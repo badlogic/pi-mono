@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AgentSession } from "../src/core/agent-session.js";
+import { AgentSession, type AgentSessionEvent } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import { loadPromptTemplates } from "../src/core/prompt-templates.js";
@@ -271,12 +271,12 @@ describe("AgentSession context reloading on newSession", () => {
 			const agentsPath = join(tempDir, "AGENTS.md");
 			writeFileSync(agentsPath, "# Context\n\nInitial.");
 
-			// Create skill
+			// Create skill with proper frontmatter
 			const skillsDir = join(tempDir, ".pi", "skills");
 			mkdirSync(skillsDir, { recursive: true });
 			const skillPath = join(skillsDir, "test-skill");
 			mkdirSync(skillPath, { recursive: true });
-			writeFileSync(join(skillPath, "SKILL.md"), "# Skill\n\nInitial.");
+			writeFileSync(join(skillPath, "SKILL.md"), "---\ndescription: A test skill.\n---\n\n# Skill\n\nInitial.");
 
 			// Create template
 			const templatesDir = join(tempDir, ".pi", "prompts");
@@ -287,7 +287,7 @@ describe("AgentSession context reloading on newSession", () => {
 
 			// Modify all files
 			writeFileSync(agentsPath, "# Context\n\nUpdated.");
-			writeFileSync(join(skillPath, "SKILL.md"), "# Skill\n\nUpdated.");
+			writeFileSync(join(skillPath, "SKILL.md"), "---\ndescription: A test skill.\n---\n\n# Skill\n\nUpdated.");
 			writeFileSync(join(templatesDir, "test.md"), "Updated.");
 
 			// Call newSession()
@@ -297,6 +297,50 @@ describe("AgentSession context reloading on newSession", () => {
 			const prompt = session.agent.state.systemPrompt;
 			expect(prompt).toContain("Custom."); // Custom prompt preserved
 			expect(session.promptTemplates[0].content).toBe("Updated."); // Templates reloaded
+		});
+
+		it("should emit context_reloaded event with details", async () => {
+			// Create AGENTS.md
+			const agentsPath = join(tempDir, "AGENTS.md");
+			writeFileSync(agentsPath, "# Context\n\nInitial.");
+
+			// Create skill with proper frontmatter
+			const skillsDir = join(tempDir, ".pi", "skills");
+			mkdirSync(skillsDir, { recursive: true });
+			const skillPath = join(skillsDir, "test-skill");
+			mkdirSync(skillPath, { recursive: true });
+			writeFileSync(join(skillPath, "SKILL.md"), "---\ndescription: A test skill.\n---\n\n# Skill\n\nInitial.");
+
+			// Create template
+			const templatesDir = join(tempDir, ".pi", "prompts");
+			mkdirSync(templatesDir, { recursive: true });
+			writeFileSync(join(templatesDir, "test.md"), "Initial.");
+
+			// Create session first
+			session = createSession();
+
+			// Capture emitted events
+			const events: AgentSessionEvent[] = [];
+			const unsubscribe = session.subscribe((event) => {
+				events.push(event);
+			});
+
+			// Call newSession()
+			await session.newSession();
+
+			// Verify context_reloaded event was emitted
+			const reloadedEvent = events.find((e) => e.type === "context_reloaded");
+			expect(reloadedEvent).toBeDefined();
+			expect(reloadedEvent?.type).toBe("context_reloaded");
+
+			if (reloadedEvent && reloadedEvent.type === "context_reloaded") {
+				expect(reloadedEvent.contextFiles).toBe(1); // AGENTS.md
+				expect(reloadedEvent.skills).toBe(1); // test-skill
+				expect(reloadedEvent.templates).toBe(1); // test.md
+				expect(reloadedEvent.errors).toBeUndefined();
+			}
+
+			unsubscribe();
 		});
 	});
 });

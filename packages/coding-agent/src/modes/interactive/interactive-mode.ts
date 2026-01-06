@@ -1354,6 +1354,41 @@ export class InteractiveMode {
 				this.ui.requestRender();
 				break;
 			}
+
+			case "context_reloaded": {
+				// Show context reload status
+				if (event.errors && event.errors.length > 0) {
+					// Show errors if any occurred
+					const errorMessages = event.errors.join(", ");
+					this.chatContainer.addChild(
+						new Text(theme.fg("warning", `Context reload failed: ${errorMessages}`), 0, 0),
+					);
+				} else {
+					// Show successful reload with details
+					const parts = [];
+					if (event.contextFiles > 0) {
+						parts.push(`${event.contextFiles} context file${event.contextFiles > 1 ? "s" : ""}`);
+					}
+					if (event.skills > 0) {
+						parts.push(`${event.skills} skill${event.skills > 1 ? "s" : ""}`);
+					}
+					if (event.templates > 0) {
+						parts.push(`${event.templates} template${event.templates > 1 ? "s" : ""}`);
+					}
+
+					if (parts.length > 0) {
+						const message = `Reloaded ${parts.join(", ")}`;
+						this.chatContainer.addChild(new Text(theme.fg("muted", message), 0, 0));
+					} else {
+						this.chatContainer.addChild(
+							new Text(theme.fg("muted", "No context files, skills, or templates found"), 0, 0),
+						);
+					}
+				}
+				this.chatContainer.addChild(new Spacer(1));
+				this.ui.requestRender();
+				break;
+			}
 		}
 	}
 

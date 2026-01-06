@@ -64,7 +64,14 @@ export type AgentSessionEvent =
 	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
 	| { type: "auto_compaction_end"; result: CompactionResult | undefined; aborted: boolean; willRetry: boolean }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
-	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
+	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
+	| {
+			type: "context_reloaded";
+			contextFiles: number;
+			skills: number;
+			templates: number;
+			errors?: string[];
+	  };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -282,11 +289,28 @@ export class AgentSession {
 
 			this._baseSystemPrompt = newPrompt;
 			this.agent.setSystemPrompt(this._baseSystemPrompt);
+
+			// Emit event to notify UI about context reload
+			this._emit({
+				type: "context_reloaded",
+				contextFiles: contextFiles.length,
+				skills: skills.length,
+				templates: this._promptTemplates.length,
+			});
 		} catch (error) {
 			// Log error but don't fail the session
 			// Session will proceed with previous prompt
 			const errorMsg = error instanceof Error ? error.message : String(error);
 			console.warn(`Warning: Failed to reload context on newSession(): ${errorMsg}`);
+
+			// Emit event with errors
+			this._emit({
+				type: "context_reloaded",
+				contextFiles: 0,
+				skills: 0,
+				templates: 0,
+				errors: [errorMsg],
+			});
 		}
 	}
 
