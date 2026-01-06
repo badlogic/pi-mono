@@ -20,7 +20,14 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import type { GoogleThinkingLevel } from "./google-gemini-cli.js";
-import { convertMessages, convertTools, mapStopReason, mapToolChoice } from "./google-shared.js";
+import {
+	convertMessages,
+	convertTools,
+	isThinkingPart,
+	mapStopReason,
+	mapToolChoice,
+	retainThoughtSignature,
+} from "./google-shared.js";
 
 export interface GoogleOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
@@ -75,7 +82,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 				if (candidate?.content?.parts) {
 					for (const part of candidate.content.parts) {
 						if (part.text !== undefined) {
-							const isThinking = part.thought === true;
+							const isThinking = isThinkingPart(part);
 							if (
 								!currentBlock ||
 								(isThinking && currentBlock.type !== "thinking") ||
@@ -110,7 +117,10 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 							}
 							if (currentBlock.type === "thinking") {
 								currentBlock.thinking += part.text;
-								currentBlock.thinkingSignature = part.thoughtSignature;
+								currentBlock.thinkingSignature = retainThoughtSignature(
+									currentBlock.thinkingSignature,
+									part.thoughtSignature,
+								);
 								stream.push({
 									type: "thinking_delta",
 									contentIndex: blockIndex(),

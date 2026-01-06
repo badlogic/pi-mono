@@ -10,6 +10,38 @@ import { transformMessages } from "./transorm-messages.js";
 type GoogleApiType = "google-generative-ai" | "google-gemini-cli" | "google-vertex";
 
 /**
+ * Determines whether a streamed Gemini `Part` should be treated as "thinking".
+ *
+ * Protocol note (Gemini / Vertex AI thought signatures):
+ * - `thoughtSignature` may appear without `thought: true` (including in empty-text parts at the end of streaming).
+ * - When persisting/replaying model outputs, signature-bearing parts must be preserved as-is;
+ *   do not merge/move signatures across parts.
+ * - Our streaming representation uses content blocks, so we classify any non-empty `thoughtSignature`
+ *   as thinking to avoid leaking thought content into normal assistant text.
+ *
+ * Some Google backends send thought content with `thoughtSignature` but omit `thought: true`
+ * on subsequent deltas. We treat any non-empty `thoughtSignature` as thinking to avoid
+ * leaking thought text into the normal assistant text stream.
+ */
+export function isThinkingPart(part: Pick<Part, "thought" | "thoughtSignature">): boolean {
+	return part.thought === true || (typeof part.thoughtSignature === "string" && part.thoughtSignature.length > 0);
+}
+
+/**
+ * Retain thought signatures during streaming.
+ *
+ * Some backends only send `thoughtSignature` on the first delta for a given part/block; later deltas may omit it.
+ * This helper preserves the last non-empty signature for the current block.
+ *
+ * Note: this does NOT merge or move signatures across distinct response parts. It only prevents
+ * a signature from being overwritten with `undefined` within the same streamed block.
+ */
+export function retainThoughtSignature(existing: string | undefined, incoming: string | undefined): string | undefined {
+	if (typeof incoming === "string" && incoming.length > 0) return incoming;
+	return existing;
+}
+
+/**
  * Convert internal messages to Gemini Content[] format.
  */
 export function convertMessages<T extends GoogleApiType>(model: Model<T>, context: Context): Content[] {
