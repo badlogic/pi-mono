@@ -289,7 +289,7 @@ export class InteractiveMode {
 			theme.fg("muted", " to suspend") +
 			"\n" +
 			theme.fg("dim", deleteToLineEnd) +
-			theme.fg("muted", " to delete line") +
+			theme.fg("muted", " to delete to end") +
 			"\n" +
 			theme.fg("dim", cycleThinkingLevel) +
 			theme.fg("muted", " to cycle thinking") +
@@ -314,6 +314,9 @@ export class InteractiveMode {
 			"\n" +
 			theme.fg("dim", "!") +
 			theme.fg("muted", " to run bash") +
+			"\n" +
+			theme.fg("dim", "!!") +
+			theme.fg("muted", " to run bash (no context)") +
 			"\n" +
 			theme.fg("dim", followUp) +
 			theme.fg("muted", " to queue follow-up") +
@@ -2710,6 +2713,7 @@ export class InteractiveMode {
 | \`Ctrl+V\` | Paste image from clipboard |
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
+| \`!!\` | Run bash command (excluded from context) |
 `;
 
 		// Add extension-registered shortcuts
