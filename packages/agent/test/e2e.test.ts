@@ -324,6 +324,30 @@ describe("Agent E2E Tests", () => {
 			await multiTurnConversation(model);
 		});
 	});
+
+	describe.skipIf(!process.env.AWS_PROFILE)("Amazon Bedrock Provider (claude-sonnet-4-5)", () => {
+		const model = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+		it("should handle basic text prompt", async () => {
+			await basicPrompt(model);
+		});
+
+		it("should execute tools correctly", async () => {
+			await toolExecution(model);
+		});
+
+		it("should handle abort during execution", async () => {
+			await abortExecution(model);
+		});
+
+		it("should emit state updates during streaming", async () => {
+			await stateUpdates(model);
+		});
+
+		it("should maintain context across multiple turns", async () => {
+			await multiTurnConversation(model);
+		});
+	});
 });
 
 describe("Agent.continue()", () => {
