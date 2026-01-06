@@ -525,6 +525,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			setStatus: () => {},
 			setWidget: () => {},
 			setFooter: () => {},
+			setHeader: () => {},
 			setTitle: () => {},
 			custom: async () => undefined as never,
 			setEditorText: () => {},

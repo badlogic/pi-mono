@@ -42,7 +42,11 @@ class SessionList implements Component {
 	}
 
 	private filterSessions(query: string): void {
-		this.filteredSessions = fuzzyFilter(this.allSessions, query, (session) => session.allMessagesText);
+		this.filteredSessions = fuzzyFilter(
+			this.allSessions,
+			query,
+			(session) => `${session.id} ${session.allMessagesText}`,
+		);
 		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredSessions.length - 1));
 	}
 
