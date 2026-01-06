@@ -739,9 +739,9 @@ export class InteractiveMode {
 	 */
 	private createExtensionUIContext(): ExtensionUIContext {
 		return {
-			select: (title, options) => this.showExtensionSelector(title, options),
-			confirm: (title, message) => this.showExtensionConfirm(title, message),
-			input: (title, placeholder) => this.showExtensionInput(title, placeholder),
+			select: (title, options, opts) => this.showExtensionSelector(title, options, opts),
+			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts),
+			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts),
 			notify: (message, type) => this.showExtensionNotify(message, type),
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
 			setWidget: (key, content) => this.setExtensionWidget(key, content),
@@ -761,16 +761,33 @@ export class InteractiveMode {
 	/**
 	 * Show a selector for extensions.
 	 */
-	private showExtensionSelector(title: string, options: string[]): Promise<string | undefined> {
+	private showExtensionSelector(
+		title: string,
+		options: string[],
+		opts?: { signal?: AbortSignal },
+	): Promise<string | undefined> {
 		return new Promise((resolve) => {
+			if (opts?.signal?.aborted) {
+				resolve(undefined);
+				return;
+			}
+
+			const onAbort = () => {
+				this.hideExtensionSelector();
+				resolve(undefined);
+			};
+			opts?.signal?.addEventListener("abort", onAbort, { once: true });
+
 			this.extensionSelector = new ExtensionSelectorComponent(
 				title,
 				options,
 				(option) => {
+					opts?.signal?.removeEventListener("abort", onAbort);
 					this.hideExtensionSelector();
 					resolve(option);
 				},
 				() => {
+					opts?.signal?.removeEventListener("abort", onAbort);
 					this.hideExtensionSelector();
 					resolve(undefined);
 				},
@@ -797,24 +814,45 @@ export class InteractiveMode {
 	/**
 	 * Show a confirmation dialog for extensions.
 	 */
-	private async showExtensionConfirm(title: string, message: string): Promise<boolean> {
-		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"]);
+	private async showExtensionConfirm(
+		title: string,
+		message: string,
+		opts?: { signal?: AbortSignal },
+	): Promise<boolean> {
+		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts);
 		return result === "Yes";
 	}
 
 	/**
 	 * Show a text input for extensions.
 	 */
-	private showExtensionInput(title: string, placeholder?: string): Promise<string | undefined> {
+	private showExtensionInput(
+		title: string,
+		placeholder?: string,
+		opts?: { signal?: AbortSignal },
+	): Promise<string | undefined> {
 		return new Promise((resolve) => {
+			if (opts?.signal?.aborted) {
+				resolve(undefined);
+				return;
+			}
+
+			const onAbort = () => {
+				this.hideExtensionInput();
+				resolve(undefined);
+			};
+			opts?.signal?.addEventListener("abort", onAbort, { once: true });
+
 			this.extensionInput = new ExtensionInputComponent(
 				title,
 				placeholder,
 				(value) => {
+					opts?.signal?.removeEventListener("abort", onAbort);
 					this.hideExtensionInput();
 					resolve(value);
 				},
 				() => {
+					opts?.signal?.removeEventListener("abort", onAbort);
 					this.hideExtensionInput();
 					resolve(undefined);
 				},
