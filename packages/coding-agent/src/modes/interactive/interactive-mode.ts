@@ -7,7 +7,6 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import Clipboard from "@crosscopy/clipboard";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { type AssistantMessage, getOAuthProviders, type Message, type OAuthProvider } from "@mariozechner/pi-ai";
 import type { KeyId, SlashCommand } from "@mariozechner/pi-tui";
@@ -43,6 +42,7 @@ import { loadProjectContextFiles } from "../../core/system-prompt.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
+import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
@@ -924,20 +924,17 @@ export class InteractiveMode {
 
 	private async handleClipboardImagePaste(): Promise<void> {
 		try {
-			if (!Clipboard.hasImage()) {
-				return;
-			}
-
-			const imageData = await Clipboard.getImageBinary();
-			if (!imageData || imageData.length === 0) {
+			const image = await readClipboardImage();
+			if (!image) {
 				return;
 			}
 
 			// Write to temp file
 			const tmpDir = os.tmpdir();
-			const fileName = `pi-clipboard-${crypto.randomUUID()}.png`;
+			const ext = extensionForImageMimeType(image.mimeType) ?? "png";
+			const fileName = `pi-clipboard-${crypto.randomUUID()}.${ext}`;
 			const filePath = path.join(tmpDir, fileName);
-			fs.writeFileSync(filePath, Buffer.from(imageData));
+			fs.writeFileSync(filePath, Buffer.from(image.bytes));
 
 			// Insert file path directly
 			this.editor.insertTextAtCursor(filePath);
