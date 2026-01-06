@@ -41,6 +41,8 @@ export interface BedrockOptions extends StreamOptions {
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
 	/* See https://docs.aws.amazon.com/bedrock/latest/userguide/inference-reasoning.html for supported models. */
 	reasoning?: ThinkingLevel;
+	/* Only supported by Claude 4.x models, see https://docs.aws.amazon.com/bedrock/latest/userguide/claude-messages-extended-thinking.html#claude-messages-extended-thinking-tool-use-interleaved */
+	interleavedThinking?: boolean;
 }
 
 type Block = (TextContent | ThinkingContent | ToolCall) & { index?: number; partialJson?: string };
@@ -427,12 +429,18 @@ function buildAdditionalModelRequestFields(
 			xhigh: 16384, // Claude doesn't support xhigh, clamp to high
 		};
 
-		return {
+		const result: Record<string, any> = {
 			thinking: {
 				type: "enabled",
 				budget_tokens: budgets[options.reasoning],
 			},
 		};
+
+		if (options.interleavedThinking) {
+			result.anthropic_beta = ["interleaved-thinking-2025-05-14"];
+		}
+
+		return result;
 	}
 
 	return undefined;
