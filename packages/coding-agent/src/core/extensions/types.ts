@@ -52,13 +52,13 @@ export type { AgentToolResult, AgentToolUpdateCallback };
  */
 export interface ExtensionUIContext {
 	/** Show a selector and return the user's choice. */
-	select(title: string, options: string[]): Promise<string | undefined>;
+	select(title: string, options: string[], opts?: { signal?: AbortSignal }): Promise<string | undefined>;
 
 	/** Show a confirmation dialog. */
-	confirm(title: string, message: string): Promise<boolean>;
+	confirm(title: string, message: string, opts?: { signal?: AbortSignal }): Promise<boolean>;
 
 	/** Show a text input dialog. */
-	input(title: string, placeholder?: string): Promise<string | undefined>;
+	input(title: string, placeholder?: string, opts?: { signal?: AbortSignal }): Promise<string | undefined>;
 
 	/** Show a notification to the user. */
 	notify(message: string, type?: "info" | "warning" | "error"): void;

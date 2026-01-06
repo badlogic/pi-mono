@@ -67,11 +67,22 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	 * Create an extension UI context that uses the RPC protocol.
 	 */
 	const createExtensionUIContext = (): ExtensionUIContext => ({
-		async select(title: string, options: string[]): Promise<string | undefined> {
+		async select(title: string, options: string[], opts?: { signal?: AbortSignal }): Promise<string | undefined> {
+			if (opts?.signal?.aborted) {
+				return undefined;
+			}
+
 			const id = crypto.randomUUID();
 			return new Promise((resolve, reject) => {
+				const onAbort = () => {
+					pendingExtensionRequests.delete(id);
+					resolve(undefined);
+				};
+				opts?.signal?.addEventListener("abort", onAbort, { once: true });
+
 				pendingExtensionRequests.set(id, {
 					resolve: (response: RpcExtensionUIResponse) => {
+						opts?.signal?.removeEventListener("abort", onAbort);
 						if ("cancelled" in response && response.cancelled) {
 							resolve(undefined);
 						} else if ("value" in response) {
@@ -86,11 +97,22 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			});
 		},
 
-		async confirm(title: string, message: string): Promise<boolean> {
+		async confirm(title: string, message: string, opts?: { signal?: AbortSignal }): Promise<boolean> {
+			if (opts?.signal?.aborted) {
+				return false;
+			}
+
 			const id = crypto.randomUUID();
 			return new Promise((resolve, reject) => {
+				const onAbort = () => {
+					pendingExtensionRequests.delete(id);
+					resolve(false);
+				};
+				opts?.signal?.addEventListener("abort", onAbort, { once: true });
+
 				pendingExtensionRequests.set(id, {
 					resolve: (response: RpcExtensionUIResponse) => {
+						opts?.signal?.removeEventListener("abort", onAbort);
 						if ("cancelled" in response && response.cancelled) {
 							resolve(false);
 						} else if ("confirmed" in response) {
@@ -105,11 +127,22 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			});
 		},
 
-		async input(title: string, placeholder?: string): Promise<string | undefined> {
+		async input(title: string, placeholder?: string, opts?: { signal?: AbortSignal }): Promise<string | undefined> {
+			if (opts?.signal?.aborted) {
+				return undefined;
+			}
+
 			const id = crypto.randomUUID();
 			return new Promise((resolve, reject) => {
+				const onAbort = () => {
+					pendingExtensionRequests.delete(id);
+					resolve(undefined);
+				};
+				opts?.signal?.addEventListener("abort", onAbort, { once: true });
+
 				pendingExtensionRequests.set(id, {
 					resolve: (response: RpcExtensionUIResponse) => {
+						opts?.signal?.removeEventListener("abort", onAbort);
 						if ("cancelled" in response && response.cancelled) {
 							resolve(undefined);
 						} else if ("value" in response) {
