@@ -345,7 +345,7 @@ export async function main(args: string[]) {
 	if (parsed.export) {
 		try {
 			const outputPath = parsed.messages.length > 0 ? parsed.messages[0] : undefined;
-			const result = exportFromFile(parsed.export, outputPath);
+			const result = await exportFromFile(parsed.export, outputPath);
 			console.log(`Exported to: ${result}`);
 			return;
 		} catch (error: unknown) {

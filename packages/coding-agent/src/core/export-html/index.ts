@@ -1,5 +1,5 @@
-import type { AgentState } from "@mariozechner/pi-agent-core";
-import { buildCodexPiBridge, getCodexInstructions, getModelFamily } from "@mariozechner/pi-ai";
+import type { AgentState, AgentTool } from "@mariozechner/pi-agent-core";
+import { buildCodexPiBridge, getCodexInstructions } from "@mariozechner/pi-ai";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir } from "../../config.js";
@@ -11,44 +11,34 @@ export interface ExportOptions {
 	themeName?: string;
 }
 
-interface ProviderSystemPrompt {
-	title: string;
-	content: string;
-	note?: string;
+/** Info about Codex injection to show inline with model_change entries */
+interface CodexInjectionInfo {
+	/** Codex instructions text */
+	instructions: string;
+	/** Bridge text (tool list) */
+	bridge: string;
 }
 
 /**
- * Build the provider-specific system prompt for display in exports.
- * Currently only supports OpenAI Codex provider.
+ * Build Codex injection info for display inline with model_change entries.
  */
-async function buildProviderSystemPrompt(state?: AgentState): Promise<ProviderSystemPrompt | undefined> {
-	if (!state?.model || state.model.provider !== "openai-codex") {
-		return undefined;
-	}
-
+async function buildCodexInjectionInfo(tools?: AgentTool[]): Promise<CodexInjectionInfo | undefined> {
+	// Try to get cached instructions for default model family
 	let instructions: string | null = null;
 	try {
-		instructions = await getCodexInstructions(state.model.id);
+		instructions = await getCodexInstructions("gpt-5.1-codex");
 	} catch {
-		// Cache miss or fetch failed - that's fine
+		// Cache miss - that's fine
 	}
 
-	const bridgeText = buildCodexPiBridge(state.tools);
-	const userPrompt = state.systemPrompt || "";
-	const modelFamily = getModelFamily(state.model.id);
+	const bridgeText = buildCodexPiBridge(tools);
 
 	const instructionsText =
 		instructions || "(Codex instructions not cached. Run a Codex request to populate the local cache.)";
-	const note = instructions
-		? `Injected by the OpenAI Codex provider for model family "${modelFamily}" (instructions + bridge + user system prompt).`
-		: "Codex instructions unavailable; showing bridge and user system prompt only.";
-
-	const content = `# Codex Instructions\n${instructionsText}\n\n# Codex-Pi Bridge\n${bridgeText}\n\n# User System Prompt\n${userPrompt || "(empty)"}`;
 
 	return {
-		title: "Injected Prompt (OpenAI Codex)",
-		content,
-		note,
+		instructions: instructionsText,
+		bridge: bridgeText,
 	};
 }
 
@@ -145,7 +135,8 @@ interface SessionData {
 	entries: ReturnType<SessionManager["getEntries"]>;
 	leafId: string | null;
 	systemPrompt?: string;
-	providerSystemPrompt?: ProviderSystemPrompt;
+	/** Info for rendering Codex injection inline with model_change entries */
+	codexInjectionInfo?: CodexInjectionInfo;
 	tools?: { name: string; description: string }[];
 }
 
@@ -209,7 +200,7 @@ export async function exportSessionToHtml(
 		entries: sm.getEntries(),
 		leafId: sm.getLeafId(),
 		systemPrompt: state?.systemPrompt,
-		providerSystemPrompt: await buildProviderSystemPrompt(state),
+		codexInjectionInfo: await buildCodexInjectionInfo(state?.tools),
 		tools: state?.tools?.map((t) => ({ name: t.name, description: t.description })),
 	};
 
@@ -229,7 +220,7 @@ export async function exportSessionToHtml(
  * Export session file to HTML (standalone, without AgentState).
  * Used by CLI for exporting arbitrary session files.
  */
-export function exportFromFile(inputPath: string, options?: ExportOptions | string): string {
+export async function exportFromFile(inputPath: string, options?: ExportOptions | string): Promise<string> {
 	const opts: ExportOptions = typeof options === "string" ? { outputPath: options } : options || {};
 
 	if (!existsSync(inputPath)) {
@@ -243,7 +234,7 @@ export function exportFromFile(inputPath: string, options?: ExportOptions | stri
 		entries: sm.getEntries(),
 		leafId: sm.getLeafId(),
 		systemPrompt: undefined,
-		providerSystemPrompt: undefined,
+		codexInjectionInfo: await buildCodexInjectionInfo(undefined),
 		tools: undefined,
 	};
 
