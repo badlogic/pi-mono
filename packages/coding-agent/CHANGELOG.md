@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Extensions can now replace the startup header with `ctx.ui.setHeader()`, see `examples/extensions/custom-header.ts`
+
 ## [0.37.3] - 2026-01-06
 
 ### Added

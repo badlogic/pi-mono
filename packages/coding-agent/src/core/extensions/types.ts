@@ -68,6 +68,9 @@ export interface ExtensionUIContext {
 	/** Set a custom footer component, or undefined to restore the built-in footer. */
 	setFooter(factory: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
 
+	/** Set a custom header component (shown at startup, above chat), or undefined to restore the built-in header. */
+	setHeader(factory: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
+
 	/** Set the terminal window/tab title. */
 	setTitle(title: string): void;
 
