@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- Exported truncation utilities for custom tools: `truncateHead`, `truncateTail`, `truncateLine`, `formatSize`, `DEFAULT_MAX_BYTES`, `DEFAULT_MAX_LINES`, `TruncationOptions`, `TruncationResult`
+- New example `truncated-tool.ts` demonstrating proper output truncation with custom rendering for extensions
+- Documentation for output truncation best practices in `docs/extensions.md`
+
 ## [0.37.4] - 2026-01-06
 
 ### Added

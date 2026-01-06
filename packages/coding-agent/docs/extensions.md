@@ -857,6 +857,57 @@ pi.registerTool({
 
 **Important:** Use `StringEnum` from `@mariozechner/pi-ai` for string enums. `Type.Union`/`Type.Literal` doesn't work with Google's API.
 
+### Output Truncation
+
+**Tools MUST truncate their output** to avoid overwhelming the LLM context. Large outputs can cause:
+- Context overflow errors (prompt too long)
+- Compaction failures
+- Degraded model performance
+
+The built-in limit is **50KB** (~10k tokens) and **2000 lines**, whichever is hit first. Use the exported truncation utilities:
+
+```typescript
+import {
+  truncateHead,      // Keep first N lines/bytes (good for file reads, search results)
+  truncateTail,      // Keep last N lines/bytes (good for logs, command output)
+  formatSize,        // Human-readable size (e.g., "50KB", "1.5MB")
+  DEFAULT_MAX_BYTES, // 50KB
+  DEFAULT_MAX_LINES, // 2000
+} from "@mariozechner/pi-coding-agent";
+
+async execute(toolCallId, params, onUpdate, ctx, signal) {
+  const output = await runCommand();
+
+  // Apply truncation
+  const truncation = truncateHead(output, {
+    maxLines: DEFAULT_MAX_LINES,
+    maxBytes: DEFAULT_MAX_BYTES,
+  });
+
+  let result = truncation.content;
+
+  if (truncation.truncated) {
+    // Write full output to temp file
+    const tempFile = writeTempFile(output);
+
+    // Inform the LLM where to find complete output
+    result += `\n\n[Output truncated: ${truncation.outputLines} of ${truncation.totalLines} lines`;
+    result += ` (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}).`;
+    result += ` Full output saved to: ${tempFile}]`;
+  }
+
+  return { content: [{ type: "text", text: result }] };
+}
+```
+
+**Key points:**
+- Use `truncateHead` for content where the beginning matters (search results, file reads)
+- Use `truncateTail` for content where the end matters (logs, command output)
+- Always inform the LLM when output is truncated and where to find the full version
+- Document the truncation limits in your tool's description
+
+See [examples/extensions/truncated-tool.ts](../examples/extensions/truncated-tool.ts) for a complete example wrapping `rg` (ripgrep) with proper truncation.
+
 ### Multiple Tools
 
 One extension can register multiple tools with shared state:

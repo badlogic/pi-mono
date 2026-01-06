@@ -4,7 +4,16 @@ export { createFindTool, type FindToolDetails, findTool } from "./find.js";
 export { createGrepTool, type GrepToolDetails, grepTool } from "./grep.js";
 export { createLsTool, type LsToolDetails, lsTool } from "./ls.js";
 export { createReadTool, type ReadToolDetails, type ReadToolOptions, readTool } from "./read.js";
-export type { TruncationResult } from "./truncate.js";
+export {
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINES,
+	formatSize,
+	type TruncationOptions,
+	type TruncationResult,
+	truncateHead,
+	truncateLine,
+	truncateTail,
+} from "./truncate.js";
 export { createWriteTool, writeTool } from "./write.js";
 
 import type { AgentTool } from "@mariozechner/pi-agent-core";
