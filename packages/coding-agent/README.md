@@ -699,7 +699,8 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
     "showImages": true
   },
   "images": {
-    "autoResize": true
+    "autoResize": true,
+    "blockImages": false
   },
   "extensions": ["/path/to/extension.ts"]
 }
@@ -726,6 +727,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
 | `terminal.showImages` | Render images inline (supported terminals) | `true` |
 | `images.autoResize` | Auto-resize images to 2000x2000 max for better model compatibility | `true` |
+| `images.blockImages` | Prevent images from being sent to LLM providers | `false` |
 | `doubleEscapeAction` | Action for double-escape with empty editor: `tree` or `branch` | `tree` |
 | `extensions` | Additional extension file paths | `[]` |
 
