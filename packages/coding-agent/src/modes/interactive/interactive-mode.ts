@@ -1366,21 +1366,16 @@ export class InteractiveMode {
 					this.chatContainer.addChild(new Spacer(1));
 				} else {
 					// Show successful reload with file lists (similar to startup)
-					const anythingLoaded =
-						event.contextFiles.length > 0 || event.skills.length > 0 || event.templates.length > 0;
-
-					if (anythingLoaded) {
-						this.chatContainer.addChild(new Text(theme.fg("muted", "Reloaded context:"), 0, 0));
-					}
-
 					if (event.contextFiles.length > 0) {
 						const contextList = event.contextFiles.map((f) => theme.fg("dim", `  ${f.path}`)).join("\n");
-						this.chatContainer.addChild(new Text(contextList, 0, 0));
+						this.chatContainer.addChild(new Text(theme.fg("muted", "Reloaded context:\n") + contextList, 0, 0));
+						this.chatContainer.addChild(new Spacer(1));
 					}
 
 					if (event.skills.length > 0) {
 						const skillList = event.skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
 						this.chatContainer.addChild(new Text(theme.fg("muted", "Reloaded skills:\n") + skillList, 0, 0));
+						this.chatContainer.addChild(new Spacer(1));
 					}
 
 					if (event.templates.length > 0) {
@@ -1390,9 +1385,6 @@ export class InteractiveMode {
 						this.chatContainer.addChild(
 							new Text(theme.fg("muted", "Reloaded templates:\n") + templateList, 0, 0),
 						);
-					}
-
-					if (anythingLoaded) {
 						this.chatContainer.addChild(new Spacer(1));
 					}
 				}
