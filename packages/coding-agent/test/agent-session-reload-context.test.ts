@@ -250,13 +250,6 @@ describe("AgentSession context reloading on newSession", () => {
 		});
 	});
 
-	describe("skills reloading", () => {
-		it.skip("should reload skills from project directory after newSession()", async () => {
-			// Skipped: Skills require read tool to be active for display in prompt.
-			// This test needs more complex setup with tool activation.
-		});
-	});
-
 	describe("prompt templates reloading", () => {
 		it("should reload prompt templates after newSession()", async () => {
 			const templatesDir = join(tempDir, ".pi", "prompts");
