@@ -6,11 +6,6 @@
 
 - `/reload` command to hot-reload AGENTS.md, skills, prompt templates, and extensions without restarting ([#508](https://github.com/badlogic/pi-mono/pull/508) by [@melihmucuk](https://github.com/melihmucuk))
 
-### Fixed
-
-- Queued steering/follow-up messages no longer wipe unsent editor input ([#503](https://github.com/badlogic/pi-mono/pull/503) by [@tmustier](https://github.com/tmustier))
-- OAuth token refresh failure no longer crashes app at startup, allowing user to `/login` to re-authenticate ([#498](https://github.com/badlogic/pi-mono/issues/498))
-
 ## [0.37.4] - 2026-01-06
 
 ### Added
