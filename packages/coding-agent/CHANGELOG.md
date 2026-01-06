@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Interactive mode: Ctrl+V clipboard image paste now works on Wayland sessions by using `wl-paste` with `xclip` fallback (avoids native panics in `@crosscopy/clipboard`).
+
 ## [0.37.2] - 2026-01-05
 
 ### Fixed
