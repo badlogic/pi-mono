@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Status bar now shows correct git branch when running in a git worktree
+
 ## [0.37.2] - 2026-01-05
 
 ### Fixed
