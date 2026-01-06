@@ -291,6 +291,16 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 						// Use server-provided delay or exponential backoff
 						const serverDelay = extractRetryDelay(errorText);
 						const delayMs = serverDelay ?? BASE_DELAY_MS * 2 ** attempt;
+
+						// Don't wait for long quota delays - fail fast so caller can rotate accounts
+						const MAX_RETRY_WAIT_MS = 30_000;
+						if (delayMs > MAX_RETRY_WAIT_MS) {
+							throw new Error(
+								`Cloud Code Assist API rate limit (${response.status}): ` +
+									`retry delay ${Math.round(delayMs / 1000)}s exceeds max wait ${MAX_RETRY_WAIT_MS / 1000}s. ${errorText}`,
+							);
+						}
+
 						await sleep(delayMs, options?.signal);
 						continue;
 					}
