@@ -641,8 +641,8 @@ export interface ExtensionAPI {
 	events: EventBus;
 }
 
-/** Extension factory function type. */
-export type ExtensionFactory = (pi: ExtensionAPI) => void;
+/** Extension factory function type. Supports both sync and async initialization. */
+export type ExtensionFactory = (pi: ExtensionAPI) => void | Promise<void>;
 
 // ============================================================================
 // Loaded Extension Types
