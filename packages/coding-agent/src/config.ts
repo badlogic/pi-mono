@@ -17,19 +17,33 @@ const __dirname = dirname(__filename);
 export const isBunBinary =
 	import.meta.url.includes("$bunfs") || import.meta.url.includes("~BUN") || import.meta.url.includes("%7EBUN");
 
+/**
+ * Detect if we're running as an embedded binary where paths were baked from a different machine.
+ * When a Bun binary is compiled on one machine and run on another, the import.meta.url
+ * contains the build machine's absolute path, which won't exist on the target machine.
+ */
+export const isEmbeddedBinary = (() => {
+	if (isBunBinary) return false;
+	try {
+		return !existsSync(__dirname);
+	} catch {
+		return true;
+	}
+})();
+
 // =============================================================================
 // Package Asset Paths (shipped with executable)
 // =============================================================================
 
 /**
  * Get the base directory for resolving package assets (themes, package.json, README.md, CHANGELOG.md).
- * - For Bun binary: returns the directory containing the executable
+ * - For Bun binary or embedded binary: returns the directory containing the executable
  * - For Node.js (dist/): returns __dirname (the dist/ directory)
  * - For tsx (src/): returns parent directory (the package root)
  */
 export function getPackageDir(): string {
-	if (isBunBinary) {
-		// Bun binary: process.execPath points to the compiled executable
+	if (isBunBinary || isEmbeddedBinary) {
+		// Bun binary or embedded binary: process.execPath points to the compiled executable
 		return dirname(process.execPath);
 	}
 	// Node.js: walk up from __dirname until we find package.json
@@ -46,12 +60,12 @@ export function getPackageDir(): string {
 
 /**
  * Get path to built-in themes directory (shipped with package)
- * - For Bun binary: theme/ next to executable
+ * - For Bun binary or embedded binary: theme/ next to executable
  * - For Node.js (dist/): dist/modes/interactive/theme/
  * - For tsx (src/): src/modes/interactive/theme/
  */
 export function getThemesDir(): string {
-	if (isBunBinary) {
+	if (isBunBinary || isEmbeddedBinary) {
 		return join(dirname(process.execPath), "theme");
 	}
 	// Theme is in modes/interactive/theme/ relative to src/ or dist/
@@ -62,12 +76,12 @@ export function getThemesDir(): string {
 
 /**
  * Get path to HTML export template directory (shipped with package)
- * - For Bun binary: export-html/ next to executable
+ * - For Bun binary or embedded binary: export-html/ next to executable
  * - For Node.js (dist/): dist/core/export-html/
  * - For tsx (src/): src/core/export-html/
  */
 export function getExportTemplateDir(): string {
-	if (isBunBinary) {
+	if (isBunBinary || isEmbeddedBinary) {
 		return join(dirname(process.execPath), "export-html");
 	}
 	const packageDir = getPackageDir();
