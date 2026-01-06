@@ -383,35 +383,40 @@ export class InteractiveMode {
 	// =========================================================================
 
 	/**
+	 * Display a loaded/reloaded section with list items.
+	 * @param label Section label (e.g., "Loaded context", "Reloaded skills")
+	 * @param items Array of items to display
+	 * @param itemToString Function to convert item to display string
+	 * @param color Text color ("dim" or "warning")
+	 */
+	private displayLoadedSection<T>(
+		label: string,
+		items: T[],
+		itemToString: (item: T) => string,
+		color: "dim" | "warning" = "dim",
+	): void {
+		if (items.length === 0) return;
+		const list = items.map((item) => theme.fg(color, `  ${itemToString(item)}`)).join("\n");
+		this.chatContainer.addChild(new Text(theme.fg("muted", `${label}:\n`) + list, 0, 0));
+		this.chatContainer.addChild(new Spacer(1));
+	}
+
+	/**
 	 * Initialize the extension system with TUI-based UI context.
 	 */
 	private async initExtensions(): Promise<void> {
 		// Show loaded project context files
 		const contextFiles = loadProjectContextFiles();
-		if (contextFiles.length > 0) {
-			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${f.path}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded context:\n") + contextList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+		this.displayLoadedSection("Loaded context", contextFiles, (f) => f.path);
 
 		// Show loaded skills
 		const skillsSettings = this.session.skillsSettings;
 		if (skillsSettings?.enabled !== false) {
 			const { skills, warnings: skillWarnings } = loadSkills(skillsSettings ?? {});
-			if (skills.length > 0) {
-				const skillList = skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
-				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
-			}
+			this.displayLoadedSection("Loaded skills", skills, (s) => s.filePath);
 
 			// Show skill warnings if any
-			if (skillWarnings.length > 0) {
-				const warningList = skillWarnings
-					.map((w) => theme.fg("warning", `  ${w.skillPath}: ${w.message}`))
-					.join("\n");
-				this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
-			}
+			this.displayLoadedSection("Skill warnings", skillWarnings, (w) => `${w.skillPath}: ${w.message}`, "warning");
 		}
 
 		// Show loaded prompt templates
@@ -419,13 +424,11 @@ export class InteractiveMode {
 			cwd: this.session.cwd,
 			agentDir: this.session.agentDir,
 		});
-		if (templates.length > 0) {
-			const templateList = templates
-				.map((t) => theme.fg("dim", `  ${t.name}${t.description ? `: ${t.description}` : ""}`))
-				.join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded templates:\n") + templateList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+		this.displayLoadedSection(
+			"Loaded templates",
+			templates,
+			(t) => `${t.name}${t.description ? `: ${t.description}` : ""}`,
+		);
 
 		// Create and set extension UI context
 		const uiContext = this.createExtensionUIContext();
@@ -1380,27 +1383,13 @@ export class InteractiveMode {
 					this.chatContainer.addChild(new Spacer(1));
 				} else {
 					// Show successful reload with file lists (similar to startup)
-					if (event.contextFiles.length > 0) {
-						const contextList = event.contextFiles.map((f) => theme.fg("dim", `  ${f.path}`)).join("\n");
-						this.chatContainer.addChild(new Text(theme.fg("muted", "Reloaded context:\n") + contextList, 0, 0));
-						this.chatContainer.addChild(new Spacer(1));
-					}
-
-					if (event.skills.length > 0) {
-						const skillList = event.skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
-						this.chatContainer.addChild(new Text(theme.fg("muted", "Reloaded skills:\n") + skillList, 0, 0));
-						this.chatContainer.addChild(new Spacer(1));
-					}
-
-					if (event.templates.length > 0) {
-						const templateList = event.templates
-							.map((t) => theme.fg("dim", `  ${t.name}${t.description ? `: ${t.description}` : ""}`))
-							.join("\n");
-						this.chatContainer.addChild(
-							new Text(theme.fg("muted", "Reloaded templates:\n") + templateList, 0, 0),
-						);
-						this.chatContainer.addChild(new Spacer(1));
-					}
+					this.displayLoadedSection("Reloaded context", event.contextFiles, (f) => f.path);
+					this.displayLoadedSection("Reloaded skills", event.skills, (s) => s.filePath);
+					this.displayLoadedSection(
+						"Reloaded templates",
+						event.templates,
+						(t) => `${t.name}${t.description ? `: ${t.description}` : ""}`,
+					);
 				}
 				this.ui.requestRender();
 				break;
