@@ -656,6 +656,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		modelRegistry,
 		toolRegistry: wrappedToolRegistry ?? toolRegistry,
 		rebuildSystemPrompt,
+		cwd,
+		agentDir,
 	});
 	time("createAgentSession");
 

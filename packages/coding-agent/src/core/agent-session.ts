@@ -23,7 +23,7 @@ import type {
 } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
-import { getAuthPath } from "../config.js";
+import { getAgentDir, getAuthPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
 import {
 	type CompactionResult,
@@ -47,9 +47,16 @@ import type {
 } from "./extensions/index.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
-import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
+import {
+	expandPromptTemplate,
+	loadPromptTemplates as loadPromptTemplatesInternal,
+	type PromptTemplate,
+} from "./prompt-templates.js";
 import type { BranchSummaryEntry, CompactionEntry, NewSessionOptions, SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
+import { loadSkills } from "./skills.js";
+import { buildSystemPrompt, loadProjectContextFiles } from "./system-prompt.js";
+import { allTools, type ToolName } from "./tools/index.js";
 
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =
@@ -83,6 +90,10 @@ export interface AgentSessionConfig {
 	toolRegistry?: Map<string, AgentTool>;
 	/** Function to rebuild system prompt when tools change */
 	rebuildSystemPrompt?: (toolNames: string[]) => string;
+	/** Working directory for context/skills discovery */
+	cwd?: string;
+	/** Agent configuration directory */
+	agentDir?: string;
 }
 
 /** Options for AgentSession.prompt() */
@@ -190,6 +201,10 @@ export class AgentSession {
 	// Base system prompt (without extension appends) - used to apply fresh appends each turn
 	private _baseSystemPrompt: string;
 
+	// Working directory and agent dir for context reloading
+	private _cwd: string;
+	private _agentDir: string;
+
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
@@ -202,10 +217,51 @@ export class AgentSession {
 		this._toolRegistry = config.toolRegistry ?? new Map();
 		this._rebuildSystemPrompt = config.rebuildSystemPrompt;
 		this._baseSystemPrompt = config.agent.state.systemPrompt;
+		this._cwd = config.cwd ?? process.cwd();
+		this._agentDir = config.agentDir ?? getAgentDir();
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
 		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
+	}
+
+	/**
+	 * Reload context files, skills, and prompt templates for a fresh session.
+	 * Called by newSession() to reflect file system changes.
+	 */
+	private async reloadContext(): Promise<void> {
+		const toolNames = this.getActiveToolNames();
+		const validToolNames = toolNames.filter((n): n is ToolName => n in allTools);
+
+		// Reload context files (AGENTS.md, etc.)
+		const contextFiles = loadProjectContextFiles({
+			cwd: this._cwd,
+			agentDir: this._agentDir,
+		});
+
+		// Reload skills
+		const { skills } = loadSkills({
+			cwd: this._cwd,
+			agentDir: this._agentDir,
+			...this._skillsSettings,
+		});
+
+		// Reload prompt templates
+		this._promptTemplates = loadPromptTemplatesInternal({
+			cwd: this._cwd,
+			agentDir: this._agentDir,
+		});
+
+		// Rebuild base system prompt with fresh context
+		this._baseSystemPrompt = buildSystemPrompt({
+			cwd: this._cwd,
+			agentDir: this._agentDir,
+			contextFiles,
+			skills,
+			selectedTools: validToolNames,
+		});
+
+		this.agent.setSystemPrompt(this._baseSystemPrompt);
 	}
 
 	/** Model registry for API key resolution and model discovery */
@@ -860,6 +916,9 @@ export class AgentSession {
 		this._followUpMessages = [];
 		this._pendingNextTurnMessages = [];
 		this._reconnectToAgent();
+
+		// Reload context files, skills, and prompt templates for fresh session
+		await this.reloadContext();
 
 		// Emit session_switch event with reason "new" to extensions
 		if (this._extensionRunner) {
