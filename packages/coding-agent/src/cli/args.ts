@@ -243,6 +243,8 @@ ${chalk.bold("Environment Variables:")}
   XAI_API_KEY             - xAI Grok API key
   OPENROUTER_API_KEY      - OpenRouter API key
   ZAI_API_KEY             - ZAI API key
+  AWS_PROFILE             - AWS profile for Amazon Bedrock
+  AWS_REGION              - AWS region for Amazon Bedrock (e.g., us-east-1)
   ${ENV_AGENT_DIR.padEnd(23)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
 
 ${chalk.bold("Available Tools (default: read, bash, edit, write):")}

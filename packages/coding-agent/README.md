@@ -210,6 +210,19 @@ Credentials stored in `~/.pi/agent/auth.json`. Use `/logout` to clear.
 - **Token expired / refresh failed:** Run `/login` again for the provider to refresh credentials.
 - **Usage limits (429):** Wait for the reset window; pi will surface a friendly message with the approximate retry time.
 
+**Amazon Bedrock:**
+
+Amazon Bedrock uses AWS credentials instead of API keys. Configure via AWS profile:
+
+```bash
+export AWS_PROFILE=your-profile-name
+export AWS_REGION=us-east-1  # or your preferred region
+
+pi --provider amazon-bedrock --model global.anthropic.claude-sonnet-4-5-20250929-v1:0
+```
+
+See [Supported foundation models in Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html).
+
 ### Quick Start
 
 ```bash

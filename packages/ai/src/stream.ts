@@ -68,6 +68,13 @@ export function getEnvApiKey(provider: any): string | undefined {
 		}
 	}
 
+	if (provider === "amazon-bedrock") {
+		// Amazon Bedrock provider doesn't use API keys, it will use provided `AWS_PROFILE` to source AWS credentials.
+		if (process.env.AWS_PROFILE) {
+			return "<authenticated>";
+		}
+	}
+
 	const envMap: Record<string, string> = {
 		openai: "OPENAI_API_KEY",
 		google: "GEMINI_API_KEY",
