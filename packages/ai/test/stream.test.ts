@@ -907,6 +907,26 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.AWS_PROFILE)("Amazon Bedrock Provider (claude-sonnet-4-5)", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+		it("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm);
+		});
+
+		it("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm);
+		});
+
+		it("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm);
+		});
+
+		it("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm);
+		});
+	});
+
 	// Check if ollama is installed and local LLM tests are enabled
 	let ollamaInstalled = false;
 	if (!process.env.PI_NO_LOCAL_LLM) {

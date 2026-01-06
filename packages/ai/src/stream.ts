@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { supportsXhigh } from "./models.js";
+import { type BedrockOptions, streamBedrock } from "./providers/amazon-bedrock.js";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
 import {
@@ -91,6 +92,9 @@ export function stream<TApi extends Api>(
 	// Vertex AI uses Application Default Credentials, not API keys
 	if (model.api === "google-vertex") {
 		return streamGoogleVertex(model as Model<"google-vertex">, context, options as GoogleVertexOptions);
+	} else if (model.api === "bedrock-converse-stream") {
+		// Bedrock doesn't have any API keys instead it sources credentials from standard AWS env variables or from given AWS profile.
+		return streamBedrock(model as Model<"bedrock-converse-stream">, context, (options || {}) as BedrockOptions);
 	}
 
 	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
@@ -147,6 +151,10 @@ export function streamSimple<TApi extends Api>(
 ): AssistantMessageEventStream {
 	// Vertex AI uses Application Default Credentials, not API keys
 	if (model.api === "google-vertex") {
+		const providerOptions = mapOptionsForApi(model, options, undefined);
+		return stream(model, context, providerOptions);
+	} else if (model.api === "bedrock-converse-stream") {
+		// Bedrock doesn't have any API keys instead it sources credentials from standard AWS env variables or from given AWS profile.
 		const providerOptions = mapOptionsForApi(model, options, undefined);
 		return stream(model, context, providerOptions);
 	}
@@ -220,6 +228,10 @@ function mapOptionsForApi<TApi extends Api>(
 				thinkingBudgetTokens: thinkingBudget,
 			} satisfies AnthropicOptions;
 		}
+
+		case "bedrock-converse-stream":
+			// TODO: We should probably tweak reasoning config here?
+			return base satisfies BedrockOptions;
 
 		case "openai-completions":
 			return {
