@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Queued steering/follow-up messages no longer wipe unsent editor input ([#503](https://github.com/badlogic/pi-mono/pull/503) by [@tmustier](https://github.com/tmustier))
+
 ## [0.37.3] - 2026-01-06
 
 ### Added
