@@ -195,7 +195,40 @@ export {
 // Main entry point
 export { main } from "./main.js";
 // UI components for extensions
-export { BorderedLoader } from "./modes/interactive/components/bordered-loader.js";
+export {
+	ArminComponent,
+	AssistantMessageComponent,
+	BashExecutionComponent,
+	BorderedLoader,
+	BranchSummaryMessageComponent,
+	CompactionSummaryMessageComponent,
+	CustomEditor,
+	CustomMessageComponent,
+	DynamicBorder,
+	ExtensionEditorComponent,
+	ExtensionInputComponent,
+	ExtensionSelectorComponent,
+	FooterComponent,
+	LoginDialogComponent,
+	ModelSelectorComponent,
+	OAuthSelectorComponent,
+	type RenderDiffOptions,
+	renderDiff,
+	SessionSelectorComponent,
+	type SettingsCallbacks,
+	type SettingsConfig,
+	SettingsSelectorComponent,
+	ShowImagesSelectorComponent,
+	ThemeSelectorComponent,
+	ThinkingSelectorComponent,
+	ToolExecutionComponent,
+	type ToolExecutionOptions,
+	TreeSelectorComponent,
+	truncateToVisualLines,
+	UserMessageComponent,
+	UserMessageSelectorComponent,
+	type VisualTruncateResult,
+} from "./modes/interactive/components/index.js";
 // Theme utilities for custom tools and extensions
 export {
 	getMarkdownTheme,
