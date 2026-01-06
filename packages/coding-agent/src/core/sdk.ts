@@ -42,7 +42,12 @@ import { convertToLlm } from "./messages.js";
 import { ModelRegistry } from "./model-registry.js";
 import { loadPromptTemplates as loadPromptTemplatesInternal, type PromptTemplate } from "./prompt-templates.js";
 import { SessionManager } from "./session-manager.js";
-import { type Settings, SettingsManager, type SkillsSettings } from "./settings-manager.js";
+import {
+	type PromptTemplatesSettings,
+	type Settings,
+	SettingsManager,
+	type SkillsSettings,
+} from "./settings-manager.js";
 import { loadSkills as loadSkillsInternal, type Skill } from "./skills.js";
 import {
 	buildSystemPrompt as buildSystemPromptInternal,
@@ -247,8 +252,13 @@ export function discoverContextFiles(cwd?: string, agentDir?: string): Array<{ p
 /**
  * Discover prompt templates from cwd and agentDir.
  */
-export function discoverPromptTemplates(cwd?: string, agentDir?: string): PromptTemplate[] {
+export function discoverPromptTemplates(
+	cwd?: string,
+	agentDir?: string,
+	settings?: PromptTemplatesSettings,
+): PromptTemplate[] {
 	return loadPromptTemplatesInternal({
+		...settings,
 		cwd: cwd ?? process.cwd(),
 		agentDir: agentDir ?? getDefaultAgentDir(),
 	});
@@ -605,7 +615,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const systemPrompt = rebuildSystemPrompt(initialActiveToolNames);
 	time("buildSystemPrompt");
 
-	const promptTemplates = options.promptTemplates ?? discoverPromptTemplates(cwd, agentDir);
+	const promptTemplates =
+		options.promptTemplates ?? discoverPromptTemplates(cwd, agentDir, settingsManager.getPromptTemplatesSettings());
 	time("discoverPromptTemplates");
 
 	// Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)

@@ -30,6 +30,10 @@ export interface SkillsSettings {
 	includeSkills?: string[]; // default: [] (empty = include all; glob patterns to filter)
 }
 
+export interface PromptTemplatesSettings {
+	customDirectories?: string[]; // default: []
+}
+
 export interface TerminalSettings {
 	showImages?: boolean; // default: true (only relevant if terminal supports images)
 }
@@ -55,6 +59,7 @@ export interface Settings {
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 	extensions?: string[]; // Array of extension file paths
 	skills?: SkillsSettings;
+	promptTemplates?: PromptTemplatesSettings;
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
@@ -422,5 +427,11 @@ export class SettingsManager {
 	setDoubleEscapeAction(action: "branch" | "tree"): void {
 		this.globalSettings.doubleEscapeAction = action;
 		this.save();
+	}
+
+	getPromptTemplatesSettings(): Required<PromptTemplatesSettings> {
+		return {
+			customDirectories: [...(this.settings.promptTemplates?.customDirectories ?? [])],
+		};
 	}
 }

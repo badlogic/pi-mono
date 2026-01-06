@@ -150,6 +150,7 @@ export {
 export {
 	type CompactionSettings,
 	type ImageSettings,
+	type PromptTemplatesSettings,
 	type RetrySettings,
 	type Settings,
 	SettingsManager,

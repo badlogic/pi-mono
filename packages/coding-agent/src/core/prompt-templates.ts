@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
+import { homedir } from "os";
 import { join, resolve } from "path";
 import { CONFIG_DIR_NAME, getPromptsDir } from "../config.js";
+import type { PromptTemplatesSettings } from "./settings-manager.js";
 
 /**
  * Represents a prompt template loaded from a markdown file
@@ -111,7 +113,11 @@ export function substituteArgs(content: string, args: string[]): string {
 /**
  * Recursively scan a directory for .md files (and symlinks to .md files) and load them as prompt templates
  */
-function loadTemplatesFromDir(dir: string, source: "user" | "project", subdir: string = ""): PromptTemplate[] {
+function loadTemplatesFromDir(
+	dir: string,
+	source: "user" | "project" | "custom",
+	subdir: string = "",
+): PromptTemplate[] {
 	const templates: PromptTemplate[] = [];
 
 	if (!existsSync(dir)) {
@@ -136,12 +142,7 @@ function loadTemplatesFromDir(dir: string, source: "user" | "project", subdir: s
 					const name = entry.name.slice(0, -3); // Remove .md extension
 
 					// Build source string
-					let sourceStr: string;
-					if (source === "user") {
-						sourceStr = subdir ? `(user:${subdir})` : "(user)";
-					} else {
-						sourceStr = subdir ? `(project:${subdir})` : "(project)";
-					}
+					const sourceStr = subdir ? `(${source}:${subdir})` : `(${source})`;
 
 					// Get description from frontmatter or first non-empty line
 					let description = frontmatter.description || "";
@@ -175,7 +176,7 @@ function loadTemplatesFromDir(dir: string, source: "user" | "project", subdir: s
 	return templates;
 }
 
-export interface LoadPromptTemplatesOptions {
+export interface LoadPromptTemplatesOptions extends PromptTemplatesSettings {
 	/** Working directory for project-local templates. Default: process.cwd() */
 	cwd?: string;
 	/** Agent config directory for global templates. Default: from getPromptsDir() */
@@ -186,21 +187,29 @@ export interface LoadPromptTemplatesOptions {
  * Load all prompt templates from:
  * 1. Global: agentDir/prompts/
  * 2. Project: cwd/{CONFIG_DIR_NAME}/prompts/
+ * 3. Custom directories from settings
  */
 export function loadPromptTemplates(options: LoadPromptTemplatesOptions = {}): PromptTemplate[] {
-	const resolvedCwd = options.cwd ?? process.cwd();
-	const resolvedAgentDir = options.agentDir ?? getPromptsDir();
+	const { cwd, agentDir, customDirectories = [] } = options;
+	const resolvedCwd = cwd ?? process.cwd();
+	const resolvedAgentDir = agentDir ?? getPromptsDir();
 
 	const templates: PromptTemplate[] = [];
 
 	// 1. Load global templates from agentDir/prompts/
 	// Note: if agentDir is provided, it should be the agent dir, not the prompts dir
-	const globalPromptsDir = options.agentDir ? join(options.agentDir, "prompts") : resolvedAgentDir;
+	const globalPromptsDir = agentDir ? join(agentDir, "prompts") : resolvedAgentDir;
 	templates.push(...loadTemplatesFromDir(globalPromptsDir, "user"));
 
 	// 2. Load project templates from cwd/{CONFIG_DIR_NAME}/prompts/
 	const projectPromptsDir = resolve(resolvedCwd, CONFIG_DIR_NAME, "prompts");
 	templates.push(...loadTemplatesFromDir(projectPromptsDir, "project"));
+
+	// 3. Load templates from custom directories
+	for (const customDir of customDirectories) {
+		const expandedDir = customDir.replace(/^~(?=$|[\\/])/, homedir());
+		templates.push(...loadTemplatesFromDir(expandedDir, "custom"));
+	}
 
 	return templates;
 }
