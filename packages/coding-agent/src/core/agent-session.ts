@@ -856,6 +856,7 @@ export class AgentSession {
 		await this.abort();
 		this.agent.reset();
 		this.sessionManager.newSession(options);
+		this.agent.sessionId = this.sessionManager.getSessionId();
 		this._steeringMessages = [];
 		this._followUpMessages = [];
 		this._pendingNextTurnMessages = [];
@@ -1666,6 +1667,7 @@ export class AgentSession {
 
 		// Set new session
 		this.sessionManager.setSessionFile(sessionPath);
+		this.agent.sessionId = this.sessionManager.getSessionId();
 
 		// Reload messages
 		const sessionContext = this.sessionManager.buildSessionContext();
@@ -1745,6 +1747,7 @@ export class AgentSession {
 		} else {
 			this.sessionManager.createBranchedSession(selectedEntry.parentId);
 		}
+		this.agent.sessionId = this.sessionManager.getSessionId();
 
 		// Reload messages from entries (works for both file and in-memory mode)
 		const sessionContext = this.sessionManager.buildSessionContext();

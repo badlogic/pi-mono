@@ -96,6 +96,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				model: model.id,
 				input: messages,
 				stream: true,
+				prompt_cache_key: options?.sessionId,
 			};
 
 			if (options?.maxTokens) {
@@ -132,7 +133,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 			const transformedBody = await transformRequestBody(params, codexOptions, systemPrompt);
 
 			const reasoningEffort = transformedBody.reasoning?.effort ?? null;
-			const headers = createCodexHeaders(model.headers, accountId, apiKey, transformedBody.prompt_cache_key);
+			const headers = createCodexHeaders(model.headers, accountId, apiKey, options?.sessionId);
 			logCodexDebug("codex request", {
 				url,
 				model: params.model,

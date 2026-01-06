@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Session ID is now forwarded to LLM providers for session-based caching (used by OpenAI Codex for prompt caching).
+
 ### Fixed
 
 - Add `minimatch` as a direct dependency for explicit imports.

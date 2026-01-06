@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `sessionId` option in `StreamOptions` for providers that support session-based caching. OpenAI Codex provider uses this to set `prompt_cache_key` and routing headers.
+
 ## [0.37.2] - 2026-01-05
 
 ### Fixed
