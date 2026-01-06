@@ -334,9 +334,20 @@ describe("AgentSession context reloading on newSession", () => {
 			expect(reloadedEvent?.type).toBe("context_reloaded");
 
 			if (reloadedEvent && reloadedEvent.type === "context_reloaded") {
-				expect(reloadedEvent.contextFiles).toBe(1); // AGENTS.md
-				expect(reloadedEvent.skills).toBe(1); // test-skill
-				expect(reloadedEvent.templates).toBe(1); // test.md
+				// Check context files array
+				expect(reloadedEvent.contextFiles).toHaveLength(1);
+				expect(reloadedEvent.contextFiles[0].path).toContain("AGENTS.md");
+
+				// Check skills array
+				expect(reloadedEvent.skills).toHaveLength(1);
+				expect(reloadedEvent.skills[0].filePath).toContain("test-skill");
+				expect(reloadedEvent.skills[0].filePath).toContain("SKILL.md");
+
+				// Check templates array
+				expect(reloadedEvent.templates).toHaveLength(1);
+				expect(reloadedEvent.templates[0].name).toBe("test");
+
+				// No errors
 				expect(reloadedEvent.errors).toBeUndefined();
 			}
 

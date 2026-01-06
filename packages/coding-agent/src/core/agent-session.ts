@@ -67,9 +67,9 @@ export type AgentSessionEvent =
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
 	| {
 			type: "context_reloaded";
-			contextFiles: number;
-			skills: number;
-			templates: number;
+			contextFiles: Array<{ path: string }>;
+			skills: Array<{ filePath: string }>;
+			templates: Array<{ name: string; description?: string; source: string }>;
 			errors?: string[];
 	  };
 
@@ -293,9 +293,9 @@ export class AgentSession {
 			// Emit event to notify UI about context reload
 			this._emit({
 				type: "context_reloaded",
-				contextFiles: contextFiles.length,
-				skills: skills.length,
-				templates: this._promptTemplates.length,
+				contextFiles,
+				skills,
+				templates: this._promptTemplates,
 			});
 		} catch (error) {
 			// Log error but don't fail the session
@@ -306,9 +306,9 @@ export class AgentSession {
 			// Emit event with errors
 			this._emit({
 				type: "context_reloaded",
-				contextFiles: 0,
-				skills: 0,
-				templates: 0,
+				contextFiles: [],
+				skills: [],
+				templates: [],
 				errors: [errorMsg],
 			});
 		}

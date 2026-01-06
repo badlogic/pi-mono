@@ -1363,29 +1363,39 @@ export class InteractiveMode {
 					this.chatContainer.addChild(
 						new Text(theme.fg("warning", `Context reload failed: ${errorMessages}`), 0, 0),
 					);
+					this.chatContainer.addChild(new Spacer(1));
 				} else {
-					// Show successful reload with details
-					const parts = [];
-					if (event.contextFiles > 0) {
-						parts.push(`${event.contextFiles} context file${event.contextFiles > 1 ? "s" : ""}`);
-					}
-					if (event.skills > 0) {
-						parts.push(`${event.skills} skill${event.skills > 1 ? "s" : ""}`);
-					}
-					if (event.templates > 0) {
-						parts.push(`${event.templates} template${event.templates > 1 ? "s" : ""}`);
+					// Show successful reload with file lists (similar to startup)
+					const anythingLoaded =
+						event.contextFiles.length > 0 || event.skills.length > 0 || event.templates.length > 0;
+
+					if (anythingLoaded) {
+						this.chatContainer.addChild(new Text(theme.fg("muted", "Reloaded context:"), 0, 0));
 					}
 
-					if (parts.length > 0) {
-						const message = `Reloaded ${parts.join(", ")}`;
-						this.chatContainer.addChild(new Text(theme.fg("muted", message), 0, 0));
-					} else {
+					if (event.contextFiles.length > 0) {
+						const contextList = event.contextFiles.map((f) => theme.fg("dim", `  ${f.path}`)).join("\n");
+						this.chatContainer.addChild(new Text(contextList, 0, 0));
+					}
+
+					if (event.skills.length > 0) {
+						const skillList = event.skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
+						this.chatContainer.addChild(new Text(theme.fg("muted", "Reloaded skills:\n") + skillList, 0, 0));
+					}
+
+					if (event.templates.length > 0) {
+						const templateList = event.templates
+							.map((t) => theme.fg("dim", `  ${t.name}${t.description ? `: ${t.description}` : ""}`))
+							.join("\n");
 						this.chatContainer.addChild(
-							new Text(theme.fg("muted", "No context files, skills, or templates found"), 0, 0),
+							new Text(theme.fg("muted", "Reloaded templates:\n") + templateList, 0, 0),
 						);
 					}
+
+					if (anythingLoaded) {
+						this.chatContainer.addChild(new Spacer(1));
+					}
 				}
-				this.chatContainer.addChild(new Spacer(1));
 				this.ui.requestRender();
 				break;
 			}
