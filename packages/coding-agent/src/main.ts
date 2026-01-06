@@ -171,12 +171,35 @@ function getChangelogForDisplay(parsed: Args, settingsManager: SettingsManager):
 	return undefined;
 }
 
+/**
+ * Resolve a session argument to a file path.
+ * If it looks like a path, use as-is. Otherwise try to match as session ID prefix.
+ */
+function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: string): string {
+	// If it looks like a file path, use as-is
+	if (sessionArg.includes("/") || sessionArg.includes("\\") || sessionArg.endsWith(".jsonl")) {
+		return sessionArg;
+	}
+
+	// Try to match as session ID (full or partial UUID)
+	const sessions = SessionManager.list(cwd, sessionDir);
+	const matches = sessions.filter((s) => s.id.startsWith(sessionArg));
+
+	if (matches.length >= 1) {
+		return matches[0].path; // Already sorted by modified time (most recent first)
+	}
+
+	// No match - return original (will create new session)
+	return sessionArg;
+}
+
 function createSessionManager(parsed: Args, cwd: string): SessionManager | undefined {
 	if (parsed.noSession) {
 		return SessionManager.inMemory();
 	}
 	if (parsed.session) {
-		return SessionManager.open(parsed.session, parsed.sessionDir);
+		const resolvedPath = resolveSessionPath(parsed.session, cwd, parsed.sessionDir);
+		return SessionManager.open(resolvedPath, parsed.sessionDir);
 	}
 	if (parsed.continue) {
 		return SessionManager.continueRecent(cwd, parsed.sessionDir);
