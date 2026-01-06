@@ -1,6 +1,9 @@
 # Changelog
 
 ## [Unreleased]
+### Fixed
+
+- Fixed IME candidate window positioning by moving the real terminal cursor to follow the fake cursor.
 
 ## [0.42.1] - 2026-01-09
 
