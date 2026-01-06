@@ -7,7 +7,6 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import Clipboard from "@crosscopy/clipboard";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { type AssistantMessage, getOAuthProviders, type Message, type OAuthProvider } from "@mariozechner/pi-ai";
 import type { KeyId, SlashCommand } from "@mariozechner/pi-tui";
@@ -41,6 +40,7 @@ import { type SessionContext, SessionManager } from "../../core/session-manager.
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
+import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
@@ -154,6 +154,15 @@ export class InteractiveMode {
 	// Extension widgets (components rendered above the editor)
 	private extensionWidgets = new Map<string, Component & { dispose?(): void }>();
 	private widgetContainer!: Container;
+
+	// Custom footer from extension (undefined = use built-in footer)
+	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
+
+	// Built-in header (logo + keybinding hints + changelog)
+	private builtInHeader: Component | undefined = undefined;
+
+	// Custom header from extension (undefined = use built-in header)
+	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
 
 	// Convenience accessors
 	private get agent() {
@@ -278,7 +287,7 @@ export class InteractiveMode {
 			theme.fg("muted", " to suspend") +
 			"\n" +
 			theme.fg("dim", deleteToLineEnd) +
-			theme.fg("muted", " to delete line") +
+			theme.fg("muted", " to delete to end") +
 			"\n" +
 			theme.fg("dim", cycleThinkingLevel) +
 			theme.fg("muted", " to cycle thinking") +
@@ -304,6 +313,9 @@ export class InteractiveMode {
 			theme.fg("dim", "!") +
 			theme.fg("muted", " to run bash") +
 			"\n" +
+			theme.fg("dim", "!!") +
+			theme.fg("muted", " to run bash (no context)") +
+			"\n" +
 			theme.fg("dim", followUp) +
 			theme.fg("muted", " to queue follow-up") +
 			"\n" +
@@ -312,11 +324,11 @@ export class InteractiveMode {
 			"\n" +
 			theme.fg("dim", "drop files") +
 			theme.fg("muted", " to attach");
-		const header = new Text(`${logo}\n${instructions}`, 1, 0);
+		this.builtInHeader = new Text(`${logo}\n${instructions}`, 1, 0);
 
 		// Setup UI layout
 		this.ui.addChild(new Spacer(1));
-		this.ui.addChild(header);
+		this.ui.addChild(this.builtInHeader);
 		this.ui.addChild(new Spacer(1));
 
 		// Add changelog if provided
@@ -430,6 +442,11 @@ export class InteractiveMode {
 					.catch((err) => {
 						this.showError(`Extension sendMessage failed: ${err instanceof Error ? err.message : String(err)}`);
 					});
+			},
+			sendUserMessageHandler: (content, options) => {
+				this.session.sendUserMessage(content, options).catch((err) => {
+					this.showError(`Extension sendUserMessage failed: ${err instanceof Error ? err.message : String(err)}`);
+				});
 			},
 			appendEntryHandler: (customType, data) => {
 				this.sessionManager.appendCustomEntry(customType, data);
@@ -639,6 +656,69 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * Set a custom footer component, or restore the built-in footer.
+	 */
+	private setExtensionFooter(factory: ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined): void {
+		// Dispose existing custom footer
+		if (this.customFooter?.dispose) {
+			this.customFooter.dispose();
+		}
+
+		// Remove current footer from UI
+		if (this.customFooter) {
+			this.ui.removeChild(this.customFooter);
+		} else {
+			this.ui.removeChild(this.footer);
+		}
+
+		if (factory) {
+			// Create and add custom footer
+			this.customFooter = factory(this.ui, theme);
+			this.ui.addChild(this.customFooter);
+		} else {
+			// Restore built-in footer
+			this.customFooter = undefined;
+			this.ui.addChild(this.footer);
+		}
+
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Set a custom header component, or restore the built-in header.
+	 */
+	private setExtensionHeader(factory: ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined): void {
+		// Header may not be initialized yet if called during early initialization
+		if (!this.builtInHeader) {
+			return;
+		}
+
+		// Dispose existing custom header
+		if (this.customHeader?.dispose) {
+			this.customHeader.dispose();
+		}
+
+		// Remove current header from UI
+		if (this.customHeader) {
+			this.ui.removeChild(this.customHeader);
+		} else {
+			this.ui.removeChild(this.builtInHeader);
+		}
+
+		if (factory) {
+			// Create and add custom header at position 1 (after initial spacer)
+			this.customHeader = factory(this.ui, theme);
+			this.ui.children.splice(1, 0, this.customHeader);
+		} else {
+			// Restore built-in header at position 1
+			this.customHeader = undefined;
+			this.ui.children.splice(1, 0, this.builtInHeader);
+		}
+
+		this.ui.requestRender();
+	}
+
+	/**
 	 * Create the ExtensionUIContext for extensions.
 	 */
 	private createExtensionUIContext(): ExtensionUIContext {
@@ -649,6 +729,8 @@ export class InteractiveMode {
 			notify: (message, type) => this.showExtensionNotify(message, type),
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
 			setWidget: (key, content) => this.setExtensionWidget(key, content),
+			setFooter: (factory) => this.setExtensionFooter(factory),
+			setHeader: (factory) => this.setExtensionHeader(factory),
 			setTitle: (title) => this.ui.terminal.setTitle(title),
 			custom: (factory) => this.showExtensionCustom(factory),
 			setEditorText: (text) => this.editor.setText(text),
@@ -916,20 +998,17 @@ export class InteractiveMode {
 
 	private async handleClipboardImagePaste(): Promise<void> {
 		try {
-			if (!Clipboard.hasImage()) {
-				return;
-			}
-
-			const imageData = await Clipboard.getImageBinary();
-			if (!imageData || imageData.length === 0) {
+			const image = await readClipboardImage();
+			if (!image) {
 				return;
 			}
 
 			// Write to temp file
 			const tmpDir = os.tmpdir();
-			const fileName = `pi-clipboard-${crypto.randomUUID()}.png`;
+			const ext = extensionForImageMimeType(image.mimeType) ?? "png";
+			const fileName = `pi-clipboard-${crypto.randomUUID()}.${ext}`;
 			const filePath = path.join(tmpDir, fileName);
-			fs.writeFileSync(filePath, Buffer.from(imageData));
+			fs.writeFileSync(filePath, Buffer.from(image.bytes));
 
 			// Insert file path directly
 			this.editor.insertTextAtCursor(filePath);
@@ -1124,7 +1203,6 @@ export class InteractiveMode {
 					this.ui.requestRender();
 				} else if (event.message.role === "user") {
 					this.addMessageToChat(event.message);
-					this.editor.setText("");
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
@@ -1961,6 +2039,7 @@ export class InteractiveMode {
 					autoCompact: this.session.autoCompactionEnabled,
 					showImages: this.settingsManager.getShowImages(),
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
+					blockImages: this.settingsManager.getBlockImages(),
 					steeringMode: this.session.steeringMode,
 					followUpMode: this.session.followUpMode,
 					thinkingLevel: this.session.thinkingLevel,
@@ -1986,6 +2065,9 @@ export class InteractiveMode {
 					},
 					onAutoResizeImagesChange: (enabled) => {
 						this.settingsManager.setImageAutoResize(enabled);
+					},
+					onBlockImagesChange: (blocked) => {
+						this.settingsManager.setBlockImages(blocked);
 					},
 					onSteeringModeChange: (mode) => {
 						this.session.setSteeringMode(mode);
@@ -2656,6 +2738,7 @@ export class InteractiveMode {
 | \`Ctrl+V\` | Paste image from clipboard |
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
+| \`!!\` | Run bash command (excluded from context) |
 `;
 
 		// Add extension-registered shortcuts

@@ -4,9 +4,50 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 
 **Note**: This library only includes models that support tool calling (function calling), as this is essential for agentic workflows.
 
+## Table of Contents
+
+- [Supported Providers](#supported-providers)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Tools](#tools)
+  - [Defining Tools](#defining-tools)
+  - [Handling Tool Calls](#handling-tool-calls)
+  - [Streaming Tool Calls with Partial JSON](#streaming-tool-calls-with-partial-json)
+  - [Validating Tool Arguments](#validating-tool-arguments)
+  - [Complete Event Reference](#complete-event-reference)
+- [Image Input](#image-input)
+- [Thinking/Reasoning](#thinkingreasoning)
+  - [Unified Interface](#unified-interface-streamsimplecompletesimple)
+  - [Provider-Specific Options](#provider-specific-options-streamcomplete)
+  - [Streaming Thinking Content](#streaming-thinking-content)
+- [Stop Reasons](#stop-reasons)
+- [Error Handling](#error-handling)
+  - [Aborting Requests](#aborting-requests)
+  - [Continuing After Abort](#continuing-after-abort)
+- [APIs, Models, and Providers](#apis-models-and-providers)
+  - [Providers and Models](#providers-and-models)
+  - [Querying Providers and Models](#querying-providers-and-models)
+  - [Custom Models](#custom-models)
+  - [OpenAI Compatibility Settings](#openai-compatibility-settings)
+  - [Type Safety](#type-safety)
+- [Cross-Provider Handoffs](#cross-provider-handoffs)
+- [Context Serialization](#context-serialization)
+- [Browser Usage](#browser-usage)
+  - [Environment Variables](#environment-variables-nodejs-only)
+  - [Checking Environment Variables](#checking-environment-variables)
+- [OAuth Providers](#oauth-providers)
+  - [Vertex AI (ADC)](#vertex-ai-adc)
+  - [CLI Login](#cli-login)
+  - [Programmatic OAuth](#programmatic-oauth)
+  - [Login Flow Example](#login-flow-example)
+  - [Using OAuth Tokens](#using-oauth-tokens)
+  - [Provider Notes](#provider-notes)
+- [License](#license)
+
 ## Supported Providers
 
 - **OpenAI**
+- **OpenAI Codex** (ChatGPT Plus/Pro subscription, requires OAuth, see below)
 - **Anthropic**
 - **Google**
 - **Vertex AI** (Gemini via Vertex AI)
@@ -16,6 +57,8 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - **xAI**
 - **OpenRouter**
 - **GitHub Copilot** (requires OAuth, see below)
+- **Google Gemini CLI** (requires OAuth, see below)
+- **Antigravity** (requires OAuth, see below)
 - **Any OpenAI-compatible API**: Ollama, vLLM, LM Studio, etc.
 
 ## Installation
@@ -806,17 +849,19 @@ const response = await complete(model, {
 
 In Node.js environments, you can set environment variables to avoid passing API keys:
 
-```bash
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-GEMINI_API_KEY=...
-MISTRAL_API_KEY=...
-GROQ_API_KEY=gsk_...
-CEREBRAS_API_KEY=csk-...
-XAI_API_KEY=xai-...
-ZAI_API_KEY=...
-OPENROUTER_API_KEY=sk-or-...
-```
+| Provider | Environment Variable(s) |
+|----------|------------------------|
+| OpenAI | `OPENAI_API_KEY` |
+| Anthropic | `ANTHROPIC_API_KEY` or `ANTHROPIC_OAUTH_TOKEN` |
+| Google | `GEMINI_API_KEY` |
+| Vertex AI | `GOOGLE_CLOUD_PROJECT` (or `GCLOUD_PROJECT`) + `GOOGLE_CLOUD_LOCATION` + ADC |
+| Mistral | `MISTRAL_API_KEY` |
+| Groq | `GROQ_API_KEY` |
+| Cerebras | `CEREBRAS_API_KEY` |
+| xAI | `XAI_API_KEY` |
+| OpenRouter | `OPENROUTER_API_KEY` |
+| zAI | `ZAI_API_KEY` |
+| GitHub Copilot | `COPILOT_GITHUB_TOKEN` or `GH_TOKEN` or `GITHUB_TOKEN` |
 
 When set, the library automatically uses these keys:
 
@@ -845,6 +890,7 @@ const key = getEnvApiKey('openai');  // checks OPENAI_API_KEY
 Several providers require OAuth authentication instead of static API keys:
 
 - **Anthropic** (Claude Pro/Max subscription)
+- **OpenAI Codex** (ChatGPT Plus/Pro subscription, access to GPT-5.x Codex models)
 - **GitHub Copilot** (Copilot subscription)
 - **Google Gemini CLI** (Free Gemini 2.0/2.5 via Google Cloud Code Assist)
 - **Antigravity** (Free Gemini 3, Claude, GPT-OSS via Google Cloud)
@@ -873,6 +919,7 @@ The library provides login and token refresh functions. Credential storage is th
 import {
   // Login functions (return credentials, do not store)
   loginAnthropic,
+  loginOpenAICodex,
   loginGitHubCopilot,
   loginGeminiCli,
   loginAntigravity,
@@ -882,7 +929,7 @@ import {
   getOAuthApiKey,      // (provider, credentialsMap) => { newCredentials, apiKey } | null
 
   // Types
-  type OAuthProvider,  // 'anthropic' | 'github-copilot' | 'google-gemini-cli' | 'google-antigravity'
+  type OAuthProvider,  // 'anthropic' | 'openai-codex' | 'github-copilot' | 'google-gemini-cli' | 'google-antigravity'
   type OAuthCredentials,
 } from '@mariozechner/pi-ai';
 ```
@@ -936,6 +983,8 @@ const response = await complete(model, {
 ```
 
 ### Provider Notes
+
+**OpenAI Codex**: Requires a ChatGPT Plus or Pro subscription. Provides access to GPT-5.x Codex models with extended context windows and reasoning capabilities. The library automatically handles session-based prompt caching when `sessionId` is provided in stream options.
 
 **GitHub Copilot**: If you get "The requested model is not supported" error, enable the model manually in VS Code: open Copilot Chat, click the model selector, select the model (warning icon), and click "Enable".
 

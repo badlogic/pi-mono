@@ -33,6 +33,8 @@ import {
 	URL_PATHS,
 } from "./openai-codex/constants.js";
 import { getCodexInstructions } from "./openai-codex/prompts/codex.js";
+import { buildCodexPiBridge } from "./openai-codex/prompts/pi-codex-bridge.js";
+import { buildCodexSystemPrompt } from "./openai-codex/prompts/system-prompt.js";
 import {
 	type CodexRequestOptions,
 	normalizeModel,
@@ -94,6 +96,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				model: model.id,
 				input: messages,
 				stream: true,
+				prompt_cache_key: options?.sessionId,
 			};
 
 			if (options?.maxTokens) {
@@ -110,6 +113,15 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 
 			const normalizedModel = normalizeModel(params.model);
 			const codexInstructions = await getCodexInstructions(normalizedModel);
+			const bridgeText = buildCodexPiBridge(context.tools);
+			const systemPrompt = buildCodexSystemPrompt({
+				codexInstructions,
+				bridgeText,
+				userSystemPrompt: context.systemPrompt,
+			});
+
+			params.model = normalizedModel;
+			params.instructions = systemPrompt.instructions;
 
 			const codexOptions: CodexRequestOptions = {
 				reasoningEffort: options?.reasoningEffort,
@@ -118,16 +130,10 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				include: options?.include,
 			};
 
-			const transformedBody = await transformRequestBody(
-				params,
-				codexInstructions,
-				codexOptions,
-				options?.codexMode ?? true,
-				context.systemPrompt,
-			);
+			const transformedBody = await transformRequestBody(params, codexOptions, systemPrompt);
 
 			const reasoningEffort = transformedBody.reasoning?.effort ?? null;
-			const headers = createCodexHeaders(model.headers, accountId, apiKey, transformedBody.prompt_cache_key);
+			const headers = createCodexHeaders(model.headers, accountId, apiKey, options?.sessionId);
 			logCodexDebug("codex request", {
 				url,
 				model: params.model,

@@ -160,6 +160,14 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			// Component factories are not supported in RPC mode - would need TUI access
 		},
 
+		setFooter(_factory: unknown): void {
+			// Custom footer not supported in RPC mode - requires TUI access
+		},
+
+		setHeader(_factory: unknown): void {
+			// Custom header not supported in RPC mode - requires TUI access
+		},
+
 		setTitle(title: string): void {
 			// Fire and forget - host can implement terminal title control
 			output({
@@ -223,6 +231,11 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			sendMessageHandler: (message, options) => {
 				session.sendCustomMessage(message, options).catch((e) => {
 					output(error(undefined, "extension_send", e.message));
+				});
+			},
+			sendUserMessageHandler: (content, options) => {
+				session.sendUserMessage(content, options).catch((e) => {
+					output(error(undefined, "extension_send_user", e.message));
 				});
 			},
 			appendEntryHandler: (customType, data) => {

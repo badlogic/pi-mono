@@ -64,6 +64,12 @@ export interface StreamOptions {
 	maxTokens?: number;
 	signal?: AbortSignal;
 	apiKey?: string;
+	/**
+	 * Optional session identifier for providers that support session-based caching.
+	 * Providers can use this to enable prompt caching, request routing, or other
+	 * session-aware features. Ignored by providers that don't support it.
+	 */
+	sessionId?: string;
 }
 
 // Unified options with reasoning passed to streamSimple() and completeSimple()

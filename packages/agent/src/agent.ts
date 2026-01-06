@@ -61,6 +61,12 @@ export interface AgentOptions {
 	streamFn?: StreamFn;
 
 	/**
+	 * Optional session identifier forwarded to LLM providers.
+	 * Used by providers that support session-based caching (e.g., OpenAI Codex).
+	 */
+	sessionId?: string;
+
+	/**
 	 * Resolves an API key dynamically for each LLM call.
 	 * Useful for expiring tokens (e.g., GitHub Copilot OAuth).
 	 */
@@ -89,6 +95,7 @@ export class Agent {
 	private steeringMode: "all" | "one-at-a-time";
 	private followUpMode: "all" | "one-at-a-time";
 	public streamFn: StreamFn;
+	private _sessionId?: string;
 	public getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
 	private runningPrompt?: Promise<void>;
 	private resolveRunningPrompt?: () => void;
@@ -100,7 +107,23 @@ export class Agent {
 		this.steeringMode = opts.steeringMode || "one-at-a-time";
 		this.followUpMode = opts.followUpMode || "one-at-a-time";
 		this.streamFn = opts.streamFn || streamSimple;
+		this._sessionId = opts.sessionId;
 		this.getApiKey = opts.getApiKey;
+	}
+
+	/**
+	 * Get the current session ID used for provider caching.
+	 */
+	get sessionId(): string | undefined {
+		return this._sessionId;
+	}
+
+	/**
+	 * Set the session ID for provider caching.
+	 * Call this when switching sessions (new session, branch, resume).
+	 */
+	set sessionId(value: string | undefined) {
+		this._sessionId = value;
 	}
 
 	get state(): AgentState {
@@ -286,6 +309,7 @@ export class Agent {
 		const config: AgentLoopConfig = {
 			model,
 			reasoning,
+			sessionId: this._sessionId,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,

@@ -7,7 +7,7 @@ describe("openai-codex include handling", () => {
 			model: "gpt-5.1-codex",
 		};
 
-		const transformed = await transformRequestBody(body, "CODEX_INSTRUCTIONS", { include: ["foo"] }, true);
+		const transformed = await transformRequestBody(body, { include: ["foo"] });
 		expect(transformed.include).toEqual(["foo", "reasoning.encrypted_content"]);
 	});
 
@@ -16,12 +16,9 @@ describe("openai-codex include handling", () => {
 			model: "gpt-5.1-codex",
 		};
 
-		const transformed = await transformRequestBody(
-			body,
-			"CODEX_INSTRUCTIONS",
-			{ include: ["foo", "reasoning.encrypted_content"] },
-			true,
-		);
+		const transformed = await transformRequestBody(body, {
+			include: ["foo", "reasoning.encrypted_content"],
+		});
 		expect(transformed.include).toEqual(["foo", "reasoning.encrypted_content"]);
 	});
 });

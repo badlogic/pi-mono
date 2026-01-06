@@ -459,7 +459,10 @@ pi -r              # Short form
 pi --no-session    # Ephemeral mode (don't save)
 
 pi --session /path/to/file.jsonl  # Use specific session file
+pi --session a8ec1c2a             # Resume by session ID (partial UUID)
 ```
+
+**Resuming by session ID:** The `--session` flag accepts a session UUID (or prefix). Session IDs are visible in filenames under `~/.pi/agent/sessions/<project>/` (e.g., `2025-12-13T17-47-46-817Z_a8ec1c2a-5a5f-4699-88cb-03e7d3cb9292.jsonl`). The UUID is the part after the underscore. You can also search by session ID in the `pi -r` picker.
 
 ### Context Compaction
 
@@ -699,7 +702,8 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
     "showImages": true
   },
   "images": {
-    "autoResize": true
+    "autoResize": true,
+    "blockImages": false
   },
   "extensions": ["/path/to/extension.ts"]
 }
@@ -726,6 +730,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
 | `terminal.showImages` | Render images inline (supported terminals) | `true` |
 | `images.autoResize` | Auto-resize images to 2000x2000 max for better model compatibility | `true` |
+| `images.blockImages` | Prevent images from being sent to LLM providers | `false` |
 | `doubleEscapeAction` | Action for double-escape with empty editor: `tree` or `branch` | `tree` |
 | `extensions` | Additional extension file paths | `[]` |
 
@@ -1066,6 +1071,13 @@ ctx.ui.setStatus("my-ext", null); // Clear
 
 // Widgets (above editor)
 ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"]);
+
+// Custom footer (replaces built-in footer)
+ctx.ui.setFooter((tui, theme) => ({
+  render(width) { return [theme.fg("dim", "Custom footer")]; },
+  invalidate() {},
+}));
+ctx.ui.setFooter(undefined); // Restore built-in footer
 
 // Full custom component with keyboard handling
 await ctx.ui.custom((tui, theme, done) => ({

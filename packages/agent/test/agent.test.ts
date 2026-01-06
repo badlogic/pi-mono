@@ -229,4 +229,30 @@ describe("Agent", () => {
 		agent.abort();
 		await firstPrompt.catch(() => {});
 	});
+
+	it("forwards sessionId to streamFn options", async () => {
+		let receivedSessionId: string | undefined;
+		const agent = new Agent({
+			sessionId: "session-abc",
+			streamFn: (_model, _context, options) => {
+				receivedSessionId = options?.sessionId;
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					const message = createAssistantMessage("ok");
+					stream.push({ type: "done", reason: "stop", message });
+				});
+				return stream;
+			},
+		});
+
+		await agent.prompt("hello");
+		expect(receivedSessionId).toBe("session-abc");
+
+		// Test setter
+		agent.sessionId = "session-def";
+		expect(agent.sessionId).toBe("session-def");
+
+		await agent.prompt("hello again");
+		expect(receivedSessionId).toBe("session-def");
+	});
 });

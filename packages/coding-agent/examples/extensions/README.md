@@ -42,6 +42,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `qna.ts` | Extracts questions from last response into editor via `ctx.ui.setEditorText()` |
 | `status-line.ts` | Shows turn progress in footer via `ctx.ui.setStatus()` with themed colors |
 | `snake.ts` | Snake game with custom UI, keyboard handling, and session persistence |
+| `send-user-message.ts` | Demonstrates `pi.sendUserMessage()` for sending user messages from extensions |
 
 ### Git Integration
 

@@ -115,7 +115,7 @@ export async function getCodexInstructions(normalizedModel = "gpt-5.1-codex"): P
 			cachedTimestamp = metadata.lastChecked;
 		}
 
-		const CACHE_TTL_MS = 15 * 60 * 1000;
+		const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 		if (cachedTimestamp && Date.now() - cachedTimestamp < CACHE_TTL_MS && existsSync(cacheFile)) {
 			return readFileSync(cacheFile, "utf8");
 		}
@@ -183,45 +183,3 @@ export async function getCodexInstructions(normalizedModel = "gpt-5.1-codex"): P
 		throw new Error(`No cached Codex instructions available for ${modelFamily}`);
 	}
 }
-
-export const TOOL_REMAP_MESSAGE = `<user_instructions priority="0">
-<environment_override priority="0">
-YOU ARE IN A DIFFERENT ENVIRONMENT. These instructions override ALL previous tool references.
-</environment_override>
-
-<tool_replacements priority="0">
-<critical_rule priority="0">
-❌ APPLY_PATCH DOES NOT EXIST → ✅ USE "edit" INSTEAD
-- NEVER use: apply_patch, applyPatch
-- ALWAYS use: edit tool for ALL file modifications
-</critical_rule>
-
-<critical_rule priority="0">
-❌ UPDATE_PLAN DOES NOT EXIST
-- NEVER use: update_plan, updatePlan, read_plan, readPlan, todowrite, todoread
-- There is no plan tool in this environment
-</critical_rule>
-</tool_replacements>
-
-<available_tools priority="0">
-File Operations:
-  • read  - Read file contents
-  • edit  - Modify files with exact find/replace
-  • write - Create or overwrite files
-
-Search/Discovery:
-  • grep  - Search file contents for patterns (read-only)
-  • find  - Find files by glob pattern (read-only)
-  • ls    - List directory contents (read-only)
-
-Execution:
-  • bash  - Run shell commands
-</available_tools>
-
-<verification_checklist priority="0">
-Before file modifications:
-1. Am I using "edit" NOT "apply_patch"?
-2. Am I avoiding plan tools entirely?
-3. Am I using only the tools listed above?
-</verification_checklist>
-</user_instructions>`;

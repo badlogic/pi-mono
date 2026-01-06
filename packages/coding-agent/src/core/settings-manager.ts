@@ -36,6 +36,7 @@ export interface TerminalSettings {
 
 export interface ImageSettings {
 	autoResize?: boolean; // default: true (resize images to 2000x2000 max for better model compatibility)
+	blockImages?: boolean; // default: false - when true, prevents all images from being sent to LLM providers
 }
 
 export interface Settings {
@@ -170,23 +171,23 @@ export class SettingsManager {
 	}
 
 	private save(): void {
-		if (!this.persist || !this.settingsPath) return;
+		if (this.persist && this.settingsPath) {
+			try {
+				const dir = dirname(this.settingsPath);
+				if (!existsSync(dir)) {
+					mkdirSync(dir, { recursive: true });
+				}
 
-		try {
-			const dir = dirname(this.settingsPath);
-			if (!existsSync(dir)) {
-				mkdirSync(dir, { recursive: true });
+				// Save only global settings (project settings are read-only)
+				writeFileSync(this.settingsPath, JSON.stringify(this.globalSettings, null, 2), "utf-8");
+			} catch (error) {
+				console.error(`Warning: Could not save settings file: ${error}`);
 			}
-
-			// Save only global settings (project settings are read-only)
-			writeFileSync(this.settingsPath, JSON.stringify(this.globalSettings, null, 2), "utf-8");
-
-			// Re-merge project settings into active settings
-			const projectSettings = this.loadProjectSettings();
-			this.settings = deepMergeSettings(this.globalSettings, projectSettings);
-		} catch (error) {
-			console.error(`Warning: Could not save settings file: ${error}`);
 		}
+
+		// Always re-merge to update active settings (needed for both file and inMemory modes)
+		const projectSettings = this.loadProjectSettings();
+		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
 	}
 
 	getLastChangelogVersion(): string | undefined {
@@ -395,6 +396,18 @@ export class SettingsManager {
 			this.globalSettings.images = {};
 		}
 		this.globalSettings.images.autoResize = enabled;
+		this.save();
+	}
+
+	getBlockImages(): boolean {
+		return this.settings.images?.blockImages ?? false;
+	}
+
+	setBlockImages(blocked: boolean): void {
+		if (!this.globalSettings.images) {
+			this.globalSettings.images = {};
+		}
+		this.globalSettings.images.blockImages = blocked;
 		this.save();
 	}
 

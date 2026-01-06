@@ -65,6 +65,12 @@ export interface ExtensionUIContext {
 	setWidget(key: string, content: string[] | undefined): void;
 	setWidget(key: string, content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
 
+	/** Set a custom footer component, or undefined to restore the built-in footer. */
+	setFooter(factory: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
+
+	/** Set a custom header component (shown at startup, above chat), or undefined to restore the built-in header. */
+	setHeader(factory: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
+
 	/** Set the terminal window/tab title. */
 	setTitle(title: string): void;
 
@@ -589,6 +595,15 @@ export interface ExtensionAPI {
 		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
 	): void;
 
+	/**
+	 * Send a user message to the agent. Always triggers a turn.
+	 * When the agent is streaming, use deliverAs to specify how to queue the message.
+	 */
+	sendUserMessage(
+		content: string | (TextContent | ImageContent)[],
+		options?: { deliverAs?: "steer" | "followUp" },
+	): void;
+
 	/** Append a custom entry to the session for state persistence (not sent to LLM). */
 	appendEntry<T = unknown>(customType: string, data?: T): void;
 
@@ -642,6 +657,11 @@ export type SendMessageHandler = <T = unknown>(
 	options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
 ) => void;
 
+export type SendUserMessageHandler = (
+	content: string | (TextContent | ImageContent)[],
+	options?: { deliverAs?: "steer" | "followUp" },
+) => void;
+
 export type AppendEntryHandler = <T = unknown>(customType: string, data?: T) => void;
 
 export type GetActiveToolsHandler = () => string[];
@@ -662,6 +682,7 @@ export interface LoadedExtension {
 	flagValues: Map<string, boolean | string>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
 	setSendMessageHandler: (handler: SendMessageHandler) => void;
+	setSendUserMessageHandler: (handler: SendUserMessageHandler) => void;
 	setAppendEntryHandler: (handler: AppendEntryHandler) => void;
 	setGetActiveToolsHandler: (handler: GetActiveToolsHandler) => void;
 	setGetAllToolsHandler: (handler: GetAllToolsHandler) => void;

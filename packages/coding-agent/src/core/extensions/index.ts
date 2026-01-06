@@ -52,6 +52,7 @@ export type {
 	RegisteredCommand,
 	RegisteredTool,
 	SendMessageHandler,
+	SendUserMessageHandler,
 	SessionBeforeBranchEvent,
 	SessionBeforeBranchResult,
 	SessionBeforeCompactEvent,

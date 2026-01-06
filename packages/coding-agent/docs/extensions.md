@@ -632,7 +632,7 @@ pi.registerTool({
 
 ### pi.sendMessage(message, options?)
 
-Inject a message into the session:
+Inject a custom message into the session:
 
 ```typescript
 pi.sendMessage({
@@ -652,6 +652,34 @@ pi.sendMessage({
   - `"followUp"` - Waits for agent to finish. Delivered only when agent has no more tool calls.
   - `"nextTurn"` - Queued for next user prompt. Does not interrupt or trigger anything.
 - `triggerTurn: true` - If agent is idle, trigger an LLM response immediately. Only applies to `"steer"` and `"followUp"` modes (ignored for `"nextTurn"`).
+
+### pi.sendUserMessage(content, options?)
+
+Send a user message to the agent. Unlike `sendMessage()` which sends custom messages, this sends an actual user message that appears as if typed by the user. Always triggers a turn.
+
+```typescript
+// Simple text message
+pi.sendUserMessage("What is 2+2?");
+
+// With content array (text + images)
+pi.sendUserMessage([
+  { type: "text", text: "Describe this image:" },
+  { type: "image", source: { type: "base64", mediaType: "image/png", data: "..." } },
+]);
+
+// During streaming - must specify delivery mode
+pi.sendUserMessage("Focus on error handling", { deliverAs: "steer" });
+pi.sendUserMessage("And then summarize", { deliverAs: "followUp" });
+```
+
+**Options:**
+- `deliverAs` - Required when agent is streaming:
+  - `"steer"` - Interrupts after current tool, remaining tools skipped
+  - `"followUp"` - Waits for agent to finish all tools
+
+When not streaming, the message is sent immediately and triggers a new turn. When streaming without `deliverAs`, throws an error.
+
+See [send-user-message.ts](../examples/extensions/send-user-message.ts) for a complete example.
 
 ### pi.appendEntry(customType, data?)
 
@@ -934,7 +962,7 @@ const text = await ctx.ui.editor("Edit:", "prefilled text");
 ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
 ```
 
-### Widgets and Status
+### Widgets, Status, and Footer
 
 ```typescript
 // Status in footer (persistent until cleared)
@@ -945,6 +973,13 @@ ctx.ui.setStatus("my-ext", undefined);  // Clear
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
 ctx.ui.setWidget("my-widget", (tui, theme) => new Text(theme.fg("accent", "Custom"), 0, 0));
 ctx.ui.setWidget("my-widget", undefined);  // Clear
+
+// Custom footer (replaces built-in footer entirely)
+ctx.ui.setFooter((tui, theme) => ({
+  render(width) { return [theme.fg("dim", "Custom footer")]; },
+  invalidate() {},
+}));
+ctx.ui.setFooter(undefined);  // Restore built-in footer
 
 // Terminal title
 ctx.ui.setTitle("pi - my-project");

@@ -326,7 +326,7 @@ export class AuthStorage {
 					if (result) {
 						return result.apiKey;
 					}
-				} catch (err) {
+				} catch {
 					// Refresh failed - re-read file to check if another instance succeeded
 					this.reload();
 					const updatedCred = this.data[provider];
@@ -339,13 +339,9 @@ export class AuthStorage {
 							: updatedCred.access;
 					}
 
-					// Refresh truly failed - DO NOT remove credentials
-					// User can retry or re-authenticate manually
-					const errorMessage = err instanceof Error ? err.message : String(err);
-					throw new Error(
-						`OAuth token refresh failed for ${provider}: ${errorMessage}. ` +
-							`Please try again or re-authenticate with /login.`,
-					);
+					// Refresh truly failed - return undefined so model discovery skips this provider
+					// User can /login to re-authenticate (credentials preserved for retry)
+					return undefined;
 				}
 			} else {
 				// Token not expired, use current access token
