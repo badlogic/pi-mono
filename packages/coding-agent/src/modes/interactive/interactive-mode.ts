@@ -157,6 +157,9 @@ export class InteractiveMode {
 	private extensionWidgets = new Map<string, Component & { dispose?(): void }>();
 	private widgetContainer!: Container;
 
+	// Custom footer from extension (undefined = use built-in footer)
+	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
+
 	// Convenience accessors
 	private get agent() {
 		return this.session.agent;
@@ -647,6 +650,35 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * Set a custom footer component, or restore the built-in footer.
+	 */
+	private setExtensionFooter(factory: ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined): void {
+		// Dispose existing custom footer
+		if (this.customFooter?.dispose) {
+			this.customFooter.dispose();
+		}
+
+		// Remove current footer from UI
+		if (this.customFooter) {
+			this.ui.removeChild(this.customFooter);
+		} else {
+			this.ui.removeChild(this.footer);
+		}
+
+		if (factory) {
+			// Create and add custom footer
+			this.customFooter = factory(this.ui, theme);
+			this.ui.addChild(this.customFooter);
+		} else {
+			// Restore built-in footer
+			this.customFooter = undefined;
+			this.ui.addChild(this.footer);
+		}
+
+		this.ui.requestRender();
+	}
+
+	/**
 	 * Create the ExtensionUIContext for extensions.
 	 */
 	private createExtensionUIContext(): ExtensionUIContext {
@@ -657,6 +689,7 @@ export class InteractiveMode {
 			notify: (message, type) => this.showExtensionNotify(message, type),
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
 			setWidget: (key, content) => this.setExtensionWidget(key, content),
+			setFooter: (factory) => this.setExtensionFooter(factory),
 			setTitle: (title) => this.ui.terminal.setTitle(title),
 			custom: (factory) => this.showExtensionCustom(factory),
 			setEditorText: (text) => this.editor.setText(text),

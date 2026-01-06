@@ -934,7 +934,7 @@ const text = await ctx.ui.editor("Edit:", "prefilled text");
 ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
 ```
 
-### Widgets and Status
+### Widgets, Status, and Footer
 
 ```typescript
 // Status in footer (persistent until cleared)
@@ -945,6 +945,13 @@ ctx.ui.setStatus("my-ext", undefined);  // Clear
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
 ctx.ui.setWidget("my-widget", (tui, theme) => new Text(theme.fg("accent", "Custom"), 0, 0));
 ctx.ui.setWidget("my-widget", undefined);  // Clear
+
+// Custom footer (replaces built-in footer entirely)
+ctx.ui.setFooter((tui, theme) => ({
+  render(width) { return [theme.fg("dim", "Custom footer")]; },
+  invalidate() {},
+}));
+ctx.ui.setFooter(undefined);  // Restore built-in footer
 
 // Terminal title
 ctx.ui.setTitle("pi - my-project");

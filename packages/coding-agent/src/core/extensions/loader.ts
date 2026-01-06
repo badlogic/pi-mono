@@ -88,6 +88,7 @@ function createNoOpUIContext(): ExtensionUIContext {
 		notify: () => {},
 		setStatus: () => {},
 		setWidget: () => {},
+		setFooter: () => {},
 		setTitle: () => {},
 		custom: async () => undefined as never,
 		setEditorText: () => {},

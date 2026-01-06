@@ -65,6 +65,9 @@ export interface ExtensionUIContext {
 	setWidget(key: string, content: string[] | undefined): void;
 	setWidget(key: string, content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
 
+	/** Set a custom footer component, or undefined to restore the built-in footer. */
+	setFooter(factory: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
+
 	/** Set the terminal window/tab title. */
 	setTitle(title: string): void;
 

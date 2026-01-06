@@ -1069,6 +1069,13 @@ ctx.ui.setStatus("my-ext", null); // Clear
 // Widgets (above editor)
 ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"]);
 
+// Custom footer (replaces built-in footer)
+ctx.ui.setFooter((tui, theme) => ({
+  render(width) { return [theme.fg("dim", "Custom footer")]; },
+  invalidate() {},
+}));
+ctx.ui.setFooter(undefined); // Restore built-in footer
+
 // Full custom component with keyboard handling
 await ctx.ui.custom((tui, theme, done) => ({
   render(width) {

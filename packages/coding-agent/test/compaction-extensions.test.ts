@@ -122,6 +122,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 				notify: () => {},
 				setStatus: () => {},
 				setWidget: () => {},
+				setFooter: () => {},
 				setTitle: () => {},
 				custom: async () => undefined as never,
 				setEditorText: () => {},
