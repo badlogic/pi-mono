@@ -69,6 +69,9 @@ export class FooterComponent implements Component {
 	private onBranchChange: (() => void) | null = null;
 	private autoCompactEnabled: boolean = true;
 	private extensionStatuses: Map<string, string> = new Map();
+	private showCost: boolean = true;
+	private showTokens: boolean = true;
+	private showContext: boolean = true;
 
 	constructor(session: AgentSession) {
 		this.session = session;
@@ -76,6 +79,18 @@ export class FooterComponent implements Component {
 
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.autoCompactEnabled = enabled;
+	}
+
+	setShowCost(show: boolean): void {
+		this.showCost = show;
+	}
+
+	setShowTokens(show: boolean): void {
+		this.showTokens = show;
+	}
+
+	setShowContext(show: boolean): void {
+		this.showContext = show;
 	}
 
 	/**
@@ -247,30 +262,38 @@ export class FooterComponent implements Component {
 
 		// Build stats line
 		const statsParts = [];
-		if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
-		if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
-		if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
-		if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
 
-		// Show cost with "(sub)" indicator if using OAuth subscription
-		const usingSubscription = state.model ? this.session.modelRegistry.isUsingOAuth(state.model) : false;
-		if (totalCost || usingSubscription) {
-			const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
-			statsParts.push(costStr);
+		// Token counts (conditionally shown)
+		if (this.showTokens) {
+			if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
+			if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
+			if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
+			if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
 		}
 
-		// Colorize context percentage based on usage
-		let contextPercentStr: string;
-		const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
-		const contextPercentDisplay = `${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
-		if (contextPercentValue > 90) {
-			contextPercentStr = theme.fg("error", contextPercentDisplay);
-		} else if (contextPercentValue > 70) {
-			contextPercentStr = theme.fg("warning", contextPercentDisplay);
-		} else {
-			contextPercentStr = contextPercentDisplay;
+		// Cost with "(sub)" indicator if using OAuth subscription (conditionally shown)
+		if (this.showCost) {
+			const usingSubscription = state.model ? this.session.modelRegistry.isUsingOAuth(state.model) : false;
+			if (totalCost || usingSubscription) {
+				const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
+				statsParts.push(costStr);
+			}
 		}
-		statsParts.push(contextPercentStr);
+
+		// Context percentage with colorization (conditionally shown)
+		if (this.showContext) {
+			let contextPercentStr: string;
+			const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
+			const contextPercentDisplay = `${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
+			if (contextPercentValue > 90) {
+				contextPercentStr = theme.fg("error", contextPercentDisplay);
+			} else if (contextPercentValue > 70) {
+				contextPercentStr = theme.fg("warning", contextPercentDisplay);
+			} else {
+				contextPercentStr = contextPercentDisplay;
+			}
+			statsParts.push(contextPercentStr);
+		}
 
 		let statsLeft = statsParts.join(" ");
 

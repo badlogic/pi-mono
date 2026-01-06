@@ -39,6 +39,12 @@ export interface ImageSettings {
 	blockImages?: boolean; // default: false - when true, prevents all images from being sent to LLM providers
 }
 
+export interface FooterSettings {
+	showCost?: boolean; // default: true - display cost in footer
+	showTokens?: boolean; // default: true - display token counts in footer
+	showContext?: boolean; // default: true - display context window usage in footer
+}
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
@@ -57,6 +63,7 @@ export interface Settings {
 	skills?: SkillsSettings;
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
+	footer?: FooterSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
 	doubleEscapeAction?: "branch" | "tree"; // Action for double-escape with empty editor (default: "tree")
 }
@@ -421,6 +428,42 @@ export class SettingsManager {
 
 	setDoubleEscapeAction(action: "branch" | "tree"): void {
 		this.globalSettings.doubleEscapeAction = action;
+		this.save();
+	}
+
+	getFooterShowCost(): boolean {
+		return this.settings.footer?.showCost ?? true;
+	}
+
+	setFooterShowCost(show: boolean): void {
+		if (!this.globalSettings.footer) {
+			this.globalSettings.footer = {};
+		}
+		this.globalSettings.footer.showCost = show;
+		this.save();
+	}
+
+	getFooterShowTokens(): boolean {
+		return this.settings.footer?.showTokens ?? true;
+	}
+
+	setFooterShowTokens(show: boolean): void {
+		if (!this.globalSettings.footer) {
+			this.globalSettings.footer = {};
+		}
+		this.globalSettings.footer.showTokens = show;
+		this.save();
+	}
+
+	getFooterShowContext(): boolean {
+		return this.settings.footer?.showContext ?? true;
+	}
+
+	setFooterShowContext(show: boolean): void {
+		if (!this.globalSettings.footer) {
+			this.globalSettings.footer = {};
+		}
+		this.globalSettings.footer.showContext = show;
 		this.save();
 	}
 }

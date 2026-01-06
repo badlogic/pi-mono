@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added footer display toggles: `showCost`, `showTokens`, `showContext` to hide/show individual stats in the footer for privacy or reduced clutter.
+
 ## [0.37.3] - 2026-01-06
 
 ### Added

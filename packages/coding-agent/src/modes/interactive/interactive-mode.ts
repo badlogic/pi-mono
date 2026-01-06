@@ -193,6 +193,9 @@ export class InteractiveMode {
 		this.editorContainer.addChild(this.editor);
 		this.footer = new FooterComponent(session);
 		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
+		this.footer.setShowCost(this.settingsManager.getFooterShowCost());
+		this.footer.setShowTokens(this.settingsManager.getFooterShowTokens());
+		this.footer.setShowContext(this.settingsManager.getFooterShowContext());
 
 		// Define commands for autocomplete
 		const slashCommands: SlashCommand[] = [
@@ -1972,6 +1975,9 @@ export class InteractiveMode {
 					showImages: this.settingsManager.getShowImages(),
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
 					blockImages: this.settingsManager.getBlockImages(),
+					showCost: this.settingsManager.getFooterShowCost(),
+					showTokens: this.settingsManager.getFooterShowTokens(),
+					showContext: this.settingsManager.getFooterShowContext(),
 					steeringMode: this.session.steeringMode,
 					followUpMode: this.session.followUpMode,
 					thinkingLevel: this.session.thinkingLevel,
@@ -2000,6 +2006,18 @@ export class InteractiveMode {
 					},
 					onBlockImagesChange: (blocked) => {
 						this.settingsManager.setBlockImages(blocked);
+					},
+					onShowCostChange: (show) => {
+						this.settingsManager.setFooterShowCost(show);
+						this.footer.setShowCost(show);
+					},
+					onShowTokensChange: (show) => {
+						this.settingsManager.setFooterShowTokens(show);
+						this.footer.setShowTokens(show);
+					},
+					onShowContextChange: (show) => {
+						this.settingsManager.setFooterShowContext(show);
+						this.footer.setShowContext(show);
 					},
 					onSteeringModeChange: (mode) => {
 						this.session.setSteeringMode(mode);

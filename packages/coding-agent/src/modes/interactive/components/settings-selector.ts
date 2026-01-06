@@ -26,6 +26,9 @@ export interface SettingsConfig {
 	showImages: boolean;
 	autoResizeImages: boolean;
 	blockImages: boolean;
+	showCost: boolean;
+	showTokens: boolean;
+	showContext: boolean;
 	steeringMode: "all" | "one-at-a-time";
 	followUpMode: "all" | "one-at-a-time";
 	thinkingLevel: ThinkingLevel;
@@ -42,6 +45,9 @@ export interface SettingsCallbacks {
 	onShowImagesChange: (enabled: boolean) => void;
 	onAutoResizeImagesChange: (enabled: boolean) => void;
 	onBlockImagesChange: (blocked: boolean) => void;
+	onShowCostChange: (show: boolean) => void;
+	onShowTokensChange: (show: boolean) => void;
+	onShowContextChange: (show: boolean) => void;
 	onSteeringModeChange: (mode: "all" | "one-at-a-time") => void;
 	onFollowUpModeChange: (mode: "all" | "one-at-a-time") => void;
 	onThinkingLevelChange: (level: ThinkingLevel) => void;
@@ -255,6 +261,34 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
+		// Footer statistics toggles (insert after block-images)
+		const blockImagesIndex = items.findIndex((item) => item.id === "block-images");
+		items.splice(blockImagesIndex + 1, 0, {
+			id: "show-cost",
+			label: "Show cost",
+			description: "Display cost in footer",
+			currentValue: config.showCost ? "true" : "false",
+			values: ["true", "false"],
+		});
+
+		const showCostIndex = items.findIndex((item) => item.id === "show-cost");
+		items.splice(showCostIndex + 1, 0, {
+			id: "show-tokens",
+			label: "Show tokens",
+			description: "Display token counts in footer",
+			currentValue: config.showTokens ? "true" : "false",
+			values: ["true", "false"],
+		});
+
+		const showTokensIndex = items.findIndex((item) => item.id === "show-tokens");
+		items.splice(showTokensIndex + 1, 0, {
+			id: "show-context",
+			label: "Show context",
+			description: "Display context window usage in footer",
+			currentValue: config.showContext ? "true" : "false",
+			values: ["true", "false"],
+		});
+
 		// Add borders
 		this.addChild(new DynamicBorder());
 
@@ -275,6 +309,15 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "block-images":
 						callbacks.onBlockImagesChange(newValue === "true");
+						break;
+					case "show-cost":
+						callbacks.onShowCostChange(newValue === "true");
+						break;
+					case "show-tokens":
+						callbacks.onShowTokensChange(newValue === "true");
+						break;
+					case "show-context":
+						callbacks.onShowContextChange(newValue === "true");
 						break;
 					case "steering-mode":
 						callbacks.onSteeringModeChange(newValue as "all" | "one-at-a-time");
