@@ -453,6 +453,14 @@ export class InteractiveMode {
 				}
 				this.statusContainer.clear();
 
+				// Clear UI state before starting new session
+				this.chatContainer.clear();
+				this.pendingMessagesContainer.clear();
+				this.compactionQueuedMessages = [];
+				this.streamingComponent = undefined;
+				this.streamingMessage = undefined;
+				this.pendingTools.clear();
+
 				// Create new session
 				const success = await this.session.newSession({ parentSession: options?.parentSession });
 				if (!success) {
@@ -463,14 +471,6 @@ export class InteractiveMode {
 				if (options?.setup) {
 					await options.setup(this.sessionManager);
 				}
-
-				// Clear UI state
-				this.chatContainer.clear();
-				this.pendingMessagesContainer.clear();
-				this.compactionQueuedMessages = [];
-				this.streamingComponent = undefined;
-				this.streamingMessage = undefined;
-				this.pendingTools.clear();
 
 				this.chatContainer.addChild(new Spacer(1));
 				this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
@@ -2702,16 +2702,16 @@ export class InteractiveMode {
 		}
 		this.statusContainer.clear();
 
-		// New session via session (emits extension session events)
-		await this.session.newSession();
-
-		// Clear UI state
+		// Clear UI state before starting new session
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
 		this.compactionQueuedMessages = [];
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
+
+		// New session via session (emits extension session events)
+		await this.session.newSession();
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
