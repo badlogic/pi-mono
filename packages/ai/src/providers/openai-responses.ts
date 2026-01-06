@@ -365,6 +365,11 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		stream: true,
 	};
 
+	if (options?.promptCacheRetention) {
+		params.prompt_cache_retention =
+			options.promptCacheRetention === "in_memory" ? "in-memory" : options.promptCacheRetention;
+	}
+
 	if (options?.maxTokens) {
 		params.max_output_tokens = options?.maxTokens;
 	}

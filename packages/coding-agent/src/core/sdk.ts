@@ -613,6 +613,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			tools: activeToolsArray,
 		},
 		convertToLlm,
+		promptCacheKey: sessionManager.getSessionId(),
 		transformContext: extensionRunner
 			? async (messages) => {
 					return extensionRunner.emitContext(messages);

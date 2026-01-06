@@ -177,6 +177,8 @@ function mapOptionsForApi<TApi extends Api>(
 		maxTokens: options?.maxTokens || Math.min(model.maxTokens, 32000),
 		signal: options?.signal,
 		apiKey: apiKey || options?.apiKey,
+		promptCacheKey: options?.promptCacheKey,
+		promptCacheRetention: options?.promptCacheRetention,
 	};
 
 	// Helper to clamp xhigh to high for providers that don't support it

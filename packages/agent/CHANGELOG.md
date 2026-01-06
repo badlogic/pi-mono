@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `promptCacheKey` option on `Agent` to forward provider-specific prompt caching identifiers to `@mariozechner/pi-ai` streaming calls.
+
 ## [0.37.2] - 2026-01-05
 
 ## [0.37.1] - 2026-01-05

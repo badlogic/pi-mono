@@ -94,7 +94,13 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				model: model.id,
 				input: messages,
 				stream: true,
+				prompt_cache_key: options?.promptCacheKey,
 			};
+
+			if (options?.promptCacheRetention) {
+				params.prompt_cache_retention =
+					options.promptCacheRetention === "in_memory" ? "in-memory" : options.promptCacheRetention;
+			}
 
 			if (options?.maxTokens) {
 				params.max_output_tokens = options.maxTokens;

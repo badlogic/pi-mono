@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- OpenAI Codex (ChatGPT backend): added `promptCacheKey` stream option to enable server-side prompt/session caching via internal headers.
+- OpenAI (Responses APIs): added `promptCacheRetention` stream option to control prompt cache retention (`in_memory` vs `24h`) where supported.
+
 ## [0.37.2] - 2026-01-05
 
 ### Fixed

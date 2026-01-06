@@ -58,12 +58,33 @@ export type Provider = KnownProvider | string;
 
 export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
 
+/**
+ * OpenAI prompt cache retention policy for supported APIs/models.
+ *
+ * See: https://platform.openai.com/docs/guides/prompt-caching
+ */
+export type PromptCacheRetention = "in_memory" | "in-memory" | "24h";
+
 // Base options all providers share
 export interface StreamOptions {
 	temperature?: number;
 	maxTokens?: number;
 	signal?: AbortSignal;
 	apiKey?: string;
+	/**
+	 * Provider-specific prompt caching key.
+	 *
+	 * Currently used by the OpenAI Codex (ChatGPT backend) provider to set internal
+	 * request headers that control server-side context/caching.
+	 */
+	promptCacheKey?: string;
+	/**
+	 * OpenAI prompt caching retention policy (Responses API).
+	 *
+	 * - Default is `in_memory`/`in-memory` if omitted.
+	 * - `24h` may not be supported by all models; OpenAI will reject unsupported combinations.
+	 */
+	promptCacheRetention?: PromptCacheRetention;
 }
 
 // Unified options with reasoning passed to streamSimple() and completeSimple()

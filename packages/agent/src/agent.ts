@@ -61,6 +61,14 @@ export interface AgentOptions {
 	streamFn?: StreamFn;
 
 	/**
+	 * Optional prompt caching key forwarded to LLM providers.
+	 *
+	 * Used by the OpenAI Codex (ChatGPT backend) provider to enable server-side
+	 * prompt/session caching. Recommended value: a stable session/conversation ID.
+	 */
+	promptCacheKey?: string;
+
+	/**
 	 * Resolves an API key dynamically for each LLM call.
 	 * Useful for expiring tokens (e.g., GitHub Copilot OAuth).
 	 */
@@ -89,6 +97,7 @@ export class Agent {
 	private steeringMode: "all" | "one-at-a-time";
 	private followUpMode: "all" | "one-at-a-time";
 	public streamFn: StreamFn;
+	private promptCacheKey?: string;
 	public getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
 	private runningPrompt?: Promise<void>;
 	private resolveRunningPrompt?: () => void;
@@ -100,7 +109,20 @@ export class Agent {
 		this.steeringMode = opts.steeringMode || "one-at-a-time";
 		this.followUpMode = opts.followUpMode || "one-at-a-time";
 		this.streamFn = opts.streamFn || streamSimple;
+		this.promptCacheKey = opts.promptCacheKey;
 		this.getApiKey = opts.getApiKey;
+	}
+
+	/**
+	 * Update the provider prompt caching key used for subsequent LLM calls.
+	 * Useful when switching sessions (new session, branch, resume another session file).
+	 */
+	setPromptCacheKey(promptCacheKey: string | undefined): void {
+		this.promptCacheKey = promptCacheKey;
+	}
+
+	getPromptCacheKey(): string | undefined {
+		return this.promptCacheKey;
 	}
 
 	get state(): AgentState {
@@ -286,6 +308,7 @@ export class Agent {
 		const config: AgentLoopConfig = {
 			model,
 			reasoning,
+			promptCacheKey: this.promptCacheKey,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,
