@@ -160,6 +160,12 @@ export class InteractiveMode {
 	// Custom footer from extension (undefined = use built-in footer)
 	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
 
+	// Built-in header (logo + keybinding hints + changelog)
+	private builtInHeader: Component | undefined = undefined;
+
+	// Custom header from extension (undefined = use built-in header)
+	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
+
 	// Convenience accessors
 	private get agent() {
 		return this.session.agent;
@@ -317,11 +323,11 @@ export class InteractiveMode {
 			"\n" +
 			theme.fg("dim", "drop files") +
 			theme.fg("muted", " to attach");
-		const header = new Text(`${logo}\n${instructions}`, 1, 0);
+		this.builtInHeader = new Text(`${logo}\n${instructions}`, 1, 0);
 
 		// Setup UI layout
 		this.ui.addChild(new Spacer(1));
-		this.ui.addChild(header);
+		this.ui.addChild(this.builtInHeader);
 		this.ui.addChild(new Spacer(1));
 
 		// Add changelog if provided
@@ -684,6 +690,40 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * Set a custom header component, or restore the built-in header.
+	 */
+	private setExtensionHeader(factory: ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined): void {
+		// Header may not be initialized yet if called during early initialization
+		if (!this.builtInHeader) {
+			return;
+		}
+
+		// Dispose existing custom header
+		if (this.customHeader?.dispose) {
+			this.customHeader.dispose();
+		}
+
+		// Remove current header from UI
+		if (this.customHeader) {
+			this.ui.removeChild(this.customHeader);
+		} else {
+			this.ui.removeChild(this.builtInHeader);
+		}
+
+		if (factory) {
+			// Create and add custom header at position 1 (after initial spacer)
+			this.customHeader = factory(this.ui, theme);
+			this.ui.children.splice(1, 0, this.customHeader);
+		} else {
+			// Restore built-in header at position 1
+			this.customHeader = undefined;
+			this.ui.children.splice(1, 0, this.builtInHeader);
+		}
+
+		this.ui.requestRender();
+	}
+
+	/**
 	 * Create the ExtensionUIContext for extensions.
 	 */
 	private createExtensionUIContext(): ExtensionUIContext {
@@ -695,6 +735,7 @@ export class InteractiveMode {
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
 			setWidget: (key, content) => this.setExtensionWidget(key, content),
 			setFooter: (factory) => this.setExtensionFooter(factory),
+			setHeader: (factory) => this.setExtensionHeader(factory),
 			setTitle: (title) => this.ui.terminal.setTitle(title),
 			custom: (factory) => this.showExtensionCustom(factory),
 			setEditorText: (text) => this.editor.setText(text),
