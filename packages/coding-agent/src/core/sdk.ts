@@ -658,6 +658,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		rebuildSystemPrompt,
 		cwd,
 		agentDir,
+		customPrompt: options.systemPrompt,
 	});
 	time("createAgentSession");
 

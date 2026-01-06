@@ -94,6 +94,8 @@ export interface AgentSessionConfig {
 	cwd?: string;
 	/** Agent configuration directory */
 	agentDir?: string;
+	/** Custom system prompt (string or function). Default: undefined (use default prompt) */
+	customPrompt?: string | ((defaultPrompt: string) => string);
 }
 
 /** Options for AgentSession.prompt() */
@@ -205,6 +207,9 @@ export class AgentSession {
 	private _cwd: string;
 	private _agentDir: string;
 
+	// Custom system prompt (string or function)
+	private _customPrompt?: string | ((defaultPrompt: string) => string);
+
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
@@ -219,6 +224,7 @@ export class AgentSession {
 		this._baseSystemPrompt = config.agent.state.systemPrompt;
 		this._cwd = config.cwd ?? process.cwd();
 		this._agentDir = config.agentDir ?? getAgentDir();
+		this._customPrompt = config.customPrompt;
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -252,15 +258,41 @@ export class AgentSession {
 			agentDir: this._agentDir,
 		});
 
-		// Rebuild base system prompt with fresh context
-		this._baseSystemPrompt = buildSystemPrompt({
-			cwd: this._cwd,
-			agentDir: this._agentDir,
-			contextFiles,
-			skills,
-			selectedTools: validToolNames,
-		});
+		// Build base system prompt with fresh context
+		let newPrompt: string;
 
+		if (this._customPrompt === undefined) {
+			// Use default prompt with fresh context
+			newPrompt = buildSystemPrompt({
+				cwd: this._cwd,
+				agentDir: this._agentDir,
+				contextFiles,
+				skills,
+				selectedTools: validToolNames,
+			});
+		} else if (typeof this._customPrompt === "string") {
+			// Build with custom string prompt
+			newPrompt = buildSystemPrompt({
+				cwd: this._cwd,
+				agentDir: this._agentDir,
+				contextFiles,
+				skills,
+				selectedTools: validToolNames,
+				customPrompt: this._customPrompt,
+			});
+		} else {
+			// Call custom function with default prompt built from fresh context
+			const defaultPrompt = buildSystemPrompt({
+				cwd: this._cwd,
+				agentDir: this._agentDir,
+				contextFiles,
+				skills,
+				selectedTools: validToolNames,
+			});
+			newPrompt = this._customPrompt(defaultPrompt);
+		}
+
+		this._baseSystemPrompt = newPrompt;
 		this.agent.setSystemPrompt(this._baseSystemPrompt);
 	}
 
