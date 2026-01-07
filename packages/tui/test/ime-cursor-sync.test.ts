@@ -4,22 +4,14 @@ import type { Component } from "../src/tui.js";
 import { TUI } from "../src/tui.js";
 import { VirtualTerminal } from "./virtual-terminal.js";
 
-class LinesComponent implements Component {
+class CursorSyncComponent implements Component {
+	public wantsImeCursor = true;
+	public inputs: string[] = [];
+
 	constructor(private lines: string[]) {}
 
 	render(_width: number): string[] {
 		return this.lines;
-	}
-
-	invalidate(): void {}
-}
-
-class InputCaptureComponent implements Component {
-	public wantsImeCursor = true;
-	public inputs: string[] = [];
-
-	render(_width: number): string[] {
-		return [];
 	}
 
 	handleInput(data: string): void {
@@ -43,14 +35,11 @@ describe("TUI cursor sync", () => {
 		for (let i = 0; i < 30; i++) {
 			lines.push(`line${i}`);
 		}
-		// Fake cursor on the last line, after 3 visible characters.
-		lines.push(`abc\x1b[7mD\x1b[0m`);
+		lines.push("abc\x1b[7mD\x1b[0m");
 
-		const content = new LinesComponent(lines);
-		const capture = new InputCaptureComponent();
-		tui.addChild(content);
-		tui.addChild(capture);
-		tui.setFocus(capture);
+		const component = new CursorSyncComponent(lines);
+		tui.addChild(component);
+		tui.setFocus(component);
 
 		tui.requestRender(true);
 		await flushRender(terminal);
@@ -60,14 +49,15 @@ describe("TUI cursor sync", () => {
 		await terminal.flush();
 
 		// Simulate the terminal responding to the DSR cursor-position request.
-		terminal.sendInput("\x1b[1;1R");
+		// We call the TUI input handler directly since the virtual terminal only forwards
+		// input after tui.start() (which we avoid in tests).
+		(tui as unknown as { handleInput: (data: string) => void }).handleInput("\x1b[1;1R");
 		await terminal.flush();
 
-		// Cursor should be moved back to the fake cursor position in the viewport.
 		const pos = terminal.getCursorPosition();
 		assert.deepStrictEqual(pos, { x: 3, y: 4 });
 
 		// The cursor-position response must not reach the focused component.
-		assert.deepStrictEqual(capture.inputs, []);
+		assert.deepStrictEqual(component.inputs, []);
 	});
 });
