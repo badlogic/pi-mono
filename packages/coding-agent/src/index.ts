@@ -229,11 +229,17 @@ export {
 	UserMessageSelectorComponent,
 	type VisualTruncateResult,
 } from "./modes/interactive/components/index.js";
+// Modes for programmatic usage
+export { InteractiveMode } from "./modes/interactive/interactive-mode.js";
 // Theme utilities for custom tools and extensions
 export {
 	getMarkdownTheme,
 	getSelectListTheme,
 	getSettingsListTheme,
+	initTheme,
+	stopThemeWatcher,
 	Theme,
 	type ThemeColor,
 } from "./modes/interactive/theme/theme.js";
+export { runPrintMode } from "./modes/print-mode.js";
+export { runRpcMode } from "./modes/rpc/rpc-mode.js";
