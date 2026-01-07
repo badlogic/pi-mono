@@ -14,6 +14,7 @@
 ### Fixed
 
 - Default thinking level from settings now applies correctly when `enabledModels` is configured. Previously, models without explicit thinking level suffixes (e.g., `claude-opus-4-5` instead of `claude-opus-4-5:high`) would override `defaultThinkingLevel` with "off"
+- External edits to `settings.json` while pi is running are now preserved when pi saves settings (e.g., when changing thinking level via Shift+Tab)
 
 ## [0.37.8] - 2026-01-07
 
