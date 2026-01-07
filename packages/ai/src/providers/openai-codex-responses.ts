@@ -346,10 +346,10 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 					}
 				} else if (eventType === "error") {
 					const code = (rawEvent as { code?: string }).code || "";
-					const message = (rawEvent as { message?: string }).message || "Unknown error";
-					throw new Error(code ? `Error Code ${code}: ${message}` : message);
+					const message = (rawEvent as { message?: string }).message || "";
+					throw new Error(formatCodexErrorEvent(rawEvent, code, message));
 				} else if (eventType === "response.failed") {
-					throw new Error("Unknown error");
+					throw new Error(formatCodexFailure(rawEvent) ?? "Codex response failed");
 				}
 			}
 
@@ -358,7 +358,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 			}
 
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error("An unknown error occurred");
+				throw new Error("Codex response failed");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -621,5 +621,70 @@ function mapStopReason(status: string | undefined): StopReason {
 			return "stop";
 		default:
 			return "stop";
+	}
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+	if (value && typeof value === "object") {
+		return value as Record<string, unknown>;
+	}
+	return null;
+}
+
+function getString(value: unknown): string | undefined {
+	return typeof value === "string" ? value : undefined;
+}
+
+function truncate(text: string, limit: number): string {
+	if (text.length <= limit) return text;
+	return `${text.slice(0, limit)}...[truncated ${text.length - limit}]`;
+}
+
+function formatCodexFailure(rawEvent: Record<string, unknown>): string | null {
+	const response = asRecord(rawEvent.response);
+	const error = asRecord(rawEvent.error) ?? (response ? asRecord(response.error) : null);
+
+	const message = getString(error?.message) ?? getString(rawEvent.message) ?? getString(response?.message);
+	const code = getString(error?.code) ?? getString(error?.type) ?? getString(rawEvent.code);
+	const status = getString(response?.status) ?? getString(rawEvent.status);
+
+	const meta: string[] = [];
+	if (code) meta.push(`code=${code}`);
+	if (status) meta.push(`status=${status}`);
+
+	if (message) {
+		const metaText = meta.length ? ` (${meta.join(", ")})` : "";
+		return `Codex response failed: ${message}${metaText}`;
+	}
+
+	if (meta.length) {
+		return `Codex response failed (${meta.join(", ")})`;
+	}
+
+	try {
+		return `Codex response failed: ${truncate(JSON.stringify(rawEvent), 800)}`;
+	} catch {
+		return "Codex response failed";
+	}
+}
+
+function formatCodexErrorEvent(rawEvent: Record<string, unknown>, code: string, message: string): string {
+	const detail = formatCodexFailure(rawEvent);
+	if (detail) {
+		return detail.replace("response failed", "error event");
+	}
+
+	const meta: string[] = [];
+	if (code) meta.push(`code=${code}`);
+	if (message) meta.push(`message=${message}`);
+
+	if (meta.length > 0) {
+		return `Codex error event (${meta.join(", ")})`;
+	}
+
+	try {
+		return `Codex error event: ${truncate(JSON.stringify(rawEvent), 800)}`;
+	} catch {
+		return "Codex error event";
 	}
 }
