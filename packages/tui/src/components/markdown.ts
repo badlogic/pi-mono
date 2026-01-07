@@ -2,6 +2,13 @@ import { marked, type Token } from "marked";
 import type { Component } from "../tui.js";
 import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.js";
 
+type MarkedListToken = Token & {
+	type: "list";
+	ordered: boolean;
+	start?: number;
+	items: Array<{ tokens?: Token[] }>;
+};
+
 /**
  * Default text styling for markdown content.
  * Applied to all text unless overridden by markdown formatting.
@@ -43,6 +50,17 @@ export interface MarkdownTheme {
 	highlightCode?: (code: string, lang?: string) => string[];
 }
 
+export interface MarkdownRenderOptions {
+	/**
+	 * When enabled, consecutive ordered list blocks keep increasing their item numbers.
+	 *
+	 * This is useful for assistant model output where list items are often separated by blank
+	 * lines or intervening blocks, which can accidentally split a single logical list into
+	 * multiple list blocks.
+	 */
+	continueOrderedListNumberingAcrossBlocks?: boolean;
+}
+
 export class Markdown implements Component {
 	private text: string;
 	private paddingX: number; // Left/right padding
@@ -50,6 +68,7 @@ export class Markdown implements Component {
 	private defaultTextStyle?: DefaultTextStyle;
 	private theme: MarkdownTheme;
 	private defaultStylePrefix?: string;
+	private options?: MarkdownRenderOptions;
 
 	// Cache for rendered output
 	private cachedText?: string;
@@ -62,12 +81,14 @@ export class Markdown implements Component {
 		paddingY: number,
 		theme: MarkdownTheme,
 		defaultTextStyle?: DefaultTextStyle,
+		options?: MarkdownRenderOptions,
 	) {
 		this.text = text;
 		this.paddingX = paddingX;
 		this.paddingY = paddingY;
 		this.theme = theme;
 		this.defaultTextStyle = defaultTextStyle;
+		this.options = options;
 	}
 
 	setText(text: string): void {
@@ -108,12 +129,46 @@ export class Markdown implements Component {
 
 		// Convert tokens to styled terminal output
 		const renderedLines: string[] = [];
+		let nextOrderedListNumber: number | undefined;
 
 		for (let i = 0; i < tokens.length; i++) {
 			const token = tokens[i];
 			const nextToken = tokens[i + 1];
-			const tokenLines = this.renderToken(token, contentWidth, nextToken?.type);
-			renderedLines.push(...tokenLines);
+
+			if (
+				this.options?.continueOrderedListNumberingAcrossBlocks &&
+				(token.type === "heading" || token.type === "hr")
+			) {
+				nextOrderedListNumber = undefined;
+			}
+
+			if (token.type === "list") {
+				const listToken = token as unknown as MarkedListToken;
+
+				if (this.options?.continueOrderedListNumberingAcrossBlocks && listToken.ordered) {
+					const startNumber = nextOrderedListNumber ?? this.getOrderedListStart(listToken);
+					renderedLines.push(...this.renderList(listToken, 0, startNumber));
+					nextOrderedListNumber = startNumber + listToken.items.length;
+					continue;
+				}
+
+				// Any unordered list breaks ordered list continuation.
+				if (this.options?.continueOrderedListNumberingAcrossBlocks && !listToken.ordered) {
+					nextOrderedListNumber = undefined;
+				}
+			}
+
+			renderedLines.push(...this.renderToken(token, contentWidth, nextToken?.type));
+
+			if (this.options?.continueOrderedListNumberingAcrossBlocks && nextOrderedListNumber !== undefined) {
+				// Keep numbering only if another ordered list follows (ignoring spaces).
+				if (token.type !== "space" && token.type !== "list" && token.type !== "heading" && token.type !== "hr") {
+					const nextNonSpaceToken = this.findNextNonSpaceToken(tokens, i + 1);
+					if (!this.isOrderedListToken(nextNonSpaceToken)) {
+						nextOrderedListNumber = undefined;
+					}
+				}
+			}
 		}
 
 		// Wrap lines (NO padding, NO background yet)
@@ -229,6 +284,28 @@ export class Markdown implements Component {
 		return this.defaultStylePrefix;
 	}
 
+	private isOrderedListToken(token: Token | undefined): token is MarkedListToken {
+		if (!token || token.type !== "list") {
+			return false;
+		}
+
+		const maybeList = token as unknown as { ordered?: boolean };
+		return maybeList.ordered === true;
+	}
+
+	private getOrderedListStart(token: MarkedListToken): number {
+		return typeof token.start === "number" && Number.isFinite(token.start) ? token.start : 1;
+	}
+
+	private findNextNonSpaceToken(tokens: Token[], startIndex: number): Token | undefined {
+		for (let i = startIndex; i < tokens.length; i++) {
+			if (tokens[i]?.type !== "space") {
+				return tokens[i];
+			}
+		}
+		return undefined;
+	}
+
 	private renderToken(token: Token, width: number, nextTokenType?: string): string[] {
 		const lines: string[] = [];
 
@@ -284,7 +361,8 @@ export class Markdown implements Component {
 			}
 
 			case "list": {
-				const listLines = this.renderList(token as any, 0);
+				const listToken = token as unknown as MarkedListToken;
+				const listLines = this.renderList(listToken, 0);
 				lines.push(...listLines);
 				// Don't add spacing after lists if a space token follows
 				// (the space token will handle it)
@@ -418,13 +496,15 @@ export class Markdown implements Component {
 	/**
 	 * Render a list with proper nesting support
 	 */
-	private renderList(token: Token & { items: any[]; ordered: boolean }, depth: number): string[] {
+	private renderList(token: MarkedListToken, depth: number, startNumber?: number): string[] {
 		const lines: string[] = [];
 		const indent = "  ".repeat(depth);
 
+		const baseNumber = token.ordered ? (startNumber ?? this.getOrderedListStart(token)) : 1;
+
 		for (let i = 0; i < token.items.length; i++) {
 			const item = token.items[i];
-			const bullet = token.ordered ? `${i + 1}. ` : "- ";
+			const bullet = token.ordered ? `${baseNumber + i}. ` : "- ";
 
 			// Process item tokens to handle nested lists
 			const itemLines = this.renderListItem(item.tokens || [], depth);
@@ -475,7 +555,7 @@ export class Markdown implements Component {
 			if (token.type === "list") {
 				// Nested list - render with one additional indent level
 				// These lines will have their own indent, so we just add them as-is
-				const nestedLines = this.renderList(token as any, parentDepth + 1);
+				const nestedLines = this.renderList(token as unknown as MarkedListToken, parentDepth + 1);
 				lines.push(...nestedLines);
 			} else if (token.type === "text") {
 				// Text content (may have inline tokens)

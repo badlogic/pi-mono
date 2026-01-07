@@ -97,6 +97,50 @@ describe("Markdown component", () => {
 		});
 	});
 
+	describe("Ordered list numbering", () => {
+		it("should respect the list start number", () => {
+			const markdown = new Markdown(
+				`3. Third
+4. Fourth`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+
+			assert.ok(plainLines.some((line) => line.includes("3. Third")));
+			assert.ok(plainLines.some((line) => line.includes("4. Fourth")));
+		});
+
+		it("should continue numbering across separated ordered list blocks when enabled", () => {
+			const markdown = new Markdown(
+				`1. First
+
+Some details in between.
+
+1. Second
+
+More details.
+
+1. Third`,
+				0,
+				0,
+				defaultMarkdownTheme,
+				undefined,
+				{ continueOrderedListNumberingAcrossBlocks: true },
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+
+			assert.ok(plainLines.some((line) => line.includes("1. First")));
+			assert.ok(plainLines.some((line) => line.includes("2. Second")));
+			assert.ok(plainLines.some((line) => line.includes("3. Third")));
+		});
+	});
+
 	describe("Tables", () => {
 		it("should render simple table", () => {
 			const markdown = new Markdown(

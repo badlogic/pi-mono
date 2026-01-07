@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Markdown renderer option to continue ordered list numbering across separated list blocks.
+
+### Fixed
+
+- Markdown renderer now respects ordered list start numbers.
+
 ## [0.37.8] - 2026-01-07
 
 ### Added

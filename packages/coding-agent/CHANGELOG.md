@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Assistant message markdown rendering no longer resets ordered list numbering across blank-line separated blocks.
+
 ## [0.37.8] - 2026-01-07
 
 ## [0.37.7] - 2026-01-07
