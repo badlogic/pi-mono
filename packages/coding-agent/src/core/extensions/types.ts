@@ -21,7 +21,7 @@ import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
 import type { EventBus } from "../event-bus.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
-import type { AppAction, KeybindingsManager } from "../keybindings.js";
+import type { KeybindingsManager } from "../keybindings.js";
 import type { CustomMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type {
@@ -742,8 +742,63 @@ export type GetThinkingLevelHandler = () => ThinkingLevel;
 
 export type SetThinkingLevelHandler = (level: ThinkingLevel) => void;
 
+/**
+ * Shared state created by loader, used during registration and runtime.
+ * Contains flag values (defaults set during registration, CLI values set after).
+ */
+export interface ExtensionRuntimeState {
+	flagValues: Map<string, boolean | string>;
+}
+
+/**
+ * Action implementations for pi.* API methods.
+ * Provided to runner.initialize(), copied into the shared runtime.
+ */
+export interface ExtensionActions {
+	sendMessage: SendMessageHandler;
+	sendUserMessage: SendUserMessageHandler;
+	appendEntry: AppendEntryHandler;
+	getActiveTools: GetActiveToolsHandler;
+	getAllTools: GetAllToolsHandler;
+	setActiveTools: SetActiveToolsHandler;
+	setModel: SetModelHandler;
+	getThinkingLevel: GetThinkingLevelHandler;
+	setThinkingLevel: SetThinkingLevelHandler;
+}
+
+/**
+ * Actions for ExtensionContext (ctx.* in event handlers).
+ * Required by all modes.
+ */
+export interface ExtensionContextActions {
+	getModel: () => Model<any> | undefined;
+	isIdle: () => boolean;
+	abort: () => void;
+	hasPendingMessages: () => boolean;
+}
+
+/**
+ * Actions for ExtensionCommandContext (ctx.* in command handlers).
+ * Only needed for interactive mode where extension commands are invokable.
+ */
+export interface ExtensionCommandContextActions {
+	waitForIdle: () => Promise<void>;
+	newSession: (options?: {
+		parentSession?: string;
+		setup?: (sessionManager: SessionManager) => Promise<void>;
+	}) => Promise<{ cancelled: boolean }>;
+	branch: (entryId: string) => Promise<{ cancelled: boolean }>;
+	navigateTree: (targetId: string, options?: { summarize?: boolean }) => Promise<{ cancelled: boolean }>;
+}
+
+/**
+ * Full runtime = state + actions.
+ * Created by loader with throwing action stubs, completed by runner.initialize().
+ */
+export interface ExtensionRuntime extends ExtensionRuntimeState, ExtensionActions {}
+
 /** Loaded extension with all registered items. */
-export interface LoadedExtension {
+export interface Extension {
 	path: string;
 	resolvedPath: string;
 	handlers: Map<string, HandlerFn[]>;
@@ -751,25 +806,15 @@ export interface LoadedExtension {
 	messageRenderers: Map<string, MessageRenderer>;
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;
-	flagValues: Map<string, boolean | string>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
-	setSendMessageHandler: (handler: SendMessageHandler) => void;
-	setSendUserMessageHandler: (handler: SendUserMessageHandler) => void;
-	setAppendEntryHandler: (handler: AppendEntryHandler) => void;
-	setGetActiveToolsHandler: (handler: GetActiveToolsHandler) => void;
-	setGetAllToolsHandler: (handler: GetAllToolsHandler) => void;
-	setSetActiveToolsHandler: (handler: SetActiveToolsHandler) => void;
-	setSetModelHandler: (handler: SetModelHandler) => void;
-	setGetThinkingLevelHandler: (handler: GetThinkingLevelHandler) => void;
-	setSetThinkingLevelHandler: (handler: SetThinkingLevelHandler) => void;
-	setFlagValue: (name: string, value: boolean | string) => void;
 }
 
 /** Result of loading extensions. */
 export interface LoadExtensionsResult {
-	extensions: LoadedExtension[];
+	extensions: Extension[];
 	errors: Array<{ path: string; error: string }>;
-	setUIContext(uiContext: ExtensionUIContext, hasUI: boolean): void;
+	/** Shared runtime - actions are throwing stubs until runner.initialize() */
+	runtime: ExtensionRuntime;
 }
 
 // ============================================================================

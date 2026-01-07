@@ -5,11 +5,31 @@
 ### Breaking Changes
 
 - `ctx.ui.custom()` factory signature changed from `(tui, theme, done)` to `(tui, theme, keybindings, done)` for consistency with other input-handling factories
+- Extension system refactored: `LoadedExtension` renamed to `Extension`, setter methods removed
+- `LoadExtensionsResult.setUIContext()` removed, replaced with `runtime: ExtensionRuntime`
+- `ExtensionRunner` constructor now requires `runtime: ExtensionRuntime` as second parameter
+- `ExtensionRunner.initialize()` signature changed from options object to `(actions, contextActions, commandContextActions?, uiContext?)`
+- `ExtensionRunner.getHasUI()` renamed to `hasUI()`
+- `CreateAgentSessionOptions.preloadedExtensions` renamed to `preloadedExtensionsResult`
+- `CreateAgentSessionResult` now returns `extensionsResult: LoadExtensionsResult` instead of `customToolsResult`
 
 ### Added
 
 - Extension UI dialogs (`ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`) now support a `timeout` option that auto-dismisses the dialog with a live countdown display. Simpler alternative to `AbortSignal` for timed dialogs.
 - Extensions can now provide custom editor components via `ctx.ui.setEditorComponent((tui, theme, keybindings) => ...)`. Extend `CustomEditor` for full app keybinding support (escape, ctrl+d, model switching, etc.). See `examples/extensions/modal-editor.ts`, `examples/extensions/rainbow-editor.ts`, and `docs/tui.md` Pattern 7.
+- `ExtensionRuntime` interface for shared runtime state and action methods
+- `ExtensionActions` interface for `pi.*` API methods
+- `ExtensionContextActions` interface for `ctx.*` in event handlers
+- `ExtensionCommandContextActions` interface for `ctx.*` in command handlers (session control)
+- `createExtensionRuntime()` function to create runtime with throwing stubs
+- `Extension` type exported (cleaner name for loaded extension data)
+- Interactive mode now warns when extensions override built-in tools (read, bash, edit, write, grep, find, ls)
+
+### Changed
+
+- Extension loader simplified: shared runtime instead of per-extension closures
+- `hasUI` now derived from whether `uiContext` is provided (no longer a separate parameter)
+- RPC and print modes now provide `ExtensionCommandContextActions` for full command support
 
 ### Fixed
 

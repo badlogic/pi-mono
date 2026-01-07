@@ -10,30 +10,17 @@ import { fileURLToPath } from "node:url";
 import type { KeyId } from "@mariozechner/pi-tui";
 import { createJiti } from "jiti";
 import { getAgentDir, isBunBinary } from "../../config.js";
-import { theme } from "../../modes/interactive/theme/theme.js";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
 import type {
-	AppendEntryHandler,
+	Extension,
 	ExtensionAPI,
 	ExtensionFactory,
-	ExtensionFlag,
-	ExtensionShortcut,
-	ExtensionUIContext,
-	GetActiveToolsHandler,
-	GetAllToolsHandler,
-	GetThinkingLevelHandler,
+	ExtensionRuntime,
 	LoadExtensionsResult,
-	LoadedExtension,
 	MessageRenderer,
 	RegisteredCommand,
-	RegisteredTool,
-	SendMessageHandler,
-	SendUserMessageHandler,
-	SetActiveToolsHandler,
-	SetModelHandler,
-	SetThinkingLevelHandler,
 	ToolDefinition,
 } from "./types.js";
 
@@ -84,87 +71,59 @@ function resolvePath(extPath: string, cwd: string): string {
 	return path.resolve(cwd, expanded);
 }
 
-function createNoOpUIContext(): ExtensionUIContext {
+type HandlerFn = (...args: unknown[]) => Promise<unknown>;
+
+/**
+ * Create a runtime with throwing stubs for action methods.
+ * Runner.initialize() replaces these with real implementations.
+ */
+export function createExtensionRuntime(): ExtensionRuntime {
+	const notInitialized = () => {
+		throw new Error("Extension runtime not initialized. Action methods cannot be called during extension loading.");
+	};
+
 	return {
-		select: async () => undefined,
-		confirm: async () => false,
-		input: async () => undefined,
-		notify: () => {},
-		setStatus: () => {},
-		setWidget: () => {},
-		setFooter: () => {},
-		setHeader: () => {},
-		setTitle: () => {},
-		custom: async () => undefined as never,
-		setEditorText: () => {},
-		getEditorText: () => "",
-		editor: async () => undefined,
-		setEditorComponent: () => {},
-		get theme() {
-			return theme;
-		},
+		sendMessage: notInitialized,
+		sendUserMessage: notInitialized,
+		appendEntry: notInitialized,
+		getActiveTools: notInitialized,
+		getAllTools: notInitialized,
+		setActiveTools: notInitialized,
+		setModel: () => Promise.reject(new Error("Extension runtime not initialized")),
+		getThinkingLevel: notInitialized,
+		setThinkingLevel: notInitialized,
+		flagValues: new Map(),
 	};
 }
 
-type HandlerFn = (...args: unknown[]) => Promise<unknown>;
-
+/**
+ * Create the ExtensionAPI for an extension.
+ * Registration methods write to the extension object.
+ * Action methods delegate to the shared runtime.
+ */
 function createExtensionAPI(
-	handlers: Map<string, HandlerFn[]>,
-	tools: Map<string, RegisteredTool>,
+	extension: Extension,
+	runtime: ExtensionRuntime,
 	cwd: string,
-	extensionPath: string,
 	eventBus: EventBus,
-	_sharedUI: { ui: ExtensionUIContext; hasUI: boolean },
-): {
-	api: ExtensionAPI;
-	messageRenderers: Map<string, MessageRenderer>;
-	commands: Map<string, RegisteredCommand>;
-	flags: Map<string, ExtensionFlag>;
-	flagValues: Map<string, boolean | string>;
-	shortcuts: Map<KeyId, ExtensionShortcut>;
-	setSendMessageHandler: (handler: SendMessageHandler) => void;
-	setSendUserMessageHandler: (handler: SendUserMessageHandler) => void;
-	setAppendEntryHandler: (handler: AppendEntryHandler) => void;
-	setGetActiveToolsHandler: (handler: GetActiveToolsHandler) => void;
-	setGetAllToolsHandler: (handler: GetAllToolsHandler) => void;
-	setSetActiveToolsHandler: (handler: SetActiveToolsHandler) => void;
-	setSetModelHandler: (handler: SetModelHandler) => void;
-	setGetThinkingLevelHandler: (handler: GetThinkingLevelHandler) => void;
-	setSetThinkingLevelHandler: (handler: SetThinkingLevelHandler) => void;
-	setFlagValue: (name: string, value: boolean | string) => void;
-} {
-	let sendMessageHandler: SendMessageHandler = () => {};
-	let sendUserMessageHandler: SendUserMessageHandler = () => {};
-	let appendEntryHandler: AppendEntryHandler = () => {};
-	let getActiveToolsHandler: GetActiveToolsHandler = () => [];
-	let getAllToolsHandler: GetAllToolsHandler = () => [];
-	let setActiveToolsHandler: SetActiveToolsHandler = () => {};
-	let setModelHandler: SetModelHandler = async () => false;
-	let getThinkingLevelHandler: GetThinkingLevelHandler = () => "off";
-	let setThinkingLevelHandler: SetThinkingLevelHandler = () => {};
-
-	const messageRenderers = new Map<string, MessageRenderer>();
-	const commands = new Map<string, RegisteredCommand>();
-	const flags = new Map<string, ExtensionFlag>();
-	const flagValues = new Map<string, boolean | string>();
-	const shortcuts = new Map<KeyId, ExtensionShortcut>();
-
+): ExtensionAPI {
 	const api = {
+		// Registration methods - write to extension
 		on(event: string, handler: HandlerFn): void {
-			const list = handlers.get(event) ?? [];
+			const list = extension.handlers.get(event) ?? [];
 			list.push(handler);
-			handlers.set(event, list);
+			extension.handlers.set(event, list);
 		},
 
 		registerTool(tool: ToolDefinition): void {
-			tools.set(tool.name, {
+			extension.tools.set(tool.name, {
 				definition: tool,
-				extensionPath,
+				extensionPath: extension.path,
 			});
 		},
 
 		registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void {
-			commands.set(name, { name, ...options });
+			extension.commands.set(name, { name, ...options });
 		},
 
 		registerShortcut(
@@ -174,37 +133,40 @@ function createExtensionAPI(
 				handler: (ctx: import("./types.js").ExtensionContext) => Promise<void> | void;
 			},
 		): void {
-			shortcuts.set(shortcut, { shortcut, extensionPath, ...options });
+			extension.shortcuts.set(shortcut, { shortcut, extensionPath: extension.path, ...options });
 		},
 
 		registerFlag(
 			name: string,
 			options: { description?: string; type: "boolean" | "string"; default?: boolean | string },
 		): void {
-			flags.set(name, { name, extensionPath, ...options });
+			extension.flags.set(name, { name, extensionPath: extension.path, ...options });
 			if (options.default !== undefined) {
-				flagValues.set(name, options.default);
+				runtime.flagValues.set(name, options.default);
 			}
 		},
 
-		getFlag(name: string): boolean | string | undefined {
-			return flagValues.get(name);
-		},
-
 		registerMessageRenderer<T>(customType: string, renderer: MessageRenderer<T>): void {
-			messageRenderers.set(customType, renderer as MessageRenderer);
+			extension.messageRenderers.set(customType, renderer as MessageRenderer);
 		},
 
+		// Flag access - checks extension registered it, reads from runtime
+		getFlag(name: string): boolean | string | undefined {
+			if (!extension.flags.has(name)) return undefined;
+			return runtime.flagValues.get(name);
+		},
+
+		// Action methods - delegate to shared runtime
 		sendMessage(message, options): void {
-			sendMessageHandler(message, options);
+			runtime.sendMessage(message, options);
 		},
 
 		sendUserMessage(content, options): void {
-			sendUserMessageHandler(content, options);
+			runtime.sendUserMessage(content, options);
 		},
 
 		appendEntry(customType: string, data?: unknown): void {
-			appendEntryHandler(customType, data);
+			runtime.appendEntry(customType, data);
 		},
 
 		exec(command: string, args: string[], options?: ExecOptions) {
@@ -212,222 +174,86 @@ function createExtensionAPI(
 		},
 
 		getActiveTools(): string[] {
-			return getActiveToolsHandler();
+			return runtime.getActiveTools();
 		},
 
 		getAllTools(): string[] {
-			return getAllToolsHandler();
+			return runtime.getAllTools();
 		},
 
 		setActiveTools(toolNames: string[]): void {
-			setActiveToolsHandler(toolNames);
+			runtime.setActiveTools(toolNames);
 		},
 
 		setModel(model) {
-			return setModelHandler(model);
+			return runtime.setModel(model);
 		},
 
 		getThinkingLevel() {
-			return getThinkingLevelHandler();
+			return runtime.getThinkingLevel();
 		},
 
 		setThinkingLevel(level) {
-			setThinkingLevelHandler(level);
+			runtime.setThinkingLevel(level);
 		},
 
 		events: eventBus,
 	} as ExtensionAPI;
 
-	return {
-		api,
-		messageRenderers,
-		commands,
-		flags,
-		flagValues,
-		shortcuts,
-		setSendMessageHandler: (handler: SendMessageHandler) => {
-			sendMessageHandler = handler;
-		},
-		setSendUserMessageHandler: (handler: SendUserMessageHandler) => {
-			sendUserMessageHandler = handler;
-		},
-		setAppendEntryHandler: (handler: AppendEntryHandler) => {
-			appendEntryHandler = handler;
-		},
-		setGetActiveToolsHandler: (handler: GetActiveToolsHandler) => {
-			getActiveToolsHandler = handler;
-		},
-		setGetAllToolsHandler: (handler: GetAllToolsHandler) => {
-			getAllToolsHandler = handler;
-		},
-		setSetActiveToolsHandler: (handler: SetActiveToolsHandler) => {
-			setActiveToolsHandler = handler;
-		},
-		setSetModelHandler: (handler: SetModelHandler) => {
-			setModelHandler = handler;
-		},
-		setGetThinkingLevelHandler: (handler: GetThinkingLevelHandler) => {
-			getThinkingLevelHandler = handler;
-		},
-		setSetThinkingLevelHandler: (handler: SetThinkingLevelHandler) => {
-			setThinkingLevelHandler = handler;
-		},
-		setFlagValue: (name: string, value: boolean | string) => {
-			flagValues.set(name, value);
-		},
-	};
+	return api;
 }
 
-async function loadExtensionWithBun(
-	resolvedPath: string,
-	cwd: string,
-	extensionPath: string,
-	eventBus: EventBus,
-	sharedUI: { ui: ExtensionUIContext; hasUI: boolean },
-): Promise<{ extension: LoadedExtension | null; error: string | null }> {
-	try {
-		const module = await import(resolvedPath);
-		const factory = (module.default ?? module) as ExtensionFactory;
+async function loadBun(path: string) {
+	const module = await import(path);
+	const factory = (module.default ?? module) as ExtensionFactory;
+	return typeof factory !== "function" ? undefined : factory;
+}
 
-		if (typeof factory !== "function") {
-			return { extension: null, error: "Extension must export a default function" };
-		}
+async function loadJiti(path: string) {
+	const jiti = createJiti(import.meta.url, {
+		alias: getAliases(),
+	});
 
-		const handlers = new Map<string, HandlerFn[]>();
-		const tools = new Map<string, RegisteredTool>();
-		const {
-			api,
-			messageRenderers,
-			commands,
-			flags,
-			flagValues,
-			shortcuts,
-			setSendMessageHandler,
-			setSendUserMessageHandler,
-			setAppendEntryHandler,
-			setGetActiveToolsHandler,
-			setGetAllToolsHandler,
-			setSetActiveToolsHandler,
-			setSetModelHandler,
-			setGetThinkingLevelHandler,
-			setSetThinkingLevelHandler,
-			setFlagValue,
-		} = createExtensionAPI(handlers, tools, cwd, extensionPath, eventBus, sharedUI);
+	const module = await jiti.import(path, { default: true });
+	const factory = module as ExtensionFactory;
+	return typeof factory !== "function" ? undefined : factory;
+}
 
-		await factory(api);
-
-		return {
-			extension: {
-				path: extensionPath,
-				resolvedPath,
-				handlers,
-				tools,
-				messageRenderers,
-				commands,
-				flags,
-				flagValues,
-				shortcuts,
-				setSendMessageHandler,
-				setSendUserMessageHandler,
-				setAppendEntryHandler,
-				setGetActiveToolsHandler,
-				setGetAllToolsHandler,
-				setSetActiveToolsHandler,
-				setSetModelHandler,
-				setGetThinkingLevelHandler,
-				setSetThinkingLevelHandler,
-				setFlagValue,
-			},
-			error: null,
-		};
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-
-		if (message.includes("Cannot find module") && message.includes("@mariozechner/")) {
-			return {
-				extension: null,
-				error:
-					`${message}\n` +
-					"Note: Extensions importing from @mariozechner/* packages are not supported in the standalone binary.\n" +
-					"Please install pi via npm: npm install -g @mariozechner/pi-coding-agent",
-			};
-		}
-
-		return { extension: null, error: `Failed to load extension: ${message}` };
-	}
+/**
+ * Create an Extension object with empty collections.
+ */
+function createExtension(extensionPath: string, resolvedPath: string): Extension {
+	return {
+		path: extensionPath,
+		resolvedPath,
+		handlers: new Map(),
+		tools: new Map(),
+		messageRenderers: new Map(),
+		commands: new Map(),
+		flags: new Map(),
+		shortcuts: new Map(),
+	};
 }
 
 async function loadExtension(
 	extensionPath: string,
 	cwd: string,
 	eventBus: EventBus,
-	sharedUI: { ui: ExtensionUIContext; hasUI: boolean },
-): Promise<{ extension: LoadedExtension | null; error: string | null }> {
+	runtime: ExtensionRuntime,
+): Promise<{ extension: Extension | null; error: string | null }> {
 	const resolvedPath = resolvePath(extensionPath, cwd);
 
-	if (isBunBinary) {
-		return loadExtensionWithBun(resolvedPath, cwd, extensionPath, eventBus, sharedUI);
-	}
-
 	try {
-		const jiti = createJiti(import.meta.url, {
-			alias: getAliases(),
-		});
-
-		const module = await jiti.import(resolvedPath, { default: true });
-		const factory = module as ExtensionFactory;
-
-		if (typeof factory !== "function") {
-			return { extension: null, error: "Extension must export a default function" };
+		const factory = isBunBinary ? await loadBun(resolvedPath) : await loadJiti(resolvedPath);
+		if (!factory) {
+			return { extension: null, error: `Extension does not export a valid factory function: ${extensionPath}` };
 		}
 
-		const handlers = new Map<string, HandlerFn[]>();
-		const tools = new Map<string, RegisteredTool>();
-		const {
-			api,
-			messageRenderers,
-			commands,
-			flags,
-			flagValues,
-			shortcuts,
-			setSendMessageHandler,
-			setSendUserMessageHandler,
-			setAppendEntryHandler,
-			setGetActiveToolsHandler,
-			setGetAllToolsHandler,
-			setSetActiveToolsHandler,
-			setSetModelHandler,
-			setGetThinkingLevelHandler,
-			setSetThinkingLevelHandler,
-			setFlagValue,
-		} = createExtensionAPI(handlers, tools, cwd, extensionPath, eventBus, sharedUI);
-
+		const extension = createExtension(extensionPath, resolvedPath);
+		const api = createExtensionAPI(extension, runtime, cwd, eventBus);
 		await factory(api);
 
-		return {
-			extension: {
-				path: extensionPath,
-				resolvedPath,
-				handlers,
-				tools,
-				messageRenderers,
-				commands,
-				flags,
-				flagValues,
-				shortcuts,
-				setSendMessageHandler,
-				setSendUserMessageHandler,
-				setAppendEntryHandler,
-				setGetActiveToolsHandler,
-				setGetAllToolsHandler,
-				setSetActiveToolsHandler,
-				setSetModelHandler,
-				setGetThinkingLevelHandler,
-				setSetThinkingLevelHandler,
-				setFlagValue,
-			},
-			error: null,
-		};
+		return { extension, error: null };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		return { extension: null, error: `Failed to load extension: ${message}` };
@@ -435,72 +261,32 @@ async function loadExtension(
 }
 
 /**
- * Create a LoadedExtension from an inline factory function.
+ * Create an Extension from an inline factory function.
  */
 export async function loadExtensionFromFactory(
 	factory: ExtensionFactory,
 	cwd: string,
 	eventBus: EventBus,
-	sharedUI: { ui: ExtensionUIContext; hasUI: boolean },
-	name = "<inline>",
-): Promise<LoadedExtension> {
-	const handlers = new Map<string, HandlerFn[]>();
-	const tools = new Map<string, RegisteredTool>();
-	const {
-		api,
-		messageRenderers,
-		commands,
-		flags,
-		flagValues,
-		shortcuts,
-		setSendMessageHandler,
-		setSendUserMessageHandler,
-		setAppendEntryHandler,
-		setGetActiveToolsHandler,
-		setGetAllToolsHandler,
-		setSetActiveToolsHandler,
-		setSetModelHandler,
-		setGetThinkingLevelHandler,
-		setSetThinkingLevelHandler,
-		setFlagValue,
-	} = createExtensionAPI(handlers, tools, cwd, name, eventBus, sharedUI);
-
+	runtime: ExtensionRuntime,
+	extensionPath = "<inline>",
+): Promise<Extension> {
+	const extension = createExtension(extensionPath, extensionPath);
+	const api = createExtensionAPI(extension, runtime, cwd, eventBus);
 	await factory(api);
-
-	return {
-		path: name,
-		resolvedPath: name,
-		handlers,
-		tools,
-		messageRenderers,
-		commands,
-		flags,
-		flagValues,
-		shortcuts,
-		setSendMessageHandler,
-		setSendUserMessageHandler,
-		setAppendEntryHandler,
-		setGetActiveToolsHandler,
-		setGetAllToolsHandler,
-		setSetActiveToolsHandler,
-		setSetModelHandler,
-		setGetThinkingLevelHandler,
-		setSetThinkingLevelHandler,
-		setFlagValue,
-	};
+	return extension;
 }
 
 /**
  * Load extensions from paths.
  */
 export async function loadExtensions(paths: string[], cwd: string, eventBus?: EventBus): Promise<LoadExtensionsResult> {
-	const extensions: LoadedExtension[] = [];
+	const extensions: Extension[] = [];
 	const errors: Array<{ path: string; error: string }> = [];
 	const resolvedEventBus = eventBus ?? createEventBus();
-	const sharedUI = { ui: createNoOpUIContext(), hasUI: false };
+	const runtime = createExtensionRuntime();
 
 	for (const extPath of paths) {
-		const { extension, error } = await loadExtension(extPath, cwd, resolvedEventBus, sharedUI);
+		const { extension, error } = await loadExtension(extPath, cwd, resolvedEventBus, runtime);
 
 		if (error) {
 			errors.push({ path: extPath, error });
@@ -515,10 +301,7 @@ export async function loadExtensions(paths: string[], cwd: string, eventBus?: Ev
 	return {
 		extensions,
 		errors,
-		setUIContext(uiContext, hasUI) {
-			sharedUI.ui = uiContext;
-			sharedUI.hasUI = hasUI;
-		},
+		runtime,
 	};
 }
 

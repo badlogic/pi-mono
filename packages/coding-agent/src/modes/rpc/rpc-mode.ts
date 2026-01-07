@@ -231,35 +231,63 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	// Set up extensions with RPC-based UI context
 	const extensionRunner = session.extensionRunner;
 	if (extensionRunner) {
-		extensionRunner.initialize({
-			getModel: () => session.agent.state.model,
-			sendMessageHandler: (message, options) => {
-				session.sendCustomMessage(message, options).catch((e) => {
-					output(error(undefined, "extension_send", e.message));
-				});
+		extensionRunner.initialize(
+			// ExtensionActions
+			{
+				sendMessage: (message, options) => {
+					session.sendCustomMessage(message, options).catch((e) => {
+						output(error(undefined, "extension_send", e.message));
+					});
+				},
+				sendUserMessage: (content, options) => {
+					session.sendUserMessage(content, options).catch((e) => {
+						output(error(undefined, "extension_send_user", e.message));
+					});
+				},
+				appendEntry: (customType, data) => {
+					session.sessionManager.appendCustomEntry(customType, data);
+				},
+				getActiveTools: () => session.getActiveToolNames(),
+				getAllTools: () => session.getAllToolNames(),
+				setActiveTools: (toolNames: string[]) => session.setActiveToolsByName(toolNames),
+				setModel: async (model) => {
+					const key = await session.modelRegistry.getApiKey(model);
+					if (!key) return false;
+					await session.setModel(model);
+					return true;
+				},
+				getThinkingLevel: () => session.thinkingLevel,
+				setThinkingLevel: (level) => session.setThinkingLevel(level),
 			},
-			sendUserMessageHandler: (content, options) => {
-				session.sendUserMessage(content, options).catch((e) => {
-					output(error(undefined, "extension_send_user", e.message));
-				});
+			// ExtensionContextActions
+			{
+				getModel: () => session.agent.state.model,
+				isIdle: () => !session.isStreaming,
+				abort: () => session.abort(),
+				hasPendingMessages: () => session.pendingMessageCount > 0,
 			},
-			appendEntryHandler: (customType, data) => {
-				session.sessionManager.appendCustomEntry(customType, data);
+			// ExtensionCommandContextActions - commands invokable via prompt("/command")
+			{
+				waitForIdle: () => session.agent.waitForIdle(),
+				newSession: async (options) => {
+					const success = await session.newSession({ parentSession: options?.parentSession });
+					// Note: setup callback runs but no UI feedback in RPC mode
+					if (success && options?.setup) {
+						await options.setup(session.sessionManager);
+					}
+					return { cancelled: !success };
+				},
+				branch: async (entryId) => {
+					const result = await session.branch(entryId);
+					return { cancelled: result.cancelled };
+				},
+				navigateTree: async (targetId, options) => {
+					const result = await session.navigateTree(targetId, { summarize: options?.summarize });
+					return { cancelled: result.cancelled };
+				},
 			},
-			getActiveToolsHandler: () => session.getActiveToolNames(),
-			getAllToolsHandler: () => session.getAllToolNames(),
-			setActiveToolsHandler: (toolNames: string[]) => session.setActiveToolsByName(toolNames),
-			setModelHandler: async (model) => {
-				const key = await session.modelRegistry.getApiKey(model);
-				if (!key) return false;
-				await session.setModel(model);
-				return true;
-			},
-			getThinkingLevelHandler: () => session.thinkingLevel,
-			setThinkingLevelHandler: (level) => session.setThinkingLevel(level),
-			uiContext: createExtensionUIContext(),
-			hasUI: false,
-		});
+			createExtensionUIContext(),
+		);
 		extensionRunner.onError((err) => {
 			output({ type: "extension_error", extensionPath: err.extensionPath, event: err.event, error: err.error });
 		});

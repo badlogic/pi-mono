@@ -33,13 +33,13 @@ import type {
 	ExtensionRunner,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
-	LoadedExtension,
 } from "../../core/extensions/index.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { loadSkills } from "../../core/skills.js";
 import { loadProjectContextFiles } from "../../core/system-prompt.js";
+import { allTools } from "../../core/tools/index.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
@@ -184,8 +184,6 @@ export class InteractiveMode {
 		session: AgentSession,
 		version: string,
 		changelogMarkdown: string | undefined = undefined,
-		_extensions: LoadedExtension[] = [],
-		private setExtensionUIContext: (uiContext: ExtensionUIContext, hasUI: boolean) => void = () => {},
 		fdPath: string | undefined = undefined,
 	) {
 		this.session = session;
@@ -429,123 +427,124 @@ export class InteractiveMode {
 			}
 		}
 
-		// Create and set extension UI context
-		const uiContext = this.createExtensionUIContext();
-		this.setExtensionUIContext(uiContext, true);
-
 		const extensionRunner = this.session.extensionRunner;
 		if (!extensionRunner) {
 			return; // No extensions loaded
 		}
 
-		extensionRunner.initialize({
-			getModel: () => this.session.model,
-			sendMessageHandler: (message, options) => {
-				const wasStreaming = this.session.isStreaming;
-				this.session
-					.sendCustomMessage(message, options)
-					.then(() => {
-						// For non-streaming cases with display=true, update UI
-						// (streaming cases update via message_end event)
-						if (!wasStreaming && message.display) {
-							this.rebuildChatFromMessages();
-						}
-					})
-					.catch((err) => {
-						this.showError(`Extension sendMessage failed: ${err instanceof Error ? err.message : String(err)}`);
+		// Create extension UI context
+		const uiContext = this.createExtensionUIContext();
+
+		extensionRunner.initialize(
+			// ExtensionActions - for pi.* API
+			{
+				sendMessage: (message, options) => {
+					const wasStreaming = this.session.isStreaming;
+					this.session
+						.sendCustomMessage(message, options)
+						.then(() => {
+							if (!wasStreaming && message.display) {
+								this.rebuildChatFromMessages();
+							}
+						})
+						.catch((err) => {
+							this.showError(
+								`Extension sendMessage failed: ${err instanceof Error ? err.message : String(err)}`,
+							);
+						});
+				},
+				sendUserMessage: (content, options) => {
+					this.session.sendUserMessage(content, options).catch((err) => {
+						this.showError(
+							`Extension sendUserMessage failed: ${err instanceof Error ? err.message : String(err)}`,
+						);
 					});
+				},
+				appendEntry: (customType, data) => {
+					this.sessionManager.appendCustomEntry(customType, data);
+				},
+				getActiveTools: () => this.session.getActiveToolNames(),
+				getAllTools: () => this.session.getAllToolNames(),
+				setActiveTools: (toolNames) => this.session.setActiveToolsByName(toolNames),
+				setModel: async (model) => {
+					const key = await this.session.modelRegistry.getApiKey(model);
+					if (!key) return false;
+					await this.session.setModel(model);
+					return true;
+				},
+				getThinkingLevel: () => this.session.thinkingLevel,
+				setThinkingLevel: (level) => this.session.setThinkingLevel(level),
 			},
-			sendUserMessageHandler: (content, options) => {
-				this.session.sendUserMessage(content, options).catch((err) => {
-					this.showError(`Extension sendUserMessage failed: ${err instanceof Error ? err.message : String(err)}`);
-				});
+			// ExtensionContextActions - for ctx.* in event handlers
+			{
+				getModel: () => this.session.model,
+				isIdle: () => !this.session.isStreaming,
+				abort: () => this.session.abort(),
+				hasPendingMessages: () => this.session.pendingMessageCount > 0,
 			},
-			appendEntryHandler: (customType, data) => {
-				this.sessionManager.appendCustomEntry(customType, data);
+			// ExtensionCommandContextActions - for ctx.* in command handlers
+			{
+				waitForIdle: () => this.session.agent.waitForIdle(),
+				newSession: async (options) => {
+					if (this.loadingAnimation) {
+						this.loadingAnimation.stop();
+						this.loadingAnimation = undefined;
+					}
+					this.statusContainer.clear();
+
+					const success = await this.session.newSession({ parentSession: options?.parentSession });
+					if (!success) {
+						return { cancelled: true };
+					}
+
+					if (options?.setup) {
+						await options.setup(this.sessionManager);
+					}
+
+					this.chatContainer.clear();
+					this.pendingMessagesContainer.clear();
+					this.compactionQueuedMessages = [];
+					this.streamingComponent = undefined;
+					this.streamingMessage = undefined;
+					this.pendingTools.clear();
+
+					this.chatContainer.addChild(new Spacer(1));
+					this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
+					this.ui.requestRender();
+
+					return { cancelled: false };
+				},
+				branch: async (entryId) => {
+					const result = await this.session.branch(entryId);
+					if (result.cancelled) {
+						return { cancelled: true };
+					}
+
+					this.chatContainer.clear();
+					this.renderInitialMessages();
+					this.editor.setText(result.selectedText);
+					this.showStatus("Branched to new session");
+
+					return { cancelled: false };
+				},
+				navigateTree: async (targetId, options) => {
+					const result = await this.session.navigateTree(targetId, { summarize: options?.summarize });
+					if (result.cancelled) {
+						return { cancelled: true };
+					}
+
+					this.chatContainer.clear();
+					this.renderInitialMessages();
+					if (result.editorText) {
+						this.editor.setText(result.editorText);
+					}
+					this.showStatus("Navigated to selected point");
+
+					return { cancelled: false };
+				},
 			},
-			getActiveToolsHandler: () => this.session.getActiveToolNames(),
-			getAllToolsHandler: () => this.session.getAllToolNames(),
-			setActiveToolsHandler: (toolNames) => this.session.setActiveToolsByName(toolNames),
-			newSessionHandler: async (options) => {
-				// Stop any loading animation
-				if (this.loadingAnimation) {
-					this.loadingAnimation.stop();
-					this.loadingAnimation = undefined;
-				}
-				this.statusContainer.clear();
-
-				// Create new session
-				const success = await this.session.newSession({ parentSession: options?.parentSession });
-				if (!success) {
-					return { cancelled: true };
-				}
-
-				// Call setup callback if provided
-				if (options?.setup) {
-					await options.setup(this.sessionManager);
-				}
-
-				// Clear UI state
-				this.chatContainer.clear();
-				this.pendingMessagesContainer.clear();
-				this.compactionQueuedMessages = [];
-				this.streamingComponent = undefined;
-				this.streamingMessage = undefined;
-				this.pendingTools.clear();
-
-				this.chatContainer.addChild(new Spacer(1));
-				this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
-				this.ui.requestRender();
-
-				return { cancelled: false };
-			},
-			branchHandler: async (entryId) => {
-				const result = await this.session.branch(entryId);
-				if (result.cancelled) {
-					return { cancelled: true };
-				}
-
-				// Update UI
-				this.chatContainer.clear();
-				this.renderInitialMessages();
-				this.editor.setText(result.selectedText);
-				this.showStatus("Branched to new session");
-
-				return { cancelled: false };
-			},
-			navigateTreeHandler: async (targetId, options) => {
-				const result = await this.session.navigateTree(targetId, { summarize: options?.summarize });
-				if (result.cancelled) {
-					return { cancelled: true };
-				}
-
-				// Update UI
-				this.chatContainer.clear();
-				this.renderInitialMessages();
-				if (result.editorText) {
-					this.editor.setText(result.editorText);
-				}
-				this.showStatus("Navigated to selected point");
-
-				return { cancelled: false };
-			},
-			setModelHandler: async (model) => {
-				const key = await this.session.modelRegistry.getApiKey(model);
-				if (!key) return false;
-				await this.session.setModel(model);
-				return true;
-			},
-			getThinkingLevelHandler: () => this.session.thinkingLevel,
-			setThinkingLevelHandler: (level) => this.session.setThinkingLevel(level),
-			isIdle: () => !this.session.isStreaming,
-			waitForIdle: () => this.session.agent.waitForIdle(),
-			abort: () => {
-				this.session.abort();
-			},
-			hasPendingMessages: () => this.session.pendingMessageCount > 0,
 			uiContext,
-			hasUI: true,
-		});
+		);
 
 		// Subscribe to extension errors
 		extensionRunner.onError((error) => {
@@ -561,6 +560,24 @@ export class InteractiveMode {
 			const extList = extensionPaths.map((p) => theme.fg("dim", `  ${p}`)).join("\n");
 			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded extensions:\n") + extList, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		// Warn about built-in tool overrides
+		const builtInToolNames = new Set(Object.keys(allTools));
+		const registeredTools = extensionRunner.getAllRegisteredTools();
+		for (const tool of registeredTools) {
+			if (builtInToolNames.has(tool.definition.name)) {
+				this.chatContainer.addChild(
+					new Text(
+						theme.fg(
+							"warning",
+							`Warning: Extension "${tool.extensionPath}" overrides built-in tool "${tool.definition.name}"`,
+						),
+						0,
+						0,
+					),
+				);
+			}
 		}
 
 		// Emit session_start event

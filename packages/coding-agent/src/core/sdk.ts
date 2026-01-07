@@ -28,11 +28,11 @@ import { AgentSession } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
 import {
+	createExtensionRuntime,
 	discoverAndLoadExtensions,
 	type ExtensionFactory,
 	ExtensionRunner,
 	type LoadExtensionsResult,
-	type LoadedExtension,
 	loadExtensionFromFactory,
 	type ToolDefinition,
 	wrapRegisteredTools,
@@ -106,10 +106,10 @@ export interface CreateAgentSessionOptions {
 	/** Additional extension paths to load (merged with discovery). */
 	additionalExtensionPaths?: string[];
 	/**
-	 * Pre-loaded extensions (skips file discovery).
+	 * Pre-loaded extensions result (skips file discovery).
 	 * @internal Used by CLI when extensions are loaded early to parse custom flags.
 	 */
-	preloadedExtensions?: LoadedExtension[];
+	preloadedExtensionsResult?: LoadExtensionsResult;
 
 	/** Shared event bus for tool/extension communication. Default: creates new bus. */
 	eventBus?: EventBus;
@@ -438,20 +438,17 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// Load extensions (discovers from standard locations + configured paths)
 	let extensionsResult: LoadExtensionsResult;
-	if (options.preloadedExtensions !== undefined && options.preloadedExtensions.length > 0) {
+	if (options.preloadedExtensionsResult !== undefined) {
 		// Use pre-loaded extensions (from early CLI flag discovery)
-		extensionsResult = {
-			extensions: options.preloadedExtensions,
-			errors: [],
-			setUIContext: () => {},
-		};
+		extensionsResult = options.preloadedExtensionsResult;
 	} else if (options.extensions !== undefined) {
 		// User explicitly provided extensions array (even if empty) - skip discovery
-		// Inline factories from options.extensions are loaded below
+		// Create runtime for inline extensions
+		const runtime = createExtensionRuntime();
 		extensionsResult = {
 			extensions: [],
 			errors: [],
-			setUIContext: () => {},
+			runtime,
 		};
 	} else {
 		// Discover extensions, merging with additional paths
@@ -465,45 +462,29 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// Load inline extensions from factories
 	if (options.extensions && options.extensions.length > 0) {
-		// Create shared UI context holder that will be set later
-		const uiHolder: { ui: any; hasUI: boolean } = {
-			ui: {
-				select: async () => undefined,
-				confirm: async () => false,
-				input: async () => undefined,
-				notify: () => {},
-				setStatus: () => {},
-				setWidget: () => {},
-				setFooter: () => {},
-				setTitle: () => {},
-				custom: async () => undefined as never,
-				setEditorText: () => {},
-				getEditorText: () => "",
-				editor: async () => undefined,
-				get theme() {
-					return {} as any;
-				},
-			},
-			hasUI: false,
-		};
 		for (let i = 0; i < options.extensions.length; i++) {
 			const factory = options.extensions[i];
-			const loaded = await loadExtensionFromFactory(factory, cwd, eventBus, uiHolder, `<inline-${i}>`);
+			const loaded = await loadExtensionFromFactory(
+				factory,
+				cwd,
+				eventBus,
+				extensionsResult.runtime,
+				`<inline-${i}>`,
+			);
 			extensionsResult.extensions.push(loaded);
 		}
-		// Extend setUIContext to update inline extensions too
-		const originalSetUIContext = extensionsResult.setUIContext;
-		extensionsResult.setUIContext = (uiContext, hasUI) => {
-			originalSetUIContext(uiContext, hasUI);
-			uiHolder.ui = uiContext;
-			uiHolder.hasUI = hasUI;
-		};
 	}
 
 	// Create extension runner if we have extensions
 	let extensionRunner: ExtensionRunner | undefined;
 	if (extensionsResult.extensions.length > 0) {
-		extensionRunner = new ExtensionRunner(extensionsResult.extensions, cwd, sessionManager, modelRegistry);
+		extensionRunner = new ExtensionRunner(
+			extensionsResult.extensions,
+			extensionsResult.runtime,
+			cwd,
+			sessionManager,
+			modelRegistry,
+		);
 	}
 
 	// Wrap extension-registered tools and SDK-provided custom tools with context getter
@@ -536,7 +517,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				return {} as any;
 			},
 		},
-		hasUI: extensionRunner?.getHasUI() ?? false,
+		hasUI: extensionRunner?.hasUI() ?? false,
 		cwd,
 		sessionManager,
 		modelRegistry,

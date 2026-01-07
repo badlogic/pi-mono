@@ -9,32 +9,27 @@ import { theme } from "../../modes/interactive/theme/theme.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
 import type {
-	AppendEntryHandler,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
 	ContextEvent,
 	ContextEventResult,
+	Extension,
+	ExtensionActions,
 	ExtensionCommandContext,
+	ExtensionCommandContextActions,
 	ExtensionContext,
+	ExtensionContextActions,
 	ExtensionError,
 	ExtensionEvent,
 	ExtensionFlag,
+	ExtensionRuntime,
 	ExtensionShortcut,
 	ExtensionUIContext,
-	GetActiveToolsHandler,
-	GetAllToolsHandler,
-	GetThinkingLevelHandler,
-	LoadedExtension,
 	MessageRenderer,
 	RegisteredCommand,
 	RegisteredTool,
-	SendMessageHandler,
-	SendUserMessageHandler,
 	SessionBeforeCompactResult,
 	SessionBeforeTreeResult,
-	SetActiveToolsHandler,
-	SetModelHandler,
-	SetThinkingLevelHandler,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEventResult,
@@ -81,9 +76,9 @@ const noOpUIContext: ExtensionUIContext = {
 };
 
 export class ExtensionRunner {
-	private extensions: LoadedExtension[];
+	private extensions: Extension[];
+	private runtime: ExtensionRuntime;
 	private uiContext: ExtensionUIContext;
-	private hasUI: boolean;
 	private cwd: string;
 	private sessionManager: SessionManager;
 	private modelRegistry: ModelRegistry;
@@ -98,78 +93,60 @@ export class ExtensionRunner {
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
 
 	constructor(
-		extensions: LoadedExtension[],
+		extensions: Extension[],
+		runtime: ExtensionRuntime,
 		cwd: string,
 		sessionManager: SessionManager,
 		modelRegistry: ModelRegistry,
 	) {
 		this.extensions = extensions;
+		this.runtime = runtime;
 		this.uiContext = noOpUIContext;
-		this.hasUI = false;
 		this.cwd = cwd;
 		this.sessionManager = sessionManager;
 		this.modelRegistry = modelRegistry;
 	}
 
-	initialize(options: {
-		getModel: () => Model<any> | undefined;
-		sendMessageHandler: SendMessageHandler;
-		sendUserMessageHandler: SendUserMessageHandler;
-		appendEntryHandler: AppendEntryHandler;
-		getActiveToolsHandler: GetActiveToolsHandler;
-		getAllToolsHandler: GetAllToolsHandler;
-		setActiveToolsHandler: SetActiveToolsHandler;
-		setModelHandler: SetModelHandler;
-		getThinkingLevelHandler: GetThinkingLevelHandler;
-		setThinkingLevelHandler: SetThinkingLevelHandler;
-		newSessionHandler?: NewSessionHandler;
-		branchHandler?: BranchHandler;
-		navigateTreeHandler?: NavigateTreeHandler;
-		isIdle?: () => boolean;
-		waitForIdle?: () => Promise<void>;
-		abort?: () => void;
-		hasPendingMessages?: () => boolean;
-		uiContext?: ExtensionUIContext;
-		hasUI?: boolean;
-	}): void {
-		this.getModel = options.getModel;
-		this.isIdleFn = options.isIdle ?? (() => true);
-		this.waitForIdleFn = options.waitForIdle ?? (async () => {});
-		this.abortFn = options.abort ?? (() => {});
-		this.hasPendingMessagesFn = options.hasPendingMessages ?? (() => false);
+	initialize(
+		actions: ExtensionActions,
+		contextActions: ExtensionContextActions,
+		commandContextActions?: ExtensionCommandContextActions,
+		uiContext?: ExtensionUIContext,
+	): void {
+		// Copy actions into the shared runtime (all extension APIs reference this)
+		this.runtime.sendMessage = actions.sendMessage;
+		this.runtime.sendUserMessage = actions.sendUserMessage;
+		this.runtime.appendEntry = actions.appendEntry;
+		this.runtime.getActiveTools = actions.getActiveTools;
+		this.runtime.getAllTools = actions.getAllTools;
+		this.runtime.setActiveTools = actions.setActiveTools;
+		this.runtime.setModel = actions.setModel;
+		this.runtime.getThinkingLevel = actions.getThinkingLevel;
+		this.runtime.setThinkingLevel = actions.setThinkingLevel;
 
-		if (options.newSessionHandler) {
-			this.newSessionHandler = options.newSessionHandler;
-		}
-		if (options.branchHandler) {
-			this.branchHandler = options.branchHandler;
-		}
-		if (options.navigateTreeHandler) {
-			this.navigateTreeHandler = options.navigateTreeHandler;
+		// Context actions (required)
+		this.getModel = contextActions.getModel;
+		this.isIdleFn = contextActions.isIdle;
+		this.abortFn = contextActions.abort;
+		this.hasPendingMessagesFn = contextActions.hasPendingMessages;
+
+		// Command context actions (optional, only for interactive mode)
+		if (commandContextActions) {
+			this.waitForIdleFn = commandContextActions.waitForIdle;
+			this.newSessionHandler = commandContextActions.newSession;
+			this.branchHandler = commandContextActions.branch;
+			this.navigateTreeHandler = commandContextActions.navigateTree;
 		}
 
-		for (const ext of this.extensions) {
-			ext.setSendMessageHandler(options.sendMessageHandler);
-			ext.setSendUserMessageHandler(options.sendUserMessageHandler);
-			ext.setAppendEntryHandler(options.appendEntryHandler);
-			ext.setGetActiveToolsHandler(options.getActiveToolsHandler);
-			ext.setGetAllToolsHandler(options.getAllToolsHandler);
-			ext.setSetActiveToolsHandler(options.setActiveToolsHandler);
-			ext.setSetModelHandler(options.setModelHandler);
-			ext.setGetThinkingLevelHandler(options.getThinkingLevelHandler);
-			ext.setSetThinkingLevelHandler(options.setThinkingLevelHandler);
-		}
-
-		this.uiContext = options.uiContext ?? noOpUIContext;
-		this.hasUI = options.hasUI ?? false;
+		this.uiContext = uiContext ?? noOpUIContext;
 	}
 
-	getUIContext(): ExtensionUIContext | null {
+	getUIContext(): ExtensionUIContext {
 		return this.uiContext;
 	}
 
-	getHasUI(): boolean {
-		return this.hasUI;
+	hasUI(): boolean {
+		return this.uiContext !== noOpUIContext;
 	}
 
 	getExtensionPaths(): string[] {
@@ -198,11 +175,7 @@ export class ExtensionRunner {
 	}
 
 	setFlagValue(name: string, value: boolean | string): void {
-		for (const ext of this.extensions) {
-			if (ext.flags.has(name)) {
-				ext.setFlagValue(name, value);
-			}
-		}
+		this.runtime.flagValues.set(name, value);
 	}
 
 	private static readonly RESERVED_SHORTCUTS = new Set([
@@ -301,7 +274,7 @@ export class ExtensionRunner {
 	private createContext(): ExtensionContext {
 		return {
 			ui: this.uiContext,
-			hasUI: this.hasUI,
+			hasUI: this.hasUI(),
 			cwd: this.cwd,
 			sessionManager: this.sessionManager,
 			modelRegistry: this.modelRegistry,

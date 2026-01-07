@@ -18,7 +18,7 @@ import type { AgentSession } from "./core/agent-session.js";
 
 import { createEventBus } from "./core/event-bus.js";
 import { exportFromFile } from "./core/export-html/index.js";
-import { discoverAndLoadExtensions, type ExtensionUIContext, type LoadedExtension } from "./core/extensions/index.js";
+import { discoverAndLoadExtensions, type LoadExtensionsResult } from "./core/extensions/index.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { type CreateAgentSessionOptions, createAgentSession, discoverAuthStorage, discoverModels } from "./core/sdk.js";
@@ -60,13 +60,11 @@ async function runInteractiveMode(
 	migratedProviders: string[],
 	versionCheckPromise: Promise<string | undefined>,
 	initialMessages: string[],
-	extensions: LoadedExtension[],
-	setExtensionUIContext: (uiContext: ExtensionUIContext, hasUI: boolean) => void,
 	initialMessage?: string,
 	initialImages?: ImageContent[],
 	fdPath: string | undefined = undefined,
 ): Promise<void> {
-	const mode = new InteractiveMode(session, version, changelogMarkdown, extensions, setExtensionUIContext, fdPath);
+	const mode = new InteractiveMode(session, version, changelogMarkdown, fdPath);
 
 	await mode.init();
 
@@ -236,7 +234,7 @@ function buildSessionOptions(
 	sessionManager: SessionManager | undefined,
 	modelRegistry: ModelRegistry,
 	settingsManager: SettingsManager,
-	preloadedExtensions?: LoadedExtension[],
+	extensionsResult?: LoadExtensionsResult,
 ): CreateAgentSessionOptions {
 	const options: CreateAgentSessionOptions = {};
 
@@ -302,8 +300,8 @@ function buildSessionOptions(
 	}
 
 	// Pre-loaded extensions (from early CLI flag discovery)
-	if (preloadedExtensions && preloadedExtensions.length > 0) {
-		options.preloadedExtensions = preloadedExtensions;
+	if (extensionsResult && extensionsResult.extensions.length > 0) {
+		options.preloadedExtensionsResult = extensionsResult;
 	}
 
 	return options;
@@ -332,12 +330,12 @@ export async function main(args: string[]) {
 	time("SettingsManager.create");
 	// Merge CLI --extension args with settings.json extensions
 	const extensionPaths = [...settingsManager.getExtensionPaths(), ...(firstPass.extensions ?? [])];
-	const { extensions: loadedExtensions } = await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus);
+	const extensionsResult = await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus);
 	time("discoverExtensionFlags");
 
 	// Collect all extension flags
 	const extensionFlags = new Map<string, { type: "boolean" | "string" }>();
-	for (const ext of loadedExtensions) {
+	for (const ext of extensionsResult.extensions) {
 		for (const [name, flag] of ext.flags) {
 			extensionFlags.set(name, { type: flag.type });
 		}
@@ -347,13 +345,9 @@ export async function main(args: string[]) {
 	const parsed = parseArgs(args, extensionFlags);
 	time("parseArgs");
 
-	// Pass flag values to extensions
+	// Pass flag values to extensions via runtime
 	for (const [name, value] of parsed.unknownFlags) {
-		for (const ext of loadedExtensions) {
-			if (ext.flags.has(name)) {
-				ext.setFlagValue(name, value);
-			}
-		}
+		extensionsResult.runtime.flagValues.set(name, value);
 	}
 
 	if (parsed.version) {
@@ -436,7 +430,7 @@ export async function main(args: string[]) {
 		sessionManager,
 		modelRegistry,
 		settingsManager,
-		loadedExtensions,
+		extensionsResult,
 	);
 	sessionOptions.authStorage = authStorage;
 	sessionOptions.modelRegistry = modelRegistry;
@@ -452,7 +446,7 @@ export async function main(args: string[]) {
 	}
 
 	time("buildSessionOptions");
-	const { session, extensionsResult, modelFallbackMessage } = await createAgentSession(sessionOptions);
+	const { session, modelFallbackMessage } = await createAgentSession(sessionOptions);
 	time("createAgentSession");
 
 	if (!isInteractive && !session.model) {
@@ -505,8 +499,6 @@ export async function main(args: string[]) {
 			migratedProviders,
 			versionCheckPromise,
 			parsed.messages,
-			extensionsResult.extensions,
-			extensionsResult.setUIContext,
 			initialMessage,
 			initialImages,
 			fdPath,

@@ -784,14 +784,17 @@ interface CreateAgentSessionResult {
   // The session
   session: AgentSession;
   
-  // Custom tools (for UI setup)
-  customToolsResult: {
-    tools: LoadedCustomTool[];
-    setUIContext: (ctx, hasUI) => void;
-  };
+  // Extensions result (for runner setup)
+  extensionsResult: LoadExtensionsResult;
   
   // Warning if session model couldn't be restored
   modelFallbackMessage?: string;
+}
+
+interface LoadExtensionsResult {
+  extensions: Extension[];
+  errors: Array<{ path: string; error: string }>;
+  runtime: ExtensionRuntime;
 }
 ```
 

@@ -11,8 +11,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import {
+	createExtensionRuntime,
+	type Extension,
 	ExtensionRunner,
-	type LoadedExtension,
 	type SessionBeforeCompactEvent,
 	type SessionCompactEvent,
 	type SessionEvent,
@@ -21,7 +22,6 @@ import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
-import { theme } from "../src/modes/interactive/theme/theme.js";
 
 const API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
 
@@ -49,7 +49,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 	function createExtension(
 		onBeforeCompact?: (event: SessionBeforeCompactEvent) => { cancel?: boolean; compaction?: any } | undefined,
 		onCompact?: (event: SessionCompactEvent) => void,
-	): LoadedExtension {
+	): Extension {
 		const handlers = new Map<string, ((event: any, ctx: any) => Promise<any>)[]>();
 
 		handlers.set("session_before_compact", [
@@ -80,22 +80,11 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 			messageRenderers: new Map(),
 			commands: new Map(),
 			flags: new Map(),
-			flagValues: new Map(),
 			shortcuts: new Map(),
-			setSendMessageHandler: () => {},
-			setSendUserMessageHandler: () => {},
-			setAppendEntryHandler: () => {},
-			setGetActiveToolsHandler: () => {},
-			setGetAllToolsHandler: () => {},
-			setSetActiveToolsHandler: () => {},
-			setSetModelHandler: () => {},
-			setGetThinkingLevelHandler: () => {},
-			setSetThinkingLevelHandler: () => {},
-			setFlagValue: () => {},
 		};
 	}
 
-	function createSession(extensions: LoadedExtension[]) {
+	function createSession(extensions: Extension[]) {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 		const agent = new Agent({
 			getApiKey: () => API_KEY,
@@ -111,39 +100,29 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 		const authStorage = new AuthStorage(join(tempDir, "auth.json"));
 		const modelRegistry = new ModelRegistry(authStorage);
 
-		extensionRunner = new ExtensionRunner(extensions, tempDir, sessionManager, modelRegistry);
-		extensionRunner.initialize({
-			getModel: () => session.model,
-			sendMessageHandler: async () => {},
-			sendUserMessageHandler: async () => {},
-			appendEntryHandler: async () => {},
-			getActiveToolsHandler: () => [],
-			getAllToolsHandler: () => [],
-			setActiveToolsHandler: () => {},
-			setModelHandler: async () => false,
-			getThinkingLevelHandler: () => "off",
-			setThinkingLevelHandler: () => {},
-			uiContext: {
-				select: async () => undefined,
-				confirm: async () => false,
-				input: async () => undefined,
-				notify: () => {},
-				setStatus: () => {},
-				setWidget: () => {},
-				setFooter: () => {},
-				setHeader: () => {},
-				setTitle: () => {},
-				custom: async () => undefined as never,
-				setEditorText: () => {},
-				getEditorText: () => "",
-				editor: async () => undefined,
-				setEditorComponent: () => {},
-				get theme() {
-					return theme;
-				},
+		const runtime = createExtensionRuntime();
+		extensionRunner = new ExtensionRunner(extensions, runtime, tempDir, sessionManager, modelRegistry);
+		extensionRunner.initialize(
+			// ExtensionActions
+			{
+				sendMessage: async () => {},
+				sendUserMessage: async () => {},
+				appendEntry: async () => {},
+				getActiveTools: () => [],
+				getAllTools: () => [],
+				setActiveTools: () => {},
+				setModel: async () => false,
+				getThinkingLevel: () => "off",
+				setThinkingLevel: () => {},
 			},
-			hasUI: false,
-		});
+			// ExtensionContextActions
+			{
+				getModel: () => session.model,
+				isIdle: () => !session.isStreaming,
+				abort: () => session.abort(),
+				hasPendingMessages: () => session.pendingMessageCount > 0,
+			},
+		);
 
 		session = new AgentSession({
 			agent,
@@ -264,7 +243,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 	}, 120000);
 
 	it("should continue with default compaction if extension throws error", async () => {
-		const throwingExtension: LoadedExtension = {
+		const throwingExtension: Extension = {
 			path: "throwing-extension",
 			resolvedPath: "/test/throwing-extension.ts",
 			handlers: new Map<string, ((event: any, ctx: any) => Promise<any>)[]>([
@@ -291,18 +270,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 			messageRenderers: new Map(),
 			commands: new Map(),
 			flags: new Map(),
-			flagValues: new Map(),
 			shortcuts: new Map(),
-			setSendMessageHandler: () => {},
-			setSendUserMessageHandler: () => {},
-			setAppendEntryHandler: () => {},
-			setGetActiveToolsHandler: () => {},
-			setGetAllToolsHandler: () => {},
-			setSetActiveToolsHandler: () => {},
-			setSetModelHandler: () => {},
-			setGetThinkingLevelHandler: () => {},
-			setSetThinkingLevelHandler: () => {},
-			setFlagValue: () => {},
 		};
 
 		createSession([throwingExtension]);
@@ -323,7 +291,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 	it("should call multiple extensions in order", async () => {
 		const callOrder: string[] = [];
 
-		const extension1: LoadedExtension = {
+		const extension1: Extension = {
 			path: "extension1",
 			resolvedPath: "/test/extension1.ts",
 			handlers: new Map<string, ((event: any, ctx: any) => Promise<any>)[]>([
@@ -350,21 +318,10 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 			messageRenderers: new Map(),
 			commands: new Map(),
 			flags: new Map(),
-			flagValues: new Map(),
 			shortcuts: new Map(),
-			setSendMessageHandler: () => {},
-			setSendUserMessageHandler: () => {},
-			setAppendEntryHandler: () => {},
-			setGetActiveToolsHandler: () => {},
-			setGetAllToolsHandler: () => {},
-			setSetActiveToolsHandler: () => {},
-			setSetModelHandler: () => {},
-			setGetThinkingLevelHandler: () => {},
-			setSetThinkingLevelHandler: () => {},
-			setFlagValue: () => {},
 		};
 
-		const extension2: LoadedExtension = {
+		const extension2: Extension = {
 			path: "extension2",
 			resolvedPath: "/test/extension2.ts",
 			handlers: new Map<string, ((event: any, ctx: any) => Promise<any>)[]>([
@@ -391,18 +348,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 			messageRenderers: new Map(),
 			commands: new Map(),
 			flags: new Map(),
-			flagValues: new Map(),
 			shortcuts: new Map(),
-			setSendMessageHandler: () => {},
-			setSendUserMessageHandler: () => {},
-			setAppendEntryHandler: () => {},
-			setGetActiveToolsHandler: () => {},
-			setGetAllToolsHandler: () => {},
-			setSetActiveToolsHandler: () => {},
-			setSetModelHandler: () => {},
-			setGetThinkingLevelHandler: () => {},
-			setSetThinkingLevelHandler: () => {},
-			setFlagValue: () => {},
 		};
 
 		createSession([extension1, extension2]);

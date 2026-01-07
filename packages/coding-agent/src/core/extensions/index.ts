@@ -2,7 +2,12 @@
  * Extension system for lifecycle events and custom tools.
  */
 
-export { discoverAndLoadExtensions, loadExtensionFromFactory, loadExtensions } from "./loader.js";
+export {
+	createExtensionRuntime,
+	discoverAndLoadExtensions,
+	loadExtensionFromFactory,
+	loadExtensions,
+} from "./loader.js";
 export type { BranchHandler, ExtensionErrorListener, NavigateTreeHandler, NewSessionHandler } from "./runner.js";
 export { ExtensionRunner } from "./runner.js";
 export type {
@@ -25,17 +30,23 @@ export type {
 	EditToolResultEvent,
 	ExecOptions,
 	ExecResult,
+	Extension,
+	ExtensionActions,
 	// API
 	ExtensionAPI,
 	ExtensionCommandContext,
+	ExtensionCommandContextActions,
 	// Context
 	ExtensionContext,
+	ExtensionContextActions,
 	// Errors
 	ExtensionError,
 	ExtensionEvent,
 	ExtensionFactory,
 	ExtensionFlag,
 	ExtensionHandler,
+	// Runtime
+	ExtensionRuntime,
 	ExtensionShortcut,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -46,8 +57,6 @@ export type {
 	GrepToolResultEvent,
 	KeybindingsManager,
 	LoadExtensionsResult,
-	// Loaded Extension
-	LoadedExtension,
 	LsToolResultEvent,
 	// Message Rendering
 	MessageRenderer,
