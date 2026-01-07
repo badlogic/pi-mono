@@ -441,7 +441,7 @@ export const MODELS = {
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsSystemRole":false,"supportsReasoningEffort":false},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -460,7 +460,7 @@ export const MODELS = {
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsSystemRole":false,"supportsReasoningEffort":false},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -479,7 +479,7 @@ export const MODELS = {
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsSystemRole":false,"supportsReasoningEffort":false},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -498,7 +498,7 @@ export const MODELS = {
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsSystemRole":false,"supportsReasoningEffort":false},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -517,7 +517,7 @@ export const MODELS = {
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsSystemRole":false,"supportsReasoningEffort":false},
 			reasoning: false,
 			input: ["text", "image"],
 			cost: {
@@ -536,7 +536,7 @@ export const MODELS = {
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsSystemRole":false,"supportsReasoningEffort":false},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -555,7 +555,7 @@ export const MODELS = {
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsSystemRole":false,"supportsReasoningEffort":false},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -574,7 +574,7 @@ export const MODELS = {
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsSystemRole":false,"supportsReasoningEffort":false},
 			reasoning: false,
 			input: ["text", "image"],
 			cost: {
@@ -593,7 +593,7 @@ export const MODELS = {
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsSystemRole":false,"supportsReasoningEffort":false},
 			reasoning: false,
 			input: ["text", "image"],
 			cost: {
@@ -756,7 +756,7 @@ export const MODELS = {
 			provider: "github-copilot",
 			baseUrl: "https://api.individual.githubcopilot.com",
 			headers: {"User-Agent":"GitHubCopilotChat/0.35.0","Editor-Version":"vscode/1.107.0","Editor-Plugin-Version":"copilot-chat/0.35.0","Copilot-Integration-Id":"vscode-chat"},
-			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
+			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsSystemRole":false,"supportsReasoningEffort":false},
 			reasoning: true,
 			input: ["text"],
 			cost: {
@@ -7189,7 +7189,7 @@ export const MODELS = {
 			api: "openai-completions",
 			provider: "zai",
 			baseUrl: "https://api.z.ai/api/coding/paas/v4",
-			compat: {"supportsDeveloperRole":false},
+			compat: {"supportsDeveloperRole":false,"supportsSystemRole":false},
 			reasoning: true,
 			input: ["text"],
 			cost: {
@@ -7207,7 +7207,7 @@ export const MODELS = {
 			api: "openai-completions",
 			provider: "zai",
 			baseUrl: "https://api.z.ai/api/coding/paas/v4",
-			compat: {"supportsDeveloperRole":false},
+			compat: {"supportsDeveloperRole":false,"supportsSystemRole":false},
 			reasoning: true,
 			input: ["text"],
 			cost: {
@@ -7225,7 +7225,7 @@ export const MODELS = {
 			api: "openai-completions",
 			provider: "zai",
 			baseUrl: "https://api.z.ai/api/coding/paas/v4",
-			compat: {"supportsDeveloperRole":false},
+			compat: {"supportsDeveloperRole":false,"supportsSystemRole":false},
 			reasoning: true,
 			input: ["text"],
 			cost: {
@@ -7243,7 +7243,7 @@ export const MODELS = {
 			api: "openai-completions",
 			provider: "zai",
 			baseUrl: "https://api.z.ai/api/coding/paas/v4",
-			compat: {"supportsDeveloperRole":false},
+			compat: {"supportsDeveloperRole":false,"supportsSystemRole":false},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -7261,7 +7261,7 @@ export const MODELS = {
 			api: "openai-completions",
 			provider: "zai",
 			baseUrl: "https://api.z.ai/api/coding/paas/v4",
-			compat: {"supportsDeveloperRole":false},
+			compat: {"supportsDeveloperRole":false,"supportsSystemRole":false},
 			reasoning: true,
 			input: ["text"],
 			cost: {
@@ -7279,7 +7279,7 @@ export const MODELS = {
 			api: "openai-completions",
 			provider: "zai",
 			baseUrl: "https://api.z.ai/api/coding/paas/v4",
-			compat: {"supportsDeveloperRole":false},
+			compat: {"supportsDeveloperRole":false,"supportsSystemRole":false},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -7297,7 +7297,7 @@ export const MODELS = {
 			api: "openai-completions",
 			provider: "zai",
 			baseUrl: "https://api.z.ai/api/coding/paas/v4",
-			compat: {"supportsDeveloperRole":false},
+			compat: {"supportsDeveloperRole":false,"supportsSystemRole":false},
 			reasoning: true,
 			input: ["text"],
 			cost: {

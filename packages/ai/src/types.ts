@@ -192,6 +192,8 @@ export type AssistantMessageEvent =
 export interface OpenAICompat {
 	/** Whether the provider supports the `store` field. Default: auto-detected from URL. */
 	supportsStore?: boolean;
+	/** Whether the provider supports the `system` role. Default: true. When false, system prompt is prepended to first user message. */
+	supportsSystemRole?: boolean;
 	/** Whether the provider supports the `developer` role (vs `system`). Default: auto-detected from URL. */
 	supportsDeveloperRole?: boolean;
 	/** Whether the provider supports `reasoning_effort`. Default: auto-detected from URL. */

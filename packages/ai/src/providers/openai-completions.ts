@@ -413,10 +413,19 @@ function convertMessages(
 
 	const transformedMessages = transformMessages(context.messages, model);
 
+	// Track system prompt for providers that don't support system role
+	let systemPromptPrefix = "";
+
 	if (context.systemPrompt) {
-		const useDeveloperRole = model.reasoning && compat.supportsDeveloperRole;
-		const role = useDeveloperRole ? "developer" : "system";
-		params.push({ role: role, content: sanitizeSurrogates(context.systemPrompt) });
+		if (compat.supportsSystemRole) {
+			const useDeveloperRole = model.reasoning && compat.supportsDeveloperRole;
+			const role = useDeveloperRole ? "developer" : "system";
+			params.push({ role: role, content: sanitizeSurrogates(context.systemPrompt) });
+		} else {
+			// For providers that don't support system role (e.g., GLM),
+			// prepend system prompt to first user message
+			systemPromptPrefix = sanitizeSurrogates(context.systemPrompt) + "\n\n";
+		}
 	}
 
 	let lastRole: string | null = null;
@@ -432,10 +441,14 @@ function convertMessages(
 		}
 
 		if (msg.role === "user") {
+			// Prepend system prompt to first user message if provider doesn't support system role
+			const prefix = systemPromptPrefix;
+			systemPromptPrefix = ""; // Only prepend once
+
 			if (typeof msg.content === "string") {
 				params.push({
 					role: "user",
-					content: sanitizeSurrogates(msg.content),
+					content: prefix + sanitizeSurrogates(msg.content),
 				});
 			} else {
 				const content: ChatCompletionContentPart[] = msg.content.map((item): ChatCompletionContentPart => {
@@ -457,9 +470,21 @@ function convertMessages(
 					? content.filter((c) => c.type !== "image_url")
 					: content;
 				if (filteredContent.length === 0) continue;
+
+				// Prepend system prompt prefix to first text block if needed
+				let finalContent = filteredContent;
+				if (prefix) {
+					finalContent = filteredContent.map((part, i) => {
+						if (i === 0 && part.type === "text") {
+							return { type: "text" as const, text: prefix + part.text };
+						}
+						return part;
+					});
+				}
+
 				params.push({
 					role: "user",
-					content: filteredContent,
+					content: finalContent,
 				});
 			}
 		} else if (msg.role === "assistant") {
@@ -653,6 +678,7 @@ function detectCompatFromUrl(baseUrl: string): Required<OpenAICompat> {
 
 	return {
 		supportsStore: !isNonStandard,
+		supportsSystemRole: true, // Most providers support system role
 		supportsDeveloperRole: !isNonStandard,
 		supportsReasoningEffort: !isGrok,
 		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
@@ -673,6 +699,7 @@ function getCompat(model: Model<"openai-completions">): Required<OpenAICompat> {
 
 	return {
 		supportsStore: model.compat.supportsStore ?? detected.supportsStore,
+		supportsSystemRole: model.compat.supportsSystemRole ?? detected.supportsSystemRole,
 		supportsDeveloperRole: model.compat.supportsDeveloperRole ?? detected.supportsDeveloperRole,
 		supportsReasoningEffort: model.compat.supportsReasoningEffort ?? detected.supportsReasoningEffort,
 		maxTokensField: model.compat.maxTokensField ?? detected.maxTokensField,
