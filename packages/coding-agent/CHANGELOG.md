@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Example extension `exa-mcp.ts` for Exa MCP web search and code context tools (with configurable tool allowlist).
+
 ## [0.37.8] - 2026-01-07
 
 ## [0.37.7] - 2026-01-07
