@@ -9,7 +9,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { type AssistantMessage, getOAuthProviders, type Message, type OAuthProvider } from "@mariozechner/pi-ai";
-import type { KeyId, SlashCommand } from "@mariozechner/pi-tui";
+import type { EditorComponent, EditorTheme, KeyId, SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
@@ -96,7 +96,9 @@ export class InteractiveMode {
 	private chatContainer: Container;
 	private pendingMessagesContainer: Container;
 	private statusContainer: Container;
-	private editor: CustomEditor;
+	private defaultEditor: CustomEditor;
+	private editor: EditorComponent;
+	private autocompleteProvider: CombinedAutocompleteProvider | undefined;
 	private editorContainer: Container;
 	private footer: FooterComponent;
 	private keybindings: KeybindingsManager;
@@ -195,9 +197,10 @@ export class InteractiveMode {
 		this.statusContainer = new Container();
 		this.widgetContainer = new Container();
 		this.keybindings = KeybindingsManager.create();
-		this.editor = new CustomEditor(getEditorTheme(), this.keybindings);
+		this.defaultEditor = new CustomEditor(getEditorTheme(), this.keybindings);
+		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
-		this.editorContainer.addChild(this.editor);
+		this.editorContainer.addChild(this.editor as Component);
 		this.footer = new FooterComponent(session);
 		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
 
@@ -238,12 +241,12 @@ export class InteractiveMode {
 		);
 
 		// Setup autocomplete
-		const autocompleteProvider = new CombinedAutocompleteProvider(
+		this.autocompleteProvider = new CombinedAutocompleteProvider(
 			[...slashCommands, ...templateCommands, ...extensionCommands],
 			process.cwd(),
 			fdPath,
 		);
-		this.editor.setAutocompleteProvider(autocompleteProvider);
+		this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
 	}
 
 	async init(): Promise<void> {
@@ -595,8 +598,8 @@ export class InteractiveMode {
 			hasPendingMessages: () => this.session.pendingMessageCount > 0,
 		});
 
-		// Set up the extension shortcut handler on the editor
-		this.editor.onExtensionShortcut = (data: string) => {
+		// Set up the extension shortcut handler on the default editor
+		this.defaultEditor.onExtensionShortcut = (data: string) => {
 			for (const [shortcutStr, shortcut] of shortcuts) {
 				// Cast to KeyId - extension shortcuts use the same format
 				if (matchesKey(data, shortcutStr as KeyId)) {
@@ -753,6 +756,7 @@ export class InteractiveMode {
 			setEditorText: (text) => this.editor.setText(text),
 			getEditorText: () => this.editor.getText(),
 			editor: (title, prefill) => this.showExtensionEditor(title, prefill),
+			setEditorComponent: (factory) => this.setCustomEditorComponent(factory),
 			get theme() {
 				return theme;
 			},
@@ -919,6 +923,65 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * Set a custom editor component from an extension.
+	 * Pass undefined to restore the default editor.
+	 */
+	private setCustomEditorComponent(
+		factory: ((tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent) | undefined,
+	): void {
+		// Save text from current editor before switching
+		const currentText = this.editor.getText();
+
+		this.editorContainer.clear();
+
+		if (factory) {
+			// Create the custom editor with tui, theme, and keybindings
+			const newEditor = factory(this.ui, getEditorTheme(), this.keybindings);
+
+			// Wire up callbacks from the default editor
+			newEditor.onSubmit = this.defaultEditor.onSubmit;
+			newEditor.onChange = this.defaultEditor.onChange;
+
+			// Copy text from previous editor
+			newEditor.setText(currentText);
+
+			// Copy appearance settings if supported
+			if (newEditor.borderColor !== undefined) {
+				newEditor.borderColor = this.defaultEditor.borderColor;
+			}
+
+			// Set autocomplete if supported
+			if (newEditor.setAutocompleteProvider && this.autocompleteProvider) {
+				newEditor.setAutocompleteProvider(this.autocompleteProvider);
+			}
+
+			// If extending CustomEditor, copy app-level handlers
+			// Use duck typing since instanceof fails across jiti module boundaries
+			const customEditor = newEditor as unknown as Record<string, unknown>;
+			if ("actionHandlers" in customEditor && customEditor.actionHandlers instanceof Map) {
+				customEditor.onEscape = this.defaultEditor.onEscape;
+				customEditor.onCtrlD = this.defaultEditor.onCtrlD;
+				customEditor.onPasteImage = this.defaultEditor.onPasteImage;
+				customEditor.onExtensionShortcut = this.defaultEditor.onExtensionShortcut;
+				// Copy action handlers (clear, suspend, model switching, etc.)
+				for (const [action, handler] of this.defaultEditor.actionHandlers) {
+					(customEditor.actionHandlers as Map<string, () => void>).set(action, handler);
+				}
+			}
+
+			this.editor = newEditor;
+		} else {
+			// Restore default editor with text from custom editor
+			this.defaultEditor.setText(currentText);
+			this.editor = this.defaultEditor;
+		}
+
+		this.editorContainer.addChild(this.editor as Component);
+		this.ui.setFocus(this.editor as Component);
+		this.ui.requestRender();
+	}
+
+	/**
 	 * Show a notification for extensions.
 	 */
 	private showExtensionNotify(message: string, type?: "info" | "warning" | "error"): void {
@@ -938,6 +1001,7 @@ export class InteractiveMode {
 		factory: (
 			tui: TUI,
 			theme: Theme,
+			keybindings: KeybindingsManager,
 			done: (result: T) => void,
 		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
 	): Promise<T> {
@@ -956,7 +1020,7 @@ export class InteractiveMode {
 				resolve(result);
 			};
 
-			Promise.resolve(factory(this.ui, theme, close)).then((c) => {
+			Promise.resolve(factory(this.ui, theme, this.keybindings, close)).then((c) => {
 				component = c;
 				this.editorContainer.clear();
 				this.editorContainer.addChild(component);
@@ -992,7 +1056,9 @@ export class InteractiveMode {
 	// =========================================================================
 
 	private setupKeyHandlers(): void {
-		this.editor.onEscape = () => {
+		// Set up handlers on defaultEditor - they use this.editor for text access
+		// so they work correctly regardless of which editor is active
+		this.defaultEditor.onEscape = () => {
 			if (this.loadingAnimation) {
 				// Abort and restore queued messages to editor
 				const { steering, followUp } = this.session.clearQueue();
@@ -1026,22 +1092,22 @@ export class InteractiveMode {
 		};
 
 		// Register app action handlers
-		this.editor.onAction("clear", () => this.handleCtrlC());
-		this.editor.onCtrlD = () => this.handleCtrlD();
-		this.editor.onAction("suspend", () => this.handleCtrlZ());
-		this.editor.onAction("cycleThinkingLevel", () => this.cycleThinkingLevel());
-		this.editor.onAction("cycleModelForward", () => this.cycleModel("forward"));
-		this.editor.onAction("cycleModelBackward", () => this.cycleModel("backward"));
+		this.defaultEditor.onAction("clear", () => this.handleCtrlC());
+		this.defaultEditor.onCtrlD = () => this.handleCtrlD();
+		this.defaultEditor.onAction("suspend", () => this.handleCtrlZ());
+		this.defaultEditor.onAction("cycleThinkingLevel", () => this.cycleThinkingLevel());
+		this.defaultEditor.onAction("cycleModelForward", () => this.cycleModel("forward"));
+		this.defaultEditor.onAction("cycleModelBackward", () => this.cycleModel("backward"));
 
 		// Global debug handler on TUI (works regardless of focus)
 		this.ui.onDebug = () => this.handleDebugCommand();
-		this.editor.onAction("selectModel", () => this.showModelSelector());
-		this.editor.onAction("expandTools", () => this.toggleToolOutputExpansion());
-		this.editor.onAction("toggleThinking", () => this.toggleThinkingBlockVisibility());
-		this.editor.onAction("externalEditor", () => this.openExternalEditor());
-		this.editor.onAction("followUp", () => this.handleFollowUp());
+		this.defaultEditor.onAction("selectModel", () => this.showModelSelector());
+		this.defaultEditor.onAction("expandTools", () => this.toggleToolOutputExpansion());
+		this.defaultEditor.onAction("toggleThinking", () => this.toggleThinkingBlockVisibility());
+		this.defaultEditor.onAction("externalEditor", () => this.openExternalEditor());
+		this.defaultEditor.onAction("followUp", () => this.handleFollowUp());
 
-		this.editor.onChange = (text: string) => {
+		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
 			this.isBashMode = text.trimStart().startsWith("!");
 			if (wasBashMode !== this.isBashMode) {
@@ -1050,7 +1116,7 @@ export class InteractiveMode {
 		};
 
 		// Handle clipboard image paste (triggered on Ctrl+V)
-		this.editor.onPasteImage = () => {
+		this.defaultEditor.onPasteImage = () => {
 			this.handleClipboardImagePaste();
 		};
 	}
@@ -1070,7 +1136,7 @@ export class InteractiveMode {
 			fs.writeFileSync(filePath, Buffer.from(image.bytes));
 
 			// Insert file path directly
-			this.editor.insertTextAtCursor(filePath);
+			this.editor.insertTextAtCursor?.(filePath);
 			this.ui.requestRender();
 		} catch {
 			// Silently ignore clipboard errors (may not have permission, etc.)
@@ -1078,7 +1144,7 @@ export class InteractiveMode {
 	}
 
 	private setupEditorSubmitHandler(): void {
-		this.editor.onSubmit = async (text: string) => {
+		this.defaultEditor.onSubmit = async (text: string) => {
 			text = text.trim();
 			if (!text) return;
 
@@ -1185,7 +1251,7 @@ export class InteractiveMode {
 						this.editor.setText(text);
 						return;
 					}
-					this.editor.addToHistory(text);
+					this.editor.addToHistory?.(text);
 					await this.handleBashCommand(command, isExcluded);
 					this.isBashMode = false;
 					this.updateEditorBorderColor();
@@ -1196,7 +1262,7 @@ export class InteractiveMode {
 			// Queue input during compaction (extension commands execute immediately)
 			if (this.session.isCompacting) {
 				if (this.isExtensionCommand(text)) {
-					this.editor.addToHistory(text);
+					this.editor.addToHistory?.(text);
 					this.editor.setText("");
 					await this.session.prompt(text);
 				} else {
@@ -1208,7 +1274,7 @@ export class InteractiveMode {
 			// If streaming, use prompt() with steer behavior
 			// This handles extension commands (execute immediately), prompt template expansion, and queueing
 			if (this.session.isStreaming) {
-				this.editor.addToHistory(text);
+				this.editor.addToHistory?.(text);
 				this.editor.setText("");
 				await this.session.prompt(text, { streamingBehavior: "steer" });
 				this.updatePendingMessagesDisplay();
@@ -1223,7 +1289,7 @@ export class InteractiveMode {
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
 			}
-			this.editor.addToHistory(text);
+			this.editor.addToHistory?.(text);
 		};
 	}
 
@@ -1393,8 +1459,8 @@ export class InteractiveMode {
 			case "auto_compaction_start": {
 				// Keep editor active; submissions are queued during compaction.
 				// Set up escape to abort auto-compaction
-				this.autoCompactionEscapeHandler = this.editor.onEscape;
-				this.editor.onEscape = () => {
+				this.autoCompactionEscapeHandler = this.defaultEditor.onEscape;
+				this.defaultEditor.onEscape = () => {
 					this.session.abortCompaction();
 				};
 				// Show compacting indicator with reason
@@ -1414,7 +1480,7 @@ export class InteractiveMode {
 			case "auto_compaction_end": {
 				// Restore escape handler
 				if (this.autoCompactionEscapeHandler) {
-					this.editor.onEscape = this.autoCompactionEscapeHandler;
+					this.defaultEditor.onEscape = this.autoCompactionEscapeHandler;
 					this.autoCompactionEscapeHandler = undefined;
 				}
 				// Stop loader
@@ -1446,8 +1512,8 @@ export class InteractiveMode {
 
 			case "auto_retry_start": {
 				// Set up escape to abort retry
-				this.retryEscapeHandler = this.editor.onEscape;
-				this.editor.onEscape = () => {
+				this.retryEscapeHandler = this.defaultEditor.onEscape;
+				this.defaultEditor.onEscape = () => {
 					this.session.abortRetry();
 				};
 				// Show retry indicator
@@ -1467,7 +1533,7 @@ export class InteractiveMode {
 			case "auto_retry_end": {
 				// Restore escape handler
 				if (this.retryEscapeHandler) {
-					this.editor.onEscape = this.retryEscapeHandler;
+					this.defaultEditor.onEscape = this.retryEscapeHandler;
 					this.retryEscapeHandler = undefined;
 				}
 				// Stop loader
@@ -1565,7 +1631,7 @@ export class InteractiveMode {
 					const userComponent = new UserMessageComponent(textContent);
 					this.chatContainer.addChild(userComponent);
 					if (options?.populateHistory) {
-						this.editor.addToHistory(textContent);
+						this.editor.addToHistory?.(textContent);
 					}
 				}
 				break;
@@ -1734,7 +1800,7 @@ export class InteractiveMode {
 		// Queue input during compaction (extension commands execute immediately)
 		if (this.session.isCompacting) {
 			if (this.isExtensionCommand(text)) {
-				this.editor.addToHistory(text);
+				this.editor.addToHistory?.(text);
 				this.editor.setText("");
 				await this.session.prompt(text);
 			} else {
@@ -1746,7 +1812,7 @@ export class InteractiveMode {
 		// Alt+Enter queues a follow-up message (waits until agent finishes)
 		// This handles extension commands (execute immediately), prompt template expansion, and queueing
 		if (this.session.isStreaming) {
-			this.editor.addToHistory(text);
+			this.editor.addToHistory?.(text);
 			this.editor.setText("");
 			await this.session.prompt(text, { streamingBehavior: "followUp" });
 			this.updatePendingMessagesDisplay();
@@ -1833,7 +1899,7 @@ export class InteractiveMode {
 			return;
 		}
 
-		const currentText = this.editor.getExpandedText();
+		const currentText = this.editor.getExpandedText?.() ?? this.editor.getText();
 		const tmpFile = path.join(os.tmpdir(), `pi-editor-${Date.now()}.pi.md`);
 
 		try {
@@ -1934,7 +2000,7 @@ export class InteractiveMode {
 
 	private queueCompactionMessage(text: string, mode: "steer" | "followUp"): void {
 		this.compactionQueuedMessages.push({ text, mode });
-		this.editor.addToHistory(text);
+		this.editor.addToHistory?.(text);
 		this.editor.setText("");
 		this.updatePendingMessagesDisplay();
 		this.showStatus("Queued message for after compaction");
@@ -2253,10 +2319,10 @@ export class InteractiveMode {
 
 					// Set up escape handler and loader if summarizing
 					let summaryLoader: Loader | undefined;
-					const originalOnEscape = this.editor.onEscape;
+					const originalOnEscape = this.defaultEditor.onEscape;
 
 					if (wantsSummary) {
-						this.editor.onEscape = () => {
+						this.defaultEditor.onEscape = () => {
 							this.session.abortBranchSummary();
 						};
 						this.chatContainer.addChild(new Spacer(1));
@@ -2298,7 +2364,7 @@ export class InteractiveMode {
 							summaryLoader.stop();
 							this.statusContainer.clear();
 						}
-						this.editor.onEscape = originalOnEscape;
+						this.defaultEditor.onEscape = originalOnEscape;
 					}
 				},
 				() => {
@@ -2921,8 +2987,8 @@ export class InteractiveMode {
 		this.statusContainer.clear();
 
 		// Set up escape handler during compaction
-		const originalOnEscape = this.editor.onEscape;
-		this.editor.onEscape = () => {
+		const originalOnEscape = this.defaultEditor.onEscape;
+		this.defaultEditor.onEscape = () => {
 			this.session.abortCompaction();
 		};
 
@@ -2959,7 +3025,7 @@ export class InteractiveMode {
 		} finally {
 			compactingLoader.stop();
 			this.statusContainer.clear();
-			this.editor.onEscape = originalOnEscape;
+			this.defaultEditor.onEscape = originalOnEscape;
 		}
 		void this.flushCompactionQueue({ willRetry: false });
 	}

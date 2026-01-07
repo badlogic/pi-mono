@@ -8,12 +8,13 @@ For each PR URL, do the following in order:
 2. Identify any linked issues referenced in the PR body, comments, commit messages, or cross links. Read each issue in full, including all comments.
 3. Analyze the PR diff. Read all relevant code files in full with no truncation. Include related code paths that are not in the diff but are required to validate behavior.
 4. Check for a changelog entry in the relevant `packages/*/CHANGELOG.md` files. Report whether an entry exists. If missing, state that a changelog entry is required before merge and that you will add it if the user decides to merge. Follow the changelog format rules in AGENTS.md.
-5. Provide a structured review with these sections:
+5. Check if packages/coding-agent/README.md, packages/coding-agent/docs/*.md, packages/coding-agent/examples/**/*.md require modification. This is usually the case when existing features have been changed, or new features have been added.
+6. Provide a structured review with these sections:
    - Good: solid choices or improvements
    - Bad: concrete issues, regressions, missing tests, or risks
    - Ugly: subtle or high impact problems
-6. Add Questions or Assumptions if anything is unclear.
-7. Add Change summary and Tests.
+7. Add Questions or Assumptions if anything is unclear.
+8. Add Change summary and Tests.
 
 Output format per PR:
 PR: <url>

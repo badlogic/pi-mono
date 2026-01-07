@@ -71,7 +71,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Run extraction with loader UI
-			const result = await ctx.ui.custom<string | null>((tui, theme, done) => {
+			const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
 				const loader = new BorderedLoader(tui, theme, `Extracting questions using ${ctx.model!.id}...`);
 				loader.onAbort = () => done(null);
 

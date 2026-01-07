@@ -11,6 +11,8 @@ export type {
 	// Re-exports
 	AgentToolResult,
 	AgentToolUpdateCallback,
+	// App keybindings (for custom editors)
+	AppAction,
 	AppendEntryHandler,
 	BashToolResultEvent,
 	BeforeAgentStartEvent,
@@ -42,6 +44,7 @@ export type {
 	GetAllToolsHandler,
 	GetThinkingLevelHandler,
 	GrepToolResultEvent,
+	KeybindingsManager,
 	LoadExtensionsResult,
 	// Loaded Extension
 	LoadedExtension,

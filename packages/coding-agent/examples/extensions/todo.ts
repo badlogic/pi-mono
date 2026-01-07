@@ -291,7 +291,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			await ctx.ui.custom<void>((_tui, theme, done) => {
+			await ctx.ui.custom<void>((_tui, theme, _kb, done) => {
 				return new TodoListComponent(todos, theme, () => done());
 			});
 		},

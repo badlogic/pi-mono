@@ -1170,6 +1170,10 @@ ctx.ui.setTitle("pi - my-project");
 // Editor text
 ctx.ui.setEditorText("Prefill text");
 const current = ctx.ui.getEditorText();
+
+// Custom editor (vim mode, emacs mode, etc.)
+ctx.ui.setEditorComponent((tui, theme, keybindings) => new VimEditor(tui, theme, keybindings));
+ctx.ui.setEditorComponent(undefined);  // Restore default editor
 ```
 
 **Examples:**
@@ -1177,6 +1181,7 @@ const current = ctx.ui.getEditorText();
 - `ctx.ui.setWidget()`: [plan-mode.ts](../examples/extensions/plan-mode.ts)
 - `ctx.ui.setFooter()`: [custom-footer.ts](../examples/extensions/custom-footer.ts)
 - `ctx.ui.setHeader()`: [custom-header.ts](../examples/extensions/custom-header.ts)
+- `ctx.ui.setEditorComponent()`: [modal-editor.ts](../examples/extensions/modal-editor.ts)
 
 ### Custom Components
 
@@ -1185,7 +1190,7 @@ For complex UI, use `ctx.ui.custom()`. This temporarily replaces the editor with
 ```typescript
 import { Text, Component } from "@mariozechner/pi-tui";
 
-const result = await ctx.ui.custom<boolean>((tui, theme, done) => {
+const result = await ctx.ui.custom<boolean>((tui, theme, keybindings, done) => {
   const text = new Text("Press Enter to confirm, Escape to cancel", 1, 1);
 
   text.onKey = (key) => {
@@ -1205,11 +1210,55 @@ if (result) {
 The callback receives:
 - `tui` - TUI instance (for screen dimensions, focus management)
 - `theme` - Current theme for styling
+- `keybindings` - App keybinding manager (for checking shortcuts)
 - `done(value)` - Call to close component and return value
 
 See [tui.md](tui.md) for the full component API.
 
 **Examples:** [handoff.ts](../examples/extensions/handoff.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [snake.ts](../examples/extensions/snake.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts)
+
+### Custom Editor
+
+Replace the main input editor with a custom implementation (vim mode, emacs mode, etc.):
+
+```typescript
+import { CustomEditor, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { matchesKey } from "@mariozechner/pi-tui";
+
+class VimEditor extends CustomEditor {
+  private mode: "normal" | "insert" = "insert";
+
+  handleInput(data: string): void {
+    if (matchesKey(data, "escape") && this.mode === "insert") {
+      this.mode = "normal";
+      return;
+    }
+    if (this.mode === "normal" && data === "i") {
+      this.mode = "insert";
+      return;
+    }
+    super.handleInput(data);  // App keybindings + text editing
+  }
+}
+
+export default function (pi: ExtensionAPI) {
+  pi.on("session_start", (_event, ctx) => {
+    ctx.ui.setEditorComponent((_tui, theme, keybindings) =>
+      new VimEditor(theme, keybindings)
+    );
+  });
+}
+```
+
+**Key points:**
+- Extend `CustomEditor` (not base `Editor`) to get app keybindings (escape to abort, ctrl+d, model switching)
+- Call `super.handleInput(data)` for keys you don't handle
+- Factory receives `theme` and `keybindings` from the app
+- Pass `undefined` to restore default: `ctx.ui.setEditorComponent(undefined)`
+
+See [tui.md](tui.md) Pattern 7 for a complete example with mode indicator.
+
+**Examples:** [modal-editor.ts](../examples/extensions/modal-editor.ts)
 
 ### Message Rendering
 

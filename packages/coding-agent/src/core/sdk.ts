@@ -531,6 +531,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			setEditorText: () => {},
 			getEditorText: () => "",
 			editor: async () => undefined,
+			setEditorComponent: () => {},
 			get theme() {
 				return {} as any;
 			},

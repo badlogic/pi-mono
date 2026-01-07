@@ -332,7 +332,19 @@ export class TUI extends Container {
 				].join("\n");
 				fs.mkdirSync(path.dirname(crashLogPath), { recursive: true });
 				fs.writeFileSync(crashLogPath, crashData);
-				throw new Error(`Rendered line ${i} exceeds terminal width. Debug log written to ${crashLogPath}`);
+
+				// Clean up terminal state before throwing
+				this.stop();
+
+				const errorMsg = [
+					`Rendered line ${i} exceeds terminal width (${visibleWidth(line)} > ${width}).`,
+					"",
+					"This is likely caused by a custom TUI component not truncating its output.",
+					"Use visibleWidth() to measure and truncateToWidth() to truncate lines.",
+					"",
+					`Debug log written to: ${crashLogPath}`,
+				].join("\n");
+				throw new Error(errorMsg);
 			}
 			buffer += line;
 		}
