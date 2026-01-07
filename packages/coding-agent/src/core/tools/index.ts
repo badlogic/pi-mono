@@ -1,4 +1,12 @@
-export { type BashToolDetails, bashTool, createBashTool } from "./bash.js";
+export {
+	type BashToolDetails,
+	type BashToolOptions,
+	bashTool,
+	createBashTool,
+	createInteractiveExecutorHolder,
+	type InteractiveExecutor,
+	type InteractiveExecutorHolder,
+} from "./bash.js";
 export { createEditTool, editTool } from "./edit.js";
 export { createFindTool, type FindToolDetails, findTool } from "./find.js";
 export { createGrepTool, type GrepToolDetails, grepTool } from "./grep.js";
@@ -17,7 +25,7 @@ export {
 export { createWriteTool, writeTool } from "./write.js";
 
 import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { bashTool, createBashTool } from "./bash.js";
+import { type BashToolOptions, bashTool, createBashTool } from "./bash.js";
 import { createEditTool, editTool } from "./edit.js";
 import { createFindTool, findTool } from "./find.js";
 import { createGrepTool, grepTool } from "./grep.js";
@@ -50,13 +58,20 @@ export type ToolName = keyof typeof allTools;
 export interface ToolsOptions {
 	/** Options for the read tool */
 	read?: ReadToolOptions;
+	/** Options for the bash tool */
+	bash?: BashToolOptions;
 }
 
 /**
  * Create coding tools configured for a specific working directory.
  */
 export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
-	return [createReadTool(cwd, options?.read), createBashTool(cwd), createEditTool(cwd), createWriteTool(cwd)];
+	return [
+		createReadTool(cwd, options?.read),
+		createBashTool(cwd, options?.bash),
+		createEditTool(cwd),
+		createWriteTool(cwd),
+	];
 }
 
 /**
@@ -72,7 +87,7 @@ export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[]
 export function createAllTools(cwd: string, options?: ToolsOptions): Record<ToolName, Tool> {
 	return {
 		read: createReadTool(cwd, options?.read),
-		bash: createBashTool(cwd),
+		bash: createBashTool(cwd, options?.bash),
 		edit: createEditTool(cwd),
 		write: createWriteTool(cwd),
 		grep: createGrepTool(cwd),

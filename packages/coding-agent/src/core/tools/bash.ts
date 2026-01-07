@@ -5,8 +5,17 @@ import { join } from "node:path";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
+import { isInteractiveCommand } from "../../utils/interactive-commands.js";
 import { getShellConfig, killProcessTree } from "../../utils/shell.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateTail } from "./truncate.js";
+
+/**
+ * Function type for executing interactive commands.
+ * Called when the bash tool detects an interactive command.
+ * @param command - The command to execute interactively
+ * @returns The exit code of the command (null if killed by signal)
+ */
+export type InteractiveExecutor = (command: string) => number | null;
 
 /**
  * Generate a unique temp file path for bash output
@@ -26,7 +35,41 @@ export interface BashToolDetails {
 	fullOutputPath?: string;
 }
 
-export function createBashTool(cwd: string): AgentTool<typeof bashSchema> {
+export interface BashToolOptions {
+	/** Function to execute interactive commands with full terminal access */
+	interactiveExecutor?: InteractiveExecutor;
+}
+
+/**
+ * Holder for an interactive executor that can be set after tool creation.
+ * This allows the bash tool to be created before the TUI is available,
+ * and the executor to be injected later from InteractiveMode.
+ */
+export interface InteractiveExecutorHolder {
+	executor?: InteractiveExecutor;
+}
+
+/**
+ * Create a holder for the interactive executor.
+ * Pass this to createBashTool, then set holder.executor later from InteractiveMode.
+ */
+export function createInteractiveExecutorHolder(): InteractiveExecutorHolder {
+	return { executor: undefined };
+}
+
+export function createBashTool(cwd: string, options?: BashToolOptions): AgentTool<typeof bashSchema> {
+	// Support both direct executor and holder pattern
+	const getInteractiveExecutor = (): InteractiveExecutor | undefined => {
+		if (options?.interactiveExecutor) {
+			return options.interactiveExecutor;
+		}
+		// Check if options is a holder
+		if (options && "executor" in options) {
+			return (options as InteractiveExecutorHolder).executor;
+		}
+		return undefined;
+	};
+
 	return {
 		name: "bash",
 		label: "bash",
@@ -38,6 +81,17 @@ export function createBashTool(cwd: string): AgentTool<typeof bashSchema> {
 			signal?: AbortSignal,
 			onUpdate?,
 		) => {
+			// Check if this is an interactive command and we have an executor
+			const executor = getInteractiveExecutor();
+			if (executor && isInteractiveCommand(command)) {
+				const exitCode = executor(command);
+				const outputText =
+					exitCode === 0
+						? "(interactive command completed successfully)"
+						: `(interactive command exited with code ${exitCode})`;
+				return { content: [{ type: "text", text: outputText }], details: undefined };
+			}
+
 			return new Promise((resolve, reject) => {
 				const { shell, args } = getShellConfig();
 

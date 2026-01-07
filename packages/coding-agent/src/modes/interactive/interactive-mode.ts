@@ -36,7 +36,7 @@ import type {
 	LoadedExtension,
 } from "../../core/extensions/index.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
-import { createCompactionSummaryMessage } from "../../core/messages.js";
+import { type BashExecutionMessage, createCompactionSummaryMessage } from "../../core/messages.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { loadSkills } from "../../core/skills.js";
 import { loadProjectContextFiles } from "../../core/system-prompt.js";
@@ -44,6 +44,7 @@ import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
+import { isInteractiveCommand } from "../../utils/interactive-commands.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
@@ -319,6 +320,9 @@ export class InteractiveMode {
 			theme.fg("dim", "!!") +
 			theme.fg("muted", " to run bash (no context)") +
 			"\n" +
+			theme.fg("dim", "!i") +
+			theme.fg("muted", " for interactive (vim, git)") +
+			"\n" +
 			theme.fg("dim", followUp) +
 			theme.fg("muted", " to queue follow-up") +
 			"\n" +
@@ -370,6 +374,12 @@ export class InteractiveMode {
 		// Set terminal title
 		const cwdBasename = path.basename(process.cwd());
 		this.ui.terminal.setTitle(`pi - ${cwdBasename}`);
+
+		// Set up interactive executor for bash tool
+		// This allows the agent to run interactive commands like vim, git rebase -i, etc.
+		this.session.setInteractiveExecutor((command: string) => {
+			return this.ui.execInteractive(command);
+		});
 
 		// Initialize extensions with TUI-based UI context
 		await this.initExtensions();
@@ -1175,10 +1185,25 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Handle bash command (! for normal, !! for excluded from context)
+			// Handle bash command prefixes:
+			// !  - normal bash command (output sent to LLM context)
+			// !! - excluded from context (output not sent to LLM)
+			// !i - force interactive mode (full terminal access)
 			if (text.startsWith("!")) {
-				const isExcluded = text.startsWith("!!");
-				const command = isExcluded ? text.slice(2).trim() : text.slice(1).trim();
+				let isExcluded = false;
+				let forceInteractive = false;
+				let command: string;
+
+				if (text.startsWith("!!")) {
+					isExcluded = true;
+					command = text.slice(2).trim();
+				} else if (text.startsWith("!i ") || text.startsWith("!i\t")) {
+					forceInteractive = true;
+					command = text.slice(2).trim();
+				} else {
+					command = text.slice(1).trim();
+				}
+
 				if (command) {
 					if (this.session.isBashRunning) {
 						this.showWarning("A bash command is already running. Press Esc to cancel it first.");
@@ -1186,7 +1211,7 @@ export class InteractiveMode {
 						return;
 					}
 					this.editor.addToHistory(text);
-					await this.handleBashCommand(command, isExcluded);
+					await this.handleBashCommand(command, isExcluded, forceInteractive);
 					this.isBashMode = false;
 					this.updateEditorBorderColor();
 					return;
@@ -2765,6 +2790,7 @@ export class InteractiveMode {
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
 | \`!!\` | Run bash command (excluded from context) |
+| \`!i\` | Run interactive command (vim, git rebase, etc.) |
 `;
 
 		// Add extension-registered shortcuts
@@ -2855,7 +2881,49 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private async handleBashCommand(command: string, excludeFromContext = false): Promise<void> {
+	private async handleBashCommand(
+		command: string,
+		excludeFromContext = false,
+		forceInteractive = false,
+	): Promise<void> {
+		// Check if this command should run interactively (full terminal access)
+		const shouldBeInteractive = forceInteractive || isInteractiveCommand(command);
+
+		if (shouldBeInteractive) {
+			// Run command with full terminal access
+			// This suspends the TUI, runs the command, then resumes
+			const exitCode = this.ui.execInteractive(command);
+
+			// Record the execution in chat (with minimal display since output was shown directly)
+			this.chatContainer.addChild(new Spacer(1));
+			const statusText =
+				exitCode === 0
+					? theme.fg("dim", `$ ${command}`)
+					: theme.fg("dim", `$ ${command}`) + theme.fg("error", ` (exit ${exitCode})`);
+			this.chatContainer.addChild(new Text(statusText, 1, 0));
+
+			// If not excluded from context, record for LLM
+			if (!excludeFromContext) {
+				// Create a minimal bash message - no output since it was interactive
+				const bashMessage: BashExecutionMessage = {
+					role: "bashExecution",
+					command,
+					output: "(interactive command - output shown in terminal)",
+					exitCode: exitCode ?? undefined,
+					cancelled: false,
+					truncated: false,
+					timestamp: Date.now(),
+					excludeFromContext: false,
+				};
+				this.session.agent.appendMessage(bashMessage);
+				this.sessionManager.appendMessage(bashMessage);
+			}
+
+			this.ui.requestRender();
+			return;
+		}
+
+		// Non-interactive command - run with output capture
 		const isDeferred = this.session.isStreaming;
 		this.bashComponent = new BashExecutionComponent(command, this.ui, excludeFromContext);
 

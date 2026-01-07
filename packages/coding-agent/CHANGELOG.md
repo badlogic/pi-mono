@@ -4,6 +4,7 @@
 
 ### Added
 
+- Interactive shell commands: Commands like `vim`, `git rebase`, `htop`, `less`, etc. now get full terminal access. These are auto-detected, or use `!i` prefix to force interactive mode for any command. Configure via `interactiveCommands` in settings.json.
 - Extension UI dialogs (`ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`) now support a `timeout` option that auto-dismisses the dialog with a live countdown display. Simpler alternative to `AbortSignal` for timed dialogs.
 
 ## [0.37.8] - 2026-01-07

@@ -24,6 +24,7 @@ import { Agent, type AgentMessage, type AgentTool, type ThinkingLevel } from "@m
 import type { Message, Model } from "@mariozechner/pi-ai";
 import { join } from "path";
 import { getAgentDir } from "../config.js";
+import { configureInteractiveCommands } from "../utils/interactive-commands.js";
 import { AgentSession } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
@@ -59,6 +60,7 @@ import {
 	createEditTool,
 	createFindTool,
 	createGrepTool,
+	createInteractiveExecutorHolder,
 	createLsTool,
 	createReadOnlyTools,
 	createReadTool,
@@ -426,8 +428,21 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	time("discoverContextFiles");
 
 	const autoResizeImages = settingsManager.getImageAutoResize();
+
+	// Configure interactive command detection from settings
+	const interactiveSettings = settingsManager.getInteractiveCommandsSettings();
+	configureInteractiveCommands({
+		additional: interactiveSettings.additionalCommands,
+		excluded: interactiveSettings.excludeCommands,
+	});
+
+	// Create holder for interactive executor (will be set by InteractiveMode)
+	const interactiveExecutorHolder = createInteractiveExecutorHolder();
 	// Create ALL built-in tools for the registry (extensions can enable any of them)
-	const allBuiltInToolsMap = createAllTools(cwd, { read: { autoResizeImages } });
+	const allBuiltInToolsMap = createAllTools(cwd, {
+		read: { autoResizeImages },
+		bash: { interactiveExecutor: (cmd) => interactiveExecutorHolder.executor?.(cmd) ?? null },
+	});
 	// Determine initially active built-in tools (default: read, bash, edit, write)
 	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
 	const initialActiveToolNames: ToolName[] = options.tools
@@ -698,6 +713,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		modelRegistry,
 		toolRegistry: wrappedToolRegistry ?? toolRegistry,
 		rebuildSystemPrompt,
+		interactiveExecutorHolder,
 	});
 	time("createAgentSession");
 

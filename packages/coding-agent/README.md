@@ -415,6 +415,24 @@ Ran `ls -la`
 
 Run multiple commands before prompting; all outputs are included together.
 
+**Prefix variants:**
+
+| Prefix | Description |
+|--------|-------------|
+| `!` | Run command, include output in LLM context |
+| `!!` | Run command, exclude output from context |
+| `!i` | Run interactively with full terminal access |
+
+**Interactive mode (`!i`)**: Some commands need direct terminal access - editors (vim, nano), pagers (less), git interactive operations (rebase -i, commit), TUI tools (htop, lazygit), etc. These are automatically detected and run interactively. Use `!i` to force interactive mode for any command:
+
+```
+!i vim file.txt
+!i git rebase -i HEAD~3
+!i htop
+```
+
+Interactive commands get full terminal control. The TUI suspends while they run and resumes after they exit.
+
 ### Image Support
 
 **Pasting images:** Press `Ctrl+V` to paste an image from your clipboard.
@@ -705,6 +723,10 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
     "autoResize": true,
     "blockImages": false
   },
+  "interactiveCommands": {
+    "additionalCommands": ["mycli", "custom-editor"],
+    "excludeCommands": ["vim"]
+  },
   "extensions": ["/path/to/extension.ts"]
 }
 ```
@@ -732,6 +754,8 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `images.autoResize` | Auto-resize images to 2000x2000 max for better model compatibility | `true` |
 | `images.blockImages` | Prevent images from being sent to LLM providers | `false` |
 | `doubleEscapeAction` | Action for double-escape with empty editor: `tree` or `branch` | `tree` |
+| `interactiveCommands.additionalCommands` | Extra commands to run interactively (full terminal access) | `[]` |
+| `interactiveCommands.excludeCommands` | Commands to exclude from interactive detection | `[]` |
 | `extensions` | Additional extension file paths | `[]` |
 
 ---

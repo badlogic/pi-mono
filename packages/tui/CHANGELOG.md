@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `TUI.execInteractive(command)` method to run commands with full terminal access (editors, pagers, etc.)
+
 ## [0.37.8] - 2026-01-07
 
 ### Added

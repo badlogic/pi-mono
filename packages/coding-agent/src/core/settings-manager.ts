@@ -39,6 +39,15 @@ export interface ImageSettings {
 	blockImages?: boolean; // default: false - when true, prevents all images from being sent to LLM providers
 }
 
+export interface InteractiveCommandsSettings {
+	/** Additional commands to run interactively (exact command names, e.g., "mycli", "kubectl edit") */
+	additionalCommands?: string[];
+	/** Additional regex patterns to match interactive commands */
+	additionalPatterns?: string[];
+	/** Commands to exclude from interactive detection (overrides built-in patterns) */
+	excludeCommands?: string[];
+}
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
@@ -59,6 +68,7 @@ export interface Settings {
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
 	doubleEscapeAction?: "branch" | "tree"; // Action for double-escape with empty editor (default: "tree")
+	interactiveCommands?: InteractiveCommandsSettings; // Configure interactive command detection
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -428,5 +438,12 @@ export class SettingsManager {
 	setDoubleEscapeAction(action: "branch" | "tree"): void {
 		this.globalSettings.doubleEscapeAction = action;
 		this.save();
+	}
+
+	getInteractiveCommandsSettings(): InteractiveCommandsSettings {
+		return {
+			additionalCommands: [...(this.settings.interactiveCommands?.additionalCommands ?? [])],
+			excludeCommands: [...(this.settings.interactiveCommands?.excludeCommands ?? [])],
+		};
 	}
 }

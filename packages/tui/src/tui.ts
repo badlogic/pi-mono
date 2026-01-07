@@ -2,6 +2,7 @@
  * Minimal TUI implementation with differential rendering
  */
 
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -126,6 +127,41 @@ export class TUI extends Container {
 	stop(): void {
 		this.terminal.showCursor();
 		this.terminal.stop();
+	}
+
+	/**
+	 * Execute a command interactively with full terminal access.
+	 *
+	 * This suspends the TUI, clears the screen, runs the command with inherited stdio
+	 * (so interactive programs like vim, git rebase -i, less, etc. work correctly),
+	 * then resumes the TUI with a full re-render.
+	 *
+	 * @param command - The command to run (will be executed via shell)
+	 * @returns The exit code of the command (null if killed by signal)
+	 */
+	execInteractive(command: string): number | null {
+		// Stop TUI to release terminal control
+		this.stop();
+
+		// Clear screen before running command
+		process.stdout.write("\x1b[2J\x1b[H");
+
+		// Get shell from environment
+		const shell = process.env.SHELL || "/bin/sh";
+
+		// Run command with inherited stdio (full terminal access)
+		const result = spawnSync(shell, ["-c", command], {
+			stdio: "inherit",
+			env: process.env,
+		});
+
+		// Restart TUI
+		this.start();
+
+		// Force full re-render (screen was cleared by command)
+		this.requestRender(true);
+
+		return result.status;
 	}
 
 	requestRender(force = false): void {

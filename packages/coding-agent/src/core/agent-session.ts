@@ -50,6 +50,7 @@ import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
 import type { BranchSummaryEntry, CompactionEntry, NewSessionOptions, SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
+import type { InteractiveExecutorHolder } from "./tools/index.js";
 
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =
@@ -83,6 +84,8 @@ export interface AgentSessionConfig {
 	toolRegistry?: Map<string, AgentTool>;
 	/** Function to rebuild system prompt when tools change */
 	rebuildSystemPrompt?: (toolNames: string[]) => string;
+	/** Holder for interactive executor - set by InteractiveMode */
+	interactiveExecutorHolder?: InteractiveExecutorHolder;
 }
 
 /** Options for AgentSession.prompt() */
@@ -190,6 +193,9 @@ export class AgentSession {
 	// Base system prompt (without extension appends) - used to apply fresh appends each turn
 	private _baseSystemPrompt: string;
 
+	// Interactive executor holder for bash tool
+	private _interactiveExecutorHolder: InteractiveExecutorHolder | undefined;
+
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
@@ -202,10 +208,21 @@ export class AgentSession {
 		this._toolRegistry = config.toolRegistry ?? new Map();
 		this._rebuildSystemPrompt = config.rebuildSystemPrompt;
 		this._baseSystemPrompt = config.agent.state.systemPrompt;
+		this._interactiveExecutorHolder = config.interactiveExecutorHolder;
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
 		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
+	}
+
+	/**
+	 * Set the interactive executor for the bash tool.
+	 * Called by InteractiveMode to enable running interactive commands like vim, git rebase -i, etc.
+	 */
+	setInteractiveExecutor(executor: ((command: string) => number | null) | undefined): void {
+		if (this._interactiveExecutorHolder) {
+			this._interactiveExecutorHolder.executor = executor;
+		}
 	}
 
 	/** Model registry for API key resolution and model discovery */
