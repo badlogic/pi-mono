@@ -178,7 +178,13 @@ export class SettingsManager {
 					mkdirSync(dir, { recursive: true });
 				}
 
-				// Save only global settings (project settings are read-only)
+				// Re-read current file to preserve any settings added externally while running
+				const currentFileSettings = SettingsManager.loadFromFile(this.settingsPath);
+				// Merge: file settings as base, globalSettings (in-memory changes) as overrides
+				const mergedSettings = deepMergeSettings(currentFileSettings, this.globalSettings);
+				this.globalSettings = mergedSettings;
+
+				// Save merged settings (project settings are read-only)
 				writeFileSync(this.settingsPath, JSON.stringify(this.globalSettings, null, 2), "utf-8");
 			} catch (error) {
 				console.error(`Warning: Could not save settings file: ${error}`);
