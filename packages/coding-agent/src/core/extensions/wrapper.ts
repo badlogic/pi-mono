@@ -2,7 +2,7 @@
  * Tool wrappers for extensions.
  */
 
-import type { AgentTool, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
+import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
 import type { ExtensionRunner } from "./runner.js";
 import type { ExtensionContext, RegisteredTool, ToolCallEventResult, ToolResultEventResult } from "./types.js";
 
@@ -55,6 +55,9 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 						input: params,
 					})) as ToolCallEventResult | undefined;
 
+					if (callResult?.result) {
+						return callResult.result as AgentToolResult<T>;
+					}
 					if (callResult?.block) {
 						const reason = callResult.reason || "Tool execution was blocked by an extension";
 						throw new Error(reason);

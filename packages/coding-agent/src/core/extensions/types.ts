@@ -492,6 +492,8 @@ export interface ContextEventResult {
 export interface ToolCallEventResult {
 	block?: boolean;
 	reason?: string;
+	/** Short-circuit tool execution with this result instead of running the tool */
+	result?: AgentToolResult<unknown>;
 }
 
 export interface ToolResultEventResult {
