@@ -5,6 +5,7 @@
 ### Added
 
 - Extension UI dialogs (`ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`) now support a `timeout` option that auto-dismisses the dialog with a live countdown display. Simpler alternative to `AbortSignal` for timed dialogs.
+- `thinkingBudgets` setting to customize token budgets per thinking level for token-based providers ([#521](https://github.com/badlogic/pi-mono/issues/521))
 
 ## [0.37.8] - 2026-01-07
 

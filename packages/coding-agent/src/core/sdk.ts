@@ -662,6 +662,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			: undefined,
 		steeringMode: settingsManager.getSteeringMode(),
 		followUpMode: settingsManager.getFollowUpMode(),
+		thinkingBudgets: settingsManager.getThinkingBudgets(),
 		getApiKey: async () => {
 			const currentModel = agent.state.model;
 			if (!currentModel) {

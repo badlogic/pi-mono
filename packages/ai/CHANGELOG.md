@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `thinkingBudgets` option in `SimpleStreamOptions` for customizing token budgets per thinking level on token-based providers ([#521](https://github.com/badlogic/pi-mono/issues/521))
+
 ## [0.37.8] - 2026-01-07
 
 ## [0.37.7] - 2026-01-07
