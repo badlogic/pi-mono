@@ -6,7 +6,7 @@ import type { AppAction, KeybindingsManager } from "../../../core/keybindings.js
  */
 export class CustomEditor extends Editor {
 	private keybindings: KeybindingsManager;
-	private actionHandlers: Map<AppAction, () => void> = new Map();
+	public actionHandlers: Map<AppAction, () => void> = new Map();
 
 	// Special handlers that can be dynamically replaced
 	public onEscape?: () => void;

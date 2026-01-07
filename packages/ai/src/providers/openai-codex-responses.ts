@@ -37,7 +37,6 @@ import { buildCodexPiBridge } from "./openai-codex/prompts/pi-codex-bridge.js";
 import { buildCodexSystemPrompt } from "./openai-codex/prompts/system-prompt.js";
 import {
 	type CodexRequestOptions,
-	normalizeModel,
 	type RequestBody,
 	transformRequestBody,
 } from "./openai-codex/request-transformer.js";
@@ -111,8 +110,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				params.tools = convertTools(context.tools);
 			}
 
-			const normalizedModel = normalizeModel(params.model);
-			const codexInstructions = await getCodexInstructions(normalizedModel);
+			const codexInstructions = await getCodexInstructions(params.model);
 			const bridgeText = buildCodexPiBridge(context.tools);
 			const systemPrompt = buildCodexSystemPrompt({
 				codexInstructions,
@@ -120,7 +118,6 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				userSystemPrompt: context.systemPrompt,
 			});
 
-			params.model = normalizedModel;
 			params.instructions = systemPrompt.instructions;
 
 			const codexOptions: CodexRequestOptions = {

@@ -12,7 +12,7 @@
         bytes[i] = binary.charCodeAt(i);
       }
       const data = JSON.parse(new TextDecoder('utf-8').decode(bytes));
-      const { header, entries, leafId: defaultLeafId, systemPrompt, tools } = data;
+      const { header, entries, leafId: defaultLeafId, systemPrompt, codexInjectionInfo, tools } = data;
 
       // ============================================================
       // URL PARAMETER HANDLING
@@ -954,7 +954,17 @@
         }
 
         if (entry.type === 'model_change') {
-          return `<div class="model-change" id="${entryId}">${tsHtml}Switched to model: <span class="model-name">${escapeHtml(entry.provider)}/${escapeHtml(entry.modelId)}</span></div>`;
+          let html = `<div class="model-change" id="${entryId}">${tsHtml}Switched to model: <span class="model-name">${escapeHtml(entry.provider)}/${escapeHtml(entry.modelId)}</span>`;
+          
+          // Show expandable bridge prompt info when switching to openai-codex
+          if (entry.provider === 'openai-codex' && codexInjectionInfo) {
+            const fullContent = `# Codex Instructions\n${codexInjectionInfo.instructions}\n\n# Codex-Pi Bridge\n${codexInjectionInfo.bridge}`;
+            html += ` <span class="codex-bridge-toggle" onclick="event.stopPropagation(); this.parentElement.classList.toggle('show-bridge')">[bridge prompt]</span>`;
+            html += `<div class="codex-bridge-content"><pre>${escapeHtml(fullContent)}</pre></div>`;
+          }
+          
+          html += '</div>';
+          return html;
         }
 
         if (entry.type === 'compaction') {
@@ -1060,6 +1070,7 @@
             </div>
           </div>`;
 
+        // Render system prompt (user's base prompt, applies to all providers)
         if (systemPrompt) {
           const lines = systemPrompt.split('\n');
           const previewLines = 10;

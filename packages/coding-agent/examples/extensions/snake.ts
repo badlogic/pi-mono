@@ -327,7 +327,7 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			await ctx.ui.custom((tui, _theme, done) => {
+			await ctx.ui.custom((tui, _theme, _kb, done) => {
 				return new SnakeComponent(
 					tui,
 					() => done(undefined),

@@ -48,6 +48,14 @@ export async function runPrintMode(
 			getActiveToolsHandler: () => session.getActiveToolNames(),
 			getAllToolsHandler: () => session.getAllToolNames(),
 			setActiveToolsHandler: (toolNames: string[]) => session.setActiveToolsByName(toolNames),
+			setModelHandler: async (model) => {
+				const key = await session.modelRegistry.getApiKey(model);
+				if (!key) return false;
+				await session.setModel(model);
+				return true;
+			},
+			getThinkingLevelHandler: () => session.thinkingLevel,
+			setThinkingLevelHandler: (level) => session.setThinkingLevel(level),
 		});
 		extensionRunner.onError((err) => {
 			console.error(`Extension error (${err.extensionPath}): ${err.error}`);

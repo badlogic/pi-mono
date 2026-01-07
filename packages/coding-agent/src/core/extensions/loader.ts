@@ -23,6 +23,7 @@ import type {
 	ExtensionUIContext,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
+	GetThinkingLevelHandler,
 	LoadExtensionsResult,
 	LoadedExtension,
 	MessageRenderer,
@@ -31,6 +32,8 @@ import type {
 	SendMessageHandler,
 	SendUserMessageHandler,
 	SetActiveToolsHandler,
+	SetModelHandler,
+	SetThinkingLevelHandler,
 	ToolDefinition,
 } from "./types.js";
 
@@ -96,6 +99,7 @@ function createNoOpUIContext(): ExtensionUIContext {
 		setEditorText: () => {},
 		getEditorText: () => "",
 		editor: async () => undefined,
+		setEditorComponent: () => {},
 		get theme() {
 			return theme;
 		},
@@ -124,6 +128,9 @@ function createExtensionAPI(
 	setGetActiveToolsHandler: (handler: GetActiveToolsHandler) => void;
 	setGetAllToolsHandler: (handler: GetAllToolsHandler) => void;
 	setSetActiveToolsHandler: (handler: SetActiveToolsHandler) => void;
+	setSetModelHandler: (handler: SetModelHandler) => void;
+	setGetThinkingLevelHandler: (handler: GetThinkingLevelHandler) => void;
+	setSetThinkingLevelHandler: (handler: SetThinkingLevelHandler) => void;
 	setFlagValue: (name: string, value: boolean | string) => void;
 } {
 	let sendMessageHandler: SendMessageHandler = () => {};
@@ -132,6 +139,9 @@ function createExtensionAPI(
 	let getActiveToolsHandler: GetActiveToolsHandler = () => [];
 	let getAllToolsHandler: GetAllToolsHandler = () => [];
 	let setActiveToolsHandler: SetActiveToolsHandler = () => {};
+	let setModelHandler: SetModelHandler = async () => false;
+	let getThinkingLevelHandler: GetThinkingLevelHandler = () => "off";
+	let setThinkingLevelHandler: SetThinkingLevelHandler = () => {};
 
 	const messageRenderers = new Map<string, MessageRenderer>();
 	const commands = new Map<string, RegisteredCommand>();
@@ -213,6 +223,18 @@ function createExtensionAPI(
 			setActiveToolsHandler(toolNames);
 		},
 
+		setModel(model) {
+			return setModelHandler(model);
+		},
+
+		getThinkingLevel() {
+			return getThinkingLevelHandler();
+		},
+
+		setThinkingLevel(level) {
+			setThinkingLevelHandler(level);
+		},
+
 		events: eventBus,
 	} as ExtensionAPI;
 
@@ -240,6 +262,15 @@ function createExtensionAPI(
 		},
 		setSetActiveToolsHandler: (handler: SetActiveToolsHandler) => {
 			setActiveToolsHandler = handler;
+		},
+		setSetModelHandler: (handler: SetModelHandler) => {
+			setModelHandler = handler;
+		},
+		setGetThinkingLevelHandler: (handler: GetThinkingLevelHandler) => {
+			getThinkingLevelHandler = handler;
+		},
+		setSetThinkingLevelHandler: (handler: SetThinkingLevelHandler) => {
+			setThinkingLevelHandler = handler;
 		},
 		setFlagValue: (name: string, value: boolean | string) => {
 			flagValues.set(name, value);
@@ -277,10 +308,13 @@ async function loadExtensionWithBun(
 			setGetActiveToolsHandler,
 			setGetAllToolsHandler,
 			setSetActiveToolsHandler,
+			setSetModelHandler,
+			setGetThinkingLevelHandler,
+			setSetThinkingLevelHandler,
 			setFlagValue,
 		} = createExtensionAPI(handlers, tools, cwd, extensionPath, eventBus, sharedUI);
 
-		factory(api);
+		await factory(api);
 
 		return {
 			extension: {
@@ -299,6 +333,9 @@ async function loadExtensionWithBun(
 				setGetActiveToolsHandler,
 				setGetAllToolsHandler,
 				setSetActiveToolsHandler,
+				setSetModelHandler,
+				setGetThinkingLevelHandler,
+				setSetThinkingLevelHandler,
 				setFlagValue,
 			},
 			error: null,
@@ -359,10 +396,13 @@ async function loadExtension(
 			setGetActiveToolsHandler,
 			setGetAllToolsHandler,
 			setSetActiveToolsHandler,
+			setSetModelHandler,
+			setGetThinkingLevelHandler,
+			setSetThinkingLevelHandler,
 			setFlagValue,
 		} = createExtensionAPI(handlers, tools, cwd, extensionPath, eventBus, sharedUI);
 
-		factory(api);
+		await factory(api);
 
 		return {
 			extension: {
@@ -381,6 +421,9 @@ async function loadExtension(
 				setGetActiveToolsHandler,
 				setGetAllToolsHandler,
 				setSetActiveToolsHandler,
+				setSetModelHandler,
+				setGetThinkingLevelHandler,
+				setSetThinkingLevelHandler,
 				setFlagValue,
 			},
 			error: null,
@@ -394,13 +437,13 @@ async function loadExtension(
 /**
  * Create a LoadedExtension from an inline factory function.
  */
-export function loadExtensionFromFactory(
+export async function loadExtensionFromFactory(
 	factory: ExtensionFactory,
 	cwd: string,
 	eventBus: EventBus,
 	sharedUI: { ui: ExtensionUIContext; hasUI: boolean },
 	name = "<inline>",
-): LoadedExtension {
+): Promise<LoadedExtension> {
 	const handlers = new Map<string, HandlerFn[]>();
 	const tools = new Map<string, RegisteredTool>();
 	const {
@@ -416,10 +459,13 @@ export function loadExtensionFromFactory(
 		setGetActiveToolsHandler,
 		setGetAllToolsHandler,
 		setSetActiveToolsHandler,
+		setSetModelHandler,
+		setGetThinkingLevelHandler,
+		setSetThinkingLevelHandler,
 		setFlagValue,
 	} = createExtensionAPI(handlers, tools, cwd, name, eventBus, sharedUI);
 
-	factory(api);
+	await factory(api);
 
 	return {
 		path: name,
@@ -437,6 +483,9 @@ export function loadExtensionFromFactory(
 		setGetActiveToolsHandler,
 		setGetAllToolsHandler,
 		setSetActiveToolsHandler,
+		setSetModelHandler,
+		setGetThinkingLevelHandler,
+		setSetThinkingLevelHandler,
 		setFlagValue,
 	};
 }

@@ -29,7 +29,8 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 
 export interface ScopedModel {
 	model: Model<Api>;
-	thinkingLevel: ThinkingLevel;
+	/** Thinking level if explicitly specified in pattern (e.g., "model:high"), undefined otherwise */
+	thinkingLevel?: ThinkingLevel;
 }
 
 /**
@@ -98,7 +99,8 @@ function tryMatchModel(modelPattern: string, availableModels: Model<Api>[]): Mod
 
 export interface ParsedModelResult {
 	model: Model<Api> | undefined;
-	thinkingLevel: ThinkingLevel;
+	/** Thinking level if explicitly specified in pattern, undefined otherwise */
+	thinkingLevel?: ThinkingLevel;
 	warning: string | undefined;
 }
 
@@ -119,14 +121,14 @@ export function parseModelPattern(pattern: string, availableModels: Model<Api>[]
 	// Try exact match first
 	const exactMatch = tryMatchModel(pattern, availableModels);
 	if (exactMatch) {
-		return { model: exactMatch, thinkingLevel: "off", warning: undefined };
+		return { model: exactMatch, thinkingLevel: undefined, warning: undefined };
 	}
 
 	// No match - try splitting on last colon if present
 	const lastColonIndex = pattern.lastIndexOf(":");
 	if (lastColonIndex === -1) {
 		// No colons, pattern simply doesn't match any model
-		return { model: undefined, thinkingLevel: "off", warning: undefined };
+		return { model: undefined, thinkingLevel: undefined, warning: undefined };
 	}
 
 	const prefix = pattern.substring(0, lastColonIndex);
@@ -137,22 +139,21 @@ export function parseModelPattern(pattern: string, availableModels: Model<Api>[]
 		const result = parseModelPattern(prefix, availableModels);
 		if (result.model) {
 			// Only use this thinking level if no warning from inner recursion
-			// (if there was an invalid suffix deeper, we already have "off")
 			return {
 				model: result.model,
-				thinkingLevel: result.warning ? "off" : suffix,
+				thinkingLevel: result.warning ? undefined : suffix,
 				warning: result.warning,
 			};
 		}
 		return result;
 	} else {
-		// Invalid suffix - recurse on prefix with "off" and warn
+		// Invalid suffix - recurse on prefix and warn
 		const result = parseModelPattern(prefix, availableModels);
 		if (result.model) {
 			return {
 				model: result.model,
-				thinkingLevel: "off",
-				warning: `Invalid thinking level "${suffix}" in pattern "${pattern}". Using "off" instead.`,
+				thinkingLevel: undefined,
+				warning: `Invalid thinking level "${suffix}" in pattern "${pattern}". Using default instead.`,
 			};
 		}
 		return result;
@@ -180,7 +181,7 @@ export async function resolveModelScope(patterns: string[], modelRegistry: Model
 			// Extract optional thinking level suffix (e.g., "provider/*:high")
 			const colonIdx = pattern.lastIndexOf(":");
 			let globPattern = pattern;
-			let thinkingLevel: ThinkingLevel = "off";
+			let thinkingLevel: ThinkingLevel | undefined;
 
 			if (colonIdx !== -1) {
 				const suffix = pattern.substring(colonIdx + 1);
@@ -282,7 +283,7 @@ export async function findInitialModel(options: {
 	if (scopedModels.length > 0 && !isContinuing) {
 		return {
 			model: scopedModels[0].model,
-			thinkingLevel: scopedModels[0].thinkingLevel,
+			thinkingLevel: scopedModels[0].thinkingLevel ?? defaultThinkingLevel ?? "off",
 			fallbackMessage: undefined,
 		};
 	}
