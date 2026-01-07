@@ -155,6 +155,12 @@ describe("parseArgs", () => {
 			const result = parseArgs(["--no-extensions"]);
 			expect(result.noExtensions).toBe(true);
 		});
+
+		test("parses --no-extensions with explicit -e flags", () => {
+			const result = parseArgs(["--no-extensions", "-e", "foo.ts", "-e", "bar.ts"]);
+			expect(result.noExtensions).toBe(true);
+			expect(result.extensions).toEqual(["foo.ts", "bar.ts"]);
+		});
 	});
 
 	describe("--no-skills flag", () => {

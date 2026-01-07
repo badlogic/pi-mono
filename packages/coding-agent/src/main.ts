@@ -18,7 +18,12 @@ import type { AgentSession } from "./core/agent-session.js";
 
 import { createEventBus } from "./core/event-bus.js";
 import { exportFromFile } from "./core/export-html/index.js";
-import { discoverAndLoadExtensions, type ExtensionUIContext, type LoadedExtension } from "./core/extensions/index.js";
+import {
+	discoverAndLoadExtensions,
+	type ExtensionUIContext,
+	type LoadedExtension,
+	loadExtensions,
+} from "./core/extensions/index.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { type CreateAgentSessionOptions, createAgentSession, discoverAuthStorage, discoverModels } from "./core/sdk.js";
@@ -328,7 +333,15 @@ export async function main(args: string[]) {
 	time("SettingsManager.create");
 
 	let loadedExtensions: LoadedExtension[] = [];
-	if (!firstPass.noExtensions) {
+	if (firstPass.noExtensions) {
+		// --no-extensions disables discovery, but explicit -e flags still work
+		const explicitPaths = firstPass.extensions ?? [];
+		if (explicitPaths.length > 0) {
+			const result = await loadExtensions(explicitPaths, cwd, eventBus);
+			loadedExtensions = result.extensions;
+			time("loadExtensions");
+		}
+	} else {
 		// Merge CLI --extension args with settings.json extensions
 		const extensionPaths = [...settingsManager.getExtensionPaths(), ...(firstPass.extensions ?? [])];
 		const result = await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus);
