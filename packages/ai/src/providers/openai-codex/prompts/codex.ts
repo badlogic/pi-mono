@@ -44,17 +44,17 @@ export type CacheMetadata = {
 	url: string;
 };
 
-export function getModelFamily(normalizedModel: string): ModelFamily {
-	if (normalizedModel.includes("gpt-5.2-codex") || normalizedModel.includes("gpt 5.2 codex")) {
+export function getModelFamily(model: string): ModelFamily {
+	if (model.includes("gpt-5.2-codex") || model.includes("gpt 5.2 codex")) {
 		return "gpt-5.2-codex";
 	}
-	if (normalizedModel.includes("codex-max")) {
+	if (model.includes("codex-max")) {
 		return "codex-max";
 	}
-	if (normalizedModel.includes("codex") || normalizedModel.startsWith("codex-")) {
+	if (model.includes("codex") || model.startsWith("codex-")) {
 		return "codex";
 	}
-	if (normalizedModel.includes("gpt-5.2")) {
+	if (model.includes("gpt-5.2")) {
 		return "gpt-5.2";
 	}
 	return "gpt-5.1";
@@ -96,8 +96,8 @@ async function getLatestReleaseTag(): Promise<string> {
 	throw new Error("Failed to determine latest release tag from GitHub");
 }
 
-export async function getCodexInstructions(normalizedModel = "gpt-5.1-codex"): Promise<string> {
-	const modelFamily = getModelFamily(normalizedModel);
+export async function getCodexInstructions(model = "gpt-5.1-codex"): Promise<string> {
+	const modelFamily = getModelFamily(model);
 	const promptFile = PROMPT_FILES[modelFamily];
 	const cacheDir = getCacheDir();
 	const cacheFile = join(cacheDir, CACHE_FILES[modelFamily]);

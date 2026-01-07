@@ -41,155 +41,26 @@ export interface RequestBody {
 	[key: string]: unknown;
 }
 
-const MODEL_MAP: Record<string, string> = {
-	"gpt-5.1-codex": "gpt-5.1-codex",
-	"gpt-5.1-codex-low": "gpt-5.1-codex",
-	"gpt-5.1-codex-medium": "gpt-5.1-codex",
-	"gpt-5.1-codex-high": "gpt-5.1-codex",
-	"gpt-5.1-codex-max": "gpt-5.1-codex-max",
-	"gpt-5.1-codex-max-low": "gpt-5.1-codex-max",
-	"gpt-5.1-codex-max-medium": "gpt-5.1-codex-max",
-	"gpt-5.1-codex-max-high": "gpt-5.1-codex-max",
-	"gpt-5.1-codex-max-xhigh": "gpt-5.1-codex-max",
-	"gpt-5.2": "gpt-5.2",
-	"gpt-5.2-none": "gpt-5.2",
-	"gpt-5.2-low": "gpt-5.2",
-	"gpt-5.2-medium": "gpt-5.2",
-	"gpt-5.2-high": "gpt-5.2",
-	"gpt-5.2-xhigh": "gpt-5.2",
-	"gpt-5.2-codex": "gpt-5.2-codex",
-	"gpt-5.2-codex-low": "gpt-5.2-codex",
-	"gpt-5.2-codex-medium": "gpt-5.2-codex",
-	"gpt-5.2-codex-high": "gpt-5.2-codex",
-	"gpt-5.2-codex-xhigh": "gpt-5.2-codex",
-	"gpt-5.1-codex-mini": "gpt-5.1-codex-mini",
-	"gpt-5.1-codex-mini-medium": "gpt-5.1-codex-mini",
-	"gpt-5.1-codex-mini-high": "gpt-5.1-codex-mini",
-	"gpt-5.1": "gpt-5.1",
-	"gpt-5.1-none": "gpt-5.1",
-	"gpt-5.1-low": "gpt-5.1",
-	"gpt-5.1-medium": "gpt-5.1",
-	"gpt-5.1-high": "gpt-5.1",
-	"gpt-5.1-chat-latest": "gpt-5.1",
-	"gpt-5-codex": "gpt-5.1-codex",
-	"codex-mini-latest": "gpt-5.1-codex-mini",
-	"gpt-5-codex-mini": "gpt-5.1-codex-mini",
-	"gpt-5-codex-mini-medium": "gpt-5.1-codex-mini",
-	"gpt-5-codex-mini-high": "gpt-5.1-codex-mini",
-	"gpt-5": "gpt-5.1",
-	"gpt-5-mini": "gpt-5.1",
-	"gpt-5-nano": "gpt-5.1",
-};
-
-function getNormalizedModel(modelId: string): string | undefined {
-	if (MODEL_MAP[modelId]) return MODEL_MAP[modelId];
-	const lowerModelId = modelId.toLowerCase();
-	const match = Object.keys(MODEL_MAP).find((key) => key.toLowerCase() === lowerModelId);
-	return match ? MODEL_MAP[match] : undefined;
-}
-
-export function normalizeModel(model: string | undefined): string {
-	if (!model) return "gpt-5.1";
-
+function clampReasoningEffort(model: string, effort: ReasoningConfig["effort"]): ReasoningConfig["effort"] {
+	// Codex backend expects exact model IDs. Do not normalize model names here.
 	const modelId = model.includes("/") ? model.split("/").pop()! : model;
-	const mappedModel = getNormalizedModel(modelId);
-	if (mappedModel) return mappedModel;
 
-	const normalized = modelId.toLowerCase();
-
-	if (normalized.includes("gpt-5.2-codex") || normalized.includes("gpt 5.2 codex")) {
-		return "gpt-5.2-codex";
-	}
-	if (normalized.includes("gpt-5.2") || normalized.includes("gpt 5.2")) {
-		return "gpt-5.2";
-	}
-	if (normalized.includes("gpt-5.1-codex-max") || normalized.includes("gpt 5.1 codex max")) {
-		return "gpt-5.1-codex-max";
-	}
-	if (normalized.includes("gpt-5.1-codex-mini") || normalized.includes("gpt 5.1 codex mini")) {
-		return "gpt-5.1-codex-mini";
-	}
-	if (
-		normalized.includes("codex-mini-latest") ||
-		normalized.includes("gpt-5-codex-mini") ||
-		normalized.includes("gpt 5 codex mini")
-	) {
-		return "codex-mini-latest";
-	}
-	if (normalized.includes("gpt-5.1-codex") || normalized.includes("gpt 5.1 codex")) {
-		return "gpt-5.1-codex";
-	}
-	if (normalized.includes("gpt-5.1") || normalized.includes("gpt 5.1")) {
-		return "gpt-5.1";
-	}
-	if (normalized.includes("codex")) {
-		return "gpt-5.1-codex";
-	}
-	if (normalized.includes("gpt-5") || normalized.includes("gpt 5")) {
-		return "gpt-5.1";
+	// gpt-5.1 does not support xhigh.
+	if (modelId === "gpt-5.1" && effort === "xhigh") {
+		return "high";
 	}
 
-	return "gpt-5.1";
+	// gpt-5.1-codex-mini only supports medium/high.
+	if (modelId === "gpt-5.1-codex-mini") {
+		return effort === "high" || effort === "xhigh" ? "high" : "medium";
+	}
+
+	return effort;
 }
 
-function getReasoningConfig(modelName: string | undefined, options: CodexRequestOptions = {}): ReasoningConfig {
-	const normalizedName = modelName?.toLowerCase() ?? "";
-
-	const isGpt52Codex = normalizedName.includes("gpt-5.2-codex") || normalizedName.includes("gpt 5.2 codex");
-	const isGpt52General = (normalizedName.includes("gpt-5.2") || normalizedName.includes("gpt 5.2")) && !isGpt52Codex;
-	const isCodexMax = normalizedName.includes("codex-max") || normalizedName.includes("codex max");
-	const isCodexMini =
-		normalizedName.includes("codex-mini") ||
-		normalizedName.includes("codex mini") ||
-		normalizedName.includes("codex_mini") ||
-		normalizedName.includes("codex-mini-latest");
-	const isCodex = normalizedName.includes("codex") && !isCodexMini;
-	const isLightweight = !isCodexMini && (normalizedName.includes("nano") || normalizedName.includes("mini"));
-	const isGpt51General =
-		(normalizedName.includes("gpt-5.1") || normalizedName.includes("gpt 5.1")) &&
-		!isCodex &&
-		!isCodexMax &&
-		!isCodexMini;
-
-	const supportsXhigh = isGpt52General || isGpt52Codex || isCodexMax;
-	const supportsNone = isGpt52General || isGpt51General;
-
-	const defaultEffort: ReasoningConfig["effort"] = isCodexMini
-		? "medium"
-		: supportsXhigh
-			? "high"
-			: isLightweight
-				? "minimal"
-				: "medium";
-
-	let effort = options.reasoningEffort || defaultEffort;
-
-	if (isCodexMini) {
-		if (effort === "minimal" || effort === "low" || effort === "none") {
-			effort = "medium";
-		}
-		if (effort === "xhigh") {
-			effort = "high";
-		}
-		if (effort !== "high" && effort !== "medium") {
-			effort = "medium";
-		}
-	}
-
-	if (!supportsXhigh && effort === "xhigh") {
-		effort = "high";
-	}
-
-	if (!supportsNone && effort === "none") {
-		effort = "low";
-	}
-
-	if (isCodex && effort === "minimal") {
-		effort = "low";
-	}
-
+function getReasoningConfig(model: string, options: CodexRequestOptions): ReasoningConfig {
 	return {
-		effort,
+		effort: clampReasoningEffort(model, options.reasoningEffort as ReasoningConfig["effort"]),
 		summary: options.reasoningSummary ?? "auto",
 	};
 }
@@ -213,9 +84,6 @@ export async function transformRequestBody(
 	options: CodexRequestOptions = {},
 	prompt?: { instructions: string; developerMessages: string[] },
 ): Promise<RequestBody> {
-	const normalizedModel = normalizeModel(body.model);
-
-	body.model = normalizedModel;
 	body.store = false;
 	body.stream = true;
 
@@ -270,7 +138,7 @@ export async function transformRequestBody(
 	}
 
 	if (options.reasoningEffort !== undefined) {
-		const reasoningConfig = getReasoningConfig(normalizedModel, options);
+		const reasoningConfig = getReasoningConfig(body.model, options);
 		body.reasoning = {
 			...body.reasoning,
 			...reasoningConfig,
