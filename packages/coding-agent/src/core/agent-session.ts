@@ -1262,8 +1262,24 @@ export class AgentSession {
 
 		const contextWindow = this.model?.contextWindow ?? 0;
 
+		// Skip overflow check if the message came from a different model.
+		// This handles the case where user switched from a smaller-context model (e.g. opus)
+		// to a larger-context model (e.g. codex) - the overflow error from the old model
+		// shouldn't trigger compaction for the new model.
+		const sameModel =
+			this.model && assistantMessage.provider === this.model.provider && assistantMessage.model === this.model.id;
+
+		// Skip overflow check if the error is from before a compaction in the current path.
+		// This handles the case where an error was kept after compaction (in the "kept" region).
+		// The error shouldn't trigger another compaction since we already compacted.
+		// Example: opus fails → switch to codex → compact → switch back to opus → opus error
+		// is still in context but shouldn't trigger compaction again.
+		const compactionEntry = this.sessionManager.getBranch().find((e) => e.type === "compaction");
+		const errorIsFromBeforeCompaction =
+			compactionEntry && assistantMessage.timestamp < new Date(compactionEntry.timestamp).getTime();
+
 		// Case 1: Overflow - LLM returned context overflow error
-		if (isContextOverflow(assistantMessage, contextWindow)) {
+		if (sameModel && !errorIsFromBeforeCompaction && isContextOverflow(assistantMessage, contextWindow)) {
 			// Remove the error message from agent state (it IS saved to session for history,
 			// but we don't want it in context for the retry)
 			const messages = this.agent.state.messages;
