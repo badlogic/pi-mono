@@ -8,6 +8,25 @@
 
 import type { AssistantMessage, ImageContent } from "@mariozechner/pi-ai";
 import type { AgentSession } from "../core/agent-session.js";
+import { PrintModeProgress } from "./print-mode-progress.js";
+
+/** Options for print mode */
+export interface PrintModeOptions {
+	/** Suppress progress output even on TTY */
+	quiet?: boolean;
+}
+
+/**
+ * Determine if progress should be shown based on mode, TTY, and quiet flag.
+ * Exported for testing.
+ */
+export function shouldShowProgress(mode: "text" | "json", isTTY: boolean, quiet?: boolean): boolean {
+	// Progress is shown only when:
+	// - In text mode (not json)
+	// - stderr is a TTY
+	// - --quiet flag is not set
+	return mode === "text" && isTTY && !quiet;
+}
 
 /**
  * Run in print (single-shot) mode.
@@ -18,6 +37,7 @@ import type { AgentSession } from "../core/agent-session.js";
  * @param messages Array of prompts to send
  * @param initialMessage Optional first message (may contain @file content)
  * @param initialImages Optional images for the initial message
+ * @param options Additional options for print mode
  */
 export async function runPrintMode(
 	session: AgentSession,
@@ -25,20 +45,26 @@ export async function runPrintMode(
 	messages: string[],
 	initialMessage?: string,
 	initialImages?: ImageContent[],
+	options?: PrintModeOptions,
 ): Promise<void> {
+	const showProgress = shouldShowProgress(mode, !!process.stderr.isTTY, options?.quiet);
+
+	// Create progress renderer if enabled
+	const progress = showProgress ? new PrintModeProgress() : null;
+
 	// Extension runner already has no-op UI context by default (set in loader)
 	// Set up extensions for print mode (no UI)
 	const extensionRunner = session.extensionRunner;
 	if (extensionRunner) {
 		extensionRunner.initialize({
 			getModel: () => session.model,
-			sendMessageHandler: (message, options) => {
-				session.sendCustomMessage(message, options).catch((e) => {
+			sendMessageHandler: (message, opts) => {
+				session.sendCustomMessage(message, opts).catch((e) => {
 					console.error(`Extension sendMessage failed: ${e instanceof Error ? e.message : String(e)}`);
 				});
 			},
-			sendUserMessageHandler: (content, options) => {
-				session.sendUserMessage(content, options).catch((e) => {
+			sendUserMessageHandler: (content, opts) => {
+				session.sendUserMessage(content, opts).catch((e) => {
 					console.error(`Extension sendUserMessage failed: ${e instanceof Error ? e.message : String(e)}`);
 				});
 			},
@@ -66,8 +92,18 @@ export async function runPrintMode(
 		});
 	}
 
+	// Start progress display if enabled
+	if (progress) {
+		progress.start(session.model, session.thinkingLevel);
+	}
+
 	// Always subscribe to enable session persistence via _handleAgentEvent
 	session.subscribe((event) => {
+		// Update progress display
+		if (progress) {
+			progress.handleEvent(event);
+		}
+
 		// In JSON mode, output all events
 		if (mode === "json") {
 			console.log(JSON.stringify(event));
@@ -82,6 +118,11 @@ export async function runPrintMode(
 	// Send remaining messages
 	for (const message of messages) {
 		await session.prompt(message);
+	}
+
+	// Stop progress display before outputting final result
+	if (progress) {
+		progress.stop();
 	}
 
 	// In text mode, output final response

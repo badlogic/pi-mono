@@ -1115,7 +1115,8 @@ pi [options] [@files...] [messages...]
 | `--system-prompt <text\|file>` | Custom system prompt (text or file path) |
 | `--append-system-prompt <text\|file>` | Append to system prompt |
 | `--mode <mode>` | Output mode: `text`, `json`, `rpc` (implies `--print`) |
-| `--print`, `-p` | Non-interactive: process prompt and exit |
+| `--print`, `-p` | Non-interactive mode: process prompt and exit |
+| `--quiet`, `-q` | Suppress progress output in non-interactive mode |
 | `--no-session` | Don't save session |
 | `--session <path>` | Use specific session file |
 | `--session-dir <dir>` | Directory for session storage and lookup |

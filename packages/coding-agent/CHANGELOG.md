@@ -10,6 +10,7 @@
 
 - Extension UI dialogs (`ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`) now support a `timeout` option that auto-dismisses the dialog with a live countdown display. Simpler alternative to `AbortSignal` for timed dialogs.
 - Extensions can now provide custom editor components via `ctx.ui.setEditorComponent((tui, theme, keybindings) => ...)`. Extend `CustomEditor` for full app keybinding support (escape, ctrl+d, model switching, etc.). See `examples/extensions/modal-editor.ts`, `examples/extensions/rainbow-editor.ts`, and `docs/tui.md` Pattern 7.
+- Print mode (`-p`) now shows a live progress line on TTY stderr with spinner, current activity, cumulative token stats, cost, model/thinking level, and elapsed time. Automatically disabled for non-TTY (piped output) or with `--quiet`/`-q` flag.
 
 ### Fixed
 

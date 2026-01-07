@@ -512,7 +512,9 @@ export async function main(args: string[]) {
 			fdPath,
 		);
 	} else {
-		await runPrintMode(session, mode, parsed.messages, initialMessage, initialImages);
+		await runPrintMode(session, mode, parsed.messages, initialMessage, initialImages, {
+			quiet: parsed.quiet,
+		});
 		stopThemeWatcher();
 		if (process.stdout.writableLength > 0) {
 			await new Promise<void>((resolve) => process.stdout.once("drain", resolve));
