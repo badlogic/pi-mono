@@ -5,6 +5,11 @@
 ### Added
 
 - `EditorComponent` interface for custom editor implementations
+- `StdinBuffer` class to split batched stdin into individual sequences (adapted from [OpenTUI](https://github.com/anomalyco/opentui), MIT license)
+
+### Fixed
+
+- Key presses no longer dropped when batched with other events over SSH ([#538](https://github.com/badlogic/pi-mono/pull/538))
 
 ## [0.37.8] - 2026-01-07
 
