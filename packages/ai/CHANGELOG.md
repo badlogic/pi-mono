@@ -2,9 +2,13 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed OpenAI Codex model aliases (`gpt-5`, `gpt-5-mini`, `gpt-5-nano`, `codex-mini-latest`, `gpt-5-codex`, `gpt-5.1-codex`, `gpt-5.1-chat-latest`). Use canonical model IDs: `gpt-5.1`, `gpt-5.1-codex-max`, `gpt-5.1-codex-mini`, `gpt-5.2`, `gpt-5.2-codex`. ([#536](https://github.com/badlogic/pi-mono/pull/536) by [@ghoulr](https://github.com/ghoulr))
+
 ### Fixed
 
-- Fixed OpenAI Codex OAuth model list (removed aliases), aligned context window/maxTokens with observed backend limits, and refined reasoning effort clamping.
+- Fixed OpenAI Codex context window from 400,000 to 272,000 tokens to match Codex CLI defaults and prevent 400 errors. ([#536](https://github.com/badlogic/pi-mono/pull/536) by [@ghoulr](https://github.com/ghoulr))
 
 ## [0.37.8] - 2026-01-07
 

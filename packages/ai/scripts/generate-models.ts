@@ -447,8 +447,7 @@ async function generateModels() {
 	// Context window is based on observed server limits (400s above ~272k), not marketing numbers.
 	const CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 	const CODEX_CONTEXT = 272000;
-	// Use the same max output token budget as Codex CLI.
-	const CODEX_MAX_TOKENS = 10000;
+	const CODEX_MAX_TOKENS = 128000;
 	const codexModels: Model<"openai-codex-responses">[] = [
 		{
 			id: "gpt-5.1",
