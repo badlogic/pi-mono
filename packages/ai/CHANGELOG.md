@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed OpenAI Codex OAuth model list (removed aliases), aligned context window/maxTokens with observed backend limits, and refined reasoning effort clamping.
+
 ## [0.37.8] - 2026-01-07
 
 ## [0.37.7] - 2026-01-07
