@@ -488,7 +488,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		};
 		for (let i = 0; i < options.extensions.length; i++) {
 			const factory = options.extensions[i];
-			const loaded = loadExtensionFromFactory(factory, cwd, eventBus, uiHolder, `<inline-${i}>`);
+			const loaded = await loadExtensionFromFactory(factory, cwd, eventBus, uiHolder, `<inline-${i}>`);
 			extensionsResult.extensions.push(loaded);
 		}
 		// Extend setUIContext to update inline extensions too
