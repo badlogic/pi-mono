@@ -1,5 +1,18 @@
-import Clipboard from "@crosscopy/clipboard";
 import { spawnSync } from "child_process";
+
+type ClipboardModule = typeof import("@crosscopy/clipboard");
+let _clipboard: ClipboardModule | null | undefined;
+
+function getClipboard(): ClipboardModule | null {
+	if (_clipboard === undefined) {
+		try {
+			_clipboard = require("@crosscopy/clipboard");
+		} catch {
+			_clipboard = null;
+		}
+	}
+	return _clipboard as ClipboardModule | null;
+}
 
 export type ClipboardImage = {
 	bytes: Uint8Array;
@@ -143,11 +156,12 @@ export async function readClipboardImage(options?: {
 		return readClipboardImageViaWlPaste() ?? readClipboardImageViaXclip();
 	}
 
-	if (!Clipboard.hasImage()) {
+	const clipboard = getClipboard();
+	if (!clipboard || !clipboard.hasImage()) {
 		return null;
 	}
 
-	const imageData = await Clipboard.getImageBinary();
+	const imageData = await clipboard.getImageBinary();
 	if (!imageData || imageData.length === 0) {
 		return null;
 	}
