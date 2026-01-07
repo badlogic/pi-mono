@@ -14,7 +14,7 @@
 import * as crypto from "node:crypto";
 import * as readline from "readline";
 import type { AgentSession } from "../../core/agent-session.js";
-import type { ExtensionUIContext } from "../../core/extensions/index.js";
+import type { ExtensionUIContext, ExtensionUIDialogOptions } from "../../core/extensions/index.js";
 import { theme } from "../interactive/theme/theme.js";
 import type {
 	RpcCommand,
@@ -63,99 +63,67 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		{ resolve: (value: any) => void; reject: (error: Error) => void }
 	>();
 
+	/** Helper for dialog methods with signal/timeout support */
+	function createDialogPromise<T>(
+		opts: ExtensionUIDialogOptions | undefined,
+		defaultValue: T,
+		request: Record<string, unknown>,
+		parseResponse: (response: RpcExtensionUIResponse) => T,
+	): Promise<T> {
+		if (opts?.signal?.aborted) return Promise.resolve(defaultValue);
+
+		const id = crypto.randomUUID();
+		return new Promise((resolve, reject) => {
+			let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+			const cleanup = () => {
+				if (timeoutId) clearTimeout(timeoutId);
+				opts?.signal?.removeEventListener("abort", onAbort);
+				pendingExtensionRequests.delete(id);
+			};
+
+			const onAbort = () => {
+				cleanup();
+				resolve(defaultValue);
+			};
+			opts?.signal?.addEventListener("abort", onAbort, { once: true });
+
+			if (opts?.timeout) {
+				timeoutId = setTimeout(() => {
+					cleanup();
+					resolve(defaultValue);
+				}, opts.timeout);
+			}
+
+			pendingExtensionRequests.set(id, {
+				resolve: (response: RpcExtensionUIResponse) => {
+					cleanup();
+					resolve(parseResponse(response));
+				},
+				reject,
+			});
+			output({ type: "extension_ui_request", id, ...request } as RpcExtensionUIRequest);
+		});
+	}
+
 	/**
 	 * Create an extension UI context that uses the RPC protocol.
 	 */
 	const createExtensionUIContext = (): ExtensionUIContext => ({
-		async select(title: string, options: string[], opts?: { signal?: AbortSignal }): Promise<string | undefined> {
-			if (opts?.signal?.aborted) {
-				return undefined;
-			}
+		select: (title, options, opts) =>
+			createDialogPromise(opts, undefined, { method: "select", title, options, timeout: opts?.timeout }, (r) =>
+				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
+			),
 
-			const id = crypto.randomUUID();
-			return new Promise((resolve, reject) => {
-				const onAbort = () => {
-					pendingExtensionRequests.delete(id);
-					resolve(undefined);
-				};
-				opts?.signal?.addEventListener("abort", onAbort, { once: true });
+		confirm: (title, message, opts) =>
+			createDialogPromise(opts, false, { method: "confirm", title, message, timeout: opts?.timeout }, (r) =>
+				"cancelled" in r && r.cancelled ? false : "confirmed" in r ? r.confirmed : false,
+			),
 
-				pendingExtensionRequests.set(id, {
-					resolve: (response: RpcExtensionUIResponse) => {
-						opts?.signal?.removeEventListener("abort", onAbort);
-						if ("cancelled" in response && response.cancelled) {
-							resolve(undefined);
-						} else if ("value" in response) {
-							resolve(response.value);
-						} else {
-							resolve(undefined);
-						}
-					},
-					reject,
-				});
-				output({ type: "extension_ui_request", id, method: "select", title, options } as RpcExtensionUIRequest);
-			});
-		},
-
-		async confirm(title: string, message: string, opts?: { signal?: AbortSignal }): Promise<boolean> {
-			if (opts?.signal?.aborted) {
-				return false;
-			}
-
-			const id = crypto.randomUUID();
-			return new Promise((resolve, reject) => {
-				const onAbort = () => {
-					pendingExtensionRequests.delete(id);
-					resolve(false);
-				};
-				opts?.signal?.addEventListener("abort", onAbort, { once: true });
-
-				pendingExtensionRequests.set(id, {
-					resolve: (response: RpcExtensionUIResponse) => {
-						opts?.signal?.removeEventListener("abort", onAbort);
-						if ("cancelled" in response && response.cancelled) {
-							resolve(false);
-						} else if ("confirmed" in response) {
-							resolve(response.confirmed);
-						} else {
-							resolve(false);
-						}
-					},
-					reject,
-				});
-				output({ type: "extension_ui_request", id, method: "confirm", title, message } as RpcExtensionUIRequest);
-			});
-		},
-
-		async input(title: string, placeholder?: string, opts?: { signal?: AbortSignal }): Promise<string | undefined> {
-			if (opts?.signal?.aborted) {
-				return undefined;
-			}
-
-			const id = crypto.randomUUID();
-			return new Promise((resolve, reject) => {
-				const onAbort = () => {
-					pendingExtensionRequests.delete(id);
-					resolve(undefined);
-				};
-				opts?.signal?.addEventListener("abort", onAbort, { once: true });
-
-				pendingExtensionRequests.set(id, {
-					resolve: (response: RpcExtensionUIResponse) => {
-						opts?.signal?.removeEventListener("abort", onAbort);
-						if ("cancelled" in response && response.cancelled) {
-							resolve(undefined);
-						} else if ("value" in response) {
-							resolve(response.value);
-						} else {
-							resolve(undefined);
-						}
-					},
-					reject,
-				});
-				output({ type: "extension_ui_request", id, method: "input", title, placeholder } as RpcExtensionUIRequest);
-			});
-		},
+		input: (title, placeholder, opts) =>
+			createDialogPromise(opts, undefined, { method: "input", title, placeholder, timeout: opts?.timeout }, (r) =>
+				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
+			),
 
 		notify(message: string, type?: "info" | "warning" | "error"): void {
 			// Fire and forget - no response needed

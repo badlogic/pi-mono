@@ -2,64 +2,73 @@
  * Simple text input component for extensions.
  */
 
-import { Container, getEditorKeybindings, Input, Spacer, Text } from "@mariozechner/pi-tui";
+import { Container, getEditorKeybindings, Input, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import { theme } from "../theme/theme.js";
+import { CountdownTimer } from "./countdown-timer.js";
 import { DynamicBorder } from "./dynamic-border.js";
+
+export interface ExtensionInputOptions {
+	tui?: TUI;
+	timeout?: number;
+}
 
 export class ExtensionInputComponent extends Container {
 	private input: Input;
 	private onSubmitCallback: (value: string) => void;
 	private onCancelCallback: () => void;
+	private titleText: Text;
+	private baseTitle: string;
+	private countdown: CountdownTimer | undefined;
 
 	constructor(
 		title: string,
 		_placeholder: string | undefined,
 		onSubmit: (value: string) => void,
 		onCancel: () => void,
+		opts?: ExtensionInputOptions,
 	) {
 		super();
 
 		this.onSubmitCallback = onSubmit;
 		this.onCancelCallback = onCancel;
+		this.baseTitle = title;
 
-		// Add top border
 		this.addChild(new DynamicBorder());
 		this.addChild(new Spacer(1));
 
-		// Add title
-		this.addChild(new Text(theme.fg("accent", title), 1, 0));
+		this.titleText = new Text(theme.fg("accent", title), 1, 0);
+		this.addChild(this.titleText);
 		this.addChild(new Spacer(1));
 
-		// Create input
+		if (opts?.timeout && opts.timeout > 0 && opts.tui) {
+			this.countdown = new CountdownTimer(
+				opts.timeout,
+				opts.tui,
+				(s) => this.titleText.setText(theme.fg("accent", `${this.baseTitle} (${s}s)`)),
+				() => this.onCancelCallback(),
+			);
+		}
+
 		this.input = new Input();
 		this.addChild(this.input);
-
 		this.addChild(new Spacer(1));
-
-		// Add hint
 		this.addChild(new Text(theme.fg("dim", "enter submit  esc cancel"), 1, 0));
-
 		this.addChild(new Spacer(1));
-
-		// Add bottom border
 		this.addChild(new DynamicBorder());
 	}
 
 	handleInput(keyData: string): void {
 		const kb = getEditorKeybindings();
-		// Enter
 		if (kb.matches(keyData, "selectConfirm") || keyData === "\n") {
 			this.onSubmitCallback(this.input.getValue());
-			return;
-		}
-
-		// Escape or Ctrl+C to cancel
-		if (kb.matches(keyData, "selectCancel")) {
+		} else if (kb.matches(keyData, "selectCancel")) {
 			this.onCancelCallback();
-			return;
+		} else {
+			this.input.handleInput(keyData);
 		}
+	}
 
-		// Forward to input
-		this.input.handleInput(keyData);
+	dispose(): void {
+		this.countdown?.dispose();
 	}
 }

@@ -54,6 +54,7 @@ export type {
 	ExtensionHandler,
 	ExtensionShortcut,
 	ExtensionUIContext,
+	ExtensionUIDialogOptions,
 	LoadExtensionsResult,
 	LoadedExtension,
 	MessageRenderer,

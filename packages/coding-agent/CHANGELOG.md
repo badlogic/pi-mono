@@ -5,6 +5,7 @@
 ### Added
 
 - `--no-extensions` flag to disable extension discovery and loading
+- Extension UI dialogs (`ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`) now support a `timeout` option that auto-dismisses the dialog with a live countdown display. Simpler alternative to `AbortSignal` for timed dialogs.
 
 ## [0.37.8] - 2026-01-07
 

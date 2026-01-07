@@ -32,6 +32,7 @@ import type {
 	ExtensionContext,
 	ExtensionRunner,
 	ExtensionUIContext,
+	ExtensionUIDialogOptions,
 	LoadedExtension,
 } from "../../core/extensions/index.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
@@ -764,7 +765,7 @@ export class InteractiveMode {
 	private showExtensionSelector(
 		title: string,
 		options: string[],
-		opts?: { signal?: AbortSignal },
+		opts?: ExtensionUIDialogOptions,
 	): Promise<string | undefined> {
 		return new Promise((resolve) => {
 			if (opts?.signal?.aborted) {
@@ -791,6 +792,7 @@ export class InteractiveMode {
 					this.hideExtensionSelector();
 					resolve(undefined);
 				},
+				{ tui: this.ui, timeout: opts?.timeout },
 			);
 
 			this.editorContainer.clear();
@@ -804,6 +806,7 @@ export class InteractiveMode {
 	 * Hide the extension selector.
 	 */
 	private hideExtensionSelector(): void {
+		this.extensionSelector?.dispose();
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.extensionSelector = undefined;
@@ -817,7 +820,7 @@ export class InteractiveMode {
 	private async showExtensionConfirm(
 		title: string,
 		message: string,
-		opts?: { signal?: AbortSignal },
+		opts?: ExtensionUIDialogOptions,
 	): Promise<boolean> {
 		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts);
 		return result === "Yes";
@@ -829,7 +832,7 @@ export class InteractiveMode {
 	private showExtensionInput(
 		title: string,
 		placeholder?: string,
-		opts?: { signal?: AbortSignal },
+		opts?: ExtensionUIDialogOptions,
 	): Promise<string | undefined> {
 		return new Promise((resolve) => {
 			if (opts?.signal?.aborted) {
@@ -856,6 +859,7 @@ export class InteractiveMode {
 					this.hideExtensionInput();
 					resolve(undefined);
 				},
+				{ tui: this.ui, timeout: opts?.timeout },
 			);
 
 			this.editorContainer.clear();
@@ -869,6 +873,7 @@ export class InteractiveMode {
 	 * Hide the extension input.
 	 */
 	private hideExtensionInput(): void {
+		this.extensionInput?.dispose();
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.extensionInput = undefined;
