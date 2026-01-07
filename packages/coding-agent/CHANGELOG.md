@@ -5,6 +5,7 @@
 ### Added
 
 - Example extension `exa-mcp.ts` for Exa MCP web search and code context tools (with configurable tool allowlist).
+- Example extension `firecrawl-mcp.ts` for Firecrawl MCP scraping and crawling tools.
 
 ## [0.37.8] - 2026-01-07
 
