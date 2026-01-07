@@ -1094,9 +1094,33 @@ ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
 - `ctx.ui.editor()`: [handoff.ts](../examples/extensions/handoff.ts)
 - `ctx.ui.setEditorText()`: [handoff.ts](../examples/extensions/handoff.ts), [qna.ts](../examples/extensions/qna.ts)
 
-#### Auto-Dismissing Dialogs
+#### Timed Dialogs with Countdown
 
-Dialogs can be programmatically dismissed using `AbortSignal`. This is useful for implementing timeouts:
+Dialogs support a `timeout` option that auto-dismisses with a live countdown display:
+
+```typescript
+// Dialog shows "Title (5s)" → "Title (4s)" → ... → auto-dismisses at 0
+const confirmed = await ctx.ui.confirm(
+  "Timed Confirmation",
+  "This dialog will auto-cancel in 5 seconds. Confirm?",
+  { timeout: 5000 }
+);
+
+if (confirmed) {
+  // User confirmed
+} else {
+  // User cancelled or timed out
+}
+```
+
+**Return values on timeout:**
+- `select()` returns `undefined`
+- `confirm()` returns `false`
+- `input()` returns `undefined`
+
+#### Manual Dismissal with AbortSignal
+
+For more control (e.g., to distinguish timeout from user cancel), use `AbortSignal`:
 
 ```typescript
 const controller = new AbortController();
@@ -1119,12 +1143,7 @@ if (confirmed) {
 }
 ```
 
-**Return values on abort:**
-- `select()` returns `undefined`
-- `confirm()` returns `false`
-- `input()` returns `undefined`
-
-See [examples/extensions/timed-confirm.ts](../examples/extensions/timed-confirm.ts) for a complete example.
+See [examples/extensions/timed-confirm.ts](../examples/extensions/timed-confirm.ts) for complete examples.
 
 ### Widgets, Status, and Footer
 
