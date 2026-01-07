@@ -46,19 +46,27 @@ export type { AgentToolResult, AgentToolUpdateCallback };
 // UI Context
 // ============================================================================
 
+/** Options for extension UI dialogs. */
+export interface ExtensionUIDialogOptions {
+	/** AbortSignal to programmatically dismiss the dialog. */
+	signal?: AbortSignal;
+	/** Timeout in milliseconds. Dialog auto-dismisses with live countdown display. */
+	timeout?: number;
+}
+
 /**
  * UI context for extensions to request interactive UI.
  * Each mode (interactive, RPC, print) provides its own implementation.
  */
 export interface ExtensionUIContext {
 	/** Show a selector and return the user's choice. */
-	select(title: string, options: string[], opts?: { signal?: AbortSignal }): Promise<string | undefined>;
+	select(title: string, options: string[], opts?: ExtensionUIDialogOptions): Promise<string | undefined>;
 
 	/** Show a confirmation dialog. */
-	confirm(title: string, message: string, opts?: { signal?: AbortSignal }): Promise<boolean>;
+	confirm(title: string, message: string, opts?: ExtensionUIDialogOptions): Promise<boolean>;
 
 	/** Show a text input dialog. */
-	input(title: string, placeholder?: string, opts?: { signal?: AbortSignal }): Promise<string | undefined>;
+	input(title: string, placeholder?: string, opts?: ExtensionUIDialogOptions): Promise<string | undefined>;
 
 	/** Show a notification to the user. */
 	notify(message: string, type?: "info" | "warning" | "error"): void;

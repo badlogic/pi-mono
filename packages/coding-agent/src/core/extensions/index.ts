@@ -36,6 +36,7 @@ export type {
 	ExtensionHandler,
 	ExtensionShortcut,
 	ExtensionUIContext,
+	ExtensionUIDialogOptions,
 	FindToolResultEvent,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
