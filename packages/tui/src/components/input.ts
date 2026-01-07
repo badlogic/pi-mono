@@ -12,6 +12,7 @@ export class Input implements Component {
 	private cursor: number = 0; // Cursor position in the value
 	public onSubmit?: (value: string) => void;
 	public onEscape?: () => void;
+	public wantsImeCursor = true;
 
 	// Bracketed paste mode buffering
 	private pasteBuffer: string = "";

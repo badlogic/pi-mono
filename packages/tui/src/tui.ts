@@ -33,6 +33,14 @@ export interface Component {
 	wantsKeyRelease?: boolean;
 
 	/**
+	 * If true, TUI will try to keep the real terminal cursor aligned with the component's
+	 * fake cursor position for IME candidate window positioning.
+	 *
+	 * Default is false.
+	 */
+	wantsImeCursor?: boolean;
+
+	/**
 	 * Invalidate any cached rendering state.
 	 * Called when theme changes or when component needs to re-render from scratch.
 	 */
@@ -93,6 +101,10 @@ export class TUI extends Container {
 	private viewportBottomRow = 0; // Track where viewport bottom is (0-indexed, relative to our first line)
 	private inputBuffer = ""; // Buffer for parsing terminal responses
 	private cellSizeQueryPending = false;
+	private cursorPositionQueryPending = false;
+	private cursorPositionQueryTimeout: NodeJS.Timeout | null = null;
+	private pendingCursorSync: { row1: number; col1: number; seq: number } | null = null;
+	private cursorSyncSeq = 0;
 
 	// Overlay stack for modal components rendered on top of base content
 	private overlayStack: {
@@ -108,6 +120,9 @@ export class TUI extends Container {
 
 	setFocus(component: Component | null): void {
 		this.focusedComponent = component;
+		if (!component?.wantsImeCursor) {
+			this.pendingCursorSync = null;
+		}
 	}
 
 	/** Show an overlay component centered (or at specified position). */
@@ -160,6 +175,12 @@ export class TUI extends Container {
 	stop(): void {
 		this.terminal.showCursor();
 		this.terminal.stop();
+		this.cursorPositionQueryPending = false;
+		this.pendingCursorSync = null;
+		if (this.cursorPositionQueryTimeout) {
+			clearTimeout(this.cursorPositionQueryTimeout);
+			this.cursorPositionQueryTimeout = null;
+		}
 	}
 
 	requestRender(force = false): void {
@@ -168,6 +189,12 @@ export class TUI extends Container {
 			this.previousWidth = 0;
 			this.cursorRow = 0;
 			this.viewportBottomRow = 0;
+			this.cursorPositionQueryPending = false;
+			this.pendingCursorSync = null;
+			if (this.cursorPositionQueryTimeout) {
+				clearTimeout(this.cursorPositionQueryTimeout);
+				this.cursorPositionQueryTimeout = null;
+			}
 		}
 		if (this.renderRequested) return;
 		this.renderRequested = true;
@@ -178,10 +205,10 @@ export class TUI extends Container {
 	}
 
 	private handleInput(data: string): void {
-		// If we're waiting for cell size response, buffer input and parse
-		if (this.cellSizeQueryPending) {
+		// If we're waiting for terminal query responses, buffer input and parse
+		if (this.cellSizeQueryPending || this.cursorPositionQueryPending) {
 			this.inputBuffer += data;
-			const filtered = this.parseCellSizeResponse();
+			const filtered = this.parsePendingTerminalResponses();
 			if (filtered.length === 0) return;
 			data = filtered;
 		}
@@ -204,45 +231,120 @@ export class TUI extends Container {
 		}
 	}
 
-	private parseCellSizeResponse(): string {
+	private startCursorSync(target: { row1: number; col1: number }): void {
+		// Don't interfere with cell size query - it uses the same input buffer.
+		if (this.cellSizeQueryPending) {
+			return;
+		}
+
+		this.cursorSyncSeq += 1;
+		const seq = this.cursorSyncSeq;
+
+		this.pendingCursorSync = { row1: target.row1, col1: target.col1, seq };
+		this.cursorPositionQueryPending = true;
+
+		if (this.cursorPositionQueryTimeout) {
+			clearTimeout(this.cursorPositionQueryTimeout);
+		}
+		this.cursorPositionQueryTimeout = setTimeout(() => {
+			if (!this.cursorPositionQueryPending) return;
+			if (this.pendingCursorSync?.seq !== seq) return;
+			this.cursorPositionQueryPending = false;
+			this.pendingCursorSync = null;
+			this.cursorPositionQueryTimeout = null;
+		}, 250);
+
+		// DSR (Device Status Report): request cursor position.
+		// Response: ESC [ row ; col R
+		this.terminal.write("\x1b[6n");
+	}
+
+	private consumeCellSizeResponse(): boolean {
 		// Response format: ESC [ 6 ; height ; width t
-		// Match the response pattern
 		const responsePattern = /\x1b\[6;(\d+);(\d+)t/;
 		const match = this.inputBuffer.match(responsePattern);
+		if (!match) {
+			return false;
+		}
 
-		if (match) {
-			const heightPx = parseInt(match[1], 10);
-			const widthPx = parseInt(match[2], 10);
+		const heightPx = parseInt(match[1], 10);
+		const widthPx = parseInt(match[2], 10);
 
-			if (heightPx > 0 && widthPx > 0) {
-				setCellDimensions({ widthPx, heightPx });
-				// Invalidate all components so images re-render with correct dimensions
-				this.invalidate();
-				this.requestRender();
+		if (heightPx > 0 && widthPx > 0) {
+			setCellDimensions({ widthPx, heightPx });
+			// Invalidate all components so images re-render with correct dimensions
+			this.invalidate();
+			this.requestRender();
+		}
+
+		this.inputBuffer = this.inputBuffer.replace(responsePattern, "");
+		this.cellSizeQueryPending = false;
+		return true;
+	}
+
+	private consumeCursorPositionResponse(): boolean {
+		const responsePattern = /\x1b\[(\d+);(\d+)R/;
+		const match = this.inputBuffer.match(responsePattern);
+		if (!match) {
+			return false;
+		}
+
+		this.inputBuffer = this.inputBuffer.replace(responsePattern, "");
+		this.cursorPositionQueryPending = false;
+
+		if (this.cursorPositionQueryTimeout) {
+			clearTimeout(this.cursorPositionQueryTimeout);
+			this.cursorPositionQueryTimeout = null;
+		}
+
+		const pending = this.pendingCursorSync;
+		if (pending) {
+			// Move to absolute screen position (1-indexed).
+			this.terminal.write(`\x1b[${pending.row1};${pending.col1}H`);
+			this.pendingCursorSync = null;
+		}
+
+		return true;
+	}
+
+	private hasPartialCsiAtEnd(buffer: string): boolean {
+		if (buffer.length === 0) {
+			return false;
+		}
+
+		const partialPattern = /\x1b\[[0-9;]*$/;
+		if (!partialPattern.test(buffer)) {
+			return false;
+		}
+
+		const lastChar = buffer[buffer.length - 1];
+		return !/[a-zA-Z~]/.test(lastChar);
+	}
+
+	private parsePendingTerminalResponses(): string {
+		let changed = true;
+		while (changed) {
+			changed = false;
+			if (this.cellSizeQueryPending) {
+				changed = this.consumeCellSizeResponse() || changed;
 			}
+			if (this.cursorPositionQueryPending) {
+				changed = this.consumeCursorPositionResponse() || changed;
+			}
+		}
 
-			// Remove the response from buffer
-			this.inputBuffer = this.inputBuffer.replace(responsePattern, "");
+		if ((this.cellSizeQueryPending || this.cursorPositionQueryPending) && this.hasPartialCsiAtEnd(this.inputBuffer)) {
+			return "";
+		}
+
+		const result = this.inputBuffer;
+		this.inputBuffer = "";
+
+		// If we were waiting for cell size, but got unrelated input, give up.
+		if (this.cellSizeQueryPending) {
 			this.cellSizeQueryPending = false;
 		}
 
-		// Check if we have a partial cell size response starting (wait for more data)
-		// Patterns that could be incomplete cell size response: \x1b, \x1b[, \x1b[6, \x1b[6;...(no t yet)
-		const partialCellSizePattern = /\x1b(\[6?;?[\d;]*)?$/;
-		if (partialCellSizePattern.test(this.inputBuffer)) {
-			// Check if it's actually a complete different escape sequence (ends with a letter)
-			// Cell size response ends with 't', Kitty keyboard ends with 'u', arrows end with A-D, etc.
-			const lastChar = this.inputBuffer[this.inputBuffer.length - 1];
-			if (!/[a-zA-Z~]/.test(lastChar)) {
-				// Doesn't end with a terminator, might be incomplete - wait for more
-				return "";
-			}
-		}
-
-		// No cell size response found, return buffered data as user input
-		const result = this.inputBuffer;
-		this.inputBuffer = "";
-		this.cellSizeQueryPending = false; // Give up waiting
 		return result;
 	}
 
@@ -368,6 +470,8 @@ export class TUI extends Container {
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
 
+		const shouldFollowFakeCursor = this.focusedComponent?.wantsImeCursor === true;
+
 		const previousViewportBottomRow = this.viewportBottomRow;
 
 		// Render all components to get new lines
@@ -394,16 +498,26 @@ export class TUI extends Container {
 			const newViewportBottomRow = newLines.length - 1;
 			this.viewportBottomRow = newViewportBottomRow;
 
-			const fakeCursor = this.findFakeCursor(newLines, width);
+			let cursorSyncTarget: { row1: number; col1: number } | null = null;
+			const fakeCursor = shouldFollowFakeCursor ? this.findFakeCursor(newLines, width) : null;
 			if (fakeCursor) {
 				buffer = this.appendMoveCursor(buffer, newViewportBottomRow, fakeCursor);
 				this.cursorRow = fakeCursor.row;
+
+				const viewportTop = Math.max(0, newViewportBottomRow - height + 1);
+				cursorSyncTarget = {
+					row1: Math.max(1, Math.min(height, fakeCursor.row - viewportTop + 1)),
+					col1: Math.max(1, Math.min(width, fakeCursor.col + 1)),
+				};
 			} else {
 				this.cursorRow = newViewportBottomRow;
 			}
 
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
+			if (cursorSyncTarget && newLines.length > height) {
+				this.startCursorSync(cursorSyncTarget);
+			}
 			this.previousLines = newLines;
 			this.previousWidth = width;
 			return;
@@ -421,16 +535,26 @@ export class TUI extends Container {
 			const newViewportBottomRow = newLines.length - 1;
 			this.viewportBottomRow = newViewportBottomRow;
 
-			const fakeCursor = this.findFakeCursor(newLines, width);
+			let cursorSyncTarget: { row1: number; col1: number } | null = null;
+			const fakeCursor = shouldFollowFakeCursor ? this.findFakeCursor(newLines, width) : null;
 			if (fakeCursor) {
 				buffer = this.appendMoveCursor(buffer, newViewportBottomRow, fakeCursor);
 				this.cursorRow = fakeCursor.row;
+
+				const viewportTop = Math.max(0, newViewportBottomRow - height + 1);
+				cursorSyncTarget = {
+					row1: Math.max(1, Math.min(height, fakeCursor.row - viewportTop + 1)),
+					col1: Math.max(1, Math.min(width, fakeCursor.col + 1)),
+				};
 			} else {
 				this.cursorRow = newViewportBottomRow;
 			}
 
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
+			if (cursorSyncTarget && newLines.length > height) {
+				this.startCursorSync(cursorSyncTarget);
+			}
 			this.previousLines = newLines;
 			this.previousWidth = width;
 			return;
@@ -472,16 +596,26 @@ export class TUI extends Container {
 			const newViewportBottomRow = newLines.length - 1;
 			this.viewportBottomRow = newViewportBottomRow;
 
-			const fakeCursor = this.findFakeCursor(newLines, width);
+			let cursorSyncTarget: { row1: number; col1: number } | null = null;
+			const fakeCursor = shouldFollowFakeCursor ? this.findFakeCursor(newLines, width) : null;
 			if (fakeCursor) {
 				buffer = this.appendMoveCursor(buffer, newViewportBottomRow, fakeCursor);
 				this.cursorRow = fakeCursor.row;
+
+				const nextViewportTop = Math.max(0, newViewportBottomRow - height + 1);
+				cursorSyncTarget = {
+					row1: Math.max(1, Math.min(height, fakeCursor.row - nextViewportTop + 1)),
+					col1: Math.max(1, Math.min(width, fakeCursor.col + 1)),
+				};
 			} else {
 				this.cursorRow = newViewportBottomRow;
 			}
 
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
+			if (cursorSyncTarget && newLines.length > height) {
+				this.startCursorSync(cursorSyncTarget);
+			}
 			this.previousLines = newLines;
 			this.previousWidth = width;
 			return;
@@ -554,10 +688,17 @@ export class TUI extends Container {
 		const newViewportBottomRow = newLines.length - 1;
 		this.viewportBottomRow = newViewportBottomRow;
 
-		const fakeCursor = this.findFakeCursor(newLines, width);
+		let cursorSyncTarget: { row1: number; col1: number } | null = null;
+		const fakeCursor = shouldFollowFakeCursor ? this.findFakeCursor(newLines, width) : null;
 		if (fakeCursor) {
 			buffer = this.appendMoveCursor(buffer, newViewportBottomRow, fakeCursor);
 			this.cursorRow = fakeCursor.row;
+
+			const viewportTop = Math.max(0, newViewportBottomRow - height + 1);
+			cursorSyncTarget = {
+				row1: Math.max(1, Math.min(height, fakeCursor.row - viewportTop + 1)),
+				col1: Math.max(1, Math.min(width, fakeCursor.col + 1)),
+			};
 		} else {
 			this.cursorRow = newViewportBottomRow;
 		}
@@ -566,6 +707,9 @@ export class TUI extends Container {
 
 		// Write entire buffer at once
 		this.terminal.write(buffer);
+		if (cursorSyncTarget && newLines.length - firstChanged > height) {
+			this.startCursorSync(cursorSyncTarget);
+		}
 
 		this.previousLines = newLines;
 		this.previousWidth = width;

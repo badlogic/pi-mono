@@ -4,6 +4,8 @@
 ### Fixed
 
 - Fixed IME candidate window positioning by moving the real terminal cursor to follow the fake cursor.
+- Fixed occasional IME candidate window drift after large renders by syncing cursor position using a DSR cursor-position query.
+- Fixed selector list rendering drift by making IME cursor syncing opt-in via `Component.wantsImeCursor`.
 
 ## [0.42.1] - 2026-01-09
 

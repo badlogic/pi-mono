@@ -5,6 +5,7 @@ import { TUI } from "../src/tui.js";
 import { VirtualTerminal } from "./virtual-terminal.js";
 
 class FakeCursorComponent implements Component {
+	public wantsImeCursor = true;
 	private lines: string[];
 
 	constructor(lines: string[]) {
@@ -34,6 +35,7 @@ describe("TUI IME cursor positioning", () => {
 
 		const component = new FakeCursorComponent(["line0", "A日本\x1b[7m語\x1b[0mZ", "line2"]);
 		tui.addChild(component);
+		tui.setFocus(component);
 
 		tui.requestRender(true);
 		await flushRender(terminal);
@@ -55,6 +57,7 @@ describe("TUI IME cursor positioning", () => {
 
 		const component = new FakeCursorComponent(["\x1b[7mA\x1b[0m", "B\x1b[7mC\x1b[0m", "DDD\x1b[7mE\x1b[0m"]);
 		tui.addChild(component);
+		tui.setFocus(component);
 
 		tui.requestRender(true);
 		await flushRender(terminal);

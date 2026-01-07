@@ -218,6 +218,7 @@ export class Editor implements Component {
 
 	// Border color (can be changed dynamically)
 	public borderColor: (str: string) => string;
+	public wantsImeCursor = true;
 
 	// Autocomplete support
 	private autocompleteProvider?: AutocompleteProvider;
