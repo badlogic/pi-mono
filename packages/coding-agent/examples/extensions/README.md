@@ -30,6 +30,8 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `todo.ts` | Todo list tool + `/todos` command with custom rendering and state persistence |
 | `hello.ts` | Minimal custom tool example |
 | `question.ts` | Demonstrates `ctx.ui.select()` for asking the user questions |
+| `exa-mcp.ts` | Exposes Exa MCP `web_search_exa` and `get_code_context_exa` tools via the hosted MCP server |
+| `firecrawl-mcp.ts` | Exposes Firecrawl MCP scraping, crawl, map, search, and extract tools |
 | `subagent/` | Delegate tasks to specialized subagents with isolated context windows |
 
 ### Commands & UI
