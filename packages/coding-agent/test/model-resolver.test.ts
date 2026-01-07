@@ -62,24 +62,24 @@ const allModels = [...mockModels, ...mockOpenRouterModels];
 
 describe("parseModelPattern", () => {
 	describe("simple patterns without colons", () => {
-		test("exact match returns model with off thinking level", () => {
+		test("exact match returns model with undefined thinking level", () => {
 			const result = parseModelPattern("claude-sonnet-4-5", allModels);
 			expect(result.model?.id).toBe("claude-sonnet-4-5");
-			expect(result.thinkingLevel).toBe("off");
+			expect(result.thinkingLevel).toBeUndefined();
 			expect(result.warning).toBeUndefined();
 		});
 
-		test("partial match returns best model", () => {
+		test("partial match returns best model with undefined thinking level", () => {
 			const result = parseModelPattern("sonnet", allModels);
 			expect(result.model?.id).toBe("claude-sonnet-4-5");
-			expect(result.thinkingLevel).toBe("off");
+			expect(result.thinkingLevel).toBeUndefined();
 			expect(result.warning).toBeUndefined();
 		});
 
-		test("no match returns null model", () => {
+		test("no match returns undefined model and thinking level", () => {
 			const result = parseModelPattern("nonexistent", allModels);
 			expect(result.model).toBeUndefined();
-			expect(result.thinkingLevel).toBe("off");
+			expect(result.thinkingLevel).toBeUndefined();
 			expect(result.warning).toBeUndefined();
 		});
 	});
@@ -110,27 +110,27 @@ describe("parseModelPattern", () => {
 	});
 
 	describe("patterns with invalid thinking levels", () => {
-		test("sonnet:random returns sonnet with off and warning", () => {
+		test("sonnet:random returns sonnet with undefined thinking level and warning", () => {
 			const result = parseModelPattern("sonnet:random", allModels);
 			expect(result.model?.id).toBe("claude-sonnet-4-5");
-			expect(result.thinkingLevel).toBe("off");
+			expect(result.thinkingLevel).toBeUndefined();
 			expect(result.warning).toContain("Invalid thinking level");
 			expect(result.warning).toContain("random");
 		});
 
-		test("gpt-4o:invalid returns gpt-4o with off and warning", () => {
+		test("gpt-4o:invalid returns gpt-4o with undefined thinking level and warning", () => {
 			const result = parseModelPattern("gpt-4o:invalid", allModels);
 			expect(result.model?.id).toBe("gpt-4o");
-			expect(result.thinkingLevel).toBe("off");
+			expect(result.thinkingLevel).toBeUndefined();
 			expect(result.warning).toContain("Invalid thinking level");
 		});
 	});
 
 	describe("OpenRouter models with colons in IDs", () => {
-		test("qwen3-coder:exacto matches the model with off", () => {
+		test("qwen3-coder:exacto matches the model with undefined thinking level", () => {
 			const result = parseModelPattern("qwen/qwen3-coder:exacto", allModels);
 			expect(result.model?.id).toBe("qwen/qwen3-coder:exacto");
-			expect(result.thinkingLevel).toBe("off");
+			expect(result.thinkingLevel).toBeUndefined();
 			expect(result.warning).toBeUndefined();
 		});
 
@@ -138,7 +138,7 @@ describe("parseModelPattern", () => {
 			const result = parseModelPattern("openrouter/qwen/qwen3-coder:exacto", allModels);
 			expect(result.model?.id).toBe("qwen/qwen3-coder:exacto");
 			expect(result.model?.provider).toBe("openrouter");
-			expect(result.thinkingLevel).toBe("off");
+			expect(result.thinkingLevel).toBeUndefined();
 			expect(result.warning).toBeUndefined();
 		});
 
@@ -157,27 +157,27 @@ describe("parseModelPattern", () => {
 			expect(result.warning).toBeUndefined();
 		});
 
-		test("gpt-4o:extended matches the extended model", () => {
+		test("gpt-4o:extended matches the extended model with undefined thinking level", () => {
 			const result = parseModelPattern("openai/gpt-4o:extended", allModels);
 			expect(result.model?.id).toBe("openai/gpt-4o:extended");
-			expect(result.thinkingLevel).toBe("off");
+			expect(result.thinkingLevel).toBeUndefined();
 			expect(result.warning).toBeUndefined();
 		});
 	});
 
 	describe("invalid thinking levels with OpenRouter models", () => {
-		test("qwen3-coder:exacto:random returns model with off and warning", () => {
+		test("qwen3-coder:exacto:random returns model with undefined thinking level and warning", () => {
 			const result = parseModelPattern("qwen/qwen3-coder:exacto:random", allModels);
 			expect(result.model?.id).toBe("qwen/qwen3-coder:exacto");
-			expect(result.thinkingLevel).toBe("off");
+			expect(result.thinkingLevel).toBeUndefined();
 			expect(result.warning).toContain("Invalid thinking level");
 			expect(result.warning).toContain("random");
 		});
 
-		test("qwen3-coder:exacto:high:random returns model with off and warning", () => {
+		test("qwen3-coder:exacto:high:random returns model with undefined thinking level and warning", () => {
 			const result = parseModelPattern("qwen/qwen3-coder:exacto:high:random", allModels);
 			expect(result.model?.id).toBe("qwen/qwen3-coder:exacto");
-			expect(result.thinkingLevel).toBe("off");
+			expect(result.thinkingLevel).toBeUndefined();
 			expect(result.warning).toContain("Invalid thinking level");
 			expect(result.warning).toContain("random");
 		});
@@ -188,7 +188,7 @@ describe("parseModelPattern", () => {
 			// Empty string is included in all model IDs, so partial matching finds a match
 			const result = parseModelPattern("", allModels);
 			expect(result.model).not.toBeNull();
-			expect(result.thinkingLevel).toBe("off");
+			expect(result.thinkingLevel).toBeUndefined();
 		});
 
 		test("pattern ending with colon treats empty suffix as invalid", () => {

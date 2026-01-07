@@ -11,6 +11,10 @@
 - Extension UI dialogs (`ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`) now support a `timeout` option that auto-dismisses the dialog with a live countdown display. Simpler alternative to `AbortSignal` for timed dialogs.
 - Extensions can now provide custom editor components via `ctx.ui.setEditorComponent((tui, theme, keybindings) => ...)`. Extend `CustomEditor` for full app keybinding support (escape, ctrl+d, model switching, etc.). See `examples/extensions/modal-editor.ts`, `examples/extensions/rainbow-editor.ts`, and `docs/tui.md` Pattern 7.
 
+### Fixed
+
+- Default thinking level from settings now applies correctly when `enabledModels` is configured. Previously, models without explicit thinking level suffixes (e.g., `claude-opus-4-5` instead of `claude-opus-4-5:high`) would override `defaultThinkingLevel` with "off"
+
 ## [0.37.8] - 2026-01-07
 
 ## [0.37.7] - 2026-01-07

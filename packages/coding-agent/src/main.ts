@@ -235,6 +235,7 @@ function buildSessionOptions(
 	scopedModels: ScopedModel[],
 	sessionManager: SessionManager | undefined,
 	modelRegistry: ModelRegistry,
+	settingsManager: SettingsManager,
 	preloadedExtensions?: LoadedExtension[],
 ): CreateAgentSessionOptions {
 	const options: CreateAgentSessionOptions = {};
@@ -261,15 +262,21 @@ function buildSessionOptions(
 	}
 
 	// Thinking level
+	// Only use scoped model's thinking level if it was explicitly specified (e.g., "model:high")
+	// Otherwise, let the SDK use defaultThinkingLevel from settings
 	if (parsed.thinking) {
 		options.thinkingLevel = parsed.thinking;
-	} else if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
+	} else if (scopedModels.length > 0 && scopedModels[0].thinkingLevel && !parsed.continue && !parsed.resume) {
 		options.thinkingLevel = scopedModels[0].thinkingLevel;
 	}
 
-	// Scoped models for Ctrl+P cycling
+	// Scoped models for Ctrl+P cycling - fill in default thinking level for models without explicit level
 	if (scopedModels.length > 0) {
-		options.scopedModels = scopedModels;
+		const defaultThinkingLevel = settingsManager.getDefaultThinkingLevel() ?? "off";
+		options.scopedModels = scopedModels.map((sm) => ({
+			model: sm.model,
+			thinkingLevel: sm.thinkingLevel ?? defaultThinkingLevel,
+		}));
 	}
 
 	// API key from CLI - set in authStorage
@@ -423,7 +430,14 @@ export async function main(args: string[]) {
 		sessionManager = SessionManager.open(selectedPath);
 	}
 
-	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager, modelRegistry, loadedExtensions);
+	const sessionOptions = buildSessionOptions(
+		parsed,
+		scopedModels,
+		sessionManager,
+		modelRegistry,
+		settingsManager,
+		loadedExtensions,
+	);
 	sessionOptions.authStorage = authStorage;
 	sessionOptions.modelRegistry = modelRegistry;
 	sessionOptions.eventBus = eventBus;
@@ -471,7 +485,7 @@ export async function main(args: string[]) {
 		if (scopedModels.length > 0) {
 			const modelList = scopedModels
 				.map((sm) => {
-					const thinkingStr = sm.thinkingLevel !== "off" ? `:${sm.thinkingLevel}` : "";
+					const thinkingStr = sm.thinkingLevel ? `:${sm.thinkingLevel}` : "";
 					return `${sm.model.id}${thinkingStr}`;
 				})
 				.join(", ");
