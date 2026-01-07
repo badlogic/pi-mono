@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `--no-extensions` flag to disable extension discovery and loading
+
 ## [0.37.8] - 2026-01-07
 
 ## [0.37.7] - 2026-01-07

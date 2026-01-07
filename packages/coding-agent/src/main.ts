@@ -294,8 +294,11 @@ function buildSessionOptions(
 		options.skills = [];
 	}
 
-	// Pre-loaded extensions (from early CLI flag discovery)
-	if (preloadedExtensions && preloadedExtensions.length > 0) {
+	// Extensions
+	if (parsed.noExtensions) {
+		options.extensions = [];
+	} else if (preloadedExtensions && preloadedExtensions.length > 0) {
+		// Pre-loaded extensions (from early CLI flag discovery)
 		options.preloadedExtensions = preloadedExtensions;
 	}
 
@@ -317,16 +320,21 @@ export async function main(args: string[]) {
 	const firstPass = parseArgs(args);
 	time("parseArgs-firstPass");
 
-	// Early load extensions to discover their CLI flags
+	// Early load extensions to discover their CLI flags (unless --no-extensions)
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const eventBus = createEventBus();
 	const settingsManager = SettingsManager.create(cwd);
 	time("SettingsManager.create");
-	// Merge CLI --extension args with settings.json extensions
-	const extensionPaths = [...settingsManager.getExtensionPaths(), ...(firstPass.extensions ?? [])];
-	const { extensions: loadedExtensions } = await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus);
-	time("discoverExtensionFlags");
+
+	let loadedExtensions: LoadedExtension[] = [];
+	if (!firstPass.noExtensions) {
+		// Merge CLI --extension args with settings.json extensions
+		const extensionPaths = [...settingsManager.getExtensionPaths(), ...(firstPass.extensions ?? [])];
+		const result = await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus);
+		loadedExtensions = result.extensions;
+		time("discoverExtensionFlags");
+	}
 
 	// Collect all extension flags
 	const extensionFlags = new Map<string, { type: "boolean" | "string" }>();
