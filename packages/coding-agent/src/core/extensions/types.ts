@@ -15,7 +15,7 @@ import type {
 	ThinkingLevel,
 } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
-import type { Component, KeyId, TUI } from "@mariozechner/pi-tui";
+import type { Component, EditorComponent, KeyId, TUI } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
@@ -96,6 +96,33 @@ export interface ExtensionUIContext {
 
 	/** Show a multi-line editor for text editing. */
 	editor(title: string, prefill?: string): Promise<string | undefined>;
+
+	/**
+	 * Set a custom editor component.
+	 * Pass undefined to restore the default editor.
+	 *
+	 * Custom editors must implement the EditorComponent interface from @mariozechner/pi-tui.
+	 * The editor receives all keyboard input when focused and is responsible for:
+	 * - Text editing and cursor management
+	 * - Calling onSubmit when the user wants to send a message
+	 * - Calling onChange when text changes
+	 *
+	 * @example
+	 * ```ts
+	 * import { Editor } from "@mariozechner/pi-tui";
+	 *
+	 * // Create a custom editor that wraps the default
+	 * class VimEditor extends Editor {
+	 *   handleInput(data: string): void {
+	 *     // Custom input handling...
+	 *     super.handleInput(data);
+	 *   }
+	 * }
+	 *
+	 * pi.ui.setEditorComponent(new VimEditor(theme));
+	 * ```
+	 */
+	setEditorComponent(editor: EditorComponent | undefined): void;
 
 	/** Get the current theme for styling. */
 	readonly theme: Theme;

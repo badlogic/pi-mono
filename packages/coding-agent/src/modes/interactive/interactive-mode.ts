@@ -9,7 +9,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { type AssistantMessage, getOAuthProviders, type Message, type OAuthProvider } from "@mariozechner/pi-ai";
-import type { KeyId, SlashCommand } from "@mariozechner/pi-tui";
+import type { EditorComponent, KeyId, SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
@@ -96,6 +96,8 @@ export class InteractiveMode {
 	private pendingMessagesContainer: Container;
 	private statusContainer: Container;
 	private editor: CustomEditor;
+	private customEditor: EditorComponent | undefined;
+	private autocompleteProvider: CombinedAutocompleteProvider | undefined;
 	private editorContainer: Container;
 	private footer: FooterComponent;
 	private keybindings: KeybindingsManager;
@@ -237,12 +239,12 @@ export class InteractiveMode {
 		);
 
 		// Setup autocomplete
-		const autocompleteProvider = new CombinedAutocompleteProvider(
+		this.autocompleteProvider = new CombinedAutocompleteProvider(
 			[...slashCommands, ...templateCommands, ...extensionCommands],
 			process.cwd(),
 			fdPath,
 		);
-		this.editor.setAutocompleteProvider(autocompleteProvider);
+		this.editor.setAutocompleteProvider(this.autocompleteProvider);
 	}
 
 	async init(): Promise<void> {
@@ -504,7 +506,7 @@ export class InteractiveMode {
 				// Update UI
 				this.chatContainer.clear();
 				this.renderInitialMessages();
-				this.editor.setText(result.selectedText);
+				this.getActiveEditor().setText(result.selectedText);
 				this.showStatus("Branched to new session");
 
 				return { cancelled: false };
@@ -519,7 +521,7 @@ export class InteractiveMode {
 				this.chatContainer.clear();
 				this.renderInitialMessages();
 				if (result.editorText) {
-					this.editor.setText(result.editorText);
+					this.getActiveEditor().setText(result.editorText);
 				}
 				this.showStatus("Navigated to selected point");
 
@@ -749,9 +751,10 @@ export class InteractiveMode {
 			setHeader: (factory) => this.setExtensionHeader(factory),
 			setTitle: (title) => this.ui.terminal.setTitle(title),
 			custom: (factory) => this.showExtensionCustom(factory),
-			setEditorText: (text) => this.editor.setText(text),
-			getEditorText: () => this.editor.getText(),
+			setEditorText: (text) => this.getActiveEditor().setText(text),
+			getEditorText: () => this.getActiveEditor().getText(),
 			editor: (title, prefill) => this.showExtensionEditor(title, prefill),
+			setEditorComponent: (editor) => this.setCustomEditorComponent(editor),
 			get theme() {
 				return theme;
 			},
@@ -914,6 +917,54 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * Set a custom editor component from an extension.
+	 * Pass undefined to restore the default editor.
+	 */
+	private setCustomEditorComponent(editor: EditorComponent | undefined): void {
+		// Save text from currently active editor before switching
+		const currentText = this.getActiveEditor().getText();
+
+		this.customEditor = editor;
+		this.editorContainer.clear();
+
+		if (editor) {
+			// Wire up the custom editor's callbacks
+			editor.onSubmit = this.editor.onSubmit;
+			editor.onChange = this.editor.onChange;
+
+			// Copy text from previous editor
+			editor.setText(currentText);
+
+			// Copy appearance settings if supported
+			if (editor.borderColor !== undefined) {
+				editor.borderColor = this.editor.borderColor;
+			}
+
+			// Set autocomplete if supported
+			if (editor.setAutocompleteProvider && this.autocompleteProvider) {
+				editor.setAutocompleteProvider(this.autocompleteProvider);
+			}
+
+			this.editorContainer.addChild(editor as Component);
+			this.ui.setFocus(editor as Component);
+		} else {
+			// Restore default editor with text from custom editor
+			this.editor.setText(currentText);
+			this.editorContainer.addChild(this.editor);
+			this.ui.setFocus(this.editor);
+		}
+
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Get the active editor (custom or default).
+	 */
+	private getActiveEditor(): EditorComponent {
+		return this.customEditor ?? this.editor;
+	}
+
+	/**
 	 * Show a notification for extensions.
 	 */
 	private showExtensionNotify(message: string, type?: "info" | "warning" | "error"): void {
@@ -936,7 +987,7 @@ export class InteractiveMode {
 			done: (result: T) => void,
 		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
 	): Promise<T> {
-		const savedText = this.editor.getText();
+		const savedText = this.getActiveEditor().getText();
 
 		return new Promise((resolve) => {
 			let component: Component & { dispose?(): void };
@@ -945,7 +996,7 @@ export class InteractiveMode {
 				component.dispose?.();
 				this.editorContainer.clear();
 				this.editorContainer.addChild(this.editor);
-				this.editor.setText(savedText);
+				this.getActiveEditor().setText(savedText);
 				this.ui.setFocus(this.editor);
 				this.ui.requestRender();
 				resolve(result);
@@ -993,18 +1044,18 @@ export class InteractiveMode {
 				const { steering, followUp } = this.session.clearQueue();
 				const allQueued = [...steering, ...followUp];
 				const queuedText = allQueued.join("\n\n");
-				const currentText = this.editor.getText();
+				const currentText = this.getActiveEditor().getText();
 				const combinedText = [queuedText, currentText].filter((t) => t.trim()).join("\n\n");
-				this.editor.setText(combinedText);
+				this.getActiveEditor().setText(combinedText);
 				this.updatePendingMessagesDisplay();
 				this.agent.abort();
 			} else if (this.session.isBashRunning) {
 				this.session.abortBash();
 			} else if (this.isBashMode) {
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				this.isBashMode = false;
 				this.updateEditorBorderColor();
-			} else if (!this.editor.getText().trim()) {
+			} else if (!this.getActiveEditor().getText().trim()) {
 				// Double-escape with empty editor triggers /tree or /branch based on setting
 				const now = Date.now();
 				if (now - this.lastEscapeTime < 500) {
@@ -1065,7 +1116,7 @@ export class InteractiveMode {
 			fs.writeFileSync(filePath, Buffer.from(image.bytes));
 
 			// Insert file path directly
-			this.editor.insertTextAtCursor(filePath);
+			this.getActiveEditor().insertTextAtCursor?.(filePath);
 			this.ui.requestRender();
 		} catch {
 			// Silently ignore clipboard errors (may not have permission, etc.)
@@ -1080,92 +1131,92 @@ export class InteractiveMode {
 			// Handle commands
 			if (text === "/settings") {
 				this.showSettingsSelector();
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text === "/model") {
 				this.showModelSelector();
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text.startsWith("/export")) {
 				await this.handleExportCommand(text);
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text === "/share") {
 				await this.handleShareCommand();
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text === "/copy") {
 				this.handleCopyCommand();
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text === "/session") {
 				this.handleSessionCommand();
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text === "/changelog") {
 				this.handleChangelogCommand();
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text === "/hotkeys") {
 				this.handleHotkeysCommand();
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text === "/branch") {
 				this.showUserMessageSelector();
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text === "/tree") {
 				this.showTreeSelector();
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text === "/login") {
 				this.showOAuthSelector("login");
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text === "/logout") {
 				this.showOAuthSelector("logout");
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text === "/new") {
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				await this.handleClearCommand();
 				return;
 			}
 			if (text === "/compact" || text.startsWith("/compact ")) {
 				const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				await this.handleCompactCommand(customInstructions);
 				return;
 			}
 			if (text === "/debug") {
 				this.handleDebugCommand();
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text === "/arminsayshi") {
 				this.handleArminSaysHi();
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text === "/resume") {
 				this.showSessionSelector();
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				return;
 			}
 			if (text === "/quit" || text === "/exit") {
-				this.editor.setText("");
+				this.getActiveEditor().setText("");
 				await this.shutdown();
 				return;
 			}
@@ -1177,10 +1228,10 @@ export class InteractiveMode {
 				if (command) {
 					if (this.session.isBashRunning) {
 						this.showWarning("A bash command is already running. Press Esc to cancel it first.");
-						this.editor.setText(text);
+						this.getActiveEditor().setText(text);
 						return;
 					}
-					this.editor.addToHistory(text);
+					this.getActiveEditor().addToHistory?.(text);
 					await this.handleBashCommand(command, isExcluded);
 					this.isBashMode = false;
 					this.updateEditorBorderColor();
@@ -1191,8 +1242,8 @@ export class InteractiveMode {
 			// Queue input during compaction (extension commands execute immediately)
 			if (this.session.isCompacting) {
 				if (this.isExtensionCommand(text)) {
-					this.editor.addToHistory(text);
-					this.editor.setText("");
+					this.getActiveEditor().addToHistory?.(text);
+					this.getActiveEditor().setText("");
 					await this.session.prompt(text);
 				} else {
 					this.queueCompactionMessage(text, "steer");
@@ -1203,8 +1254,8 @@ export class InteractiveMode {
 			// If streaming, use prompt() with steer behavior
 			// This handles extension commands (execute immediately), prompt template expansion, and queueing
 			if (this.session.isStreaming) {
-				this.editor.addToHistory(text);
-				this.editor.setText("");
+				this.getActiveEditor().addToHistory?.(text);
+				this.getActiveEditor().setText("");
 				await this.session.prompt(text, { streamingBehavior: "steer" });
 				this.updatePendingMessagesDisplay();
 				this.ui.requestRender();
@@ -1218,7 +1269,7 @@ export class InteractiveMode {
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
 			}
-			this.editor.addToHistory(text);
+			this.getActiveEditor().addToHistory?.(text);
 		};
 	}
 
@@ -1560,7 +1611,7 @@ export class InteractiveMode {
 					const userComponent = new UserMessageComponent(textContent);
 					this.chatContainer.addChild(userComponent);
 					if (options?.populateHistory) {
-						this.editor.addToHistory(textContent);
+						this.getActiveEditor().addToHistory?.(textContent);
 					}
 				}
 				break;
@@ -1723,14 +1774,14 @@ export class InteractiveMode {
 	}
 
 	private async handleFollowUp(): Promise<void> {
-		const text = this.editor.getText().trim();
+		const text = this.getActiveEditor().getText().trim();
 		if (!text) return;
 
 		// Queue input during compaction (extension commands execute immediately)
 		if (this.session.isCompacting) {
 			if (this.isExtensionCommand(text)) {
-				this.editor.addToHistory(text);
-				this.editor.setText("");
+				this.getActiveEditor().addToHistory?.(text);
+				this.getActiveEditor().setText("");
 				await this.session.prompt(text);
 			} else {
 				this.queueCompactionMessage(text, "followUp");
@@ -1741,8 +1792,8 @@ export class InteractiveMode {
 		// Alt+Enter queues a follow-up message (waits until agent finishes)
 		// This handles extension commands (execute immediately), prompt template expansion, and queueing
 		if (this.session.isStreaming) {
-			this.editor.addToHistory(text);
-			this.editor.setText("");
+			this.getActiveEditor().addToHistory?.(text);
+			this.getActiveEditor().setText("");
 			await this.session.prompt(text, { streamingBehavior: "followUp" });
 			this.updatePendingMessagesDisplay();
 			this.ui.requestRender();
@@ -1849,7 +1900,7 @@ export class InteractiveMode {
 			// On successful exit (status 0), replace editor content
 			if (result.status === 0) {
 				const newContent = fs.readFileSync(tmpFile, "utf-8").replace(/\n$/, "");
-				this.editor.setText(newContent);
+				this.getActiveEditor().setText(newContent);
 			}
 			// On non-zero exit, keep original text (no action needed)
 		} finally {
@@ -1871,7 +1922,7 @@ export class InteractiveMode {
 	// =========================================================================
 
 	clearEditor(): void {
-		this.editor.setText("");
+		this.getActiveEditor().setText("");
 		this.ui.requestRender();
 	}
 
@@ -1929,8 +1980,8 @@ export class InteractiveMode {
 
 	private queueCompactionMessage(text: string, mode: "steer" | "followUp"): void {
 		this.compactionQueuedMessages.push({ text, mode });
-		this.editor.addToHistory(text);
-		this.editor.setText("");
+		this.getActiveEditor().addToHistory?.(text);
+		this.getActiveEditor().setText("");
 		this.updatePendingMessagesDisplay();
 		this.showStatus("Queued message for after compaction");
 	}
@@ -2194,7 +2245,7 @@ export class InteractiveMode {
 
 					this.chatContainer.clear();
 					this.renderInitialMessages();
-					this.editor.setText(result.selectedText);
+					this.getActiveEditor().setText(result.selectedText);
 					done();
 					this.showStatus("Branched to new session");
 				},
@@ -2283,7 +2334,7 @@ export class InteractiveMode {
 						this.chatContainer.clear();
 						this.renderInitialMessages();
 						if (result.editorText) {
-							this.editor.setText(result.editorText);
+							this.getActiveEditor().setText(result.editorText);
 						}
 						this.showStatus("Navigated to selected point");
 					} catch (error) {

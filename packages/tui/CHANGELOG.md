@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `EditorComponent` interface for custom editor implementations
+
 ## [0.37.8] - 2026-01-07
 
 ### Added

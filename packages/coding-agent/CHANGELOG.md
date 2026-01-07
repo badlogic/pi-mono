@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Extensions can now provide custom editor components via `ctx.ui.setEditorComponent()`, enabling vim mode, emacs mode, or other custom editing experiences. See `examples/extensions/modal-editor.ts` for a working example.
+
 ## [0.37.8] - 2026-01-07
 
 ## [0.37.7] - 2026-01-07
