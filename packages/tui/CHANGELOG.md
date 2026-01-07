@@ -5,6 +5,11 @@
 ### Added
 
 - `EditorComponent` interface for custom editor implementations
+- `filterKeyReleases(data)` function to properly handle batched input over SSH
+
+### Fixed
+
+- Key presses no longer dropped when batched with release events in the same data chunk (common over SSH)
 
 ## [0.37.8] - 2026-01-07
 

@@ -310,8 +310,11 @@ interface ParsedKittySequence {
 let _lastEventType: KeyEventType = "press";
 
 /**
- * Check if the last parsed key event was a key release.
+ * Check if the input is a single key release event.
  * Only meaningful when Kitty keyboard protocol with flag 2 is active.
+ *
+ * Note: For batched input (common over SSH), use filterKeyReleases() instead
+ * to properly handle multiple events in a single data chunk.
  */
 export function isKeyRelease(data: string): boolean {
 	// Quick check: release events with flag 2 contain ":3"
@@ -329,6 +332,26 @@ export function isKeyRelease(data: string): boolean {
 		return true;
 	}
 	return false;
+}
+
+/**
+ * Remove key release events from input data.
+ * Use this instead of isKeyRelease() for batched input (common over SSH)
+ * where multiple events may be concatenated in a single data chunk.
+ *
+ * Returns the input with all release event sequences removed.
+ * Press and repeat events are preserved.
+ */
+export function filterKeyReleases(data: string): string {
+	// Remove Kitty protocol key release events (event type 3)
+	// CSI u: \x1b[<codepoint>:3u or \x1b[<codepoint>;<mod>:3u
+	// Functional: \x1b[<num>:3~ or \x1b[<num>;<mod>:3~
+	// Arrow: \x1b[1;<mod>:3[ABCD]
+	// Home/End: \x1b[1;<mod>:3[HF]
+	return data
+		.replace(/\x1b\[\d+(?:;\d+)?:3u/g, "") // CSI u releases
+		.replace(/\x1b\[\d+(?:;\d+)?:3~/g, "") // Functional key releases
+		.replace(/\x1b\[1;\d+:3[ABCDHF]/g, ""); // Arrow/Home/End releases
 }
 
 /**

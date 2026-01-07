@@ -33,6 +33,7 @@ export {
 } from "./keybindings.js";
 // Keyboard input handling
 export {
+	filterKeyReleases,
 	isKeyRelease,
 	isKeyRepeat,
 	isKittyProtocolActive,

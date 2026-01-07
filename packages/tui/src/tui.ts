@@ -5,7 +5,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { isKeyRelease, matchesKey } from "./keys.js";
+import { filterKeyReleases, matchesKey } from "./keys.js";
 import type { Terminal } from "./terminal.js";
 import { getCapabilities, setCellDimensions } from "./terminal-image.js";
 import { visibleWidth } from "./utils.js";
@@ -160,11 +160,13 @@ export class TUI extends Container {
 		// Pass input to focused component (including Ctrl+C)
 		// The focused component can decide how to handle Ctrl+C
 		if (this.focusedComponent?.handleInput) {
-			// Filter out key release events unless component opts in
-			if (isKeyRelease(data) && !this.focusedComponent.wantsKeyRelease) {
-				return;
+			// Filter out key release events from batched input unless component opts in
+			// This properly handles SSH scenarios where multiple events arrive together
+			const filtered = this.focusedComponent.wantsKeyRelease ? data : filterKeyReleases(data);
+			if (filtered.length === 0) {
+				return; // Nothing left after filtering release events
 			}
-			this.focusedComponent.handleInput(data);
+			this.focusedComponent.handleInput(filtered);
 			this.requestRender();
 		}
 	}
