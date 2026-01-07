@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `Component.wantsKeyRelease` property to opt-in to key release events (default false)
+
+### Fixed
+
+- TUI now filters out key release events by default, preventing double-processing of keys in editors and other components
+
 ## [0.37.7] - 2026-01-07
 
 ### Fixed

@@ -5,7 +5,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { matchesKey } from "./keys.js";
+import { isKeyRelease, matchesKey } from "./keys.js";
 import type { Terminal } from "./terminal.js";
 import { getCapabilities, setCellDimensions } from "./terminal-image.js";
 import { visibleWidth } from "./utils.js";
@@ -25,6 +25,12 @@ export interface Component {
 	 * Optional handler for keyboard input when component has focus
 	 */
 	handleInput?(data: string): void;
+
+	/**
+	 * If true, component receives key release events (Kitty protocol).
+	 * Default is false - release events are filtered out.
+	 */
+	wantsKeyRelease?: boolean;
 
 	/**
 	 * Invalidate any cached rendering state.
@@ -154,6 +160,10 @@ export class TUI extends Container {
 		// Pass input to focused component (including Ctrl+C)
 		// The focused component can decide how to handle Ctrl+C
 		if (this.focusedComponent?.handleInput) {
+			// Filter out key release events unless component opts in
+			if (isKeyRelease(data) && !this.focusedComponent.wantsKeyRelease) {
+				return;
+			}
 			this.focusedComponent.handleInput(data);
 			this.requestRender();
 		}
