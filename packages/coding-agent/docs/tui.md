@@ -361,7 +361,7 @@ pi.registerCommand("pick", {
       { value: "opt3", label: "Option 3" },  // description is optional
     ];
 
-    const result = await ctx.ui.custom<string | null>((tui, theme, done) => {
+    const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
       const container = new Container();
 
       // Top border
@@ -413,7 +413,7 @@ import { BorderedLoader } from "@mariozechner/pi-coding-agent";
 
 pi.registerCommand("fetch", {
   handler: async (_args, ctx) => {
-    const result = await ctx.ui.custom<string | null>((tui, theme, done) => {
+    const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
       const loader = new BorderedLoader(tui, theme, "Fetching data...");
       loader.onAbort = () => done(null);
 
@@ -451,7 +451,7 @@ pi.registerCommand("settings", {
       { id: "color", label: "Color output", currentValue: "on", values: ["on", "off"] },
     ];
 
-    await ctx.ui.custom((_tui, theme, done) => {
+    await ctx.ui.custom((_tui, theme, _kb, done) => {
       const container = new Container();
       container.addChild(new Text(theme.fg("accent", theme.bold("Settings")), 1, 1));
 
@@ -541,9 +541,85 @@ ctx.ui.setFooter(undefined);
 
 **Examples:** [custom-footer.ts](../examples/extensions/custom-footer.ts)
 
+### Pattern 7: Custom Editor (vim mode, etc.)
+
+Replace the main input editor with a custom implementation. Useful for modal editing (vim), different keybindings (emacs), or specialized input handling.
+
+```typescript
+import { CustomEditor, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
+
+type Mode = "normal" | "insert";
+
+class VimEditor extends CustomEditor {
+  private mode: Mode = "insert";
+
+  handleInput(data: string): void {
+    // Escape: switch to normal mode, or pass through for app handling
+    if (matchesKey(data, "escape")) {
+      if (this.mode === "insert") {
+        this.mode = "normal";
+        return;
+      }
+      // In normal mode, escape aborts agent (handled by CustomEditor)
+      super.handleInput(data);
+      return;
+    }
+
+    // Insert mode: pass everything to CustomEditor
+    if (this.mode === "insert") {
+      super.handleInput(data);
+      return;
+    }
+
+    // Normal mode: vim-style navigation
+    switch (data) {
+      case "i": this.mode = "insert"; return;
+      case "h": super.handleInput("\x1b[D"); return; // Left
+      case "j": super.handleInput("\x1b[B"); return; // Down
+      case "k": super.handleInput("\x1b[A"); return; // Up
+      case "l": super.handleInput("\x1b[C"); return; // Right
+    }
+    // Pass unhandled keys to super (ctrl+c, etc.), but filter printable chars
+    if (data.length === 1 && data.charCodeAt(0) >= 32) return;
+    super.handleInput(data);
+  }
+
+  render(width: number): string[] {
+    const lines = super.render(width);
+    // Add mode indicator to bottom border (use truncateToWidth for ANSI-safe truncation)
+    if (lines.length > 0) {
+      const label = this.mode === "normal" ? " NORMAL " : " INSERT ";
+      const lastLine = lines[lines.length - 1]!;
+      // Pass "" as ellipsis to avoid adding "..." when truncating
+      lines[lines.length - 1] = truncateToWidth(lastLine, width - label.length, "") + label;
+    }
+    return lines;
+  }
+}
+
+export default function (pi: ExtensionAPI) {
+  pi.on("session_start", (_event, ctx) => {
+    // Factory receives theme and keybindings from the app
+    ctx.ui.setEditorComponent((tui, theme, keybindings) =>
+      new VimEditor(theme, keybindings)
+    );
+  });
+}
+```
+
+**Key points:**
+
+- **Extend `CustomEditor`** (not base `Editor`) to get app keybindings (escape to abort, ctrl+d to exit, model switching, etc.)
+- **Call `super.handleInput(data)`** for keys you don't handle
+- **Factory pattern**: `setEditorComponent` receives a factory function that gets `tui`, `theme`, and `keybindings`
+- **Pass `undefined`** to restore the default editor: `ctx.ui.setEditorComponent(undefined)`
+
+**Examples:** [modal-editor.ts](../examples/extensions/modal-editor.ts)
+
 ## Key Rules
 
-1. **Always use theme from callback** - Don't import theme directly. Use `theme` from the `ctx.ui.custom((tui, theme, done) => ...)` callback.
+1. **Always use theme from callback** - Don't import theme directly. Use `theme` from the `ctx.ui.custom((tui, theme, keybindings, done) => ...)` callback.
 
 2. **Always type DynamicBorder color param** - Write `(s: string) => theme.fg("accent", s)`, not `(s) => theme.fg("accent", s)`.
 
@@ -560,5 +636,6 @@ ctx.ui.setFooter(undefined);
 - **Settings toggles**: [examples/extensions/tools.ts](../examples/extensions/tools.ts) - SettingsList for tool enable/disable
 - **Status indicators**: [examples/extensions/plan-mode.ts](../examples/extensions/plan-mode.ts) - setStatus and setWidget
 - **Custom footer**: [examples/extensions/custom-footer.ts](../examples/extensions/custom-footer.ts) - setFooter with stats
+- **Custom editor**: [examples/extensions/modal-editor.ts](../examples/extensions/modal-editor.ts) - Vim-like modal editing
 - **Snake game**: [examples/extensions/snake.ts](../examples/extensions/snake.ts) - Full game with keyboard input, game loop
 - **Custom tool rendering**: [examples/extensions/todo.ts](../examples/extensions/todo.ts) - renderCall and renderResult

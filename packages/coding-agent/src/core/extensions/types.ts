@@ -15,12 +15,13 @@ import type {
 	ThinkingLevel,
 } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
-import type { Component, KeyId, TUI } from "@mariozechner/pi-tui";
+import type { Component, EditorComponent, EditorTheme, KeyId, TUI } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
 import type { EventBus } from "../event-bus.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
+import type { AppAction, KeybindingsManager } from "../keybindings.js";
 import type { CustomMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type {
@@ -41,6 +42,7 @@ import type {
 
 export type { ExecOptions, ExecResult } from "../exec.js";
 export type { AgentToolResult, AgentToolUpdateCallback };
+export type { AppAction, KeybindingsManager } from "../keybindings.js";
 
 // ============================================================================
 // UI Context
@@ -92,6 +94,7 @@ export interface ExtensionUIContext {
 		factory: (
 			tui: TUI,
 			theme: Theme,
+			keybindings: KeybindingsManager,
 			done: (result: T) => void,
 		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
 	): Promise<T>;
@@ -104,6 +107,43 @@ export interface ExtensionUIContext {
 
 	/** Show a multi-line editor for text editing. */
 	editor(title: string, prefill?: string): Promise<string | undefined>;
+
+	/**
+	 * Set a custom editor component via factory function.
+	 * Pass undefined to restore the default editor.
+	 *
+	 * The factory receives:
+	 * - `theme`: EditorTheme for styling borders and autocomplete
+	 * - `keybindings`: KeybindingsManager for app-level keybindings
+	 *
+	 * For full app keybinding support (escape, ctrl+d, model switching, etc.),
+	 * extend `CustomEditor` from `@mariozechner/pi-coding-agent` and call
+	 * `super.handleInput(data)` for keys you don't handle.
+	 *
+	 * @example
+	 * ```ts
+	 * import { CustomEditor } from "@mariozechner/pi-coding-agent";
+	 *
+	 * class VimEditor extends CustomEditor {
+	 *   private mode: "normal" | "insert" = "insert";
+	 *
+	 *   handleInput(data: string): void {
+	 *     if (this.mode === "normal") {
+	 *       // Handle vim normal mode keys...
+	 *       if (data === "i") { this.mode = "insert"; return; }
+	 *     }
+	 *     super.handleInput(data);  // App keybindings + text editing
+	 *   }
+	 * }
+	 *
+	 * ctx.ui.setEditorComponent((tui, theme, keybindings) =>
+	 *   new VimEditor(tui, theme, keybindings)
+	 * );
+	 * ```
+	 */
+	setEditorComponent(
+		factory: ((tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent) | undefined,
+	): void;
 
 	/** Get the current theme for styling. */
 	readonly theme: Theme;

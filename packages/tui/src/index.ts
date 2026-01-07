@@ -20,6 +20,8 @@ export { type SettingItem, SettingsList, type SettingsListTheme } from "./compon
 export { Spacer } from "./components/spacer.js";
 export { Text } from "./components/text.js";
 export { TruncatedText } from "./components/truncated-text.js";
+// Editor component interface (for custom editors)
+export type { EditorComponent } from "./editor-component.js";
 // Keybindings
 export {
 	DEFAULT_EDITOR_KEYBINDINGS,
@@ -41,6 +43,8 @@ export {
 	parseKey,
 	setKittyProtocolActive,
 } from "./keys.js";
+// Input buffering for batch splitting
+export { StdinBuffer, type StdinBufferEventMap, type StdinBufferOptions } from "./stdin-buffer.js";
 // Terminal interface and implementations
 export { ProcessTerminal, type Terminal } from "./terminal.js";
 // Terminal image support

@@ -74,6 +74,7 @@ const noOpUIContext: ExtensionUIContext = {
 	setEditorText: () => {},
 	getEditorText: () => "",
 	editor: async () => undefined,
+	setEditorComponent: () => {},
 	get theme() {
 		return theme;
 	},

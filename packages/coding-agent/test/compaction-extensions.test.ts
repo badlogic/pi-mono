@@ -137,6 +137,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 				setEditorText: () => {},
 				getEditorText: () => "",
 				editor: async () => undefined,
+				setEditorComponent: () => {},
 				get theme() {
 					return theme;
 				},

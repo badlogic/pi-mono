@@ -75,7 +75,7 @@ export default function (pi: ExtensionAPI) {
 			const currentSessionFile = ctx.sessionManager.getSessionFile();
 
 			// Generate the handoff prompt with loader UI
-			const result = await ctx.ui.custom<string | null>((tui, theme, done) => {
+			const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
 				const loader = new BorderedLoader(tui, theme, `Generating handoff prompt...`);
 				loader.onAbort = () => done(null);
 

@@ -3,11 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCodexInstructions } from "../src/providers/openai-codex/prompts/codex.js";
-import {
-	normalizeModel,
-	type RequestBody,
-	transformRequestBody,
-} from "../src/providers/openai-codex/request-transformer.js";
+import { type RequestBody, transformRequestBody } from "../src/providers/openai-codex/request-transformer.js";
 import { parseCodexError } from "../src/providers/openai-codex/response-handler.js";
 
 const DEFAULT_PROMPT_PREFIX =
@@ -59,9 +55,21 @@ describe("openai-codex request transformer", () => {
 	});
 });
 
-describe("openai-codex model normalization", () => {
-	it("maps space-separated codex-mini names to codex-mini-latest", () => {
-		expect(normalizeModel("gpt 5 codex mini")).toBe("codex-mini-latest");
+describe("openai-codex reasoning effort clamping", () => {
+	it("clamps gpt-5.1 xhigh to high", async () => {
+		const body: RequestBody = { model: "gpt-5.1", input: [] };
+		const transformed = await transformRequestBody(body, { reasoningEffort: "xhigh" });
+		expect(transformed.reasoning?.effort).toBe("high");
+	});
+
+	it("clamps gpt-5.1-codex-mini to medium/high only", async () => {
+		const body: RequestBody = { model: "gpt-5.1-codex-mini", input: [] };
+
+		const low = await transformRequestBody({ ...body }, { reasoningEffort: "low" });
+		expect(low.reasoning?.effort).toBe("medium");
+
+		const xhigh = await transformRequestBody({ ...body }, { reasoningEffort: "xhigh" });
+		expect(xhigh.reasoning?.effort).toBe("high");
 	});
 });
 

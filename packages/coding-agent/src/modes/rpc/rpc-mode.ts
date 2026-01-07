@@ -219,6 +219,10 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			});
 		},
 
+		setEditorComponent(): void {
+			// Custom editor components not supported in RPC mode
+		},
+
 		get theme() {
 			return theme;
 		},

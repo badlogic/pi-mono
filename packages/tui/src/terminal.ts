@@ -1,4 +1,5 @@
 import { setKittyProtocolActive } from "./keys.js";
+import { StdinBuffer } from "./stdin-buffer.js";
 
 /**
  * Minimal terminal interface for TUI
@@ -44,6 +45,8 @@ export class ProcessTerminal implements Terminal {
 	private inputHandler?: (data: string) => void;
 	private resizeHandler?: () => void;
 	private _kittyProtocolActive = false;
+	private stdinBuffer?: StdinBuffer;
+	private stdinDataHandler?: (data: string) => void;
 
 	get kittyProtocolActive(): boolean {
 		return this._kittyProtocolActive;
@@ -74,6 +77,35 @@ export class ProcessTerminal implements Terminal {
 	}
 
 	/**
+	 * Set up StdinBuffer to split batched input into individual sequences.
+	 * This ensures components receive single events, making matchesKey/isKeyRelease work correctly.
+	 * Note: Does NOT register the stdin handler - that's done after the Kitty protocol query.
+	 */
+	private setupStdinBuffer(): void {
+		this.stdinBuffer = new StdinBuffer({ timeout: 10 });
+
+		// Forward individual sequences to the input handler
+		this.stdinBuffer.on("data", (sequence) => {
+			if (this.inputHandler) {
+				this.inputHandler(sequence);
+			}
+		});
+
+		// Re-wrap paste content with bracketed paste markers for existing editor handling
+		this.stdinBuffer.on("paste", (content) => {
+			if (this.inputHandler) {
+				this.inputHandler(`\x1b[200~${content}\x1b[201~`);
+			}
+		});
+
+		// Handler that pipes stdin data through the buffer
+		// Registration happens after Kitty protocol query completes
+		this.stdinDataHandler = (data: string) => {
+			this.stdinBuffer!.process(data);
+		};
+	}
+
+	/**
 	 * Query terminal for Kitty keyboard protocol support and enable if available.
 	 *
 	 * Sends CSI ? u to query current flags. If terminal responds with CSI ? <flags> u,
@@ -91,9 +123,9 @@ export class ProcessTerminal implements Terminal {
 
 		const queryHandler = (data: string) => {
 			if (resolved) {
-				// Query phase done, forward to user handler
-				if (this.inputHandler) {
-					this.inputHandler(data);
+				// Query phase done, forward to StdinBuffer
+				if (this.stdinBuffer) {
+					this.stdinBuffer.process(data);
 				}
 				return;
 			}
@@ -112,21 +144,24 @@ export class ProcessTerminal implements Terminal {
 				// Flag 2 = report event types (press/repeat/release)
 				process.stdout.write("\x1b[>3u");
 
-				// Remove the response from buffer, forward any remaining input
+				// Remove the response from buffer, forward any remaining input through StdinBuffer
 				const remaining = buffer.replace(kittyResponsePattern, "");
-				if (remaining && this.inputHandler) {
-					this.inputHandler(remaining);
+				if (remaining && this.stdinBuffer) {
+					this.stdinBuffer.process(remaining);
 				}
 
-				// Replace with user handler
+				// Replace query handler with StdinBuffer handler
 				process.stdin.removeListener("data", queryHandler);
-				if (this.inputHandler) {
-					process.stdin.on("data", this.inputHandler);
+				if (this.stdinDataHandler) {
+					process.stdin.on("data", this.stdinDataHandler);
 				}
 			}
 		};
 
-		// Temporarily intercept input for the query
+		// Set up StdinBuffer before query (it will receive input after query completes)
+		this.setupStdinBuffer();
+
+		// Temporarily intercept input for the query (before StdinBuffer)
 		process.stdin.on("data", queryHandler);
 
 		// Send query
@@ -139,15 +174,15 @@ export class ProcessTerminal implements Terminal {
 				this._kittyProtocolActive = false;
 				setKittyProtocolActive(false);
 
-				// Forward any buffered input that wasn't a Kitty response
-				if (buffer && this.inputHandler) {
-					this.inputHandler(buffer);
+				// Forward any buffered input that wasn't a Kitty response through StdinBuffer
+				if (buffer && this.stdinBuffer) {
+					this.stdinBuffer.process(buffer);
 				}
 
-				// Replace with user handler
+				// Replace query handler with StdinBuffer handler
 				process.stdin.removeListener("data", queryHandler);
-				if (this.inputHandler) {
-					process.stdin.on("data", this.inputHandler);
+				if (this.stdinDataHandler) {
+					process.stdin.on("data", this.stdinDataHandler);
 				}
 			}
 		}, QUERY_TIMEOUT_MS);
@@ -164,11 +199,18 @@ export class ProcessTerminal implements Terminal {
 			setKittyProtocolActive(false);
 		}
 
-		// Remove event handlers
-		if (this.inputHandler) {
-			process.stdin.removeListener("data", this.inputHandler);
-			this.inputHandler = undefined;
+		// Clean up StdinBuffer
+		if (this.stdinBuffer) {
+			this.stdinBuffer.destroy();
+			this.stdinBuffer = undefined;
 		}
+
+		// Remove event handlers
+		if (this.stdinDataHandler) {
+			process.stdin.removeListener("data", this.stdinDataHandler);
+			this.stdinDataHandler = undefined;
+		}
+		this.inputHandler = undefined;
 		if (this.resizeHandler) {
 			process.stdout.removeListener("resize", this.resizeHandler);
 			this.resizeHandler = undefined;

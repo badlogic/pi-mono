@@ -206,7 +206,7 @@ export default function presetExtension(pi: ExtensionAPI) {
 			description: "Clear active preset, restore defaults",
 		});
 
-		const result = await ctx.ui.custom<string | null>((tui, theme, done) => {
+		const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
 			const container = new Container();
 			container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
 
