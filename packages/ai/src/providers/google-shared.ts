@@ -186,6 +186,143 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 }
 
 /**
+ * Sanitize JSON Schema for Google Cloud Code Assist API (Antigravity).
+ * Converts TypeBox's anyOf/const patterns to enum arrays for JSON Schema 2020-12 compatibility.
+ *
+ * TypeBox generates schemas like: { anyOf: [{ const: "a", type: "string" }, { const: "b", type: "string" }] }
+ * Antigravity requires: { type: "string", enum: ["a", "b"] }
+ */
+function sanitizeSchemaForGoogle(schema: unknown): unknown {
+	if (!schema || typeof schema !== "object") {
+		return schema;
+	}
+	if (Array.isArray(schema)) {
+		return schema.map((item) => sanitizeSchemaForGoogle(item));
+	}
+
+	const obj = schema as Record<string, unknown>;
+	const sanitized: Record<string, unknown> = {};
+
+	// Check if this is an "anyOf" with all "const" values (TypeBox string enum pattern)
+	if (obj.anyOf && Array.isArray(obj.anyOf)) {
+		const constValues: unknown[] = [];
+		let allConsts = true;
+		let inferredType: unknown = null;
+
+		for (const variant of obj.anyOf) {
+			if (variant && typeof variant === "object" && "const" in variant) {
+				constValues.push((variant as Record<string, unknown>).const);
+				if ((variant as Record<string, unknown>).type && !inferredType) {
+					inferredType = (variant as Record<string, unknown>).type;
+				}
+			} else {
+				allConsts = false;
+				break;
+			}
+		}
+
+		if (allConsts && constValues.length > 0) {
+			if (inferredType) {
+				sanitized.type = inferredType;
+			}
+			sanitized.enum = constValues;
+			if (obj.description) {
+				sanitized.description = obj.description;
+			}
+			return sanitized;
+		}
+	}
+
+	// Handle oneOf similarly
+	if (obj.oneOf && Array.isArray(obj.oneOf)) {
+		const constValues: unknown[] = [];
+		let allConsts = true;
+		let inferredType: unknown = null;
+
+		for (const variant of obj.oneOf) {
+			if (variant && typeof variant === "object" && "const" in variant) {
+				constValues.push((variant as Record<string, unknown>).const);
+				if ((variant as Record<string, unknown>).type && !inferredType) {
+					inferredType = (variant as Record<string, unknown>).type;
+				}
+			} else {
+				allConsts = false;
+				break;
+			}
+		}
+
+		if (allConsts && constValues.length > 0) {
+			if (inferredType) {
+				sanitized.type = inferredType;
+			}
+			sanitized.enum = constValues;
+			if (obj.description) {
+				sanitized.description = obj.description;
+			}
+			return sanitized;
+		}
+	}
+
+	// List of unsupported JSON Schema keywords for Google APIs
+	const unsupportedKeywords = [
+		"patternProperties",
+		"$schema",
+		"$id",
+		"$ref",
+		"$defs",
+		"definitions",
+		"if",
+		"then",
+		"else",
+		"dependentSchemas",
+		"dependentRequired",
+		"unevaluatedProperties",
+		"unevaluatedItems",
+		"contentEncoding",
+		"contentMediaType",
+		"contentSchema",
+		"deprecated",
+		"readOnly",
+		"writeOnly",
+		"examples",
+		"$comment",
+	];
+
+	for (const [key, value] of Object.entries(obj)) {
+		if (unsupportedKeywords.includes(key)) continue;
+
+		// Convert const to enum
+		if (key === "const") {
+			sanitized.enum = [value];
+			continue;
+		}
+
+		// Skip anyOf/oneOf/allOf if not handled above (complex unions)
+		if (["anyOf", "oneOf", "allOf", "not"].includes(key)) continue;
+
+		// Recursively sanitize nested objects
+		if (key === "properties" && typeof value === "object" && value !== null) {
+			sanitized[key] = Object.fromEntries(
+				Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, sanitizeSchemaForGoogle(v)]),
+			);
+		} else if (key === "items" && typeof value === "object") {
+			sanitized[key] = sanitizeSchemaForGoogle(value);
+		} else if (key === "additionalProperties" && typeof value === "object") {
+			sanitized[key] = sanitizeSchemaForGoogle(value);
+		} else {
+			sanitized[key] = value;
+		}
+	}
+
+	// Ensure type: "object" when properties exist
+	if (("properties" in sanitized || "required" in sanitized) && !("type" in sanitized)) {
+		sanitized.type = "object";
+	}
+
+	return sanitized;
+}
+
+/**
  * Convert tools to Gemini function declarations format.
  */
 export function convertTools(
@@ -197,7 +334,7 @@ export function convertTools(
 			functionDeclarations: tools.map((tool) => ({
 				name: tool.name,
 				description: tool.description,
-				parameters: tool.parameters as Schema,
+				parameters: sanitizeSchemaForGoogle(tool.parameters) as Schema,
 			})),
 		},
 	];
