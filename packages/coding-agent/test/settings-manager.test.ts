@@ -1,0 +1,108 @@
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { join } from "path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { SettingsManager } from "../src/core/settings-manager.js";
+
+describe("SettingsManager", () => {
+	const testDir = join(process.cwd(), "test-settings-tmp");
+	const agentDir = join(testDir, "agent");
+	const projectDir = join(testDir, "project");
+
+	beforeEach(() => {
+		// Clean up and create fresh directories
+		if (existsSync(testDir)) {
+			rmSync(testDir, { recursive: true });
+		}
+		mkdirSync(agentDir, { recursive: true });
+		mkdirSync(join(projectDir, ".pi"), { recursive: true });
+	});
+
+	afterEach(() => {
+		if (existsSync(testDir)) {
+			rmSync(testDir, { recursive: true });
+		}
+	});
+
+	describe("preserves externally added settings", () => {
+		it("should preserve enabledModels when changing thinking level", () => {
+			// Create initial settings file
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					theme: "dark",
+					defaultModel: "claude-sonnet",
+				}),
+			);
+
+			// Create SettingsManager (simulates pi starting up)
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			// Simulate user editing settings.json externally to add enabledModels
+			const currentSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			currentSettings.enabledModels = ["claude-opus-4-5", "gpt-5.2-codex"];
+			writeFileSync(settingsPath, JSON.stringify(currentSettings, null, 2));
+
+			// User changes thinking level via Shift+Tab
+			manager.setDefaultThinkingLevel("high");
+
+			// Verify enabledModels is preserved
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.enabledModels).toEqual(["claude-opus-4-5", "gpt-5.2-codex"]);
+			expect(savedSettings.defaultThinkingLevel).toBe("high");
+			expect(savedSettings.theme).toBe("dark");
+			expect(savedSettings.defaultModel).toBe("claude-sonnet");
+		});
+
+		it("should preserve custom settings when changing theme", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					defaultModel: "claude-sonnet",
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			// User adds custom settings externally
+			const currentSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			currentSettings.shellPath = "/bin/zsh";
+			currentSettings.extensions = ["/path/to/extension.ts"];
+			writeFileSync(settingsPath, JSON.stringify(currentSettings, null, 2));
+
+			// User changes theme
+			manager.setTheme("light");
+
+			// Verify all settings preserved
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.shellPath).toBe("/bin/zsh");
+			expect(savedSettings.extensions).toEqual(["/path/to/extension.ts"]);
+			expect(savedSettings.theme).toBe("light");
+		});
+
+		it("should let in-memory changes override file changes for same key", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					theme: "dark",
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			// User externally sets thinking level to "low"
+			const currentSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			currentSettings.defaultThinkingLevel = "low";
+			writeFileSync(settingsPath, JSON.stringify(currentSettings, null, 2));
+
+			// But then changes it via UI to "high"
+			manager.setDefaultThinkingLevel("high");
+
+			// In-memory change should win
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.defaultThinkingLevel).toBe("high");
+		});
+	});
+});
