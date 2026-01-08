@@ -549,14 +549,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		if (options.systemPrompt === undefined) {
 			return defaultPrompt;
 		} else if (typeof options.systemPrompt === "string") {
-			return buildSystemPromptInternal({
-				cwd,
-				agentDir,
-				skills,
-				contextFiles,
-				selectedTools: validToolNames,
-				customPrompt: options.systemPrompt,
-			});
+			// String is a full replacement - use as-is without appending context/skills
+			return options.systemPrompt;
 		} else {
 			return options.systemPrompt(defaultPrompt);
 		}
