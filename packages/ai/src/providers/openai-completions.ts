@@ -364,7 +364,8 @@ function createClient(model: Model<"openai-completions">, context: Context, apiK
 
 function buildParams(model: Model<"openai-completions">, context: Context, options?: OpenAICompletionsOptions) {
 	const compat = getCompat(model);
-	const messages = convertMessages(model, context, compat);
+	let messages = convertMessages(model, context, compat);
+	messages = maybeAddOpenRouterAnthropicCacheControl(model, messages);
 
 	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
 		model: model.id,
@@ -408,6 +409,52 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 	}
 
 	return params;
+}
+
+type ChatCompletionTextPartWithCacheControl = ChatCompletionContentPartText & {
+	cache_control?: { type: "ephemeral" };
+};
+
+function maybeAddOpenRouterAnthropicCacheControl(
+	model: Model<"openai-completions">,
+	messages: ChatCompletionMessageParam[],
+): ChatCompletionMessageParam[] {
+	if (model.provider !== "openrouter" || !model.id.startsWith("anthropic/")) return messages;
+
+	// Anthropic-style caching requires cache_control on a text part. Add a breakpoint
+	// on the last user/assistant message (walking backwards until we find text content).
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role !== "user" && msg.role !== "assistant") continue;
+
+		const content = (msg as { content?: unknown }).content;
+		if (typeof content === "string") {
+			// Convert string to multipart with cache_control
+			messages[i] = {
+				...msg,
+				content: [
+					{
+						type: "text",
+						text: content,
+						cache_control: { type: "ephemeral" },
+					} as ChatCompletionTextPartWithCacheControl,
+				],
+			} as ChatCompletionMessageParam;
+			return messages;
+		}
+
+		if (!Array.isArray(content)) continue;
+
+		// Find last text part and add cache_control
+		for (let i = content.length - 1; i >= 0; i--) {
+			if (content[i]?.type === "text") {
+				(content[i] as ChatCompletionTextPartWithCacheControl).cache_control = { type: "ephemeral" };
+				return messages;
+			}
+		}
+	}
+
+	return messages;
 }
 
 function convertMessages(
