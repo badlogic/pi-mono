@@ -174,6 +174,9 @@ export class InteractiveMode {
 	// Messages queued while compaction is running
 	private compactionQueuedMessages: CompactionQueuedMessage[] = [];
 
+	// Shutdown state
+	private shutdownRequested = false;
+
 	// Extension UI state
 	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
 	private extensionInput: ExtensionInputComponent | undefined = undefined;
@@ -628,6 +631,9 @@ export class InteractiveMode {
 				isIdle: () => !this.session.isStreaming,
 				abort: () => this.session.abort(),
 				hasPendingMessages: () => this.session.pendingMessageCount > 0,
+				shutdown: () => {
+					this.shutdownRequested = true;
+				},
 			},
 			// ExtensionCommandContextActions - for ctx.* in command handlers
 			{
@@ -760,6 +766,9 @@ export class InteractiveMode {
 			isIdle: () => !this.session.isStreaming,
 			abort: () => this.session.abort(),
 			hasPendingMessages: () => this.session.pendingMessageCount > 0,
+			shutdown: () => {
+				this.shutdownRequested = true;
+			},
 		});
 
 		// Set up the extension shortcut handler on the default editor
@@ -1617,6 +1626,9 @@ export class InteractiveMode {
 					this.streamingMessage = undefined;
 				}
 				this.pendingTools.clear();
+
+				await this.checkShutdownRequested();
+
 				this.ui.requestRender();
 				break;
 
@@ -1930,7 +1942,12 @@ export class InteractiveMode {
 	 * Gracefully shutdown the agent.
 	 * Emits shutdown event to extensions, then exits.
 	 */
+	private isShuttingDown = false;
+
 	private async shutdown(): Promise<void> {
+		if (this.isShuttingDown) return;
+		this.isShuttingDown = true;
+
 		// Emit shutdown event to extensions
 		const extensionRunner = this.session.extensionRunner;
 		if (extensionRunner?.hasHandlers("session_shutdown")) {
@@ -1941,6 +1958,14 @@ export class InteractiveMode {
 
 		this.stop();
 		process.exit(0);
+	}
+
+	/**
+	 * Check if shutdown was requested and perform shutdown if so.
+	 */
+	private async checkShutdownRequested(): Promise<void> {
+		if (!this.shutdownRequested) return;
+		await this.shutdown();
 	}
 
 	private handleCtrlZ(): void {

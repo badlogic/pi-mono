@@ -175,6 +175,8 @@ export interface ExtensionContext {
 	abort(): void;
 	/** Whether there are queued messages waiting */
 	hasPendingMessages(): boolean;
+	/** Gracefully shutdown pi and exit. Available in all contexts. */
+	shutdown(): void;
 }
 
 /**
@@ -775,6 +777,7 @@ export interface ExtensionContextActions {
 	isIdle: () => boolean;
 	abort: () => void;
 	hasPendingMessages: () => boolean;
+	shutdown: () => void;
 }
 
 /**

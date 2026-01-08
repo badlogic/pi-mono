@@ -66,6 +66,7 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 				isIdle: () => !session.isStreaming,
 				abort: () => session.abort(),
 				hasPendingMessages: () => session.pendingMessageCount > 0,
+				shutdown: () => {},
 			},
 			// ExtensionCommandContextActions - commands invokable via prompt("/command")
 			{

@@ -556,6 +556,24 @@ Access to models and API keys.
 
 Control flow helpers.
 
+### ctx.shutdown()
+
+Request a graceful shutdown of pi.
+
+- **Interactive mode:** Deferred until the agent becomes idle (after processing all queued steering and follow-up messages).
+- **RPC mode:** Deferred until the next idle state (after completing the current command response, when waiting for the next command).
+- **Print mode:** No-op. The process exits automatically when all prompts are processed.
+
+Emits `session_shutdown` event to all extensions before exiting. Available in all contexts (event handlers, tools, commands, shortcuts).
+
+```typescript
+pi.on("tool_call", (event, ctx) => {
+  if (isFatal(event.input)) {
+    ctx.shutdown();
+  }
+});
+```
+
 ## ExtensionCommandContext
 
 Command handlers receive `ExtensionCommandContext`, which extends `ExtensionContext` with session control methods. These are only available in commands because they can deadlock if called from event handlers.

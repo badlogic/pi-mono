@@ -527,6 +527,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		abort: () => {
 			session.abort();
 		},
+		shutdown: () => {},
 	}));
 
 	// Create tool registry mapping name -> tool (for extension getTools/setTools)
