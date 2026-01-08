@@ -21,7 +21,7 @@
 - Extension UI dialogs (`ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`) now support a `timeout` option with live countdown display ([#522](https://github.com/badlogic/pi-mono/pull/522) by [@nicobailon](https://github.com/nicobailon))
 - Extensions can now provide custom editor components via `ctx.ui.setEditorComponent()`. See `examples/extensions/modal-editor.ts` and `docs/tui.md` Pattern 7.
 - Extension factories can now be async, enabling dynamic imports and lazy-loaded dependencies ([#513](https://github.com/badlogic/pi-mono/pull/513) by [@austinm911](https://github.com/austinm911))
-- `ctx.shutdown()` is now available in extension contexts for requesting a graceful shutdown. In interactive mode, shutdown is deferred until the agent becomes idle (after processing all queued steering and follow-up messages). In RPC mode, shutdown is deferred until after completing the current command response. In print mode, shutdown is a no-op as the process exits automatically when prompts complete.
+- `ctx.shutdown()` is now available in extension contexts for requesting a graceful shutdown. In interactive mode, shutdown is deferred until the agent becomes idle (after processing all queued steering and follow-up messages). In RPC mode, shutdown is deferred until after completing the current command response. In print mode, shutdown is a no-op as the process exits automatically when prompts complete. ([#542](https://github.com/badlogic/pi-mono/pull/542) by [@kaofelix](https://github.com/kaofelix))
 
 ### Fixed
 

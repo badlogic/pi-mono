@@ -13,7 +13,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("quit", {
 		description: "Exit pi cleanly",
 		handler: async (_args, ctx) => {
-			await ctx.shutdown();
+			ctx.shutdown();
 		},
 	});
 
@@ -25,12 +25,12 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _onUpdate, ctx, _signal) {
 			// Do any final work here...
-			// Then shutdown
-			await ctx.shutdown();
+			// Request graceful shutdown (deferred until agent is idle)
+			ctx.shutdown();
 
-			// This return won't be reached, but required by type
+			// This return is sent to the LLM before shutdown occurs
 			return {
-				content: [{ type: "text", text: "Shutting down..." }],
+				content: [{ type: "text", text: "Shutdown requested. Exiting after this response." }],
 				details: {},
 			};
 		},
@@ -50,12 +50,12 @@ export default function (pi: ExtensionAPI) {
 			// Example deployment logic
 			// const result = await pi.exec("npm", ["run", "deploy", params.environment], { signal });
 
-			// On success, shutdown
+			// On success, request graceful shutdown
 			onUpdate?.({ content: [{ type: "text", text: "Deployment complete, exiting..." }], details: {} });
-			await ctx.shutdown();
+			ctx.shutdown();
 
 			return {
-				content: [{ type: "text", text: "Done!" }],
+				content: [{ type: "text", text: "Done! Shutdown requested." }],
 				details: { environment: params.environment },
 			};
 		},
