@@ -292,7 +292,12 @@ export async function main(args: string[]) {
 	time("prepareInitialMessage");
 	const isInteractive = !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
-	initTheme(settingsManager.getTheme(), isInteractive);
+	initTheme({
+		themeName: settingsManager.getTheme(),
+		enableWatcher: isInteractive,
+		autoThemeLight: settingsManager.getAutoThemeLight(),
+		autoThemeDark: settingsManager.getAutoThemeDark(),
+	});
 	time("initTheme");
 
 	// Show deprecation warnings in interactive mode

@@ -230,7 +230,12 @@ export class InteractiveMode {
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 
 		// Initialize theme with watcher for interactive mode
-		initTheme(this.settingsManager.getTheme(), true);
+		initTheme({
+			themeName: this.settingsManager.getTheme(),
+			enableWatcher: true,
+			autoThemeLight: this.settingsManager.getAutoThemeLight(),
+			autoThemeDark: this.settingsManager.getAutoThemeDark(),
+		});
 	}
 
 	private setupAutocomplete(fdPath: string | undefined): void {
@@ -2354,8 +2359,8 @@ export class InteractiveMode {
 					followUpMode: this.session.followUpMode,
 					thinkingLevel: this.session.thinkingLevel,
 					availableThinkingLevels: this.session.getAvailableThinkingLevels(),
-					currentTheme: this.settingsManager.getTheme() || "dark",
-					availableThemes: getAvailableThemes(),
+					currentTheme: this.settingsManager.getTheme() || "auto",
+					availableThemes: ["auto", ...getAvailableThemes()],
 					hideThinkingBlock: this.hideThinkingBlock,
 					collapseChangelog: this.settingsManager.getCollapseChangelog(),
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
@@ -2391,7 +2396,11 @@ export class InteractiveMode {
 						this.updateEditorBorderColor();
 					},
 					onThemeChange: (themeName) => {
-						const result = setTheme(themeName, true);
+						const result = setTheme(themeName, {
+							enableWatcher: true,
+							autoThemeLight: this.settingsManager.getAutoThemeLight(),
+							autoThemeDark: this.settingsManager.getAutoThemeDark(),
+						});
 						this.settingsManager.setTheme(themeName);
 						this.ui.invalidate();
 						if (!result.success) {
@@ -2399,7 +2408,11 @@ export class InteractiveMode {
 						}
 					},
 					onThemePreview: (themeName) => {
-						const result = setTheme(themeName, true);
+						const result = setTheme(themeName, {
+							enableWatcher: true,
+							autoThemeLight: this.settingsManager.getAutoThemeLight(),
+							autoThemeDark: this.settingsManager.getAutoThemeDark(),
+						});
 						if (result.success) {
 							this.ui.invalidate();
 							this.ui.requestRender();

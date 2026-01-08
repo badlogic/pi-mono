@@ -2,7 +2,7 @@ import { initTheme, theme } from "../src/modes/interactive/theme/theme.js";
 
 // Initialize with dark theme explicitly
 process.env.COLORTERM = "truecolor";
-initTheme("dark");
+initTheme({ themeName: "dark" });
 
 console.log("\n=== Foreground Colors ===\n");
 

@@ -261,10 +261,16 @@ export {
 } from "./modes/interactive/components/index.js";
 // Theme utilities for custom tools and extensions
 export {
+	detectSystemAppearance,
+	getCurrentThemeName,
+	getCurrentThemeSetting,
 	getMarkdownTheme,
 	getSelectListTheme,
 	getSettingsListTheme,
+	type InitThemeOptions,
 	initTheme,
+	type SetThemeOptions,
+	setTheme,
 	Theme,
 	type ThemeColor,
 } from "./modes/interactive/theme/theme.js";

@@ -1,4 +1,6 @@
+import { execSync } from "node:child_process";
 import * as fs from "node:fs";
+import { homedir } from "node:os";
 import * as path from "node:path";
 import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@mariozechner/pi-tui";
 import { type Static, Type } from "@sinclair/typebox";
@@ -547,6 +549,95 @@ function detectTerminalBackground(): "dark" | "light" {
 	return "dark";
 }
 
+// ============================================================================
+// System Appearance Detection (macOS)
+// ============================================================================
+
+const MACOS_PREFS_PLIST = path.join(homedir(), "Library/Preferences/.GlobalPreferences.plist");
+
+/**
+ * Detect system appearance on macOS.
+ * Returns "dark" | "light" on macOS, undefined on other platforms.
+ */
+export function detectSystemAppearance(): "dark" | "light" | undefined {
+	if (process.platform !== "darwin") {
+		// TODO: Linux/Windows support
+		return undefined;
+	}
+
+	try {
+		const result = execSync("defaults read -g AppleInterfaceStyle", {
+			encoding: "utf-8",
+			timeout: 1000,
+			stdio: ["pipe", "pipe", "pipe"],
+		}).trim();
+		return result === "Dark" ? "dark" : "light";
+	} catch {
+		// No AppleInterfaceStyle = light mode (or command failed)
+		return "light";
+	}
+}
+
+let systemAppearanceWatcher: fs.FSWatcher | undefined;
+let lastSystemAppearance: "dark" | "light" | undefined;
+
+/**
+ * Start watching for system appearance changes (macOS only).
+ * Calls the callback when appearance changes.
+ * Returns a cleanup function.
+ */
+function startSystemAppearanceWatcher(onChange: (appearance: "dark" | "light") => void): () => void {
+	if (process.platform !== "darwin") {
+		return () => {};
+	}
+
+	// Stop existing watcher
+	if (systemAppearanceWatcher) {
+		systemAppearanceWatcher.close();
+		systemAppearanceWatcher = undefined;
+	}
+
+	lastSystemAppearance = detectSystemAppearance();
+
+	// Watch the preferences plist for changes
+	if (!fs.existsSync(MACOS_PREFS_PLIST)) {
+		return () => {};
+	}
+
+	try {
+		let debounceTimer: NodeJS.Timeout | undefined;
+		systemAppearanceWatcher = fs.watch(MACOS_PREFS_PLIST, { persistent: false }, (event) => {
+			if (event === "change") {
+				// Debounce rapid changes
+				if (debounceTimer) clearTimeout(debounceTimer);
+				debounceTimer = setTimeout(() => {
+					const current = detectSystemAppearance();
+					if (current && current !== lastSystemAppearance) {
+						lastSystemAppearance = current;
+						onChange(current);
+					}
+				}, 100);
+			}
+		});
+	} catch {
+		// Ignore errors starting watcher
+	}
+
+	return () => {
+		if (systemAppearanceWatcher) {
+			systemAppearanceWatcher.close();
+			systemAppearanceWatcher = undefined;
+		}
+	};
+}
+
+function stopSystemAppearanceWatcher(): void {
+	if (systemAppearanceWatcher) {
+		systemAppearanceWatcher.close();
+		systemAppearanceWatcher = undefined;
+	}
+}
+
 function getDefaultTheme(): string {
 	return detectTerminalBackground();
 }
@@ -557,43 +648,150 @@ function getDefaultTheme(): string {
 
 export let theme: Theme;
 let currentThemeName: string | undefined;
+let currentThemeSetting: string | undefined; // The actual setting ("auto" or theme name)
 let themeWatcher: fs.FSWatcher | undefined;
 let onThemeChangeCallback: (() => void) | undefined;
+let autoThemeLightSetting: string | undefined;
+let autoThemeDarkSetting: string | undefined;
 
-export function initTheme(themeName?: string, enableWatcher: boolean = false): void {
-	const name = themeName ?? getDefaultTheme();
-	currentThemeName = name;
+/**
+ * Resolve "auto" to actual theme name based on system appearance.
+ * Falls back to terminal background detection if system detection unavailable.
+ */
+function resolveThemeName(themeSetting: string, autoThemeLight?: string, autoThemeDark?: string): string {
+	if (themeSetting !== "auto") {
+		return themeSetting;
+	}
+
+	const systemAppearance = detectSystemAppearance();
+	if (systemAppearance) {
+		return systemAppearance === "dark" ? (autoThemeDark ?? "dark") : (autoThemeLight ?? "light");
+	}
+
+	// Fallback to terminal background detection
+	const terminalBg = detectTerminalBackground();
+	return terminalBg === "dark" ? (autoThemeDark ?? "dark") : (autoThemeLight ?? "light");
+}
+
+export interface InitThemeOptions {
+	themeName?: string;
+	enableWatcher?: boolean;
+	autoThemeLight?: string;
+	autoThemeDark?: string;
+}
+
+export function initTheme(options: InitThemeOptions = {}): void {
+	const { themeName, enableWatcher = false, autoThemeLight, autoThemeDark } = options;
+
+	currentThemeSetting = themeName ?? getDefaultTheme();
+	autoThemeLightSetting = autoThemeLight;
+	autoThemeDarkSetting = autoThemeDark;
+
+	const resolvedName = resolveThemeName(currentThemeSetting, autoThemeLight, autoThemeDark);
+	currentThemeName = resolvedName;
+
 	try {
-		theme = loadTheme(name);
+		theme = loadTheme(resolvedName);
 		if (enableWatcher) {
 			startThemeWatcher();
+			// Start system appearance watcher if in auto mode
+			if (currentThemeSetting === "auto") {
+				startSystemAppearanceWatcher((appearance) => {
+					const newThemeName =
+						appearance === "dark" ? (autoThemeDarkSetting ?? "dark") : (autoThemeLightSetting ?? "light");
+					if (newThemeName !== currentThemeName) {
+						try {
+							theme = loadTheme(newThemeName);
+							currentThemeName = newThemeName;
+							if (onThemeChangeCallback) {
+								onThemeChangeCallback();
+							}
+						} catch {
+							// Ignore errors loading theme
+						}
+					}
+				});
+			}
 		}
 	} catch (_error) {
 		// Theme is invalid - fall back to dark theme silently
 		currentThemeName = "dark";
+		currentThemeSetting = "dark";
 		theme = loadTheme("dark");
 		// Don't start watcher for fallback theme
 	}
 }
 
-export function setTheme(name: string, enableWatcher: boolean = false): { success: boolean; error?: string } {
-	currentThemeName = name;
+export interface SetThemeOptions {
+	enableWatcher?: boolean;
+	autoThemeLight?: string;
+	autoThemeDark?: string;
+}
+
+export function setTheme(name: string, options: SetThemeOptions = {}): { success: boolean; error?: string } {
+	const { enableWatcher = false, autoThemeLight, autoThemeDark } = options;
+
+	// Stop system appearance watcher when switching away from auto
+	if (currentThemeSetting === "auto" && name !== "auto") {
+		stopSystemAppearanceWatcher();
+	}
+
+	currentThemeSetting = name;
+	autoThemeLightSetting = autoThemeLight ?? autoThemeLightSetting;
+	autoThemeDarkSetting = autoThemeDark ?? autoThemeDarkSetting;
+
+	const resolvedName = resolveThemeName(name, autoThemeLightSetting, autoThemeDarkSetting);
+	currentThemeName = resolvedName;
+
 	try {
-		theme = loadTheme(name);
+		theme = loadTheme(resolvedName);
 		if (enableWatcher) {
 			startThemeWatcher();
+			// Start system appearance watcher if switching to auto mode
+			if (name === "auto") {
+				startSystemAppearanceWatcher((appearance) => {
+					const newThemeName =
+						appearance === "dark" ? (autoThemeDarkSetting ?? "dark") : (autoThemeLightSetting ?? "light");
+					if (newThemeName !== currentThemeName) {
+						try {
+							theme = loadTheme(newThemeName);
+							currentThemeName = newThemeName;
+							if (onThemeChangeCallback) {
+								onThemeChangeCallback();
+							}
+						} catch {
+							// Ignore errors loading theme
+						}
+					}
+				});
+			}
 		}
 		return { success: true };
 	} catch (error) {
 		// Theme is invalid - fall back to dark theme
 		currentThemeName = "dark";
+		currentThemeSetting = "dark";
 		theme = loadTheme("dark");
-		// Don't start watcher for fallback theme
+		stopSystemAppearanceWatcher();
 		return {
 			success: false,
 			error: error instanceof Error ? error.message : String(error),
 		};
 	}
+}
+
+/**
+ * Get the current theme setting (may be "auto" or a specific theme name).
+ */
+export function getCurrentThemeSetting(): string | undefined {
+	return currentThemeSetting;
+}
+
+/**
+ * Get the currently resolved/active theme name.
+ */
+export function getCurrentThemeName(): string | undefined {
+	return currentThemeName;
 }
 
 export function onThemeChange(callback: () => void): void {
@@ -663,6 +861,7 @@ export function stopThemeWatcher(): void {
 		themeWatcher.close();
 		themeWatcher = undefined;
 	}
+	stopSystemAppearanceWatcher();
 }
 
 // ============================================================================

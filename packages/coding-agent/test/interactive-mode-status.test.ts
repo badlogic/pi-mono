@@ -12,7 +12,7 @@ function renderLastLine(container: Container, width = 120): string {
 describe("InteractiveMode.showStatus", () => {
 	beforeAll(() => {
 		// showStatus uses the global theme instance
-		initTheme("dark");
+		initTheme({ themeName: "dark" });
 	});
 
 	test("coalesces immediately-sequential status messages", () => {

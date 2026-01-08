@@ -53,7 +53,9 @@ export interface Settings {
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
-	theme?: string;
+	theme?: string; // "auto" | "dark" | "light" | "<custom-theme>"
+	autoThemeLight?: string; // Theme to use in light mode when theme="auto" (default: "light")
+	autoThemeDark?: string; // Theme to use in dark mode when theme="auto" (default: "dark")
 	compaction?: CompactionSettings;
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
@@ -261,6 +263,24 @@ export class SettingsManager {
 
 	setTheme(theme: string): void {
 		this.globalSettings.theme = theme;
+		this.save();
+	}
+
+	getAutoThemeLight(): string {
+		return this.settings.autoThemeLight ?? "light";
+	}
+
+	setAutoThemeLight(theme: string): void {
+		this.globalSettings.autoThemeLight = theme;
+		this.save();
+	}
+
+	getAutoThemeDark(): string {
+		return this.settings.autoThemeDark ?? "dark";
+	}
+
+	setAutoThemeDark(theme: string): void {
+		this.globalSettings.autoThemeDark = theme;
 		this.save();
 	}
 
