@@ -8,11 +8,14 @@
 import { createAgentSession, discoverSkills, SessionManager, type Skill } from "@mariozechner/pi-coding-agent";
 
 // Discover all skills from cwd/.pi/skills, ~/.pi/agent/skills, etc.
-const allSkills = discoverSkills();
+const { skills: allSkills, warnings } = discoverSkills();
 console.log(
 	"Discovered skills:",
 	allSkills.map((s) => s.name),
 );
+if (warnings.length > 0) {
+	console.log("Warnings:", warnings);
+}
 
 // Filter to specific skills
 const filteredSkills = allSkills.filter((s) => s.name.includes("browser") || s.name.includes("search"));

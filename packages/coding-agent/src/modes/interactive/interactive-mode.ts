@@ -43,7 +43,6 @@ import type {
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
-import { loadSkills } from "../../core/skills.js";
 import { loadProjectContextFiles } from "../../core/system-prompt.js";
 import { allTools } from "../../core/tools/index.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
@@ -564,24 +563,22 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
-		// Show loaded skills
-		const skillsSettings = this.session.skillsSettings;
-		if (skillsSettings?.enabled !== false) {
-			const { skills, warnings: skillWarnings } = loadSkills(skillsSettings ?? {});
-			if (skills.length > 0) {
-				const skillList = skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
-				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
-			}
+		// Show loaded skills (already discovered by SDK)
+		const skills = this.session.skills;
+		if (skills.length > 0) {
+			const skillList = skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
 
-			// Show skill warnings if any
-			if (skillWarnings.length > 0) {
-				const warningList = skillWarnings
-					.map((w) => theme.fg("warning", `  ${w.skillPath}: ${w.message}`))
-					.join("\n");
-				this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
-			}
+		// Show skill warnings if any
+		const skillWarnings = this.session.skillWarnings;
+		if (skillWarnings.length > 0) {
+			const warningList = skillWarnings
+				.map((w) => theme.fg("warning", `  ${w.skillPath}: ${w.message}`))
+				.join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
 		}
 
 		const extensionRunner = this.session.extensionRunner;

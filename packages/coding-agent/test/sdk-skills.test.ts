@@ -14,7 +14,7 @@ describe("createAgentSession skills option", () => {
 		skillsDir = join(tempDir, "skills", "test-skill");
 		mkdirSync(skillsDir, { recursive: true });
 
-		// Create a test skill
+		// Create a test skill in the pi skills directory
 		writeFileSync(
 			join(skillsDir, "SKILL.md"),
 			`---
@@ -35,18 +35,19 @@ This is a test skill.
 		}
 	});
 
-	it("should discover skills by default", async () => {
+	it("should discover skills by default and expose them on session.skills", async () => {
 		const { session } = await createAgentSession({
 			cwd: tempDir,
 			agentDir: tempDir,
 			sessionManager: SessionManager.inMemory(),
 		});
 
-		// skillsSettings.enabled should be true (from default settings)
-		expect(session.skillsSettings?.enabled).toBe(true);
+		// Skills should be discovered and exposed on the session
+		expect(session.skills.length).toBeGreaterThan(0);
+		expect(session.skills.some((s) => s.name === "test-skill")).toBe(true);
 	});
 
-	it("should disable skills in skillsSettings when options.skills is empty array", async () => {
+	it("should have empty skills when options.skills is empty array (--no-skills)", async () => {
 		const { session } = await createAgentSession({
 			cwd: tempDir,
 			agentDir: tempDir,
@@ -54,27 +55,31 @@ This is a test skill.
 			skills: [], // Explicitly empty - like --no-skills
 		});
 
-		// skillsSettings.enabled should be false so UI doesn't re-discover
-		expect(session.skillsSettings?.enabled).toBe(false);
+		// session.skills should be empty
+		expect(session.skills).toEqual([]);
+		// No warnings since we didn't discover
+		expect(session.skillWarnings).toEqual([]);
 	});
 
-	it("should disable skills in skillsSettings when options.skills is provided with skills", async () => {
+	it("should use provided skills when options.skills is explicitly set", async () => {
+		const customSkill = {
+			name: "custom-skill",
+			description: "A custom skill",
+			filePath: "/fake/path/SKILL.md",
+			baseDir: "/fake/path",
+			source: "custom" as const,
+		};
+
 		const { session } = await createAgentSession({
 			cwd: tempDir,
 			agentDir: tempDir,
 			sessionManager: SessionManager.inMemory(),
-			skills: [
-				{
-					name: "custom-skill",
-					description: "A custom skill",
-					filePath: "/fake/path/SKILL.md",
-					baseDir: "/fake/path",
-					source: "custom",
-				},
-			],
+			skills: [customSkill],
 		});
 
-		// skillsSettings.enabled should be false because skills were explicitly provided
-		expect(session.skillsSettings?.enabled).toBe(false);
+		// session.skills should contain only the provided skill
+		expect(session.skills).toEqual([customSkill]);
+		// No warnings since we didn't discover
+		expect(session.skillWarnings).toEqual([]);
 	});
 });
