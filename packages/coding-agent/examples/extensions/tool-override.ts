@@ -13,20 +13,15 @@
  * 2. Block access to sensitive paths (e.g., .env files)
  * 3. Delegate to the original read implementation for allowed files
  *
+ * Since no custom renderCall/renderResult are provided, the built-in renderer
+ * is used automatically (syntax highlighting, line numbers, truncation warnings).
+ *
  * Usage:
- *   pi --no-tools --tools bash,edit,write -e ./tool-override.ts
- *
- * The --no-tools flag disables all built-in tools, then --tools adds back the ones
- * we want (excluding read, which we're overriding). The extension provides our
- * custom read implementation.
- *
- * Alternatively, without --no-tools the extension's read tool will override the
- * built-in read tool automatically.
+ *   pi -e ./tool-override.ts
  */
 
 import type { TextContent } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { appendFileSync, constants, readFileSync } from "fs";
 import { access, readFile } from "fs/promises";
@@ -128,38 +123,8 @@ export default function (pi: ExtensionAPI) {
 			}
 		},
 
-		// Custom rendering to show it's the audited version
-		renderCall(args, theme) {
-			return new Text(theme.fg("toolTitle", theme.bold("read ")) + theme.fg("accent", args.path), 0, 0);
-		},
-
-		renderResult(result, { expanded }, theme) {
-			const content = result.content[0];
-			if (content?.type === "text" && content.text.startsWith("Access denied")) {
-				return new Text(theme.fg("error", "Access denied (sensitive file)"), 0, 0);
-			}
-			if (content?.type === "text" && content.text.startsWith("Error")) {
-				return new Text(theme.fg("error", content.text), 0, 0);
-			}
-
-			// Show preview of content
-			if (content?.type === "text") {
-				const lines = content.text.split("\n");
-				const preview = lines.slice(0, expanded ? 10 : 3);
-				let text = theme.fg("success", `Read ${lines.length} lines`);
-				if (expanded) {
-					for (const line of preview) {
-						text += `\n${theme.fg("dim", line.slice(0, 100))}`;
-					}
-					if (lines.length > 10) {
-						text += `\n${theme.fg("muted", `... ${lines.length - 10} more lines`)}`;
-					}
-				}
-				return new Text(text, 0, 0);
-			}
-
-			return new Text(theme.fg("dim", "Read complete"), 0, 0);
-		},
+		// No renderCall/renderResult - uses built-in renderer automatically
+		// (syntax highlighting, line numbers, truncation warnings, etc.)
 	});
 
 	// Also register a command to view the access log
