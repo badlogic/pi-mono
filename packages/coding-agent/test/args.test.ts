@@ -170,6 +170,24 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--no-tools flag", () => {
+		test("parses --no-tools flag", () => {
+			const result = parseArgs(["--no-tools"]);
+			expect(result.noTools).toBe(true);
+		});
+
+		test("parses --no-tools with explicit --tools flags", () => {
+			const result = parseArgs(["--no-tools", "--tools", "read,bash"]);
+			expect(result.noTools).toBe(true);
+			expect(result.tools).toEqual(["read", "bash"]);
+		});
+
+		test("parses --tools with empty string", () => {
+			const result = parseArgs(["--tools", ""]);
+			expect(result.tools).toEqual([]);
+		});
+	});
+
 	describe("messages and file args", () => {
 		test("parses plain text messages", () => {
 			const result = parseArgs(["hello", "world"]);

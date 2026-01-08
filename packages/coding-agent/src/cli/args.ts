@@ -26,6 +26,7 @@ export interface Args {
 	sessionDir?: string;
 	models?: string[];
 	tools?: ToolName[];
+	noTools?: boolean;
 	extensions?: string[];
 	noExtensions?: boolean;
 	print?: boolean;
@@ -86,19 +87,27 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 			result.sessionDir = args[++i];
 		} else if (arg === "--models" && i + 1 < args.length) {
 			result.models = args[++i].split(",").map((s) => s.trim());
+		} else if (arg === "--no-tools") {
+			result.noTools = true;
 		} else if (arg === "--tools" && i + 1 < args.length) {
-			const toolNames = args[++i].split(",").map((s) => s.trim());
-			const validTools: ToolName[] = [];
-			for (const name of toolNames) {
-				if (name in allTools) {
-					validTools.push(name as ToolName);
-				} else {
-					console.error(
-						chalk.yellow(`Warning: Unknown tool "${name}". Valid tools: ${Object.keys(allTools).join(", ")}`),
-					);
+			const toolsArg = args[++i];
+			// Handle empty string as no tools (e.g., --tools '')
+			if (toolsArg === "") {
+				result.tools = [];
+			} else {
+				const toolNames = toolsArg.split(",").map((s) => s.trim());
+				const validTools: ToolName[] = [];
+				for (const name of toolNames) {
+					if (name in allTools) {
+						validTools.push(name as ToolName);
+					} else {
+						console.error(
+							chalk.yellow(`Warning: Unknown tool "${name}". Valid tools: ${Object.keys(allTools).join(", ")}`),
+						);
+					}
 				}
+				result.tools = validTools;
 			}
-			result.tools = validTools;
 		} else if (arg === "--thinking" && i + 1 < args.length) {
 			const level = args[++i];
 			if (isValidThinkingLevel(level)) {
@@ -174,6 +183,7 @@ ${chalk.bold("Options:")}
   --no-session                   Don't save session (ephemeral)
   --models <patterns>            Comma-separated model patterns for Ctrl+P cycling
                                  Supports globs (anthropic/*, *sonnet*) and fuzzy matching
+  --no-tools                     Disable all built-in tools (use with -e for extension-only tools)
   --tools <tools>                Comma-separated list of tools to enable (default: read,bash,edit,write)
                                  Available: read, bash, edit, write, grep, find, ls
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh

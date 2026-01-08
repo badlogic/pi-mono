@@ -177,7 +177,15 @@ function buildSessionOptions(
 	}
 
 	// Tools
-	if (parsed.tools) {
+	if (parsed.noTools) {
+		// --no-tools: start with no built-in tools
+		// --tools can still add specific ones back
+		if (parsed.tools && parsed.tools.length > 0) {
+			options.tools = parsed.tools.map((name) => allTools[name]);
+		} else {
+			options.tools = [];
+		}
+	} else if (parsed.tools) {
 		options.tools = parsed.tools.map((name) => allTools[name]);
 	}
 
