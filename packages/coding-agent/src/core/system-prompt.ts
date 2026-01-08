@@ -222,12 +222,6 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 	const hasLs = tools.includes("ls");
 	const hasRead = tools.includes("read");
 
-	// Read-only mode notice (only if we have some read-only tools but no write tools)
-	// Skip this if there are no built-in tools at all (extensions may provide write capabilities)
-	if (tools.length > 0 && !hasBash && !hasEdit && !hasWrite) {
-		guidelinesList.push("You are in READ-ONLY mode - you cannot modify files or execute arbitrary commands");
-	}
-
 	// Bash without edit/write = read-only bash mode
 	if (hasBash && !hasEdit && !hasWrite) {
 		guidelinesList.push(
@@ -266,9 +260,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	// Always include these
 	guidelinesList.push("Be concise in your responses");
-	if (tools.length > 0) {
-		guidelinesList.push("Show file paths clearly when working with files");
-	}
+	guidelinesList.push("Show file paths clearly when working with files");
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 

@@ -4,7 +4,7 @@
 
 ### Added
 
-- `--no-tools` flag to disable all built-in tools, allowing extension-only tool setups ([#555](https://github.com/badlogic/pi-mono/issues/555))
+- `--no-tools` flag to disable all built-in tools, allowing extension-only tool setups ([#557](https://github.com/badlogic/pi-mono/pull/557) by [@cv](https://github.com/cv))
 
 ### Fixed
 

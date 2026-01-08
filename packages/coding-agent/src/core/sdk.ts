@@ -514,7 +514,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	// Initially active tools = active built-in + extension tools
-	let activeToolsArray: Tool[] = [...initialActiveBuiltInTools, ...wrappedExtensionTools];
+	// Extension tools can override built-in tools with the same name
+	const extensionToolNames = new Set(wrappedExtensionTools.map((t) => t.name));
+	const nonOverriddenBuiltInTools = initialActiveBuiltInTools.filter((t) => !extensionToolNames.has(t.name));
+	let activeToolsArray: Tool[] = [...nonOverriddenBuiltInTools, ...wrappedExtensionTools];
 	time("combineTools");
 
 	// Wrap tools with extensions if available

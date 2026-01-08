@@ -90,24 +90,18 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 		} else if (arg === "--no-tools") {
 			result.noTools = true;
 		} else if (arg === "--tools" && i + 1 < args.length) {
-			const toolsArg = args[++i];
-			// Handle empty string as no tools (e.g., --tools '')
-			if (toolsArg === "") {
-				result.tools = [];
-			} else {
-				const toolNames = toolsArg.split(",").map((s) => s.trim());
-				const validTools: ToolName[] = [];
-				for (const name of toolNames) {
-					if (name in allTools) {
-						validTools.push(name as ToolName);
-					} else {
-						console.error(
-							chalk.yellow(`Warning: Unknown tool "${name}". Valid tools: ${Object.keys(allTools).join(", ")}`),
-						);
-					}
+			const toolNames = args[++i].split(",").map((s) => s.trim());
+			const validTools: ToolName[] = [];
+			for (const name of toolNames) {
+				if (name in allTools) {
+					validTools.push(name as ToolName);
+				} else {
+					console.error(
+						chalk.yellow(`Warning: Unknown tool "${name}". Valid tools: ${Object.keys(allTools).join(", ")}`),
+					);
 				}
-				result.tools = validTools;
 			}
+			result.tools = validTools;
 		} else if (arg === "--thinking" && i + 1 < args.length) {
 			const level = args[++i];
 			if (isValidThinkingLevel(level)) {
@@ -188,7 +182,7 @@ ${chalk.bold("Options:")}
                                  Available: read, bash, edit, write, grep, find, ls
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
-  --no-extensions                Disable extensions discovery and loading
+  --no-extensions                Disable extension discovery (explicit -e paths still work)
   --no-skills                    Disable skills discovery and loading
   --skills <patterns>            Comma-separated glob patterns to filter skills (e.g., git-*,docker)
   --export <file>                Export session file to HTML and exit

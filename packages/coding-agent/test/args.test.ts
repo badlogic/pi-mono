@@ -181,11 +181,6 @@ describe("parseArgs", () => {
 			expect(result.noTools).toBe(true);
 			expect(result.tools).toEqual(["read", "bash"]);
 		});
-
-		test("parses --tools with empty string", () => {
-			const result = parseArgs(["--tools", ""]);
-			expect(result.tools).toEqual([]);
-		});
 	});
 
 	describe("messages and file args", () => {
