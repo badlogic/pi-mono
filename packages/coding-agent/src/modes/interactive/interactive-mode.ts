@@ -1751,8 +1751,10 @@ export class InteractiveMode {
 			}
 
 			case "auto_retry_start": {
-				// Set up escape to abort retry
-				this.retryEscapeHandler = this.defaultEditor.onEscape;
+				// Set up escape to abort retry - only save on first attempt
+				if (!this.retryEscapeHandler) {
+					this.retryEscapeHandler = this.defaultEditor.onEscape;
+				}
 				this.defaultEditor.onEscape = () => {
 					this.session.abortRetry();
 				};
