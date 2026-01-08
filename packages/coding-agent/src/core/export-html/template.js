@@ -192,7 +192,7 @@
 
       /**
        * Find the leaf of a branch starting from any entry.
-       * Follows the first (chronologically earliest) child at each level.
+       * Follows the latest (chronologically newest) child at each level.
        */
       function findBranchLeaf(entryId) {
         let current = entryId;
@@ -201,8 +201,8 @@
           if (!children || children.length === 0) {
             return current;
           }
-          // Follow the first child (already sorted by timestamp)
-          current = children[0].id;
+          // Follow the latest child (children sorted by timestamp ascending)
+          current = children[children.length - 1].id;
         }
       }
 
@@ -696,7 +696,7 @@
       // ============================================================
 
       let currentLeafId = leafId;
-      let currentTargetId = urlTargetId || leafId; // The "selected" entry (for active marker)
+      let currentTargetId = urlTargetId || leafId;
       let treeRendered = false;
 
       function renderTree() {
