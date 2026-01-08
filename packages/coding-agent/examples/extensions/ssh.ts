@@ -14,7 +14,6 @@
  */
 
 import { spawn } from "node:child_process";
-import { basename } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
 	type BashOperations,
@@ -124,7 +123,7 @@ export default function (pi: ExtensionAPI) {
 	const getSsh = () => {
 		const arg = pi.getFlag("ssh") as string | undefined;
 		if (!arg) return null;
-		const [remote, path] = arg.includes(":") ? arg.split(":") : [arg, `~/${basename(localCwd)}`];
+		const [remote, path] = arg.includes(":") ? arg.split(":") : [arg, "~"];
 		return { remote, remoteCwd: path };
 	};
 
