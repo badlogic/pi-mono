@@ -1330,7 +1330,20 @@ The callback receives:
 
 See [tui.md](tui.md) for the full component API.
 
-**Examples:** [handoff.ts](../examples/extensions/handoff.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [snake.ts](../examples/extensions/snake.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts)
+#### Overlay Mode (Experimental)
+
+Pass `{ overlay: true }` to render the component as a floating modal on top of existing content, without clearing the screen:
+
+```typescript
+const result = await ctx.ui.custom<string | null>(
+  (tui, theme, keybindings, done) => new MyOverlayComponent({ onClose: done }),
+  { overlay: true }
+);
+```
+
+Overlay components should define a `width` property to control their size. The overlay is centered by default. See [overlay-test.ts](../examples/extensions/overlay-test.ts) for a complete example.
+
+**Examples:** [handoff.ts](../examples/extensions/handoff.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [snake.ts](../examples/extensions/snake.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts), [overlay-test.ts](../examples/extensions/overlay-test.ts)
 
 ### Custom Editor
 
