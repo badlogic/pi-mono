@@ -152,7 +152,11 @@ export function splitThinkingTags(input: string, state: ThinkingTagState): Think
 	return segments;
 }
 
-export function isGeminiCliThinkingPart(part: { thought?: boolean; thoughtSignature?: string; text?: string }): boolean {
+export function isGeminiCliThinkingPart(part: {
+	thought?: boolean;
+	thoughtSignature?: string;
+	text?: string;
+}): boolean {
 	if (part.thought === true) return true;
 
 	const hasSignature = typeof part.thoughtSignature === "string" && part.thoughtSignature.length > 0;
@@ -608,8 +612,6 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 						}
 					}
 				}
-			} finally {
-
 			} finally {
 				options?.signal?.removeEventListener("abort", abortHandler);
 			}

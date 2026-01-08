@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { splitThinkingTags, type ThinkingTagState } from "../src/providers/google-gemini-cli.js";
+import {
+	isGeminiCliThinkingPart,
+	splitThinkingTags,
+	type ThinkingTagState,
+} from "../src/providers/google-gemini-cli.js";
 
 describe("google-gemini-cli thinking tag parsing", () => {
 	it("splits tagged content in a single chunk", () => {
@@ -38,5 +42,20 @@ describe("google-gemini-cli thinking tag parsing", () => {
 			{ text: "gamma", isThinking: false },
 		]);
 		expect(state).toEqual({ inThinking: false, pending: "" });
+	});
+});
+
+describe("google-gemini-cli thoughtSignature handling", () => {
+	it("treats explicit thought as thinking", () => {
+		expect(isGeminiCliThinkingPart({ thought: true, text: "ignored" })).toBe(true);
+	});
+
+	it("does not treat signature on normal text as thinking", () => {
+		expect(isGeminiCliThinkingPart({ thoughtSignature: "sig", text: "final answer" })).toBe(false);
+	});
+
+	it("treats signature-only parts as thinking", () => {
+		expect(isGeminiCliThinkingPart({ thoughtSignature: "sig", text: "" })).toBe(true);
+		expect(isGeminiCliThinkingPart({ thoughtSignature: "sig", text: "   " })).toBe(true);
 	});
 });
