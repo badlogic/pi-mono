@@ -1,6 +1,6 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir as fsMkdir, writeFile as fsWriteFile } from "fs/promises";
 import { dirname } from "path";
 import { resolveToCwd } from "./path-utils.js";
 
@@ -9,7 +9,30 @@ const writeSchema = Type.Object({
 	content: Type.String({ description: "Content to write to the file" }),
 });
 
-export function createWriteTool(cwd: string): AgentTool<typeof writeSchema> {
+/**
+ * Pluggable operations for the write tool.
+ * Override these to delegate file writing to remote systems (e.g., SSH).
+ */
+export interface WriteOperations {
+	/** Write content to a file */
+	writeFile: (absolutePath: string, content: string) => Promise<void>;
+	/** Create directory (recursively) */
+	mkdir: (dir: string) => Promise<void>;
+}
+
+const defaultWriteOperations: WriteOperations = {
+	writeFile: (path, content) => fsWriteFile(path, content, "utf-8"),
+	mkdir: (dir) => fsMkdir(dir, { recursive: true }).then(() => {}),
+};
+
+export interface WriteToolOptions {
+	/** Custom operations for file writing. Default: local filesystem */
+	operations?: WriteOperations;
+}
+
+export function createWriteTool(cwd: string, options?: WriteToolOptions): AgentTool<typeof writeSchema> {
+	const ops = options?.operations ?? defaultWriteOperations;
+
 	return {
 		name: "write",
 		label: "write",
@@ -48,7 +71,7 @@ export function createWriteTool(cwd: string): AgentTool<typeof writeSchema> {
 					(async () => {
 						try {
 							// Create parent directories if needed
-							await mkdir(dir, { recursive: true });
+							await ops.mkdir(dir);
 
 							// Check if aborted before writing
 							if (aborted) {
@@ -56,7 +79,7 @@ export function createWriteTool(cwd: string): AgentTool<typeof writeSchema> {
 							}
 
 							// Write the file
-							await writeFile(absolutePath, content, "utf-8");
+							await ops.writeFile(absolutePath, content);
 
 							// Check if aborted after writing
 							if (aborted) {

@@ -2,7 +2,7 @@ import { createInterface } from "node:readline";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
-import { readFileSync, type Stats, statSync } from "fs";
+import { readFileSync, statSync } from "fs";
 import path from "path";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { resolveToCwd } from "./path-utils.js";
@@ -37,7 +37,30 @@ export interface GrepToolDetails {
 	linesTruncated?: boolean;
 }
 
-export function createGrepTool(cwd: string): AgentTool<typeof grepSchema> {
+/**
+ * Pluggable operations for the grep tool.
+ * Override these to delegate search to remote systems (e.g., SSH).
+ */
+export interface GrepOperations {
+	/** Check if path is a directory. Throws if path doesn't exist. */
+	isDirectory: (absolutePath: string) => Promise<boolean> | boolean;
+	/** Read file contents for context lines */
+	readFile: (absolutePath: string) => Promise<string> | string;
+}
+
+const defaultGrepOperations: GrepOperations = {
+	isDirectory: (p) => statSync(p).isDirectory(),
+	readFile: (p) => readFileSync(p, "utf-8"),
+};
+
+export interface GrepToolOptions {
+	/** Custom operations for grep. Default: local filesystem + ripgrep */
+	operations?: GrepOperations;
+}
+
+export function createGrepTool(cwd: string, options?: GrepToolOptions): AgentTool<typeof grepSchema> {
+	const customOps = options?.operations;
+
 	return {
 		name: "grep",
 		label: "grep",
@@ -87,15 +110,15 @@ export function createGrepTool(cwd: string): AgentTool<typeof grepSchema> {
 						}
 
 						const searchPath = resolveToCwd(searchDir || ".", cwd);
-						let searchStat: Stats;
+						const ops = customOps ?? defaultGrepOperations;
+
+						let isDirectory: boolean;
 						try {
-							searchStat = statSync(searchPath);
+							isDirectory = await ops.isDirectory(searchPath);
 						} catch (_err) {
 							settle(() => reject(new Error(`Path not found: ${searchPath}`)));
 							return;
 						}
-
-						const isDirectory = searchStat.isDirectory();
 						const contextValue = context && context > 0 ? context : 0;
 						const effectiveLimit = Math.max(1, limit ?? DEFAULT_LIMIT);
 
@@ -110,11 +133,11 @@ export function createGrepTool(cwd: string): AgentTool<typeof grepSchema> {
 						};
 
 						const fileCache = new Map<string, string[]>();
-						const getFileLines = (filePath: string): string[] => {
+						const getFileLines = async (filePath: string): Promise<string[]> => {
 							let lines = fileCache.get(filePath);
 							if (!lines) {
 								try {
-									const content = readFileSync(filePath, "utf-8");
+									const content = await ops.readFile(filePath);
 									lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
 								} catch {
 									lines = [];
@@ -173,9 +196,9 @@ export function createGrepTool(cwd: string): AgentTool<typeof grepSchema> {
 							stderr += chunk.toString();
 						});
 
-						const formatBlock = (filePath: string, lineNumber: number): string[] => {
+						const formatBlock = async (filePath: string, lineNumber: number): Promise<string[]> => {
 							const relativePath = formatPath(filePath);
-							const lines = getFileLines(filePath);
+							const lines = await getFileLines(filePath);
 							if (!lines.length) {
 								return [`${relativePath}:${lineNumber}: (unable to read file)`];
 							}
@@ -205,6 +228,9 @@ export function createGrepTool(cwd: string): AgentTool<typeof grepSchema> {
 							return block;
 						};
 
+						// Collect matches during streaming, format after
+						const matches: Array<{ filePath: string; lineNumber: number }> = [];
+
 						rl.on("line", (line) => {
 							if (!line.trim() || matchCount >= effectiveLimit) {
 								return;
@@ -223,7 +249,7 @@ export function createGrepTool(cwd: string): AgentTool<typeof grepSchema> {
 								const lineNumber = event.data?.line_number;
 
 								if (filePath && typeof lineNumber === "number") {
-									outputLines.push(...formatBlock(filePath, lineNumber));
+									matches.push({ filePath, lineNumber });
 								}
 
 								if (matchCount >= effectiveLimit) {
@@ -238,7 +264,7 @@ export function createGrepTool(cwd: string): AgentTool<typeof grepSchema> {
 							settle(() => reject(new Error(`Failed to run ripgrep: ${error.message}`)));
 						});
 
-						child.on("close", (code) => {
+						child.on("close", async (code) => {
 							cleanup();
 
 							if (aborted) {
@@ -257,6 +283,12 @@ export function createGrepTool(cwd: string): AgentTool<typeof grepSchema> {
 									resolve({ content: [{ type: "text", text: "No matches found" }], details: undefined }),
 								);
 								return;
+							}
+
+							// Format matches (async to support remote file reading)
+							for (const match of matches) {
+								const block = await formatBlock(match.filePath, match.lineNumber);
+								outputLines.push(...block);
 							}
 
 							// Apply byte truncation (no line limit since we already have match limit)

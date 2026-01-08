@@ -23,7 +23,33 @@ export interface FindToolDetails {
 	resultLimitReached?: number;
 }
 
-export function createFindTool(cwd: string): AgentTool<typeof findSchema> {
+/**
+ * Pluggable operations for the find tool.
+ * Override these to delegate file search to remote systems (e.g., SSH).
+ */
+export interface FindOperations {
+	/** Check if path exists */
+	exists: (absolutePath: string) => Promise<boolean> | boolean;
+	/** Find files matching glob pattern. Returns relative paths. */
+	glob: (pattern: string, cwd: string, options: { ignore: string[]; limit: number }) => Promise<string[]> | string[];
+}
+
+const defaultFindOperations: FindOperations = {
+	exists: existsSync,
+	glob: (_pattern, _searchCwd, _options) => {
+		// This is a placeholder - actual fd execution happens in execute
+		return [];
+	},
+};
+
+export interface FindToolOptions {
+	/** Custom operations for find. Default: local filesystem + fd */
+	operations?: FindOperations;
+}
+
+export function createFindTool(cwd: string, options?: FindToolOptions): AgentTool<typeof findSchema> {
+	const customOps = options?.operations;
+
 	return {
 		name: "find",
 		label: "find",
@@ -45,26 +71,86 @@ export function createFindTool(cwd: string): AgentTool<typeof findSchema> {
 
 				(async () => {
 					try {
-						// Ensure fd is available
+						const searchPath = resolveToCwd(searchDir || ".", cwd);
+						const effectiveLimit = limit ?? DEFAULT_LIMIT;
+						const ops = customOps ?? defaultFindOperations;
+
+						// If custom operations provided with glob, use that
+						if (customOps?.glob) {
+							if (!(await ops.exists(searchPath))) {
+								reject(new Error(`Path not found: ${searchPath}`));
+								return;
+							}
+
+							const results = await ops.glob(pattern, searchPath, {
+								ignore: ["**/node_modules/**", "**/.git/**"],
+								limit: effectiveLimit,
+							});
+
+							signal?.removeEventListener("abort", onAbort);
+
+							if (results.length === 0) {
+								resolve({
+									content: [{ type: "text", text: "No files found matching pattern" }],
+									details: undefined,
+								});
+								return;
+							}
+
+							// Relativize paths
+							const relativized = results.map((p) => {
+								if (p.startsWith(searchPath)) {
+									return p.slice(searchPath.length + 1);
+								}
+								return path.relative(searchPath, p);
+							});
+
+							const resultLimitReached = relativized.length >= effectiveLimit;
+							const rawOutput = relativized.join("\n");
+							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+
+							let resultOutput = truncation.content;
+							const details: FindToolDetails = {};
+							const notices: string[] = [];
+
+							if (resultLimitReached) {
+								notices.push(`${effectiveLimit} results limit reached`);
+								details.resultLimitReached = effectiveLimit;
+							}
+
+							if (truncation.truncated) {
+								notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+								details.truncation = truncation;
+							}
+
+							if (notices.length > 0) {
+								resultOutput += `\n\n[${notices.join(". ")}]`;
+							}
+
+							resolve({
+								content: [{ type: "text", text: resultOutput }],
+								details: Object.keys(details).length > 0 ? details : undefined,
+							});
+							return;
+						}
+
+						// Default: use fd
 						const fdPath = await ensureTool("fd", true);
 						if (!fdPath) {
 							reject(new Error("fd is not available and could not be downloaded"));
 							return;
 						}
 
-						const searchPath = resolveToCwd(searchDir || ".", cwd);
-						const effectiveLimit = limit ?? DEFAULT_LIMIT;
-
 						// Build fd arguments
 						const args: string[] = [
-							"--glob", // Use glob pattern
-							"--color=never", // No ANSI colors
-							"--hidden", // Search hidden files (but still respect .gitignore)
+							"--glob",
+							"--color=never",
+							"--hidden",
 							"--max-results",
 							String(effectiveLimit),
 						];
 
-						// Include .gitignore files (root + nested) so fd respects them even outside git repos
+						// Include .gitignore files
 						const gitignoreFiles = new Set<string>();
 						const rootGitignore = path.join(searchPath, ".gitignore");
 						if (existsSync(rootGitignore)) {
@@ -89,13 +175,11 @@ export function createFindTool(cwd: string): AgentTool<typeof findSchema> {
 							args.push("--ignore-file", gitignorePath);
 						}
 
-						// Pattern and path
 						args.push(pattern, searchPath);
 
-						// Run fd
 						const result = spawnSync(fdPath, args, {
 							encoding: "utf-8",
-							maxBuffer: 10 * 1024 * 1024, // 10MB
+							maxBuffer: 10 * 1024 * 1024,
 						});
 
 						signal?.removeEventListener("abort", onAbort);
@@ -109,7 +193,6 @@ export function createFindTool(cwd: string): AgentTool<typeof findSchema> {
 
 						if (result.status !== 0) {
 							const errorMsg = result.stderr?.trim() || `fd exited with code ${result.status}`;
-							// fd returns non-zero for some errors but may still have partial output
 							if (!output) {
 								reject(new Error(errorMsg));
 								return;
@@ -129,14 +212,12 @@ export function createFindTool(cwd: string): AgentTool<typeof findSchema> {
 
 						for (const rawLine of lines) {
 							const line = rawLine.replace(/\r$/, "").trim();
-							if (!line) {
-								continue;
-							}
+							if (!line) continue;
 
 							const hadTrailingSlash = line.endsWith("/") || line.endsWith("\\");
 							let relativePath = line;
 							if (line.startsWith(searchPath)) {
-								relativePath = line.slice(searchPath.length + 1); // +1 for the /
+								relativePath = line.slice(searchPath.length + 1);
 							} else {
 								relativePath = path.relative(searchPath, line);
 							}
@@ -148,17 +229,12 @@ export function createFindTool(cwd: string): AgentTool<typeof findSchema> {
 							relativized.push(relativePath);
 						}
 
-						// Check if we hit the result limit
 						const resultLimitReached = relativized.length >= effectiveLimit;
-
-						// Apply byte truncation (no line limit since we already have result limit)
 						const rawOutput = relativized.join("\n");
 						const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
 
 						let resultOutput = truncation.content;
 						const details: FindToolDetails = {};
-
-						// Build notices
 						const notices: string[] = [];
 
 						if (resultLimitReached) {

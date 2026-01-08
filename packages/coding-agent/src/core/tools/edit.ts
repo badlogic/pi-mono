@@ -1,7 +1,7 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { constants } from "fs";
-import { access, readFile, writeFile } from "fs/promises";
+import { access as fsAccess, readFile as fsReadFile, writeFile as fsWriteFile } from "fs/promises";
 import { detectLineEnding, generateDiffString, normalizeToLF, restoreLineEndings, stripBom } from "./edit-diff.js";
 import { resolveToCwd } from "./path-utils.js";
 
@@ -18,7 +18,33 @@ export interface EditToolDetails {
 	firstChangedLine?: number;
 }
 
-export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
+/**
+ * Pluggable operations for the edit tool.
+ * Override these to delegate file editing to remote systems (e.g., SSH).
+ */
+export interface EditOperations {
+	/** Read file contents as a Buffer */
+	readFile: (absolutePath: string) => Promise<Buffer>;
+	/** Write content to a file */
+	writeFile: (absolutePath: string, content: string) => Promise<void>;
+	/** Check if file is readable and writable (throw if not) */
+	access: (absolutePath: string) => Promise<void>;
+}
+
+const defaultEditOperations: EditOperations = {
+	readFile: (path) => fsReadFile(path),
+	writeFile: (path, content) => fsWriteFile(path, content, "utf-8"),
+	access: (path) => fsAccess(path, constants.R_OK | constants.W_OK),
+};
+
+export interface EditToolOptions {
+	/** Custom operations for file editing. Default: local filesystem */
+	operations?: EditOperations;
+}
+
+export function createEditTool(cwd: string, options?: EditToolOptions): AgentTool<typeof editSchema> {
+	const ops = options?.operations ?? defaultEditOperations;
+
 	return {
 		name: "edit",
 		label: "edit",
@@ -59,7 +85,7 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 					try {
 						// Check if file exists
 						try {
-							await access(absolutePath, constants.R_OK | constants.W_OK);
+							await ops.access(absolutePath);
 						} catch {
 							if (signal) {
 								signal.removeEventListener("abort", onAbort);
@@ -74,7 +100,8 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 						}
 
 						// Read the file
-						const rawContent = await readFile(absolutePath, "utf-8");
+						const buffer = await ops.readFile(absolutePath);
+						const rawContent = buffer.toString("utf-8");
 
 						// Check if aborted after reading
 						if (aborted) {
@@ -144,7 +171,7 @@ export function createEditTool(cwd: string): AgentTool<typeof editSchema> {
 						}
 
 						const finalContent = bom + restoreLineEndings(normalizedNewContent, originalEnding);
-						await writeFile(absolutePath, finalContent, "utf-8");
+						await ops.writeFile(absolutePath, finalContent);
 
 						// Check if aborted after writing
 						if (aborted) {

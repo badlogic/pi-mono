@@ -1,9 +1,15 @@
-export { type BashToolDetails, bashTool, createBashTool } from "./bash.js";
-export { createEditTool, editTool } from "./edit.js";
-export { createFindTool, type FindToolDetails, findTool } from "./find.js";
-export { createGrepTool, type GrepToolDetails, grepTool } from "./grep.js";
-export { createLsTool, type LsToolDetails, lsTool } from "./ls.js";
-export { createReadTool, type ReadToolDetails, type ReadToolOptions, readTool } from "./read.js";
+export { type BashOperations, type BashToolDetails, type BashToolOptions, bashTool, createBashTool } from "./bash.js";
+export { createEditTool, type EditOperations, type EditToolDetails, type EditToolOptions, editTool } from "./edit.js";
+export { createFindTool, type FindOperations, type FindToolDetails, type FindToolOptions, findTool } from "./find.js";
+export { createGrepTool, type GrepOperations, type GrepToolDetails, type GrepToolOptions, grepTool } from "./grep.js";
+export { createLsTool, type LsOperations, type LsToolDetails, type LsToolOptions, lsTool } from "./ls.js";
+export {
+	createReadTool,
+	type ReadOperations,
+	type ReadToolDetails,
+	type ReadToolOptions,
+	readTool,
+} from "./read.js";
 export {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
@@ -14,7 +20,7 @@ export {
 	truncateLine,
 	truncateTail,
 } from "./truncate.js";
-export { createWriteTool, writeTool } from "./write.js";
+export { createWriteTool, type WriteOperations, type WriteToolOptions, writeTool } from "./write.js";
 
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { bashTool, createBashTool } from "./bash.js";

@@ -2,7 +2,7 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { constants } from "fs";
-import { access, readFile } from "fs/promises";
+import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
 import { resolveReadPath } from "./path-utils.js";
@@ -18,13 +18,36 @@ export interface ReadToolDetails {
 	truncation?: TruncationResult;
 }
 
+/**
+ * Pluggable operations for the read tool.
+ * Override these to delegate file reading to remote systems (e.g., SSH).
+ */
+export interface ReadOperations {
+	/** Read file contents as a Buffer */
+	readFile: (absolutePath: string) => Promise<Buffer>;
+	/** Check if file is readable (throw if not) */
+	access: (absolutePath: string) => Promise<void>;
+	/** Detect image MIME type, return null/undefined for non-images */
+	detectImageMimeType?: (absolutePath: string) => Promise<string | null | undefined>;
+}
+
+const defaultReadOperations: ReadOperations = {
+	readFile: (path) => fsReadFile(path),
+	access: (path) => fsAccess(path, constants.R_OK),
+	detectImageMimeType: detectSupportedImageMimeTypeFromFile,
+};
+
 export interface ReadToolOptions {
 	/** Whether to auto-resize images to 2000x2000 max. Default: true */
 	autoResizeImages?: boolean;
+	/** Custom operations for file reading. Default: local filesystem */
+	operations?: ReadOperations;
 }
 
 export function createReadTool(cwd: string, options?: ReadToolOptions): AgentTool<typeof readSchema> {
 	const autoResizeImages = options?.autoResizeImages ?? true;
+	const ops = options?.operations ?? defaultReadOperations;
+
 	return {
 		name: "read",
 		label: "read",
@@ -61,14 +84,14 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 					(async () => {
 						try {
 							// Check if file exists
-							await access(absolutePath, constants.R_OK);
+							await ops.access(absolutePath);
 
 							// Check if aborted before reading
 							if (aborted) {
 								return;
 							}
 
-							const mimeType = await detectSupportedImageMimeTypeFromFile(absolutePath);
+							const mimeType = ops.detectImageMimeType ? await ops.detectImageMimeType(absolutePath) : undefined;
 
 							// Read the file based on type
 							let content: (TextContent | ImageContent)[];
@@ -76,7 +99,7 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 
 							if (mimeType) {
 								// Read as image (binary)
-								const buffer = await readFile(absolutePath);
+								const buffer = await ops.readFile(absolutePath);
 								const base64 = buffer.toString("base64");
 
 								if (autoResizeImages) {
@@ -101,7 +124,8 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 								}
 							} else {
 								// Read as text
-								const textContent = await readFile(absolutePath, "utf-8");
+								const buffer = await ops.readFile(absolutePath);
+								const textContent = buffer.toString("utf-8");
 								const allLines = textContent.split("\n");
 								const totalFileLines = allLines.length;
 

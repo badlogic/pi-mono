@@ -972,6 +972,39 @@ Built-in tool implementations:
 - [find.ts](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/tools/find.ts) - `FindToolDetails`
 - [ls.ts](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/tools/ls.ts) - `LsToolDetails`
 
+### Remote Execution
+
+Built-in tools support pluggable operations for delegating to remote systems (SSH, containers, etc.):
+
+```typescript
+import { createReadTool, createBashTool, type ReadOperations } from "@mariozechner/pi-coding-agent";
+
+// Create tool with custom operations
+const remoteRead = createReadTool(cwd, {
+  operations: {
+    readFile: (path) => sshExec(remote, `cat ${path}`),
+    access: (path) => sshExec(remote, `test -r ${path}`).then(() => {}),
+  }
+});
+
+// Register, checking flag at execution time
+pi.registerTool({
+  ...remoteRead,
+  async execute(id, params, onUpdate, _ctx, signal) {
+    const ssh = getSshConfig();
+    if (ssh) {
+      const tool = createReadTool(cwd, { operations: createRemoteOps(ssh) });
+      return tool.execute(id, params, signal, onUpdate);
+    }
+    return localRead.execute(id, params, signal, onUpdate);
+  },
+});
+```
+
+**Operations interfaces:** `ReadOperations`, `WriteOperations`, `EditOperations`, `BashOperations`, `LsOperations`, `GrepOperations`, `FindOperations`
+
+See [examples/extensions/ssh.ts](../examples/extensions/ssh.ts) for a complete SSH example with `--ssh` flag.
+
 ### Output Truncation
 
 **Tools MUST truncate their output** to avoid overwhelming the LLM context. Large outputs can cause:

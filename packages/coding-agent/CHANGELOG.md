@@ -5,6 +5,10 @@
 ### Added
 
 - `--no-tools` flag to disable all built-in tools, allowing extension-only tool setups ([#557](https://github.com/badlogic/pi-mono/pull/557) by [@cv](https://github.com/cv))
+- Pluggable operations for built-in tools enabling remote execution via SSH or other transports ([#564](https://github.com/badlogic/pi-mono/issues/564)). Interfaces: `ReadOperations`, `WriteOperations`, `EditOperations`, `BashOperations`, `LsOperations`, `GrepOperations`, `FindOperations`
+- `setActiveTools()` in ExtensionAPI for dynamic tool management
+- Built-in renderers used automatically for tool overrides without custom `renderCall`/`renderResult`
+- `ssh.ts` example: remote tool execution via `--ssh user@host:/path`
 
 ### Fixed
 
