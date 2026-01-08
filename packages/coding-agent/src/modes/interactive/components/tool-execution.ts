@@ -13,6 +13,7 @@ import {
 import stripAnsi from "strip-ansi";
 import type { ToolDefinition } from "../../../core/extensions/types.js";
 import { computeEditDiff, type EditDiffError, type EditDiffResult } from "../../../core/tools/edit-diff.js";
+import { allTools } from "../../../core/tools/index.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
 import { convertToPng } from "../../../utils/image-convert.js";
 import { sanitizeBinaryOutput } from "../../../utils/shell.js";
@@ -94,13 +95,26 @@ export class ToolExecutionComponent extends Container {
 		this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
 		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
 
-		if (toolDefinition || toolName === "bash") {
+		// Use contentBox for bash (visual truncation) or custom tools with custom renderers
+		// Use contentText for built-in tools (including overrides without custom renderers)
+		if (toolName === "bash" || (toolDefinition && !this.shouldUseBuiltInRenderer())) {
 			this.addChild(this.contentBox);
 		} else {
 			this.addChild(this.contentText);
 		}
 
 		this.updateDisplay();
+	}
+
+	/**
+	 * Check if we should use built-in rendering for this tool.
+	 * Returns true if the tool name is a built-in AND either there's no toolDefinition
+	 * or the toolDefinition doesn't provide custom renderers.
+	 */
+	private shouldUseBuiltInRenderer(): boolean {
+		const isBuiltInName = this.toolName in allTools;
+		const hasCustomRenderers = this.toolDefinition?.renderCall || this.toolDefinition?.renderResult;
+		return isBuiltInName && !hasCustomRenderers;
 	}
 
 	updateArgs(args: any): void {
@@ -213,8 +227,19 @@ export class ToolExecutionComponent extends Container {
 				? (text: string) => theme.bg("toolErrorBg", text)
 				: (text: string) => theme.bg("toolSuccessBg", text);
 
-		// Check for custom tool rendering
-		if (this.toolDefinition) {
+		// Use built-in rendering for built-in tools (or overrides without custom renderers)
+		if (this.shouldUseBuiltInRenderer()) {
+			if (this.toolName === "bash") {
+				// Bash uses Box with visual line truncation
+				this.contentBox.setBgFn(bgFn);
+				this.contentBox.clear();
+				this.renderBashContent();
+			} else {
+				// Other built-in tools: use Text directly with caching
+				this.contentText.setCustomBgFn(bgFn);
+				this.contentText.setText(this.formatToolExecution());
+			}
+		} else if (this.toolDefinition) {
 			// Custom tools use Box for flexible component rendering
 			this.contentBox.setBgFn(bgFn);
 			this.contentBox.clear();
@@ -260,15 +285,6 @@ export class ToolExecutionComponent extends Container {
 					this.contentBox.addChild(new Text(theme.fg("toolOutput", output), 0, 0));
 				}
 			}
-		} else if (this.toolName === "bash") {
-			// Bash uses Box with visual line truncation
-			this.contentBox.setBgFn(bgFn);
-			this.contentBox.clear();
-			this.renderBashContent();
-		} else {
-			// Other built-in tools: use Text directly with caching
-			this.contentText.setCustomBgFn(bgFn);
-			this.contentText.setText(this.formatToolExecution());
 		}
 
 		// Handle images (same for both custom and built-in)
