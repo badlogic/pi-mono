@@ -5,8 +5,11 @@
 ### Breaking Changes
 
 - `ctx.ui.custom()` factory signature changed from `(tui, theme, done)` to `(tui, theme, keybindings, done)` for keybinding access in custom components
+- `LoadedExtension` type renamed to `Extension`
 
 ### Added
+
+- SDK: `InteractiveMode`, `runPrintMode()`, `runRpcMode()` exported for building custom run modes. See `docs/sdk.md`.
 
 - `PI_SKIP_VERSION_CHECK` environment variable to disable new version notifications at startup ([#549](https://github.com/badlogic/pi-mono/pull/549) by [@aos](https://github.com/aos))
 - Extension UI dialogs (`ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`) now support a `timeout` option with live countdown display ([#522](https://github.com/badlogic/pi-mono/pull/522) by [@nicobailon](https://github.com/nicobailon))
