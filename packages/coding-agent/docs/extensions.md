@@ -543,7 +543,7 @@ pi.on("user_bash", (event, ctx) => {
 });
 ```
 
-**Examples:** [ssh.ts](../examples/extensions/ssh.ts)
+**Examples:** [ssh.ts](../examples/extensions/ssh.ts), [interactive-shell.ts](../examples/extensions/interactive-shell.ts)
 
 ## ExtensionContext
 

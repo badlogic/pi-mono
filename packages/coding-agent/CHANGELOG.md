@@ -16,6 +16,7 @@
 - `setActiveTools()` in ExtensionAPI for dynamic tool management
 - Built-in renderers used automatically for tool overrides without custom `renderCall`/`renderResult`
 - `ssh.ts` example: remote tool execution via `--ssh user@host:/path`
+- `interactive-shell.ts` example: run interactive commands (vim, git rebase, htop) with full terminal access via `!i` prefix or auto-detection
 - Wayland clipboard support for `/copy` command using wl-copy with xclip/xsel fallback ([#570](https://github.com/badlogic/pi-mono/pull/570) by [@OgulcanCelik](https://github.com/OgulcanCelik))
 - **Experimental:** `ctx.ui.custom()` now accepts `{ overlay: true }` option for floating modal components that composite over existing content without clearing the screen ([#558](https://github.com/badlogic/pi-mono/pull/558) by [@nicobailon](https://github.com/nicobailon))
 - `AgentSession.skills` and `AgentSession.skillWarnings` properties to access loaded skills without rediscovery ([#577](https://github.com/badlogic/pi-mono/pull/577) by [@cv](https://github.com/cv))
