@@ -458,6 +458,7 @@
 - Fixed Antigravity provider returning 429 errors despite available quota ([#571](https://github.com/badlogic/pi-mono/pull/571) by [@ben-vargas](https://github.com/ben-vargas))
 - Fixed malformed thinking text in Gemini/Antigravity responses where thinking content appeared as regular text or vice versa. Cross-model conversations now properly convert thinking blocks to plain text. ([#561](https://github.com/badlogic/pi-mono/issues/561))
 - `--no-skills` flag now correctly prevents skills from loading in interactive mode ([#577](https://github.com/badlogic/pi-mono/pull/577) by [@cv](https://github.com/cv))
+- HTML export: clicking a message in the sidebar now scrolls to it instead of truncating the branch. Previously, clicking a non-leaf message would hide all messages below it.
 
 ## [0.38.0] - 2026-01-08
 

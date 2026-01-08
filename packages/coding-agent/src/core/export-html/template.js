@@ -38,6 +38,21 @@
         byId.set(entry.id, entry);
       }
 
+      // Children lookup (parentId -> array of child entries)
+      const childrenMap = new Map();
+      for (const entry of entries) {
+        if (entry.parentId && entry.parentId !== entry.id) {
+          if (!childrenMap.has(entry.parentId)) {
+            childrenMap.set(entry.parentId, []);
+          }
+          childrenMap.get(entry.parentId).push(entry);
+        }
+      }
+      // Sort children by timestamp
+      for (const [, children] of childrenMap) {
+        children.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      }
+
       // Tool call lookup (toolCallId -> {name, arguments})
       const toolCallMap = new Map();
       for (const entry of entries) {
@@ -173,6 +188,22 @@
           current = current.children[current.children.length - 1];
         }
         return current.entry.id;
+      }
+
+      /**
+       * Find the leaf of a branch starting from any entry.
+       * Follows the first (chronologically earliest) child at each level.
+       */
+      function findBranchLeaf(entryId) {
+        let current = entryId;
+        while (true) {
+          const children = childrenMap.get(current);
+          if (!children || children.length === 0) {
+            return current;
+          }
+          // Follow the first child (already sorted by timestamp)
+          current = children[0].id;
+        }
       }
 
       /**
@@ -1347,6 +1378,38 @@
           entryCache.set(entry.id, node.cloneNode(true));
         }
         return node;
+      }
+
+      /**
+       * Scroll to a specific entry in the messages view without re-rendering.
+       */
+      function scrollToEntry(entryId, highlight = true) {
+        const targetEl = document.getElementById(`entry-${entryId}`);
+        if (targetEl) {
+          targetEl.scrollIntoView({ block: 'center' });
+          if (highlight) {
+            targetEl.classList.add('highlight');
+            setTimeout(() => targetEl.classList.remove('highlight'), 2000);
+          }
+        }
+      }
+
+      /**
+       * Handle click on a tree node in the sidebar.
+       * If the entry is on the current path, just scroll to it.
+       * If on a different branch, navigate to that branch's leaf and scroll to the entry.
+       */
+      function handleTreeNodeClick(entryId) {
+        const currentPathIds = buildActivePathIds(currentLeafId);
+
+        if (currentPathIds.has(entryId)) {
+          // Entry is on current path - just scroll to it
+          scrollToEntry(entryId);
+        } else {
+          // Entry is on a different branch - find that branch's leaf and navigate
+          const branchLeaf = findBranchLeaf(entryId);
+          navigateTo(branchLeaf, 'target', entryId);
+        }
       }
 
       function navigateTo(targetId, scrollMode = 'target', scrollToEntryId = null) {
