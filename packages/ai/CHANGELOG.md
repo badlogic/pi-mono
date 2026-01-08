@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add Amazon Bedrock provider ([#494](https://github.com/badlogic/pi-mono/pull/494) by [@unexge](https://github.com/unexge))
+
 ## [0.42.0] - 2026-01-09
 
 ### Added
