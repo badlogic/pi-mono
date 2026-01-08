@@ -641,6 +641,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		sessionManager.appendThinkingLevelChange(thinkingLevel);
 	}
 
+	// Determine skillsSettings: if options.skills was explicitly provided (even []),
+	// mark skills as disabled so UI doesn't re-discover them
+	const skillsSettings =
+		options.skills !== undefined
+			? { ...settingsManager.getSkillsSettings(), enabled: false }
+			: settingsManager.getSkillsSettings();
+
 	const session = new AgentSession({
 		agent,
 		sessionManager,
@@ -648,7 +655,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		scopedModels: options.scopedModels,
 		promptTemplates: promptTemplates,
 		extensionRunner,
-		skillsSettings: settingsManager.getSkillsSettings(),
+		skillsSettings,
 		modelRegistry,
 		toolRegistry: wrappedToolRegistry ?? toolRegistry,
 		rebuildSystemPrompt,
