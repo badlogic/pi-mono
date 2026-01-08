@@ -5,6 +5,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { CURSOR_MARKER } from "./cursor.js";
 import { isKeyRelease, matchesKey } from "./keys.js";
 import type { Terminal } from "./terminal.js";
 import { getCapabilities, setCellDimensions } from "./terminal-image.js";
@@ -33,14 +34,6 @@ export interface Component {
 	wantsKeyRelease?: boolean;
 
 	/**
-	 * If true, TUI will try to keep the real terminal cursor aligned with the component's
-	 * fake cursor position for IME candidate window positioning.
-	 *
-	 * Default is false.
-	 */
-	wantsImeCursor?: boolean;
-
-	/**
 	 * Invalidate any cached rendering state.
 	 * Called when theme changes or when component needs to re-render from scratch.
 	 */
@@ -48,6 +41,11 @@ export interface Component {
 }
 
 export { visibleWidth };
+
+interface ComponentRange {
+	startRow: number;
+	endRow: number; // Exclusive
+}
 
 /**
  * Container - a component that contains other components
@@ -93,6 +91,7 @@ export class TUI extends Container {
 	private previousLines: string[] = [];
 	private previousWidth = 0;
 	private focusedComponent: Component | null = null;
+	private lastRenderRanges: WeakMap<Component, ComponentRange> = new WeakMap();
 
 	/** Global callback for debug key (Shift+Ctrl+D). Called before input is forwarded to focused component. */
 	public onDebug?: () => void;
@@ -120,9 +119,7 @@ export class TUI extends Container {
 
 	setFocus(component: Component | null): void {
 		this.focusedComponent = component;
-		if (!component?.wantsImeCursor) {
-			this.pendingCursorSync = null;
-		}
+		this.pendingCursorSync = null;
 	}
 
 	/** Show an overlay component centered (or at specified position). */
@@ -153,7 +150,7 @@ export class TUI extends Container {
 
 	start(): void {
 		this.terminal.start(
-			(data) => this.handleInput(data),
+			(data) => this.handleTerminalInput(data),
 			() => this.requestRender(),
 		);
 		this.terminal.hideCursor();
@@ -204,7 +201,7 @@ export class TUI extends Container {
 		});
 	}
 
-	private handleInput(data: string): void {
+	private handleTerminalInput(data: string): void {
 		// If we're waiting for terminal query responses, buffer input and parse
 		if (this.cellSizeQueryPending || this.cursorPositionQueryPending) {
 			this.inputBuffer += data;
@@ -353,7 +350,12 @@ export class TUI extends Container {
 	}
 
 	/** Composite all overlays into content lines (in stack order, later = on top). */
-	private compositeOverlays(lines: string[], termWidth: number, termHeight: number): string[] {
+	private compositeOverlays(
+		lines: string[],
+		termWidth: number,
+		termHeight: number,
+		ranges: WeakMap<Component, ComponentRange>,
+	): string[] {
 		if (this.overlayStack.length === 0) return lines;
 		const result = [...lines];
 		const viewportStart = Math.max(0, result.length - termHeight);
@@ -368,6 +370,9 @@ export class TUI extends Container {
 
 			const row = Math.max(0, Math.min(options?.row ?? Math.floor((termHeight - h) / 2), termHeight - h));
 			const col = Math.max(0, Math.min(options?.col ?? Math.floor((termWidth - w) / 2), termWidth - w));
+			const startRow = viewportStart + row;
+			const endRow = Math.min(result.length, startRow + h);
+			ranges.set(component, { startRow, endRow });
 
 			for (let i = 0; i < h; i++) {
 				const idx = viewportStart + row + i;
@@ -423,31 +428,104 @@ export class TUI extends Container {
 		return resultWidth <= totalWidth ? result : sliceByColumn(result, 0, totalWidth, true);
 	}
 
-	private findFakeCursor(lines: string[], width: number): { row: number; col: number } | null {
-		const marker = "\x1b[7m";
-		let cursorRow = -1;
-		let cursorCol = 0;
+	private renderWithRanges(width: number): { lines: string[]; ranges: WeakMap<Component, ComponentRange> } {
+		const ranges = new WeakMap<Component, ComponentRange>();
+		const lines = this.renderComponentWithRanges(this, width, ranges, 0);
+		return { lines, ranges };
+	}
 
-		for (let row = 0; row < lines.length; row++) {
-			const line = lines[row];
-			if (!line) continue;
-			const idx = line.lastIndexOf(marker);
-			if (idx === -1) continue;
-			cursorRow = row;
-			cursorCol = visibleWidth(line.slice(0, idx));
+	private renderComponentWithRanges(
+		component: Component,
+		width: number,
+		ranges: WeakMap<Component, ComponentRange>,
+		startRow: number,
+	): string[] {
+		if (component instanceof Container && component.render === Container.prototype.render) {
+			const lines: string[] = [];
+			let row = startRow;
+
+			for (const child of component.children) {
+				const childLines = this.renderComponentWithRanges(child, width, ranges, row);
+				lines.push(...childLines);
+				row += childLines.length;
+			}
+
+			ranges.set(component, { startRow, endRow: row });
+			return lines;
 		}
 
-		if (cursorRow === -1) {
+		const lines = component.render(width);
+		ranges.set(component, { startRow, endRow: startRow + lines.length });
+		return lines;
+	}
+
+	private findFocusedCursor(lines: string[], width: number): { row: number; col: number } | null {
+		const focused = this.focusedComponent;
+		if (!focused) {
 			return null;
 		}
 
-		if (width > 0) {
-			cursorCol = Math.max(0, Math.min(width - 1, cursorCol));
-		} else {
-			cursorCol = Math.max(0, cursorCol);
+		const range = this.lastRenderRanges.get(focused);
+		if (!range) {
+			return null;
 		}
 
-		return { row: cursorRow, col: cursorCol };
+		return this.findCursorMarkerInRange(lines, width, range);
+	}
+
+	private findCursorMarkerInRange(
+		lines: string[],
+		width: number,
+		range: ComponentRange,
+	): { row: number; col: number } | null {
+		const start = Math.max(0, range.startRow);
+		const end = Math.min(lines.length, range.endRow);
+
+		for (let row = end - 1; row >= start; row--) {
+			const line = lines[row];
+			if (!line) continue;
+
+			const idx = line.lastIndexOf(CURSOR_MARKER);
+			if (idx === -1) continue;
+
+			let col = visibleWidth(line.slice(0, idx));
+			if (width > 0) {
+				col = Math.max(0, Math.min(width - 1, col));
+			} else {
+				col = Math.max(0, col);
+			}
+
+			return { row, col };
+		}
+
+		return null;
+	}
+
+	private finalizeCursorAfterRender(
+		buffer: string,
+		newLines: string[],
+		width: number,
+		height: number,
+	): { buffer: string; cursorSyncTarget: { row1: number; col1: number } | null } {
+		const newViewportBottomRow = newLines.length - 1;
+		this.viewportBottomRow = newViewportBottomRow;
+
+		const cursor = this.findFocusedCursor(newLines, width);
+		if (!cursor) {
+			this.cursorRow = newViewportBottomRow;
+			return { buffer, cursorSyncTarget: null };
+		}
+
+		buffer = this.appendMoveCursor(buffer, newViewportBottomRow, cursor);
+		this.cursorRow = cursor.row;
+
+		const viewportTop = Math.max(0, newViewportBottomRow - height + 1);
+		const cursorSyncTarget = {
+			row1: Math.max(1, Math.min(height, cursor.row - viewportTop + 1)),
+			col1: Math.max(1, Math.min(width, cursor.col + 1)),
+		};
+
+		return { buffer, cursorSyncTarget };
 	}
 
 	private appendMoveCursor(buffer: string, fromRow: number, target: { row: number; col: number }): string {
@@ -470,17 +548,17 @@ export class TUI extends Container {
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
 
-		const shouldFollowFakeCursor = this.focusedComponent?.wantsImeCursor === true;
-
 		const previousViewportBottomRow = this.viewportBottomRow;
 
-		// Render all components to get new lines
-		let newLines = this.render(width);
+		// Render all components to get new lines and component ranges
+		const { lines: baseLines, ranges } = this.renderWithRanges(width);
+		let newLines = baseLines;
 
 		// Composite overlays into the rendered lines (before differential compare)
 		if (this.overlayStack.length > 0) {
-			newLines = this.compositeOverlays(newLines, width, height);
+			newLines = this.compositeOverlays(newLines, width, height, ranges);
 		}
+		this.lastRenderRanges = ranges;
 
 		// Width changed - need full re-render
 		const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;
@@ -493,30 +571,13 @@ export class TUI extends Container {
 				buffer += newLines[i];
 			}
 
-			// After rendering N lines, cursor is at end of last line (line N-1)
-			// If a fake cursor is present, we move the real terminal cursor there for IME candidate positioning.
-			const newViewportBottomRow = newLines.length - 1;
-			this.viewportBottomRow = newViewportBottomRow;
-
-			let cursorSyncTarget: { row1: number; col1: number } | null = null;
-			const fakeCursor = shouldFollowFakeCursor ? this.findFakeCursor(newLines, width) : null;
-			if (fakeCursor) {
-				buffer = this.appendMoveCursor(buffer, newViewportBottomRow, fakeCursor);
-				this.cursorRow = fakeCursor.row;
-
-				const viewportTop = Math.max(0, newViewportBottomRow - height + 1);
-				cursorSyncTarget = {
-					row1: Math.max(1, Math.min(height, fakeCursor.row - viewportTop + 1)),
-					col1: Math.max(1, Math.min(width, fakeCursor.col + 1)),
-				};
-			} else {
-				this.cursorRow = newViewportBottomRow;
-			}
+			const cursorResult = this.finalizeCursorAfterRender(buffer, newLines, width, height);
+			buffer = cursorResult.buffer;
 
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
-			if (cursorSyncTarget && newLines.length > height) {
-				this.startCursorSync(cursorSyncTarget);
+			if (cursorResult.cursorSyncTarget && newLines.length > height) {
+				this.startCursorSync(cursorResult.cursorSyncTarget);
 			}
 			this.previousLines = newLines;
 			this.previousWidth = width;
@@ -532,28 +593,13 @@ export class TUI extends Container {
 				buffer += newLines[i];
 			}
 
-			const newViewportBottomRow = newLines.length - 1;
-			this.viewportBottomRow = newViewportBottomRow;
-
-			let cursorSyncTarget: { row1: number; col1: number } | null = null;
-			const fakeCursor = shouldFollowFakeCursor ? this.findFakeCursor(newLines, width) : null;
-			if (fakeCursor) {
-				buffer = this.appendMoveCursor(buffer, newViewportBottomRow, fakeCursor);
-				this.cursorRow = fakeCursor.row;
-
-				const viewportTop = Math.max(0, newViewportBottomRow - height + 1);
-				cursorSyncTarget = {
-					row1: Math.max(1, Math.min(height, fakeCursor.row - viewportTop + 1)),
-					col1: Math.max(1, Math.min(width, fakeCursor.col + 1)),
-				};
-			} else {
-				this.cursorRow = newViewportBottomRow;
-			}
+			const cursorResult = this.finalizeCursorAfterRender(buffer, newLines, width, height);
+			buffer = cursorResult.buffer;
 
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
-			if (cursorSyncTarget && newLines.length > height) {
-				this.startCursorSync(cursorSyncTarget);
+			if (cursorResult.cursorSyncTarget && newLines.length > height) {
+				this.startCursorSync(cursorResult.cursorSyncTarget);
 			}
 			this.previousLines = newLines;
 			this.previousWidth = width;
@@ -593,28 +639,13 @@ export class TUI extends Container {
 				buffer += newLines[i];
 			}
 
-			const newViewportBottomRow = newLines.length - 1;
-			this.viewportBottomRow = newViewportBottomRow;
-
-			let cursorSyncTarget: { row1: number; col1: number } | null = null;
-			const fakeCursor = shouldFollowFakeCursor ? this.findFakeCursor(newLines, width) : null;
-			if (fakeCursor) {
-				buffer = this.appendMoveCursor(buffer, newViewportBottomRow, fakeCursor);
-				this.cursorRow = fakeCursor.row;
-
-				const nextViewportTop = Math.max(0, newViewportBottomRow - height + 1);
-				cursorSyncTarget = {
-					row1: Math.max(1, Math.min(height, fakeCursor.row - nextViewportTop + 1)),
-					col1: Math.max(1, Math.min(width, fakeCursor.col + 1)),
-				};
-			} else {
-				this.cursorRow = newViewportBottomRow;
-			}
+			const cursorResult = this.finalizeCursorAfterRender(buffer, newLines, width, height);
+			buffer = cursorResult.buffer;
 
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
-			if (cursorSyncTarget && newLines.length > height) {
-				this.startCursorSync(cursorSyncTarget);
+			if (cursorResult.cursorSyncTarget && newLines.length > height) {
+				this.startCursorSync(cursorResult.cursorSyncTarget);
 			}
 			this.previousLines = newLines;
 			this.previousWidth = width;
@@ -683,32 +714,15 @@ export class TUI extends Container {
 			buffer += `\x1b[${extraLines}A`;
 		}
 
-		// Cursor is now at end of last line
-		// If a fake cursor is present, we move the real terminal cursor there for IME candidate positioning.
-		const newViewportBottomRow = newLines.length - 1;
-		this.viewportBottomRow = newViewportBottomRow;
-
-		let cursorSyncTarget: { row1: number; col1: number } | null = null;
-		const fakeCursor = shouldFollowFakeCursor ? this.findFakeCursor(newLines, width) : null;
-		if (fakeCursor) {
-			buffer = this.appendMoveCursor(buffer, newViewportBottomRow, fakeCursor);
-			this.cursorRow = fakeCursor.row;
-
-			const viewportTop = Math.max(0, newViewportBottomRow - height + 1);
-			cursorSyncTarget = {
-				row1: Math.max(1, Math.min(height, fakeCursor.row - viewportTop + 1)),
-				col1: Math.max(1, Math.min(width, fakeCursor.col + 1)),
-			};
-		} else {
-			this.cursorRow = newViewportBottomRow;
-		}
+		const cursorResult = this.finalizeCursorAfterRender(buffer, newLines, width, height);
+		buffer = cursorResult.buffer;
 
 		buffer += "\x1b[?2026l"; // End synchronized output
 
 		// Write entire buffer at once
 		this.terminal.write(buffer);
-		if (cursorSyncTarget && newLines.length - firstChanged > height) {
-			this.startCursorSync(cursorSyncTarget);
+		if (cursorResult.cursorSyncTarget && newLines.length - firstChanged > height) {
+			this.startCursorSync(cursorResult.cursorSyncTarget);
 		}
 
 		this.previousLines = newLines;

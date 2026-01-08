@@ -1,11 +1,11 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
+import { CURSOR_MARKER } from "../src/cursor.js";
 import type { Component } from "../src/tui.js";
 import { TUI } from "../src/tui.js";
 import { VirtualTerminal } from "./virtual-terminal.js";
 
 class CursorSyncComponent implements Component {
-	public wantsImeCursor = true;
 	public inputs: string[] = [];
 
 	constructor(private lines: string[]) {}
@@ -26,7 +26,7 @@ async function flushRender(terminal: VirtualTerminal): Promise<void> {
 	await terminal.flush();
 }
 
-describe("TUI cursor sync", () => {
+describe("TUI cursor synchronization", () => {
 	it("re-applies cursor positioning after a DSR cursor-position response", async () => {
 		const terminal = new VirtualTerminal(20, 5);
 		const tui = new TUI(terminal);
@@ -35,7 +35,7 @@ describe("TUI cursor sync", () => {
 		for (let i = 0; i < 30; i++) {
 			lines.push(`line${i}`);
 		}
-		lines.push("abc\x1b[7mD\x1b[0m");
+		lines.push(`abc${CURSOR_MARKER}D\x1b[0m`);
 
 		const component = new CursorSyncComponent(lines);
 		tui.addChild(component);
@@ -51,7 +51,7 @@ describe("TUI cursor sync", () => {
 		// Simulate the terminal responding to the DSR cursor-position request.
 		// We call the TUI input handler directly since the virtual terminal only forwards
 		// input after tui.start() (which we avoid in tests).
-		(tui as unknown as { handleInput: (data: string) => void }).handleInput("\x1b[1;1R");
+		(tui as unknown as { handleTerminalInput: (data: string) => void }).handleTerminalInput("\x1b[1;1R");
 		await terminal.flush();
 
 		const pos = terminal.getCursorPosition();

@@ -1,4 +1,5 @@
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
+import { CURSOR_MARKER, CURSOR_MARKER_END } from "../cursor.js";
 import { getEditorKeybindings } from "../keybindings.js";
 import { matchesKey } from "../keys.js";
 import type { Component } from "../tui.js";
@@ -218,7 +219,6 @@ export class Editor implements Component {
 
 	// Border color (can be changed dynamically)
 	public borderColor: (str: string) => string;
-	public wantsImeCursor = true;
 
 	// Autocomplete support
 	private autocompleteProvider?: AutocompleteProvider;
@@ -345,14 +345,14 @@ export class Editor implements Component {
 					const afterGraphemes = [...segmenter.segment(after)];
 					const firstGrapheme = afterGraphemes[0]?.segment || "";
 					const restAfter = after.slice(firstGrapheme.length);
-					const cursor = `\x1b[7m${firstGrapheme}\x1b[0m`;
+					const cursor = `${CURSOR_MARKER}${firstGrapheme}${CURSOR_MARKER_END}`;
 					displayText = before + cursor + restAfter;
 					// lineVisibleWidth stays the same - we're replacing, not adding
 				} else {
 					// Cursor is at the end - check if we have room for the space
 					if (lineVisibleWidth < width) {
 						// We have room - add highlighted space
-						const cursor = "\x1b[7m \x1b[0m";
+						const cursor = `${CURSOR_MARKER} ${CURSOR_MARKER_END}`;
 						displayText = before + cursor;
 						// lineVisibleWidth increases by 1 - we're adding a space
 						lineVisibleWidth = lineVisibleWidth + 1;
@@ -362,7 +362,7 @@ export class Editor implements Component {
 						const beforeGraphemes = [...segmenter.segment(before)];
 						if (beforeGraphemes.length > 0) {
 							const lastGrapheme = beforeGraphemes[beforeGraphemes.length - 1]?.segment || "";
-							const cursor = `\x1b[7m${lastGrapheme}\x1b[0m`;
+							const cursor = `${CURSOR_MARKER}${lastGrapheme}${CURSOR_MARKER_END}`;
 							// Rebuild 'before' without the last grapheme
 							const beforeWithoutLast = beforeGraphemes
 								.slice(0, -1)
