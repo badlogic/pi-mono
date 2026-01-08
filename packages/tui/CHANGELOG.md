@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Overlay compositing for `ctx.ui.custom()` with `{ overlay: true }` option ([#558](https://github.com/badlogic/pi-mono/pull/558) by [@nicobailon](https://github.com/nicobailon))
+
 ## [0.38.0] - 2026-01-08
 
 ### Added

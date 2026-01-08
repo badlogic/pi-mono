@@ -932,7 +932,7 @@ export class InteractiveMode {
 			setFooter: (factory) => this.setExtensionFooter(factory),
 			setHeader: (factory) => this.setExtensionHeader(factory),
 			setTitle: (title) => this.ui.terminal.setTitle(title),
-			custom: (factory) => this.showExtensionCustom(factory),
+			custom: (factory, options) => this.showExtensionCustom(factory, options),
 			setEditorText: (text) => this.editor.setText(text),
 			getEditorText: () => this.editor.getText(),
 			editor: (title, prefill) => this.showExtensionEditor(title, prefill),
@@ -1188,9 +1188,7 @@ export class InteractiveMode {
 		}
 	}
 
-	/**
-	 * Show a custom component with keyboard focus.
-	 */
+	/** Show a custom component with keyboard focus. Overlay mode renders on top of existing content. */
 	private async showExtensionCustom<T>(
 		factory: (
 			tui: TUI,
@@ -1198,29 +1196,56 @@ export class InteractiveMode {
 			keybindings: KeybindingsManager,
 			done: (result: T) => void,
 		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
+		options?: { overlay?: boolean },
 	): Promise<T> {
 		const savedText = this.editor.getText();
+		const isOverlay = options?.overlay ?? false;
 
-		return new Promise((resolve) => {
+		const restoreEditor = () => {
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.editor);
+			this.editor.setText(savedText);
+			this.ui.setFocus(this.editor);
+			this.ui.requestRender();
+		};
+
+		return new Promise((resolve, reject) => {
 			let component: Component & { dispose?(): void };
+			let closed = false;
 
 			const close = (result: T) => {
-				component.dispose?.();
-				this.editorContainer.clear();
-				this.editorContainer.addChild(this.editor);
-				this.editor.setText(savedText);
-				this.ui.setFocus(this.editor);
-				this.ui.requestRender();
+				if (closed) return;
+				closed = true;
+				if (isOverlay) this.ui.hideOverlay();
+				else restoreEditor();
+				// Note: both branches above already call requestRender
 				resolve(result);
+				try {
+					component?.dispose?.();
+				} catch {
+					/* ignore dispose errors */
+				}
 			};
 
-			Promise.resolve(factory(this.ui, theme, this.keybindings, close)).then((c) => {
-				component = c;
-				this.editorContainer.clear();
-				this.editorContainer.addChild(component);
-				this.ui.setFocus(component);
-				this.ui.requestRender();
-			});
+			Promise.resolve(factory(this.ui, theme, this.keybindings, close))
+				.then((c) => {
+					if (closed) return;
+					component = c;
+					if (isOverlay) {
+						const w = (component as { width?: number }).width;
+						this.ui.showOverlay(component, w ? { width: w } : undefined);
+					} else {
+						this.editorContainer.clear();
+						this.editorContainer.addChild(component);
+						this.ui.setFocus(component);
+						this.ui.requestRender();
+					}
+				})
+				.catch((err) => {
+					if (closed) return;
+					if (!isOverlay) restoreEditor();
+					reject(err);
+				});
 		});
 	}
 

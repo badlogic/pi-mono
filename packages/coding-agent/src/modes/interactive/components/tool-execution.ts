@@ -355,24 +355,29 @@ export class ToolExecutionComponent extends Container {
 					// Show all lines when expanded
 					this.contentBox.addChild(new Text(`\n${styledOutput}`, 0, 0));
 				} else {
-					// Use visual line truncation when collapsed
-					// Box has paddingX=1, so content width = terminal.columns - 2
-					const { visualLines, skippedCount } = truncateToVisualLines(
-						`\n${styledOutput}`,
-						BASH_PREVIEW_LINES,
-						this.ui.terminal.columns - 2,
-					);
+					// Use visual line truncation when collapsed with width-aware caching
+					const textContent = `\n${styledOutput}`;
+					let cachedWidth: number | undefined;
+					let cachedLines: string[] | undefined;
+					let cachedSkipped: number | undefined;
 
-					if (skippedCount > 0) {
-						this.contentBox.addChild(
-							new Text(theme.fg("toolOutput", `\n... (${skippedCount} earlier lines)`), 0, 0),
-						);
-					}
-
-					// Add pre-rendered visual lines as a raw component
 					this.contentBox.addChild({
-						render: () => visualLines,
-						invalidate: () => {},
+						render: (width: number) => {
+							if (cachedLines === undefined || cachedWidth !== width) {
+								const result = truncateToVisualLines(textContent, BASH_PREVIEW_LINES, width);
+								cachedLines = result.visualLines;
+								cachedSkipped = result.skippedCount;
+								cachedWidth = width;
+							}
+							return cachedSkipped && cachedSkipped > 0
+								? ["", theme.fg("toolOutput", `... (${cachedSkipped} earlier lines)`), ...cachedLines]
+								: cachedLines;
+						},
+						invalidate: () => {
+							cachedWidth = undefined;
+							cachedLines = undefined;
+							cachedSkipped = undefined;
+						},
 					});
 				}
 			}
