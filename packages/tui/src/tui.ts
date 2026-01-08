@@ -93,6 +93,13 @@ export class TUI extends Container {
 	private inputBuffer = ""; // Buffer for parsing terminal responses
 	private cellSizeQueryPending = false;
 
+	// Overlay stack for modal components rendered on top of base content
+	private overlayStack: {
+		component: Component;
+		options?: { row?: number; col?: number; width?: number };
+		preFocus: Component | null;
+	}[] = [];
+
 	constructor(terminal: Terminal) {
 		super();
 		this.terminal = terminal;
@@ -100,6 +107,62 @@ export class TUI extends Container {
 
 	setFocus(component: Component | null): void {
 		this.focusedComponent = component;
+	}
+
+	/**
+	 * Show an overlay component at the specified position (or centered).
+	 * The overlay renders on top of existing content using absolute cursor positioning.
+	 * Input is routed to the overlay via existing focus mechanism.
+	 */
+	showOverlay(
+		component: Component,
+		options?: {
+			row?: number;
+			col?: number;
+			width?: number;
+		},
+	): void {
+		this.overlayStack.push({
+			component,
+			options,
+			preFocus: this.focusedComponent,
+		});
+		this.setFocus(component);
+		// Don't show cursor by default - component can show it if needed for text input
+		this.terminal.hideCursor();
+		this.requestRender(true);
+	}
+
+	/**
+	 * Hide the topmost overlay and restore previous focus.
+	 */
+	hideOverlay(): void {
+		const overlay = this.overlayStack.pop();
+		if (!overlay) return;
+
+		// Restore previous focus (even if null - we don't want focus stuck on removed overlay)
+		this.setFocus(overlay.preFocus);
+
+		// If no more overlays, hide cursor (TUI default)
+		if (this.overlayStack.length === 0) {
+			this.terminal.hideCursor();
+		}
+
+		// Force full redraw with screen clear to remove overlay remnants.
+		// Set previousLines to non-empty to skip first-render path (which doesn't clear).
+		// Set previousWidth to -1 (sentinel) to trigger widthChanged path (which clears).
+		// If more overlays remain, the overlay code path in doRender() handles it.
+		this.previousLines = [""];
+		this.previousWidth = -1;
+		this.cursorRow = 0;
+		this.requestRender();
+	}
+
+	/**
+	 * Check if any overlay is currently shown.
+	 */
+	hasOverlay(): boolean {
+		return this.overlayStack.length > 0;
 	}
 
 	start(): void {
@@ -215,12 +278,69 @@ export class TUI extends Container {
 		return line.includes("\x1b_G") || line.includes("\x1b]1337;File=");
 	}
 
+	/**
+	 * Render the topmost overlay using absolute cursor positioning.
+	 */
+	private renderOverlay(): void {
+		const overlay = this.overlayStack[this.overlayStack.length - 1];
+		if (!overlay) return;
+
+		const { component, options } = overlay;
+		const termWidth = this.terminal.columns;
+		const termHeight = this.terminal.rows;
+
+		// Calculate width (clamped to terminal, minimum 1)
+		const width =
+			options?.width !== undefined
+				? Math.max(1, Math.min(options.width, termWidth - 4))
+				: Math.max(1, Math.min(80, termWidth - 4));
+
+		const lines = component.render(width);
+
+		// Calculate position (centered if not specified, clamped to viewport)
+		const row =
+			options?.row !== undefined
+				? Math.max(0, Math.min(options.row, termHeight - lines.length))
+				: Math.max(0, Math.floor((termHeight - lines.length) / 2));
+		const col =
+			options?.col !== undefined
+				? Math.max(0, Math.min(options.col, termWidth - width))
+				: Math.max(0, Math.floor((termWidth - width) / 2));
+
+		// Write using absolute positioning
+		let buffer = "\x1b[?2026h"; // Begin synchronized output
+		for (let i = 0; i < lines.length; i++) {
+			buffer += `\x1b[${row + i + 1};${col + 1}H`; // ANSI is 1-indexed
+			buffer += lines[i] + " ".repeat(Math.max(0, width - visibleWidth(lines[i])));
+		}
+		buffer += "\x1b[?2026l"; // End synchronized output
+		this.terminal.write(buffer);
+	}
+
 	private doRender(): void {
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
 
 		// Render all components to get new lines
 		const newLines = this.render(width);
+
+		// When overlay is active, use dedicated clear+redraw path to avoid
+		// cursor position conflicts between overlay (absolute) and differential (relative)
+		if (this.overlayStack.length > 0) {
+			let buffer = "\x1b[?2026h"; // Begin synchronized output
+			buffer += "\x1b[3J\x1b[2J\x1b[H"; // Clear scrollback, screen, and home
+			for (let i = 0; i < newLines.length; i++) {
+				if (i > 0) buffer += "\r\n";
+				buffer += newLines[i];
+			}
+			buffer += "\x1b[?2026l"; // End synchronized output
+			this.terminal.write(buffer);
+			this.cursorRow = newLines.length - 1;
+			this.previousLines = newLines;
+			this.previousWidth = width;
+			this.renderOverlay();
+			return; // Skip normal render paths
+		}
 
 		// Width changed - need full re-render
 		const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;

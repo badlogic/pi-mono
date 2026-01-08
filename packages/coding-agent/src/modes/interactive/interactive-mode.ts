@@ -752,7 +752,7 @@ export class InteractiveMode {
 			setFooter: (factory) => this.setExtensionFooter(factory),
 			setHeader: (factory) => this.setExtensionHeader(factory),
 			setTitle: (title) => this.ui.terminal.setTitle(title),
-			custom: (factory) => this.showExtensionCustom(factory),
+			custom: (factory, options) => this.showExtensionCustom(factory, options),
 			setEditorText: (text) => this.editor.setText(text),
 			getEditorText: () => this.editor.getText(),
 			editor: (title, prefill) => this.showExtensionEditor(title, prefill),
@@ -996,6 +996,8 @@ export class InteractiveMode {
 
 	/**
 	 * Show a custom component with keyboard focus.
+	 * When overlay mode is enabled, the component renders as a floating overlay
+	 * on top of the existing content rather than replacing the editor.
 	 */
 	private async showExtensionCustom<T>(
 		factory: (
@@ -1004,29 +1006,72 @@ export class InteractiveMode {
 			keybindings: KeybindingsManager,
 			done: (result: T) => void,
 		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
+		options?: { overlay?: boolean },
 	): Promise<T> {
 		const savedText = this.editor.getText();
+		const isOverlay = options?.overlay ?? false;
 
-		return new Promise((resolve) => {
+		return new Promise((resolve, reject) => {
 			let component: Component & { dispose?(): void };
+			let closed = false;
 
 			const close = (result: T) => {
-				component.dispose?.();
-				this.editorContainer.clear();
-				this.editorContainer.addChild(this.editor);
-				this.editor.setText(savedText);
-				this.ui.setFocus(this.editor);
+				// Guard against multiple close() calls - could pop wrong overlay from stack
+				if (closed) return;
+				closed = true;
+
+				// Restore UI state first, then dispose (so UI is restored even if dispose throws)
+				if (isOverlay) {
+					this.ui.hideOverlay();
+				} else {
+					this.editorContainer.clear();
+					this.editorContainer.addChild(this.editor);
+					this.editor.setText(savedText);
+					this.ui.setFocus(this.editor);
+				}
 				this.ui.requestRender();
 				resolve(result);
+
+				// Dispose after resolve - if it throws, at least promise resolved and UI restored
+				try {
+					component?.dispose?.();
+				} catch (e) {
+					// Log but don't propagate - component cleanup errors shouldn't crash the app
+					console.error("Component dispose() error:", e);
+				}
 			};
 
-			Promise.resolve(factory(this.ui, theme, this.keybindings, close)).then((c) => {
-				component = c;
-				this.editorContainer.clear();
-				this.editorContainer.addChild(component);
-				this.ui.setFocus(component);
-				this.ui.requestRender();
-			});
+			Promise.resolve(factory(this.ui, theme, this.keybindings, close))
+				.then((c) => {
+					// If close() was called before factory completed, don't show the component
+					if (closed) return;
+
+					component = c;
+					if (isOverlay) {
+						// Pass component's width if defined (for proper overlay sizing)
+						const overlayWidth = (component as { width?: number }).width;
+						this.ui.showOverlay(component, overlayWidth ? { width: overlayWidth } : undefined);
+					} else {
+						this.editorContainer.clear();
+						this.editorContainer.addChild(component);
+						this.ui.setFocus(component);
+						this.ui.requestRender();
+					}
+				})
+				.catch((err) => {
+					// If close() was already called, promise is resolved - nothing to do
+					if (closed) return;
+
+					// If factory fails, restore UI state (overlay needs no restoration)
+					if (!isOverlay) {
+						this.editorContainer.clear();
+						this.editorContainer.addChild(this.editor);
+						this.editor.setText(savedText);
+						this.ui.setFocus(this.editor);
+						this.ui.requestRender();
+					}
+					reject(err);
+				});
 		});
 	}
 
