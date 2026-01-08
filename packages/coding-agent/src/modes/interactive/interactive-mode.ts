@@ -574,9 +574,7 @@ export class InteractiveMode {
 		// Show skill warnings if any
 		const skillWarnings = this.session.skillWarnings;
 		if (skillWarnings.length > 0) {
-			const warningList = skillWarnings
-				.map((w) => theme.fg("warning", `  ${w.skillPath}: ${w.message}`))
-				.join("\n");
+			const warningList = skillWarnings.map((w) => theme.fg("warning", `  ${w.skillPath}: ${w.message}`)).join("\n");
 			this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
