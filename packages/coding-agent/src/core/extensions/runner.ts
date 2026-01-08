@@ -288,6 +288,14 @@ export class ExtensionRunner {
 		return undefined;
 	}
 
+	/**
+	 * Request a graceful shutdown. Called by extension tools and event handlers.
+	 * The actual shutdown behavior is provided by the mode via initialize().
+	 */
+	shutdown(): void {
+		this.shutdownHandler();
+	}
+
 	private createContext(): ExtensionContext {
 		return {
 			ui: this.uiContext,
