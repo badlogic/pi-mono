@@ -14,8 +14,6 @@ import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
 import { CONFIG_DIR_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
-import type { AgentSession } from "./core/agent-session.js";
-
 import { createEventBus } from "./core/event-bus.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import { discoverAndLoadExtensions, type LoadExtensionsResult } from "./core/extensions/index.js";
@@ -30,92 +28,6 @@ import { allTools } from "./core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
-import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
-import { ensureTool } from "./utils/tools-manager.js";
-
-async function checkForNewVersion(currentVersion: string): Promise<string | undefined> {
-	try {
-		const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest");
-		if (!response.ok) return undefined;
-
-		const data = (await response.json()) as { version?: string };
-		const latestVersion = data.version;
-
-		if (latestVersion && latestVersion !== currentVersion) {
-			return latestVersion;
-		}
-
-		return undefined;
-	} catch {
-		return undefined;
-	}
-}
-
-async function runInteractiveMode(
-	session: AgentSession,
-	version: string,
-	changelogMarkdown: string | undefined,
-	modelFallbackMessage: string | undefined,
-	modelsJsonError: string | undefined,
-	migratedProviders: string[],
-	versionCheckPromise: Promise<string | undefined>,
-	initialMessages: string[],
-	initialMessage?: string,
-	initialImages?: ImageContent[],
-	fdPath: string | undefined = undefined,
-): Promise<void> {
-	const mode = new InteractiveMode(session, version, changelogMarkdown, fdPath);
-
-	await mode.init();
-
-	versionCheckPromise.then((newVersion) => {
-		if (newVersion) {
-			mode.showNewVersionNotification(newVersion);
-		}
-	});
-
-	mode.renderInitialMessages();
-
-	if (migratedProviders.length > 0) {
-		mode.showWarning(`Migrated credentials to auth.json: ${migratedProviders.join(", ")}`);
-	}
-
-	if (modelsJsonError) {
-		mode.showError(`models.json error: ${modelsJsonError}`);
-	}
-
-	if (modelFallbackMessage) {
-		mode.showWarning(modelFallbackMessage);
-	}
-
-	if (initialMessage) {
-		try {
-			await session.prompt(initialMessage, { images: initialImages });
-		} catch (error: unknown) {
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-			mode.showError(errorMessage);
-		}
-	}
-
-	for (const message of initialMessages) {
-		try {
-			await session.prompt(message);
-		} catch (error: unknown) {
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-			mode.showError(errorMessage);
-		}
-	}
-
-	while (true) {
-		const userInput = await mode.getUserInput();
-		try {
-			await session.prompt(userInput);
-		} catch (error: unknown) {
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-			mode.showError(errorMessage);
-		}
-	}
-}
 
 async function prepareInitialMessage(
 	parsed: Args,
@@ -142,31 +54,6 @@ async function prepareInitialMessage(
 		initialMessage,
 		initialImages: images.length > 0 ? images : undefined,
 	};
-}
-
-function getChangelogForDisplay(parsed: Args, settingsManager: SettingsManager): string | undefined {
-	if (parsed.continue || parsed.resume) {
-		return undefined;
-	}
-
-	const lastVersion = settingsManager.getLastChangelogVersion();
-	const changelogPath = getChangelogPath();
-	const entries = parseChangelog(changelogPath);
-
-	if (!lastVersion) {
-		if (entries.length > 0) {
-			settingsManager.setLastChangelogVersion(VERSION);
-			return entries.map((e) => e.content).join("\n\n");
-		}
-	} else {
-		const newEntries = getNewEntries(entries, lastVersion);
-		if (newEntries.length > 0) {
-			settingsManager.setLastChangelogVersion(VERSION);
-			return newEntries.map((e) => e.content).join("\n\n");
-		}
-	}
-
-	return undefined;
 }
 
 /**
@@ -473,9 +360,6 @@ export async function main(args: string[]) {
 	if (mode === "rpc") {
 		await runRpcMode(session);
 	} else if (isInteractive) {
-		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => undefined);
-		const changelogMarkdown = getChangelogForDisplay(parsed, settingsManager);
-
 		if (scopedModels.length > 0) {
 			const modelList = scopedModels
 				.map((sm) => {
@@ -486,23 +370,15 @@ export async function main(args: string[]) {
 			console.log(chalk.dim(`Model scope: ${modelList} ${chalk.gray("(Ctrl+P to cycle)")}`));
 		}
 
-		const fdPath = await ensureTool("fd");
-		time("ensureTool(fd)");
-
 		printTimings();
-		await runInteractiveMode(
-			session,
-			VERSION,
-			changelogMarkdown,
-			modelFallbackMessage,
-			modelRegistry.getError(),
+		const mode = new InteractiveMode(session, {
 			migratedProviders,
-			versionCheckPromise,
-			parsed.messages,
+			modelFallbackMessage,
 			initialMessage,
 			initialImages,
-			fdPath,
-		);
+			initialMessages: parsed.messages,
+		});
+		await mode.run();
 	} else {
 		await runPrintMode(session, mode, parsed.messages, initialMessage, initialImages);
 		stopThemeWatcher();

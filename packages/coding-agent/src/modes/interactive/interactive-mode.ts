@@ -8,7 +8,13 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import { type AssistantMessage, getOAuthProviders, type Message, type OAuthProvider } from "@mariozechner/pi-ai";
+import {
+	type AssistantMessage,
+	getOAuthProviders,
+	type ImageContent,
+	type Message,
+	type OAuthProvider,
+} from "@mariozechner/pi-ai";
 import type { EditorComponent, EditorTheme, KeyId, SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
@@ -26,7 +32,7 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { spawn, spawnSync } from "child_process";
-import { APP_NAME, getAuthPath, getDebugLogPath } from "../../config.js";
+import { APP_NAME, getAuthPath, getDebugLogPath, VERSION } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type {
 	ExtensionContext,
@@ -41,9 +47,10 @@ import { loadSkills } from "../../core/skills.js";
 import { loadProjectContextFiles } from "../../core/system-prompt.js";
 import { allTools } from "../../core/tools/index.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
-import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
+import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
+import { ensureTool } from "../../utils/tools-manager.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
@@ -89,6 +96,22 @@ type CompactionQueuedMessage = {
 	text: string;
 	mode: "steer" | "followUp";
 };
+
+/**
+ * Options for InteractiveMode initialization.
+ */
+export interface InteractiveModeOptions {
+	/** Providers that were migrated to auth.json (shows warning) */
+	migratedProviders?: string[];
+	/** Warning message if session model couldn't be restored */
+	modelFallbackMessage?: string;
+	/** Initial message to send on startup (can include @file content) */
+	initialMessage?: string;
+	/** Images to attach to the initial message */
+	initialImages?: ImageContent[];
+	/** Additional messages to send after the initial message */
+	initialMessages?: string[];
+}
 
 export class InteractiveMode {
 	private session: AgentSession;
@@ -182,13 +205,10 @@ export class InteractiveMode {
 
 	constructor(
 		session: AgentSession,
-		version: string,
-		changelogMarkdown: string | undefined = undefined,
-		fdPath: string | undefined = undefined,
+		private options: InteractiveModeOptions = {},
 	) {
 		this.session = session;
-		this.version = version;
-		this.changelogMarkdown = changelogMarkdown;
+		this.version = VERSION;
 		this.ui = new TUI(new ProcessTerminal());
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
@@ -202,6 +222,11 @@ export class InteractiveMode {
 		this.footer = new FooterComponent(session);
 		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
 
+		// Load hide thinking block setting
+		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
+	}
+
+	private setupAutocomplete(fdPath: string | undefined): void {
 		// Define commands for autocomplete
 		const slashCommands: SlashCommand[] = [
 			{ name: "settings", description: "Open settings menu" },
@@ -220,9 +245,6 @@ export class InteractiveMode {
 			{ name: "compact", description: "Manually compact the session context" },
 			{ name: "resume", description: "Resume a different session" },
 		];
-
-		// Load hide thinking block setting
-		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 
 		// Convert prompt templates to SlashCommand format for autocomplete
 		const templateCommands: SlashCommand[] = this.session.promptTemplates.map((cmd) => ({
@@ -249,6 +271,13 @@ export class InteractiveMode {
 
 	async init(): Promise<void> {
 		if (this.isInitialized) return;
+
+		// Load changelog (only show new entries, skip for resumed sessions)
+		this.changelogMarkdown = this.getChangelogForDisplay();
+
+		// Setup autocomplete with fd tool for file path completion
+		const fdPath = await ensureTool("fd");
+		this.setupAutocomplete(fdPath);
 
 		// Add header with keybindings from config
 		const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
@@ -389,6 +418,122 @@ export class InteractiveMode {
 		this.footer.watchBranch(() => {
 			this.ui.requestRender();
 		});
+	}
+
+	/**
+	 * Run the interactive mode. This is the main entry point.
+	 * Initializes the UI, shows warnings, processes initial messages, and starts the interactive loop.
+	 */
+	async run(): Promise<void> {
+		await this.init();
+
+		// Start version check asynchronously
+		this.checkForNewVersion().then((newVersion) => {
+			if (newVersion) {
+				this.showNewVersionNotification(newVersion);
+			}
+		});
+
+		this.renderInitialMessages();
+
+		// Show startup warnings
+		const { migratedProviders, modelFallbackMessage, initialMessage, initialImages, initialMessages } = this.options;
+
+		if (migratedProviders && migratedProviders.length > 0) {
+			this.showWarning(`Migrated credentials to auth.json: ${migratedProviders.join(", ")}`);
+		}
+
+		const modelsJsonError = this.session.modelRegistry.getError();
+		if (modelsJsonError) {
+			this.showError(`models.json error: ${modelsJsonError}`);
+		}
+
+		if (modelFallbackMessage) {
+			this.showWarning(modelFallbackMessage);
+		}
+
+		// Process initial messages
+		if (initialMessage) {
+			try {
+				await this.session.prompt(initialMessage, { images: initialImages });
+			} catch (error: unknown) {
+				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+				this.showError(errorMessage);
+			}
+		}
+
+		if (initialMessages) {
+			for (const message of initialMessages) {
+				try {
+					await this.session.prompt(message);
+				} catch (error: unknown) {
+					const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+					this.showError(errorMessage);
+				}
+			}
+		}
+
+		// Main interactive loop
+		while (true) {
+			const userInput = await this.getUserInput();
+			try {
+				await this.session.prompt(userInput);
+			} catch (error: unknown) {
+				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+				this.showError(errorMessage);
+			}
+		}
+	}
+
+	/**
+	 * Check npm registry for a newer version.
+	 */
+	private async checkForNewVersion(): Promise<string | undefined> {
+		try {
+			const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest");
+			if (!response.ok) return undefined;
+
+			const data = (await response.json()) as { version?: string };
+			const latestVersion = data.version;
+
+			if (latestVersion && latestVersion !== this.version) {
+				return latestVersion;
+			}
+
+			return undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
+	/**
+	 * Get changelog entries to display on startup.
+	 * Only shows new entries since last seen version, skips for resumed sessions.
+	 */
+	private getChangelogForDisplay(): string | undefined {
+		// Skip changelog for resumed/continued sessions (already have messages)
+		if (this.session.state.messages.length > 0) {
+			return undefined;
+		}
+
+		const lastVersion = this.settingsManager.getLastChangelogVersion();
+		const changelogPath = getChangelogPath();
+		const entries = parseChangelog(changelogPath);
+
+		if (!lastVersion) {
+			if (entries.length > 0) {
+				this.settingsManager.setLastChangelogVersion(VERSION);
+				return entries.map((e) => e.content).join("\n\n");
+			}
+		} else {
+			const newEntries = getNewEntries(entries, lastVersion);
+			if (newEntries.length > 0) {
+				this.settingsManager.setLastChangelogVersion(VERSION);
+				return newEntries.map((e) => e.content).join("\n\n");
+			}
+		}
+
+		return undefined;
 	}
 
 	// =========================================================================
