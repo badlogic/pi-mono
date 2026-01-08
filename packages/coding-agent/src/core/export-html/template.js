@@ -400,7 +400,6 @@
           }
 
           // Apply filter mode
-          const isSettingsEntry = ['label', 'custom', 'model_change', 'thinking_level_change'].includes(entry.type);
           let passesFilter = true;
 
           switch (filterMode) {
@@ -408,7 +407,7 @@
               passesFilter = entry.type === 'message' && entry.message.role === 'user';
               break;
             case 'no-tools':
-              passesFilter = !isSettingsEntry && !(entry.type === 'message' && entry.message.role === 'toolResult');
+              passesFilter = !isSettingsEntry(entry) && !(entry.type === 'message' && entry.message.role === 'toolResult');
               break;
             case 'labeled-only':
               passesFilter = label !== undefined;
@@ -417,7 +416,7 @@
               passesFilter = true;
               break;
             default: // 'default'
-              passesFilter = !isSettingsEntry;
+              passesFilter = !isSettingsEntry(entry);
               break;
           }
 
