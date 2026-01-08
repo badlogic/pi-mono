@@ -4,12 +4,13 @@
 
 import type { AgentTool, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
 import type { ExtensionRunner } from "./runner.js";
-import type { ExtensionContext, RegisteredTool, ToolCallEventResult, ToolResultEventResult } from "./types.js";
+import type { RegisteredTool, ToolCallEventResult, ToolResultEventResult } from "./types.js";
 
 /**
  * Wrap a RegisteredTool into an AgentTool.
+ * Uses the runner's createContext() for consistent context across tools and event handlers.
  */
-export function wrapRegisteredTool(registeredTool: RegisteredTool, getContext: () => ExtensionContext): AgentTool {
+export function wrapRegisteredTool(registeredTool: RegisteredTool, runner: ExtensionRunner): AgentTool {
 	const { definition } = registeredTool;
 	return {
 		name: definition.name,
@@ -17,18 +18,16 @@ export function wrapRegisteredTool(registeredTool: RegisteredTool, getContext: (
 		description: definition.description,
 		parameters: definition.parameters,
 		execute: (toolCallId, params, signal, onUpdate) =>
-			definition.execute(toolCallId, params, onUpdate, getContext(), signal),
+			definition.execute(toolCallId, params, onUpdate, runner.createContext(), signal),
 	};
 }
 
 /**
  * Wrap all registered tools into AgentTools.
+ * Uses the runner's createContext() for consistent context across tools and event handlers.
  */
-export function wrapRegisteredTools(
-	registeredTools: RegisteredTool[],
-	getContext: () => ExtensionContext,
-): AgentTool[] {
-	return registeredTools.map((rt) => wrapRegisteredTool(rt, getContext));
+export function wrapRegisteredTools(registeredTools: RegisteredTool[], runner: ExtensionRunner): AgentTool[] {
+	return registeredTools.map((rt) => wrapRegisteredTool(rt, runner));
 }
 
 /**

@@ -475,9 +475,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}
 	}
 
-	// Create extension runner if we have extensions
+	// Create extension runner if we have extensions or SDK custom tools
+	// The runner provides consistent context for tool execution (shutdown, abort, etc.)
 	let extensionRunner: ExtensionRunner | undefined;
-	if (extensionsResult.extensions.length > 0) {
+	const hasExtensions = extensionsResult.extensions.length > 0;
+	const hasCustomTools = options.customTools && options.customTools.length > 0;
+	if (hasExtensions || hasCustomTools) {
 		extensionRunner = new ExtensionRunner(
 			extensionsResult.extensions,
 			extensionsResult.runtime,
@@ -487,50 +490,18 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		);
 	}
 
-	// Wrap extension-registered tools and SDK-provided custom tools with context getter
-	// (agent/session assigned below, accessed at execute time)
+	// Wrap extension-registered tools and SDK-provided custom tools
+	// Tools use runner.createContext() for consistent context with event handlers
 	let agent: Agent;
-	let session: AgentSession;
 	const registeredTools = extensionRunner?.getAllRegisteredTools() ?? [];
 	// Combine extension-registered tools with SDK-provided custom tools
 	const allCustomTools = [
 		...registeredTools,
 		...(options.customTools?.map((def) => ({ definition: def, extensionPath: "<sdk>" })) ?? []),
 	];
-	const wrappedExtensionTools = wrapRegisteredTools(allCustomTools, () => ({
-		ui: extensionRunner?.getUIContext() ?? {
-			select: async () => undefined,
-			confirm: async () => false,
-			input: async () => undefined,
-			notify: () => {},
-			setStatus: () => {},
-			setWidget: () => {},
-			setFooter: () => {},
-			setHeader: () => {},
-			setTitle: () => {},
-			custom: async () => undefined as never,
-			setEditorText: () => {},
-			getEditorText: () => "",
-			editor: async () => undefined,
-			setEditorComponent: () => {},
-			get theme() {
-				return {} as any;
-			},
-		},
-		hasUI: extensionRunner?.hasUI() ?? false,
-		cwd,
-		sessionManager,
-		modelRegistry,
-		model: agent.state.model,
-		isIdle: () => !session.isStreaming,
-		hasPendingMessages: () => session.pendingMessageCount > 0,
-		abort: () => {
-			session.abort();
-		},
-		shutdown: () => {
-			extensionRunner?.shutdown();
-		},
-	}));
+
+	// Wrap tools using runner's context (ensures shutdown, abort, etc. work correctly)
+	const wrappedExtensionTools = extensionRunner ? wrapRegisteredTools(allCustomTools, extensionRunner) : [];
 
 	// Create tool registry mapping name -> tool (for extension getTools/setTools)
 	// Registry contains ALL built-in tools so extensions can enable any of them
@@ -673,7 +644,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		sessionManager.appendThinkingLevelChange(thinkingLevel);
 	}
 
-	session = new AgentSession({
+	const session = new AgentSession({
 		agent,
 		sessionManager,
 		settingsManager,

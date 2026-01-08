@@ -296,7 +296,11 @@ export class ExtensionRunner {
 		this.shutdownHandler();
 	}
 
-	private createContext(): ExtensionContext {
+	/**
+	 * Create an ExtensionContext for use in event handlers and tool execution.
+	 * Context values are resolved at call time, so changes via initialize() are reflected.
+	 */
+	createContext(): ExtensionContext {
 		return {
 			ui: this.uiContext,
 			hasUI: this.hasUI(),
