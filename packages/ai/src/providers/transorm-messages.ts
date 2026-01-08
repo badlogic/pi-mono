@@ -45,12 +45,13 @@ export function transformMessages<TApi extends Api>(messages: Message[], model: 
 				assistantMsg.api !== model.api;
 
 			// Transform message from different provider/model
-			const transformedContent = assistantMsg.content.map((block) => {
+			const transformedContent = assistantMsg.content.flatMap((block) => {
 				if (block.type === "thinking") {
-					// Convert thinking block to text block with <thinking> tags
+					// Skip empty thinking blocks, convert others to plain text
+					if (!block.thinking || block.thinking.trim() === "") return [];
 					return {
 						type: "text" as const,
-						text: `<thinking>\n${block.thinking}\n</thinking>`,
+						text: block.thinking,
 					};
 				}
 				// Normalize tool call IDs for github-copilot cross-API switches

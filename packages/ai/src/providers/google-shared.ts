@@ -77,6 +77,8 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 			}
 		} else if (msg.role === "assistant") {
 			const parts: Part[] = [];
+			// Check if message is from same provider and model - only then keep thinking blocks
+			const isSameProviderAndModel = msg.provider === model.provider && msg.model === model.id;
 
 			for (const block of msg.content) {
 				if (block.type === "text") {
@@ -84,17 +86,19 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 					if (!block.text || block.text.trim() === "") continue;
 					parts.push({ text: sanitizeSurrogates(block.text) });
 				} else if (block.type === "thinking") {
-					// Thinking blocks require signatures for Claude via Antigravity.
-					// If signature is missing (e.g. from GPT-OSS), convert to regular text with delimiters.
-					if (block.thinkingSignature) {
+					// Skip empty thinking blocks
+					if (!block.thinking || block.thinking.trim() === "") continue;
+					// Only keep as thinking block if same provider AND same model
+					// Otherwise convert to plain text (no tags to avoid model mimicking them)
+					if (isSameProviderAndModel) {
 						parts.push({
 							thought: true,
 							text: sanitizeSurrogates(block.thinking),
-							thoughtSignature: block.thinkingSignature,
+							...(block.thinkingSignature && { thoughtSignature: block.thinkingSignature }),
 						});
 					} else {
 						parts.push({
-							text: `<thinking>\n${sanitizeSurrogates(block.thinking)}\n</thinking>`,
+							text: sanitizeSurrogates(block.thinking),
 						});
 					}
 				} else if (block.type === "toolCall") {

@@ -22,6 +22,7 @@
 - ESC key now works during "Working..." state after auto-retry ([#568](https://github.com/badlogic/pi-mono/pull/568) by [@tmustier](https://github.com/tmustier))
 - Abort messages now show correct retry attempt count (e.g., "Aborted after 2 retry attempts") ([#568](https://github.com/badlogic/pi-mono/pull/568) by [@tmustier](https://github.com/tmustier))
 - Fixed Antigravity provider returning 429 errors despite available quota ([#571](https://github.com/badlogic/pi-mono/pull/571) by [@ben-vargas](https://github.com/ben-vargas))
+- Fixed malformed thinking text in Gemini/Antigravity responses where thinking content appeared as regular text or vice versa. Cross-model conversations now properly convert thinking blocks to plain text. ([#561](https://github.com/badlogic/pi-mono/issues/561))
 
 ## [0.38.0] - 2026-01-08
 

@@ -490,10 +490,8 @@ function convertMessages(
 			const nonEmptyThinkingBlocks = thinkingBlocks.filter((b) => b.thinking && b.thinking.trim().length > 0);
 			if (nonEmptyThinkingBlocks.length > 0) {
 				if (compat.requiresThinkingAsText) {
-					// Convert thinking blocks to text with <thinking> delimiters
-					const thinkingText = nonEmptyThinkingBlocks
-						.map((b) => `<thinking>\n${b.thinking}\n</thinking>`)
-						.join("\n");
+					// Convert thinking blocks to plain text (no tags to avoid model mimicking them)
+					const thinkingText = nonEmptyThinkingBlocks.map((b) => b.thinking).join("\n\n");
 					const textContent = assistantMsg.content as Array<{ type: "text"; text: string }> | null;
 					if (textContent) {
 						textContent.unshift({ type: "text", text: thinkingText });
