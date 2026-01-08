@@ -20,9 +20,9 @@ export { type SettingItem, SettingsList, type SettingsListTheme } from "./compon
 export { Spacer } from "./components/spacer.js";
 export { Text } from "./components/text.js";
 export { TruncatedText } from "./components/truncated-text.js";
+export { CURSOR_MARKER, CURSOR_MARKER_END } from "./cursor.js";
 // Editor component interface (for custom editors)
 export type { EditorComponent } from "./editor-component.js";
-export { CURSOR_MARKER, CURSOR_MARKER_END } from "./cursor.js";
 // Keybindings
 export {
 	DEFAULT_EDITOR_KEYBINDINGS,

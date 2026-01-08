@@ -1,6 +1,8 @@
 import {
 	type Component,
 	Container,
+	CURSOR_MARKER,
+	CURSOR_MARKER_END,
 	getEditorKeybindings,
 	Input,
 	matchesKey,
@@ -716,16 +718,24 @@ class TreeList implements Component {
 
 /** Component that displays the current search query */
 class SearchLine implements Component {
-	constructor(private treeList: TreeList) {}
+	constructor(
+		private treeList: TreeList,
+		private showCursor: () => boolean,
+	) {}
 
 	invalidate(): void {}
 
 	render(width: number): string[] {
 		const query = this.treeList.getSearchQuery();
-		if (query) {
-			return [truncateToWidth(`  ${theme.fg("muted", "Search:")} ${theme.fg("accent", query)}`, width)];
+		const label = `  ${theme.fg("muted", "Search:")} `;
+		const base = query ? `${label}${theme.fg("accent", query)}` : label;
+
+		if (!this.showCursor()) {
+			return [truncateToWidth(base, width)];
 		}
-		return [truncateToWidth(`  ${theme.fg("muted", "Search:")}`, width)];
+
+		const truncated = truncateToWidth(base, Math.max(0, width - 1));
+		return [`${truncated}${CURSOR_MARKER} ${CURSOR_MARKER_END}`];
 	}
 
 	handleInput(_keyData: string): void {}
@@ -810,7 +820,7 @@ export class TreeSelectorComponent extends Container {
 		this.addChild(
 			new TruncatedText(theme.fg("muted", "  ↑/↓: move. ←/→: page. l: label. ^O/⇧^O: filter. Type to search"), 0, 0),
 		);
-		this.addChild(new SearchLine(this.treeList));
+		this.addChild(new SearchLine(this.treeList, () => this.labelInput === null));
 		this.addChild(new DynamicBorder());
 		this.addChild(new Spacer(1));
 		this.addChild(this.treeContainer);
