@@ -63,6 +63,9 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		{ resolve: (value: any) => void; reject: (error: Error) => void }
 	>();
 
+	// Shutdown request flag
+	let shutdownRequested = false;
+
 	/** Helper for dialog methods with signal/timeout support */
 	function createDialogPromise<T>(
 		opts: ExtensionUIDialogOptions | undefined,
@@ -265,6 +268,9 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				isIdle: () => !session.isStreaming,
 				abort: () => session.abort(),
 				hasPendingMessages: () => session.pendingMessageCount > 0,
+				shutdown: () => {
+					shutdownRequested = true;
+				},
 			},
 			// ExtensionCommandContextActions - commands invokable via prompt("/command")
 			{
@@ -515,6 +521,22 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		}
 	};
 
+	/**
+	 * Check if shutdown was requested and perform shutdown if so.
+	 * Called after handling each command when waiting for the next command.
+	 */
+	async function checkShutdownRequested(): Promise<void> {
+		if (!shutdownRequested) return;
+
+		if (extensionRunner?.hasHandlers("session_shutdown")) {
+			await extensionRunner.emit({ type: "session_shutdown" });
+		}
+
+		// Close readline interface to stop waiting for input
+		rl.close();
+		process.exit(0);
+	}
+
 	// Listen for JSON input
 	const rl = readline.createInterface({
 		input: process.stdin,
@@ -541,6 +563,9 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			const command = parsed as RpcCommand;
 			const response = await handleCommand(command);
 			output(response);
+
+			// Check for deferred shutdown request (idle between commands)
+			await checkShutdownRequested();
 		} catch (e: any) {
 			output(error(undefined, "parse", `Failed to parse command: ${e.message}`));
 		}

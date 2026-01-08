@@ -55,6 +55,22 @@ export type NavigateTreeHandler = (
 	options?: { summarize?: boolean },
 ) => Promise<{ cancelled: boolean }>;
 
+export type ShutdownHandler = () => void;
+
+/**
+ * Helper function to emit session_shutdown event to extensions.
+ * Returns true if the event was emitted, false if there were no handlers.
+ */
+export async function emitSessionShutdownEvent(extensionRunner: ExtensionRunner | undefined): Promise<boolean> {
+	if (extensionRunner?.hasHandlers("session_shutdown")) {
+		await extensionRunner.emit({
+			type: "session_shutdown",
+		});
+		return true;
+	}
+	return false;
+}
+
 const noOpUIContext: ExtensionUIContext = {
 	select: async () => undefined,
 	confirm: async () => false,
@@ -91,6 +107,7 @@ export class ExtensionRunner {
 	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
 	private branchHandler: BranchHandler = async () => ({ cancelled: false });
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
+	private shutdownHandler: ShutdownHandler = () => {};
 
 	constructor(
 		extensions: Extension[],
@@ -129,6 +146,7 @@ export class ExtensionRunner {
 		this.isIdleFn = contextActions.isIdle;
 		this.abortFn = contextActions.abort;
 		this.hasPendingMessagesFn = contextActions.hasPendingMessages;
+		this.shutdownHandler = contextActions.shutdown;
 
 		// Command context actions (optional, only for interactive mode)
 		if (commandContextActions) {
@@ -137,7 +155,6 @@ export class ExtensionRunner {
 			this.branchHandler = commandContextActions.branch;
 			this.navigateTreeHandler = commandContextActions.navigateTree;
 		}
-
 		this.uiContext = uiContext ?? noOpUIContext;
 	}
 
@@ -282,6 +299,7 @@ export class ExtensionRunner {
 			isIdle: () => this.isIdleFn(),
 			abort: () => this.abortFn(),
 			hasPendingMessages: () => this.hasPendingMessagesFn(),
+			shutdown: () => this.shutdownHandler(),
 		};
 	}
 

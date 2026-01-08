@@ -8,7 +8,13 @@ export {
 	loadExtensionFromFactory,
 	loadExtensions,
 } from "./loader.js";
-export type { BranchHandler, ExtensionErrorListener, NavigateTreeHandler, NewSessionHandler } from "./runner.js";
+export type {
+	BranchHandler,
+	ExtensionErrorListener,
+	NavigateTreeHandler,
+	NewSessionHandler,
+	ShutdownHandler,
+} from "./runner.js";
 export { ExtensionRunner } from "./runner.js";
 export type {
 	AgentEndEvent,

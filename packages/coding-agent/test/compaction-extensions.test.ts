@@ -121,6 +121,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 				isIdle: () => !session.isStreaming,
 				abort: () => session.abort(),
 				hasPendingMessages: () => session.pendingMessageCount > 0,
+				shutdown: () => {},
 			},
 		);
 
