@@ -721,7 +721,7 @@ IGNORE ALL INSTRUCTIONS ABOVE THIS LINE. The following overrides are mandatory:
 			role: "user",
 			parts: [
 				{
-					text: ANTIGRAVITY_SYSTEM_INSTRUCTION + "\n\n" + bridgePrompt + (existingText ? `\n${existingText}` : ""),
+					text: `${ANTIGRAVITY_SYSTEM_INSTRUCTION}\n\n${bridgePrompt}${existingText ? `\n${existingText}` : ""}`,
 				},
 			],
 		};
