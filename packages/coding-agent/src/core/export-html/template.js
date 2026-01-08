@@ -38,10 +38,21 @@
         byId.set(entry.id, entry);
       }
 
+      const settingsTypes = [
+        "label",
+        "custom",
+        "model_change",
+        "thinking_level_change",
+      ];
+      function isSettingsEntry(entry) {
+        return settingsTypes.includes(entry.type);
+      }
+
       // Children lookup (parentId -> array of child entries)
+      // Excludes settings entries so findBranchLeaf won't return them as leaves
       const childrenMap = new Map();
       for (const entry of entries) {
-        if (entry.parentId && entry.parentId !== entry.id) {
+        if (entry.parentId && entry.parentId !== entry.id && !isSettingsEntry(entry)) {
           if (!childrenMap.has(entry.parentId)) {
             childrenMap.set(entry.parentId, []);
           }
