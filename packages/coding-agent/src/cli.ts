@@ -5,6 +5,14 @@
  *
  * Test with: npx tsx src/cli-new.ts [args...]
  */
+import { handleUpdate } from "./cli/update.js";
 import { main } from "./main.js";
 
-main(process.argv.slice(2));
+const args = process.argv.slice(2);
+
+// Handle `pi update` before anything else
+if (args[0] === "update") {
+	handleUpdate().then(() => process.exit(0));
+} else {
+	main(args);
+}

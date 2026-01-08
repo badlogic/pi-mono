@@ -168,6 +168,9 @@ export function printHelp(): void {
 ${chalk.bold("Usage:")}
   ${APP_NAME} [options] [@files...] [messages...]
 
+${chalk.bold("Commands:")}
+  update                         Update ${APP_NAME} to the latest version
+
 ${chalk.bold("Options:")}
   --provider <name>              Provider name (default: google)
   --model <id>                   Model ID (default: gemini-2.5-flash)

@@ -5,6 +5,7 @@
 ### Added
 
 - `--no-tools` flag to disable all built-in tools, allowing extension-only tool setups ([#555](https://github.com/badlogic/pi-mono/issues/555))
+- `pi update` command to update to the latest version. Detects install method (npm, pnpm, bun) and runs the appropriate update command.
 
 ## [0.38.0] - 2026-01-08
 
