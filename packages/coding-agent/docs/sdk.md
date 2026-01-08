@@ -886,9 +886,65 @@ session.subscribe((event) => {
 await session.prompt("Get status and list files.");
 ```
 
+## Run Modes
+
+The SDK exports run mode utilities for building custom interfaces on top of `createAgentSession()`:
+
+### InteractiveMode
+
+Full TUI interactive mode with editor, chat history, and all built-in commands:
+
+```typescript
+import { createAgentSession, InteractiveMode } from "@mariozechner/pi-coding-agent";
+
+const { session } = await createAgentSession({ /* ... */ });
+
+const mode = new InteractiveMode(session, {
+  // All optional
+  migratedProviders: [],           // Show migration warnings
+  modelFallbackMessage: undefined, // Show model restore warning
+  initialMessage: "Hello",         // Send on startup
+  initialImages: [],               // Images with initial message
+  initialMessages: [],             // Additional startup prompts
+});
+
+await mode.run();  // Blocks until exit
+```
+
+### runPrintMode
+
+Single-shot mode: send prompts, output result, exit:
+
+```typescript
+import { createAgentSession, runPrintMode } from "@mariozechner/pi-coding-agent";
+
+const { session } = await createAgentSession({ /* ... */ });
+
+await runPrintMode(session, {
+  mode: "text",              // "text" for final response, "json" for all events
+  initialMessage: "Hello",   // First message (can include @file content)
+  initialImages: [],         // Images with initial message
+  messages: ["Follow up"],   // Additional prompts
+});
+```
+
+### runRpcMode
+
+JSON-RPC mode for subprocess integration:
+
+```typescript
+import { createAgentSession, runRpcMode } from "@mariozechner/pi-coding-agent";
+
+const { session } = await createAgentSession({ /* ... */ });
+
+await runRpcMode(session);  // Reads JSON commands from stdin, writes to stdout
+```
+
+See [RPC documentation](rpc.md) for the JSON protocol.
+
 ## RPC Mode Alternative
 
-For subprocess-based integration, use RPC mode instead of the SDK:
+For subprocess-based integration without building with the SDK, use the CLI directly:
 
 ```bash
 pi --mode rpc --no-session

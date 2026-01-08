@@ -380,7 +380,12 @@ export async function main(args: string[]) {
 		});
 		await mode.run();
 	} else {
-		await runPrintMode(session, mode, parsed.messages, initialMessage, initialImages);
+		await runPrintMode(session, {
+			mode,
+			messages: parsed.messages,
+			initialMessage,
+			initialImages,
+		});
 		stopThemeWatcher();
 		if (process.stdout.writableLength > 0) {
 			await new Promise<void>((resolve) => process.stdout.once("drain", resolve));

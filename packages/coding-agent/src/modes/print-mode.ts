@@ -10,22 +10,25 @@ import type { AssistantMessage, ImageContent } from "@mariozechner/pi-ai";
 import type { AgentSession } from "../core/agent-session.js";
 
 /**
+ * Options for print mode.
+ */
+export interface PrintModeOptions {
+	/** Output mode: "text" for final response only, "json" for all events */
+	mode: "text" | "json";
+	/** Array of additional prompts to send after initialMessage */
+	messages?: string[];
+	/** First message to send (may contain @file content) */
+	initialMessage?: string;
+	/** Images to attach to the initial message */
+	initialImages?: ImageContent[];
+}
+
+/**
  * Run in print (single-shot) mode.
  * Sends prompts to the agent and outputs the result.
- *
- * @param session The agent session
- * @param mode Output mode: "text" for final response only, "json" for all events
- * @param messages Array of prompts to send
- * @param initialMessage Optional first message (may contain @file content)
- * @param initialImages Optional images for the initial message
  */
-export async function runPrintMode(
-	session: AgentSession,
-	mode: "text" | "json",
-	messages: string[],
-	initialMessage?: string,
-	initialImages?: ImageContent[],
-): Promise<void> {
+export async function runPrintMode(session: AgentSession, options: PrintModeOptions): Promise<void> {
+	const { mode, messages = [], initialMessage, initialImages } = options;
 	// Set up extensions for print mode (no UI, no command context)
 	const extensionRunner = session.extensionRunner;
 	if (extensionRunner) {

@@ -24,6 +24,12 @@
 - `createExtensionRuntime()` function to create runtime with throwing stubs
 - `Extension` type exported (cleaner name for loaded extension data)
 - Interactive mode now warns when extensions override built-in tools (read, bash, edit, write, grep, find, ls)
+- `InteractiveMode` constructor simplified to `(session, options?)` with `InteractiveModeOptions` interface
+- `InteractiveMode.run()` method for complete initialization and interactive loop
+- `InteractiveModeOptions` exported for SDK users building custom interactive modes
+- `runPrintMode()` now takes `(session, options)` with `PrintModeOptions` interface
+- `PrintModeOptions` exported for SDK users
+- Run mode utilities exported from main package: `InteractiveMode`, `InteractiveModeOptions`, `runPrintMode`, `PrintModeOptions`, `runRpcMode`
 
 ### Changed
 

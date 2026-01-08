@@ -202,6 +202,14 @@ export {
 } from "./core/tools/index.js";
 // Main entry point
 export { main } from "./main.js";
+// Run modes for programmatic SDK usage
+export {
+	InteractiveMode,
+	type InteractiveModeOptions,
+	type PrintModeOptions,
+	runPrintMode,
+	runRpcMode,
+} from "./modes/index.js";
 // UI components for extensions
 export {
 	ArminComponent,
