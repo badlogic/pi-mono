@@ -77,6 +77,7 @@ import {
 	getAvailableThemes,
 	getEditorTheme,
 	getMarkdownTheme,
+	initTheme,
 	onThemeChange,
 	setTheme,
 	type Theme,
@@ -227,6 +228,9 @@ export class InteractiveMode {
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
+
+		// Initialize theme with watcher for interactive mode
+		initTheme(this.settingsManager.getTheme(), true);
 	}
 
 	private setupAutocomplete(fdPath: string | undefined): void {
