@@ -6,6 +6,10 @@
 
 - `--no-tools` flag to disable all built-in tools, allowing extension-only tool setups ([#555](https://github.com/badlogic/pi-mono/issues/555))
 
+### Fixed
+
+- Update notification for bun binary installs now shows release download URL instead of npm command ([#567](https://github.com/badlogic/pi-mono/pull/567) by [@ferologics](https://github.com/ferologics))
+
 ## [0.38.0] - 2026-01-08
 
 ### Breaking Changes

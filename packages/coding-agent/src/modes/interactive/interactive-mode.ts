@@ -32,7 +32,7 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { spawn, spawnSync } from "child_process";
-import { APP_NAME, getAuthPath, getDebugLogPath, VERSION } from "../../config.js";
+import { APP_NAME, getAuthPath, getDebugLogPath, isBunBinary, VERSION } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type {
 	ExtensionContext,
@@ -2148,17 +2148,16 @@ export class InteractiveMode {
 	}
 
 	showNewVersionNotification(newVersion: string): void {
+		const updateInstruction = isBunBinary
+			? theme.fg("muted", `New version ${newVersion} is available. Download from: `) +
+				theme.fg("accent", "https://github.com/badlogic/pi-mono/releases/latest")
+			: theme.fg("muted", `New version ${newVersion} is available. Run: `) +
+				theme.fg("accent", "npm install -g @mariozechner/pi-coding-agent");
+
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
 		this.chatContainer.addChild(
-			new Text(
-				theme.bold(theme.fg("warning", "Update Available")) +
-					"\n" +
-					theme.fg("muted", `New version ${newVersion} is available. Run: `) +
-					theme.fg("accent", "npm install -g @mariozechner/pi-coding-agent"),
-				1,
-				0,
-			),
+			new Text(`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}`, 1, 0),
 		);
 		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
 		this.ui.requestRender();
