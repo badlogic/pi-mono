@@ -9,6 +9,7 @@
 - `setActiveTools()` in ExtensionAPI for dynamic tool management
 - Built-in renderers used automatically for tool overrides without custom `renderCall`/`renderResult`
 - `ssh.ts` example: remote tool execution via `--ssh user@host:/path`
+- Wayland clipboard support for `/copy` command using wl-copy with xclip/xsel fallback ([#570](https://github.com/badlogic/pi-mono/pull/570) by [@OgulcanCelik](https://github.com/OgulcanCelik))
 
 ### Fixed
 
