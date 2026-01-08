@@ -18,8 +18,25 @@ function isDarkMode(): boolean {
 }
 
 export default function (pi: ExtensionAPI) {
+	let intervalId: ReturnType<typeof setInterval> | null = null;
+
 	pi.on("session_start", (_event, ctx) => {
-		const theme = isDarkMode() ? "dark" : "light";
-		ctx.ui.setTheme(theme);
+		let currentTheme = isDarkMode() ? "dark" : "light";
+		ctx.ui.setTheme(currentTheme);
+
+		intervalId = setInterval(() => {
+			const newTheme = isDarkMode() ? "dark" : "light";
+			if (newTheme !== currentTheme) {
+				currentTheme = newTheme;
+				ctx.ui.setTheme(currentTheme);
+			}
+		}, 2000);
+	});
+
+	pi.on("session_shutdown", () => {
+		if (intervalId) {
+			clearInterval(intervalId);
+			intervalId = null;
+		}
 	});
 }
