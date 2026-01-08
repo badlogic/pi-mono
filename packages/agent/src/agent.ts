@@ -10,6 +10,7 @@ import {
 	type Model,
 	streamSimple,
 	type TextContent,
+	type ThinkingBudgets,
 } from "@mariozechner/pi-ai";
 import { agentLoop, agentLoopContinue } from "./agent-loop.js";
 import type {
@@ -71,6 +72,11 @@ export interface AgentOptions {
 	 * Useful for expiring tokens (e.g., GitHub Copilot OAuth).
 	 */
 	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+
+	/**
+	 * Custom token budgets for thinking levels (token-based providers only).
+	 */
+	thinkingBudgets?: ThinkingBudgets;
 }
 
 export class Agent {
@@ -99,6 +105,7 @@ export class Agent {
 	public getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
 	private runningPrompt?: Promise<void>;
 	private resolveRunningPrompt?: () => void;
+	private _thinkingBudgets?: ThinkingBudgets;
 
 	constructor(opts: AgentOptions = {}) {
 		this._state = { ...this._state, ...opts.initialState };
@@ -109,6 +116,7 @@ export class Agent {
 		this.streamFn = opts.streamFn || streamSimple;
 		this._sessionId = opts.sessionId;
 		this.getApiKey = opts.getApiKey;
+		this._thinkingBudgets = opts.thinkingBudgets;
 	}
 
 	/**
@@ -124,6 +132,20 @@ export class Agent {
 	 */
 	set sessionId(value: string | undefined) {
 		this._sessionId = value;
+	}
+
+	/**
+	 * Get the current thinking budgets.
+	 */
+	get thinkingBudgets(): ThinkingBudgets | undefined {
+		return this._thinkingBudgets;
+	}
+
+	/**
+	 * Set custom thinking budgets for token-based providers.
+	 */
+	set thinkingBudgets(value: ThinkingBudgets | undefined) {
+		this._thinkingBudgets = value;
 	}
 
 	get state(): AgentState {
@@ -310,6 +332,7 @@ export class Agent {
 			model,
 			reasoning,
 			sessionId: this._sessionId,
+			thinkingBudgets: this._thinkingBudgets,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,

@@ -39,6 +39,13 @@ export interface ImageSettings {
 	blockImages?: boolean; // default: false - when true, prevents all images from being sent to LLM providers
 }
 
+export interface ThinkingBudgetsSettings {
+	minimal?: number;
+	low?: number;
+	medium?: number;
+	high?: number;
+}
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
@@ -59,6 +66,7 @@ export interface Settings {
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
 	doubleEscapeAction?: "branch" | "tree"; // Action for double-escape with empty editor (default: "tree")
+	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -379,6 +387,10 @@ export class SettingsManager {
 			ignoredSkills: [...(this.settings.skills?.ignoredSkills ?? [])],
 			includeSkills: [...(this.settings.skills?.includeSkills ?? [])],
 		};
+	}
+
+	getThinkingBudgets(): ThinkingBudgetsSettings | undefined {
+		return this.settings.thinkingBudgets;
 	}
 
 	getShowImages(): boolean {

@@ -16,6 +16,7 @@
 
 - SDK: `InteractiveMode`, `runPrintMode()`, `runRpcMode()` exported for building custom run modes. See `docs/sdk.md`.
 - `PI_SKIP_VERSION_CHECK` environment variable to disable new version notifications at startup ([#549](https://github.com/badlogic/pi-mono/pull/549) by [@aos](https://github.com/aos))
+- `thinkingBudgets` setting to customize token budgets per thinking level for token-based providers ([#529](https://github.com/badlogic/pi-mono/pull/529) by [@melihmucuk](https://github.com/melihmucuk))
 - Extension UI dialogs (`ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`) now support a `timeout` option with live countdown display ([#522](https://github.com/badlogic/pi-mono/pull/522) by [@nicobailon](https://github.com/nicobailon))
 - Extensions can now provide custom editor components via `ctx.ui.setEditorComponent()`. See `examples/extensions/modal-editor.ts` and `docs/tui.md` Pattern 7.
 - Extension factories can now be async, enabling dynamic imports and lazy-loaded dependencies ([#513](https://github.com/badlogic/pi-mono/pull/513) by [@austinm911](https://github.com/austinm911))
@@ -135,6 +136,7 @@
 This release unifies hooks and custom tools into a single "extensions" system and renames "slash commands" to "prompt templates". ([#454](https://github.com/badlogic/pi-mono/issues/454))
 
 **Before migrating, read:**
+
 - [docs/extensions.md](docs/extensions.md) - Full API reference
 - [README.md](README.md) - Extensions section with examples
 - [examples/extensions/](examples/extensions/) - Working examples
@@ -144,14 +146,17 @@ This release unifies hooks and custom tools into a single "extensions" system an
 Hooks and custom tools are now unified as **extensions**. Both were TypeScript modules exporting a factory function that receives an API object. Now there's one concept, one discovery location, one CLI flag, one settings.json entry.
 
 **Automatic migration:**
+
 - `commands/` directories are automatically renamed to `prompts/` on startup (both `~/.pi/agent/commands/` and `.pi/commands/`)
 
 **Manual migration required:**
+
 1. Move files from `hooks/` and `tools/` directories to `extensions/` (deprecation warnings shown on startup)
 2. Update imports and type names in your extension code
 3. Update `settings.json` if you have explicit hook and custom tool paths configured
 
 **Directory changes:**
+
 ```
 # Before
 ~/.pi/agent/hooks/*.ts       →  ~/.pi/agent/extensions/*.ts
@@ -161,6 +166,7 @@ Hooks and custom tools are now unified as **extensions**. Both were TypeScript m
 ```
 
 **Extension discovery rules** (in `extensions/` directories):
+
 1. **Direct files:** `extensions/*.ts` or `*.js` → loaded directly
 2. **Subdirectory with index:** `extensions/myext/index.ts` → loaded as single extension
 3. **Subdirectory with package.json:** `extensions/myext/package.json` with `"pi"` field → loads declared paths
@@ -179,6 +185,7 @@ Hooks and custom tools are now unified as **extensions**. Both were TypeScript m
 No recursion beyond one level. Complex packages must use the `package.json` manifest. Dependencies are resolved via jiti, and extensions can be published to and installed from npm.
 
 **Type renames:**
+
 - `HookAPI` → `ExtensionAPI`
 - `HookContext` → `ExtensionContext`
 - `HookCommandContext` → `ExtensionCommandContext`
@@ -191,6 +198,7 @@ No recursion beyond one level. Complex packages must use the `package.json` mani
 - `HookMessage` → `CustomMessage`
 
 **Import changes:**
+
 ```typescript
 // Before (hook)
 import type { HookAPI, HookContext } from "@mariozechner/pi-coding-agent";
@@ -233,6 +241,7 @@ export default function (pi: ExtensionAPI) {
 - `ctx.sessionManager` - Read session entries, get branch history
 
 **Settings changes:**
+
 ```json
 // Before
 {
@@ -247,6 +256,7 @@ export default function (pi: ExtensionAPI) {
 ```
 
 **CLI changes:**
+
 ```bash
 # Before
 pi --hook ./safety.ts --tool ./todo.ts
@@ -262,22 +272,26 @@ pi --extension ./safety.ts -e ./todo.ts
 **Automatic migration:** The `commands/` directory is automatically renamed to `prompts/` on startup (if `prompts/` doesn't exist). Works for both regular directories and symlinks.
 
 **Directory changes:**
+
 ```
 ~/.pi/agent/commands/*.md    →  ~/.pi/agent/prompts/*.md
 .pi/commands/*.md            →  .pi/prompts/*.md
 ```
 
 **SDK type renames:**
+
 - `FileSlashCommand` → `PromptTemplate`
 - `LoadSlashCommandsOptions` → `LoadPromptTemplatesOptions`
 
 **SDK function renames:**
+
 - `discoverSlashCommands()` → `discoverPromptTemplates()`
 - `loadSlashCommands()` → `loadPromptTemplates()`
 - `expandSlashCommand()` → `expandPromptTemplate()`
 - `getCommandsDir()` → `getPromptsDir()`
 
 **SDK option renames:**
+
 - `CreateAgentSessionOptions.slashCommands` → `.promptTemplates`
 - `AgentSession.fileCommands` → `.promptTemplates`
 - `PromptOptions.expandSlashCommands` → `.expandPromptTemplates`
@@ -285,17 +299,20 @@ pi --extension ./safety.ts -e ./todo.ts
 ### SDK Migration
 
 **Discovery functions:**
+
 - `discoverAndLoadHooks()` → `discoverAndLoadExtensions()`
 - `discoverAndLoadCustomTools()` → merged into `discoverAndLoadExtensions()`
 - `loadHooks()` → `loadExtensions()`
 - `loadCustomTools()` → merged into `loadExtensions()`
 
 **Runner and wrapper:**
+
 - `HookRunner` → `ExtensionRunner`
 - `wrapToolsWithHooks()` → `wrapToolsWithExtensions()`
 - `wrapToolWithHooks()` → `wrapToolWithExtensions()`
 
 **CreateAgentSessionOptions:**
+
 - `.hooks` → removed (use `.additionalExtensionPaths` for paths)
 - `.additionalHookPaths` → `.additionalExtensionPaths`
 - `.preloadedHooks` → `.preloadedExtensions`
@@ -304,6 +321,7 @@ pi --extension ./safety.ts -e ./todo.ts
 - `.slashCommands` → `.promptTemplates`
 
 **AgentSession:**
+
 - `.hookRunner` → `.extensionRunner`
 - `.fileCommands` → `.promptTemplates`
 - `.sendHookMessage()` → `.sendCustomMessage()`
@@ -311,6 +329,7 @@ pi --extension ./safety.ts -e ./todo.ts
 ### Session Migration
 
 **Automatic.** Session version bumped from 2 to 3. Existing sessions are migrated on first load:
+
 - Message role `"hookMessage"` → `"custom"`
 
 ### Breaking Changes
@@ -424,7 +443,7 @@ pi --extension ./safety.ts -e ./todo.ts
   - `steer()` and `followUp()` now expand file-based slash commands and error on hook commands (hook commands cannot be queued)
   - `prompt()` accepts new `streamingBehavior` option (`"steer"` or `"followUp"`) to specify queueing behavior during streaming
   - RPC `prompt` command now accepts optional `streamingBehavior` field
-  ([#420](https://github.com/badlogic/pi-mono/issues/420))
+    ([#420](https://github.com/badlogic/pi-mono/issues/420))
 
 ### Fixed
 
@@ -510,10 +529,12 @@ See [docs/session.md](docs/session.md) for the file format and `SessionManager` 
 The hooks API has been restructured with more granular events and better session access.
 
 **Type renames:**
+
 - `HookEventContext` → `HookContext`
 - `HookCommandContext` is now a new interface extending `HookContext` with session control methods
 
 **Event changes:**
+
 - The monolithic `session` event is now split into granular events: `session_start`, `session_before_switch`, `session_switch`, `session_before_branch`, `session_branch`, `session_before_compact`, `session_compact`, `session_shutdown`
 - `session_before_switch` and `session_switch` events now include `reason: "new" | "resume"` to distinguish between `/new` and `/resume`
 - New `session_before_tree` and `session_tree` events for `/tree` navigation (hook can provide custom branch summary)
@@ -522,6 +543,7 @@ The hooks API has been restructured with more granular events and better session
 - Session entries are no longer passed in events. Use `ctx.sessionManager.getEntries()` or `ctx.sessionManager.getBranch()` instead
 
 **API changes:**
+
 - `pi.send(text, attachments?)` → `pi.sendMessage(message, triggerTurn?)` (creates `CustomMessageEntry`)
 - New `pi.appendEntry(customType, data?)` for hook state persistence (not in LLM context)
 - New `pi.registerCommand(name, options)` for custom slash commands (handler receives `HookCommandContext`)
@@ -536,6 +558,7 @@ The hooks API has been restructured with more granular events and better session
 - New `ctx.modelRegistry` and `ctx.model` for API key resolution
 
 **HookCommandContext (slash commands only):**
+
 - `ctx.waitForIdle()` - wait for agent to finish streaming
 - `ctx.newSession(options?)` - create new sessions with optional setup callback
 - `ctx.branch(entryId)` - branch from a specific entry
@@ -544,6 +567,7 @@ The hooks API has been restructured with more granular events and better session
 These methods are only on `HookCommandContext` (not `HookContext`) because they can deadlock if called from event handlers that run inside the agent loop.
 
 **Removed:**
+
 - `hookTimeout` setting (hooks no longer have timeouts; use Ctrl+C to abort)
 - `resolveApiKey` parameter (use `ctx.modelRegistry.getApiKey(model)`)
 
@@ -554,12 +578,14 @@ See [docs/hooks.md](docs/hooks.md) and [examples/hooks/](examples/hooks/) for th
 The custom tools API has been restructured to mirror the hooks pattern with a context object.
 
 **Type renames:**
+
 - `CustomAgentTool` → `CustomTool`
 - `ToolAPI` → `CustomToolAPI`
 - `ToolContext` → `CustomToolContext`
 - `ToolSessionEvent` → `CustomToolSessionEvent`
 
 **Execute signature changed:**
+
 ```typescript
 // Before (v0.30.2)
 execute(toolCallId, params, signal, onUpdate)
@@ -569,11 +595,13 @@ execute(toolCallId, params, onUpdate, ctx, signal?)
 ```
 
 The new `ctx: CustomToolContext` provides `sessionManager`, `modelRegistry`, `model`, and agent state methods:
+
 - `ctx.isIdle()` - check if agent is streaming
 - `ctx.hasQueuedMessages()` - check if user has queued messages (skip interactive prompts)
 - `ctx.abort()` - abort current operation (fire-and-forget)
 
 **Session event changes:**
+
 - `CustomToolSessionEvent` now only has `reason` and `previousSessionFile`
 - Session entries are no longer in the event. Use `ctx.sessionManager.getBranch()` or `ctx.sessionManager.getEntries()` to reconstruct state
 - Reasons: `"start" | "switch" | "branch" | "tree" | "shutdown"` (no separate `"new"` reason; `/new` triggers `"switch"`)
@@ -584,6 +612,7 @@ See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](ex
 ### SDK Migration
 
 **Type changes:**
+
 - `CustomAgentTool` → `CustomTool`
 - `AppMessage` → `AgentMessage`
 - `sessionFile` returns `string | undefined` (was `string | null`)
@@ -591,6 +620,7 @@ See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](ex
 - `Attachment` type removed. Use `ImageContent` from `@mariozechner/pi-ai` instead. Add images directly to message content arrays.
 
 **AgentSession API:**
+
 - `branch(entryIndex: number)` → `branch(entryId: string)`
 - `getUserMessagesForBranching()` returns `{ entryId, text }` instead of `{ entryIndex, text }`
 - `reset()` → `newSession(options?)` where options has optional `parentSession` for lineage tracking
@@ -598,9 +628,11 @@ See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](ex
 - New `navigateTree(targetId, options?)` for in-place tree navigation
 
 **Hook integration:**
+
 - New `sendHookMessage(message, triggerTurn?)` for hook message injection
 
 **SessionManager API:**
+
 - Method renames: `saveXXX()` → `appendXXX()` (e.g., `appendMessage`, `appendCompaction`)
 - `branchInPlace()` → `branch()`
 - `reset()` → `newSession(options?)` with optional `parentSession` for lineage tracking
@@ -618,10 +650,13 @@ See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](ex
 `ModelRegistry` is a new class that manages model discovery and API key resolution. It combines built-in models with custom models from `models.json` and resolves API keys via `AuthStorage`.
 
 ```typescript
-import { discoverAuthStorage, discoverModels } from "@mariozechner/pi-coding-agent";
+import {
+  discoverAuthStorage,
+  discoverModels,
+} from "@mariozechner/pi-coding-agent";
 
-const authStorage = discoverAuthStorage();  // ~/.pi/agent/auth.json
-const modelRegistry = discoverModels(authStorage);  // + ~/.pi/agent/models.json
+const authStorage = discoverAuthStorage(); // ~/.pi/agent/auth.json
+const modelRegistry = discoverModels(authStorage); // + ~/.pi/agent/models.json
 
 // Get all models (built-in + custom)
 const allModels = modelRegistry.getAll();
@@ -639,6 +674,7 @@ const apiKey = await modelRegistry.getApiKey(model);
 This replaces the old `resolveApiKey` callback pattern. Hooks and custom tools access it via `ctx.modelRegistry`.
 
 **Renamed exports:**
+
 - `messageTransformer` → `convertToLlm`
 - `SessionContext` alias `LoadedSession` removed
 
@@ -647,17 +683,21 @@ See [docs/sdk.md](docs/sdk.md) and [examples/sdk/](examples/sdk/) for the curren
 ### RPC Migration
 
 **Session commands:**
+
 - `reset` command → `new_session` command with optional `parentSession` field
 
 **Branching commands:**
+
 - `branch` command: `entryIndex` → `entryId`
 - `get_branch_messages` response: `entryIndex` → `entryId`
 
 **Type changes:**
+
 - Messages are now `AgentMessage` (was `AppMessage`)
 - `prompt` command: `attachments` field replaced with `images` field using `ImageContent` format
 
 **Compaction events:**
+
 - `auto_compaction_start` now includes `reason` field (`"threshold"` or `"overflow"`)
 - `auto_compaction_end` now includes `willRetry` field
 - `compact` response includes full `CompactionResult` (`summary`, `firstKeptEntryId`, `tokensBefore`, `details`)
@@ -667,6 +707,7 @@ See [docs/rpc.md](docs/rpc.md) for the current protocol.
 ### Structured Compaction
 
 Compaction and branch summarization now use a structured output format:
+
 - Clear sections: Goal, Progress, Key Information, File Operations
 - File tracking: `readFiles` and `modifiedFiles` arrays in `details`, accumulated across compactions
 - Conversations are serialized to text before summarization to prevent the model from "continuing" them
@@ -676,6 +717,7 @@ The `before_compact` and `before_tree` hook events allow custom compaction imple
 ### Interactive Mode
 
 **`/tree` command:**
+
 - Navigate the full session tree in-place
 - Search by typing, page with ←/→
 - Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
@@ -683,12 +725,14 @@ The `before_compact` and `before_tree` hook events allow custom compaction imple
 - Selecting a branch switches context and optionally injects a summary of the abandoned branch
 
 **Entry labels:**
+
 - Bookmark any entry via `/tree` → select → `l`
 - Labels appear in tree view and persist as `LabelEntry`
 
 **Theme changes (breaking for custom themes):**
 
 Custom themes must add these new color tokens or they will fail to load:
+
 - `selectedBg`: background for selected/highlighted items in tree selector and other components
 - `customMessageBg`: background for hook-injected messages (`CustomMessageEntry`)
 - `customMessageText`: text color for hook messages
@@ -697,6 +741,7 @@ Custom themes must add these new color tokens or they will fail to load:
 Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) for the full color list and copy values from the built-in dark/light themes.
 
 **Settings:**
+
 - `enabledModels`: allowlist models in `settings.json` (same format as `--models` CLI)
 
 ### Added
@@ -794,6 +839,7 @@ Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) fo
 - **Credential storage refactored**: API keys and OAuth tokens are now stored in `~/.pi/agent/auth.json` instead of `oauth.json` and `settings.json`. Existing credentials are automatically migrated on first run. ([#296](https://github.com/badlogic/pi-mono/issues/296))
 
 - **SDK API changes** ([#296](https://github.com/badlogic/pi-mono/issues/296)):
+
   - Added `AuthStorage` class for credential management (API keys and OAuth tokens)
   - Added `ModelRegistry` class for model discovery and API key resolution
   - Added `discoverAuthStorage()` and `discoverModels()` discovery functions
@@ -832,6 +878,7 @@ Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) fo
 ### Added
 
 - **Compaction hook improvements**: The `before_compact` session event now includes:
+
   - `previousSummary`: Summary from the last compaction (if any), so hooks can preserve accumulated context
   - `messagesToKeep`: Messages that will be kept after the summary (recent turns), in addition to `messagesToSummarize`
   - `resolveApiKey`: Function to resolve API keys for any model (checks settings, OAuth, env vars)
@@ -1094,6 +1141,7 @@ Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) fo
 - Improved system prompt documentation section with clearer pointers to specific doc files for custom models, themes, skills, hooks, custom tools, and RPC.
 
 - Cleaned up documentation:
+
   - `theme.md`: Added missing color tokens (`thinkingXhigh`, `bashMode`)
   - `skills.md`: Rewrote with better framing and examples
   - `hooks.md`: Fixed timeout/error handling docs, added import aliases section

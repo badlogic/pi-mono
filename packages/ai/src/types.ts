@@ -58,6 +58,14 @@ export type Provider = KnownProvider | string;
 
 export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
 
+/** Token budgets for each thinking level (token-based providers only) */
+export interface ThinkingBudgets {
+	minimal?: number;
+	low?: number;
+	medium?: number;
+	high?: number;
+}
+
 // Base options all providers share
 export interface StreamOptions {
 	temperature?: number;
@@ -75,6 +83,8 @@ export interface StreamOptions {
 // Unified options with reasoning passed to streamSimple() and completeSimple()
 export interface SimpleStreamOptions extends StreamOptions {
 	reasoning?: ThinkingLevel;
+	/** Custom token budgets for thinking levels (token-based providers only) */
+	thinkingBudgets?: ThinkingBudgets;
 }
 
 // Generic StreamFunction with typed options

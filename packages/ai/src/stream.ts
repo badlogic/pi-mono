@@ -22,6 +22,7 @@ import type {
 	Model,
 	OptionsForApi,
 	SimpleStreamOptions,
+	ThinkingBudgets,
 	ThinkingLevel,
 } from "./types.js";
 
@@ -192,15 +193,17 @@ function mapOptionsForApi<TApi extends Api>(
 
 			// Claude requires max_tokens > thinking.budget_tokens
 			// So we need to ensure maxTokens accounts for both thinking and output
-			const anthropicBudgets = {
+			const defaultBudgets: ThinkingBudgets = {
 				minimal: 1024,
 				low: 2048,
 				medium: 8192,
 				high: 16384,
 			};
+			const budgets = { ...defaultBudgets, ...options?.thinkingBudgets };
 
 			const minOutputTokens = 1024;
-			let thinkingBudget = anthropicBudgets[clampReasoning(options.reasoning)!];
+			const level = clampReasoning(options.reasoning)!;
+			let thinkingBudget = budgets[level]!;
 			// Caller's maxTokens is the desired output; add thinking budget on top, capped at model limit
 			const maxTokens = Math.min((base.maxTokens || 0) + thinkingBudget, model.maxTokens);
 
@@ -261,7 +264,7 @@ function mapOptionsForApi<TApi extends Api>(
 				...base,
 				thinking: {
 					enabled: true,
-					budgetTokens: getGoogleBudget(googleModel, effort),
+					budgetTokens: getGoogleBudget(googleModel, effort, options?.thinkingBudgets),
 				},
 			} satisfies GoogleOptions;
 		}
@@ -287,15 +290,16 @@ function mapOptionsForApi<TApi extends Api>(
 			// Models using thinkingBudget (Gemini 2.x, Claude via Antigravity)
 			// Claude requires max_tokens > thinking.budget_tokens
 			// So we need to ensure maxTokens accounts for both thinking and output
-			const budgets: Record<ClampedThinkingLevel, number> = {
+			const defaultBudgets: ThinkingBudgets = {
 				minimal: 1024,
 				low: 2048,
 				medium: 8192,
 				high: 16384,
 			};
+			const budgets = { ...defaultBudgets, ...options?.thinkingBudgets };
 
 			const minOutputTokens = 1024;
-			let thinkingBudget = budgets[effort];
+			let thinkingBudget = budgets[effort]!;
 			// Caller's maxTokens is the desired output; add thinking budget on top, capped at model limit
 			const maxTokens = Math.min((base.maxTokens || 0) + thinkingBudget, model.maxTokens);
 
@@ -338,7 +342,7 @@ function mapOptionsForApi<TApi extends Api>(
 				...base,
 				thinking: {
 					enabled: true,
-					budgetTokens: getGoogleBudget(geminiModel, effort),
+					budgetTokens: getGoogleBudget(geminiModel, effort, options?.thinkingBudgets),
 				},
 			} satisfies GoogleVertexOptions;
 		}
@@ -416,7 +420,16 @@ function getGeminiCliThinkingLevel(effort: ClampedThinkingLevel, modelId: string
 	}
 }
 
-function getGoogleBudget(model: Model<"google-generative-ai">, effort: ClampedThinkingLevel): number {
+function getGoogleBudget(
+	model: Model<"google-generative-ai">,
+	effort: ClampedThinkingLevel,
+	customBudgets?: ThinkingBudgets,
+): number {
+	// Custom budgets take precedence if provided for this level
+	if (customBudgets?.[effort] !== undefined) {
+		return customBudgets[effort]!;
+	}
+
 	// See https://ai.google.dev/gemini-api/docs/thinking#set-budget
 	if (model.id.includes("2.5-pro")) {
 		const budgets: Record<ClampedThinkingLevel, number> = {
