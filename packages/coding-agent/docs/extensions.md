@@ -946,13 +946,15 @@ pi.registerTool({
 
 Extensions can override built-in tools (`read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`) by registering a tool with the same name. Interactive mode displays a warning when this happens.
 
-Use `--no-tools` to start without built-in tools, then add back specific ones with `--tools`:
+```bash
+# Extension's read tool replaces built-in read
+pi -e ./tool-override.ts
+```
+
+Alternatively, use `--no-tools` to start without any built-in tools:
 ```bash
 # No built-in tools, only extension tools
 pi --no-tools -e ./my-extension.ts
-
-# No built-in read, use extension's read, keep other built-ins
-pi -e ./tool-override.ts
 ```
 
 See [examples/extensions/tool-override.ts](../examples/extensions/tool-override.ts) for a complete example that overrides `read` with logging and access control.
