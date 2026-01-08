@@ -1481,6 +1481,16 @@ export class InteractiveMode {
 
 		switch (event.type) {
 			case "agent_start":
+				// Restore main escape handler if retry handler is still active
+				// (retry success event fires later, but we need main handler now)
+				if (this.retryEscapeHandler) {
+					this.defaultEditor.onEscape = this.retryEscapeHandler;
+					this.retryEscapeHandler = undefined;
+				}
+				if (this.retryLoader) {
+					this.retryLoader.stop();
+					this.retryLoader = undefined;
+				}
 				if (this.loadingAnimation) {
 					this.loadingAnimation.stop();
 				}

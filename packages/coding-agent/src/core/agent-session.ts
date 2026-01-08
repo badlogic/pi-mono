@@ -1567,7 +1567,7 @@ export class AgentSession {
 	 */
 	abortRetry(): void {
 		this._retryAbortController?.abort();
-		this._retryAttempt = 0;
+		// Note: _retryAttempt is reset in the catch block of _autoRetry
 		this._resolveRetry();
 	}
 
