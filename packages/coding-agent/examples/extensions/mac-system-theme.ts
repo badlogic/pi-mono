@@ -5,16 +5,18 @@
  *   pi -e examples/extensions/mac-system-theme.ts
  */
 
-import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-function isDarkMode(): boolean {
+const execAsync = promisify(exec);
+
+async function isDarkMode(): Promise<boolean> {
 	try {
-		const result = execSync(
+		const { stdout } = await execAsync(
 			"osascript -e 'tell application \"System Events\" to tell appearance preferences to return dark mode'",
-			{ encoding: "utf-8" },
 		);
-		return result.trim() === "true";
+		return stdout.trim() === "true";
 	} catch {
 		return false;
 	}
@@ -23,12 +25,12 @@ function isDarkMode(): boolean {
 export default function (pi: ExtensionAPI) {
 	let intervalId: ReturnType<typeof setInterval> | null = null;
 
-	pi.on("session_start", (_event, ctx) => {
-		let currentTheme = isDarkMode() ? "dark" : "light";
+	pi.on("session_start", async (_event, ctx) => {
+		let currentTheme = (await isDarkMode()) ? "dark" : "light";
 		ctx.ui.setTheme(currentTheme);
 
-		intervalId = setInterval(() => {
-			const newTheme = isDarkMode() ? "dark" : "light";
+		intervalId = setInterval(async () => {
+			const newTheme = (await isDarkMode()) ? "dark" : "light";
 			if (newTheme !== currentTheme) {
 				currentTheme = newTheme;
 				ctx.ui.setTheme(currentTheme);
