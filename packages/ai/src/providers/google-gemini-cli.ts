@@ -22,7 +22,6 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import {
 	convertMessages,
 	convertTools,
-	isThinkingPart,
 	mapStopReasonString,
 	mapToolChoice,
 	retainThoughtSignature,
@@ -82,6 +81,86 @@ let toolCallCounter = 0;
 // Retry configuration
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
+
+// Gemini CLI sometimes embeds literal <thinking> tags in text parts.
+// Parse and strip them while handling tags split across chunks.
+const THINKING_TAG_OPEN = "<thinking>";
+const THINKING_TAG_CLOSE = "</thinking>";
+const THINKING_TAG_PREFIX_MAX = Math.max(THINKING_TAG_OPEN.length, THINKING_TAG_CLOSE.length) - 1;
+
+export interface ThinkingTagState {
+	inThinking: boolean;
+	pending: string; // trailing partial tag fragment
+}
+
+interface ThinkingTagSegment {
+	text: string;
+	isThinking: boolean;
+}
+
+function trailingTagPrefixLength(text: string): number {
+	const maxLength = Math.min(text.length, THINKING_TAG_PREFIX_MAX);
+	for (let length = maxLength; length > 0; length--) {
+		const suffix = text.slice(-length);
+		if (THINKING_TAG_OPEN.startsWith(suffix) || THINKING_TAG_CLOSE.startsWith(suffix)) {
+			return length;
+		}
+	}
+	return 0;
+}
+
+export function splitThinkingTags(input: string, state: ThinkingTagState): ThinkingTagSegment[] {
+	let text = state.pending + input;
+	state.pending = "";
+	const segments: ThinkingTagSegment[] = [];
+
+	while (true) {
+		const openIndex = text.indexOf(THINKING_TAG_OPEN);
+		const closeIndex = text.indexOf(THINKING_TAG_CLOSE);
+		let nextIndex = -1;
+		let nextTag: "open" | "close" | null = null;
+
+		if (openIndex >= 0 && (closeIndex < 0 || openIndex < closeIndex)) {
+			nextIndex = openIndex;
+			nextTag = "open";
+		} else if (closeIndex >= 0) {
+			nextIndex = closeIndex;
+			nextTag = "close";
+		}
+
+		if (nextIndex < 0 || nextTag === null) break;
+
+		const before = text.slice(0, nextIndex);
+		if (before.length > 0) {
+			segments.push({ text: before, isThinking: state.inThinking });
+		}
+		state.inThinking = nextTag === "open";
+		text = text.slice(nextIndex + (nextTag === "open" ? THINKING_TAG_OPEN.length : THINKING_TAG_CLOSE.length));
+	}
+
+	const trailingLength = trailingTagPrefixLength(text);
+	if (trailingLength > 0) {
+		const remaining = text.slice(0, -trailingLength);
+		if (remaining.length > 0) {
+			segments.push({ text: remaining, isThinking: state.inThinking });
+		}
+		state.pending = text.slice(-trailingLength);
+	} else if (text.length > 0) {
+		segments.push({ text, isThinking: state.inThinking });
+	}
+
+	return segments;
+}
+
+export function isGeminiCliThinkingPart(part: { thought?: boolean; thoughtSignature?: string; text?: string }): boolean {
+	if (part.thought === true) return true;
+
+	const hasSignature = typeof part.thoughtSignature === "string" && part.thoughtSignature.length > 0;
+	if (!hasSignature) return false;
+
+	const hasText = typeof part.text === "string" && part.text.trim().length > 0;
+	return !hasText;
+}
 
 /**
  * Extract retry delay from Gemini error response (in milliseconds).
@@ -335,6 +414,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 			let currentBlock: TextContent | ThinkingContent | null = null;
 			const blocks = output.content;
 			const blockIndex = () => blocks.length - 1;
+			const thinkingTagState: ThinkingTagState = { inThinking: false, pending: "" };
 
 			// Read SSE stream
 			const reader = response.body.getReader();
@@ -382,59 +462,70 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 						if (candidate?.content?.parts) {
 							for (const part of candidate.content.parts) {
 								if (part.text !== undefined) {
-									const isThinking = isThinkingPart(part);
-									if (
-										!currentBlock ||
-										(isThinking && currentBlock.type !== "thinking") ||
-										(!isThinking && currentBlock.type !== "text")
-									) {
-										if (currentBlock) {
-											if (currentBlock.type === "text") {
-												stream.push({
-													type: "text_end",
-													contentIndex: blocks.length - 1,
-													content: currentBlock.text,
-													partial: output,
-												});
+									const partIsThinking = isGeminiCliThinkingPart(part);
+									const segments = splitThinkingTags(part.text, thinkingTagState);
+									for (const segment of segments) {
+										if (segment.text.length === 0) continue;
+										const isThinking = partIsThinking || segment.isThinking;
+										if (
+											!currentBlock ||
+											(isThinking && currentBlock.type !== "thinking") ||
+											(!isThinking && currentBlock.type !== "text")
+										) {
+											if (currentBlock) {
+												if (currentBlock.type === "text") {
+													stream.push({
+														type: "text_end",
+														contentIndex: blocks.length - 1,
+														content: currentBlock.text,
+														partial: output,
+													});
+												} else {
+													stream.push({
+														type: "thinking_end",
+														contentIndex: blockIndex(),
+														content: currentBlock.thinking,
+														partial: output,
+													});
+												}
+											}
+											if (isThinking) {
+												currentBlock = { type: "thinking", thinking: "", thinkingSignature: undefined };
+												output.content.push(currentBlock);
+												stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
 											} else {
-												stream.push({
-													type: "thinking_end",
-													contentIndex: blockIndex(),
-													content: currentBlock.thinking,
-													partial: output,
-												});
+												currentBlock = { type: "text", text: "" };
+												output.content.push(currentBlock);
+												stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
 											}
 										}
-										if (isThinking) {
-											currentBlock = { type: "thinking", thinking: "", thinkingSignature: undefined };
-											output.content.push(currentBlock);
-											stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
+										if (currentBlock.type === "thinking") {
+											currentBlock.thinking += segment.text;
+											currentBlock.thinkingSignature = retainThoughtSignature(
+												currentBlock.thinkingSignature,
+												part.thoughtSignature,
+											);
+											stream.push({
+												type: "thinking_delta",
+												contentIndex: blockIndex(),
+												delta: segment.text,
+												partial: output,
+											});
 										} else {
-											currentBlock = { type: "text", text: "" };
-											output.content.push(currentBlock);
-											stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
+											currentBlock.text += segment.text;
+											stream.push({
+												type: "text_delta",
+												contentIndex: blockIndex(),
+												delta: segment.text,
+												partial: output,
+											});
 										}
 									}
-									if (currentBlock.type === "thinking") {
-										currentBlock.thinking += part.text;
+									if (part.thoughtSignature && currentBlock?.type === "thinking") {
 										currentBlock.thinkingSignature = retainThoughtSignature(
 											currentBlock.thinkingSignature,
 											part.thoughtSignature,
 										);
-										stream.push({
-											type: "thinking_delta",
-											contentIndex: blockIndex(),
-											delta: part.text,
-											partial: output,
-										});
-									} else {
-										currentBlock.text += part.text;
-										stream.push({
-											type: "text_delta",
-											contentIndex: blockIndex(),
-											delta: part.text,
-											partial: output,
-										});
 									}
 								}
 
@@ -517,6 +608,8 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 						}
 					}
 				}
+			} finally {
+
 			} finally {
 				options?.signal?.removeEventListener("abort", abortHandler);
 			}
