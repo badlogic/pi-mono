@@ -27,6 +27,7 @@ export interface Args {
 	models?: string[];
 	tools?: ToolName[];
 	extensions?: string[];
+	noExtensions?: boolean;
 	print?: boolean;
 	export?: string;
 	noSkills?: boolean;
@@ -116,6 +117,8 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 		} else if ((arg === "--extension" || arg === "-e") && i + 1 < args.length) {
 			result.extensions = result.extensions ?? [];
 			result.extensions.push(args[++i]);
+		} else if (arg === "--no-extensions") {
+			result.noExtensions = true;
 		} else if (arg === "--no-skills") {
 			result.noSkills = true;
 		} else if (arg === "--skills" && i + 1 < args.length) {
@@ -175,6 +178,7 @@ ${chalk.bold("Options:")}
                                  Available: read, bash, edit, write, grep, find, ls
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
+  --no-extensions                Disable extensions discovery and loading
   --no-skills                    Disable skills discovery and loading
   --skills <patterns>            Comma-separated glob patterns to filter skills (e.g., git-*,docker)
   --export <file>                Export session file to HTML and exit

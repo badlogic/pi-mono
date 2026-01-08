@@ -16,7 +16,7 @@ import { selectSession } from "./cli/session-picker.js";
 import { CONFIG_DIR_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
 import { createEventBus } from "./core/event-bus.js";
 import { exportFromFile } from "./core/export-html/index.js";
-import { discoverAndLoadExtensions, type LoadExtensionsResult } from "./core/extensions/index.js";
+import { discoverAndLoadExtensions, type LoadExtensionsResult, loadExtensions } from "./core/extensions/index.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { type CreateAgentSessionOptions, createAgentSession, discoverAuthStorage, discoverModels } from "./core/sdk.js";
@@ -209,16 +209,25 @@ export async function main(args: string[]) {
 	const firstPass = parseArgs(args);
 	time("parseArgs-firstPass");
 
-	// Early load extensions to discover their CLI flags
+	// Early load extensions to discover their CLI flags (unless --no-extensions)
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const eventBus = createEventBus();
 	const settingsManager = SettingsManager.create(cwd);
 	time("SettingsManager.create");
-	// Merge CLI --extension args with settings.json extensions
-	const extensionPaths = [...settingsManager.getExtensionPaths(), ...(firstPass.extensions ?? [])];
-	const extensionsResult = await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus);
-	time("discoverExtensionFlags");
+
+	let extensionsResult: LoadExtensionsResult;
+	if (firstPass.noExtensions) {
+		// --no-extensions disables discovery, but explicit -e flags still work
+		const explicitPaths = firstPass.extensions ?? [];
+		extensionsResult = await loadExtensions(explicitPaths, cwd, eventBus);
+		time("loadExtensions");
+	} else {
+		// Merge CLI --extension args with settings.json extensions
+		const extensionPaths = [...settingsManager.getExtensionPaths(), ...(firstPass.extensions ?? [])];
+		extensionsResult = await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus);
+		time("discoverExtensionFlags");
+	}
 
 	// Collect all extension flags
 	const extensionFlags = new Map<string, { type: "boolean" | "string" }>();

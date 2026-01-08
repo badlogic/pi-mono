@@ -14,6 +14,7 @@
 
 ### Added
 
+- `--no-extensions` flag to disable extension discovery while still allowing explicit `-e` paths ([#524](https://github.com/badlogic/pi-mono/pull/524) by [@cv](https://github.com/cv))
 - SDK: `InteractiveMode`, `runPrintMode()`, `runRpcMode()` exported for building custom run modes. See `docs/sdk.md`.
 - `PI_SKIP_VERSION_CHECK` environment variable to disable new version notifications at startup ([#549](https://github.com/badlogic/pi-mono/pull/549) by [@aos](https://github.com/aos))
 - `thinkingBudgets` setting to customize token budgets per thinking level for token-based providers ([#529](https://github.com/badlogic/pi-mono/pull/529) by [@melihmucuk](https://github.com/melihmucuk))

@@ -150,6 +150,26 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--no-extensions flag", () => {
+		test("parses --no-extensions flag", () => {
+			const result = parseArgs(["--no-extensions"]);
+			expect(result.noExtensions).toBe(true);
+		});
+
+		test("parses --no-extensions with explicit -e flags", () => {
+			const result = parseArgs(["--no-extensions", "-e", "foo.ts", "-e", "bar.ts"]);
+			expect(result.noExtensions).toBe(true);
+			expect(result.extensions).toEqual(["foo.ts", "bar.ts"]);
+		});
+	});
+
+	describe("--no-skills flag", () => {
+		test("parses --no-skills flag", () => {
+			const result = parseArgs(["--no-skills"]);
+			expect(result.noSkills).toBe(true);
+		});
+	});
+
 	describe("messages and file args", () => {
 		test("parses plain text messages", () => {
 			const result = parseArgs(["hello", "world"]);
