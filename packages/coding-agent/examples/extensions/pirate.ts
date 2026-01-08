@@ -1,8 +1,8 @@
 /**
  * Pirate Extension
  *
- * Demonstrates using systemPromptAppend in before_agent_start to dynamically
- * modify the system prompt based on extension state.
+ * Demonstrates modifying the system prompt in before_agent_start to dynamically
+ * change agent behavior based on extension state.
  *
  * Usage:
  * 1. Copy this file to ~/.pi/agent/extensions/ or your project's .pi/extensions/
@@ -25,10 +25,13 @@ export default function pirateExtension(pi: ExtensionAPI) {
 	});
 
 	// Append to system prompt when pirate mode is enabled
-	pi.on("before_agent_start", async () => {
+	pi.on("before_agent_start", async (event) => {
 		if (pirateMode) {
 			return {
-				systemPromptAppend: `
+				systemPrompt:
+					event.systemPrompt +
+					`
+
 IMPORTANT: You are now in PIRATE MODE. You must:
 - Speak like a stereotypical pirate in all responses
 - Use phrases like "Arrr!", "Ahoy!", "Shiver me timbers!", "Avast!", "Ye scurvy dog!"

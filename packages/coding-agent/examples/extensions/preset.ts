@@ -345,10 +345,10 @@ export default function presetExtension(pi: ExtensionAPI) {
 	});
 
 	// Inject preset instructions into system prompt
-	pi.on("before_agent_start", async () => {
+	pi.on("before_agent_start", async (event) => {
 		if (activePreset?.instructions) {
 			return {
-				systemPromptAppend: activePreset.instructions,
+				systemPrompt: `${event.systemPrompt}\n\n${activePreset.instructions}`,
 			};
 		}
 	});

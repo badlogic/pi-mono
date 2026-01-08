@@ -255,7 +255,7 @@ pi starts
       ▼
 user sends prompt ─────────────────────────────────────────┐
   │                                                        │
-  ├─► before_agent_start (can inject message, append to system prompt)
+  ├─► before_agent_start (can inject message, modify system prompt)
   ├─► agent_start                                          │
   │                                                        │
   │   ┌─── turn (repeats while LLM calls tools) ───┐       │
@@ -414,12 +414,13 @@ pi.on("session_shutdown", async (_event, ctx) => {
 
 #### before_agent_start
 
-Fired after user submits prompt, before agent loop. Can inject a message and/or append to the system prompt.
+Fired after user submits prompt, before agent loop. Can inject a message and/or modify the system prompt.
 
 ```typescript
 pi.on("before_agent_start", async (event, ctx) => {
   // event.prompt - user's prompt text
   // event.images - attached images (if any)
+  // event.systemPrompt - current system prompt
 
   return {
     // Inject a persistent message (stored in session, sent to LLM)
@@ -428,13 +429,13 @@ pi.on("before_agent_start", async (event, ctx) => {
       content: "Additional context for the LLM",
       display: true,
     },
-    // Append to system prompt for this turn only
-    systemPromptAppend: "Extra instructions for this turn...",
+    // Replace the system prompt for this turn (chained across extensions)
+    systemPrompt: event.systemPrompt + "\n\nExtra instructions for this turn...",
   };
 });
 ```
 
-**Examples:** [claude-rules.ts](../examples/extensions/claude-rules.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts)
+**Examples:** [claude-rules.ts](../examples/extensions/claude-rules.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [ssh.ts](../examples/extensions/ssh.ts)
 
 #### agent_start / agent_end
 

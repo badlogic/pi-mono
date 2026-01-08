@@ -349,6 +349,7 @@ export interface BeforeAgentStartEvent {
 	type: "before_agent_start";
 	prompt: string;
 	images?: ImageContent[];
+	systemPrompt: string;
 }
 
 /** Fired when an agent loop starts */
@@ -504,7 +505,8 @@ export interface ToolResultEventResult {
 
 export interface BeforeAgentStartEventResult {
 	message?: Pick<CustomMessage, "customType" | "content" | "display" | "details">;
-	systemPromptAppend?: string;
+	/** Replace the system prompt for this turn. If multiple extensions return this, they are chained. */
+	systemPrompt?: string;
 }
 
 export interface SessionBeforeSwitchResult {

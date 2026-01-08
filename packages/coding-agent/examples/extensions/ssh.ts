@@ -191,4 +191,16 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify(`SSH mode: ${ssh.remote}:${ssh.remoteCwd}`, "info");
 		}
 	});
+
+	// Replace local cwd with remote cwd in system prompt
+	pi.on("before_agent_start", async (event) => {
+		const ssh = getSsh();
+		if (ssh) {
+			const modified = event.systemPrompt.replace(
+				`Current working directory: ${localCwd}`,
+				`Current working directory: ${ssh.remoteCwd} (via SSH: ${ssh.remote})`,
+			);
+			return { systemPrompt: modified };
+		}
+	});
 }

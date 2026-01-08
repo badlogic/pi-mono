@@ -38,7 +38,7 @@ import type {
 /** Combined result from all before_agent_start handlers */
 interface BeforeAgentStartCombinedResult {
 	messages?: NonNullable<BeforeAgentStartEventResult["message"]>[];
-	systemPromptAppend?: string;
+	systemPrompt?: string;
 }
 
 export type ExtensionErrorListener = (error: ExtensionError) => void;
@@ -433,11 +433,13 @@ export class ExtensionRunner {
 
 	async emitBeforeAgentStart(
 		prompt: string,
-		images?: ImageContent[],
+		images: ImageContent[] | undefined,
+		systemPrompt: string,
 	): Promise<BeforeAgentStartCombinedResult | undefined> {
 		const ctx = this.createContext();
 		const messages: NonNullable<BeforeAgentStartEventResult["message"]>[] = [];
-		const systemPromptAppends: string[] = [];
+		let currentSystemPrompt = systemPrompt;
+		let systemPromptModified = false;
 
 		for (const ext of this.extensions) {
 			const handlers = ext.handlers.get("before_agent_start");
@@ -445,7 +447,12 @@ export class ExtensionRunner {
 
 			for (const handler of handlers) {
 				try {
-					const event: BeforeAgentStartEvent = { type: "before_agent_start", prompt, images };
+					const event: BeforeAgentStartEvent = {
+						type: "before_agent_start",
+						prompt,
+						images,
+						systemPrompt: currentSystemPrompt,
+					};
 					const handlerResult = await handler(event, ctx);
 
 					if (handlerResult) {
@@ -453,8 +460,9 @@ export class ExtensionRunner {
 						if (result.message) {
 							messages.push(result.message);
 						}
-						if (result.systemPromptAppend) {
-							systemPromptAppends.push(result.systemPromptAppend);
+						if (result.systemPrompt !== undefined) {
+							currentSystemPrompt = result.systemPrompt;
+							systemPromptModified = true;
 						}
 					}
 				} catch (err) {
@@ -470,10 +478,10 @@ export class ExtensionRunner {
 			}
 		}
 
-		if (messages.length > 0 || systemPromptAppends.length > 0) {
+		if (messages.length > 0 || systemPromptModified) {
 			return {
 				messages: messages.length > 0 ? messages : undefined,
-				systemPromptAppend: systemPromptAppends.length > 0 ? systemPromptAppends.join("\n\n") : undefined,
+				systemPrompt: systemPromptModified ? currentSystemPrompt : undefined,
 			};
 		}
 

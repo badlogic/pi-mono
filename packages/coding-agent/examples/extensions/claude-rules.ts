@@ -61,7 +61,7 @@ export default function claudeRulesExtension(pi: ExtensionAPI) {
 	});
 
 	// Append available rules to system prompt
-	pi.on("before_agent_start", async () => {
+	pi.on("before_agent_start", async (event) => {
 		if (ruleFiles.length === 0) {
 			return;
 		}
@@ -69,7 +69,10 @@ export default function claudeRulesExtension(pi: ExtensionAPI) {
 		const rulesList = ruleFiles.map((f) => `- .claude/rules/${f}`).join("\n");
 
 		return {
-			systemPromptAppend: `
+			systemPrompt:
+				event.systemPrompt +
+				`
+
 ## Project Rules
 
 The following project rules are available in .claude/rules/:

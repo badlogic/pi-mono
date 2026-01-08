@@ -613,7 +613,11 @@ export class AgentSession {
 
 		// Emit before_agent_start extension event
 		if (this._extensionRunner) {
-			const result = await this._extensionRunner.emitBeforeAgentStart(expandedText, options?.images);
+			const result = await this._extensionRunner.emitBeforeAgentStart(
+				expandedText,
+				options?.images,
+				this._baseSystemPrompt,
+			);
 			// Add all custom messages from extensions
 			if (result?.messages) {
 				for (const msg of result.messages) {
@@ -627,11 +631,11 @@ export class AgentSession {
 					});
 				}
 			}
-			// Apply extension systemPromptAppend on top of base prompt
-			if (result?.systemPromptAppend) {
-				this.agent.setSystemPrompt(`${this._baseSystemPrompt}\n\n${result.systemPromptAppend}`);
+			// Apply extension-modified system prompt, or reset to base
+			if (result?.systemPrompt) {
+				this.agent.setSystemPrompt(result.systemPrompt);
 			} else {
-				// Ensure we're using the base prompt (in case previous turn had appends)
+				// Ensure we're using the base prompt (in case previous turn had modifications)
 				this.agent.setSystemPrompt(this._baseSystemPrompt);
 			}
 		}

@@ -264,6 +264,7 @@ export {
 	getMarkdownTheme,
 	getSelectListTheme,
 	getSettingsListTheme,
+	initTheme,
 	Theme,
 	type ThemeColor,
 } from "./modes/interactive/theme/theme.js";
