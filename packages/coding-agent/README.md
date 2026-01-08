@@ -249,6 +249,8 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | `/copy` | Copy last agent message to clipboard |
 | `/compact [instructions]` | Manually compact conversation context |
 
+Results are sorted by version-aware model ids (major/minor, undated before dated with newest-first), then provider; search prioritizes id matches over provider matches.
+
 ### Editor Features
 
 **File reference (`@`):** Type `@` to fuzzy-search project files. Respects `.gitignore`.

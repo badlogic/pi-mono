@@ -10,6 +10,10 @@
 
 - Update notification for bun binary installs now shows release download URL instead of npm command ([#567](https://github.com/badlogic/pi-mono/pull/567) by [@ferologics](https://github.com/ferologics))
 
+### Changed
+
+- `/model` selector now orders by version-aware model id (major/minor, undated before dated with newest-first), then provider; search prioritizes id matches over provider matches.
+
 ## [0.38.0] - 2026-01-08
 
 ### Breaking Changes

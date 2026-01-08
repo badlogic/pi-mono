@@ -2,7 +2,8 @@ import { type Model, modelsAreEqual } from "@mariozechner/pi-ai";
 import { Container, getEditorKeybindings, Input, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import type { ModelRegistry } from "../../../core/model-registry.js";
 import type { SettingsManager } from "../../../core/settings-manager.js";
-import { fuzzyFilter } from "../../../utils/fuzzy.js";
+import { fuzzyMatch } from "../../../utils/fuzzy.js";
+import { compareModelIds, normalizeModelSearchText } from "../../../utils/model-sorting.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -131,12 +132,14 @@ export class ModelSelectorComponent extends Container {
 			}
 		}
 
-		// Sort: current model first, then by provider
+		// Sort: current model first, then by model id, then provider
 		models.sort((a, b) => {
 			const aIsCurrent = modelsAreEqual(this.currentModel, a.model);
 			const bIsCurrent = modelsAreEqual(this.currentModel, b.model);
 			if (aIsCurrent && !bIsCurrent) return -1;
 			if (!aIsCurrent && bIsCurrent) return 1;
+			const idCompare = compareModelIds(a.id, b.id);
+			if (idCompare !== 0) return idCompare;
 			return a.provider.localeCompare(b.provider);
 		});
 
@@ -145,8 +148,55 @@ export class ModelSelectorComponent extends Container {
 		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, models.length - 1));
 	}
 
+	// Filters by fuzzy match while preserving the base sort order.
 	private filterModels(query: string): void {
-		this.filteredModels = fuzzyFilter(this.allModels, query, ({ id, provider }) => `${id} ${provider}`);
+		const normalizedQuery = normalizeModelSearchText(query);
+		const tokens = normalizedQuery
+			.trim()
+			.split(/\s+/)
+			.filter((token) => token.length > 0);
+
+		if (tokens.length === 0) {
+			this.filteredModels = this.allModels;
+			this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredModels.length - 1));
+			this.updateList();
+			return;
+		}
+
+		const results: { item: ModelItem; matchRank: number }[] = [];
+		for (const item of this.allModels) {
+			const idText = normalizeModelSearchText(item.id);
+			const providerText = normalizeModelSearchText(item.provider);
+			let allMatch = true;
+			let allIdMatch = true;
+			let allProviderMatch = true;
+
+			// Rank matches by specificity: id-only > mixed id/provider > provider-only.
+			for (const token of tokens) {
+				const idMatch = fuzzyMatch(token, idText).matches;
+				const providerMatch = fuzzyMatch(token, providerText).matches;
+				if (!idMatch && !providerMatch) {
+					allMatch = false;
+					break;
+				}
+				if (!idMatch) allIdMatch = false;
+				if (!providerMatch) allProviderMatch = false;
+			}
+
+			if (allMatch) {
+				const matchRank = allIdMatch ? 0 : allProviderMatch ? 2 : 1;
+				results.push({ item, matchRank });
+			}
+		}
+
+		results.sort((a, b) => {
+			if (a.matchRank !== b.matchRank) return a.matchRank - b.matchRank;
+			const idCompare = compareModelIds(a.item.id, b.item.id);
+			if (idCompare !== 0) return idCompare;
+			return a.item.provider.localeCompare(b.item.provider);
+		});
+
+		this.filteredModels = results.map((result) => result.item);
 		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredModels.length - 1));
 		this.updateList();
 	}
