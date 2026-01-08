@@ -4,43 +4,20 @@
 
 ### Breaking Changes
 
-- `ctx.ui.custom()` factory signature changed from `(tui, theme, done)` to `(tui, theme, keybindings, done)` for consistency with other input-handling factories
-- Extension system refactored: `LoadedExtension` renamed to `Extension`, setter methods removed
-- `LoadExtensionsResult.setUIContext()` removed, replaced with `runtime: ExtensionRuntime`
-- `ExtensionRunner` constructor now requires `runtime: ExtensionRuntime` as second parameter
-- `ExtensionRunner.initialize()` signature changed from options object to `(actions, contextActions, commandContextActions?, uiContext?)`
-- `ExtensionRunner.getHasUI()` renamed to `hasUI()`
-- `CreateAgentSessionResult` now returns `extensionsResult: LoadExtensionsResult` instead of `customToolsResult`
+- `ctx.ui.custom()` factory signature changed from `(tui, theme, done)` to `(tui, theme, keybindings, done)` for keybinding access in custom components
 
 ### Added
 
 - `PI_SKIP_VERSION_CHECK` environment variable to disable new version notifications at startup ([#549](https://github.com/badlogic/pi-mono/pull/549) by [@aos](https://github.com/aos))
-- Extension UI dialogs (`ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`) now support a `timeout` option that auto-dismisses the dialog with a live countdown display. Simpler alternative to `AbortSignal` for timed dialogs.
-- Extensions can now provide custom editor components via `ctx.ui.setEditorComponent((tui, theme, keybindings) => ...)`. Extend `CustomEditor` for full app keybinding support (escape, ctrl+d, model switching, etc.). See `examples/extensions/modal-editor.ts`, `examples/extensions/rainbow-editor.ts`, and `docs/tui.md` Pattern 7.
-- `ExtensionRuntime` interface for shared runtime state and action methods
-- `ExtensionActions` interface for `pi.*` API methods
-- `ExtensionContextActions` interface for `ctx.*` in event handlers
-- `ExtensionCommandContextActions` interface for `ctx.*` in command handlers (session control)
-- `createExtensionRuntime()` function to create runtime with throwing stubs
-- `Extension` type exported (cleaner name for loaded extension data)
-- Interactive mode now warns when extensions override built-in tools (read, bash, edit, write, grep, find, ls)
-- `InteractiveMode` constructor simplified to `(session, options?)` with `InteractiveModeOptions` interface
-- `InteractiveMode.run()` method for complete initialization and interactive loop
-- `InteractiveModeOptions` exported for SDK users building custom interactive modes
-- `runPrintMode()` now takes `(session, options)` with `PrintModeOptions` interface
-- `PrintModeOptions` exported for SDK users
-- Run mode utilities exported from main package: `InteractiveMode`, `InteractiveModeOptions`, `runPrintMode`, `PrintModeOptions`, `runRpcMode`
-
-### Changed
-
-- Extension loader simplified: shared runtime instead of per-extension closures
-- `hasUI` now derived from whether `uiContext` is provided (no longer a separate parameter)
-- RPC and print modes now provide `ExtensionCommandContextActions` for full command support
+- Extension UI dialogs (`ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`) now support a `timeout` option with live countdown display ([#522](https://github.com/badlogic/pi-mono/pull/522) by [@nicobailon](https://github.com/nicobailon))
+- Extensions can now provide custom editor components via `ctx.ui.setEditorComponent()`. See `examples/extensions/modal-editor.ts` and `docs/tui.md` Pattern 7.
+- Extension factories can now be async, enabling dynamic imports and lazy-loaded dependencies ([#513](https://github.com/badlogic/pi-mono/pull/513) by [@austinm911](https://github.com/austinm911))
 
 ### Fixed
 
-- Default thinking level from settings now applies correctly when `enabledModels` is configured. Previously, models without explicit thinking level suffixes (e.g., `claude-opus-4-5` instead of `claude-opus-4-5:high`) would override `defaultThinkingLevel` with "off"
-- External edits to `settings.json` while pi is running are now preserved when pi saves settings (e.g., when changing thinking level via Shift+Tab)
+- Default thinking level from settings now applies correctly when `enabledModels` is configured ([#540](https://github.com/badlogic/pi-mono/pull/540) by [@ferologics](https://github.com/ferologics))
+- External edits to `settings.json` while pi is running are now preserved when pi saves settings ([#527](https://github.com/badlogic/pi-mono/pull/527) by [@ferologics](https://github.com/ferologics))
+- Overflow-based compaction now skips if error came from a different model or was already handled by a previous compaction ([#535](https://github.com/badlogic/pi-mono/pull/535) by [@mitsuhiko](https://github.com/mitsuhiko))
 
 ## [0.37.8] - 2026-01-07
 
