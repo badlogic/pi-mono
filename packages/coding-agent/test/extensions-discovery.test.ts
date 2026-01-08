@@ -366,7 +366,7 @@ describe("extensions discovery", () => {
 		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 
 		expect(result.errors).toHaveLength(1);
-		expect(result.errors[0].error).toContain("must export a default function");
+		expect(result.errors[0].error).toContain("does not export a valid factory function");
 		expect(result.extensions).toHaveLength(0);
 	});
 
