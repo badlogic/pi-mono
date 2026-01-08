@@ -1122,7 +1122,7 @@ pi [options] [@files...] [messages...]
 | `--continue`, `-c` | Continue most recent session |
 | `--resume`, `-r` | Select session to resume |
 | `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling. Supports glob patterns (e.g., `anthropic/*`, `*sonnet*:high`) and fuzzy matching (e.g., `sonnet,haiku:low`) |
-| `--no-tools` | Disable all built-in tools (use with `-e` for extension-only setups) |
+| `--no-tools` | Disable all built-in tools |
 | `--tools <tools>` | Comma-separated tool list (default: `read,bash,edit,write`) |
 | `--thinking <level>` | Thinking level: `off`, `minimal`, `low`, `medium`, `high` |
 | `--extension <path>`, `-e` | Load an extension file (can be used multiple times) |
