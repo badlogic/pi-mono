@@ -2,10 +2,6 @@
 
 ## [Unreleased]
 
-### Added
-
-- `PI_SKIP_VERSION_CHECK` environment variable to disable new version notifications at startup ([#549](https://github.com/badlogic/pi-mono/pull/549) by [@aos](https://github.com/aos))
-
 ### Breaking Changes
 
 - `ctx.ui.custom()` factory signature changed from `(tui, theme, done)` to `(tui, theme, keybindings, done)` for consistency with other input-handling factories
@@ -14,11 +10,11 @@
 - `ExtensionRunner` constructor now requires `runtime: ExtensionRuntime` as second parameter
 - `ExtensionRunner.initialize()` signature changed from options object to `(actions, contextActions, commandContextActions?, uiContext?)`
 - `ExtensionRunner.getHasUI()` renamed to `hasUI()`
-- `CreateAgentSessionOptions.preloadedExtensions` renamed to `preloadedExtensionsResult`
 - `CreateAgentSessionResult` now returns `extensionsResult: LoadExtensionsResult` instead of `customToolsResult`
 
 ### Added
 
+- `PI_SKIP_VERSION_CHECK` environment variable to disable new version notifications at startup ([#549](https://github.com/badlogic/pi-mono/pull/549) by [@aos](https://github.com/aos))
 - Extension UI dialogs (`ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`) now support a `timeout` option that auto-dismisses the dialog with a live countdown display. Simpler alternative to `AbortSignal` for timed dialogs.
 - Extensions can now provide custom editor components via `ctx.ui.setEditorComponent((tui, theme, keybindings) => ...)`. Extend `CustomEditor` for full app keybinding support (escape, ctrl+d, model switching, etc.). See `examples/extensions/modal-editor.ts`, `examples/extensions/rainbow-editor.ts`, and `docs/tui.md` Pattern 7.
 - `ExtensionRuntime` interface for shared runtime state and action methods

@@ -109,7 +109,7 @@ export interface CreateAgentSessionOptions {
 	 * Pre-loaded extensions result (skips file discovery).
 	 * @internal Used by CLI when extensions are loaded early to parse custom flags.
 	 */
-	preloadedExtensionsResult?: LoadExtensionsResult;
+	preloadedExtensions?: LoadExtensionsResult;
 
 	/** Shared event bus for tool/extension communication. Default: creates new bus. */
 	eventBus?: EventBus;
@@ -438,9 +438,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// Load extensions (discovers from standard locations + configured paths)
 	let extensionsResult: LoadExtensionsResult;
-	if (options.preloadedExtensionsResult !== undefined) {
+	if (options.preloadedExtensions !== undefined) {
 		// Use pre-loaded extensions (from early CLI flag discovery)
-		extensionsResult = options.preloadedExtensionsResult;
+		extensionsResult = options.preloadedExtensions;
 	} else if (options.extensions !== undefined) {
 		// User explicitly provided extensions array (even if empty) - skip discovery
 		// Create runtime for inline extensions
