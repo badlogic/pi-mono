@@ -73,6 +73,11 @@ export class BashExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
+	override invalidate(): void {
+		super.invalidate();
+		this.updateDisplay();
+	}
+
 	appendOutput(chunk: string): void {
 		// Strip ANSI codes and normalize line endings
 		// Note: binary data is already sanitized in tui-renderer.ts executeBashCommand

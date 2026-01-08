@@ -36,6 +36,11 @@ export class CustomMessageComponent extends Container {
 		}
 	}
 
+	override invalidate(): void {
+		super.invalidate();
+		this.rebuild();
+	}
+
 	private rebuild(): void {
 		// Remove previous content component
 		if (this.customComponent) {

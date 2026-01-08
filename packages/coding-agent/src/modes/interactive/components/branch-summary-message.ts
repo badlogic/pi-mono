@@ -21,6 +21,11 @@ export class BranchSummaryMessageComponent extends Box {
 		this.updateDisplay();
 	}
 
+	override invalidate(): void {
+		super.invalidate();
+		this.updateDisplay();
+	}
+
 	private updateDisplay(): void {
 		this.clear();
 

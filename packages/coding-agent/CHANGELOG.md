@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Components now properly rebuild their content on theme change (tool executions, assistant messages, bash executions, custom messages, branch/compaction summaries)
+
 ## [0.39.1] - 2026-01-08
 
 ### Fixed

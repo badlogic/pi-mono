@@ -219,6 +219,11 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
+	override invalidate(): void {
+		super.invalidate();
+		this.updateDisplay();
+	}
+
 	private updateDisplay(): void {
 		// Set background based on state
 		const bgFn = this.isPartial

@@ -8,6 +8,7 @@ import { getMarkdownTheme, theme } from "../theme/theme.js";
 export class AssistantMessageComponent extends Container {
 	private contentContainer: Container;
 	private hideThinkingBlock: boolean;
+	private lastMessage?: AssistantMessage;
 
 	constructor(message?: AssistantMessage, hideThinkingBlock = false) {
 		super();
@@ -23,11 +24,20 @@ export class AssistantMessageComponent extends Container {
 		}
 	}
 
+	override invalidate(): void {
+		super.invalidate();
+		if (this.lastMessage) {
+			this.updateContent(this.lastMessage);
+		}
+	}
+
 	setHideThinkingBlock(hide: boolean): void {
 		this.hideThinkingBlock = hide;
 	}
 
 	updateContent(message: AssistantMessage): void {
+		this.lastMessage = message;
+
 		// Clear content container
 		this.contentContainer.clear();
 
