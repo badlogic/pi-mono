@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execSync, spawn } from "child_process";
 import { platform } from "os";
 
 export function copyToClipboard(text: string): void {
@@ -11,17 +11,30 @@ export function copyToClipboard(text: string): void {
 		} else if (p === "win32") {
 			execSync("clip", options);
 		} else {
-			// Linux - try xclip first, fall back to xsel
-			try {
-				execSync("xclip -selection clipboard", options);
-			} catch {
-				execSync("xsel --clipboard --input", options);
+			// Linux - use wl-copy for Wayland, xclip/xsel for X11
+			const isWayland = process.env.XDG_SESSION_TYPE === "wayland";
+			if (isWayland) {
+				// Verify wl-copy exists (spawn errors are async and won't be caught)
+				execSync("which wl-copy", { stdio: "ignore" });
+				// wl-copy with execSync hangs due to fork behavior; use spawn instead
+				const proc = spawn("wl-copy", [], { stdio: ["pipe", "ignore", "ignore"] });
+				proc.stdin.write(text);
+				proc.stdin.end();
+				proc.unref();
+			} else {
+				try {
+					execSync("xclip -selection clipboard", options);
+				} catch {
+					execSync("xsel --clipboard --input", options);
+				}
 			}
 		}
 	} catch (error) {
 		const msg = error instanceof Error ? error.message : String(error);
 		if (p === "linux") {
-			throw new Error(`Failed to copy to clipboard. Install xclip or xsel: ${msg}`);
+			const isWayland = process.env.XDG_SESSION_TYPE === "wayland";
+			const tools = isWayland ? "wl-copy (wl-clipboard)" : "xclip or xsel";
+			throw new Error(`Failed to copy to clipboard. Install ${tools}: ${msg}`);
 		}
 		throw new Error(`Failed to copy to clipboard: ${msg}`);
 	}
