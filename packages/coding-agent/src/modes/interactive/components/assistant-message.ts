@@ -31,12 +31,11 @@ export class AssistantMessageComponent extends Container {
 		// Clear content container
 		this.contentContainer.clear();
 
-		if (
-			message.content.length > 0 &&
-			message.content.some(
-				(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
-			)
-		) {
+		const hasVisibleContent = message.content.some(
+			(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
+		);
+
+		if (hasVisibleContent) {
 			this.contentContainer.addChild(new Spacer(1));
 		}
 
@@ -75,7 +74,12 @@ export class AssistantMessageComponent extends Container {
 		const hasToolCalls = message.content.some((c) => c.type === "toolCall");
 		if (!hasToolCalls) {
 			if (message.stopReason === "aborted") {
-				this.contentContainer.addChild(new Text(theme.fg("error", "\nAborted"), 1, 0));
+				const abortMessage =
+					message.errorMessage && message.errorMessage !== "Request was aborted"
+						? message.errorMessage
+						: "Operation aborted";
+				const prefix = hasVisibleContent ? "\n" : "";
+				this.contentContainer.addChild(new Text(theme.fg("error", `${prefix}${abortMessage}`), 1, 0));
 			} else if (message.stopReason === "error") {
 				const errorMsg = message.errorMessage || "Unknown error";
 				this.contentContainer.addChild(new Spacer(1));

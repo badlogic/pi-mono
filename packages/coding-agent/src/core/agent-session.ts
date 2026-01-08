@@ -435,6 +435,11 @@ export class AgentSession {
 		return this.agent.state.isStreaming;
 	}
 
+	/** Current retry attempt (0 if not retrying) */
+	get retryAttempt(): number {
+		return this._retryAttempt;
+	}
+
 	/**
 	 * Get the names of currently active tools.
 	 * Returns the names of tools currently set on the agent.
@@ -1567,7 +1572,7 @@ export class AgentSession {
 	 */
 	abortRetry(): void {
 		this._retryAbortController?.abort();
-		this._retryAttempt = 0;
+		// Note: _retryAttempt is reset in the catch block of _autoRetry
 		this._resolveRetry();
 	}
 

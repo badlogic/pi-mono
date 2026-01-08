@@ -1481,6 +1481,16 @@ export class InteractiveMode {
 
 		switch (event.type) {
 			case "agent_start":
+				// Restore main escape handler if retry handler is still active
+				// (retry success event fires later, but we need main handler now)
+				if (this.retryEscapeHandler) {
+					this.defaultEditor.onEscape = this.retryEscapeHandler;
+					this.retryEscapeHandler = undefined;
+				}
+				if (this.retryLoader) {
+					this.retryLoader.stop();
+					this.retryLoader = undefined;
+				}
 				if (this.loadingAnimation) {
 					this.loadingAnimation.stop();
 				}
@@ -1549,13 +1559,21 @@ export class InteractiveMode {
 				if (event.message.role === "user") break;
 				if (this.streamingComponent && event.message.role === "assistant") {
 					this.streamingMessage = event.message;
+					let errorMessage: string | undefined;
+					if (this.streamingMessage.stopReason === "aborted") {
+						const retryAttempt = this.session.retryAttempt;
+						errorMessage =
+							retryAttempt > 0
+								? `Aborted after ${retryAttempt} retry attempt${retryAttempt > 1 ? "s" : ""}`
+								: "Operation aborted";
+						this.streamingMessage.errorMessage = errorMessage;
+					}
 					this.streamingComponent.updateContent(this.streamingMessage);
 
 					if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
-						const errorMessage =
-							this.streamingMessage.stopReason === "aborted"
-								? "Operation aborted"
-								: this.streamingMessage.errorMessage || "Error";
+						if (!errorMessage) {
+							errorMessage = this.streamingMessage.errorMessage || "Error";
+						}
 						for (const [, component] of this.pendingTools.entries()) {
 							component.updateResult({
 								content: [{ type: "text", text: errorMessage }],
@@ -1862,8 +1880,16 @@ export class InteractiveMode {
 						this.chatContainer.addChild(component);
 
 						if (message.stopReason === "aborted" || message.stopReason === "error") {
-							const errorMessage =
-								message.stopReason === "aborted" ? "Operation aborted" : message.errorMessage || "Error";
+							let errorMessage: string;
+							if (message.stopReason === "aborted") {
+								const retryAttempt = this.session.retryAttempt;
+								errorMessage =
+									retryAttempt > 0
+										? `Aborted after ${retryAttempt} retry attempt${retryAttempt > 1 ? "s" : ""}`
+										: "Operation aborted";
+							} else {
+								errorMessage = message.errorMessage || "Error";
+							}
 							component.updateResult({ content: [{ type: "text", text: errorMessage }], isError: true });
 						} else {
 							this.pendingTools.set(content.id, component);
