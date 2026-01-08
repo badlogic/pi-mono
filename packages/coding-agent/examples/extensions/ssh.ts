@@ -120,12 +120,10 @@ export default function (pi: ExtensionAPI) {
 	const localEdit = createEditTool(localCwd);
 	const localBash = createBashTool(localCwd);
 
-	const getSsh = () => {
-		const arg = pi.getFlag("ssh") as string | undefined;
-		if (!arg) return null;
-		const [remote, path] = arg.includes(":") ? arg.split(":") : [arg, "~"];
-		return { remote, remoteCwd: path };
-	};
+	// Resolved lazily on session_start (CLI flags not available during factory)
+	let resolvedSsh: { remote: string; remoteCwd: string } | null = null;
+
+	const getSsh = () => resolvedSsh;
 
 	pi.registerTool({
 		...localRead,
@@ -184,10 +182,20 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		const ssh = getSsh();
-		if (ssh) {
-			ctx.ui.setStatus("ssh", `SSH: ${ssh.remote}:${ssh.remoteCwd}`);
-			ctx.ui.notify(`SSH mode: ${ssh.remote}:${ssh.remoteCwd}`, "info");
+		// Resolve SSH config now that CLI flags are available
+		const arg = pi.getFlag("ssh") as string | undefined;
+		if (arg) {
+			if (arg.includes(":")) {
+				const [remote, path] = arg.split(":");
+				resolvedSsh = { remote, remoteCwd: path };
+			} else {
+				// No path given, evaluate pwd on remote
+				const remote = arg;
+				const pwd = (await sshExec(remote, "pwd")).toString().trim();
+				resolvedSsh = { remote, remoteCwd: pwd };
+			}
+			ctx.ui.setStatus("ssh", ctx.ui.theme.fg("accent", `SSH: ${resolvedSsh.remote}:${resolvedSsh.remoteCwd}`));
+			ctx.ui.notify(`SSH mode: ${resolvedSsh.remote}:${resolvedSsh.remoteCwd}`, "info");
 		}
 	});
 
