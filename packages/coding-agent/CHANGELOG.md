@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Documentation on component invalidation and theme changes in `docs/tui.md`
+
 ### Fixed
 
 - Components now properly rebuild their content on theme change (tool executions, assistant messages, bash executions, custom messages, branch/compaction summaries)

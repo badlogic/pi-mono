@@ -340,6 +340,108 @@ class CachedComponent {
 
 Call `invalidate()` when state changes, then `handle.requestRender()` to trigger re-render.
 
+## Invalidation and Theme Changes
+
+When the theme changes, the TUI calls `invalidate()` on all components to clear their caches. Components must properly implement `invalidate()` to ensure theme changes take effect.
+
+### The Problem
+
+If a component pre-bakes theme colors into strings (via `theme.fg()`, `theme.bg()`, etc.) and caches them, the cached strings contain ANSI escape codes from the old theme. Simply clearing the render cache isn't enough if the component stores the themed content separately.
+
+**Wrong approach** (theme colors won't update):
+
+```typescript
+class BadComponent extends Container {
+  private content: Text;
+
+  constructor(message: string, theme: Theme) {
+    super();
+    // Pre-baked theme colors stored in Text component
+    this.content = new Text(theme.fg("accent", message), 1, 0);
+    this.addChild(this.content);
+  }
+  // No invalidate override - parent's invalidate only clears
+  // child render caches, not the pre-baked content
+}
+```
+
+### The Solution
+
+Components that build content with theme colors must rebuild that content when `invalidate()` is called:
+
+```typescript
+class GoodComponent extends Container {
+  private message: string;
+  private content: Text;
+
+  constructor(message: string) {
+    super();
+    this.message = message;
+    this.content = new Text("", 1, 0);
+    this.addChild(this.content);
+    this.updateDisplay();
+  }
+
+  private updateDisplay(): void {
+    // Rebuild content with current theme
+    this.content.setText(theme.fg("accent", this.message));
+  }
+
+  override invalidate(): void {
+    super.invalidate();  // Clear child caches
+    this.updateDisplay(); // Rebuild with new theme
+  }
+}
+```
+
+### Pattern: Rebuild on Invalidate
+
+For components with complex content:
+
+```typescript
+class ComplexComponent extends Container {
+  private data: SomeData;
+
+  constructor(data: SomeData) {
+    super();
+    this.data = data;
+    this.rebuild();
+  }
+
+  private rebuild(): void {
+    this.clear();  // Remove all children
+
+    // Build UI with current theme
+    this.addChild(new Text(theme.fg("accent", theme.bold("Title")), 1, 0));
+    this.addChild(new Spacer(1));
+
+    for (const item of this.data.items) {
+      const color = item.active ? "success" : "muted";
+      this.addChild(new Text(theme.fg(color, item.label), 1, 0));
+    }
+  }
+
+  override invalidate(): void {
+    super.invalidate();
+    this.rebuild();
+  }
+}
+```
+
+### When This Matters
+
+This pattern is needed when:
+
+1. **Pre-baking theme colors** - Using `theme.fg()` or `theme.bg()` to create styled strings stored in child components
+2. **Syntax highlighting** - Using `highlightCode()` which applies theme-based syntax colors
+3. **Complex layouts** - Building child component trees that embed theme colors
+
+This pattern is NOT needed when:
+
+1. **Using theme callbacks** - Passing functions like `(text) => theme.fg("accent", text)` that are called during render
+2. **Simple containers** - Just grouping other components without adding themed content
+3. **Stateless render** - Computing themed output fresh in every `render()` call (no caching)
+
 ## Common Patterns
 
 These patterns cover the most common UI needs in extensions. **Copy these patterns instead of building from scratch.**
