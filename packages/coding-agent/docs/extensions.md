@@ -523,6 +523,28 @@ pi.on("tool_result", async (event, ctx) => {
 
 **Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts)
 
+### User Bash Events
+
+#### user_bash
+
+Fired when user executes `!` or `!!` commands. **Can intercept.**
+
+```typescript
+pi.on("user_bash", (event, ctx) => {
+  // event.command - the bash command
+  // event.excludeFromContext - true if !! prefix
+  // event.cwd - working directory
+
+  // Option 1: Provide custom operations (e.g., SSH)
+  return { operations: remoteBashOps };
+
+  // Option 2: Full replacement - return result directly
+  return { result: { output: "...", exitCode: 0, cancelled: false, truncated: false } };
+});
+```
+
+**Examples:** [ssh.ts](../examples/extensions/ssh.ts)
+
 ## ExtensionContext
 
 Every handler receives `ctx: ExtensionContext`:
@@ -1256,6 +1278,16 @@ const current = ctx.ui.getEditorText();
 // Custom editor (vim mode, emacs mode, etc.)
 ctx.ui.setEditorComponent((tui, theme, keybindings) => new VimEditor(tui, theme, keybindings));
 ctx.ui.setEditorComponent(undefined);  // Restore default editor
+
+// Theme management
+const themes = ctx.ui.getAllThemes();  // [{ name: "dark", path: "/..." | undefined }, ...]
+const lightTheme = ctx.ui.getTheme("light");  // Load without switching
+const result = ctx.ui.setTheme("light");  // Switch by name
+if (!result.success) {
+  ctx.ui.notify(`Failed: ${result.error}`, "error");
+}
+ctx.ui.setTheme(lightTheme!);  // Or switch by Theme object
+ctx.ui.theme.fg("accent", "styled text");  // Access current theme
 ```
 
 **Examples:**
@@ -1264,6 +1296,7 @@ ctx.ui.setEditorComponent(undefined);  // Restore default editor
 - `ctx.ui.setFooter()`: [custom-footer.ts](../examples/extensions/custom-footer.ts)
 - `ctx.ui.setHeader()`: [custom-header.ts](../examples/extensions/custom-header.ts)
 - `ctx.ui.setEditorComponent()`: [modal-editor.ts](../examples/extensions/modal-editor.ts)
+- `ctx.ui.setTheme()`: [mac-system-theme.ts](../examples/extensions/mac-system-theme.ts)
 
 ### Custom Components
 

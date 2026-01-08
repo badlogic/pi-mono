@@ -75,12 +75,15 @@ import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
 import {
 	getAvailableThemes,
+	getAvailableThemesWithPaths,
 	getEditorTheme,
 	getMarkdownTheme,
+	getThemeByName,
 	initTheme,
 	onThemeChange,
 	setTheme,
-	type Theme,
+	setThemeInstance,
+	Theme,
 	theme,
 } from "./theme/theme.js";
 
@@ -936,6 +939,20 @@ export class InteractiveMode {
 			setEditorComponent: (factory) => this.setCustomEditorComponent(factory),
 			get theme() {
 				return theme;
+			},
+			getAllThemes: () => getAvailableThemesWithPaths(),
+			getTheme: (name) => getThemeByName(name),
+			setTheme: (themeOrName) => {
+				if (themeOrName instanceof Theme) {
+					setThemeInstance(themeOrName);
+					this.ui.requestRender();
+					return { success: true };
+				}
+				const result = setTheme(themeOrName, true);
+				if (result.success) {
+					this.ui.requestRender();
+				}
+				return result;
 			},
 		};
 	}
@@ -3140,6 +3157,50 @@ export class InteractiveMode {
 	}
 
 	private async handleBashCommand(command: string, excludeFromContext = false): Promise<void> {
+		const extensionRunner = this.session.extensionRunner;
+
+		// Emit user_bash event to let extensions intercept
+		const eventResult = extensionRunner
+			? await extensionRunner.emitUserBash({
+					type: "user_bash",
+					command,
+					excludeFromContext,
+					cwd: process.cwd(),
+				})
+			: undefined;
+
+		// If extension returned a full result, use it directly
+		if (eventResult?.result) {
+			const result = eventResult.result;
+
+			// Create UI component for display
+			this.bashComponent = new BashExecutionComponent(command, this.ui, excludeFromContext);
+			if (this.session.isStreaming) {
+				this.pendingMessagesContainer.addChild(this.bashComponent);
+				this.pendingBashComponents.push(this.bashComponent);
+			} else {
+				this.chatContainer.addChild(this.bashComponent);
+			}
+
+			// Show output and complete
+			if (result.output) {
+				this.bashComponent.appendOutput(result.output);
+			}
+			this.bashComponent.setComplete(
+				result.exitCode,
+				result.cancelled,
+				result.truncated ? ({ truncated: true, content: result.output } as TruncationResult) : undefined,
+				result.fullOutputPath,
+			);
+
+			// Record the result in session
+			this.session.recordBashResult(command, result, { excludeFromContext });
+			this.bashComponent = undefined;
+			this.ui.requestRender();
+			return;
+		}
+
+		// Normal execution path (possibly with custom operations)
 		const isDeferred = this.session.isStreaming;
 		this.bashComponent = new BashExecutionComponent(command, this.ui, excludeFromContext);
 
@@ -3162,7 +3223,7 @@ export class InteractiveMode {
 						this.ui.requestRender();
 					}
 				},
-				{ excludeFromContext },
+				{ excludeFromContext, operations: eventResult?.operations },
 			);
 
 			if (this.bashComponent) {

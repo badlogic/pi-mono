@@ -199,6 +199,13 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
+	// Handle user ! commands via SSH
+	pi.on("user_bash", (_event) => {
+		const ssh = getSsh();
+		if (!ssh) return; // No SSH, use local execution
+		return { operations: createRemoteBashOps(ssh.remote, ssh.remoteCwd, localCwd) };
+	});
+
 	// Replace local cwd with remote cwd in system prompt
 	pi.on("before_agent_start", async (event) => {
 		const ssh = getSsh();

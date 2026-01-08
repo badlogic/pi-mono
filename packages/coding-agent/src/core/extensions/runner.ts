@@ -5,7 +5,7 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model } from "@mariozechner/pi-ai";
 import type { KeyId } from "@mariozechner/pi-tui";
-import { theme } from "../../modes/interactive/theme/theme.js";
+import { type Theme, theme } from "../../modes/interactive/theme/theme.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
 import type {
@@ -33,6 +33,8 @@ import type {
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEventResult,
+	UserBashEvent,
+	UserBashEventResult,
 } from "./types.js";
 
 /** Combined result from all before_agent_start handlers */
@@ -89,6 +91,9 @@ const noOpUIContext: ExtensionUIContext = {
 	get theme() {
 		return theme;
 	},
+	getAllThemes: () => [],
+	getTheme: () => undefined,
+	setTheme: (_theme: string | Theme) => ({ success: false, error: "UI not available" }),
 };
 
 export class ExtensionRunner {
@@ -397,6 +402,35 @@ export class ExtensionRunner {
 		}
 
 		return result;
+	}
+
+	async emitUserBash(event: UserBashEvent): Promise<UserBashEventResult | undefined> {
+		const ctx = this.createContext();
+
+		for (const ext of this.extensions) {
+			const handlers = ext.handlers.get("user_bash");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					const handlerResult = await handler(event, ctx);
+					if (handlerResult) {
+						return handlerResult as UserBashEventResult;
+					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
+					this.emitError({
+						extensionPath: ext.path,
+						event: "user_bash",
+						error: message,
+						stack,
+					});
+				}
+			}
+		}
+
+		return undefined;
 	}
 
 	async emitContext(messages: AgentMessage[]): Promise<AgentMessage[]> {

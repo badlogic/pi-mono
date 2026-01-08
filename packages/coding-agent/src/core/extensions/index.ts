@@ -103,6 +103,9 @@ export type {
 	TreePreparation,
 	TurnEndEvent,
 	TurnStartEvent,
+	// Events - User Bash
+	UserBashEvent,
+	UserBashEventResult,
 	WriteToolResultEvent,
 } from "./types.js";
 // Type guards

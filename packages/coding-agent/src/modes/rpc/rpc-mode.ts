@@ -15,7 +15,7 @@ import * as crypto from "node:crypto";
 import * as readline from "readline";
 import type { AgentSession } from "../../core/agent-session.js";
 import type { ExtensionUIContext, ExtensionUIDialogOptions } from "../../core/extensions/index.js";
-import { theme } from "../interactive/theme/theme.js";
+import { type Theme, theme } from "../interactive/theme/theme.js";
 import type {
 	RpcCommand,
 	RpcExtensionUIRequest,
@@ -228,6 +228,19 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 
 		get theme() {
 			return theme;
+		},
+
+		getAllThemes() {
+			return [];
+		},
+
+		getTheme(_name: string) {
+			return undefined;
+		},
+
+		setTheme(_theme: string | Theme) {
+			// Theme switching not supported in RPC mode
+			return { success: false, error: "Theme switching not supported in RPC mode" };
 		},
 	});
 

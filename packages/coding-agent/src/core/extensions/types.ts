@@ -18,6 +18,7 @@ import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mario
 import type { Component, EditorComponent, EditorTheme, KeyId, TUI } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
+import type { BashResult } from "../bash-executor.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
 import type { EventBus } from "../event-bus.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
@@ -31,6 +32,7 @@ import type {
 	SessionEntry,
 	SessionManager,
 } from "../session-manager.js";
+import type { BashOperations } from "../tools/bash.js";
 import type { EditToolDetails } from "../tools/edit.js";
 import type {
 	BashToolDetails,
@@ -147,6 +149,15 @@ export interface ExtensionUIContext {
 
 	/** Get the current theme for styling. */
 	readonly theme: Theme;
+
+	/** Get all available themes with their names and file paths. */
+	getAllThemes(): { name: string; path: string | undefined }[];
+
+	/** Load a theme by name without switching to it. Returns undefined if not found. */
+	getTheme(name: string): Theme | undefined;
+
+	/** Set the current theme by name or Theme object. */
+	setTheme(theme: string | Theme): { success: boolean; error?: string };
 }
 
 // ============================================================================
@@ -379,6 +390,21 @@ export interface TurnEndEvent {
 }
 
 // ============================================================================
+// User Bash Events
+// ============================================================================
+
+/** Fired when user executes a bash command via ! or !! prefix */
+export interface UserBashEvent {
+	type: "user_bash";
+	/** The command to execute */
+	command: string;
+	/** True if !! prefix was used (excluded from LLM context) */
+	excludeFromContext: boolean;
+	/** Current working directory */
+	cwd: string;
+}
+
+// ============================================================================
 // Tool Events
 // ============================================================================
 
@@ -481,6 +507,7 @@ export type ExtensionEvent =
 	| AgentEndEvent
 	| TurnStartEvent
 	| TurnEndEvent
+	| UserBashEvent
 	| ToolCallEvent
 	| ToolResultEvent;
 
@@ -495,6 +522,14 @@ export interface ContextEventResult {
 export interface ToolCallEventResult {
 	block?: boolean;
 	reason?: string;
+}
+
+/** Result from user_bash event handler */
+export interface UserBashEventResult {
+	/** Custom operations to use for execution */
+	operations?: BashOperations;
+	/** Full replacement: extension handled execution, use this result */
+	result?: BashResult;
 }
 
 export interface ToolResultEventResult {
@@ -598,6 +633,7 @@ export interface ExtensionAPI {
 	on(event: "turn_end", handler: ExtensionHandler<TurnEndEvent>): void;
 	on(event: "tool_call", handler: ExtensionHandler<ToolCallEvent, ToolCallEventResult>): void;
 	on(event: "tool_result", handler: ExtensionHandler<ToolResultEvent, ToolResultEventResult>): void;
+	on(event: "user_bash", handler: ExtensionHandler<UserBashEvent, UserBashEventResult>): void;
 
 	// =========================================================================
 	// Tool Registration

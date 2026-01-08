@@ -456,6 +456,36 @@ export function getAvailableThemes(): string[] {
 	return Array.from(themes).sort();
 }
 
+export interface ThemeInfo {
+	name: string;
+	path: string | undefined;
+}
+
+export function getAvailableThemesWithPaths(): ThemeInfo[] {
+	const themesDir = getThemesDir();
+	const customThemesDir = getCustomThemesDir();
+	const result: ThemeInfo[] = [];
+
+	// Built-in themes
+	for (const name of Object.keys(getBuiltinThemes())) {
+		result.push({ name, path: path.join(themesDir, `${name}.json`) });
+	}
+
+	// Custom themes
+	if (fs.existsSync(customThemesDir)) {
+		for (const file of fs.readdirSync(customThemesDir)) {
+			if (file.endsWith(".json")) {
+				const name = file.slice(0, -5);
+				if (!result.some((t) => t.name === name)) {
+					result.push({ name, path: path.join(customThemesDir, file) });
+				}
+			}
+		}
+	}
+
+	return result.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function loadThemeJson(name: string): ThemeJson {
 	const builtinThemes = getBuiltinThemes();
 	if (name in builtinThemes) {
@@ -532,6 +562,14 @@ function loadTheme(name: string, mode?: ColorMode): Theme {
 	return createTheme(themeJson, mode);
 }
 
+export function getThemeByName(name: string): Theme | undefined {
+	try {
+		return loadTheme(name);
+	} catch {
+		return undefined;
+	}
+}
+
 function detectTerminalBackground(): "dark" | "light" {
 	const colorfgbg = process.env.COLORFGBG || "";
 	if (colorfgbg) {
@@ -594,6 +632,12 @@ export function setTheme(name: string, enableWatcher: boolean = false): { succes
 			error: error instanceof Error ? error.message : String(error),
 		};
 	}
+}
+
+export function setThemeInstance(themeInstance: Theme): void {
+	theme = themeInstance;
+	currentThemeName = "<in-memory>";
+	stopThemeWatcher(); // Can't watch a direct instance
 }
 
 export function onThemeChange(callback: () => void): void {

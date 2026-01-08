@@ -83,6 +83,8 @@ export type {
 	ToolResultEvent,
 	TurnEndEvent,
 	TurnStartEvent,
+	UserBashEvent,
+	UserBashEventResult,
 } from "./core/extensions/index.js";
 export {
 	createExtensionRuntime,
