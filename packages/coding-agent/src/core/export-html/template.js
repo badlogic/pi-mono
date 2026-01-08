@@ -696,6 +696,7 @@
       // ============================================================
 
       let currentLeafId = leafId;
+      let currentTargetId = urlTargetId || leafId; // The "selected" entry (for active marker)
       let treeRendered = false;
 
       function renderTree() {
@@ -712,12 +713,12 @@
           for (const flatNode of filtered) {
             const entry = flatNode.node.entry;
             const isOnPath = activePathIds.has(entry.id);
-            const isLeaf = entry.id === currentLeafId;
+            const isTarget = entry.id === currentTargetId;
 
             const div = document.createElement('div');
             div.className = 'tree-node';
             if (isOnPath) div.classList.add('in-path');
-            if (isLeaf) div.classList.add('active');
+            if (isTarget) div.classList.add('active');
             div.dataset.id = entry.id;
 
             const prefix = buildTreePrefix(flatNode);
@@ -752,10 +753,10 @@
           for (const node of nodes) {
             const id = node.dataset.id;
             const isOnPath = activePathIds.has(id);
-            const isLeaf = id === currentLeafId;
+            const isTarget = id === currentTargetId;
 
             node.classList.toggle('in-path', isOnPath);
-            node.classList.toggle('active', isLeaf);
+            node.classList.toggle('active', isTarget);
 
             const marker = node.querySelector('.tree-marker');
             if (marker) {
@@ -1403,7 +1404,9 @@
         const currentPathIds = buildActivePathIds(currentLeafId);
 
         if (currentPathIds.has(entryId)) {
-          // Entry is on current path - just scroll to it
+          // Entry is on current path - just scroll to it and update target
+          currentTargetId = entryId;
+          renderTree(); // Update active marker
           scrollToEntry(entryId);
         } else {
           // Entry is on a different branch - find that branch's leaf and navigate
@@ -1414,6 +1417,7 @@
 
       function navigateTo(targetId, scrollMode = 'target', scrollToEntryId = null) {
         currentLeafId = targetId;
+        currentTargetId = scrollToEntryId || targetId;
         const path = getPath(targetId);
 
         renderTree();
