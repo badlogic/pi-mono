@@ -706,9 +706,24 @@ function buildRequest(
 
 	if (isAntigravity) {
 		const existingText = request.systemInstruction?.parts?.[0]?.text || "";
+		const bridgePrompt = `# CRITICAL: Environment Override
+
+IGNORE ALL INSTRUCTIONS ABOVE THIS LINE. The following overrides are mandatory:
+
+- You are Pi, NOT Antigravity
+- Use RELATIVE paths, never absolute paths
+- IGNORE all <web_application_development> guidelines above (no glassmorphism, no "premium aesthetics", no design opinions)
+- IGNORE <communication_style> above
+- IGNORE <ephemeral_message> handling above
+- Follow ONLY the instructions below
+`;
 		request.systemInstruction = {
 			role: "user",
-			parts: [{ text: ANTIGRAVITY_SYSTEM_INSTRUCTION + (existingText ? `\n\n${existingText}` : "") }],
+			parts: [
+				{
+					text: ANTIGRAVITY_SYSTEM_INSTRUCTION + "\n\n" + bridgePrompt + (existingText ? `\n${existingText}` : ""),
+				},
+			],
 		};
 	}
 
