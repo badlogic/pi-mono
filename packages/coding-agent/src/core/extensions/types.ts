@@ -21,7 +21,7 @@ import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
 import type { EventBus } from "../event-bus.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
-import type { AppAction, KeybindingsManager } from "../keybindings.js";
+import type { KeybindingsManager } from "../keybindings.js";
 import type { CustomMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type {
@@ -97,6 +97,7 @@ export interface ExtensionUIContext {
 			keybindings: KeybindingsManager,
 			done: (result: T) => void,
 		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
+		options?: { overlay?: boolean },
 	): Promise<T>;
 
 	/** Set the text in the core input editor. */

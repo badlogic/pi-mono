@@ -135,21 +135,29 @@ export function visibleWidth(str: string): number {
 /**
  * Extract ANSI escape sequences from a string at the given position.
  */
-function extractAnsiCode(str: string, pos: number): { code: string; length: number } | null {
-	if (pos >= str.length || str[pos] !== "\x1b" || str[pos + 1] !== "[") {
+export function extractAnsiCode(str: string, pos: number): { code: string; length: number } | null {
+	if (pos >= str.length || str[pos] !== "\x1b") return null;
+
+	const next = str[pos + 1];
+
+	// CSI sequence: ESC [ ... m/G/K/H/J
+	if (next === "[") {
+		let j = pos + 2;
+		while (j < str.length && !/[mGKHJ]/.test(str[j]!)) j++;
+		if (j < str.length) return { code: str.substring(pos, j + 1), length: j + 1 - pos };
 		return null;
 	}
 
-	let j = pos + 2;
-	while (j < str.length && str[j] && !/[mGKHJ]/.test(str[j]!)) {
-		j++;
-	}
-
-	if (j < str.length) {
-		return {
-			code: str.substring(pos, j + 1),
-			length: j + 1 - pos,
-		};
+	// OSC sequence: ESC ] ... BEL or ESC ] ... ST (ESC \)
+	// Used for hyperlinks (OSC 8), window titles, etc.
+	if (next === "]") {
+		let j = pos + 2;
+		while (j < str.length) {
+			if (str[j] === "\x07") return { code: str.substring(pos, j + 1), length: j + 1 - pos };
+			if (str[j] === "\x1b" && str[j + 1] === "\\") return { code: str.substring(pos, j + 2), length: j + 2 - pos };
+			j++;
+		}
+		return null;
 	}
 
 	return null;
@@ -306,6 +314,11 @@ class AnsiCodeTracker {
 		this.strikethrough = false;
 		this.fgColor = null;
 		this.bgColor = null;
+	}
+
+	/** Clear all state for reuse. */
+	clear(): void {
+		this.reset();
 	}
 
 	getActiveCodes(): string {
@@ -710,4 +723,141 @@ export function truncateToWidth(text: string, maxWidth: number, ellipsis: string
 
 	// Add reset code before ellipsis to prevent styling leaking into it
 	return `${result}\x1b[0m${ellipsis}`;
+}
+
+/**
+ * Extract a range of visible columns from a line. Handles ANSI codes and wide chars.
+ * @param strict - If true, exclude wide chars at boundary that would extend past the range
+ */
+export function sliceByColumn(line: string, startCol: number, length: number, strict = false): string {
+	return sliceWithWidth(line, startCol, length, strict).text;
+}
+
+/** Like sliceByColumn but also returns the actual visible width of the result. */
+export function sliceWithWidth(
+	line: string,
+	startCol: number,
+	length: number,
+	strict = false,
+): { text: string; width: number } {
+	if (length <= 0) return { text: "", width: 0 };
+	const endCol = startCol + length;
+	let result = "",
+		resultWidth = 0,
+		currentCol = 0,
+		i = 0,
+		pendingAnsi = "";
+
+	while (i < line.length) {
+		const ansi = extractAnsiCode(line, i);
+		if (ansi) {
+			if (currentCol >= startCol && currentCol < endCol) result += ansi.code;
+			else if (currentCol < startCol) pendingAnsi += ansi.code;
+			i += ansi.length;
+			continue;
+		}
+
+		let textEnd = i;
+		while (textEnd < line.length && !extractAnsiCode(line, textEnd)) textEnd++;
+
+		for (const { segment } of segmenter.segment(line.slice(i, textEnd))) {
+			const w = graphemeWidth(segment);
+			const inRange = currentCol >= startCol && currentCol < endCol;
+			const fits = !strict || currentCol + w <= endCol;
+			if (inRange && fits) {
+				if (pendingAnsi) {
+					result += pendingAnsi;
+					pendingAnsi = "";
+				}
+				result += segment;
+				resultWidth += w;
+			}
+			currentCol += w;
+			if (currentCol >= endCol) break;
+		}
+		i = textEnd;
+		if (currentCol >= endCol) break;
+	}
+	return { text: result, width: resultWidth };
+}
+
+// Pooled tracker instance for extractSegments (avoids allocation per call)
+const pooledStyleTracker = new AnsiCodeTracker();
+
+/**
+ * Extract "before" and "after" segments from a line in a single pass.
+ * Used for overlay compositing where we need content before and after the overlay region.
+ * Preserves styling from before the overlay that should affect content after it.
+ */
+export function extractSegments(
+	line: string,
+	beforeEnd: number,
+	afterStart: number,
+	afterLen: number,
+	strictAfter = false,
+): { before: string; beforeWidth: number; after: string; afterWidth: number } {
+	let before = "",
+		beforeWidth = 0,
+		after = "",
+		afterWidth = 0;
+	let currentCol = 0,
+		i = 0;
+	let pendingAnsiBefore = "";
+	let afterStarted = false;
+	const afterEnd = afterStart + afterLen;
+
+	// Track styling state so "after" inherits styling from before the overlay
+	pooledStyleTracker.clear();
+
+	while (i < line.length) {
+		const ansi = extractAnsiCode(line, i);
+		if (ansi) {
+			// Track all SGR codes to know styling state at afterStart
+			pooledStyleTracker.process(ansi.code);
+			// Include ANSI codes in their respective segments
+			if (currentCol < beforeEnd) {
+				pendingAnsiBefore += ansi.code;
+			} else if (currentCol >= afterStart && currentCol < afterEnd && afterStarted) {
+				// Only include after we've started "after" (styling already prepended)
+				after += ansi.code;
+			}
+			i += ansi.length;
+			continue;
+		}
+
+		let textEnd = i;
+		while (textEnd < line.length && !extractAnsiCode(line, textEnd)) textEnd++;
+
+		for (const { segment } of segmenter.segment(line.slice(i, textEnd))) {
+			const w = graphemeWidth(segment);
+
+			if (currentCol < beforeEnd) {
+				if (pendingAnsiBefore) {
+					before += pendingAnsiBefore;
+					pendingAnsiBefore = "";
+				}
+				before += segment;
+				beforeWidth += w;
+			} else if (currentCol >= afterStart && currentCol < afterEnd) {
+				const fits = !strictAfter || currentCol + w <= afterEnd;
+				if (fits) {
+					// On first "after" grapheme, prepend inherited styling from before overlay
+					if (!afterStarted) {
+						after += pooledStyleTracker.getActiveCodes();
+						afterStarted = true;
+					}
+					after += segment;
+					afterWidth += w;
+				}
+			}
+
+			currentCol += w;
+			// Early exit: done with "before" only, or done with both segments
+			if (afterLen <= 0 ? currentCol >= beforeEnd : currentCol >= afterEnd) break;
+		}
+		i = textEnd;
+		if (afterLen <= 0 ? currentCol >= beforeEnd : currentCol >= afterEnd) break;
+	}
+
+	return { before, beforeWidth, after, afterWidth };
 }

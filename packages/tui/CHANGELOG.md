@@ -4,6 +4,8 @@
 
 ### Added
 
+- Overlay compositing for `ctx.ui.custom()` with `{ overlay: true }` option
+- `extractSegments()` for ANSI-aware line slicing with style inheritance
 - `EditorComponent` interface for custom editor implementations
 - `StdinBuffer` class to split batched stdin into individual sequences (adapted from [OpenTUI](https://github.com/anomalyco/opentui), MIT license)
 
