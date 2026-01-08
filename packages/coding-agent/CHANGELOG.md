@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `setTheme()` now triggers a full rerender so previously rendered components update with the new theme colors
+- `mac-system-theme.ts` example now polls every 2 seconds and uses `osascript` for real-time macOS appearance detection
+
 ## [0.39.0] - 2026-01-08
 
 ### Breaking Changes

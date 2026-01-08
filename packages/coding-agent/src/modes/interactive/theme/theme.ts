@@ -621,6 +621,9 @@ export function setTheme(name: string, enableWatcher: boolean = false): { succes
 		if (enableWatcher) {
 			startThemeWatcher();
 		}
+		if (onThemeChangeCallback) {
+			onThemeChangeCallback();
+		}
 		return { success: true };
 	} catch (error) {
 		// Theme is invalid - fall back to dark theme
@@ -638,6 +641,9 @@ export function setThemeInstance(themeInstance: Theme): void {
 	theme = themeInstance;
 	currentThemeName = "<in-memory>";
 	stopThemeWatcher(); // Can't watch a direct instance
+	if (onThemeChangeCallback) {
+		onThemeChangeCallback();
+	}
 }
 
 export function onThemeChange(callback: () => void): void {

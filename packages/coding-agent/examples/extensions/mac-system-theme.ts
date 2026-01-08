@@ -10,10 +10,13 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 function isDarkMode(): boolean {
 	try {
-		execSync("defaults read -g AppleInterfaceStyle", { encoding: "utf-8" });
-		return true; // Returns "Dark" if dark mode
+		const result = execSync(
+			"osascript -e 'tell application \"System Events\" to tell appearance preferences to return dark mode'",
+			{ encoding: "utf-8" },
+		);
+		return result.trim() === "true";
 	} catch {
-		return false; // Throws if light mode
+		return false;
 	}
 }
 
