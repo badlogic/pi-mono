@@ -31,6 +31,7 @@ export interface Args {
 	print?: boolean;
 	export?: string;
 	noSkills?: boolean;
+	watchSkills?: boolean;
 	skills?: string[];
 	listModels?: string | true;
 	messages: string[];
@@ -121,6 +122,8 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 			result.noExtensions = true;
 		} else if (arg === "--no-skills") {
 			result.noSkills = true;
+		} else if (arg === "--watch-skills") {
+			result.watchSkills = true;
 		} else if (arg === "--skills" && i + 1 < args.length) {
 			// Comma-separated glob patterns for skill filtering
 			result.skills = args[++i].split(",").map((s) => s.trim());
@@ -180,6 +183,7 @@ ${chalk.bold("Options:")}
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions                Disable extensions discovery and loading
   --no-skills                    Disable skills discovery and loading
+  --watch-skills                 Watch skills directories for changes
   --skills <patterns>            Comma-separated glob patterns to filter skills (e.g., git-*,docker)
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)

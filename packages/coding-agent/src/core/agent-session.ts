@@ -23,7 +23,7 @@ import type {
 } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
-import { getAuthPath } from "../config.js";
+import { getAgentDir, getAuthPath } from "../config.js";
 import { type BashResult, executeBash as executeBashCommand } from "./bash-executor.js";
 import {
 	type CompactionResult,
@@ -34,6 +34,7 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.js";
+import type { EventBus } from "./event-bus.js";
 import { exportSessionToHtml } from "./export-html/index.js";
 import type {
 	ExtensionRunner,
@@ -50,6 +51,8 @@ import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
 import type { BranchSummaryEntry, CompactionEntry, NewSessionOptions, SessionManager } from "./session-manager.js";
 import type { SettingsManager, SkillsSettings } from "./settings-manager.js";
+import { diffSkills, getSkillSources, loadSkills, type Skill, type SkillWarning } from "./skills.js";
+import { SkillsWatcher } from "./skills-watcher.js";
 
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =
@@ -77,6 +80,20 @@ export interface AgentSessionConfig {
 	/** Extension runner (created in sdk.ts with wrapped tools) */
 	extensionRunner?: ExtensionRunner;
 	skillsSettings?: Required<SkillsSettings>;
+	/** Initial skills list (for diffing/reload) */
+	skills?: Skill[];
+	/** Initial skill warnings */
+	skillWarnings?: SkillWarning[];
+	/** Mutable skills reference used by system prompt rebuild */
+	skillsState?: { skills: Skill[] };
+	/** Event bus for emitting skills:changed */
+	eventBus?: EventBus;
+	/** Working directory for skill discovery */
+	cwd?: string;
+	/** Agent config directory for skill discovery */
+	agentDir?: string;
+	/** Enable skill reloads (default: true) */
+	skillsReloadEnabled?: boolean;
 	/** Model registry for API key resolution and model discovery */
 	modelRegistry: ModelRegistry;
 	/** Tool registry for extension getTools/setTools - maps name to tool */
@@ -93,6 +110,19 @@ export interface PromptOptions {
 	images?: ImageContent[];
 	/** When streaming, how to queue the message: "steer" (interrupt) or "followUp" (wait). Required if streaming. */
 	streamingBehavior?: "steer" | "followUp";
+}
+
+export type SkillsReloadReason = "watcher" | "manual" | "cli";
+
+export interface SkillsReloadSummary {
+	reason: SkillsReloadReason;
+	before: number;
+	after: number;
+	added: string[];
+	removed: string[];
+	updated: string[];
+	warnings: SkillWarning[];
+	changed: boolean;
 }
 
 /** Result from cycleModel() */
@@ -177,6 +207,15 @@ export class AgentSession {
 	private _turnIndex = 0;
 
 	private _skillsSettings: Required<SkillsSettings> | undefined;
+	private _skills: Skill[] = [];
+	private _skillWarnings: SkillWarning[] = [];
+	private _skillsState: { skills: Skill[] } | undefined;
+	private _skillsReloadEnabled = true;
+	private _eventBus: EventBus | undefined;
+	private _cwd: string;
+	private _agentDir: string;
+	private _skillsWatcher: SkillsWatcher | undefined;
+	private _pendingSkillsPromptUpdate = false;
 
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
@@ -198,6 +237,13 @@ export class AgentSession {
 		this._promptTemplates = config.promptTemplates ?? [];
 		this._extensionRunner = config.extensionRunner;
 		this._skillsSettings = config.skillsSettings;
+		this._skills = config.skills ?? [];
+		this._skillWarnings = config.skillWarnings ?? [];
+		this._skillsState = config.skillsState;
+		this._skillsReloadEnabled = config.skillsReloadEnabled ?? true;
+		this._eventBus = config.eventBus;
+		this._cwd = config.cwd ?? this.sessionManager.getCwd();
+		this._agentDir = config.agentDir ?? getAgentDir();
 		this._modelRegistry = config.modelRegistry;
 		this._toolRegistry = config.toolRegistry ?? new Map();
 		this._rebuildSystemPrompt = config.rebuildSystemPrompt;
@@ -304,6 +350,10 @@ export class AgentSession {
 
 			await this._checkCompaction(msg);
 		}
+
+		if (event.type === "agent_end" && this._pendingSkillsPromptUpdate) {
+			this._applySkillsPromptUpdate();
+		}
 	};
 
 	/** Resolve the pending retry promise */
@@ -408,6 +458,7 @@ export class AgentSession {
 	 */
 	dispose(): void {
 		this._disconnectFromAgent();
+		this.stopSkillsWatcher();
 		this._eventListeners = [];
 	}
 
@@ -858,6 +909,136 @@ export class AgentSession {
 
 	get skillsSettings(): Required<SkillsSettings> | undefined {
 		return this._skillsSettings;
+	}
+
+	startSkillsWatcher(options?: { debounceMs?: number }): void {
+		if (this._skillsWatcher) {
+			this._skillsWatcher.close();
+			this._skillsWatcher = undefined;
+		}
+
+		if (!this._skillsSettings || this._skillsSettings.enabled === false || !this._skillsReloadEnabled) {
+			return;
+		}
+
+		const sources = getSkillSources({ ...this._skillsSettings, cwd: this._cwd, agentDir: this._agentDir });
+		const roots = Array.from(new Set(sources.map((source) => source.dir)));
+		if (roots.length === 0) {
+			return;
+		}
+
+		this._skillsWatcher = new SkillsWatcher({
+			roots,
+			debounceMs: options?.debounceMs,
+			onChange: () => {
+				void this.reloadSkills("watcher");
+			},
+		});
+	}
+
+	stopSkillsWatcher(): void {
+		if (this._skillsWatcher) {
+			this._skillsWatcher.close();
+			this._skillsWatcher = undefined;
+		}
+	}
+
+	async reloadSkills(reason: SkillsReloadReason): Promise<SkillsReloadSummary | null> {
+		if (!this._skillsSettings || this._skillsSettings.enabled === false || !this._skillsReloadEnabled) {
+			return null;
+		}
+
+		let loaded: { skills: Skill[]; warnings: SkillWarning[] };
+		try {
+			loaded = loadSkills({ ...this._skillsSettings, cwd: this._cwd, agentDir: this._agentDir });
+		} catch {
+			return null;
+		}
+
+		const diff = diffSkills(this._skills, loaded.skills);
+		const warningsChanged = !this._warningsMatch(this._skillWarnings, loaded.warnings);
+		const summary: SkillsReloadSummary = {
+			reason,
+			before: this._skills.length,
+			after: loaded.skills.length,
+			added: diff.added,
+			removed: diff.removed,
+			updated: diff.updated,
+			warnings: loaded.warnings,
+			changed: diff.added.length > 0 || diff.removed.length > 0 || diff.updated.length > 0 || warningsChanged,
+		};
+
+		this._skills = loaded.skills;
+		this._skillWarnings = loaded.warnings;
+		if (this._skillsState) {
+			this._skillsState.skills = loaded.skills;
+		}
+
+		// Avoid spamming sessions/listeners on no-op reloads (e.g. editor temp files or unrelated changes).
+		if (summary.changed) {
+			this._appendSkillsReloadEntry(summary);
+			this._emitSkillsChanged(summary);
+			this._scheduleSkillsPromptUpdate();
+		}
+
+		return summary;
+	}
+
+	private _warningsMatch(a: SkillWarning[], b: SkillWarning[]): boolean {
+		if (a.length !== b.length) return false;
+		const toKey = (warning: SkillWarning) => `${warning.skillPath}::${warning.message}`;
+		const aSet = new Set(a.map(toKey));
+		const bSet = new Set(b.map(toKey));
+		if (aSet.size !== bSet.size) return false;
+		for (const value of aSet) {
+			if (!bSet.has(value)) return false;
+		}
+		return true;
+	}
+
+	private _scheduleSkillsPromptUpdate(): void {
+		if (!this._rebuildSystemPrompt) return;
+		if (this.isStreaming) {
+			this._pendingSkillsPromptUpdate = true;
+			return;
+		}
+		this._applySkillsPromptUpdate();
+	}
+
+	private _applySkillsPromptUpdate(): void {
+		if (!this._rebuildSystemPrompt) return;
+		this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+		this.agent.setSystemPrompt(this._baseSystemPrompt);
+		this._pendingSkillsPromptUpdate = false;
+	}
+
+	private _emitSkillsChanged(summary: SkillsReloadSummary): void {
+		if (!this._eventBus) return;
+		this._eventBus.emit("skills:changed", {
+			timestamp: new Date().toISOString(),
+			source: summary.reason,
+			skills: {
+				before: summary.before,
+				after: summary.after,
+				added: summary.added,
+				removed: summary.removed,
+				updated: summary.updated,
+				warnings: summary.warnings,
+			},
+		});
+	}
+
+	private _appendSkillsReloadEntry(summary: SkillsReloadSummary): void {
+		// Stored as custom entry; rendered in the default tree view.
+		this.sessionManager.appendCustomEntry("skills_reload", {
+			reason: summary.reason,
+			before: summary.before,
+			after: summary.after,
+			added: summary.added,
+			removed: summary.removed,
+			updated: summary.updated,
+			warnings: summary.warnings,
+		});
 	}
 
 	/**

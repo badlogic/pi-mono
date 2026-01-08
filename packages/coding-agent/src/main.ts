@@ -21,7 +21,7 @@ import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { type CreateAgentSessionOptions, createAgentSession, discoverAuthStorage, discoverModels } from "./core/sdk.js";
 import { SessionManager } from "./core/session-manager.js";
-import { SettingsManager } from "./core/settings-manager.js";
+import { SettingsManager, type SkillsSettings } from "./core/settings-manager.js";
 import { resolvePromptInput } from "./core/system-prompt.js";
 import { printTimings, time } from "./core/timings.js";
 import { allTools } from "./core/tools/index.js";
@@ -241,6 +241,20 @@ export async function main(args: string[]) {
 	const parsed = parseArgs(args, extensionFlags);
 	time("parseArgs");
 
+	const skillsOverrides: Partial<SkillsSettings> = {};
+	if (parsed.skills) {
+		skillsOverrides.includeSkills = parsed.skills;
+	}
+	if (parsed.noSkills) {
+		skillsOverrides.enabled = false;
+	}
+	if (parsed.watchSkills !== undefined) {
+		skillsOverrides.watch = parsed.watchSkills;
+	}
+	if (Object.keys(skillsOverrides).length > 0) {
+		settingsManager.applyOverrides({ skills: skillsOverrides });
+	}
+
 	// Pass flag values to extensions via runtime
 	for (const [name, value] of parsed.unknownFlags) {
 		extensionsResult.runtime.flagValues.set(name, value);
@@ -320,6 +334,13 @@ export async function main(args: string[]) {
 		sessionManager = SessionManager.open(selectedPath);
 	}
 
+	const skillsSettings = settingsManager.getSkillsSettings();
+	const watchSkills = parsed.noSkills
+		? false
+		: parsed.print && parsed.watchSkills === undefined
+			? false
+			: skillsSettings.watch;
+
 	const sessionOptions = buildSessionOptions(
 		parsed,
 		scopedModels,
@@ -331,6 +352,7 @@ export async function main(args: string[]) {
 	sessionOptions.authStorage = authStorage;
 	sessionOptions.modelRegistry = modelRegistry;
 	sessionOptions.eventBus = eventBus;
+	sessionOptions.watchSkills = watchSkills;
 
 	// Handle CLI --api-key as runtime override (not persisted)
 	if (parsed.apiKey) {
@@ -383,6 +405,7 @@ export async function main(args: string[]) {
 		const mode = new InteractiveMode(session, {
 			migratedProviders,
 			modelFallbackMessage,
+			eventBus,
 			initialMessage,
 			initialImages,
 			initialMessages: parsed.messages,

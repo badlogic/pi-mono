@@ -7,7 +7,7 @@
 
 import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model } from "@mariozechner/pi-ai";
-import type { SessionStats } from "../../core/agent-session.js";
+import type { SessionStats, SkillsReloadSummary } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
 
@@ -58,6 +58,7 @@ export type RpcCommand =
 	| { id?: string; type: "branch"; entryId: string }
 	| { id?: string; type: "get_branch_messages" }
 	| { id?: string; type: "get_last_assistant_text" }
+	| { id?: string; type: "reload_skills" }
 
 	// Messages
 	| { id?: string; type: "get_messages" };
@@ -163,6 +164,13 @@ export type RpcResponse =
 			command: "get_last_assistant_text";
 			success: true;
 			data: { text: string | null };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "reload_skills";
+			success: true;
+			data: SkillsReloadSummary;
 	  }
 
 	// Messages

@@ -20,6 +20,7 @@ export interface RetrySettings {
 
 export interface SkillsSettings {
 	enabled?: boolean; // default: true
+	watch?: boolean; // default: false
 	enableCodexUser?: boolean; // default: true
 	enableClaudeUser?: boolean; // default: true
 	enableClaudeProject?: boolean; // default: true
@@ -378,6 +379,7 @@ export class SettingsManager {
 	getSkillsSettings(): Required<SkillsSettings> {
 		return {
 			enabled: this.settings.skills?.enabled ?? true,
+			watch: this.settings.skills?.watch ?? false,
 			enableCodexUser: this.settings.skills?.enableCodexUser ?? true,
 			enableClaudeUser: this.settings.skills?.enableClaudeUser ?? true,
 			enableClaudeProject: this.settings.skills?.enableClaudeProject ?? true,

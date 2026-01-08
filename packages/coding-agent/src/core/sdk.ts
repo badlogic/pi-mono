@@ -43,7 +43,7 @@ import { ModelRegistry } from "./model-registry.js";
 import { loadPromptTemplates as loadPromptTemplatesInternal, type PromptTemplate } from "./prompt-templates.js";
 import { SessionManager } from "./session-manager.js";
 import { type Settings, SettingsManager, type SkillsSettings } from "./settings-manager.js";
-import { loadSkills as loadSkillsInternal, type Skill } from "./skills.js";
+import { loadSkills as loadSkillsInternal, type Skill, type SkillWarning } from "./skills.js";
 import {
 	buildSystemPrompt as buildSystemPromptInternal,
 	loadProjectContextFiles as loadContextFilesInternal,
@@ -116,6 +116,8 @@ export interface CreateAgentSessionOptions {
 
 	/** Skills. Default: discovered from multiple locations */
 	skills?: Skill[];
+	/** Enable skill watcher (opt-in). Default: settings.skills.watch */
+	watchSkills?: boolean;
 	/** Context files (AGENTS.md content). Default: discovered walking up from cwd */
 	contextFiles?: Array<{ path: string; content: string }>;
 	/** Prompt templates. Default: discovered from cwd/.pi/prompts/ + agentDir/prompts/ */
@@ -419,8 +421,20 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = "off";
 	}
 
-	const skills = options.skills ?? discoverSkills(cwd, agentDir, settingsManager.getSkillsSettings());
+	const skillsSettings = settingsManager.getSkillsSettings();
+
+	let skills: Skill[] = [];
+	let skillWarnings: SkillWarning[] = [];
+	if (options.skills !== undefined) {
+		skills = options.skills;
+	} else if (skillsSettings.enabled !== false) {
+		const loaded = loadSkillsInternal({ ...skillsSettings, cwd, agentDir });
+		skills = loaded.skills;
+		skillWarnings = loaded.warnings;
+	}
 	time("discoverSkills");
+
+	const skillsState = { skills };
 
 	const contextFiles = options.contextFiles ?? discoverContextFiles(cwd, agentDir);
 	time("discoverContextFiles");
@@ -531,14 +545,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	// Function to rebuild system prompt when tools change
-	// Captures static options (cwd, agentDir, skills, contextFiles, customPrompt)
+	// Uses current skills state to keep prompt in sync with reloads
 	const rebuildSystemPrompt = (toolNames: string[]): string => {
 		// Filter to valid tool names
 		const validToolNames = toolNames.filter((n): n is ToolName => n in allBuiltInToolsMap);
 		const defaultPrompt = buildSystemPromptInternal({
 			cwd,
 			agentDir,
-			skills,
+			skills: skillsState.skills,
 			contextFiles,
 			selectedTools: validToolNames,
 		});
@@ -549,7 +563,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			return buildSystemPromptInternal({
 				cwd,
 				agentDir,
-				skills,
+				skills: skillsState.skills,
 				contextFiles,
 				selectedTools: validToolNames,
 				customPrompt: options.systemPrompt,
@@ -651,11 +665,23 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		scopedModels: options.scopedModels,
 		promptTemplates: promptTemplates,
 		extensionRunner,
-		skillsSettings: settingsManager.getSkillsSettings(),
+		skillsSettings,
+		skills,
+		skillWarnings,
+		skillsState,
+		skillsReloadEnabled: options.skills === undefined,
 		modelRegistry,
 		toolRegistry: wrappedToolRegistry ?? toolRegistry,
 		rebuildSystemPrompt,
+		eventBus,
+		cwd,
+		agentDir,
 	});
+	const canWatchSkills = skillsSettings.enabled !== false && options.skills === undefined;
+	const watchSkills = options.watchSkills ?? skillsSettings.watch;
+	if (canWatchSkills && watchSkills) {
+		session.startSkillsWatcher();
+	}
 	time("createAgentSession");
 
 	return {

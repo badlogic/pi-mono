@@ -8,7 +8,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import * as readline from "node:readline";
 import type { AgentEvent, AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ImageContent } from "@mariozechner/pi-ai";
-import type { SessionStats } from "../../core/agent-session.js";
+import type { SessionStats, SkillsReloadSummary } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
 import type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.js";
@@ -360,6 +360,14 @@ export class RpcClient {
 	async getLastAssistantText(): Promise<string | null> {
 		const response = await this.send({ type: "get_last_assistant_text" });
 		return this.getData<{ text: string | null }>(response).text;
+	}
+
+	/**
+	 * Reload skills from disk.
+	 */
+	async reloadSkills(): Promise<SkillsReloadSummary> {
+		const response = await this.send({ type: "reload_skills" });
+		return this.getData(response);
 	}
 
 	/**

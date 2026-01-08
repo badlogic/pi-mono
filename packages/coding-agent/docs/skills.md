@@ -155,6 +155,7 @@ Configure skill loading in `~/.pi/agent/settings.json`:
 {
   "skills": {
     "enabled": true,
+    "watch": false,
     "enableCodexUser": true,
     "enableClaudeUser": true,
     "enableClaudeProject": true,
@@ -170,6 +171,7 @@ Configure skill loading in `~/.pi/agent/settings.json`:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `enabled` | `true` | Master toggle for all skills |
+| `watch` | `false` | Watch skill directories and reload on changes |
 | `enableCodexUser` | `true` | Load from `~/.codex/skills/` |
 | `enableClaudeUser` | `true` | Load from `~/.claude/skills/` |
 | `enableClaudeProject` | `true` | Load from `<cwd>/.claude/skills/` |
@@ -197,6 +199,22 @@ pi --skills "aws-*"
 ```
 
 This overrides the `includeSkills` setting for the current session.
+
+### Hot Reloading
+
+Enable the watcher (opt-in) to reload skills when files change:
+
+```bash
+pi --watch-skills
+```
+
+Manual reload (interactive mode):
+
+```
+/skills reload
+```
+
+Print mode keeps watching off unless `--watch-skills` is explicitly set.
 
 ## How Skills Work
 

@@ -282,6 +282,79 @@
         return '';
       }
 
+      function parseSkillsReloadData(data) {
+        const result = {
+          reason: undefined,
+          before: undefined,
+          after: undefined,
+          added: [],
+          removed: [],
+          updated: [],
+          warningsCount: 0,
+        };
+
+        if (!data || typeof data !== 'object') return result;
+
+        const toStringArray = value => Array.isArray(value) ? value.filter(item => typeof item === 'string') : [];
+
+        if (typeof data.reason === 'string') result.reason = data.reason;
+        if (typeof data.before === 'number') result.before = data.before;
+        if (typeof data.after === 'number') result.after = data.after;
+
+        result.added = toStringArray(data.added);
+        result.removed = toStringArray(data.removed);
+        result.updated = toStringArray(data.updated);
+
+        if (Array.isArray(data.warnings)) {
+          result.warningsCount = data.warnings.length;
+        }
+
+        return result;
+      }
+
+      function formatSkillsReloadSummary(data) {
+        const info = parseSkillsReloadData(data);
+        const parts = [];
+
+        const formatNames = (names, maxNames) => {
+          if (!names || names.length === 0) return '';
+          const shown = names.slice(0, maxNames);
+          const more = names.length - shown.length;
+          return more > 0 ? `${shown.join(', ')}, +${more} more` : shown.join(', ');
+        };
+
+        const bucket = (label, names) => {
+          if (!names || names.length === 0) return null;
+          return `${label}: ${formatNames(names, 3)}`;
+        };
+
+        const diffParts = [];
+        const addedPart = bucket('added', info.added);
+        const removedPart = bucket('removed', info.removed);
+        const updatedPart = bucket('updated', info.updated);
+        if (addedPart) diffParts.push(addedPart);
+        if (removedPart) diffParts.push(removedPart);
+        if (updatedPart) diffParts.push(updatedPart);
+
+        parts.push(diffParts.length > 0 ? diffParts.join(' · ') : 'warnings changed');
+
+        const metaParts = [];
+        if (info.before !== undefined && info.after !== undefined) {
+          metaParts.push(`count: ${info.before}→${info.after}`);
+        }
+        if (info.warningsCount > 0) {
+          metaParts.push(`warnings: ${info.warningsCount}`);
+        }
+        if (info.reason) {
+          metaParts.push(`source: ${info.reason}`);
+        }
+        if (metaParts.length > 0) {
+          parts.push(metaParts.join(', '));
+        }
+
+        return parts.join(' · ');
+      }
+
       function getSearchableText(entry, label) {
         const parts = [];
         if (label) parts.push(label);
@@ -297,6 +370,22 @@
           case 'custom_message':
             parts.push(entry.customType);
             parts.push(typeof entry.content === 'string' ? entry.content : extractContent(entry.content));
+            break;
+          case 'custom':
+            if (entry.customType === 'skills_reload') {
+              const info = parseSkillsReloadData(entry.data);
+              parts.push('skills reload');
+              if (info.reason) parts.push(info.reason);
+              parts.push(...info.added, ...info.removed, ...info.updated);
+              if (info.before !== undefined && info.after !== undefined) {
+                parts.push(`${info.before}->${info.after}`);
+              }
+              if (info.warningsCount > 0) {
+                parts.push(`${info.warningsCount} warnings`);
+              }
+            } else {
+              parts.push('custom', entry.customType);
+            }
             break;
           case 'compaction':
             parts.push('compaction');
@@ -338,7 +427,8 @@
           }
 
           // Apply filter mode
-          const isSettingsEntry = ['label', 'custom', 'model_change', 'thinking_level_change'].includes(entry.type);
+          const isSkillsReloadEntry = entry.type === 'custom' && entry.customType === 'skills_reload';
+          const isSettingsEntry = ['label', 'model_change', 'thinking_level_change'].includes(entry.type) || (entry.type === 'custom' && !isSkillsReloadEntry);
           let passesFilter = true;
 
           switch (filterMode) {
@@ -486,6 +576,13 @@
           case 'custom_message': {
             const content = typeof entry.content === 'string' ? entry.content : extractContent(entry.content);
             return labelHtml + `<span class="tree-custom">[${escapeHtml(entry.customType)}]:</span> ${escapeHtml(truncate(normalize(content)))}`;
+          }
+          case 'custom': {
+            if (entry.customType === 'skills_reload') {
+              const summary = formatSkillsReloadSummary(entry.data);
+              return labelHtml + `<span class="tree-custom-message">[skills reload]</span> ${escapeHtml(summary)}`;
+            }
+            return labelHtml + `<span class="tree-muted">[custom: ${escapeHtml(entry.customType)}]</span>`;
           }
           case 'model_change':
             return labelHtml + `<span class="tree-muted">[model: ${entry.modelId}]</span>`;
@@ -979,6 +1076,63 @@
           return `<div class="branch-summary" id="${entryId}">${tsHtml}
             <div class="branch-summary-header">Branch Summary</div>
             <div class="markdown-content">${safeMarkedParse(entry.summary)}</div>
+          </div>`;
+        }
+
+        if (entry.type === 'custom' && entry.customType === 'skills_reload') {
+          const info = parseSkillsReloadData(entry.data);
+          const summary = formatSkillsReloadSummary(entry.data);
+
+          const warnings = Array.isArray(entry.data?.warnings) ? entry.data.warnings : [];
+          const warningLines = [];
+          for (const w of warnings) {
+            if (!w || typeof w !== 'object') continue;
+            const skillPath = typeof w.skillPath === 'string' ? w.skillPath : '';
+            const message = typeof w.message === 'string' ? w.message : '';
+            const line = skillPath && message ? `${shortenPath(skillPath)}: ${message}` : (message || skillPath);
+            if (line) warningLines.push(line);
+          }
+
+          const buildSection = (title, names) => {
+            if (!names || names.length === 0) return '';
+            const lines = [`${title} (${names.length}):`];
+            for (const name of names) {
+              lines.push(`- ${name}`);
+            }
+            return lines.join('\n');
+          };
+
+          const contentLines = [];
+          contentLines.push(`Summary: ${summary}`);
+          if (info.before !== undefined && info.after !== undefined) {
+            contentLines.push(`Count: ${info.before}->${info.after}`);
+          }
+          if (info.reason) {
+            contentLines.push(`Reason: ${info.reason}`);
+          }
+          if (info.added.length || info.removed.length || info.updated.length) {
+            contentLines.push('');
+            const addedBlock = buildSection('Added', info.added);
+            const removedBlock = buildSection('Removed', info.removed);
+            const updatedBlock = buildSection('Updated', info.updated);
+            if (addedBlock) contentLines.push(addedBlock);
+            if (removedBlock) contentLines.push(removedBlock);
+            if (updatedBlock) contentLines.push(updatedBlock);
+          }
+          if (warningLines.length > 0) {
+            contentLines.push('');
+            contentLines.push(`Warnings (${warningLines.length}):`);
+            for (const line of warningLines) {
+              contentLines.push(`- ${line}`);
+            }
+          }
+
+          const contentText = contentLines.join('\n');
+
+          return `<div class="compaction skills-reload" id="${entryId}" onclick="this.classList.toggle('expanded')">${tsHtml}
+            <div class="compaction-label">[skills reload]</div>
+            <div class="compaction-collapsed">${escapeHtml(summary)}</div>
+            <div class="compaction-content">${escapeHtml(contentText)}</div>
           </div>`;
         }
 

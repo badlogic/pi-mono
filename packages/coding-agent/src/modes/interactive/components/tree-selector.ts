@@ -255,9 +255,10 @@ class TreeList implements Component {
 			// Apply filter mode
 			let passesFilter = true;
 			// Entry types hidden in default view (settings/bookkeeping)
+			const isSkillsReloadEntry = entry.type === "custom" && entry.customType === "skills_reload";
 			const isSettingsEntry =
 				entry.type === "label" ||
-				entry.type === "custom" ||
+				(entry.type === "custom" && !isSkillsReloadEntry) ||
 				entry.type === "model_change" ||
 				entry.type === "thinking_level_change";
 
@@ -353,9 +354,23 @@ class TreeList implements Component {
 			case "thinking_level_change":
 				parts.push("thinking", entry.thinkingLevel);
 				break;
-			case "custom":
-				parts.push("custom", entry.customType);
+			case "custom": {
+				if (entry.customType === "skills_reload") {
+					const info = this.parseSkillsReloadData(entry.data);
+					parts.push("skills reload");
+					if (info.reason) parts.push(info.reason);
+					parts.push(...info.added, ...info.removed, ...info.updated);
+					if (info.before !== undefined && info.after !== undefined) {
+						parts.push(`${info.before}->${info.after}`);
+					}
+					if (info.warningsCount > 0) {
+						parts.push(`${info.warningsCount} warnings`);
+					}
+				} else {
+					parts.push("custom", entry.customType);
+				}
 				break;
+			}
 			case "label":
 				parts.push("label", entry.label ?? "");
 				break;
@@ -556,7 +571,12 @@ class TreeList implements Component {
 				result = theme.fg("dim", `[thinking: ${entry.thinkingLevel}]`);
 				break;
 			case "custom":
-				result = theme.fg("dim", `[custom: ${entry.customType}]`);
+				if (entry.customType === "skills_reload") {
+					const summary = this.formatSkillsReloadSummary(entry.data);
+					result = theme.fg("customMessageLabel", "[skills reload] ") + theme.fg("dim", summary);
+				} else {
+					result = theme.fg("dim", `[custom: ${entry.customType}]`);
+				}
 				break;
 			case "label":
 				result = theme.fg("dim", `[label: ${entry.label ?? "(cleared)"}]`);
@@ -595,6 +615,97 @@ class TreeList implements Component {
 			}
 		}
 		return false;
+	}
+
+	private parseSkillsReloadData(data: unknown): {
+		reason?: string;
+		before?: number;
+		after?: number;
+		added: string[];
+		removed: string[];
+		updated: string[];
+		warningsCount: number;
+	} {
+		const result = {
+			reason: undefined as string | undefined,
+			before: undefined as number | undefined,
+			after: undefined as number | undefined,
+			added: [] as string[],
+			removed: [] as string[],
+			updated: [] as string[],
+			warningsCount: 0,
+		};
+
+		if (!data || typeof data !== "object") {
+			return result;
+		}
+
+		const record = data as Record<string, unknown>;
+		const toStringArray = (value: unknown): string[] =>
+			Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+
+		if (typeof record.reason === "string") {
+			result.reason = record.reason;
+		}
+		if (typeof record.before === "number") {
+			result.before = record.before;
+		}
+		if (typeof record.after === "number") {
+			result.after = record.after;
+		}
+
+		result.added = toStringArray(record.added);
+		result.removed = toStringArray(record.removed);
+		result.updated = toStringArray(record.updated);
+
+		if (Array.isArray(record.warnings)) {
+			result.warningsCount = record.warnings.length;
+		}
+
+		return result;
+	}
+
+	private formatSkillsReloadSummary(data: unknown): string {
+		const info = this.parseSkillsReloadData(data);
+		const parts: string[] = [];
+
+		const formatNames = (names: string[], maxNames: number): string => {
+			if (names.length === 0) return "";
+			const shown = names.slice(0, maxNames);
+			const more = names.length - shown.length;
+			return more > 0 ? `${shown.join(", ")}, +${more} more` : shown.join(", ");
+		};
+
+		const bucket = (label: string, names: string[]): string | null => {
+			if (names.length === 0) return null;
+			return `${label}: ${formatNames(names, 3)}`;
+		};
+
+		const diffParts: string[] = [];
+		const addedPart = bucket("added", info.added);
+		const removedPart = bucket("removed", info.removed);
+		const updatedPart = bucket("updated", info.updated);
+		if (addedPart) diffParts.push(addedPart);
+		if (removedPart) diffParts.push(removedPart);
+		if (updatedPart) diffParts.push(updatedPart);
+
+		parts.push(diffParts.length > 0 ? diffParts.join(" · ") : "warnings changed");
+
+		const metaParts: string[] = [];
+		if (info.before !== undefined && info.after !== undefined) {
+			metaParts.push(`count: ${info.before}→${info.after}`);
+		}
+		if (info.warningsCount > 0) {
+			metaParts.push(`warnings: ${info.warningsCount}`);
+		}
+		if (info.reason) {
+			metaParts.push(`source: ${info.reason}`);
+		}
+		if (metaParts.length > 0) {
+			parts.push(metaParts.join(", "));
+		}
+
+		return parts.join(" · ");
 	}
 
 	private formatToolCall(name: string, args: Record<string, unknown>): string {

@@ -506,6 +506,14 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				return success(id, "get_last_assistant_text", { text });
 			}
 
+			case "reload_skills": {
+				const summary = await session.reloadSkills("manual");
+				if (!summary) {
+					return error(id, "reload_skills", "Skills reload is disabled");
+				}
+				return success(id, "reload_skills", summary);
+			}
+
 			// =================================================================
 			// Messages
 			// =================================================================

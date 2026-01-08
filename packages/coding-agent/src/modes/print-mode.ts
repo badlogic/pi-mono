@@ -139,6 +139,8 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 		}
 	}
 
+	session.stopSkillsWatcher();
+
 	// Ensure stdout is fully flushed before returning
 	// This prevents race conditions where the process exits before all output is written
 	await new Promise<void>((resolve, reject) => {

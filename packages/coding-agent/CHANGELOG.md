@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Skills hot-reload watcher (settings + CLI) with `/skills reload` and RPC `reload_skills`, emitting `skills:changed` events and `skills_reload` session entries
+
 ## [0.38.0] - 2026-01-08
 
 ### Breaking Changes

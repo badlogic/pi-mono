@@ -7,6 +7,8 @@ export {
 	type ModelCycleResult,
 	type PromptOptions,
 	type SessionStats,
+	type SkillsReloadReason,
+	type SkillsReloadSummary,
 } from "./core/agent-session.js";
 // Auth and model registry
 export { type ApiKeyCredential, type AuthCredential, AuthStorage, type OAuthCredential } from "./core/auth-storage.js";

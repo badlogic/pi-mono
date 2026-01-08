@@ -335,11 +335,13 @@ export interface LoadSkillsOptions extends SkillsSettings {
 	agentDir?: string;
 }
 
-/**
- * Load skills from all configured locations.
- * Returns skills and any validation warnings.
- */
-export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
+export interface SkillSourceRoot {
+	dir: string;
+	source: string;
+	format: SkillFormat;
+}
+
+export function getSkillSources(options: LoadSkillsOptions = {}): SkillSourceRoot[] {
 	const {
 		cwd = process.cwd(),
 		agentDir,
@@ -349,12 +351,43 @@ export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
 		enablePiUser = true,
 		enablePiProject = true,
 		customDirectories = [],
-		ignoredSkills = [],
-		includeSkills = [],
 	} = options;
 
-	// Resolve agentDir - if not provided, use default from config
 	const resolvedAgentDir = agentDir ?? getAgentDir();
+	const sources: SkillSourceRoot[] = [];
+
+	if (enableCodexUser) {
+		sources.push({ dir: join(homedir(), ".codex", "skills"), source: "codex-user", format: "recursive" });
+	}
+	if (enableClaudeUser) {
+		sources.push({ dir: join(homedir(), ".claude", "skills"), source: "claude-user", format: "claude" });
+	}
+	if (enableClaudeProject) {
+		sources.push({ dir: resolve(cwd, ".claude", "skills"), source: "claude-project", format: "claude" });
+	}
+	if (enablePiUser) {
+		sources.push({ dir: join(resolvedAgentDir, "skills"), source: "user", format: "recursive" });
+	}
+	if (enablePiProject) {
+		sources.push({ dir: resolve(cwd, CONFIG_DIR_NAME, "skills"), source: "project", format: "recursive" });
+	}
+	for (const customDir of customDirectories) {
+		sources.push({
+			dir: customDir.replace(/^~(?=$|[\\/])/, homedir()),
+			source: "custom",
+			format: "recursive",
+		});
+	}
+
+	return sources;
+}
+
+/**
+ * Load skills from all configured locations.
+ * Returns skills and any validation warnings.
+ */
+export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
+	const { ignoredSkills = [], includeSkills = [] } = options;
 
 	const skillMap = new Map<string, Skill>();
 	const realPathSet = new Set<string>();
@@ -411,27 +444,57 @@ export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
 		}
 	}
 
-	if (enableCodexUser) {
-		addSkills(loadSkillsFromDirInternal(join(homedir(), ".codex", "skills"), "codex-user", "recursive"));
-	}
-	if (enableClaudeUser) {
-		addSkills(loadSkillsFromDirInternal(join(homedir(), ".claude", "skills"), "claude-user", "claude"));
-	}
-	if (enableClaudeProject) {
-		addSkills(loadSkillsFromDirInternal(resolve(cwd, ".claude", "skills"), "claude-project", "claude"));
-	}
-	if (enablePiUser) {
-		addSkills(loadSkillsFromDirInternal(join(resolvedAgentDir, "skills"), "user", "recursive"));
-	}
-	if (enablePiProject) {
-		addSkills(loadSkillsFromDirInternal(resolve(cwd, CONFIG_DIR_NAME, "skills"), "project", "recursive"));
-	}
-	for (const customDir of customDirectories) {
-		addSkills(loadSkillsFromDirInternal(customDir.replace(/^~(?=$|[\\/])/, homedir()), "custom", "recursive"));
+	for (const source of getSkillSources(options)) {
+		addSkills(loadSkillsFromDirInternal(source.dir, source.source, source.format));
 	}
 
 	return {
 		skills: Array.from(skillMap.values()),
 		warnings: [...allWarnings, ...collisionWarnings],
 	};
+}
+
+export interface SkillsDiff {
+	added: string[];
+	removed: string[];
+	updated: string[];
+}
+
+export function diffSkills(before: Skill[], after: Skill[]): SkillsDiff {
+	const beforeMap = new Map<string, Skill>();
+	const afterMap = new Map<string, Skill>();
+
+	for (const skill of before) {
+		beforeMap.set(skill.name, skill);
+	}
+	for (const skill of after) {
+		afterMap.set(skill.name, skill);
+	}
+
+	const added: string[] = [];
+	const removed: string[] = [];
+	const updated: string[] = [];
+
+	for (const [name, skill] of afterMap) {
+		const previous = beforeMap.get(name);
+		if (!previous) {
+			added.push(name);
+			continue;
+		}
+		if (previous.filePath !== skill.filePath || previous.description !== skill.description) {
+			updated.push(name);
+		}
+	}
+
+	for (const name of beforeMap.keys()) {
+		if (!afterMap.has(name)) {
+			removed.push(name);
+		}
+	}
+
+	added.sort();
+	removed.sort();
+	updated.sort();
+
+	return { added, removed, updated };
 }

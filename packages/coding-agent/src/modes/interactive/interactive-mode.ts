@@ -34,6 +34,7 @@ import {
 import { spawn, spawnSync } from "child_process";
 import { APP_NAME, getAuthPath, getDebugLogPath, VERSION } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
+import type { EventBus } from "../../core/event-bus.js";
 import type {
 	ExtensionContext,
 	ExtensionRunner,
@@ -105,6 +106,8 @@ export interface InteractiveModeOptions {
 	migratedProviders?: string[];
 	/** Warning message if session model couldn't be restored */
 	modelFallbackMessage?: string;
+	/** Event bus for UI events (e.g., skills reload notifications) */
+	eventBus?: EventBus;
 	/** Initial message to send on startup (can include @file content) */
 	initialMessage?: string;
 	/** Images to attach to the initial message */
@@ -153,6 +156,7 @@ export class InteractiveMode {
 
 	// Agent subscription unsubscribe function
 	private unsubscribe?: () => void;
+	private unsubscribeSkillsChanged?: () => void;
 
 	// Track if editor is in bash mode (text starts with !)
 	private isBashMode = false;
@@ -246,6 +250,7 @@ export class InteractiveMode {
 			{ name: "logout", description: "Logout from OAuth provider" },
 			{ name: "new", description: "Start a new session" },
 			{ name: "compact", description: "Manually compact the session context" },
+			{ name: "skills", description: "Reload skills list" },
 			{ name: "resume", description: "Resume a different session" },
 		];
 
@@ -409,6 +414,7 @@ export class InteractiveMode {
 
 		// Subscribe to agent events
 		this.subscribeToAgent();
+		this.subscribeToSkillsChanged();
 
 		// Set up theme file watcher
 		onThemeChange(() => {
@@ -419,6 +425,70 @@ export class InteractiveMode {
 
 		// Set up git branch watcher
 		this.footer.watchBranch(() => {
+			this.ui.requestRender();
+		});
+	}
+
+	private subscribeToSkillsChanged(): void {
+		// Only used for surfacing skills hot-reload in the chat transcript.
+		// The actual reload flow and persistence is handled by AgentSession + SessionManager.
+		const bus = this.options.eventBus;
+		if (!bus) return;
+
+		if (this.unsubscribeSkillsChanged) {
+			this.unsubscribeSkillsChanged();
+			this.unsubscribeSkillsChanged = undefined;
+		}
+
+		this.unsubscribeSkillsChanged = bus.on("skills:changed", (data) => {
+			// We only show watcher-triggered reloads here. Manual `/skills reload` already prints its own status + warnings.
+			if (!data || typeof data !== "object") return;
+			const record = data as Record<string, unknown>;
+			const source = typeof record.source === "string" ? record.source : undefined;
+			if (source !== "watcher") return;
+
+			const skills = record.skills;
+			if (!skills || typeof skills !== "object") return;
+			const skillsRec = skills as Record<string, unknown>;
+
+			const before = typeof skillsRec.before === "number" ? skillsRec.before : undefined;
+			const after = typeof skillsRec.after === "number" ? skillsRec.after : undefined;
+
+			const toStringArray = (value: unknown): string[] =>
+				Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+
+			const added = toStringArray(skillsRec.added);
+			const removed = toStringArray(skillsRec.removed);
+			const updated = toStringArray(skillsRec.updated);
+			const warningsCount = Array.isArray(skillsRec.warnings) ? skillsRec.warnings.length : 0;
+
+			const formatNames = (names: string[], maxNames: number): string => {
+				if (names.length === 0) return "";
+				const shown = names.slice(0, maxNames);
+				const more = names.length - shown.length;
+				return more > 0 ? `${shown.join(", ")}, +${more} more` : shown.join(", ");
+			};
+
+			const changeParts: string[] = [];
+			if (added.length > 0) changeParts.push(`added: ${formatNames(added, 3)}`);
+			if (removed.length > 0) changeParts.push(`removed: ${formatNames(removed, 3)}`);
+			if (updated.length > 0) changeParts.push(`updated: ${formatNames(updated, 3)}`);
+			if (changeParts.length === 0) {
+				// Reloads are only emitted when something changed; if we have no skill changes, it was warnings.
+				changeParts.push("warnings changed");
+			}
+
+			const metaParts: string[] = [];
+			if (before !== undefined && after !== undefined) metaParts.push(`count: ${before}→${after}`);
+			if (warningsCount > 0) metaParts.push(`warnings: ${warningsCount}`);
+			metaParts.push(`source: ${source}`);
+
+			const summary = `${changeParts.join(" · ")}${metaParts.length > 0 ? ` · ${metaParts.join(" · ")}` : ""}`;
+
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(
+				new Text(theme.fg("customMessageLabel", "[skills reload] ") + theme.fg("dim", summary), 1, 0),
+			);
 			this.ui.requestRender();
 		});
 	}
@@ -1391,6 +1461,11 @@ export class InteractiveMode {
 				const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
 				this.editor.setText("");
 				await this.handleCompactCommand(customInstructions);
+				return;
+			}
+			if (text.startsWith("/skills")) {
+				this.editor.setText("");
+				await this.handleSkillsCommand(text);
 				return;
 			}
 			if (text === "/debug") {
@@ -2763,6 +2838,41 @@ export class InteractiveMode {
 		}
 	}
 
+	private async handleSkillsCommand(text: string): Promise<void> {
+		const parts = text.split(/\s+/).filter(Boolean);
+		if (parts.length < 2 || parts[1] !== "reload") {
+			this.showStatus("Usage: /skills reload");
+			return;
+		}
+
+		const summary = await this.session.reloadSkills("manual");
+		if (!summary) {
+			this.showError("Skills reload is disabled");
+			return;
+		}
+
+		const changes: string[] = [];
+		if (summary.added.length > 0) changes.push(`+${summary.added.length} added`);
+		if (summary.removed.length > 0) changes.push(`-${summary.removed.length} removed`);
+		if (summary.updated.length > 0) changes.push(`${summary.updated.length} updated`);
+		const changeText = changes.length > 0 ? changes.join(", ") : "no changes";
+		const warningText =
+			summary.warnings.length > 0
+				? `, ${summary.warnings.length} warning${summary.warnings.length === 1 ? "" : "s"}`
+				: "";
+
+		this.showStatus(`Skills reloaded (${changeText}${warningText})`);
+
+		if (summary.warnings.length > 0) {
+			const warningList = summary.warnings
+				.map((warning) => theme.fg("warning", `  ${warning.skillPath}: ${warning.message}`))
+				.join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+			this.ui.requestRender();
+		}
+	}
+
 	private async handleShareCommand(): Promise<void> {
 		// Check if gh is available and logged in
 		try {
@@ -3227,6 +3337,9 @@ export class InteractiveMode {
 		this.footer.dispose();
 		if (this.unsubscribe) {
 			this.unsubscribe();
+		}
+		if (this.unsubscribeSkillsChanged) {
+			this.unsubscribeSkillsChanged();
 		}
 		if (this.isInitialized) {
 			this.ui.stop();

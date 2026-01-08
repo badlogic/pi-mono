@@ -170,6 +170,13 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--watch-skills flag", () => {
+		test("parses --watch-skills flag", () => {
+			const result = parseArgs(["--watch-skills"]);
+			expect(result.watchSkills).toBe(true);
+		});
+	});
+
 	describe("messages and file args", () => {
 		test("parses plain text messages", () => {
 			const result = parseArgs(["hello", "world"]);

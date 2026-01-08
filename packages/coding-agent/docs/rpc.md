@@ -612,6 +612,32 @@ Response:
 
 Returns `{"text": null}` if no assistant messages exist.
 
+#### reload_skills
+
+Reload skills from disk (equivalent to `/skills reload`).
+
+```json
+{"type": "reload_skills"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "reload_skills",
+  "success": true,
+  "data": {
+    "reason": "manual",
+    "before": 2,
+    "after": 3,
+    "added": ["docker"],
+    "removed": [],
+    "updated": ["git"],
+    "warnings": []
+  }
+}
+```
+
 ## Events
 
 Events are streamed to stdout as JSON lines during agent operation. Events do NOT include an `id` field (only responses do).
