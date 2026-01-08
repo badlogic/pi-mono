@@ -38,7 +38,7 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@crosscopy/clipboard": "^0.2.8",
+		"@mariozechner/clipboard": "^0.3.0",
 		"@mariozechner/pi-agent-core": "^0.37.8",
 		"@mariozechner/pi-ai": "^0.37.8",
 		"@mariozechner/pi-tui": "^0.37.8",

@@ -1,4 +1,4 @@
-import Clipboard from "@crosscopy/clipboard";
+import Clipboard from "@mariozechner/clipboard";
 import { spawnSync } from "child_process";
 
 export type ClipboardImage = {
