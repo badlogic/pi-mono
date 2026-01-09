@@ -1,3 +1,4 @@
+import { CURSOR_MARKER, CURSOR_MARKER_END } from "../cursor.js";
 import { getEditorKeybindings } from "../keybindings.js";
 import type { Component } from "../tui.js";
 import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
@@ -307,8 +308,8 @@ export class Input implements Component {
 		const atCursor = visibleText[cursorDisplay] || " "; // Character at cursor, or space if at end
 		const afterCursor = visibleText.slice(cursorDisplay + 1);
 
-		// Use inverse video to show cursor
-		const cursorChar = `\x1b[7m${atCursor}\x1b[27m`; // ESC[7m = reverse video, ESC[27m = normal
+		// Use inverse video to show cursor (unique marker for reliable cursor positioning)
+		const cursorChar = `${CURSOR_MARKER}${atCursor}${CURSOR_MARKER_END}`;
 		const textWithCursor = beforeCursor + cursorChar + afterCursor;
 
 		// Calculate visual width

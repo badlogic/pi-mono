@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Replace cursor marker from `\x1b[7m` to `\x1b[7;999m` to avoid sync ambiguity.
+
+### Fixed
+
+- Fixed IME candidate window positioning by syncing the real terminal cursor to the focused fake cursor in input/editor components.
+
 ## [0.42.1] - 2026-01-09
 
 ## [0.42.0] - 2026-01-09
