@@ -307,6 +307,9 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 			for (const block of output.content) delete (block as any).index;
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
 			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			// Some providers via OpenRouter give additional information in this field.
+			const rawMetadata = (error as any)?.error?.metadata?.raw;
+			if (rawMetadata) output.errorMessage += `\n${rawMetadata}`;
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}
