@@ -97,8 +97,17 @@ export interface CreateAgentSessionOptions {
 	/** System prompt. String replaces default, function receives default and returns final. */
 	systemPrompt?: string | ((defaultPrompt: string) => string);
 
-	/** Built-in tools to use. Default: codingTools [read, bash, edit, write] */
+	/**
+	 * Built-in tools to use. Default: codingTools [read, bash, edit, write].
+	 * Ignored if `toolNames` is specified.
+	 */
 	tools?: Tool[];
+	/**
+	 * Tool names to enable (built-in and extension).
+	 * When specified, only these tools are active. Overrides `tools` option.
+	 * Unknown tool names are warned and ignored.
+	 */
+	toolNames?: string[];
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
 	/** Inline extensions. When provided (even if empty), skips file discovery. */
@@ -340,6 +349,40 @@ export function loadSettings(cwd?: string, agentDir?: string): Settings {
  * });
  * ```
  */
+
+/** Resolve which tools should be active based on toolNames option or defaults. */
+function resolveActiveTools(
+	toolNames: string[] | undefined,
+	toolRegistry: Map<string, AgentTool>,
+	defaultBuiltInTools: Tool[],
+	extensionTools: Tool[],
+): { tools: Tool[]; names: string[] } {
+	if (toolNames) {
+		// Validate and filter to only specified tools
+		const tools: Tool[] = [];
+		const names: string[] = [];
+		for (const name of toolNames) {
+			const tool = toolRegistry.get(name);
+			if (tool) {
+				names.push(name);
+				tools.push(tool);
+			} else {
+				console.error(
+					`Warning: Unknown tool "${name}". Valid tools: ${Array.from(toolRegistry.keys()).sort().join(", ")}`,
+				);
+			}
+		}
+		return { tools, names };
+	}
+
+	// Default: active built-in tools + all extension tools
+	// Extension tools can override built-in tools with the same name
+	const extToolNames = new Set(extensionTools.map((t) => t.name));
+	const nonOverriddenBuiltIn = defaultBuiltInTools.filter((t) => !extToolNames.has(t.name));
+	const tools = [...nonOverriddenBuiltIn, ...extensionTools];
+	return { tools, names: tools.map((t) => t.name) };
+}
+
 export async function createAgentSession(options: CreateAgentSessionOptions = {}): Promise<CreateAgentSessionResult> {
 	const cwd = options.cwd ?? process.cwd();
 	const agentDir = options.agentDir ?? getDefaultAgentDir();
@@ -525,17 +568,21 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		toolRegistry.set(tool.name, tool);
 	}
 
-	// Initially active tools = active built-in + extension tools
-	// Extension tools can override built-in tools with the same name
-	const extensionToolNames = new Set(wrappedExtensionTools.map((t) => t.name));
-	const nonOverriddenBuiltInTools = initialActiveBuiltInTools.filter((t) => !extensionToolNames.has(t.name));
-	let activeToolsArray: Tool[] = [...nonOverriddenBuiltInTools, ...wrappedExtensionTools];
+	// Determine active tools based on toolNames option or defaults
+	const { tools: resolvedTools, names: activeToolNames } = resolveActiveTools(
+		options.toolNames,
+		toolRegistry,
+		initialActiveBuiltInTools,
+		wrappedExtensionTools,
+	);
 	time("combineTools");
 
 	// Wrap tools with extensions if available
 	let wrappedToolRegistry: Map<string, AgentTool> | undefined;
+	const activeTools = extensionRunner
+		? wrapToolsWithExtensions(resolvedTools as AgentTool[], extensionRunner)
+		: resolvedTools;
 	if (extensionRunner) {
-		activeToolsArray = wrapToolsWithExtensions(activeToolsArray as AgentTool[], extensionRunner);
 		// Wrap ALL registry tools (not just active) so extensions can enable any
 		const allRegistryTools = Array.from(toolRegistry.values());
 		const wrappedAllTools = wrapToolsWithExtensions(allRegistryTools, extensionRunner);
@@ -568,7 +615,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}
 	};
 
-	const systemPrompt = rebuildSystemPrompt(initialActiveToolNames);
+	const systemPrompt = rebuildSystemPrompt(activeToolNames);
 	time("buildSystemPrompt");
 
 	const promptTemplates = options.promptTemplates ?? discoverPromptTemplates(cwd, agentDir);
@@ -616,7 +663,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			systemPrompt,
 			model,
 			thinkingLevel,
-			tools: activeToolsArray,
+			tools: activeTools,
 		},
 		convertToLlm: convertToLlmWithBlockImages,
 		sessionId: sessionManager.getSessionId(),

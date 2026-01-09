@@ -5,7 +5,6 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR } from "../config.js";
-import { allTools, type ToolName } from "../core/tools/index.js";
 
 export type Mode = "text" | "json" | "rpc";
 
@@ -25,7 +24,8 @@ export interface Args {
 	session?: string;
 	sessionDir?: string;
 	models?: string[];
-	tools?: ToolName[];
+	/** Tool names to enable - validated after extensions are loaded */
+	tools?: string[];
 	noTools?: boolean;
 	extensions?: string[];
 	noExtensions?: boolean;
@@ -90,18 +90,8 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 		} else if (arg === "--no-tools") {
 			result.noTools = true;
 		} else if (arg === "--tools" && i + 1 < args.length) {
-			const toolNames = args[++i].split(",").map((s) => s.trim());
-			const validTools: ToolName[] = [];
-			for (const name of toolNames) {
-				if (name in allTools) {
-					validTools.push(name as ToolName);
-				} else {
-					console.error(
-						chalk.yellow(`Warning: Unknown tool "${name}". Valid tools: ${Object.keys(allTools).join(", ")}`),
-					);
-				}
-			}
-			result.tools = validTools;
+			// Store raw tool names - validation happens after extensions are loaded
+			result.tools = args[++i].split(",").map((s) => s.trim());
 		} else if (arg === "--thinking" && i + 1 < args.length) {
 			const level = args[++i];
 			if (isValidThinkingLevel(level)) {

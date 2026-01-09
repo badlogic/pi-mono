@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `--tools` flag now properly filters extension tools. Previously, extension tools were always included regardless of the `--tools` flag setting. Now `--tools read,subagent` correctly enables only those specific tools.
+- `--tools` flag now accepts extension tool names without warning. Previously, specifying extension tools like `--tools subagent` would warn "Unknown tool" and ignore them.
+
 ## [0.42.0] - 2026-01-09
 
 ### Added

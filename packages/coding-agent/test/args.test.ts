@@ -170,6 +170,25 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--tools flag", () => {
+		test("parses built-in tool names", () => {
+			const result = parseArgs(["--tools", "read,bash,edit"]);
+			expect(result.tools).toEqual(["read", "bash", "edit"]);
+		});
+
+		test("accepts unknown tool names (validation deferred to extension loading)", () => {
+			// Unknown tool names like extension tools are accepted at parse time
+			// Validation happens later when extensions are loaded
+			const result = parseArgs(["--tools", "read,subagent,custom-tool"]);
+			expect(result.tools).toEqual(["read", "subagent", "custom-tool"]);
+		});
+
+		test("trims whitespace from tool names", () => {
+			const result = parseArgs(["--tools", " read , bash , edit "]);
+			expect(result.tools).toEqual(["read", "bash", "edit"]);
+		});
+	});
+
 	describe("--no-tools flag", () => {
 		test("parses --no-tools flag", () => {
 			const result = parseArgs(["--no-tools"]);
