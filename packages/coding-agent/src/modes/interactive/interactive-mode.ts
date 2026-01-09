@@ -398,7 +398,6 @@ export class InteractiveMode {
 		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
 		this.ui.addChild(this.widgetContainer);
-		this.ui.addChild(new Spacer(1));
 		this.ui.addChild(this.editorContainer);
 		this.ui.addChild(this.footer);
 		this.ui.setFocus(this.editor);
@@ -847,6 +846,7 @@ export class InteractiveMode {
 			return;
 		}
 
+		this.widgetContainer.addChild(new Spacer(1));
 		for (const [_key, component] of this.extensionWidgets) {
 			this.widgetContainer.addChild(component);
 		}
