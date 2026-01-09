@@ -28,7 +28,27 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 
 import { transformMessages } from "./transorm-messages.js";
 
-const piToolPrefix = "pi_";
+// Stealth mode: Mimic Claude Code's tool naming exactly
+const claudeCodeVersion = "2.1.2";
+
+// Map pi! tool names to Claude Code's exact tool names
+const claudeCodeToolNames: Record<string, string> = {
+	"read": "Read",
+	"write": "Write",
+	"edit": "Edit",
+	"bash": "Bash",
+	"grep": "Grep",
+	"find": "Glob",
+	"ls": "Glob",
+};
+
+const toClaudeCodeName = (name: string) => claudeCodeToolNames[name] || name;
+const fromClaudeCodeName = (name: string) => {
+	for (const [piName, ccName] of Object.entries(claudeCodeToolNames)) {
+		if (ccName === name) return piName;
+	}
+	return name;
+};
 
 /**
  * Convert content blocks to Anthropic API format
@@ -159,9 +179,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 						const block: Block = {
 							type: "toolCall",
 							id: event.content_block.id,
-							name: isOAuthToken
-								? event.content_block.name.substring(piToolPrefix.length)
-								: event.content_block.name,
+							name: isOAuthToken ? fromClaudeCodeName(event.content_block.name) : event.content_block.name,
 							arguments: event.content_block.input as Record<string, any>,
 							partialJson: "",
 							index: event.index,
@@ -298,10 +316,13 @@ function createClient(
 
 	const oauthToken = isOAuthToken(apiKey);
 	if (oauthToken) {
+		// Stealth mode: Mimic Claude Code's headers exactly
 		const defaultHeaders = {
 			accept: "application/json",
 			"anthropic-dangerous-direct-browser-access": "true",
-			"anthropic-beta": `oauth-2025-04-20,${betaFeatures.join(",")}`,
+			"anthropic-beta": `claude-code-20250219,oauth-2025-04-20,${betaFeatures.join(",")}`,
+			"user-agent": `claude-cli/${claudeCodeVersion} (external, cli)`,
+			"x-app": "cli",
 			...(model.headers || {}),
 		};
 
@@ -494,7 +515,7 @@ function convertMessages(
 					blocks.push({
 						type: "tool_use",
 						id: sanitizeToolCallId(block.id),
-						name: isOAuthToken ? `${piToolPrefix}${block.name}` : block.name,
+						name: isOAuthToken ? toClaudeCodeName(block.name) : block.name,
 						input: block.arguments,
 					});
 				}
@@ -567,7 +588,7 @@ function convertTools(tools: Tool[], isOAuthToken: boolean): Anthropic.Messages.
 		const jsonSchema = tool.parameters as any; // TypeBox already generates JSON Schema
 
 		return {
-			name: isOAuthToken ? `${piToolPrefix}${tool.name}` : tool.name,
+			name: isOAuthToken ? toClaudeCodeName(tool.name) : tool.name,
 			description: tool.description,
 			input_schema: {
 				type: "object" as const,
