@@ -206,7 +206,7 @@ async function pollOperation(
  */
 async function discoverProject(accessToken: string, onProgress?: (message: string) => void): Promise<string> {
 	// Check for user-provided project ID via environment variable
-	const envProjectId = process.env["GOOGLE_CLOUD_PROJECT"] || process.env["GOOGLE_CLOUD_PROJECT_ID"];
+	const envProjectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT_ID;
 
 	const headers = {
 		Authorization: `Bearer ${accessToken}`,
@@ -291,8 +291,8 @@ async function discoverProject(accessToken: string, onProgress?: (message: strin
 	};
 
 	if (tierId !== TIER_FREE && envProjectId) {
-		onboardBody["cloudaicompanionProject"] = envProjectId;
-		(onboardBody["metadata"] as Record<string, unknown>)["duetProject"] = envProjectId;
+		onboardBody.cloudaicompanionProject = envProjectId;
+		(onboardBody.metadata as Record<string, unknown>).duetProject = envProjectId;
 	}
 
 	// Start onboarding - this returns a long-running operation
