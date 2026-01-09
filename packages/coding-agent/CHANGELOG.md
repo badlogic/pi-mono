@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Symlinked directories in `prompts/` folders are now followed when loading prompt templates ([#601](https://github.com/badlogic/pi-mono/pull/601) by [@aliou](https://github.com/aliou))
+
 ## [0.42.0] - 2026-01-09
 
 ### Added
