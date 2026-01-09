@@ -1,4 +1,4 @@
-import { DynamicBorder, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { DynamicBorder, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Container, Text } from "@mariozechner/pi-tui";
 
 const PR_PROMPT_PATTERN = /^You are given one or more GitHub PR URLs:\s*(\S+)/im;
@@ -35,13 +35,12 @@ async function fetchGhMetadata(
 	pi: ExtensionAPI,
 	kind: PromptMatch["kind"],
 	url: string,
-	signal?: AbortSignal,
 ): Promise<GhMetadata | undefined> {
 	const args =
 		kind === "pr" ? ["pr", "view", url, "--json", "title,author"] : ["issue", "view", url, "--json", "title,author"];
 
 	try {
-		const result = await pi.exec("gh", args, { signal });
+		const result = await pi.exec("gh", args);
 		if (result.code !== 0 || !result.stdout) return undefined;
 		return JSON.parse(result.stdout) as GhMetadata;
 	} catch {
@@ -60,18 +59,7 @@ function formatAuthor(author?: GhMetadata["author"]): string | undefined {
 }
 
 export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
-	pi.on("before_agent_start", async (event, ctx) => {
-		if (!ctx.hasUI) return;
-		const match = extractPromptMatch(event.prompt);
-		if (!match) {
-			ctx.ui.setWidget("prompt-url", undefined);
-			return;
-		}
-
-		const meta = await fetchGhMetadata(pi, match.kind, match.url, event.signal);
-		const title = meta?.title?.trim();
-		const authorText = formatAuthor(meta?.author);
-
+	const setWidget = (ctx: ExtensionContext, match: PromptMatch, title?: string, authorText?: string) => {
 		ctx.ui.setWidget("prompt-url", (_tui, thm) => {
 			const titleText = title ? thm.fg("accent", title) : thm.fg("accent", match.url);
 			const authorLine = authorText ? thm.fg("muted", authorText) : undefined;
@@ -86,10 +74,52 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 			container.addChild(new Text(lines.join("\n"), 1, 0));
 			return container;
 		});
+	};
+
+	pi.on("before_agent_start", async (event, ctx) => {
+		if (!ctx.hasUI) return;
+		const match = extractPromptMatch(event.prompt);
+		if (!match) {
+			ctx.ui.setWidget("prompt-url", undefined);
+			return;
+		}
+
+		setWidget(ctx, match);
+		void fetchGhMetadata(pi, match.kind, match.url).then((meta) => {
+			const title = meta?.title?.trim();
+			const authorText = formatAuthor(meta?.author);
+			setWidget(ctx, match, title, authorText);
+		});
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (!ctx.hasUI) return;
-		ctx.ui.setWidget("prompt-url", undefined);
+
+		const entries = ctx.sessionManager.getEntries();
+		const lastUser = [...entries].reverse().find((entry) => {
+			return entry.type === "message" && entry.message.role === "user";
+		});
+
+		const content = lastUser?.type === "message" && lastUser?.message.role === "user" ? lastUser.message.content : undefined;
+		const text =
+			typeof content === "string"
+				? content
+				: content
+						?.filter((block): block is { type: "text"; text: string } => block.type === "text")
+						.map((block) => block.text)
+						.join("\n") ?? "";
+
+		const match = text ? extractPromptMatch(text) : undefined;
+		if (!match) {
+			ctx.ui.setWidget("prompt-url", undefined);
+			return;
+		}
+
+		setWidget(ctx, match);
+		void fetchGhMetadata(pi, match.kind, match.url).then((meta) => {
+			const title = meta?.title?.trim();
+			const authorText = formatAuthor(meta?.author);
+			setWidget(ctx, match, title, authorText);
+		});
 	});
 }
