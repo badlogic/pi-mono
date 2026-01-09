@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Anthropic OAuth support is back! Use `/login` to authenticate with your Claude Pro/Max subscription.
+
 ## [0.40.1] - 2026-01-09
 
 ### Removed
