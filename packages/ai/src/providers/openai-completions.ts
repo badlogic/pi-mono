@@ -367,8 +367,11 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		model: model.id,
 		messages,
 		stream: true,
-		stream_options: { include_usage: true },
 	};
+
+	if (compat.supportsStreamOptions) {
+		(params as any).stream_options = { include_usage: true };
+	}
 
 	if (compat.supportsStore) {
 		params.store = false;
@@ -641,7 +644,8 @@ function detectCompatFromUrl(baseUrl: string): Required<OpenAICompat> {
 		baseUrl.includes("cerebras.ai") ||
 		baseUrl.includes("api.x.ai") ||
 		baseUrl.includes("mistral.ai") ||
-		baseUrl.includes("chutes.ai");
+		baseUrl.includes("chutes.ai") ||
+		baseUrl.includes("gatewayz.ai");
 
 	const useMaxTokens = baseUrl.includes("mistral.ai") || baseUrl.includes("chutes.ai");
 
@@ -653,6 +657,7 @@ function detectCompatFromUrl(baseUrl: string): Required<OpenAICompat> {
 		supportsStore: !isNonStandard,
 		supportsDeveloperRole: !isNonStandard,
 		supportsReasoningEffort: !isGrok,
+		supportsStreamOptions: !isNonStandard,
 		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
 		requiresToolResultName: isMistral,
 		requiresAssistantAfterToolResult: false, // Mistral no longer requires this as of Dec 2024
@@ -673,6 +678,7 @@ function getCompat(model: Model<"openai-completions">): Required<OpenAICompat> {
 		supportsStore: model.compat.supportsStore ?? detected.supportsStore,
 		supportsDeveloperRole: model.compat.supportsDeveloperRole ?? detected.supportsDeveloperRole,
 		supportsReasoningEffort: model.compat.supportsReasoningEffort ?? detected.supportsReasoningEffort,
+		supportsStreamOptions: model.compat.supportsStreamOptions ?? detected.supportsStreamOptions,
 		maxTokensField: model.compat.maxTokensField ?? detected.maxTokensField,
 		requiresToolResultName: model.compat.requiresToolResultName ?? detected.requiresToolResultName,
 		requiresAssistantAfterToolResult:

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Fixed 422 error with non-standard providers (gatewayz.ai, chutes.ai, etc.) by adding `supportsStreamOptions` compatibility flag and conditionally sending `stream_options` parameter.
+
 ## [0.42.0] - 2026-01-09
 
 ### Added
