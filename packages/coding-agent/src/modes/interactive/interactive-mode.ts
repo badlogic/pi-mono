@@ -1368,8 +1368,9 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
-			if (text === "/model") {
-				this.showModelSelector();
+			if (text === "/model" || text.startsWith("/model ")) {
+				const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
+				this.showModelSelector(searchTerm);
 				this.editor.setText("");
 				return;
 			}
@@ -2469,7 +2470,7 @@ export class InteractiveMode {
 		});
 	}
 
-	private showModelSelector(): void {
+	private showModelSelector(initialSearchInput?: string): void {
 		this.showSelector((done) => {
 			const selector = new ModelSelectorComponent(
 				this.ui,
@@ -2479,10 +2480,10 @@ export class InteractiveMode {
 				this.session.scopedModels,
 				async (model) => {
 					try {
+						done();
 						await this.session.setModel(model);
 						this.footer.invalidate();
 						this.updateEditorBorderColor();
-						done();
 						this.showStatus(`Model: ${model.id}`);
 					} catch (error) {
 						done();
@@ -2493,6 +2494,7 @@ export class InteractiveMode {
 					done();
 					this.ui.requestRender();
 				},
+				initialSearchInput,
 			);
 			return { component: selector, focus: selector };
 		});

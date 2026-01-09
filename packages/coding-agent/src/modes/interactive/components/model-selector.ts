@@ -43,6 +43,7 @@ export class ModelSelectorComponent extends Container {
 		scopedModels: ReadonlyArray<ScopedModelItem>,
 		onSelect: (model: Model<any>) => void,
 		onCancel: () => void,
+		initialSearchInput?: string,
 	) {
 		super();
 
@@ -68,6 +69,9 @@ export class ModelSelectorComponent extends Container {
 
 		// Create search input
 		this.searchInput = new Input();
+		if (initialSearchInput) {
+			this.searchInput.setValue(initialSearchInput);
+		}
 		this.searchInput.onSubmit = () => {
 			// Enter on search input selects the first filtered item
 			if (this.filteredModels[this.selectedIndex]) {
@@ -89,7 +93,18 @@ export class ModelSelectorComponent extends Container {
 
 		// Load models and do initial render
 		this.loadModels().then(() => {
-			this.updateList();
+			if (initialSearchInput && this.tryAutoSelect(initialSearchInput)) {
+				// Auto-selection happened, don't show UI
+				return;
+			}
+
+			// Apply initial filter if provided
+			if (initialSearchInput) {
+				this.filterModels(initialSearchInput);
+			} else {
+				this.updateList();
+			}
+
 			// Request re-render after models are loaded
 			this.tui.requestRender();
 		});
@@ -234,6 +249,44 @@ export class ModelSelectorComponent extends Container {
 			this.searchInput.handleInput(keyData);
 			this.filterModels(this.searchInput.getValue());
 		}
+	}
+
+	/**
+	 * Attempt to auto-select a model based on search term. Must be either:
+	 * 1. Model ID only: "gpt-4" - must have single match across all providers
+	 * 2. Provider/Model: "openai/gpt-4" - matches specific provider
+	 *
+	 * @returns true if auto-selection happened, false otherwise
+	 */
+	private tryAutoSelect(searchTerm: string): boolean {
+		let targetProvider: string | undefined;
+		let targetModelId: string;
+
+		if (searchTerm.includes("/")) {
+			const parts = searchTerm.split("/", 2);
+			targetProvider = parts[0]?.trim().toLowerCase();
+			targetModelId = parts[1]?.trim().toLowerCase() ?? "";
+		} else {
+			targetModelId = searchTerm.trim().toLowerCase();
+		}
+
+		if (!targetModelId) {
+			return false;
+		}
+
+		const exactMatches = this.allModels.filter((item) => {
+			const idMatch = item.id.toLowerCase() === targetModelId;
+			const providerMatch = !targetProvider || item.provider.toLowerCase() === targetProvider;
+			return idMatch && providerMatch;
+		});
+
+		if (exactMatches.length === 1) {
+			this.handleSelect(exactMatches[0].model);
+			return true;
+		}
+
+		// Multiple matches or no matches - show selector UI
+		return false;
 	}
 
 	private handleSelect(model: Model<any>): void {
