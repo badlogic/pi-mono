@@ -122,10 +122,25 @@ interface LoadCodeAssistPayload {
 	allowedTiers?: Array<{ id?: string; isDefault?: boolean }>;
 }
 
-interface OnboardUserPayload {
+/**
+ * Long-running operation response from onboardUser
+ */
+interface LongRunningOperationResponse {
+	name?: string;
 	done?: boolean;
 	response?: {
 		cloudaicompanionProject?: { id?: string };
+	};
+}
+
+// Tier IDs as used by the Cloud Code API
+const TIER_FREE = "free-tier";
+const TIER_LEGACY = "legacy-tier";
+const TIER_STANDARD = "standard-tier";
+
+interface GoogleRpcErrorResponse {
+	error?: {
+		details?: Array<{ reason?: string }>;
 	};
 }
 
@@ -137,18 +152,62 @@ function wait(ms: number): Promise<void> {
 }
 
 /**
- * Get default tier ID from allowed tiers
+ * Get default tier from allowed tiers
  */
-function getDefaultTierId(allowedTiers?: Array<{ id?: string; isDefault?: boolean }>): string | undefined {
-	if (!allowedTiers || allowedTiers.length === 0) return undefined;
+function getDefaultTier(allowedTiers?: Array<{ id?: string; isDefault?: boolean }>): { id?: string } {
+	if (!allowedTiers || allowedTiers.length === 0) return { id: TIER_LEGACY };
 	const defaultTier = allowedTiers.find((t) => t.isDefault);
-	return defaultTier?.id ?? allowedTiers[0]?.id;
+	return defaultTier ?? { id: TIER_LEGACY };
+}
+
+function isVpcScAffectedUser(payload: unknown): boolean {
+	if (!payload || typeof payload !== "object") return false;
+	if (!("error" in payload)) return false;
+	const error = (payload as GoogleRpcErrorResponse).error;
+	if (!error?.details || !Array.isArray(error.details)) return false;
+	return error.details.some((detail) => detail.reason === "SECURITY_POLICY_VIOLATED");
+}
+
+/**
+ * Poll a long-running operation until completion
+ */
+async function pollOperation(
+	operationName: string,
+	headers: Record<string, string>,
+	onProgress?: (message: string) => void,
+): Promise<LongRunningOperationResponse> {
+	let attempt = 0;
+	while (true) {
+		if (attempt > 0) {
+			onProgress?.(`Waiting for project provisioning (attempt ${attempt + 1})...`);
+			await wait(5000);
+		}
+
+		const response = await fetch(`${CODE_ASSIST_ENDPOINT}/v1internal/${operationName}`, {
+			method: "GET",
+			headers,
+		});
+
+		if (!response.ok) {
+			throw new Error(`Failed to poll operation: ${response.status} ${response.statusText}`);
+		}
+
+		const data = (await response.json()) as LongRunningOperationResponse;
+		if (data.done) {
+			return data;
+		}
+
+		attempt += 1;
+	}
 }
 
 /**
  * Discover or provision a Google Cloud project for the user
  */
 async function discoverProject(accessToken: string, onProgress?: (message: string) => void): Promise<string> {
+	// Check for user-provided project ID via environment variable
+	const envProjectId = process.env["GOOGLE_CLOUD_PROJECT"] || process.env["GOOGLE_CLOUD_PROJECT_ID"];
+
 	const headers = {
 		Authorization: `Bearer ${accessToken}`,
 		"Content-Type": "application/json",
@@ -162,62 +221,114 @@ async function discoverProject(accessToken: string, onProgress?: (message: strin
 		method: "POST",
 		headers,
 		body: JSON.stringify({
+			cloudaicompanionProject: envProjectId,
 			metadata: {
 				ideType: "IDE_UNSPECIFIED",
 				platform: "PLATFORM_UNSPECIFIED",
 				pluginType: "GEMINI",
+				duetProject: envProjectId,
 			},
 		}),
 	});
 
-	if (loadResponse.ok) {
-		const data = (await loadResponse.json()) as LoadCodeAssistPayload;
+	let data: LoadCodeAssistPayload;
 
-		// If we have an existing project, use it
+	if (!loadResponse.ok) {
+		let errorPayload: unknown;
+		try {
+			errorPayload = await loadResponse.clone().json();
+		} catch {
+			errorPayload = undefined;
+		}
+
+		if (isVpcScAffectedUser(errorPayload)) {
+			data = { currentTier: { id: TIER_STANDARD } };
+		} else {
+			const errorText = await loadResponse.text();
+			throw new Error(`loadCodeAssist failed: ${loadResponse.status} ${loadResponse.statusText}: ${errorText}`);
+		}
+	} else {
+		data = (await loadResponse.json()) as LoadCodeAssistPayload;
+	}
+
+	// If user already has a current tier and project, use it
+	if (data.currentTier) {
 		if (data.cloudaicompanionProject) {
 			return data.cloudaicompanionProject;
 		}
-
-		// Otherwise, try to onboard with the FREE tier
-		const tierId = getDefaultTierId(data.allowedTiers) ?? "FREE";
-
-		onProgress?.("Provisioning Cloud Code Assist project (this may take a moment)...");
-
-		// Onboard with retries (the API may take time to provision)
-		for (let attempt = 0; attempt < 10; attempt++) {
-			const onboardResponse = await fetch(`${CODE_ASSIST_ENDPOINT}/v1internal:onboardUser`, {
-				method: "POST",
-				headers,
-				body: JSON.stringify({
-					tierId,
-					metadata: {
-						ideType: "IDE_UNSPECIFIED",
-						platform: "PLATFORM_UNSPECIFIED",
-						pluginType: "GEMINI",
-					},
-				}),
-			});
-
-			if (onboardResponse.ok) {
-				const onboardData = (await onboardResponse.json()) as OnboardUserPayload;
-				const projectId = onboardData.response?.cloudaicompanionProject?.id;
-
-				if (onboardData.done && projectId) {
-					return projectId;
-				}
-			}
-
-			// Wait before retrying
-			if (attempt < 9) {
-				onProgress?.(`Waiting for project provisioning (attempt ${attempt + 2}/10)...`);
-				await wait(3000);
-			}
+		// User has a tier but no managed project - they need to provide one via env var
+		if (envProjectId) {
+			return envProjectId;
 		}
+		throw new Error(
+			"This account requires setting the GOOGLE_CLOUD_PROJECT or GOOGLE_CLOUD_PROJECT_ID environment variable. " +
+				"See https://goo.gle/gemini-cli-auth-docs#workspace-gca",
+		);
+	}
+
+	// User needs to be onboarded - get the default tier
+	const tier = getDefaultTier(data.allowedTiers);
+	const tierId = tier?.id ?? TIER_FREE;
+
+	if (tierId !== TIER_FREE && !envProjectId) {
+		throw new Error(
+			"This account requires setting the GOOGLE_CLOUD_PROJECT or GOOGLE_CLOUD_PROJECT_ID environment variable. " +
+				"See https://goo.gle/gemini-cli-auth-docs#workspace-gca",
+		);
+	}
+
+	onProgress?.("Provisioning Cloud Code Assist project (this may take a moment)...");
+
+	// Build onboard request - for free tier, don't include project ID (Google provisions one)
+	// For other tiers, include the user's project ID if available
+	const onboardBody: Record<string, unknown> = {
+		tierId,
+		metadata: {
+			ideType: "IDE_UNSPECIFIED",
+			platform: "PLATFORM_UNSPECIFIED",
+			pluginType: "GEMINI",
+		},
+	};
+
+	if (tierId !== TIER_FREE && envProjectId) {
+		onboardBody["cloudaicompanionProject"] = envProjectId;
+		(onboardBody["metadata"] as Record<string, unknown>)["duetProject"] = envProjectId;
+	}
+
+	// Start onboarding - this returns a long-running operation
+	const onboardResponse = await fetch(`${CODE_ASSIST_ENDPOINT}/v1internal:onboardUser`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify(onboardBody),
+	});
+
+	if (!onboardResponse.ok) {
+		const errorText = await onboardResponse.text();
+		throw new Error(`onboardUser failed: ${onboardResponse.status} ${onboardResponse.statusText}: ${errorText}`);
+	}
+
+	let lroData = (await onboardResponse.json()) as LongRunningOperationResponse;
+
+	// If the operation isn't done yet, poll until completion
+	if (!lroData.done && lroData.name) {
+		lroData = await pollOperation(lroData.name, headers, onProgress);
+	}
+
+	// Try to get project ID from the response
+	const projectId = lroData.response?.cloudaicompanionProject?.id;
+	if (projectId) {
+		return projectId;
+	}
+
+	// If no project ID from onboarding, fall back to env var
+	if (envProjectId) {
+		return envProjectId;
 	}
 
 	throw new Error(
 		"Could not discover or provision a Google Cloud project. " +
-			"Please ensure you have access to Google Cloud Code Assist (Gemini CLI).",
+			"Try setting the GOOGLE_CLOUD_PROJECT or GOOGLE_CLOUD_PROJECT_ID environment variable. " +
+			"See https://goo.gle/gemini-cli-auth-docs#workspace-gca",
 	);
 }
 
