@@ -5192,17 +5192,17 @@ export const MODELS = {
 			contextWindow: 262144,
 			maxTokens: 65535,
 		} satisfies Model<"openai-completions">,
-		"nex-agi/deepseek-v3.1-nex-n1:free": {
-			id: "nex-agi/deepseek-v3.1-nex-n1:free",
-			name: "Nex AGI: DeepSeek V3.1 Nex N1 (free)",
+		"nex-agi/deepseek-v3.1-nex-n1": {
+			id: "nex-agi/deepseek-v3.1-nex-n1",
+			name: "Nex AGI: DeepSeek V3.1 Nex N1",
 			api: "openai-completions",
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
 			reasoning: false,
 			input: ["text"],
 			cost: {
-				input: 0,
-				output: 0,
+				input: 0.27,
+				output: 1,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
