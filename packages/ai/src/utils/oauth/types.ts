@@ -8,7 +8,12 @@ export type OAuthCredentials = {
 	accountId?: string;
 };
 
-export type OAuthProvider = "github-copilot" | "google-gemini-cli" | "google-antigravity" | "openai-codex";
+export type OAuthProvider =
+	| "anthropic"
+	| "github-copilot"
+	| "google-gemini-cli"
+	| "google-antigravity"
+	| "openai-codex";
 
 export type OAuthPrompt = {
 	message: string;

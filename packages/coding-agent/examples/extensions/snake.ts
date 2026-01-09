@@ -156,23 +156,9 @@ class SnakeComponent {
 				this.onClose();
 				return;
 			}
-			// Any other key resumes (including P)
+			// Any other key resumes
 			this.paused = false;
 			this.startGame();
-			this.version++;
-			this.tui.requestRender();
-			return;
-		}
-
-		// P to pause without closing
-		if (data === "p" || data === "P") {
-			this.paused = true;
-			if (this.interval) {
-				clearInterval(this.interval);
-				this.interval = null;
-			}
-			this.version++;
-			this.tui.requestRender();
 			return;
 		}
 
@@ -289,7 +275,7 @@ class SnakeComponent {
 		} else if (this.state.gameOver) {
 			footer = `${red(bold("GAME OVER!"))} Press ${bold("R")} to restart, ${bold("Q")} to quit`;
 		} else {
-			footer = `↑↓←→ or WASD to move, ${bold("P")} pause, ${bold("ESC")} save+quit, ${bold("Q")} quit`;
+			footer = `↑↓←→ or WASD to move, ${bold("ESC")} pause, ${bold("Q")} quit`;
 		}
 		lines.push(this.padLine(boxLine(footer), width));
 
