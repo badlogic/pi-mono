@@ -25,7 +25,7 @@ function formatTokenCount(count: number): string {
  * List available models, optionally filtered by search pattern
  */
 export async function listModels(modelRegistry: ModelRegistry, searchPattern?: string): Promise<void> {
-	const models = await modelRegistry.getAvailable();
+	const models = modelRegistry.getAvailable();
 
 	if (models.length === 0) {
 		console.log("No models available. Set API keys in environment variables.");

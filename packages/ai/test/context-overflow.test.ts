@@ -285,6 +285,22 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
+	// Amazon Bedrock
+	// Expected pattern: "Input is too long for requested model"
+	// =============================================================================
+
+	describe.skipIf(!process.env.AWS_PROFILE)("Amazon Bedrock", () => {
+		it("claude-sonnet-4-5 - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+			const result = await testContextOverflow(model, "");
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
 	// xAI
 	// Expected pattern: "maximum prompt length is X but the request contains Y"
 	// =============================================================================
