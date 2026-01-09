@@ -1,22 +1,15 @@
 import { calculateCost } from "../../models.js";
-import type {
-	Api,
-	AssistantMessage,
-	Context,
-	ImageContent,
-	Message,
-	Model,
-	StopReason,
-	TextContent,
-	ThinkingContent,
-	Tool,
-	ToolCall,
-	ToolResultMessage,
-} from "../../types.js";
+import type { Api, AssistantMessage, Context, Model, TextContent, ThinkingContent, ToolCall } from "../../types.js";
 import type { AssistantMessageEventStream } from "../../utils/event-stream.js";
 import { parseStreamingJson } from "../../utils/json-parse.js";
 import { sanitizeSurrogates } from "../../utils/sanitize-unicode.js";
-import { transformMessages } from "../transorm-messages.js";
+import {
+	type AnthropicMessageParam,
+	type AnthropicToolDefinition,
+	convertAnthropicMessages,
+	convertAnthropicTools,
+	mapAnthropicStopReason,
+} from "../anthropic-shared.js";
 import { getVertexAccessToken, resolveLocation, resolveProject } from "./shared.js";
 import type { GoogleVertexOptions } from "./types.js";
 
@@ -43,55 +36,14 @@ type VertexClaudeResponse = {
 	usage?: VertexClaudeUsage;
 };
 
-type ClaudeTextBlockParam = { type: "text"; text: string };
-
-type ClaudeImageBlockParam = {
-	type: "image";
-	source: {
-		type: "base64";
-		media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
-		data: string;
-	};
-};
-
-type ClaudeThinkingBlockParam = { type: "thinking"; thinking: string; signature?: string };
-
-type ClaudeToolUseBlockParam = { type: "tool_use"; id: string; name: string; input: Record<string, unknown> };
-
-type ClaudeToolResultBlockParam = {
-	type: "tool_result";
-	tool_use_id: string;
-	content: string | ClaudeContentBlockParam[];
-	is_error?: boolean;
-};
-
-type ClaudeContentBlockParam =
-	| ClaudeTextBlockParam
-	| ClaudeImageBlockParam
-	| ClaudeThinkingBlockParam
-	| ClaudeToolUseBlockParam
-	| ClaudeToolResultBlockParam;
-
-type ClaudeMessageParam = { role: "user" | "assistant"; content: string | ClaudeContentBlockParam[] };
-
-type VertexClaudeTool = {
-	name: string;
-	description?: string;
-	input_schema: {
-		type: "object";
-		properties: Record<string, unknown>;
-		required: string[];
-	};
-};
-
 type VertexClaudeParams = {
 	anthropic_version: string;
-	messages: ClaudeMessageParam[];
+	messages: AnthropicMessageParam[];
 	max_tokens: number;
 	stream: boolean;
 	system?: string;
 	temperature?: number;
-	tools?: VertexClaudeTool[];
+	tools?: AnthropicToolDefinition[];
 	tool_choice?: { type: "auto" | "any" | "none" };
 	thinking?: { type: "enabled"; budget_tokens: number };
 };
@@ -185,7 +137,7 @@ export async function streamVertexAnthropic(
 			emitClaudeContentBlocks(output, stream, normalizeClaudeContent(message.content));
 			output.usage = mapClaudeUsage(message.usage);
 			calculateCost(model, output.usage);
-			output.stopReason = mapClaudeStopReason(message.stop_reason);
+			output.stopReason = mapAnthropicStopReason(message.stop_reason);
 		}
 
 		if (options?.signal?.aborted) {
@@ -323,7 +275,7 @@ async function streamClaudeSse(
 
 		if (event.type === "message_delta") {
 			if (event.delta?.stop_reason) {
-				output.stopReason = mapClaudeStopReason(event.delta.stop_reason);
+				output.stopReason = mapAnthropicStopReason(event.delta.stop_reason);
 			}
 			if (event.usage) {
 				output.usage = mapClaudeUsage(event.usage);
@@ -512,27 +464,6 @@ function extractClaudeResponse(payload: unknown): VertexClaudeResponse {
 	throw new Error("Unexpected Vertex Claude response format");
 }
 
-function mapClaudeStopReason(
-	reason: string | null | undefined,
-): Extract<StopReason, "stop" | "length" | "toolUse" | "error"> {
-	switch (reason) {
-		case "end_turn":
-			return "stop";
-		case "max_tokens":
-			return "length";
-		case "tool_use":
-			return "toolUse";
-		case "refusal":
-			return "error";
-		case "pause_turn":
-			return "stop";
-		case "stop_sequence":
-			return "stop";
-		default:
-			return "stop";
-	}
-}
-
 function normalizeClaudeModelId(modelId: string): string {
 	const prefix = "publishers/anthropic/models/";
 	return modelId.startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
@@ -545,7 +476,7 @@ function buildClaudeVertexParams(
 ): VertexClaudeParams {
 	const params: VertexClaudeParams = {
 		anthropic_version: VERTEX_ANTHROPIC_VERSION,
-		messages: convertClaudeMessages(context.messages, model),
+		messages: convertAnthropicMessages(context.messages, model, { addCacheControl: false }),
 		max_tokens: options?.maxTokens || (model.maxTokens / 3) | 0,
 		stream: true,
 	};
@@ -559,7 +490,7 @@ function buildClaudeVertexParams(
 	}
 
 	if (context.tools && context.tools.length > 0) {
-		params.tools = convertClaudeTools(context.tools);
+		params.tools = convertAnthropicTools(context.tools, { addCacheControl: false });
 	}
 
 	if (context.tools && context.tools.length > 0 && options?.toolChoice) {
@@ -576,149 +507,4 @@ function buildClaudeVertexParams(
 	}
 
 	return params;
-}
-
-function convertClaudeContentBlocks(content: (TextContent | ImageContent)[]): string | ClaudeContentBlockParam[] {
-	const hasImages = content.some((c) => c.type === "image");
-	if (!hasImages) {
-		return sanitizeSurrogates(content.map((c) => (c as TextContent).text).join("\n"));
-	}
-
-	const blocks: ClaudeContentBlockParam[] = content.map((block) => {
-		if (block.type === "text") {
-			return { type: "text", text: sanitizeSurrogates(block.text) };
-		}
-		return {
-			type: "image",
-			source: {
-				type: "base64",
-				media_type: block.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-				data: block.data,
-			},
-		};
-	});
-
-	const hasText = blocks.some((b) => b.type === "text");
-	if (!hasText) {
-		blocks.unshift({ type: "text", text: "(see attached image)" });
-	}
-
-	return blocks;
-}
-
-function convertClaudeMessages(messages: Message[], model: Model<"google-vertex">): ClaudeMessageParam[] {
-	const params: ClaudeMessageParam[] = [];
-	const transformedMessages = transformMessages(messages, model);
-
-	for (let i = 0; i < transformedMessages.length; i++) {
-		const msg = transformedMessages[i];
-
-		if (msg.role === "user") {
-			if (typeof msg.content === "string") {
-				if (msg.content.trim().length > 0) {
-					params.push({ role: "user", content: sanitizeSurrogates(msg.content) });
-				}
-			} else {
-				const blocks: ClaudeContentBlockParam[] = msg.content.map((item) => {
-					if (item.type === "text") {
-						return { type: "text", text: sanitizeSurrogates(item.text) };
-					}
-					return {
-						type: "image",
-						source: {
-							type: "base64",
-							media_type: item.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-							data: item.data,
-						},
-					};
-				});
-				let filteredBlocks = !model?.input.includes("image") ? blocks.filter((b) => b.type !== "image") : blocks;
-				filteredBlocks = filteredBlocks.filter((b) => {
-					if (b.type === "text") {
-						return b.text.trim().length > 0;
-					}
-					return true;
-				});
-				if (filteredBlocks.length === 0) continue;
-				params.push({ role: "user", content: filteredBlocks });
-			}
-		} else if (msg.role === "assistant") {
-			const blocks: ClaudeContentBlockParam[] = [];
-
-			for (const block of msg.content) {
-				if (block.type === "text") {
-					if (block.text.trim().length === 0) continue;
-					blocks.push({ type: "text", text: sanitizeSurrogates(block.text) });
-				} else if (block.type === "thinking") {
-					if (block.thinking.trim().length === 0) continue;
-					if (!block.thinkingSignature || block.thinkingSignature.trim().length === 0) {
-						blocks.push({ type: "text", text: sanitizeSurrogates(block.thinking) });
-					} else {
-						blocks.push({
-							type: "thinking",
-							thinking: sanitizeSurrogates(block.thinking),
-							signature: block.thinkingSignature,
-						});
-					}
-				} else if (block.type === "toolCall") {
-					blocks.push({
-						type: "tool_use",
-						id: sanitizeToolCallId(block.id),
-						name: block.name,
-						input: block.arguments,
-					});
-				}
-			}
-
-			if (blocks.length === 0) continue;
-			params.push({ role: "assistant", content: blocks });
-		} else if (msg.role === "toolResult") {
-			const toolResults: ClaudeContentBlockParam[] = [];
-
-			toolResults.push({
-				type: "tool_result",
-				tool_use_id: sanitizeToolCallId(msg.toolCallId),
-				content: convertClaudeContentBlocks(msg.content),
-				is_error: msg.isError,
-			});
-
-			let j = i + 1;
-			while (j < transformedMessages.length && transformedMessages[j].role === "toolResult") {
-				const nextMsg = transformedMessages[j] as ToolResultMessage;
-				toolResults.push({
-					type: "tool_result",
-					tool_use_id: sanitizeToolCallId(nextMsg.toolCallId),
-					content: convertClaudeContentBlocks(nextMsg.content),
-					is_error: nextMsg.isError,
-				});
-				j++;
-			}
-
-			i = j - 1;
-			params.push({ role: "user", content: toolResults });
-		}
-	}
-
-	return params;
-}
-
-function convertClaudeTools(tools: Tool[]): VertexClaudeTool[] {
-	if (!tools) return [];
-
-	return tools.map((tool) => {
-		const jsonSchema = tool.parameters as { properties?: Record<string, unknown>; required?: string[] };
-		return {
-			name: tool.name,
-			description: tool.description,
-			input_schema: {
-				type: "object",
-				properties: jsonSchema.properties || {},
-				required: jsonSchema.required || [],
-			},
-		};
-	});
-}
-
-function sanitizeToolCallId(id: string): string {
-	return id.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
