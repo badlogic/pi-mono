@@ -76,6 +76,7 @@ export function getEnvApiKey(provider: any): string | undefined {
 		openrouter: "OPENROUTER_API_KEY",
 		zai: "ZAI_API_KEY",
 		mistral: "MISTRAL_API_KEY",
+		opencode: "OPENCODE_API_KEY",
 	};
 
 	const envVar = envMap[provider];

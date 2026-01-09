@@ -25,6 +25,7 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	cerebras: "zai-glm-4.6",
 	zai: "glm-4.6",
 	mistral: "devstral-medium-latest",
+	opencode: "claude-opus-4-5",
 };
 
 export interface ScopedModel {
