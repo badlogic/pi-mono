@@ -612,6 +612,7 @@ function convertTools(tools: Tool[]): OpenAI.Chat.Completions.ChatCompletionTool
 			name: tool.name,
 			description: tool.description,
 			parameters: tool.parameters as any, // TypeBox already generates JSON Schema
+			strict: false, // Disable strict mode to allow optional parameters without null unions
 		},
 	}));
 }
