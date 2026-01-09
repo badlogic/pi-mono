@@ -37,6 +37,11 @@ When closing issues via commit:
 - Include `fixes #<number>` or `closes #<number>` in the commit message
 - This automatically closes the issue when the commit is merged
 
+## PR Workflow
+- Analyze PRs without pulling locally first
+- If the user approves: create a feature branch, rebase on main, apply adjustments, commit, merge into main, push, close PR, and leave a comment in the user's tone
+- Do not open a new PR for changelog-only adjustments unless explicitly requested
+
 ## Tools
 - GitHub CLI for issues/PRs
 - Add package labels to issues/PRs: pkg:agent, pkg:ai, pkg:coding-agent, pkg:mom, pkg:pods, pkg:tui, pkg:web-ui
