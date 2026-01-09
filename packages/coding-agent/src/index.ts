@@ -103,6 +103,8 @@ export {
 	wrapToolsWithExtensions,
 	wrapToolWithExtensions,
 } from "./core/extensions/index.js";
+// Footer data provider (git branch + extension statuses - data not otherwise available to extensions)
+export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.js";
 export { convertToLlm } from "./core/messages.js";
 export { ModelRegistry } from "./core/model-registry.js";
 // SDK for programmatic usage

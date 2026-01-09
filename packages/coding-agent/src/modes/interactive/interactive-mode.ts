@@ -41,6 +41,7 @@ import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 } from "../../core/extensions/index.js";
+import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
@@ -128,6 +129,7 @@ export class InteractiveMode {
 	private autocompleteProvider: CombinedAutocompleteProvider | undefined;
 	private editorContainer: Container;
 	private footer: FooterComponent;
+	private footerDataProvider: FooterDataProvider;
 	private keybindings: KeybindingsManager;
 	private version: string;
 	private isInitialized = false;
@@ -226,7 +228,8 @@ export class InteractiveMode {
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
-		this.footer = new FooterComponent(session);
+		this.footerDataProvider = new FooterDataProvider();
+		this.footer = new FooterComponent(session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
 
 		// Load hide thinking block setting
@@ -427,8 +430,8 @@ export class InteractiveMode {
 			this.ui.requestRender();
 		});
 
-		// Set up git branch watcher
-		this.footer.watchBranch(() => {
+		// Set up git branch watcher (uses provider instead of footer)
+		this.footerDataProvider.onBranchChange(() => {
 			this.ui.requestRender();
 		});
 	}
@@ -797,7 +800,7 @@ export class InteractiveMode {
 	 * Set extension status text in the footer.
 	 */
 	private setExtensionStatus(key: string, text: string | undefined): void {
-		this.footer.setExtensionStatus(key, text);
+		this.footerDataProvider.setExtensionStatus(key, text);
 		this.ui.requestRender();
 	}
 
@@ -859,7 +862,11 @@ export class InteractiveMode {
 	/**
 	 * Set a custom footer component, or restore the built-in footer.
 	 */
-	private setExtensionFooter(factory: ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined): void {
+	private setExtensionFooter(
+		factory:
+			| ((tui: TUI, thm: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void })
+			| undefined,
+	): void {
 		// Dispose existing custom footer
 		if (this.customFooter?.dispose) {
 			this.customFooter.dispose();
@@ -873,8 +880,8 @@ export class InteractiveMode {
 		}
 
 		if (factory) {
-			// Create and add custom footer
-			this.customFooter = factory(this.ui, theme);
+			// Create and add custom footer, passing the data provider
+			this.customFooter = factory(this.ui, theme, this.footerDataProvider);
 			this.ui.addChild(this.customFooter);
 		} else {
 			// Restore built-in footer
@@ -3430,6 +3437,7 @@ export class InteractiveMode {
 			this.loadingAnimation = undefined;
 		}
 		this.footer.dispose();
+		this.footerDataProvider.dispose();
 		if (this.unsubscribe) {
 			this.unsubscribe();
 		}
