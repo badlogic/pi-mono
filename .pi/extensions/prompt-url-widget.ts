@@ -1,8 +1,8 @@
 import { DynamicBorder, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Container, Text } from "@mariozechner/pi-tui";
 
-const PR_PROMPT_PATTERN = /^You are given one or more GitHub PR URLs:\s*(\S+)/im;
-const ISSUE_PROMPT_PATTERN = /^Analyze GitHub issue\(s\):\s*(\S+)/im;
+const PR_PROMPT_PATTERN = /^\s*You are given one or more GitHub PR URLs:\s*(\S+)/im;
+const ISSUE_PROMPT_PATTERN = /^\s*Analyze GitHub issue\(s\):\s*(\S+)/im;
 
 type PromptMatch = {
 	kind: "pr" | "issue";
@@ -92,23 +92,34 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 		});
 	});
 
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_switch", async (_event, ctx) => {
+		rebuildFromSession(ctx);
+	});
+
+	const getUserText = (content: string | { type: string; text?: string }[] | undefined): string => {
+		if (!content) return "";
+		if (typeof content === "string") return content;
+		return (
+			content
+				.filter((block): block is { type: "text"; text: string } => block.type === "text")
+				.map((block) => block.text)
+				.join("\n") ?? ""
+		);
+	};
+
+	const rebuildFromSession = (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
 
 		const entries = ctx.sessionManager.getEntries();
-		const lastUser = [...entries].reverse().find((entry) => {
-			return entry.type === "message" && entry.message.role === "user";
+		const lastMatch = [...entries].reverse().find((entry) => {
+			if (entry.type !== "message" || entry.message.role !== "user") return false;
+			const text = getUserText(entry.message.content);
+			return !!extractPromptMatch(text);
 		});
 
-		const content = lastUser?.type === "message" && lastUser?.message.role === "user" ? lastUser.message.content : undefined;
-		const text =
-			typeof content === "string"
-				? content
-				: content
-						?.filter((block): block is { type: "text"; text: string } => block.type === "text")
-						.map((block) => block.text)
-						.join("\n") ?? "";
-
+		const content =
+			lastMatch?.type === "message" && lastMatch.message.role === "user" ? lastMatch.message.content : undefined;
+		const text = getUserText(content);
 		const match = text ? extractPromptMatch(text) : undefined;
 		if (!match) {
 			ctx.ui.setWidget("prompt-url", undefined);
@@ -121,5 +132,9 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 			const authorText = formatAuthor(meta?.author);
 			setWidget(ctx, match, title, authorText);
 		});
+	};
+
+	pi.on("session_start", async (_event, ctx) => {
+		rebuildFromSession(ctx);
 	});
 }
