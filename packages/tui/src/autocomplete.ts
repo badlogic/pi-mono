@@ -131,7 +131,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				const filtered = this.commands
 					.filter((cmd) => {
 						const name = "name" in cmd ? cmd.name : cmd.value; // Check if SlashCommand or AutocompleteItem
-						return name?.toLowerCase().startsWith(prefix.toLowerCase());
+						return typeof name === "string" && name.toLowerCase().startsWith(prefix.toLowerCase());
 					})
 					.map((cmd) => ({
 						value: "name" in cmd ? cmd.name : cmd.value,
