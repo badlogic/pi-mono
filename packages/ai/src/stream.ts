@@ -9,7 +9,7 @@ import {
 	type GoogleThinkingLevel,
 	streamGoogleGeminiCli,
 } from "./providers/google-gemini-cli.js";
-import { type GoogleVertexOptions, streamGoogleVertex } from "./providers/google-vertex.js";
+import { type GoogleVertexOptions, streamGoogleVertex } from "./providers/google-vertex/index.js";
 import { type OpenAICodexResponsesOptions, streamOpenAICodexResponses } from "./providers/openai-codex-responses.js";
 import { type OpenAICompletionsOptions, streamOpenAICompletions } from "./providers/openai-completions.js";
 import { type OpenAIResponsesOptions, streamOpenAIResponses } from "./providers/openai-responses.js";

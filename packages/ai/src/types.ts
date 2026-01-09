@@ -1,7 +1,7 @@
 import type { AnthropicOptions } from "./providers/anthropic.js";
 import type { GoogleOptions } from "./providers/google.js";
 import type { GoogleGeminiCliOptions } from "./providers/google-gemini-cli.js";
-import type { GoogleVertexOptions } from "./providers/google-vertex.js";
+import type { GoogleVertexOptions } from "./providers/google-vertex/index.js";
 import type { OpenAICodexResponsesOptions } from "./providers/openai-codex-responses.js";
 import type { OpenAICompletionsOptions } from "./providers/openai-completions.js";
 import type { OpenAIResponsesOptions } from "./providers/openai-responses.js";
@@ -239,4 +239,6 @@ export interface Model<TApi extends Api> {
 	headers?: Record<string, string>;
 	/** Compatibility overrides for openai-completions API. If not set, auto-detected from baseUrl. */
 	compat?: TApi extends "openai-completions" ? OpenAICompat : never;
+	/** Optional Vertex AI metadata for partner models. */
+	vertex?: TApi extends "google-vertex" ? { publisher?: string; modelId?: string } : never;
 }

@@ -5,21 +5,20 @@ import {
 	type ThinkingConfig,
 	ThinkingLevel,
 } from "@google/genai";
-import { calculateCost } from "../models.js";
+import { calculateCost } from "../../models.js";
 import type {
 	Api,
 	AssistantMessage,
 	Context,
 	Model,
 	StreamFunction,
-	StreamOptions,
 	TextContent,
 	ThinkingContent,
 	ToolCall,
-} from "../types.js";
-import { AssistantMessageEventStream } from "../utils/event-stream.js";
-import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-import type { GoogleThinkingLevel } from "./google-gemini-cli.js";
+} from "../../types.js";
+import { AssistantMessageEventStream } from "../../utils/event-stream.js";
+import { sanitizeSurrogates } from "../../utils/sanitize-unicode.js";
+import type { GoogleThinkingLevel } from "../google-gemini-cli.js";
 import {
 	convertMessages,
 	convertTools,
@@ -27,18 +26,12 @@ import {
 	mapStopReason,
 	mapToolChoice,
 	retainThoughtSignature,
-} from "./google-shared.js";
+} from "../google-shared.js";
+import { isVertexAnthropicModel, streamVertexAnthropic } from "./anthropic.js";
+import { resolveLocation, resolveProject } from "./shared.js";
+import type { GoogleVertexOptions } from "./types.js";
 
-export interface GoogleVertexOptions extends StreamOptions {
-	toolChoice?: "auto" | "none" | "any";
-	thinking?: {
-		enabled: boolean;
-		budgetTokens?: number; // -1 for dynamic, 0 to disable
-		level?: GoogleThinkingLevel;
-	};
-	project?: string;
-	location?: string;
-}
+export type { GoogleVertexOptions } from "./types.js";
 
 const API_VERSION = "v1";
 
@@ -59,6 +52,11 @@ export const streamGoogleVertex: StreamFunction<"google-vertex"> = (
 	options?: GoogleVertexOptions,
 ): AssistantMessageEventStream => {
 	const stream = new AssistantMessageEventStream();
+
+	if (isVertexAnthropicModel(model)) {
+		void streamVertexAnthropic(model, context, options, stream);
+		return stream;
+	}
 
 	(async () => {
 		const output: AssistantMessage = {
@@ -289,22 +287,15 @@ function createClient(model: Model<"google-vertex">, project: string, location: 
 	});
 }
 
-function resolveProject(options?: GoogleVertexOptions): string {
-	const project = options?.project || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
-	if (!project) {
-		throw new Error(
-			"Vertex AI requires a project ID. Set GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT or pass project in options.",
-		);
+function resolveVertexModelName(model: Model<"google-vertex">): string {
+	// Vertex partner models require the publisher prefix.
+	if (model.id.startsWith("publishers/")) return model.id;
+	const publisher = model.vertex?.publisher;
+	if (publisher) {
+		const modelId = model.vertex?.modelId || model.id;
+		return `publishers/${publisher}/models/${modelId}`;
 	}
-	return project;
-}
-
-function resolveLocation(options?: GoogleVertexOptions): string {
-	const location = options?.location || process.env.GOOGLE_CLOUD_LOCATION;
-	if (!location) {
-		throw new Error("Vertex AI requires a location. Set GOOGLE_CLOUD_LOCATION or pass location in options.");
-	}
-	return location;
+	return model.id;
 }
 
 function buildParams(
@@ -356,7 +347,7 @@ function buildParams(
 	}
 
 	const params: GenerateContentParameters = {
-		model: model.id,
+		model: resolveVertexModelName(model),
 		contents,
 		config,
 	};

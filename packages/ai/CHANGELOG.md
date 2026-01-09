@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Vertex AI Claude Opus 4.5 model (`claude-opus-4-5@20251101`).
+- Added the full set of Vertex AI Claude models (Claude 3/3.5/3.7/4/4.1/4.5 variants).
+- Added Vertex AI Claude support via the Anthropic publisher streamRawPredict endpoint (tool use + thinking).
+
 ## [0.42.0] - 2026-01-09
 
 ### Added
