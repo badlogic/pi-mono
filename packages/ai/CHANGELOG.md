@@ -2,8 +2,8 @@
 
 ## [Unreleased]
 
-### Fixed
-- Fixed 422 error with non-standard providers (gatewayz.ai, chutes.ai, etc.) by adding `supportsStreamOptions` compatibility flag and conditionally sending `stream_options` parameter.
+### Added
+- Added `supportsUsageInStreaming` compatibility flag for OpenAI-compatible providers that reject `stream_options: { include_usage: true }`. Defaults to `true`. Set to `false` in model config for providers like gatewayz.ai. ([#596](https://github.com/badlogic/pi-mono/pull/596) by [@XesGaDeus](https://github.com/XesGaDeus))
 
 ## [0.42.0] - 2026-01-09
 
