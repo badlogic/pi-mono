@@ -13,6 +13,7 @@ import {
 	getOAuthProviders,
 	type ImageContent,
 	type Message,
+	type Model,
 	type OAuthProvider,
 } from "@mariozechner/pi-ai";
 import type { EditorComponent, EditorTheme, KeyId, SlashCommand } from "@mariozechner/pi-tui";
@@ -1366,9 +1367,10 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
-			if (text === "/model") {
-				this.showModelSelector();
+			if (text === "/model" || text.startsWith("/model ")) {
+				const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
 				this.editor.setText("");
+				await this.handleModelCommand(searchTerm);
 				return;
 			}
 			if (text.startsWith("/export")) {
@@ -2497,7 +2499,69 @@ export class InteractiveMode {
 		});
 	}
 
-	private showModelSelector(): void {
+	private async handleModelCommand(searchTerm?: string): Promise<void> {
+		if (!searchTerm) {
+			this.showModelSelector();
+			return;
+		}
+
+		const model = await this.findExactModelMatch(searchTerm);
+		if (model) {
+			try {
+				await this.session.setModel(model);
+				this.footer.invalidate();
+				this.updateEditorBorderColor();
+				this.showStatus(`Model: ${model.id}`);
+			} catch (error) {
+				this.showError(error instanceof Error ? error.message : String(error));
+			}
+			return;
+		}
+
+		this.showModelSelector(searchTerm);
+	}
+
+	private async findExactModelMatch(searchTerm: string): Promise<Model<any> | undefined> {
+		const term = searchTerm.trim();
+		if (!term) return undefined;
+
+		let targetProvider: string | undefined;
+		let targetModelId = "";
+
+		if (term.includes("/")) {
+			const parts = term.split("/", 2);
+			targetProvider = parts[0]?.trim().toLowerCase();
+			targetModelId = parts[1]?.trim().toLowerCase() ?? "";
+		} else {
+			targetModelId = term.toLowerCase();
+		}
+
+		if (!targetModelId) return undefined;
+
+		const models = await this.getModelCandidates();
+		const exactMatches = models.filter((item) => {
+			const idMatch = item.id.toLowerCase() === targetModelId;
+			const providerMatch = !targetProvider || item.provider.toLowerCase() === targetProvider;
+			return idMatch && providerMatch;
+		});
+
+		return exactMatches.length === 1 ? exactMatches[0] : undefined;
+	}
+
+	private async getModelCandidates(): Promise<Model<any>[]> {
+		if (this.session.scopedModels.length > 0) {
+			return this.session.scopedModels.map((scoped) => scoped.model);
+		}
+
+		this.session.modelRegistry.refresh();
+		try {
+			return await this.session.modelRegistry.getAvailable();
+		} catch {
+			return [];
+		}
+	}
+
+	private showModelSelector(initialSearchInput?: string): void {
 		this.showSelector((done) => {
 			const selector = new ModelSelectorComponent(
 				this.ui,
@@ -2521,6 +2585,7 @@ export class InteractiveMode {
 					done();
 					this.ui.requestRender();
 				},
+				initialSearchInput,
 			);
 			return { component: selector, focus: selector };
 		});

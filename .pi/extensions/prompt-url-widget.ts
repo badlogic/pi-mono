@@ -80,7 +80,6 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 		if (!ctx.hasUI) return;
 		const match = extractPromptMatch(event.prompt);
 		if (!match) {
-			ctx.ui.setWidget("prompt-url", undefined);
 			return;
 		}
 
