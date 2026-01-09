@@ -34,11 +34,12 @@ import {
 import { spawn, spawnSync } from "child_process";
 import { APP_NAME, getAuthPath, getDebugLogPath, isBunBinary, VERSION } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
-import type {
-	ExtensionContext,
-	ExtensionRunner,
-	ExtensionUIContext,
-	ExtensionUIDialogOptions,
+import {
+	type ExtensionContext,
+	type ExtensionRunner,
+	type ExtensionUIContext,
+	type ExtensionUIDialogOptions,
+	loadExtensions,
 } from "../../core/extensions/index.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
@@ -253,6 +254,7 @@ export class InteractiveMode {
 			{ name: "new", description: "Start a new session" },
 			{ name: "compact", description: "Manually compact the session context" },
 			{ name: "resume", description: "Resume a different session" },
+			{ name: "reload-extensions", description: "Reload all extensions from disk" },
 		];
 
 		// Convert prompt templates to SlashCommand format for autocomplete
@@ -1447,6 +1449,11 @@ export class InteractiveMode {
 			if (text === "/resume") {
 				this.showSessionSelector();
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/reload-extensions") {
+				this.editor.setText("");
+				await this.handleReloadExtensions();
 				return;
 			}
 			if (text === "/quit" || text === "/exit") {
@@ -3275,6 +3282,68 @@ export class InteractiveMode {
 		}
 
 		await this.executeCompaction(customInstructions, false);
+	}
+
+	private async handleReloadExtensions(): Promise<void> {
+		const runner = this.session.extensionRunner;
+		if (!runner) {
+			this.showWarning("No extension runner available");
+			return;
+		}
+
+		// Get the original extension paths (includes CLI -e paths)
+		const originalPaths = runner.getExtensionPaths();
+		const cwd = process.cwd();
+
+		// Show loading indicator
+		this.chatContainer.addChild(new Spacer(1));
+		const reloadingLoader = new Loader(
+			this.ui,
+			(spinner) => theme.fg("accent", spinner),
+			(text) => theme.fg("muted", text),
+			"Reloading extensions...",
+		);
+		this.statusContainer.addChild(reloadingLoader);
+		this.ui.requestRender();
+
+		try {
+			// Emit session_shutdown to existing extensions
+			if (runner.hasHandlers("session_shutdown")) {
+				await runner.emit({ type: "session_shutdown" });
+			}
+
+			// Reload the same extensions that were originally loaded
+			const result = await loadExtensions(originalPaths, cwd, undefined, { useVM: true });
+
+			// Report errors
+			for (const error of result.errors) {
+				this.showError(`Extension error: ${path.basename(error.path)}: ${error.error}`);
+			}
+
+			// Replace extensions in runner (re-applies actions from old runtime)
+			runner.replaceExtensions(result.extensions, result.runtime);
+
+			// Re-setup shortcuts (they're captured in a closure)
+			this.setupExtensionShortcuts(runner);
+
+			// Emit session_start to new extensions
+			if (runner.hasHandlers("session_start")) {
+				await runner.emit({ type: "session_start" });
+			}
+
+			// Update autocomplete with new extension commands
+			const fdPath = await ensureTool("fd");
+			this.setupAutocomplete(fdPath);
+
+			const count = runner.getExtensionCount();
+			this.showStatus(`Reloaded ${count} extension${count !== 1 ? "s" : ""}`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.showError(`Failed to reload extensions: ${message}`);
+		} finally {
+			reloadingLoader.stop();
+			this.statusContainer.clear();
+		}
 	}
 
 	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<void> {

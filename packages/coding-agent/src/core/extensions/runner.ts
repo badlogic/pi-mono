@@ -129,6 +129,54 @@ export class ExtensionRunner {
 		this.modelRegistry = modelRegistry;
 	}
 
+	/**
+	 * Replace extensions with new ones after reload.
+	 * Preserves CLI flag values and re-applies actions from the old runtime.
+	 */
+	replaceExtensions(extensions: Extension[], runtime: ExtensionRuntime): void {
+		// Dispose old extensions (releases VM contexts)
+		for (const ext of this.extensions) {
+			ext.dispose?.();
+		}
+
+		// Preserve CLI flag values (set via setFlagValue, not from defaults)
+		const preservedFlags = new Map(this.runtime.flagValues);
+
+		// Preserve actions from old runtime
+		const oldRuntime = this.runtime;
+
+		// Replace with new extensions and runtime
+		this.extensions = extensions;
+		this.runtime = runtime;
+
+		// Re-apply preserved flag values to new runtime
+		for (const [name, value] of preservedFlags) {
+			// Only preserve if the flag still exists in new extensions
+			const flagExists = this.extensions.some((ext) => ext.flags.has(name));
+			if (flagExists) {
+				this.runtime.flagValues.set(name, value);
+			}
+		}
+
+		// Re-apply actions from old runtime (they were set in initialize())
+		this.runtime.sendMessage = oldRuntime.sendMessage;
+		this.runtime.sendUserMessage = oldRuntime.sendUserMessage;
+		this.runtime.appendEntry = oldRuntime.appendEntry;
+		this.runtime.getActiveTools = oldRuntime.getActiveTools;
+		this.runtime.getAllTools = oldRuntime.getAllTools;
+		this.runtime.setActiveTools = oldRuntime.setActiveTools;
+		this.runtime.setModel = oldRuntime.setModel;
+		this.runtime.getThinkingLevel = oldRuntime.getThinkingLevel;
+		this.runtime.setThinkingLevel = oldRuntime.setThinkingLevel;
+	}
+
+	/**
+	 * Get the number of loaded extensions.
+	 */
+	getExtensionCount(): number {
+		return this.extensions.length;
+	}
+
 	initialize(
 		actions: ExtensionActions,
 		contextActions: ExtensionContextActions,

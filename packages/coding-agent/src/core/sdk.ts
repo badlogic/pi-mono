@@ -461,6 +461,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			extensions: [],
 			errors: [],
 			runtime,
+			paths: [],
+			dispose: () => {},
 		};
 	} else {
 		// Discover extensions, merging with additional paths

@@ -1,5 +1,5 @@
 /**
- * Extension loader - loads TypeScript extension modules using jiti.
+ * Extension loader - loads TypeScript extension modules using jiti or VM isolation.
  */
 
 import * as fs from "node:fs";
@@ -23,6 +23,7 @@ import type {
 	RegisteredCommand,
 	ToolDefinition,
 } from "./types.js";
+import { VMExtensionLoader } from "./vm-loader.js";
 
 const require = createRequire(import.meta.url);
 
@@ -203,26 +204,46 @@ function createExtensionAPI(
 	return api;
 }
 
-async function loadBun(path: string) {
-	const module = await import(path);
+async function loadBun(filePath: string) {
+	const module = await import(filePath);
 	const factory = (module.default ?? module) as ExtensionFactory;
 	return typeof factory !== "function" ? undefined : factory;
 }
 
-async function loadJiti(path: string) {
+async function loadJiti(filePath: string) {
 	const jiti = createJiti(import.meta.url, {
 		alias: getAliases(),
 	});
 
-	const module = await jiti.import(path, { default: true });
+	const module = await jiti.import(filePath, { default: true });
 	const factory = module as ExtensionFactory;
 	return typeof factory !== "function" ? undefined : factory;
 }
 
 /**
+ * Load an extension using VM-based isolation.
+ * Returns the factory function and a dispose callback.
+ */
+function loadVM(filePath: string, cwd: string): { factory: ExtensionFactory | undefined; dispose: () => void } {
+	const loader = new VMExtensionLoader({ extensionPath: filePath, cwd });
+	try {
+		const module = loader.loadFile(filePath) as { default?: ExtensionFactory } | ExtensionFactory;
+		const factory =
+			typeof module === "function" ? module : typeof module?.default === "function" ? module.default : undefined;
+		return {
+			factory,
+			dispose: () => loader.dispose(),
+		};
+	} catch (err) {
+		loader.dispose();
+		throw err;
+	}
+}
+
+/**
  * Create an Extension object with empty collections.
  */
-function createExtension(extensionPath: string, resolvedPath: string): Extension {
+function createExtension(extensionPath: string, resolvedPath: string, dispose?: () => void): Extension {
 	return {
 		path: extensionPath,
 		resolvedPath,
@@ -232,7 +253,12 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		commands: new Map(),
 		flags: new Map(),
 		shortcuts: new Map(),
+		dispose,
 	};
+}
+
+interface LoadExtensionOptions {
+	useVM?: boolean;
 }
 
 async function loadExtension(
@@ -240,16 +266,33 @@ async function loadExtension(
 	cwd: string,
 	eventBus: EventBus,
 	runtime: ExtensionRuntime,
+	options: LoadExtensionOptions = {},
 ): Promise<{ extension: Extension | null; error: string | null }> {
 	const resolvedPath = resolvePath(extensionPath, cwd);
 
 	try {
-		const factory = isBunBinary ? await loadBun(resolvedPath) : await loadJiti(resolvedPath);
+		let factory: ExtensionFactory | undefined;
+		let dispose: (() => void) | undefined;
+
+		if (options.useVM && !isBunBinary) {
+			// Use VM-based isolation
+			const result = loadVM(resolvedPath, cwd);
+			factory = result.factory;
+			dispose = result.dispose;
+		} else if (isBunBinary) {
+			// Bun doesn't need jiti
+			factory = await loadBun(resolvedPath);
+		} else {
+			// Standard jiti loading
+			factory = await loadJiti(resolvedPath);
+		}
+
 		if (!factory) {
+			dispose?.();
 			return { extension: null, error: `Extension does not export a valid factory function: ${extensionPath}` };
 		}
 
-		const extension = createExtension(extensionPath, resolvedPath);
+		const extension = createExtension(extensionPath, resolvedPath, dispose);
 		const api = createExtensionAPI(extension, runtime, cwd, eventBus);
 		await factory(api);
 
@@ -279,14 +322,19 @@ export async function loadExtensionFromFactory(
 /**
  * Load extensions from paths.
  */
-export async function loadExtensions(paths: string[], cwd: string, eventBus?: EventBus): Promise<LoadExtensionsResult> {
+export async function loadExtensions(
+	paths: string[],
+	cwd: string,
+	eventBus?: EventBus,
+	options: LoadExtensionOptions = {},
+): Promise<LoadExtensionsResult> {
 	const extensions: Extension[] = [];
 	const errors: Array<{ path: string; error: string }> = [];
 	const resolvedEventBus = eventBus ?? createEventBus();
 	const runtime = createExtensionRuntime();
 
 	for (const extPath of paths) {
-		const { extension, error } = await loadExtension(extPath, cwd, resolvedEventBus, runtime);
+		const { extension, error } = await loadExtension(extPath, cwd, resolvedEventBus, runtime, options);
 
 		if (error) {
 			errors.push({ path: extPath, error });
@@ -302,6 +350,12 @@ export async function loadExtensions(paths: string[], cwd: string, eventBus?: Ev
 		extensions,
 		errors,
 		runtime,
+		paths,
+		dispose: () => {
+			for (const ext of extensions) {
+				ext.dispose?.();
+			}
+		},
 	};
 }
 
@@ -414,14 +468,13 @@ function discoverExtensionsInDir(dir: string): string[] {
 }
 
 /**
- * Discover and load extensions from standard locations.
+ * Discover extension paths from standard locations without loading.
  */
-export async function discoverAndLoadExtensions(
+export function discoverExtensionPaths(
 	configuredPaths: string[],
 	cwd: string,
 	agentDir: string = getAgentDir(),
-	eventBus?: EventBus,
-): Promise<LoadExtensionsResult> {
+): string[] {
 	const allPaths: string[] = [];
 	const seen = new Set<string>();
 
@@ -457,5 +510,19 @@ export async function discoverAndLoadExtensions(
 		addPaths([resolved]);
 	}
 
-	return loadExtensions(allPaths, cwd, eventBus);
+	return allPaths;
+}
+
+/**
+ * Discover and load extensions from standard locations.
+ */
+export async function discoverAndLoadExtensions(
+	configuredPaths: string[],
+	cwd: string,
+	agentDir: string = getAgentDir(),
+	eventBus?: EventBus,
+	options: LoadExtensionOptions = {},
+): Promise<LoadExtensionsResult> {
+	const allPaths = discoverExtensionPaths(configuredPaths, cwd, agentDir);
+	return loadExtensions(allPaths, cwd, eventBus, options);
 }

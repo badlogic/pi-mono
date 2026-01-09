@@ -62,6 +62,7 @@ export type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	KeybindingsManager,
+	LoadExtensionsOptions,
 	LoadExtensionsResult,
 	MessageRenderer,
 	MessageRenderOptions,
@@ -89,6 +90,7 @@ export type {
 export {
 	createExtensionRuntime,
 	discoverAndLoadExtensions,
+	discoverExtensionPaths,
 	ExtensionRunner,
 	isBashToolResult,
 	isEditToolResult,

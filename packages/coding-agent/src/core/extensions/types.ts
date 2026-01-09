@@ -849,6 +849,14 @@ export interface Extension {
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
+	/** Dispose callback for VM-loaded extensions */
+	dispose?: () => void;
+}
+
+/** Options for loading extensions */
+export interface LoadExtensionsOptions {
+	/** Use VM-based isolation for extensions (enables clean reload) */
+	useVM?: boolean;
 }
 
 /** Result of loading extensions. */
@@ -857,6 +865,10 @@ export interface LoadExtensionsResult {
 	errors: Array<{ path: string; error: string }>;
 	/** Shared runtime - actions are throwing stubs until runner.initialize() */
 	runtime: ExtensionRuntime;
+	/** Dispose all VM loaders (call before reload to free resources) */
+	dispose: () => void;
+	/** Paths that were discovered/loaded */
+	paths: string[];
 }
 
 // ============================================================================

@@ -5,6 +5,7 @@
 export {
 	createExtensionRuntime,
 	discoverAndLoadExtensions,
+	discoverExtensionPaths,
 	loadExtensionFromFactory,
 	loadExtensions,
 } from "./loader.js";
@@ -62,6 +63,7 @@ export type {
 	GetThinkingLevelHandler,
 	GrepToolResultEvent,
 	KeybindingsManager,
+	LoadExtensionsOptions,
 	LoadExtensionsResult,
 	LsToolResultEvent,
 	// Message Rendering

@@ -24,6 +24,7 @@ export {
 	type BeforeAgentStartEvent,
 	type ContextEvent,
 	discoverAndLoadExtensions,
+	discoverExtensionPaths,
 	type ExecOptions,
 	type ExecResult,
 	type Extension,
