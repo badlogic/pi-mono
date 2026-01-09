@@ -311,6 +311,7 @@ export class InteractiveMode {
 		const toggleThinking = formatStartupKey(kb.getKeys("toggleThinking"));
 		const externalEditor = formatStartupKey(kb.getKeys("externalEditor"));
 		const followUp = formatStartupKey(kb.getKeys("followUp"));
+		const dequeue = formatStartupKey(kb.getKeys("dequeue"));
 
 		const instructions =
 			theme.fg("dim", interrupt) +
@@ -360,6 +361,9 @@ export class InteractiveMode {
 			"\n" +
 			theme.fg("dim", followUp) +
 			theme.fg("muted", " to queue follow-up") +
+			"\n" +
+			theme.fg("dim", dequeue) +
+			theme.fg("muted", " to restore queued messages") +
 			"\n" +
 			theme.fg("dim", "ctrl+v") +
 			theme.fg("muted", " to paste image") +
@@ -1274,15 +1278,7 @@ export class InteractiveMode {
 		// so they work correctly regardless of which editor is active
 		this.defaultEditor.onEscape = () => {
 			if (this.loadingAnimation) {
-				// Abort and restore queued messages to editor
-				const { steering, followUp } = this.session.clearQueue();
-				const allQueued = [...steering, ...followUp];
-				const queuedText = allQueued.join("\n\n");
-				const currentText = this.editor.getText();
-				const combinedText = [queuedText, currentText].filter((t) => t.trim()).join("\n\n");
-				this.editor.setText(combinedText);
-				this.updatePendingMessagesDisplay();
-				this.agent.abort();
+				this.restoreQueuedMessagesToEditor({ abort: true });
 			} else if (this.session.isBashRunning) {
 				this.session.abortBash();
 			} else if (this.isBashMode) {
@@ -1320,6 +1316,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("toggleThinking", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("externalEditor", () => this.openExternalEditor());
 		this.defaultEditor.onAction("followUp", () => this.handleFollowUp());
+		this.defaultEditor.onAction("dequeue", () => this.handleDequeue());
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -2080,6 +2077,15 @@ export class InteractiveMode {
 		}
 	}
 
+	private handleDequeue(): void {
+		const restored = this.restoreQueuedMessagesToEditor();
+		if (restored === 0) {
+			this.showStatus("No queued messages to restore");
+		} else {
+			this.showStatus(`Restored ${restored} queued message${restored > 1 ? "s" : ""} to editor`);
+		}
+	}
+
 	private updateEditorBorderColor(): void {
 		if (this.isBashMode) {
 			this.editor.borderColor = theme.getBashModeBorderColor();
@@ -2251,6 +2257,27 @@ export class InteractiveMode {
 				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
 			}
 		}
+	}
+
+	private restoreQueuedMessagesToEditor(options?: { abort?: boolean; currentText?: string }): number {
+		const { steering, followUp } = this.session.clearQueue();
+		const allQueued = [...steering, ...followUp];
+		if (allQueued.length === 0) {
+			this.updatePendingMessagesDisplay();
+			if (options?.abort) {
+				this.agent.abort();
+			}
+			return 0;
+		}
+		const queuedText = allQueued.join("\n\n");
+		const currentText = options?.currentText ?? this.editor.getText();
+		const combinedText = [queuedText, currentText].filter((t) => t.trim()).join("\n\n");
+		this.editor.setText(combinedText);
+		this.updatePendingMessagesDisplay();
+		if (options?.abort) {
+			this.agent.abort();
+		}
+		return allQueued.length;
 	}
 
 	private queueCompactionMessage(text: string, mode: "steer" | "followUp"): void {
@@ -3049,6 +3076,7 @@ export class InteractiveMode {
 		const toggleThinking = this.getAppKeyDisplay("toggleThinking");
 		const externalEditor = this.getAppKeyDisplay("externalEditor");
 		const followUp = this.getAppKeyDisplay("followUp");
+		const dequeue = this.getAppKeyDisplay("dequeue");
 
 		let hotkeys = `
 **Navigation**
@@ -3082,6 +3110,7 @@ export class InteractiveMode {
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${externalEditor}\` | Edit message in external editor |
 | \`${followUp}\` | Queue follow-up message |
+| \`${dequeue}\` | Restore queued messages |
 | \`Ctrl+V\` | Paste image from clipboard |
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
