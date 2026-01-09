@@ -842,6 +842,7 @@ export class InteractiveMode {
 		this.widgetContainer.clear();
 
 		if (this.extensionWidgets.size === 0) {
+			this.widgetContainer.addChild(new Spacer(1));
 			this.ui.requestRender();
 			return;
 		}
