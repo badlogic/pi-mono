@@ -2,7 +2,6 @@
 
 ## [Unreleased]
 
-<<<<<<< HEAD
 - Session preview pane in `--resume` selector with chunked file reading for large sessions
 
 ## [0.42.0] - 2026-01-09
