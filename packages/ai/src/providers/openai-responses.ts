@@ -543,7 +543,7 @@ function convertTools(tools: Tool[]): OpenAITool[] {
 		name: tool.name,
 		description: tool.description,
 		parameters: tool.parameters as any, // TypeBox already generates JSON Schema
-		strict: null,
+		strict: false,
 	}));
 }
 
