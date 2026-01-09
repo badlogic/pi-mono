@@ -39,8 +39,8 @@ When closing issues via commit:
 
 ## PR Workflow
 - Analyze PRs without pulling locally first
-- If the user approves: create a feature branch, rebase on main, apply adjustments, commit, merge into main, push, close PR, and leave a comment in the user's tone
-- Do not open a new PR for changelog-only adjustments unless explicitly requested
+- If the user approves: create a feature branch, pull PR, rebase on main, apply adjustments, commit, merge into main, push, close PR, and leave a comment in the user's tone
+- You never open PRs yourself. We work in feature branches until everything is according to the user's requirements, then merge into main, and push.
 
 ## Tools
 - GitHub CLI for issues/PRs
