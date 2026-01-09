@@ -33,13 +33,13 @@ const claudeCodeVersion = "2.1.2";
 
 // Map pi! tool names to Claude Code's exact tool names
 const claudeCodeToolNames: Record<string, string> = {
-	"read": "Read",
-	"write": "Write",
-	"edit": "Edit",
-	"bash": "Bash",
-	"grep": "Grep",
-	"find": "Glob",
-	"ls": "Glob",
+	read: "Read",
+	write: "Write",
+	edit: "Edit",
+	bash: "Bash",
+	grep: "Grep",
+	find: "Glob",
+	ls: "Glob",
 };
 
 const toClaudeCodeName = (name: string) => claudeCodeToolNames[name] || name;

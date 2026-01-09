@@ -22,6 +22,7 @@ import type { BashResult } from "../bash-executor.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
 import type { EventBus } from "../event-bus.js";
 import type { ExecOptions, ExecResult } from "../exec.js";
+import type { ReadonlyFooterDataProvider } from "../footer-data-provider.js";
 import type { KeybindingsManager } from "../keybindings.js";
 import type { CustomMessage } from "../messages.js";
 import type { ModelRegistry } from "../model-registry.js";
@@ -82,8 +83,17 @@ export interface ExtensionUIContext {
 	setWidget(key: string, content: string[] | undefined): void;
 	setWidget(key: string, content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
 
-	/** Set a custom footer component, or undefined to restore the built-in footer. */
-	setFooter(factory: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
+	/** Set a custom footer component, or undefined to restore the built-in footer.
+	 *
+	 * The factory receives a FooterDataProvider for data not otherwise accessible:
+	 * git branch and extension statuses from setStatus(). Token stats, model info,
+	 * etc. are available via ctx.sessionManager and ctx.model.
+	 */
+	setFooter(
+		factory:
+			| ((tui: TUI, theme: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void })
+			| undefined,
+	): void;
 
 	/** Set a custom header component (shown at startup, above chat), or undefined to restore the built-in header. */
 	setHeader(factory: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;

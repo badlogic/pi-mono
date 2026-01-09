@@ -1,8 +1,11 @@
 /**
- * Custom Footer Extension
+ * Custom Footer Extension - demonstrates ctx.ui.setFooter()
  *
- * Demonstrates ctx.ui.setFooter() for replacing the built-in footer
- * with a custom component showing session context usage.
+ * footerData exposes data not otherwise accessible:
+ * - getGitBranch(): current git branch
+ * - getExtensionStatuses(): texts from ctx.ui.setStatus()
+ *
+ * Token stats come from ctx.sessionManager/ctx.model (already accessible).
  */
 
 import type { AssistantMessage } from "@mariozechner/pi-ai";
@@ -10,76 +13,51 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 
 export default function (pi: ExtensionAPI) {
-	let isCustomFooter = false;
+	let enabled = false;
 
-	// Toggle custom footer with /footer command
 	pi.registerCommand("footer", {
-		description: "Toggle custom footer showing context usage",
+		description: "Toggle custom footer",
 		handler: async (_args, ctx) => {
-			isCustomFooter = !isCustomFooter;
+			enabled = !enabled;
 
-			if (isCustomFooter) {
-				ctx.ui.setFooter((_tui, theme) => {
+			if (enabled) {
+				ctx.ui.setFooter((tui, theme, footerData) => {
+					const unsub = footerData.onBranchChange(() => tui.requestRender());
+
 					return {
+						dispose: unsub,
+						invalidate() {},
 						render(width: number): string[] {
-							// Calculate usage from branch entries
-							let totalInput = 0;
-							let totalOutput = 0;
-							let totalCost = 0;
-							let lastAssistant: AssistantMessage | undefined;
-
-							for (const entry of ctx.sessionManager.getBranch()) {
-								if (entry.type === "message" && entry.message.role === "assistant") {
-									const msg = entry.message as AssistantMessage;
-									totalInput += msg.usage.input;
-									totalOutput += msg.usage.output;
-									totalCost += msg.usage.cost.total;
-									lastAssistant = msg;
+							// Compute tokens from ctx (already accessible to extensions)
+							let input = 0,
+								output = 0,
+								cost = 0;
+							for (const e of ctx.sessionManager.getBranch()) {
+								if (e.type === "message" && e.message.role === "assistant") {
+									const m = e.message as AssistantMessage;
+									input += m.usage.input;
+									output += m.usage.output;
+									cost += m.usage.cost.total;
 								}
 							}
 
-							// Context percentage from last assistant message
-							const contextTokens = lastAssistant
-								? lastAssistant.usage.input +
-									lastAssistant.usage.output +
-									lastAssistant.usage.cacheRead +
-									lastAssistant.usage.cacheWrite
-								: 0;
-							const contextWindow = ctx.model?.contextWindow || 0;
-							const contextPercent = contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0;
-
-							// Format tokens
+							// Get git branch (not otherwise accessible)
+							const branch = footerData.getGitBranch();
 							const fmt = (n: number) => (n < 1000 ? `${n}` : `${(n / 1000).toFixed(1)}k`);
 
-							// Build footer line
-							const left = [
-								theme.fg("dim", `↑${fmt(totalInput)}`),
-								theme.fg("dim", `↓${fmt(totalOutput)}`),
-								theme.fg("dim", `$${totalCost.toFixed(3)}`),
-							].join(" ");
+							const left = theme.fg("dim", `↑${fmt(input)} ↓${fmt(output)} $${cost.toFixed(3)}`);
+							const branchStr = branch ? ` (${branch})` : "";
+							const right = theme.fg("dim", `${ctx.model?.id || "no-model"}${branchStr}`);
 
-							// Color context percentage based on usage
-							let contextStr = `${contextPercent.toFixed(1)}%`;
-							if (contextPercent > 90) {
-								contextStr = theme.fg("error", contextStr);
-							} else if (contextPercent > 70) {
-								contextStr = theme.fg("warning", contextStr);
-							} else {
-								contextStr = theme.fg("success", contextStr);
-							}
-
-							const right = `${contextStr} ${theme.fg("dim", ctx.model?.id || "no model")}`;
-							const padding = " ".repeat(Math.max(1, width - visibleWidth(left) - visibleWidth(right)));
-
-							return [truncateToWidth(left + padding + right, width)];
+							const pad = " ".repeat(Math.max(1, width - visibleWidth(left) - visibleWidth(right)));
+							return [truncateToWidth(left + pad + right, width)];
 						},
-						invalidate() {},
 					};
 				});
 				ctx.ui.notify("Custom footer enabled", "info");
 			} else {
 				ctx.ui.setFooter(undefined);
-				ctx.ui.notify("Built-in footer restored", "info");
+				ctx.ui.notify("Default footer restored", "info");
 			}
 		},
 	});

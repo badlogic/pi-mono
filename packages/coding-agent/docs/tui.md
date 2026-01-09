@@ -624,22 +624,23 @@ ctx.ui.setWidget("my-widget", undefined);
 
 ### Pattern 6: Custom Footer
 
-Replace the entire footer with custom content.
+Replace the footer. `footerData` exposes data not otherwise accessible to extensions.
 
 ```typescript
-ctx.ui.setFooter((_tui, theme) => ({
-  render(width: number): string[] {
-    const left = theme.fg("dim", "custom footer");
-    const right = theme.fg("accent", "status");
-    const padding = " ".repeat(Math.max(1, width - visibleWidth(left) - visibleWidth(right)));
-    return [truncateToWidth(left + padding + right, width)];
-  },
+ctx.ui.setFooter((tui, theme, footerData) => ({
   invalidate() {},
+  render(width: number): string[] {
+    // footerData.getGitBranch(): string | null
+    // footerData.getExtensionStatuses(): ReadonlyMap<string, string>
+    return [`${ctx.model?.id} (${footerData.getGitBranch() || "no git"})`];
+  },
+  dispose: footerData.onBranchChange(() => tui.requestRender()), // reactive
 }));
 
-// Restore default
-ctx.ui.setFooter(undefined);
+ctx.ui.setFooter(undefined); // restore default
 ```
+
+Token stats available via `ctx.sessionManager.getBranch()` and `ctx.model`.
 
 **Examples:** [custom-footer.ts](../examples/extensions/custom-footer.ts)
 

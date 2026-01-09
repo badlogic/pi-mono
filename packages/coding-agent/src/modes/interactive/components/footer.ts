@@ -1,8 +1,7 @@
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { type Component, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import { existsSync, type FSWatcher, readFileSync, statSync, watch } from "fs";
-import { dirname, join, resolve } from "path";
 import type { AgentSession } from "../../../core/agent-session.js";
+import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
 import { theme } from "../theme/theme.js";
 
 /**
@@ -18,160 +17,46 @@ function sanitizeStatusText(text: string): string {
 }
 
 /**
- * Find the git HEAD path by walking up from cwd.
- * Handles both regular git repos (.git is a directory) and worktrees (.git is a file).
- * Returns the path to the HEAD file if found, null otherwise.
+ * Format token counts (similar to web-ui)
  */
-function findGitHeadPath(): string | null {
-	let dir = process.cwd();
-	while (true) {
-		const gitPath = join(dir, ".git");
-		if (existsSync(gitPath)) {
-			try {
-				const stat = statSync(gitPath);
-				if (stat.isFile()) {
-					// Worktree: .git is a file containing "gitdir: <path>"
-					const content = readFileSync(gitPath, "utf8").trim();
-					if (content.startsWith("gitdir: ")) {
-						const gitDir = content.slice(8);
-						const headPath = resolve(dir, gitDir, "HEAD");
-						if (existsSync(headPath)) {
-							return headPath;
-						}
-					}
-				} else if (stat.isDirectory()) {
-					// Regular repo: .git is a directory
-					const headPath = join(gitPath, "HEAD");
-					if (existsSync(headPath)) {
-						return headPath;
-					}
-				}
-			} catch {
-				return null;
-			}
-		}
-		const parent = dirname(dir);
-		if (parent === dir) {
-			// Reached filesystem root
-			return null;
-		}
-		dir = parent;
-	}
+function formatTokens(count: number): string {
+	if (count < 1000) return count.toString();
+	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+	if (count < 1000000) return `${Math.round(count / 1000)}k`;
+	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
+	return `${Math.round(count / 1000000)}M`;
 }
 
 /**
- * Footer component that shows pwd, token stats, and context usage
+ * Footer component that shows pwd, token stats, and context usage.
+ * Computes token/context stats from session, gets git branch and extension statuses from provider.
  */
 export class FooterComponent implements Component {
-	private session: AgentSession;
-	private cachedBranch: string | null | undefined = undefined; // undefined = not checked yet, null = not in git repo, string = branch name
-	private gitWatcher: FSWatcher | null = null;
-	private onBranchChange: (() => void) | null = null;
-	private autoCompactEnabled: boolean = true;
-	private extensionStatuses: Map<string, string> = new Map();
+	private autoCompactEnabled = true;
 
-	constructor(session: AgentSession) {
-		this.session = session;
-	}
+	constructor(
+		private session: AgentSession,
+		private footerData: ReadonlyFooterDataProvider,
+	) {}
 
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.autoCompactEnabled = enabled;
 	}
 
 	/**
-	 * Set extension status text to display in the footer.
-	 * Text is sanitized (newlines/tabs replaced with spaces) and truncated to terminal width.
-	 * ANSI escape codes for styling are preserved.
-	 * @param key - Unique key to identify this status
-	 * @param text - Status text, or undefined to clear
+	 * No-op: git branch caching now handled by provider.
+	 * Kept for compatibility with existing call sites in interactive-mode.
 	 */
-	setExtensionStatus(key: string, text: string | undefined): void {
-		if (text === undefined) {
-			this.extensionStatuses.delete(key);
-		} else {
-			this.extensionStatuses.set(key, text);
-		}
+	invalidate(): void {
+		// No-op: git branch is cached/invalidated by provider
 	}
 
 	/**
-	 * Set up a file watcher on .git/HEAD to detect branch changes.
-	 * Call the provided callback when branch changes.
-	 */
-	watchBranch(onBranchChange: () => void): void {
-		this.onBranchChange = onBranchChange;
-		this.setupGitWatcher();
-	}
-
-	private setupGitWatcher(): void {
-		// Clean up existing watcher
-		if (this.gitWatcher) {
-			this.gitWatcher.close();
-			this.gitWatcher = null;
-		}
-
-		const gitHeadPath = findGitHeadPath();
-		if (!gitHeadPath) {
-			return;
-		}
-
-		try {
-			this.gitWatcher = watch(gitHeadPath, () => {
-				this.cachedBranch = undefined; // Invalidate cache
-				if (this.onBranchChange) {
-					this.onBranchChange();
-				}
-			});
-		} catch {
-			// Silently fail if we can't watch
-		}
-	}
-
-	/**
-	 * Clean up the file watcher
+	 * Clean up resources.
+	 * Git watcher cleanup now handled by provider.
 	 */
 	dispose(): void {
-		if (this.gitWatcher) {
-			this.gitWatcher.close();
-			this.gitWatcher = null;
-		}
-	}
-
-	invalidate(): void {
-		// Invalidate cached branch so it gets re-read on next render
-		this.cachedBranch = undefined;
-	}
-
-	/**
-	 * Get current git branch by reading .git/HEAD directly.
-	 * Returns null if not in a git repo, branch name otherwise.
-	 */
-	private getCurrentBranch(): string | null {
-		// Return cached value if available
-		if (this.cachedBranch !== undefined) {
-			return this.cachedBranch;
-		}
-
-		try {
-			const gitHeadPath = findGitHeadPath();
-			if (!gitHeadPath) {
-				this.cachedBranch = null;
-				return null;
-			}
-			const content = readFileSync(gitHeadPath, "utf8").trim();
-
-			if (content.startsWith("ref: refs/heads/")) {
-				// Normal branch: extract branch name
-				this.cachedBranch = content.slice(16);
-			} else {
-				// Detached HEAD state
-				this.cachedBranch = "detached";
-			}
-		} catch {
-			// Not in a git repo or error reading file
-			this.cachedBranch = null;
-		}
-
-		return this.cachedBranch;
+		// Git watcher cleanup handled by provider
 	}
 
 	render(width: number): string[] {
@@ -211,15 +96,6 @@ export class FooterComponent implements Component {
 		const contextPercentValue = contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0;
 		const contextPercent = contextPercentValue.toFixed(1);
 
-		// Format token counts (similar to web-ui)
-		const formatTokens = (count: number): string => {
-			if (count < 1000) return count.toString();
-			if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-			if (count < 1000000) return `${Math.round(count / 1000)}k`;
-			if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
-			return `${Math.round(count / 1000000)}M`;
-		};
-
 		// Replace home directory with ~
 		let pwd = process.cwd();
 		const home = process.env.HOME || process.env.USERPROFILE;
@@ -228,7 +104,7 @@ export class FooterComponent implements Component {
 		}
 
 		// Add git branch if available
-		const branch = this.getCurrentBranch();
+		const branch = this.footerData.getGitBranch();
 		if (branch) {
 			pwd = `${pwd} (${branch})`;
 		}
@@ -332,8 +208,9 @@ export class FooterComponent implements Component {
 		const lines = [theme.fg("dim", pwd), dimStatsLeft + dimRemainder];
 
 		// Add extension statuses on a single line, sorted by key alphabetically
-		if (this.extensionStatuses.size > 0) {
-			const sortedStatuses = Array.from(this.extensionStatuses.entries())
+		const extensionStatuses = this.footerData.getExtensionStatuses();
+		if (extensionStatuses.size > 0) {
+			const sortedStatuses = Array.from(extensionStatuses.entries())
 				.sort(([a], [b]) => a.localeCompare(b))
 				.map(([, text]) => sanitizeStatusText(text));
 			const statusLine = sortedStatuses.join(" ");
