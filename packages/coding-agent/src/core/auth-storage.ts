@@ -9,7 +9,6 @@
 import {
 	getEnvApiKey,
 	getOAuthApiKey,
-	loginAnthropic,
 	loginAntigravity,
 	loginGeminiCli,
 	loginGitHubCopilot,
@@ -170,12 +169,6 @@ export class AuthStorage {
 		let credentials: OAuthCredentials;
 
 		switch (provider) {
-			case "anthropic":
-				credentials = await loginAnthropic(
-					(url) => callbacks.onAuth({ url }),
-					() => callbacks.onPrompt({ message: "Paste the authorization code:" }),
-				);
-				break;
 			case "github-copilot":
 				credentials = await loginGitHubCopilot({
 					onAuth: (url, instructions) => callbacks.onAuth({ url, instructions }),

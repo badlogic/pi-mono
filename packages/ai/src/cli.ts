@@ -2,7 +2,6 @@
 
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { createInterface } from "readline";
-import { loginAnthropic } from "./utils/oauth/anthropic.js";
 import { loginGitHubCopilot } from "./utils/oauth/github-copilot.js";
 import { loginAntigravity } from "./utils/oauth/google-antigravity.js";
 import { loginGeminiCli } from "./utils/oauth/google-gemini-cli.js";
@@ -39,17 +38,6 @@ async function login(provider: OAuthProvider): Promise<void> {
 		let credentials: OAuthCredentials;
 
 		switch (provider) {
-			case "anthropic":
-				credentials = await loginAnthropic(
-					(url) => {
-						console.log(`\nOpen this URL in your browser:\n${url}\n`);
-					},
-					async () => {
-						return await promptFn("Paste the authorization code:");
-					},
-				);
-				break;
-
 			case "github-copilot":
 				credentials = await loginGitHubCopilot({
 					onAuth: (url, instructions) => {
@@ -122,7 +110,6 @@ Commands:
   list              List available providers
 
 Providers:
-  anthropic         Anthropic (Claude Pro/Max)
   github-copilot    GitHub Copilot
   google-gemini-cli Google Gemini CLI
   google-antigravity Antigravity (Gemini 3, Claude, GPT-OSS)

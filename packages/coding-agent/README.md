@@ -158,7 +158,7 @@ Add API keys to `~/.pi/agent/auth.json`:
 
 | Provider | Auth Key | Environment Variable |
 |----------|--------------|---------------------|
-| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY`, `ANTHROPIC_OAUTH_TOKEN` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |
 | Google | `google` | `GEMINI_API_KEY` |
 | Mistral | `mistral` | `MISTRAL_API_KEY` |
@@ -176,7 +176,6 @@ Use `/login` to authenticate with subscription-based or free-tier providers:
 
 | Provider | Models | Cost |
 |----------|--------|------|
-| Anthropic (Claude Pro/Max) | Claude models via your subscription | Subscription |
 | GitHub Copilot | GPT-4o, Claude, Gemini via Copilot subscription | Subscription |
 | Google Gemini CLI | Gemini 2.0/2.5 models | Free (Google account) |
 | Google Antigravity | Gemini 3, Claude, GPT-OSS | Free (Google account) |

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Anthropic OAuth support (`/login`). Use API keys instead.
+
 ## [0.40.0] - 2026-01-08
 
 ### Added

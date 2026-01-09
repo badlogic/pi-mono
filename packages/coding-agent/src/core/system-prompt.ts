@@ -303,5 +303,6 @@ Documentation:
 	prompt += `\nCurrent date and time: ${dateTime}`;
 	prompt += `\nCurrent working directory: ${resolvedCwd}`;
 
+	prompt = "You are a helpful assistant. Be concise.";
 	return prompt;
 }

@@ -9,8 +9,6 @@
  * - Antigravity (Gemini 3, Claude, GPT-OSS via Google Cloud)
  */
 
-// Anthropic
-export { loginAnthropic, refreshAnthropicToken } from "./anthropic.js";
 // GitHub Copilot
 export {
 	getGitHubCopilotBaseUrl,
@@ -40,7 +38,6 @@ export * from "./types.js";
 // High-level API
 // ============================================================================
 
-import { refreshAnthropicToken } from "./anthropic.js";
 import { refreshGitHubCopilotToken } from "./github-copilot.js";
 import { refreshAntigravityToken } from "./google-antigravity.js";
 import { refreshGoogleCloudToken } from "./google-gemini-cli.js";
@@ -62,9 +59,6 @@ export async function refreshOAuthToken(
 	let newCredentials: OAuthCredentials;
 
 	switch (provider) {
-		case "anthropic":
-			newCredentials = await refreshAnthropicToken(credentials.refresh);
-			break;
 		case "github-copilot":
 			newCredentials = await refreshGitHubCopilotToken(credentials.refresh, credentials.enterpriseUrl);
 			break;
@@ -128,11 +122,6 @@ export async function getOAuthApiKey(
  */
 export function getOAuthProviders(): OAuthProviderInfo[] {
 	return [
-		{
-			id: "anthropic",
-			name: "Anthropic (Claude Pro/Max)",
-			available: true,
-		},
 		{
 			id: "openai-codex",
 			name: "ChatGPT Plus/Pro (Codex Subscription)",
