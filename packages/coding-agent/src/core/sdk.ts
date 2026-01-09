@@ -22,6 +22,7 @@
 
 import { Agent, type AgentMessage, type AgentTool, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Message, Model } from "@mariozechner/pi-ai";
+import chalk from "chalk";
 import { join } from "path";
 import { getAgentDir } from "../config.js";
 import { AgentSession } from "./agent-session.js";
@@ -99,6 +100,8 @@ export interface CreateAgentSessionOptions {
 
 	/** Built-in tools to use. Default: codingTools [read, bash, edit, write] */
 	tools?: Tool[];
+	/** Raw tool names for filtering (includes extension tool names). When set, only these tools are active. */
+	toolFilter?: string[];
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
 	/** Inline extensions. When provided (even if empty), skips file discovery. */
@@ -527,9 +530,31 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// Initially active tools = active built-in + extension tools
 	// Extension tools can override built-in tools with the same name
-	const extensionToolNames = new Set(wrappedExtensionTools.map((t) => t.name));
+	// When --tools/toolFilter is specified, also filter extension tools to only those explicitly allowed
+	const allowedToolNames = options.toolFilter ? new Set(options.toolFilter) : null;
+	const activeExtensionTools = allowedToolNames
+		? wrappedExtensionTools.filter((t) => allowedToolNames.has(t.name))
+		: wrappedExtensionTools;
+	const extensionToolNames = new Set(activeExtensionTools.map((t) => t.name));
 	const nonOverriddenBuiltInTools = initialActiveBuiltInTools.filter((t) => !extensionToolNames.has(t.name));
-	let activeToolsArray: Tool[] = [...nonOverriddenBuiltInTools, ...wrappedExtensionTools];
+	let activeToolsArray: Tool[] = [...nonOverriddenBuiltInTools, ...activeExtensionTools];
+
+	// Warn about unknown tool names in toolFilter (now that we know all available tools)
+	if (options.toolFilter) {
+		const allAvailableToolNames = new Set([
+			...Object.keys(allBuiltInToolsMap),
+			...wrappedExtensionTools.map((t) => t.name),
+		]);
+		for (const name of options.toolFilter) {
+			if (!allAvailableToolNames.has(name)) {
+				console.error(
+					chalk.yellow(
+						`Warning: Unknown tool "${name}". Valid tools: ${Array.from(allAvailableToolNames).join(", ")}`,
+					),
+				);
+			}
+		}
+	}
 	time("combineTools");
 
 	// Wrap tools with extensions if available

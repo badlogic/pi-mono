@@ -26,6 +26,8 @@ export interface Args {
 	sessionDir?: string;
 	models?: string[];
 	tools?: ToolName[];
+	/** Raw tool names from --tools flag (includes extension tool names) */
+	toolFilter?: string[];
 	noTools?: boolean;
 	extensions?: string[];
 	noExtensions?: boolean;
@@ -91,15 +93,15 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 			result.noTools = true;
 		} else if (arg === "--tools" && i + 1 < args.length) {
 			const toolNames = args[++i].split(",").map((s) => s.trim());
+			// Store raw tool names for filtering (includes extension tools)
+			result.toolFilter = toolNames;
+			// Also extract valid built-in tools
 			const validTools: ToolName[] = [];
 			for (const name of toolNames) {
 				if (name in allTools) {
 					validTools.push(name as ToolName);
-				} else {
-					console.error(
-						chalk.yellow(`Warning: Unknown tool "${name}". Valid tools: ${Object.keys(allTools).join(", ")}`),
-					);
 				}
+				// Don't warn about unknown tools - they might be extension tools
 			}
 			result.tools = validTools;
 		} else if (arg === "--thinking" && i + 1 < args.length) {

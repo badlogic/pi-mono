@@ -189,6 +189,11 @@ function buildSessionOptions(
 		options.tools = parsed.tools.map((name) => allTools[name]);
 	}
 
+	// Pass raw tool filter for extension tool filtering
+	if (parsed.toolFilter) {
+		options.toolFilter = parsed.toolFilter;
+	}
+
 	// Skills
 	if (parsed.noSkills) {
 		options.skills = [];
