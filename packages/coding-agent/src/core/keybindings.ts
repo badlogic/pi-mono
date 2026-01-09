@@ -26,7 +26,8 @@ export type AppAction =
 	| "expandTools"
 	| "toggleThinking"
 	| "externalEditor"
-	| "followUp";
+	| "followUp"
+	| "dequeue";
 
 /**
  * All configurable actions.
@@ -56,6 +57,7 @@ export const DEFAULT_APP_KEYBINDINGS: Record<AppAction, KeyId | KeyId[]> = {
 	toggleThinking: "ctrl+t",
 	externalEditor: "ctrl+g",
 	followUp: "alt+enter",
+	dequeue: "alt+up",
 };
 
 /**
@@ -80,6 +82,7 @@ const APP_ACTIONS: AppAction[] = [
 	"toggleThinking",
 	"externalEditor",
 	"followUp",
+	"dequeue",
 ];
 
 function isAppAction(action: string): action is AppAction {
