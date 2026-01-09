@@ -10,13 +10,13 @@ import {
 	convertAnthropicTools,
 	mapAnthropicStopReason,
 } from "../anthropic-shared.js";
-import { getVertexAccessToken, resolveLocation, resolveProject } from "./shared.js";
+import { createVertexToolCallId, getVertexAccessToken, resolveLocation, resolveProject } from "./shared.js";
 import type { GoogleVertexOptions } from "./types.js";
 
+// Vertex Anthropic API version used by streamRawPredict.
 const VERTEX_ANTHROPIC_VERSION = "vertex-2023-10-16";
-
-// Counter for generating unique tool call IDs
-let toolCallCounter = 0;
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
 
 type VertexClaudeContentBlock =
 	| { type: "text"; text: string }
@@ -72,8 +72,31 @@ type VertexClaudeStreamEvent = {
 	};
 	usage?: VertexClaudeUsage;
 	index?: number;
-	error?: { message?: string };
+	error?: {
+		message?: string;
+		type?: string;
+		code?: number;
+		status?: number;
+	};
 };
+
+function isRetryableStatus(status: number): boolean {
+	return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new Error("Request was aborted"));
+			return;
+		}
+		const timeout = setTimeout(resolve, ms);
+		signal?.addEventListener("abort", () => {
+			clearTimeout(timeout);
+			reject(new Error("Request was aborted"));
+		});
+	});
+}
 
 export function isVertexAnthropicModel(model: Model<"google-vertex">): boolean {
 	return model.vertex?.publisher === "anthropic";
@@ -110,20 +133,63 @@ export async function streamVertexAnthropic(
 		const endpoint = buildClaudeVertexEndpoint(project, location, model.vertex?.modelId || model.id);
 		const params = buildClaudeVertexParams(model, context, options);
 
-		const response = await fetch(endpoint, {
-			method: "POST",
-			headers: {
-				Authorization: `Bearer ${accessToken}`,
-				"Content-Type": "application/json",
-				Accept: "text/event-stream",
-			},
-			body: JSON.stringify(params),
-			signal: options?.signal,
-		});
+		let response: Response | undefined;
+		let lastError: Error | undefined;
 
-		if (!response.ok) {
-			const errorText = await response.text();
-			throw new Error(errorText || "Vertex Claude request failed");
+		for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+			if (options?.signal?.aborted) {
+				throw new Error("Request was aborted");
+			}
+
+			try {
+				response = await fetch(endpoint, {
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${accessToken}`,
+						"Content-Type": "application/json",
+						Accept: "text/event-stream",
+					},
+					body: JSON.stringify(params),
+					signal: options?.signal,
+				});
+
+				if (response.ok) {
+					break;
+				}
+
+				const errorText = await response.text();
+				const statusLabel = response.statusText
+					? `${response.status} ${response.statusText}`
+					: `${response.status}`;
+				const message = errorText
+					? `Vertex Claude request failed (${statusLabel}): ${errorText}`
+					: `Vertex Claude request failed (${statusLabel})`;
+
+				if (attempt < MAX_RETRIES && isRetryableStatus(response.status)) {
+					const delayMs = BASE_DELAY_MS * 2 ** attempt;
+					await sleep(delayMs, options?.signal);
+					continue;
+				}
+
+				throw new Error(message);
+			} catch (error) {
+				if (error instanceof Error) {
+					if (error.name === "AbortError" || error.message === "Request was aborted") {
+						throw new Error("Request was aborted");
+					}
+				}
+				lastError = error instanceof Error ? error : new Error(String(error));
+				if (attempt < MAX_RETRIES) {
+					const delayMs = BASE_DELAY_MS * 2 ** attempt;
+					await sleep(delayMs, options?.signal);
+					continue;
+				}
+				throw lastError;
+			}
+		}
+
+		if (!response || !response.ok) {
+			throw lastError ?? new Error("Failed to get response after retries");
 		}
 
 		stream.push({ type: "start", partial: output });
@@ -188,8 +254,14 @@ async function streamClaudeSse(
 		if (!event || typeof event !== "object") return;
 
 		if (event.type === "error") {
-			const message = event.error?.message || "Vertex Claude stream error";
-			throw new Error(message);
+			const errorDetails = event.error;
+			const message = errorDetails?.message || "Vertex Claude stream error";
+			const extra = [
+				errorDetails?.type ? `type=${errorDetails.type}` : null,
+				typeof errorDetails?.code === "number" ? `code=${errorDetails.code}` : null,
+				typeof errorDetails?.status === "number" ? `status=${errorDetails.status}` : null,
+			].filter((value): value is string => Boolean(value));
+			throw new Error(extra.length > 0 ? `${message} (${extra.join(" ")})` : message);
 		}
 
 		if (event.type === "message_start") {
@@ -219,7 +291,7 @@ async function streamClaudeSse(
 			} else if (blockType === "tool_use") {
 				const block: Block = {
 					type: "toolCall",
-					id: event.content_block?.id || `tool_${Date.now()}_${++toolCallCounter}`,
+					id: event.content_block?.id || createVertexToolCallId(event.content_block?.name || "tool"),
 					name: event.content_block?.name || "",
 					arguments: event.content_block?.input || {},
 					partialJson: "",

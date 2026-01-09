@@ -28,7 +28,7 @@ import {
 	retainThoughtSignature,
 } from "../google-shared.js";
 import { isVertexAnthropicModel, streamVertexAnthropic } from "./anthropic.js";
-import { resolveLocation, resolveProject } from "./shared.js";
+import { createVertexToolCallId, resolveLocation, resolveProject } from "./shared.js";
 import type { GoogleVertexOptions } from "./types.js";
 
 export type { GoogleVertexOptions } from "./types.js";
@@ -42,9 +42,6 @@ const THINKING_LEVEL_MAP: Record<GoogleThinkingLevel, ThinkingLevel> = {
 	MEDIUM: ThinkingLevel.MEDIUM,
 	HIGH: ThinkingLevel.HIGH,
 };
-
-// Counter for generating unique tool call IDs
-let toolCallCounter = 0;
 
 export const streamGoogleVertex: StreamFunction<"google-vertex"> = (
 	model: Model<"google-vertex">,
@@ -173,7 +170,7 @@ export const streamGoogleVertex: StreamFunction<"google-vertex"> = (
 							const needsNewId =
 								!providedId || output.content.some((b) => b.type === "toolCall" && b.id === providedId);
 							const toolCallId = needsNewId
-								? `${part.functionCall.name}_${Date.now()}_${++toolCallCounter}`
+								? createVertexToolCallId(part.functionCall.name || "tool")
 								: providedId;
 
 							const toolCall: ToolCall = {
