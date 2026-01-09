@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `GOOGLE_APPLICATION_CREDENTIALS` env var support for Vertex AI credential detection (standard for CI/production).
+
+### Fixed
+
+- Fixed `os.homedir()` calls at module load time; now resolved lazily when needed.
+
 ## [0.42.0] - 2026-01-09
 
 ### Added
