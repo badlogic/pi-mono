@@ -3,7 +3,7 @@ import { MODELS } from "../src/models.generated.js";
 import { complete } from "../src/stream.js";
 import type { Model } from "../src/types.js";
 
-describe("OpenCode Zen Models Smoke Test", () => {
+describe.skipIf(!process.env.OPENCODE_API_KEY)("OpenCode Zen Models Smoke Test", () => {
 	const zenModels = Object.values(MODELS.opencode);
 
 	zenModels.forEach((model) => {
