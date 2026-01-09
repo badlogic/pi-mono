@@ -28,6 +28,8 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 
 import { transformMessages } from "./transorm-messages.js";
 
+const piToolPrefix = "pi_";
+
 /**
  * Convert content blocks to Anthropic API format
  */
@@ -157,7 +159,9 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 						const block: Block = {
 							type: "toolCall",
 							id: event.content_block.id,
-							name: isOAuthToken ? event.content_block.name.substring(4) : event.content_block.name,
+							name: isOAuthToken
+								? event.content_block.name.substring(piToolPrefix.length)
+								: event.content_block.name,
 							arguments: event.content_block.input as Record<string, any>,
 							partialJson: "",
 							index: event.index,
@@ -490,7 +494,7 @@ function convertMessages(
 					blocks.push({
 						type: "tool_use",
 						id: sanitizeToolCallId(block.id),
-						name: isOAuthToken ? `mcp_${block.name}` : block.name,
+						name: isOAuthToken ? `${piToolPrefix}${block.name}` : block.name,
 						input: block.arguments,
 					});
 				}
@@ -563,7 +567,7 @@ function convertTools(tools: Tool[], isOAuthToken: boolean): Anthropic.Messages.
 		const jsonSchema = tool.parameters as any; // TypeBox already generates JSON Schema
 
 		return {
-			name: isOAuthToken ? `mcp_${tool.name}` : tool.name,
+			name: isOAuthToken ? `${piToolPrefix}${tool.name}` : tool.name,
 			description: tool.description,
 			input_schema: {
 				type: "object" as const,
