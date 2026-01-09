@@ -658,11 +658,7 @@ export function applyBackgroundToLine(line: string, width: number, bgFn: (text: 
  * @returns Truncated text with ellipsis if it exceeded maxWidth
  */
 export function truncateToWidth(text: string, maxWidth: number, ellipsis: string = "..."): string {
-	const textVisibleWidth = visibleWidth(text);
-
-	if (textVisibleWidth <= maxWidth) {
-		return text;
-	}
+	if (maxWidth <= 0) return "";
 
 	const ellipsisWidth = visibleWidth(ellipsis);
 	const targetWidth = maxWidth - ellipsisWidth;
@@ -671,58 +667,55 @@ export function truncateToWidth(text: string, maxWidth: number, ellipsis: string
 		return ellipsis.substring(0, maxWidth);
 	}
 
-	// Separate ANSI codes from visible content using grapheme segmentation
-	let i = 0;
-	const segments: Array<{ type: "ansi" | "grapheme"; value: string }> = [];
-
-	while (i < text.length) {
-		const ansiResult = extractAnsiCode(text, i);
-		if (ansiResult) {
-			segments.push({ type: "ansi", value: ansiResult.code });
-			i += ansiResult.length;
-		} else {
-			// Find the next ANSI code or end of string
-			let end = i;
-			while (end < text.length) {
-				const nextAnsi = extractAnsiCode(text, end);
-				if (nextAnsi) break;
-				end++;
-			}
-			// Segment this non-ANSI portion into graphemes
-			const textPortion = text.slice(i, end);
-			for (const seg of segmenter.segment(textPortion)) {
-				segments.push({ type: "grapheme", value: seg.segment });
-			}
-			i = end;
-		}
-	}
-
-	// Build truncated string from segments
 	let result = "";
 	let currentWidth = 0;
+	let i = 0;
 
-	for (const seg of segments) {
-		if (seg.type === "ansi") {
-			result += seg.value;
+	while (i < text.length) {
+		// Check for ANSI escape code
+		if (text[i] === "\x1b") {
+			const ansiResult = extractAnsiCode(text, i);
+			if (ansiResult) {
+				result += ansiResult.code;
+				i += ansiResult.length;
+				continue;
+			}
+		}
+
+		// Find a bounded chunk of plain text (limit scan distance to avoid O(n) scan)
+		const maxChunkSize = Math.max(64, (targetWidth - currentWidth) * 4);
+		let chunkEnd = i;
+		while (chunkEnd < text.length && text[chunkEnd] !== "\x1b" && chunkEnd - i < maxChunkSize) {
+			chunkEnd++;
+		}
+
+		if (chunkEnd === i) {
+			i++;
 			continue;
 		}
 
-		const grapheme = seg.value;
-		// Skip empty graphemes to avoid issues with string-width calculation
-		if (!grapheme) continue;
+		// Process chunk grapheme by grapheme
+		const chunk = text.slice(i, chunkEnd);
+		for (const { segment: grapheme } of segmenter.segment(chunk)) {
+			// Skip empty graphemes to avoid issues with string-width calculation
+			if (!grapheme) continue;
 
-		const graphemeWidth = visibleWidth(grapheme);
+			const graphemeWidth = visibleWidth(grapheme);
 
-		if (currentWidth + graphemeWidth > targetWidth) {
-			break;
+			if (currentWidth + graphemeWidth > targetWidth) {
+				// Early exit - we have enough, return with ellipsis
+				return `${result}\x1b[0m${ellipsis}`;
+			}
+
+			result += grapheme;
+			currentWidth += graphemeWidth;
 		}
 
-		result += grapheme;
-		currentWidth += graphemeWidth;
+		i = chunkEnd;
 	}
 
-	// Add reset code before ellipsis to prevent styling leaking into it
-	return `${result}\x1b[0m${ellipsis}`;
+	// Entire string processed and fits within maxWidth (no truncation needed)
+	return text;
 }
 
 /**

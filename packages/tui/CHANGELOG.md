@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- **SplitPane component**: New component for rendering two child components side by side with configurable ratio, divider, and padding.
+- Improved performance by processing text in chunks and handling edge cases (zero/negative width) more efficiently.
+
 ## [0.42.0] - 2026-01-09
 
 ## [0.41.0] - 2026-01-09
