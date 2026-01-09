@@ -197,6 +197,7 @@ pi
 - Gemini CLI uses the production Cloud Code Assist endpoint (standard Gemini models)
 - Antigravity uses a sandbox endpoint with access to Gemini 3, Claude (sonnet/opus thinking), and GPT-OSS models
 - Both are free with any Google account, subject to rate limits
+- Paid Cloud Code Assist subscriptions: set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_CLOUD_PROJECT_ID` env var to your project ID
 
 **OpenAI Codex notes:**
 - Requires ChatGPT Plus/Pro OAuth (`/login openai-codex`)
