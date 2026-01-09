@@ -2,8 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `GOOGLE_APPLICATION_CREDENTIALS` env var support for Vertex AI credential detection (standard for CI/production).
+
 ### Fixed
 
+- Fixed `os.homedir()` calls at module load time; now resolved lazily when needed.
 - Fixed OpenAI Responses tool strict flag to use a boolean for LM Studio compatibility ([#598](https://github.com/badlogic/pi-mono/pull/598) by [@gnattu](https://github.com/gnattu))
 
 ## [0.42.1] - 2026-01-09

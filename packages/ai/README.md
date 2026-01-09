@@ -897,7 +897,41 @@ Several providers require OAuth authentication instead of static API keys:
 
 ### Vertex AI (ADC)
 
-Vertex AI models use Application Default Credentials. Run `gcloud auth application-default login`, set `GOOGLE_CLOUD_PROJECT` (or `GCLOUD_PROJECT`), and `GOOGLE_CLOUD_LOCATION`. You can also pass `project`/`location` in the call options.
+Vertex AI models use Application Default Credentials (ADC):
+
+- **Local development**: Run `gcloud auth application-default login`
+- **CI/Production**: Set `GOOGLE_APPLICATION_CREDENTIALS` to point to a service account JSON key file
+
+Also set `GOOGLE_CLOUD_PROJECT` (or `GCLOUD_PROJECT`) and `GOOGLE_CLOUD_LOCATION`. You can also pass `project`/`location` in the call options.
+
+Example:
+
+```bash
+# Local (uses your user credentials)
+gcloud auth application-default login
+export GOOGLE_CLOUD_PROJECT="my-project"
+export GOOGLE_CLOUD_LOCATION="us-central1"
+
+# CI/Production (service account key file)
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
+```
+
+```typescript
+import { getModel, complete } from '@mariozechner/pi-ai';
+
+(async () => {
+  const model = getModel('google-vertex', 'gemini-2.5-flash');
+  const response = await complete(model, {
+    messages: [{ role: 'user', content: 'Hello from Vertex AI' }]
+  });
+
+  for (const block of response.content) {
+    if (block.type === 'text') console.log(block.text);
+  }
+})().catch(console.error);
+```
+
+Official docs: [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials)
 
 ### CLI Login
 

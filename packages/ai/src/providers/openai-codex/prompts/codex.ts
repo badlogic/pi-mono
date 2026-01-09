@@ -6,13 +6,12 @@ import { fileURLToPath } from "node:url";
 const GITHUB_API_RELEASES = "https://api.github.com/repos/openai/codex/releases/latest";
 const GITHUB_HTML_RELEASES = "https://github.com/openai/codex/releases/latest";
 
-const DEFAULT_AGENT_DIR = join(homedir(), ".pi", "agent");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const FALLBACK_PROMPT_PATH = join(__dirname, "codex-instructions.md");
 
 function getAgentDir(): string {
-	return process.env.PI_CODING_AGENT_DIR || DEFAULT_AGENT_DIR;
+	return process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
 }
 
 function getCacheDir(): string {
