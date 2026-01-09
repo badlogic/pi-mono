@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join, resolve } from "path";
 import { CONFIG_DIR_NAME, getPromptsDir } from "../config.js";
 
@@ -124,11 +124,25 @@ function loadTemplatesFromDir(dir: string, source: "user" | "project", subdir: s
 		for (const entry of entries) {
 			const fullPath = join(dir, entry.name);
 
-			if (entry.isDirectory()) {
+			// For symlinks, check if they point to a directory and follow them
+			let isDirectory = entry.isDirectory();
+			let isFile = entry.isFile();
+			if (entry.isSymbolicLink()) {
+				try {
+					const stats = statSync(fullPath);
+					isDirectory = stats.isDirectory();
+					isFile = stats.isFile();
+				} catch {
+					// Broken symlink, skip it
+					continue;
+				}
+			}
+
+			if (isDirectory) {
 				// Recurse into subdirectory
 				const newSubdir = subdir ? `${subdir}:${entry.name}` : entry.name;
 				templates.push(...loadTemplatesFromDir(fullPath, source, newSubdir));
-			} else if ((entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".md")) {
+			} else if (isFile && entry.name.endsWith(".md")) {
 				try {
 					const rawContent = readFileSync(fullPath, "utf-8");
 					const { frontmatter, content } = parseFrontmatter(rawContent);
