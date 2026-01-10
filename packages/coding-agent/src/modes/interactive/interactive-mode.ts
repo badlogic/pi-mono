@@ -217,6 +217,7 @@ export class InteractiveMode {
 			{ name: "new", description: "Start a new session" },
 			{ name: "compact", description: "Manually compact the session context" },
 			{ name: "resume", description: "Resume a different session" },
+			{ name: "exit", description: "Exit Pi", aliases: ["quit"] },
 		];
 
 		// Load hide thinking block setting
@@ -1166,6 +1167,9 @@ export class InteractiveMode {
 			}
 			if (text === "/quit" || text === "/exit") {
 				this.editor.setText("");
+				this.showFarewell("See you later!");
+				// Wait for render to complete before shutdown
+				await new Promise((resolve) => process.nextTick(resolve));
 				await this.shutdown();
 				return;
 			}
@@ -1514,6 +1518,17 @@ export class InteractiveMode {
 		this.chatContainer.addChild(text);
 		this.lastStatusSpacer = spacer;
 		this.lastStatusText = text;
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Show a farewell message in the chat before exiting.
+	 */
+	private showFarewell(message: string): void {
+		const spacer = new Spacer(1);
+		const text = new Text(theme.fg("dim", `└ ${message}`), 1, 0);
+		this.chatContainer.addChild(spacer);
+		this.chatContainer.addChild(text);
 		this.ui.requestRender();
 	}
 

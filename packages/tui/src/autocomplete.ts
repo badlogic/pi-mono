@@ -51,6 +51,7 @@ export interface AutocompleteItem {
 export interface SlashCommand {
 	name: string;
 	description?: string;
+	aliases?: string[];
 	// Function to get argument completions for this command
 	// Returns null if no argument completion is available
 	getArgumentCompletions?(argumentPrefix: string): AutocompleteItem[] | null;
@@ -128,16 +129,37 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			if (spaceIndex === -1) {
 				// No space yet - complete command names
 				const prefix = textBeforeCursor.slice(1); // Remove the "/"
-				const filtered = this.commands
-					.filter((cmd) => {
-						const name = "name" in cmd ? cmd.name : cmd.value; // Check if SlashCommand or AutocompleteItem
-						return name?.toLowerCase().startsWith(prefix.toLowerCase());
-					})
-					.map((cmd) => ({
-						value: "name" in cmd ? cmd.name : cmd.value,
-						label: "name" in cmd ? cmd.name : cmd.label,
-						...(cmd.description && { description: cmd.description }),
-					}));
+				const filtered: AutocompleteItem[] = [];
+
+				for (const cmd of this.commands) {
+					if ("name" in cmd) {
+						// SlashCommand - check primary name
+						if (cmd.name.toLowerCase().startsWith(prefix.toLowerCase())) {
+							filtered.push({
+								value: cmd.name,
+								label: cmd.name,
+								...(cmd.description && { description: cmd.description }),
+							});
+						}
+						// Check aliases
+						if (cmd.aliases) {
+							for (const alias of cmd.aliases) {
+								if (alias.toLowerCase().startsWith(prefix.toLowerCase())) {
+									filtered.push({
+										value: cmd.name, // Insert primary command
+										label: `${cmd.name} (${alias})`, // Show as alias
+										...(cmd.description && { description: cmd.description }),
+									});
+								}
+							}
+						}
+					} else {
+						// AutocompleteItem
+						if (cmd.value?.toLowerCase().startsWith(prefix.toLowerCase())) {
+							filtered.push(cmd);
+						}
+					}
+				}
 
 				if (filtered.length === 0) return null;
 

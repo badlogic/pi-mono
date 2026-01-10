@@ -3,6 +3,55 @@ import { describe, it } from "node:test";
 import { CombinedAutocompleteProvider } from "../src/autocomplete.js";
 
 describe("CombinedAutocompleteProvider", () => {
+	describe("slash command aliases", () => {
+		it("shows primary command when typing the primary name", () => {
+			const provider = new CombinedAutocompleteProvider(
+				[{ name: "exit", description: "Exit Pi" }],
+				"/tmp",
+			);
+			const result = provider.getSuggestions(["/exit"], 0, 5);
+
+			assert.notEqual(result, null);
+			if (result) {
+				assert.strictEqual(result.items[0]?.label, "exit");
+				assert.strictEqual(result.items[0]?.value, "exit");
+				assert.strictEqual(result.items[0]?.description, "Exit Pi");
+			}
+		});
+
+		it("shows aliased command when typing the alias", () => {
+			const provider = new CombinedAutocompleteProvider(
+				[{ name: "exit", description: "Exit Pi", aliases: ["quit"] }],
+				"/tmp",
+			);
+			const result = provider.getSuggestions(["/quit"], 0, 5);
+
+			assert.notEqual(result, null);
+			if (result) {
+				assert.strictEqual(result.items[0]?.label, "exit (quit)");
+				assert.strictEqual(result.items[0]?.value, "exit");
+				assert.strictEqual(result.items[0]?.description, "Exit Pi");
+			}
+		});
+
+		it("applies alias completion with primary command value", () => {
+			const provider = new CombinedAutocompleteProvider(
+				[{ name: "exit", description: "Exit Pi", aliases: ["quit"] }],
+				"/tmp",
+			);
+
+			const result = provider.applyCompletion(
+				["/quit"],
+				0,
+				5,
+				{ value: "exit", label: "exit (quit)", description: "Exit Pi" },
+				"/quit",
+			);
+
+			assert.strictEqual(result.lines[0], "/exit ");
+		});
+	});
+
 	describe("extractPathPrefix", () => {
 		it("extracts / from 'hey /' when forced", () => {
 			const provider = new CombinedAutocompleteProvider([], "/tmp");

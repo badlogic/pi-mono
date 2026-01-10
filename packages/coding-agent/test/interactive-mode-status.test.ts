@@ -9,6 +9,25 @@ function renderLastLine(container: Container, width = 120): string {
 	return last.render(width).join("\n");
 }
 
+describe("InteractiveMode.showFarewell", () => {
+	beforeAll(() => {
+		initTheme("dark");
+	});
+
+	test("shows farewell message with box drawing character", () => {
+		const fakeThis: any = {
+			chatContainer: new Container(),
+			ui: { requestRender: vi.fn() },
+		};
+
+		(InteractiveMode as any).prototype.showFarewell.call(fakeThis, "See you later!");
+		expect(fakeThis.chatContainer.children).toHaveLength(2); // Spacer + Text
+		expect(renderLastLine(fakeThis.chatContainer)).toContain("└");
+		expect(renderLastLine(fakeThis.chatContainer)).toContain("See you later!");
+		expect(fakeThis.ui.requestRender).toHaveBeenCalled();
+	});
+});
+
 describe("InteractiveMode.showStatus", () => {
 	beforeAll(() => {
 		// showStatus uses the global theme instance
