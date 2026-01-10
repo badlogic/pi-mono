@@ -5,10 +5,7 @@ import { CombinedAutocompleteProvider } from "../src/autocomplete.js";
 describe("CombinedAutocompleteProvider", () => {
 	describe("slash command aliases", () => {
 		it("shows primary command when typing the primary name", () => {
-			const provider = new CombinedAutocompleteProvider(
-				[{ name: "exit", description: "Exit Pi" }],
-				"/tmp",
-			);
+			const provider = new CombinedAutocompleteProvider([{ name: "exit", description: "Exit Pi" }], "/tmp");
 			const result = provider.getSuggestions(["/exit"], 0, 5);
 
 			assert.notEqual(result, null);
