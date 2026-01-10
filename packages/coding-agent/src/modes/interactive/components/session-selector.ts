@@ -1,3 +1,4 @@
+import * as os from "node:os";
 import {
 	type Component,
 	Container,
@@ -5,12 +6,67 @@ import {
 	getEditorKeybindings,
 	Input,
 	Spacer,
-	Text,
 	truncateToWidth,
+	visibleWidth,
 } from "@mariozechner/pi-tui";
 import type { SessionInfo } from "../../../core/session-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+
+type SessionScope = "current" | "all";
+
+function shortenPath(path: string): string {
+	const home = os.homedir();
+	if (!path) return path;
+	if (path.startsWith(home)) {
+		return `~${path.slice(home.length)}`;
+	}
+	return path;
+}
+
+function formatSessionDate(date: Date): string {
+	const now = new Date();
+	const diffMs = now.getTime() - date.getTime();
+	const diffMins = Math.floor(diffMs / 60000);
+	const diffHours = Math.floor(diffMs / 3600000);
+	const diffDays = Math.floor(diffMs / 86400000);
+
+	if (diffMins < 1) return "just now";
+	if (diffMins < 60) return `${diffMins} minute${diffMins !== 1 ? "s" : ""} ago`;
+	if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? "s" : ""} ago`;
+	if (diffDays === 1) return "1 day ago";
+	if (diffDays < 7) return `${diffDays} days ago`;
+
+	return date.toLocaleDateString();
+}
+
+class SessionSelectorHeader implements Component {
+	private scope: SessionScope;
+
+	constructor(scope: SessionScope) {
+		this.scope = scope;
+	}
+
+	setScope(scope: SessionScope): void {
+		this.scope = scope;
+	}
+
+	invalidate(): void {}
+
+	render(width: number): string[] {
+		const title = this.scope === "current" ? "Resume Session (Current Folder)" : "Resume Session (All)";
+		const leftText = theme.bold(title);
+		const scopeText =
+			this.scope === "current"
+				? `${theme.fg("accent", "◉ Current Folder")}${theme.fg("muted", " | ○ All")}`
+				: `${theme.fg("muted", "○ Current Folder | ")}${theme.fg("accent", "◉ All")}`;
+		const rightText = truncateToWidth(scopeText, width, "");
+		const availableLeft = Math.max(0, width - visibleWidth(rightText) - 1);
+		const left = truncateToWidth(leftText, availableLeft, "");
+		const spacing = Math.max(0, width - visibleWidth(left) - visibleWidth(rightText));
+		return [`${left}${" ".repeat(spacing)}${rightText}`];
+	}
+}
 
 /**
  * Custom session list component with multi-line items and search
@@ -20,15 +76,18 @@ class SessionList implements Component {
 	private filteredSessions: SessionInfo[] = [];
 	private selectedIndex: number = 0;
 	private searchInput: Input;
+	private showCwd = false;
 	public onSelect?: (sessionPath: string) => void;
 	public onCancel?: () => void;
 	public onExit: () => void = () => {};
+	public onToggleScope?: () => void;
 	private maxVisible: number = 5; // Max sessions visible (each session is 3 lines: msg + metadata + blank)
 
-	constructor(sessions: SessionInfo[]) {
+	constructor(sessions: SessionInfo[], showCwd: boolean) {
 		this.allSessions = sessions;
 		this.filteredSessions = sessions;
 		this.searchInput = new Input();
+		this.showCwd = showCwd;
 
 		// Handle Enter in search input - select current item
 		this.searchInput.onSubmit = () => {
@@ -41,18 +100,22 @@ class SessionList implements Component {
 		};
 	}
 
+	setSessions(sessions: SessionInfo[], showCwd: boolean): void {
+		this.allSessions = sessions;
+		this.showCwd = showCwd;
+		this.filterSessions(this.searchInput.getValue());
+	}
+
 	private filterSessions(query: string): void {
 		this.filteredSessions = fuzzyFilter(
 			this.allSessions,
 			query,
-			(session) => `${session.id} ${session.allMessagesText}`,
+			(session) => `${session.id} ${session.allMessagesText} ${session.cwd}`,
 		);
 		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredSessions.length - 1));
 	}
 
-	invalidate(): void {
-		// No cached state to invalidate currently
-	}
+	invalidate(): void {}
 
 	render(width: number): string[] {
 		const lines: string[] = [];
@@ -65,23 +128,6 @@ class SessionList implements Component {
 			lines.push(theme.fg("muted", "  No sessions found"));
 			return lines;
 		}
-
-		// Format dates
-		const formatDate = (date: Date): string => {
-			const now = new Date();
-			const diffMs = now.getTime() - date.getTime();
-			const diffMins = Math.floor(diffMs / 60000);
-			const diffHours = Math.floor(diffMs / 3600000);
-			const diffDays = Math.floor(diffMs / 86400000);
-
-			if (diffMins < 1) return "just now";
-			if (diffMins < 60) return `${diffMins} minute${diffMins !== 1 ? "s" : ""} ago`;
-			if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? "s" : ""} ago`;
-			if (diffDays === 1) return "1 day ago";
-			if (diffDays < 7) return `${diffDays} days ago`;
-
-			return date.toLocaleDateString();
-		};
 
 		// Calculate visible range with scrolling
 		const startIndex = Math.max(
@@ -105,9 +151,13 @@ class SessionList implements Component {
 			const messageLine = cursor + (isSelected ? theme.bold(truncatedMsg) : truncatedMsg);
 
 			// Second line: metadata (dimmed) - also truncate for safety
-			const modified = formatDate(session.modified);
+			const modified = formatSessionDate(session.modified);
 			const msgCount = `${session.messageCount} message${session.messageCount !== 1 ? "s" : ""}`;
-			const metadata = `  ${modified} · ${msgCount}`;
+			const metadataParts = [modified, msgCount];
+			if (this.showCwd && session.cwd) {
+				metadataParts.push(shortenPath(session.cwd));
+			}
+			const metadata = `  ${metadataParts.join(" · ")}`;
 			const metadataLine = theme.fg("dim", truncateToWidth(metadata, width, ""));
 
 			lines.push(messageLine);
@@ -127,6 +177,12 @@ class SessionList implements Component {
 
 	handleInput(keyData: string): void {
 		const kb = getEditorKeybindings();
+		if (kb.matches(keyData, "tab")) {
+			if (this.onToggleScope) {
+				this.onToggleScope();
+			}
+			return;
+		}
 		// Up arrow
 		if (kb.matches(keyData, "selectUp")) {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
@@ -161,27 +217,36 @@ class SessionList implements Component {
  */
 export class SessionSelectorComponent extends Container {
 	private sessionList: SessionList;
+	private header: SessionSelectorHeader;
+	private scope: SessionScope = "current";
+	private currentSessions: SessionInfo[];
+	private allSessions: SessionInfo[];
 
 	constructor(
-		sessions: SessionInfo[],
+		currentSessions: SessionInfo[],
+		allSessions: SessionInfo[],
 		onSelect: (sessionPath: string) => void,
 		onCancel: () => void,
 		onExit: () => void,
 	) {
 		super();
+		this.currentSessions = currentSessions;
+		this.allSessions = allSessions;
+		this.header = new SessionSelectorHeader(this.scope);
 
 		// Add header
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.bold("Resume Session"), 1, 0));
+		this.addChild(this.header);
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
 		this.addChild(new Spacer(1));
 
 		// Create session list
-		this.sessionList = new SessionList(sessions);
+		this.sessionList = new SessionList(this.currentSessions, this.scope === "all");
 		this.sessionList.onSelect = onSelect;
 		this.sessionList.onCancel = onCancel;
 		this.sessionList.onExit = onExit;
+		this.sessionList.onToggleScope = () => this.toggleScope();
 
 		this.addChild(this.sessionList);
 
@@ -190,9 +255,16 @@ export class SessionSelectorComponent extends Container {
 		this.addChild(new DynamicBorder());
 
 		// Auto-cancel if no sessions
-		if (sessions.length === 0) {
+		if (currentSessions.length === 0 && allSessions.length === 0) {
 			setTimeout(() => onCancel(), 100);
 		}
+	}
+
+	private toggleScope(): void {
+		this.scope = this.scope === "current" ? "all" : "current";
+		const sessions = this.scope === "current" ? this.currentSessions : this.allSessions;
+		this.sessionList.setSessions(sessions, this.scope === "all");
+		this.header.setScope(this.scope);
 	}
 
 	getSessionList(): SessionList {

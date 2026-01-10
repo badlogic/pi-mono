@@ -14,7 +14,7 @@ import {
 	writeFileSync,
 } from "fs";
 import { join, resolve } from "path";
-import { getAgentDir as getDefaultAgentDir } from "../config.js";
+import { getAgentDir as getDefaultAgentDir, getSessionsDir } from "../config.js";
 import {
 	type BashExecutionMessage,
 	type CustomMessage,
@@ -156,6 +156,7 @@ export interface SessionContext {
 export interface SessionInfo {
 	path: string;
 	id: string;
+	cwd?: string;
 	created: Date;
 	modified: Date;
 	messageCount: number;
@@ -468,6 +469,92 @@ export function findMostRecentSession(sessionDir: string): string | null {
 	} catch {
 		return null;
 	}
+}
+
+function isMessageWithContent(message: AgentMessage): message is Message {
+	return typeof (message as Message).role === "string" && "content" in message;
+}
+
+function extractTextContent(message: Message): string {
+	const content = message.content;
+	if (typeof content === "string") {
+		return content;
+	}
+	return content
+		.filter((block): block is TextContent => block.type === "text")
+		.map((block) => block.text)
+		.join(" ");
+}
+
+function buildSessionInfo(filePath: string): SessionInfo | null {
+	const entries = loadEntriesFromFile(filePath);
+	if (entries.length === 0) return null;
+
+	const header = entries[0];
+	if (header.type !== "session") return null;
+
+	const stats = statSync(filePath);
+	let messageCount = 0;
+	let firstMessage = "";
+	const allMessages: string[] = [];
+
+	for (const entry of entries) {
+		if (entry.type !== "message") continue;
+		messageCount++;
+
+		const message = entry.message;
+		if (!isMessageWithContent(message)) continue;
+		if (message.role !== "user" && message.role !== "assistant") continue;
+
+		const textContent = extractTextContent(message);
+		if (!textContent) continue;
+
+		allMessages.push(textContent);
+		if (!firstMessage && message.role === "user") {
+			firstMessage = textContent;
+		}
+	}
+
+	const cwd = typeof header.cwd === "string" ? header.cwd : "";
+
+	return {
+		path: filePath,
+		id: header.id,
+		cwd,
+		created: new Date(header.timestamp),
+		modified: stats.mtime,
+		messageCount,
+		firstMessage: firstMessage || "(no messages)",
+		allMessagesText: allMessages.join(" "),
+	};
+}
+
+function listSessionsFromDir(dir: string): SessionInfo[] {
+	const sessions: SessionInfo[] = [];
+	if (!existsSync(dir)) {
+		return sessions;
+	}
+
+	try {
+		const files = readdirSync(dir)
+			.filter((f) => f.endsWith(".jsonl"))
+			.map((f) => join(dir, f));
+
+		for (const file of files) {
+			try {
+				const info = buildSessionInfo(file);
+				if (info) {
+					sessions.push(info);
+				}
+			} catch {
+				// Skip files that can't be read
+			}
+		}
+	} catch {
+		// Return empty list on error
+	}
+
+	return sessions;
 }
 
 /**
@@ -1063,82 +1150,29 @@ export class SessionManager {
 	 */
 	static list(cwd: string, sessionDir?: string): SessionInfo[] {
 		const dir = sessionDir ?? getDefaultSessionDir(cwd);
+		const sessions = listSessionsFromDir(dir);
+		sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+		return sessions;
+	}
+
+	static listAll(): SessionInfo[] {
 		const sessions: SessionInfo[] = [];
+		const sessionsDir = getSessionsDir();
 
 		try {
-			const files = readdirSync(dir)
-				.filter((f) => f.endsWith(".jsonl"))
-				.map((f) => join(dir, f));
-
-			for (const file of files) {
-				try {
-					const content = readFileSync(file, "utf8");
-					const lines = content.trim().split("\n");
-					if (lines.length === 0) continue;
-
-					// Check first line for valid session header
-					let header: { type: string; id: string; timestamp: string } | null = null;
-					try {
-						const first = JSON.parse(lines[0]);
-						if (first.type === "session" && first.id) {
-							header = first;
-						}
-					} catch {
-						// Not valid JSON
-					}
-					if (!header) continue;
-
-					const stats = statSync(file);
-					let messageCount = 0;
-					let firstMessage = "";
-					const allMessages: string[] = [];
-
-					for (let i = 1; i < lines.length; i++) {
-						try {
-							const entry = JSON.parse(lines[i]);
-
-							if (entry.type === "message") {
-								messageCount++;
-
-								if (entry.message.role === "user" || entry.message.role === "assistant") {
-									const textContent = entry.message.content
-										.filter((c: any) => c.type === "text")
-										.map((c: any) => c.text)
-										.join(" ");
-
-									if (textContent) {
-										allMessages.push(textContent);
-
-										if (!firstMessage && entry.message.role === "user") {
-											firstMessage = textContent;
-										}
-									}
-								}
-							}
-						} catch {
-							// Skip malformed lines
-						}
-					}
-
-					sessions.push({
-						path: file,
-						id: header.id,
-						created: new Date(header.timestamp),
-						modified: stats.mtime,
-						messageCount,
-						firstMessage: firstMessage || "(no messages)",
-						allMessagesText: allMessages.join(" "),
-					});
-				} catch {
-					// Skip files that can't be read
-				}
+			if (!existsSync(sessionsDir)) {
+				return sessions;
 			}
-
-			sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+			const entries = readdirSync(sessionsDir, { withFileTypes: true });
+			for (const entry of entries) {
+				if (!entry.isDirectory()) continue;
+				sessions.push(...listSessionsFromDir(join(sessionsDir, entry.name)));
+			}
 		} catch {
 			// Return empty list on error
 		}
 
+		sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
 		return sessions;
 	}
 }

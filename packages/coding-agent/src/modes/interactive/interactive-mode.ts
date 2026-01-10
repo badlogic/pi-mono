@@ -2876,9 +2876,11 @@ export class InteractiveMode {
 
 	private showSessionSelector(): void {
 		this.showSelector((done) => {
-			const sessions = SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir());
+			const currentSessions = SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir());
+			const allSessions = SessionManager.listAll();
 			const selector = new SessionSelectorComponent(
-				sessions,
+				currentSessions,
+				allSessions,
 				async (sessionPath) => {
 					done();
 					await this.handleResumeSession(sessionPath);

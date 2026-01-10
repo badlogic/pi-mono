@@ -7,13 +7,17 @@ import type { SessionInfo } from "../core/session-manager.js";
 import { SessionSelectorComponent } from "../modes/interactive/components/session-selector.js";
 
 /** Show TUI session selector and return selected session path or null if cancelled */
-export async function selectSession(sessions: SessionInfo[]): Promise<string | null> {
+export async function selectSession(
+	currentSessions: SessionInfo[],
+	allSessions: SessionInfo[],
+): Promise<string | null> {
 	return new Promise((resolve) => {
 		const ui = new TUI(new ProcessTerminal());
 		let resolved = false;
 
 		const selector = new SessionSelectorComponent(
-			sessions,
+			currentSessions,
+			allSessions,
 			(path: string) => {
 				if (!resolved) {
 					resolved = true;

@@ -317,13 +317,14 @@ export async function main(args: string[]) {
 		// Initialize keybindings so session picker respects user config
 		KeybindingsManager.create();
 
-		const sessions = SessionManager.list(cwd, parsed.sessionDir);
+		const currentSessions = SessionManager.list(cwd, parsed.sessionDir);
+		const allSessions = SessionManager.listAll();
 		time("SessionManager.list");
-		if (sessions.length === 0) {
+		if (currentSessions.length === 0 && allSessions.length === 0) {
 			console.log(chalk.dim("No sessions found"));
 			return;
 		}
-		const selectedPath = await selectSession(sessions);
+		const selectedPath = await selectSession(currentSessions, allSessions);
 		time("selectSession");
 		if (!selectedPath) {
 			console.log(chalk.dim("No session selected"));
