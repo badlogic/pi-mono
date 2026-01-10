@@ -16,7 +16,7 @@ import {
 	type Model,
 	type OAuthProvider,
 } from "@mariozechner/pi-ai";
-import type { EditorComponent, EditorTheme, KeyId, SlashCommand } from "@mariozechner/pi-tui";
+import type { AutocompleteItem, EditorComponent, EditorTheme, KeyId, SlashCommand } from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
@@ -51,6 +51,7 @@ import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
+import { fuzzyFilter } from "../../utils/fuzzy.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
@@ -243,7 +244,37 @@ export class InteractiveMode {
 		// Define commands for autocomplete
 		const slashCommands: SlashCommand[] = [
 			{ name: "settings", description: "Open settings menu" },
-			{ name: "model", description: "Select model (opens selector UI)" },
+			{
+				name: "model",
+				description: "Select model (opens selector UI)",
+				getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
+					// Get available models (scoped or from registry)
+					const models =
+						this.session.scopedModels.length > 0
+							? this.session.scopedModels.map((s) => s.model)
+							: this.session.modelRegistry.getAvailable();
+
+					if (models.length === 0) return null;
+
+					// Create items with provider/id format
+					const items = models.map((m) => ({
+						id: m.id,
+						provider: m.provider,
+						label: `${m.provider}/${m.id}`,
+					}));
+
+					// Fuzzy filter by model ID (not provider/id to avoid matching provider name)
+					const filtered = fuzzyFilter(items, prefix, (item) => item.id);
+
+					if (filtered.length === 0) return null;
+
+					return filtered.map((item) => ({
+						value: item.label,
+						label: item.id,
+						description: item.provider,
+					}));
+				},
+			},
 			{ name: "export", description: "Export session to HTML file" },
 			{ name: "share", description: "Share session as a secret GitHub gist" },
 			{ name: "copy", description: "Copy last agent message to clipboard" },
