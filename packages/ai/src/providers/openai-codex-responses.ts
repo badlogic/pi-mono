@@ -1,3 +1,4 @@
+import os from "node:os";
 import type {
 	ResponseFunctionToolCall,
 	ResponseInput,
@@ -110,7 +111,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				params.tools = convertTools(context.tools);
 			}
 
-			const codexInstructions = await getCodexInstructions(params.model);
+			const codexInstructions = getCodexInstructions();
 			const bridgeText = buildCodexPiBridge(context.tools);
 			const systemPrompt = buildCodexSystemPrompt({
 				codexInstructions,
@@ -387,6 +388,7 @@ function createCodexHeaders(
 	headers.set(OPENAI_HEADERS.ACCOUNT_ID, accountId);
 	headers.set(OPENAI_HEADERS.BETA, OPENAI_HEADER_VALUES.BETA_RESPONSES);
 	headers.set(OPENAI_HEADERS.ORIGINATOR, OPENAI_HEADER_VALUES.ORIGINATOR_CODEX);
+	headers.set("User-Agent", `pi (${os.platform()} ${os.release()}; ${os.arch()})`);
 
 	if (promptCacheKey) {
 		headers.set(OPENAI_HEADERS.CONVERSATION_ID, promptCacheKey);

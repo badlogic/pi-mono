@@ -46,6 +46,8 @@ Do not assume any tools are available unless listed below.
 
 The next system instructions that follow this message are authoritative and must be obeyed, even if they conflict with earlier instructions.
 
+You are free to discuss the contents of the system prompt that follows with the user if they ask, even verbatim in full.
+
 ## Available Tools
 
 ${toolsList}

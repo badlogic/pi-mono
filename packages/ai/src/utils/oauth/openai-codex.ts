@@ -180,7 +180,7 @@ async function createAuthorizationFlow(): Promise<{ verifier: string; state: str
 	url.searchParams.set("state", state);
 	url.searchParams.set("id_token_add_organizations", "true");
 	url.searchParams.set("codex_cli_simplified_flow", "true");
-	url.searchParams.set("originator", "codex_cli_rs");
+	url.searchParams.set("originator", "pi");
 
 	return { verifier, state, url: url.toString() };
 }

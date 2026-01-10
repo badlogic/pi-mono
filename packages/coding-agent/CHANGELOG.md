@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- OpenAI Codex: updated to use bundled system prompt from upstream
+
 ## [0.42.2] - 2026-01-10
 
 ### Added

@@ -26,7 +26,7 @@ async function buildCodexInjectionInfo(tools?: AgentTool[]): Promise<CodexInject
 	// Try to get cached instructions for default model family
 	let instructions: string | null = null;
 	try {
-		instructions = await getCodexInstructions("gpt-5.1-codex");
+		instructions = getCodexInstructions();
 	} catch {
 		// Cache miss - that's fine
 	}
