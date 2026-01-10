@@ -44,8 +44,11 @@ const claudeCodeToolNames: Record<string, string> = {
 
 const toClaudeCodeName = (name: string) => claudeCodeToolNames[name] || name;
 const fromClaudeCodeName = (name: string) => {
+	// Claude sometimes returns lowercase tool names even when schemas use capitalized names
+	const lowerName = name.toLowerCase();
 	for (const [piName, ccName] of Object.entries(claudeCodeToolNames)) {
-		if (ccName === name) return piName;
+		if (ccName.toLowerCase() === lowerName || piName.toLowerCase() === lowerName)
+			return ccName; // Return the CAPITALIZED Claude Code name
 	}
 	return name;
 };
