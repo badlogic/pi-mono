@@ -166,7 +166,11 @@ export class BashExecutionComponent extends Container {
 
 			// Show how many lines are hidden (collapsed preview)
 			if (hiddenLineCount > 0) {
-				statusParts.push(theme.fg("dim", `... ${hiddenLineCount} more lines (ctrl+o to expand)`));
+				if (this.expanded) {
+					statusParts.push(theme.fg("dim", "(ctrl+o to collapse)"));
+				} else {
+					statusParts.push(theme.fg("dim", `... ${hiddenLineCount} more lines (ctrl+o to expand)`));
+				}
 			}
 
 			if (this.status === "cancelled") {
