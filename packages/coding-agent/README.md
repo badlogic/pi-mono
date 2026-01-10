@@ -650,6 +650,7 @@ To fully replace a built-in provider with custom models, include the `models` ar
 | `supportsStore` | Whether provider supports `store` field |
 | `supportsDeveloperRole` | Use `developer` vs `system` role |
 | `supportsReasoningEffort` | Support for `reasoning_effort` parameter |
+| `supportsUsageInStreaming` | Whether provider supports `stream_options: { include_usage: true }`. Default: `true` |
 | `maxTokensField` | Use `max_completion_tokens` or `max_tokens` |
 
 **Live reload:** The file reloads each time you open `/model`. Edit during session; no restart needed.
