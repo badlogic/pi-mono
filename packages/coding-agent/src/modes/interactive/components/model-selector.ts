@@ -154,7 +154,11 @@ export class ModelSelectorComponent extends Container {
 	}
 
 	private filterModels(query: string): void {
-		this.filteredModels = fuzzyFilter(this.allModels, query, ({ id, provider }) => `${id} ${provider}`);
+		this.filteredModels = fuzzyFilter(
+			this.allModels,
+			query,
+			({ id, provider, model }) => `${model.name || ""} ${id} ${provider}`,
+		);
 		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredModels.length - 1));
 		this.updateList();
 	}
@@ -180,13 +184,13 @@ export class ModelSelectorComponent extends Container {
 			let line = "";
 			if (isSelected) {
 				const prefix = theme.fg("accent", "→ ");
-				const modelText = `${item.id}`;
-				const providerBadge = theme.fg("muted", `[${item.provider}]`);
+				const modelText = `${item.model.name || item.id}`;
+				const providerBadge = theme.fg("muted", `[${item.provider}:${item.id}]`);
 				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
 				line = `${prefix + theme.fg("accent", modelText)} ${providerBadge}${checkmark}`;
 			} else {
-				const modelText = `  ${item.id}`;
-				const providerBadge = theme.fg("muted", `[${item.provider}]`);
+				const modelText = `  ${item.model.name || item.id}`;
+				const providerBadge = theme.fg("muted", `[${item.provider}:${item.id}]`);
 				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
 				line = `${modelText} ${providerBadge}${checkmark}`;
 			}

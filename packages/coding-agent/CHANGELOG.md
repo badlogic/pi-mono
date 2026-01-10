@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Model display is now consistent across the status bar, model cycling, and model selector. The model name is shown everywhere instead of the identifier, with the model selector also showing `[provider:id]` for additional context.
+
 ## [0.42.2] - 2026-01-10
 
 ### Added

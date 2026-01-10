@@ -2518,7 +2518,7 @@ export class InteractiveMode {
 				await this.session.setModel(model);
 				this.footer.invalidate();
 				this.updateEditorBorderColor();
-				this.showStatus(`Model: ${model.id}`);
+				this.showStatus(`Model: ${model.name || model.id}`);
 			} catch (error) {
 				this.showError(error instanceof Error ? error.message : String(error));
 			}
@@ -2582,7 +2582,7 @@ export class InteractiveMode {
 						this.footer.invalidate();
 						this.updateEditorBorderColor();
 						done();
-						this.showStatus(`Model: ${model.id}`);
+						this.showStatus(`Model: ${model.name || model.id}`);
 					} catch (error) {
 						done();
 						this.showError(error instanceof Error ? error.message : String(error));
