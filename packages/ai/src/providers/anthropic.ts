@@ -43,9 +43,11 @@ const claudeCodeToolNames: Record<string, string> = {
 };
 
 const toClaudeCodeName = (name: string) => claudeCodeToolNames[name] || name;
-const fromClaudeCodeName = (name: string) => {
-	for (const [piName, ccName] of Object.entries(claudeCodeToolNames)) {
-		if (ccName === name) return piName;
+const fromClaudeCodeName = (name: string, tools?: Tool[]) => {
+	if (tools && tools.length > 0) {
+		const lowerName = name.toLowerCase();
+		const matchedTool = tools.find((tool) => tool.name.toLowerCase() === lowerName);
+		if (matchedTool) return matchedTool.name;
 	}
 	return name;
 };
@@ -179,7 +181,9 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 						const block: Block = {
 							type: "toolCall",
 							id: event.content_block.id,
-							name: isOAuthToken ? fromClaudeCodeName(event.content_block.name) : event.content_block.name,
+							name: isOAuthToken
+								? fromClaudeCodeName(event.content_block.name, context.tools)
+								: event.content_block.name,
 							arguments: event.content_block.input as Record<string, any>,
 							partialJson: "",
 							index: event.index,
