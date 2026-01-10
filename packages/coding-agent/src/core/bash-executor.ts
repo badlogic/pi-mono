@@ -197,11 +197,13 @@ export async function executeBashWithOperations(
 	let tempFileStream: WriteStream | undefined;
 	let totalBytes = 0;
 
+	const decoder = new TextDecoder();
+
 	const onData = (data: Buffer) => {
 		totalBytes += data.length;
 
 		// Sanitize: strip ANSI, replace binary garbage, normalize newlines
-		const text = sanitizeBinaryOutput(stripAnsi(data.toString("utf-8"))).replace(/\r/g, "");
+		const text = sanitizeBinaryOutput(stripAnsi(decoder.decode(data, { stream: true }))).replace(/\r/g, "");
 
 		// Start writing to temp file if exceeds threshold
 		if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
