@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Reduced flicker by only re-rendering changed lines ([#617](https://github.com/badlogic/pi-mono/pull/617) by [@ogulcancelik](https://github.com/ogulcancelik))
+
 ## [0.42.4] - 2026-01-10
 
 ## [0.42.3] - 2026-01-10
