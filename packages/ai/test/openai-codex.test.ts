@@ -8,7 +8,7 @@ import { parseCodexError } from "../src/providers/openai-codex/response-handler.
 
 const DEFAULT_PROMPT_PREFIX =
 	"You are an expert coding assistant. You help users with coding tasks by reading files, executing commands";
-const FALLBACK_PROMPT = readFileSync(
+const CODEX_PROMPT = readFileSync(
 	new URL("../src/providers/openai-codex/prompts/codex-instructions.md", import.meta.url),
 	"utf8",
 );
@@ -168,6 +168,6 @@ describe("openai-codex prompt caching", () => {
 		global.fetch = fetchMock as typeof fetch;
 
 		const instructions = await getCodexInstructions("gpt-5.1-codex");
-		expect(instructions).toBe(FALLBACK_PROMPT);
+		expect(instructions).toBe(CODEX_PROMPT);
 	});
 });
