@@ -164,7 +164,7 @@ export class TUI extends Container {
 	requestRender(force = false): void {
 		if (force) {
 			this.previousLines = [];
-			this.previousWidth = 0;
+			this.previousWidth = -1; // -1 triggers widthChanged, forcing a full clear
 			this.cursorRow = 0;
 		}
 		if (this.renderRequested) return;
@@ -334,8 +334,8 @@ export class TUI extends Container {
 		// Width changed - need full re-render
 		const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;
 
-		// First render - just output everything without clearing
-		if (this.previousLines.length === 0) {
+		// First render - just output everything without clearing (assumes clean screen)
+		if (this.previousLines.length === 0 && !widthChanged) {
 			let buffer = "\x1b[?2026h"; // Begin synchronized output
 			for (let i = 0; i < newLines.length; i++) {
 				if (i > 0) buffer += "\r\n";

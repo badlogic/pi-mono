@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- TUI renders with wrong dimensions after suspend/resume if terminal was resized while suspended ([#599](https://github.com/badlogic/pi-mono/issues/599))
+
 ## [0.42.4] - 2026-01-10
 
 ## [0.42.3] - 2026-01-10
