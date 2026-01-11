@@ -66,7 +66,7 @@ export interface Settings {
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
-	doubleEscapeAction?: "branch" | "tree"; // Action for double-escape with empty editor (default: "tree")
+	doubleEscapeAction?: "fork" | "tree"; // Action for double-escape with empty editor (default: "tree")
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
 }
 
@@ -452,11 +452,11 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getDoubleEscapeAction(): "branch" | "tree" {
+	getDoubleEscapeAction(): "fork" | "tree" {
 		return this.settings.doubleEscapeAction ?? "tree";
 	}
 
-	setDoubleEscapeAction(action: "branch" | "tree"): void {
+	setDoubleEscapeAction(action: "fork" | "tree"): void {
 		this.globalSettings.doubleEscapeAction = action;
 		this.save();
 	}

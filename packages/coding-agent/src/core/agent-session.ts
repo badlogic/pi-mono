@@ -37,8 +37,8 @@ import {
 import { exportSessionToHtml } from "./export-html/index.js";
 import type {
 	ExtensionRunner,
-	SessionBeforeBranchResult,
 	SessionBeforeCompactResult,
+	SessionBeforeForkResult,
 	SessionBeforeSwitchResult,
 	SessionBeforeTreeResult,
 	TreePreparation,
@@ -1831,32 +1831,32 @@ export class AgentSession {
 	}
 
 	/**
-	 * Create a branch from a specific entry.
-	 * Emits before_branch/branch session events to extensions.
+	 * Create a fork from a specific entry.
+	 * Emits before_fork/fork session events to extensions.
 	 *
-	 * @param entryId ID of the entry to branch from
+	 * @param entryId ID of the entry to fork from
 	 * @returns Object with:
 	 *   - selectedText: The text of the selected user message (for editor pre-fill)
-	 *   - cancelled: True if an extension cancelled the branch
+	 *   - cancelled: True if an extension cancelled the fork
 	 */
-	async branch(entryId: string): Promise<{ selectedText: string; cancelled: boolean }> {
+	async fork(entryId: string): Promise<{ selectedText: string; cancelled: boolean }> {
 		const previousSessionFile = this.sessionFile;
 		const selectedEntry = this.sessionManager.getEntry(entryId);
 
 		if (!selectedEntry || selectedEntry.type !== "message" || selectedEntry.message.role !== "user") {
-			throw new Error("Invalid entry ID for branching");
+			throw new Error("Invalid entry ID for forking");
 		}
 
 		const selectedText = this._extractUserMessageText(selectedEntry.message.content);
 
 		let skipConversationRestore = false;
 
-		// Emit session_before_branch event (can be cancelled)
-		if (this._extensionRunner?.hasHandlers("session_before_branch")) {
+		// Emit session_before_fork event (can be cancelled)
+		if (this._extensionRunner?.hasHandlers("session_before_fork")) {
 			const result = (await this._extensionRunner.emit({
-				type: "session_before_branch",
+				type: "session_before_fork",
 				entryId,
-			})) as SessionBeforeBranchResult | undefined;
+			})) as SessionBeforeForkResult | undefined;
 
 			if (result?.cancel) {
 				return { selectedText, cancelled: true };
@@ -1877,15 +1877,15 @@ export class AgentSession {
 		// Reload messages from entries (works for both file and in-memory mode)
 		const sessionContext = this.sessionManager.buildSessionContext();
 
-		// Emit session_branch event to extensions (after branch completes)
+		// Emit session_fork event to extensions (after fork completes)
 		if (this._extensionRunner) {
 			await this._extensionRunner.emit({
-				type: "session_branch",
+				type: "session_fork",
 				previousSessionFile,
 			});
 		}
 
-		// Emit session event to custom tools (with reason "branch")
+		// Emit session event to custom tools (with reason "fork")
 
 		if (!skipConversationRestore) {
 			this.agent.replaceMessages(sessionContext.messages);
@@ -1900,7 +1900,7 @@ export class AgentSession {
 
 	/**
 	 * Navigate to a different node in the session tree.
-	 * Unlike branch() which creates a new session file, this stays in the same file.
+	 * Unlike fork() which creates a new session file, this stays in the same file.
 	 *
 	 * @param targetId The entry ID to navigate to
 	 * @param options.summarize Whether user wants to summarize abandoned branch
@@ -2061,9 +2061,9 @@ export class AgentSession {
 	}
 
 	/**
-	 * Get all user messages from session for branch selector.
+	 * Get all user messages from session for fork selector.
 	 */
-	getUserMessagesForBranching(): Array<{ entryId: string; text: string }> {
+	getUserMessagesForForking(): Array<{ entryId: string; text: string }> {
 		const entries = this.sessionManager.getEntries();
 		const result: Array<{ entryId: string; text: string }> = [];
 

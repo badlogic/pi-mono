@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Renamed `/branch` command to `/fork` ([#641](https://github.com/badlogic/pi-mono/issues/641))
+  - RPC: `branch` → `fork`, `get_branch_messages` → `get_fork_messages`
+  - SDK: `branch()` → `fork()`, `getBranchMessages()` → `getForkMessages()`
+  - AgentSession: `branch()` → `fork()`, `getUserMessagesForBranching()` → `getUserMessagesForForking()`
+  - Extension events: `session_before_branch` → `session_before_fork`, `session_branch` → `session_fork`
+  - Settings: `doubleEscapeAction: "branch" | "tree"` → `"fork" | "tree"`
+
 ### Added
 
 - `/models` command to enable/disable models for Ctrl+P cycling. Changes persist to `enabledModels` in settings.json and take effect immediately. ([#626](https://github.com/badlogic/pi-mono/pull/626) by [@CarlosGtrz](https://github.com/CarlosGtrz))

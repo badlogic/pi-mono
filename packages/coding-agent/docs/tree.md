@@ -6,14 +6,14 @@ The `/tree` command provides tree-based navigation of the session history.
 
 Sessions are stored as trees where each entry has an `id` and `parentId`. The "leaf" pointer tracks the current position. `/tree` lets you navigate to any point and optionally summarize the branch you're leaving.
 
-### Comparison with `/branch`
+### Comparison with `/fork`
 
-| Feature | `/branch` | `/tree` |
-|---------|-----------|---------|
+| Feature | `/fork` | `/tree` |
+|---------|---------|---------|
 | View | Flat list of user messages | Full tree structure |
 | Action | Extracts path to **new session file** | Changes leaf in **same session** |
 | Summary | Never | Optional (user prompted) |
-| Events | `session_before_branch` / `session_branch` | `session_before_tree` / `session_tree` |
+| Events | `session_before_fork` / `session_fork` | `session_before_tree` / `session_tree` |
 
 ## Tree UI
 

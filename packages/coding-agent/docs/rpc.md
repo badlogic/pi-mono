@@ -541,47 +541,47 @@ If a hook cancelled the switch:
 {"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": true}}
 ```
 
-#### branch
+#### fork
 
-Create a new branch from a previous user message. Can be cancelled by a `before_branch` hook. Returns the text of the message being branched from.
+Create a new fork from a previous user message. Can be cancelled by a `before_fork` hook. Returns the text of the message being forked from.
 
 ```json
-{"type": "branch", "entryId": "abc123"}
+{"type": "fork", "entryId": "abc123"}
 ```
 
 Response:
 ```json
 {
   "type": "response",
-  "command": "branch",
+  "command": "fork",
   "success": true,
   "data": {"text": "The original prompt text...", "cancelled": false}
 }
 ```
 
-If a hook cancelled the branch:
+If a hook cancelled the fork:
 ```json
 {
   "type": "response",
-  "command": "branch",
+  "command": "fork",
   "success": true,
   "data": {"text": "The original prompt text...", "cancelled": true}
 }
 ```
 
-#### get_branch_messages
+#### get_fork_messages
 
-Get user messages available for branching.
+Get user messages available for forking.
 
 ```json
-{"type": "get_branch_messages"}
+{"type": "get_fork_messages"}
 ```
 
 Response:
 ```json
 {
   "type": "response",
-  "command": "get_branch_messages",
+  "command": "get_fork_messages",
   "success": true,
   "data": {
     "messages": [

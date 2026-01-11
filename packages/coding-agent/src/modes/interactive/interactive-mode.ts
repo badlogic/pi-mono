@@ -289,7 +289,7 @@ export class InteractiveMode {
 			{ name: "session", description: "Show session info and stats" },
 			{ name: "changelog", description: "Show changelog entries" },
 			{ name: "hotkeys", description: "Show all keyboard shortcuts" },
-			{ name: "branch", description: "Create a new branch from a previous message" },
+			{ name: "fork", description: "Create a new fork from a previous message" },
 			{ name: "tree", description: "Navigate session tree (switch branches)" },
 			{ name: "login", description: "Login with OAuth provider" },
 			{ name: "logout", description: "Logout from OAuth provider" },
@@ -730,8 +730,8 @@ export class InteractiveMode {
 
 					return { cancelled: false };
 				},
-				branch: async (entryId) => {
-					const result = await this.session.branch(entryId);
+				fork: async (entryId) => {
+					const result = await this.session.fork(entryId);
 					if (result.cancelled) {
 						return { cancelled: true };
 					}
@@ -739,7 +739,7 @@ export class InteractiveMode {
 					this.chatContainer.clear();
 					this.renderInitialMessages();
 					this.editor.setText(result.selectedText);
-					this.showStatus("Branched to new session");
+					this.showStatus("Forked to new session");
 
 					return { cancelled: false };
 				},
@@ -1336,7 +1336,7 @@ export class InteractiveMode {
 				this.isBashMode = false;
 				this.updateEditorBorderColor();
 			} else if (!this.editor.getText().trim()) {
-				// Double-escape with empty editor triggers /tree or /branch based on setting
+				// Double-escape with empty editor triggers /tree or /fork based on setting
 				const now = Date.now();
 				if (now - this.lastEscapeTime < 500) {
 					if (this.settingsManager.getDoubleEscapeAction() === "tree") {
@@ -1456,7 +1456,7 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
-			if (text === "/branch") {
+			if (text === "/fork") {
 				this.showUserMessageSelector();
 				this.editor.setText("");
 				return;
@@ -2738,10 +2738,10 @@ export class InteractiveMode {
 	}
 
 	private showUserMessageSelector(): void {
-		const userMessages = this.session.getUserMessagesForBranching();
+		const userMessages = this.session.getUserMessagesForForking();
 
 		if (userMessages.length === 0) {
-			this.showStatus("No messages to branch from");
+			this.showStatus("No messages to fork from");
 			return;
 		}
 
@@ -2749,9 +2749,9 @@ export class InteractiveMode {
 			const selector = new UserMessageSelectorComponent(
 				userMessages.map((m) => ({ id: m.entryId, text: m.text })),
 				async (entryId) => {
-					const result = await this.session.branch(entryId);
+					const result = await this.session.fork(entryId);
 					if (result.cancelled) {
-						// Extension cancelled the branch
+						// Extension cancelled the fork
 						done();
 						this.ui.requestRender();
 						return;

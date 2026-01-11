@@ -278,9 +278,9 @@ user sends another prompt ◄─────────────────
   ├─► session_before_switch (can cancel)
   └─► session_switch
 
-/branch
-  ├─► session_before_branch (can cancel)
-  └─► session_branch
+/fork
+  ├─► session_before_fork (can cancel)
+  └─► session_fork
 
 /compact or auto-compaction
   ├─► session_before_compact (can cancel or customize)
@@ -334,19 +334,19 @@ pi.on("session_switch", async (event, ctx) => {
 
 **Examples:** [confirm-destructive.ts](../examples/extensions/confirm-destructive.ts), [dirty-repo-guard.ts](../examples/extensions/dirty-repo-guard.ts), [status-line.ts](../examples/extensions/status-line.ts), [todo.ts](../examples/extensions/todo.ts)
 
-#### session_before_branch / session_branch
+#### session_before_fork / session_fork
 
-Fired when branching via `/branch`.
+Fired when forking via `/fork`.
 
 ```typescript
-pi.on("session_before_branch", async (event, ctx) => {
-  // event.entryId - ID of the entry being branched from
-  return { cancel: true }; // Cancel branch
+pi.on("session_before_fork", async (event, ctx) => {
+  // event.entryId - ID of the entry being forked from
+  return { cancel: true }; // Cancel fork
   // OR
-  return { skipConversationRestore: true }; // Branch but don't rewind messages
+  return { skipConversationRestore: true }; // Fork but don't rewind messages
 });
 
-pi.on("session_branch", async (event, ctx) => {
+pi.on("session_fork", async (event, ctx) => {
   // event.previousSessionFile - previous session file
 });
 ```

@@ -20,7 +20,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 |-----------|-------------|
 | `permission-gate.ts` | Prompts for confirmation before dangerous bash commands (rm -rf, sudo, etc.) |
 | `protected-paths.ts` | Blocks writes to protected paths (.env, .git/, node_modules/) |
-| `confirm-destructive.ts` | Confirms before destructive session actions (clear, switch, branch) |
+| `confirm-destructive.ts` | Confirms before destructive session actions (clear, switch, fork) |
 | `dirty-repo-guard.ts` | Prevents session changes with uncommitted git changes |
 
 ### Custom Tools
@@ -53,7 +53,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 
 | Extension | Description |
 |-----------|-------------|
-| `git-checkpoint.ts` | Creates git stash checkpoints at each turn for code restoration on branch |
+| `git-checkpoint.ts` | Creates git stash checkpoints at each turn for code restoration on fork |
 | `auto-commit-on-exit.ts` | Auto-commits on exit using last assistant message for commit message |
 
 ### System Prompt & Compaction
@@ -129,7 +129,7 @@ action: Type.Union([Type.Literal("list"), Type.Literal("add")])
 
 **State persistence via details:**
 ```typescript
-// Store state in tool result details for proper branching support
+// Store state in tool result details for proper forking support
 return {
   content: [{ type: "text", text: "Done" }],
   details: { todos: [...todos], nextId },  // Persisted in session

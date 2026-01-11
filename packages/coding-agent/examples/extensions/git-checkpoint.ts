@@ -1,8 +1,8 @@
 /**
  * Git Checkpoint Extension
  *
- * Creates git stash checkpoints at each turn so /branch can restore code state.
- * When branching, offers to restore code to that point in history.
+ * Creates git stash checkpoints at each turn so /fork can restore code state.
+ * When forking, offers to restore code to that point in history.
  */
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -26,7 +26,7 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("session_before_branch", async (event, ctx) => {
+	pi.on("session_before_fork", async (event, ctx) => {
 		const ref = checkpoints.get(event.entryId);
 		if (!ref) return;
 

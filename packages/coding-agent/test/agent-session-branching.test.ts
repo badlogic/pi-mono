@@ -1,10 +1,10 @@
 /**
- * Tests for AgentSession branching behavior.
+ * Tests for AgentSession forking behavior.
  *
  * These tests verify:
- * - Branching from a single message works
- * - Branching in --no-session mode (in-memory only)
- * - getUserMessagesForBranching returns correct entries
+ * - Forking from a single message works
+ * - Forking in --no-session mode (in-memory only)
+ * - getUserMessagesForForking returns correct entries
  */
 
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -21,7 +21,7 @@ import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
 import { API_KEY } from "./utilities.js";
 
-describe.skipIf(!API_KEY)("AgentSession branching", () => {
+describe.skipIf(!API_KEY)("AgentSession forking", () => {
 	let session: AgentSession;
 	let tempDir: string;
 	let sessionManager: SessionManager;
@@ -70,32 +70,32 @@ describe.skipIf(!API_KEY)("AgentSession branching", () => {
 		return session;
 	}
 
-	it("should allow branching from single message", async () => {
+	it("should allow forking from single message", async () => {
 		createSession();
 
 		// Send one message
 		await session.prompt("Say hello");
 		await session.agent.waitForIdle();
 
-		// Should have exactly 1 user message available for branching
-		const userMessages = session.getUserMessagesForBranching();
+		// Should have exactly 1 user message available for forking
+		const userMessages = session.getUserMessagesForForking();
 		expect(userMessages.length).toBe(1);
 		expect(userMessages[0].text).toBe("Say hello");
 
-		// Branch from the first message
-		const result = await session.branch(userMessages[0].entryId);
+		// Fork from the first message
+		const result = await session.fork(userMessages[0].entryId);
 		expect(result.selectedText).toBe("Say hello");
 		expect(result.cancelled).toBe(false);
 
-		// After branching, conversation should be empty (branched before the first message)
+		// After forking, conversation should be empty (forked before the first message)
 		expect(session.messages.length).toBe(0);
 
-		// Session file should exist (new branch)
+		// Session file should exist (new fork)
 		expect(session.sessionFile).not.toBeNull();
 		expect(existsSync(session.sessionFile!)).toBe(true);
 	});
 
-	it("should support in-memory branching in --no-session mode", async () => {
+	it("should support in-memory forking in --no-session mode", async () => {
 		createSession(true);
 
 		// Verify sessions are disabled
@@ -106,25 +106,25 @@ describe.skipIf(!API_KEY)("AgentSession branching", () => {
 		await session.agent.waitForIdle();
 
 		// Should have 1 user message
-		const userMessages = session.getUserMessagesForBranching();
+		const userMessages = session.getUserMessagesForForking();
 		expect(userMessages.length).toBe(1);
 
-		// Verify we have messages before branching
+		// Verify we have messages before forking
 		expect(session.messages.length).toBeGreaterThan(0);
 
-		// Branch from the first message
-		const result = await session.branch(userMessages[0].entryId);
+		// Fork from the first message
+		const result = await session.fork(userMessages[0].entryId);
 		expect(result.selectedText).toBe("Say hi");
 		expect(result.cancelled).toBe(false);
 
-		// After branching, conversation should be empty
+		// After forking, conversation should be empty
 		expect(session.messages.length).toBe(0);
 
 		// Session file should still be undefined (no file created)
 		expect(session.sessionFile).toBeUndefined();
 	});
 
-	it("should branch from middle of conversation", async () => {
+	it("should fork from middle of conversation", async () => {
 		createSession();
 
 		// Send multiple messages
@@ -138,15 +138,15 @@ describe.skipIf(!API_KEY)("AgentSession branching", () => {
 		await session.agent.waitForIdle();
 
 		// Should have 3 user messages
-		const userMessages = session.getUserMessagesForBranching();
+		const userMessages = session.getUserMessagesForForking();
 		expect(userMessages.length).toBe(3);
 
-		// Branch from second message (keeps first message + response)
+		// Fork from second message (keeps first message + response)
 		const secondMessage = userMessages[1];
-		const result = await session.branch(secondMessage.entryId);
+		const result = await session.fork(secondMessage.entryId);
 		expect(result.selectedText).toBe("Say two");
 
-		// After branching, should have first user message + assistant response
+		// After forking, should have first user message + assistant response
 		expect(session.messages.length).toBe(2);
 		expect(session.messages[0].role).toBe("user");
 		expect(session.messages[1].role).toBe("assistant");

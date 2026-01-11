@@ -218,8 +218,8 @@ export interface ExtensionCommandContext extends ExtensionContext {
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 	}): Promise<{ cancelled: boolean }>;
 
-	/** Branch from a specific entry, creating a new session file. */
-	branch(entryId: string): Promise<{ cancelled: boolean }>;
+	/** Fork from a specific entry, creating a new session file. */
+	fork(entryId: string): Promise<{ cancelled: boolean }>;
 
 	/** Navigate to a different point in the session tree. */
 	navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ cancelled: boolean }>;
@@ -289,15 +289,15 @@ export interface SessionSwitchEvent {
 	previousSessionFile: string | undefined;
 }
 
-/** Fired before branching a session (can be cancelled) */
-export interface SessionBeforeBranchEvent {
-	type: "session_before_branch";
+/** Fired before forking a session (can be cancelled) */
+export interface SessionBeforeForkEvent {
+	type: "session_before_fork";
 	entryId: string;
 }
 
-/** Fired after branching a session */
-export interface SessionBranchEvent {
-	type: "session_branch";
+/** Fired after forking a session */
+export interface SessionForkEvent {
+	type: "session_fork";
 	previousSessionFile: string | undefined;
 }
 
@@ -351,8 +351,8 @@ export type SessionEvent =
 	| SessionStartEvent
 	| SessionBeforeSwitchEvent
 	| SessionSwitchEvent
-	| SessionBeforeBranchEvent
-	| SessionBranchEvent
+	| SessionBeforeForkEvent
+	| SessionForkEvent
 	| SessionBeforeCompactEvent
 	| SessionCompactEvent
 	| SessionShutdownEvent
@@ -577,7 +577,7 @@ export interface SessionBeforeSwitchResult {
 	cancel?: boolean;
 }
 
-export interface SessionBeforeBranchResult {
+export interface SessionBeforeForkResult {
 	cancel?: boolean;
 	skipConversationRestore?: boolean;
 }
@@ -641,11 +641,8 @@ export interface ExtensionAPI {
 		handler: ExtensionHandler<SessionBeforeSwitchEvent, SessionBeforeSwitchResult>,
 	): void;
 	on(event: "session_switch", handler: ExtensionHandler<SessionSwitchEvent>): void;
-	on(
-		event: "session_before_branch",
-		handler: ExtensionHandler<SessionBeforeBranchEvent, SessionBeforeBranchResult>,
-	): void;
-	on(event: "session_branch", handler: ExtensionHandler<SessionBranchEvent>): void;
+	on(event: "session_before_fork", handler: ExtensionHandler<SessionBeforeForkEvent, SessionBeforeForkResult>): void;
+	on(event: "session_fork", handler: ExtensionHandler<SessionForkEvent>): void;
 	on(
 		event: "session_before_compact",
 		handler: ExtensionHandler<SessionBeforeCompactEvent, SessionBeforeCompactResult>,
@@ -858,7 +855,7 @@ export interface ExtensionCommandContextActions {
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 	}) => Promise<{ cancelled: boolean }>;
-	branch: (entryId: string) => Promise<{ cancelled: boolean }>;
+	fork: (entryId: string) => Promise<{ cancelled: boolean }>;
 	navigateTree: (targetId: string, options?: { summarize?: boolean }) => Promise<{ cancelled: boolean }>;
 }
 

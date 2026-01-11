@@ -35,7 +35,7 @@ export interface SettingsConfig {
 	availableThemes: string[];
 	hideThinkingBlock: boolean;
 	collapseChangelog: boolean;
-	doubleEscapeAction: "branch" | "tree";
+	doubleEscapeAction: "fork" | "tree";
 }
 
 export interface SettingsCallbacks {
@@ -51,7 +51,7 @@ export interface SettingsCallbacks {
 	onThemePreview?: (theme: string) => void;
 	onHideThinkingBlockChange: (hidden: boolean) => void;
 	onCollapseChangelogChange: (collapsed: boolean) => void;
-	onDoubleEscapeActionChange: (action: "branch" | "tree") => void;
+	onDoubleEscapeActionChange: (action: "fork" | "tree") => void;
 	onCancel: () => void;
 }
 
@@ -171,7 +171,7 @@ export class SettingsSelectorComponent extends Container {
 				label: "Double-escape action",
 				description: "Action when pressing Escape twice with empty editor",
 				currentValue: config.doubleEscapeAction,
-				values: ["tree", "branch"],
+				values: ["tree", "fork"],
 			},
 			{
 				id: "thinking",
@@ -304,7 +304,7 @@ export class SettingsSelectorComponent extends Container {
 						callbacks.onCollapseChangelogChange(newValue === "true");
 						break;
 					case "double-escape-action":
-						callbacks.onDoubleEscapeActionChange(newValue as "branch" | "tree");
+						callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree");
 						break;
 				}
 			},

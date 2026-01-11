@@ -243,7 +243,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display full version history |
 | `/tree` | Navigate session tree in-place (search, filter, label entries) |
-| `/branch` | Create new conversation branch from a previous message |
+| `/fork` | Create new conversation fork from a previous message |
 | `/resume` | Switch to a different session (interactive selector) |
 | `/login` | OAuth login for subscription-based models |
 | `/logout` | Clear OAuth tokens |
@@ -507,10 +507,10 @@ See [docs/compaction.md](docs/compaction.md) for how compaction works internally
 - Press `l` to label entries as bookmarks
 - When switching branches, you're prompted whether to generate a summary of the abandoned branch (messages up to the common ancestor)
 
-**Create new session (`/branch`):** Branch to a new session file:
+**Create new session (`/fork`):** Fork to a new session file:
 
 1. Opens selector showing all your user messages
-2. Select a message to branch from
+2. Select a message to fork from
 3. Creates new session with history up to that point
 4. Selected message placed in editor for modification
 
@@ -859,7 +859,7 @@ Extensions are TypeScript modules that extend pi's behavior.
 - **Custom tools** - Register tools callable by the LLM with custom UI and rendering
 - **Custom commands** - Add `/commands` for users (e.g., `/deploy`, `/stats`)
 - **Event interception** - Block tool calls, modify results, customize compaction
-- **State persistence** - Store data in session, reconstruct on reload/branch
+- **State persistence** - Store data in session, reconstruct on reload/fork
 - **External integrations** - File watchers, webhooks, git checkpointing
 - **Custom UI** - Full TUI control from tools, commands, or event handlers
 
@@ -1011,7 +1011,7 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.on("session_start", async (e, ctx) => reconstruct(ctx));
-  pi.on("session_branch", async (e, ctx) => reconstruct(ctx));
+  pi.on("session_fork", async (e, ctx) => reconstruct(ctx));
   pi.on("session_tree", async (e, ctx) => reconstruct(ctx));
 
   pi.registerCommand("increment", {

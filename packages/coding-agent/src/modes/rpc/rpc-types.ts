@@ -55,8 +55,8 @@ export type RpcCommand =
 	| { id?: string; type: "get_session_stats" }
 	| { id?: string; type: "export_html"; outputPath?: string }
 	| { id?: string; type: "switch_session"; sessionPath: string }
-	| { id?: string; type: "branch"; entryId: string }
-	| { id?: string; type: "get_branch_messages" }
+	| { id?: string; type: "fork"; entryId: string }
+	| { id?: string; type: "get_fork_messages" }
 	| { id?: string; type: "get_last_assistant_text" }
 
 	// Messages
@@ -149,11 +149,11 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "get_session_stats"; success: true; data: SessionStats }
 	| { id?: string; type: "response"; command: "export_html"; success: true; data: { path: string } }
 	| { id?: string; type: "response"; command: "switch_session"; success: true; data: { cancelled: boolean } }
-	| { id?: string; type: "response"; command: "branch"; success: true; data: { text: string; cancelled: boolean } }
+	| { id?: string; type: "response"; command: "fork"; success: true; data: { text: string; cancelled: boolean } }
 	| {
 			id?: string;
 			type: "response";
-			command: "get_branch_messages";
+			command: "get_fork_messages";
 			success: true;
 			data: { messages: Array<{ entryId: string; text: string }> };
 	  }

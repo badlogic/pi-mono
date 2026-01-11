@@ -78,8 +78,8 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 					}
 					return { cancelled: !success };
 				},
-				branch: async (entryId) => {
-					const result = await session.branch(entryId);
+				fork: async (entryId) => {
+					const result = await session.fork(entryId);
 					return { cancelled: result.cancelled };
 				},
 				navigateTree: async (targetId, options) => {

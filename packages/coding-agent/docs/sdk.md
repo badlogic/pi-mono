@@ -108,8 +108,8 @@ interface AgentSession {
   newSession(options?: { parentSession?: string }): Promise<boolean>;  // Returns false if cancelled by hook
   switchSession(sessionPath: string): Promise<boolean>;
   
-  // Branching
-  branch(entryId: string): Promise<{ selectedText: string; cancelled: boolean }>;  // Creates new session file
+  // Forking
+  fork(entryId: string): Promise<{ selectedText: string; cancelled: boolean }>;  // Creates new session file
   navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ editorText?: string; cancelled: boolean }>;  // In-place navigation
   
   // Hook message injection
