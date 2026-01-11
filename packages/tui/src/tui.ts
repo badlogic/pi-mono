@@ -385,6 +385,31 @@ export class TUI extends Container {
 			return;
 		}
 
+		// All changes are in deleted lines (nothing to render, just clear)
+		if (firstChanged >= newLines.length) {
+			if (this.previousLines.length > newLines.length) {
+				let buffer = "\x1b[?2026h";
+				// Move to end of new content
+				const targetRow = newLines.length - 1;
+				const lineDiff = targetRow - this.cursorRow;
+				if (lineDiff > 0) buffer += `\x1b[${lineDiff}B`;
+				else if (lineDiff < 0) buffer += `\x1b[${-lineDiff}A`;
+				buffer += "\r";
+				// Clear extra lines
+				const extraLines = this.previousLines.length - newLines.length;
+				for (let i = 0; i < extraLines; i++) {
+					buffer += "\r\n\x1b[2K";
+				}
+				buffer += `\x1b[${extraLines}A`;
+				buffer += "\x1b[?2026l";
+				this.terminal.write(buffer);
+				this.cursorRow = newLines.length - 1;
+			}
+			this.previousLines = newLines;
+			this.previousWidth = width;
+			return;
+		}
+
 		// Check if firstChanged is outside the viewport
 		// cursorRow is the line where cursor is (0-indexed)
 		// Viewport shows lines from (cursorRow - height + 1) to cursorRow

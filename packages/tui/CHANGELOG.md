@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Cursor position tracking when content shrinks with unchanged remaining lines
 - TUI renders with wrong dimensions after suspend/resume if terminal was resized while suspended ([#599](https://github.com/badlogic/pi-mono/issues/599))
 
 ## [0.42.4] - 2026-01-10
