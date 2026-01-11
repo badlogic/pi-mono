@@ -268,8 +268,8 @@ export class InteractiveMode {
 						label: `${m.provider}/${m.id}`,
 					}));
 
-					// Fuzzy filter by model ID (not provider/id to avoid matching provider name)
-					const filtered = fuzzyFilter(items, prefix, (item) => item.id);
+					// Fuzzy filter by provider + model ID (allows "anthropic opus" to match)
+					const filtered = fuzzyFilter(items, prefix, (item) => `${item.provider} ${item.id}`);
 
 					if (filtered.length === 0) return null;
 
