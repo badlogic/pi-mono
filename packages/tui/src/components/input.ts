@@ -16,6 +16,7 @@ export class Input implements Component {
 	// Bracketed paste mode buffering
 	private pasteBuffer: string = "";
 	private isInPaste: boolean = false;
+	private pendingShiftEnter: boolean = false;
 
 	getValue(): string {
 		return this.value;
@@ -63,6 +64,23 @@ export class Input implements Component {
 			}
 			return;
 		}
+
+		if (this.pendingShiftEnter) {
+			if (data === "\r") {
+				this.pendingShiftEnter = false;
+				if (this.onSubmit) this.onSubmit(this.value);
+				return;
+			}
+			this.pendingShiftEnter = false;
+			this.value = `${this.value.slice(0, this.cursor)}\\${this.value.slice(this.cursor)}`;
+			this.cursor += 1;
+		}
+
+		if (data === "\\") {
+			this.pendingShiftEnter = true;
+			return;
+		}
+
 		const kb = getEditorKeybindings();
 
 		// Escape/Cancel

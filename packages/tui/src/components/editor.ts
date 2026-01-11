@@ -232,6 +232,7 @@ export class Editor implements Component {
 	// Bracketed paste mode buffering
 	private pasteBuffer: string = "";
 	private isInPaste: boolean = false;
+	private pendingShiftEnter: boolean = false;
 
 	// Prompt history for up/down navigation
 	private history: string[] = [];
@@ -419,6 +420,21 @@ export class Editor implements Component {
 				}
 				return;
 			}
+			return;
+		}
+
+		if (this.pendingShiftEnter) {
+			if (data === "\r") {
+				this.pendingShiftEnter = false;
+				this.addNewLine();
+				return;
+			}
+			this.pendingShiftEnter = false;
+			this.insertCharacter("\\");
+		}
+
+		if (data === "\\") {
+			this.pendingShiftEnter = true;
 			return;
 		}
 

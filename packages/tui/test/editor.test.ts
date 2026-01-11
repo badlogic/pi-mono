@@ -275,6 +275,26 @@ describe("Editor component", () => {
 		});
 	});
 
+	describe("Shift+Enter handling", () => {
+		it("treats split VS Code Shift+Enter as a newline", () => {
+			const editor = new Editor(defaultEditorTheme);
+
+			editor.handleInput("\\");
+			editor.handleInput("\r");
+
+			assert.strictEqual(editor.getText(), "\n");
+		});
+
+		it("inserts a literal backslash when not followed by Enter", () => {
+			const editor = new Editor(defaultEditorTheme);
+
+			editor.handleInput("\\");
+			editor.handleInput("x");
+
+			assert.strictEqual(editor.getText(), "\\x");
+		});
+	});
+
 	describe("Unicode text editing behavior", () => {
 		it("inserts mixed ASCII, umlauts, and emojis as literal text", () => {
 			const editor = new Editor(defaultEditorTheme);
