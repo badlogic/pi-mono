@@ -225,7 +225,7 @@ describe("ExtensionRunner", () => {
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
 			const flags = runner.getFlags();
 
-			expect(flags.has("--my-flag")).toBe(true);
+			expect(flags.has("my-flag")).toBe(true);
 		});
 
 		it("can set flag values", async () => {

@@ -441,7 +441,7 @@ describe("extensions discovery", () => {
 
 		expect(result.errors).toHaveLength(0);
 		expect(result.extensions).toHaveLength(1);
-		expect(result.extensions[0].flags.has("--my-flag")).toBe(true);
+		expect(result.extensions[0].flags.has("my-flag")).toBe(true);
 	});
 
 	it("loadExtensions only loads explicit paths without discovery", async () => {
