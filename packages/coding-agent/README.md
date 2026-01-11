@@ -801,7 +801,7 @@ Usage: `/component Button "onClick handler" "disabled support"`
 
 Skills are self-contained capability packages that the agent loads on-demand. Pi implements the [Agent Skills standard](https://agentskills.io/specification), warning about violations but remaining lenient.
 
-A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks. Skills are loaded when the agent decides a task matches the description, or when you explicitly ask to use one.
+A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks. Skills are loaded when the agent decides a task matches the description, or when you explicitly ask to use one. You can also invoke skills directly via `/skill:name` commands (e.g., `/skill:brave-search`).
 
 **Example use cases:**
 - Web search and content extraction (Brave Search API)

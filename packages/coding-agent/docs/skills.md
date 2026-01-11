@@ -160,6 +160,7 @@ Configure skill loading in `~/.pi/agent/settings.json`:
     "enableClaudeProject": true,
     "enablePiUser": true,
     "enablePiProject": true,
+    "enableSkillCommands": true,
     "customDirectories": ["~/my-skills-repo"],
     "ignoredSkills": ["deprecated-skill"],
     "includeSkills": ["git-*", "docker"]
@@ -175,6 +176,7 @@ Configure skill loading in `~/.pi/agent/settings.json`:
 | `enableClaudeProject` | `true` | Load from `<cwd>/.claude/skills/` |
 | `enablePiUser` | `true` | Load from `~/.pi/agent/skills/` |
 | `enablePiProject` | `true` | Load from `<cwd>/.pi/skills/` |
+| `enableSkillCommands` | `true` | Register skills as `/skill:name` commands |
 | `customDirectories` | `[]` | Additional directories to scan (supports `~` expansion) |
 | `ignoredSkills` | `[]` | Glob patterns to exclude (e.g., `["deprecated-*", "test-skill"]`) |
 | `includeSkills` | `[]` | Glob patterns to include (empty = all; e.g., `["git-*", "docker"]`) |
@@ -206,6 +208,31 @@ This overrides the `includeSkills` setting for the current session.
 4. The agent follows the instructions, using relative paths to reference scripts/assets
 
 This is progressive disclosure: only descriptions are always in context, full instructions load on-demand.
+
+## Skill Commands
+
+Skills are automatically registered as slash commands with a `/skill:` prefix:
+
+```bash
+/skill:brave-search         # Load and execute the brave-search skill
+/skill:pdf-tools extract    # Load skill with arguments
+```
+
+Arguments after the command name are appended to the skill content as `User: <args>`.
+
+Toggle skill commands via `/settings` or in `settings.json`:
+
+```json
+{
+  "skills": {
+    "enableSkillCommands": true
+  }
+}
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enableSkillCommands` | `true` | Register skills as `/skill:name` commands |
 
 ## Validation Warnings
 

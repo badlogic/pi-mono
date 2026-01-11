@@ -3,8 +3,8 @@
  */
 
 import type { Api, Model } from "@mariozechner/pi-ai";
+import { fuzzyFilter } from "@mariozechner/pi-tui";
 import type { ModelRegistry } from "../core/model-registry.js";
-import { fuzzyFilter } from "../utils/fuzzy.js";
 
 /**
  * Format a number as human-readable (e.g., 200000 -> "200K", 1000000 -> "1M")

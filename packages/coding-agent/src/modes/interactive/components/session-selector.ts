@@ -1,6 +1,7 @@
 import {
 	type Component,
 	Container,
+	fuzzyFilter,
 	getEditorKeybindings,
 	Input,
 	Spacer,
@@ -8,7 +9,6 @@ import {
 	truncateToWidth,
 } from "@mariozechner/pi-tui";
 import type { SessionInfo } from "../../../core/session-manager.js";
-import { fuzzyFilter } from "../../../utils/fuzzy.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 

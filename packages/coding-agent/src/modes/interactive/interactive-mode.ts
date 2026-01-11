@@ -21,6 +21,7 @@ import {
 	CombinedAutocompleteProvider,
 	type Component,
 	Container,
+	fuzzyFilter,
 	getEditorKeybindings,
 	Loader,
 	Markdown,
@@ -50,7 +51,7 @@ import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
-import { fuzzyFilter } from "../../utils/fuzzy.js";
+
 import { ensureTool } from "../../utils/tools-manager.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
@@ -127,6 +128,7 @@ export class InteractiveMode {
 	private defaultEditor: CustomEditor;
 	private editor: EditorComponent;
 	private autocompleteProvider: CombinedAutocompleteProvider | undefined;
+	private fdPath: string | undefined;
 	private editorContainer: Container;
 	private footer: FooterComponent;
 	private footerDataProvider: FooterDataProvider;
@@ -157,6 +159,9 @@ export class InteractiveMode {
 
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
+
+	// Skill commands: command name -> skill file path
+	private skillCommands = new Map<string, string>();
 
 	// Agent subscription unsubscribe function
 	private unsubscribe?: () => void;
@@ -304,13 +309,28 @@ export class InteractiveMode {
 			}),
 		);
 
+		// Build skill commands from session.skills (if enabled)
+		this.skillCommands.clear();
+		const skillCommandList: SlashCommand[] = [];
+		if (this.settingsManager.getEnableSkillCommands()) {
+			for (const skill of this.session.skills) {
+				const commandName = `skill:${skill.name}`;
+				this.skillCommands.set(commandName, skill.filePath);
+				skillCommandList.push({ name: commandName, description: skill.description });
+			}
+		}
+
 		// Setup autocomplete
 		this.autocompleteProvider = new CombinedAutocompleteProvider(
-			[...slashCommands, ...templateCommands, ...extensionCommands],
+			[...slashCommands, ...templateCommands, ...extensionCommands, ...skillCommandList],
 			process.cwd(),
 			fdPath,
 		);
 		this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
+	}
+
+	private rebuildAutocomplete(): void {
+		this.setupAutocomplete(this.fdPath);
 	}
 
 	async init(): Promise<void> {
@@ -320,8 +340,8 @@ export class InteractiveMode {
 		this.changelogMarkdown = this.getChangelogForDisplay();
 
 		// Setup autocomplete with fd tool for file path completion
-		const fdPath = await ensureTool("fd");
-		this.setupAutocomplete(fdPath);
+		this.fdPath = await ensureTool("fd");
+		this.setupAutocomplete(this.fdPath);
 
 		// Add header with keybindings from config
 		const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
@@ -1480,6 +1500,20 @@ export class InteractiveMode {
 				return;
 			}
 
+			// Handle skill commands (/skill:name [args])
+			if (text.startsWith("/skill:")) {
+				const spaceIndex = text.indexOf(" ");
+				const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+				const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+				const skillPath = this.skillCommands.get(commandName);
+				if (skillPath) {
+					this.editor.addToHistory?.(text);
+					this.editor.setText("");
+					await this.handleSkillCommand(skillPath, args);
+					return;
+				}
+			}
+
 			// Handle bash command (! for normal, !! for excluded from context)
 			if (text.startsWith("!")) {
 				const isExcluded = text.startsWith("!!");
@@ -2442,6 +2476,7 @@ export class InteractiveMode {
 					showImages: this.settingsManager.getShowImages(),
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
 					blockImages: this.settingsManager.getBlockImages(),
+					enableSkillCommands: this.settingsManager.getEnableSkillCommands(),
 					steeringMode: this.session.steeringMode,
 					followUpMode: this.session.followUpMode,
 					thinkingLevel: this.session.thinkingLevel,
@@ -2470,6 +2505,10 @@ export class InteractiveMode {
 					},
 					onBlockImagesChange: (blocked) => {
 						this.settingsManager.setBlockImages(blocked);
+					},
+					onEnableSkillCommandsChange: (enabled) => {
+						this.settingsManager.setEnableSkillCommands(enabled);
+						this.rebuildAutocomplete();
 					},
 					onSteeringModeChange: (mode) => {
 						this.session.setSteeringMode(mode);
@@ -3087,6 +3126,18 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(info, 1, 0));
 		this.ui.requestRender();
+	}
+
+	private async handleSkillCommand(skillPath: string, args: string): Promise<void> {
+		try {
+			const content = fs.readFileSync(skillPath, "utf-8");
+			// Strip YAML frontmatter if present
+			const body = content.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
+			const message = args ? `${body}\n\n---\n\nUser: ${args}` : body;
+			await this.session.prompt(message);
+		} catch (err) {
+			this.showError(`Failed to load skill: ${err instanceof Error ? err.message : String(err)}`);
+		}
 	}
 
 	private handleChangelogCommand(): void {

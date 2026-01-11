@@ -1,5 +1,8 @@
-// Fuzzy search. Matches if all query characters appear in order (not necessarily consecutive).
-// Lower score = better match.
+/**
+ * Fuzzy matching utilities.
+ * Matches if all query characters appear in order (not necessarily consecutive).
+ * Lower score = better match.
+ */
 
 export interface FuzzyMatch {
 	matches: boolean;
@@ -25,26 +28,26 @@ export function fuzzyMatch(query: string, text: string): FuzzyMatch {
 
 	for (let i = 0; i < textLower.length && queryIndex < queryLower.length; i++) {
 		if (textLower[i] === queryLower[queryIndex]) {
-			const isWordBoundary = i === 0 || /[\s\-_./]/.test(textLower[i - 1]!);
+			const isWordBoundary = i === 0 || /[\s\-_./:]/.test(textLower[i - 1]!);
 
-			// Reward consecutive character matches (e.g., typing "foo" matches "foobar" better than "f_o_o")
+			// Reward consecutive matches
 			if (lastMatchIndex === i - 1) {
 				consecutiveMatches++;
 				score -= consecutiveMatches * 5;
 			} else {
 				consecutiveMatches = 0;
-				// Penalize gaps between matched characters
+				// Penalize gaps
 				if (lastMatchIndex >= 0) {
 					score += (i - lastMatchIndex - 1) * 2;
 				}
 			}
 
-			// Reward matches at word boundaries (start of words are more likely intentional targets)
+			// Reward word boundary matches
 			if (isWordBoundary) {
 				score -= 10;
 			}
 
-			// Slight penalty for matches later in the string (prefer earlier matches)
+			// Slight penalty for later matches
 			score += i * 0.1;
 
 			lastMatchIndex = i;
@@ -52,7 +55,6 @@ export function fuzzyMatch(query: string, text: string): FuzzyMatch {
 		}
 	}
 
-	// Not all query characters were found in order
 	if (queryIndex < queryLower.length) {
 		return { matches: false, score: 0 };
 	}
@@ -60,14 +62,15 @@ export function fuzzyMatch(query: string, text: string): FuzzyMatch {
 	return { matches: true, score };
 }
 
-// Filter and sort items by fuzzy match quality (best matches first)
-// Supports space-separated tokens: all tokens must match, sorted by match count then score
+/**
+ * Filter and sort items by fuzzy match quality (best matches first).
+ * Supports space-separated tokens: all tokens must match.
+ */
 export function fuzzyFilter<T>(items: T[], query: string, getText: (item: T) => string): T[] {
 	if (!query.trim()) {
 		return items;
 	}
 
-	// Split query into tokens
 	const tokens = query
 		.trim()
 		.split(/\s+/)
@@ -84,7 +87,6 @@ export function fuzzyFilter<T>(items: T[], query: string, getText: (item: T) => 
 		let totalScore = 0;
 		let allMatch = true;
 
-		// Check each token against the text - ALL must match
 		for (const token of tokens) {
 			const match = fuzzyMatch(token, text);
 			if (match.matches) {
@@ -95,14 +97,11 @@ export function fuzzyFilter<T>(items: T[], query: string, getText: (item: T) => 
 			}
 		}
 
-		// Only include if all tokens match
 		if (allMatch) {
 			results.push({ item, totalScore });
 		}
 	}
 
-	// Sort by score (asc, lower is better)
 	results.sort((a, b) => a.totalScore - b.totalScore);
-
 	return results.map((r) => r.item);
 }
