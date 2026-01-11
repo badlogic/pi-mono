@@ -404,6 +404,20 @@ export interface TurnEndEvent {
 }
 
 // ============================================================================
+// Model Events
+// ============================================================================
+
+export type ModelSelectSource = "set" | "cycle" | "restore";
+
+/** Fired when a new model is selected */
+export interface ModelSelectEvent {
+	type: "model_select";
+	model: Model<any>;
+	previousModel: Model<any> | undefined;
+	source: ModelSelectSource;
+}
+
+// ============================================================================
 // User Bash Events
 // ============================================================================
 
@@ -521,6 +535,7 @@ export type ExtensionEvent =
 	| AgentEndEvent
 	| TurnStartEvent
 	| TurnEndEvent
+	| ModelSelectEvent
 	| UserBashEvent
 	| ToolCallEvent
 	| ToolResultEvent;
@@ -645,6 +660,7 @@ export interface ExtensionAPI {
 	on(event: "agent_end", handler: ExtensionHandler<AgentEndEvent>): void;
 	on(event: "turn_start", handler: ExtensionHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: ExtensionHandler<TurnEndEvent>): void;
+	on(event: "model_select", handler: ExtensionHandler<ModelSelectEvent>): void;
 	on(event: "tool_call", handler: ExtensionHandler<ToolCallEvent, ToolCallEventResult>): void;
 	on(event: "tool_result", handler: ExtensionHandler<ToolResultEvent, ToolResultEventResult>): void;
 	on(event: "user_bash", handler: ExtensionHandler<UserBashEvent, UserBashEventResult>): void;

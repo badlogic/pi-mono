@@ -67,6 +67,8 @@ export type {
 	// Message Rendering
 	MessageRenderer,
 	MessageRenderOptions,
+	ModelSelectEvent,
+	ModelSelectSource,
 	ReadToolResultEvent,
 	// Commands
 	RegisteredCommand,
