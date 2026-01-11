@@ -238,6 +238,11 @@ export async function main(args: string[]) {
 		time("discoverExtensionFlags");
 	}
 
+	// Log extension loading errors
+	for (const { path, error } of extensionsResult.errors) {
+		console.error(chalk.red(`Failed to load extension "${path}": ${error}`));
+	}
+
 	// Collect all extension flags
 	const extensionFlags = new Map<string, { type: "boolean" | "string" }>();
 	for (const ext of extensionsResult.extensions) {
