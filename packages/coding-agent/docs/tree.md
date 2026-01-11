@@ -66,7 +66,11 @@ If user selects the very first message (has no parent):
 
 ## Branch Summarization
 
-When switching, user is prompted: "Summarize the branch you're leaving?"
+When switching branches, user is presented with three options:
+
+1. **No summary** - Switch immediately without summarizing
+2. **Summarize** - Generate a summary using the default prompt
+3. **Summarize with custom prompt** - Opens an editor to enter additional focus instructions that are appended to the default summarization prompt
 
 ### What Gets Summarized
 
