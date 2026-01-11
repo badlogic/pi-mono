@@ -85,13 +85,34 @@ export class ProcessTerminal implements Terminal {
 	/**
 	 * Set up StdinBuffer to split batched input into individual sequences.
 	 * This ensures components receive single events, making matchesKey/isKeyRelease work correctly.
-	 * Note: Does NOT register the stdin handler - that's done after the Kitty protocol query.
+	 *
+	 * Also watches for Kitty protocol response and enables it when detected.
+	 * This is done here (after stdinBuffer parsing) rather than on raw stdin
+	 * to handle the case where the response arrives split across multiple events.
 	 */
 	private setupStdinBuffer(): void {
 		this.stdinBuffer = new StdinBuffer({ timeout: 10 });
 
+		// Kitty protocol response pattern: \x1b[?<flags>u
+		const kittyResponsePattern = /^\x1b\[\?(\d+)u$/;
+
 		// Forward individual sequences to the input handler
 		this.stdinBuffer.on("data", (sequence) => {
+			// Check for Kitty protocol response (only if not already enabled)
+			if (!this._kittyProtocolActive) {
+				const match = sequence.match(kittyResponsePattern);
+				if (match) {
+					this._kittyProtocolActive = true;
+					setKittyProtocolActive(true);
+
+					// Enable Kitty keyboard protocol (push flags)
+					// Flag 1 = disambiguate escape codes
+					// Flag 2 = report event types (press/repeat/release)
+					process.stdout.write("\x1b[>3u");
+					return; // Don't forward protocol response to TUI
+				}
+			}
+
 			if (this.inputHandler) {
 				this.inputHandler(sequence);
 			}
@@ -105,7 +126,6 @@ export class ProcessTerminal implements Terminal {
 		});
 
 		// Handler that pipes stdin data through the buffer
-		// Registration happens after Kitty protocol query completes
 		this.stdinDataHandler = (data: string) => {
 			this.stdinBuffer!.process(data);
 		};
@@ -117,81 +137,13 @@ export class ProcessTerminal implements Terminal {
 	 * Sends CSI ? u to query current flags. If terminal responds with CSI ? <flags> u,
 	 * it supports the protocol and we enable it with CSI > 1 u.
 	 *
-	 * Non-supporting terminals won't respond, so we use a timeout.
+	 * The response is detected in setupStdinBuffer's data handler, which properly
+	 * handles the case where the response arrives split across multiple stdin events.
 	 */
 	private queryAndEnableKittyProtocol(): void {
-		const QUERY_TIMEOUT_MS = 100;
-		let resolved = false;
-		let buffer = "";
-
-		// Kitty protocol response pattern: \x1b[?<flags>u
-		const kittyResponsePattern = /\x1b\[\?(\d+)u/;
-
-		const queryHandler = (data: string) => {
-			if (resolved) {
-				// Query phase done, forward to StdinBuffer
-				if (this.stdinBuffer) {
-					this.stdinBuffer.process(data);
-				}
-				return;
-			}
-
-			buffer += data;
-
-			// Check if we have a Kitty protocol response
-			const match = buffer.match(kittyResponsePattern);
-			if (match) {
-				resolved = true;
-				this._kittyProtocolActive = true;
-				setKittyProtocolActive(true);
-
-				// Enable Kitty keyboard protocol (push flags)
-				// Flag 1 = disambiguate escape codes
-				// Flag 2 = report event types (press/repeat/release)
-				process.stdout.write("\x1b[>3u");
-
-				// Remove the response from buffer, forward any remaining input through StdinBuffer
-				const remaining = buffer.replace(kittyResponsePattern, "");
-				if (remaining && this.stdinBuffer) {
-					this.stdinBuffer.process(remaining);
-				}
-
-				// Replace query handler with StdinBuffer handler
-				process.stdin.removeListener("data", queryHandler);
-				if (this.stdinDataHandler) {
-					process.stdin.on("data", this.stdinDataHandler);
-				}
-			}
-		};
-
-		// Set up StdinBuffer before query (it will receive input after query completes)
 		this.setupStdinBuffer();
-
-		// Temporarily intercept input for the query (before StdinBuffer)
-		process.stdin.on("data", queryHandler);
-
-		// Send query
+		process.stdin.on("data", this.stdinDataHandler!);
 		process.stdout.write("\x1b[?u");
-
-		// Timeout: if no response, terminal doesn't support Kitty protocol
-		setTimeout(() => {
-			if (!resolved) {
-				resolved = true;
-				this._kittyProtocolActive = false;
-				setKittyProtocolActive(false);
-
-				// Forward any buffered input that wasn't a Kitty response through StdinBuffer
-				if (buffer && this.stdinBuffer) {
-					this.stdinBuffer.process(buffer);
-				}
-
-				// Replace query handler with StdinBuffer handler
-				process.stdin.removeListener("data", queryHandler);
-				if (this.stdinDataHandler) {
-					process.stdin.on("data", this.stdinDataHandler);
-				}
-			}
-		}, QUERY_TIMEOUT_MS);
 	}
 
 	stop(): void {

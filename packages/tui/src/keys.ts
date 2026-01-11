@@ -437,6 +437,21 @@ function matchesKittySequence(data: string, expectedCodepoint: number, expectedM
 	return parsed.codepoint === expectedCodepoint && actualMod === expectedMod;
 }
 
+/**
+ * Match xterm modifyOtherKeys format: CSI 27 ; modifiers ; keycode ~
+ * This is used by terminals when Kitty protocol is not enabled.
+ * Modifier values are 1-indexed: 2=shift, 3=alt, 5=ctrl, etc.
+ */
+function matchesModifyOtherKeys(data: string, expectedKeycode: number, expectedModifier: number): boolean {
+	const match = data.match(/^\x1b\[27;(\d+);(\d+)~$/);
+	if (!match) return false;
+	const modValue = parseInt(match[1]!, 10);
+	const keycode = parseInt(match[2]!, 10);
+	// Convert from 1-indexed xterm format to our 0-indexed format
+	const actualMod = modValue - 1;
+	return keycode === expectedKeycode && actualMod === expectedModifier;
+}
+
 // =============================================================================
 // Generic Key Matching
 // =============================================================================
@@ -515,6 +530,10 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 				) {
 					return true;
 				}
+				// xterm modifyOtherKeys format (fallback when Kitty protocol not enabled)
+				if (matchesModifyOtherKeys(data, CODEPOINTS.enter, MODIFIERS.shift)) {
+					return true;
+				}
 				// When Kitty protocol is active, legacy sequences are custom terminal mappings
 				// \x1b\r = Kitty's "map shift+enter send_text all \e\r"
 				// \n = Ghostty's "keybind = shift+enter=text:\n"
@@ -529,6 +548,10 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 					matchesKittySequence(data, CODEPOINTS.enter, MODIFIERS.alt) ||
 					matchesKittySequence(data, CODEPOINTS.kpEnter, MODIFIERS.alt)
 				) {
+					return true;
+				}
+				// xterm modifyOtherKeys format (fallback when Kitty protocol not enabled)
+				if (matchesModifyOtherKeys(data, CODEPOINTS.enter, MODIFIERS.alt)) {
 					return true;
 				}
 				// \x1b\r is alt+enter only in legacy mode (no Kitty protocol)
