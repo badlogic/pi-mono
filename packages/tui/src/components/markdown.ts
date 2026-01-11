@@ -126,18 +126,19 @@ export class Markdown implements Component {
 		const leftMargin = " ".repeat(this.paddingX);
 		const rightMargin = " ".repeat(this.paddingX);
 		const bgFn = this.defaultTextStyle?.bgColor;
+		const lineReset = "\x1b[0m";
 		const contentLines: string[] = [];
 
 		for (const line of wrappedLines) {
 			const lineWithMargins = leftMargin + line + rightMargin;
 
 			if (bgFn) {
-				contentLines.push(applyBackgroundToLine(lineWithMargins, width, bgFn));
+				contentLines.push(applyBackgroundToLine(lineWithMargins, width, bgFn) + lineReset);
 			} else {
 				// No background - just pad to width
 				const visibleLen = visibleWidth(lineWithMargins);
 				const paddingNeeded = Math.max(0, width - visibleLen);
-				contentLines.push(lineWithMargins + " ".repeat(paddingNeeded));
+				contentLines.push(lineWithMargins + " ".repeat(paddingNeeded) + lineReset);
 			}
 		}
 
@@ -146,7 +147,7 @@ export class Markdown implements Component {
 		const emptyLines: string[] = [];
 		for (let i = 0; i < this.paddingY; i++) {
 			const line = bgFn ? applyBackgroundToLine(emptyLine, width, bgFn) : emptyLine;
-			emptyLines.push(line);
+			emptyLines.push(line + lineReset);
 		}
 
 		// Combine top padding, content, and bottom padding

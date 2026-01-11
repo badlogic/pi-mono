@@ -412,6 +412,22 @@ describe("Markdown component", () => {
 			assert.ok(hasCodeColor, "Should style inline code");
 		});
 
+		it("should reset line endings when markdown ends with an inline token", () => {
+			// Edge case: markdown ends with an inline token, which can leave a default style
+			// prefix (e.g. italic on) dangling at EOL and leak into subsequent terminal output.
+			const markdown = new Markdown("This is thinking with `inline code`", 1, 0, defaultMarkdownTheme, {
+				color: (text) => chalk.gray(text),
+				italic: true,
+			});
+
+			const lines = markdown.render(80);
+			assert.ok(lines.length > 0);
+
+			for (const line of lines) {
+				assert.ok(line.endsWith("\x1b[0m"), "Expected markdown lines to end with a full SGR reset (\\x1b[0m)");
+			}
+		});
+
 		it("should preserve gray italic styling after bold text", () => {
 			const markdown = new Markdown(
 				"This is thinking with **bold text** and more after",
