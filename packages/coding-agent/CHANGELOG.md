@@ -4,7 +4,7 @@
 
 ### Added
 
-- `ctx.ui.setWorkingMessage()` extension API to customize the "Working..." message during streaming
+- `ctx.ui.setWorkingMessage()` extension API to customize the "Working..." message during streaming ([#625](https://github.com/badlogic/pi-mono/pull/625) by [@nicobailon](https://github.com/nicobailon))
 
 ## [0.42.5] - 2026-01-11
 
