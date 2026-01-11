@@ -507,6 +507,8 @@ pi.on("model_select", async (event, ctx) => {
 
 Use this to update UI elements (status bars, footers) or perform model-specific initialization when the active model changes.
 
+**Examples:** [model-status.ts](../examples/extensions/model-status.ts)
+
 ### Tool Events
 
 #### tool_call
