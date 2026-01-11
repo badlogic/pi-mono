@@ -92,7 +92,7 @@ pi.exe
 
 ```bash
 git clone https://github.com/badlogic/pi-mono.git
-cd pi-mono && npm install
+cd pi-mono && npm install && npm run build
 cd packages/coding-agent && npm run build:binary
 ./dist/pi
 ```
