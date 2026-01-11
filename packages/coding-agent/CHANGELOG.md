@@ -9,6 +9,10 @@
 - Skill slash commands: loaded skills are registered as `/skill:name` commands for quick access. Toggle via `/settings` or `skills.enableSkillCommands` in settings.json. ([#630](https://github.com/badlogic/pi-mono/pull/630) by [@Dwsy](https://github.com/Dwsy))
 - Slash command autocomplete now uses fuzzy matching (type `/skbra` to match `/skill:brave-search`)
 
+### Fixed
+
+- Session picker respects custom keybindings when using `--resume` ([#633](https://github.com/badlogic/pi-mono/pull/633) by [@aos](https://github.com/aos))
+
 ## [0.42.5] - 2026-01-11
 
 ### Fixed
