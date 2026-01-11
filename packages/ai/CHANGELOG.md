@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Anthropic caching on OpenRouter**: Interactions with Anthropic models via OpenRouter now set a 5-minute cache point using Anthropic-style `cache_control` breakpoints on the last assistant or user message. ([#584](https://github.com/badlogic/pi-mono/pull/584) by [@nathyong](https://github.com/nathyong))
+
 ## [0.42.4] - 2026-01-10
 
 ## [0.42.3] - 2026-01-10
