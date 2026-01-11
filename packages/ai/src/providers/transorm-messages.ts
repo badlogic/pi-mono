@@ -1,11 +1,11 @@
 import type { Api, AssistantMessage, Message, Model, ToolCall, ToolResultMessage } from "../types.js";
 
 /**
- * Normalize tool call ID for GitHub Copilot cross-API compatibility.
- * OpenAI Responses API generates IDs that are 450+ chars with special characters like `|`.
+ * Normalize tool call ID for cross-API compatibility.
+ * OpenAI Responses APIs generate IDs that are 450+ chars with special characters like `|`.
  * Other APIs (Claude, etc.) require max 40 chars and only alphanumeric + underscore + hyphen.
  */
-function normalizeCopilotToolCallId(id: string): string {
+function normalizeToolCallId(id: string): string {
 	return id.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
 }
 
@@ -38,11 +38,11 @@ export function transformMessages<TApi extends Api>(messages: Message[], model: 
 				return msg;
 			}
 
-			// Check if we need to normalize tool call IDs (github-copilot cross-API)
+			// Check if we need to normalize tool call IDs
+			// OpenAI Responses APIs generate IDs with `|` chars and 450+ length that other APIs reject
 			const needsToolCallIdNormalization =
-				assistantMsg.provider === "github-copilot" &&
-				model.provider === "github-copilot" &&
-				assistantMsg.api !== model.api;
+				(assistantMsg.api === "openai-responses" || assistantMsg.api === "openai-codex-responses") &&
+				model.api !== assistantMsg.api;
 
 			// Transform message from different provider/model
 			const transformedContent = assistantMsg.content.flatMap((block) => {
@@ -54,10 +54,10 @@ export function transformMessages<TApi extends Api>(messages: Message[], model: 
 						text: block.thinking,
 					};
 				}
-				// Normalize tool call IDs for github-copilot cross-API switches
+				// Normalize tool call IDs for cross-API switches
 				if (block.type === "toolCall" && needsToolCallIdNormalization) {
 					const toolCall = block as ToolCall;
-					const normalizedId = normalizeCopilotToolCallId(toolCall.id);
+					const normalizedId = normalizeToolCallId(toolCall.id);
 					if (normalizedId !== toolCall.id) {
 						toolCallIdMap.set(toolCall.id, normalizedId);
 						return { ...toolCall, id: normalizedId };
