@@ -2265,7 +2265,8 @@ export class InteractiveMode {
 
 			// Restart TUI
 			this.ui.start();
-			this.ui.requestRender();
+			// Force full re-render since external editor uses alternate screen
+			this.ui.requestRender(true);
 		}
 	}
 
@@ -2806,10 +2807,29 @@ export class InteractiveMode {
 					// Ask about summarization
 					done(); // Close selector first
 
-					const wantsSummary = await this.showExtensionConfirm(
-						"Summarize branch?",
-						"Create a summary of the branch you're leaving?",
-					);
+					const summaryChoice = await this.showExtensionSelector("Summarize branch?", [
+						"No summary",
+						"Summarize",
+						"Summarize with custom prompt",
+					]);
+
+					if (summaryChoice === undefined) {
+						// User pressed escape - re-show tree selector
+						this.showTreeSelector();
+						return;
+					}
+
+					const wantsSummary = summaryChoice !== "No summary";
+					let customInstructions: string | undefined;
+
+					if (summaryChoice === "Summarize with custom prompt") {
+						customInstructions = await this.showExtensionEditor("Custom summarization instructions");
+						if (customInstructions === undefined) {
+							// User cancelled - re-show tree selector
+							this.showTreeSelector();
+							return;
+						}
+					}
 
 					// Set up escape handler and loader if summarizing
 					let summaryLoader: Loader | undefined;
@@ -2831,7 +2851,10 @@ export class InteractiveMode {
 					}
 
 					try {
-						const result = await this.session.navigateTree(entryId, { summarize: wantsSummary });
+						const result = await this.session.navigateTree(entryId, {
+							summarize: wantsSummary,
+							customInstructions,
+						});
 
 						if (result.aborted) {
 							// Summarization aborted - re-show tree selector

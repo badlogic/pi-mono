@@ -43,6 +43,10 @@ export class ExtensionEditorComponent extends Container {
 		if (prefill) {
 			this.editor.setText(prefill);
 		}
+		// Wire up Enter to submit (Shift+Enter for newlines, like the main editor)
+		this.editor.onSubmit = (text: string) => {
+			this.onSubmitCallback(text);
+		};
 		this.addChild(this.editor);
 
 		this.addChild(new Spacer(1));
@@ -50,8 +54,8 @@ export class ExtensionEditorComponent extends Container {
 		// Add hint
 		const hasExternalEditor = !!(process.env.VISUAL || process.env.EDITOR);
 		const hint = hasExternalEditor
-			? "ctrl+enter submit  esc cancel  ctrl+g external editor"
-			: "ctrl+enter submit  esc cancel";
+			? "enter submit  shift+enter newline  esc cancel  ctrl+g external editor"
+			: "enter submit  shift+enter newline  esc cancel";
 		this.addChild(new Text(theme.fg("dim", hint), 1, 0));
 
 		this.addChild(new Spacer(1));
@@ -61,12 +65,6 @@ export class ExtensionEditorComponent extends Container {
 	}
 
 	handleInput(keyData: string): void {
-		// Ctrl+Enter to submit
-		if (keyData === "\x1b[13;5u" || keyData === "\x1b[27;5;13~") {
-			this.onSubmitCallback(this.editor.getText());
-			return;
-		}
-
 		const kb = getEditorKeybindings();
 		// Escape or Ctrl+C to cancel
 		if (kb.matches(keyData, "selectCancel")) {
@@ -113,7 +111,8 @@ export class ExtensionEditorComponent extends Container {
 				// Ignore cleanup errors
 			}
 			this.tui.start();
-			this.tui.requestRender();
+			// Force full re-render since external editor uses alternate screen
+			this.tui.requestRender(true);
 		}
 	}
 }
