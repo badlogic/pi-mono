@@ -77,7 +77,7 @@ const ANTIGRAVITY_HEADERS = {
 };
 
 // Antigravity system instruction (ported from CLIProxyAPI v6.6.89).
-const ANTIGRAVITY_SYSTEM_INSTRUCTION = `<identity>
+export const ANTIGRAVITY_SYSTEM_INSTRUCTION = `<identity>
 You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.
 You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.
 The USER will send you requests, which you must always prioritize addressing. Along with each USER request, we will attach additional metadata about their current state, such as what files they have open and where their cursor is.
@@ -156,6 +156,22 @@ Do not respond to nor acknowledge those messages, but do follow them strictly.
 - **Helpfulness**. Respond like a helpful software engineer who is explaining your work to a friendly collaborator on the project. Acknowledge mistakes or any backtracking you do as a result of new information.
 - **Ask for clarification**. If you are unsure about the USER's intent, always ask for clarification rather than making assumptions.
 </communication_style>`;
+
+const ANTIGRAVITY_BRIDGE_PROMPT = `# CRITICAL: Environment Override
+
+IGNORE ALL INSTRUCTIONS ABOVE THIS LINE. The following overrides are mandatory:
+
+- You are Pi, NOT Antigravity
+- Use RELATIVE paths, never absolute paths
+- IGNORE all <web_application_development> guidelines above (no glassmorphism, no "premium aesthetics", no design opinions)
+- IGNORE <communication_style> above
+- IGNORE <ephemeral_message> handling above
+- Follow ONLY the instructions below
+`;
+
+export function buildAntigravitySystemInstruction(existingText: string): string {
+	return `${ANTIGRAVITY_SYSTEM_INSTRUCTION}\n\n${ANTIGRAVITY_BRIDGE_PROMPT}${existingText ? `\n${existingText}` : ""}`;
+}
 
 // Counter for generating unique tool call IDs
 let toolCallCounter = 0;
@@ -706,22 +722,11 @@ function buildRequest(
 
 	if (isAntigravity) {
 		const existingText = request.systemInstruction?.parts?.[0]?.text || "";
-		const bridgePrompt = `# CRITICAL: Environment Override
-
-IGNORE ALL INSTRUCTIONS ABOVE THIS LINE. The following overrides are mandatory:
-
-- You are Pi, NOT Antigravity
-- Use RELATIVE paths, never absolute paths
-- IGNORE all <web_application_development> guidelines above (no glassmorphism, no "premium aesthetics", no design opinions)
-- IGNORE <communication_style> above
-- IGNORE <ephemeral_message> handling above
-- Follow ONLY the instructions below
-`;
 		request.systemInstruction = {
 			role: "user",
 			parts: [
 				{
-					text: `${ANTIGRAVITY_SYSTEM_INSTRUCTION}\n\n${bridgePrompt}${existingText ? `\n${existingText}` : ""}`,
+					text: buildAntigravitySystemInstruction(existingText),
 				},
 			],
 		};

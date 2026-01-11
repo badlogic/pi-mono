@@ -1,7 +1,9 @@
-import type { AssistantMessage } from "@mariozechner/pi-ai";
+import { type AssistantMessage, getSystemPromptEstimateParts } from "@mariozechner/pi-ai";
 import { type Component, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import type { AgentSession } from "../../../core/agent-session.js";
+import { estimateTextTokens, estimateTokens } from "../../../core/compaction/index.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
+import type { SessionEntry } from "../../../core/session-manager.js";
 import { theme } from "../theme/theme.js";
 
 /**
@@ -25,6 +27,22 @@ function formatTokens(count: number): string {
 	if (count < 1000000) return `${Math.round(count / 1000)}k`;
 	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
 	return `${Math.round(count / 1000000)}M`;
+}
+
+type ToolEstimate = {
+	name: string;
+	description: string;
+	parameters: unknown;
+};
+
+function estimateToolTokens(tools: ToolEstimate[]): number {
+	if (tools.length === 0) return 0;
+	const payload = tools.map(({ name, description, parameters }) => ({ name, description, parameters }));
+	return estimateTextTokens(JSON.stringify(payload));
+}
+
+function calculateUsageContextTokens(usage: AssistantMessage["usage"]): number {
+	return usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
 }
 
 /**
@@ -59,8 +77,42 @@ export class FooterComponent implements Component {
 		// Git watcher cleanup handled by provider
 	}
 
+	private getRecentContextState(branchEntries: SessionEntry[]): {
+		lastAssistantMessage?: AssistantMessage;
+		hasRecentCompaction: boolean;
+	} {
+		let lastAssistantMessage: AssistantMessage | undefined;
+		let lastAssistantIndex = -1;
+		let lastCompactionIndex = -1;
+
+		for (let i = branchEntries.length - 1; i >= 0; i--) {
+			const entry = branchEntries[i];
+			if (lastCompactionIndex === -1 && entry.type === "compaction") {
+				lastCompactionIndex = i;
+			}
+			if (lastAssistantIndex === -1 && entry.type === "message" && entry.message.role === "assistant") {
+				const assistant = entry.message as AssistantMessage;
+				if (assistant.stopReason !== "aborted" && assistant.stopReason !== "error") {
+					lastAssistantMessage = assistant;
+					lastAssistantIndex = i;
+				}
+			}
+			if (lastCompactionIndex !== -1 && lastAssistantIndex !== -1) {
+				break;
+			}
+		}
+
+		const hasRecentCompaction =
+			lastCompactionIndex !== -1 && (lastAssistantIndex === -1 || lastCompactionIndex > lastAssistantIndex);
+
+		return { lastAssistantMessage, hasRecentCompaction };
+	}
+
 	render(width: number): string[] {
 		const state = this.session.state;
+
+		const allEntries = this.session.sessionManager.getEntries();
+		const branchEntries = this.session.sessionManager.getBranch();
 
 		// Calculate cumulative usage from ALL session entries (not just post-compaction messages)
 		let totalInput = 0;
@@ -69,7 +121,7 @@ export class FooterComponent implements Component {
 		let totalCacheWrite = 0;
 		let totalCost = 0;
 
-		for (const entry of this.session.sessionManager.getEntries()) {
+		for (const entry of allEntries) {
 			if (entry.type === "message" && entry.message.role === "assistant") {
 				totalInput += entry.message.usage.input;
 				totalOutput += entry.message.usage.output;
@@ -79,19 +131,28 @@ export class FooterComponent implements Component {
 			}
 		}
 
-		// Get last assistant message for context percentage calculation (skip aborted messages)
-		const lastAssistantMessage = state.messages
-			.slice()
-			.reverse()
-			.find((m) => m.role === "assistant" && m.stopReason !== "aborted") as AssistantMessage | undefined;
+		const usingSubscription = state.model ? this.session.modelRegistry.isUsingOAuth(state.model) : false;
 
-		// Calculate context percentage from last message (input + output + cacheRead + cacheWrite)
-		const contextTokens = lastAssistantMessage
-			? lastAssistantMessage.usage.input +
-				lastAssistantMessage.usage.output +
-				lastAssistantMessage.usage.cacheRead +
-				lastAssistantMessage.usage.cacheWrite
-			: 0;
+		// Get last assistant usage for context percentage calculation (skip aborted messages)
+		const { lastAssistantMessage, hasRecentCompaction } = this.getRecentContextState(branchEntries);
+		const lastAssistantUsage = lastAssistantMessage?.usage;
+		const toolPayload = state.tools.map(({ name, description, parameters }) => ({ name, description, parameters }));
+
+		// Calculate context percentage from last message usage, or estimate after compaction/start
+		let contextTokens = 0;
+		if (hasRecentCompaction || !lastAssistantMessage || !lastAssistantUsage) {
+			const messageTokens = state.messages.reduce((total, message) => total + estimateTokens(message), 0);
+			const systemPromptTokens = getSystemPromptEstimateParts({
+				model: state.model,
+				systemPrompt: state.systemPrompt,
+				tools: state.tools,
+				isAnthropicOAuth: usingSubscription,
+			}).reduce((total, part) => total + estimateTextTokens(part), 0);
+			const toolTokens = estimateToolTokens(toolPayload);
+			contextTokens = messageTokens + systemPromptTokens + toolTokens;
+		} else {
+			contextTokens = calculateUsageContextTokens(lastAssistantUsage);
+		}
 		const contextWindow = state.model?.contextWindow || 0;
 		const contextPercentValue = contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0;
 		const contextPercent = contextPercentValue.toFixed(1);
@@ -129,7 +190,6 @@ export class FooterComponent implements Component {
 		if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
 
 		// Show cost with "(sub)" indicator if using OAuth subscription
-		const usingSubscription = state.model ? this.session.modelRegistry.isUsingOAuth(state.model) : false;
 		if (totalCost || usingSubscription) {
 			const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
 			statsParts.push(costStr);

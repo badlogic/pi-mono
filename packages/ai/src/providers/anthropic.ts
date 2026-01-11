@@ -31,6 +31,8 @@ import { transformMessages } from "./transorm-messages.js";
 // Stealth mode: Mimic Claude Code's tool naming exactly
 const claudeCodeVersion = "2.1.2";
 
+export const CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official CLI for Claude.";
+
 // Map pi! tool names to Claude Code's exact tool names
 const claudeCodeToolNames: Record<string, string> = {
 	read: "Read",
@@ -376,7 +378,7 @@ function buildParams(
 		params.system = [
 			{
 				type: "text",
-				text: "You are Claude Code, Anthropic's official CLI for Claude.",
+				text: CLAUDE_CODE_IDENTITY,
 				cache_control: {
 					type: "ephemeral",
 				},

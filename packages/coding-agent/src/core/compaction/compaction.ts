@@ -121,6 +121,15 @@ export function calculateContextTokens(usage: Usage): number {
 	return usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
 }
 
+function estimateTokenCount(chars: number): number {
+	return Math.ceil(chars / 4);
+}
+
+export function estimateTextTokens(text: string): number {
+	if (!text) return 0;
+	return estimateTokenCount(text.length);
+}
+
 /**
  * Get usage from an assistant message if available.
  * Skips aborted and error messages as they don't have valid usage data.
@@ -180,7 +189,7 @@ export function estimateTokens(message: AgentMessage): number {
 					}
 				}
 			}
-			return Math.ceil(chars / 4);
+			return estimateTokenCount(chars);
 		}
 		case "assistant": {
 			const assistant = message as AssistantMessage;
@@ -193,7 +202,7 @@ export function estimateTokens(message: AgentMessage): number {
 					chars += block.name.length + JSON.stringify(block.arguments).length;
 				}
 			}
-			return Math.ceil(chars / 4);
+			return estimateTokenCount(chars);
 		}
 		case "custom":
 		case "toolResult": {
@@ -209,16 +218,16 @@ export function estimateTokens(message: AgentMessage): number {
 					}
 				}
 			}
-			return Math.ceil(chars / 4);
+			return estimateTokenCount(chars);
 		}
 		case "bashExecution": {
 			chars = message.command.length + message.output.length;
-			return Math.ceil(chars / 4);
+			return estimateTokenCount(chars);
 		}
 		case "branchSummary":
 		case "compactionSummary": {
 			chars = message.summary.length;
-			return Math.ceil(chars / 4);
+			return estimateTokenCount(chars);
 		}
 	}
 
