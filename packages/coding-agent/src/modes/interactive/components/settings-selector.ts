@@ -26,6 +26,7 @@ export interface SettingsConfig {
 	showImages: boolean;
 	autoResizeImages: boolean;
 	blockImages: boolean;
+	enableSkillCommands: boolean;
 	steeringMode: "all" | "one-at-a-time";
 	followUpMode: "all" | "one-at-a-time";
 	thinkingLevel: ThinkingLevel;
@@ -42,6 +43,7 @@ export interface SettingsCallbacks {
 	onShowImagesChange: (enabled: boolean) => void;
 	onAutoResizeImagesChange: (enabled: boolean) => void;
 	onBlockImagesChange: (blocked: boolean) => void;
+	onEnableSkillCommandsChange: (enabled: boolean) => void;
 	onSteeringModeChange: (mode: "all" | "one-at-a-time") => void;
 	onFollowUpModeChange: (mode: "all" | "one-at-a-time") => void;
 	onThinkingLevelChange: (level: ThinkingLevel) => void;
@@ -255,6 +257,15 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
+		// Skill commands toggle
+		items.splice(items.findIndex((item) => item.id === "steering-mode"), 0, {
+			id: "skill-commands",
+			label: "Skill commands",
+			description: "Register loaded skills as slash commands for quick access",
+			currentValue: config.enableSkillCommands ? "true" : "false",
+			values: ["true", "false"],
+		});
+
 		// Add borders
 		this.addChild(new DynamicBorder());
 
@@ -275,6 +286,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "block-images":
 						callbacks.onBlockImagesChange(newValue === "true");
+						break;
+					case "skill-commands":
+						callbacks.onEnableSkillCommandsChange(newValue === "true");
 						break;
 					case "steering-mode":
 						callbacks.onSteeringModeChange(newValue as "all" | "one-at-a-time");

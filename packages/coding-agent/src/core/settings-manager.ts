@@ -25,6 +25,7 @@ export interface SkillsSettings {
 	enableClaudeProject?: boolean; // default: true
 	enablePiUser?: boolean; // default: true
 	enablePiProject?: boolean; // default: true
+	enableSkillCommands?: boolean; // default: true - register loaded skills as slash commands
 	customDirectories?: string[]; // default: []
 	ignoredSkills?: string[]; // default: [] (glob patterns to exclude; takes precedence over includeSkills)
 	includeSkills?: string[]; // default: [] (empty = include all; glob patterns to filter)
@@ -375,6 +376,14 @@ export class SettingsManager {
 		this.save();
 	}
 
+	setEnableSkillCommands(enabled: boolean): void {
+		if (!this.globalSettings.skills) {
+			this.globalSettings.skills = {};
+		}
+		this.globalSettings.skills.enableSkillCommands = enabled;
+		this.save();
+	}
+
 	getSkillsSettings(): Required<SkillsSettings> {
 		return {
 			enabled: this.settings.skills?.enabled ?? true,
@@ -383,6 +392,7 @@ export class SettingsManager {
 			enableClaudeProject: this.settings.skills?.enableClaudeProject ?? true,
 			enablePiUser: this.settings.skills?.enablePiUser ?? true,
 			enablePiProject: this.settings.skills?.enablePiProject ?? true,
+			enableSkillCommands: this.settings.skills?.enableSkillCommands ?? true,
 			customDirectories: [...(this.settings.skills?.customDirectories ?? [])],
 			ignoredSkills: [...(this.settings.skills?.ignoredSkills ?? [])],
 			includeSkills: [...(this.settings.skills?.includeSkills ?? [])],

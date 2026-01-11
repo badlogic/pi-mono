@@ -151,6 +151,9 @@ export class InteractiveMode {
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
 
+	// Skill commands: command name -> { filePath, description }
+	private skillCommands = new Map<string, { filePath: string; description: string }>();
+
 	// Agent subscription unsubscribe function
 	private unsubscribe?: () => void;
 
@@ -263,9 +266,35 @@ export class InteractiveMode {
 			}),
 		);
 
+		// Load skills and convert to SlashCommand format (if enabled)
+		const skillsSettings = this.session.skillsSettings;
+		const skillCommandList: SlashCommand[] = [];
+		this.skillCommands.clear();
+
+		if (skillsSettings?.enableSkillCommands !== false) {
+			const { skills } = loadSkills({});
+
+			for (const skill of skills) {
+				// Convert skill name to valid command name with "skill:" prefix
+				const commandName = "skill:" + skill.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+				if (!commandName) continue;
+
+				skillCommandList.push({
+					name: commandName,
+					description: skill.description || skill.name,
+				});
+
+				// Store mapping for later use in command execution
+				this.skillCommands.set(commandName, {
+					filePath: skill.filePath,
+					description: skill.description,
+				});
+			}
+		}
+
 		// Setup autocomplete
 		this.autocompleteProvider = new CombinedAutocompleteProvider(
-			[...slashCommands, ...templateCommands, ...extensionCommands],
+			[...slashCommands, ...templateCommands, ...extensionCommands, ...skillCommandList],
 			process.cwd(),
 			fdPath,
 		);
@@ -1414,6 +1443,43 @@ export class InteractiveMode {
 				return;
 			}
 
+			// Handle skill commands (e.g., /skill:skill-name)
+			if (text.startsWith("/")) {
+				const spaceIndex = text.indexOf(" ");
+				const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+				const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+
+				const skill = this.skillCommands.get(commandName);
+				if (skill) {
+					try {
+						// Read skill file
+						const content = fs.readFileSync(skill.filePath, "utf-8");
+
+						// Strip frontmatter if present
+						let skillContent = content;
+						const frontmatterMatch = content.match(/^---\n[\s\S]*?\n---\n/);
+						if (frontmatterMatch) skillContent = content.slice(frontmatterMatch[0].length);
+
+						skillContent = skillContent.trim();
+
+						// Append args if provided
+						if (args) skillContent += `\n\n---\n\nUser: ${args}`;
+
+						// Add to history and clear editor
+						this.editor.addToHistory?.(text);
+						this.editor.setText("");
+
+						// Queue the skill content as user message
+						await this.session.prompt(skillContent);
+					} catch (err) {
+						const errorMessage = err instanceof Error ? err.message : String(err);
+						this.showError(`Failed to load skill "${commandName}": ${errorMessage}`);
+						this.editor.setText("");
+					}
+					return;
+				}
+			}
+
 			// Handle bash command (! for normal, !! for excluded from context)
 			if (text.startsWith("!")) {
 				const isExcluded = text.startsWith("!!");
@@ -2321,6 +2387,7 @@ export class InteractiveMode {
 					showImages: this.settingsManager.getShowImages(),
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
 					blockImages: this.settingsManager.getBlockImages(),
+					enableSkillCommands: this.session.skillsSettings?.enableSkillCommands ?? true,
 					steeringMode: this.session.steeringMode,
 					followUpMode: this.session.followUpMode,
 					thinkingLevel: this.session.thinkingLevel,
@@ -2349,6 +2416,9 @@ export class InteractiveMode {
 					},
 					onBlockImagesChange: (blocked) => {
 						this.settingsManager.setBlockImages(blocked);
+					},
+					onEnableSkillCommandsChange: (enabled) => {
+						this.settingsManager.setEnableSkillCommands(enabled);
 					},
 					onSteeringModeChange: (mode) => {
 						this.session.setSteeringMode(mode);
