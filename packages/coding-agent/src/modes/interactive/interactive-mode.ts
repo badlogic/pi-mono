@@ -2773,7 +2773,7 @@ export class InteractiveMode {
 		});
 	}
 
-	private showTreeSelector(): void {
+	private showTreeSelector(initialSelectedId?: string): void {
 		const tree = this.sessionManager.getTree();
 		const realLeafId = this.sessionManager.getLeafId();
 
@@ -2819,8 +2819,8 @@ export class InteractiveMode {
 						]);
 
 						if (summaryChoice === undefined) {
-							// User pressed escape - re-show tree selector
-							this.showTreeSelector();
+							// User pressed escape - re-show tree selector with same selection
+							this.showTreeSelector(entryId);
 							return;
 						}
 
@@ -2864,9 +2864,9 @@ export class InteractiveMode {
 						});
 
 						if (result.aborted) {
-							// Summarization aborted - re-show tree selector
+							// Summarization aborted - re-show tree selector with same selection
 							this.showStatus("Branch summarization cancelled");
-							this.showTreeSelector();
+							this.showTreeSelector(entryId);
 							return;
 						}
 						if (result.cancelled) {
@@ -2899,6 +2899,7 @@ export class InteractiveMode {
 					this.sessionManager.appendLabelChange(entryId, label);
 					this.ui.requestRender();
 				},
+				initialSelectedId,
 			);
 			return { component: selector, focus: selector };
 		});

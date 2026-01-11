@@ -62,7 +62,12 @@ class TreeList implements Component {
 	public onCancel?: () => void;
 	public onLabelEdit?: (entryId: string, currentLabel: string | undefined) => void;
 
-	constructor(tree: SessionTreeNode[], currentLeafId: string | null, maxVisibleLines: number) {
+	constructor(
+		tree: SessionTreeNode[],
+		currentLeafId: string | null,
+		maxVisibleLines: number,
+		initialSelectedId?: string,
+	) {
 		this.currentLeafId = currentLeafId;
 		this.maxVisibleLines = maxVisibleLines;
 		this.multipleRoots = tree.length > 1;
@@ -70,10 +75,11 @@ class TreeList implements Component {
 		this.buildActivePath();
 		this.applyFilter();
 
-		// Start with current leaf selected
-		const leafIndex = this.filteredNodes.findIndex((n) => n.node.entry.id === currentLeafId);
-		if (leafIndex !== -1) {
-			this.selectedIndex = leafIndex;
+		// Start with initialSelectedId if provided, otherwise current leaf
+		const targetId = initialSelectedId ?? currentLeafId;
+		const targetIndex = this.filteredNodes.findIndex((n) => n.node.entry.id === targetId);
+		if (targetIndex !== -1) {
+			this.selectedIndex = targetIndex;
 		} else {
 			this.selectedIndex = Math.max(0, this.filteredNodes.length - 1);
 		}
@@ -788,13 +794,14 @@ export class TreeSelectorComponent extends Container {
 		onSelect: (entryId: string) => void,
 		onCancel: () => void,
 		onLabelChange?: (entryId: string, label: string | undefined) => void,
+		initialSelectedId?: string,
 	) {
 		super();
 
 		this.onLabelChangeCallback = onLabelChange;
 		const maxVisibleLines = Math.max(5, Math.floor(terminalHeight / 2));
 
-		this.treeList = new TreeList(tree, currentLeafId, maxVisibleLines);
+		this.treeList = new TreeList(tree, currentLeafId, maxVisibleLines, initialSelectedId);
 		this.treeList.onSelect = onSelect;
 		this.treeList.onCancel = onCancel;
 		this.treeList.onLabelEdit = (entryId, currentLabel) => this.showLabelInput(entryId, currentLabel);
