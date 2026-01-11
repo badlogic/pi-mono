@@ -4,6 +4,7 @@
 
 ### Added
 
+- `/models` command to enable/disable models for Ctrl+P cycling. Changes persist to `enabledModels` in settings.json and take effect immediately. ([#626](https://github.com/badlogic/pi-mono/pull/626) by [@CarlosGtrz](https://github.com/CarlosGtrz))
 - `model_select` extension hook fires when model changes via `/model`, model cycling, or session restore with `source` field and `previousModel` ([#628](https://github.com/badlogic/pi-mono/pull/628) by [@marckrenn](https://github.com/marckrenn))
 - `ctx.ui.setWorkingMessage()` extension API to customize the "Working..." message during streaming ([#625](https://github.com/badlogic/pi-mono/pull/625) by [@nicobailon](https://github.com/nicobailon))
 - Skill slash commands: loaded skills are registered as `/skill:name` commands for quick access. Toggle via `/settings` or `skills.enableSkillCommands` in settings.json. ([#630](https://github.com/badlogic/pi-mono/pull/630) by [@Dwsy](https://github.com/Dwsy))

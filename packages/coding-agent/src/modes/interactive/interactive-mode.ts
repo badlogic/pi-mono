@@ -45,6 +45,7 @@ import type {
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
 import { KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
+import { resolveModelScope } from "../../core/model-resolver.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { loadProjectContextFiles } from "../../core/system-prompt.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
@@ -68,6 +69,7 @@ import { ExtensionSelectorComponent } from "./components/extension-selector.js";
 import { FooterComponent } from "./components/footer.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
+import { ModelsSelectorComponent } from "./components/models-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
@@ -280,6 +282,7 @@ export class InteractiveMode {
 					}));
 				},
 			},
+			{ name: "models", description: "Enable/disable models for Ctrl+P cycling" },
 			{ name: "export", description: "Export session to HTML file" },
 			{ name: "share", description: "Share session as a secret GitHub gist" },
 			{ name: "copy", description: "Copy last agent message to clipboard" },
@@ -1410,6 +1413,11 @@ export class InteractiveMode {
 			if (text === "/settings") {
 				this.showSettingsSelector();
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/models") {
+				this.editor.setText("");
+				await this.showModelsSelector();
 				return;
 			}
 			if (text === "/model" || text.startsWith("/model ")) {
@@ -2652,6 +2660,80 @@ export class InteractiveMode {
 				initialSearchInput,
 			);
 			return { component: selector, focus: selector };
+		});
+	}
+
+	private async showModelsSelector(): Promise<void> {
+		// Get all available models
+		this.session.modelRegistry.refresh();
+		const allModels = this.session.modelRegistry.getAvailable();
+
+		if (allModels.length === 0) {
+			this.showStatus("No models available");
+			return;
+		}
+
+		// Get current enabledModels patterns
+		const patterns = this.settingsManager.getEnabledModels();
+		const hasFilter = patterns !== undefined && patterns.length > 0;
+
+		// Resolve patterns to get currently enabled model IDs
+		const enabledModelIds = new Set<string>();
+		if (hasFilter) {
+			const scopedModels = await resolveModelScope(patterns, this.session.modelRegistry);
+			for (const sm of scopedModels) {
+				enabledModelIds.add(`${sm.model.provider}/${sm.model.id}`);
+			}
+		}
+
+		// Track current enabled state
+		const currentEnabledIds = new Set(enabledModelIds);
+		let currentHasFilter = hasFilter;
+
+		this.showSelector((done) => {
+			const selector = new ModelsSelectorComponent(
+				{
+					allModels,
+					enabledModelIds: currentEnabledIds,
+					hasEnabledModelsFilter: currentHasFilter,
+				},
+				{
+					onModelToggle: async (modelId, enabled) => {
+						if (enabled) {
+							currentEnabledIds.add(modelId);
+						} else {
+							currentEnabledIds.delete(modelId);
+						}
+						currentHasFilter = true;
+
+						// Save to settings
+						const newPatterns =
+							currentEnabledIds.size === allModels.length
+								? undefined // All enabled = clear filter
+								: Array.from(currentEnabledIds);
+						this.settingsManager.setEnabledModels(newPatterns);
+
+						// Update session's scoped models
+						if (newPatterns && newPatterns.length > 0) {
+							const defaultThinkingLevel = this.settingsManager.getDefaultThinkingLevel() ?? "off";
+							const newScopedModels = await resolveModelScope(newPatterns, this.session.modelRegistry);
+							this.session.setScopedModels(
+								newScopedModels.map((sm) => ({
+									model: sm.model,
+									thinkingLevel: sm.thinkingLevel ?? defaultThinkingLevel,
+								})),
+							);
+						} else {
+							this.session.setScopedModels([]);
+						}
+					},
+					onCancel: () => {
+						done();
+						this.ui.requestRender();
+					},
+				},
+			);
+			return { component: selector, focus: selector.getSettingsList() };
 		});
 	}
 
