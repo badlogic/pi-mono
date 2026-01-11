@@ -69,8 +69,8 @@ import { ExtensionSelectorComponent } from "./components/extension-selector.js";
 import { FooterComponent } from "./components/footer.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
-import { ModelsSelectorComponent } from "./components/models-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
+import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
@@ -282,7 +282,7 @@ export class InteractiveMode {
 					}));
 				},
 			},
-			{ name: "models", description: "Enable/disable models for Ctrl+P cycling" },
+			{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
 			{ name: "export", description: "Export session to HTML file" },
 			{ name: "share", description: "Share session as a secret GitHub gist" },
 			{ name: "copy", description: "Copy last agent message to clipboard" },
@@ -1415,7 +1415,7 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
-			if (text === "/models") {
+			if (text === "/scoped-models") {
 				this.editor.setText("");
 				await this.showModelsSelector();
 				return;
@@ -2674,25 +2674,56 @@ export class InteractiveMode {
 			return;
 		}
 
-		// Get current enabledModels patterns
-		const patterns = this.settingsManager.getEnabledModels();
-		const hasFilter = patterns !== undefined && patterns.length > 0;
+		// Check if session has scoped models (from previous session-only changes or CLI --models)
+		const sessionScopedModels = this.session.scopedModels;
+		const hasSessionScope = sessionScopedModels.length > 0;
 
-		// Resolve patterns to get currently enabled model IDs
+		// Build enabled model IDs from session state or settings
 		const enabledModelIds = new Set<string>();
-		if (hasFilter) {
-			const scopedModels = await resolveModelScope(patterns, this.session.modelRegistry);
-			for (const sm of scopedModels) {
+		let hasFilter = false;
+
+		if (hasSessionScope) {
+			// Use current session's scoped models
+			for (const sm of sessionScopedModels) {
 				enabledModelIds.add(`${sm.model.provider}/${sm.model.id}`);
+			}
+			hasFilter = true;
+		} else {
+			// Fall back to settings
+			const patterns = this.settingsManager.getEnabledModels();
+			if (patterns !== undefined && patterns.length > 0) {
+				hasFilter = true;
+				const scopedModels = await resolveModelScope(patterns, this.session.modelRegistry);
+				for (const sm of scopedModels) {
+					enabledModelIds.add(`${sm.model.provider}/${sm.model.id}`);
+				}
 			}
 		}
 
-		// Track current enabled state
+		// Track current enabled state (session-only until persisted)
 		const currentEnabledIds = new Set(enabledModelIds);
 		let currentHasFilter = hasFilter;
 
+		// Helper to update session's scoped models (session-only, no persist)
+		const updateSessionModels = async (enabledIds: Set<string>) => {
+			if (enabledIds.size > 0 && enabledIds.size < allModels.length) {
+				// Use current session thinking level, not settings default
+				const currentThinkingLevel = this.session.thinkingLevel;
+				const newScopedModels = await resolveModelScope(Array.from(enabledIds), this.session.modelRegistry);
+				this.session.setScopedModels(
+					newScopedModels.map((sm) => ({
+						model: sm.model,
+						thinkingLevel: sm.thinkingLevel ?? currentThinkingLevel,
+					})),
+				);
+			} else {
+				// All enabled or none enabled = no filter
+				this.session.setScopedModels([]);
+			}
+		};
+
 		this.showSelector((done) => {
-			const selector = new ModelsSelectorComponent(
+			const selector = new ScopedModelsSelectorComponent(
 				{
 					allModels,
 					enabledModelIds: currentEnabledIds,
@@ -2706,27 +2737,40 @@ export class InteractiveMode {
 							currentEnabledIds.delete(modelId);
 						}
 						currentHasFilter = true;
-
-						// Save to settings
-						const newPatterns =
-							currentEnabledIds.size === allModels.length
-								? undefined // All enabled = clear filter
-								: Array.from(currentEnabledIds);
-						this.settingsManager.setEnabledModels(newPatterns);
-
-						// Update session's scoped models
-						if (newPatterns && newPatterns.length > 0) {
-							const defaultThinkingLevel = this.settingsManager.getDefaultThinkingLevel() ?? "off";
-							const newScopedModels = await resolveModelScope(newPatterns, this.session.modelRegistry);
-							this.session.setScopedModels(
-								newScopedModels.map((sm) => ({
-									model: sm.model,
-									thinkingLevel: sm.thinkingLevel ?? defaultThinkingLevel,
-								})),
-							);
-						} else {
-							this.session.setScopedModels([]);
+						await updateSessionModels(currentEnabledIds);
+					},
+					onEnableAll: async (allModelIds) => {
+						currentEnabledIds.clear();
+						for (const id of allModelIds) {
+							currentEnabledIds.add(id);
 						}
+						currentHasFilter = false;
+						await updateSessionModels(currentEnabledIds);
+					},
+					onClearAll: async () => {
+						currentEnabledIds.clear();
+						currentHasFilter = true;
+						await updateSessionModels(currentEnabledIds);
+					},
+					onToggleProvider: async (_provider, modelIds, enabled) => {
+						for (const id of modelIds) {
+							if (enabled) {
+								currentEnabledIds.add(id);
+							} else {
+								currentEnabledIds.delete(id);
+							}
+						}
+						currentHasFilter = true;
+						await updateSessionModels(currentEnabledIds);
+					},
+					onPersist: (enabledIds) => {
+						// Persist to settings
+						const newPatterns =
+							enabledIds.length === allModels.length
+								? undefined // All enabled = clear filter
+								: enabledIds;
+						this.settingsManager.setEnabledModels(newPatterns);
+						this.showStatus("Model selection saved to settings");
 					},
 					onCancel: () => {
 						done();
@@ -2734,7 +2778,7 @@ export class InteractiveMode {
 					},
 				},
 			);
-			return { component: selector, focus: selector.getSettingsList() };
+			return { component: selector, focus: selector };
 		});
 	}
 
