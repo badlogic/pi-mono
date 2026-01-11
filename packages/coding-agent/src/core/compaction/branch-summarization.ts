@@ -297,7 +297,9 @@ export async function generateBranchSummary(
 	const conversationText = serializeConversation(llmMessages);
 
 	// Build prompt
-	const instructions = customInstructions || BRANCH_SUMMARY_PROMPT;
+	const instructions = customInstructions
+		? `${BRANCH_SUMMARY_PROMPT}\n\nAdditional focus: ${customInstructions}`
+		: BRANCH_SUMMARY_PROMPT;
 	const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${instructions}`;
 
 	const summarizationMessages = [

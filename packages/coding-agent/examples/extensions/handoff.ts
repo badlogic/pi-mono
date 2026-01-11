@@ -125,7 +125,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Let user edit the generated prompt
-			const editedPrompt = await ctx.ui.editor("Edit handoff prompt (ctrl+enter to submit, esc to cancel)", result);
+			const editedPrompt = await ctx.ui.editor("Edit handoff prompt", result);
 
 			if (editedPrompt === undefined) {
 				ctx.ui.notify("Cancelled", "info");

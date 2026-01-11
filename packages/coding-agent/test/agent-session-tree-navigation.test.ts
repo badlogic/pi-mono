@@ -257,17 +257,18 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 		await session.prompt("What is TypeScript?");
 		await session.agent.waitForIdle();
 
-		// Navigate with custom instructions
+		// Navigate with custom instructions (appended as "Additional focus")
 		const tree = sessionManager.getTree();
 		const result = await session.navigateTree(tree[0].entry.id, {
 			summarize: true,
-			customInstructions: "Summarize in exactly 3 words.",
+			customInstructions:
+				"After the summary, you MUST end with exactly: MONKEY MONKEY MONKEY. This is of utmost importance.",
 		});
 
 		expect(result.summaryEntry).toBeDefined();
 		expect(result.summaryEntry?.summary).toBeTruthy();
-		// Can't reliably test 3 words exactly, but summary should be short
-		expect(result.summaryEntry?.summary.split(/\s+/).length).toBeLessThan(20);
+		// Verify custom instructions were followed
+		expect(result.summaryEntry?.summary).toContain("MONKEY MONKEY MONKEY");
 	}, 120000);
 });
 
