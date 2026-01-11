@@ -61,14 +61,14 @@ async function prepareInitialMessage(
  * Resolve a session argument to a file path.
  * If it looks like a path, use as-is. Otherwise try to match as session ID prefix.
  */
-function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: string): string {
+async function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: string): Promise<string> {
 	// If it looks like a file path, use as-is
 	if (sessionArg.includes("/") || sessionArg.includes("\\") || sessionArg.endsWith(".jsonl")) {
 		return sessionArg;
 	}
 
 	// Try to match as session ID (full or partial UUID)
-	const sessions = SessionManager.list(cwd, sessionDir);
+	const sessions = await SessionManager.list(cwd, sessionDir);
 	const matches = sessions.filter((s) => s.id.startsWith(sessionArg));
 
 	if (matches.length >= 1) {
@@ -79,12 +79,12 @@ function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: string
 	return sessionArg;
 }
 
-function createSessionManager(parsed: Args, cwd: string): SessionManager | undefined {
+async function createSessionManager(parsed: Args, cwd: string): Promise<SessionManager | undefined> {
 	if (parsed.noSession) {
 		return SessionManager.inMemory();
 	}
 	if (parsed.session) {
-		const resolvedPath = resolveSessionPath(parsed.session, cwd, parsed.sessionDir);
+		const resolvedPath = await resolveSessionPath(parsed.session, cwd, parsed.sessionDir);
 		return SessionManager.open(resolvedPath, parsed.sessionDir);
 	}
 	if (parsed.continue) {
@@ -309,7 +309,7 @@ export async function main(args: string[]) {
 	}
 
 	// Create session manager based on CLI flags
-	let sessionManager = createSessionManager(parsed, cwd);
+	let sessionManager = await createSessionManager(parsed, cwd);
 	time("createSessionManager");
 
 	// Handle --resume: show session picker
@@ -317,14 +317,10 @@ export async function main(args: string[]) {
 		// Initialize keybindings so session picker respects user config
 		KeybindingsManager.create();
 
-		const currentSessions = SessionManager.list(cwd, parsed.sessionDir);
-		const allSessions = SessionManager.listAll();
-		time("SessionManager.list");
-		if (currentSessions.length === 0 && allSessions.length === 0) {
-			console.log(chalk.dim("No sessions found"));
-			return;
-		}
-		const selectedPath = await selectSession(currentSessions, allSessions);
+		const selectedPath = await selectSession(
+			(onProgress) => SessionManager.list(cwd, parsed.sessionDir, onProgress),
+			SessionManager.listAll,
+		);
 		time("selectSession");
 		if (!selectedPath) {
 			console.log(chalk.dim("No session selected"));

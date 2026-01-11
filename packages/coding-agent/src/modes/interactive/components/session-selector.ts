@@ -9,7 +9,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
-import type { SessionInfo } from "../../../core/session-manager.js";
+import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -42,6 +42,8 @@ function formatSessionDate(date: Date): string {
 
 class SessionSelectorHeader implements Component {
 	private scope: SessionScope;
+	private loading = false;
+	private loadProgress: { loaded: number; total: number } | null = null;
 
 	constructor(scope: SessionScope) {
 		this.scope = scope;
@@ -51,20 +53,38 @@ class SessionSelectorHeader implements Component {
 		this.scope = scope;
 	}
 
+	setLoading(loading: boolean): void {
+		this.loading = loading;
+		if (!loading) {
+			this.loadProgress = null;
+		}
+	}
+
+	setProgress(loaded: number, total: number): void {
+		this.loadProgress = { loaded, total };
+	}
+
 	invalidate(): void {}
 
 	render(width: number): string[] {
 		const title = this.scope === "current" ? "Resume Session (Current Folder)" : "Resume Session (All)";
 		const leftText = theme.bold(title);
-		const scopeText =
-			this.scope === "current"
-				? `${theme.fg("accent", "◉ Current Folder")}${theme.fg("muted", " | ○ All")}`
-				: `${theme.fg("muted", "○ Current Folder | ")}${theme.fg("accent", "◉ All")}`;
+		let scopeText: string;
+		if (this.loading) {
+			const progressText = this.loadProgress ? `${this.loadProgress.loaded}/${this.loadProgress.total}` : "...";
+			scopeText = `${theme.fg("muted", "○ Current Folder | ")}${theme.fg("accent", `Loading ${progressText}`)}`;
+		} else {
+			scopeText =
+				this.scope === "current"
+					? `${theme.fg("accent", "◉ Current Folder")}${theme.fg("muted", " | ○ All")}`
+					: `${theme.fg("muted", "○ Current Folder | ")}${theme.fg("accent", "◉ All")}`;
+		}
 		const rightText = truncateToWidth(scopeText, width, "");
 		const availableLeft = Math.max(0, width - visibleWidth(rightText) - 1);
 		const left = truncateToWidth(leftText, availableLeft, "");
 		const spacing = Math.max(0, width - visibleWidth(left) - visibleWidth(rightText));
-		return [`${left}${" ".repeat(spacing)}${rightText}`];
+		const hint = theme.fg("muted", "Tab to toggle scope");
+		return [`${left}${" ".repeat(spacing)}${rightText}`, hint];
 	}
 }
 
@@ -212,6 +232,8 @@ class SessionList implements Component {
 	}
 }
 
+type SessionsLoader = (onProgress?: SessionListProgress) => Promise<SessionInfo[]>;
+
 /**
  * Component that renders a session selector
  */
@@ -219,19 +241,26 @@ export class SessionSelectorComponent extends Container {
 	private sessionList: SessionList;
 	private header: SessionSelectorHeader;
 	private scope: SessionScope = "current";
-	private currentSessions: SessionInfo[];
-	private allSessions: SessionInfo[];
+	private currentSessions: SessionInfo[] | null = null;
+	private allSessions: SessionInfo[] | null = null;
+	private currentSessionsLoader: SessionsLoader;
+	private allSessionsLoader: SessionsLoader;
+	private onCancel: () => void;
+	private requestRender: () => void;
 
 	constructor(
-		currentSessions: SessionInfo[],
-		allSessions: SessionInfo[],
+		currentSessionsLoader: SessionsLoader,
+		allSessionsLoader: SessionsLoader,
 		onSelect: (sessionPath: string) => void,
 		onCancel: () => void,
 		onExit: () => void,
+		requestRender: () => void,
 	) {
 		super();
-		this.currentSessions = currentSessions;
-		this.allSessions = allSessions;
+		this.currentSessionsLoader = currentSessionsLoader;
+		this.allSessionsLoader = allSessionsLoader;
+		this.onCancel = onCancel;
+		this.requestRender = requestRender;
 		this.header = new SessionSelectorHeader(this.scope);
 
 		// Add header
@@ -241,8 +270,8 @@ export class SessionSelectorComponent extends Container {
 		this.addChild(new DynamicBorder());
 		this.addChild(new Spacer(1));
 
-		// Create session list
-		this.sessionList = new SessionList(this.currentSessions, this.scope === "all");
+		// Create session list (starts empty, will be populated after load)
+		this.sessionList = new SessionList([], false);
 		this.sessionList.onSelect = onSelect;
 		this.sessionList.onCancel = onCancel;
 		this.sessionList.onExit = onExit;
@@ -254,17 +283,62 @@ export class SessionSelectorComponent extends Container {
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
 
-		// Auto-cancel if no sessions
-		if (currentSessions.length === 0 && allSessions.length === 0) {
-			setTimeout(() => onCancel(), 100);
-		}
+		// Start loading current sessions immediately
+		this.loadCurrentSessions();
+	}
+
+	private loadCurrentSessions(): void {
+		this.header.setLoading(true);
+		this.requestRender();
+		this.currentSessionsLoader((loaded, total) => {
+			this.header.setProgress(loaded, total);
+			this.requestRender();
+		}).then((sessions) => {
+			this.currentSessions = sessions;
+			this.header.setLoading(false);
+			this.sessionList.setSessions(sessions, false);
+			this.requestRender();
+			// If no sessions found, cancel
+			if (sessions.length === 0) {
+				this.onCancel();
+			}
+		});
 	}
 
 	private toggleScope(): void {
-		this.scope = this.scope === "current" ? "all" : "current";
-		const sessions = this.scope === "current" ? this.currentSessions : this.allSessions;
-		this.sessionList.setSessions(sessions, this.scope === "all");
-		this.header.setScope(this.scope);
+		if (this.scope === "current") {
+			// Switching to "all" - load if not already loaded
+			if (this.allSessions === null) {
+				this.header.setLoading(true);
+				this.header.setScope("all");
+				this.sessionList.setSessions([], true); // Clear list while loading
+				this.requestRender();
+				// Load asynchronously with progress updates
+				this.allSessionsLoader((loaded, total) => {
+					this.header.setProgress(loaded, total);
+					this.requestRender();
+				}).then((sessions) => {
+					this.allSessions = sessions;
+					this.header.setLoading(false);
+					this.scope = "all";
+					this.sessionList.setSessions(this.allSessions, true);
+					this.requestRender();
+					// If no sessions in All scope either, cancel
+					if (this.allSessions.length === 0 && (this.currentSessions?.length ?? 0) === 0) {
+						this.onCancel();
+					}
+				});
+			} else {
+				this.scope = "all";
+				this.sessionList.setSessions(this.allSessions, true);
+				this.header.setScope(this.scope);
+			}
+		} else {
+			// Switching back to "current"
+			this.scope = "current";
+			this.sessionList.setSessions(this.currentSessions ?? [], false);
+			this.header.setScope(this.scope);
+		}
 	}
 
 	getSessionList(): SessionList {

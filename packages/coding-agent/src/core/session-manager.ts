@@ -13,6 +13,7 @@ import {
 	statSync,
 	writeFileSync,
 } from "fs";
+import { readdir, readFile, stat } from "fs/promises";
 import { join, resolve } from "path";
 import { getAgentDir as getDefaultAgentDir, getSessionsDir } from "../config.js";
 import {
@@ -156,7 +157,8 @@ export interface SessionContext {
 export interface SessionInfo {
 	path: string;
 	id: string;
-	cwd?: string;
+	/** Working directory where the session was started. Empty string for old sessions. */
+	cwd: string;
 	created: Date;
 	modified: Date;
 	messageCount: number;
@@ -486,68 +488,94 @@ function extractTextContent(message: Message): string {
 		.join(" ");
 }
 
-function buildSessionInfo(filePath: string): SessionInfo | null {
-	const entries = loadEntriesFromFile(filePath);
-	if (entries.length === 0) return null;
+async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
+	try {
+		const content = await readFile(filePath, "utf8");
+		const entries: FileEntry[] = [];
+		const lines = content.trim().split("\n");
 
-	const header = entries[0];
-	if (header.type !== "session") return null;
-
-	const stats = statSync(filePath);
-	let messageCount = 0;
-	let firstMessage = "";
-	const allMessages: string[] = [];
-
-	for (const entry of entries) {
-		if (entry.type !== "message") continue;
-		messageCount++;
-
-		const message = entry.message;
-		if (!isMessageWithContent(message)) continue;
-		if (message.role !== "user" && message.role !== "assistant") continue;
-
-		const textContent = extractTextContent(message);
-		if (!textContent) continue;
-
-		allMessages.push(textContent);
-		if (!firstMessage && message.role === "user") {
-			firstMessage = textContent;
+		for (const line of lines) {
+			if (!line.trim()) continue;
+			try {
+				entries.push(JSON.parse(line) as FileEntry);
+			} catch {
+				// Skip malformed lines
+			}
 		}
+
+		if (entries.length === 0) return null;
+		const header = entries[0];
+		if (header.type !== "session") return null;
+
+		const stats = await stat(filePath);
+		let messageCount = 0;
+		let firstMessage = "";
+		const allMessages: string[] = [];
+
+		for (const entry of entries) {
+			if (entry.type !== "message") continue;
+			messageCount++;
+
+			const message = (entry as SessionMessageEntry).message;
+			if (!isMessageWithContent(message)) continue;
+			if (message.role !== "user" && message.role !== "assistant") continue;
+
+			const textContent = extractTextContent(message);
+			if (!textContent) continue;
+
+			allMessages.push(textContent);
+			if (!firstMessage && message.role === "user") {
+				firstMessage = textContent;
+			}
+		}
+
+		const cwd = typeof (header as SessionHeader).cwd === "string" ? (header as SessionHeader).cwd : "";
+
+		return {
+			path: filePath,
+			id: (header as SessionHeader).id,
+			cwd,
+			created: new Date((header as SessionHeader).timestamp),
+			modified: stats.mtime,
+			messageCount,
+			firstMessage: firstMessage || "(no messages)",
+			allMessagesText: allMessages.join(" "),
+		};
+	} catch {
+		return null;
 	}
-
-	const cwd = typeof header.cwd === "string" ? header.cwd : "";
-
-	return {
-		path: filePath,
-		id: header.id,
-		cwd,
-		created: new Date(header.timestamp),
-		modified: stats.mtime,
-		messageCount,
-		firstMessage: firstMessage || "(no messages)",
-		allMessagesText: allMessages.join(" "),
-	};
 }
 
-function listSessionsFromDir(dir: string): SessionInfo[] {
+export type SessionListProgress = (loaded: number, total: number) => void;
+
+async function listSessionsFromDir(
+	dir: string,
+	onProgress?: SessionListProgress,
+	progressOffset = 0,
+	progressTotal?: number,
+): Promise<SessionInfo[]> {
 	const sessions: SessionInfo[] = [];
 	if (!existsSync(dir)) {
 		return sessions;
 	}
 
 	try {
-		const files = readdirSync(dir)
-			.filter((f) => f.endsWith(".jsonl"))
-			.map((f) => join(dir, f));
+		const dirEntries = await readdir(dir);
+		const files = dirEntries.filter((f) => f.endsWith(".jsonl")).map((f) => join(dir, f));
+		const total = progressTotal ?? files.length;
 
-		for (const file of files) {
-			try {
-				const info = buildSessionInfo(file);
-				if (info) {
-					sessions.push(info);
-				}
-			} catch {
-				// Skip files that can't be read
+		let loaded = 0;
+		const results = await Promise.all(
+			files.map(async (file) => {
+				const info = await buildSessionInfo(file);
+				loaded++;
+				onProgress?.(progressOffset + loaded, total);
+				return info;
+			}),
+		);
+		for (const info of results) {
+			if (info) {
+				sessions.push(info);
 			}
 		}
 	} catch {
@@ -1144,35 +1172,69 @@ export class SessionManager {
 	}
 
 	/**
-	 * List all sessions.
+	 * List all sessions for a directory.
 	 * @param cwd Working directory (used to compute default session directory)
 	 * @param sessionDir Optional session directory. If omitted, uses default (~/.pi/agent/sessions/<encoded-cwd>/).
+	 * @param onProgress Optional callback for progress updates (loaded, total)
 	 */
-	static list(cwd: string, sessionDir?: string): SessionInfo[] {
+	static async list(cwd: string, sessionDir?: string, onProgress?: SessionListProgress): Promise<SessionInfo[]> {
 		const dir = sessionDir ?? getDefaultSessionDir(cwd);
-		const sessions = listSessionsFromDir(dir);
+		const sessions = await listSessionsFromDir(dir, onProgress);
 		sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
 		return sessions;
 	}
 
-	static listAll(): SessionInfo[] {
-		const sessions: SessionInfo[] = [];
+	/**
+	 * List all sessions across all project directories.
+	 * @param onProgress Optional callback for progress updates (loaded, total)
+	 */
+	static async listAll(onProgress?: SessionListProgress): Promise<SessionInfo[]> {
 		const sessionsDir = getSessionsDir();
 
 		try {
 			if (!existsSync(sessionsDir)) {
-				return sessions;
+				return [];
 			}
-			const entries = readdirSync(sessionsDir, { withFileTypes: true });
-			for (const entry of entries) {
-				if (!entry.isDirectory()) continue;
-				sessions.push(...listSessionsFromDir(join(sessionsDir, entry.name)));
-			}
-		} catch {
-			// Return empty list on error
-		}
+			const entries = await readdir(sessionsDir, { withFileTypes: true });
+			const dirs = entries.filter((e) => e.isDirectory()).map((e) => join(sessionsDir, e.name));
 
-		sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
-		return sessions;
+			// Count total files first for accurate progress
+			let totalFiles = 0;
+			const dirFiles: string[][] = [];
+			for (const dir of dirs) {
+				try {
+					const files = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
+					dirFiles.push(files.map((f) => join(dir, f)));
+					totalFiles += files.length;
+				} catch {
+					dirFiles.push([]);
+				}
+			}
+
+			// Process all files with progress tracking
+			let loaded = 0;
+			const sessions: SessionInfo[] = [];
+			const allFiles = dirFiles.flat();
+
+			const results = await Promise.all(
+				allFiles.map(async (file) => {
+					const info = await buildSessionInfo(file);
+					loaded++;
+					onProgress?.(loaded, totalFiles);
+					return info;
+				}),
+			);
+
+			for (const info of results) {
+				if (info) {
+					sessions.push(info);
+				}
+			}
+
+			sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+			return sessions;
+		} catch {
+			return [];
+		}
 	}
 }

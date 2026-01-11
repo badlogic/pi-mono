@@ -3,21 +3,23 @@
  */
 
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
-import type { SessionInfo } from "../core/session-manager.js";
+import type { SessionInfo, SessionListProgress } from "../core/session-manager.js";
 import { SessionSelectorComponent } from "../modes/interactive/components/session-selector.js";
+
+type SessionsLoader = (onProgress?: SessionListProgress) => Promise<SessionInfo[]>;
 
 /** Show TUI session selector and return selected session path or null if cancelled */
 export async function selectSession(
-	currentSessions: SessionInfo[],
-	allSessions: SessionInfo[],
+	currentSessionsLoader: SessionsLoader,
+	allSessionsLoader: SessionsLoader,
 ): Promise<string | null> {
 	return new Promise((resolve) => {
 		const ui = new TUI(new ProcessTerminal());
 		let resolved = false;
 
 		const selector = new SessionSelectorComponent(
-			currentSessions,
-			allSessions,
+			currentSessionsLoader,
+			allSessionsLoader,
 			(path: string) => {
 				if (!resolved) {
 					resolved = true;
@@ -36,6 +38,7 @@ export async function selectSession(
 				ui.stop();
 				process.exit(0);
 			},
+			() => ui.requestRender(),
 		);
 
 		ui.addChild(selector);
