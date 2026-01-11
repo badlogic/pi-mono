@@ -190,7 +190,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({ ... });
   pi.registerCommand("name", { ... });
   pi.registerShortcut("ctrl+x", { ... });
-  pi.registerFlag("--my-flag", { ... });
+  pi.registerFlag("my-flag", { ... });
 }
 ```
 
@@ -809,7 +809,7 @@ pi.registerShortcut("ctrl+shift+p", {
 Register a CLI flag.
 
 ```typescript
-pi.registerFlag("--plan", {
+pi.registerFlag("plan", {
   description: "Start in plan mode",
   type: "boolean",
   default: false,

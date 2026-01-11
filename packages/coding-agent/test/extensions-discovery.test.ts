@@ -429,7 +429,7 @@ describe("extensions discovery", () => {
 	it("loads extension with flags", async () => {
 		const extCode = `
 			export default function(pi) {
-				pi.registerFlag("--my-flag", {
+				pi.registerFlag("my-flag", {
 					description: "My custom flag",
 					handler: async (value) => {},
 				});

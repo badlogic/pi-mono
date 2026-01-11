@@ -1041,7 +1041,7 @@ Register custom CLI flags (parsed automatically, shown in `--help`):
 
 ```typescript
 export default function (pi: ExtensionAPI) {
-  pi.registerFlag("--dry-run", {
+  pi.registerFlag("dry-run", {
     description: "Run without making changes",
     type: "boolean",
   });
