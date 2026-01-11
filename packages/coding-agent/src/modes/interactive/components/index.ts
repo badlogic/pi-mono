@@ -15,6 +15,7 @@ export { ExtensionSelectorComponent } from "./extension-selector.js";
 export { FooterComponent } from "./footer.js";
 export { LoginDialogComponent } from "./login-dialog.js";
 export { ModelSelectorComponent } from "./model-selector.js";
+export { type ModelsCallbacks, type ModelsConfig, ModelsSelectorComponent } from "./models-selector.js";
 export { OAuthSelectorComponent } from "./oauth-selector.js";
 export { SessionSelectorComponent } from "./session-selector.js";
 export { type SettingsCallbacks, type SettingsConfig, SettingsSelectorComponent } from "./settings-selector.js";

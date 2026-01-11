@@ -525,6 +525,11 @@ export class AgentSession {
 		return this._scopedModels;
 	}
 
+	/** Update scoped models for cycling */
+	setScopedModels(scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>): void {
+		this._scopedModels = scopedModels;
+	}
+
 	/** File-based prompt templates */
 	get promptTemplates(): ReadonlyArray<PromptTemplate> {
 		return this._promptTemplates;
