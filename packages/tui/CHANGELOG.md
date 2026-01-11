@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Reduced flicker by only re-rendering changed lines ([#617](https://github.com/badlogic/pi-mono/pull/617) by [@ogulcancelik](https://github.com/ogulcancelik))
 - Cursor position tracking when content shrinks with unchanged remaining lines
 - TUI renders with wrong dimensions after suspend/resume if terminal was resized while suspended ([#599](https://github.com/badlogic/pi-mono/issues/599))
 
