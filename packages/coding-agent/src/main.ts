@@ -17,6 +17,7 @@ import { CONFIG_DIR_NAME, getAgentDir, getModelsPath, VERSION } from "./config.j
 import { createEventBus } from "./core/event-bus.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import { discoverAndLoadExtensions, type LoadExtensionsResult, loadExtensions } from "./core/extensions/index.js";
+import { KeybindingsManager } from "./core/keybindings.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { type CreateAgentSessionOptions, createAgentSession, discoverAuthStorage, discoverModels } from "./core/sdk.js";
@@ -313,6 +314,9 @@ export async function main(args: string[]) {
 
 	// Handle --resume: show session picker
 	if (parsed.resume) {
+		// Initialize keybindings so session picker respects user config
+		KeybindingsManager.create();
+
 		const sessions = SessionManager.list(cwd, parsed.sessionDir);
 		time("SessionManager.list");
 		if (sessions.length === 0) {
