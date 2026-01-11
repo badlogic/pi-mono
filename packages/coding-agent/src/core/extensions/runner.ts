@@ -307,13 +307,16 @@ export class ExtensionRunner {
 	 * Context values are resolved at call time, so changes via initialize() are reflected.
 	 */
 	createContext(): ExtensionContext {
+		const getModel = this.getModel;
 		return {
 			ui: this.uiContext,
 			hasUI: this.hasUI(),
 			cwd: this.cwd,
 			sessionManager: this.sessionManager,
 			modelRegistry: this.modelRegistry,
-			model: this.getModel(),
+			get model() {
+				return getModel();
+			},
 			isIdle: () => this.isIdleFn(),
 			abort: () => this.abortFn(),
 			hasPendingMessages: () => this.hasPendingMessagesFn(),
