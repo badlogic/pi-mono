@@ -2,7 +2,6 @@
 
 import { join, resolve } from "path";
 import { type AgentRunner, getOrCreateRunner } from "./agent.js";
-import { syncLogToContext } from "./context.js";
 import { downloadChannel } from "./download.js";
 import { createEventsWatcher } from "./events.js";
 import * as log from "./log.js";
@@ -254,7 +253,6 @@ const handler: MomHandler = {
 
 	async handleEvent(event: SlackEvent, slack: SlackBot, isEvent?: boolean): Promise<void> {
 		const state = getState(event.channel);
-		const channelDir = join(workingDir, event.channel);
 
 		// Start run
 		state.running = true;
@@ -263,14 +261,6 @@ const handler: MomHandler = {
 		log.logInfo(`[${event.channel}] Starting run: ${event.text.substring(0, 50)}`);
 
 		try {
-			// SYNC context from log.jsonl BEFORE processing
-			// This adds any messages that were logged while mom wasn't running
-			// Exclude messages >= current ts (will be handled by agent)
-			const syncedCount = syncLogToContext(channelDir, event.ts);
-			if (syncedCount > 0) {
-				log.logInfo(`[${event.channel}] Synced ${syncedCount} messages from log to context`);
-			}
-
 			// Create context adapter
 			const ctx = createSlackContext(event, slack, state, isEvent);
 
