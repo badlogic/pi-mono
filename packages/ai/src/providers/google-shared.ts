@@ -85,7 +85,10 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 				if (block.type === "text") {
 					// Skip empty text blocks - they can cause issues with some models (e.g. Claude via Antigravity)
 					if (!block.text || block.text.trim() === "") continue;
-					parts.push({ text: sanitizeSurrogates(block.text) });
+					parts.push({
+						text: sanitizeSurrogates(block.text),
+						...(block.textSignature && { thoughtSignature: block.textSignature }),
+					});
 				} else if (block.type === "thinking") {
 					// Skip empty thinking blocks
 					if (!block.thinking || block.thinking.trim() === "") continue;
