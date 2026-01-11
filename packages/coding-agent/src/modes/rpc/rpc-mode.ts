@@ -150,6 +150,10 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			} as RpcExtensionUIRequest);
 		},
 
+		setWorkingMessage(_message?: string): void {
+			// Working message not supported in RPC mode - requires TUI loader access
+		},
+
 		setWidget(key: string, content: unknown): void {
 			// Only support string arrays in RPC mode - factory functions are ignored
 			if (content === undefined || Array.isArray(content)) {

@@ -79,6 +79,9 @@ export interface ExtensionUIContext {
 	/** Set status text in the footer/status bar. Pass undefined to clear. */
 	setStatus(key: string, text: string | undefined): void;
 
+	/** Set the working/loading message shown during streaming. Call with no argument to restore default. */
+	setWorkingMessage(message?: string): void;
+
 	/** Set a widget to display above the editor. Accepts string array or component factory. */
 	setWidget(key: string, content: string[] | undefined): void;
 	setWidget(key: string, content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
