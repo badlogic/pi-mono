@@ -142,6 +142,10 @@ export const streamGoogleVertex: StreamFunction<"google-vertex"> = (
 								});
 							} else {
 								currentBlock.text += part.text;
+								currentBlock.textSignature = retainThoughtSignature(
+									currentBlock.textSignature,
+									part.thoughtSignature,
+								);
 								stream.push({
 									type: "text_delta",
 									contentIndex: blockIndex(),

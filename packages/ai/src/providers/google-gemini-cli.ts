@@ -511,6 +511,10 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 										});
 									} else {
 										currentBlock.text += part.text;
+										currentBlock.textSignature = retainThoughtSignature(
+											currentBlock.textSignature,
+											part.thoughtSignature,
+										);
 										stream.push({
 											type: "text_delta",
 											contentIndex: blockIndex(),
