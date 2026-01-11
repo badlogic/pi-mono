@@ -2807,28 +2807,35 @@ export class InteractiveMode {
 					// Ask about summarization
 					done(); // Close selector first
 
-					const summaryChoice = await this.showExtensionSelector("Summarize branch?", [
-						"No summary",
-						"Summarize",
-						"Summarize with custom prompt",
-					]);
-
-					if (summaryChoice === undefined) {
-						// User pressed escape - re-show tree selector
-						this.showTreeSelector();
-						return;
-					}
-
-					const wantsSummary = summaryChoice !== "No summary";
+					// Loop until user makes a complete choice or cancels to tree
+					let wantsSummary = false;
 					let customInstructions: string | undefined;
 
-					if (summaryChoice === "Summarize with custom prompt") {
-						customInstructions = await this.showExtensionEditor("Custom summarization instructions");
-						if (customInstructions === undefined) {
-							// User cancelled - re-show tree selector
+					while (true) {
+						const summaryChoice = await this.showExtensionSelector("Summarize branch?", [
+							"No summary",
+							"Summarize",
+							"Summarize with custom prompt",
+						]);
+
+						if (summaryChoice === undefined) {
+							// User pressed escape - re-show tree selector
 							this.showTreeSelector();
 							return;
 						}
+
+						wantsSummary = summaryChoice !== "No summary";
+
+						if (summaryChoice === "Summarize with custom prompt") {
+							customInstructions = await this.showExtensionEditor("Custom summarization instructions");
+							if (customInstructions === undefined) {
+								// User cancelled - loop back to summary selector
+								continue;
+							}
+						}
+
+						// User made a complete choice
+						break;
 					}
 
 					// Set up escape handler and loader if summarizing
