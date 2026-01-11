@@ -2876,9 +2876,10 @@ export class InteractiveMode {
 
 	private showSessionSelector(): void {
 		this.showSelector((done) => {
-			const sessions = SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir());
 			const selector = new SessionSelectorComponent(
-				sessions,
+				(onProgress) =>
+					SessionManager.list(this.sessionManager.getCwd(), this.sessionManager.getSessionDir(), onProgress),
+				SessionManager.listAll,
 				async (sessionPath) => {
 					done();
 					await this.handleResumeSession(sessionPath);
@@ -2890,6 +2891,7 @@ export class InteractiveMode {
 				() => {
 					void this.shutdown();
 				},
+				() => this.ui.requestRender(),
 			);
 			return { component: selector, focus: selector.getSessionList() };
 		});

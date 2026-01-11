@@ -459,7 +459,7 @@ Sessions auto-save to `~/.pi/agent/sessions/` organized by working directory.
 pi --continue      # Continue most recent session
 pi -c              # Short form
 
-pi --resume        # Browse and select from past sessions
+pi --resume        # Browse and select from past sessions (Tab to toggle Current Folder / All)
 pi -r              # Short form
 
 pi --no-session    # Ephemeral mode (don't save)

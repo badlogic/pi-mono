@@ -10,9 +10,13 @@
   - AgentSession: `branch()` → `fork()`, `getUserMessagesForBranching()` → `getUserMessagesForForking()`
   - Extension events: `session_before_branch` → `session_before_fork`, `session_branch` → `session_fork`
   - Settings: `doubleEscapeAction: "branch" | "tree"` → `"fork" | "tree"`
+- `SessionManager.list()` and `SessionManager.listAll()` are now async, returning `Promise<SessionInfo[]>`. Callers must await them. ([#620](https://github.com/badlogic/pi-mono/pull/620) by [@tmustier](https://github.com/tmustier))
 
 ### Added
-
+- `/resume` selector now toggles between current-folder and all sessions with Tab, showing the session cwd in the All view and loading progress. ([#620](https://github.com/badlogic/pi-mono/pull/620) by [@tmustier](https://github.com/tmustier))
+- `SessionManager.list()` and `SessionManager.listAll()` accept optional `onProgress` callback for progress updates
+- `SessionInfo.cwd` field containing the session's working directory (empty string for old sessions)
+- `SessionListProgress` type export for progress callbacks
 - `/models` command to enable/disable models for Ctrl+P cycling. Changes persist to `enabledModels` in settings.json and take effect immediately. ([#626](https://github.com/badlogic/pi-mono/pull/626) by [@CarlosGtrz](https://github.com/CarlosGtrz))
 - `model_select` extension hook fires when model changes via `/model`, model cycling, or session restore with `source` field and `previousModel` ([#628](https://github.com/badlogic/pi-mono/pull/628) by [@marckrenn](https://github.com/marckrenn))
 - `ctx.ui.setWorkingMessage()` extension API to customize the "Working..." message during streaming ([#625](https://github.com/badlogic/pi-mono/pull/625) by [@nicobailon](https://github.com/nicobailon))
