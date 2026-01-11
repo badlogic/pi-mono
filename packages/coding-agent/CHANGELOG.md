@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ctx.ui.setWorkingMessage()` extension API to customize the "Working..." message during streaming
+
 ## [0.42.5] - 2026-01-11
 
 ### Fixed

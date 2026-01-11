@@ -79,6 +79,7 @@ const noOpUIContext: ExtensionUIContext = {
 	input: async () => undefined,
 	notify: () => {},
 	setStatus: () => {},
+	setWorkingMessage: () => {},
 	setWidget: () => {},
 	setFooter: () => {},
 	setHeader: () => {},

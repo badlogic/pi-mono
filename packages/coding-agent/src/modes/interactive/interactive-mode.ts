@@ -135,6 +135,7 @@ export class InteractiveMode {
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
 	private loadingAnimation: Loader | undefined = undefined;
+	private readonly defaultWorkingMessage = "Working... (esc to interrupt)";
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
@@ -948,6 +949,11 @@ export class InteractiveMode {
 			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts),
 			notify: (message, type) => this.showExtensionNotify(message, type),
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
+			setWorkingMessage: (message) => {
+				if (this.loadingAnimation) {
+					this.loadingAnimation.setMessage(message ?? this.defaultWorkingMessage);
+				}
+			},
 			setWidget: (key, content) => this.setExtensionWidget(key, content),
 			setFooter: (factory) => this.setExtensionFooter(factory),
 			setHeader: (factory) => this.setExtensionHeader(factory),
@@ -1559,7 +1565,7 @@ export class InteractiveMode {
 					this.ui,
 					(spinner) => theme.fg("accent", spinner),
 					(text) => theme.fg("muted", text),
-					"Working... (esc to interrupt)",
+					this.defaultWorkingMessage,
 				);
 				this.statusContainer.addChild(this.loadingAnimation);
 				this.ui.requestRender();
