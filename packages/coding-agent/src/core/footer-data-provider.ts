@@ -103,10 +103,17 @@ export class FooterDataProvider {
 		const gitHeadPath = findGitHeadPath();
 		if (!gitHeadPath) return;
 
+		// Watch the directory containing HEAD, not HEAD itself.
+		// Git uses atomic writes (write temp, rename over HEAD), which changes the inode.
+		// fs.watch on a file stops working after the inode changes.
+		const gitDir = dirname(gitHeadPath);
+
 		try {
-			this.gitWatcher = watch(gitHeadPath, () => {
-				this.cachedBranch = undefined;
-				for (const cb of this.branchChangeCallbacks) cb();
+			this.gitWatcher = watch(gitDir, (_eventType, filename) => {
+				if (filename === "HEAD") {
+					this.cachedBranch = undefined;
+					for (const cb of this.branchChangeCallbacks) cb();
+				}
 			});
 		} catch {
 			// Silently fail if we can't watch
