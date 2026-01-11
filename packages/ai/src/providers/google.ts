@@ -129,12 +129,10 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 								});
 							} else {
 								currentBlock.text += part.text;
-								if (part.thoughtSignature) {
-									currentBlock.textSignature = retainThoughtSignature(
-										currentBlock.textSignature,
-										part.thoughtSignature,
-									);
-								}
+								currentBlock.textSignature = retainThoughtSignature(
+									currentBlock.textSignature,
+									part.thoughtSignature,
+								);
 								stream.push({
 									type: "text_delta",
 									contentIndex: blockIndex(),
