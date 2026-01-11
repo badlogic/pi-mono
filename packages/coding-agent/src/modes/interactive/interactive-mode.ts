@@ -755,24 +755,6 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
-		// Warn about built-in tool overrides
-		const builtInToolNames = new Set(Object.keys(allTools));
-		const registeredTools = extensionRunner.getAllRegisteredTools();
-		for (const tool of registeredTools) {
-			if (builtInToolNames.has(tool.definition.name)) {
-				this.chatContainer.addChild(
-					new Text(
-						theme.fg(
-							"warning",
-							`Warning: Extension "${tool.extensionPath}" overrides built-in tool "${tool.definition.name}"`,
-						),
-						0,
-						0,
-					),
-				);
-			}
-		}
-
 		// Emit session_start event
 		await extensionRunner.emit({
 			type: "session_start",
