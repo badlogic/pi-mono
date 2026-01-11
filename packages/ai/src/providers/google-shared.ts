@@ -13,18 +13,19 @@ type GoogleApiType = "google-generative-ai" | "google-gemini-cli" | "google-vert
  * Determines whether a streamed Gemini `Part` should be treated as "thinking".
  *
  * Protocol note (Gemini / Vertex AI thought signatures):
- * - `thoughtSignature` may appear without `thought: true` (including in empty-text parts at the end of streaming).
+ * - `thought: true` is the definitive marker for thinking content (thought summaries).
+ * - `thoughtSignature` is an encrypted representation of the model's internal thought process
+ *   used to preserve reasoning context across multi-turn interactions.
+ * - `thoughtSignature` can appear on ANY part type (text, functionCall, etc.) - it does NOT
+ *   indicate the part itself is thinking content.
+ * - For non-functionCall responses, the signature appears on the last part for context replay.
  * - When persisting/replaying model outputs, signature-bearing parts must be preserved as-is;
  *   do not merge/move signatures across parts.
- * - Our streaming representation uses content blocks, so we classify any non-empty `thoughtSignature`
- *   as thinking to avoid leaking thought content into normal assistant text.
  *
- * Some Google backends send thought content with `thoughtSignature` but omit `thought: true`
- * on subsequent deltas. We treat any non-empty `thoughtSignature` as thinking to avoid
- * leaking thought text into the normal assistant text stream.
+ * See: https://ai.google.dev/gemini-api/docs/thought-signatures
  */
 export function isThinkingPart(part: Pick<Part, "thought" | "thoughtSignature">): boolean {
-	return part.thought === true || (typeof part.thoughtSignature === "string" && part.thoughtSignature.length > 0);
+	return part.thought === true;
 }
 
 /**
@@ -104,14 +105,10 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 				} else if (block.type === "toolCall") {
 					const part: Part = {
 						functionCall: {
-							id: block.id,
 							name: block.name,
 							args: block.arguments,
 						},
 					};
-					if (model.provider === "google-vertex" && part?.functionCall?.id) {
-						delete part.functionCall.id; // Vertex AI does not support 'id' in functionCall
-					}
 					if (block.thoughtSignature) {
 						part.thoughtSignature = block.thoughtSignature;
 					}
@@ -152,17 +149,12 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 
 			const functionResponsePart: Part = {
 				functionResponse: {
-					id: msg.toolCallId,
 					name: msg.toolName,
 					response: msg.isError ? { error: responseValue } : { output: responseValue },
 					// Nest images inside functionResponse.parts for Gemini 3
 					...(hasImages && supportsMultimodalFunctionResponse && { parts: imageParts }),
 				},
 			};
-
-			if (model.provider === "google-vertex" && functionResponsePart.functionResponse?.id) {
-				delete functionResponsePart.functionResponse.id; // Vertex AI does not support 'id' in functionResponse
-			}
 
 			// Cloud Code Assist API requires all function responses to be in a single user turn.
 			// Check if the last content is already a user turn with function responses and merge.
