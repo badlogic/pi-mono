@@ -213,7 +213,7 @@ describe("ExtensionRunner", () => {
 		it("collects flags from extensions", async () => {
 			const extCode = `
 				export default function(pi) {
-					pi.registerFlag("--my-flag", {
+					pi.registerFlag("my-flag", {
 						description: "My flag",
 						handler: async () => {},
 					});
@@ -231,7 +231,7 @@ describe("ExtensionRunner", () => {
 		it("can set flag values", async () => {
 			const extCode = `
 				export default function(pi) {
-					pi.registerFlag("--test-flag", {
+					pi.registerFlag("test-flag", {
 						description: "Test flag",
 						handler: async () => {},
 					});
