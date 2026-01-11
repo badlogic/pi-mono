@@ -290,6 +290,9 @@ user sends another prompt ◄─────────────────
   ├─► session_before_tree (can cancel or customize)
   └─► session_tree
 
+/model or Ctrl+P (model selection/cycling)
+  └─► model_select
+
 exit (Ctrl+C, Ctrl+D)
   └─► session_shutdown
 ```
@@ -480,6 +483,29 @@ pi.on("context", async (event, ctx) => {
 ```
 
 **Examples:** [plan-mode.ts](../examples/extensions/plan-mode.ts)
+
+### Model Events
+
+#### model_select
+
+Fired when the model changes via `/model` command, model cycling (`Ctrl+P`), or session restore.
+
+```typescript
+pi.on("model_select", async (event, ctx) => {
+  // event.model - newly selected model
+  // event.previousModel - previous model (undefined if first selection)
+  // event.source - "set" | "cycle" | "restore"
+  
+  const prev = event.previousModel 
+    ? `${event.previousModel.provider}/${event.previousModel.id}` 
+    : "none";
+  const next = `${event.model.provider}/${event.model.id}`;
+  
+  ctx.ui.notify(`Model changed (${event.source}): ${prev} -> ${next}`, "info");
+});
+```
+
+Use this to update UI elements (status bars, footers) or perform model-specific initialization when the active model changes.
 
 ### Tool Events
 

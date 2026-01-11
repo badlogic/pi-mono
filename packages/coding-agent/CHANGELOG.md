@@ -4,6 +4,7 @@
 
 ### Added
 
+- `model_select` extension hook fires when model changes via `/model`, model cycling, or session restore with `source` field and `previousModel` ([#XXX](https://github.com/badlogic/pi-mono/pull/XXX))
 - `ctx.ui.setWorkingMessage()` extension API to customize the "Working..." message during streaming ([#625](https://github.com/badlogic/pi-mono/pull/625) by [@nicobailon](https://github.com/nicobailon))
 
 ## [0.42.5] - 2026-01-11
