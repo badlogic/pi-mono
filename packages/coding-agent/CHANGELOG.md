@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/models` command to enable/disable models for Ctrl+P cycling. Changes persist to `enabledModels` in settings.json and take effect immediately.
+
 ## [0.42.5] - 2026-01-11
 
 ### Fixed

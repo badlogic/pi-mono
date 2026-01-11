@@ -433,6 +433,11 @@ export class SettingsManager {
 		return this.settings.enabledModels;
 	}
 
+	setEnabledModels(patterns: string[] | undefined): void {
+		this.globalSettings.enabledModels = patterns;
+		this.save();
+	}
+
 	getDoubleEscapeAction(): "branch" | "tree" {
 		return this.settings.doubleEscapeAction ?? "tree";
 	}
