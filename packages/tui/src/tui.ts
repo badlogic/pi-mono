@@ -289,6 +289,11 @@ export class TUI extends Container {
 
 	private static readonly SEGMENT_RESET = "\x1b[0m\x1b]8;;\x07";
 
+	private applyLineResets(lines: string[]): string[] {
+		const reset = TUI.SEGMENT_RESET;
+		return lines.map((line) => (this.containsImage(line) ? line : line + reset));
+	}
+
 	/** Splice overlay content into a base line at a specific column. Single-pass optimized. */
 	private compositeLineAt(
 		baseLine: string,
@@ -342,6 +347,8 @@ export class TUI extends Container {
 		if (this.overlayStack.length > 0) {
 			newLines = this.compositeOverlays(newLines, width, height);
 		}
+
+		newLines = this.applyLineResets(newLines);
 
 		// Width changed - need full re-render
 		const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;

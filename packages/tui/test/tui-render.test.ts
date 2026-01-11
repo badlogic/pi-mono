@@ -1,5 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
+import type { Terminal as XtermTerminalType } from "@xterm/headless";
 import { type Component, TUI } from "../src/tui.js";
 import { VirtualTerminal } from "./virtual-terminal.js";
 
@@ -9,6 +10,16 @@ class TestComponent implements Component {
 		return this.lines;
 	}
 	invalidate(): void {}
+}
+
+function getCellItalic(terminal: VirtualTerminal, row: number, col: number): number {
+	const xterm = (terminal as unknown as { xterm: XtermTerminalType }).xterm;
+	const buffer = xterm.buffer.active;
+	const line = buffer.getLine(buffer.viewportY + row);
+	assert.ok(line, `Missing buffer line at row ${row}`);
+	const cell = line.getCell(col);
+	assert.ok(cell, `Missing cell at row ${row} col ${col}`);
+	return cell.isItalic();
 }
 
 describe("TUI differential rendering", () => {
@@ -65,6 +76,20 @@ describe("TUI differential rendering", () => {
 			assert.ok(viewport[2]?.includes("Footer"), `Footer preserved: ${viewport[2]}`);
 		}
 
+		tui.stop();
+	});
+
+	it("resets styles after each rendered line", async () => {
+		const terminal = new VirtualTerminal(20, 6);
+		const tui = new TUI(terminal);
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		component.lines = ["\x1b[3mItalic", "Plain"];
+		tui.start();
+		await terminal.flush();
+
+		assert.strictEqual(getCellItalic(terminal, 1, 0), 0);
 		tui.stop();
 	});
 

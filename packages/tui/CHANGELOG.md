@@ -10,6 +10,7 @@
 ### Fixed
 
 - Cursor now moves to end of content on exit, preventing status line from being overwritten ([#629](https://github.com/badlogic/pi-mono/pull/629) by [@tallshort](https://github.com/tallshort))
+- Reset ANSI styles after each rendered line to prevent style leakage
 
 ## [0.42.5] - 2026-01-11
 

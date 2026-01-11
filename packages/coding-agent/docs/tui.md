@@ -24,6 +24,8 @@ interface Component {
 | `handleInput?(data)` | Receive keyboard input when component has focus. |
 | `invalidate?()` | Clear cached render state. |
 
+The TUI appends a full SGR reset and OSC 8 reset at the end of each rendered line. Styles do not carry across lines. If you emit multi-line text with styling, reapply styles per line or use `wrapTextWithAnsi()` so styles are preserved for each wrapped line.
+
 ## Using Components
 
 **In hooks** via `ctx.ui.custom()`:
