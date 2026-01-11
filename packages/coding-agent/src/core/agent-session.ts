@@ -947,6 +947,21 @@ export class AgentSession {
 	// Model Management
 	// =========================================================================
 
+	private async _emitModelSelect(
+		nextModel: Model<any>,
+		previousModel: Model<any> | undefined,
+		source: "set" | "cycle" | "restore",
+	): Promise<void> {
+		if (!this._extensionRunner) return;
+		if (modelsAreEqual(previousModel, nextModel)) return;
+		await this._extensionRunner.emit({
+			type: "model_select",
+			model: nextModel,
+			previousModel,
+			source,
+		});
+	}
+
 	/**
 	 * Set model directly.
 	 * Validates API key, saves to session and settings.
@@ -958,12 +973,15 @@ export class AgentSession {
 			throw new Error(`No API key for ${model.provider}/${model.id}`);
 		}
 
+		const previousModel = this.model;
 		this.agent.setModel(model);
 		this.sessionManager.appendModelChange(model.provider, model.id);
 		this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
 
 		// Re-clamp thinking level for new model's capabilities
 		this.setThinkingLevel(this.thinkingLevel);
+
+		await this._emitModelSelect(model, previousModel, "set");
 	}
 
 	/**
@@ -1004,6 +1022,8 @@ export class AgentSession {
 		// Apply thinking level (setThinkingLevel clamps to model capabilities)
 		this.setThinkingLevel(next.thinkingLevel);
 
+		await this._emitModelSelect(next.model, currentModel, "cycle");
+
 		return { model: next.model, thinkingLevel: this.thinkingLevel, isScoped: true };
 	}
 
@@ -1030,6 +1050,8 @@ export class AgentSession {
 
 		// Re-clamp thinking level for new model's capabilities
 		this.setThinkingLevel(this.thinkingLevel);
+
+		await this._emitModelSelect(nextModel, currentModel, "cycle");
 
 		return { model: nextModel, thinkingLevel: this.thinkingLevel, isScoped: false };
 	}
@@ -1783,12 +1805,14 @@ export class AgentSession {
 
 		// Restore model if saved
 		if (sessionContext.model) {
+			const previousModel = this.model;
 			const availableModels = await this._modelRegistry.getAvailable();
 			const match = availableModels.find(
 				(m) => m.provider === sessionContext.model!.provider && m.id === sessionContext.model!.modelId,
 			);
 			if (match) {
 				this.agent.setModel(match);
+				await this._emitModelSelect(match, previousModel, "restore");
 			}
 		}
 
