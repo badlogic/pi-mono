@@ -314,6 +314,14 @@ let _lastEventType: KeyEventType = "press";
  * Only meaningful when Kitty keyboard protocol with flag 2 is active.
  */
 export function isKeyRelease(data: string): boolean {
+	// Don't treat bracketed paste content as key release, even if it contains
+	// patterns like ":3F" (e.g., bluetooth MAC addresses like "90:62:3F:A5").
+	// Terminal.ts re-wraps paste content with bracketed paste markers before
+	// passing to TUI, so pasted data will always contain \x1b[200~.
+	if (data.includes("\x1b[200~")) {
+		return false;
+	}
+
 	// Quick check: release events with flag 2 contain ":3"
 	// Format: \x1b[<codepoint>;<modifier>:3u
 	if (
@@ -336,6 +344,12 @@ export function isKeyRelease(data: string): boolean {
  * Only meaningful when Kitty keyboard protocol with flag 2 is active.
  */
 export function isKeyRepeat(data: string): boolean {
+	// Don't treat bracketed paste content as key repeat, even if it contains
+	// patterns like ":2F". See isKeyRelease() for details.
+	if (data.includes("\x1b[200~")) {
+		return false;
+	}
+
 	if (
 		data.includes(":2u") ||
 		data.includes(":2~") ||
