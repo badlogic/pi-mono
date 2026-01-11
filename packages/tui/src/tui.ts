@@ -157,6 +157,18 @@ export class TUI extends Container {
 	}
 
 	stop(): void {
+		// Move cursor to the end of the content to prevent overwriting/artifacts on exit
+		if (this.previousLines.length > 0) {
+			const targetRow = this.previousLines.length; // Line after the last content
+			const lineDiff = targetRow - this.cursorRow;
+			if (lineDiff > 0) {
+				this.terminal.write(`\x1b[${lineDiff}B`);
+			} else if (lineDiff < 0) {
+				this.terminal.write(`\x1b[${-lineDiff}A`);
+			}
+			this.terminal.write("\r\n");
+		}
+
 		this.terminal.showCursor();
 		this.terminal.stop();
 	}
