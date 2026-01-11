@@ -1,11 +1,24 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
+import type { Terminal as XtermTerminalType } from "@xterm/headless";
 import { Chalk } from "chalk";
 import { Markdown } from "../src/components/markdown.js";
+import { type Component, TUI } from "../src/tui.js";
 import { defaultMarkdownTheme } from "./test-themes.js";
+import { VirtualTerminal } from "./virtual-terminal.js";
 
 // Force full color in CI so ANSI assertions are deterministic
 const chalk = new Chalk({ level: 3 });
+
+function getCellItalic(terminal: VirtualTerminal, row: number, col: number): number {
+	const xterm = (terminal as unknown as { xterm: XtermTerminalType }).xterm;
+	const buffer = xterm.buffer.active;
+	const line = buffer.getLine(buffer.viewportY + row);
+	assert.ok(line, `Missing buffer line at row ${row}`);
+	const cell = line.getCell(col);
+	assert.ok(cell, `Missing cell at row ${row} col ${col}`);
+	return cell.isItalic();
+}
 
 describe("Markdown component", () => {
 	describe("Nested lists", () => {
@@ -436,6 +449,41 @@ describe("Markdown component", () => {
 
 			// Should have bold codes (1 or 22 for bold on/off)
 			assert.ok(joinedOutput.includes("\x1b[1m"), "Should have bold code");
+		});
+
+		it("should not leak styles into following lines when rendered in TUI", async () => {
+			class MarkdownWithInput implements Component {
+				public markdownLineCount = 0;
+
+				constructor(private readonly markdown: Markdown) {}
+
+				render(width: number): string[] {
+					const lines = this.markdown.render(width);
+					this.markdownLineCount = lines.length;
+					return [...lines, "INPUT"];
+				}
+
+				invalidate(): void {
+					this.markdown.invalidate();
+				}
+			}
+
+			const markdown = new Markdown("This is thinking with `inline code`", 1, 0, defaultMarkdownTheme, {
+				color: (text) => chalk.gray(text),
+				italic: true,
+			});
+
+			const terminal = new VirtualTerminal(80, 6);
+			const tui = new TUI(terminal);
+			const component = new MarkdownWithInput(markdown);
+			tui.addChild(component);
+			tui.start();
+			await terminal.flush();
+
+			assert.ok(component.markdownLineCount > 0);
+			const inputRow = component.markdownLineCount;
+			assert.strictEqual(getCellItalic(terminal, inputRow, 0), 0);
+			tui.stop();
 		});
 	});
 
