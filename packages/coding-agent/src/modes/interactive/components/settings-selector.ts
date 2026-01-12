@@ -309,6 +309,7 @@ export class SettingsSelectorComponent extends Container {
 				}
 			},
 			callbacks.onCancel,
+			{ enableSearch: true },
 		);
 
 		this.addChild(this.settingsList);
