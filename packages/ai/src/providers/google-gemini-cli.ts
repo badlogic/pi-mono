@@ -211,13 +211,29 @@ function extractRetryDelay(errorText: string): number | undefined {
 }
 
 /**
- * Check if an error is retryable (rate limit, server error, etc.)
+ * Check if an error is retryable (rate limit, server error, network error, etc.)
  */
 function isRetryableError(status: number, errorText: string): boolean {
 	if (status === 429 || status === 500 || status === 502 || status === 503 || status === 504) {
 		return true;
 	}
-	return /resource.?exhausted|rate.?limit|overloaded|service.?unavailable/i.test(errorText);
+	return /resource.?exhausted|rate.?limit|overloaded|service.?unavailable|other.?side.?closed/i.test(errorText);
+}
+
+/**
+ * Extract a clean, user-friendly error message from Google API error response.
+ * Parses JSON error responses and returns just the message field.
+ */
+function extractErrorMessage(errorText: string): string {
+	try {
+		const parsed = JSON.parse(errorText) as { error?: { message?: string } };
+		if (parsed.error?.message) {
+			return parsed.error.message;
+		}
+	} catch {
+		// Not JSON, return as-is
+	}
+	return errorText;
 }
 
 /**
@@ -385,7 +401,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 					}
 
 					// Not retryable or max retries exceeded
-					throw new Error(`Cloud Code Assist API error (${response.status}): ${errorText}`);
+					throw new Error(`Cloud Code Assist API error (${response.status}): ${extractErrorMessage(errorText)}`);
 				} catch (error) {
 					// Check for abort - fetch throws AbortError, our code throws "Request was aborted"
 					if (error instanceof Error) {
@@ -393,7 +409,11 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 							throw new Error("Request was aborted");
 						}
 					}
+					// Extract detailed error message from fetch errors (Node includes cause)
 					lastError = error instanceof Error ? error : new Error(String(error));
+					if (lastError.message === "fetch failed" && lastError.cause instanceof Error) {
+						lastError = new Error(`Network error: ${lastError.cause.message}`);
+					}
 					// Network errors are retryable
 					if (attempt < MAX_RETRIES) {
 						const delayMs = BASE_DELAY_MS * 2 ** attempt;
