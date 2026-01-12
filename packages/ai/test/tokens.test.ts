@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { stream } from "../src/stream.js";
 import type { Api, Context, Model, OptionsForApi } from "../src/types.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -44,7 +45,7 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: Op
 
 	expect(msg.stopReason).toBe("aborted");
 
-	// OpenAI providers, OpenAI Codex, Gemini CLI, zai, and the GPT-OSS model on Antigravity only send usage in the final chunk,
+	// OpenAI providers, OpenAI Codex, Gemini CLI, zai, Amazon Bedrock, and the GPT-OSS model on Antigravity only send usage in the final chunk,
 	// so when aborted they have no token stats Anthropic and Google send usage information early in the stream
 	if (
 		llm.api === "openai-completions" ||
@@ -52,6 +53,7 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: Op
 		llm.api === "openai-codex-responses" ||
 		llm.provider === "google-gemini-cli" ||
 		llm.provider === "zai" ||
+		llm.provider === "amazon-bedrock" ||
 		(llm.provider === "google-antigravity" && llm.id.includes("gpt-oss"))
 	) {
 		expect(msg.usage.input).toBe(0);
@@ -229,5 +231,13 @@ describe("Token Statistics on Abort", () => {
 				await testTokensOnAbort(llm, { apiKey: openaiCodexToken });
 			},
 		);
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
 	});
 });

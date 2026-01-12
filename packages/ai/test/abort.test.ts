@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete, stream } from "../src/stream.js";
 import type { Api, Context, Model, OptionsForApi } from "../src/types.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -64,6 +65,35 @@ async function testImmediateAbort<TApi extends Api>(llm: Model<TApi>, options: O
 
 	const response = await complete(llm, context, { ...options, signal: controller.signal });
 	expect(response.stopReason).toBe("aborted");
+}
+
+async function testAbortThenNewMessage<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
+	// First request: abort immediately before any response content arrives
+	const controller = new AbortController();
+	controller.abort();
+
+	const context: Context = {
+		messages: [{ role: "user", content: "Hello, how are you?", timestamp: Date.now() }],
+	};
+
+	const abortedResponse = await complete(llm, context, { ...options, signal: controller.signal });
+	expect(abortedResponse.stopReason).toBe("aborted");
+	// The aborted message has empty content since we aborted before anything arrived
+	expect(abortedResponse.content.length).toBe(0);
+
+	// Add the aborted assistant message to context (this is what happens in the real coding agent)
+	context.messages.push(abortedResponse);
+
+	// Second request: send a new message - this should work even with the aborted message in context
+	context.messages.push({
+		role: "user",
+		content: "What is 2 + 2?",
+		timestamp: Date.now(),
+	});
+
+	const followUp = await complete(llm, context, options);
+	expect(followUp.stopReason).toBe("stop");
+	expect(followUp.content.length).toBeGreaterThan(0);
 }
 
 describe("AI Providers Abort Tests", () => {
@@ -152,6 +182,22 @@ describe("AI Providers Abort Tests", () => {
 		it.skipIf(!openaiCodexToken)("should handle immediate abort", { retry: 3 }, async () => {
 			const llm = getModel("openai-codex", "gpt-5.2-codex");
 			await testImmediateAbort(llm, { apiKey: openaiCodexToken });
+		});
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider Abort", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+		it("should abort mid-stream", { retry: 3 }, async () => {
+			await testAbortSignal(llm, { reasoning: "medium" });
+		});
+
+		it("should handle immediate abort", { retry: 3 }, async () => {
+			await testImmediateAbort(llm);
+		});
+
+		it("should handle abort then new message", { retry: 3 }, async () => {
+			await testAbortThenNewMessage(llm);
 		});
 	});
 });

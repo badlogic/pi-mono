@@ -18,6 +18,7 @@ import { getModel } from "../src/models.js";
 import { complete } from "../src/stream.js";
 import type { AssistantMessage, Context, Model, Usage } from "../src/types.js";
 import { isContextOverflow } from "../src/utils/overflow.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -282,6 +283,22 @@ describe("Context overflow error handling", () => {
 			},
 			120000,
 		);
+	});
+
+	// =============================================================================
+	// Amazon Bedrock
+	// Expected pattern: "Input is too long for requested model"
+	// =============================================================================
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock", () => {
+		it("claude-sonnet-4-5 - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+			const result = await testContextOverflow(model, "");
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
 	});
 
 	// =============================================================================

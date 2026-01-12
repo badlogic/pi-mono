@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete } from "../src/stream.js";
 import type { Api, Context, Model, OptionsForApi, Usage } from "../src/types.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -525,6 +526,25 @@ describe("totalTokens field", () => {
 
 				console.log(`\nGoogle Antigravity / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: antigravityToken });
+
+				logUsage("First request", first);
+				logUsage("Second request", second);
+
+				assertTotalTokensEqualsComponents(first);
+				assertTotalTokensEqualsComponents(second);
+			},
+		);
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock", () => {
+		it(
+			"claude-sonnet-4-5 - should return totalTokens equal to sum of components",
+			{ retry: 3, timeout: 60000 },
+			async () => {
+				const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+				console.log(`\nAmazon Bedrock / ${llm.id}:`);
+				const { first, second } = await testTotalTokensWithCache(llm);
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
