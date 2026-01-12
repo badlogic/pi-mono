@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed tool call ID normalization missing cross-provider cases. Normalize when assistantMsg.api is openai-responses/openai-codex-responses and target isn't
+
 ## [0.43.0] - 2026-01-11
 
 ### Fixed
@@ -41,6 +45,8 @@
 - Added OpenCode Zen provider support with 26 models (Claude, GPT, Gemini, Grok, Kimi, GLM, Qwen, etc.). Set `OPENCODE_API_KEY` env var to use.
 
 ## [0.41.0] - 2026-01-09
+
+## [0.40.1] - 2026-01-09
 
 ## [0.40.1] - 2026-01-09
 
