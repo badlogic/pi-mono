@@ -106,6 +106,12 @@ export interface LabelEntry extends SessionEntryBase {
 	label: string | undefined;
 }
 
+/** Session metadata entry (e.g., user-defined name). */
+export interface SessionInfoEntry extends SessionEntryBase {
+	type: "session_info";
+	name?: string;
+}
+
 /**
  * Custom message entry for extensions to inject messages into LLM context.
  * Use customType to identify your extension's entries.
@@ -135,7 +141,8 @@ export type SessionEntry =
 	| BranchSummaryEntry
 	| CustomEntry
 	| CustomMessageEntry
-	| LabelEntry;
+	| LabelEntry
+	| SessionInfoEntry;
 
 /** Raw file entry (includes header) */
 export type FileEntry = SessionHeader | SessionEntry;
@@ -159,6 +166,8 @@ export interface SessionInfo {
 	id: string;
 	/** Working directory where the session was started. Empty string for old sessions. */
 	cwd: string;
+	/** Optional display name stored in session_info entries. */
+	name?: string;
 	created: Date;
 	modified: Date;
 	messageCount: number;
@@ -511,8 +520,12 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 		let messageCount = 0;
 		let firstMessage = "";
 		const allMessages: string[] = [];
+		let name: string | undefined;
 
 		for (const entry of entries) {
+			if (entry.type === "session_info" && entry.name) {
+				name = entry.name.trim();
+			}
 			if (entry.type !== "message") continue;
 			messageCount++;
 
@@ -535,6 +548,7 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 			path: filePath,
 			id: (header as SessionHeader).id,
 			cwd,
+			name,
 			created: new Date((header as SessionHeader).timestamp),
 			modified: stats.mtime,
 			messageCount,
@@ -773,6 +787,19 @@ export class SessionManager {
 			timestamp: new Date().toISOString(),
 			provider,
 			modelId,
+		};
+		this._appendEntry(entry);
+		return entry.id;
+	}
+
+	/** Append a session metadata entry (e.g., name) as child of current leaf. Returns entry id. */
+	appendSessionInfo(name?: string): string {
+		const entry: SessionInfoEntry = {
+			type: "session_info",
+			id: generateId(this.byId),
+			parentId: this.leafId,
+			timestamp: new Date().toISOString(),
+			name,
 		};
 		this._appendEntry(entry);
 		return entry.id;

@@ -130,7 +130,7 @@ class SessionList implements Component {
 		this.filteredSessions = fuzzyFilter(
 			this.allSessions,
 			query,
-			(session) => `${session.id} ${session.allMessagesText} ${session.cwd}`,
+			(session) => `${session.id} ${session.name ?? ""} ${session.allMessagesText} ${session.cwd}`,
 		);
 		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredSessions.length - 1));
 	}
@@ -162,7 +162,8 @@ class SessionList implements Component {
 			const isSelected = i === this.selectedIndex;
 
 			// Normalize first message to single line
-			const normalizedMessage = session.firstMessage.replace(/\n/g, " ").trim();
+			const displayName = session.name?.trim() ?? session.firstMessage;
+			const normalizedMessage = displayName.replace(/\n/g, " ").trim();
 
 			// First line: cursor + message (truncate to visible width)
 			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";

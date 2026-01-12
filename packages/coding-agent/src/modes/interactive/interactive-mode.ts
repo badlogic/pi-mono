@@ -286,6 +286,7 @@ export class InteractiveMode {
 			{ name: "export", description: "Export session to HTML file" },
 			{ name: "share", description: "Share session as a secret GitHub gist" },
 			{ name: "copy", description: "Copy last agent message to clipboard" },
+			{ name: "name", description: "Set session name" },
 			{ name: "session", description: "Show session info and stats" },
 			{ name: "changelog", description: "Show changelog entries" },
 			{ name: "hotkeys", description: "Show all keyboard shortcuts" },
@@ -674,6 +675,14 @@ export class InteractiveMode {
 					});
 				},
 				appendEntry: (customType, data) => {
+					if (customType === "session_info") {
+						if (typeof data !== "string") {
+							this.showError("Session name must be a string");
+							return;
+						}
+						this.sessionManager.appendSessionInfo(data);
+						return;
+					}
 					this.sessionManager.appendCustomEntry(customType, data);
 				},
 				getActiveTools: () => this.session.getActiveToolNames(),
@@ -1438,6 +1447,11 @@ export class InteractiveMode {
 			}
 			if (text === "/copy") {
 				this.handleCopyCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/name" || text.startsWith("/name ")) {
+				this.handleNameCommand(text);
 				this.editor.setText("");
 				return;
 			}
@@ -3252,6 +3266,19 @@ export class InteractiveMode {
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
+	}
+
+	private handleNameCommand(text: string): void {
+		const name = text.replace(/^\/name\b/, "").trim();
+		if (!name) {
+			this.showWarning("Usage: /name <name>");
+			return;
+		}
+
+		this.sessionManager.appendSessionInfo(name);
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("dim", `Session name set: ${name}`), 1, 0));
+		this.ui.requestRender();
 	}
 
 	private handleSessionCommand(): void {

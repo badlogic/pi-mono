@@ -265,6 +265,14 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					});
 				},
 				appendEntry: (customType, data) => {
+					if (customType === "session_info") {
+						if (typeof data !== "string") {
+							output(error(undefined, "append_entry", "Session name must be a string"));
+							return;
+						}
+						session.sessionManager.appendSessionInfo(data);
+						return;
+					}
 					session.sessionManager.appendCustomEntry(customType, data);
 				},
 				getActiveTools: () => session.getActiveToolNames(),
