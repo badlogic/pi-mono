@@ -145,7 +145,13 @@ class SessionList implements Component {
 		lines.push(""); // Blank line after search
 
 		if (this.filteredSessions.length === 0) {
-			lines.push(theme.fg("muted", "  No sessions found"));
+			if (this.showCwd) {
+				// "All" scope - no sessions anywhere that match filter
+				lines.push(theme.fg("muted", "  No sessions found"));
+			} else {
+				// "Current folder" scope - hint to try "all"
+				lines.push(theme.fg("muted", "  No sessions in current folder. Press Tab to view all."));
+			}
 			return lines;
 		}
 
@@ -298,10 +304,6 @@ export class SessionSelectorComponent extends Container {
 			this.header.setLoading(false);
 			this.sessionList.setSessions(sessions, false);
 			this.requestRender();
-			// If no sessions found, cancel
-			if (sessions.length === 0) {
-				this.onCancel();
-			}
 		});
 	}
 
