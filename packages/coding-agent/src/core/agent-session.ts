@@ -459,10 +459,13 @@ export class AgentSession {
 	}
 
 	/**
-	 * Get all configured tool names (built-in via --tools or default, plus custom tools).
+	 * Get all configured tools with name and description.
 	 */
-	getAllToolNames(): string[] {
-		return Array.from(this._toolRegistry.keys());
+	getAllTools(): Array<{ name: string; description: string }> {
+		return Array.from(this._toolRegistry.values()).map((t) => ({
+			name: t.name,
+			description: t.description,
+		}));
 	}
 
 	/**

@@ -9,7 +9,7 @@
  * 2. Use /tools to open the tool selector
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@mariozechner/pi-coding-agent";
 import { getSettingsListTheme } from "@mariozechner/pi-coding-agent";
 import { Container, type SettingItem, SettingsList } from "@mariozechner/pi-tui";
 
@@ -21,7 +21,7 @@ interface ToolsState {
 export default function toolsExtension(pi: ExtensionAPI) {
 	// Track enabled tools
 	let enabledTools: Set<string> = new Set();
-	let allTools: string[] = [];
+	let allTools: ToolInfo[] = [];
 
 	// Persist current state
 	function persistState() {
@@ -54,7 +54,8 @@ export default function toolsExtension(pi: ExtensionAPI) {
 
 		if (savedTools) {
 			// Restore saved tool selection (filter to only tools that still exist)
-			enabledTools = new Set(savedTools.filter((t: string) => allTools.includes(t)));
+			const allToolNames = allTools.map((t) => t.name);
+			enabledTools = new Set(savedTools.filter((t: string) => allToolNames.includes(t)));
 			applyTools();
 		} else {
 			// No saved state - sync with currently active tools
@@ -72,9 +73,9 @@ export default function toolsExtension(pi: ExtensionAPI) {
 			await ctx.ui.custom((tui, theme, _kb, done) => {
 				// Build settings items for each tool
 				const items: SettingItem[] = allTools.map((tool) => ({
-					id: tool,
-					label: tool,
-					currentValue: enabledTools.has(tool) ? "enabled" : "disabled",
+					id: tool.name,
+					label: tool.name,
+					currentValue: enabledTools.has(tool.name) ? "enabled" : "disabled",
 					values: ["enabled", "disabled"],
 				}));
 

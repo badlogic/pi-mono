@@ -743,8 +743,8 @@ export interface ExtensionAPI {
 	/** Get the list of currently active tool names. */
 	getActiveTools(): string[];
 
-	/** Get all configured tools (built-in + extension tools). */
-	getAllTools(): string[];
+	/** Get all configured tools with name and description. */
+	getAllTools(): ToolInfo[];
 
 	/** Set the active tools by name. */
 	setActiveTools(toolNames: string[]): void;
@@ -813,7 +813,10 @@ export type GetSessionNameHandler = () => string | undefined;
 
 export type GetActiveToolsHandler = () => string[];
 
-export type GetAllToolsHandler = () => string[];
+/** Tool info with name and description */
+export type ToolInfo = Pick<ToolDefinition, "name" | "description">;
+
+export type GetAllToolsHandler = () => ToolInfo[];
 
 export type SetActiveToolsHandler = (toolNames: string[]) => void;
 

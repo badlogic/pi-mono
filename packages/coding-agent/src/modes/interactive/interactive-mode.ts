@@ -685,7 +685,7 @@ export class InteractiveMode {
 					return this.sessionManager.getSessionName();
 				},
 				getActiveTools: () => this.session.getActiveToolNames(),
-				getAllTools: () => this.session.getAllToolNames(),
+				getAllTools: () => this.session.getAllTools(),
 				setActiveTools: (toolNames) => this.session.setActiveToolsByName(toolNames),
 				setModel: async (model) => {
 					const key = await this.session.modelRegistry.getApiKey(model);

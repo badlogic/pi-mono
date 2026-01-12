@@ -133,9 +133,9 @@ export default function presetExtension(pi: ExtensionAPI) {
 
 		// Apply tools if specified
 		if (preset.tools && preset.tools.length > 0) {
-			const allTools = pi.getAllTools();
-			const validTools = preset.tools.filter((t) => allTools.includes(t));
-			const invalidTools = preset.tools.filter((t) => !allTools.includes(t));
+			const allToolNames = pi.getAllTools().map((t) => t.name);
+			const validTools = preset.tools.filter((t) => allToolNames.includes(t));
+			const invalidTools = preset.tools.filter((t) => !allToolNames.includes(t));
 
 			if (invalidTools.length > 0) {
 				ctx.ui.notify(`Preset "${name}": Unknown tools: ${invalidTools.join(", ")}`, "warning");

@@ -887,6 +887,8 @@ Manage active tools.
 
 ```typescript
 const active = pi.getActiveTools();  // ["read", "bash", "edit", "write"]
+const all = pi.getAllTools();        // [{ name: "read", description: "Read file contents..." }, ...]
+const names = all.map(t => t.name);  // Just names if needed
 pi.setActiveTools(["read", "bash"]); // Switch to read-only
 ```
 

@@ -79,6 +79,7 @@ export type {
 	SessionTreeEvent,
 	ToolCallEvent,
 	ToolDefinition,
+	ToolInfo,
 	ToolRenderResultOptions,
 	ToolResultEvent,
 	TurnEndEvent,

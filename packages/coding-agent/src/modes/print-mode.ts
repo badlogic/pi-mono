@@ -55,7 +55,7 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 					return session.sessionManager.getSessionName();
 				},
 				getActiveTools: () => session.getActiveToolNames(),
-				getAllTools: () => session.getAllToolNames(),
+				getAllTools: () => session.getAllTools(),
 				setActiveTools: (toolNames: string[]) => session.setActiveToolsByName(toolNames),
 				setModel: async (model) => {
 					const key = await session.modelRegistry.getApiKey(model);

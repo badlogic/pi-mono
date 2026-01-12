@@ -187,7 +187,7 @@ function createExtensionAPI(
 			return runtime.getActiveTools();
 		},
 
-		getAllTools(): string[] {
+		getAllTools() {
 			return runtime.getAllTools();
 		},
 
