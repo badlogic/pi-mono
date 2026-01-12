@@ -166,6 +166,8 @@ let toolCallCounter = 0;
 // Retry configuration
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
+const MAX_EMPTY_STREAM_RETRIES = 2;
+const EMPTY_STREAM_BASE_DELAY_MS = 500;
 
 /**
  * Extract retry delay from Gemini error response (in milliseconds).
@@ -404,9 +406,18 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 			const requestBody = buildRequest(model, context, projectId, options, isAntigravity);
 			const headers = isAntigravity ? ANTIGRAVITY_HEADERS : GEMINI_CLI_HEADERS;
 
+			const requestHeaders = {
+				Authorization: `Bearer ${accessToken}`,
+				"Content-Type": "application/json",
+				Accept: "text/event-stream",
+				...headers,
+			};
+			const requestBodyJson = JSON.stringify(requestBody);
+
 			// Fetch with retry logic for rate limits and transient errors
 			let response: Response | undefined;
 			let lastError: Error | undefined;
+			let requestUrl: string | undefined;
 
 			for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
 				if (options?.signal?.aborted) {
@@ -415,16 +426,11 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 
 				try {
 					const endpoint = endpoints[Math.min(attempt, endpoints.length - 1)];
-					const url = `${endpoint}/v1internal:streamGenerateContent?alt=sse`;
-					response = await fetch(url, {
+					requestUrl = `${endpoint}/v1internal:streamGenerateContent?alt=sse`;
+					response = await fetch(requestUrl, {
 						method: "POST",
-						headers: {
-							Authorization: `Bearer ${accessToken}`,
-							"Content-Type": "application/json",
-							Accept: "text/event-stream",
-							...headers,
-						},
-						body: JSON.stringify(requestBody),
+						headers: requestHeaders,
+						body: requestBodyJson,
 						signal: options?.signal,
 					});
 
@@ -467,73 +473,160 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 				throw lastError ?? new Error("Failed to get response after retries");
 			}
 
-			if (!response.body) {
-				throw new Error("No response body");
-			}
-
-			stream.push({ type: "start", partial: output });
-
-			let currentBlock: TextContent | ThinkingContent | null = null;
-			const blocks = output.content;
-			const blockIndex = () => blocks.length - 1;
-
-			// Read SSE stream
-			const reader = response.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = "";
-
-			// Set up abort handler to cancel reader when signal fires
-			const abortHandler = () => {
-				void reader.cancel().catch(() => {});
+			let started = false;
+			const ensureStarted = () => {
+				if (!started) {
+					stream.push({ type: "start", partial: output });
+					started = true;
+				}
 			};
-			options?.signal?.addEventListener("abort", abortHandler);
 
-			try {
-				while (true) {
-					// Check abort signal before each read
-					if (options?.signal?.aborted) {
-						throw new Error("Request was aborted");
-					}
+			const resetOutput = () => {
+				output.content = [];
+				output.usage = {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				};
+				output.stopReason = "stop";
+				output.errorMessage = undefined;
+				output.timestamp = Date.now();
+				started = false;
+			};
 
-					const { done, value } = await reader.read();
-					if (done) break;
+			const streamResponse = async (activeResponse: Response): Promise<boolean> => {
+				if (!activeResponse.body) {
+					throw new Error("No response body");
+				}
 
-					buffer += decoder.decode(value, { stream: true });
-					const lines = buffer.split("\n");
-					buffer = lines.pop() || "";
+				let hasContent = false;
+				let currentBlock: TextContent | ThinkingContent | null = null;
+				const blocks = output.content;
+				const blockIndex = () => blocks.length - 1;
 
-					for (const line of lines) {
-						if (!line.startsWith("data:")) continue;
+				// Read SSE stream
+				const reader = activeResponse.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = "";
 
-						const jsonStr = line.slice(5).trim();
-						if (!jsonStr) continue;
+				// Set up abort handler to cancel reader when signal fires
+				const abortHandler = () => {
+					void reader.cancel().catch(() => {});
+				};
+				options?.signal?.addEventListener("abort", abortHandler);
 
-						let chunk: CloudCodeAssistResponseChunk;
-						try {
-							chunk = JSON.parse(jsonStr);
-						} catch {
-							continue;
+				try {
+					while (true) {
+						// Check abort signal before each read
+						if (options?.signal?.aborted) {
+							throw new Error("Request was aborted");
 						}
 
-						// Unwrap the response
-						const responseData = chunk.response;
-						if (!responseData) continue;
+						const { done, value } = await reader.read();
+						if (done) break;
 
-						const candidate = responseData.candidates?.[0];
-						if (candidate?.content?.parts) {
-							for (const part of candidate.content.parts) {
-								if (part.text !== undefined) {
-									const isThinking = isThinkingPart(part);
-									if (
-										!currentBlock ||
-										(isThinking && currentBlock.type !== "thinking") ||
-										(!isThinking && currentBlock.type !== "text")
-									) {
+						buffer += decoder.decode(value, { stream: true });
+						const lines = buffer.split("\n");
+						buffer = lines.pop() || "";
+
+						for (const line of lines) {
+							if (!line.startsWith("data:")) continue;
+
+							const jsonStr = line.slice(5).trim();
+							if (!jsonStr) continue;
+
+							let chunk: CloudCodeAssistResponseChunk;
+							try {
+								chunk = JSON.parse(jsonStr);
+							} catch {
+								continue;
+							}
+
+							// Unwrap the response
+							const responseData = chunk.response;
+							if (!responseData) continue;
+
+							const candidate = responseData.candidates?.[0];
+							if (candidate?.content?.parts) {
+								for (const part of candidate.content.parts) {
+									if (part.text !== undefined) {
+										hasContent = true;
+										const isThinking = isThinkingPart(part);
+										if (
+											!currentBlock ||
+											(isThinking && currentBlock.type !== "thinking") ||
+											(!isThinking && currentBlock.type !== "text")
+										) {
+											if (currentBlock) {
+												if (currentBlock.type === "text") {
+													stream.push({
+														type: "text_end",
+														contentIndex: blocks.length - 1,
+														content: currentBlock.text,
+														partial: output,
+													});
+												} else {
+													stream.push({
+														type: "thinking_end",
+														contentIndex: blockIndex(),
+														content: currentBlock.thinking,
+														partial: output,
+													});
+												}
+											}
+											if (isThinking) {
+												currentBlock = { type: "thinking", thinking: "", thinkingSignature: undefined };
+												output.content.push(currentBlock);
+												ensureStarted();
+												stream.push({
+													type: "thinking_start",
+													contentIndex: blockIndex(),
+													partial: output,
+												});
+											} else {
+												currentBlock = { type: "text", text: "" };
+												output.content.push(currentBlock);
+												ensureStarted();
+												stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
+											}
+										}
+										if (currentBlock.type === "thinking") {
+											currentBlock.thinking += part.text;
+											currentBlock.thinkingSignature = retainThoughtSignature(
+												currentBlock.thinkingSignature,
+												part.thoughtSignature,
+											);
+											stream.push({
+												type: "thinking_delta",
+												contentIndex: blockIndex(),
+												delta: part.text,
+												partial: output,
+											});
+										} else {
+											currentBlock.text += part.text;
+											currentBlock.textSignature = retainThoughtSignature(
+												currentBlock.textSignature,
+												part.thoughtSignature,
+											);
+											stream.push({
+												type: "text_delta",
+												contentIndex: blockIndex(),
+												delta: part.text,
+												partial: output,
+											});
+										}
+									}
+
+									if (part.functionCall) {
+										hasContent = true;
 										if (currentBlock) {
 											if (currentBlock.type === "text") {
 												stream.push({
 													type: "text_end",
-													contentIndex: blocks.length - 1,
+													contentIndex: blockIndex(),
 													content: currentBlock.text,
 													partial: output,
 												});
@@ -545,143 +638,142 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 													partial: output,
 												});
 											}
+											currentBlock = null;
 										}
-										if (isThinking) {
-											currentBlock = { type: "thinking", thinking: "", thinkingSignature: undefined };
-											output.content.push(currentBlock);
-											stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
-										} else {
-											currentBlock = { type: "text", text: "" };
-											output.content.push(currentBlock);
-											stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
-										}
-									}
-									if (currentBlock.type === "thinking") {
-										currentBlock.thinking += part.text;
-										currentBlock.thinkingSignature = retainThoughtSignature(
-											currentBlock.thinkingSignature,
-											part.thoughtSignature,
-										);
+
+										const providedId = part.functionCall.id;
+										const needsNewId =
+											!providedId ||
+											output.content.some((b) => b.type === "toolCall" && b.id === providedId);
+										const toolCallId = needsNewId
+											? `${part.functionCall.name}_${Date.now()}_${++toolCallCounter}`
+											: providedId;
+
+										const toolCall: ToolCall = {
+											type: "toolCall",
+											id: toolCallId,
+											name: part.functionCall.name || "",
+											arguments: part.functionCall.args as Record<string, unknown>,
+											...(part.thoughtSignature && { thoughtSignature: part.thoughtSignature }),
+										};
+
+										output.content.push(toolCall);
+										ensureStarted();
+										stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
 										stream.push({
-											type: "thinking_delta",
+											type: "toolcall_delta",
 											contentIndex: blockIndex(),
-											delta: part.text,
+											delta: JSON.stringify(toolCall.arguments),
 											partial: output,
 										});
-									} else {
-										currentBlock.text += part.text;
-										currentBlock.textSignature = retainThoughtSignature(
-											currentBlock.textSignature,
-											part.thoughtSignature,
-										);
 										stream.push({
-											type: "text_delta",
+											type: "toolcall_end",
 											contentIndex: blockIndex(),
-											delta: part.text,
+											toolCall,
 											partial: output,
 										});
 									}
 								}
+							}
 
-								if (part.functionCall) {
-									if (currentBlock) {
-										if (currentBlock.type === "text") {
-											stream.push({
-												type: "text_end",
-												contentIndex: blockIndex(),
-												content: currentBlock.text,
-												partial: output,
-											});
-										} else {
-											stream.push({
-												type: "thinking_end",
-												contentIndex: blockIndex(),
-												content: currentBlock.thinking,
-												partial: output,
-											});
-										}
-										currentBlock = null;
-									}
-
-									const providedId = part.functionCall.id;
-									const needsNewId =
-										!providedId || output.content.some((b) => b.type === "toolCall" && b.id === providedId);
-									const toolCallId = needsNewId
-										? `${part.functionCall.name}_${Date.now()}_${++toolCallCounter}`
-										: providedId;
-
-									const toolCall: ToolCall = {
-										type: "toolCall",
-										id: toolCallId,
-										name: part.functionCall.name || "",
-										arguments: part.functionCall.args as Record<string, unknown>,
-										...(part.thoughtSignature && { thoughtSignature: part.thoughtSignature }),
-									};
-
-									output.content.push(toolCall);
-									stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
-									stream.push({
-										type: "toolcall_delta",
-										contentIndex: blockIndex(),
-										delta: JSON.stringify(toolCall.arguments),
-										partial: output,
-									});
-									stream.push({ type: "toolcall_end", contentIndex: blockIndex(), toolCall, partial: output });
+							if (candidate?.finishReason) {
+								output.stopReason = mapStopReasonString(candidate.finishReason);
+								if (output.content.some((b) => b.type === "toolCall")) {
+									output.stopReason = "toolUse";
 								}
 							}
-						}
 
-						if (candidate?.finishReason) {
-							output.stopReason = mapStopReasonString(candidate.finishReason);
-							if (output.content.some((b) => b.type === "toolCall")) {
-								output.stopReason = "toolUse";
-							}
-						}
-
-						if (responseData.usageMetadata) {
-							// promptTokenCount includes cachedContentTokenCount, so subtract to get fresh input
-							const promptTokens = responseData.usageMetadata.promptTokenCount || 0;
-							const cacheReadTokens = responseData.usageMetadata.cachedContentTokenCount || 0;
-							output.usage = {
-								input: promptTokens - cacheReadTokens,
-								output:
-									(responseData.usageMetadata.candidatesTokenCount || 0) +
-									(responseData.usageMetadata.thoughtsTokenCount || 0),
-								cacheRead: cacheReadTokens,
-								cacheWrite: 0,
-								totalTokens: responseData.usageMetadata.totalTokenCount || 0,
-								cost: {
-									input: 0,
-									output: 0,
-									cacheRead: 0,
+							if (responseData.usageMetadata) {
+								// promptTokenCount includes cachedContentTokenCount, so subtract to get fresh input
+								const promptTokens = responseData.usageMetadata.promptTokenCount || 0;
+								const cacheReadTokens = responseData.usageMetadata.cachedContentTokenCount || 0;
+								output.usage = {
+									input: promptTokens - cacheReadTokens,
+									output:
+										(responseData.usageMetadata.candidatesTokenCount || 0) +
+										(responseData.usageMetadata.thoughtsTokenCount || 0),
+									cacheRead: cacheReadTokens,
 									cacheWrite: 0,
-									total: 0,
-								},
-							};
-							calculateCost(model, output.usage);
+									totalTokens: responseData.usageMetadata.totalTokenCount || 0,
+									cost: {
+										input: 0,
+										output: 0,
+										cacheRead: 0,
+										cacheWrite: 0,
+										total: 0,
+									},
+								};
+								calculateCost(model, output.usage);
+							}
 						}
 					}
+				} finally {
+					options?.signal?.removeEventListener("abort", abortHandler);
 				}
-			} finally {
-				options?.signal?.removeEventListener("abort", abortHandler);
+
+				if (currentBlock) {
+					if (currentBlock.type === "text") {
+						stream.push({
+							type: "text_end",
+							contentIndex: blockIndex(),
+							content: currentBlock.text,
+							partial: output,
+						});
+					} else {
+						stream.push({
+							type: "thinking_end",
+							contentIndex: blockIndex(),
+							content: currentBlock.thinking,
+							partial: output,
+						});
+					}
+				}
+
+				return hasContent;
+			};
+
+			let receivedContent = false;
+			let currentResponse = response;
+
+			for (let emptyAttempt = 0; emptyAttempt <= MAX_EMPTY_STREAM_RETRIES; emptyAttempt++) {
+				if (options?.signal?.aborted) {
+					throw new Error("Request was aborted");
+				}
+
+				if (emptyAttempt > 0) {
+					const backoffMs = EMPTY_STREAM_BASE_DELAY_MS * 2 ** (emptyAttempt - 1);
+					await sleep(backoffMs, options?.signal);
+
+					if (!requestUrl) {
+						throw new Error("Missing request URL");
+					}
+
+					currentResponse = await fetch(requestUrl, {
+						method: "POST",
+						headers: requestHeaders,
+						body: requestBodyJson,
+						signal: options?.signal,
+					});
+
+					if (!currentResponse.ok) {
+						const retryErrorText = await currentResponse.text();
+						throw new Error(`Cloud Code Assist API error (${currentResponse.status}): ${retryErrorText}`);
+					}
+				}
+
+				const streamed = await streamResponse(currentResponse);
+				if (streamed) {
+					receivedContent = true;
+					break;
+				}
+
+				if (emptyAttempt < MAX_EMPTY_STREAM_RETRIES) {
+					resetOutput();
+				}
 			}
 
-			if (currentBlock) {
-				if (currentBlock.type === "text") {
-					stream.push({
-						type: "text_end",
-						contentIndex: blockIndex(),
-						content: currentBlock.text,
-						partial: output,
-					});
-				} else {
-					stream.push({
-						type: "thinking_end",
-						contentIndex: blockIndex(),
-						content: currentBlock.thinking,
-						partial: output,
-					});
-				}
+			if (!receivedContent) {
+				throw new Error("Cloud Code Assist API returned an empty response");
 			}
 
 			if (options?.signal?.aborted) {
