@@ -168,13 +168,60 @@ const BASE_DELAY_MS = 1000;
 
 /**
  * Extract retry delay from Gemini error response (in milliseconds).
- * Parses patterns like:
+ * Checks headers first (Retry-After, x-ratelimit-reset, x-ratelimit-reset-after),
+ * then parses body patterns like:
  * - "Your quota will reset after 39s"
  * - "Your quota will reset after 18h31m10s"
  * - "Please retry in Xs" or "Please retry in Xms"
  * - "retryDelay": "34.074824224s" (JSON field)
  */
-function extractRetryDelay(errorText: string): number | undefined {
+export function extractRetryDelay(errorText: string, response?: Response | Headers): number | undefined {
+	const normalizeDelay = (ms: number): number | undefined => (ms > 0 ? Math.ceil(ms + 1000) : undefined);
+
+	const headers = response instanceof Headers ? response : response?.headers;
+	if (headers) {
+		const retryAfter = headers.get("retry-after");
+		if (retryAfter) {
+			const retryAfterSeconds = Number(retryAfter);
+			if (Number.isFinite(retryAfterSeconds)) {
+				const delay = normalizeDelay(retryAfterSeconds * 1000);
+				if (delay !== undefined) {
+					return delay;
+				}
+			}
+			const retryAfterDate = new Date(retryAfter);
+			const retryAfterMs = retryAfterDate.getTime();
+			if (!Number.isNaN(retryAfterMs)) {
+				const delay = normalizeDelay(retryAfterMs - Date.now());
+				if (delay !== undefined) {
+					return delay;
+				}
+			}
+		}
+
+		const rateLimitReset = headers.get("x-ratelimit-reset");
+		if (rateLimitReset) {
+			const resetSeconds = Number.parseInt(rateLimitReset, 10);
+			if (!Number.isNaN(resetSeconds)) {
+				const delay = normalizeDelay(resetSeconds * 1000 - Date.now());
+				if (delay !== undefined) {
+					return delay;
+				}
+			}
+		}
+
+		const rateLimitResetAfter = headers.get("x-ratelimit-reset-after");
+		if (rateLimitResetAfter) {
+			const resetAfterSeconds = Number(rateLimitResetAfter);
+			if (Number.isFinite(resetAfterSeconds)) {
+				const delay = normalizeDelay(resetAfterSeconds * 1000);
+				if (delay !== undefined) {
+					return delay;
+				}
+			}
+		}
+	}
+
 	// Pattern 1: "Your quota will reset after ..." (formats: "18h31m10s", "10m15s", "6s", "39s")
 	const durationMatch = errorText.match(/reset after (?:(\d+)h)?(?:(\d+)m)?(\d+(?:\.\d+)?)s/i);
 	if (durationMatch) {
@@ -183,8 +230,9 @@ function extractRetryDelay(errorText: string): number | undefined {
 		const seconds = parseFloat(durationMatch[3]);
 		if (!Number.isNaN(seconds)) {
 			const totalMs = ((hours * 60 + minutes) * 60 + seconds) * 1000;
-			if (totalMs > 0) {
-				return Math.ceil(totalMs + 1000); // Add 1s buffer
+			const delay = normalizeDelay(totalMs);
+			if (delay !== undefined) {
+				return delay;
 			}
 		}
 	}
@@ -195,7 +243,10 @@ function extractRetryDelay(errorText: string): number | undefined {
 		const value = parseFloat(retryInMatch[1]);
 		if (!Number.isNaN(value) && value > 0) {
 			const ms = retryInMatch[2].toLowerCase() === "ms" ? value : value * 1000;
-			return Math.ceil(ms + 1000);
+			const delay = normalizeDelay(ms);
+			if (delay !== undefined) {
+				return delay;
+			}
 		}
 	}
 
@@ -205,7 +256,10 @@ function extractRetryDelay(errorText: string): number | undefined {
 		const value = parseFloat(retryDelayMatch[1]);
 		if (!Number.isNaN(value) && value > 0) {
 			const ms = retryDelayMatch[2].toLowerCase() === "ms" ? value : value * 1000;
-			return Math.ceil(ms + 1000);
+			const delay = normalizeDelay(ms);
+			if (delay !== undefined) {
+				return delay;
+			}
 		}
 	}
 
@@ -381,7 +435,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 					// Check if retryable
 					if (attempt < MAX_RETRIES && isRetryableError(response.status, errorText)) {
 						// Use server-provided delay or exponential backoff
-						const serverDelay = extractRetryDelay(errorText);
+						const serverDelay = extractRetryDelay(errorText, response);
 						const delayMs = serverDelay ?? BASE_DELAY_MS * 2 ** attempt;
 						await sleep(delayMs, options?.signal);
 						continue;
