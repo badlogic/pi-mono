@@ -39,6 +39,15 @@ const COPILOT_STATIC_HEADERS = {
 	"Copilot-Integration-Id": "vscode-chat",
 } as const;
 
+function formatNumber(n: number): string {
+	if (!Number.isFinite(n)) return "0";
+	if (Object.is(n, -0)) return "0";
+
+	// Prevent float artifacts (e.g., 0.44999999999999996) in generated output.
+	const rounded = Number.isInteger(n) ? n : Number(n.toFixed(6));
+	return Object.is(rounded, -0) ? "0" : String(rounded);
+}
+
 async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from OpenRouter API...");
@@ -994,10 +1003,10 @@ export const MODELS = {
 			output += `\t\t\treasoning: ${model.reasoning},\n`;
 			output += `\t\t\tinput: [${model.input.map(i => `"${i}"`).join(", ")}],\n`;
 			output += `\t\t\tcost: {\n`;
-			output += `\t\t\t\tinput: ${model.cost.input},\n`;
-			output += `\t\t\t\toutput: ${model.cost.output},\n`;
-			output += `\t\t\t\tcacheRead: ${model.cost.cacheRead},\n`;
-			output += `\t\t\t\tcacheWrite: ${model.cost.cacheWrite},\n`;
+			output += `\t\t\t\tinput: ${formatNumber(model.cost.input)},\n`;
+			output += `\t\t\t\toutput: ${formatNumber(model.cost.output)},\n`;
+			output += `\t\t\t\tcacheRead: ${formatNumber(model.cost.cacheRead)},\n`;
+			output += `\t\t\t\tcacheWrite: ${formatNumber(model.cost.cacheWrite)},\n`;
 			output += `\t\t\t},\n`;
 			output += `\t\t\tcontextWindow: ${model.contextWindow},\n`;
 			output += `\t\t\tmaxTokens: ${model.maxTokens},\n`;

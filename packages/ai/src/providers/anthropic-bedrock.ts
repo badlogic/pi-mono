@@ -171,7 +171,7 @@ export const streamAnthropicBedrock: StreamFunction<"anthropic-bedrock"> = (
 							type: "toolCall",
 							id: event.content_block.id,
 							name: event.content_block.name,
-							arguments: event.content_block.input as Record<string, any>,
+							arguments: event.content_block.input as Record<string, unknown>,
 							partialJson: "",
 							index: event.index,
 						};
@@ -228,7 +228,7 @@ export const streamAnthropicBedrock: StreamFunction<"anthropic-bedrock"> = (
 					const index = blocks.findIndex((b) => b.index === event.index);
 					const block = blocks[index];
 					if (block) {
-						delete (block as any).index;
+						delete (block as { index?: number }).index;
 						if (block.type === "text") {
 							stream.push({
 								type: "text_end",
@@ -245,7 +245,7 @@ export const streamAnthropicBedrock: StreamFunction<"anthropic-bedrock"> = (
 							});
 						} else if (block.type === "toolCall") {
 							block.arguments = parseStreamingJson(block.partialJson);
-							delete (block as any).partialJson;
+							delete (block as { partialJson?: string }).partialJson;
 							stream.push({
 								type: "toolcall_end",
 								contentIndex: index,
@@ -293,7 +293,7 @@ export const streamAnthropicBedrock: StreamFunction<"anthropic-bedrock"> = (
 			stream.push({ type: "done", reason: output.stopReason, message: output });
 			stream.end();
 		} catch (error) {
-			for (const block of output.content) delete (block as any).index;
+			for (const block of output.content) delete (block as { index?: number }).index;
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
 			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
 			stream.push({ type: "error", reason: output.stopReason, error: output });
@@ -394,9 +394,6 @@ function buildParams(
 			{
 				type: "text",
 				text: sanitizeSurrogates(context.systemPrompt),
-				cache_control: {
-					type: "ephemeral",
-				},
 			},
 		];
 	}
@@ -556,23 +553,6 @@ function convertMessages(messages: Message[], model: Model<"anthropic-bedrock">)
 		}
 	}
 
-	// Add cache_control to the last user message to cache conversation history
-	if (params.length > 0) {
-		const lastMessage = params[params.length - 1];
-		if (lastMessage.role === "user") {
-			// Add cache control to the last content block
-			if (Array.isArray(lastMessage.content)) {
-				const lastBlock = lastMessage.content[lastMessage.content.length - 1];
-				if (
-					lastBlock &&
-					(lastBlock.type === "text" || lastBlock.type === "image" || lastBlock.type === "tool_result")
-				) {
-					(lastBlock as any).cache_control = { type: "ephemeral" };
-				}
-			}
-		}
-	}
-
 	return params;
 }
 
@@ -580,7 +560,10 @@ function convertTools(tools: Tool[]): Anthropic.Messages.Tool[] {
 	if (!tools) return [];
 
 	return tools.map((tool) => {
-		const jsonSchema = tool.parameters as any;
+		const jsonSchema = tool.parameters as unknown as {
+			properties?: Record<string, unknown>;
+			required?: string[];
+		};
 
 		return {
 			name: tool.name,
