@@ -304,6 +304,7 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 | Ctrl+T | Toggle thinking block visibility |
 | Ctrl+G | Edit message in external editor (`$VISUAL` or `$EDITOR`) |
 | Ctrl+V | Paste image from clipboard |
+| Alt+Up | Restore queued messages to editor |
 
 ### Custom Keybindings
 
@@ -348,6 +349,7 @@ All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Eac
 | `toggleThinking` | `ctrl+t` | Toggle thinking |
 | `externalEditor` | `ctrl+g` | Open external editor |
 | `followUp` | `alt+enter` | Queue follow-up message |
+| `dequeue` | `alt+up` | Restore queued messages to editor |
 | `selectUp` | `up` | Move selection up in lists (session picker, model selector) |
 | `selectDown` | `down` | Move selection down in lists |
 | `selectConfirm` | `enter` | Confirm selection |

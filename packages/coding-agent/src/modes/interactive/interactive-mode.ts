@@ -421,7 +421,7 @@ export class InteractiveMode {
 			theme.fg("muted", " to queue follow-up") +
 			"\n" +
 			theme.fg("dim", dequeue) +
-			theme.fg("muted", " to restore queued messages") +
+			theme.fg("muted", " to edit all queued messages") +
 			"\n" +
 			theme.fg("dim", "ctrl+v") +
 			theme.fg("muted", " to paste image") +
@@ -2328,6 +2328,9 @@ export class InteractiveMode {
 				const text = theme.fg("dim", `Follow-up: ${message}`);
 				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
 			}
+			const dequeueHint = this.getAppKeyDisplay("dequeue");
+			const hintText = theme.fg("dim", `↳ ${dequeueHint} to edit all queued messages`);
+			this.pendingMessagesContainer.addChild(new TruncatedText(hintText, 1, 0));
 		}
 	}
 
