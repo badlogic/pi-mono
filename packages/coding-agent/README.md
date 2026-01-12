@@ -240,6 +240,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | `/export [file]` | Export session to self-contained HTML |
 | `/share` | Upload session as secret GitHub gist, get shareable URL (requires `gh` CLI) |
 | `/session` | Show session info: path, message counts, token usage, cost |
+| `/name <name>` | Set session display name (shown in session selector) |
 | `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display full version history |
 | `/tree` | Navigate session tree in-place (search, filter, label entries) |

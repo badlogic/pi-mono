@@ -86,6 +86,8 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		sendMessage: notInitialized,
 		sendUserMessage: notInitialized,
 		appendEntry: notInitialized,
+		setSessionName: notInitialized,
+		getSessionName: notInitialized,
 		getActiveTools: notInitialized,
 		getAllTools: notInitialized,
 		setActiveTools: notInitialized,
@@ -167,6 +169,14 @@ function createExtensionAPI(
 
 		appendEntry(customType: string, data?: unknown): void {
 			runtime.appendEntry(customType, data);
+		},
+
+		setSessionName(name: string): void {
+			runtime.setSessionName(name);
+		},
+
+		getSessionName(): string | undefined {
+			return runtime.getSessionName();
 		},
 
 		exec(command: string, args: string[], options?: ExecOptions) {

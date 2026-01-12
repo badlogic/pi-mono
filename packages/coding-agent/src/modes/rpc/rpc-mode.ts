@@ -267,6 +267,12 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				appendEntry: (customType, data) => {
 					session.sessionManager.appendCustomEntry(customType, data);
 				},
+				setSessionName: (name) => {
+					session.sessionManager.appendSessionInfo(name);
+				},
+				getSessionName: () => {
+					return session.sessionManager.getSessionName();
+				},
 				getActiveTools: () => session.getActiveToolNames(),
 				getAllTools: () => session.getAllToolNames(),
 				setActiveTools: (toolNames: string[]) => session.setActiveToolsByName(toolNames),

@@ -286,6 +286,7 @@ export class InteractiveMode {
 			{ name: "export", description: "Export session to HTML file" },
 			{ name: "share", description: "Share session as a secret GitHub gist" },
 			{ name: "copy", description: "Copy last agent message to clipboard" },
+			{ name: "name", description: "Set session display name" },
 			{ name: "session", description: "Show session info and stats" },
 			{ name: "changelog", description: "Show changelog entries" },
 			{ name: "hotkeys", description: "Show all keyboard shortcuts" },
@@ -676,6 +677,12 @@ export class InteractiveMode {
 				},
 				appendEntry: (customType, data) => {
 					this.sessionManager.appendCustomEntry(customType, data);
+				},
+				setSessionName: (name) => {
+					this.sessionManager.appendSessionInfo(name);
+				},
+				getSessionName: () => {
+					return this.sessionManager.getSessionName();
 				},
 				getActiveTools: () => this.session.getActiveToolNames(),
 				getAllTools: () => this.session.getAllToolNames(),
@@ -1439,6 +1446,11 @@ export class InteractiveMode {
 			}
 			if (text === "/copy") {
 				this.handleCopyCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/name" || text.startsWith("/name ")) {
+				this.handleNameCommand(text);
 				this.editor.setText("");
 				return;
 			}
@@ -3258,10 +3270,34 @@ export class InteractiveMode {
 		}
 	}
 
+	private handleNameCommand(text: string): void {
+		const name = text.replace(/^\/name\s*/, "").trim();
+		if (!name) {
+			const currentName = this.sessionManager.getSessionName();
+			if (currentName) {
+				this.chatContainer.addChild(new Spacer(1));
+				this.chatContainer.addChild(new Text(theme.fg("dim", `Session name: ${currentName}`), 1, 0));
+			} else {
+				this.showWarning("Usage: /name <name>");
+			}
+			this.ui.requestRender();
+			return;
+		}
+
+		this.sessionManager.appendSessionInfo(name);
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(theme.fg("dim", `Session name set: ${name}`), 1, 0));
+		this.ui.requestRender();
+	}
+
 	private handleSessionCommand(): void {
 		const stats = this.session.getSessionStats();
+		const sessionName = this.sessionManager.getSessionName();
 
 		let info = `${theme.bold("Session Info")}\n\n`;
+		if (sessionName) {
+			info += `${theme.fg("dim", "Name:")} ${sessionName}\n`;
+		}
 		info += `${theme.fg("dim", "File:")} ${stats.sessionFile ?? "In-memory"}\n`;
 		info += `${theme.fg("dim", "ID:")} ${stats.sessionId}\n\n`;
 		info += `${theme.bold("Messages")}\n`;

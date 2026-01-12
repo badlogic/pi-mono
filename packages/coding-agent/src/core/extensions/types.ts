@@ -727,6 +727,16 @@ export interface ExtensionAPI {
 	/** Append a custom entry to the session for state persistence (not sent to LLM). */
 	appendEntry<T = unknown>(customType: string, data?: T): void;
 
+	// =========================================================================
+	// Session Metadata
+	// =========================================================================
+
+	/** Set the session display name (shown in session selector). */
+	setSessionName(name: string): void;
+
+	/** Get the current session name, if set. */
+	getSessionName(): string | undefined;
+
 	/** Execute a shell command. */
 	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 
@@ -797,6 +807,10 @@ export type SendUserMessageHandler = (
 
 export type AppendEntryHandler = <T = unknown>(customType: string, data?: T) => void;
 
+export type SetSessionNameHandler = (name: string) => void;
+
+export type GetSessionNameHandler = () => string | undefined;
+
 export type GetActiveToolsHandler = () => string[];
 
 export type GetAllToolsHandler = () => string[];
@@ -825,6 +839,8 @@ export interface ExtensionActions {
 	sendMessage: SendMessageHandler;
 	sendUserMessage: SendUserMessageHandler;
 	appendEntry: AppendEntryHandler;
+	setSessionName: SetSessionNameHandler;
+	getSessionName: GetSessionNameHandler;
 	getActiveTools: GetActiveToolsHandler;
 	getAllTools: GetAllToolsHandler;
 	setActiveTools: SetActiveToolsHandler;

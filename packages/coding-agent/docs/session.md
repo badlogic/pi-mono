@@ -138,6 +138,16 @@ User-defined bookmark/marker on an entry.
 
 Set `label` to `undefined` to clear a label.
 
+### SessionInfoEntry
+
+Session metadata (e.g., user-defined display name). Set via `/name` command or `pi.setSessionName()` in extensions.
+
+```json
+{"type":"session_info","id":"k1l2m3n4","parentId":"j0k1l2m3","timestamp":"2024-12-03T14:35:00.000Z","name":"Refactor auth module"}
+```
+
+The session name is displayed in the session selector (`/resume`) instead of the first message when set.
+
 ## Tree Structure
 
 Entries form a tree:
@@ -222,6 +232,7 @@ Key methods for working with sessions programmatically:
 - `appendModelChange(provider, modelId)` - Record model change
 - `appendCompaction(summary, firstKeptEntryId, tokensBefore, details?, fromHook?)` - Add compaction
 - `appendCustomEntry(customType, data?)` - Extension state (not in context)
+- `appendSessionInfo(name)` - Set session display name
 - `appendCustomMessageEntry(customType, content, display, details?)` - Extension message (in context)
 - `appendLabelChange(targetId, label)` - Set/clear label
 
@@ -241,3 +252,4 @@ Key methods for working with sessions programmatically:
 - `buildSessionContext()` - Get messages for LLM
 - `getEntries()` - All entries (excluding header)
 - `getHeader()` - Session metadata
+- `getSessionName()` - Get display name from latest session_info entry

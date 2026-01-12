@@ -155,6 +155,7 @@ export {
 	type SessionEntryBase,
 	type SessionHeader,
 	type SessionInfo,
+	type SessionInfoEntry,
 	SessionManager,
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,

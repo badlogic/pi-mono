@@ -106,6 +106,12 @@ export interface LabelEntry extends SessionEntryBase {
 	label: string | undefined;
 }
 
+/** Session metadata entry (e.g., user-defined display name). */
+export interface SessionInfoEntry extends SessionEntryBase {
+	type: "session_info";
+	name?: string;
+}
+
 /**
  * Custom message entry for extensions to inject messages into LLM context.
  * Use customType to identify your extension's entries.
@@ -135,7 +141,8 @@ export type SessionEntry =
 	| BranchSummaryEntry
 	| CustomEntry
 	| CustomMessageEntry
-	| LabelEntry;
+	| LabelEntry
+	| SessionInfoEntry;
 
 /** Raw file entry (includes header) */
 export type FileEntry = SessionHeader | SessionEntry;
@@ -159,6 +166,8 @@ export interface SessionInfo {
 	id: string;
 	/** Working directory where the session was started. Empty string for old sessions. */
 	cwd: string;
+	/** User-defined display name from session_info entries. */
+	name?: string;
 	created: Date;
 	modified: Date;
 	messageCount: number;
@@ -180,6 +189,7 @@ export type ReadonlySessionManager = Pick<
 	| "getHeader"
 	| "getEntries"
 	| "getTree"
+	| "getSessionName"
 >;
 
 /** Generate a unique short ID (8 hex chars, collision-checked) */
@@ -511,8 +521,17 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 		let messageCount = 0;
 		let firstMessage = "";
 		const allMessages: string[] = [];
+		let name: string | undefined;
 
 		for (const entry of entries) {
+			// Extract session name (use latest)
+			if (entry.type === "session_info") {
+				const infoEntry = entry as SessionInfoEntry;
+				if (infoEntry.name) {
+					name = infoEntry.name.trim();
+				}
+			}
+
 			if (entry.type !== "message") continue;
 			messageCount++;
 
@@ -535,6 +554,7 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 			path: filePath,
 			id: (header as SessionHeader).id,
 			cwd,
+			name,
 			created: new Date((header as SessionHeader).timestamp),
 			modified: stats.mtime,
 			messageCount,
@@ -813,6 +833,32 @@ export class SessionManager {
 		};
 		this._appendEntry(entry);
 		return entry.id;
+	}
+
+	/** Append a session info entry (e.g., display name). Returns entry id. */
+	appendSessionInfo(name: string): string {
+		const entry: SessionInfoEntry = {
+			type: "session_info",
+			id: generateId(this.byId),
+			parentId: this.leafId,
+			timestamp: new Date().toISOString(),
+			name: name.trim(),
+		};
+		this._appendEntry(entry);
+		return entry.id;
+	}
+
+	/** Get the current session name from the latest session_info entry, if any. */
+	getSessionName(): string | undefined {
+		// Walk entries in reverse to find the latest session_info with a name
+		const entries = this.getEntries();
+		for (let i = entries.length - 1; i >= 0; i--) {
+			const entry = entries[i];
+			if (entry.type === "session_info" && entry.name) {
+				return entry.name;
+			}
+		}
+		return undefined;
 	}
 
 	/**

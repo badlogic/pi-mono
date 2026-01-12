@@ -797,6 +797,25 @@ pi.on("session_start", async (_event, ctx) => {
 
 **Examples:** [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [snake.ts](../examples/extensions/snake.ts), [tools.ts](../examples/extensions/tools.ts)
 
+### pi.setSessionName(name)
+
+Set the session display name (shown in session selector instead of first message).
+
+```typescript
+pi.setSessionName("Refactor auth module");
+```
+
+### pi.getSessionName()
+
+Get the current session name, if set.
+
+```typescript
+const name = pi.getSessionName();
+if (name) {
+  console.log(`Session: ${name}`);
+}
+```
+
 ### pi.registerCommand(name, options)
 
 Register a command.
