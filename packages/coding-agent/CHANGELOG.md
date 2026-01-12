@@ -16,6 +16,7 @@
 ### Fixed
 
 - Session selector now stays open when current folder has no sessions, allowing Tab to switch to "all" scope ([#661](https://github.com/badlogic/pi-mono/pull/661) by [@aliou](https://github.com/aliou))
+- Extensions using theme utilities like `getSettingsListTheme()` now work in dev mode with tsx
 
 ## [0.43.0] - 2026-01-11
 
