@@ -7,6 +7,10 @@
 - Extension example: `notify.ts` for desktop notifications via OSC 777 escape sequence ([#658](https://github.com/badlogic/pi-mono/pull/658) by [@ferologics](https://github.com/ferologics))
 - Inline hint for queued messages showing the `Alt+Up` restore shortcut ([#657](https://github.com/badlogic/pi-mono/pull/657) by [@tmustier](https://github.com/tmustier))
 
+### Fixed
+
+- Session selector now stays open when current folder has no sessions, allowing Tab to switch to "all" scope ([#661](https://github.com/badlogic/pi-mono/pull/661) by [@aliou](https://github.com/aliou))
+
 ## [0.43.0] - 2026-01-11
 
 ### Breaking Changes
