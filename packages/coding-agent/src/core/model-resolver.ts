@@ -26,6 +26,7 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	zai: "glm-4.6",
 	mistral: "devstral-medium-latest",
 	opencode: "claude-opus-4-5",
+	minimax: "MiniMax-M2.1",
 };
 
 export interface ScopedModel {

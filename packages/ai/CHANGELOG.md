@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- MiniMax provider support with M2 and M2.1 models via Anthropic-compatible API (`MINIMAX_API_KEY` environment variable)
+
 ## [0.43.0] - 2026-01-11
 
 ### Fixed

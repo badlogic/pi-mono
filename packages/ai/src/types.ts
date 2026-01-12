@@ -54,7 +54,8 @@ export type KnownProvider =
 	| "openrouter"
 	| "zai"
 	| "mistral"
-	| "opencode";
+	| "opencode"
+	| "minimax";
 export type Provider = KnownProvider | string;
 
 export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
