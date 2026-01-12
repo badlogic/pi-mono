@@ -54,6 +54,8 @@ export interface GoogleGeminiCliOptions extends StreamOptions {
 }
 
 const DEFAULT_ENDPOINT = "https://cloudcode-pa.googleapis.com";
+const ANTIGRAVITY_DAILY_ENDPOINT = "https://daily-cloudcode-pa.sandbox.googleapis.com";
+const ANTIGRAVITY_ENDPOINT_FALLBACKS = [ANTIGRAVITY_DAILY_ENDPOINT, DEFAULT_ENDPOINT] as const;
 // Headers for Gemini CLI (prod endpoint)
 const GEMINI_CLI_HEADERS = {
 	"User-Agent": "google-cloud-sdk vscode_cloudshelleditor/0.1",
@@ -339,11 +341,10 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 				throw new Error("Missing token or projectId in Google Cloud credentials. Use /login to re-authenticate.");
 			}
 
-			const endpoint = model.baseUrl || DEFAULT_ENDPOINT;
-			const url = `${endpoint}/v1internal:streamGenerateContent?alt=sse`;
+			const isAntigravity = model.provider === "google-antigravity";
+			const baseUrl = model.baseUrl?.trim();
+			const endpoints = baseUrl ? [baseUrl] : isAntigravity ? ANTIGRAVITY_ENDPOINT_FALLBACKS : [DEFAULT_ENDPOINT];
 
-			// Use Antigravity headers for sandbox endpoint, otherwise Gemini CLI headers
-			const isAntigravity = endpoint.includes("sandbox.googleapis.com");
 			const requestBody = buildRequest(model, context, projectId, options, isAntigravity);
 			const headers = isAntigravity ? ANTIGRAVITY_HEADERS : GEMINI_CLI_HEADERS;
 
@@ -357,6 +358,8 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 				}
 
 				try {
+					const endpoint = endpoints[Math.min(attempt, endpoints.length - 1)];
+					const url = `${endpoint}/v1internal:streamGenerateContent?alt=sse`;
 					response = await fetch(url, {
 						method: "POST",
 						headers: {
