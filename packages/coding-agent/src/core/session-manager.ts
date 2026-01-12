@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Message, TextContent } from "@mariozechner/pi-ai";
 import { randomUUID } from "crypto";
 import {
@@ -150,7 +150,8 @@ export interface SessionTreeNode {
 
 export interface SessionContext {
 	messages: AgentMessage[];
-	thinkingLevel: string;
+	/** Thinking level from session entries, or undefined if no thinking_level_change entry exists */
+	thinkingLevel: ThinkingLevel | undefined;
 	model: { provider: string; modelId: string } | null;
 }
 
@@ -309,7 +310,7 @@ export function buildSessionContext(
 	let leaf: SessionEntry | undefined;
 	if (leafId === null) {
 		// Explicitly null - return no messages (navigated to before first entry)
-		return { messages: [], thinkingLevel: "off", model: null };
+		return { messages: [], thinkingLevel: undefined, model: null };
 	}
 	if (leafId) {
 		leaf = byId.get(leafId);
@@ -320,7 +321,7 @@ export function buildSessionContext(
 	}
 
 	if (!leaf) {
-		return { messages: [], thinkingLevel: "off", model: null };
+		return { messages: [], thinkingLevel: undefined, model: null };
 	}
 
 	// Walk from leaf to root, collecting path
@@ -332,13 +333,13 @@ export function buildSessionContext(
 	}
 
 	// Extract settings and find compaction
-	let thinkingLevel = "off";
+	let thinkingLevel: ThinkingLevel | undefined;
 	let model: { provider: string; modelId: string } | null = null;
 	let compaction: CompactionEntry | null = null;
 
 	for (const entry of path) {
 		if (entry.type === "thinking_level_change") {
-			thinkingLevel = entry.thinkingLevel;
+			thinkingLevel = entry.thinkingLevel as ThinkingLevel;
 		} else if (entry.type === "model_change") {
 			model = { provider: entry.provider, modelId: entry.modelId };
 		} else if (entry.type === "message" && entry.message.role === "assistant") {

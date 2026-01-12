@@ -409,7 +409,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// If session has data, restore thinking level from it
 	if (thinkingLevel === undefined && hasExistingSession) {
-		thinkingLevel = existingSession.thinkingLevel as ThinkingLevel;
+		thinkingLevel = existingSession.thinkingLevel;
 	}
 
 	// Fall back to settings default

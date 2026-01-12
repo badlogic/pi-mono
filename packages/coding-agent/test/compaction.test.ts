@@ -283,7 +283,7 @@ describe("buildSessionContext", () => {
 
 		const loaded = buildSessionContext(entries);
 		expect(loaded.messages.length).toBe(4);
-		expect(loaded.thinkingLevel).toBe("off");
+		expect(loaded.thinkingLevel).toBeUndefined();
 		expect(loaded.model).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-5" });
 	});
 

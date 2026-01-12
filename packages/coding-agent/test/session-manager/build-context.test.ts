@@ -65,7 +65,7 @@ describe("buildSessionContext", () => {
 		it("empty entries returns empty context", () => {
 			const ctx = buildSessionContext([]);
 			expect(ctx.messages).toEqual([]);
-			expect(ctx.thinkingLevel).toBe("off");
+			expect(ctx.thinkingLevel).toBeUndefined();
 			expect(ctx.model).toBeNull();
 		});
 
