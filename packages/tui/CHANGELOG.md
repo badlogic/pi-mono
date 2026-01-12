@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Numbered list items showing "1." for all items when code blocks break list continuity ([#660](https://github.com/badlogic/pi-mono/pull/660) by [@ogulcancelik](https://github.com/ogulcancelik))
+
 ## [0.43.0] - 2026-01-11
 
 ### Added

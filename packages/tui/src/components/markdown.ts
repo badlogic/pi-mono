@@ -418,13 +418,15 @@ export class Markdown implements Component {
 	/**
 	 * Render a list with proper nesting support
 	 */
-	private renderList(token: Token & { items: any[]; ordered: boolean }, depth: number): string[] {
+	private renderList(token: Token & { items: any[]; ordered: boolean; start?: number }, depth: number): string[] {
 		const lines: string[] = [];
 		const indent = "  ".repeat(depth);
+		// Use the list's start property (defaults to 1 for ordered lists)
+		const startNumber = token.start ?? 1;
 
 		for (let i = 0; i < token.items.length; i++) {
 			const item = token.items[i];
-			const bullet = token.ordered ? `${i + 1}. ` : "- ";
+			const bullet = token.ordered ? `${startNumber + i}. ` : "- ";
 
 			// Process item tokens to handle nested lists
 			const itemLines = this.renderListItem(item.tokens || [], depth);
