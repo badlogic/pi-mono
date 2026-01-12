@@ -42,7 +42,7 @@ import {
 	transformRequestBody,
 } from "./openai-codex/request-transformer.js";
 import { parseCodexError, parseCodexSseStream } from "./openai-codex/response-handler.js";
-import { transformMessages } from "./transorm-messages.js";
+import { transformMessages } from "./transform-messages.js";
 
 export interface OpenAICodexResponsesOptions extends StreamOptions {
 	reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
