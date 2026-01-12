@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `pageUp` and `pageDown` key support with `selectPageUp`/`selectPageDown` editor actions ([#662](https://github.com/badlogic/pi-mono/pull/662) by [@aliou](https://github.com/aliou))
+
 ## [0.43.0] - 2026-01-11
 
 ### Added
