@@ -155,7 +155,7 @@ export class ScopedModelsSelectorComponent extends Container {
 		const enabledCount = this.enabledIds?.length ?? this.allIds.length;
 		const allEnabled = this.enabledIds === null;
 		const countText = allEnabled ? "all enabled" : `${enabledCount}/${this.allIds.length} enabled`;
-		const parts = ["Enter toggle", "^A all", "^X clear", "^P provider", "^S save", countText];
+		const parts = ["Enter toggle", "^A all", "^X clear", "^P provider", "Alt+↑↓ reorder", "^S save", countText];
 		return this.isDirty
 			? theme.fg("dim", `  ${parts.join(" · ")} `) + theme.fg("warning", "(unsaved)")
 			: theme.fg("dim", `  ${parts.join(" · ")}`);
@@ -217,6 +217,25 @@ export class ScopedModelsSelectorComponent extends Container {
 			if (this.filteredItems.length === 0) return;
 			this.selectedIndex = this.selectedIndex === this.filteredItems.length - 1 ? 0 : this.selectedIndex + 1;
 			this.updateList();
+			return;
+		}
+
+		// Alt+Up/Down - Reorder enabled models
+		if (matchesKey(data, Key.alt("up")) || matchesKey(data, Key.alt("down"))) {
+			const item = this.filteredItems[this.selectedIndex];
+			if (item && isEnabled(this.enabledIds, item.fullId)) {
+				const delta = matchesKey(data, Key.alt("up")) ? -1 : 1;
+				const enabledList = this.enabledIds ?? this.allIds;
+				const currentIndex = enabledList.indexOf(item.fullId);
+				const newIndex = currentIndex + delta;
+				// Only move if within bounds
+				if (newIndex >= 0 && newIndex < enabledList.length) {
+					this.enabledIds = move(this.enabledIds, this.allIds, item.fullId, delta);
+					this.isDirty = true;
+					this.selectedIndex += delta;
+					this.refresh();
+				}
+			}
 			return;
 		}
 
