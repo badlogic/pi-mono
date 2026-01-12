@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- Inline hint for queued messages showing the `Alt+Up` restore shortcut.
+
 ## [0.43.0] - 2026-01-11
 
 ### Breaking Changes
