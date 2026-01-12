@@ -287,7 +287,7 @@ export const streamAnthropicBedrock: StreamFunction<"anthropic-bedrock"> = (
 			}
 
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error("An unkown error ocurred");
+				throw new Error("An unknown error occurred");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -346,7 +346,7 @@ function createClient(
 	options?: AnthropicBedrockOptions,
 ): AnthropicBedrock {
 	const credentials = parseAwsCredentials(apiKey);
-	const awsRegion = options?.awsRegion || process.env.AWS_REGION || "us-east-1";
+	const awsRegion = options?.awsRegion || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
 
 	const betaFeatures = ["fine-grained-tool-streaming-2025-05-14"];
 	if (options?.interleavedThinking !== false) {
@@ -372,7 +372,6 @@ function createClient(
 		baseURL: baseUrl,
 		dangerouslyAllowBrowser: true,
 		defaultHeaders,
-		maxRetries: 0,
 	});
 
 	return client;
