@@ -31,25 +31,14 @@ function getAliases(): Record<string, string> {
 	if (_aliases) return _aliases;
 
 	const __dirname = path.dirname(fileURLToPath(import.meta.url));
-	// Use .js extension but check if .ts exists (dev mode with tsx)
-	let packageIndex = path.resolve(__dirname, "../..", "index.js");
-	if (!fs.existsSync(packageIndex)) {
-		const tsPath = packageIndex.replace(/\.js$/, ".ts");
-		if (fs.existsSync(tsPath)) packageIndex = tsPath;
-	}
-
-	let extensionsIndex = path.resolve(__dirname, "index.js");
-	if (!fs.existsSync(extensionsIndex)) {
-		const tsPath = extensionsIndex.replace(/\.js$/, ".ts");
-		if (fs.existsSync(tsPath)) extensionsIndex = tsPath;
-	}
+	const packageIndex = path.resolve(__dirname, "../..", "index.js");
 
 	const typeboxEntry = require.resolve("@sinclair/typebox");
 	const typeboxRoot = typeboxEntry.replace(/\/build\/cjs\/index\.js$/, "");
 
 	_aliases = {
 		"@mariozechner/pi-coding-agent": packageIndex,
-		"@mariozechner/pi-coding-agent/extensions": extensionsIndex,
+		"@mariozechner/pi-coding-agent/extensions": path.resolve(__dirname, "index.js"),
 		"@mariozechner/pi-tui": require.resolve("@mariozechner/pi-tui"),
 		"@mariozechner/pi-ai": require.resolve("@mariozechner/pi-ai"),
 		"@sinclair/typebox": typeboxRoot,
