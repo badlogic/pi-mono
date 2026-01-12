@@ -638,11 +638,12 @@ export class SessionManager {
 			this._buildIndex();
 			this.flushed = true;
 		} else {
-			this.newSession();
+			// Keep explicit path (e.g. `--session /path/to/file.jsonl`) instead of generating a new filename
+			this.newSession(undefined, { reuseCurrentSessionFile: true });
 		}
 	}
 
-	newSession(options?: NewSessionOptions): string | undefined {
+	newSession(options?: NewSessionOptions, fileOptions?: { reuseCurrentSessionFile?: boolean }): string | undefined {
 		this.sessionId = randomUUID();
 		const timestamp = new Date().toISOString();
 		const header: SessionHeader = {
@@ -655,11 +656,16 @@ export class SessionManager {
 		};
 		this.fileEntries = [header];
 		this.byId.clear();
+		this.labelsById.clear();
 		this.leafId = null;
 		this.flushed = false;
 
-		// Only generate filename if persisting and not already set (e.g., via --session flag)
-		if (this.persist && !this.sessionFile) {
+		if (!this.persist) {
+			this.sessionFile = undefined;
+			return undefined;
+		}
+
+		if (!fileOptions?.reuseCurrentSessionFile || !this.sessionFile) {
 			const fileTimestamp = timestamp.replace(/[:.]/g, "-");
 			this.sessionFile = join(this.getSessionDir(), `${fileTimestamp}_${this.sessionId}.jsonl`);
 		}
@@ -713,8 +719,8 @@ export class SessionManager {
 	_persist(entry: SessionEntry): void {
 		if (!this.persist || !this.sessionFile) return;
 
-		const hasAssistant = this.fileEntries.some((e) => e.type === "message" && e.message.role === "assistant");
-		if (!hasAssistant) return;
+		const hasMessage = this.fileEntries.some((e) => e.type === "message");
+		if (!hasMessage) return;
 
 		if (!this.flushed) {
 			for (const e of this.fileEntries) {

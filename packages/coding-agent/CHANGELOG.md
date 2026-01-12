@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `/new` continuing to append to the previous session file, which could make conversations appear merged in `/tree` and prevent the new session from showing up in `/resume`.
+- Fixed sessions not being persisted until an assistant message existed, which could hide user-only sessions from `/resume`.
+
 ## [0.43.0] - 2026-01-11
 
 ### Breaking Changes
