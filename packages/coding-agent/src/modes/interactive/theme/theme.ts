@@ -593,8 +593,8 @@ function getDefaultTheme(): string {
 // Global Theme Instance
 // ============================================================================
 
-export let theme: Theme;
-let currentThemeName: string | undefined;
+export let theme: Theme = loadTheme(getDefaultTheme());
+let currentThemeName: string | undefined = getDefaultTheme();
 let themeWatcher: fs.FSWatcher | undefined;
 let onThemeChangeCallback: (() => void) | undefined;
 
