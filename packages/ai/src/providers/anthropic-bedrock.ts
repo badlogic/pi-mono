@@ -1,10 +1,10 @@
 import AnthropicBedrock from "@anthropic-ai/bedrock-sdk";
 import type Anthropic from "@anthropic-ai/sdk";
 import type {
-	ContentBlockParam,
+	BetaStopReason,
 	MessageCreateParamsStreaming,
-	MessageParam,
-} from "@anthropic-ai/sdk/resources/messages.js";
+} from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
+import type { ContentBlockParam, MessageParam } from "@anthropic-ai/sdk/resources/messages.js";
 import { calculateCost } from "../models.js";
 import { getEnvApiKey } from "../stream.js";
 import type {
@@ -120,7 +120,7 @@ export const streamAnthropicBedrock: StreamFunction<"anthropic-bedrock"> = (
 			const apiKey = options?.apiKey ?? getEnvApiKey(model.provider) ?? "";
 			const client = createClient(model, apiKey, options);
 			const params = buildParams(model, context, options);
-			const anthropicStream = client.messages.stream({ ...params, stream: true }, { signal: options?.signal });
+			const anthropicStream = client.beta.messages.stream({ ...params, stream: true }, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
 
 			type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string })) & { index: number };
@@ -348,11 +348,6 @@ function createClient(
 	const credentials = parseAwsCredentials(apiKey);
 	const awsRegion = options?.awsRegion || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
 
-	const betaFeatures = ["fine-grained-tool-streaming-2025-05-14"];
-	if (options?.interleavedThinking !== false) {
-		betaFeatures.push("interleaved-thinking-2025-05-14");
-	}
-
 	const baseUrl = model.baseUrl.includes("{region}")
 		? model.baseUrl.replace("{region}", awsRegion)
 		: model.baseUrl || undefined;
@@ -360,7 +355,6 @@ function createClient(
 	const defaultHeaders = {
 		accept: "application/json",
 		"anthropic-dangerous-direct-browser-access": "true",
-		"anthropic-beta": betaFeatures.join(","),
 		...(model.headers || {}),
 	};
 
@@ -382,10 +376,16 @@ function buildParams(
 	context: Context,
 	options?: AnthropicBedrockOptions,
 ): MessageCreateParamsStreaming {
+	const betaFeatures = ["fine-grained-tool-streaming-2025-05-14"];
+	if (options?.interleavedThinking !== false) {
+		betaFeatures.push("interleaved-thinking-2025-05-14");
+	}
+
 	const params: MessageCreateParamsStreaming = {
 		model: model.id,
 		messages: convertMessages(context.messages, model),
 		max_tokens: options?.maxTokens || (model.maxTokens / 3) | 0,
+		betas: betaFeatures,
 		stream: true,
 	};
 
@@ -594,7 +594,7 @@ function convertTools(tools: Tool[]): Anthropic.Messages.Tool[] {
 	});
 }
 
-function mapStopReason(reason: Anthropic.Messages.StopReason): StopReason {
+function mapStopReason(reason: Anthropic.Messages.StopReason | BetaStopReason): StopReason {
 	switch (reason) {
 		case "end_turn":
 			return "stop";
@@ -608,6 +608,8 @@ function mapStopReason(reason: Anthropic.Messages.StopReason): StopReason {
 			return "stop";
 		case "stop_sequence":
 			return "stop";
+		case "model_context_window_exceeded":
+			return "error";
 		default: {
 			const _exhaustive: never = reason;
 			throw new Error(`Unhandled stop reason: ${_exhaustive}`);
