@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `serviceTier` option for OpenAI Responses requests ([#672](https://github.com/badlogic/pi-mono/pull/672) by [@markusylisiurunen](https://github.com/markusylisiurunen))
+
 ## [0.44.0] - 2026-01-12
 
 ## [0.43.0] - 2026-01-11
