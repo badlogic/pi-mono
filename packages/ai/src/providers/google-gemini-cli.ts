@@ -168,6 +168,7 @@ const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
 const MAX_EMPTY_STREAM_RETRIES = 2;
 const EMPTY_STREAM_BASE_DELAY_MS = 500;
+const CLAUDE_THINKING_BETA_HEADER = "interleaved-thinking-2025-05-14";
 
 /**
  * Extract retry delay from Gemini error response (in milliseconds).
@@ -267,6 +268,11 @@ export function extractRetryDelay(errorText: string, response?: Response | Heade
 	}
 
 	return undefined;
+}
+
+function isClaudeThinkingModel(modelId: string): boolean {
+	const normalized = modelId.toLowerCase();
+	return normalized.includes("claude") && normalized.includes("thinking");
 }
 
 /**
@@ -411,6 +417,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 				"Content-Type": "application/json",
 				Accept: "text/event-stream",
 				...headers,
+				...(isClaudeThinkingModel(model.id) ? { "anthropic-beta": CLAUDE_THINKING_BETA_HEADER } : {}),
 			};
 			const requestBodyJson = JSON.stringify(requestBody);
 
