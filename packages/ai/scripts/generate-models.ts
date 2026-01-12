@@ -131,6 +131,35 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
+		// Process Amazon Bedrock Anthropic models
+		if (data["amazon-bedrock"]?.models) {
+			for (const [modelId, model] of Object.entries(data["amazon-bedrock"].models)) {
+				if (!modelId.startsWith("anthropic.")) continue;
+
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					api: "anthropic-bedrock",
+					provider: "amazon-bedrock",
+					// Template, resolved by the anthropic-bedrock provider based on awsRegion (or AWS_REGION)
+					baseUrl: "https://bedrock-runtime.{region}.amazonaws.com",
+					reasoning: m.reasoning === true,
+					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+				});
+			}
+		}
+
 		// Process Google models
 		if (data.google?.models) {
 			for (const [modelId, model] of Object.entries(data.google.models)) {

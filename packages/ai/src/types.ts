@@ -1,4 +1,5 @@
 import type { AnthropicOptions } from "./providers/anthropic.js";
+import type { AnthropicBedrockOptions } from "./providers/anthropic-bedrock.js";
 import type { GoogleOptions } from "./providers/google.js";
 import type { GoogleGeminiCliOptions } from "./providers/google-gemini-cli.js";
 import type { GoogleVertexOptions } from "./providers/google-vertex.js";
@@ -14,12 +15,14 @@ export type Api =
 	| "openai-responses"
 	| "openai-codex-responses"
 	| "anthropic-messages"
+	| "anthropic-bedrock"
 	| "google-generative-ai"
 	| "google-gemini-cli"
 	| "google-vertex";
 
 export interface ApiOptionsMap {
 	"anthropic-messages": AnthropicOptions;
+	"anthropic-bedrock": AnthropicBedrockOptions;
 	"openai-completions": OpenAICompletionsOptions;
 	"openai-responses": OpenAIResponsesOptions;
 	"openai-codex-responses": OpenAICodexResponsesOptions;
@@ -41,6 +44,7 @@ export type OptionsForApi<TApi extends Api> = ApiOptionsMap[TApi];
 
 export type KnownProvider =
 	| "anthropic"
+	| "amazon-bedrock"
 	| "google"
 	| "google-gemini-cli"
 	| "google-antigravity"

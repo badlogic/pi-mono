@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { supportsXhigh } from "./models.js";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
+import { type AnthropicBedrockOptions, streamAnthropicBedrock } from "./providers/anthropic-bedrock.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
 import {
 	type GoogleGeminiCliOptions,
@@ -101,15 +102,21 @@ export function stream<TApi extends Api>(
 	}
 
 	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
-	if (!apiKey) {
+	if (!apiKey && model.api !== "anthropic-bedrock") {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
 	const providerOptions = { ...options, apiKey };
 
-	const api: Api = model.api;
-	switch (api) {
+	switch (model.api) {
 		case "anthropic-messages":
-			return streamAnthropic(model as Model<"anthropic-messages">, context, providerOptions);
+			return streamAnthropic(model as Model<"anthropic-messages">, context, providerOptions as AnthropicOptions);
+
+		case "anthropic-bedrock":
+			return streamAnthropicBedrock(
+				model as Model<"anthropic-bedrock">,
+				context,
+				providerOptions as AnthropicBedrockOptions,
+			);
 
 		case "openai-completions":
 			return streamOpenAICompletions(model as Model<"openai-completions">, context, providerOptions as any);
@@ -121,7 +128,7 @@ export function stream<TApi extends Api>(
 			return streamOpenAICodexResponses(model as Model<"openai-codex-responses">, context, providerOptions as any);
 
 		case "google-generative-ai":
-			return streamGoogle(model as Model<"google-generative-ai">, context, providerOptions);
+			return streamGoogle(model as Model<"google-generative-ai">, context, providerOptions as GoogleOptions);
 
 		case "google-gemini-cli":
 			return streamGoogleGeminiCli(
@@ -132,7 +139,7 @@ export function stream<TApi extends Api>(
 
 		default: {
 			// This should never be reached if all Api cases are handled
-			const _exhaustive: never = api;
+			const _exhaustive: never = model.api;
 			throw new Error(`Unhandled API: ${_exhaustive}`);
 		}
 	}
@@ -159,7 +166,7 @@ export function streamSimple<TApi extends Api>(
 	}
 
 	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
-	if (!apiKey) {
+	if (!apiKey && model.api !== "anthropic-bedrock") {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
 
@@ -226,6 +233,41 @@ function mapOptionsForApi<TApi extends Api>(
 				thinkingEnabled: true,
 				thinkingBudgetTokens: thinkingBudget,
 			} satisfies AnthropicOptions;
+		}
+
+		case "anthropic-bedrock": {
+			// Explicitly disable thinking when reasoning is not specified
+			if (!options?.reasoning) {
+				return { ...base, thinkingEnabled: false } satisfies AnthropicBedrockOptions;
+			}
+
+			// Claude requires max_tokens > thinking.budget_tokens
+			// So we need to ensure maxTokens accounts for both thinking and output
+			const defaultBudgets: ThinkingBudgets = {
+				minimal: 1024,
+				low: 2048,
+				medium: 8192,
+				high: 16384,
+			};
+			const budgets = { ...defaultBudgets, ...options?.thinkingBudgets };
+
+			const minOutputTokens = 1024;
+			const level = clampReasoning(options.reasoning)!;
+			let thinkingBudget = budgets[level]!;
+			// Caller's maxTokens is the desired output; add thinking budget on top, capped at model limit
+			const maxTokens = Math.min((base.maxTokens || 0) + thinkingBudget, model.maxTokens);
+
+			// If not enough room for thinking + output, reduce thinking budget
+			if (maxTokens <= thinkingBudget) {
+				thinkingBudget = Math.max(0, maxTokens - minOutputTokens);
+			}
+
+			return {
+				...base,
+				maxTokens,
+				thinkingEnabled: true,
+				thinkingBudgetTokens: thinkingBudget,
+			} satisfies AnthropicBedrockOptions;
 		}
 
 		case "openai-completions":
