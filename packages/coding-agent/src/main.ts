@@ -223,6 +223,14 @@ export async function main(args: string[]) {
 	const agentDir = getAgentDir();
 	const eventBus = createEventBus();
 	const settingsManager = SettingsManager.create(cwd);
+
+	// Apply environment variables from settings (does not override existing)
+	for (const [key, value] of Object.entries(settingsManager.getEnv())) {
+		if (process.env[key] === undefined) {
+			process.env[key] = value;
+		}
+	}
+
 	time("SettingsManager.create");
 
 	let extensionsResult: LoadExtensionsResult;

@@ -48,6 +48,7 @@ export interface ThinkingBudgetsSettings {
 }
 
 export interface Settings {
+	env?: Record<string, string>; // Environment variables to set on startup
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
 	defaultModel?: string;
@@ -212,6 +213,10 @@ export class SettingsManager {
 	setLastChangelogVersion(version: string): void {
 		this.globalSettings.lastChangelogVersion = version;
 		this.save();
+	}
+
+	getEnv(): Record<string, string> {
+		return this.settings.env ?? {};
 	}
 
 	getDefaultProvider(): string | undefined {

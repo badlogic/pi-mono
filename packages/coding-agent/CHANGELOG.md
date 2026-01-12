@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `env` setting in settings.json for defining environment variables (applied on startup, does not override existing env vars)
+
 ## [0.43.0] - 2026-01-11
 
 ### Breaking Changes
