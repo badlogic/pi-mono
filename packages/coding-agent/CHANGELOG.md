@@ -4,6 +4,7 @@
 
 ### Added
 
+- `/scoped-models`: Alt+Up/Down to reorder enabled models. Order is preserved when saving with Ctrl+S and determines Ctrl+P cycling order.
 - Extension example: `sandbox/` for OS-level bash sandboxing using `@anthropic-ai/sandbox-runtime` with per-project config ([#673](https://github.com/badlogic/pi-mono/pull/673) by [@dannote](https://github.com/dannote))
 
 ## [0.44.0] - 2026-01-12
