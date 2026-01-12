@@ -39,7 +39,7 @@ const claudeCodeToolNames: Record<string, string> = {
 	bash: "Bash",
 	grep: "Grep",
 	find: "Glob",
-	ls: "Glob",
+	ls: "Ls",
 };
 
 const toClaudeCodeName = (name: string) => claudeCodeToolNames[name] || name;
