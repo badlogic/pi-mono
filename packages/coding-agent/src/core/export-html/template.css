@@ -194,6 +194,10 @@
       color: var(--customMessageLabel);
     }
 
+    .tree-container > .tree-node:last-child {
+      margin-bottom: 1rem;
+    }
+
     .tree-status {
       padding: 4px 12px;
       font-size: 10px;
