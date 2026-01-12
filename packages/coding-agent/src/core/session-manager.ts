@@ -658,7 +658,9 @@ export class SessionManager {
 			this._buildIndex();
 			this.flushed = true;
 		} else {
+			const explicitPath = this.sessionFile;
 			this.newSession();
+			this.sessionFile = explicitPath; // preserve explicit path from --session flag
 		}
 	}
 
@@ -675,11 +677,11 @@ export class SessionManager {
 		};
 		this.fileEntries = [header];
 		this.byId.clear();
+		this.labelsById.clear();
 		this.leafId = null;
 		this.flushed = false;
 
-		// Only generate filename if persisting and not already set (e.g., via --session flag)
-		if (this.persist && !this.sessionFile) {
+		if (this.persist) {
 			const fileTimestamp = timestamp.replace(/[:.]/g, "-");
 			this.sessionFile = join(this.getSessionDir(), `${fileTimestamp}_${this.sessionId}.jsonl`);
 		}
