@@ -87,7 +87,7 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 					if (!block.text || block.text.trim() === "") continue;
 					parts.push({
 						text: sanitizeSurrogates(block.text),
-						...(block.textSignature && { thoughtSignature: block.textSignature }),
+						...(isSameProviderAndModel && block.textSignature && { thoughtSignature: block.textSignature }),
 					});
 				} else if (block.type === "thinking") {
 					// Skip empty thinking blocks
@@ -112,7 +112,7 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 							args: block.arguments,
 						},
 					};
-					if (block.thoughtSignature) {
+					if (isSameProviderAndModel && block.thoughtSignature) {
 						part.thoughtSignature = block.thoughtSignature;
 					}
 					parts.push(part);
