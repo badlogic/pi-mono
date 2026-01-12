@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Extension example: `notify.ts` for desktop notifications via OSC 777 escape sequence ([#658](https://github.com/badlogic/pi-mono/pull/658) by [@ferologics](https://github.com/ferologics))
+
 ## [0.43.0] - 2026-01-11
 
 ### Breaking Changes
