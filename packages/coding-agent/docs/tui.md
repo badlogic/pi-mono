@@ -568,6 +568,7 @@ pi.registerCommand("settings", {
           ctx.ui.notify(`${id} = ${newValue}`, "info");
         },
         () => done(undefined),  // On close
+        { enableSearch: true }, // Optional: enable fuzzy search by label
       );
       container.addChild(settingsList);
 
