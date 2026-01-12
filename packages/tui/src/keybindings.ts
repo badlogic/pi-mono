@@ -26,6 +26,8 @@ export type EditorAction =
 	// Selection/autocomplete
 	| "selectUp"
 	| "selectDown"
+	| "selectPageUp"
+	| "selectPageDown"
 	| "selectConfirm"
 	| "selectCancel"
 	// Clipboard
@@ -67,6 +69,8 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	// Selection/autocomplete
 	selectUp: "up",
 	selectDown: "down",
+	selectPageUp: "pageUp",
+	selectPageDown: "pageDown",
 	selectConfirm: "enter",
 	selectCancel: ["escape", "ctrl+c"],
 	// Clipboard

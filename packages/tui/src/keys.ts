@@ -114,6 +114,8 @@ type SpecialKey =
 	| "delete"
 	| "home"
 	| "end"
+	| "pageUp"
+	| "pageDown"
 	| "up"
 	| "down"
 	| "left"
@@ -164,6 +166,8 @@ export const Key = {
 	delete: "delete" as const,
 	home: "home" as const,
 	end: "end" as const,
+	pageUp: "pageUp" as const,
+	pageDown: "pageDown" as const,
 	up: "up" as const,
 	down: "down" as const,
 	left: "left" as const,
@@ -611,6 +615,18 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 			}
 			return matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.end, modifier);
 
+		case "pageUp":
+			if (modifier === 0) {
+				return data === "\x1b[5~" || matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.pageUp, 0);
+			}
+			return matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.pageUp, modifier);
+
+		case "pageDown":
+			if (modifier === 0) {
+				return data === "\x1b[6~" || matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.pageDown, 0);
+			}
+			return matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.pageDown, modifier);
+
 		case "up":
 			if (modifier === 0) {
 				return data === "\x1b[A" || matchesKittySequence(data, ARROW_CODEPOINTS.up, 0);
@@ -713,6 +729,8 @@ export function parseKey(data: string): string | undefined {
 		else if (codepoint === FUNCTIONAL_CODEPOINTS.delete) keyName = "delete";
 		else if (codepoint === FUNCTIONAL_CODEPOINTS.home) keyName = "home";
 		else if (codepoint === FUNCTIONAL_CODEPOINTS.end) keyName = "end";
+		else if (codepoint === FUNCTIONAL_CODEPOINTS.pageUp) keyName = "pageUp";
+		else if (codepoint === FUNCTIONAL_CODEPOINTS.pageDown) keyName = "pageDown";
 		else if (codepoint === ARROW_CODEPOINTS.up) keyName = "up";
 		else if (codepoint === ARROW_CODEPOINTS.down) keyName = "down";
 		else if (codepoint === ARROW_CODEPOINTS.left) keyName = "left";
@@ -749,6 +767,8 @@ export function parseKey(data: string): string | undefined {
 	if (data === "\x1b[H") return "home";
 	if (data === "\x1b[F") return "end";
 	if (data === "\x1b[3~") return "delete";
+	if (data === "\x1b[5~") return "pageUp";
+	if (data === "\x1b[6~") return "pageDown";
 
 	// Raw Ctrl+letter
 	if (data.length === 1) {

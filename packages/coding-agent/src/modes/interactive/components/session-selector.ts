@@ -227,6 +227,14 @@ class SessionList implements Component {
 		else if (kb.matches(keyData, "selectDown")) {
 			this.selectedIndex = Math.min(this.filteredSessions.length - 1, this.selectedIndex + 1);
 		}
+		// Page up - jump up by maxVisible items
+		else if (kb.matches(keyData, "selectPageUp")) {
+			this.selectedIndex = Math.max(0, this.selectedIndex - this.maxVisible);
+		}
+		// Page down - jump down by maxVisible items
+		else if (kb.matches(keyData, "selectPageDown")) {
+			this.selectedIndex = Math.min(this.filteredSessions.length - 1, this.selectedIndex + this.maxVisible);
+		}
 		// Enter
 		else if (kb.matches(keyData, "selectConfirm")) {
 			const selected = this.filteredSessions[this.selectedIndex];
