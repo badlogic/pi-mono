@@ -43,6 +43,13 @@ export function retainThoughtSignature(existing: string | undefined, incoming: s
 }
 
 /**
+ * Claude models via Google APIs require explicit tool call IDs in function calls/responses.
+ */
+export function requiresToolCallId(modelId: string): boolean {
+	return modelId.startsWith("claude-");
+}
+
+/**
  * Convert internal messages to Gemini Content[] format.
  */
 export function convertMessages<T extends GoogleApiType>(model: Model<T>, context: Context): Content[] {
@@ -110,6 +117,7 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 						functionCall: {
 							name: block.name,
 							args: block.arguments,
+							...(requiresToolCallId(model.id) ? { id: block.id } : {}),
 						},
 					};
 					if (block.thoughtSignature) {
@@ -150,12 +158,14 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 				},
 			}));
 
+			const includeId = requiresToolCallId(model.id);
 			const functionResponsePart: Part = {
 				functionResponse: {
 					name: msg.toolName,
 					response: msg.isError ? { error: responseValue } : { output: responseValue },
 					// Nest images inside functionResponse.parts for Gemini 3
 					...(hasImages && supportsMultimodalFunctionResponse && { parts: imageParts }),
+					...(includeId ? { id: msg.toolCallId } : {}),
 				},
 			};
 
