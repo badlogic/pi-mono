@@ -49,6 +49,8 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `timed-confirm.ts` | Demonstrates AbortSignal for auto-dismissing `ctx.ui.confirm()` and `ctx.ui.select()` dialogs |
 | `modal-editor.ts` | Custom vim-like modal editor via `ctx.ui.setEditorComponent()` |
 | `notify.ts` | Desktop notifications via OSC 777 when agent finishes (Ghostty, iTerm2, WezTerm) |
+| `overlay-test.ts` | Test overlay compositing with inline text inputs and edge cases |
+| `overlay-qa-tests.ts` | Comprehensive overlay QA tests: anchors, margins, stacking, overflow protection |
 
 ### Git Integration
 

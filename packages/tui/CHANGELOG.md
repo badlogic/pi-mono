@@ -8,6 +8,7 @@
 - `pageUp` and `pageDown` key support with `selectPageUp`/`selectPageDown` editor actions ([#662](https://github.com/badlogic/pi-mono/pull/662) by [@aliou](https://github.com/aliou))
 - `OverlayOptions` API for overlay positioning and sizing: `width`, `widthPercent`, `minWidth`, `maxHeight`, `maxHeightPercent`, `anchor`, `offsetX`, `offsetY`, `rowPercent`, `colPercent`, `row`, `col`, `margin`
 - New exported types: `OverlayAnchor`, `OverlayMargin`, `OverlayOptions`
+- `truncateToWidth()` now accepts optional `pad` parameter to pad result with spaces to exactly `maxWidth`
 
 ### Fixed
 

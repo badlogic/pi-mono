@@ -16,7 +16,14 @@ import {
 	type Model,
 	type OAuthProvider,
 } from "@mariozechner/pi-ai";
-import type { AutocompleteItem, EditorComponent, EditorTheme, KeyId, SlashCommand } from "@mariozechner/pi-tui";
+import type {
+	AutocompleteItem,
+	EditorComponent,
+	EditorTheme,
+	KeyId,
+	OverlayOptions,
+	SlashCommand,
+} from "@mariozechner/pi-tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
@@ -1253,7 +1260,7 @@ export class InteractiveMode {
 			keybindings: KeybindingsManager,
 			done: (result: T) => void,
 		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
-		options?: { overlay?: boolean },
+		options?: { overlay?: boolean; overlayOptions?: OverlayOptions | (() => OverlayOptions) },
 	): Promise<T> {
 		const savedText = this.editor.getText();
 		const isOverlay = options?.overlay ?? false;
@@ -1289,8 +1296,20 @@ export class InteractiveMode {
 					if (closed) return;
 					component = c;
 					if (isOverlay) {
-						const w = (component as { width?: number }).width;
-						this.ui.showOverlay(component, w ? { width: w } : undefined);
+						// Resolve overlay options - can be static or dynamic function
+						const resolveOptions = (): OverlayOptions | undefined => {
+							if (options?.overlayOptions) {
+								const opts =
+									typeof options.overlayOptions === "function"
+										? options.overlayOptions()
+										: options.overlayOptions;
+								return opts;
+							}
+							// Fallback: use component's width property if available
+							const w = (component as { width?: number }).width;
+							return w ? { width: w } : undefined;
+						};
+						this.ui.showOverlay(component, resolveOptions());
 					} else {
 						this.editorContainer.clear();
 						this.editorContainer.addChild(component);

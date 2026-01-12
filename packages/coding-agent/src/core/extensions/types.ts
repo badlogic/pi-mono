@@ -15,7 +15,7 @@ import type {
 	ThinkingLevel,
 } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
-import type { Component, EditorComponent, EditorTheme, KeyId, TUI } from "@mariozechner/pi-tui";
+import type { Component, EditorComponent, EditorTheme, KeyId, OverlayOptions, TUI } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { BashResult } from "../bash-executor.js";
@@ -112,7 +112,11 @@ export interface ExtensionUIContext {
 			keybindings: KeybindingsManager,
 			done: (result: T) => void,
 		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
-		options?: { overlay?: boolean },
+		options?: {
+			overlay?: boolean;
+			/** Overlay positioning/sizing options. Can be static or a function for dynamic updates. */
+			overlayOptions?: OverlayOptions | (() => OverlayOptions);
+		},
 	): Promise<T>;
 
 	/** Set the text in the core input editor. */

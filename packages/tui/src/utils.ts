@@ -650,18 +650,25 @@ export function applyBackgroundToLine(line: string, width: number, bgFn: (text: 
 
 /**
  * Truncate text to fit within a maximum visible width, adding ellipsis if needed.
+ * Optionally pad with spaces to reach exactly maxWidth.
  * Properly handles ANSI escape codes (they don't count toward width).
  *
  * @param text - Text to truncate (may contain ANSI codes)
  * @param maxWidth - Maximum visible width
  * @param ellipsis - Ellipsis string to append when truncating (default: "...")
- * @returns Truncated text with ellipsis if it exceeded maxWidth
+ * @param pad - If true, pad result with spaces to exactly maxWidth (default: false)
+ * @returns Truncated text, optionally padded to exactly maxWidth
  */
-export function truncateToWidth(text: string, maxWidth: number, ellipsis: string = "..."): string {
+export function truncateToWidth(
+	text: string,
+	maxWidth: number,
+	ellipsis: string = "...",
+	pad: boolean = false,
+): string {
 	const textVisibleWidth = visibleWidth(text);
 
 	if (textVisibleWidth <= maxWidth) {
-		return text;
+		return pad ? text + " ".repeat(maxWidth - textVisibleWidth) : text;
 	}
 
 	const ellipsisWidth = visibleWidth(ellipsis);
@@ -722,7 +729,12 @@ export function truncateToWidth(text: string, maxWidth: number, ellipsis: string
 	}
 
 	// Add reset code before ellipsis to prevent styling leaking into it
-	return `${result}\x1b[0m${ellipsis}`;
+	const truncated = `${result}\x1b[0m${ellipsis}`;
+	if (pad) {
+		const truncatedWidth = visibleWidth(truncated);
+		return truncated + " ".repeat(Math.max(0, maxWidth - truncatedWidth));
+	}
+	return truncated;
 }
 
 /**
