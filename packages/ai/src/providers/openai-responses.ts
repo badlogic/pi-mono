@@ -48,6 +48,7 @@ function shortHash(str: string): string {
 export interface OpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
+	serviceTier?: ResponseCreateParamsStreaming["service_tier"];
 }
 
 /**
@@ -371,6 +372,10 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 
 	if (options?.temperature !== undefined) {
 		params.temperature = options?.temperature;
+	}
+
+	if (options?.serviceTier !== undefined) {
+		params.service_tier = options.serviceTier;
 	}
 
 	if (context.tools) {
