@@ -274,7 +274,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					return session.sessionManager.getSessionName();
 				},
 				getActiveTools: () => session.getActiveToolNames(),
-				getAllTools: () => session.getAllToolNames(),
+				getAllTools: () => session.getAllTools(),
 				setActiveTools: (toolNames: string[]) => session.setActiveToolsByName(toolNames),
 				setModel: async (model) => {
 					const key = await session.modelRegistry.getApiKey(model);

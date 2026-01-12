@@ -99,6 +99,7 @@ export type {
 	ToolCallEventResult,
 	// Tools
 	ToolDefinition,
+	ToolInfo,
 	ToolRenderResultOptions,
 	ToolResultEvent,
 	ToolResultEventResult,
