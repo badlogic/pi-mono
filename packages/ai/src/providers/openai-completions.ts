@@ -365,6 +365,7 @@ function createClient(model: Model<"openai-completions">, context: Context, apiK
 function buildParams(model: Model<"openai-completions">, context: Context, options?: OpenAICompletionsOptions) {
 	const compat = getCompat(model);
 	const messages = convertMessages(model, context, compat);
+	maybeAddOpenRouterAnthropicCacheControl(model, messages);
 
 	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
 		model: model.id,
@@ -408,6 +409,39 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 	}
 
 	return params;
+}
+
+function maybeAddOpenRouterAnthropicCacheControl(
+	model: Model<"openai-completions">,
+	messages: ChatCompletionMessageParam[],
+): void {
+	if (model.provider !== "openrouter" || !model.id.startsWith("anthropic/")) return;
+
+	// Anthropic-style caching requires cache_control on a text part. Add a breakpoint
+	// on the last user/assistant message (walking backwards until we find text content).
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role !== "user" && msg.role !== "assistant") continue;
+
+		const content = msg.content;
+		if (typeof content === "string") {
+			msg.content = [
+				Object.assign({ type: "text" as const, text: content }, { cache_control: { type: "ephemeral" } }),
+			];
+			return;
+		}
+
+		if (!Array.isArray(content)) continue;
+
+		// Find last text part and add cache_control
+		for (let j = content.length - 1; j >= 0; j--) {
+			const part = content[j];
+			if (part?.type === "text") {
+				Object.assign(part, { cache_control: { type: "ephemeral" } });
+				return;
+			}
+		}
+	}
 }
 
 function convertMessages(
