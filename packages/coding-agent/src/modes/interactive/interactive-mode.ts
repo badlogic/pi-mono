@@ -71,6 +71,7 @@ import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.js";
+import { ScopedSkillsSelectorComponent } from "./components/scoped-skills-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
@@ -283,6 +284,7 @@ export class InteractiveMode {
 				},
 			},
 			{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
+			{ name: "scoped-skills", description: "Enable/disable skills in session" },
 			{ name: "export", description: "Export session to HTML file" },
 			{ name: "share", description: "Share session as a secret GitHub gist" },
 			{ name: "copy", description: "Copy last agent message to clipboard" },
@@ -1418,6 +1420,11 @@ export class InteractiveMode {
 			if (text === "/scoped-models") {
 				this.editor.setText("");
 				await this.showModelsSelector();
+				return;
+			}
+			if (text === "/scoped-skills") {
+				this.editor.setText("");
+				await this.showSkillsSelector();
 				return;
 			}
 			if (text === "/model" || text.startsWith("/model ")) {
@@ -2771,6 +2778,104 @@ export class InteractiveMode {
 								: enabledIds;
 						this.settingsManager.setEnabledModels(newPatterns);
 						this.showStatus("Model selection saved to settings");
+					},
+					onCancel: () => {
+						done();
+						this.ui.requestRender();
+					},
+				},
+			);
+			return { component: selector, focus: selector };
+		});
+	}
+
+	private async showSkillsSelector(): Promise<void> {
+		const allSkills = this.session.skills;
+
+		if (allSkills.length === 0) {
+			this.showStatus("No skills available");
+			return;
+		}
+
+		// Check if session has scoped skills
+		const sessionScopedSkills = this.session.scopedSkillNames;
+
+		// Build enabled skill names from session state or settings
+		const enabledSkillNames = new Set<string>();
+		let hasFilter = false;
+
+		if (sessionScopedSkills !== null) {
+			// Use current session's scoped skills
+			for (const name of sessionScopedSkills) {
+				enabledSkillNames.add(name);
+			}
+			hasFilter = true;
+		} else {
+			// Fall back to settings - check includeSkills
+			const skillsSettings = this.session.skillsSettings;
+			if (skillsSettings && skillsSettings.includeSkills.length > 0) {
+				hasFilter = true;
+				// Match skills against include patterns (exact match for now)
+				for (const skill of allSkills) {
+					if (skillsSettings.includeSkills.includes(skill.name)) {
+						enabledSkillNames.add(skill.name);
+					}
+				}
+			}
+		}
+
+		// Track current enabled state (session-only until persisted)
+		const currentEnabledNames = new Set(enabledSkillNames);
+		let currentHasFilter = hasFilter;
+
+		// Helper to update session's scoped skills (session-only, no persist)
+		const updateSessionSkills = (enabledNames: Set<string>) => {
+			if (enabledNames.size > 0 && enabledNames.size < allSkills.length) {
+				this.session.setScopedSkillNames(new Set(enabledNames));
+			} else {
+				// All enabled or none = no filter
+				this.session.setScopedSkillNames(null);
+			}
+		};
+
+		this.showSelector((done) => {
+			const selector = new ScopedSkillsSelectorComponent(
+				{
+					allSkills: [...allSkills],
+					enabledSkillNames: currentEnabledNames,
+					hasFilter: currentHasFilter,
+				},
+				{
+					onSkillToggle: (skillName, enabled) => {
+						if (enabled) {
+							currentEnabledNames.add(skillName);
+						} else {
+							currentEnabledNames.delete(skillName);
+						}
+						currentHasFilter = true;
+						updateSessionSkills(currentEnabledNames);
+					},
+					onEnableAll: (allSkillNames) => {
+						currentEnabledNames.clear();
+						for (const name of allSkillNames) {
+							currentEnabledNames.add(name);
+						}
+						currentHasFilter = false;
+						updateSessionSkills(currentEnabledNames);
+					},
+					onClearAll: () => {
+						currentEnabledNames.clear();
+						currentHasFilter = true;
+						updateSessionSkills(currentEnabledNames);
+					},
+					onPersist: (enabledNames) => {
+						// Persist to settings via includeSkills
+						const newPatterns =
+							enabledNames.length === allSkills.length
+								? [] // All enabled = clear filter
+								: enabledNames;
+						this.settingsManager.setIncludeSkills(newPatterns);
+						this.showStatus("Skill selection saved to settings");
 					},
 					onCancel: () => {
 						done();
