@@ -92,6 +92,7 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		setModel: () => Promise.reject(new Error("Extension runtime not initialized")),
 		getThinkingLevel: notInitialized,
 		setThinkingLevel: notInitialized,
+		getToolInfo: notInitialized,
 		flagValues: new Map(),
 	};
 }
@@ -179,6 +180,10 @@ function createExtensionAPI(
 
 		getAllTools(): string[] {
 			return runtime.getAllTools();
+		},
+
+		getToolInfo() {
+			return runtime.getToolInfo();
 		},
 
 		setActiveTools(toolNames: string[]): void {

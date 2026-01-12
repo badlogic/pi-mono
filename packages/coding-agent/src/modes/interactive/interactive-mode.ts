@@ -678,6 +678,7 @@ export class InteractiveMode {
 				},
 				getActiveTools: () => this.session.getActiveToolNames(),
 				getAllTools: () => this.session.getAllToolNames(),
+				getToolInfo: () => this.session.getToolInfo(),
 				setActiveTools: (toolNames) => this.session.setActiveToolsByName(toolNames),
 				setModel: async (model) => {
 					const key = await this.session.modelRegistry.getApiKey(model);

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `pi.getToolInfo()` extension API to get tool names and descriptions ([#647](https://github.com/badlogic/pi-mono/issues/647))
+
 ## [0.43.0] - 2026-01-11
 
 ### Breaking Changes

@@ -60,6 +60,7 @@ export type {
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
 	GetThinkingLevelHandler,
+	GetToolInfoHandler,
 	GrepToolResultEvent,
 	KeybindingsManager,
 	LoadExtensionsResult,
@@ -99,6 +100,7 @@ export type {
 	ToolCallEventResult,
 	// Tools
 	ToolDefinition,
+	ToolInfo,
 	ToolRenderResultOptions,
 	ToolResultEvent,
 	ToolResultEventResult,

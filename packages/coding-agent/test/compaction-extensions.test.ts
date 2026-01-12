@@ -110,6 +110,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 				appendEntry: async () => {},
 				getActiveTools: () => [],
 				getAllTools: () => [],
+				getToolInfo: () => [],
 				setActiveTools: () => {},
 				setModel: async () => false,
 				getThinkingLevel: () => "off",

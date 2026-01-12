@@ -466,6 +466,16 @@ export class AgentSession {
 	}
 
 	/**
+	 * Get tool info (name and description) for all configured tools.
+	 */
+	getToolInfo(): Array<{ name: string; description: string }> {
+		return Array.from(this._toolRegistry.values()).map((t) => ({
+			name: t.name,
+			description: t.description,
+		}));
+	}
+
+	/**
 	 * Set active tools by name.
 	 * Only tools in the registry can be enabled. Unknown tool names are ignored.
 	 * Also rebuilds the system prompt to reflect the new tool set.

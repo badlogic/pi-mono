@@ -736,6 +736,9 @@ export interface ExtensionAPI {
 	/** Get all configured tools (built-in + extension tools). */
 	getAllTools(): string[];
 
+	/** Get tool info (name and description) for all configured tools. */
+	getToolInfo(): ToolInfo[];
+
 	/** Set the active tools by name. */
 	setActiveTools(toolNames: string[]): void;
 
@@ -801,6 +804,11 @@ export type GetActiveToolsHandler = () => string[];
 
 export type GetAllToolsHandler = () => string[];
 
+/** Simplified tool info for extensions */
+export type ToolInfo = Pick<ToolDefinition, "name" | "description">;
+
+export type GetToolInfoHandler = () => ToolInfo[];
+
 export type SetActiveToolsHandler = (toolNames: string[]) => void;
 
 export type SetModelHandler = (model: Model<any>) => Promise<boolean>;
@@ -831,6 +839,7 @@ export interface ExtensionActions {
 	setModel: SetModelHandler;
 	getThinkingLevel: GetThinkingLevelHandler;
 	setThinkingLevel: SetThinkingLevelHandler;
+	getToolInfo: GetToolInfoHandler;
 }
 
 /**

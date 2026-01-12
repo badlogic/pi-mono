@@ -862,12 +862,14 @@ const result = await pi.exec("git", ["status"], { signal, timeout: 5000 });
 
 **Examples:** [auto-commit-on-exit.ts](../examples/extensions/auto-commit-on-exit.ts), [dirty-repo-guard.ts](../examples/extensions/dirty-repo-guard.ts), [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts)
 
-### pi.getActiveTools() / pi.getAllTools() / pi.setActiveTools(names)
+### pi.getActiveTools() / pi.getAllTools() / pi.getToolInfo() / pi.setActiveTools(names)
 
 Manage active tools.
 
 ```typescript
 const active = pi.getActiveTools();  // ["read", "bash", "edit", "write"]
+const all = pi.getAllTools();        // All tool names
+const info = pi.getToolInfo();       // [{ name: "read", description: "Read file contents..." }, ...]
 pi.setActiveTools(["read", "bash"]); // Switch to read-only
 ```
 
