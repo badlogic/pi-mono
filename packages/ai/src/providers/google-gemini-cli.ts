@@ -211,13 +211,13 @@ function extractRetryDelay(errorText: string): number | undefined {
 }
 
 /**
- * Check if an error is retryable (rate limit, server error, etc.)
+ * Check if an error is retryable (rate limit, server error, network error, etc.)
  */
 function isRetryableError(status: number, errorText: string): boolean {
 	if (status === 429 || status === 500 || status === 502 || status === 503 || status === 504) {
 		return true;
 	}
-	return /resource.?exhausted|rate.?limit|overloaded|service.?unavailable/i.test(errorText);
+	return /resource.?exhausted|rate.?limit|overloaded|service.?unavailable|other.?side.?closed/i.test(errorText);
 }
 
 /**
