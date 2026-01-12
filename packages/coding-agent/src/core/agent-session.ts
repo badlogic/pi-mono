@@ -185,6 +185,7 @@ export class AgentSession {
 	private _skills: Skill[];
 	private _skillWarnings: SkillWarning[];
 	private _skillsSettings: Required<SkillsSettings> | undefined;
+	private _scopedSkillNames: Set<string> | null = null;
 
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
@@ -892,6 +893,28 @@ export class AgentSession {
 	/** Skill loading warnings captured by SDK */
 	get skillWarnings(): readonly SkillWarning[] {
 		return this._skillWarnings;
+	}
+
+	/** Scoped skill names (for filtering skills), or null if not scoped */
+	get scopedSkillNames(): ReadonlySet<string> | null {
+		return this._scopedSkillNames;
+	}
+
+	/** Set scoped skill names (for filtering skills) */
+	setScopedSkillNames(names: Set<string> | null): void {
+		this._scopedSkillNames = names;
+	}
+
+	/**
+	 * Get effective skills filtered by scoped skill names.
+	 * If _scopedSkillNames is null, returns all skills.
+	 * Otherwise filters to only include skills whose names are in the scope.
+	 */
+	getEffectiveSkills(): readonly Skill[] {
+		if (this._scopedSkillNames === null) {
+			return this._skills;
+		}
+		return this._skills.filter((skill) => this._scopedSkillNames!.has(skill.name));
 	}
 
 	/**

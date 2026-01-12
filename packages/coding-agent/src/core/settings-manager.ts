@@ -391,6 +391,22 @@ export class SettingsManager {
 		};
 	}
 
+	setIncludeSkills(patterns: string[]): void {
+		if (!this.globalSettings.skills) {
+			this.globalSettings.skills = {};
+		}
+		this.globalSettings.skills.includeSkills = patterns;
+		this.save();
+	}
+
+	setIgnoredSkills(patterns: string[]): void {
+		if (!this.globalSettings.skills) {
+			this.globalSettings.skills = {};
+		}
+		this.globalSettings.skills.ignoredSkills = patterns;
+		this.save();
+	}
+
 	getEnableSkillCommands(): boolean {
 		return this.settings.skills?.enableSkillCommands ?? true;
 	}
