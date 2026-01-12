@@ -139,24 +139,33 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				const m = model as ModelsDevModel;
 				if (m.tool_call !== true) continue;
 
-				models.push({
-					id: modelId,
-					name: m.name || modelId,
-					api: "anthropic-bedrock",
-					provider: "amazon-bedrock",
-					// Template, resolved by the anthropic-bedrock provider based on awsRegion (or AWS_REGION)
-					baseUrl: "https://bedrock-runtime.{region}.amazonaws.com",
-					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
-					cost: {
-						input: m.cost?.input || 0,
-						output: m.cost?.output || 0,
-						cacheRead: m.cost?.cache_read || 0,
-						cacheWrite: m.cost?.cache_write || 0,
-					},
-					contextWindow: m.limit?.context || 4096,
-					maxTokens: m.limit?.output || 4096,
-				});
+				const baseName = m.name || modelId;
+				const variants = [
+					{ id: modelId, nameSuffix: "" },
+					{ id: `global.${modelId}`, nameSuffix: " (global)" },
+					{ id: `eu.${modelId}`, nameSuffix: " (eu)" },
+				];
+
+				for (const variant of variants) {
+					models.push({
+						id: variant.id,
+						name: `${baseName}${variant.nameSuffix}`,
+						api: "anthropic-bedrock",
+						provider: "amazon-bedrock",
+						// Template, resolved by the anthropic-bedrock provider based on awsRegion (or AWS_REGION)
+						baseUrl: "https://bedrock-runtime.{region}.amazonaws.com",
+						reasoning: m.reasoning === true,
+						input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+						cost: {
+							input: m.cost?.input || 0,
+							output: m.cost?.output || 0,
+							cacheRead: m.cost?.cache_read || 0,
+							cacheWrite: m.cost?.cache_write || 0,
+						},
+						contextWindow: m.limit?.context || 4096,
+						maxTokens: m.limit?.output || 4096,
+					});
+				}
 			}
 		}
 
