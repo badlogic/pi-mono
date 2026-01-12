@@ -42,6 +42,73 @@ export interface Component {
 export { visibleWidth };
 
 /**
+ * Anchor position for overlays
+ */
+export type OverlayAnchor =
+	| "center"
+	| "top-left"
+	| "top-right"
+	| "bottom-left"
+	| "bottom-right"
+	| "top-center"
+	| "bottom-center"
+	| "left-center"
+	| "right-center";
+
+/**
+ * Margin configuration for overlays
+ */
+export interface OverlayMargin {
+	top?: number;
+	right?: number;
+	bottom?: number;
+	left?: number;
+}
+
+/**
+ * Options for overlay positioning and sizing
+ */
+export interface OverlayOptions {
+	// === Sizing (absolute) ===
+	/** Fixed width in columns */
+	width?: number;
+	/** Minimum width in columns */
+	minWidth?: number;
+	/** Maximum height in rows */
+	maxHeight?: number;
+
+	// === Sizing (relative to terminal) ===
+	/** Width as percentage of terminal width (0-100) */
+	widthPercent?: number;
+	/** Maximum height as percentage of terminal height (0-100) */
+	maxHeightPercent?: number;
+
+	// === Positioning - anchor-based ===
+	/** Anchor point for positioning (default: 'center') */
+	anchor?: OverlayAnchor;
+	/** Horizontal offset from anchor position (positive = right) */
+	offsetX?: number;
+	/** Vertical offset from anchor position (positive = down) */
+	offsetY?: number;
+
+	// === Positioning - percentage-based (alternative to anchor) ===
+	/** Vertical position as percentage (0 = top, 100 = bottom) */
+	rowPercent?: number;
+	/** Horizontal position as percentage (0 = left, 100 = right) */
+	colPercent?: number;
+
+	// === Positioning - absolute (low-level) ===
+	/** Absolute row position (overrides anchor/percent) */
+	row?: number;
+	/** Absolute column position (overrides anchor/percent) */
+	col?: number;
+
+	// === Margin from terminal edges ===
+	/** Margin from terminal edges. Number applies to all sides. */
+	margin?: OverlayMargin | number;
+}
+
+/**
  * Container - a component that contains other components
  */
 export class Container implements Component {
@@ -96,7 +163,7 @@ export class TUI extends Container {
 	// Overlay stack for modal components rendered on top of base content
 	private overlayStack: {
 		component: Component;
-		options?: { row?: number; col?: number; width?: number };
+		options?: OverlayOptions;
 		preFocus: Component | null;
 	}[] = [];
 
@@ -109,8 +176,8 @@ export class TUI extends Container {
 		this.focusedComponent = component;
 	}
 
-	/** Show an overlay component centered (or at specified position). */
-	showOverlay(component: Component, options?: { row?: number; col?: number; width?: number }): void {
+	/** Show an overlay component with configurable positioning and sizing. */
+	showOverlay(component: Component, options?: OverlayOptions): void {
 		this.overlayStack.push({ component, options, preFocus: this.focusedComponent });
 		this.setFocus(component);
 		this.terminal.hideCursor();
@@ -260,30 +327,202 @@ export class TUI extends Container {
 		return line.includes("\x1b_G") || line.includes("\x1b]1337;File=");
 	}
 
+	/**
+	 * Resolve overlay layout from options.
+	 * Returns { width, row, col, maxHeight } for rendering.
+	 */
+	private resolveOverlayLayout(
+		options: OverlayOptions | undefined,
+		overlayHeight: number,
+		termWidth: number,
+		termHeight: number,
+	): { width: number; row: number; col: number; maxHeight: number | undefined } {
+		const opt = options ?? {};
+
+		// Parse margin (clamp to non-negative)
+		const margin =
+			typeof opt.margin === "number"
+				? { top: opt.margin, right: opt.margin, bottom: opt.margin, left: opt.margin }
+				: (opt.margin ?? {});
+		const marginTop = Math.max(0, margin.top ?? 0);
+		const marginRight = Math.max(0, margin.right ?? 0);
+		const marginBottom = Math.max(0, margin.bottom ?? 0);
+		const marginLeft = Math.max(0, margin.left ?? 0);
+
+		// Available space after margins
+		const availWidth = Math.max(1, termWidth - marginLeft - marginRight);
+		const availHeight = Math.max(1, termHeight - marginTop - marginBottom);
+
+		// === Resolve width ===
+		let width: number;
+		if (opt.width !== undefined) {
+			width = opt.width;
+		} else if (opt.widthPercent !== undefined) {
+			width = Math.floor((termWidth * opt.widthPercent) / 100);
+		} else {
+			width = Math.min(80, availWidth);
+		}
+		// Apply minWidth
+		if (opt.minWidth !== undefined) {
+			width = Math.max(width, opt.minWidth);
+		}
+		// Clamp to available space
+		width = Math.max(1, Math.min(width, availWidth));
+
+		// === Resolve maxHeight ===
+		let maxHeight: number | undefined;
+		if (opt.maxHeight !== undefined) {
+			maxHeight = opt.maxHeight;
+		} else if (opt.maxHeightPercent !== undefined) {
+			maxHeight = Math.floor((termHeight * opt.maxHeightPercent) / 100);
+		}
+		// Clamp to available space
+		if (maxHeight !== undefined) {
+			maxHeight = Math.max(1, Math.min(maxHeight, availHeight));
+		}
+
+		// Effective overlay height (may be clamped by maxHeight)
+		const effectiveHeight = maxHeight !== undefined ? Math.min(overlayHeight, maxHeight) : overlayHeight;
+
+		// === Resolve position ===
+		let row: number;
+		let col: number;
+
+		// Absolute positioning takes precedence
+		if (opt.row !== undefined) {
+			row = opt.row;
+		} else if (opt.rowPercent !== undefined) {
+			// Percentage: 0 = top, 100 = bottom
+			const maxRow = Math.max(0, availHeight - effectiveHeight);
+			row = marginTop + Math.floor((maxRow * opt.rowPercent) / 100);
+		} else {
+			// Anchor-based (default: center)
+			const anchor = opt.anchor ?? "center";
+			row = this.resolveAnchorRow(anchor, effectiveHeight, availHeight, marginTop);
+		}
+
+		if (opt.col !== undefined) {
+			col = opt.col;
+		} else if (opt.colPercent !== undefined) {
+			// Percentage: 0 = left, 100 = right
+			const maxCol = Math.max(0, availWidth - width);
+			col = marginLeft + Math.floor((maxCol * opt.colPercent) / 100);
+		} else {
+			// Anchor-based (default: center)
+			const anchor = opt.anchor ?? "center";
+			col = this.resolveAnchorCol(anchor, width, availWidth, marginLeft);
+		}
+
+		// Apply offsets
+		if (opt.offsetY !== undefined) row += opt.offsetY;
+		if (opt.offsetX !== undefined) col += opt.offsetX;
+
+		// Clamp to terminal bounds (respecting margins)
+		row = Math.max(marginTop, Math.min(row, termHeight - marginBottom - effectiveHeight));
+		col = Math.max(marginLeft, Math.min(col, termWidth - marginRight - width));
+
+		return { width, row, col, maxHeight };
+	}
+
+	private resolveAnchorRow(anchor: OverlayAnchor, height: number, availHeight: number, marginTop: number): number {
+		switch (anchor) {
+			case "top-left":
+			case "top-center":
+			case "top-right":
+				return marginTop;
+			case "bottom-left":
+			case "bottom-center":
+			case "bottom-right":
+				return marginTop + availHeight - height;
+			case "left-center":
+			case "center":
+			case "right-center":
+				return marginTop + Math.floor((availHeight - height) / 2);
+		}
+	}
+
+	private resolveAnchorCol(anchor: OverlayAnchor, width: number, availWidth: number, marginLeft: number): number {
+		switch (anchor) {
+			case "top-left":
+			case "left-center":
+			case "bottom-left":
+				return marginLeft;
+			case "top-right":
+			case "right-center":
+			case "bottom-right":
+				return marginLeft + availWidth - width;
+			case "top-center":
+			case "center":
+			case "bottom-center":
+				return marginLeft + Math.floor((availWidth - width) / 2);
+		}
+	}
+
 	/** Composite all overlays into content lines (in stack order, later = on top). */
 	private compositeOverlays(lines: string[], termWidth: number, termHeight: number): string[] {
 		if (this.overlayStack.length === 0) return lines;
 		const result = [...lines];
-		const viewportStart = Math.max(0, result.length - termHeight);
+
+		// Pre-render all overlays and calculate positions
+		const rendered: { overlayLines: string[]; row: number; col: number; w: number }[] = [];
+		let minLinesNeeded = result.length;
 
 		for (const { component, options } of this.overlayStack) {
-			const w =
-				options?.width !== undefined
-					? Math.max(1, Math.min(options.width, termWidth - 4))
-					: Math.max(1, Math.min(80, termWidth - 4));
-			const overlayLines = component.render(w);
-			const h = overlayLines.length;
+			// Get layout with height=0 first to determine width and maxHeight
+			// (width and maxHeight don't depend on overlay height)
+			const { width, maxHeight } = this.resolveOverlayLayout(options, 0, termWidth, termHeight);
 
-			const row = Math.max(0, Math.min(options?.row ?? Math.floor((termHeight - h) / 2), termHeight - h));
-			const col = Math.max(0, Math.min(options?.col ?? Math.floor((termWidth - w) / 2), termWidth - w));
+			// Render component at calculated width
+			let overlayLines = component.render(width);
 
-			for (let i = 0; i < h; i++) {
+			// Apply maxHeight if specified
+			if (maxHeight !== undefined && overlayLines.length > maxHeight) {
+				overlayLines = overlayLines.slice(0, maxHeight);
+			}
+
+			// Get final row/col with actual overlay height
+			const { row, col } = this.resolveOverlayLayout(options, overlayLines.length, termWidth, termHeight);
+
+			rendered.push({ overlayLines, row, col, w: width });
+			minLinesNeeded = Math.max(minLinesNeeded, row + overlayLines.length);
+		}
+
+		// Extend result with empty lines if content is too short for overlay placement
+		while (result.length < minLinesNeeded) {
+			result.push("");
+		}
+
+		const viewportStart = Math.max(0, result.length - termHeight);
+
+		// Track which lines were modified for final verification
+		const modifiedLines = new Set<number>();
+
+		// Composite each overlay
+		for (const { overlayLines, row, col, w } of rendered) {
+			for (let i = 0; i < overlayLines.length; i++) {
 				const idx = viewportStart + row + i;
 				if (idx >= 0 && idx < result.length) {
-					result[idx] = this.compositeLineAt(result[idx], overlayLines[i], col, w, termWidth);
+					// Defensive: truncate overlay line to declared width before compositing
+					// (components should already respect width, but this ensures it)
+					const truncatedOverlayLine =
+						visibleWidth(overlayLines[i]) > w ? sliceByColumn(overlayLines[i], 0, w, true) : overlayLines[i];
+					result[idx] = this.compositeLineAt(result[idx], truncatedOverlayLine, col, w, termWidth);
+					modifiedLines.add(idx);
 				}
 			}
 		}
+
+		// Final verification: ensure no composited line exceeds terminal width
+		// This is a belt-and-suspenders safeguard - compositeLineAt should already
+		// guarantee this, but we verify here to prevent crashes from any edge cases
+		// Only check lines that were actually modified (optimization)
+		for (const idx of modifiedLines) {
+			const lineWidth = visibleWidth(result[idx]);
+			if (lineWidth > termWidth) {
+				result[idx] = sliceByColumn(result[idx], 0, termWidth, true);
+			}
+		}
+
 		return result;
 	}
 
@@ -308,8 +547,8 @@ export class TUI extends Container {
 		const afterStart = startCol + overlayWidth;
 		const base = extractSegments(baseLine, startCol, afterStart, totalWidth - afterStart, true);
 
-		// Extract overlay with width tracking
-		const overlay = sliceWithWidth(overlayLine, 0, overlayWidth);
+		// Extract overlay with width tracking (strict=true to exclude wide chars at boundary)
+		const overlay = sliceWithWidth(overlayLine, 0, overlayWidth, true);
 
 		// Pad segments to target widths
 		const beforePad = Math.max(0, startCol - base.beforeWidth);
@@ -319,7 +558,7 @@ export class TUI extends Container {
 		const afterTarget = Math.max(0, totalWidth - actualBeforeWidth - actualOverlayWidth);
 		const afterPad = Math.max(0, afterTarget - base.afterWidth);
 
-		// Compose result - widths are tracked so no final visibleWidth check needed
+		// Compose result
 		const r = TUI.SEGMENT_RESET;
 		const result =
 			base.before +
@@ -331,9 +570,18 @@ export class TUI extends Container {
 			base.after +
 			" ".repeat(afterPad);
 
-		// Only truncate if wide char at after boundary caused overflow (rare)
-		const resultWidth = actualBeforeWidth + actualOverlayWidth + Math.max(afterTarget, base.afterWidth);
-		return resultWidth <= totalWidth ? result : sliceByColumn(result, 0, totalWidth, true);
+		// CRITICAL: Always verify and truncate to terminal width.
+		// This is the final safeguard against width overflow which would crash the TUI.
+		// Width tracking can drift from actual visible width due to:
+		// - Complex ANSI/OSC sequences (hyperlinks, colors)
+		// - Wide characters at segment boundaries
+		// - Edge cases in segment extraction
+		const resultWidth = visibleWidth(result);
+		if (resultWidth <= totalWidth) {
+			return result;
+		}
+		// Truncate with strict=true to ensure we don't exceed totalWidth
+		return sliceByColumn(result, 0, totalWidth, true);
 	}
 
 	private doRender(): void {
@@ -362,8 +610,8 @@ export class TUI extends Container {
 			}
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
-			// After rendering N lines, cursor is at end of last line (line N-1)
-			this.cursorRow = newLines.length - 1;
+			// After rendering N lines, cursor is at end of last line (clamp to 0 for empty)
+			this.cursorRow = Math.max(0, newLines.length - 1);
 			this.previousLines = newLines;
 			this.previousWidth = width;
 			return;
@@ -379,7 +627,7 @@ export class TUI extends Container {
 			}
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
-			this.cursorRow = newLines.length - 1;
+			this.cursorRow = Math.max(0, newLines.length - 1);
 			this.previousLines = newLines;
 			this.previousWidth = width;
 			return;
@@ -410,8 +658,8 @@ export class TUI extends Container {
 		if (firstChanged >= newLines.length) {
 			if (this.previousLines.length > newLines.length) {
 				let buffer = "\x1b[?2026h";
-				// Move to end of new content
-				const targetRow = newLines.length - 1;
+				// Move to end of new content (clamp to 0 for empty content)
+				const targetRow = Math.max(0, newLines.length - 1);
 				const lineDiff = targetRow - this.cursorRow;
 				if (lineDiff > 0) buffer += `\x1b[${lineDiff}B`;
 				else if (lineDiff < 0) buffer += `\x1b[${-lineDiff}A`;
@@ -424,7 +672,7 @@ export class TUI extends Container {
 				buffer += `\x1b[${extraLines}A`;
 				buffer += "\x1b[?2026l";
 				this.terminal.write(buffer);
-				this.cursorRow = newLines.length - 1;
+				this.cursorRow = targetRow;
 			}
 			this.previousLines = newLines;
 			this.previousWidth = width;
@@ -446,7 +694,7 @@ export class TUI extends Container {
 			}
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
-			this.cursorRow = newLines.length - 1;
+			this.cursorRow = Math.max(0, newLines.length - 1);
 			this.previousLines = newLines;
 			this.previousWidth = width;
 			return;

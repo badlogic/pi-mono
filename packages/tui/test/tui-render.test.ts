@@ -165,4 +165,35 @@ describe("TUI differential rendering", () => {
 
 		tui.stop();
 	});
+
+	it("handles transition from content to empty and back to content", async () => {
+		const terminal = new VirtualTerminal(40, 10);
+		const tui = new TUI(terminal);
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		// Start with content
+		component.lines = ["Line 0", "Line 1", "Line 2"];
+		tui.start();
+		await terminal.flush();
+
+		let viewport = terminal.getViewport();
+		assert.ok(viewport[0]?.includes("Line 0"), "Initial content rendered");
+
+		// Clear to empty
+		component.lines = [];
+		tui.requestRender();
+		await terminal.flush();
+
+		// Add content back - this should work correctly even after empty state
+		component.lines = ["New Line 0", "New Line 1"];
+		tui.requestRender();
+		await terminal.flush();
+
+		viewport = terminal.getViewport();
+		assert.ok(viewport[0]?.includes("New Line 0"), `New content rendered: ${viewport[0]}`);
+		assert.ok(viewport[1]?.includes("New Line 1"), `New content line 1: ${viewport[1]}`);
+
+		tui.stop();
+	});
 });

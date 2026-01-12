@@ -72,6 +72,13 @@ export {
 	setCellDimensions,
 	type TerminalCapabilities,
 } from "./terminal-image.js";
-export { type Component, Container, TUI } from "./tui.js";
+export {
+	type Component,
+	Container,
+	type OverlayAnchor,
+	type OverlayMargin,
+	type OverlayOptions,
+	TUI,
+} from "./tui.js";
 // Utilities
 export { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "./utils.js";

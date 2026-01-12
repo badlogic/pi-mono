@@ -6,10 +6,13 @@
 
 - `SettingsListOptions` with `enableSearch` for fuzzy filtering in `SettingsList` ([#643](https://github.com/badlogic/pi-mono/pull/643) by [@ninlds](https://github.com/ninlds))
 - `pageUp` and `pageDown` key support with `selectPageUp`/`selectPageDown` editor actions ([#662](https://github.com/badlogic/pi-mono/pull/662) by [@aliou](https://github.com/aliou))
+- `OverlayOptions` API for overlay positioning and sizing: `width`, `widthPercent`, `minWidth`, `maxHeight`, `maxHeightPercent`, `anchor`, `offsetX`, `offsetY`, `rowPercent`, `colPercent`, `row`, `col`, `margin`
+- New exported types: `OverlayAnchor`, `OverlayMargin`, `OverlayOptions`
 
 ### Fixed
 
 - Numbered list items showing "1." for all items when code blocks break list continuity ([#660](https://github.com/badlogic/pi-mono/pull/660) by [@ogulcancelik](https://github.com/ogulcancelik))
+- Overlay compositing crash when rendered lines exceed terminal width due to complex ANSI/OSC sequences (e.g., hyperlinks in subagent output)
 
 ## [0.43.0] - 2026-01-11
 

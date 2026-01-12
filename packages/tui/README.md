@@ -56,6 +56,56 @@ tui.requestRender(); // Request a re-render
 tui.onDebug = () => console.log("Debug triggered");
 ```
 
+### Overlays
+
+Overlays render components on top of existing content without replacing it. Useful for dialogs, menus, and modal UI.
+
+```typescript
+// Show overlay with default options (centered, max 80 cols)
+tui.showOverlay(component);
+
+// Show overlay with custom positioning and sizing
+tui.showOverlay(component, {
+  // Sizing
+  width: 60,              // Fixed width in columns
+  widthPercent: 80,       // Width as percentage of terminal (0-100)
+  minWidth: 40,           // Minimum width floor
+  maxHeight: 20,          // Maximum height in rows
+  maxHeightPercent: 50,   // Maximum height as percentage of terminal
+
+  // Anchor-based positioning (default: 'center')
+  anchor: 'bottom-right', // Position relative to anchor point
+  offsetX: 2,             // Horizontal offset from anchor
+  offsetY: -1,            // Vertical offset from anchor
+
+  // Percentage-based positioning (alternative to anchor)
+  rowPercent: 25,         // Vertical position (0=top, 100=bottom)
+  colPercent: 50,         // Horizontal position (0=left, 100=right)
+
+  // Absolute positioning (overrides anchor/percent)
+  row: 5,                 // Exact row position
+  col: 10,                // Exact column position
+
+  // Margin from terminal edges
+  margin: 2,              // All sides
+  margin: { top: 1, right: 2, bottom: 1, left: 2 }
+});
+
+// Hide topmost overlay
+tui.hideOverlay();
+
+// Check if any overlay is active
+tui.hasOverlay();
+```
+
+**Anchor values**: `'center'`, `'top-left'`, `'top-right'`, `'bottom-left'`, `'bottom-right'`, `'top-center'`, `'bottom-center'`, `'left-center'`, `'right-center'`
+
+**Resolution order**:
+1. `width` takes precedence over `widthPercent`
+2. `minWidth` is applied as a floor after width calculation
+3. For position: `row`/`col` > `rowPercent`/`colPercent` > `anchor`
+4. `margin` clamps final position to stay within terminal bounds
+
 ### Component Interface
 
 All components implement:
