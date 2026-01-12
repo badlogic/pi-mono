@@ -24,6 +24,7 @@ import type {
 	ThinkingContent,
 	Tool,
 	ToolCall,
+	Usage,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
@@ -277,6 +278,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 						};
 					}
 					calculateCost(model, output.usage);
+					applyServiceTierPricing(output.usage, response?.service_tier ?? options?.serviceTier);
 					// Map status to stop reason
 					output.stopReason = mapStopReason(response?.status);
 					if (output.content.some((b) => b.type === "toolCall") && output.stopReason === "stop") {
@@ -550,6 +552,28 @@ function convertTools(tools: Tool[]): OpenAITool[] {
 		parameters: tool.parameters as any, // TypeBox already generates JSON Schema
 		strict: false,
 	}));
+}
+
+function getServiceTierCostMultiplier(serviceTier: ResponseCreateParamsStreaming["service_tier"] | undefined): number {
+	switch (serviceTier) {
+		case "flex":
+			return 0.5;
+		case "priority":
+			return 2;
+		default:
+			return 1;
+	}
+}
+
+function applyServiceTierPricing(usage: Usage, serviceTier: ResponseCreateParamsStreaming["service_tier"] | undefined) {
+	const multiplier = getServiceTierCostMultiplier(serviceTier);
+	if (multiplier === 1) return;
+
+	usage.cost.input *= multiplier;
+	usage.cost.output *= multiplier;
+	usage.cost.cacheRead *= multiplier;
+	usage.cost.cacheWrite *= multiplier;
+	usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
 }
 
 function mapStopReason(status: OpenAI.Responses.ResponseStatus | undefined): StopReason {
