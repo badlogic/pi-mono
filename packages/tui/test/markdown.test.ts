@@ -108,6 +108,43 @@ describe("Markdown component", () => {
 			assert.ok(plainLines.some((line) => line.includes("  - Unordered nested")));
 			assert.ok(plainLines.some((line) => line.includes("2. Second ordered")));
 		});
+
+		it("should maintain numbering when code blocks are not indented (LLM output)", () => {
+			// When code blocks aren't indented, marked parses each item as a separate list.
+			// We use token.start to preserve the original numbering.
+			const markdown = new Markdown(
+				`1. First item
+
+\`\`\`typescript
+// code block
+\`\`\`
+
+2. Second item
+
+\`\`\`typescript
+// another code block
+\`\`\`
+
+3. Third item`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trim());
+
+			// Find all lines that start with a number and period
+			const numberedLines = plainLines.filter((line) => /^\d+\./.test(line));
+
+			// Should have 3 numbered items
+			assert.strictEqual(numberedLines.length, 3, `Expected 3 numbered items, got: ${numberedLines.join(", ")}`);
+
+			// Check the actual numbers
+			assert.ok(numberedLines[0].startsWith("1."), `First item should be "1.", got: ${numberedLines[0]}`);
+			assert.ok(numberedLines[1].startsWith("2."), `Second item should be "2.", got: ${numberedLines[1]}`);
+			assert.ok(numberedLines[2].startsWith("3."), `Third item should be "3.", got: ${numberedLines[2]}`);
+		});
 	});
 
 	describe("Tables", () => {
