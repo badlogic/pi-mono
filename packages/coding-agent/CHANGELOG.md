@@ -6,7 +6,7 @@
 
 ### Fixed
 
-- Extensions now load correctly in compiled Bun binary by using jiti for module resolution with proper alias handling
+- Extensions now load correctly in compiled Bun binary using `@mariozechner/jiti` fork with `virtualModules` support. Bundled packages (`@sinclair/typebox`, `@mariozechner/pi-tui`, `@mariozechner/pi-ai`, `@mariozechner/pi-coding-agent`) are accessible to extensions without filesystem node_modules.
 
 ## [0.45.1] - 2026-01-13
 

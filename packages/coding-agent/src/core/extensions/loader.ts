@@ -1,5 +1,7 @@
 /**
  * Extension loader - loads TypeScript extension modules using jiti.
+ *
+ * Uses @mariozechner/jiti fork with virtualModules support for compiled Bun binaries.
  */
 
 import * as fs from "node:fs";
@@ -7,9 +9,15 @@ import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createJiti } from "@mariozechner/jiti";
+import * as _bundledPiAi from "@mariozechner/pi-ai";
 import type { KeyId } from "@mariozechner/pi-tui";
-import { createJiti } from "jiti";
-import { getAgentDir } from "../../config.js";
+import * as _bundledPiTui from "@mariozechner/pi-tui";
+// Static imports of packages that extensions may use.
+// These MUST be static so Bun bundles them into the compiled binary.
+// The virtualModules option then makes them available to extensions.
+import * as _bundledTypebox from "@sinclair/typebox";
+import { getAgentDir, isBunBinary } from "../../config.js";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
@@ -24,8 +32,28 @@ import type {
 	ToolDefinition,
 } from "./types.js";
 
+/** Modules available to extensions via virtualModules (for compiled Bun binary) */
+let _lazyPiCodingAgent: unknown;
+const VIRTUAL_MODULES: Record<string, unknown> = {
+	"@sinclair/typebox": _bundledTypebox,
+	"@mariozechner/pi-tui": _bundledPiTui,
+	"@mariozechner/pi-ai": _bundledPiAi,
+	// Lazy-loaded to avoid circular dependency (loader.ts is part of pi-coding-agent)
+	get "@mariozechner/pi-coding-agent"() {
+		if (!_lazyPiCodingAgent) {
+			// Dynamic require after module initialization completes
+			_lazyPiCodingAgent = require("../../index.js");
+		}
+		return _lazyPiCodingAgent;
+	},
+};
+
 const require = createRequire(import.meta.url);
 
+/**
+ * Get aliases for jiti (used in Node.js/development mode).
+ * In Bun binary mode, virtualModules is used instead.
+ */
 let _aliases: Record<string, string> | null = null;
 function getAliases(): Record<string, string> {
 	if (_aliases) return _aliases;
@@ -33,26 +61,15 @@ function getAliases(): Record<string, string> {
 	const __dirname = path.dirname(fileURLToPath(import.meta.url));
 	const packageIndex = path.resolve(__dirname, "../..", "index.js");
 
-	// Debug: log what we're resolving
-	if (process.env.DEBUG_EXTENSIONS) {
-		console.error("[DEBUG] import.meta.url:", import.meta.url);
-		console.error("[DEBUG] __dirname:", __dirname);
-	}
-
 	const typeboxEntry = require.resolve("@sinclair/typebox");
 	const typeboxRoot = typeboxEntry.replace(/\/build\/cjs\/index\.js$/, "");
 
 	_aliases = {
 		"@mariozechner/pi-coding-agent": packageIndex,
-		"@mariozechner/pi-coding-agent/extensions": path.resolve(__dirname, "index.js"),
 		"@mariozechner/pi-tui": require.resolve("@mariozechner/pi-tui"),
 		"@mariozechner/pi-ai": require.resolve("@mariozechner/pi-ai"),
 		"@sinclair/typebox": typeboxRoot,
 	};
-
-	if (process.env.DEBUG_EXTENSIONS) {
-		console.error("[DEBUG] aliases:", JSON.stringify(_aliases, null, 2));
-	}
 
 	return _aliases;
 }
@@ -224,12 +241,15 @@ function createExtensionAPI(
 	return api;
 }
 
-async function loadExtensionModule(path: string) {
+async function loadExtensionModule(extensionPath: string) {
 	const jiti = createJiti(import.meta.url, {
-		alias: getAliases(),
+		// In Bun binary: use virtualModules for bundled packages (no filesystem resolution)
+		// Also disable tryNative so jiti handles ALL imports (not just the entry point)
+		// In Node.js/dev: use aliases to resolve to node_modules paths
+		...(isBunBinary ? { virtualModules: VIRTUAL_MODULES, tryNative: false } : { alias: getAliases() }),
 	});
 
-	const module = await jiti.import(path, { default: true });
+	const module = await jiti.import(extensionPath, { default: true });
 	const factory = module as ExtensionFactory;
 	return typeof factory !== "function" ? undefined : factory;
 }
