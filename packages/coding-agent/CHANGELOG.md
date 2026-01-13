@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Exported `highlightCode` and `getLanguageFromPath` for extensions ([#703](https://github.com/badlogic/pi-mono/pull/703) by [@dannote](https://github.com/dannote))
+
 ## [0.45.6] - 2026-01-13
 
 ### Added
