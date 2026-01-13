@@ -4,6 +4,7 @@
  * Usage: pi --extension ./examples/extensions/overlay-qa-tests.ts
  *
  * Commands:
+ *   /overlay-animation  - Real-time animation demo (~30 FPS, proves DOOM-like rendering works)
  *   /overlay-anchors    - Cycle through all 9 anchor positions
  *   /overlay-margins    - Test margin and offset options
  *   /overlay-stack      - Test stacked overlays
@@ -11,14 +12,30 @@
  *   /overlay-edge       - Test overlay positioned at terminal edge
  *   /overlay-percent    - Test percentage-based positioning
  *   /overlay-maxheight  - Test maxHeight truncation
+ *   /overlay-sidepanel  - Responsive sidepanel (hides when terminal < 100 cols)
+ *   /overlay-toggle     - Toggle visibility demo (demonstrates OverlayHandle.setHidden)
  */
 
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
-import type { OverlayAnchor, OverlayOptions, TUI } from "@mariozechner/pi-tui";
+import type { OverlayAnchor, OverlayHandle, OverlayOptions, TUI } from "@mariozechner/pi-tui";
 import { matchesKey, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { spawn } from "child_process";
 
+// Global handle for toggle demo (in real code, use a more elegant pattern)
+let globalToggleHandle: OverlayHandle | null = null;
+
 export default function (pi: ExtensionAPI) {
+	// Animation demo - proves overlays can handle real-time updates (like pi-doom would need)
+	pi.registerCommand("overlay-animation", {
+		description: "Test real-time animation in overlay (~30 FPS)",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			await ctx.ui.custom<void>((tui, theme, _kb, done) => new AnimationDemoComponent(tui, theme, done), {
+				overlay: true,
+				overlayOptions: { anchor: "center", width: 50, maxHeight: 20 },
+			});
+		},
+	});
+
 	// Test all 9 anchor positions
 	pi.registerCommand("overlay-anchors", {
 		description: "Cycle through all anchor positions",
@@ -178,8 +195,8 @@ export default function (pi: ExtensionAPI) {
 						overlay: true,
 						overlayOptions: {
 							width: 30,
-							rowPercent: config.row,
-							colPercent: config.col,
+							row: `${config.row}%`,
+							col: `${config.col}%`,
 						},
 					},
 				);
@@ -203,6 +220,42 @@ export default function (pi: ExtensionAPI) {
 			});
 		},
 	});
+
+	// Test responsive sidepanel - only shows when terminal is wide enough
+	pi.registerCommand("overlay-sidepanel", {
+		description: "Test responsive sidepanel (hides when terminal < 100 cols)",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			await ctx.ui.custom<void>((tui, theme, _kb, done) => new SidepanelComponent(tui, theme, done), {
+				overlay: true,
+				overlayOptions: {
+					anchor: "right-center",
+					width: "25%",
+					minWidth: 30,
+					margin: { right: 1 },
+					// Only show when terminal is wide enough
+					visible: (termWidth) => termWidth >= 100,
+				},
+			});
+		},
+	});
+
+	// Test toggle overlay - demonstrates OverlayHandle.setHidden() via onHandle callback
+	pi.registerCommand("overlay-toggle", {
+		description: "Test overlay toggle (press 't' to toggle visibility)",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			await ctx.ui.custom<void>((tui, theme, _kb, done) => new ToggleDemoComponent(tui, theme, done), {
+				overlay: true,
+				overlayOptions: { anchor: "center", width: 50 },
+				// onHandle callback provides access to the OverlayHandle for visibility control
+				onHandle: (handle) => {
+					// Store handle globally so component can access it
+					// (In real code, you'd use a more elegant pattern like a store or event emitter)
+					globalToggleHandle = handle;
+				},
+			});
+			globalToggleHandle = null;
+		},
+	});
 }
 
 function sleep(ms: number): Promise<void> {
@@ -215,7 +268,7 @@ abstract class BaseOverlay {
 
 	protected box(lines: string[], width: number, title?: string): string[] {
 		const th = this.theme;
-		const innerW = width - 2;
+		const innerW = Math.max(1, width - 2);
 		const result: string[] = [];
 
 		const titleStr = title ? truncateToWidth(` ${title} `, innerW) : "";
@@ -331,7 +384,7 @@ class StackOverlayComponent extends BaseOverlay {
 		// Use different colors for each overlay to show stacking
 		const colors = ["error", "success", "accent"] as const;
 		const color = colors[(this.num - 1) % colors.length]!;
-		const innerW = width - 2;
+		const innerW = Math.max(1, width - 2);
 		const border = (char: string) => th.fg(color, char);
 		const padLine = (s: string) => truncateToWidth(s, innerW, "...", true);
 		const lines: string[] = [];
@@ -443,7 +496,7 @@ class StreamingOverflowComponent extends BaseOverlay {
 
 	render(width: number): string[] {
 		const th = this.theme;
-		const innerW = width - 2;
+		const innerW = Math.max(1, width - 2);
 		const padLine = (s: string) => truncateToWidth(s, innerW, "...", true);
 		const border = (c: string) => th.fg("border", c);
 
@@ -587,5 +640,242 @@ class MaxHeightTestComponent extends BaseOverlay {
 		contentLines.push("", th.fg("dim", " Press Esc to close"));
 
 		return this.box(contentLines, width, "MaxHeight Test");
+	}
+}
+
+// Responsive sidepanel - demonstrates percentage width and visibility callback
+class SidepanelComponent extends BaseOverlay {
+	private items = ["Dashboard", "Messages", "Settings", "Help", "About"];
+	private selectedIndex = 0;
+
+	constructor(
+		private tui: TUI,
+		theme: Theme,
+		private done: () => void,
+	) {
+		super(theme);
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+			this.done();
+		} else if (matchesKey(data, "up")) {
+			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+			this.tui.requestRender();
+		} else if (matchesKey(data, "down")) {
+			this.selectedIndex = Math.min(this.items.length - 1, this.selectedIndex + 1);
+			this.tui.requestRender();
+		} else if (matchesKey(data, "return")) {
+			// Could trigger an action here
+			this.tui.requestRender();
+		}
+	}
+
+	render(width: number): string[] {
+		const th = this.theme;
+		const innerW = Math.max(1, width - 2);
+		const padLine = (s: string) => truncateToWidth(s, innerW, "...", true);
+		const border = (c: string) => th.fg("border", c);
+		const lines: string[] = [];
+
+		// Header
+		lines.push(border(`╭${"─".repeat(innerW)}╮`));
+		lines.push(border("│") + padLine(th.fg("accent", " Responsive Sidepanel")) + border("│"));
+		lines.push(border("├") + border("─".repeat(innerW)) + border("┤"));
+
+		// Menu items
+		for (let i = 0; i < this.items.length; i++) {
+			const item = this.items[i]!;
+			const isSelected = i === this.selectedIndex;
+			const prefix = isSelected ? th.fg("accent", "→ ") : "  ";
+			const text = isSelected ? th.fg("accent", item) : item;
+			lines.push(border("│") + padLine(`${prefix}${text}`) + border("│"));
+		}
+
+		// Footer with responsive behavior info
+		lines.push(border("├") + border("─".repeat(innerW)) + border("┤"));
+		lines.push(border("│") + padLine(th.fg("warning", " ⚠ Resize terminal < 100 cols")) + border("│"));
+		lines.push(border("│") + padLine(th.fg("warning", "   to see panel auto-hide")) + border("│"));
+		lines.push(border("│") + padLine(th.fg("dim", " Uses visible: (w) => w >= 100")) + border("│"));
+		lines.push(border("│") + padLine(th.fg("dim", " ↑↓ navigate | Esc close")) + border("│"));
+		lines.push(border(`╰${"─".repeat(innerW)}╯`));
+
+		return lines;
+	}
+}
+
+// Animation demo - proves overlays can handle real-time updates like pi-doom
+class AnimationDemoComponent extends BaseOverlay {
+	private frame = 0;
+	private interval: ReturnType<typeof setInterval> | null = null;
+	private fps = 0;
+	private lastFpsUpdate = Date.now();
+	private framesSinceLastFps = 0;
+
+	constructor(
+		private tui: TUI,
+		theme: Theme,
+		private done: () => void,
+	) {
+		super(theme);
+		this.startAnimation();
+	}
+
+	private startAnimation(): void {
+		// Run at ~30 FPS (same as DOOM target)
+		this.interval = setInterval(() => {
+			this.frame++;
+			this.framesSinceLastFps++;
+
+			// Update FPS counter every second
+			const now = Date.now();
+			if (now - this.lastFpsUpdate >= 1000) {
+				this.fps = this.framesSinceLastFps;
+				this.framesSinceLastFps = 0;
+				this.lastFpsUpdate = now;
+			}
+
+			this.tui.requestRender();
+		}, 1000 / 30);
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+			this.dispose();
+			this.done();
+		}
+	}
+
+	render(width: number): string[] {
+		const th = this.theme;
+		const innerW = Math.max(1, width - 2);
+		const padLine = (s: string) => truncateToWidth(s, innerW, "...", true);
+		const border = (c: string) => th.fg("border", c);
+
+		const lines: string[] = [];
+		lines.push(border(`╭${"─".repeat(innerW)}╮`));
+		lines.push(border("│") + padLine(th.fg("accent", " Animation Demo (~30 FPS)")) + border("│"));
+		lines.push(border("│") + padLine(``) + border("│"));
+		lines.push(border("│") + padLine(` Frame: ${th.fg("accent", String(this.frame))}`) + border("│"));
+		lines.push(border("│") + padLine(` FPS: ${th.fg("success", String(this.fps))}`) + border("│"));
+		lines.push(border("│") + padLine(``) + border("│"));
+
+		// Animated content - bouncing bar
+		const barWidth = Math.max(12, innerW - 4); // Ensure enough space for bar
+		const pos = Math.max(0, Math.floor(((Math.sin(this.frame / 10) + 1) * (barWidth - 10)) / 2));
+		const bar = " ".repeat(pos) + th.fg("accent", "██████████") + " ".repeat(Math.max(0, barWidth - 10 - pos));
+		lines.push(border("│") + padLine(` ${bar}`) + border("│"));
+
+		// Spinning character
+		const spinChars = ["◐", "◓", "◑", "◒"];
+		const spin = spinChars[this.frame % spinChars.length];
+		lines.push(border("│") + padLine(` Spinner: ${th.fg("warning", spin!)}`) + border("│"));
+
+		// Color cycling
+		const hue = (this.frame * 3) % 360;
+		const rgb = hslToRgb(hue / 360, 0.8, 0.5);
+		const colorBlock = `\x1b[48;2;${rgb[0]};${rgb[1]};${rgb[2]}m${"  ".repeat(10)}\x1b[0m`;
+		lines.push(border("│") + padLine(` Color: ${colorBlock}`) + border("│"));
+
+		lines.push(border("│") + padLine(``) + border("│"));
+		lines.push(border("│") + padLine(th.fg("dim", " This proves overlays can handle")) + border("│"));
+		lines.push(border("│") + padLine(th.fg("dim", " real-time game-like rendering.")) + border("│"));
+		lines.push(border("│") + padLine(th.fg("dim", " (pi-doom uses same approach)")) + border("│"));
+		lines.push(border("│") + padLine(``) + border("│"));
+		lines.push(border("│") + padLine(th.fg("dim", " Press Esc to close")) + border("│"));
+		lines.push(border(`╰${"─".repeat(innerW)}╯`));
+
+		return lines;
+	}
+
+	dispose(): void {
+		if (this.interval) {
+			clearInterval(this.interval);
+			this.interval = null;
+		}
+	}
+}
+
+// HSL to RGB helper for color cycling animation
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+	let r: number, g: number, b: number;
+	if (s === 0) {
+		r = g = b = l;
+	} else {
+		const hue2rgb = (p: number, q: number, t: number) => {
+			if (t < 0) t += 1;
+			if (t > 1) t -= 1;
+			if (t < 1 / 6) return p + (q - p) * 6 * t;
+			if (t < 1 / 2) return q;
+			if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+			return p;
+		};
+		const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+		const p = 2 * l - q;
+		r = hue2rgb(p, q, h + 1 / 3);
+		g = hue2rgb(p, q, h);
+		b = hue2rgb(p, q, h - 1 / 3);
+	}
+	return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+
+// Toggle demo - demonstrates OverlayHandle.setHidden() via onHandle callback
+class ToggleDemoComponent extends BaseOverlay {
+	private toggleCount = 0;
+	private isToggling = false;
+
+	constructor(
+		private tui: TUI,
+		theme: Theme,
+		private done: () => void,
+	) {
+		super(theme);
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+			this.done();
+		} else if (matchesKey(data, "t") && globalToggleHandle && !this.isToggling) {
+			// Demonstrate toggle by hiding for 1 second then showing again
+			// (In real usage, a global keybinding would control visibility)
+			this.isToggling = true;
+			this.toggleCount++;
+			globalToggleHandle.setHidden(true);
+
+			// Auto-restore after 1 second to demonstrate the API
+			setTimeout(() => {
+				if (globalToggleHandle) {
+					globalToggleHandle.setHidden(false);
+					this.isToggling = false;
+					this.tui.requestRender();
+				}
+			}, 1000);
+		}
+	}
+
+	render(width: number): string[] {
+		const th = this.theme;
+		return this.box(
+			[
+				"",
+				th.fg("accent", " Toggle Demo"),
+				"",
+				" This overlay demonstrates the",
+				" onHandle callback API.",
+				"",
+				` Toggle count: ${th.fg("accent", String(this.toggleCount))}`,
+				"",
+				th.fg("dim", " Press 't' to hide for 1 second"),
+				th.fg("dim", " (demonstrates setHidden API)"),
+				"",
+				th.fg("dim", " In real usage, a global keybinding"),
+				th.fg("dim", " would toggle visibility externally."),
+				"",
+				th.fg("dim", " Press Esc to close"),
+				"",
+			],
+			width,
+			"Toggle Demo",
+		);
 	}
 }

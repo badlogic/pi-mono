@@ -167,14 +167,14 @@ describe("TUI overlay options", () => {
 		});
 	});
 
-	describe("widthPercent", () => {
+	describe("width percentage", () => {
 		it("should render overlay at percentage of terminal width", async () => {
 			const terminal = new VirtualTerminal(100, 24);
 			const tui = new TUI(terminal);
 			const overlay = new StaticOverlay(["test"]);
 
 			tui.addChild(new EmptyContent());
-			tui.showOverlay(overlay, { widthPercent: 50 });
+			tui.showOverlay(overlay, { width: "50%" });
 			tui.start();
 			await renderAndFlush(tui, terminal);
 
@@ -188,7 +188,7 @@ describe("TUI overlay options", () => {
 			const overlay = new StaticOverlay(["test"]);
 
 			tui.addChild(new EmptyContent());
-			tui.showOverlay(overlay, { widthPercent: 10, minWidth: 30 });
+			tui.showOverlay(overlay, { width: "10%", minWidth: 30 });
 			tui.start();
 			await renderAndFlush(tui, terminal);
 
@@ -344,7 +344,7 @@ describe("TUI overlay options", () => {
 
 			tui.addChild(new EmptyContent());
 			// 50% should center both ways
-			tui.showOverlay(overlay, { width: 10, rowPercent: 50, colPercent: 50 });
+			tui.showOverlay(overlay, { width: 10, row: "50%", col: "50%" });
 			tui.start();
 			await renderAndFlush(tui, terminal);
 
@@ -368,7 +368,7 @@ describe("TUI overlay options", () => {
 			const overlay = new StaticOverlay(["TOP"]);
 
 			tui.addChild(new EmptyContent());
-			tui.showOverlay(overlay, { width: 10, rowPercent: 0 });
+			tui.showOverlay(overlay, { width: 10, row: "0%" });
 			tui.start();
 			await renderAndFlush(tui, terminal);
 
@@ -383,7 +383,7 @@ describe("TUI overlay options", () => {
 			const overlay = new StaticOverlay(["BOTTOM"]);
 
 			tui.addChild(new EmptyContent());
-			tui.showOverlay(overlay, { width: 10, rowPercent: 100 });
+			tui.showOverlay(overlay, { width: 10, row: "100%" });
 			tui.start();
 			await renderAndFlush(tui, terminal);
 
@@ -421,7 +421,7 @@ describe("TUI overlay options", () => {
 			const overlay = new StaticOverlay(["L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9", "L10"]);
 
 			tui.addChild(new EmptyContent());
-			tui.showOverlay(overlay, { maxHeightPercent: 50 });
+			tui.showOverlay(overlay, { maxHeight: "50%" });
 			tui.start();
 			await renderAndFlush(tui, terminal);
 

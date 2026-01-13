@@ -50,7 +50,8 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `modal-editor.ts` | Custom vim-like modal editor via `ctx.ui.setEditorComponent()` |
 | `notify.ts` | Desktop notifications via OSC 777 when agent finishes (Ghostty, iTerm2, WezTerm) |
 | `overlay-test.ts` | Test overlay compositing with inline text inputs and edge cases |
-| `overlay-qa-tests.ts` | Comprehensive overlay QA tests: anchors, margins, stacking, overflow protection |
+| `overlay-qa-tests.ts` | Comprehensive overlay QA tests: anchors, margins, stacking, overflow, animation |
+| `doom-overlay/` | DOOM game running as an overlay at 35 FPS (demonstrates real-time game rendering) |
 
 ### Git Integration
 

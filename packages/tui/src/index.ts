@@ -76,8 +76,10 @@ export {
 	type Component,
 	Container,
 	type OverlayAnchor,
+	type OverlayHandle,
 	type OverlayMargin,
 	type OverlayOptions,
+	type SizeValue,
 	TUI,
 } from "./tui.js";
 // Utilities

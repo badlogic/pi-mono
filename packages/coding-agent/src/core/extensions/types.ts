@@ -15,7 +15,15 @@ import type {
 	ThinkingLevel,
 } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
-import type { Component, EditorComponent, EditorTheme, KeyId, OverlayOptions, TUI } from "@mariozechner/pi-tui";
+import type {
+	Component,
+	EditorComponent,
+	EditorTheme,
+	KeyId,
+	OverlayHandle,
+	OverlayOptions,
+	TUI,
+} from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { BashResult } from "../bash-executor.js";
@@ -116,6 +124,8 @@ export interface ExtensionUIContext {
 			overlay?: boolean;
 			/** Overlay positioning/sizing options. Can be static or a function for dynamic updates. */
 			overlayOptions?: OverlayOptions | (() => OverlayOptions);
+			/** Called with the overlay handle after the overlay is shown. Use to control visibility. */
+			onHandle?: (handle: OverlayHandle) => void;
 		},
 	): Promise<T>;
 

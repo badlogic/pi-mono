@@ -65,23 +65,33 @@ export interface OverlayMargin {
 	left?: number;
 }
 
+/** Value that can be absolute (number) or percentage (string like "50%") */
+export type SizeValue = number | `${number}%`;
+
+/** Parse a SizeValue into absolute value given a reference size */
+function parseSizeValue(value: SizeValue | undefined, referenceSize: number): number | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value === "number") return value;
+	// Parse percentage string like "50%"
+	const match = value.match(/^(\d+(?:\.\d+)?)%$/);
+	if (match) {
+		return Math.floor((referenceSize * parseFloat(match[1])) / 100);
+	}
+	return undefined;
+}
+
 /**
- * Options for overlay positioning and sizing
+ * Options for overlay positioning and sizing.
+ * Values can be absolute numbers or percentage strings (e.g., "50%").
  */
 export interface OverlayOptions {
-	// === Sizing (absolute) ===
-	/** Fixed width in columns */
-	width?: number;
+	// === Sizing ===
+	/** Width in columns, or percentage of terminal width (e.g., "50%") */
+	width?: SizeValue;
 	/** Minimum width in columns */
 	minWidth?: number;
-	/** Maximum height in rows */
-	maxHeight?: number;
-
-	// === Sizing (relative to terminal) ===
-	/** Width as percentage of terminal width (0-100) */
-	widthPercent?: number;
-	/** Maximum height as percentage of terminal height (0-100) */
-	maxHeightPercent?: number;
+	/** Maximum height in rows, or percentage of terminal height (e.g., "50%") */
+	maxHeight?: SizeValue;
 
 	// === Positioning - anchor-based ===
 	/** Anchor point for positioning (default: 'center') */
@@ -91,21 +101,35 @@ export interface OverlayOptions {
 	/** Vertical offset from anchor position (positive = down) */
 	offsetY?: number;
 
-	// === Positioning - percentage-based (alternative to anchor) ===
-	/** Vertical position as percentage (0 = top, 100 = bottom) */
-	rowPercent?: number;
-	/** Horizontal position as percentage (0 = left, 100 = right) */
-	colPercent?: number;
-
-	// === Positioning - absolute (low-level) ===
-	/** Absolute row position (overrides anchor/percent) */
-	row?: number;
-	/** Absolute column position (overrides anchor/percent) */
-	col?: number;
+	// === Positioning - percentage or absolute ===
+	/** Row position: absolute number, or percentage (e.g., "25%" = 25% from top) */
+	row?: SizeValue;
+	/** Column position: absolute number, or percentage (e.g., "50%" = centered horizontally) */
+	col?: SizeValue;
 
 	// === Margin from terminal edges ===
 	/** Margin from terminal edges. Number applies to all sides. */
 	margin?: OverlayMargin | number;
+
+	// === Visibility ===
+	/**
+	 * Control overlay visibility based on terminal dimensions.
+	 * If provided, overlay is only rendered when this returns true.
+	 * Called each render cycle with current terminal dimensions.
+	 */
+	visible?: (termWidth: number, termHeight: number) => boolean;
+}
+
+/**
+ * Handle returned by showOverlay for controlling the overlay
+ */
+export interface OverlayHandle {
+	/** Permanently remove the overlay (cannot be shown again) */
+	hide(): void;
+	/** Temporarily hide or show the overlay */
+	setHidden(hidden: boolean): void;
+	/** Check if overlay is temporarily hidden */
+	isHidden(): boolean;
 }
 
 /**
@@ -165,6 +189,7 @@ export class TUI extends Container {
 		component: Component;
 		options?: OverlayOptions;
 		preFocus: Component | null;
+		hidden: boolean;
 	}[] = [];
 
 	constructor(terminal: Terminal) {
@@ -176,25 +201,90 @@ export class TUI extends Container {
 		this.focusedComponent = component;
 	}
 
-	/** Show an overlay component with configurable positioning and sizing. */
-	showOverlay(component: Component, options?: OverlayOptions): void {
-		this.overlayStack.push({ component, options, preFocus: this.focusedComponent });
-		this.setFocus(component);
+	/**
+	 * Show an overlay component with configurable positioning and sizing.
+	 * Returns a handle to control the overlay's visibility.
+	 */
+	showOverlay(component: Component, options?: OverlayOptions): OverlayHandle {
+		const entry = { component, options, preFocus: this.focusedComponent, hidden: false };
+		this.overlayStack.push(entry);
+		// Only focus if overlay is actually visible
+		if (this.isOverlayVisible(entry)) {
+			this.setFocus(component);
+		}
 		this.terminal.hideCursor();
 		this.requestRender();
+
+		// Return handle for controlling this overlay
+		return {
+			hide: () => {
+				const index = this.overlayStack.indexOf(entry);
+				if (index !== -1) {
+					this.overlayStack.splice(index, 1);
+					// Restore focus if this overlay had focus
+					if (this.focusedComponent === component) {
+						const topVisible = this.getTopmostVisibleOverlay();
+						this.setFocus(topVisible?.component ?? entry.preFocus);
+					}
+					if (this.overlayStack.length === 0) this.terminal.hideCursor();
+					this.requestRender();
+				}
+			},
+			setHidden: (hidden: boolean) => {
+				if (entry.hidden === hidden) return;
+				entry.hidden = hidden;
+				// Update focus when hiding/showing
+				if (hidden) {
+					// If this overlay had focus, move focus to next visible or preFocus
+					if (this.focusedComponent === component) {
+						const topVisible = this.getTopmostVisibleOverlay();
+						this.setFocus(topVisible?.component ?? entry.preFocus);
+					}
+				} else {
+					// Restore focus to this overlay when showing (if it's actually visible)
+					if (this.isOverlayVisible(entry)) {
+						this.setFocus(component);
+					}
+				}
+				this.requestRender();
+			},
+			isHidden: () => entry.hidden,
+		};
 	}
 
 	/** Hide the topmost overlay and restore previous focus. */
 	hideOverlay(): void {
 		const overlay = this.overlayStack.pop();
 		if (!overlay) return;
-		this.setFocus(overlay.preFocus);
+		// Find topmost visible overlay, or fall back to preFocus
+		const topVisible = this.getTopmostVisibleOverlay();
+		this.setFocus(topVisible?.component ?? overlay.preFocus);
 		if (this.overlayStack.length === 0) this.terminal.hideCursor();
 		this.requestRender();
 	}
 
+	/** Check if there are any visible overlays */
 	hasOverlay(): boolean {
-		return this.overlayStack.length > 0;
+		return this.overlayStack.some((o) => this.isOverlayVisible(o));
+	}
+
+	/** Check if an overlay entry is currently visible */
+	private isOverlayVisible(entry: (typeof this.overlayStack)[number]): boolean {
+		if (entry.hidden) return false;
+		if (entry.options?.visible) {
+			return entry.options.visible(this.terminal.columns, this.terminal.rows);
+		}
+		return true;
+	}
+
+	/** Find the topmost visible overlay, if any */
+	private getTopmostVisibleOverlay(): (typeof this.overlayStack)[number] | undefined {
+		for (let i = this.overlayStack.length - 1; i >= 0; i--) {
+			if (this.isOverlayVisible(this.overlayStack[i])) {
+				return this.overlayStack[i];
+			}
+		}
+		return undefined;
 	}
 
 	override invalidate(): void {
@@ -267,6 +357,20 @@ export class TUI extends Container {
 		if (matchesKey(data, "shift+ctrl+d") && this.onDebug) {
 			this.onDebug();
 			return;
+		}
+
+		// If focused component is an overlay, verify it's still visible
+		// (visibility can change due to terminal resize or visible() callback)
+		const focusedOverlay = this.overlayStack.find((o) => o.component === this.focusedComponent);
+		if (focusedOverlay && !this.isOverlayVisible(focusedOverlay)) {
+			// Focused overlay is no longer visible, redirect to topmost visible overlay
+			const topVisible = this.getTopmostVisibleOverlay();
+			if (topVisible) {
+				this.setFocus(topVisible.component);
+			} else {
+				// No visible overlays, restore to preFocus
+				this.setFocus(focusedOverlay.preFocus);
+			}
 		}
 
 		// Pass input to focused component (including Ctrl+C)
@@ -354,14 +458,7 @@ export class TUI extends Container {
 		const availHeight = Math.max(1, termHeight - marginTop - marginBottom);
 
 		// === Resolve width ===
-		let width: number;
-		if (opt.width !== undefined) {
-			width = opt.width;
-		} else if (opt.widthPercent !== undefined) {
-			width = Math.floor((termWidth * opt.widthPercent) / 100);
-		} else {
-			width = Math.min(80, availWidth);
-		}
+		let width = parseSizeValue(opt.width, termWidth) ?? Math.min(80, availWidth);
 		// Apply minWidth
 		if (opt.minWidth !== undefined) {
 			width = Math.max(width, opt.minWidth);
@@ -370,12 +467,7 @@ export class TUI extends Container {
 		width = Math.max(1, Math.min(width, availWidth));
 
 		// === Resolve maxHeight ===
-		let maxHeight: number | undefined;
-		if (opt.maxHeight !== undefined) {
-			maxHeight = opt.maxHeight;
-		} else if (opt.maxHeightPercent !== undefined) {
-			maxHeight = Math.floor((termHeight * opt.maxHeightPercent) / 100);
-		}
+		let maxHeight = parseSizeValue(opt.maxHeight, termHeight);
 		// Clamp to available space
 		if (maxHeight !== undefined) {
 			maxHeight = Math.max(1, Math.min(maxHeight, availHeight));
@@ -388,13 +480,22 @@ export class TUI extends Container {
 		let row: number;
 		let col: number;
 
-		// Absolute positioning takes precedence
 		if (opt.row !== undefined) {
-			row = opt.row;
-		} else if (opt.rowPercent !== undefined) {
-			// Percentage: 0 = top, 100 = bottom
-			const maxRow = Math.max(0, availHeight - effectiveHeight);
-			row = marginTop + Math.floor((maxRow * opt.rowPercent) / 100);
+			if (typeof opt.row === "string") {
+				// Percentage: 0% = top, 100% = bottom (overlay stays within bounds)
+				const match = opt.row.match(/^(\d+(?:\.\d+)?)%$/);
+				if (match) {
+					const maxRow = Math.max(0, availHeight - effectiveHeight);
+					const percent = parseFloat(match[1]) / 100;
+					row = marginTop + Math.floor(maxRow * percent);
+				} else {
+					// Invalid format, fall back to center
+					row = this.resolveAnchorRow("center", effectiveHeight, availHeight, marginTop);
+				}
+			} else {
+				// Absolute row position
+				row = opt.row;
+			}
 		} else {
 			// Anchor-based (default: center)
 			const anchor = opt.anchor ?? "center";
@@ -402,11 +503,21 @@ export class TUI extends Container {
 		}
 
 		if (opt.col !== undefined) {
-			col = opt.col;
-		} else if (opt.colPercent !== undefined) {
-			// Percentage: 0 = left, 100 = right
-			const maxCol = Math.max(0, availWidth - width);
-			col = marginLeft + Math.floor((maxCol * opt.colPercent) / 100);
+			if (typeof opt.col === "string") {
+				// Percentage: 0% = left, 100% = right (overlay stays within bounds)
+				const match = opt.col.match(/^(\d+(?:\.\d+)?)%$/);
+				if (match) {
+					const maxCol = Math.max(0, availWidth - width);
+					const percent = parseFloat(match[1]) / 100;
+					col = marginLeft + Math.floor(maxCol * percent);
+				} else {
+					// Invalid format, fall back to center
+					col = this.resolveAnchorCol("center", width, availWidth, marginLeft);
+				}
+			} else {
+				// Absolute column position
+				col = opt.col;
+			}
 		} else {
 			// Anchor-based (default: center)
 			const anchor = opt.anchor ?? "center";
@@ -463,11 +574,16 @@ export class TUI extends Container {
 		if (this.overlayStack.length === 0) return lines;
 		const result = [...lines];
 
-		// Pre-render all overlays and calculate positions
+		// Pre-render all visible overlays and calculate positions
 		const rendered: { overlayLines: string[]; row: number; col: number; w: number }[] = [];
 		let minLinesNeeded = result.length;
 
-		for (const { component, options } of this.overlayStack) {
+		for (const entry of this.overlayStack) {
+			// Skip invisible overlays (hidden or visible() returns false)
+			if (!this.isOverlayVisible(entry)) continue;
+
+			const { component, options } = entry;
+
 			// Get layout with height=0 first to determine width and maxHeight
 			// (width and maxHeight don't depend on overlay height)
 			const { width, maxHeight } = this.resolveOverlayLayout(options, 0, termWidth, termHeight);

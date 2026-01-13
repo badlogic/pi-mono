@@ -21,6 +21,7 @@ import type {
 	EditorComponent,
 	EditorTheme,
 	KeyId,
+	OverlayHandle,
 	OverlayOptions,
 	SlashCommand,
 } from "@mariozechner/pi-tui";
@@ -1260,7 +1261,11 @@ export class InteractiveMode {
 			keybindings: KeybindingsManager,
 			done: (result: T) => void,
 		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
-		options?: { overlay?: boolean; overlayOptions?: OverlayOptions | (() => OverlayOptions) },
+		options?: {
+			overlay?: boolean;
+			overlayOptions?: OverlayOptions | (() => OverlayOptions);
+			onHandle?: (handle: OverlayHandle) => void;
+		},
 	): Promise<T> {
 		const savedText = this.editor.getText();
 		const isOverlay = options?.overlay ?? false;
@@ -1309,7 +1314,9 @@ export class InteractiveMode {
 							const w = (component as { width?: number }).width;
 							return w ? { width: w } : undefined;
 						};
-						this.ui.showOverlay(component, resolveOptions());
+						const handle = this.ui.showOverlay(component, resolveOptions());
+						// Expose handle to caller for visibility control
+						options?.onHandle?.(handle);
 					} else {
 						this.editorContainer.clear();
 						this.editorContainer.addChild(component);

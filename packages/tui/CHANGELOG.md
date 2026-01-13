@@ -6,8 +6,10 @@
 
 - `SettingsListOptions` with `enableSearch` for fuzzy filtering in `SettingsList` ([#643](https://github.com/badlogic/pi-mono/pull/643) by [@ninlds](https://github.com/ninlds))
 - `pageUp` and `pageDown` key support with `selectPageUp`/`selectPageDown` editor actions ([#662](https://github.com/badlogic/pi-mono/pull/662) by [@aliou](https://github.com/aliou))
-- `OverlayOptions` API for overlay positioning and sizing: `width`, `widthPercent`, `minWidth`, `maxHeight`, `maxHeightPercent`, `anchor`, `offsetX`, `offsetY`, `rowPercent`, `colPercent`, `row`, `col`, `margin`
-- New exported types: `OverlayAnchor`, `OverlayMargin`, `OverlayOptions`
+- `OverlayOptions` API for overlay positioning and sizing with CSS-like values: `width`, `maxHeight`, `row`, `col` accept numbers (absolute) or percentage strings (e.g., `"50%"`). Also supports `minWidth`, `anchor`, `offsetX`, `offsetY`, `margin`.
+- `OverlayOptions.visible` callback for responsive overlays - receives terminal dimensions, return false to hide
+- `showOverlay()` now returns `OverlayHandle` with `hide()`, `setHidden(boolean)`, `isHidden()` for programmatic visibility control
+- New exported types: `OverlayAnchor`, `OverlayHandle`, `OverlayMargin`, `OverlayOptions`, `SizeValue`
 - `truncateToWidth()` now accepts optional `pad` parameter to pad result with spaces to exactly `maxWidth`
 
 ### Fixed
