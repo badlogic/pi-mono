@@ -58,6 +58,7 @@ export type KnownProvider =
 	| "openrouter"
 	| "zai"
 	| "mistral"
+	| "minimax"
 	| "opencode";
 export type Provider = KnownProvider | string;
 

@@ -46,7 +46,8 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: Op
 	expect(msg.stopReason).toBe("aborted");
 
 	// OpenAI providers, OpenAI Codex, Gemini CLI, zai, Amazon Bedrock, and the GPT-OSS model on Antigravity only send usage in the final chunk,
-	// so when aborted they have no token stats Anthropic and Google send usage information early in the stream
+	// so when aborted they have no token stats. Anthropic and Google send usage information early in the stream.
+	// MiniMax reports input tokens but not output tokens when aborted.
 	if (
 		llm.api === "openai-completions" ||
 		llm.api === "openai-responses" ||
@@ -57,6 +58,10 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: Op
 		(llm.provider === "google-antigravity" && llm.id.includes("gpt-oss"))
 	) {
 		expect(msg.usage.input).toBe(0);
+		expect(msg.usage.output).toBe(0);
+	} else if (llm.provider === "minimax") {
+		// MiniMax reports input tokens early but output tokens only in final chunk
+		expect(msg.usage.input).toBeGreaterThan(0);
 		expect(msg.usage.output).toBe(0);
 	} else {
 		expect(msg.usage.input).toBeGreaterThan(0);
@@ -140,6 +145,14 @@ describe("Token Statistics on Abort", () => {
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider", () => {
 		const llm = getModel("mistral", "devstral-medium-latest");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider", () => {
+		const llm = getModel("minimax", "MiniMax-M2.1");
 
 		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
 			await testTokensOnAbort(llm);

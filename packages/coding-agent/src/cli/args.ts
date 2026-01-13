@@ -243,6 +243,8 @@ ${chalk.bold("Environment Variables:")}
   XAI_API_KEY             - xAI Grok API key
   OPENROUTER_API_KEY      - OpenRouter API key
   ZAI_API_KEY             - ZAI API key
+  MISTRAL_API_KEY         - Mistral API key
+  MINIMAX_API_KEY         - MiniMax API key
   AWS_PROFILE             - AWS profile for Amazon Bedrock
   AWS_ACCESS_KEY_ID       - AWS access key for Amazon Bedrock
   AWS_SECRET_ACCESS_KEY   - AWS secret key for Amazon Bedrock

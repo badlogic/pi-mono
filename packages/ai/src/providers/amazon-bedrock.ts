@@ -378,38 +378,34 @@ function convertMessages(context: Context, model: Model<"bedrock-converse-stream
 				// Bedrock requires all tool results to be in one message
 				const toolResults: ContentBlock.ToolResultMember[] = [];
 
-				// Add current tool result
-				for (const c of m.content) {
-					toolResults.push({
-						toolResult: {
-							toolUseId: m.toolCallId,
-							content: [
-								c.type === "image"
-									? { image: createImageBlock(c.mimeType, c.data) }
-									: { text: sanitizeSurrogates(c.text) },
-							],
-							status: m.isError ? ToolResultStatus.ERROR : ToolResultStatus.SUCCESS,
-						},
-					});
-				}
+				// Add current tool result with all content blocks combined
+				toolResults.push({
+					toolResult: {
+						toolUseId: m.toolCallId,
+						content: m.content.map((c) =>
+							c.type === "image"
+								? { image: createImageBlock(c.mimeType, c.data) }
+								: { text: sanitizeSurrogates(c.text) },
+						),
+						status: m.isError ? ToolResultStatus.ERROR : ToolResultStatus.SUCCESS,
+					},
+				});
 
 				// Look ahead for consecutive toolResult messages
 				let j = i + 1;
 				while (j < messages.length && messages[j].role === "toolResult") {
 					const nextMsg = messages[j] as ToolResultMessage;
-					for (const c of nextMsg.content) {
-						toolResults.push({
-							toolResult: {
-								toolUseId: nextMsg.toolCallId,
-								content: [
-									c.type === "image"
-										? { image: createImageBlock(c.mimeType, c.data) }
-										: { text: sanitizeSurrogates(c.text) },
-								],
-								status: nextMsg.isError ? ToolResultStatus.ERROR : ToolResultStatus.SUCCESS,
-							},
-						});
-					}
+					toolResults.push({
+						toolResult: {
+							toolUseId: nextMsg.toolCallId,
+							content: nextMsg.content.map((c) =>
+								c.type === "image"
+									? { image: createImageBlock(c.mimeType, c.data) }
+									: { text: sanitizeSurrogates(c.text) },
+							),
+							status: nextMsg.isError ? ToolResultStatus.ERROR : ToolResultStatus.SUCCESS,
+						},
+					});
 					j++;
 				}
 

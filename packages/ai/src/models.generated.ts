@@ -2686,6 +2686,42 @@ export const MODELS = {
 			maxTokens: 16384,
 		} satisfies Model<"openai-completions">,
 	},
+	"minimax": {
+		"MiniMax-M2": {
+			id: "MiniMax-M2",
+			name: "MiniMax-M2",
+			api: "anthropic-messages",
+			provider: "minimax",
+			baseUrl: "https://api.minimax.io/anthropic",
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 0.3,
+				output: 1.2,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 196608,
+			maxTokens: 128000,
+		} satisfies Model<"anthropic-messages">,
+		"MiniMax-M2.1": {
+			id: "MiniMax-M2.1",
+			name: "MiniMax-M2.1",
+			api: "anthropic-messages",
+			provider: "minimax",
+			baseUrl: "https://api.minimax.io/anthropic",
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 0.3,
+				output: 1.2,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 204800,
+			maxTokens: 131072,
+		} satisfies Model<"anthropic-messages">,
+	},
 	"mistral": {
 		"codestral-latest": {
 			id: "codestral-latest",
@@ -4529,7 +4565,7 @@ export const MODELS = {
 				cacheWrite: 18.75,
 			},
 			contextWindow: 200000,
-			maxTokens: 4096,
+			maxTokens: 32000,
 		} satisfies Model<"openai-completions">,
 		"anthropic/claude-opus-4.5": {
 			id: "anthropic/claude-opus-4.5",
