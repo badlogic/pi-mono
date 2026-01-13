@@ -55,6 +55,7 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: Op
 		llm.provider === "google-gemini-cli" ||
 		llm.provider === "zai" ||
 		llm.provider === "amazon-bedrock" ||
+		llm.provider === "vercel-ai-gateway" ||
 		(llm.provider === "google-antigravity" && llm.id.includes("gpt-oss"))
 	) {
 		expect(msg.usage.input).toBe(0);

@@ -599,7 +599,7 @@ describe("Generate E2E Tests", () => {
 	});
 
 	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
-		"Vercel AI Gateway Provider (google/gemini-2.5-flash via OpenAI Completions)",
+		"Vercel AI Gateway Provider (google/gemini-2.5-flash via Anthropic Messages)",
 		() => {
 			const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
 
@@ -613,6 +613,14 @@ describe("Generate E2E Tests", () => {
 
 			it("should handle streaming", { retry: 3 }, async () => {
 				await handleStreaming(llm);
+			});
+
+			it("should handle image input", { retry: 3 }, async () => {
+				await handleImage(llm);
+			});
+
+			it("should handle multi-turn with tools", { retry: 3 }, async () => {
+				await multiTurn(llm);
 			});
 		},
 	);
