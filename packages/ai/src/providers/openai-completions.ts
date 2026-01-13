@@ -404,7 +404,12 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		params.tool_choice = options.toolChoice;
 	}
 
-	if (options?.reasoningEffort && model.reasoning && compat.supportsReasoningEffort) {
+	if (compat.thinkingFormat === "zai" && model.reasoning) {
+		// Z.ai uses binary thinking: { type: "enabled" | "disabled" }
+		// Must explicitly disable since z.ai defaults to thinking enabled
+		(params as any).thinking = { type: options?.reasoningEffort ? "enabled" : "disabled" };
+	} else if (options?.reasoningEffort && model.reasoning && compat.supportsReasoningEffort) {
+		// OpenAI-style reasoning_effort
 		params.reasoning_effort = options.reasoningEffort;
 	}
 
@@ -678,11 +683,14 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): Sto
  * Returns a fully resolved OpenAICompat object with all fields set.
  */
 function detectCompatFromUrl(baseUrl: string): Required<OpenAICompat> {
+	const isZai = baseUrl.includes("api.z.ai");
+
 	const isNonStandard =
 		baseUrl.includes("cerebras.ai") ||
 		baseUrl.includes("api.x.ai") ||
 		baseUrl.includes("mistral.ai") ||
-		baseUrl.includes("chutes.ai");
+		baseUrl.includes("chutes.ai") ||
+		isZai;
 
 	const useMaxTokens = baseUrl.includes("mistral.ai") || baseUrl.includes("chutes.ai");
 
@@ -693,13 +701,14 @@ function detectCompatFromUrl(baseUrl: string): Required<OpenAICompat> {
 	return {
 		supportsStore: !isNonStandard,
 		supportsDeveloperRole: !isNonStandard,
-		supportsReasoningEffort: !isGrok,
+		supportsReasoningEffort: !isGrok && !isZai,
 		supportsUsageInStreaming: true,
 		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
 		requiresToolResultName: isMistral,
 		requiresAssistantAfterToolResult: false, // Mistral no longer requires this as of Dec 2024
 		requiresThinkingAsText: isMistral,
 		requiresMistralToolIds: isMistral,
+		thinkingFormat: isZai ? "zai" : "openai",
 	};
 }
 
@@ -722,5 +731,6 @@ function getCompat(model: Model<"openai-completions">): Required<OpenAICompat> {
 			model.compat.requiresAssistantAfterToolResult ?? detected.requiresAssistantAfterToolResult,
 		requiresThinkingAsText: model.compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
 		requiresMistralToolIds: model.compat.requiresMistralToolIds ?? detected.requiresMistralToolIds,
+		thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
 	};
 }

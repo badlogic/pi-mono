@@ -14,6 +14,7 @@
 ### Fixed
 
 - Fix API key resolution after model switches by using provider argument ([#691](https://github.com/badlogic/pi-mono/pull/691) by [@joshp123](https://github.com/joshp123))
+- Fixed z.ai thinking/reasoning: thinking toggle now correctly enables/disables thinking for z.ai models ([#688](https://github.com/badlogic/pi-mono/issues/688))
 
 ## [0.45.3] - 2026-01-13
 

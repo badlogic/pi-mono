@@ -440,6 +440,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				},
 				compat: {
 					supportsDeveloperRole: false,
+					thinkingFormat: "zai",
 				},
 				contextWindow: m.limit?.context || 4096,
 				maxTokens: m.limit?.output || 4096,
