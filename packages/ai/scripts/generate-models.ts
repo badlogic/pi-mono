@@ -53,7 +53,8 @@ const COPILOT_STATIC_HEADERS = {
 	"Copilot-Integration-Id": "vscode-chat",
 } as const;
 
-const AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1";
+const AI_GATEWAY_MODELS_URL = "https://ai-gateway.vercel.sh/v1";
+const AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh";
 
 async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 	try {
@@ -116,7 +117,7 @@ async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 async function fetchAiGatewayModels(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from Vercel AI Gateway API...");
-		const response = await fetch(`${AI_GATEWAY_BASE_URL}/models`);
+		const response = await fetch(`${AI_GATEWAY_MODELS_URL}/models`);
 		const data = await response.json();
 		const models: Model<any>[] = [];
 
@@ -147,7 +148,7 @@ async function fetchAiGatewayModels(): Promise<Model<any>[]> {
 			models.push({
 				id: model.id,
 				name: model.name || model.id,
-				api: "openai-completions",
+				api: "anthropic-messages",
 				baseUrl: AI_GATEWAY_BASE_URL,
 				provider: "ai-gateway",
 				reasoning: tags.includes("reasoning"),
