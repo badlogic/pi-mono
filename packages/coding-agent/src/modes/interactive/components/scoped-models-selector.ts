@@ -12,6 +12,55 @@ import {
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
+// EnabledIds: null = all enabled (no filter), string[] = explicit ordered list
+type EnabledIds = string[] | null;
+
+function isEnabled(enabledIds: EnabledIds, id: string): boolean {
+	return enabledIds === null || enabledIds.includes(id);
+}
+
+function toggle(enabledIds: EnabledIds, id: string): EnabledIds {
+	if (enabledIds === null) return [id]; // First toggle: start with only this one
+	const index = enabledIds.indexOf(id);
+	if (index >= 0) return [...enabledIds.slice(0, index), ...enabledIds.slice(index + 1)];
+	return [...enabledIds, id];
+}
+
+function enableAll(enabledIds: EnabledIds, allIds: string[], targetIds?: string[]): EnabledIds {
+	if (enabledIds === null) return null; // Already all enabled
+	const targets = targetIds ?? allIds;
+	const result = [...enabledIds];
+	for (const id of targets) {
+		if (!result.includes(id)) result.push(id);
+	}
+	return result.length === allIds.length ? null : result;
+}
+
+function clearAll(enabledIds: EnabledIds, allIds: string[], targetIds?: string[]): EnabledIds {
+	if (enabledIds === null) {
+		return targetIds ? allIds.filter((id) => !targetIds.includes(id)) : [];
+	}
+	const targets = new Set(targetIds ?? enabledIds);
+	return enabledIds.filter((id) => !targets.has(id));
+}
+
+function move(enabledIds: EnabledIds, allIds: string[], id: string, delta: number): EnabledIds {
+	const list = enabledIds ?? [...allIds];
+	const index = list.indexOf(id);
+	if (index < 0) return list;
+	const newIndex = index + delta;
+	if (newIndex < 0 || newIndex >= list.length) return list;
+	const result = [...list];
+	[result[index], result[newIndex]] = [result[newIndex], result[index]];
+	return result;
+}
+
+function getSortedIds(enabledIds: EnabledIds, allIds: string[]): string[] {
+	if (enabledIds === null) return allIds;
+	const enabledSet = new Set(enabledIds);
+	return [...enabledIds, ...allIds.filter((id) => !enabledSet.has(id))];
+}
+
 interface ModelItem {
 	fullId: string;
 	model: Model<any>;
@@ -44,7 +93,9 @@ export interface ModelsCallbacks {
  * Changes are session-only until explicitly persisted with Ctrl+S.
  */
 export class ScopedModelsSelectorComponent extends Container {
-	private items: ModelItem[] = [];
+	private modelsById: Map<string, Model<any>> = new Map();
+	private allIds: string[] = [];
+	private enabledIds: EnabledIds = null;
 	private filteredItems: ModelItem[] = [];
 	private selectedIndex = 0;
 	private searchInput: Input;
@@ -58,28 +109,14 @@ export class ScopedModelsSelectorComponent extends Container {
 		super();
 		this.callbacks = callbacks;
 
-		// Group models by provider for organized display
-		const modelsByProvider = new Map<string, Model<any>[]>();
 		for (const model of config.allModels) {
-			const list = modelsByProvider.get(model.provider) ?? [];
-			list.push(model);
-			modelsByProvider.set(model.provider, list);
+			const fullId = `${model.provider}/${model.id}`;
+			this.modelsById.set(fullId, model);
+			this.allIds.push(fullId);
 		}
 
-		// Build items - group by provider
-		for (const [provider, models] of modelsByProvider) {
-			for (const model of models) {
-				const fullId = `${provider}/${model.id}`;
-				// If no filter defined, all models are enabled by default
-				const isEnabled = !config.hasEnabledModelsFilter || config.enabledModelIds.has(fullId);
-				this.items.push({
-					fullId,
-					model,
-					enabled: isEnabled,
-				});
-			}
-		}
-		this.filteredItems = this.getSortedItems();
+		this.enabledIds = config.hasEnabledModelsFilter ? [...config.enabledModelIds] : null;
+		this.filteredItems = this.buildItems();
 
 		// Header
 		this.addChild(new DynamicBorder());
@@ -103,41 +140,34 @@ export class ScopedModelsSelectorComponent extends Container {
 		this.addChild(this.footerText);
 
 		this.addChild(new DynamicBorder());
-
 		this.updateList();
 	}
 
-	/** Get items sorted with enabled items first */
-	private getSortedItems(): ModelItem[] {
-		const enabled = this.items.filter((i) => i.enabled);
-		const disabled = this.items.filter((i) => !i.enabled);
-		return [...enabled, ...disabled];
+	private buildItems(): ModelItem[] {
+		return getSortedIds(this.enabledIds, this.allIds).map((id) => ({
+			fullId: id,
+			model: this.modelsById.get(id)!,
+			enabled: isEnabled(this.enabledIds, id),
+		}));
 	}
 
 	private getFooterText(): string {
-		const enabledCount = this.items.filter((i) => i.enabled).length;
-		const allEnabled = enabledCount === this.items.length;
-		const countText = allEnabled ? "all enabled" : `${enabledCount}/${this.items.length} enabled`;
-		const parts = ["Enter toggle", "^A all", "^X clear", "^P provider", "^S save", countText];
-		if (this.isDirty) {
-			return theme.fg("dim", `  ${parts.join(" · ")} `) + theme.fg("warning", "(unsaved)");
-		}
-		return theme.fg("dim", `  ${parts.join(" · ")}`);
+		const enabledCount = this.enabledIds?.length ?? this.allIds.length;
+		const allEnabled = this.enabledIds === null;
+		const countText = allEnabled ? "all enabled" : `${enabledCount}/${this.allIds.length} enabled`;
+		const parts = ["Enter toggle", "^A all", "^X clear", "^P provider", "Alt+↑↓ reorder", "^S save", countText];
+		return this.isDirty
+			? theme.fg("dim", `  ${parts.join(" · ")} `) + theme.fg("warning", "(unsaved)")
+			: theme.fg("dim", `  ${parts.join(" · ")}`);
 	}
 
-	private updateFooter(): void {
-		this.footerText.setText(this.getFooterText());
-	}
-
-	private filterItems(query: string): void {
-		const sorted = this.getSortedItems();
-		if (!query) {
-			this.filteredItems = sorted;
-		} else {
-			this.filteredItems = fuzzyFilter(sorted, query, (item) => `${item.model.id} ${item.model.provider}`);
-		}
+	private refresh(): void {
+		const query = this.searchInput.getValue();
+		const items = this.buildItems();
+		this.filteredItems = query ? fuzzyFilter(items, query, (i) => `${i.model.id} ${i.model.provider}`) : items;
 		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredItems.length - 1));
 		this.updateList();
+		this.footerText.setText(this.getFooterText());
 	}
 
 	private updateList(): void {
@@ -153,51 +183,24 @@ export class ScopedModelsSelectorComponent extends Container {
 			Math.min(this.selectedIndex - Math.floor(this.maxVisible / 2), this.filteredItems.length - this.maxVisible),
 		);
 		const endIndex = Math.min(startIndex + this.maxVisible, this.filteredItems.length);
-
-		// Only show status if there's a filter (not all models enabled)
-		const allEnabled = this.items.every((i) => i.enabled);
+		const allEnabled = this.enabledIds === null;
 
 		for (let i = startIndex; i < endIndex; i++) {
-			const item = this.filteredItems[i];
-			if (!item) continue;
-
+			const item = this.filteredItems[i]!;
 			const isSelected = i === this.selectedIndex;
 			const prefix = isSelected ? theme.fg("accent", "→ ") : "  ";
 			const modelText = isSelected ? theme.fg("accent", item.model.id) : item.model.id;
 			const providerBadge = theme.fg("muted", ` [${item.model.provider}]`);
-			// Only show checkmarks when there's actually a filter
 			const status = allEnabled ? "" : item.enabled ? theme.fg("success", " ✓") : theme.fg("dim", " ✗");
-
 			this.listContainer.addChild(new Text(`${prefix}${modelText}${providerBadge}${status}`, 0, 0));
 		}
 
 		// Add scroll indicator if needed
 		if (startIndex > 0 || endIndex < this.filteredItems.length) {
-			const scrollInfo = theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredItems.length})`);
-			this.listContainer.addChild(new Text(scrollInfo, 0, 0));
+			this.listContainer.addChild(
+				new Text(theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredItems.length})`), 0, 0),
+			);
 		}
-	}
-
-	private toggleItem(item: ModelItem): void {
-		// If all models are currently enabled (no scope yet), first toggle starts fresh:
-		// clear all and enable only the selected model
-		const allEnabled = this.items.every((i) => i.enabled);
-		if (allEnabled) {
-			for (const i of this.items) {
-				i.enabled = false;
-			}
-			item.enabled = true;
-			this.isDirty = true;
-			this.callbacks.onClearAll();
-			this.callbacks.onModelToggle(item.fullId, true);
-		} else {
-			item.enabled = !item.enabled;
-			this.isDirty = true;
-			this.callbacks.onModelToggle(item.fullId, item.enabled);
-		}
-		// Re-sort and re-filter to move item to correct section
-		this.filterItems(this.searchInput.getValue());
-		this.updateFooter();
 	}
 
 	handleInput(data: string): void {
@@ -217,70 +220,81 @@ export class ScopedModelsSelectorComponent extends Container {
 			return;
 		}
 
+		// Alt+Up/Down - Reorder enabled models
+		if (matchesKey(data, Key.alt("up")) || matchesKey(data, Key.alt("down"))) {
+			const item = this.filteredItems[this.selectedIndex];
+			if (item && isEnabled(this.enabledIds, item.fullId)) {
+				const delta = matchesKey(data, Key.alt("up")) ? -1 : 1;
+				const enabledList = this.enabledIds ?? this.allIds;
+				const currentIndex = enabledList.indexOf(item.fullId);
+				const newIndex = currentIndex + delta;
+				// Only move if within bounds
+				if (newIndex >= 0 && newIndex < enabledList.length) {
+					this.enabledIds = move(this.enabledIds, this.allIds, item.fullId, delta);
+					this.isDirty = true;
+					this.selectedIndex += delta;
+					this.refresh();
+				}
+			}
+			return;
+		}
+
 		// Toggle on Enter
 		if (matchesKey(data, Key.enter)) {
 			const item = this.filteredItems[this.selectedIndex];
 			if (item) {
-				this.toggleItem(item);
+				const wasAllEnabled = this.enabledIds === null;
+				this.enabledIds = toggle(this.enabledIds, item.fullId);
+				this.isDirty = true;
+				if (wasAllEnabled) this.callbacks.onClearAll();
+				this.callbacks.onModelToggle(item.fullId, isEnabled(this.enabledIds, item.fullId));
+				this.refresh();
 			}
 			return;
 		}
 
 		// Ctrl+A - Enable all (filtered if search active, otherwise all)
 		if (matchesKey(data, Key.ctrl("a"))) {
-			const targets = this.searchInput.getValue() ? this.filteredItems : this.items;
-			for (const item of targets) {
-				item.enabled = true;
-			}
+			const targetIds = this.searchInput.getValue() ? this.filteredItems.map((i) => i.fullId) : undefined;
+			this.enabledIds = enableAll(this.enabledIds, this.allIds, targetIds);
 			this.isDirty = true;
-			this.callbacks.onEnableAll(targets.map((i) => i.fullId));
-			this.filterItems(this.searchInput.getValue());
-			this.updateFooter();
+			this.callbacks.onEnableAll(targetIds ?? this.allIds);
+			this.refresh();
 			return;
 		}
 
 		// Ctrl+X - Clear all (filtered if search active, otherwise all)
 		if (matchesKey(data, Key.ctrl("x"))) {
-			const targets = this.searchInput.getValue() ? this.filteredItems : this.items;
-			for (const item of targets) {
-				item.enabled = false;
-			}
+			const targetIds = this.searchInput.getValue() ? this.filteredItems.map((i) => i.fullId) : undefined;
+			this.enabledIds = clearAll(this.enabledIds, this.allIds, targetIds);
 			this.isDirty = true;
 			this.callbacks.onClearAll();
-			this.filterItems(this.searchInput.getValue());
-			this.updateFooter();
+			this.refresh();
 			return;
 		}
 
 		// Ctrl+P - Toggle provider of current item
 		if (matchesKey(data, Key.ctrl("p"))) {
-			const currentItem = this.filteredItems[this.selectedIndex];
-			if (currentItem) {
-				const provider = currentItem.model.provider;
-				const providerItems = this.items.filter((i) => i.model.provider === provider);
-				const allEnabled = providerItems.every((i) => i.enabled);
-				const newState = !allEnabled;
-				for (const item of providerItems) {
-					item.enabled = newState;
-				}
+			const item = this.filteredItems[this.selectedIndex];
+			if (item) {
+				const provider = item.model.provider;
+				const providerIds = this.allIds.filter((id) => this.modelsById.get(id)!.provider === provider);
+				const allEnabled = providerIds.every((id) => isEnabled(this.enabledIds, id));
+				this.enabledIds = allEnabled
+					? clearAll(this.enabledIds, this.allIds, providerIds)
+					: enableAll(this.enabledIds, this.allIds, providerIds);
 				this.isDirty = true;
-				this.callbacks.onToggleProvider(
-					provider,
-					providerItems.map((i) => i.fullId),
-					newState,
-				);
-				this.filterItems(this.searchInput.getValue());
-				this.updateFooter();
+				this.callbacks.onToggleProvider(provider, providerIds, !allEnabled);
+				this.refresh();
 			}
 			return;
 		}
 
 		// Ctrl+S - Save/persist to settings
 		if (matchesKey(data, Key.ctrl("s"))) {
-			const enabledIds = this.items.filter((i) => i.enabled).map((i) => i.fullId);
-			this.callbacks.onPersist(enabledIds);
+			this.callbacks.onPersist(this.enabledIds ?? [...this.allIds]);
 			this.isDirty = false;
-			this.updateFooter();
+			this.footerText.setText(this.getFooterText());
 			return;
 		}
 
@@ -288,7 +302,7 @@ export class ScopedModelsSelectorComponent extends Container {
 		if (matchesKey(data, Key.ctrl("c"))) {
 			if (this.searchInput.getValue()) {
 				this.searchInput.setValue("");
-				this.filterItems("");
+				this.refresh();
 			} else {
 				this.callbacks.onCancel();
 			}
@@ -303,7 +317,7 @@ export class ScopedModelsSelectorComponent extends Container {
 
 		// Pass everything else to search input
 		this.searchInput.handleInput(data);
-		this.filterItems(this.searchInput.getValue());
+		this.refresh();
 	}
 
 	getSearchInput(): Input {
