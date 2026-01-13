@@ -50,6 +50,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `timed-confirm.ts` | Demonstrates AbortSignal for auto-dismissing `ctx.ui.confirm()` and `ctx.ui.select()` dialogs |
 | `modal-editor.ts` | Custom vim-like modal editor via `ctx.ui.setEditorComponent()` |
 | `notify.ts` | Desktop notifications via OSC 777 when agent finishes (Ghostty, iTerm2, WezTerm) |
+| `summarize.ts` | Summarize the conversation so far with GPT-5.2, and show in a nice transient UI |
 
 ### Git Integration
 

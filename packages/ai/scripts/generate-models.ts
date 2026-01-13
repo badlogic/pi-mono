@@ -154,14 +154,14 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 						id = "us." + id;
 				}
 
-				models.push({
+				const bedrockModel = {
 					id,
 					name: m.name || id,
-					api: "bedrock-converse-stream",
-					provider: "amazon-bedrock",
+					api: "bedrock-converse-stream" as const,
+					provider: "amazon-bedrock" as const,
 					baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
 					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					input: (m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"]) as ("text" | "image")[],
 					cost: {
 						input: m.cost?.input || 0,
 						output: m.cost?.output || 0,
@@ -170,7 +170,19 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					},
 					contextWindow: m.limit?.context || 4096,
 					maxTokens: m.limit?.output || 4096,
-				});
+				};
+				models.push(bedrockModel);
+
+				// Add EU cross-region inference variants for Claude models
+				if (modelId.startsWith("anthropic.claude-haiku-4-5") ||
+						modelId.startsWith("anthropic.claude-sonnet-4-5") ||
+						modelId.startsWith("anthropic.claude-opus-4-5")) {
+					models.push({
+						...bedrockModel,
+						id: "eu." + modelId,
+						name: (m.name || modelId) + " (EU)",
+					});
+				}
 			}
 		}
 

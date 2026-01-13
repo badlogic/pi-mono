@@ -18,6 +18,7 @@ Extensions are TypeScript modules that extend pi's behavior. They can subscribe 
 - Git checkpointing (stash at each turn, restore on branch)
 - Path protection (block writes to `.env`, `node_modules/`)
 - Custom compaction (summarize conversation your way)
+- Conversation summaries (see `summarize.ts` example)
 - Interactive tools (questions, wizards, custom dialogs)
 - Stateful tools (todo lists, connection pools)
 - External integrations (file watchers, webhooks, CI triggers)
@@ -830,7 +831,7 @@ pi.registerCommand("stats", {
 });
 ```
 
-**Examples:** [custom-footer.ts](../examples/extensions/custom-footer.ts), [custom-header.ts](../examples/extensions/custom-header.ts), [handoff.ts](../examples/extensions/handoff.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [send-user-message.ts](../examples/extensions/send-user-message.ts), [snake.ts](../examples/extensions/snake.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts)
+**Examples:** [custom-footer.ts](../examples/extensions/custom-footer.ts), [custom-header.ts](../examples/extensions/custom-header.ts), [handoff.ts](../examples/extensions/handoff.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [send-user-message.ts](../examples/extensions/send-user-message.ts), [snake.ts](../examples/extensions/snake.ts), [summarize.ts](../examples/extensions/summarize.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts)
 
 ### pi.registerMessageRenderer(customType, renderer)
 
@@ -1397,7 +1398,7 @@ const result = await ctx.ui.custom<string | null>(
 
 Overlay components should define a `width` property to control their size. The overlay is centered by default. See [overlay-test.ts](../examples/extensions/overlay-test.ts) for a complete example.
 
-**Examples:** [handoff.ts](../examples/extensions/handoff.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [snake.ts](../examples/extensions/snake.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts), [overlay-test.ts](../examples/extensions/overlay-test.ts)
+**Examples:** [handoff.ts](../examples/extensions/handoff.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [snake.ts](../examples/extensions/snake.ts), [summarize.ts](../examples/extensions/summarize.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts), [overlay-test.ts](../examples/extensions/overlay-test.ts)
 
 ### Custom Editor
 
