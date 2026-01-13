@@ -595,10 +595,9 @@ export class InteractiveMode {
 		const entries = parseChangelog(changelogPath);
 
 		if (!lastVersion) {
-			if (entries.length > 0) {
-				this.settingsManager.setLastChangelogVersion(VERSION);
-				return entries.map((e) => e.content).join("\n\n");
-			}
+			// Fresh install - just record the version, don't show changelog
+			this.settingsManager.setLastChangelogVersion(VERSION);
+			return undefined;
 		} else {
 			const newEntries = getNewEntries(entries, lastVersion);
 			if (newEntries.length > 0) {

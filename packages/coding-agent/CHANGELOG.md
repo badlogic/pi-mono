@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Skip changelog display on fresh install (only show on upgrades)
+
 ## [0.45.4] - 2026-01-13
 
 ### Changed
