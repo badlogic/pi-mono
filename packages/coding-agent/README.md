@@ -166,6 +166,7 @@ Add API keys to `~/.pi/agent/auth.json`:
 | Cerebras | `cerebras` | `CEREBRAS_API_KEY` |
 | xAI | `xai` | `XAI_API_KEY` |
 | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
+| Vercel AI Gateway | `ai-gateway` | `AI_GATEWAY_API_KEY` |
 | ZAI | `zai` | `ZAI_API_KEY` |
 | MiniMax | `minimax` | `MINIMAX_API_KEY` |
 
@@ -1143,7 +1144,7 @@ pi [options] [@files...] [messages...]
 
 | Option | Description |
 |--------|-------------|
-| `--provider <name>` | Provider: `anthropic`, `openai`, `openai-codex`, `google`, `google-vertex`, `amazon-bedrock`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`, `zai`, `minimax`, `github-copilot`, `google-gemini-cli`, `google-antigravity`, or custom |
+| `--provider <name>` | Provider: `anthropic`, `openai`, `openai-codex`, `google`, `google-vertex`, `amazon-bedrock`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`, `ai-gateway`, `zai`, `minimax`, `github-copilot`, `google-gemini-cli`, `google-antigravity`, or custom |
 | `--model <id>` | Model ID |
 | `--api-key <key>` | API key (overrides environment) |
 | `--system-prompt <text\|file>` | Custom system prompt (text or file path) |
