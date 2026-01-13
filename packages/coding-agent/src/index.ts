@@ -88,8 +88,6 @@ export type {
 	UserBashEventResult,
 } from "./core/extensions/index.js";
 export {
-	createExtensionRuntime,
-	discoverAndLoadExtensions,
 	ExtensionRunner,
 	isBashToolResult,
 	isEditToolResult,
@@ -98,7 +96,6 @@ export {
 	isLsToolResult,
 	isReadToolResult,
 	isWriteToolResult,
-	loadExtensions,
 	wrapRegisteredTool,
 	wrapRegisteredTools,
 	wrapToolsWithExtensions,
