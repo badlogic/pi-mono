@@ -625,6 +625,60 @@ describe("Generate E2E Tests", () => {
 		},
 	);
 
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
+		"Vercel AI Gateway Provider (anthropic/claude-opus-4.5 via Anthropic Messages)",
+		() => {
+			const llm = getModel("vercel-ai-gateway", "anthropic/claude-opus-4.5");
+
+			it("should complete basic text generation", { retry: 3 }, async () => {
+				await basicTextGeneration(llm);
+			});
+
+			it("should handle tool calling", { retry: 3 }, async () => {
+				await handleToolCall(llm);
+			});
+
+			it("should handle streaming", { retry: 3 }, async () => {
+				await handleStreaming(llm);
+			});
+
+			it("should handle image input", { retry: 3 }, async () => {
+				await handleImage(llm);
+			});
+
+			it("should handle multi-turn with tools", { retry: 3 }, async () => {
+				await multiTurn(llm);
+			});
+		},
+	);
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
+		"Vercel AI Gateway Provider (openai/gpt-5.1-codex-max via Anthropic Messages)",
+		() => {
+			const llm = getModel("vercel-ai-gateway", "openai/gpt-5.1-codex-max");
+
+			it("should complete basic text generation", { retry: 3 }, async () => {
+				await basicTextGeneration(llm);
+			});
+
+			it("should handle tool calling", { retry: 3 }, async () => {
+				await handleToolCall(llm);
+			});
+
+			it("should handle streaming", { retry: 3 }, async () => {
+				await handleStreaming(llm);
+			});
+
+			it("should handle image input", { retry: 3 }, async () => {
+				await handleImage(llm);
+			});
+
+			it("should handle multi-turn with tools", { retry: 3 }, async () => {
+				await multiTurn(llm);
+			});
+		},
+	);
+
 	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5-air via OpenAI Completions)", () => {
 		const llm = getModel("zai", "glm-4.5-air");
 
