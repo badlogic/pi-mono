@@ -5,6 +5,7 @@
 ### Changed
 
 - Light theme colors adjusted for WCAG AA compliance (4.5:1 contrast ratio against white backgrounds)
+- Replaced `sharp` with `wasm-vips` for image processing (resize, PNG conversion). Eliminates native build requirements that caused installation failures on some systems. ([#696](https://github.com/badlogic/pi-mono/issues/696))
 
 ### Added
 
