@@ -3,18 +3,18 @@
  * The server manages auth and proxies requests to LLM providers.
  */
 
+// Internal import for JSON parsing utility
 import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
 	type Context,
 	EventStream,
 	type Model,
+	parseStreamingJson,
 	type SimpleStreamOptions,
 	type StopReason,
 	type ToolCall,
 } from "@mariozechner/pi-ai";
-// Internal import for JSON parsing utility
-import { parseStreamingJson } from "@mariozechner/pi-ai/dist/utils/json-parse.js";
 
 // Create stream class matching ProxyMessageEventStream
 class ProxyMessageEventStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
