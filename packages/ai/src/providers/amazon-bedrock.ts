@@ -38,6 +38,7 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import { transformMessages } from "./transform-messages.js";
 
 export interface BedrockOptions extends StreamOptions {
 	region?: string;
@@ -307,10 +308,10 @@ function buildSystemPrompt(
 
 function convertMessages(context: Context, model: Model<"bedrock-converse-stream">): Message[] {
 	const result: Message[] = [];
-	const messages = context.messages;
+	const transformedMessages = transformMessages(context.messages, model);
 
-	for (let i = 0; i < messages.length; i++) {
-		const m = messages[i];
+	for (let i = 0; i < transformedMessages.length; i++) {
+		const m = transformedMessages[i];
 
 		switch (m.role) {
 			case "user":
@@ -393,8 +394,8 @@ function convertMessages(context: Context, model: Model<"bedrock-converse-stream
 
 				// Look ahead for consecutive toolResult messages
 				let j = i + 1;
-				while (j < messages.length && messages[j].role === "toolResult") {
-					const nextMsg = messages[j] as ToolResultMessage;
+				while (j < transformedMessages.length && transformedMessages[j].role === "toolResult") {
+					const nextMsg = transformedMessages[j] as ToolResultMessage;
 					toolResults.push({
 						toolResult: {
 							toolUseId: nextMsg.toolCallId,
