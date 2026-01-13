@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `/share` now outputs `buildwithpi.ai` session preview URLs instead of `shittycodingagent.ai`
+
 ## [0.45.0] - 2026-01-13
 
 ### Added

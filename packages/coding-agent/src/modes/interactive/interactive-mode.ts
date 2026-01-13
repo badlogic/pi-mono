@@ -3245,7 +3245,7 @@ export class InteractiveMode {
 			}
 
 			// Create the preview URL
-			const previewUrl = `https://shittycodingagent.ai/session?${gistId}`;
+			const previewUrl = `https://buildwithpi.ai/session?${gistId}`;
 			this.showStatus(`Share URL: ${previewUrl}\nGist: ${gistUrl}`);
 		} catch (error: unknown) {
 			if (!loader.signal.aborted) {
