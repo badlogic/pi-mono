@@ -30,8 +30,10 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 |-----------|-------------|
 | `todo.ts` | Todo list tool + `/todos` command with custom rendering and state persistence |
 | `hello.ts` | Minimal custom tool example |
-| `question.ts` | Demonstrates `ctx.ui.select()` for asking the user questions |
+| `question.ts` | Demonstrates `ctx.ui.select()` for asking the user questions with custom UI |
+| `questionnaire.ts` | Multi-question input with tab bar navigation between questions |
 | `tool-override.ts` | Override built-in tools (e.g., add logging/access control to `read`) |
+| `truncated-tool.ts` | Wraps ripgrep with proper output truncation (50KB/2000 lines) |
 | `ssh.ts` | Delegate all tools to a remote machine via SSH using pluggable operations |
 | `subagent/` | Delegate tasks to specialized subagents with isolated context windows |
 
@@ -40,17 +42,24 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | Extension | Description |
 |-----------|-------------|
 | `preset.ts` | Named presets for model, thinking level, tools, and instructions via `--preset` flag and `/preset` command |
-| `plan-mode.ts` | Claude Code-style plan mode for read-only exploration with `/plan` command |
+| `plan-mode/` | Claude Code-style plan mode for read-only exploration with `/plan` command and step tracking |
 | `tools.ts` | Interactive `/tools` command to enable/disable tools with session persistence |
 | `handoff.ts` | Transfer context to a new focused session via `/handoff <goal>` |
 | `qna.ts` | Extracts questions from last response into editor via `ctx.ui.setEditorText()` |
 | `status-line.ts` | Shows turn progress in footer via `ctx.ui.setStatus()` with themed colors |
+| `model-status.ts` | Shows model changes in status bar via `model_select` hook |
 | `snake.ts` | Snake game with custom UI, keyboard handling, and session persistence |
 | `send-user-message.ts` | Demonstrates `pi.sendUserMessage()` for sending user messages from extensions |
 | `timed-confirm.ts` | Demonstrates AbortSignal for auto-dismissing `ctx.ui.confirm()` and `ctx.ui.select()` dialogs |
 | `modal-editor.ts` | Custom vim-like modal editor via `ctx.ui.setEditorComponent()` |
+| `rainbow-editor.ts` | Animated rainbow text effect via custom editor |
 | `notify.ts` | Desktop notifications via OSC 777 when agent finishes (Ghostty, iTerm2, WezTerm) |
-| `summarize.ts` | Summarize the conversation so far with GPT-5.2, and show in a nice transient UI |
+| `summarize.ts` | Summarize conversation with GPT-5.2 and show in transient UI |
+| `custom-footer.ts` | Custom footer with git branch and token stats via `ctx.ui.setFooter()` |
+| `custom-header.ts` | Custom header via `ctx.ui.setHeader()` |
+| `overlay-test.ts` | Test overlay rendering with inline text inputs |
+| `shutdown-command.ts` | Adds `/quit` command demonstrating `ctx.shutdown()` |
+| `interactive-shell.ts` | Run interactive commands (vim, htop) with full terminal via `user_bash` hook |
 
 ### Git Integration
 
@@ -64,7 +73,14 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | Extension | Description |
 |-----------|-------------|
 | `pirate.ts` | Demonstrates `systemPromptAppend` to dynamically modify system prompt |
+| `claude-rules.ts` | Scans `.claude/rules/` folder and lists rules in system prompt |
 | `custom-compaction.ts` | Custom compaction that summarizes entire conversation |
+
+### System Integration
+
+| Extension | Description |
+|-----------|-------------|
+| `mac-system-theme.ts` | Syncs pi theme with macOS dark/light mode |
 
 ### External Dependencies
 
