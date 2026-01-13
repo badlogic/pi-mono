@@ -32,12 +32,28 @@ interface ModelsDevModel {
 	};
 }
 
+interface AiGatewayModel {
+	id: string;
+	name?: string;
+	context_window?: number;
+	max_tokens?: number;
+	tags?: string[];
+	pricing?: {
+		input?: string | number;
+		output?: string | number;
+		input_cache_read?: string | number;
+		input_cache_write?: string | number;
+	};
+}
+
 const COPILOT_STATIC_HEADERS = {
 	"User-Agent": "GitHubCopilotChat/0.35.0",
 	"Editor-Version": "vscode/1.107.0",
 	"Editor-Plugin-Version": "copilot-chat/0.35.0",
 	"Copilot-Integration-Id": "vscode-chat",
 } as const;
+
+const AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1";
 
 async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 	try {
@@ -93,6 +109,64 @@ async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 		return models;
 	} catch (error) {
 		console.error("Failed to fetch OpenRouter models:", error);
+		return [];
+	}
+}
+
+async function fetchAiGatewayModels(): Promise<Model<any>[]> {
+	try {
+		console.log("Fetching models from Vercel AI Gateway API...");
+		const response = await fetch(`${AI_GATEWAY_BASE_URL}/models`);
+		const data = await response.json();
+		const models: Model<any>[] = [];
+
+		const toNumber = (value: string | number | undefined): number => {
+			if (typeof value === "number") {
+				return Number.isFinite(value) ? value : 0;
+			}
+			const parsed = parseFloat(value ?? "0");
+			return Number.isFinite(parsed) ? parsed : 0;
+		};
+
+		const items = Array.isArray(data.data) ? (data.data as AiGatewayModel[]) : [];
+		for (const model of items) {
+			const tags = Array.isArray(model.tags) ? model.tags : [];
+			// Only include models that support tools
+			if (!tags.includes("tool-use")) continue;
+
+			const input: ("text" | "image")[] = ["text"];
+			if (tags.includes("vision")) {
+				input.push("image");
+			}
+
+			const inputCost = toNumber(model.pricing?.input) * 1_000_000;
+			const outputCost = toNumber(model.pricing?.output) * 1_000_000;
+			const cacheReadCost = toNumber(model.pricing?.input_cache_read) * 1_000_000;
+			const cacheWriteCost = toNumber(model.pricing?.input_cache_write) * 1_000_000;
+
+			models.push({
+				id: model.id,
+				name: model.name || model.id,
+				api: "openai-completions",
+				baseUrl: AI_GATEWAY_BASE_URL,
+				provider: "ai-gateway",
+				reasoning: tags.includes("reasoning"),
+				input,
+				cost: {
+					input: inputCost,
+					output: outputCost,
+					cacheRead: cacheReadCost,
+					cacheWrite: cacheWriteCost,
+				},
+				contextWindow: model.context_window || 4096,
+				maxTokens: model.max_tokens || 4096,
+			});
+		}
+
+		console.log(`Fetched ${models.length} tool-capable models from Vercel AI Gateway`);
+		return models;
+	} catch (error) {
+		console.error("Failed to fetch Vercel AI Gateway models:", error);
 		return [];
 	}
 }
@@ -529,11 +603,13 @@ async function generateModels() {
 	// Fetch models from both sources
 	// models.dev: Anthropic, Google, OpenAI, Groq, Cerebras
 	// OpenRouter: xAI and other providers (excluding Anthropic, Google, OpenAI)
+	// AI Gateway: OpenAI-compatible catalog with tool-capable models
 	const modelsDevModels = await loadModelsDevData();
 	const openRouterModels = await fetchOpenRouterModels();
+	const aiGatewayModels = await fetchAiGatewayModels();
 
 	// Combine models (models.dev has priority)
-	const allModels = [...modelsDevModels, ...openRouterModels];
+	const allModels = [...modelsDevModels, ...openRouterModels, ...aiGatewayModels];
 
 	// Fix incorrect cache pricing for Claude Opus 4.5 from models.dev
 	// models.dev has 3x the correct pricing (1.5/18.75 instead of 0.5/6.25)

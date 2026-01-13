@@ -242,6 +242,7 @@ ${chalk.bold("Environment Variables:")}
   CEREBRAS_API_KEY        - Cerebras API key
   XAI_API_KEY             - xAI Grok API key
   OPENROUTER_API_KEY      - OpenRouter API key
+  AI_GATEWAY_API_KEY      - Vercel AI Gateway API key
   ZAI_API_KEY             - ZAI API key
   MISTRAL_API_KEY         - Mistral API key
   MINIMAX_API_KEY         - MiniMax API key

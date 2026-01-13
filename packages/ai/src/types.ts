@@ -56,6 +56,7 @@ export type KnownProvider =
 	| "groq"
 	| "cerebras"
 	| "openrouter"
+	| "ai-gateway"
 	| "zai"
 	| "mistral"
 	| "minimax"

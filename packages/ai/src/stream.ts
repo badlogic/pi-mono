@@ -96,6 +96,7 @@ export function getEnvApiKey(provider: any): string | undefined {
 		cerebras: "CEREBRAS_API_KEY",
 		xai: "XAI_API_KEY",
 		openrouter: "OPENROUTER_API_KEY",
+		"ai-gateway": "AI_GATEWAY_API_KEY",
 		zai: "ZAI_API_KEY",
 		mistral: "MISTRAL_API_KEY",
 		minimax: "MINIMAX_API_KEY",
