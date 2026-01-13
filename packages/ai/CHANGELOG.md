@@ -4,7 +4,7 @@
 
 ### Added
 
-- Added Vercel AI Gateway provider with model discovery and `AI_GATEWAY_API_KEY` env support.
+- Added Vercel AI Gateway provider with model discovery and `AI_GATEWAY_API_KEY` env support ([#689](https://github.com/badlogic/pi-mono/pull/689) by [@timolins](https://github.com/timolins))
 
 ## [0.45.3] - 2026-01-13
 

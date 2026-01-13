@@ -842,6 +842,49 @@ describe("Image Limits E2E Tests", () => {
 	});
 
 	// -------------------------------------------------------------------------
+	// Vercel AI Gateway (google/gemini-2.5-flash)
+	// -------------------------------------------------------------------------
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway (google/gemini-2.5-flash)", () => {
+		const model = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+
+		it("should accept a small number of images (5)", async () => {
+			const result = await testImageCount(model, 5, smallImage);
+			expect(result.success, result.error).toBe(true);
+		});
+
+		it("should find maximum image count limit", { timeout: 600000 }, async () => {
+			const { limit, lastError } = await findLimit((count) => testImageCount(model, count, smallImage), 10, 100, 10);
+			console.log(`\n  Vercel AI Gateway max images: ~${limit} (last error: ${lastError})`);
+			expect(limit).toBeGreaterThanOrEqual(5);
+		});
+
+		it("should find maximum image size limit", { timeout: 600000 }, async () => {
+			const MB = 1024 * 1024;
+			const sizes = [5, 10, 15, 20];
+
+			let lastSuccess = 0;
+			let lastError: string | undefined;
+
+			for (const sizeMB of sizes) {
+				console.log(`  Testing size: ${sizeMB}MB...`);
+				const imageBase64 = generateImageWithSize(sizeMB * MB, `size-${sizeMB}mb.png`);
+				const result = await testImageSize(model, imageBase64);
+				if (result.success) {
+					lastSuccess = sizeMB;
+					console.log(`    SUCCESS`);
+				} else {
+					lastError = result.error;
+					console.log(`    FAILED: ${result.error?.substring(0, 100)}`);
+					break;
+				}
+			}
+
+			console.log(`\n  Vercel AI Gateway max image size: ~${lastSuccess}MB (last error: ${lastError})`);
+			expect(lastSuccess).toBeGreaterThanOrEqual(5);
+		});
+	});
+
+	// -------------------------------------------------------------------------
 	// Amazon Bedrock (claude-sonnet-4-5)
 	// Limits: 100 images (Anthropic), 5MB per image, 8000px max dimension
 	// -------------------------------------------------------------------------

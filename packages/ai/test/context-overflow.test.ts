@@ -413,6 +413,21 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
+	// Vercel AI Gateway - Unified API for multiple providers
+	// =============================================================================
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway", () => {
+		it("google/gemini-2.5-flash via AI Gateway - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+			const result = await testContextOverflow(model, process.env.AI_GATEWAY_API_KEY!);
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
 	// OpenRouter - Multiple backend providers
 	// Expected pattern: "maximum context length is X tokens"
 	// =============================================================================

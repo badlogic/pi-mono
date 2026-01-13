@@ -172,6 +172,18 @@ describe("AI Providers Abort Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway Provider Abort", () => {
+		const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+
+		it("should abort mid-stream", { retry: 3 }, async () => {
+			await testAbortSignal(llm);
+		});
+
+		it("should handle immediate abort", { retry: 3 }, async () => {
+			await testImmediateAbort(llm);
+		});
+	});
+
 	// Google Gemini CLI / Antigravity share the same provider, so one test covers both
 	describe("Google Gemini CLI Provider Abort", () => {
 		it.skipIf(!geminiCliToken)("should abort mid-stream", { retry: 3 }, async () => {

@@ -207,12 +207,12 @@ describe("default model selection", () => {
 	});
 
 	test("findInitialModel selects ai-gateway default when available", async () => {
-		const aiGatewayModel: Model<"openai-completions"> = {
+		const aiGatewayModel: Model<"anthropic-messages"> = {
 			id: "anthropic/claude-opus-4.5",
 			name: "Claude Opus 4.5",
-			api: "openai-completions",
+			api: "anthropic-messages",
 			provider: "vercel-ai-gateway",
-			baseUrl: "https://ai-gateway.vercel.sh/v1",
+			baseUrl: "https://ai-gateway.vercel.sh",
 			reasoning: true,
 			input: ["text", "image"],
 			cost: { input: 5, output: 15, cacheRead: 0.5, cacheWrite: 5 },
