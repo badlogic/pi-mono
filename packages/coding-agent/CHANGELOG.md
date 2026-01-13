@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Light theme colors adjusted for WCAG AA compliance (4.5:1 contrast ratio against white backgrounds)
+
 ### Added
 
 - Extension example: `summarize.ts` for summarizing conversations using custom UI and an external model
