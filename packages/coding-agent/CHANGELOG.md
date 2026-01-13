@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Extension example: `summarize.ts` for summarizing conversations using custom UI and an external model
+
 ## [0.45.3] - 2026-01-13
 
 ## [0.45.2] - 2026-01-13
