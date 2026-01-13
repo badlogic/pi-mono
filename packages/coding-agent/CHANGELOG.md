@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Extensions now load correctly in compiled Bun binary by using jiti for module resolution with proper alias handling
+
 ## [0.45.1] - 2026-01-13
 
 ### Changed

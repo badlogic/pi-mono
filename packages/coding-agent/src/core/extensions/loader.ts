@@ -9,7 +9,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { KeyId } from "@mariozechner/pi-tui";
 import { createJiti } from "jiti";
-import { getAgentDir, isBunBinary } from "../../config.js";
+import { getAgentDir } from "../../config.js";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
@@ -213,13 +213,7 @@ function createExtensionAPI(
 	return api;
 }
 
-async function loadBun(path: string) {
-	const module = await import(path);
-	const factory = (module.default ?? module) as ExtensionFactory;
-	return typeof factory !== "function" ? undefined : factory;
-}
-
-async function loadJiti(path: string) {
+async function loadExtensionModule(path: string) {
 	const jiti = createJiti(import.meta.url, {
 		alias: getAliases(),
 	});
@@ -254,7 +248,7 @@ async function loadExtension(
 	const resolvedPath = resolvePath(extensionPath, cwd);
 
 	try {
-		const factory = isBunBinary ? await loadBun(resolvedPath) : await loadJiti(resolvedPath);
+		const factory = await loadExtensionModule(resolvedPath);
 		if (!factory) {
 			return { extension: null, error: `Extension does not export a valid factory function: ${extensionPath}` };
 		}
