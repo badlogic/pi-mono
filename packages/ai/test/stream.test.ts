@@ -601,7 +601,7 @@ describe("Generate E2E Tests", () => {
 	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
 		"Vercel AI Gateway Provider (google/gemini-2.5-flash via OpenAI Completions)",
 		() => {
-			const llm = getModel("ai-gateway", "google/gemini-2.5-flash");
+			const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
 
 			it("should complete basic text generation", { retry: 3 }, async () => {
 				await basicTextGeneration(llm);

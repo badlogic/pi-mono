@@ -203,7 +203,7 @@ describe("parseModelPattern", () => {
 
 describe("default model selection", () => {
 	test("ai-gateway default is opus 4.5", () => {
-		expect(defaultModelPerProvider["ai-gateway"]).toBe("anthropic/claude-opus-4.5");
+		expect(defaultModelPerProvider["vercel-ai-gateway"]).toBe("anthropic/claude-opus-4.5");
 	});
 
 	test("findInitialModel selects ai-gateway default when available", async () => {
@@ -211,7 +211,7 @@ describe("default model selection", () => {
 			id: "anthropic/claude-opus-4.5",
 			name: "Claude Opus 4.5",
 			api: "openai-completions",
-			provider: "ai-gateway",
+			provider: "vercel-ai-gateway",
 			baseUrl: "https://ai-gateway.vercel.sh/v1",
 			reasoning: true,
 			input: ["text", "image"],
@@ -230,7 +230,7 @@ describe("default model selection", () => {
 			modelRegistry: registry,
 		});
 
-		expect(result.model?.provider).toBe("ai-gateway");
+		expect(result.model?.provider).toBe("vercel-ai-gateway");
 		expect(result.model?.id).toBe("anthropic/claude-opus-4.5");
 	});
 });

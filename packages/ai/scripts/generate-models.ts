@@ -150,7 +150,7 @@ async function fetchAiGatewayModels(): Promise<Model<any>[]> {
 				name: model.name || model.id,
 				api: "anthropic-messages",
 				baseUrl: AI_GATEWAY_BASE_URL,
-				provider: "ai-gateway",
+				provider: "vercel-ai-gateway",
 				reasoning: tags.includes("reasoning"),
 				input,
 				cost: {
