@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Export `parseStreamingJson` from main package for tsx dev mode compatibility
+
 ## [0.45.5] - 2026-01-13
 
 ## [0.45.4] - 2026-01-13
