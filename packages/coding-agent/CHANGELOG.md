@@ -9,7 +9,7 @@
 ### Added
 
 - Extension example: `summarize.ts` for summarizing conversations using custom UI and an external model
-- Vercel AI Gateway provider support: set `AI_GATEWAY_API_KEY` and use `--provider vercel-ai-gateway` ([#689](https://github.com/badlogic/pi-mono/pull/689) by [@timolins](https://github.com/timolins))
+- Experimental Vercel AI Gateway provider support: set `AI_GATEWAY_API_KEY` and use `--provider vercel-ai-gateway`. Token usage is currently reported incorrectly by Anthropic Messages compatible endpoint. ([#689](https://github.com/badlogic/pi-mono/pull/689) by [@timolins](https://github.com/timolins))
 
 ### Fixed
 
