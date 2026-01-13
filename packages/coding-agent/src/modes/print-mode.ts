@@ -29,6 +29,12 @@ export interface PrintModeOptions {
  */
 export async function runPrintMode(session: AgentSession, options: PrintModeOptions): Promise<void> {
 	const { mode, messages = [], initialMessage, initialImages } = options;
+	if (mode === "json") {
+		const header = session.sessionManager.getHeader();
+		if (header) {
+			console.log(JSON.stringify(header));
+		}
+	}
 	// Set up extensions for print mode (no UI, no command context)
 	const extensionRunner = session.extensionRunner;
 	if (extensionRunner) {
