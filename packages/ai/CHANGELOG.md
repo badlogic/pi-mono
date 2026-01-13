@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Vercel AI Gateway provider with model discovery and `AI_GATEWAY_API_KEY` env support.
+
 ## [0.45.3] - 2026-01-13
 
 ## [0.45.2] - 2026-01-13
