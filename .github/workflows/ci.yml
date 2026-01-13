@@ -30,7 +30,11 @@ jobs:
           sudo ln -s $(which fdfind) /usr/local/bin/fd
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          # package-lock.json was generated on macOS and is missing Linux native bindings
+          # Install the parcel watcher binding needed by tailwindcss
+          npm install --no-save --force @parcel/watcher-linux-x64-glibc@2.5.1
 
       - name: Build
         run: npm run build
