@@ -397,6 +397,22 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
+	// MiniMax
+	// Expected pattern: TBD - need to test actual error message
+	// =============================================================================
+
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax", () => {
+		it("MiniMax-M2.1 - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("minimax", "MiniMax-M2.1");
+			const result = await testContextOverflow(model, process.env.MINIMAX_API_KEY!);
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
 	// OpenRouter - Multiple backend providers
 	// Expected pattern: "maximum context length is X tokens"
 	// =============================================================================

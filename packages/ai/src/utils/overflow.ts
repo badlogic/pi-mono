@@ -17,6 +17,7 @@ import type { AssistantMessage } from "../types.js";
  * - llama.cpp: "the request exceeds the available context size, try increasing it"
  * - LM Studio: "tokens to keep from the initial prompt is greater than the context length"
  * - GitHub Copilot: "prompt token count of X exceeds the limit of Y"
+ * - MiniMax: "invalid params, context window exceeds limit"
  * - Cerebras: Returns "400 status code (no body)" - handled separately below
  * - Mistral: Returns "400 status code (no body)" - handled separately below
  * - z.ai: Does NOT error, accepts overflow silently - handled via usage.input > contextWindow
@@ -33,6 +34,7 @@ const OVERFLOW_PATTERNS = [
 	/exceeds the limit of \d+/i, // GitHub Copilot
 	/exceeds the available context size/i, // llama.cpp server
 	/greater than the context length/i, // LM Studio
+	/context window exceeds limit/i, // MiniMax
 	/context[_ ]length[_ ]exceeded/i, // Generic fallback
 	/too many tokens/i, // Generic fallback
 	/token limit exceeded/i, // Generic fallback

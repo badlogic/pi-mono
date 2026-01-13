@@ -326,6 +326,29 @@ describe("totalTokens field", () => {
 	});
 
 	// =========================================================================
+	// MiniMax
+	// =========================================================================
+
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax", () => {
+		it(
+			"MiniMax-M2.1 - should return totalTokens equal to sum of components",
+			{ retry: 3, timeout: 60000 },
+			async () => {
+				const llm = getModel("minimax", "MiniMax-M2.1");
+
+				console.log(`\nMiniMax / ${llm.id}:`);
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.MINIMAX_API_KEY });
+
+				logUsage("First request", first);
+				logUsage("Second request", second);
+
+				assertTotalTokensEqualsComponents(first);
+				assertTotalTokensEqualsComponents(second);
+			},
+		);
+	});
+
+	// =========================================================================
 	// OpenRouter - Multiple backend providers
 	// =========================================================================
 
