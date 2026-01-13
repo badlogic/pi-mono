@@ -1,11 +1,11 @@
 import type { Api, AssistantMessage, Message, Model, ToolCall, ToolResultMessage } from "../types.js";
 
 /**
- * Normalize tool call ID for GitHub Copilot cross-API compatibility.
+ * Normalize tool call ID for cross-provider compatibility.
  * OpenAI Responses API generates IDs that are 450+ chars with special characters like `|`.
- * Other APIs (Claude, etc.) require max 40 chars and only alphanumeric + underscore + hyphen.
+ * Anthropic APIs require IDs matching ^[a-zA-Z0-9_-]+$ (max 64 chars).
  */
-function normalizeCopilotToolCallId(id: string): string {
+function normalizeToolCallId(id: string): string {
 	return id.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
 }
 
@@ -38,11 +38,17 @@ export function transformMessages<TApi extends Api>(messages: Message[], model: 
 				return msg;
 			}
 
-			// Check if we need to normalize tool call IDs (github-copilot cross-API)
-			const needsToolCallIdNormalization =
+			// Check if we need to normalize tool call IDs
+			// Anthropic APIs require IDs matching ^[a-zA-Z0-9_-]+$ (max 64 chars)
+			// OpenAI Responses API generates IDs with `|` and 450+ chars
+			// GitHub Copilot routes to Anthropic for Claude models
+			const targetRequiresStrictIds = model.api === "anthropic-messages" || model.provider === "github-copilot";
+			const crossProviderSwitch = assistantMsg.provider !== model.provider;
+			const copilotCrossApiSwitch =
 				assistantMsg.provider === "github-copilot" &&
 				model.provider === "github-copilot" &&
 				assistantMsg.api !== model.api;
+			const needsToolCallIdNormalization = targetRequiresStrictIds && (crossProviderSwitch || copilotCrossApiSwitch);
 
 			// Transform message from different provider/model
 			const transformedContent = assistantMsg.content.flatMap((block) => {
@@ -54,10 +60,10 @@ export function transformMessages<TApi extends Api>(messages: Message[], model: 
 						text: block.thinking,
 					};
 				}
-				// Normalize tool call IDs for github-copilot cross-API switches
+				// Normalize tool call IDs when target API requires strict format
 				if (block.type === "toolCall" && needsToolCallIdNormalization) {
 					const toolCall = block as ToolCall;
-					const normalizedId = normalizeCopilotToolCallId(toolCall.id);
+					const normalizedId = normalizeToolCallId(toolCall.id);
 					if (normalizedId !== toolCall.id) {
 						toolCallIdMap.set(toolCall.id, normalizedId);
 						return { ...toolCall, id: normalizedId };

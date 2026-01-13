@@ -33,6 +33,12 @@ function getAliases(): Record<string, string> {
 	const __dirname = path.dirname(fileURLToPath(import.meta.url));
 	const packageIndex = path.resolve(__dirname, "../..", "index.js");
 
+	// Debug: log what we're resolving
+	if (process.env.DEBUG_EXTENSIONS) {
+		console.error("[DEBUG] import.meta.url:", import.meta.url);
+		console.error("[DEBUG] __dirname:", __dirname);
+	}
+
 	const typeboxEntry = require.resolve("@sinclair/typebox");
 	const typeboxRoot = typeboxEntry.replace(/\/build\/cjs\/index\.js$/, "");
 
@@ -43,6 +49,11 @@ function getAliases(): Record<string, string> {
 		"@mariozechner/pi-ai": require.resolve("@mariozechner/pi-ai"),
 		"@sinclair/typebox": typeboxRoot,
 	};
+
+	if (process.env.DEBUG_EXTENSIONS) {
+		console.error("[DEBUG] aliases:", JSON.stringify(_aliases, null, 2));
+	}
+
 	return _aliases;
 }
 

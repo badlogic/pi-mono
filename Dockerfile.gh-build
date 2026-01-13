@@ -1,0 +1,21 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+  && apt-get install -y curl unzip git xz-utils ca-certificates \
+  && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+  && apt-get install -y nodejs \
+  && BUN_VERSION=1.2.20 \
+  && ARCH=$(dpkg --print-architecture) \
+  && if [ "$ARCH" = "amd64" ]; then BUN_ARCH="linux-x64"; else BUN_ARCH="linux-aarch64"; fi \
+  && curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-${BUN_ARCH}.zip" -o /tmp/bun.zip \
+  && unzip /tmp/bun.zip -d /tmp \
+  && mv /tmp/bun-${BUN_ARCH}/bun /usr/local/bin/bun \
+  && chmod +x /usr/local/bin/bun \
+  && rm -rf /tmp/bun.zip /tmp/bun-linux-x64 \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /repo
+
+ENTRYPOINT ["/bin/bash", "-lc"]
