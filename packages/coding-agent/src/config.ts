@@ -52,13 +52,7 @@ export function getPackageDir(): string {
  */
 export function getThemesDir(): string {
 	if (isBunBinary) {
-		const execDir = dirname(process.execPath);
-		const themeDir = join(execDir, "theme");
-		// Fall back to root if theme/ doesn't exist (mise flattens directory structure)
-		if (existsSync(themeDir)) {
-			return themeDir;
-		}
-		return execDir;
+		return join(dirname(process.execPath), "theme");
 	}
 	// Theme is in modes/interactive/theme/ relative to src/ or dist/
 	const packageDir = getPackageDir();

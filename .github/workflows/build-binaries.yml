@@ -108,9 +108,10 @@ jobs:
           # Create archives
           cd binaries
 
-          # Unix platforms (tar.gz)
+          # Unix platforms (tar.gz) - use wrapper directory for mise compatibility
+          # mise auto-detects single-directory archives and strips one component
           for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
-            tar -czf pi-$platform.tar.gz -C $platform .
+            mv $platform pi && tar -czf pi-$platform.tar.gz pi && mv pi $platform
           done
           
           # Windows (zip)
