@@ -264,9 +264,11 @@ export {
 } from "./modes/interactive/components/index.js";
 // Theme utilities for custom tools and extensions
 export {
+	getLanguageFromPath,
 	getMarkdownTheme,
 	getSelectListTheme,
 	getSettingsListTheme,
+	highlightCode,
 	initTheme,
 	Theme,
 	type ThemeColor,
