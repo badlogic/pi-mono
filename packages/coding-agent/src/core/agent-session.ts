@@ -24,6 +24,7 @@ import type {
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import { getAuthPath } from "../config.js";
+import { theme } from "../modes/interactive/theme/theme.js";
 import { type BashResult, executeBash as executeBashCommand, executeBashWithOperations } from "./bash-executor.js";
 import {
 	type CompactionResult,
@@ -34,7 +35,8 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.js";
-import { exportSessionToHtml } from "./export-html/index.js";
+import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.js";
+import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import type {
 	ExtensionRunner,
 	SessionBeforeCompactResult,
@@ -2148,7 +2150,21 @@ export class AgentSession {
 	 */
 	async exportToHtml(outputPath?: string): Promise<string> {
 		const themeName = this.settingsManager.getTheme();
-		return await exportSessionToHtml(this.sessionManager, this.state, { outputPath, themeName });
+
+		// Create tool renderer if we have an extension runner (for custom tool HTML rendering)
+		let toolRenderer: ToolHtmlRenderer | undefined;
+		if (this._extensionRunner) {
+			toolRenderer = createToolHtmlRenderer({
+				getToolDefinition: (name) => this._extensionRunner!.getToolDefinition(name),
+				theme,
+			});
+		}
+
+		return await exportSessionToHtml(this.sessionManager, this.state, {
+			outputPath,
+			themeName,
+			toolRenderer,
+		});
 	}
 
 	// =========================================================================
