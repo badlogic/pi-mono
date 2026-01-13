@@ -189,6 +189,17 @@ export class ExtensionRunner {
 		return tools;
 	}
 
+	/** Get a tool definition by name. Returns undefined if not found. */
+	getToolDefinition(toolName: string): RegisteredTool["definition"] | undefined {
+		for (const ext of this.extensions) {
+			const tool = ext.tools.get(toolName);
+			if (tool) {
+				return tool.definition;
+			}
+		}
+		return undefined;
+	}
+
 	getFlags(): Map<string, ExtensionFlag> {
 		const allFlags = new Map<string, ExtensionFlag>();
 		for (const ext of this.extensions) {
