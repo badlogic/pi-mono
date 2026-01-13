@@ -437,7 +437,7 @@ class StreamingOverflowComponent extends BaseOverlay {
 				DIR="/Users/nicobailon/Documents/development/pi-mono/packages/coding-agent/src/modes/interactive"
 				FILE="\${DIR}/components/very-long-component-name-that-exceeds-width-\${i}.ts"
 				echo -e "\\033]8;;file://\${FILE}\\007▶ read: \${FILE}\\033]8;;\\007"
-				
+
 				# Add some colored status messages with long text
 				if [ $((i % 5)) -eq 0 ]; then
 					echo -e "  \\033[32m✓ Successfully processed \${i} files in /Users/nicobailon/Documents/development/pi-mono\\033[0m"
@@ -503,7 +503,7 @@ class StreamingOverflowComponent extends BaseOverlay {
 		const result: string[] = [];
 		const title = truncateToWidth(` Streaming Output (${this.lines.length} lines) `, innerW);
 		const titlePad = Math.max(0, innerW - visibleWidth(title));
-		result.push(border("╭") + th.fg("accent", title) + border("─".repeat(titlePad) + "╮"));
+		result.push(border("╭") + th.fg("accent", title) + border(`${"─".repeat(titlePad)}╮`));
 
 		// Scroll indicators
 		const canScrollUp = this.scrollOffset > 0;
