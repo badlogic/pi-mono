@@ -376,6 +376,13 @@ export class ModelRegistry {
 	}
 
 	/**
+	 * Get API key for a provider.
+	 */
+	async getApiKeyForProvider(provider: string): Promise<string | undefined> {
+		return this.authStorage.getApiKey(provider);
+	}
+
+	/**
 	 * Check if a model is using OAuth credentials (subscription).
 	 */
 	isUsingOAuth(model: Model<Api>): boolean {

@@ -635,7 +635,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			if (!resolvedProvider) {
 				throw new Error("No model selected");
 			}
-			const key = await modelRegistry.authStorage.getApiKey(resolvedProvider);
+			const key = await modelRegistry.getApiKeyForProvider(resolvedProvider);
 			if (!key) {
 				throw new Error(`No API key found for provider "${resolvedProvider}"`);
 			}
