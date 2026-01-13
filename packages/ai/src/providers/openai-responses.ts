@@ -366,6 +366,7 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		model: model.id,
 		input: messages,
 		stream: true,
+		prompt_cache_key: options?.sessionId,
 	};
 
 	if (options?.maxTokens) {
