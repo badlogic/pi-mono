@@ -11,6 +11,10 @@
 - Extension example: `summarize.ts` for summarizing conversations using custom UI and an external model
 - Vercel AI Gateway provider support: set `AI_GATEWAY_API_KEY` and use `--provider vercel-ai-gateway` ([#689](https://github.com/badlogic/pi-mono/pull/689) by [@timolins](https://github.com/timolins))
 
+### Fixed
+
+- Fix API key resolution after model switches by using provider argument ([#691](https://github.com/badlogic/pi-mono/pull/691) by [@joshp123](https://github.com/joshp123))
+
 ## [0.45.3] - 2026-01-13
 
 ## [0.45.2] - 2026-01-13
