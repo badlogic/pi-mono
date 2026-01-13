@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `streamSimple()` ignoring `serviceTier` for OpenAI Responses requests.
+
 ## [0.45.3] - 2026-01-13
 
 ## [0.45.2] - 2026-01-13

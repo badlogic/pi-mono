@@ -268,6 +268,7 @@ function mapOptionsForApi<TApi extends Api>(
 			return {
 				...base,
 				reasoningEffort: supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning),
+				...(options?.serviceTier !== undefined ? { serviceTier: options.serviceTier } : {}),
 			} satisfies OpenAIResponsesOptions;
 
 		case "openai-codex-responses":

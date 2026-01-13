@@ -91,6 +91,8 @@ export interface SimpleStreamOptions extends StreamOptions {
 	reasoning?: ThinkingLevel;
 	/** Custom token budgets for thinking levels (token-based providers only) */
 	thinkingBudgets?: ThinkingBudgets;
+	/** OpenAI Responses-specific: request a specific service tier (latency/pricing). */
+	serviceTier?: OpenAIResponsesOptions["serviceTier"];
 }
 
 // Generic StreamFunction with typed options
