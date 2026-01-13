@@ -32,12 +32,29 @@ interface ModelsDevModel {
 	};
 }
 
+interface AiGatewayModel {
+	id: string;
+	name?: string;
+	context_window?: number;
+	max_tokens?: number;
+	tags?: string[];
+	pricing?: {
+		input?: string | number;
+		output?: string | number;
+		input_cache_read?: string | number;
+		input_cache_write?: string | number;
+	};
+}
+
 const COPILOT_STATIC_HEADERS = {
 	"User-Agent": "GitHubCopilotChat/0.35.0",
 	"Editor-Version": "vscode/1.107.0",
 	"Editor-Plugin-Version": "copilot-chat/0.35.0",
 	"Copilot-Integration-Id": "vscode-chat",
 } as const;
+
+const AI_GATEWAY_MODELS_URL = "https://ai-gateway.vercel.sh/v1";
+const AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh";
 
 async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 	try {
@@ -97,6 +114,64 @@ async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 	}
 }
 
+async function fetchAiGatewayModels(): Promise<Model<any>[]> {
+	try {
+		console.log("Fetching models from Vercel AI Gateway API...");
+		const response = await fetch(`${AI_GATEWAY_MODELS_URL}/models`);
+		const data = await response.json();
+		const models: Model<any>[] = [];
+
+		const toNumber = (value: string | number | undefined): number => {
+			if (typeof value === "number") {
+				return Number.isFinite(value) ? value : 0;
+			}
+			const parsed = parseFloat(value ?? "0");
+			return Number.isFinite(parsed) ? parsed : 0;
+		};
+
+		const items = Array.isArray(data.data) ? (data.data as AiGatewayModel[]) : [];
+		for (const model of items) {
+			const tags = Array.isArray(model.tags) ? model.tags : [];
+			// Only include models that support tools
+			if (!tags.includes("tool-use")) continue;
+
+			const input: ("text" | "image")[] = ["text"];
+			if (tags.includes("vision")) {
+				input.push("image");
+			}
+
+			const inputCost = toNumber(model.pricing?.input) * 1_000_000;
+			const outputCost = toNumber(model.pricing?.output) * 1_000_000;
+			const cacheReadCost = toNumber(model.pricing?.input_cache_read) * 1_000_000;
+			const cacheWriteCost = toNumber(model.pricing?.input_cache_write) * 1_000_000;
+
+			models.push({
+				id: model.id,
+				name: model.name || model.id,
+				api: "anthropic-messages",
+				baseUrl: AI_GATEWAY_BASE_URL,
+				provider: "vercel-ai-gateway",
+				reasoning: tags.includes("reasoning"),
+				input,
+				cost: {
+					input: inputCost,
+					output: outputCost,
+					cacheRead: cacheReadCost,
+					cacheWrite: cacheWriteCost,
+				},
+				contextWindow: model.context_window || 4096,
+				maxTokens: model.max_tokens || 4096,
+			});
+		}
+
+		console.log(`Fetched ${models.length} tool-capable models from Vercel AI Gateway`);
+		return models;
+	} catch (error) {
+		console.error("Failed to fetch Vercel AI Gateway models:", error);
+		return [];
+	}
+}
+
 async function loadModelsDevData(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from models.dev API...");
@@ -104,6 +179,87 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 		const data = await response.json();
 
 		const models: Model<any>[] = [];
+
+		// Process Amazon Bedrock models
+		if (data["amazon-bedrock"]?.models) {
+			for (const [modelId, model] of Object.entries(data["amazon-bedrock"].models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				let id = modelId;
+
+				if (id.startsWith("ai21.jamba")) {
+					// These models doesn't support tool use in streaming mode
+					continue;
+				}
+
+				if (id.startsWith("amazon.titan-text-express") ||
+				    id.startsWith("mistral.mistral-7b-instruct-v0")) {
+					// These models doesn't support system messages
+					continue;
+				}
+
+				// Some Amazon Bedrock models require cross-region inference profiles to work.
+				// To use cross-region inference, we need to add a region prefix to the models.
+				// See https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html#inference-profiles-support-system
+				// TODO: Remove Claude models once https://github.com/anomalyco/models.dev/pull/607 is merged, and follow-up with other models.
+
+				// Models with global cross-region inference profiles
+				if (id.startsWith("anthropic.claude-haiku-4-5") ||
+						id.startsWith("anthropic.claude-sonnet-4") ||
+						id.startsWith("anthropic.claude-opus-4-5") ||
+						id.startsWith("amazon.nova-2-lite") ||
+						id.startsWith("cohere.embed-v4") ||
+						id.startsWith("twelvelabs.pegasus-1-2")) {
+						id = "global." + id;
+				}
+
+				// Models with US cross-region inference profiles
+				if (id.startsWith("amazon.nova-lite") ||
+						id.startsWith("amazon.nova-micro") ||
+						id.startsWith("amazon.nova-premier") ||
+						id.startsWith("amazon.nova-pro") ||
+						id.startsWith("anthropic.claude-3-7-sonnet") ||
+						id.startsWith("anthropic.claude-opus-4-1") ||
+						id.startsWith("anthropic.claude-opus-4-20250514") ||
+						id.startsWith("deepseek.r1") ||
+						id.startsWith("meta.llama3-2") ||
+						id.startsWith("meta.llama3-3") ||
+						id.startsWith("meta.llama4")) {
+						id = "us." + id;
+				}
+
+				const bedrockModel = {
+					id,
+					name: m.name || id,
+					api: "bedrock-converse-stream" as const,
+					provider: "amazon-bedrock" as const,
+					baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+					reasoning: m.reasoning === true,
+					input: (m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"]) as ("text" | "image")[],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+				};
+				models.push(bedrockModel);
+
+				// Add EU cross-region inference variants for Claude models
+				if (modelId.startsWith("anthropic.claude-haiku-4-5") ||
+						modelId.startsWith("anthropic.claude-sonnet-4-5") ||
+						modelId.startsWith("anthropic.claude-opus-4-5")) {
+					models.push({
+						...bedrockModel,
+						id: "eu." + modelId,
+						name: (m.name || modelId) + " (EU)",
+					});
+				}
+			}
+		}
 
 		// Process Anthropic models
 		if (data.anthropic?.models) {
@@ -284,6 +440,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				},
 				compat: {
 					supportsDeveloperRole: false,
+					thinkingFormat: "zai",
 				},
 				contextWindow: m.limit?.context || 4096,
 				maxTokens: m.limit?.output || 4096,
@@ -409,6 +566,33 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
+		// Process MiniMax models
+		if (data.minimax?.models) {
+			for (const [modelId, model] of Object.entries(data.minimax.models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					api: "anthropic-messages",
+					provider: "minimax",
+					// MiniMax's Anthropic-compatible API - SDK appends /v1/messages
+					baseUrl: "https://api.minimax.io/anthropic",
+					reasoning: m.reasoning === true,
+					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+				});
+			}
+		}
+
 		console.log(`Loaded ${models.length} tool-capable models from models.dev`);
 		return models;
 	} catch (error) {
@@ -421,11 +605,13 @@ async function generateModels() {
 	// Fetch models from both sources
 	// models.dev: Anthropic, Google, OpenAI, Groq, Cerebras
 	// OpenRouter: xAI and other providers (excluding Anthropic, Google, OpenAI)
+	// AI Gateway: OpenAI-compatible catalog with tool-capable models
 	const modelsDevModels = await loadModelsDevData();
 	const openRouterModels = await fetchOpenRouterModels();
+	const aiGatewayModels = await fetchAiGatewayModels();
 
 	// Combine models (models.dev has priority)
-	const allModels = [...modelsDevModels, ...openRouterModels];
+	const allModels = [...modelsDevModels, ...openRouterModels, ...aiGatewayModels];
 
 	// Fix incorrect cache pricing for Claude Opus 4.5 from models.dev
 	// models.dev has 3x the correct pricing (1.5/18.75 instead of 0.5/6.25)

@@ -37,6 +37,7 @@ const ModelDefinitionSchema = Type.Object({
 			Type.Literal("openai-codex-responses"),
 			Type.Literal("anthropic-messages"),
 			Type.Literal("google-generative-ai"),
+			Type.Literal("bedrock-converse-stream"),
 		]),
 	),
 	reasoning: Type.Boolean(),
@@ -63,6 +64,7 @@ const ProviderConfigSchema = Type.Object({
 			Type.Literal("openai-codex-responses"),
 			Type.Literal("anthropic-messages"),
 			Type.Literal("google-generative-ai"),
+			Type.Literal("bedrock-converse-stream"),
 		]),
 	),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
@@ -371,6 +373,13 @@ export class ModelRegistry {
 	 */
 	async getApiKey(model: Model<Api>): Promise<string | undefined> {
 		return this.authStorage.getApiKey(model.provider);
+	}
+
+	/**
+	 * Get API key for a provider.
+	 */
+	async getApiKeyForProvider(provider: string): Promise<string | undefined> {
+		return this.authStorage.getApiKey(provider);
 	}
 
 	/**

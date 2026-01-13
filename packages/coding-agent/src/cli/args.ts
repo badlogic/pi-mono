@@ -242,7 +242,15 @@ ${chalk.bold("Environment Variables:")}
   CEREBRAS_API_KEY        - Cerebras API key
   XAI_API_KEY             - xAI Grok API key
   OPENROUTER_API_KEY      - OpenRouter API key
+  AI_GATEWAY_API_KEY      - Vercel AI Gateway API key
   ZAI_API_KEY             - ZAI API key
+  MISTRAL_API_KEY         - Mistral API key
+  MINIMAX_API_KEY         - MiniMax API key
+  AWS_PROFILE             - AWS profile for Amazon Bedrock
+  AWS_ACCESS_KEY_ID       - AWS access key for Amazon Bedrock
+  AWS_SECRET_ACCESS_KEY   - AWS secret key for Amazon Bedrock
+  AWS_BEARER_TOKEN_BEDROCK - Bedrock API key (bearer token)
+  AWS_REGION              - AWS region for Amazon Bedrock (e.g., us-east-1)
   ${ENV_AGENT_DIR.padEnd(23)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
 
 ${chalk.bold("Available Tools (default: read, bash, edit, write):")}

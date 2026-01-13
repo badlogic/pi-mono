@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { Api, Context, Model, Tool, ToolResultMessage } from "../src/index.js";
 import { complete, getModel } from "../src/index.js";
 import type { OptionsForApi } from "../src/types.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -263,6 +264,30 @@ describe("Tool Results with Images", () => {
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider (pixtral-12b)", () => {
 		const llm = getModel("mistral", "pixtral-12b");
+
+		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithImageResult(llm);
+		});
+
+		it("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithTextAndImageResult(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway Provider (google/gemini-2.5-flash)", () => {
+		const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+
+		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithImageResult(llm);
+		});
+
+		it("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithTextAndImageResult(llm);
+		});
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider (claude-sonnet-4-5)", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
 
 		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
 			await handleToolWithImageResult(llm);

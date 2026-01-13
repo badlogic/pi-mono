@@ -28,7 +28,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@4bc047ad259df6fc24a6c9b0f9a0cb08cf17fbe5 # v2.0.1
         with:
-          bun-version: 1.3.4
+          bun-version: 1.2.20
 
       - name: Setup Node.js
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
@@ -108,9 +108,10 @@ jobs:
           # Create archives
           cd binaries
 
-          # Unix platforms (tar.gz)
+          # Unix platforms (tar.gz) - use wrapper directory for mise compatibility
+          # mise auto-detects single-directory archives and strips one component
           for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
-            tar -czf pi-$platform.tar.gz -C $platform .
+            mv $platform pi && tar -czf pi-$platform.tar.gz pi && mv pi $platform
           done
           
           # Windows (zip)

@@ -75,6 +75,46 @@ Use these sections under `## [Unreleased]`:
 - **Internal changes (from issues)**: `Fixed foo bar ([#123](https://github.com/badlogic/pi-mono/issues/123))`
 - **External contributions**: `Added feature X ([#456](https://github.com/badlogic/pi-mono/pull/456) by [@username](https://github.com/username))`
 
+## Adding a New LLM Provider (packages/ai)
+
+Adding a new provider requires changes across multiple files:
+
+### 1. Core Types (`packages/ai/src/types.ts`)
+- Add API identifier to `Api` type union (e.g., `"bedrock-converse-stream"`)
+- Create options interface extending `StreamOptions`
+- Add mapping to `ApiOptionsMap`
+- Add provider name to `KnownProvider` type union
+
+### 2. Provider Implementation (`packages/ai/src/providers/`)
+Create provider file exporting:
+- `stream<Provider>()` function returning `AssistantMessageEventStream`
+- Message/tool conversion functions
+- Response parsing emitting standardized events (`text`, `tool_call`, `thinking`, `usage`, `stop`)
+
+### 3. Stream Integration (`packages/ai/src/stream.ts`)
+- Import provider's stream function and options type
+- Add credential detection in `getEnvApiKey()`
+- Add case in `mapOptionsForApi()` for `SimpleStreamOptions` mapping
+- Add provider to `streamFunctions` map
+
+### 4. Model Generation (`packages/ai/scripts/generate-models.ts`)
+- Add logic to fetch/parse models from provider source
+- Map to standardized `Model` interface
+
+### 5. Tests (`packages/ai/test/`)
+Add provider to: `stream.test.ts`, `tokens.test.ts`, `abort.test.ts`, `empty.test.ts`, `context-overflow.test.ts`, `image-limits.test.ts`, `unicode-surrogate.test.ts`, `tool-call-without-result.test.ts`, `image-tool-result.test.ts`, `total-tokens.test.ts`
+
+For non-standard auth, create utility (e.g., `bedrock-utils.ts`) with credential detection.
+
+### 6. Coding Agent (`packages/coding-agent/`)
+- `src/core/model-resolver.ts`: Add default model ID to `DEFAULT_MODELS`
+- `src/cli/args.ts`: Add env var documentation
+- `README.md`: Add provider setup instructions
+
+### 7. Documentation
+- `packages/ai/README.md`: Add to providers table, document options/auth, add env vars
+- `packages/ai/CHANGELOG.md`: Add entry under `## [Unreleased]`
+
 ## Releasing
 
 **Lockstep versioning**: All packages always share the same version number. Every release updates all packages together.

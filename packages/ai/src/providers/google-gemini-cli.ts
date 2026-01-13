@@ -4,6 +4,7 @@
  * Uses the Cloud Code Assist API endpoint to access Gemini and Claude models.
  */
 
+import { createHash } from "node:crypto";
 import type { Content, ThinkingConfig } from "@google/genai";
 import { calculateCost } from "../models.js";
 import type {
@@ -54,6 +55,8 @@ export interface GoogleGeminiCliOptions extends StreamOptions {
 }
 
 const DEFAULT_ENDPOINT = "https://cloudcode-pa.googleapis.com";
+const ANTIGRAVITY_DAILY_ENDPOINT = "https://daily-cloudcode-pa.sandbox.googleapis.com";
+const ANTIGRAVITY_ENDPOINT_FALLBACKS = [ANTIGRAVITY_DAILY_ENDPOINT, DEFAULT_ENDPOINT] as const;
 // Headers for Gemini CLI (prod endpoint)
 const GEMINI_CLI_HEADERS = {
 	"User-Agent": "google-cloud-sdk vscode_cloudshelleditor/0.1",
@@ -163,16 +166,66 @@ let toolCallCounter = 0;
 // Retry configuration
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
+const MAX_EMPTY_STREAM_RETRIES = 2;
+const EMPTY_STREAM_BASE_DELAY_MS = 500;
+const CLAUDE_THINKING_BETA_HEADER = "interleaved-thinking-2025-05-14";
 
 /**
  * Extract retry delay from Gemini error response (in milliseconds).
- * Parses patterns like:
+ * Checks headers first (Retry-After, x-ratelimit-reset, x-ratelimit-reset-after),
+ * then parses body patterns like:
  * - "Your quota will reset after 39s"
  * - "Your quota will reset after 18h31m10s"
  * - "Please retry in Xs" or "Please retry in Xms"
  * - "retryDelay": "34.074824224s" (JSON field)
  */
-function extractRetryDelay(errorText: string): number | undefined {
+export function extractRetryDelay(errorText: string, response?: Response | Headers): number | undefined {
+	const normalizeDelay = (ms: number): number | undefined => (ms > 0 ? Math.ceil(ms + 1000) : undefined);
+
+	const headers = response instanceof Headers ? response : response?.headers;
+	if (headers) {
+		const retryAfter = headers.get("retry-after");
+		if (retryAfter) {
+			const retryAfterSeconds = Number(retryAfter);
+			if (Number.isFinite(retryAfterSeconds)) {
+				const delay = normalizeDelay(retryAfterSeconds * 1000);
+				if (delay !== undefined) {
+					return delay;
+				}
+			}
+			const retryAfterDate = new Date(retryAfter);
+			const retryAfterMs = retryAfterDate.getTime();
+			if (!Number.isNaN(retryAfterMs)) {
+				const delay = normalizeDelay(retryAfterMs - Date.now());
+				if (delay !== undefined) {
+					return delay;
+				}
+			}
+		}
+
+		const rateLimitReset = headers.get("x-ratelimit-reset");
+		if (rateLimitReset) {
+			const resetSeconds = Number.parseInt(rateLimitReset, 10);
+			if (!Number.isNaN(resetSeconds)) {
+				const delay = normalizeDelay(resetSeconds * 1000 - Date.now());
+				if (delay !== undefined) {
+					return delay;
+				}
+			}
+		}
+
+		const rateLimitResetAfter = headers.get("x-ratelimit-reset-after");
+		if (rateLimitResetAfter) {
+			const resetAfterSeconds = Number(rateLimitResetAfter);
+			if (Number.isFinite(resetAfterSeconds)) {
+				const delay = normalizeDelay(resetAfterSeconds * 1000);
+				if (delay !== undefined) {
+					return delay;
+				}
+			}
+		}
+	}
+
 	// Pattern 1: "Your quota will reset after ..." (formats: "18h31m10s", "10m15s", "6s", "39s")
 	const durationMatch = errorText.match(/reset after (?:(\d+)h)?(?:(\d+)m)?(\d+(?:\.\d+)?)s/i);
 	if (durationMatch) {
@@ -181,8 +234,9 @@ function extractRetryDelay(errorText: string): number | undefined {
 		const seconds = parseFloat(durationMatch[3]);
 		if (!Number.isNaN(seconds)) {
 			const totalMs = ((hours * 60 + minutes) * 60 + seconds) * 1000;
-			if (totalMs > 0) {
-				return Math.ceil(totalMs + 1000); // Add 1s buffer
+			const delay = normalizeDelay(totalMs);
+			if (delay !== undefined) {
+				return delay;
 			}
 		}
 	}
@@ -193,7 +247,10 @@ function extractRetryDelay(errorText: string): number | undefined {
 		const value = parseFloat(retryInMatch[1]);
 		if (!Number.isNaN(value) && value > 0) {
 			const ms = retryInMatch[2].toLowerCase() === "ms" ? value : value * 1000;
-			return Math.ceil(ms + 1000);
+			const delay = normalizeDelay(ms);
+			if (delay !== undefined) {
+				return delay;
+			}
 		}
 	}
 
@@ -203,21 +260,45 @@ function extractRetryDelay(errorText: string): number | undefined {
 		const value = parseFloat(retryDelayMatch[1]);
 		if (!Number.isNaN(value) && value > 0) {
 			const ms = retryDelayMatch[2].toLowerCase() === "ms" ? value : value * 1000;
-			return Math.ceil(ms + 1000);
+			const delay = normalizeDelay(ms);
+			if (delay !== undefined) {
+				return delay;
+			}
 		}
 	}
 
 	return undefined;
 }
 
+function isClaudeThinkingModel(modelId: string): boolean {
+	const normalized = modelId.toLowerCase();
+	return normalized.includes("claude") && normalized.includes("thinking");
+}
+
 /**
- * Check if an error is retryable (rate limit, server error, etc.)
+ * Check if an error is retryable (rate limit, server error, network error, etc.)
  */
 function isRetryableError(status: number, errorText: string): boolean {
 	if (status === 429 || status === 500 || status === 502 || status === 503 || status === 504) {
 		return true;
 	}
-	return /resource.?exhausted|rate.?limit|overloaded|service.?unavailable/i.test(errorText);
+	return /resource.?exhausted|rate.?limit|overloaded|service.?unavailable|other.?side.?closed/i.test(errorText);
+}
+
+/**
+ * Extract a clean, user-friendly error message from Google API error response.
+ * Parses JSON error responses and returns just the message field.
+ */
+function extractErrorMessage(errorText: string): string {
+	try {
+		const parsed = JSON.parse(errorText) as { error?: { message?: string } };
+		if (parsed.error?.message) {
+			return parsed.error.message;
+		}
+	} catch {
+		// Not JSON, return as-is
+	}
+	return errorText;
 }
 
 /**
@@ -242,6 +323,7 @@ interface CloudCodeAssistRequest {
 	model: string;
 	request: {
 		contents: Content[];
+		sessionId?: string;
 		systemInstruction?: { role?: string; parts: { text: string }[] };
 		generationConfig?: {
 			maxOutputTokens?: number;
@@ -339,17 +421,26 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 				throw new Error("Missing token or projectId in Google Cloud credentials. Use /login to re-authenticate.");
 			}
 
-			const endpoint = model.baseUrl || DEFAULT_ENDPOINT;
-			const url = `${endpoint}/v1internal:streamGenerateContent?alt=sse`;
+			const isAntigravity = model.provider === "google-antigravity";
+			const baseUrl = model.baseUrl?.trim();
+			const endpoints = baseUrl ? [baseUrl] : isAntigravity ? ANTIGRAVITY_ENDPOINT_FALLBACKS : [DEFAULT_ENDPOINT];
 
-			// Use Antigravity headers for sandbox endpoint, otherwise Gemini CLI headers
-			const isAntigravity = endpoint.includes("sandbox.googleapis.com");
 			const requestBody = buildRequest(model, context, projectId, options, isAntigravity);
 			const headers = isAntigravity ? ANTIGRAVITY_HEADERS : GEMINI_CLI_HEADERS;
+
+			const requestHeaders = {
+				Authorization: `Bearer ${accessToken}`,
+				"Content-Type": "application/json",
+				Accept: "text/event-stream",
+				...headers,
+				...(isClaudeThinkingModel(model.id) ? { "anthropic-beta": CLAUDE_THINKING_BETA_HEADER } : {}),
+			};
+			const requestBodyJson = JSON.stringify(requestBody);
 
 			// Fetch with retry logic for rate limits and transient errors
 			let response: Response | undefined;
 			let lastError: Error | undefined;
+			let requestUrl: string | undefined;
 
 			for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
 				if (options?.signal?.aborted) {
@@ -357,15 +448,12 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 				}
 
 				try {
-					response = await fetch(url, {
+					const endpoint = endpoints[Math.min(attempt, endpoints.length - 1)];
+					requestUrl = `${endpoint}/v1internal:streamGenerateContent?alt=sse`;
+					response = await fetch(requestUrl, {
 						method: "POST",
-						headers: {
-							Authorization: `Bearer ${accessToken}`,
-							"Content-Type": "application/json",
-							Accept: "text/event-stream",
-							...headers,
-						},
-						body: JSON.stringify(requestBody),
+						headers: requestHeaders,
+						body: requestBodyJson,
 						signal: options?.signal,
 					});
 
@@ -378,14 +466,14 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 					// Check if retryable
 					if (attempt < MAX_RETRIES && isRetryableError(response.status, errorText)) {
 						// Use server-provided delay or exponential backoff
-						const serverDelay = extractRetryDelay(errorText);
+						const serverDelay = extractRetryDelay(errorText, response);
 						const delayMs = serverDelay ?? BASE_DELAY_MS * 2 ** attempt;
 						await sleep(delayMs, options?.signal);
 						continue;
 					}
 
 					// Not retryable or max retries exceeded
-					throw new Error(`Cloud Code Assist API error (${response.status}): ${errorText}`);
+					throw new Error(`Cloud Code Assist API error (${response.status}): ${extractErrorMessage(errorText)}`);
 				} catch (error) {
 					// Check for abort - fetch throws AbortError, our code throws "Request was aborted"
 					if (error instanceof Error) {
@@ -393,7 +481,11 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 							throw new Error("Request was aborted");
 						}
 					}
+					// Extract detailed error message from fetch errors (Node includes cause)
 					lastError = error instanceof Error ? error : new Error(String(error));
+					if (lastError.message === "fetch failed" && lastError.cause instanceof Error) {
+						lastError = new Error(`Network error: ${lastError.cause.message}`);
+					}
 					// Network errors are retryable
 					if (attempt < MAX_RETRIES) {
 						const delayMs = BASE_DELAY_MS * 2 ** attempt;
@@ -408,73 +500,160 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 				throw lastError ?? new Error("Failed to get response after retries");
 			}
 
-			if (!response.body) {
-				throw new Error("No response body");
-			}
-
-			stream.push({ type: "start", partial: output });
-
-			let currentBlock: TextContent | ThinkingContent | null = null;
-			const blocks = output.content;
-			const blockIndex = () => blocks.length - 1;
-
-			// Read SSE stream
-			const reader = response.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = "";
-
-			// Set up abort handler to cancel reader when signal fires
-			const abortHandler = () => {
-				void reader.cancel().catch(() => {});
+			let started = false;
+			const ensureStarted = () => {
+				if (!started) {
+					stream.push({ type: "start", partial: output });
+					started = true;
+				}
 			};
-			options?.signal?.addEventListener("abort", abortHandler);
 
-			try {
-				while (true) {
-					// Check abort signal before each read
-					if (options?.signal?.aborted) {
-						throw new Error("Request was aborted");
-					}
+			const resetOutput = () => {
+				output.content = [];
+				output.usage = {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				};
+				output.stopReason = "stop";
+				output.errorMessage = undefined;
+				output.timestamp = Date.now();
+				started = false;
+			};
 
-					const { done, value } = await reader.read();
-					if (done) break;
+			const streamResponse = async (activeResponse: Response): Promise<boolean> => {
+				if (!activeResponse.body) {
+					throw new Error("No response body");
+				}
 
-					buffer += decoder.decode(value, { stream: true });
-					const lines = buffer.split("\n");
-					buffer = lines.pop() || "";
+				let hasContent = false;
+				let currentBlock: TextContent | ThinkingContent | null = null;
+				const blocks = output.content;
+				const blockIndex = () => blocks.length - 1;
 
-					for (const line of lines) {
-						if (!line.startsWith("data:")) continue;
+				// Read SSE stream
+				const reader = activeResponse.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = "";
 
-						const jsonStr = line.slice(5).trim();
-						if (!jsonStr) continue;
+				// Set up abort handler to cancel reader when signal fires
+				const abortHandler = () => {
+					void reader.cancel().catch(() => {});
+				};
+				options?.signal?.addEventListener("abort", abortHandler);
 
-						let chunk: CloudCodeAssistResponseChunk;
-						try {
-							chunk = JSON.parse(jsonStr);
-						} catch {
-							continue;
+				try {
+					while (true) {
+						// Check abort signal before each read
+						if (options?.signal?.aborted) {
+							throw new Error("Request was aborted");
 						}
 
-						// Unwrap the response
-						const responseData = chunk.response;
-						if (!responseData) continue;
+						const { done, value } = await reader.read();
+						if (done) break;
 
-						const candidate = responseData.candidates?.[0];
-						if (candidate?.content?.parts) {
-							for (const part of candidate.content.parts) {
-								if (part.text !== undefined) {
-									const isThinking = isThinkingPart(part);
-									if (
-										!currentBlock ||
-										(isThinking && currentBlock.type !== "thinking") ||
-										(!isThinking && currentBlock.type !== "text")
-									) {
+						buffer += decoder.decode(value, { stream: true });
+						const lines = buffer.split("\n");
+						buffer = lines.pop() || "";
+
+						for (const line of lines) {
+							if (!line.startsWith("data:")) continue;
+
+							const jsonStr = line.slice(5).trim();
+							if (!jsonStr) continue;
+
+							let chunk: CloudCodeAssistResponseChunk;
+							try {
+								chunk = JSON.parse(jsonStr);
+							} catch {
+								continue;
+							}
+
+							// Unwrap the response
+							const responseData = chunk.response;
+							if (!responseData) continue;
+
+							const candidate = responseData.candidates?.[0];
+							if (candidate?.content?.parts) {
+								for (const part of candidate.content.parts) {
+									if (part.text !== undefined) {
+										hasContent = true;
+										const isThinking = isThinkingPart(part);
+										if (
+											!currentBlock ||
+											(isThinking && currentBlock.type !== "thinking") ||
+											(!isThinking && currentBlock.type !== "text")
+										) {
+											if (currentBlock) {
+												if (currentBlock.type === "text") {
+													stream.push({
+														type: "text_end",
+														contentIndex: blocks.length - 1,
+														content: currentBlock.text,
+														partial: output,
+													});
+												} else {
+													stream.push({
+														type: "thinking_end",
+														contentIndex: blockIndex(),
+														content: currentBlock.thinking,
+														partial: output,
+													});
+												}
+											}
+											if (isThinking) {
+												currentBlock = { type: "thinking", thinking: "", thinkingSignature: undefined };
+												output.content.push(currentBlock);
+												ensureStarted();
+												stream.push({
+													type: "thinking_start",
+													contentIndex: blockIndex(),
+													partial: output,
+												});
+											} else {
+												currentBlock = { type: "text", text: "" };
+												output.content.push(currentBlock);
+												ensureStarted();
+												stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
+											}
+										}
+										if (currentBlock.type === "thinking") {
+											currentBlock.thinking += part.text;
+											currentBlock.thinkingSignature = retainThoughtSignature(
+												currentBlock.thinkingSignature,
+												part.thoughtSignature,
+											);
+											stream.push({
+												type: "thinking_delta",
+												contentIndex: blockIndex(),
+												delta: part.text,
+												partial: output,
+											});
+										} else {
+											currentBlock.text += part.text;
+											currentBlock.textSignature = retainThoughtSignature(
+												currentBlock.textSignature,
+												part.thoughtSignature,
+											);
+											stream.push({
+												type: "text_delta",
+												contentIndex: blockIndex(),
+												delta: part.text,
+												partial: output,
+											});
+										}
+									}
+
+									if (part.functionCall) {
+										hasContent = true;
 										if (currentBlock) {
 											if (currentBlock.type === "text") {
 												stream.push({
 													type: "text_end",
-													contentIndex: blocks.length - 1,
+													contentIndex: blockIndex(),
 													content: currentBlock.text,
 													partial: output,
 												});
@@ -486,143 +665,142 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 													partial: output,
 												});
 											}
+											currentBlock = null;
 										}
-										if (isThinking) {
-											currentBlock = { type: "thinking", thinking: "", thinkingSignature: undefined };
-											output.content.push(currentBlock);
-											stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
-										} else {
-											currentBlock = { type: "text", text: "" };
-											output.content.push(currentBlock);
-											stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
-										}
-									}
-									if (currentBlock.type === "thinking") {
-										currentBlock.thinking += part.text;
-										currentBlock.thinkingSignature = retainThoughtSignature(
-											currentBlock.thinkingSignature,
-											part.thoughtSignature,
-										);
+
+										const providedId = part.functionCall.id;
+										const needsNewId =
+											!providedId ||
+											output.content.some((b) => b.type === "toolCall" && b.id === providedId);
+										const toolCallId = needsNewId
+											? `${part.functionCall.name}_${Date.now()}_${++toolCallCounter}`
+											: providedId;
+
+										const toolCall: ToolCall = {
+											type: "toolCall",
+											id: toolCallId,
+											name: part.functionCall.name || "",
+											arguments: part.functionCall.args as Record<string, unknown>,
+											...(part.thoughtSignature && { thoughtSignature: part.thoughtSignature }),
+										};
+
+										output.content.push(toolCall);
+										ensureStarted();
+										stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
 										stream.push({
-											type: "thinking_delta",
+											type: "toolcall_delta",
 											contentIndex: blockIndex(),
-											delta: part.text,
+											delta: JSON.stringify(toolCall.arguments),
 											partial: output,
 										});
-									} else {
-										currentBlock.text += part.text;
-										currentBlock.textSignature = retainThoughtSignature(
-											currentBlock.textSignature,
-											part.thoughtSignature,
-										);
 										stream.push({
-											type: "text_delta",
+											type: "toolcall_end",
 											contentIndex: blockIndex(),
-											delta: part.text,
+											toolCall,
 											partial: output,
 										});
 									}
 								}
+							}
 
-								if (part.functionCall) {
-									if (currentBlock) {
-										if (currentBlock.type === "text") {
-											stream.push({
-												type: "text_end",
-												contentIndex: blockIndex(),
-												content: currentBlock.text,
-												partial: output,
-											});
-										} else {
-											stream.push({
-												type: "thinking_end",
-												contentIndex: blockIndex(),
-												content: currentBlock.thinking,
-												partial: output,
-											});
-										}
-										currentBlock = null;
-									}
-
-									const providedId = part.functionCall.id;
-									const needsNewId =
-										!providedId || output.content.some((b) => b.type === "toolCall" && b.id === providedId);
-									const toolCallId = needsNewId
-										? `${part.functionCall.name}_${Date.now()}_${++toolCallCounter}`
-										: providedId;
-
-									const toolCall: ToolCall = {
-										type: "toolCall",
-										id: toolCallId,
-										name: part.functionCall.name || "",
-										arguments: part.functionCall.args as Record<string, unknown>,
-										...(part.thoughtSignature && { thoughtSignature: part.thoughtSignature }),
-									};
-
-									output.content.push(toolCall);
-									stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
-									stream.push({
-										type: "toolcall_delta",
-										contentIndex: blockIndex(),
-										delta: JSON.stringify(toolCall.arguments),
-										partial: output,
-									});
-									stream.push({ type: "toolcall_end", contentIndex: blockIndex(), toolCall, partial: output });
+							if (candidate?.finishReason) {
+								output.stopReason = mapStopReasonString(candidate.finishReason);
+								if (output.content.some((b) => b.type === "toolCall")) {
+									output.stopReason = "toolUse";
 								}
 							}
-						}
 
-						if (candidate?.finishReason) {
-							output.stopReason = mapStopReasonString(candidate.finishReason);
-							if (output.content.some((b) => b.type === "toolCall")) {
-								output.stopReason = "toolUse";
-							}
-						}
-
-						if (responseData.usageMetadata) {
-							// promptTokenCount includes cachedContentTokenCount, so subtract to get fresh input
-							const promptTokens = responseData.usageMetadata.promptTokenCount || 0;
-							const cacheReadTokens = responseData.usageMetadata.cachedContentTokenCount || 0;
-							output.usage = {
-								input: promptTokens - cacheReadTokens,
-								output:
-									(responseData.usageMetadata.candidatesTokenCount || 0) +
-									(responseData.usageMetadata.thoughtsTokenCount || 0),
-								cacheRead: cacheReadTokens,
-								cacheWrite: 0,
-								totalTokens: responseData.usageMetadata.totalTokenCount || 0,
-								cost: {
-									input: 0,
-									output: 0,
-									cacheRead: 0,
+							if (responseData.usageMetadata) {
+								// promptTokenCount includes cachedContentTokenCount, so subtract to get fresh input
+								const promptTokens = responseData.usageMetadata.promptTokenCount || 0;
+								const cacheReadTokens = responseData.usageMetadata.cachedContentTokenCount || 0;
+								output.usage = {
+									input: promptTokens - cacheReadTokens,
+									output:
+										(responseData.usageMetadata.candidatesTokenCount || 0) +
+										(responseData.usageMetadata.thoughtsTokenCount || 0),
+									cacheRead: cacheReadTokens,
 									cacheWrite: 0,
-									total: 0,
-								},
-							};
-							calculateCost(model, output.usage);
+									totalTokens: responseData.usageMetadata.totalTokenCount || 0,
+									cost: {
+										input: 0,
+										output: 0,
+										cacheRead: 0,
+										cacheWrite: 0,
+										total: 0,
+									},
+								};
+								calculateCost(model, output.usage);
+							}
 						}
 					}
+				} finally {
+					options?.signal?.removeEventListener("abort", abortHandler);
 				}
-			} finally {
-				options?.signal?.removeEventListener("abort", abortHandler);
+
+				if (currentBlock) {
+					if (currentBlock.type === "text") {
+						stream.push({
+							type: "text_end",
+							contentIndex: blockIndex(),
+							content: currentBlock.text,
+							partial: output,
+						});
+					} else {
+						stream.push({
+							type: "thinking_end",
+							contentIndex: blockIndex(),
+							content: currentBlock.thinking,
+							partial: output,
+						});
+					}
+				}
+
+				return hasContent;
+			};
+
+			let receivedContent = false;
+			let currentResponse = response;
+
+			for (let emptyAttempt = 0; emptyAttempt <= MAX_EMPTY_STREAM_RETRIES; emptyAttempt++) {
+				if (options?.signal?.aborted) {
+					throw new Error("Request was aborted");
+				}
+
+				if (emptyAttempt > 0) {
+					const backoffMs = EMPTY_STREAM_BASE_DELAY_MS * 2 ** (emptyAttempt - 1);
+					await sleep(backoffMs, options?.signal);
+
+					if (!requestUrl) {
+						throw new Error("Missing request URL");
+					}
+
+					currentResponse = await fetch(requestUrl, {
+						method: "POST",
+						headers: requestHeaders,
+						body: requestBodyJson,
+						signal: options?.signal,
+					});
+
+					if (!currentResponse.ok) {
+						const retryErrorText = await currentResponse.text();
+						throw new Error(`Cloud Code Assist API error (${currentResponse.status}): ${retryErrorText}`);
+					}
+				}
+
+				const streamed = await streamResponse(currentResponse);
+				if (streamed) {
+					receivedContent = true;
+					break;
+				}
+
+				if (emptyAttempt < MAX_EMPTY_STREAM_RETRIES) {
+					resetOutput();
+				}
 			}
 
-			if (currentBlock) {
-				if (currentBlock.type === "text") {
-					stream.push({
-						type: "text_end",
-						contentIndex: blockIndex(),
-						content: currentBlock.text,
-						partial: output,
-					});
-				} else {
-					stream.push({
-						type: "thinking_end",
-						contentIndex: blockIndex(),
-						content: currentBlock.thinking,
-						partial: output,
-					});
-				}
+			if (!receivedContent) {
+				throw new Error("Cloud Code Assist API returned an empty response");
 			}
 
 			if (options?.signal?.aborted) {
@@ -651,7 +829,34 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 	return stream;
 };
 
-function buildRequest(
+function deriveSessionId(context: Context): string | undefined {
+	for (const message of context.messages) {
+		if (message.role !== "user") {
+			continue;
+		}
+
+		let text = "";
+		if (typeof message.content === "string") {
+			text = message.content;
+		} else if (Array.isArray(message.content)) {
+			text = message.content
+				.filter((item): item is TextContent => item.type === "text")
+				.map((item) => item.text)
+				.join("\n");
+		}
+
+		if (!text || text.trim().length === 0) {
+			return undefined;
+		}
+
+		const hash = createHash("sha256").update(text).digest("hex");
+		return hash.slice(0, 32);
+	}
+
+	return undefined;
+}
+
+export function buildRequest(
 	model: Model<"google-gemini-cli">,
 	context: Context,
 	projectId: string,
@@ -685,6 +890,11 @@ function buildRequest(
 	const request: CloudCodeAssistRequest["request"] = {
 		contents,
 	};
+
+	const sessionId = deriveSessionId(context);
+	if (sessionId) {
+		request.sessionId = sessionId;
+	}
 
 	// System instruction must be object with parts, not plain string
 	if (context.systemPrompt) {

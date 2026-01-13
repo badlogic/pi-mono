@@ -56,9 +56,12 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - **Cerebras**
 - **xAI**
 - **OpenRouter**
+- **Vercel AI Gateway**
+- **MiniMax**
 - **GitHub Copilot** (requires OAuth, see below)
 - **Google Gemini CLI** (requires OAuth, see below)
 - **Antigravity** (requires OAuth, see below)
+- **Amazon Bedrock**
 - **Any OpenAI-compatible API**: Ollama, vLLM, LM Studio, etc.
 
 ## Installation
@@ -708,6 +711,7 @@ interface OpenAICompat {
   supportsDeveloperRole?: boolean;   // Whether provider supports `developer` role vs `system` (default: true)
   supportsReasoningEffort?: boolean; // Whether provider supports `reasoning_effort` (default: true)
   maxTokensField?: 'max_completion_tokens' | 'max_tokens';  // Which field name to use (default: max_completion_tokens)
+  thinkingFormat?: 'openai' | 'zai'; // Format for reasoning param: 'openai' uses reasoning_effort, 'zai' uses thinking: { type: "enabled" } (default: openai)
 }
 ```
 
@@ -860,7 +864,9 @@ In Node.js environments, you can set environment variables to avoid passing API 
 | Cerebras | `CEREBRAS_API_KEY` |
 | xAI | `XAI_API_KEY` |
 | OpenRouter | `OPENROUTER_API_KEY` |
+| Vercel AI Gateway | `AI_GATEWAY_API_KEY` |
 | zAI | `ZAI_API_KEY` |
+| MiniMax | `MINIMAX_API_KEY` |
 | GitHub Copilot | `COPILOT_GITHUB_TOKEN` or `GH_TOKEN` or `GITHUB_TOKEN` |
 
 When set, the library automatically uses these keys:
@@ -1025,6 +1031,90 @@ const response = await complete(model, {
 **GitHub Copilot**: If you get "The requested model is not supported" error, enable the model manually in VS Code: open Copilot Chat, click the model selector, select the model (warning icon), and click "Enable".
 
 **Google Gemini CLI / Antigravity**: These use Google Cloud OAuth. The `apiKey` returned by `getOAuthApiKey()` is a JSON string containing both the token and project ID, which the library handles automatically.
+
+## Development
+
+### Adding a New Provider
+
+Adding a new LLM provider requires changes across multiple files. This checklist covers all necessary steps:
+
+#### 1. Core Types (`src/types.ts`)
+
+- Add the API identifier to the `Api` type union (e.g., `"bedrock-converse-stream"`)
+- Create an options interface extending `StreamOptions` (e.g., `BedrockOptions`)
+- Add the mapping to `ApiOptionsMap`
+- Add the provider name to `KnownProvider` type union (e.g., `"amazon-bedrock"`)
+
+#### 2. Provider Implementation (`src/providers/`)
+
+Create a new provider file (e.g., `amazon-bedrock.ts`) that exports:
+
+- `stream<Provider>()` function returning `AssistantMessageEventStream`
+- Provider-specific options interface
+- Message conversion functions to transform `Context` to provider format
+- Tool conversion if the provider supports tools
+- Response parsing to emit standardized events (`text`, `tool_call`, `thinking`, `usage`, `stop`)
+
+#### 3. Stream Integration (`src/stream.ts`)
+
+- Import the provider's stream function and options type
+- Add credential detection in `getEnvApiKey()` for the new provider
+- Add a case in `mapOptionsForApi()` to map `SimpleStreamOptions` to provider options
+- Add the provider's stream function to the `streamFunctions` map
+
+#### 4. Model Generation (`scripts/generate-models.ts`)
+
+- Add logic to fetch and parse models from the provider's source (e.g., models.dev API)
+- Map provider model data to the standardized `Model` interface
+- Handle provider-specific quirks (pricing format, capability flags, model ID transformations)
+
+#### 5. Tests (`test/`)
+
+Create or update test files to cover the new provider:
+
+- `stream.test.ts` - Basic streaming and tool use
+- `tokens.test.ts` - Token usage reporting
+- `abort.test.ts` - Request cancellation
+- `empty.test.ts` - Empty message handling
+- `context-overflow.test.ts` - Context limit errors
+- `image-limits.test.ts` - Image support (if applicable)
+- `unicode-surrogate.test.ts` - Unicode handling
+- `tool-call-without-result.test.ts` - Orphaned tool calls
+- `image-tool-result.test.ts` - Images in tool results
+- `total-tokens.test.ts` - Token counting accuracy
+
+For providers with non-standard auth (AWS, Google Vertex), create a utility like `bedrock-utils.ts` with credential detection helpers.
+
+#### 6. Coding Agent Integration (`../coding-agent/`)
+
+Update `src/core/model-resolver.ts`:
+
+- Add a default model ID for the provider in `DEFAULT_MODELS`
+
+Update `src/cli/args.ts`:
+
+- Add environment variable documentation in the help text
+
+Update `README.md`:
+
+- Add the provider to the providers section with setup instructions
+
+#### 7. Documentation
+
+Update `packages/ai/README.md`:
+
+- Add to the Supported Providers table
+- Document any provider-specific options or authentication requirements
+- Add environment variable to the Environment Variables section
+
+#### 8. Changelog
+
+Add an entry to `packages/ai/CHANGELOG.md` under `## [Unreleased]`:
+
+```markdown
+### Added
+- Added support for [Provider Name] provider ([#PR](link) by [@author](link))
+```
 
 ## License
 

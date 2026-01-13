@@ -1,6 +1,6 @@
 import type { Model } from "@mariozechner/pi-ai";
 import { describe, expect, test } from "vitest";
-import { parseModelPattern } from "../src/core/model-resolver.js";
+import { defaultModelPerProvider, findInitialModel, parseModelPattern } from "../src/core/model-resolver.js";
 
 // Mock models for testing
 const mockModels: Model<"anthropic-messages">[] = [
@@ -198,5 +198,39 @@ describe("parseModelPattern", () => {
 			expect(result.model?.id).toBe("claude-sonnet-4-5");
 			expect(result.warning).toContain("Invalid thinking level");
 		});
+	});
+});
+
+describe("default model selection", () => {
+	test("ai-gateway default is opus 4.5", () => {
+		expect(defaultModelPerProvider["vercel-ai-gateway"]).toBe("anthropic/claude-opus-4.5");
+	});
+
+	test("findInitialModel selects ai-gateway default when available", async () => {
+		const aiGatewayModel: Model<"anthropic-messages"> = {
+			id: "anthropic/claude-opus-4.5",
+			name: "Claude Opus 4.5",
+			api: "anthropic-messages",
+			provider: "vercel-ai-gateway",
+			baseUrl: "https://ai-gateway.vercel.sh",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 5, output: 15, cacheRead: 0.5, cacheWrite: 5 },
+			contextWindow: 200000,
+			maxTokens: 8192,
+		};
+
+		const registry = {
+			getAvailable: async () => [aiGatewayModel],
+		} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
+
+		const result = await findInitialModel({
+			scopedModels: [],
+			isContinuing: false,
+			modelRegistry: registry,
+		});
+
+		expect(result.model?.provider).toBe("vercel-ai-gateway");
+		expect(result.model?.id).toBe("anthropic/claude-opus-4.5");
 	});
 });

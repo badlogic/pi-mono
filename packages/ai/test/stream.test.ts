@@ -8,6 +8,7 @@ import { getModel } from "../src/models.js";
 import { complete, stream } from "../src/stream.js";
 import type { Api, Context, ImageContent, Model, OptionsForApi, Tool, ToolResultMessage } from "../src/types.js";
 import { StringEnum } from "../src/utils/typebox-helpers.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -356,7 +357,7 @@ describe("Generate E2E Tests", () => {
 			await handleStreaming(llm);
 		});
 
-		it("should handle ", { retry: 3 }, async () => {
+		it("should handle thinking", { retry: 3 }, async () => {
 			await handleThinking(llm, { thinking: { enabled: true, budgetTokens: 1024 } });
 		});
 
@@ -597,6 +598,87 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
+		"Vercel AI Gateway Provider (google/gemini-2.5-flash via Anthropic Messages)",
+		() => {
+			const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+
+			it("should complete basic text generation", { retry: 3 }, async () => {
+				await basicTextGeneration(llm);
+			});
+
+			it("should handle tool calling", { retry: 3 }, async () => {
+				await handleToolCall(llm);
+			});
+
+			it("should handle streaming", { retry: 3 }, async () => {
+				await handleStreaming(llm);
+			});
+
+			it("should handle image input", { retry: 3 }, async () => {
+				await handleImage(llm);
+			});
+
+			it("should handle multi-turn with tools", { retry: 3 }, async () => {
+				await multiTurn(llm);
+			});
+		},
+	);
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
+		"Vercel AI Gateway Provider (anthropic/claude-opus-4.5 via Anthropic Messages)",
+		() => {
+			const llm = getModel("vercel-ai-gateway", "anthropic/claude-opus-4.5");
+
+			it("should complete basic text generation", { retry: 3 }, async () => {
+				await basicTextGeneration(llm);
+			});
+
+			it("should handle tool calling", { retry: 3 }, async () => {
+				await handleToolCall(llm);
+			});
+
+			it("should handle streaming", { retry: 3 }, async () => {
+				await handleStreaming(llm);
+			});
+
+			it("should handle image input", { retry: 3 }, async () => {
+				await handleImage(llm);
+			});
+
+			it("should handle multi-turn with tools", { retry: 3 }, async () => {
+				await multiTurn(llm);
+			});
+		},
+	);
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
+		"Vercel AI Gateway Provider (openai/gpt-5.1-codex-max via Anthropic Messages)",
+		() => {
+			const llm = getModel("vercel-ai-gateway", "openai/gpt-5.1-codex-max");
+
+			it("should complete basic text generation", { retry: 3 }, async () => {
+				await basicTextGeneration(llm);
+			});
+
+			it("should handle tool calling", { retry: 3 }, async () => {
+				await handleToolCall(llm);
+			});
+
+			it("should handle streaming", { retry: 3 }, async () => {
+				await handleStreaming(llm);
+			});
+
+			it("should handle image input", { retry: 3 }, async () => {
+				await handleImage(llm);
+			});
+
+			it("should handle multi-turn with tools", { retry: 3 }, async () => {
+				await multiTurn(llm);
+			});
+		},
+	);
+
 	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5-air via OpenAI Completions)", () => {
 		const llm = getModel("zai", "glm-4.5-air");
 
@@ -695,6 +777,30 @@ describe("Generate E2E Tests", () => {
 
 		it("should handle image input", { retry: 3 }, async () => {
 			await handleImage(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider (MiniMax-M2.1 via Anthropic Messages)", () => {
+		const llm = getModel("minimax", "MiniMax-M2.1");
+
+		it("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm);
+		});
+
+		it("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm);
+		});
+
+		it("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm);
+		});
+
+		it("should handle thinking mode", { retry: 3 }, async () => {
+			await handleThinking(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+		});
+
+		it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
 		});
 	});
 
@@ -904,6 +1010,34 @@ describe("Generate E2E Tests", () => {
 
 		it.skipIf(!openaiCodexToken)("should handle image input", { retry: 3 }, async () => {
 			await handleImage(llm, { apiKey: openaiCodexToken });
+		});
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider (claude-sonnet-4-5)", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+		it("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm);
+		});
+
+		it("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm);
+		});
+
+		it("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm);
+		});
+
+		it("should handle thinking", { retry: 3 }, async () => {
+			await handleThinking(llm, { reasoning: "medium" });
+		});
+
+		it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { reasoning: "high" });
+		});
+
+		it("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm);
 		});
 	});
 

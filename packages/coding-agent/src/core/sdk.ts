@@ -628,14 +628,16 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		steeringMode: settingsManager.getSteeringMode(),
 		followUpMode: settingsManager.getFollowUpMode(),
 		thinkingBudgets: settingsManager.getThinkingBudgets(),
-		getApiKey: async () => {
-			const currentModel = agent.state.model;
-			if (!currentModel) {
+		getApiKey: async (provider) => {
+			// Use the provider argument from the in-flight request;
+			// agent.state.model may already be switched mid-turn.
+			const resolvedProvider = provider || agent.state.model?.provider;
+			if (!resolvedProvider) {
 				throw new Error("No model selected");
 			}
-			const key = await modelRegistry.getApiKey(currentModel);
+			const key = await modelRegistry.getApiKeyForProvider(resolvedProvider);
 			if (!key) {
-				throw new Error(`No API key found for provider "${currentModel.provider}"`);
+				throw new Error(`No API key found for provider "${resolvedProvider}"`);
 			}
 			return key;
 		},

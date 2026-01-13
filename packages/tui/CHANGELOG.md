@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.45.5] - 2026-01-13
+
+## [0.45.4] - 2026-01-13
+
+## [0.45.3] - 2026-01-13
+
+## [0.45.2] - 2026-01-13
+
+## [0.45.1] - 2026-01-13
+
+## [0.45.0] - 2026-01-13
+
+## [0.44.0] - 2026-01-12
+
 ### Added
 
 - `SettingsListOptions` with `enableSearch` for fuzzy filtering in `SettingsList` ([#643](https://github.com/badlogic/pi-mono/pull/643) by [@ninlds](https://github.com/ninlds))

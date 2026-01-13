@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete } from "../src/stream.js";
 import type { Api, AssistantMessage, Context, Model, OptionsForApi, UserMessage } from "../src/types.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -303,6 +304,66 @@ describe("AI Providers Empty Message Tests", () => {
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider Empty Messages", () => {
 		const llm = getModel("mistral", "devstral-medium-latest");
+
+		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyMessage(llm);
+		});
+
+		it("should handle empty string content", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyStringMessage(llm);
+		});
+
+		it("should handle whitespace-only content", { retry: 3, timeout: 30000 }, async () => {
+			await testWhitespaceOnlyMessage(llm);
+		});
+
+		it("should handle empty assistant message in conversation", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyAssistantMessage(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider Empty Messages", () => {
+		const llm = getModel("minimax", "MiniMax-M2.1");
+
+		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyMessage(llm);
+		});
+
+		it("should handle empty string content", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyStringMessage(llm);
+		});
+
+		it("should handle whitespace-only content", { retry: 3, timeout: 30000 }, async () => {
+			await testWhitespaceOnlyMessage(llm);
+		});
+
+		it("should handle empty assistant message in conversation", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyAssistantMessage(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway Provider Empty Messages", () => {
+		const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+
+		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyMessage(llm);
+		});
+
+		it("should handle empty string content", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyStringMessage(llm);
+		});
+
+		it("should handle whitespace-only content", { retry: 3, timeout: 30000 }, async () => {
+			await testWhitespaceOnlyMessage(llm);
+		});
+
+		it("should handle empty assistant message in conversation", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyAssistantMessage(llm);
+		});
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider Empty Messages", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
 
 		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
 			await testEmptyMessage(llm);

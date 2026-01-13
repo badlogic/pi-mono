@@ -48,6 +48,56 @@ async execute(toolCallId, params, onUpdate, ctx, signal) {
 }
 ```
 
+## Overlays
+
+Overlays render components on top of existing content without clearing the screen. Pass `{ overlay: true }` to `ctx.ui.custom()`:
+
+```typescript
+const result = await ctx.ui.custom<string | null>(
+  (tui, theme, keybindings, done) => new MyDialog({ onClose: done }),
+  { overlay: true }
+);
+```
+
+For positioning and sizing, use `overlayOptions`:
+
+```typescript
+const result = await ctx.ui.custom<string | null>(
+  (tui, theme, keybindings, done) => new SidePanel({ onClose: done }),
+  {
+    overlay: true,
+    overlayOptions: {
+      // Size: number or percentage string
+      width: "50%",          // 50% of terminal width
+      minWidth: 40,          // minimum 40 columns
+      maxHeight: "80%",      // max 80% of terminal height
+
+      // Position: anchor-based (default: "center")
+      anchor: "right-center", // 9 positions: center, top-left, top-center, etc.
+      offsetX: -2,            // offset from anchor
+      offsetY: 0,
+
+      // Or percentage/absolute positioning
+      row: "25%",            // 25% from top
+      col: 10,               // column 10
+
+      // Margins
+      margin: 2,             // all sides, or { top, right, bottom, left }
+
+      // Responsive: hide on narrow terminals
+      visible: (termWidth, termHeight) => termWidth >= 80,
+    },
+    // Get handle for programmatic visibility control
+    onHandle: (handle) => {
+      // handle.setHidden(true/false) - toggle visibility
+      // handle.hide() - permanently remove
+    },
+  }
+);
+```
+
+See [overlay-qa-tests.ts](../examples/extensions/overlay-qa-tests.ts) for comprehensive examples covering anchors, margins, stacking, responsive visibility, and animation.
+
 ## Built-in Components
 
 Import from `@mariozechner/pi-tui`:

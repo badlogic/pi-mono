@@ -18,6 +18,7 @@ import { getModel } from "../src/models.js";
 import { complete } from "../src/stream.js";
 import type { AssistantMessage, Context, Model, Usage } from "../src/types.js";
 import { isContextOverflow } from "../src/utils/overflow.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -285,6 +286,22 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
+	// Amazon Bedrock
+	// Expected pattern: "Input is too long for requested model"
+	// =============================================================================
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock", () => {
+		it("claude-sonnet-4-5 - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+			const result = await testContextOverflow(model, "");
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
 	// xAI
 	// Expected pattern: "maximum prompt length is X but the request contains Y"
 	// =============================================================================
@@ -372,6 +389,37 @@ describe("Context overflow error handling", () => {
 		it("devstral-medium-latest - should detect overflow via isContextOverflow", async () => {
 			const model = getModel("mistral", "devstral-medium-latest");
 			const result = await testContextOverflow(model, process.env.MISTRAL_API_KEY!);
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
+	// MiniMax
+	// Expected pattern: TBD - need to test actual error message
+	// =============================================================================
+
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax", () => {
+		it("MiniMax-M2.1 - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("minimax", "MiniMax-M2.1");
+			const result = await testContextOverflow(model, process.env.MINIMAX_API_KEY!);
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
+	// Vercel AI Gateway - Unified API for multiple providers
+	// =============================================================================
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway", () => {
+		it("google/gemini-2.5-flash via AI Gateway - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+			const result = await testContextOverflow(model, process.env.AI_GATEWAY_API_KEY!);
 			logResult(result);
 
 			expect(result.stopReason).toBe("error");

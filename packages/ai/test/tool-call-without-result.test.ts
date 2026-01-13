@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete } from "../src/stream.js";
 import type { Api, Context, Model, OptionsForApi, Tool } from "../src/types.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -164,6 +165,30 @@ describe("Tool Call Without Result Tests", () => {
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider", () => {
 		const model = getModel("mistral", "devstral-medium-latest");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider", () => {
+		const model = getModel("minimax", "MiniMax-M2.1");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway Provider", () => {
+		const model = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider", () => {
+		const model = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testToolCallWithoutResult(model);

@@ -24,6 +24,7 @@ import type {
 	ThinkingContent,
 	Tool,
 	ToolCall,
+	Usage,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
@@ -48,6 +49,7 @@ function shortHash(str: string): string {
 export interface OpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
+	serviceTier?: ResponseCreateParamsStreaming["service_tier"];
 }
 
 /**
@@ -85,7 +87,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
 			const client = createClient(model, context, apiKey);
 			const params = buildParams(model, context, options);
-			const openaiStream = await client.responses.create(params, { signal: options?.signal });
+			const openaiStream = await client.responses.create(params, { signal: options?.signal, timeout: undefined });
 			stream.push({ type: "start", partial: output });
 
 			let currentItem: ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall | null = null;
@@ -276,6 +278,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 						};
 					}
 					calculateCost(model, output.usage);
+					applyServiceTierPricing(output.usage, response?.service_tier ?? options?.serviceTier);
 					// Map status to stop reason
 					output.stopReason = mapStopReason(response?.status);
 					if (output.content.some((b) => b.type === "toolCall") && output.stopReason === "stop") {
@@ -363,6 +366,7 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		model: model.id,
 		input: messages,
 		stream: true,
+		prompt_cache_key: options?.sessionId,
 	};
 
 	if (options?.maxTokens) {
@@ -371,6 +375,10 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 
 	if (options?.temperature !== undefined) {
 		params.temperature = options?.temperature;
+	}
+
+	if (options?.serviceTier !== undefined) {
+		params.service_tier = options.serviceTier;
 	}
 
 	if (context.tools) {
@@ -545,6 +553,28 @@ function convertTools(tools: Tool[]): OpenAITool[] {
 		parameters: tool.parameters as any, // TypeBox already generates JSON Schema
 		strict: false,
 	}));
+}
+
+function getServiceTierCostMultiplier(serviceTier: ResponseCreateParamsStreaming["service_tier"] | undefined): number {
+	switch (serviceTier) {
+		case "flex":
+			return 0.5;
+		case "priority":
+			return 2;
+		default:
+			return 1;
+	}
+}
+
+function applyServiceTierPricing(usage: Usage, serviceTier: ResponseCreateParamsStreaming["service_tier"] | undefined) {
+	const multiplier = getServiceTierCostMultiplier(serviceTier);
+	if (multiplier === 1) return;
+
+	usage.cost.input *= multiplier;
+	usage.cost.output *= multiplier;
+	usage.cost.cacheRead *= multiplier;
+	usage.cost.cacheWrite *= multiplier;
+	usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
 }
 
 function mapStopReason(status: OpenAI.Responses.ResponseStatus | undefined): StopReason {

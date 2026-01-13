@@ -1,4 +1,5 @@
 import type { ImageContent } from "@mariozechner/pi-ai";
+import { getVips } from "./vips.js";
 
 export interface ImageResizeOptions {
 	maxWidth?: number; // Default: 2000
@@ -29,9 +30,9 @@ const DEFAULT_OPTIONS: Required<ImageResizeOptions> = {
 
 /** Helper to pick the smaller of two buffers */
 function pickSmaller(
-	a: { buffer: Buffer; mimeType: string },
-	b: { buffer: Buffer; mimeType: string },
-): { buffer: Buffer; mimeType: string } {
+	a: { buffer: Uint8Array; mimeType: string },
+	b: { buffer: Uint8Array; mimeType: string },
+): { buffer: Uint8Array; mimeType: string } {
 	return a.buffer.length <= b.buffer.length ? a : b;
 }
 
@@ -39,7 +40,7 @@ function pickSmaller(
  * Resize an image to fit within the specified max dimensions and file size.
  * Returns the original image if it already fits within the limits.
  *
- * Uses sharp for image processing. If sharp is not available (e.g., in some
+ * Uses wasm-vips for image processing. If wasm-vips is not available (e.g., in some
  * environments), returns the original image unchanged.
  *
  * Strategy for staying under maxBytes:
@@ -52,12 +53,29 @@ export async function resizeImage(img: ImageContent, options?: ImageResizeOption
 	const opts = { ...DEFAULT_OPTIONS, ...options };
 	const buffer = Buffer.from(img.data, "base64");
 
-	let sharp: typeof import("sharp") | undefined;
+	const vipsOrNull = await getVips();
+	if (!vipsOrNull) {
+		// wasm-vips not available - return original image
+		// We can't get dimensions without vips, so return 0s
+		return {
+			data: img.data,
+			mimeType: img.mimeType,
+			originalWidth: 0,
+			originalHeight: 0,
+			width: 0,
+			height: 0,
+			wasResized: false,
+		};
+	}
+	// Capture non-null reference for use in nested functions
+	const vips = vipsOrNull;
+
+	// Load image to get metadata
+	let sourceImg: InstanceType<typeof vips.Image>;
 	try {
-		sharp = (await import("sharp")).default;
+		sourceImg = vips.Image.newFromBuffer(buffer);
 	} catch {
-		// Sharp not available - return original image
-		// We can't get dimensions without sharp, so return 0s
+		// Failed to load image
 		return {
 			data: img.data,
 			mimeType: img.mimeType,
@@ -69,16 +87,14 @@ export async function resizeImage(img: ImageContent, options?: ImageResizeOption
 		};
 	}
 
-	const sharpImg = sharp(buffer);
-	const metadata = await sharpImg.metadata();
-
-	const originalWidth = metadata.width ?? 0;
-	const originalHeight = metadata.height ?? 0;
-	const format = metadata.format ?? img.mimeType?.split("/")[1] ?? "png";
+	const originalWidth = sourceImg.width;
+	const originalHeight = sourceImg.height;
 
 	// Check if already within all limits (dimensions AND size)
 	const originalSize = buffer.length;
 	if (originalWidth <= opts.maxWidth && originalHeight <= opts.maxHeight && originalSize <= opts.maxBytes) {
+		sourceImg.delete();
+		const format = img.mimeType?.split("/")[1] ?? "png";
 		return {
 			data: img.data,
 			mimeType: img.mimeType ?? `image/${format}`,
@@ -104,37 +120,45 @@ export async function resizeImage(img: ImageContent, options?: ImageResizeOption
 	}
 
 	// Helper to resize and encode in both formats, returning the smaller one
-	async function tryBothFormats(
+	function tryBothFormats(
 		width: number,
 		height: number,
 		jpegQuality: number,
-	): Promise<{ buffer: Buffer; mimeType: string }> {
-		const resized = await sharp!(buffer)
-			.resize(width, height, { fit: "inside", withoutEnlargement: true })
-			.toBuffer();
+	): { buffer: Uint8Array; mimeType: string } {
+		// Load image fresh and resize using scale factor
+		// (Using newFromBuffer + resize instead of thumbnailBuffer to avoid lazy re-read issues)
+		const img = vips.Image.newFromBuffer(buffer);
+		const scale = Math.min(width / img.width, height / img.height);
+		const resized = scale < 1 ? img.resize(scale) : img;
 
-		const [pngBuffer, jpegBuffer] = await Promise.all([
-			sharp!(resized).png({ compressionLevel: 9 }).toBuffer(),
-			sharp!(resized).jpeg({ quality: jpegQuality }).toBuffer(),
-		]);
+		const pngBuffer = resized.writeToBuffer(".png");
+		const jpegBuffer = resized.writeToBuffer(".jpg", { Q: jpegQuality });
+
+		if (resized !== img) {
+			resized.delete();
+		}
+		img.delete();
 
 		return pickSmaller({ buffer: pngBuffer, mimeType: "image/png" }, { buffer: jpegBuffer, mimeType: "image/jpeg" });
 	}
+
+	// Clean up the source image
+	sourceImg.delete();
 
 	// Try to produce an image under maxBytes
 	const qualitySteps = [85, 70, 55, 40];
 	const scaleSteps = [1.0, 0.75, 0.5, 0.35, 0.25];
 
-	let best: { buffer: Buffer; mimeType: string };
+	let best: { buffer: Uint8Array; mimeType: string };
 	let finalWidth = targetWidth;
 	let finalHeight = targetHeight;
 
 	// First attempt: resize to target dimensions, try both formats
-	best = await tryBothFormats(targetWidth, targetHeight, opts.jpegQuality);
+	best = tryBothFormats(targetWidth, targetHeight, opts.jpegQuality);
 
 	if (best.buffer.length <= opts.maxBytes) {
 		return {
-			data: best.buffer.toString("base64"),
+			data: Buffer.from(best.buffer).toString("base64"),
 			mimeType: best.mimeType,
 			originalWidth,
 			originalHeight,
@@ -146,11 +170,11 @@ export async function resizeImage(img: ImageContent, options?: ImageResizeOption
 
 	// Still too large - try JPEG with decreasing quality (and compare to PNG each time)
 	for (const quality of qualitySteps) {
-		best = await tryBothFormats(targetWidth, targetHeight, quality);
+		best = tryBothFormats(targetWidth, targetHeight, quality);
 
 		if (best.buffer.length <= opts.maxBytes) {
 			return {
-				data: best.buffer.toString("base64"),
+				data: Buffer.from(best.buffer).toString("base64"),
 				mimeType: best.mimeType,
 				originalWidth,
 				originalHeight,
@@ -172,11 +196,11 @@ export async function resizeImage(img: ImageContent, options?: ImageResizeOption
 		}
 
 		for (const quality of qualitySteps) {
-			best = await tryBothFormats(finalWidth, finalHeight, quality);
+			best = tryBothFormats(finalWidth, finalHeight, quality);
 
 			if (best.buffer.length <= opts.maxBytes) {
 				return {
-					data: best.buffer.toString("base64"),
+					data: Buffer.from(best.buffer).toString("base64"),
 					mimeType: best.mimeType,
 					originalWidth,
 					originalHeight,
@@ -191,7 +215,7 @@ export async function resizeImage(img: ImageContent, options?: ImageResizeOption
 	// Last resort: return smallest version we produced even if over limit
 	// (the API will reject it, but at least we tried everything)
 	return {
-		data: best.buffer.toString("base64"),
+		data: Buffer.from(best.buffer).toString("base64"),
 		mimeType: best.mimeType,
 		originalWidth,
 		originalHeight,

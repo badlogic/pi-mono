@@ -37,9 +37,8 @@ import {
   discoverModels,
   discoverSkills,
   discoverExtensions,
-  discoverCustomTools,
   discoverContextFiles,
-  discoverSlashCommands,
+  discoverPromptTemplates,
   loadSettings,
   buildSystemPrompt,
   ModelRegistry,
@@ -92,7 +91,7 @@ const { session } = await createAgentSession({
   extensions: [{ factory: myExtension }],
   skills: [],
   contextFiles: [],
-  slashCommands: [],
+  promptTemplates: [],
   sessionManager: SessionManager.inMemory(),
 });
 
@@ -123,7 +122,7 @@ await session.prompt("Hello");
 | `additionalExtensionPaths` | `[]` | Merge with discovery |
 | `skills` | Discovered | Skills for prompt |
 | `contextFiles` | Discovered | AGENTS.md files |
-| `slashCommands` | Discovered | File commands |
+| `promptTemplates` | Discovered | Prompt templates (slash commands) |
 | `sessionManager` | `SessionManager.create(cwd)` | Persistence |
 | `settingsManager` | From agentDir | Settings overrides |
 

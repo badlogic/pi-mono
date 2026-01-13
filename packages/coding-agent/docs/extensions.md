@@ -18,6 +18,7 @@ Extensions are TypeScript modules that extend pi's behavior. They can subscribe 
 - Git checkpointing (stash at each turn, restore on branch)
 - Path protection (block writes to `.env`, `node_modules/`)
 - Custom compaction (summarize conversation your way)
+- Conversation summaries (see `summarize.ts` example)
 - Interactive tools (questions, wizards, custom dialogs)
 - Stateful tools (todo lists, connection pools)
 - External integrations (file watchers, webhooks, CI triggers)
@@ -438,7 +439,7 @@ pi.on("before_agent_start", async (event, ctx) => {
 });
 ```
 
-**Examples:** [claude-rules.ts](../examples/extensions/claude-rules.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [ssh.ts](../examples/extensions/ssh.ts)
+**Examples:** [claude-rules.ts](../examples/extensions/claude-rules.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [ssh.ts](../examples/extensions/ssh.ts)
 
 #### agent_start / agent_end
 
@@ -452,7 +453,7 @@ pi.on("agent_end", async (event, ctx) => {
 });
 ```
 
-**Examples:** [chalk-logger.ts](../examples/extensions/chalk-logger.ts), [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts)
+**Examples:** [chalk-logger.ts](../examples/extensions/chalk-logger.ts), [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 
 #### turn_start / turn_end
 
@@ -468,7 +469,7 @@ pi.on("turn_end", async (event, ctx) => {
 });
 ```
 
-**Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [status-line.ts](../examples/extensions/status-line.ts)
+**Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [status-line.ts](../examples/extensions/status-line.ts)
 
 #### context
 
@@ -482,7 +483,7 @@ pi.on("context", async (event, ctx) => {
 });
 ```
 
-**Examples:** [plan-mode.ts](../examples/extensions/plan-mode.ts)
+**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 
 ### Model Events
 
@@ -527,7 +528,7 @@ pi.on("tool_call", async (event, ctx) => {
 });
 ```
 
-**Examples:** [chalk-logger.ts](../examples/extensions/chalk-logger.ts), [permission-gate.ts](../examples/extensions/permission-gate.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [protected-paths.ts](../examples/extensions/protected-paths.ts)
+**Examples:** [chalk-logger.ts](../examples/extensions/chalk-logger.ts), [permission-gate.ts](../examples/extensions/permission-gate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [protected-paths.ts](../examples/extensions/protected-paths.ts)
 
 #### tool_result
 
@@ -549,7 +550,7 @@ pi.on("tool_result", async (event, ctx) => {
 });
 ```
 
-**Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts)
+**Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 
 ### User Bash Events
 
@@ -723,7 +724,7 @@ pi.registerTool({
 });
 ```
 
-**Examples:** [hello.ts](../examples/extensions/hello.ts), [question.ts](../examples/extensions/question.ts), [todo.ts](../examples/extensions/todo.ts), [truncated-tool.ts](../examples/extensions/truncated-tool.ts)
+**Examples:** [hello.ts](../examples/extensions/hello.ts), [question.ts](../examples/extensions/question.ts), [questionnaire.ts](../examples/extensions/questionnaire.ts), [todo.ts](../examples/extensions/todo.ts), [truncated-tool.ts](../examples/extensions/truncated-tool.ts)
 
 ### pi.sendMessage(message, options?)
 
@@ -748,7 +749,7 @@ pi.sendMessage({
   - `"nextTurn"` - Queued for next user prompt. Does not interrupt or trigger anything.
 - `triggerTurn: true` - If agent is idle, trigger an LLM response immediately. Only applies to `"steer"` and `"followUp"` modes (ignored for `"nextTurn"`).
 
-**Examples:** [file-trigger.ts](../examples/extensions/file-trigger.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts)
+**Examples:** [file-trigger.ts](../examples/extensions/file-trigger.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 
 ### pi.sendUserMessage(content, options?)
 
@@ -795,7 +796,7 @@ pi.on("session_start", async (_event, ctx) => {
 });
 ```
 
-**Examples:** [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [snake.ts](../examples/extensions/snake.ts), [tools.ts](../examples/extensions/tools.ts)
+**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [snake.ts](../examples/extensions/snake.ts), [tools.ts](../examples/extensions/tools.ts)
 
 ### pi.setSessionName(name)
 
@@ -830,7 +831,7 @@ pi.registerCommand("stats", {
 });
 ```
 
-**Examples:** [custom-footer.ts](../examples/extensions/custom-footer.ts), [custom-header.ts](../examples/extensions/custom-header.ts), [handoff.ts](../examples/extensions/handoff.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [send-user-message.ts](../examples/extensions/send-user-message.ts), [snake.ts](../examples/extensions/snake.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts)
+**Examples:** [custom-footer.ts](../examples/extensions/custom-footer.ts), [custom-header.ts](../examples/extensions/custom-header.ts), [handoff.ts](../examples/extensions/handoff.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [send-user-message.ts](../examples/extensions/send-user-message.ts), [snake.ts](../examples/extensions/snake.ts), [summarize.ts](../examples/extensions/summarize.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts)
 
 ### pi.registerMessageRenderer(customType, renderer)
 
@@ -849,7 +850,7 @@ pi.registerShortcut("ctrl+shift+p", {
 });
 ```
 
-**Examples:** [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts)
+**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts)
 
 ### pi.registerFlag(name, options)
 
@@ -868,7 +869,7 @@ if (pi.getFlag("--plan")) {
 }
 ```
 
-**Examples:** [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts)
+**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts)
 
 ### pi.exec(command, args, options?)
 
@@ -892,7 +893,7 @@ const names = all.map(t => t.name);  // Just names if needed
 pi.setActiveTools(["read", "bash"]); // Switch to read-only
 ```
 
-**Examples:** [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [tools.ts](../examples/extensions/tools.ts)
+**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [tools.ts](../examples/extensions/tools.ts)
 
 ### pi.setModel(model)
 
@@ -1243,7 +1244,7 @@ ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
 ```
 
 **Examples:**
-- `ctx.ui.select()`: [confirm-destructive.ts](../examples/extensions/confirm-destructive.ts), [dirty-repo-guard.ts](../examples/extensions/dirty-repo-guard.ts), [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [permission-gate.ts](../examples/extensions/permission-gate.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [question.ts](../examples/extensions/question.ts)
+- `ctx.ui.select()`: [confirm-destructive.ts](../examples/extensions/confirm-destructive.ts), [dirty-repo-guard.ts](../examples/extensions/dirty-repo-guard.ts), [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [permission-gate.ts](../examples/extensions/permission-gate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [question.ts](../examples/extensions/question.ts), [questionnaire.ts](../examples/extensions/questionnaire.ts)
 - `ctx.ui.confirm()`: [confirm-destructive.ts](../examples/extensions/confirm-destructive.ts)
 - `ctx.ui.editor()`: [handoff.ts](../examples/extensions/handoff.ts)
 - `ctx.ui.setEditorText()`: [handoff.ts](../examples/extensions/handoff.ts), [qna.ts](../examples/extensions/qna.ts)
@@ -1345,8 +1346,8 @@ ctx.ui.theme.fg("accent", "styled text");  // Access current theme
 ```
 
 **Examples:**
-- `ctx.ui.setStatus()`: [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [status-line.ts](../examples/extensions/status-line.ts)
-- `ctx.ui.setWidget()`: [plan-mode.ts](../examples/extensions/plan-mode.ts)
+- `ctx.ui.setStatus()`: [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [status-line.ts](../examples/extensions/status-line.ts)
+- `ctx.ui.setWidget()`: [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 - `ctx.ui.setFooter()`: [custom-footer.ts](../examples/extensions/custom-footer.ts)
 - `ctx.ui.setHeader()`: [custom-header.ts](../examples/extensions/custom-header.ts)
 - `ctx.ui.setEditorComponent()`: [modal-editor.ts](../examples/extensions/modal-editor.ts)
@@ -1395,9 +1396,22 @@ const result = await ctx.ui.custom<string | null>(
 );
 ```
 
-Overlay components should define a `width` property to control their size. The overlay is centered by default. See [overlay-test.ts](../examples/extensions/overlay-test.ts) for a complete example.
+For advanced positioning (anchors, margins, percentages, responsive visibility), pass `overlayOptions`. Use `onHandle` to control visibility programmatically:
 
-**Examples:** [handoff.ts](../examples/extensions/handoff.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [snake.ts](../examples/extensions/snake.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts), [overlay-test.ts](../examples/extensions/overlay-test.ts)
+```typescript
+const result = await ctx.ui.custom<string | null>(
+  (tui, theme, keybindings, done) => new MyOverlayComponent({ onClose: done }),
+  {
+    overlay: true,
+    overlayOptions: { anchor: "top-right", width: "50%", margin: 2 },
+    onHandle: (handle) => { /* handle.setHidden(true/false) */ }
+  }
+);
+```
+
+See [tui.md](tui.md) for the full `OverlayOptions` API and [overlay-qa-tests.ts](../examples/extensions/overlay-qa-tests.ts) for examples.
+
+**Examples:** [handoff.ts](../examples/extensions/handoff.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [snake.ts](../examples/extensions/snake.ts), [summarize.ts](../examples/extensions/summarize.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts), [overlay-test.ts](../examples/extensions/overlay-test.ts)
 
 ### Custom Editor
 

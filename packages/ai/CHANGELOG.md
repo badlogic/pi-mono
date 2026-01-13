@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+## [0.45.5] - 2026-01-13
+
+## [0.45.4] - 2026-01-13
+
+### Added
+
+- Added Vercel AI Gateway provider with model discovery and `AI_GATEWAY_API_KEY` env support ([#689](https://github.com/badlogic/pi-mono/pull/689) by [@timolins](https://github.com/timolins))
+
+### Fixed
+
+- Fixed z.ai thinking/reasoning: z.ai uses `thinking: { type: "enabled" }` instead of OpenAI's `reasoning_effort`. Added `thinkingFormat` compat flag to handle this. ([#688](https://github.com/badlogic/pi-mono/issues/688))
+
+## [0.45.3] - 2026-01-13
+
+## [0.45.2] - 2026-01-13
+
+## [0.45.1] - 2026-01-13
+
+## [0.45.0] - 2026-01-13
+
+### Added
+
+- MiniMax provider support with M2 and M2.1 models via Anthropic-compatible API ([#656](https://github.com/badlogic/pi-mono/pull/656) by [@dannote](https://github.com/dannote))
+- Add Amazon Bedrock provider with prompt caching for Claude models (experimental, tested with Anthropic Claude models only) ([#494](https://github.com/badlogic/pi-mono/pull/494) by [@unexge](https://github.com/unexge))
+- Added `serviceTier` option for OpenAI Responses requests ([#672](https://github.com/badlogic/pi-mono/pull/672) by [@markusylisiurunen](https://github.com/markusylisiurunen))
+- **Anthropic caching on OpenRouter**: Interactions with Anthropic models via OpenRouter now set a 5-minute cache point using Anthropic-style `cache_control` breakpoints on the last assistant or user message. ([#584](https://github.com/badlogic/pi-mono/pull/584) by [@nathyong](https://github.com/nathyong))
+- **Google Gemini CLI provider improvements**: Added Antigravity endpoint fallback (tries daily sandbox then prod when `baseUrl` is unset), header-based retry delay parsing (`Retry-After`, `x-ratelimit-reset`, `x-ratelimit-reset-after`), stable `sessionId` derivation from first user message for cache affinity, empty SSE stream retry with backoff, and `anthropic-beta` header for Claude thinking models ([#670](https://github.com/badlogic/pi-mono/pull/670) by [@kim0](https://github.com/kim0))
+
+## [0.44.0] - 2026-01-12
+
 ## [0.43.0] - 2026-01-11
 
 ### Fixed
