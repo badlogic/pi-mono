@@ -34,7 +34,10 @@ jobs:
           npm ci
           # package-lock.json was generated on macOS and is missing Linux native bindings
           # Install bindings needed by tailwindcss
-          npm install --no-save --force @parcel/watcher-linux-x64-glibc@2.5.1 lightningcss-linux-x64-gnu@1.30.2
+          npm install --no-save --force \
+            @parcel/watcher-linux-x64-glibc@2.5.1 \
+            lightningcss-linux-x64-gnu@1.30.2 \
+            @tailwindcss/oxide-linux-x64-gnu@4.1.18
 
       - name: Build
         run: npm run build
