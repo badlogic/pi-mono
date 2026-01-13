@@ -71,8 +71,7 @@ export class DoomOverlayComponent implements Component {
 		this.interval = setInterval(() => {
 			try {
 				this.engine.tick();
-				// Force full re-render to prevent bleed artifacts at high frame rates
-				this.tui.requestRender(true);
+				this.tui.requestRender();
 			} catch {
 				// WASM error (e.g., exit via DOOM menu) - treat as quit
 				this.dispose();
