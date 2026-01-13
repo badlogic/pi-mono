@@ -87,7 +87,10 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
 			const client = createClient(model, context, apiKey);
 			const params = buildParams(model, context, options);
-			const openaiStream = await client.responses.create(params, { signal: options?.signal, timeout: undefined });
+			const openaiStream = await client.responses.create(
+				params,
+				options?.signal ? { signal: options.signal } : undefined,
+			);
 			stream.push({ type: "start", partial: output });
 
 			let currentItem: ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall | null = null;
