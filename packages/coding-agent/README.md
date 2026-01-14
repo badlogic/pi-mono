@@ -573,7 +573,7 @@ Use these for:
 
 ### Custom System Prompt
 
-Replace the default system prompt entirely by creating a `SYSTEM.md` file:
+Replace the default system prompt **entirely** by creating a `SYSTEM.md` file:
 
 1. **Project-local:** `.pi/SYSTEM.md` (takes precedence)
 2. **Global:** `~/.pi/agent/SYSTEM.md` (fallback)
@@ -589,7 +589,16 @@ Focus on:
 - Proper formatting
 ```
 
-The `--system-prompt` CLI flag overrides both files. Use `--append-system-prompt` to add to (rather than replace) the prompt.
+The `--system-prompt` CLI flag overrides both files.
+
+### Appending to the System Prompt
+
+To add instructions to the system prompt **without** replacing the default (preserving automatic loading of `AGENTS.md` context files, skills, and tools guidelines), create an `APPEND_SYSTEM.md` file:
+
+1. **Project-local:** `.pi/APPEND_SYSTEM.md` (takes precedence)
+2. **Global:** `~/.pi/agent/APPEND_SYSTEM.md` (fallback)
+
+The `--append-system-prompt` CLI flag overrides both files.
 
 ### Custom Models and Providers
 
