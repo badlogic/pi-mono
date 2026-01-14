@@ -116,6 +116,23 @@ function discoverSystemPromptFile(): string | undefined {
 	return undefined;
 }
 
+/** Discover APPEND_SYSTEM.md file if no CLI append system prompt was provided */
+function discoverAppendSystemPromptFile(): string | undefined {
+	// Check project-local first: .pi/APPEND_SYSTEM.md
+	const projectPath = join(process.cwd(), CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
+	if (existsSync(projectPath)) {
+		return projectPath;
+	}
+
+	// Fall back to global: ~/.pi/agent/APPEND_SYSTEM.md
+	const globalPath = join(getAgentDir(), "APPEND_SYSTEM.md");
+	if (existsSync(globalPath)) {
+		return globalPath;
+	}
+
+	return undefined;
+}
+
 function buildSessionOptions(
 	parsed: Args,
 	scopedModels: ScopedModel[],
@@ -128,8 +145,11 @@ function buildSessionOptions(
 
 	// Auto-discover SYSTEM.md if no CLI system prompt provided
 	const systemPromptSource = parsed.systemPrompt ?? discoverSystemPromptFile();
+	// Auto-discover APPEND_SYSTEM.md if no CLI append system prompt provided
+	const appendSystemPromptSource = parsed.appendSystemPrompt ?? discoverAppendSystemPromptFile();
+
 	const resolvedSystemPrompt = resolvePromptInput(systemPromptSource, "system prompt");
-	const resolvedAppendPrompt = resolvePromptInput(parsed.appendSystemPrompt, "append system prompt");
+	const resolvedAppendPrompt = resolvePromptInput(appendSystemPromptSource, "append system prompt");
 
 	if (sessionManager) {
 		options.sessionManager = sessionManager;
