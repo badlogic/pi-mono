@@ -3,6 +3,7 @@ import {
 	Box,
 	Container,
 	getCapabilities,
+	getEditorKeybindings,
 	getImageDimensions,
 	Image,
 	imageFallback,
@@ -374,9 +375,15 @@ export class ToolExecutionComponent extends Container {
 								cachedSkipped = result.skippedCount;
 								cachedWidth = width;
 							}
-							return cachedSkipped && cachedSkipped > 0
-								? ["", theme.fg("toolOutput", `... (${cachedSkipped} earlier lines)`), ...cachedLines]
-								: cachedLines;
+							if (cachedSkipped && cachedSkipped > 0) {
+								const expandKey = getEditorKeybindings().getKeys("expandTools")[0]!;
+								const hint =
+									theme.fg("muted", `... (${cachedSkipped} earlier lines, `) +
+									theme.fg("dim", expandKey) +
+									theme.fg("muted", " to expand)");
+								return ["", hint, ...cachedLines];
+							}
+							return cachedLines;
 						},
 						invalidate: () => {
 							cachedWidth = undefined;
@@ -469,7 +476,11 @@ export class ToolExecutionComponent extends Container {
 						.map((line: string) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line))))
 						.join("\n");
 				if (remaining > 0) {
-					text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
+					const expandKey = getEditorKeybindings().getKeys("expandTools")[0]!;
+					text +=
+						theme.fg("muted", `\n... (${remaining} more lines, `) +
+						theme.fg("dim", expandKey) +
+						theme.fg("muted", " to expand)");
 				}
 
 				const truncation = this.result.details?.truncation;
@@ -526,7 +537,11 @@ export class ToolExecutionComponent extends Container {
 						.map((line: string) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line))))
 						.join("\n");
 				if (remaining > 0) {
-					text += theme.fg("toolOutput", `\n... (${remaining} more lines, ${totalLines} total)`);
+					const expandKey = getEditorKeybindings().getKeys("expandTools")[0]!;
+					text +=
+						theme.fg("muted", `\n... (${remaining} more lines, ${totalLines} total, `) +
+						theme.fg("dim", expandKey) +
+						theme.fg("muted", " to expand)");
 				}
 			}
 		} else if (this.toolName === "edit") {
@@ -584,7 +599,11 @@ export class ToolExecutionComponent extends Container {
 
 					text += `\n\n${displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n")}`;
 					if (remaining > 0) {
-						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
+						const expandKey = getEditorKeybindings().getKeys("expandTools")[0]!;
+						text +=
+							theme.fg("muted", `\n... (${remaining} more lines, `) +
+							theme.fg("dim", expandKey) +
+							theme.fg("muted", " to expand)");
 					}
 				}
 
@@ -625,7 +644,11 @@ export class ToolExecutionComponent extends Container {
 
 					text += `\n\n${displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n")}`;
 					if (remaining > 0) {
-						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
+						const expandKey = getEditorKeybindings().getKeys("expandTools")[0]!;
+						text +=
+							theme.fg("muted", `\n... (${remaining} more lines, `) +
+							theme.fg("dim", expandKey) +
+							theme.fg("muted", " to expand)");
 					}
 				}
 
@@ -670,7 +693,11 @@ export class ToolExecutionComponent extends Container {
 
 					text += `\n\n${displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n")}`;
 					if (remaining > 0) {
-						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
+						const expandKey = getEditorKeybindings().getKeys("expandTools")[0]!;
+						text +=
+							theme.fg("muted", `\n... (${remaining} more lines, `) +
+							theme.fg("dim", expandKey) +
+							theme.fg("muted", " to expand)");
 					}
 				}
 

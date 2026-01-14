@@ -1,4 +1,4 @@
-import { Box, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { Box, getEditorKeybindings, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import type { CompactionSummaryMessage } from "../../../core/messages.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 
@@ -42,8 +42,15 @@ export class CompactionSummaryMessageComponent extends Box {
 				}),
 			);
 		} else {
+			const expandKey = getEditorKeybindings().getKeys("expandTools")[0]!;
 			this.addChild(
-				new Text(theme.fg("customMessageText", `Compacted from ${tokenStr} tokens (ctrl+o to expand)`), 0, 0),
+				new Text(
+					theme.fg("customMessageText", `Compacted from ${tokenStr} tokens (`) +
+						theme.fg("dim", expandKey) +
+						theme.fg("customMessageText", " to expand)"),
+					0,
+					0,
+				),
 			);
 		}
 	}

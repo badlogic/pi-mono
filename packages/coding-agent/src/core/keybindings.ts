@@ -111,9 +111,10 @@ export class KeybindingsManager {
 		const manager = new KeybindingsManager(config);
 
 		// Set up editor keybindings globally
+		// Include both editor actions and expandTools (shared between app and editor)
 		const editorConfig: EditorKeybindingsConfig = {};
 		for (const [action, keys] of Object.entries(config)) {
-			if (!isAppAction(action)) {
+			if (!isAppAction(action) || action === "expandTools") {
 				editorConfig[action as EditorAction] = keys;
 			}
 		}

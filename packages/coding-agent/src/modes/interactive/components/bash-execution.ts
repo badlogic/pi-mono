@@ -2,7 +2,7 @@
  * Component for displaying bash command execution with streaming output.
  */
 
-import { Container, Loader, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
+import { Container, getEditorKeybindings, Loader, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
 import {
 	DEFAULT_MAX_BYTES,
@@ -166,10 +166,15 @@ export class BashExecutionComponent extends Container {
 
 			// Show how many lines are hidden (collapsed preview)
 			if (hiddenLineCount > 0) {
+				const expandKey = getEditorKeybindings().getKeys("expandTools")[0]!;
 				if (this.expanded) {
-					statusParts.push(theme.fg("dim", "(ctrl+o to collapse)"));
+					statusParts.push(`(${theme.fg("dim", expandKey)}${theme.fg("muted", " to collapse")})`);
 				} else {
-					statusParts.push(theme.fg("dim", `... ${hiddenLineCount} more lines (ctrl+o to expand)`));
+					statusParts.push(
+						theme.fg("muted", `... ${hiddenLineCount} more lines (`) +
+							theme.fg("dim", expandKey) +
+							theme.fg("muted", " to expand)"),
+					);
 				}
 			}
 

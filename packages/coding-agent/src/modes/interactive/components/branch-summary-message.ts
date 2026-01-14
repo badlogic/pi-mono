@@ -1,4 +1,4 @@
-import { Box, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { Box, getEditorKeybindings, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import type { BranchSummaryMessage } from "../../../core/messages.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 
@@ -41,7 +41,16 @@ export class BranchSummaryMessageComponent extends Box {
 				}),
 			);
 		} else {
-			this.addChild(new Text(theme.fg("customMessageText", "Branch summary (ctrl+o to expand)"), 0, 0));
+			const expandKey = getEditorKeybindings().getKeys("expandTools")[0]!;
+			this.addChild(
+				new Text(
+					theme.fg("customMessageText", "Branch summary (") +
+						theme.fg("dim", expandKey) +
+						theme.fg("customMessageText", " to expand)"),
+					0,
+					0,
+				),
+			);
 		}
 	}
 }
