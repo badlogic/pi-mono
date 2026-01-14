@@ -1,6 +1,7 @@
 import { CancellableLoader, Container, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import type { Theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+import { keyHint } from "./keybinding-hints.js";
 
 /** Loader wrapped with borders for extension UI */
 export class BorderedLoader extends Container {
@@ -18,7 +19,7 @@ export class BorderedLoader extends Container {
 		);
 		this.addChild(this.loader);
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("muted", "esc cancel"), 1, 0));
+		this.addChild(new Text(keyHint("selectCancel", "cancel"), 1, 0));
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder(borderColor));
 	}

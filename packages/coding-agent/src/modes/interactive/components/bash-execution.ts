@@ -2,7 +2,7 @@
  * Component for displaying bash command execution with streaming output.
  */
 
-import { Container, getEditorKeybindings, Loader, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
+import { Container, Loader, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
 import {
 	DEFAULT_MAX_BYTES,
@@ -12,6 +12,7 @@ import {
 } from "../../../core/tools/truncate.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+import { editorKey, keyHint } from "./keybinding-hints.js";
 import { truncateToVisualLines } from "./visual-truncate.js";
 
 // Preview line limit when not expanded (matches tool execution behavior)
@@ -57,7 +58,7 @@ export class BashExecutionComponent extends Container {
 			ui,
 			(spinner) => theme.fg(colorKey, spinner),
 			(text) => theme.fg("muted", text),
-			"Running... (esc to cancel)",
+			`Running... (${editorKey("selectCancel")} to cancel)`, // Plain text for loader
 		);
 		this.contentContainer.addChild(this.loader);
 
@@ -166,14 +167,11 @@ export class BashExecutionComponent extends Container {
 
 			// Show how many lines are hidden (collapsed preview)
 			if (hiddenLineCount > 0) {
-				const expandKey = getEditorKeybindings().getKeys("expandTools")[0]!;
 				if (this.expanded) {
-					statusParts.push(`(${theme.fg("dim", expandKey)}${theme.fg("muted", " to collapse")})`);
+					statusParts.push(`(${keyHint("expandTools", "to collapse")})`);
 				} else {
 					statusParts.push(
-						theme.fg("muted", `... ${hiddenLineCount} more lines (`) +
-							theme.fg("dim", expandKey) +
-							theme.fg("muted", " to expand)"),
+						`${theme.fg("muted", `... ${hiddenLineCount} more lines`)} (${keyHint("expandTools", "to expand")})`,
 					);
 				}
 			}
