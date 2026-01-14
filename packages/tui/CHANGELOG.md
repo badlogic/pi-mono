@@ -1,6 +1,16 @@
 # Changelog
 
 ## [Unreleased]
+### Added
+
+- Added hardware cursor positioning support for input fields and editor components
+- Added input queuing during terminal cell size detection to prevent input loss
+
+### Fixed
+
+- Fixed cursor positioning calculations to handle multi-byte Unicode characters correctly
+- Fixed race condition between cell size detection and component rendering
+- Fixed cursor visibility when autocomplete is active in editor
 
 ## [0.45.7] - 2026-01-13
 

@@ -315,6 +315,28 @@ export class Editor implements Component {
 		// No cached state to invalidate currently
 	}
 
+	getCursorPosition(width: number): { row: number; col: number } | null {
+		// Don't show hardware cursor if autocomplete is active
+		if (this.isAutocompleting) {
+			return null;
+		}
+
+		const layoutLines = this.layoutText(width);
+
+		// Find the layout line with the cursor
+		for (let i = 0; i < layoutLines.length; i++) {
+			const layoutLine = layoutLines[i];
+			if (layoutLine?.hasCursor && layoutLine.cursorPos !== undefined) {
+				// Row: +1 for top border
+				// Col: visible width of text before cursor position
+				const before = layoutLine.text.slice(0, layoutLine.cursorPos);
+				return { row: i + 1, col: visibleWidth(before) };
+			}
+		}
+
+		return null;
+	}
+
 	render(width: number): string[] {
 		// Store width for cursor navigation
 		this.lastWidth = width;

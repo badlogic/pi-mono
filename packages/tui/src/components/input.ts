@@ -282,6 +282,42 @@ export class Input implements Component {
 		// No cached state to invalidate currently
 	}
 
+	getCursorPosition(width: number): { row: number; col: number } | null {
+		const prompt = "> ";
+		const availableWidth = width - prompt.length;
+
+		if (availableWidth <= 0) {
+			return null;
+		}
+
+		// Calculate visible text and cursor position within it (same as render())
+		let visibleText = "";
+		let cursorDisplay = this.cursor;
+
+		if (this.value.length < availableWidth) {
+			visibleText = this.value;
+		} else {
+			const scrollWidth = this.cursor === this.value.length ? availableWidth - 1 : availableWidth;
+			const halfWidth = Math.floor(scrollWidth / 2);
+
+			if (this.cursor < halfWidth) {
+				visibleText = this.value.slice(0, scrollWidth);
+				cursorDisplay = this.cursor;
+			} else if (this.cursor > this.value.length - halfWidth) {
+				visibleText = this.value.slice(this.value.length - scrollWidth);
+				cursorDisplay = scrollWidth - (this.value.length - this.cursor);
+			} else {
+				const start = this.cursor - halfWidth;
+				visibleText = this.value.slice(start, start + scrollWidth);
+				cursorDisplay = halfWidth;
+			}
+		}
+
+		// Calculate visual column using visible width of text before cursor
+		const beforeCursor = visibleText.slice(0, cursorDisplay);
+		return { row: 0, col: prompt.length + visibleWidth(beforeCursor) };
+	}
+
 	render(width: number): string[] {
 		// Calculate visible window
 		const prompt = "> ";

@@ -33,6 +33,11 @@ export interface Component {
 	wantsKeyRelease?: boolean;
 
 	/**
+	 * Optional cursor position within the rendered output (0-based row/col).
+	 */
+	getCursorPosition?(width: number): { row: number; col: number } | null;
+
+	/**
 	 * Invalidate any cached rendering state.
 	 * Called when theme changes or when component needs to re-render from scratch.
 	 */
@@ -137,6 +142,8 @@ export interface OverlayHandle {
  */
 export class Container implements Component {
 	children: Component[] = [];
+	private lastRenderLineCounts: number[] | null = null;
+	private lastRenderWidth: number | null = null;
 
 	addChild(component: Component): void {
 		this.children.push(component);
@@ -157,13 +164,35 @@ export class Container implements Component {
 		for (const child of this.children) {
 			child.invalidate?.();
 		}
+		this.lastRenderLineCounts = null;
+		this.lastRenderWidth = null;
+	}
+
+	getCursorPosition(width: number): { row: number; col: number } | null {
+		const lineCounts = this.lastRenderWidth === width ? this.lastRenderLineCounts : null;
+		let rowOffset = 0;
+		for (let index = 0; index < this.children.length; index++) {
+			const child = this.children[index];
+			const childCursor = child.getCursorPosition?.(width) ?? null;
+			if (childCursor) {
+				return { row: rowOffset + childCursor.row, col: childCursor.col };
+			}
+			const lineCount = lineCounts?.[index];
+			rowOffset += lineCount ?? child.render(width).length;
+		}
+		return null;
 	}
 
 	render(width: number): string[] {
 		const lines: string[] = [];
+		const lineCounts: number[] = [];
 		for (const child of this.children) {
-			lines.push(...child.render(width));
+			const childLines = child.render(width);
+			lines.push(...childLines);
+			lineCounts.push(childLines.length);
 		}
+		this.lastRenderLineCounts = lineCounts;
+		this.lastRenderWidth = width;
 		return lines;
 	}
 }
@@ -180,7 +209,8 @@ export class TUI extends Container {
 	/** Global callback for debug key (Shift+Ctrl+D). Called before input is forwarded to focused component. */
 	public onDebug?: () => void;
 	private renderRequested = false;
-	private cursorRow = 0; // Track where cursor is (0-indexed, relative to our first line)
+	private cursorRow = 0; // Track end-of-render cursor row (0-indexed)
+	private hardwareCursorRow = 0;
 	private inputBuffer = ""; // Buffer for parsing terminal responses
 	private cellSizeQueryPending = false;
 
@@ -191,6 +221,8 @@ export class TUI extends Container {
 		preFocus: Component | null;
 		hidden: boolean;
 	}[] = [];
+	private inputQueue: string[] = []; // Queue input during cell size query to avoid interleaving
+	private previousCursor: { row: number; col: number } | null = null;
 
 	constructor(terminal: Terminal) {
 		super();
@@ -317,7 +349,7 @@ export class TUI extends Container {
 		// Move cursor to the end of the content to prevent overwriting/artifacts on exit
 		if (this.previousLines.length > 0) {
 			const targetRow = this.previousLines.length; // Line after the last content
-			const lineDiff = targetRow - this.cursorRow;
+			const lineDiff = targetRow - this.hardwareCursorRow;
 			if (lineDiff > 0) {
 				this.terminal.write(`\x1b[${lineDiff}B`);
 			} else if (lineDiff < 0) {
@@ -335,6 +367,8 @@ export class TUI extends Container {
 			this.previousLines = [];
 			this.previousWidth = -1; // -1 triggers widthChanged, forcing a full clear
 			this.cursorRow = 0;
+			this.hardwareCursorRow = 0;
+			this.previousCursor = null;
 		}
 		if (this.renderRequested) return;
 		this.renderRequested = true;
@@ -344,15 +378,67 @@ export class TUI extends Container {
 		});
 	}
 
+	private areCursorsEqual(
+		left: { row: number; col: number } | null,
+		right: { row: number; col: number } | null,
+	): boolean {
+		if (!left && !right) return true;
+		if (!left || !right) return false;
+		return left.row === right.row && left.col === right.col;
+	}
+
+	private updateHardwareCursor(
+		width: number,
+		totalLines: number,
+		cursor: { row: number; col: number } | null,
+		currentCursorRow: number,
+	): void {
+		if (!cursor || totalLines <= 0) {
+			this.terminal.hideCursor();
+			this.hardwareCursorRow = Math.max(0, currentCursorRow);
+			return;
+		}
+
+		const targetRow = Math.max(0, Math.min(cursor.row, totalLines - 1));
+		const targetCol = Math.max(0, Math.min(cursor.col, width - 1));
+		const rowDelta = targetRow - currentCursorRow;
+
+		let buffer = "";
+		if (rowDelta > 0) {
+			buffer += `\x1b[${rowDelta}B`;
+		} else if (rowDelta < 0) {
+			buffer += `\x1b[${-rowDelta}A`;
+		}
+		buffer += `\r\x1b[${targetCol + 1}G`;
+		this.terminal.write(buffer);
+		this.hardwareCursorRow = targetRow;
+		this.terminal.showCursor();
+	}
+
 	private handleInput(data: string): void {
 		// If we're waiting for cell size response, buffer input and parse
 		if (this.cellSizeQueryPending) {
 			this.inputBuffer += data;
 			const filtered = this.parseCellSizeResponse();
 			if (filtered.length === 0) return;
-			data = filtered;
+			if (filtered.length > 0) {
+				this.inputQueue.push(filtered);
+			}
+			// Process queued input after cell size response completes
+			if (!this.cellSizeQueryPending && this.inputQueue.length > 0) {
+				const queued = this.inputQueue;
+				this.inputQueue = [];
+				for (const item of queued) {
+					this.processInput(item);
+				}
+			}
+			return;
 		}
 
+		this.processInput(data);
+	}
+
+	private processInput(data: string): void {
 		// Global debug key handler (Shift+Ctrl+D)
 		if (matchesKey(data, "shift+ctrl+d") && this.onDebug) {
 			this.onDebug();
@@ -376,7 +462,6 @@ export class TUI extends Container {
 		// Pass input to focused component (including Ctrl+C)
 		// The focused component can decide how to handle Ctrl+C
 		if (this.focusedComponent?.handleInput) {
-			// Filter out key release events unless component opts in
 			if (isKeyRelease(data) && !this.focusedComponent.wantsKeyRelease) {
 				return;
 			}
@@ -395,16 +480,17 @@ export class TUI extends Container {
 			const heightPx = parseInt(match[1], 10);
 			const widthPx = parseInt(match[2], 10);
 
+			// Remove the response from buffer first
+			this.inputBuffer = this.inputBuffer.replace(responsePattern, "");
+			this.cellSizeQueryPending = false;
+
 			if (heightPx > 0 && widthPx > 0) {
 				setCellDimensions({ widthPx, heightPx });
 				// Invalidate all components so images re-render with correct dimensions
+				// This is safe now because cellSizeQueryPending=false prevents race with render
 				this.invalidate();
 				this.requestRender();
 			}
-
-			// Remove the response from buffer
-			this.inputBuffer = this.inputBuffer.replace(responsePattern, "");
-			this.cellSizeQueryPending = false;
 		}
 
 		// Check if we have a partial cell size response starting (wait for more data)
@@ -701,8 +787,12 @@ export class TUI extends Container {
 	}
 
 	private doRender(): void {
+		// Capture terminal dimensions at start to ensure consistency throughout render
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
+		// Snapshot cursor position at start of render for consistent viewport calculations
+		const currentRenderCursorRow = this.cursorRow;
+		const currentHardwareCursorRow = this.hardwareCursorRow;
 
 		// Render all components to get new lines
 		let newLines = this.render(width);
@@ -713,6 +803,8 @@ export class TUI extends Container {
 		}
 
 		newLines = this.applyLineResets(newLines);
+
+		const cursorInfo = this.getCursorPosition(width);
 
 		// Width changed - need full re-render
 		const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;
@@ -726,8 +818,10 @@ export class TUI extends Container {
 			}
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
-			// After rendering N lines, cursor is at end of last line (clamp to 0 for empty)
-			this.cursorRow = Math.max(0, newLines.length - 1);
+			// After rendering N lines, cursor is at end of last line (line N-1)
+			this.cursorRow = newLines.length - 1;
+			this.updateHardwareCursor(width, newLines.length, cursorInfo, this.cursorRow);
+			this.previousCursor = cursorInfo;
 			this.previousLines = newLines;
 			this.previousWidth = width;
 			return;
@@ -743,7 +837,9 @@ export class TUI extends Container {
 			}
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
-			this.cursorRow = Math.max(0, newLines.length - 1);
+			this.cursorRow = newLines.length - 1;
+			this.updateHardwareCursor(width, newLines.length, cursorInfo, this.cursorRow);
+			this.previousCursor = cursorInfo;
 			this.previousLines = newLines;
 			this.previousWidth = width;
 			return;
@@ -767,6 +863,10 @@ export class TUI extends Container {
 
 		// No changes
 		if (firstChanged === -1) {
+			if (!this.areCursorsEqual(cursorInfo, this.previousCursor)) {
+				this.updateHardwareCursor(width, newLines.length, cursorInfo, currentHardwareCursorRow);
+				this.previousCursor = cursorInfo;
+			}
 			return;
 		}
 
@@ -774,9 +874,9 @@ export class TUI extends Container {
 		if (firstChanged >= newLines.length) {
 			if (this.previousLines.length > newLines.length) {
 				let buffer = "\x1b[?2026h";
-				// Move to end of new content (clamp to 0 for empty content)
-				const targetRow = Math.max(0, newLines.length - 1);
-				const lineDiff = targetRow - this.cursorRow;
+				// Move to end of new content
+				const targetRow = newLines.length - 1;
+				const lineDiff = targetRow - currentHardwareCursorRow;
 				if (lineDiff > 0) buffer += `\x1b[${lineDiff}B`;
 				else if (lineDiff < 0) buffer += `\x1b[${-lineDiff}A`;
 				buffer += "\r";
@@ -788,7 +888,8 @@ export class TUI extends Container {
 				buffer += `\x1b[${extraLines}A`;
 				buffer += "\x1b[?2026l";
 				this.terminal.write(buffer);
-				this.cursorRow = targetRow;
+				this.cursorRow = newLines.length - 1;
+				this.hardwareCursorRow = this.cursorRow;
 			}
 			this.previousLines = newLines;
 			this.previousWidth = width;
@@ -796,10 +897,10 @@ export class TUI extends Container {
 		}
 
 		// Check if firstChanged is outside the viewport
-		// cursorRow is the line where cursor is (0-indexed)
-		// Viewport shows lines from (cursorRow - height + 1) to cursorRow
+		// Use snapshotted cursor position for consistent viewport calculation
+		// Viewport shows lines from (currentRenderCursorRow - height + 1) to currentRenderCursorRow
 		// If firstChanged < viewportTop, we need full re-render
-		const viewportTop = this.cursorRow - height + 1;
+		const viewportTop = currentRenderCursorRow - height + 1;
 		if (firstChanged < viewportTop) {
 			// First change is above viewport - need full re-render
 			let buffer = "\x1b[?2026h"; // Begin synchronized output
@@ -810,7 +911,9 @@ export class TUI extends Container {
 			}
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
-			this.cursorRow = Math.max(0, newLines.length - 1);
+			this.cursorRow = newLines.length - 1;
+			this.updateHardwareCursor(width, newLines.length, cursorInfo, this.cursorRow);
+			this.previousCursor = cursorInfo;
 			this.previousLines = newLines;
 			this.previousWidth = width;
 			return;
@@ -820,8 +923,8 @@ export class TUI extends Container {
 		// Build buffer with all updates wrapped in synchronized output
 		let buffer = "\x1b[?2026h"; // Begin synchronized output
 
-		// Move cursor to first changed line
-		const lineDiff = firstChanged - this.cursorRow;
+		// Move cursor to first changed line using snapshotted position
+		const lineDiff = firstChanged - currentHardwareCursorRow;
 		if (lineDiff > 0) {
 			buffer += `\x1b[${lineDiff}B`; // Move down
 		} else if (lineDiff < 0) {
@@ -850,8 +953,12 @@ export class TUI extends Container {
 					...newLines.map((l, idx) => `[${idx}] (w=${visibleWidth(l)}) ${l}`),
 					"",
 				].join("\n");
-				fs.mkdirSync(path.dirname(crashLogPath), { recursive: true });
-				fs.writeFileSync(crashLogPath, crashData);
+				try {
+					fs.mkdirSync(path.dirname(crashLogPath), { recursive: true });
+					fs.writeFileSync(crashLogPath, crashData);
+				} catch {
+					// Ignore - crash log is best-effort
+				}
 
 				// Clean up terminal state before throwing
 				this.stop();
@@ -895,6 +1002,8 @@ export class TUI extends Container {
 
 		// Track cursor position for next render
 		this.cursorRow = finalCursorRow;
+		this.updateHardwareCursor(width, newLines.length, cursorInfo, this.cursorRow);
+		this.previousCursor = cursorInfo;
 
 		this.previousLines = newLines;
 		this.previousWidth = width;
