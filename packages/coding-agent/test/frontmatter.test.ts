@@ -4,18 +4,31 @@ import { parseFrontmatter, stripFrontmatter } from "../src/utils/frontmatter.js"
 describe("parseFrontmatter", () => {
 	it("parses keys, strips quotes, and returns body", () => {
 		const input = "---\nname: \"skill-name\"\ndescription: 'A desc'\nfoo-bar: value\n---\n\nBody text";
-		const { frontmatter, body, allKeys } = parseFrontmatter<Record<string, string>>(input);
+		const { frontmatter, body } = parseFrontmatter<Record<string, string>>(input);
 		expect(frontmatter.name).toBe("skill-name");
 		expect(frontmatter.description).toBe("A desc");
 		expect(frontmatter["foo-bar"]).toBe("value");
 		expect(body).toBe("Body text");
-		expect(allKeys).toEqual(["name", "description", "foo-bar"]);
 	});
 
 	it("normalizes newlines and handles CRLF", () => {
 		const input = "---\r\nname: test\r\n---\r\nLine one\r\nLine two";
 		const { body } = parseFrontmatter<Record<string, string>>(input);
 		expect(body).toBe("Line one\nLine two");
+	});
+
+	it("returns empty data on YAML parse errors", () => {
+		const input = "---\nfoo: [bar\n---\nBody";
+		const { frontmatter, body } = parseFrontmatter<Record<string, string>>(input);
+		expect(frontmatter).toEqual({});
+		expect(body).toBe("Body");
+	});
+
+	it("parses | multiline yaml syntax", () => {
+		const input = "---\ndescription: |\n  Line one\n  Line two\n---\n\nBody";
+		const { frontmatter, body } = parseFrontmatter<Record<string, string>>(input);
+		expect(frontmatter.description).toBe("Line one\nLine two\n");
+		expect(body).toBe("Body");
 	});
 
 	it("returns original content when frontmatter is missing or unterminated", () => {
@@ -27,7 +40,6 @@ describe("parseFrontmatter", () => {
 		expect(resultMissingEnd.body).toBe(
 			"---\nname: test\nBody without terminator".replace(/\r\n/g, "\n").replace(/\r/g, "\n"),
 		);
-		expect(resultMissingEnd.allKeys).toHaveLength(0);
 	});
 });
 
