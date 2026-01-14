@@ -486,7 +486,16 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			// =================================================================
 
 			case "bash": {
-				const result = await session.executeBash(command.command);
+				// Validate and sanitize the bash command to prevent injection attacks
+				if (!command.command || typeof command.command !== "string") {
+					return error(id, "bash", "Invalid bash command: command must be a non-empty string");
+				}
+				// Ensure command is not empty after trimming
+				const trimmedCommand = command.command.trim();
+				if (trimmedCommand.length === 0) {
+					return error(id, "bash", "Invalid bash command: command cannot be empty");
+				}
+				const result = await session.executeBash(trimmedCommand);
 				return success(id, "bash", result);
 			}
 
