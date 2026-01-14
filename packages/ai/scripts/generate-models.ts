@@ -567,29 +567,36 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 		}
 
 		// Process MiniMax models
-		if (data.minimax?.models) {
-			for (const [modelId, model] of Object.entries(data.minimax.models)) {
-				const m = model as ModelsDevModel;
-				if (m.tool_call !== true) continue;
+		const minimaxVariants = [
+			{ key: "minimax", provider: "minimax", baseUrl: "https://api.minimax.io/anthropic" },
+			{ key: "minimax-cn", provider: "minimax-cn", baseUrl: "https://api.minimaxi.com/anthropic" },
+		] as const;
 
-				models.push({
-					id: modelId,
-					name: m.name || modelId,
-					api: "anthropic-messages",
-					provider: "minimax",
-					// MiniMax's Anthropic-compatible API - SDK appends /v1/messages
-					baseUrl: "https://api.minimax.io/anthropic",
-					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
-					cost: {
-						input: m.cost?.input || 0,
-						output: m.cost?.output || 0,
-						cacheRead: m.cost?.cache_read || 0,
-						cacheWrite: m.cost?.cache_write || 0,
-					},
-					contextWindow: m.limit?.context || 4096,
-					maxTokens: m.limit?.output || 4096,
-				});
+		for (const { key, provider, baseUrl } of minimaxVariants) {
+			if (data[key]?.models) {
+				for (const [modelId, model] of Object.entries(data[key].models)) {
+					const m = model as ModelsDevModel;
+					if (m.tool_call !== true) continue;
+
+					models.push({
+						id: modelId,
+						name: m.name || modelId,
+						api: "anthropic-messages",
+						provider,
+						// MiniMax's Anthropic-compatible API - SDK appends /v1/messages
+						baseUrl,
+						reasoning: m.reasoning === true,
+						input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+						cost: {
+							input: m.cost?.input || 0,
+							output: m.cost?.output || 0,
+							cacheRead: m.cost?.cache_read || 0,
+							cacheWrite: m.cost?.cache_write || 0,
+						},
+						contextWindow: m.limit?.context || 4096,
+						maxTokens: m.limit?.output || 4096,
+					});
+				}
 			}
 		}
 
