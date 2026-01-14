@@ -1,4 +1,4 @@
-import { getVips } from "./vips.js";
+import photon from "@silvia-odwyer/photon-node";
 
 /**
  * Convert image to PNG format for terminal display.
@@ -13,21 +13,17 @@ export async function convertToPng(
 		return { data: base64Data, mimeType };
 	}
 
-	const vips = await getVips();
-	if (!vips) {
-		// wasm-vips not available
-		return null;
-	}
-
 	try {
-		const buffer = Buffer.from(base64Data, "base64");
-		const img = vips.Image.newFromBuffer(buffer);
-		const pngBuffer = img.writeToBuffer(".png");
-		img.delete();
-		return {
-			data: Buffer.from(pngBuffer).toString("base64"),
-			mimeType: "image/png",
-		};
+		const image = photon.PhotonImage.new_from_byteslice(new Uint8Array(Buffer.from(base64Data, "base64")));
+		try {
+			const pngBuffer = image.get_bytes();
+			return {
+				data: Buffer.from(pngBuffer).toString("base64"),
+				mimeType: "image/png",
+			};
+		} finally {
+			image.free();
+		}
 	} catch {
 		// Conversion failed
 		return null;
