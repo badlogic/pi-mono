@@ -2,9 +2,9 @@ import * as os from "node:os";
 import {
 	type Component,
 	Container,
-	fuzzyFilter,
 	getEditorKeybindings,
 	Input,
+	matchesKey,
 	Spacer,
 	truncateToWidth,
 	visibleWidth,
@@ -12,6 +12,7 @@ import {
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+import { filterAndSortSessions, type SortMode } from "./session-selector-search.js";
 
 type SessionScope = "current" | "all";
 
@@ -42,15 +43,21 @@ function formatSessionDate(date: Date): string {
 
 class SessionSelectorHeader implements Component {
 	private scope: SessionScope;
+	private sortMode: SortMode;
 	private loading = false;
 	private loadProgress: { loaded: number; total: number } | null = null;
 
-	constructor(scope: SessionScope) {
+	constructor(scope: SessionScope, sortMode: SortMode) {
 		this.scope = scope;
+		this.sortMode = sortMode;
 	}
 
 	setScope(scope: SessionScope): void {
 		this.scope = scope;
+	}
+
+	setSortMode(sortMode: SortMode): void {
+		this.sortMode = sortMode;
 	}
 
 	setLoading(loading: boolean): void {
@@ -69,6 +76,10 @@ class SessionSelectorHeader implements Component {
 	render(width: number): string[] {
 		const title = this.scope === "current" ? "Resume Session (Current Folder)" : "Resume Session (All)";
 		const leftText = theme.bold(title);
+
+		const sortLabel = this.sortMode === "recent" ? "Recent" : "Fuzzy";
+		const sortText = theme.fg("muted", "Sort: ") + theme.fg("accent", sortLabel);
+
 		let scopeText: string;
 		if (this.loading) {
 			const progressText = this.loadProgress ? `${this.loadProgress.loaded}/${this.loadProgress.total}` : "...";
@@ -79,11 +90,12 @@ class SessionSelectorHeader implements Component {
 					? `${theme.fg("accent", "◉ Current Folder")}${theme.fg("muted", " | ○ All")}`
 					: `${theme.fg("muted", "○ Current Folder | ")}${theme.fg("accent", "◉ All")}`;
 		}
-		const rightText = truncateToWidth(scopeText, width, "");
+
+		const rightText = truncateToWidth(`${scopeText}  ${sortText}`, width, "");
 		const availableLeft = Math.max(0, width - visibleWidth(rightText) - 1);
 		const left = truncateToWidth(leftText, availableLeft, "");
 		const spacing = Math.max(0, width - visibleWidth(left) - visibleWidth(rightText));
-		const hint = theme.fg("muted", "Tab to toggle scope");
+		const hint = theme.fg("muted", 'Tab: scope · Ctrl+R: sort · re:<pattern> for regex · "phrase" for exact phrase');
 		return [`${left}${" ".repeat(spacing)}${rightText}`, hint];
 	}
 }
@@ -97,17 +109,20 @@ class SessionList implements Component {
 	private selectedIndex: number = 0;
 	private searchInput: Input;
 	private showCwd = false;
+	private sortMode: SortMode = "relevance";
 	public onSelect?: (sessionPath: string) => void;
 	public onCancel?: () => void;
 	public onExit: () => void = () => {};
 	public onToggleScope?: () => void;
+	public onToggleSort?: () => void;
 	private maxVisible: number = 5; // Max sessions visible (each session is 3 lines: msg + metadata + blank)
 
-	constructor(sessions: SessionInfo[], showCwd: boolean) {
+	constructor(sessions: SessionInfo[], showCwd: boolean, sortMode: SortMode) {
 		this.allSessions = sessions;
 		this.filteredSessions = sessions;
 		this.searchInput = new Input();
 		this.showCwd = showCwd;
+		this.sortMode = sortMode;
 
 		// Handle Enter in search input - select current item
 		this.searchInput.onSubmit = () => {
@@ -120,6 +135,11 @@ class SessionList implements Component {
 		};
 	}
 
+	setSortMode(sortMode: SortMode): void {
+		this.sortMode = sortMode;
+		this.filterSessions(this.searchInput.getValue());
+	}
+
 	setSessions(sessions: SessionInfo[], showCwd: boolean): void {
 		this.allSessions = sessions;
 		this.showCwd = showCwd;
@@ -127,11 +147,7 @@ class SessionList implements Component {
 	}
 
 	private filterSessions(query: string): void {
-		this.filteredSessions = fuzzyFilter(
-			this.allSessions,
-			query,
-			(session) => `${session.id} ${session.name ?? ""} ${session.allMessagesText} ${session.cwd}`,
-		);
+		this.filteredSessions = filterAndSortSessions(this.allSessions, query, this.sortMode);
 		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredSessions.length - 1));
 	}
 
@@ -219,6 +235,12 @@ class SessionList implements Component {
 			}
 			return;
 		}
+
+		if (matchesKey(keyData, "ctrl+r")) {
+			this.onToggleSort?.();
+			return;
+		}
+
 		// Up arrow
 		if (kb.matches(keyData, "selectUp")) {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
@@ -265,6 +287,7 @@ export class SessionSelectorComponent extends Container {
 	private sessionList: SessionList;
 	private header: SessionSelectorHeader;
 	private scope: SessionScope = "current";
+	private sortMode: SortMode = "relevance";
 	private currentSessions: SessionInfo[] | null = null;
 	private allSessions: SessionInfo[] | null = null;
 	private currentSessionsLoader: SessionsLoader;
@@ -285,7 +308,7 @@ export class SessionSelectorComponent extends Container {
 		this.allSessionsLoader = allSessionsLoader;
 		this.onCancel = onCancel;
 		this.requestRender = requestRender;
-		this.header = new SessionSelectorHeader(this.scope);
+		this.header = new SessionSelectorHeader(this.scope, this.sortMode);
 
 		// Add header
 		this.addChild(new Spacer(1));
@@ -295,11 +318,12 @@ export class SessionSelectorComponent extends Container {
 		this.addChild(new Spacer(1));
 
 		// Create session list (starts empty, will be populated after load)
-		this.sessionList = new SessionList([], false);
+		this.sessionList = new SessionList([], false, this.sortMode);
 		this.sessionList.onSelect = onSelect;
 		this.sessionList.onCancel = onCancel;
 		this.sessionList.onExit = onExit;
 		this.sessionList.onToggleScope = () => this.toggleScope();
+		this.sessionList.onToggleSort = () => this.toggleSortMode();
 
 		this.addChild(this.sessionList);
 
@@ -323,6 +347,13 @@ export class SessionSelectorComponent extends Container {
 			this.sessionList.setSessions(sessions, false);
 			this.requestRender();
 		});
+	}
+
+	private toggleSortMode(): void {
+		this.sortMode = this.sortMode === "recent" ? "relevance" : "recent";
+		this.header.setSortMode(this.sortMode);
+		this.sessionList.setSortMode(this.sortMode);
+		this.requestRender();
 	}
 
 	private toggleScope(): void {
