@@ -3357,7 +3357,10 @@ export class InteractiveMode {
 			const content = fs.readFileSync(skillPath, "utf-8");
 			// Strip YAML frontmatter if present
 			const body = content.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
-			const message = args ? `${body}\n\n---\n\nUser: ${args}` : body;
+			const skillDir = path.dirname(skillPath);
+			const header = `Skill location: ${skillPath}\nReferences are relative to ${skillDir}.`;
+			const skillMessage = `${header}\n\n${body}`;
+			const message = args ? `${skillMessage}\n\n---\n\nUser: ${args}` : skillMessage;
 			await this.session.prompt(message);
 		} catch (err) {
 			this.showError(`Failed to load skill: ${err instanceof Error ? err.message : String(err)}`);
