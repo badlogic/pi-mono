@@ -5,6 +5,9 @@
 ### Fixed
 
 - Show `bun install` instead of `npm install` in update notification when running under Bun
+### Added
+
+- Edit tool now uses fuzzy matching as fallback when exact match fails, tolerating trailing whitespace, smart quotes, Unicode dashes, and special spaces
 
 ## [0.45.7] - 2026-01-13
 
