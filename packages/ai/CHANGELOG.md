@@ -2,10 +2,6 @@
 
 ## [Unreleased]
 
-### Added
-
-- Added `gpt-5.2-codex` to OpenAI provider model list.
-
 ### Fixed
 
 - Fixed signature support for non-Anthropic models in Amazon Bedrock provider ([#727](https://github.com/badlogic/pi-mono/pull/727) by [@unexge](https://github.com/unexge))
