@@ -60,6 +60,7 @@ import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
+import { stripFrontmatter } from "../../utils/frontmatter.js";
 
 import { ensureTool } from "../../utils/tools-manager.js";
 import { ArminComponent } from "./components/armin.js";
@@ -3356,7 +3357,7 @@ export class InteractiveMode {
 		try {
 			const content = fs.readFileSync(skillPath, "utf-8");
 			// Strip YAML frontmatter if present
-			const body = content.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
+			const body = stripFrontmatter(content).trim();
 			const message = args ? `${body}\n\n---\n\nUser: ${args}` : body;
 			await this.session.prompt(message);
 		} catch (err) {
