@@ -49,8 +49,8 @@ describe("stripFrontmatter", () => {
 		expect(stripFrontmatter(input)).toBe("Body");
 	});
 
-	it("trims when no frontmatter is present", () => {
+	it("returns body when no frontmatter present", () => {
 		const input = "\n  No frontmatter body  \n";
-		expect(stripFrontmatter(input)).toBe("No frontmatter body");
+		expect(stripFrontmatter(input)).toBe("\n  No frontmatter body  \n");
 	});
 });

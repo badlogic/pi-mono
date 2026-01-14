@@ -3356,7 +3356,7 @@ export class InteractiveMode {
 	private async handleSkillCommand(skillPath: string, args: string): Promise<void> {
 		try {
 			const content = fs.readFileSync(skillPath, "utf-8");
-			const body = stripFrontmatter(content);
+			const body = stripFrontmatter(content).trim();
 			const message = args ? `${body}\n\n---\n\nUser: ${args}` : body;
 			await this.session.prompt(message);
 		} catch (err) {
