@@ -17,9 +17,8 @@
  * 1. **Inference Profile Required**: Some models require an inference profile ARN instead of on-demand.
  * 2. **Invalid Model ID**: Model identifiers that don't exist in the current region.
  * 3. **Max Tokens Exceeded**: Model's maxTokens in our config exceeds the actual limit.
- * 4. **No Signature Support**: Model doesn't support reasoningContent.reasoningText.signature field.
- * 5. **No Reasoning in User Messages**: Model rejects reasoning content when replayed in conversation.
- * 6. **Invalid Signature Format**: Model validates signature format (Anthropic newer models).
+ * 4. **No Reasoning in User Messages**: Model rejects reasoning content when replayed in conversation.
+ * 5. **Invalid Signature Format**: Model validates signature format (Anthropic newer models).
  */
 
 import type { AssistantMessage } from "@mariozechner/pi-ai";
@@ -55,23 +54,6 @@ const INVALID_MODEL_ID = new Set([
 const MAX_TOKENS_EXCEEDED = new Set([
 	"us.meta.llama4-maverick-17b-instruct-v1:0",
 	"us.meta.llama4-scout-17b-instruct-v1:0",
-]);
-
-/**
- * Models that don't support the reasoningContent.reasoningText.signature field.
- * These fail on multi-turn conversations when thinking generates a signature.
- */
-const NO_SIGNATURE_SUPPORT = new Set([
-	"global.amazon.nova-2-lite-v1:0",
-	"minimax.minimax-m2",
-	"moonshot.kimi-k2-thinking",
-	"openai.gpt-oss-120b-1:0",
-	"openai.gpt-oss-20b-1:0",
-	"openai.gpt-oss-safeguard-120b",
-	"openai.gpt-oss-safeguard-20b",
-	"qwen.qwen3-32b-v1:0",
-	"qwen.qwen3-next-80b-a3b",
-	"qwen.qwen3-vl-235b-a22b",
 ]);
 
 /**
@@ -113,6 +95,18 @@ const NO_REASONING_IN_USER_MESSAGES = new Set([
 	// Google models
 	"google.gemma-3-27b-it",
 	"google.gemma-3-4b-it",
+	// Non-Anthropic models that don't support signatures (now handled by omitting signature)
+	// but still reject reasoning content in user messages
+	"global.amazon.nova-2-lite-v1:0",
+	"minimax.minimax-m2",
+	"moonshot.kimi-k2-thinking",
+	"openai.gpt-oss-120b-1:0",
+	"openai.gpt-oss-20b-1:0",
+	"openai.gpt-oss-safeguard-120b",
+	"openai.gpt-oss-safeguard-20b",
+	"qwen.qwen3-32b-v1:0",
+	"qwen.qwen3-next-80b-a3b",
+	"qwen.qwen3-vl-235b-a22b",
 ]);
 
 /**
@@ -143,15 +137,11 @@ function isModelUnavailable(modelId: string): boolean {
 }
 
 function failsMultiTurnWithThinking(modelId: string): boolean {
-	return NO_SIGNATURE_SUPPORT.has(modelId) || REJECTS_REASONING_ON_REPLAY.has(modelId);
+	return REJECTS_REASONING_ON_REPLAY.has(modelId);
 }
 
 function failsSyntheticSignature(modelId: string): boolean {
-	return (
-		NO_SIGNATURE_SUPPORT.has(modelId) ||
-		NO_REASONING_IN_USER_MESSAGES.has(modelId) ||
-		VALIDATES_SIGNATURE_FORMAT.has(modelId)
-	);
+	return NO_REASONING_IN_USER_MESSAGES.has(modelId) || VALIDATES_SIGNATURE_FORMAT.has(modelId);
 }
 
 // =============================================================================
