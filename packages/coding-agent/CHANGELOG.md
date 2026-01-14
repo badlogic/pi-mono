@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Show `bun install` instead of `npm install` in update notification when running under Bun
+
 ## [0.45.7] - 2026-01-13
 
 ### Added

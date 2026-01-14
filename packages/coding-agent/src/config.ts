@@ -17,6 +17,9 @@ const __dirname = dirname(__filename);
 export const isBunBinary =
 	import.meta.url.includes("$bunfs") || import.meta.url.includes("~BUN") || import.meta.url.includes("%7EBUN");
 
+/** Detect if Bun is the runtime (compiled binary or bun run) */
+export const isBunRuntime = !!process.versions.bun;
+
 // =============================================================================
 // Package Asset Paths (shipped with executable)
 // =============================================================================
