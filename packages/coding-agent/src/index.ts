@@ -273,3 +273,4 @@ export {
 	Theme,
 	type ThemeColor,
 } from "./modes/interactive/theme/theme.js";
+export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.js";
