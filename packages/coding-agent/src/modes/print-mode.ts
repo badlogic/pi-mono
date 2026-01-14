@@ -2,7 +2,7 @@
  * Print mode (single-shot): Send prompts, output result, exit.
  *
  * Used for:
- * - `pi -p "prompt"` - text output
+ * - `pi -p "prompt"` - text output (streamed)
  * - `pi --mode json "prompt"` - JSON event stream
  */
 
@@ -13,7 +13,7 @@ import type { AgentSession } from "../core/agent-session.js";
  * Options for print mode.
  */
 export interface PrintModeOptions {
-	/** Output mode: "text" for final response only, "json" for all events */
+	/** Output mode: "text" for streamed text, "json" for all events */
 	mode: "text" | "json";
 	/** Array of additional prompts to send after initialMessage */
 	messages?: string[];
@@ -116,6 +116,14 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 		if (mode === "json") {
 			console.log(JSON.stringify(event));
 		}
+		// In text mode, stream text deltas
+		else if (
+			mode === "text" &&
+			event.type === "message_update" &&
+			event.assistantMessageEvent.type === "text_delta"
+		) {
+			process.stdout.write(event.assistantMessageEvent.delta);
+		}
 	});
 
 	// Send initial message with attachments
@@ -128,7 +136,7 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 		await session.prompt(message);
 	}
 
-	// In text mode, output final response
+	// In text mode, check for errors after streaming completes
 	if (mode === "text") {
 		const state = session.state;
 		const lastMessage = state.messages[state.messages.length - 1];
@@ -140,13 +148,6 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 			if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
 				console.error(assistantMsg.errorMessage || `Request ${assistantMsg.stopReason}`);
 				process.exit(1);
-			}
-
-			// Output text content
-			for (const content of assistantMsg.content) {
-				if (content.type === "text") {
-					console.log(content.text);
-				}
 			}
 		}
 	}
