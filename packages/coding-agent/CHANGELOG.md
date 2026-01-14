@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Edit tool now uses fuzzy matching as fallback when exact match fails, tolerating trailing whitespace, smart quotes, Unicode dashes, and special spaces
+
 ## [0.45.7] - 2026-01-13
 
 ### Added

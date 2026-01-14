@@ -2,7 +2,15 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile, writeFile as fsWriteFile } from "fs/promises";
-import { detectLineEnding, generateDiffString, normalizeToLF, restoreLineEndings, stripBom } from "./edit-diff.js";
+import {
+	detectLineEnding,
+	fuzzyFindText,
+	generateDiffString,
+	normalizeForFuzzyMatch,
+	normalizeToLF,
+	restoreLineEndings,
+	stripBom,
+} from "./edit-diff.js";
 import { resolveToCwd } from "./path-utils.js";
 
 const editSchema = Type.Object({
@@ -116,8 +124,10 @@ export function createEditTool(cwd: string, options?: EditToolOptions): AgentToo
 						const normalizedOldText = normalizeToLF(oldText);
 						const normalizedNewText = normalizeToLF(newText);
 
-						// Check if old text exists
-						if (!normalizedContent.includes(normalizedOldText)) {
+						// Find the old text using fuzzy matching (tries exact match first, then fuzzy)
+						const matchResult = fuzzyFindText(normalizedContent, normalizedOldText);
+
+						if (!matchResult.found) {
 							if (signal) {
 								signal.removeEventListener("abort", onAbort);
 							}
@@ -129,8 +139,10 @@ export function createEditTool(cwd: string, options?: EditToolOptions): AgentToo
 							return;
 						}
 
-						// Count occurrences
-						const occurrences = normalizedContent.split(normalizedOldText).length - 1;
+						// Count occurrences using fuzzy-normalized content for consistency
+						const fuzzyContent = normalizeForFuzzyMatch(normalizedContent);
+						const fuzzyOldText = normalizeForFuzzyMatch(normalizedOldText);
+						const occurrences = fuzzyContent.split(fuzzyOldText).length - 1;
 
 						if (occurrences > 1) {
 							if (signal) {
@@ -149,16 +161,16 @@ export function createEditTool(cwd: string, options?: EditToolOptions): AgentToo
 							return;
 						}
 
-						// Perform replacement using indexOf + substring (raw string replace, no special character interpretation)
-						// String.replace() interprets $ in the replacement string, so we do manual replacement
-						const index = normalizedContent.indexOf(normalizedOldText);
-						const normalizedNewContent =
-							normalizedContent.substring(0, index) +
+						// Perform replacement using the matched text position
+						// When fuzzy matching was used, contentForReplacement is the normalized version
+						const baseContent = matchResult.contentForReplacement;
+						const newContent =
+							baseContent.substring(0, matchResult.index) +
 							normalizedNewText +
-							normalizedContent.substring(index + normalizedOldText.length);
+							baseContent.substring(matchResult.index + matchResult.matchLength);
 
 						// Verify the replacement actually changed something
-						if (normalizedContent === normalizedNewContent) {
+						if (baseContent === newContent) {
 							if (signal) {
 								signal.removeEventListener("abort", onAbort);
 							}
@@ -170,7 +182,7 @@ export function createEditTool(cwd: string, options?: EditToolOptions): AgentToo
 							return;
 						}
 
-						const finalContent = bom + restoreLineEndings(normalizedNewContent, originalEnding);
+						const finalContent = bom + restoreLineEndings(newContent, originalEnding);
 						await ops.writeFile(absolutePath, finalContent);
 
 						// Check if aborted after writing
@@ -183,7 +195,7 @@ export function createEditTool(cwd: string, options?: EditToolOptions): AgentToo
 							signal.removeEventListener("abort", onAbort);
 						}
 
-						const diffResult = generateDiffString(normalizedContent, normalizedNewContent);
+						const diffResult = generateDiffString(baseContent, newContent);
 						resolve({
 							content: [
 								{
