@@ -1,4 +1,4 @@
-import { Editor, type EditorTheme, matchesKey } from "@mariozechner/pi-tui";
+import { Editor, type EditorTheme } from "@mariozechner/pi-tui";
 import type { AppAction, KeybindingsManager } from "../../../core/keybindings.js";
 
 /**
@@ -33,8 +33,8 @@ export class CustomEditor extends Editor {
 			return;
 		}
 
-		// Check for Ctrl+V to handle clipboard image paste
-		if (matchesKey(data, "ctrl+v")) {
+		// Check for paste image keybinding
+		if (this.keybindings.matches(data, "pasteImage")) {
 			this.onPasteImage?.();
 			return;
 		}

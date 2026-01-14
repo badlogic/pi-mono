@@ -18,6 +18,7 @@ import {
 } from "@mariozechner/pi-ai";
 import type {
 	AutocompleteItem,
+	EditorAction,
 	EditorComponent,
 	EditorTheme,
 	KeyId,
@@ -30,7 +31,6 @@ import {
 	type Component,
 	Container,
 	fuzzyFilter,
-	getEditorKeybindings,
 	Loader,
 	Markdown,
 	matchesKey,
@@ -42,7 +42,7 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { spawn, spawnSync } from "child_process";
-import { APP_NAME, getAuthPath, getDebugLogPath, isBunBinary, VERSION } from "../../config.js";
+import { APP_NAME, getAuthPath, getDebugLogPath, isBunBinary, isBunRuntime, VERSION } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type {
 	ExtensionContext,
@@ -51,7 +51,7 @@ import type {
 	ExtensionUIDialogOptions,
 } from "../../core/extensions/index.js";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
-import { KeybindingsManager } from "../../core/keybindings.js";
+import { type AppAction, KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { resolveModelScope } from "../../core/model-resolver.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
@@ -76,6 +76,7 @@ import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
 import { FooterComponent } from "./components/footer.js";
+import { appKey, appKeyHint, editorKey, keyHint, rawKeyHint } from "./components/keybinding-hints.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
@@ -148,7 +149,7 @@ export class InteractiveMode {
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
 	private loadingAnimation: Loader | undefined = undefined;
-	private readonly defaultWorkingMessage = "Working... (esc to interrupt)";
+	private readonly defaultWorkingMessage = "Working...";
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
@@ -359,85 +360,31 @@ export class InteractiveMode {
 		// Add header with keybindings from config
 		const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
 
-		// Format keybinding for startup display (lowercase, compact)
-		const formatStartupKey = (keys: string | string[]): string => {
-			const keyArray = Array.isArray(keys) ? keys : [keys];
-			return keyArray.join("/");
-		};
-
+		// Build startup instructions using keybinding hint helpers
 		const kb = this.keybindings;
-		const interrupt = formatStartupKey(kb.getKeys("interrupt"));
-		const clear = formatStartupKey(kb.getKeys("clear"));
-		const exit = formatStartupKey(kb.getKeys("exit"));
-		const suspend = formatStartupKey(kb.getKeys("suspend"));
-		const deleteToLineEnd = formatStartupKey(getEditorKeybindings().getKeys("deleteToLineEnd"));
-		const cycleThinkingLevel = formatStartupKey(kb.getKeys("cycleThinkingLevel"));
-		const cycleModelForward = formatStartupKey(kb.getKeys("cycleModelForward"));
-		const cycleModelBackward = formatStartupKey(kb.getKeys("cycleModelBackward"));
-		const selectModel = formatStartupKey(kb.getKeys("selectModel"));
-		const expandTools = formatStartupKey(kb.getKeys("expandTools"));
-		const toggleThinking = formatStartupKey(kb.getKeys("toggleThinking"));
-		const externalEditor = formatStartupKey(kb.getKeys("externalEditor"));
-		const followUp = formatStartupKey(kb.getKeys("followUp"));
-		const dequeue = formatStartupKey(kb.getKeys("dequeue"));
+		const hint = (action: AppAction, desc: string) => appKeyHint(kb, action, desc);
 
-		const instructions =
-			theme.fg("dim", interrupt) +
-			theme.fg("muted", " to interrupt") +
-			"\n" +
-			theme.fg("dim", clear) +
-			theme.fg("muted", " to clear") +
-			"\n" +
-			theme.fg("dim", `${clear} twice`) +
-			theme.fg("muted", " to exit") +
-			"\n" +
-			theme.fg("dim", exit) +
-			theme.fg("muted", " to exit (empty)") +
-			"\n" +
-			theme.fg("dim", suspend) +
-			theme.fg("muted", " to suspend") +
-			"\n" +
-			theme.fg("dim", deleteToLineEnd) +
-			theme.fg("muted", " to delete to end") +
-			"\n" +
-			theme.fg("dim", cycleThinkingLevel) +
-			theme.fg("muted", " to cycle thinking") +
-			"\n" +
-			theme.fg("dim", `${cycleModelForward}/${cycleModelBackward}`) +
-			theme.fg("muted", " to cycle models") +
-			"\n" +
-			theme.fg("dim", selectModel) +
-			theme.fg("muted", " to select model") +
-			"\n" +
-			theme.fg("dim", expandTools) +
-			theme.fg("muted", " to expand tools") +
-			"\n" +
-			theme.fg("dim", toggleThinking) +
-			theme.fg("muted", " to toggle thinking") +
-			"\n" +
-			theme.fg("dim", externalEditor) +
-			theme.fg("muted", " for external editor") +
-			"\n" +
-			theme.fg("dim", "/") +
-			theme.fg("muted", " for commands") +
-			"\n" +
-			theme.fg("dim", "!") +
-			theme.fg("muted", " to run bash") +
-			"\n" +
-			theme.fg("dim", "!!") +
-			theme.fg("muted", " to run bash (no context)") +
-			"\n" +
-			theme.fg("dim", followUp) +
-			theme.fg("muted", " to queue follow-up") +
-			"\n" +
-			theme.fg("dim", dequeue) +
-			theme.fg("muted", " to edit all queued messages") +
-			"\n" +
-			theme.fg("dim", "ctrl+v") +
-			theme.fg("muted", " to paste image") +
-			"\n" +
-			theme.fg("dim", "drop files") +
-			theme.fg("muted", " to attach");
+		const instructions = [
+			hint("interrupt", "to interrupt"),
+			hint("clear", "to clear"),
+			rawKeyHint(`${appKey(kb, "clear")} twice`, "to exit"),
+			hint("exit", "to exit (empty)"),
+			hint("suspend", "to suspend"),
+			keyHint("deleteToLineEnd", "to delete to end"),
+			hint("cycleThinkingLevel", "to cycle thinking"),
+			rawKeyHint(`${appKey(kb, "cycleModelForward")}/${appKey(kb, "cycleModelBackward")}`, "to cycle models"),
+			hint("selectModel", "to select model"),
+			hint("expandTools", "to expand tools"),
+			hint("toggleThinking", "to toggle thinking"),
+			hint("externalEditor", "for external editor"),
+			rawKeyHint("/", "for commands"),
+			rawKeyHint("!", "to run bash"),
+			rawKeyHint("!!", "to run bash (no context)"),
+			hint("followUp", "to queue follow-up"),
+			hint("dequeue", "to edit all queued messages"),
+			hint("pasteImage", "to paste image"),
+			rawKeyHint("drop files", "to attach"),
+		].join("\n");
 		this.builtInHeader = new Text(`${logo}\n${instructions}`, 1, 0);
 
 		// Setup UI layout
@@ -990,7 +937,13 @@ export class InteractiveMode {
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
 			setWorkingMessage: (message) => {
 				if (this.loadingAnimation) {
-					this.loadingAnimation.setMessage(message ?? this.defaultWorkingMessage);
+					if (message) {
+						this.loadingAnimation.setMessage(message);
+					} else {
+						this.loadingAnimation.setMessage(
+							`${this.defaultWorkingMessage} (${appKey(this.keybindings, "interrupt")} to interrupt)`,
+						);
+					}
 				}
 			},
 			setWidget: (key, content) => this.setExtensionWidget(key, content),
@@ -1151,6 +1104,7 @@ export class InteractiveMode {
 		return new Promise((resolve) => {
 			this.extensionEditor = new ExtensionEditorComponent(
 				this.ui,
+				this.keybindings,
 				title,
 				prefill,
 				(value) => {
@@ -1811,7 +1765,7 @@ export class InteractiveMode {
 					this.ui,
 					(spinner) => theme.fg("accent", spinner),
 					(text) => theme.fg("muted", text),
-					`${reasonText}Auto-compacting... (esc to cancel)`,
+					`${reasonText}Auto-compacting... (${appKey(this.keybindings, "interrupt")} to cancel)`,
 				);
 				this.statusContainer.addChild(this.autoCompactionLoader);
 				this.ui.requestRender();
@@ -1864,7 +1818,7 @@ export class InteractiveMode {
 					this.ui,
 					(spinner) => theme.fg("warning", spinner),
 					(text) => theme.fg("muted", text),
-					`Retrying (${event.attempt}/${event.maxAttempts}) in ${delaySeconds}s... (esc to cancel)`,
+					`Retrying (${event.attempt}/${event.maxAttempts}) in ${delaySeconds}s... (${appKey(this.keybindings, "interrupt")} to cancel)`,
 				);
 				this.statusContainer.addChild(this.retryLoader);
 				this.ui.requestRender();
@@ -2331,11 +2285,10 @@ export class InteractiveMode {
 	}
 
 	showNewVersionNotification(newVersion: string): void {
-		const updateInstruction = isBunBinary
-			? theme.fg("muted", `New version ${newVersion} is available. Download from: `) +
-				theme.fg("accent", "https://github.com/badlogic/pi-mono/releases/latest")
-			: theme.fg("muted", `New version ${newVersion} is available. Run: `) +
-				theme.fg("accent", "npm install -g @mariozechner/pi-coding-agent");
+		const action = isBunBinary
+			? `Download from: ${theme.fg("accent", "https://github.com/badlogic/pi-mono/releases/latest")}`
+			: `Run: ${theme.fg("accent", `${isBunRuntime ? "bun" : "npm"} install -g @mariozechner/pi-coding-agent`)}`;
+		const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. `) + action;
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
@@ -2937,7 +2890,7 @@ export class InteractiveMode {
 							this.ui,
 							(spinner) => theme.fg("accent", spinner),
 							(text) => theme.fg("muted", text),
-							"Summarizing branch... (esc to cancel)",
+							`Summarizing branch... (${appKey(this.keybindings, "interrupt")} to cancel)`,
 						);
 						this.statusContainer.addChild(summaryLoader);
 						this.ui.requestRender();
@@ -3357,7 +3310,10 @@ export class InteractiveMode {
 		try {
 			const content = fs.readFileSync(skillPath, "utf-8");
 			const body = stripFrontmatter(content).trim();
-			const message = args ? `${body}\n\n---\n\nUser: ${args}` : body;
+			const skillDir = path.dirname(skillPath);
+			const header = `Skill location: ${skillPath}\nReferences are relative to ${skillDir}.`;
+			const skillMessage = `${header}\n\n${body}`;
+			const message = args ? `${skillMessage}\n\n---\n\nUser: ${args}` : skillMessage;
 			await this.session.prompt(message);
 		} catch (err) {
 			this.showError(`Failed to load skill: ${err instanceof Error ? err.message : String(err)}`);
@@ -3386,13 +3342,13 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Format keybindings for display (e.g., "ctrl+c" -> "Ctrl+C").
+	 * Capitalize keybinding for display (e.g., "ctrl+c" -> "Ctrl+C").
 	 */
-	private formatKeyDisplay(keys: string | string[]): string {
-		const keyArray = Array.isArray(keys) ? keys : [keys];
-		return keyArray
-			.map((key) =>
-				key
+	private capitalizeKey(key: string): string {
+		return key
+			.split("/")
+			.map((k) =>
+				k
 					.split("+")
 					.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
 					.join("+"),
@@ -3401,19 +3357,17 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Get display string for an app keybinding action.
+	 * Get capitalized display string for an app keybinding action.
 	 */
-	private getAppKeyDisplay(action: Parameters<KeybindingsManager["getDisplayString"]>[0]): string {
-		const display = this.keybindings.getDisplayString(action);
-		return this.formatKeyDisplay(display);
+	private getAppKeyDisplay(action: AppAction): string {
+		return this.capitalizeKey(appKey(this.keybindings, action));
 	}
 
 	/**
-	 * Get display string for an editor keybinding action.
+	 * Get capitalized display string for an editor keybinding action.
 	 */
-	private getEditorKeyDisplay(action: Parameters<ReturnType<typeof getEditorKeybindings>["getKeys"]>[0]): string {
-		const keys = getEditorKeybindings().getKeys(action);
-		return this.formatKeyDisplay(keys);
+	private getEditorKeyDisplay(action: EditorAction): string {
+		return this.capitalizeKey(editorKey(action));
 	}
 
 	private handleHotkeysCommand(): void {
@@ -3688,7 +3642,8 @@ export class InteractiveMode {
 
 		// Show compacting status
 		this.chatContainer.addChild(new Spacer(1));
-		const label = isAuto ? "Auto-compacting context... (esc to cancel)" : "Compacting context... (esc to cancel)";
+		const cancelHint = `(${appKey(this.keybindings, "interrupt")} to cancel)`;
+		const label = isAuto ? `Auto-compacting context... ${cancelHint}` : `Compacting context... ${cancelHint}`;
 		const compactingLoader = new Loader(
 			this.ui,
 			(spinner) => theme.fg("accent", spinner),

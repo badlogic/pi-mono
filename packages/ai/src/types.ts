@@ -60,6 +60,7 @@ export type KnownProvider =
 	| "zai"
 	| "mistral"
 	| "minimax"
+	| "minimax-cn"
 	| "opencode";
 export type Provider = KnownProvider | string;
 

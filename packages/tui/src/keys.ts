@@ -306,6 +306,8 @@ export type KeyEventType = "press" | "repeat" | "release";
 
 interface ParsedKittySequence {
 	codepoint: number;
+	shiftedKey?: number; // Shifted version of the key (when shift is pressed)
+	baseLayoutKey?: number; // Key in standard PC-101 layout (for non-Latin layouts)
 	modifier: number;
 	eventType: KeyEventType;
 }
@@ -378,15 +380,25 @@ function parseEventType(eventTypeStr: string | undefined): KeyEventType {
 }
 
 function parseKittySequence(data: string): ParsedKittySequence | null {
-	// CSI u format: \x1b[<num>u or \x1b[<num>;<mod>u or \x1b[<num>;<mod>:<event>u
-	// With flag 2, event type is appended after colon: 1=press, 2=repeat, 3=release
-	const csiUMatch = data.match(/^\x1b\[(\d+)(?:;(\d+))?(?::(\d+))?u$/);
+	// CSI u format with alternate keys (flag 4):
+	// \x1b[<codepoint>u
+	// \x1b[<codepoint>;<mod>u
+	// \x1b[<codepoint>;<mod>:<event>u
+	// \x1b[<codepoint>:<shifted>;<mod>u
+	// \x1b[<codepoint>:<shifted>:<base>;<mod>u
+	// \x1b[<codepoint>::<base>;<mod>u (no shifted key, only base)
+	//
+	// With flag 2, event type is appended after modifier colon: 1=press, 2=repeat, 3=release
+	// With flag 4, alternate keys are appended after codepoint with colons
+	const csiUMatch = data.match(/^\x1b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$/);
 	if (csiUMatch) {
 		const codepoint = parseInt(csiUMatch[1]!, 10);
-		const modValue = csiUMatch[2] ? parseInt(csiUMatch[2], 10) : 1;
-		const eventType = parseEventType(csiUMatch[3]);
+		const shiftedKey = csiUMatch[2] && csiUMatch[2].length > 0 ? parseInt(csiUMatch[2], 10) : undefined;
+		const baseLayoutKey = csiUMatch[3] ? parseInt(csiUMatch[3], 10) : undefined;
+		const modValue = csiUMatch[4] ? parseInt(csiUMatch[4], 10) : 1;
+		const eventType = parseEventType(csiUMatch[5]);
 		_lastEventType = eventType;
-		return { codepoint, modifier: modValue - 1, eventType };
+		return { codepoint, shiftedKey, baseLayoutKey, modifier: modValue - 1, eventType };
 	}
 
 	// Arrow keys with modifier: \x1b[1;<mod>A/B/C/D or \x1b[1;<mod>:<event>A/B/C/D
@@ -438,7 +450,19 @@ function matchesKittySequence(data: string, expectedCodepoint: number, expectedM
 	if (!parsed) return false;
 	const actualMod = parsed.modifier & ~LOCK_MASK;
 	const expectedMod = expectedModifier & ~LOCK_MASK;
-	return parsed.codepoint === expectedCodepoint && actualMod === expectedMod;
+
+	// Check if modifiers match
+	if (actualMod !== expectedMod) return false;
+
+	// Primary match: codepoint matches directly
+	if (parsed.codepoint === expectedCodepoint) return true;
+
+	// Alternate match: use base layout key for non-Latin keyboard layouts
+	// This allows Ctrl+С (Cyrillic) to match Ctrl+c (Latin) when terminal reports
+	// the base layout key (the key in standard PC-101 layout)
+	if (parsed.baseLayoutKey !== undefined && parsed.baseLayoutKey === expectedCodepoint) return true;
+
+	return false;
 }
 
 /**
@@ -713,30 +737,35 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 export function parseKey(data: string): string | undefined {
 	const kitty = parseKittySequence(data);
 	if (kitty) {
-		const { codepoint, modifier } = kitty;
+		const { codepoint, baseLayoutKey, modifier } = kitty;
 		const mods: string[] = [];
 		const effectiveMod = modifier & ~LOCK_MASK;
 		if (effectiveMod & MODIFIERS.shift) mods.push("shift");
 		if (effectiveMod & MODIFIERS.ctrl) mods.push("ctrl");
 		if (effectiveMod & MODIFIERS.alt) mods.push("alt");
 
+		// Prefer base layout key for consistent shortcut naming across keyboard layouts
+		// This ensures Ctrl+С (Cyrillic) is reported as "ctrl+c" (Latin)
+		const effectiveCodepoint = baseLayoutKey ?? codepoint;
+
 		let keyName: string | undefined;
-		if (codepoint === CODEPOINTS.escape) keyName = "escape";
-		else if (codepoint === CODEPOINTS.tab) keyName = "tab";
-		else if (codepoint === CODEPOINTS.enter || codepoint === CODEPOINTS.kpEnter) keyName = "enter";
-		else if (codepoint === CODEPOINTS.space) keyName = "space";
-		else if (codepoint === CODEPOINTS.backspace) keyName = "backspace";
-		else if (codepoint === FUNCTIONAL_CODEPOINTS.delete) keyName = "delete";
-		else if (codepoint === FUNCTIONAL_CODEPOINTS.home) keyName = "home";
-		else if (codepoint === FUNCTIONAL_CODEPOINTS.end) keyName = "end";
-		else if (codepoint === FUNCTIONAL_CODEPOINTS.pageUp) keyName = "pageUp";
-		else if (codepoint === FUNCTIONAL_CODEPOINTS.pageDown) keyName = "pageDown";
-		else if (codepoint === ARROW_CODEPOINTS.up) keyName = "up";
-		else if (codepoint === ARROW_CODEPOINTS.down) keyName = "down";
-		else if (codepoint === ARROW_CODEPOINTS.left) keyName = "left";
-		else if (codepoint === ARROW_CODEPOINTS.right) keyName = "right";
-		else if (codepoint >= 97 && codepoint <= 122) keyName = String.fromCharCode(codepoint);
-		else if (SYMBOL_KEYS.has(String.fromCharCode(codepoint))) keyName = String.fromCharCode(codepoint);
+		if (effectiveCodepoint === CODEPOINTS.escape) keyName = "escape";
+		else if (effectiveCodepoint === CODEPOINTS.tab) keyName = "tab";
+		else if (effectiveCodepoint === CODEPOINTS.enter || effectiveCodepoint === CODEPOINTS.kpEnter) keyName = "enter";
+		else if (effectiveCodepoint === CODEPOINTS.space) keyName = "space";
+		else if (effectiveCodepoint === CODEPOINTS.backspace) keyName = "backspace";
+		else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.delete) keyName = "delete";
+		else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.home) keyName = "home";
+		else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.end) keyName = "end";
+		else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.pageUp) keyName = "pageUp";
+		else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.pageDown) keyName = "pageDown";
+		else if (effectiveCodepoint === ARROW_CODEPOINTS.up) keyName = "up";
+		else if (effectiveCodepoint === ARROW_CODEPOINTS.down) keyName = "down";
+		else if (effectiveCodepoint === ARROW_CODEPOINTS.left) keyName = "left";
+		else if (effectiveCodepoint === ARROW_CODEPOINTS.right) keyName = "right";
+		else if (effectiveCodepoint >= 97 && effectiveCodepoint <= 122) keyName = String.fromCharCode(effectiveCodepoint);
+		else if (SYMBOL_KEYS.has(String.fromCharCode(effectiveCodepoint)))
+			keyName = String.fromCharCode(effectiveCodepoint);
 
 		if (keyName) {
 			return mods.length > 0 ? `${mods.join("+")}+${keyName}` : keyName;

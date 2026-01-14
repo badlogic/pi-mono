@@ -19,6 +19,7 @@ import { convertToPng } from "../../../utils/image-convert.js";
 import { sanitizeBinaryOutput } from "../../../utils/shell.js";
 import { getLanguageFromPath, highlightCode, theme } from "../theme/theme.js";
 import { renderDiff } from "./diff.js";
+import { keyHint } from "./keybinding-hints.js";
 import { truncateToVisualLines } from "./visual-truncate.js";
 
 // Preview line limit for bash when not expanded
@@ -374,9 +375,13 @@ export class ToolExecutionComponent extends Container {
 								cachedSkipped = result.skippedCount;
 								cachedWidth = width;
 							}
-							return cachedSkipped && cachedSkipped > 0
-								? ["", theme.fg("toolOutput", `... (${cachedSkipped} earlier lines)`), ...cachedLines]
-								: cachedLines;
+							if (cachedSkipped && cachedSkipped > 0) {
+								const hint =
+									theme.fg("muted", `... (${cachedSkipped} earlier lines,`) +
+									` ${keyHint("expandTools", "to expand")})`;
+								return ["", hint, ...cachedLines];
+							}
+							return cachedLines;
 						},
 						invalidate: () => {
 							cachedWidth = undefined;
@@ -469,7 +474,7 @@ export class ToolExecutionComponent extends Container {
 						.map((line: string) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line))))
 						.join("\n");
 				if (remaining > 0) {
-					text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
+					text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("expandTools", "to expand")})`;
 				}
 
 				const truncation = this.result.details?.truncation;
@@ -526,7 +531,9 @@ export class ToolExecutionComponent extends Container {
 						.map((line: string) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line))))
 						.join("\n");
 				if (remaining > 0) {
-					text += theme.fg("toolOutput", `\n... (${remaining} more lines, ${totalLines} total)`);
+					text +=
+						theme.fg("muted", `\n... (${remaining} more lines, ${totalLines} total,`) +
+						` ${keyHint("expandTools", "to expand")})`;
 				}
 			}
 		} else if (this.toolName === "edit") {
@@ -584,7 +591,7 @@ export class ToolExecutionComponent extends Container {
 
 					text += `\n\n${displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n")}`;
 					if (remaining > 0) {
-						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
+						text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("expandTools", "to expand")})`;
 					}
 				}
 
@@ -625,7 +632,7 @@ export class ToolExecutionComponent extends Container {
 
 					text += `\n\n${displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n")}`;
 					if (remaining > 0) {
-						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
+						text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("expandTools", "to expand")})`;
 					}
 				}
 
@@ -670,7 +677,7 @@ export class ToolExecutionComponent extends Container {
 
 					text += `\n\n${displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n")}`;
 					if (remaining > 0) {
-						text += theme.fg("toolOutput", `\n... (${remaining} more lines)`);
+						text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("expandTools", "to expand")})`;
 					}
 				}
 

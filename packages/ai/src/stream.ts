@@ -100,6 +100,7 @@ export function getEnvApiKey(provider: any): string | undefined {
 		zai: "ZAI_API_KEY",
 		mistral: "MISTRAL_API_KEY",
 		minimax: "MINIMAX_API_KEY",
+		"minimax-cn": "MINIMAX_CN_API_KEY",
 		opencode: "OPENCODE_API_KEY",
 	};
 

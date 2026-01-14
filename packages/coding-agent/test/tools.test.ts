@@ -388,6 +388,147 @@ describe("Coding Agent Tools", () => {
 	});
 });
 
+describe("edit tool fuzzy matching", () => {
+	let testDir: string;
+
+	beforeEach(() => {
+		testDir = join(tmpdir(), `coding-agent-fuzzy-test-${Date.now()}`);
+		mkdirSync(testDir, { recursive: true });
+	});
+
+	afterEach(() => {
+		rmSync(testDir, { recursive: true, force: true });
+	});
+
+	it("should match text with trailing whitespace stripped", async () => {
+		const testFile = join(testDir, "trailing-ws.txt");
+		// File has trailing spaces on lines
+		writeFileSync(testFile, "line one   \nline two  \nline three\n");
+
+		// oldText without trailing whitespace should still match
+		const result = await editTool.execute("test-fuzzy-1", {
+			path: testFile,
+			oldText: "line one\nline two\n",
+			newText: "replaced\n",
+		});
+
+		expect(getTextOutput(result)).toContain("Successfully replaced");
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("replaced\nline three\n");
+	});
+
+	it("should match smart single quotes to ASCII quotes", async () => {
+		const testFile = join(testDir, "smart-quotes.txt");
+		// File has smart/curly single quotes (U+2018, U+2019)
+		writeFileSync(testFile, "console.log(\u2018hello\u2019);\n");
+
+		// oldText with ASCII quotes should match
+		const result = await editTool.execute("test-fuzzy-2", {
+			path: testFile,
+			oldText: "console.log('hello');",
+			newText: "console.log('world');",
+		});
+
+		expect(getTextOutput(result)).toContain("Successfully replaced");
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toContain("world");
+	});
+
+	it("should match smart double quotes to ASCII quotes", async () => {
+		const testFile = join(testDir, "smart-double-quotes.txt");
+		// File has smart/curly double quotes (U+201C, U+201D)
+		writeFileSync(testFile, "const msg = \u201CHello World\u201D;\n");
+
+		// oldText with ASCII quotes should match
+		const result = await editTool.execute("test-fuzzy-3", {
+			path: testFile,
+			oldText: 'const msg = "Hello World";',
+			newText: 'const msg = "Goodbye";',
+		});
+
+		expect(getTextOutput(result)).toContain("Successfully replaced");
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toContain("Goodbye");
+	});
+
+	it("should match Unicode dashes to ASCII hyphen", async () => {
+		const testFile = join(testDir, "unicode-dashes.txt");
+		// File has en-dash (U+2013) and em-dash (U+2014)
+		writeFileSync(testFile, "range: 1\u20135\nbreak\u2014here\n");
+
+		// oldText with ASCII hyphens should match
+		const result = await editTool.execute("test-fuzzy-4", {
+			path: testFile,
+			oldText: "range: 1-5\nbreak-here",
+			newText: "range: 10-50\nbreak--here",
+		});
+
+		expect(getTextOutput(result)).toContain("Successfully replaced");
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toContain("10-50");
+	});
+
+	it("should match non-breaking space to regular space", async () => {
+		const testFile = join(testDir, "nbsp.txt");
+		// File has non-breaking space (U+00A0)
+		writeFileSync(testFile, "hello\u00A0world\n");
+
+		// oldText with regular space should match
+		const result = await editTool.execute("test-fuzzy-5", {
+			path: testFile,
+			oldText: "hello world",
+			newText: "hello universe",
+		});
+
+		expect(getTextOutput(result)).toContain("Successfully replaced");
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toContain("universe");
+	});
+
+	it("should prefer exact match over fuzzy match", async () => {
+		const testFile = join(testDir, "exact-preferred.txt");
+		// File has both exact and fuzzy-matchable content
+		writeFileSync(testFile, "const x = 'exact';\nconst y = 'other';\n");
+
+		const result = await editTool.execute("test-fuzzy-6", {
+			path: testFile,
+			oldText: "const x = 'exact';",
+			newText: "const x = 'changed';",
+		});
+
+		expect(getTextOutput(result)).toContain("Successfully replaced");
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("const x = 'changed';\nconst y = 'other';\n");
+	});
+
+	it("should still fail when text is not found even with fuzzy matching", async () => {
+		const testFile = join(testDir, "no-match.txt");
+		writeFileSync(testFile, "completely different content\n");
+
+		await expect(
+			editTool.execute("test-fuzzy-7", {
+				path: testFile,
+				oldText: "this does not exist",
+				newText: "replacement",
+			}),
+		).rejects.toThrow(/Could not find the exact text/);
+	});
+
+	it("should detect duplicates after fuzzy normalization", async () => {
+		const testFile = join(testDir, "fuzzy-dups.txt");
+		// Two lines that are identical after trailing whitespace is stripped
+		writeFileSync(testFile, "hello world   \nhello world\n");
+
+		await expect(
+			editTool.execute("test-fuzzy-8", {
+				path: testFile,
+				oldText: "hello world",
+				newText: "replaced",
+			}),
+		).rejects.toThrow(/Found 2 occurrences/);
+	});
+});
+
 describe("edit tool CRLF handling", () => {
 	let testDir: string;
 

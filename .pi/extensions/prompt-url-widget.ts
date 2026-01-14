@@ -76,6 +76,21 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 		});
 	};
 
+	const applySessionName = (ctx: ExtensionContext, match: PromptMatch, title?: string) => {
+		const label = match.kind === "pr" ? "PR" : "Issue";
+		const trimmedTitle = title?.trim();
+		const fallbackName = `${label}: ${match.url}`;
+		const desiredName = trimmedTitle ? `${label}: ${trimmedTitle} (${match.url})` : fallbackName;
+		const currentName = ctx.getSessionName()?.trim();
+		if (!currentName) {
+			ctx.setSessionName(desiredName);
+			return;
+		}
+		if (currentName === match.url || currentName === fallbackName) {
+			ctx.setSessionName(desiredName);
+		}
+	};
+
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (!ctx.hasUI) return;
 		const match = extractPromptMatch(event.prompt);
@@ -84,10 +99,12 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 		}
 
 		setWidget(ctx, match);
+		applySessionName(ctx, match);
 		void fetchGhMetadata(pi, match.kind, match.url).then((meta) => {
 			const title = meta?.title?.trim();
 			const authorText = formatAuthor(meta?.author);
 			setWidget(ctx, match, title, authorText);
+			applySessionName(ctx, match, title);
 		});
 	});
 
@@ -126,10 +143,12 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 		}
 
 		setWidget(ctx, match);
+		applySessionName(ctx, match);
 		void fetchGhMetadata(pi, match.kind, match.url).then((meta) => {
 			const title = meta?.title?.trim();
 			const authorText = formatAuthor(meta?.author);
 			setWidget(ctx, match, title, authorText);
+			applySessionName(ctx, match, title);
 		});
 	};
 

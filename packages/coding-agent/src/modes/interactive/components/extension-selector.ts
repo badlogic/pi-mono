@@ -7,6 +7,7 @@ import { Container, getEditorKeybindings, Spacer, Text, type TUI } from "@marioz
 import { theme } from "../theme/theme.js";
 import { CountdownTimer } from "./countdown-timer.js";
 import { DynamicBorder } from "./dynamic-border.js";
+import { keyHint, rawKeyHint } from "./keybinding-hints.js";
 
 export interface ExtensionSelectorOptions {
 	tui?: TUI;
@@ -56,7 +57,17 @@ export class ExtensionSelectorComponent extends Container {
 		this.listContainer = new Container();
 		this.addChild(this.listContainer);
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("dim", "↑↓ navigate  enter select  esc cancel"), 1, 0));
+		this.addChild(
+			new Text(
+				rawKeyHint("↑↓", "navigate") +
+					"  " +
+					keyHint("selectConfirm", "select") +
+					"  " +
+					keyHint("selectCancel", "cancel"),
+				1,
+				0,
+			),
+		);
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
 
