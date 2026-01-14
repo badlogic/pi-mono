@@ -33,7 +33,7 @@ export const parseFrontmatter = <T extends Record<string, unknown> = Record<stri
 		return { frontmatter: {} as T, body };
 	}
 	const parsed = parse(yamlString);
-	return { frontmatter: parsed as T, body };
+	return { frontmatter: (parsed ?? {}) as T, body };
 };
 
 export const stripFrontmatter = (content: string): string => parseFrontmatter(content).body;

@@ -17,11 +17,9 @@ describe("parseFrontmatter", () => {
 		expect(body).toBe("Line one\nLine two");
 	});
 
-	it("returns empty data on YAML parse errors", () => {
+	it("throws on invalid YAML frontmatter", () => {
 		const input = "---\nfoo: [bar\n---\nBody";
-		const { frontmatter, body } = parseFrontmatter<Record<string, string>>(input);
-		expect(frontmatter).toEqual({});
-		expect(body).toBe("Body");
+		expect(() => parseFrontmatter<Record<string, string>>(input)).toThrow(/at line 1, column 10/);
 	});
 
 	it("parses | multiline yaml syntax", () => {
@@ -40,6 +38,12 @@ describe("parseFrontmatter", () => {
 		expect(resultMissingEnd.body).toBe(
 			"---\nname: test\nBody without terminator".replace(/\r\n/g, "\n").replace(/\r/g, "\n"),
 		);
+	});
+
+	it("returns empty object for empty or comment-only frontmatter", () => {
+		const input = "---\n# just a comment\n---\nBody";
+		const { frontmatter } = parseFrontmatter(input);
+		expect(frontmatter).toEqual({});
 	});
 });
 

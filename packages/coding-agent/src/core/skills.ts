@@ -244,7 +244,9 @@ function loadSkillFromFile(filePath: string, source: string): { skill: Skill | n
 			},
 			warnings,
 		};
-	} catch {
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "failed to parse skill file";
+		warnings.push({ skillPath: filePath, message });
 		return { skill: null, warnings };
 	}
 }
