@@ -12,6 +12,7 @@ import {
 import type { SessionTreeNode } from "../../../core/session-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+import { keyHint } from "./keybinding-hints.js";
 
 /** Gutter info: position (displayIndent where connector was) and whether to show │ */
 interface GutterInfo {
@@ -760,7 +761,9 @@ class LabelInput implements Component {
 		const availableWidth = width - indent.length;
 		lines.push(truncateToWidth(`${indent}${theme.fg("muted", "Label (empty to remove):")}`, width));
 		lines.push(...this.input.render(availableWidth).map((line) => truncateToWidth(`${indent}${line}`, width)));
-		lines.push(truncateToWidth(`${indent}${theme.fg("dim", "enter: save  esc: cancel")}`, width));
+		lines.push(
+			truncateToWidth(`${indent}${keyHint("selectConfirm", "save")}  ${keyHint("selectCancel", "cancel")}`, width),
+		);
 		return lines;
 	}
 
@@ -815,7 +818,13 @@ export class TreeSelectorComponent extends Container {
 		this.addChild(new DynamicBorder());
 		this.addChild(new Text(theme.bold("  Session Tree"), 1, 0));
 		this.addChild(
-			new TruncatedText(theme.fg("muted", "  ↑/↓: move. ←/→: page. l: label. ^O/⇧^O: filter. Type to search"), 0, 0),
+			new TruncatedText(
+				theme.fg("muted", "  ↑/↓: move. ←/→: page. l: label. ") +
+					theme.fg("dim", "^O/⇧^O") +
+					theme.fg("muted", ": filter. Type to search"),
+				0,
+				0,
+			),
 		);
 		this.addChild(new SearchLine(this.treeList));
 		this.addChild(new DynamicBorder());

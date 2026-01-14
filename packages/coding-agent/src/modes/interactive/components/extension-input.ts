@@ -6,6 +6,7 @@ import { Container, getEditorKeybindings, Input, Spacer, Text, type TUI } from "
 import { theme } from "../theme/theme.js";
 import { CountdownTimer } from "./countdown-timer.js";
 import { DynamicBorder } from "./dynamic-border.js";
+import { keyHint } from "./keybinding-hints.js";
 
 export interface ExtensionInputOptions {
 	tui?: TUI;
@@ -52,7 +53,7 @@ export class ExtensionInputComponent extends Container {
 		this.input = new Input();
 		this.addChild(this.input);
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("dim", "enter submit  esc cancel"), 1, 0));
+		this.addChild(new Text(`${keyHint("selectConfirm", "submit")}  ${keyHint("selectCancel", "cancel")}`, 1, 0));
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
 	}
