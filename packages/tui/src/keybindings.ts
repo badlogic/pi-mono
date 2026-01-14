@@ -31,7 +31,9 @@ export type EditorAction =
 	| "selectConfirm"
 	| "selectCancel"
 	// Clipboard
-	| "copy";
+	| "copy"
+	// Tool output
+	| "expandTools";
 
 // Re-export KeyId from keys.ts
 export type { KeyId };
@@ -75,6 +77,8 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	selectCancel: ["escape", "ctrl+c"],
 	// Clipboard
 	copy: "ctrl+c",
+	// Tool output
+	expandTools: "ctrl+o",
 };
 
 /**
