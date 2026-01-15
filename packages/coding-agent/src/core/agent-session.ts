@@ -37,6 +37,7 @@ import {
 import { exportSessionToHtml } from "./export-html/index.js";
 import type {
 	ExtensionRunner,
+	InputSource,
 	SessionBeforeCompactResult,
 	SessionBeforeForkResult,
 	SessionBeforeSwitchResult,
@@ -99,8 +100,8 @@ export interface PromptOptions {
 	images?: ImageContent[];
 	/** When streaming, how to queue the message: "steer" (interrupt) or "followUp" (wait). Required if streaming. */
 	streamingBehavior?: "steer" | "followUp";
-	/** @internal Source of input for extension input event */
-	_source?: "interactive" | "rpc" | "extension";
+	/** Source of input for extension input event handlers. Defaults to "interactive". */
+	source?: InputSource;
 }
 
 /** Result from cycleModel() */
@@ -573,13 +574,15 @@ export class AgentSession {
 			const inputResult = await this._extensionRunner.emitInput(
 				currentText,
 				currentImages,
-				options?._source ?? "interactive",
+				options?.source ?? "interactive",
 			);
 			if (inputResult.action === "handled") {
 				if (inputResult.response) {
-					this._extensionRunner.hasUI()
-						? this._extensionRunner.getUIContext().notify(inputResult.response, "info")
-						: console.log(inputResult.response);
+					if (this._extensionRunner.hasUI()) {
+						this._extensionRunner.getUIContext().notify(inputResult.response, "info");
+					} else {
+						console.log(inputResult.response);
+					}
 				}
 				return;
 			}
@@ -878,7 +881,7 @@ export class AgentSession {
 			expandPromptTemplates: false,
 			streamingBehavior: options?.deliverAs,
 			images,
-			_source: "extension",
+			source: "extension",
 		});
 	}
 
