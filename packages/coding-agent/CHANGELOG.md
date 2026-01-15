@@ -5,6 +5,7 @@
 ### Fixed
 
 - Session tree now preserves branch connectors/indentation when filters hide intermediate entries (e.g., model changes or custom entries in default view): descendants attach to the nearest visible ancestor so sibling branches align. Fixed in both TUI and HTML export.
+- Scoped models (`--models` or `enabledModels`) now remember the last selected model across sessions instead of always starting with the first model in the scope ([#736](https://github.com/badlogic/pi-mono/pull/736) by [@ogulcancelik](https://github.com/ogulcancelik))
 - Show `bun install` instead of `npm install` in update notification when running under Bun ([#714](https://github.com/badlogic/pi-mono/pull/714) by [@dannote](https://github.com/dannote))
 - `/skill` prompts now include the skill path ([#711](https://github.com/badlogic/pi-mono/pull/711) by [@jblwilliams](https://github.com/jblwilliams))
 - Use configurable `expandTools` keybinding instead of hardcoded Ctrl+O ([#717](https://github.com/badlogic/pi-mono/pull/717) by [@dannote](https://github.com/dannote))
@@ -18,6 +19,7 @@
 ### Changed
 
 - Replaced `wasm-vips` with `@silvia-odwyer/photon-node` for image processing ([#710](https://github.com/badlogic/pi-mono/pull/710) by [@can1357](https://github.com/can1357))
+- Extension example: `plan-mode/` shortcut changed from Shift+P to Ctrl+Alt+P to avoid conflict with typing capital P ([#746](https://github.com/badlogic/pi-mono/pull/746) by [@ferologics](https://github.com/ferologics))
 
 ## [0.45.7] - 2026-01-13
 
