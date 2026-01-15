@@ -28,19 +28,6 @@ exec "$(dirname "$0")/tsc" "$@"
 EOF
 chmod +x node_modules/.bin/tsgo
 
-# Update TypeScript target to ES2024 (required for regex v flag)
-echo "Updating TypeScript configuration..."
-if [ -f tsconfig.base.json ]; then
-    # Backup original
-    cp tsconfig.base.json tsconfig.base.json.backup
-    
-    # Update target and lib to ES2024
-    sed -i 's/"target": "ES2022"/"target": "ES2024"/' tsconfig.base.json
-    sed -i 's/"lib": \["ES2022"\]/"lib": ["ES2024"]/' tsconfig.base.json
-    
-    echo "TypeScript configuration updated (backup saved as tsconfig.base.json.backup)"
-fi
-
 echo ""
 echo "Setup complete! Now run:"
 echo "  npm run build"

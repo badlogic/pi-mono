@@ -63,14 +63,7 @@ EOF
 chmod +x node_modules/.bin/tsgo
 ```
 
-4. Update TypeScript target to ES2024 (required for regex v flag):
-
-```bash
-sed -i 's/"target": "ES2022"/"target": "ES2024"/' tsconfig.base.json
-sed -i 's/"lib": \["ES2022"\]/"lib": ["ES2024"]/' tsconfig.base.json
-```
-
-5. Build the project:
+4. Build the project:
 
 ```bash
 npm run build
