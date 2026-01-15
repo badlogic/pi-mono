@@ -251,13 +251,17 @@ See [Supported foundation models in Amazon Bedrock](https://docs.aws.amazon.com/
 
 **GitLab Duo:**
 
-GitLab Duo provides access to Claude models via GitLab's Anthropic proxy. Requires a GitLab API token:
+GitLab Duo provides access to Claude models via GitLab's Anthropic proxy. Authenticate via OAuth or API token:
 
 ```bash
-# Option 1: GitLab token
+# Option 1: OAuth (recommended)
+pi
+/login gitlab-duo
+
+# Option 2: GitLab token
 export GITLAB_TOKEN=glpat-...
 
-# Option 2: Dedicated Duo token (takes precedence)
+# Option 3: Dedicated Duo token (takes precedence over GITLAB_TOKEN)
 export GITLAB_DUO_TOKEN=glpat-...
 
 # Use GitLab Duo (defaults to Claude Sonnet 4.5)
@@ -275,7 +279,7 @@ Available models map to Anthropic Claude models:
 - `duo-chat-sonnet-4-5` - Claude Sonnet 4.5
 - `duo-chat-haiku-4-5` - Claude Haiku 4.5
 
-For self-hosted GitLab instances, the provider auto-detects from OpenCode auth or you can configure via the `instanceUrl` option.
+For self-hosted GitLab instances, set `GITLAB_INSTANCE_URL` environment variable.
 
 ### Quick Start
 

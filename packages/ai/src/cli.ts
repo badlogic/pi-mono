@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import { createInterface } from "readline";
 import { loginAnthropic } from "./utils/oauth/anthropic.js";
 import { loginGitHubCopilot } from "./utils/oauth/github-copilot.js";
+import { loginGitLabDuo } from "./utils/oauth/gitlab-duo.js";
 import { loginAntigravity } from "./utils/oauth/google-antigravity.js";
 import { loginGeminiCli } from "./utils/oauth/google-gemini-cli.js";
 import { getOAuthProviders } from "./utils/oauth/index.js";
@@ -62,6 +63,17 @@ async function login(provider: OAuthProvider): Promise<void> {
 					},
 					onProgress: (msg) => console.log(msg),
 				});
+				break;
+
+			case "gitlab-duo":
+				credentials = await loginGitLabDuo(
+					(url) => {
+						console.log(`\nOpen this URL in your browser:\n${url}\n`);
+					},
+					async () => {
+						return await promptFn("Paste the authorization code:");
+					},
+				);
 				break;
 
 			case "google-gemini-cli":

@@ -11,6 +11,7 @@ export type OAuthCredentials = {
 export type OAuthProvider =
 	| "anthropic"
 	| "github-copilot"
+	| "gitlab-duo"
 	| "google-gemini-cli"
 	| "google-antigravity"
 	| "openai-codex";

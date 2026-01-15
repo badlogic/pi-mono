@@ -18,6 +18,11 @@ export {
 	normalizeDomain,
 	refreshGitHubCopilotToken,
 } from "./github-copilot.js";
+// GitLab Duo
+export {
+	loginGitLabDuo,
+	refreshGitLabDuoToken,
+} from "./gitlab-duo.js";
 // Google Antigravity
 export {
 	loginAntigravity,
@@ -42,6 +47,7 @@ export * from "./types.js";
 
 import { refreshAnthropicToken } from "./anthropic.js";
 import { refreshGitHubCopilotToken } from "./github-copilot.js";
+import { refreshGitLabDuoToken } from "./gitlab-duo.js";
 import { refreshAntigravityToken } from "./google-antigravity.js";
 import { refreshGoogleCloudToken } from "./google-gemini-cli.js";
 import { refreshOpenAICodexToken } from "./openai-codex.js";
@@ -67,6 +73,9 @@ export async function refreshOAuthToken(
 			break;
 		case "github-copilot":
 			newCredentials = await refreshGitHubCopilotToken(credentials.refresh, credentials.enterpriseUrl);
+			break;
+		case "gitlab-duo":
+			newCredentials = await refreshGitLabDuoToken(credentials.refresh, credentials.enterpriseUrl);
 			break;
 		case "google-gemini-cli":
 			if (!credentials.projectId) {
@@ -141,6 +150,11 @@ export function getOAuthProviders(): OAuthProviderInfo[] {
 		{
 			id: "github-copilot",
 			name: "GitHub Copilot",
+			available: true,
+		},
+		{
+			id: "gitlab-duo",
+			name: "GitLab Duo",
 			available: true,
 		},
 		{
