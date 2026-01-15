@@ -7,7 +7,7 @@
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model, Usage } from "@mariozechner/pi-ai";
-import { complete, completeSimple } from "@mariozechner/pi-ai";
+import { completeSimple } from "@mariozechner/pi-ai";
 import { convertToLlm, createBranchSummaryMessage, createCustomMessage } from "../messages.js";
 import type { CompactionEntry, SessionEntry } from "../session-manager.js";
 import {
@@ -719,18 +719,22 @@ async function generateTurnPrefixSummary(
 	signal?: AbortSignal,
 ): Promise<string> {
 	const maxTokens = Math.floor(0.5 * reserveTokens); // Smaller budget for turn prefix
-
-	const transformedMessages = convertToLlm(messages);
+	const llmMessages = convertToLlm(messages);
+	const conversationText = serializeConversation(llmMessages);
+	const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${TURN_PREFIX_SUMMARIZATION_PROMPT}`;
 	const summarizationMessages = [
-		...transformedMessages,
 		{
 			role: "user" as const,
-			content: [{ type: "text" as const, text: TURN_PREFIX_SUMMARIZATION_PROMPT }],
+			content: [{ type: "text" as const, text: promptText }],
 			timestamp: Date.now(),
 		},
 	];
 
-	const response = await complete(model, { messages: summarizationMessages }, { maxTokens, signal, apiKey });
+	const response = await completeSimple(
+		model,
+		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
+		{ maxTokens, signal, apiKey },
+	);
 
 	if (response.stopReason === "error") {
 		throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
