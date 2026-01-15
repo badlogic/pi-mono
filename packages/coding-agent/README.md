@@ -138,6 +138,17 @@ config.enable_kitty_keyboard = true
 return config
 ```
 
+**VS Code (Integrated Terminal):** Add to `keybindings.json` to enable `Shift+Enter` for multi-line input:
+
+```json
+{
+  "key": "shift+enter",
+  "command": "workbench.action.terminal.sendSequence",
+  "args": { "text": "\u001b[13;2u" },
+  "when": "terminalFocus"
+}
+```
+
 **Windows Terminal:** Does not support the Kitty keyboard protocol. Shift+Enter cannot be distinguished from Enter. Use Ctrl+Enter for multi-line input instead. All other keybindings work correctly.
 
 ### API Keys & OAuth
