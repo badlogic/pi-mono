@@ -13,6 +13,7 @@ import {
 	loginAntigravity,
 	loginGeminiCli,
 	loginGitHubCopilot,
+	loginGitLabDuo,
 	loginOpenAICodex,
 	type OAuthCredentials,
 	type OAuthProvider,
@@ -183,6 +184,12 @@ export class AuthStorage {
 					onProgress: callbacks.onProgress,
 					signal: callbacks.signal,
 				});
+				break;
+			case "gitlab-duo":
+				credentials = await loginGitLabDuo(
+					(url) => callbacks.onAuth({ url }),
+					() => callbacks.onPrompt({ message: "Paste the authorization code:" }),
+				);
 				break;
 			case "google-gemini-cli":
 				credentials = await loginGeminiCli(callbacks.onAuth, callbacks.onProgress, callbacks.onManualCodeInput);
