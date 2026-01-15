@@ -14,6 +14,8 @@ pkg install git nodejs-lts
 
 ## Installation
 
+### Quick Setup (Recommended)
+
 1. Clone the repository:
 
 ```bash
@@ -23,6 +25,26 @@ git clone https://github.com/VaclavSynacek/pi-mono.git
 cd pi-mono
 git checkout termux-support
 ```
+
+2. Run the Termux setup script:
+
+```bash
+./scripts/setup-termux.sh
+```
+
+3. Build the project:
+
+```bash
+npm run build
+```
+
+This will take several minutes on older Android devices.
+
+### Manual Setup
+
+If you prefer to set up manually or the script doesn't work:
+
+1. Clone the repository (same as above)
 
 2. Install dependencies (skip native module builds):
 
@@ -53,8 +75,6 @@ sed -i 's/"lib": \["ES2022"\]/"lib": ["ES2024"]/' tsconfig.base.json
 ```bash
 npm run build
 ```
-
-This will take several minutes on older Android devices.
 
 ## Running
 
