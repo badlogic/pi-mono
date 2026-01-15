@@ -95,6 +95,28 @@ describe("skills", () => {
 			expect(warnings.some((w) => w.message.includes("description is required"))).toBe(true);
 		});
 
+		it("should warn and skip skill when YAML frontmatter is invalid", () => {
+			const { skills, warnings } = loadSkillsFromDir({
+				dir: join(fixturesDir, "invalid-yaml"),
+				source: "test",
+			});
+
+			expect(skills).toHaveLength(0);
+			expect(warnings.some((w) => w.message.includes("at line"))).toBe(true);
+		});
+
+		it("should preserve multiline descriptions from YAML", () => {
+			const { skills, warnings } = loadSkillsFromDir({
+				dir: join(fixturesDir, "multiline-description"),
+				source: "test",
+			});
+
+			expect(skills).toHaveLength(1);
+			expect(skills[0].description).toContain("\n");
+			expect(skills[0].description).toContain("This is a multiline description.");
+			expect(warnings).toHaveLength(0);
+		});
+
 		it("should warn when name contains consecutive hyphens", () => {
 			const { skills, warnings } = loadSkillsFromDir({
 				dir: join(fixturesDir, "consecutive-hyphens"),

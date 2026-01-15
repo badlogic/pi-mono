@@ -2,6 +2,8 @@ import { getEditorKeybindings } from "../keybindings.js";
 import type { Component } from "../tui.js";
 import { truncateToWidth } from "../utils.js";
 
+const normalizeToSingleLine = (text: string): string => text.replace(/[\r\n]+/g, " ").trim();
+
 export interface SelectItem {
 	value: string;
 	label: string;
@@ -70,6 +72,7 @@ export class SelectList implements Component {
 			if (!item) continue;
 
 			const isSelected = i === this.selectedIndex;
+			const descriptionSingleLine = item.description ? normalizeToSingleLine(item.description) : undefined;
 
 			let line = "";
 			if (isSelected) {
@@ -77,7 +80,7 @@ export class SelectList implements Component {
 				const prefixWidth = 2; // "→ " is 2 characters visually
 				const displayValue = item.label || item.value;
 
-				if (item.description && width > 40) {
+				if (descriptionSingleLine && width > 40) {
 					// Calculate how much space we have for value + description
 					const maxValueWidth = Math.min(30, width - prefixWidth - 4);
 					const truncatedValue = truncateToWidth(displayValue, maxValueWidth, "");
@@ -88,7 +91,7 @@ export class SelectList implements Component {
 					const remainingWidth = width - descriptionStart - 2; // -2 for safety
 
 					if (remainingWidth > 10) {
-						const truncatedDesc = truncateToWidth(item.description, remainingWidth, "");
+						const truncatedDesc = truncateToWidth(descriptionSingleLine, remainingWidth, "");
 						// Apply selectedText to entire line content
 						line = this.theme.selectedText(`→ ${truncatedValue}${spacing}${truncatedDesc}`);
 					} else {
@@ -105,7 +108,7 @@ export class SelectList implements Component {
 				const displayValue = item.label || item.value;
 				const prefix = "  ";
 
-				if (item.description && width > 40) {
+				if (descriptionSingleLine && width > 40) {
 					// Calculate how much space we have for value + description
 					const maxValueWidth = Math.min(30, width - prefix.length - 4);
 					const truncatedValue = truncateToWidth(displayValue, maxValueWidth, "");
@@ -116,7 +119,7 @@ export class SelectList implements Component {
 					const remainingWidth = width - descriptionStart - 2; // -2 for safety
 
 					if (remainingWidth > 10) {
-						const truncatedDesc = truncateToWidth(item.description, remainingWidth, "");
+						const truncatedDesc = truncateToWidth(descriptionSingleLine, remainingWidth, "");
 						const descText = this.theme.description(spacing + truncatedDesc);
 						line = prefix + truncatedValue + descText;
 					} else {

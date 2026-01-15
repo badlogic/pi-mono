@@ -60,7 +60,7 @@ import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
-
+import { stripFrontmatter } from "../../utils/frontmatter.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
@@ -3316,8 +3316,7 @@ export class InteractiveMode {
 	private async handleSkillCommand(skillPath: string, args: string): Promise<void> {
 		try {
 			const content = fs.readFileSync(skillPath, "utf-8");
-			// Strip YAML frontmatter if present
-			const body = content.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
+			const body = stripFrontmatter(content).trim();
 			const skillDir = path.dirname(skillPath);
 			const header = `Skill location: ${skillPath}\nReferences are relative to ${skillDir}.`;
 			const skillMessage = `${header}\n\n${body}`;
