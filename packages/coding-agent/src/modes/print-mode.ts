@@ -99,7 +99,7 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 					return { cancelled: result.cancelled };
 				},
 			},
-			// No UI context
+			// No UI context - hasUI will be false
 		);
 		extensionRunner.onError((err) => {
 			console.error(`Extension error (${err.extensionPath}): ${err.error}`);

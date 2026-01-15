@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- New `input` event in extension system for intercepting, transforming, or handling user input before the agent processes it. Supports three result types: `continue` (pass through), `transform` (modify text/images), `handled` (respond without LLM). Handlers chain transforms and short-circuit on handled.
+- Extension example: `input-transform.ts` demonstrating input interception patterns (quick mode, instant commands, source routing)
+
 ### Fixed
 
 - Session tree now preserves branch connectors and indentation when filters hide intermediate entries so descendants attach to the nearest visible ancestor and sibling branches align. Fixed in both TUI and HTML export ([#739](https://github.com/badlogic/pi-mono/pull/739) by [@w-winter](https://github.com/w-winter))
