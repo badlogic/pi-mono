@@ -5,7 +5,7 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
-import { type ImageContent, supportsXhigh } from "@mariozechner/pi-ai";
+import { type ImageContent, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { existsSync } from "fs";
 import { join } from "path";
@@ -164,16 +164,30 @@ function buildSessionOptions(
 		}
 		options.model = model;
 	} else if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
-		options.model = scopedModels[0].model;
+		// Check if saved default is in scoped models - use it if so, otherwise first scoped model
+		const savedProvider = settingsManager.getDefaultProvider();
+		const savedModelId = settingsManager.getDefaultModel();
+		const savedModel = savedProvider && savedModelId ? modelRegistry.find(savedProvider, savedModelId) : undefined;
+		const savedInScope = savedModel ? scopedModels.find((sm) => modelsAreEqual(sm.model, savedModel)) : undefined;
+
+		if (savedInScope) {
+			options.model = savedInScope.model;
+			// Use thinking level from scoped model config if explicitly set
+			if (!parsed.thinking && savedInScope.thinkingLevel) {
+				options.thinkingLevel = savedInScope.thinkingLevel;
+			}
+		} else {
+			options.model = scopedModels[0].model;
+			// Use thinking level from first scoped model if explicitly set
+			if (!parsed.thinking && scopedModels[0].thinkingLevel) {
+				options.thinkingLevel = scopedModels[0].thinkingLevel;
+			}
+		}
 	}
 
-	// Thinking level
-	// Only use scoped model's thinking level if it was explicitly specified (e.g., "model:high")
-	// Otherwise, let the SDK use defaultThinkingLevel from settings
+	// Thinking level from CLI (takes precedence over scoped model thinking levels set above)
 	if (parsed.thinking) {
 		options.thinkingLevel = parsed.thinking;
-	} else if (scopedModels.length > 0 && scopedModels[0].thinkingLevel && !parsed.continue && !parsed.resume) {
-		options.thinkingLevel = scopedModels[0].thinkingLevel;
 	}
 
 	// Scoped models for Ctrl+P cycling - fill in default thinking level for models without explicit level

@@ -596,6 +596,14 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
+		// Show loaded prompt templates
+		const templates = this.session.promptTemplates;
+		if (templates.length > 0) {
+			const templateList = templates.map((t) => theme.fg("dim", `  /${t.name} ${t.source}`)).join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded prompt templates:\n") + templateList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
 		const extensionRunner = this.session.extensionRunner;
 		if (!extensionRunner) {
 			return; // No extensions loaded

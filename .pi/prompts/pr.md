@@ -6,7 +6,7 @@ You are given one or more GitHub PR URLs: $@
 For each PR URL, do the following in order:
 1. Read the PR page in full. Include description, all comments, all commits, and all changed files.
 2. Identify any linked issues referenced in the PR body, comments, commit messages, or cross links. Read each issue in full, including all comments.
-3. Analyze the PR diff. Read all relevant code files in full with no truncation. Include related code paths that are not in the diff but are required to validate behavior.
+3. Analyze the PR diff. Read all relevant code files in full with no truncation from the current main branch and compare against the diff. Do not fetch PR file blobs unless a file is missing on main or the diff context is insufficient. Include related code paths that are not in the diff but are required to validate behavior.
 4. Check for a changelog entry in the relevant `packages/*/CHANGELOG.md` files. Report whether an entry exists. If missing, state that a changelog entry is required before merge and that you will add it if the user decides to merge. Follow the changelog format rules in AGENTS.md. Verify:
    - Entry uses correct section (`### Breaking Changes`, `### Added`, `### Fixed`, etc.)
    - External contributions include PR link and author: `Fixed foo ([#123](https://github.com/badlogic/pi-mono/pull/123) by [@user](https://github.com/user))`

@@ -1,6 +1,6 @@
 {
 	"name": "@mariozechner/pi-agent-core",
-	"version": "0.45.7",
+	"version": "0.46.0",
 	"description": "General-purpose agent with transport abstraction, state management, and attachment support",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -17,8 +17,8 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@mariozechner/pi-ai": "^0.45.7",
-		"@mariozechner/pi-tui": "^0.45.7"
+		"@mariozechner/pi-ai": "^0.46.0",
+		"@mariozechner/pi-tui": "^0.46.0"
 	},
 	"keywords": [
 		"ai",
