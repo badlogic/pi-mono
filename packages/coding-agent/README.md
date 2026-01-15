@@ -176,6 +176,7 @@ Add API keys to `~/.pi/agent/auth.json`:
 | Groq | `groq` | `GROQ_API_KEY` |
 | Cerebras | `cerebras` | `CEREBRAS_API_KEY` |
 | xAI | `xai` | `XAI_API_KEY` |
+| GitLab Duo | `gitlab-duo` | `GITLAB_TOKEN` or `GITLAB_DUO_TOKEN` |
 | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
 | Vercel AI Gateway | `vercel-ai-gateway` | `AI_GATEWAY_API_KEY` |
 | ZAI | `zai` | `ZAI_API_KEY` |
@@ -247,6 +248,34 @@ pi --provider amazon-bedrock --model global.anthropic.claude-sonnet-4-5-20250929
 ```
 
 See [Supported foundation models in Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html).
+
+**GitLab Duo:**
+
+GitLab Duo provides access to Claude models via GitLab's Anthropic proxy. Requires a GitLab API token:
+
+```bash
+# Option 1: GitLab token
+export GITLAB_TOKEN=glpat-...
+
+# Option 2: Dedicated Duo token (takes precedence)
+export GITLAB_DUO_TOKEN=glpat-...
+
+# Use GitLab Duo (defaults to Claude Sonnet 4.5)
+pi --provider gitlab-duo --model duo-chat
+
+# Use specific Claude model variants
+pi --provider gitlab-duo --model duo-chat-opus-4-5    # Claude Opus 4.5
+pi --provider gitlab-duo --model duo-chat-sonnet-4-5  # Claude Sonnet 4.5
+pi --provider gitlab-duo --model duo-chat-haiku-4-5   # Claude Haiku 4.5
+```
+
+Available models map to Anthropic Claude models:
+- `duo-chat` - Claude Sonnet 4.5 (default)
+- `duo-chat-opus-4-5` - Claude Opus 4.5
+- `duo-chat-sonnet-4-5` - Claude Sonnet 4.5
+- `duo-chat-haiku-4-5` - Claude Haiku 4.5
+
+For self-hosted GitLab instances, the provider auto-detects from OpenCode auth or you can configure via the `instanceUrl` option.
 
 ### Quick Start
 

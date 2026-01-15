@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added GitLab Duo provider support using `@gitlab/gitlab-ai-provider` for native tool calling via GitLab's Anthropic proxy. Supports Claude Opus 4.5, Sonnet 4.5, and Haiku 4.5 models with automatic OAuth token management.
+
 ### Fixed
 
 - Fixed signature support for non-Anthropic models in Amazon Bedrock provider ([#727](https://github.com/badlogic/pi-mono/pull/727) by [@unexge](https://github.com/unexge))

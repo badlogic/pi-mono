@@ -236,6 +236,8 @@ ${chalk.bold("Examples:")}
 ${chalk.bold("Environment Variables:")}
   ANTHROPIC_API_KEY       - Anthropic Claude API key
   ANTHROPIC_OAUTH_TOKEN   - Anthropic OAuth token (alternative to API key)
+  GITLAB_TOKEN            - GitLab API token for GitLab Duo
+  GITLAB_DUO_TOKEN        - GitLab Duo API token (alternative to GITLAB_TOKEN)
   OPENAI_API_KEY          - OpenAI GPT API key
   GEMINI_API_KEY          - Google Gemini API key
   GROQ_API_KEY            - Groq API key

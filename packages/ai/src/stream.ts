@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { supportsXhigh } from "./models.js";
 import { type BedrockOptions, streamBedrock } from "./providers/amazon-bedrock.js";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
+import { type GitLabDuoOptions, streamGitLabDuo } from "./providers/gitlab-duo.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
 import {
 	type GoogleGeminiCliOptions,
@@ -61,6 +62,11 @@ export function getEnvApiKey(provider: any): string | undefined {
 	// ANTHROPIC_OAUTH_TOKEN takes precedence over ANTHROPIC_API_KEY
 	if (provider === "anthropic") {
 		return process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
+	}
+
+	// GitLab Duo uses GITLAB_TOKEN or GITLAB_DUO_TOKEN
+	if (provider === "gitlab-duo") {
+		return process.env.GITLAB_DUO_TOKEN || process.env.GITLAB_TOKEN;
 	}
 
 	// Vertex AI uses Application Default Credentials, not API keys.
@@ -150,6 +156,9 @@ export function stream<TApi extends Api>(
 				context,
 				providerOptions as GoogleGeminiCliOptions,
 			);
+
+		case "gitlab-duo":
+			return streamGitLabDuo(model as Model<"gitlab-duo">, context, providerOptions as GitLabDuoOptions);
 
 		default: {
 			// This should never be reached if all Api cases are handled
@@ -385,6 +394,15 @@ function mapOptionsForApi<TApi extends Api>(
 					budgetTokens: getGoogleBudget(geminiModel, effort, options?.thinkingBudgets),
 				},
 			} satisfies GoogleVertexOptions;
+		}
+
+		case "gitlab-duo": {
+			return {
+				...base,
+				thinking: {
+					enabled: options?.reasoning !== undefined && options.reasoning !== "minimal",
+				},
+			} satisfies GitLabDuoOptions;
 		}
 
 		default: {

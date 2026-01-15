@@ -51,6 +51,7 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - **Anthropic**
 - **Google**
 - **Vertex AI** (Gemini via Vertex AI)
+- **GitLab Duo**
 - **Mistral**
 - **Groq**
 - **Cerebras**
@@ -478,6 +479,13 @@ await complete(googleModel, context, {
     budgetTokens: 8192  // -1 for dynamic, 0 to disable
   }
 });
+
+// GitLab Duo (uses Claude via GitLab's Anthropic proxy)
+const gitlabDuoModel = getModel('gitlab-duo', 'duo-chat');
+await complete(gitlabDuoModel, context, {
+  thinking: true,
+  instanceUrl: 'https://gitlab.example.com', // Optional: self-hosted GitLab URL
+});
 ```
 
 ### Streaming Thinking Content
@@ -858,6 +866,7 @@ In Node.js environments, you can set environment variables to avoid passing API 
 | OpenAI | `OPENAI_API_KEY` |
 | Anthropic | `ANTHROPIC_API_KEY` or `ANTHROPIC_OAUTH_TOKEN` |
 | Google | `GEMINI_API_KEY` |
+| GitLab Duo | `GITLAB_DUO_TOKEN` or `GITLAB_TOKEN` |
 | Vertex AI | `GOOGLE_CLOUD_PROJECT` (or `GCLOUD_PROJECT`) + `GOOGLE_CLOUD_LOCATION` + ADC |
 | Mistral | `MISTRAL_API_KEY` |
 | Groq | `GROQ_API_KEY` |
