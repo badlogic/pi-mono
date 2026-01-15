@@ -60,7 +60,6 @@ import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
-
 import { stripFrontmatter } from "../../utils/frontmatter.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { ArminComponent } from "./components/armin.js";
