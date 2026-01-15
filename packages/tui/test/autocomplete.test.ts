@@ -1,4 +1,7 @@
 import assert from "node:assert";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 import { describe, it } from "node:test";
 import { CombinedAutocompleteProvider } from "../src/autocomplete.js";
 
@@ -58,6 +61,61 @@ describe("CombinedAutocompleteProvider", () => {
 			assert.notEqual(result, null, "Should trigger for absolute paths in command arguments");
 			if (result) {
 				assert.strictEqual(result.prefix, "/", "Prefix should be '/'");
+			}
+		});
+	});
+
+	describe("shell completions", () => {
+		it("completes command names after ! prefix", () => {
+			const originalPath = process.env.PATH;
+			const tempDir = mkdtempSync(join(tmpdir(), "pi-tui-"));
+			const commandPath = join(tempDir, "pi-testcmd");
+			writeFileSync(commandPath, "#!/bin/sh\necho test\n");
+			if (process.platform !== "win32") {
+				chmodSync(commandPath, 0o755);
+			}
+
+			process.env.PATH = originalPath ? `${tempDir}${delimiter}${originalPath}` : tempDir;
+
+			try {
+				const provider = new CombinedAutocompleteProvider([], "/tmp");
+				const line = "!pi-te";
+				const result = provider.getForceFileSuggestions([line], 0, line.length);
+
+				assert.notEqual(result, null, "Should return command suggestions");
+				if (result) {
+					assert.strictEqual(result.prefix, "pi-te", "Prefix should be 'pi-te'");
+					const values = result.items.map((item) => item.value);
+					assert.ok(values.includes("pi-testcmd"));
+				}
+			} finally {
+				if (originalPath === undefined) {
+					delete process.env.PATH;
+				} else {
+					process.env.PATH = originalPath;
+				}
+				rmSync(tempDir, { recursive: true, force: true });
+			}
+		});
+
+		it("completes ./ paths after ! prefix", () => {
+			const tempDir = mkdtempSync(join(tmpdir(), "pi-tui-"));
+			const filePath = join(tempDir, "example.txt");
+			writeFileSync(filePath, "test");
+
+			try {
+				const provider = new CombinedAutocompleteProvider([], tempDir);
+				const line = "!./";
+				const result = provider.getForceFileSuggestions([line], 0, line.length);
+
+				assert.notEqual(result, null, "Should return path suggestions");
+				if (result) {
+					assert.strictEqual(result.prefix, "./", "Prefix should be './'");
+					const values = result.items.map((item) => item.value);
+					assert.ok(values.includes("./example.txt"));
+				}
+			} finally {
+				rmSync(tempDir, { recursive: true, force: true });
 			}
 		});
 	});

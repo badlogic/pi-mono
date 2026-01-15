@@ -60,6 +60,7 @@ import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
+import { getShellConfig } from "../../utils/shell.js";
 
 import { ensureTool } from "../../utils/tools-manager.js";
 import { ArminComponent } from "./components/armin.js";
@@ -334,10 +335,18 @@ export class InteractiveMode {
 		}
 
 		// Setup autocomplete
+		let shellPath: string | undefined;
+		try {
+			shellPath = getShellConfig().shell;
+		} catch {
+			shellPath = undefined;
+		}
+
 		this.autocompleteProvider = new CombinedAutocompleteProvider(
 			[...slashCommands, ...templateCommands, ...extensionCommands, ...skillCommandList],
 			process.cwd(),
 			fdPath,
+			shellPath,
 		);
 		this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
 	}

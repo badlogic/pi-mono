@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Shell command tab completion now uses bash completions for `!`/`!!` commands when available
+
 ## [0.46.0] - 2026-01-15
 
 ### Fixed

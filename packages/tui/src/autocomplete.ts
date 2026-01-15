@@ -1,7 +1,8 @@
 import { spawnSync } from "child_process";
-import { readdirSync, statSync } from "fs";
+import { type Dirent, readdirSync, statSync } from "fs";
 import { homedir } from "os";
-import { basename, dirname, join } from "path";
+import { basename, delimiter, dirname, extname, join } from "path";
+import { bashCompletionScript } from "./bash-completion-script.js";
 import { fuzzyFilter } from "./fuzzy.js";
 
 // Use fd to walk directory tree (fast, respects .gitignore)
@@ -89,15 +90,19 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	private commands: (SlashCommand | AutocompleteItem)[];
 	private basePath: string;
 	private fdPath: string | null;
+	private shellPath: string | undefined;
+	private commandCache: { pathValue: string; commands: string[] } | null = null;
 
 	constructor(
 		commands: (SlashCommand | AutocompleteItem)[] = [],
 		basePath: string = process.cwd(),
 		fdPath: string | null = null,
+		shellPath?: string,
 	) {
 		this.commands = commands;
 		this.basePath = basePath;
 		this.fdPath = fdPath;
+		this.shellPath = shellPath;
 	}
 
 	getSuggestions(
@@ -120,6 +125,11 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				items: suggestions,
 				prefix: prefix,
 			};
+		}
+
+		const shellSuggestions = this.getShellSuggestions(currentLine, cursorCol);
+		if (shellSuggestions) {
+			return shellSuggestions;
 		}
 
 		// Check for slash commands
@@ -266,6 +276,226 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			cursorLine,
 			cursorCol: beforePrefix.length + item.value.length,
 		};
+	}
+
+	private getShellSuggestions(
+		currentLine: string,
+		cursorCol: number,
+	): { items: AutocompleteItem[]; prefix: string } | null {
+		const context = this.getShellCompletionContext(currentLine, cursorCol);
+		if (!context) {
+			return null;
+		}
+
+		const { commandLine, commandCursor, prefix } = context;
+		const shellSuggestions = this.getBashCompletions(commandLine, commandCursor);
+
+		if (shellSuggestions.length > 0) {
+			const unique = Array.from(new Set(shellSuggestions));
+			const filtered = prefix
+				? unique.filter((value) => value.toLowerCase().startsWith(prefix.toLowerCase()))
+				: unique;
+			if (filtered.length > 0) {
+				return {
+					items: filtered.map((value) => ({ value, label: value })),
+					prefix,
+				};
+			}
+		}
+
+		if (!prefix) {
+			return null;
+		}
+
+		if (this.isPathLike(prefix)) {
+			const suggestions = this.getFileSuggestions(prefix);
+			if (suggestions.length === 0) return null;
+
+			return { items: suggestions, prefix };
+		}
+
+		const suggestions = this.getCommandSuggestions(prefix);
+		if (suggestions.length === 0) return null;
+
+		return { items: suggestions, prefix };
+	}
+
+	private getShellCompletionContext(
+		currentLine: string,
+		cursorCol: number,
+	): { commandLine: string; commandCursor: number; prefix: string } | null {
+		const trimmedLine = currentLine.trimStart();
+		if (!trimmedLine.startsWith("!")) {
+			return null;
+		}
+
+		const leadingWhitespace = currentLine.length - trimmedLine.length;
+		const bangCount = trimmedLine.startsWith("!!") ? 2 : 1;
+		const commandStart = leadingWhitespace + bangCount;
+
+		if (cursorCol < commandStart) {
+			return null;
+		}
+
+		const rawCommandLine = currentLine.slice(commandStart);
+		const rawCursor = cursorCol - commandStart;
+		const trimmedCommandLine = rawCommandLine.trimStart();
+		const trimOffset = rawCommandLine.length - trimmedCommandLine.length;
+		const commandCursor = Math.max(0, rawCursor - trimOffset);
+		const commandLine = trimmedCommandLine;
+		const boundedCursor = Math.min(commandCursor, commandLine.length);
+		const commandBeforeCursor = commandLine.slice(0, boundedCursor);
+		const prefix = this.getShellCompletionPrefix(commandBeforeCursor);
+
+		return {
+			commandLine,
+			commandCursor: boundedCursor,
+			prefix,
+		};
+	}
+
+	private getShellCompletionPrefix(commandBeforeCursor: string): string {
+		const lastDelimiterIndex = Math.max(
+			commandBeforeCursor.lastIndexOf(" "),
+			commandBeforeCursor.lastIndexOf("\t"),
+			commandBeforeCursor.lastIndexOf('"'),
+			commandBeforeCursor.lastIndexOf("'"),
+			commandBeforeCursor.lastIndexOf("="),
+		);
+
+		return lastDelimiterIndex === -1 ? commandBeforeCursor : commandBeforeCursor.slice(lastDelimiterIndex + 1);
+	}
+
+	private getBashCompletions(commandLine: string, cursorCol: number): string[] {
+		if (!commandLine.trim()) {
+			return [];
+		}
+
+		const shellPath = this.shellPath ?? "bash";
+		if (!shellPath) {
+			return [];
+		}
+
+		const script = bashCompletionScript;
+
+		const result = spawnSync(shellPath, ["--noprofile", "--norc", "-ic", script], {
+			encoding: "utf-8",
+			stdio: ["ignore", "pipe", "ignore"],
+			env: {
+				...process.env,
+				PI_BASH_COMPLETION_LINE: commandLine,
+				PI_BASH_COMPLETION_POINT: String(cursorCol),
+			},
+			maxBuffer: 1024 * 1024,
+		});
+
+		if (result.error || result.status !== 0 || !result.stdout) {
+			return [];
+		}
+
+		const suggestions = result.stdout.split(/\r?\n/).filter((line) => line.length > 0);
+		const seen = new Set<string>();
+		for (const suggestion of suggestions) {
+			if (!seen.has(suggestion)) {
+				seen.add(suggestion);
+			}
+		}
+
+		return Array.from(seen).slice(0, 200);
+	}
+
+	private isPathLike(prefix: string): boolean {
+		return prefix.includes("/") || prefix.startsWith(".") || prefix.startsWith("~");
+	}
+
+	private getCommandSuggestions(prefix: string): AutocompleteItem[] {
+		if (!prefix) return [];
+
+		const commands = this.getCommandList();
+		if (commands.length === 0) return [];
+
+		const filtered = fuzzyFilter(commands, prefix, (command) => command).slice(0, 100);
+		return filtered.map((command) => ({
+			value: command,
+			label: command,
+		}));
+	}
+
+	private getCommandList(): string[] {
+		const pathValue = process.env.PATH ?? "";
+		if (this.commandCache && this.commandCache.pathValue === pathValue) {
+			return this.commandCache.commands;
+		}
+
+		const commandSet = new Set<string>();
+		const directories = pathValue.split(delimiter).filter((dir) => dir.length > 0);
+		const windowsExtensions = this.getWindowsPathExtensions();
+
+		for (const dir of directories) {
+			let entries: Dirent[];
+			try {
+				entries = readdirSync(dir, { withFileTypes: true });
+			} catch {
+				continue;
+			}
+
+			for (const entry of entries) {
+				if (entry.isDirectory()) {
+					continue;
+				}
+
+				const name = entry.name;
+				const fullPath = join(dir, name);
+
+				let stats: ReturnType<typeof statSync>;
+				try {
+					stats = statSync(fullPath);
+				} catch {
+					continue;
+				}
+
+				if (!stats.isFile()) {
+					continue;
+				}
+
+				if (process.platform === "win32") {
+					const normalized = this.normalizeWindowsCommandName(name, windowsExtensions);
+					if (normalized) {
+						commandSet.add(normalized);
+					}
+					continue;
+				}
+
+				if ((stats.mode & 0o111) === 0) {
+					continue;
+				}
+
+				commandSet.add(name);
+			}
+		}
+
+		const commands = Array.from(commandSet).sort((a, b) => a.localeCompare(b));
+		this.commandCache = { pathValue, commands };
+		return commands;
+	}
+
+	private getWindowsPathExtensions(): string[] {
+		const pathext = process.env.PATHEXT;
+		const extensions = pathext ? pathext.split(";") : [".COM", ".EXE", ".BAT", ".CMD"];
+		return extensions.map((ext) => ext.trim().toLowerCase()).filter((ext) => ext.length > 0);
+	}
+
+	private normalizeWindowsCommandName(fileName: string, extensions: string[]): string | null {
+		const extension = extname(fileName).toLowerCase();
+		if (!extension) {
+			return fileName;
+		}
+
+		if (extensions.includes(extension)) {
+			return fileName.slice(0, -extension.length);
+		}
+
+		return null;
 	}
 
 	// Extract a path-like prefix from the text before cursor
@@ -546,6 +776,11 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		// Don't trigger if we're typing a slash command at the start of the line
 		if (textBeforeCursor.trim().startsWith("/") && !textBeforeCursor.trim().includes(" ")) {
 			return null;
+		}
+
+		const shellSuggestions = this.getShellSuggestions(currentLine, cursorCol);
+		if (shellSuggestions) {
+			return shellSuggestions;
 		}
 
 		// Force extract path prefix - this will always return something
