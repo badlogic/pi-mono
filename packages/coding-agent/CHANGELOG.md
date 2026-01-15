@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Session tree now preserves branch connectors/indentation when filters hide intermediate entries (e.g., model changes or custom entries in default view): descendants attach to the nearest visible ancestor so sibling branches align. Fixed in both TUI and HTML export.
 - Show `bun install` instead of `npm install` in update notification when running under Bun ([#714](https://github.com/badlogic/pi-mono/pull/714) by [@dannote](https://github.com/dannote))
 - `/skill` prompts now include the skill path ([#711](https://github.com/badlogic/pi-mono/pull/711) by [@jblwilliams](https://github.com/jblwilliams))
 - Use configurable `expandTools` keybinding instead of hardcoded Ctrl+O ([#717](https://github.com/badlogic/pi-mono/pull/717) by [@dannote](https://github.com/dannote))
