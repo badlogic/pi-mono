@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Session tree now preserves branch connectors and indentation when filters hide intermediate entries so descendants attach to the nearest visible ancestor and sibling branches align. Fixed in both TUI and HTML export ([#739](https://github.com/badlogic/pi-mono/pull/739) by [@w-winter](https://github.com/w-winter))
+
 ## [0.46.0] - 2026-01-15
 
 ### Fixed
