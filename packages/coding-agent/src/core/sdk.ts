@@ -479,7 +479,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// Emit skills_discover event to collect additional directories from extensions
 	let extensionSkillDirectories: string[] = [];
-	if (extensionRunner) {
+	const shouldDiscoverSkills = options.skills === undefined;
+	if (extensionRunner && shouldDiscoverSkills) {
 		extensionSkillDirectories = await extensionRunner.emitSkillsDiscover(cwd);
 	}
 
