@@ -750,9 +750,9 @@ class SearchLine implements Component {
 	render(width: number): string[] {
 		const query = this.treeList.getSearchQuery();
 		if (query) {
-			return [truncateToWidth(`  ${theme.fg("muted", "Search:")} ${theme.fg("accent", query)}`, width)];
+			return [truncateToWidth(`  ${theme.fg("muted", "Type to search:")} ${theme.fg("accent", query)}`, width)];
 		}
-		return [truncateToWidth(`  ${theme.fg("muted", "Search:")}`, width)];
+		return [truncateToWidth(`  ${theme.fg("muted", "Type to search:")}`, width)];
 	}
 
 	handleInput(_keyData: string): void {}
@@ -840,7 +840,7 @@ export class TreeSelectorComponent extends Container {
 		this.addChild(
 			new TruncatedText(
 				theme.fg("muted", "  ↑/↓: move. ←/→: page. l: label. ") +
-					theme.fg("dim", "^D/^T/^U/^L/^A: filters (^O/⇧^O cycle). Type to search"),
+					theme.fg("muted", "^D/^T/^U/^L/^A: filters (^O/⇧^O cycle)"),
 				0,
 				0,
 			),
