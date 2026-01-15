@@ -105,6 +105,9 @@ export type {
 	SetLabelHandler,
 	SetModelHandler,
 	SetThinkingLevelHandler,
+	// Events - Skills
+	SkillsDiscoverEvent,
+	SkillsDiscoverResult,
 	// Events - Tool
 	ToolCallEvent,
 	ToolCallEventResult,
