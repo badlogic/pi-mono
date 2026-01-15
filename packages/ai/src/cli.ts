@@ -67,11 +67,13 @@ async function login(provider: OAuthProvider): Promise<void> {
 
 			case "gitlab-duo":
 				credentials = await loginGitLabDuo(
-					(url) => {
-						console.log(`\nOpen this URL in your browser:\n${url}\n`);
+					(info) => {
+						console.log(`\nOpen this URL in your browser:\n${info.url}`);
+						if (info.instructions) console.log(info.instructions);
+						console.log();
 					},
-					async () => {
-						return await promptFn("Paste the authorization code:");
+					async (p) => {
+						return await promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
 					},
 				);
 				break;

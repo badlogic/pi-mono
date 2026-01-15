@@ -186,10 +186,7 @@ export class AuthStorage {
 				});
 				break;
 			case "gitlab-duo":
-				credentials = await loginGitLabDuo(
-					(url) => callbacks.onAuth({ url }),
-					() => callbacks.onPrompt({ message: "Paste the authorization code:" }),
-				);
+				credentials = await loginGitLabDuo((info) => callbacks.onAuth(info), callbacks.onPrompt);
 				break;
 			case "google-gemini-cli":
 				credentials = await loginGeminiCli(callbacks.onAuth, callbacks.onProgress, callbacks.onManualCodeInput);
