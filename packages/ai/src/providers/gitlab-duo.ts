@@ -251,6 +251,7 @@ export const streamGitLabDuo: StreamFunction<"gitlab-duo"> = (
 			const textBlocks: Map<string, { index: number; text: string }> = new Map();
 			const toolBlocks: Map<string, { index: number; name: string; input: string }> = new Map();
 			const reasoningBlocks: Map<string, { index: number; thinking: string }> = new Map();
+			const processedToolCallIds: Set<string> = new Set();
 
 			// Read from the stream
 			const reader = aiStream.getReader();
@@ -400,6 +401,8 @@ export const streamGitLabDuo: StreamFunction<"gitlab-duo"> = (
 										partial: output,
 									});
 								}
+								// Mark this tool call ID as processed
+								processedToolCallIds.add(event.id);
 								toolBlocks.delete(event.id);
 							}
 							break;
@@ -407,24 +410,26 @@ export const streamGitLabDuo: StreamFunction<"gitlab-duo"> = (
 
 						case "tool-call": {
 							// Complete tool call event (non-streaming)
-							// Check if we already have this tool call from streaming
-							if (!toolBlocks.has(event.toolCallId)) {
-								const toolCall: ToolCall = {
-									type: "toolCall",
-									id: event.toolCallId,
-									name: event.toolName,
-									arguments: typeof event.input === "string" ? JSON.parse(event.input) : event.input,
-								};
-								output.content.push(toolCall);
-								const contentIndex = output.content.length - 1;
-								stream.push({ type: "toolcall_start", contentIndex, partial: output });
-								stream.push({
-									type: "toolcall_end",
-									contentIndex,
-									toolCall,
-									partial: output,
-								});
+							// Skip if we already processed this tool call from streaming events
+							if (processedToolCallIds.has(event.toolCallId)) {
+								break;
 							}
+							const toolCall: ToolCall = {
+								type: "toolCall",
+								id: event.toolCallId,
+								name: event.toolName,
+								arguments: typeof event.input === "string" ? JSON.parse(event.input) : event.input,
+							};
+							output.content.push(toolCall);
+							const contentIndex = output.content.length - 1;
+							stream.push({ type: "toolcall_start", contentIndex, partial: output });
+							stream.push({
+								type: "toolcall_end",
+								contentIndex,
+								toolCall,
+								partial: output,
+							});
+							processedToolCallIds.add(event.toolCallId);
 							break;
 						}
 

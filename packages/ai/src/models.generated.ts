@@ -5251,23 +5251,6 @@ export const MODELS = {
 			contextWindow: 1048576,
 			maxTokens: 65536,
 		} satisfies Model<"openai-completions">,
-		"google/gemini-2.5-flash-preview-09-2025": {
-			id: "google/gemini-2.5-flash-preview-09-2025",
-			name: "Google: Gemini 2.5 Flash Preview 09-2025",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: true,
-			input: ["text", "image"],
-			cost: {
-				input: 0.3,
-				output: 2.5,
-				cacheRead: 0.075,
-				cacheWrite: 0.3833,
-			},
-			contextWindow: 1048576,
-			maxTokens: 65535,
-		} satisfies Model<"openai-completions">,
 		"google/gemini-2.5-pro": {
 			id: "google/gemini-2.5-pro",
 			name: "Google: Gemini 2.5 Pro",
