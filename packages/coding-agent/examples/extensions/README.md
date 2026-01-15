@@ -70,6 +70,12 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `git-checkpoint.ts` | Creates git stash checkpoints at each turn for code restoration on fork |
 | `auto-commit-on-exit.ts` | Auto-commits on exit using last assistant message for commit message |
 
+### Skills
+
+| Extension | Description |
+|-----------|-------------|
+| `recursive-skills.ts` | Recursively discovers `.pi/skills` and `.claude/skills` directories via `skills_discover` |
+
 ### System Prompt & Compaction
 
 | Extension | Description |
