@@ -1,5 +1,4 @@
-import type { AgentState, AgentTool } from "@mariozechner/pi-agent-core";
-import { buildCodexPiBridge, getCodexInstructions } from "@mariozechner/pi-ai";
+import type { AgentState } from "@mariozechner/pi-agent-core";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir } from "../../config.js";
@@ -34,37 +33,6 @@ export interface ExportOptions {
 	themeName?: string;
 	/** Optional tool renderer for custom tools */
 	toolRenderer?: ToolHtmlRenderer;
-}
-
-/** Info about Codex injection to show inline with model_change entries */
-interface CodexInjectionInfo {
-	/** Codex instructions text */
-	instructions: string;
-	/** Bridge text (tool list) */
-	bridge: string;
-}
-
-/**
- * Build Codex injection info for display inline with model_change entries.
- */
-async function buildCodexInjectionInfo(tools?: AgentTool[]): Promise<CodexInjectionInfo | undefined> {
-	// Try to get cached instructions for default model family
-	let instructions: string | null = null;
-	try {
-		instructions = getCodexInstructions();
-	} catch {
-		// Cache miss - that's fine
-	}
-
-	const bridgeText = buildCodexPiBridge(tools);
-
-	const instructionsText =
-		instructions || "(Codex instructions not cached. Run a Codex request to populate the local cache.)";
-
-	return {
-		instructions: instructionsText,
-		bridge: bridgeText,
-	};
 }
 
 /** Parse a color string to RGB values. Supports hex (#RRGGBB) and rgb(r,g,b) formats. */
@@ -160,8 +128,6 @@ interface SessionData {
 	entries: ReturnType<SessionManager["getEntries"]>;
 	leafId: string | null;
 	systemPrompt?: string;
-	/** Info for rendering Codex injection inline with model_change entries */
-	codexInjectionInfo?: CodexInjectionInfo;
 	tools?: { name: string; description: string }[];
 	/** Pre-rendered HTML for custom tool calls/results, keyed by tool call ID */
 	renderedTools?: Record<string, RenderedToolHtml>;
@@ -287,7 +253,6 @@ export async function exportSessionToHtml(
 		entries,
 		leafId: sm.getLeafId(),
 		systemPrompt: state?.systemPrompt,
-		codexInjectionInfo: await buildCodexInjectionInfo(state?.tools),
 		tools: state?.tools?.map((t) => ({ name: t.name, description: t.description })),
 		renderedTools,
 	};
@@ -322,7 +287,6 @@ export async function exportFromFile(inputPath: string, options?: ExportOptions 
 		entries: sm.getEntries(),
 		leafId: sm.getLeafId(),
 		systemPrompt: undefined,
-		codexInjectionInfo: await buildCodexInjectionInfo(undefined),
 		tools: undefined,
 	};
 
