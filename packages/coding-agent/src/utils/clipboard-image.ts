@@ -139,6 +139,11 @@ export async function readClipboardImage(options?: {
 	const env = options?.env ?? process.env;
 	const platform = options?.platform ?? process.platform;
 
+	// Termux: termux-clipboard-get only handles text, not images
+	if (env.TERMUX_VERSION) {
+		return null;
+	}
+
 	if (platform === "linux" && isWaylandSession(env)) {
 		return readClipboardImageViaWlPaste() ?? readClipboardImageViaXclip();
 	}
