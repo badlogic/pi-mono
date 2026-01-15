@@ -1,5 +1,13 @@
 import type { ImageContent } from "@mariozechner/pi-ai";
-import photon from "@silvia-odwyer/photon-node";
+
+// Optional import - photon-node may not be available on all platforms (e.g., Termux)
+let photon: any = null;
+try {
+	// eslint-disable-next-line @typescript-eslint/no-require-imports
+	photon = require("@silvia-odwyer/photon-node");
+} catch {
+	// Photon not available - image resizing will be skipped
+}
 
 export interface ImageResizeOptions {
 	maxWidth?: number; // Default: 2000
@@ -52,6 +60,19 @@ function pickSmaller(
 export async function resizeImage(img: ImageContent, options?: ImageResizeOptions): Promise<ResizedImage> {
 	const opts = { ...DEFAULT_OPTIONS, ...options };
 	const inputBuffer = Buffer.from(img.data, "base64");
+
+	// If photon is not available, return original image
+	if (!photon) {
+		return {
+			data: img.data,
+			mimeType: img.mimeType,
+			originalWidth: 0,
+			originalHeight: 0,
+			width: 0,
+			height: 0,
+			wasResized: false,
+		};
+	}
 
 	let image: ReturnType<typeof photon.PhotonImage.new_from_byteslice> | undefined;
 	try {

@@ -50,7 +50,9 @@
 		"glob": "^11.0.3",
 		"marked": "^15.0.12",
 		"minimatch": "^10.1.1",
-		"proper-lockfile": "^4.1.2",
+		"proper-lockfile": "^4.1.2"
+	},
+	"optionalDependencies": {
 		"@silvia-odwyer/photon-node": "^0.3.4"
 	},
 	"devDependencies": {

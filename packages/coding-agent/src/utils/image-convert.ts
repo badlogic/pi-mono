@@ -1,4 +1,11 @@
-import photon from "@silvia-odwyer/photon-node";
+// Optional import - photon-node may not be available on all platforms (e.g., Termux)
+let photon: any = null;
+try {
+	// eslint-disable-next-line @typescript-eslint/no-require-imports
+	photon = require("@silvia-odwyer/photon-node");
+} catch {
+	// Photon not available - image conversion will be skipped
+}
 
 /**
  * Convert image to PNG format for terminal display.
@@ -11,6 +18,11 @@ export async function convertToPng(
 	// Already PNG, no conversion needed
 	if (mimeType === "image/png") {
 		return { data: base64Data, mimeType };
+	}
+
+	// If photon is not available, cannot convert
+	if (!photon) {
+		return null;
 	}
 
 	try {
