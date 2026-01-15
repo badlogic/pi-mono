@@ -302,6 +302,9 @@ class TreeList implements Component {
 			return true;
 		});
 
+		// Recalculate visual structure (indent, connectors, gutters) based on visible tree
+		this.recalculateVisualStructure();
+
 		// Try to preserve cursor on the same node after filtering
 		if (previouslySelectedId) {
 			const newIndex = this.filteredNodes.findIndex((n) => n.node.entry.id === previouslySelectedId);
@@ -314,6 +317,133 @@ class TreeList implements Component {
 		// Fall back: clamp index if out of bounds
 		if (this.selectedIndex >= this.filteredNodes.length) {
 			this.selectedIndex = Math.max(0, this.filteredNodes.length - 1);
+		}
+	}
+
+	/**
+	 * Recompute indentation/connectors for the filtered view
+	 *
+	 * Filtering can hide intermediate entries; descendants attach to the nearest visible ancestor.
+	 * Keep indentation semantics aligned with flattenTree() so single-child chains don't drift right.
+	 */
+	private recalculateVisualStructure(): void {
+		if (this.filteredNodes.length === 0) return;
+
+		const visibleIds = new Set(this.filteredNodes.map((n) => n.node.entry.id));
+
+		// Build entry map for efficient parent lookup (using full tree)
+		const entryMap = new Map<string, FlatNode>();
+		for (const flatNode of this.flatNodes) {
+			entryMap.set(flatNode.node.entry.id, flatNode);
+		}
+
+		// Find nearest visible ancestor for a node
+		const findVisibleAncestor = (nodeId: string): string | null => {
+			let currentId = entryMap.get(nodeId)?.node.entry.parentId ?? null;
+			while (currentId !== null) {
+				if (visibleIds.has(currentId)) {
+					return currentId;
+				}
+				currentId = entryMap.get(currentId)?.node.entry.parentId ?? null;
+			}
+			return null;
+		};
+
+		// Build visible tree structure:
+		// - visibleParent: nodeId → nearest visible ancestor (or null for roots)
+		// - visibleChildren: parentId → list of visible children (in filteredNodes order)
+		const visibleParent = new Map<string, string | null>();
+		const visibleChildren = new Map<string | null, string[]>();
+		visibleChildren.set(null, []); // root-level nodes
+
+		for (const flatNode of this.filteredNodes) {
+			const nodeId = flatNode.node.entry.id;
+			const ancestorId = findVisibleAncestor(nodeId);
+			visibleParent.set(nodeId, ancestorId);
+
+			if (!visibleChildren.has(ancestorId)) {
+				visibleChildren.set(ancestorId, []);
+			}
+			visibleChildren.get(ancestorId)!.push(nodeId);
+		}
+
+		// Update multipleRoots based on visible roots
+		const visibleRootIds = visibleChildren.get(null)!;
+		this.multipleRoots = visibleRootIds.length > 1;
+
+		// Build a map for quick lookup: nodeId → FlatNode
+		const filteredNodeMap = new Map<string, FlatNode>();
+		for (const flatNode of this.filteredNodes) {
+			filteredNodeMap.set(flatNode.node.entry.id, flatNode);
+		}
+
+		// DFS over the visible tree using flattenTree() indentation semantics
+		// Stack items: [nodeId, indent, justBranched, showConnector, isLast, gutters, isVirtualRootChild]
+		type StackItem = [string, number, boolean, boolean, boolean, GutterInfo[], boolean];
+		const stack: StackItem[] = [];
+
+		// Add visible roots in reverse order (to process in forward order via stack)
+		for (let i = visibleRootIds.length - 1; i >= 0; i--) {
+			const isLast = i === visibleRootIds.length - 1;
+			stack.push([
+				visibleRootIds[i],
+				this.multipleRoots ? 1 : 0,
+				this.multipleRoots,
+				this.multipleRoots,
+				isLast,
+				[],
+				this.multipleRoots,
+			]);
+		}
+
+		while (stack.length > 0) {
+			const [nodeId, indent, justBranched, showConnector, isLast, gutters, isVirtualRootChild] = stack.pop()!;
+
+			const flatNode = filteredNodeMap.get(nodeId);
+			if (!flatNode) continue;
+
+			// Update this node's visual properties
+			flatNode.indent = indent;
+			flatNode.showConnector = showConnector;
+			flatNode.isLast = isLast;
+			flatNode.gutters = gutters;
+			flatNode.isVirtualRootChild = isVirtualRootChild;
+
+			// Get visible children of this node
+			const children = visibleChildren.get(nodeId) || [];
+			const multipleChildren = children.length > 1;
+
+			// Child indent follows flattenTree(): branch points (and first generation after a branch) shift +1
+			let childIndent: number;
+			if (multipleChildren) {
+				childIndent = indent + 1;
+			} else if (justBranched && indent > 0) {
+				childIndent = indent + 1;
+			} else {
+				childIndent = indent;
+			}
+
+			// Child gutters follow flattenTree() connector/gutter rules
+			const connectorDisplayed = showConnector && !isVirtualRootChild;
+			const currentDisplayIndent = this.multipleRoots ? Math.max(0, indent - 1) : indent;
+			const connectorPosition = Math.max(0, currentDisplayIndent - 1);
+			const childGutters: GutterInfo[] = connectorDisplayed
+				? [...gutters, { position: connectorPosition, show: !isLast }]
+				: gutters;
+
+			// Add children in reverse order (to process in forward order via stack)
+			for (let i = children.length - 1; i >= 0; i--) {
+				const childIsLast = i === children.length - 1;
+				stack.push([
+					children[i],
+					childIndent,
+					multipleChildren,
+					multipleChildren,
+					childIsLast,
+					childGutters,
+					false,
+				]);
+			}
 		}
 	}
 

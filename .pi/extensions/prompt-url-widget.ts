@@ -81,13 +81,13 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 		const trimmedTitle = title?.trim();
 		const fallbackName = `${label}: ${match.url}`;
 		const desiredName = trimmedTitle ? `${label}: ${trimmedTitle} (${match.url})` : fallbackName;
-		const currentName = ctx.getSessionName()?.trim();
+		const currentName = pi.getSessionName()?.trim();
 		if (!currentName) {
-			ctx.setSessionName(desiredName);
+			pi.setSessionName(desiredName);
 			return;
 		}
 		if (currentName === match.url || currentName === fallbackName) {
-			ctx.setSessionName(desiredName);
+			pi.setSessionName(desiredName);
 		}
 	};
 
