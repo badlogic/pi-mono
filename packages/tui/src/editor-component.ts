@@ -56,6 +56,9 @@ export interface EditorComponent extends Component {
 	/** Set the autocomplete provider */
 	setAutocompleteProvider?(provider: AutocompleteProvider): void;
 
+	/** Called when async autocomplete needs a render update */
+	onRenderRequest?: () => void;
+
 	// =========================================================================
 	// Appearance (optional)
 	// =========================================================================

@@ -1,7 +1,18 @@
 // Core TUI interfaces and classes
 
+// Async file search
+export {
+	AsyncFileSearch,
+	type AsyncFileSearchOptions,
+	DebouncedFileSearch,
+	type DebouncedSearchCallbacks,
+	type FileSearchEntry,
+	type FileSearchResult,
+	type FileSearchState,
+} from "./async-file-search.js";
 // Autocomplete support
 export {
+	type AsyncAutocompleteCallbacks,
 	type AutocompleteItem,
 	type AutocompleteProvider,
 	CombinedAutocompleteProvider,

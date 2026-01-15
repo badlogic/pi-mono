@@ -339,6 +339,12 @@ export class InteractiveMode {
 			process.cwd(),
 			fdPath,
 		);
+
+		// Connect render request callback BEFORE setting provider (callbacks capture this reference)
+		this.defaultEditor.onRenderRequest = () => {
+			this.ui.requestRender();
+		};
+
 		this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
 	}
 
@@ -1172,6 +1178,10 @@ export class InteractiveMode {
 
 			// Set autocomplete if supported
 			if (newEditor.setAutocompleteProvider && this.autocompleteProvider) {
+				// Set render request callback BEFORE setting provider
+				newEditor.onRenderRequest = () => {
+					this.ui.requestRender();
+				};
 				newEditor.setAutocompleteProvider(this.autocompleteProvider);
 			}
 

@@ -1,4 +1,8 @@
-import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
+import type {
+	AsyncAutocompleteCallbacks,
+	AutocompleteProvider,
+	CombinedAutocompleteProvider,
+} from "../autocomplete.js";
 import { getEditorKeybindings } from "../keybindings.js";
 import { matchesKey } from "../keys.js";
 import type { Component } from "../tui.js";
@@ -224,6 +228,8 @@ export class Editor implements Component {
 	private autocompleteList?: SelectList;
 	private isAutocompleting: boolean = false;
 	private autocompletePrefix: string = "";
+	private isAutocompleteLoading: boolean = false;
+	private isAsyncAutocomplete: boolean = false;
 
 	// Paste tracking for large pastes
 	private pastes: Map<number, string> = new Map();
@@ -240,6 +246,7 @@ export class Editor implements Component {
 
 	public onSubmit?: (text: string) => void;
 	public onChange?: (text: string) => void;
+	public onRenderRequest?: () => void;
 	public disableSubmit: boolean = false;
 
 	constructor(theme: EditorTheme) {
@@ -249,6 +256,45 @@ export class Editor implements Component {
 
 	setAutocompleteProvider(provider: AutocompleteProvider): void {
 		this.autocompleteProvider = provider;
+
+		// Set up async callbacks if provider supports it
+		const combinedProvider = provider as CombinedAutocompleteProvider;
+		if (typeof combinedProvider.setAsyncCallbacks === "function") {
+			const callbacks: AsyncAutocompleteCallbacks = {
+				onSuggestions: (items, prefix) => {
+					this.handleAsyncSuggestions(items, prefix);
+					this.onRenderRequest?.();
+				},
+				onLoading: (isLoading) => {
+					this.isAutocompleteLoading = isLoading;
+					this.onRenderRequest?.();
+				},
+			};
+			combinedProvider.setAsyncCallbacks(callbacks);
+		}
+	}
+
+	/**
+	 * Handle async suggestions from the provider.
+	 */
+	private handleAsyncSuggestions(
+		items: Array<{ value: string; label: string; description?: string }>,
+		prefix: string,
+	): void {
+		// Validate state: only process if still in async autocomplete mode
+		// and the prefix matches (user hasn't changed input)
+		if (!this.isAsyncAutocomplete || this.autocompletePrefix !== prefix) {
+			return;
+		}
+
+		if (items.length > 0) {
+			this.autocompleteList = new SelectList(items, 5, this.theme.selectList);
+			this.isAutocompleting = true;
+			this.isAutocompleteLoading = false;
+		} else {
+			// No results - cancel autocomplete
+			this.cancelAutocomplete();
+		}
 	}
 
 	/**
@@ -385,10 +431,14 @@ export class Editor implements Component {
 		// Render bottom border
 		result.push(horizontal.repeat(width));
 
-		// Add autocomplete list if active
+		// Add autocomplete list or loading indicator
 		if (this.isAutocompleting && this.autocompleteList) {
 			const autocompleteResult = this.autocompleteList.render(width);
 			result.push(...autocompleteResult);
+		} else if (this.isAutocompleteLoading) {
+			// Show loading indicator
+			const loadingText = this.theme.selectList.description("  Loading...");
+			result.push(loadingText);
 		}
 
 		return result;
@@ -1330,10 +1380,23 @@ export class Editor implements Component {
 			this.state.cursorCol,
 		);
 
-		if (suggestions && suggestions.items.length > 0) {
-			this.autocompletePrefix = suggestions.prefix;
-			this.autocompleteList = new SelectList(suggestions.items, 5, this.theme.selectList);
-			this.isAutocompleting = true;
+		if (suggestions) {
+			if (suggestions.isAsync) {
+				// Async search triggered - wait for callback
+				this.autocompletePrefix = suggestions.prefix;
+				this.isAsyncAutocomplete = true;
+				this.isAutocompleting = true;
+				// Show loading immediately for better UX
+				this.isAutocompleteLoading = true;
+			} else if (suggestions.items.length > 0) {
+				// Sync results available
+				this.autocompletePrefix = suggestions.prefix;
+				this.autocompleteList = new SelectList(suggestions.items, 5, this.theme.selectList);
+				this.isAutocompleting = true;
+				this.isAsyncAutocomplete = false;
+			} else {
+				this.cancelAutocomplete();
+			}
 		} else {
 			this.cancelAutocomplete();
 		}
@@ -1393,10 +1456,18 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 		this.isAutocompleting = false;
 		this.autocompleteList = undefined;
 		this.autocompletePrefix = "";
+		this.isAutocompleteLoading = false;
+		this.isAsyncAutocomplete = false;
+
+		// Abort any in-progress async search
+		const combinedProvider = this.autocompleteProvider as CombinedAutocompleteProvider;
+		if (typeof combinedProvider?.abortAsyncSearch === "function") {
+			combinedProvider.abortAsyncSearch();
+		}
 	}
 
 	public isShowingAutocomplete(): boolean {
-		return this.isAutocompleting;
+		return this.isAutocompleting || this.isAutocompleteLoading;
 	}
 
 	private updateAutocomplete(): void {
@@ -1408,10 +1479,22 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 			this.state.cursorCol,
 		);
 
-		if (suggestions && suggestions.items.length > 0) {
-			this.autocompletePrefix = suggestions.prefix;
-			// Always create new SelectList to ensure update
-			this.autocompleteList = new SelectList(suggestions.items, 5, this.theme.selectList);
+		if (suggestions) {
+			if (suggestions.isAsync) {
+				// Async search triggered - wait for callback
+				this.autocompletePrefix = suggestions.prefix;
+				this.isAsyncAutocomplete = true;
+				// Show loading immediately for better UX
+				this.isAutocompleteLoading = true;
+			} else if (suggestions.items.length > 0) {
+				this.autocompletePrefix = suggestions.prefix;
+				// Always create new SelectList to ensure update
+				this.autocompleteList = new SelectList(suggestions.items, 5, this.theme.selectList);
+				this.isAsyncAutocomplete = false;
+				this.isAutocompleteLoading = false;
+			} else {
+				this.cancelAutocomplete();
+			}
 		} else {
 			this.cancelAutocomplete();
 		}

@@ -2,9 +2,15 @@ import { spawnSync } from "child_process";
 import { readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join } from "path";
+import {
+	AsyncFileSearch,
+	DebouncedFileSearch,
+	type DebouncedSearchCallbacks,
+	type FileSearchEntry,
+} from "./async-file-search.js";
 import { fuzzyFilter } from "./fuzzy.js";
 
-// Use fd to walk directory tree (fast, respects .gitignore)
+// Use fd to walk directory tree (fast, respects .gitignore) - sync fallback
 function walkDirectoryWithFd(
 	baseDir: string,
 	fdPath: string,
@@ -13,7 +19,6 @@ function walkDirectoryWithFd(
 ): Array<{ path: string; isDirectory: boolean }> {
 	const args = ["--base-directory", baseDir, "--max-results", String(maxResults), "--type", "f", "--type", "d"];
 
-	// Add query as pattern if provided
 	if (query) {
 		args.push(query);
 	}
@@ -29,18 +34,10 @@ function walkDirectoryWithFd(
 	}
 
 	const lines = result.stdout.trim().split("\n").filter(Boolean);
-	const results: Array<{ path: string; isDirectory: boolean }> = [];
-
-	for (const line of lines) {
-		// fd outputs directories with trailing /
-		const isDirectory = line.endsWith("/");
-		results.push({
-			path: line,
-			isDirectory,
-		});
-	}
-
-	return results;
+	return lines.map((line) => ({
+		path: line,
+		isDirectory: line.endsWith("/"),
+	}));
 }
 
 export interface AutocompleteItem {
@@ -60,13 +57,15 @@ export interface SlashCommand {
 export interface AutocompleteProvider {
 	// Get autocomplete suggestions for current text/cursor position
 	// Returns null if no suggestions available
+	// isAsync indicates results will be delivered via callbacks
 	getSuggestions(
 		lines: string[],
 		cursorLine: number,
 		cursorCol: number,
 	): {
 		items: AutocompleteItem[];
-		prefix: string; // What we're matching against (e.g., "/" or "src/")
+		prefix: string;
+		isAsync?: boolean; // true if results will come via async callback
 	} | null;
 
 	// Apply the selected item
@@ -84,11 +83,26 @@ export interface AutocompleteProvider {
 	};
 }
 
+/**
+ * Callbacks for async autocomplete operations.
+ */
+export interface AsyncAutocompleteCallbacks {
+	onSuggestions: (items: AutocompleteItem[], prefix: string) => void;
+	onLoading: (isLoading: boolean) => void;
+	onError?: (error: Error) => void;
+}
+
 // Combined provider that handles both slash commands and file paths
 export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	private commands: (SlashCommand | AutocompleteItem)[];
 	private basePath: string;
 	private fdPath: string | null;
+
+	// Async search components
+	private asyncSearch: AsyncFileSearch | null = null;
+	private debouncedSearch: DebouncedFileSearch | null = null;
+	private asyncCallbacks: AsyncAutocompleteCallbacks | null = null;
+	private lastAsyncPrefix: string = "";
 
 	constructor(
 		commands: (SlashCommand | AutocompleteItem)[] = [],
@@ -98,13 +112,99 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		this.commands = commands;
 		this.basePath = basePath;
 		this.fdPath = fdPath;
+
+		// Initialize async search if fd is available
+		if (fdPath) {
+			this.asyncSearch = new AsyncFileSearch(basePath, fdPath, {
+				maxResults: 50,
+				cacheTtl: 30000,
+			});
+		}
+	}
+
+	/**
+	 * Set callbacks for async autocomplete operations.
+	 * This enables the 200ms loading delay optimization.
+	 */
+	setAsyncCallbacks(callbacks: AsyncAutocompleteCallbacks): void {
+		this.asyncCallbacks = callbacks;
+
+		if (this.asyncSearch && callbacks) {
+			const searchCallbacks: DebouncedSearchCallbacks = {
+				onSuggestions: (entries) => {
+					const items = this.entriesToAutocompleteItems(entries, this.lastAsyncPrefix);
+					callbacks.onSuggestions(items, this.lastAsyncPrefix);
+				},
+				onLoading: callbacks.onLoading,
+				onError: callbacks.onError,
+			};
+
+			this.debouncedSearch = new DebouncedFileSearch(this.asyncSearch, searchCallbacks, 200);
+		}
+	}
+
+	/**
+	 * Trigger async fuzzy file search. Results delivered via callbacks.
+	 * Returns true if async search was triggered, false if falling back to sync.
+	 */
+	triggerAsyncFuzzySearch(query: string, prefix: string): boolean {
+		if (!this.debouncedSearch || !this.asyncCallbacks) {
+			return false;
+		}
+
+		this.lastAsyncPrefix = prefix;
+		this.debouncedSearch.trigger(query);
+		return true;
+	}
+
+	/**
+	 * Abort any in-progress async search.
+	 */
+	abortAsyncSearch(): void {
+		this.debouncedSearch?.abort();
+	}
+
+	/**
+	 * Initialize async file search (crawls directory).
+	 * Call this early for faster first search.
+	 */
+	async initializeAsyncSearch(): Promise<void> {
+		await this.asyncSearch?.initialize();
+	}
+
+	/**
+	 * Check if async search is available and configured.
+	 */
+	hasAsyncSearch(): boolean {
+		return this.asyncSearch !== null && this.asyncCallbacks !== null;
+	}
+
+	private entriesToAutocompleteItems(entries: FileSearchEntry[], prefix: string): AutocompleteItem[] {
+		return entries.map((entry) => {
+			const pathWithoutSlash = entry.isDirectory ? entry.path.slice(0, -1) : entry.path;
+			const entryName = basename(pathWithoutSlash);
+
+			// Determine the value based on prefix
+			let value: string;
+			if (prefix.startsWith("@")) {
+				value = `@${entry.path}`;
+			} else {
+				value = entry.path;
+			}
+
+			return {
+				value,
+				label: entryName + (entry.isDirectory ? "/" : ""),
+				description: pathWithoutSlash,
+			};
+		});
 	}
 
 	getSuggestions(
 		lines: string[],
 		cursorLine: number,
 		cursorCol: number,
-	): { items: AutocompleteItem[]; prefix: string } | null {
+	): { items: AutocompleteItem[]; prefix: string; isAsync?: boolean } | null {
 		const currentLine = lines[cursorLine] || "";
 		const textBeforeCursor = currentLine.slice(0, cursorCol);
 
@@ -113,6 +213,14 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		if (atMatch) {
 			const prefix = atMatch[1] ?? "@"; // The @... part
 			const query = prefix.slice(1); // Remove the @
+
+			// Try async search first if available
+			if (this.hasAsyncSearch()) {
+				this.triggerAsyncFuzzySearch(query, prefix);
+				return { items: [], prefix, isAsync: true };
+			}
+
+			// Fallback to sync search
 			const suggestions = this.getFuzzyFileSuggestions(query);
 			if (suggestions.length === 0) return null;
 

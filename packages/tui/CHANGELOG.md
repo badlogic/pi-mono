@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- Async file search with fzf fuzzy matching for `@` file autocomplete, replacing synchronous fd calls with debounced async search and 200ms loading delay optimization
+- `AsyncFileSearch` class with state machine, caching, and AbortController support
+- `DebouncedFileSearch` helper for debounced search with loading state management
+- `EditorComponent.onRenderRequest` callback for async autocomplete render updates
+
 ## [0.46.0] - 2026-01-15
 
 ### Fixed
