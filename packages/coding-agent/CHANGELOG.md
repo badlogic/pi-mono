@@ -17,6 +17,7 @@
 ### Changed
 
 - Replaced `wasm-vips` with `@silvia-odwyer/photon-node` for image processing ([#710](https://github.com/badlogic/pi-mono/pull/710) by [@can1357](https://github.com/can1357))
+- Extension example: `plan-mode/` shortcut changed from Shift+P to Ctrl+Alt+P to avoid conflict with typing capital P ([#746](https://github.com/badlogic/pi-mono/pull/746) by [@ferologics](https://github.com/ferologics))
 
 ## [0.45.7] - 2026-01-13
 
