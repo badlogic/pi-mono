@@ -422,33 +422,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = "off";
 	}
 
-	let skills: Skill[];
-	let skillWarnings: SkillWarning[];
-	if (options.skills !== undefined) {
-		skills = options.skills;
-		skillWarnings = [];
-	} else {
-		const discovered = discoverSkills(cwd, agentDir, settingsManager.getSkillsSettings());
-		skills = discovered.skills;
-		skillWarnings = discovered.warnings;
-	}
-	time("discoverSkills");
-
-	const contextFiles = options.contextFiles ?? discoverContextFiles(cwd, agentDir);
-	time("discoverContextFiles");
-
-	const autoResizeImages = settingsManager.getImageAutoResize();
-	// Create ALL built-in tools for the registry (extensions can enable any of them)
-	const allBuiltInToolsMap = createAllTools(cwd, { read: { autoResizeImages } });
-	// Determine initially active built-in tools (default: read, bash, edit, write)
-	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
-	const initialActiveToolNames: ToolName[] = options.tools
-		? options.tools.map((t) => t.name).filter((n): n is ToolName => n in allBuiltInToolsMap)
-		: defaultActiveToolNames;
-	const initialActiveBuiltInTools = initialActiveToolNames.map((name) => allBuiltInToolsMap[name]);
-	time("createAllTools");
-
-	// Load extensions (discovers from standard locations + configured paths)
+	// Load extensions BEFORE skill discovery so extensions can provide additional skill directories
+	// (discovers from standard locations + configured paths)
 	let extensionsResult: LoadExtensionsResult;
 	if (options.preloadedExtensions !== undefined) {
 		// Use pre-loaded extensions (from early CLI flag discovery)
@@ -501,6 +476,43 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			modelRegistry,
 		);
 	}
+
+	// Emit skills_discover event to collect additional directories from extensions
+	let extensionSkillDirectories: string[] = [];
+	if (extensionRunner) {
+		extensionSkillDirectories = await extensionRunner.emitSkillsDiscover(cwd);
+	}
+
+	let skills: Skill[];
+	let skillWarnings: SkillWarning[];
+	if (options.skills !== undefined) {
+		skills = options.skills;
+		skillWarnings = [];
+	} else {
+		const discovered = loadSkillsInternal({
+			...settingsManager.getSkillsSettings(),
+			cwd,
+			agentDir,
+			extensionDirectories: extensionSkillDirectories,
+		});
+		skills = discovered.skills;
+		skillWarnings = discovered.warnings;
+	}
+	time("discoverSkills");
+
+	const contextFiles = options.contextFiles ?? discoverContextFiles(cwd, agentDir);
+	time("discoverContextFiles");
+
+	const autoResizeImages = settingsManager.getImageAutoResize();
+	// Create ALL built-in tools for the registry (extensions can enable any of them)
+	const allBuiltInToolsMap = createAllTools(cwd, { read: { autoResizeImages } });
+	// Determine initially active built-in tools (default: read, bash, edit, write)
+	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
+	const initialActiveToolNames: ToolName[] = options.tools
+		? options.tools.map((t) => t.name).filter((n): n is ToolName => n in allBuiltInToolsMap)
+		: defaultActiveToolNames;
+	const initialActiveBuiltInTools = initialActiveToolNames.map((name) => allBuiltInToolsMap[name]);
+	time("createAllTools");
 
 	// Wrap extension-registered tools and SDK-provided custom tools
 	// Tools use runner.createContext() for consistent context with event handlers

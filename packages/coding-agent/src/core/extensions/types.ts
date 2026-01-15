@@ -281,6 +281,23 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 }
 
 // ============================================================================
+// Skills Events
+// ============================================================================
+
+/** Fired during skill discovery, before skills are loaded. Extensions can provide additional directories. */
+export interface SkillsDiscoverEvent {
+	type: "skills_discover";
+	/** Current working directory */
+	cwd: string;
+}
+
+/** Result from skills_discover event handler */
+export interface SkillsDiscoverResult {
+	/** Additional directories to scan for skills (supports ~ expansion) */
+	additionalDirectories?: string[];
+}
+
+// ============================================================================
 // Session Events
 // ============================================================================
 
@@ -542,6 +559,7 @@ export function isLsToolResult(e: ToolResultEvent): e is LsToolResultEvent {
 
 /** Union of all event types */
 export type ExtensionEvent =
+	| SkillsDiscoverEvent
 	| SessionEvent
 	| ContextEvent
 	| BeforeAgentStartEvent
@@ -649,6 +667,7 @@ export interface ExtensionAPI {
 	// Event Subscription
 	// =========================================================================
 
+	on(event: "skills_discover", handler: ExtensionHandler<SkillsDiscoverEvent, SkillsDiscoverResult>): void;
 	on(event: "session_start", handler: ExtensionHandler<SessionStartEvent>): void;
 	on(
 		event: "session_before_switch",

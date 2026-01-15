@@ -251,6 +251,8 @@ Run `npm install` in the extension directory, then imports from `node_modules/` 
 ```
 pi starts
   │
+  ├─► skills_discover (can provide additional skill directories)
+  │
   └─► session_start
       │
       ▼
@@ -297,6 +299,36 @@ user sends another prompt ◄─────────────────
 exit (Ctrl+C, Ctrl+D)
   └─► session_shutdown
 ```
+
+### Skills Events
+
+#### skills_discover
+
+Fired during skill discovery, before the session starts. Extensions can return additional directories to scan for skills.
+
+```typescript
+pi.on("skills_discover", async (event, ctx) => {
+  // Traverse up the directory tree to find ancestor skill directories
+  const dirs: string[] = [];
+  let current = dirname(event.cwd);
+  
+  while (current !== dirname(current)) {
+    const skillsDir = join(current, ".pi", "skills");
+    if (existsSync(skillsDir)) {
+      dirs.push(skillsDir);
+    }
+    current = dirname(current);
+  }
+  
+  return { additionalDirectories: dirs };
+});
+```
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `event.cwd` | `string` | Current working directory |
+
+**Returns:** `{ additionalDirectories?: string[] }` - Additional directories to scan (supports `~` expansion)
 
 ### Session Events
 

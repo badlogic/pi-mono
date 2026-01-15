@@ -30,6 +30,8 @@ import type {
 	RegisteredTool,
 	SessionBeforeCompactResult,
 	SessionBeforeTreeResult,
+	SkillsDiscoverEvent,
+	SkillsDiscoverResult,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolResultEventResult,
@@ -526,5 +528,46 @@ export class ExtensionRunner {
 		}
 
 		return undefined;
+	}
+
+	/**
+	 * Emit skills_discover event to collect additional skill directories from extensions.
+	 * Called during skill discovery, before skills are loaded.
+	 * Note: This is called before initialize(), so context has limited functionality.
+	 */
+	async emitSkillsDiscover(cwd: string): Promise<string[]> {
+		const additionalDirectories: string[] = [];
+
+		for (const ext of this.extensions) {
+			const handlers = ext.handlers.get("skills_discover");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					const event: SkillsDiscoverEvent = { type: "skills_discover", cwd };
+					// Create a minimal context - full context isn't available yet
+					const ctx = this.createContext();
+					const handlerResult = await handler(event, ctx);
+
+					if (handlerResult) {
+						const result = handlerResult as SkillsDiscoverResult;
+						if (result.additionalDirectories) {
+							additionalDirectories.push(...result.additionalDirectories);
+						}
+					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
+					this.emitError({
+						extensionPath: ext.path,
+						event: "skills_discover",
+						error: message,
+						stack,
+					});
+				}
+			}
+		}
+
+		return additionalDirectories;
 	}
 }

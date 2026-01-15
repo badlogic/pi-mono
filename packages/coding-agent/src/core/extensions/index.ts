@@ -94,6 +94,9 @@ export type {
 	SetActiveToolsHandler,
 	SetModelHandler,
 	SetThinkingLevelHandler,
+	// Events - Skills
+	SkillsDiscoverEvent,
+	SkillsDiscoverResult,
 	// Events - Tool
 	ToolCallEvent,
 	ToolCallEventResult,

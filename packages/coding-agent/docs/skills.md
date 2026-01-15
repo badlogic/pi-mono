@@ -200,6 +200,27 @@ pi --skills "aws-*"
 
 This overrides the `includeSkills` setting for the current session.
 
+### Extension Hook
+
+Extensions can provide additional skill directories via the `skills_discover` event:
+
+```typescript
+export default function(pi: ExtensionAPI) {
+  pi.on("skills_discover", async (event, ctx) => {
+    // event.cwd contains the current working directory
+    // Return additional directories to scan for skills
+    return {
+      additionalDirectories: [
+        "~/shared-skills",
+        "/path/to/team/skills"
+      ]
+    };
+  });
+}
+```
+
+This hook fires during skill discovery, before the system prompt is built. Use it for dynamic skill directories based on project structure (e.g., traversing ancestor directories).
+
 ## How Skills Work
 
 1. At startup, pi scans skill locations and extracts names + descriptions
