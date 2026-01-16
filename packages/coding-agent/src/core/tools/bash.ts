@@ -134,10 +134,10 @@ const defaultBashOperations: BashOperations = {
 };
 
 export const resolveBashCommand = (settings: SettingsManager, command: string): string => {
-	const rawInitCommand = settings.getShellInitCommand();
-	if (!rawInitCommand) return command;
+	const rawPrefix = settings.getShellCommandPrefix();
+	if (!rawPrefix) return command;
 
-	return `${rawInitCommand}${command}`;
+	return `${rawPrefix}${command}`;
 };
 
 export interface BashToolOptions {

@@ -23,7 +23,7 @@ function getTextOutput(result: any): string {
 }
 
 type AgentSettingsFile = {
-	shellInitCommand?: string;
+	shellCommandPrefix?: string;
 };
 
 const createBashToolWithAgentSettings = (cwd: string, settings: AgentSettingsFile) => {
@@ -289,7 +289,7 @@ describe("Coding Agent Tools", () => {
 
 		it("should prepend shell init command when configured", async () => {
 			const bashWithInit = createBashToolWithAgentSettings(testDir, {
-				shellInitCommand: "export TEST_VAR=testValue\n",
+				shellCommandPrefix: "export TEST_VAR=testValue\n",
 			});
 
 			const result = await bashWithInit.execute("test-call-shell-init", { command: "echo $TEST_VAR" });
@@ -297,14 +297,14 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("should include output from shell init and command", async () => {
-			const bashWithInit = createBashToolWithAgentSettings(testDir, { shellInitCommand: "echo init-ready\n" });
+			const bashWithInit = createBashToolWithAgentSettings(testDir, { shellCommandPrefix: "echo init-ready\n" });
 
 			const result = await bashWithInit.execute("test-call-shell-init-output", { command: "echo command-ready" });
 			expect(getTextOutput(result).trim()).toBe("init-ready\ncommand-ready");
 		});
 
 		it("should not add separators between init and command", async () => {
-			const bashWithInit = createBashToolWithAgentSettings(testDir, { shellInitCommand: "echo init-ready" });
+			const bashWithInit = createBashToolWithAgentSettings(testDir, { shellCommandPrefix: "echo init-ready" });
 
 			const result = await bashWithInit.execute("test-call-shell-init-raw", { command: "echo command-ready" });
 			expect(getTextOutput(result).trim()).toBe("init-readyecho command-ready");

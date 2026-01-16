@@ -106,19 +106,19 @@ describe("SettingsManager", () => {
 		});
 	});
 
-	describe("shellInitCommand", () => {
-		it("loads shellInitCommand from settings", () => {
+	describe("shellCommandPrefix", () => {
+		it("loads shellCommandPrefix from settings", () => {
 			const settingsPath = join(agentDir, "settings.json");
-			writeFileSync(settingsPath, JSON.stringify({ shellInitCommand: "shopt -s expand_aliases" }));
+			writeFileSync(settingsPath, JSON.stringify({ shellCommandPrefix: "shopt -s expand_aliases" }));
 
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			expect(manager.getShellInitCommand()).toBe("shopt -s expand_aliases");
+			expect(manager.getShellCommandPrefix()).toBe("shopt -s expand_aliases");
 		});
 
-		it("preserves shellInitCommand when saving unrelated settings", () => {
+		it("preserves shellCommandPrefix when saving unrelated settings", () => {
 			const settingsPath = join(agentDir, "settings.json");
-			writeFileSync(settingsPath, JSON.stringify({ shellInitCommand: "shopt -s expand_aliases" }));
+			writeFileSync(settingsPath, JSON.stringify({ shellCommandPrefix: "shopt -s expand_aliases" }));
 
 			const manager = SettingsManager.create(projectDir, agentDir);
 
@@ -126,7 +126,7 @@ describe("SettingsManager", () => {
 
 			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
 
-			expect(savedSettings.shellInitCommand).toBe("shopt -s expand_aliases");
+			expect(savedSettings.shellCommandPrefix).toBe("shopt -s expand_aliases");
 			expect(savedSettings.theme).toBe("light");
 		});
 	});

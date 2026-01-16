@@ -60,7 +60,7 @@ export interface Settings {
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
-	shellInitCommand?: string;
+	shellCommandPrefix?: string;
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 	extensions?: string[]; // Array of extension file paths
 	skills?: SkillsSettings;
@@ -342,8 +342,8 @@ export class SettingsManager {
 		return this.settings.shellPath;
 	}
 
-	getShellInitCommand(): string | undefined {
-		return this.settings.shellInitCommand;
+	getShellCommandPrefix(): string | undefined {
+		return this.settings.shellCommandPrefix;
 	}
 
 	setShellPath(path: string | undefined): void {
@@ -351,8 +351,8 @@ export class SettingsManager {
 		this.save();
 	}
 
-	setShellInitCommand(command: string | undefined): void {
-		this.globalSettings.shellInitCommand = command;
+	setShellCommandPrefix(command: string | undefined): void {
+		this.globalSettings.shellCommandPrefix = command;
 		this.save();
 	}
 
