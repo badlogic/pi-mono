@@ -6,6 +6,10 @@
 
 - Added GitLab Duo provider support using `@gitlab/gitlab-ai-provider` for native tool calling via GitLab's Anthropic proxy. Supports Claude Opus 4.5, Sonnet 4.5, and Haiku 4.5 models with automatic OAuth token management.
 
+### Fixed
+
+- Fixed OpenAI-compatible provider feature detection to use `model.provider` in addition to URL, allowing custom base URLs (e.g., proxies) to work correctly with provider-specific settings ([#774](https://github.com/badlogic/pi-mono/issues/774))
+
 ## [0.47.0] - 2026-01-16
 
 ### Fixed

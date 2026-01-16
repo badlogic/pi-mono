@@ -150,7 +150,7 @@ function createExtensionAPI(
 			});
 		},
 
-		registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void {
+		registerCommand(name: string, options: Omit<RegisteredCommand, "name">): void {
 			extension.commands.set(name, { name, ...options });
 		},
 
