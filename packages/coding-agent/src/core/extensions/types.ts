@@ -16,6 +16,7 @@ import type {
 } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
 import type {
+	AutocompleteItem,
 	Component,
 	EditorComponent,
 	EditorTheme,
@@ -655,6 +656,7 @@ export type MessageRenderer<T = unknown> = (
 export interface RegisteredCommand {
 	name: string;
 	description?: string;
+	getArgumentCompletions?: (argumentPrefix: string) => AutocompleteItem[] | null;
 	handler: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 }
 
@@ -714,7 +716,7 @@ export interface ExtensionAPI {
 	// =========================================================================
 
 	/** Register a custom command. */
-	registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void;
+	registerCommand(name: string, options: Omit<RegisteredCommand, "name">): void;
 
 	/** Register a keyboard shortcut. */
 	registerShortcut(
