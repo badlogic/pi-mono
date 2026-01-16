@@ -463,7 +463,7 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 		} else if (msg.role === "assistant") {
 			const output: ResponseInput = [];
 
-			const strictResponsesPairing = model.strictResponsesPairing === true;
+			const strictResponsesPairing = model.compat?.strictResponsesPairing ?? false;
 			let isIncomplete = false;
 			let shouldReplayReasoning = msg.stopReason !== "error";
 			if (strictResponsesPairing) {

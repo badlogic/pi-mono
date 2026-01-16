@@ -1,0 +1,17 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"baseUrl": ".",
+		"paths": {
+			"@mariozechner/pi-ai": ["../ai/src/index.ts"],
+			"@mariozechner/pi-ai/*": ["../ai/src/*"],
+			"@mariozechner/pi-agent-core": ["../agent/src/index.ts"],
+			"@mariozechner/pi-agent-core/*": ["../agent/src/*"],
+			"@mariozechner/pi-tui": ["../tui/src/index.ts"],
+			"@mariozechner/pi-tui/*": ["../tui/src/*"]
+		}
+	},
+	"include": ["src/**/*.ts", "test/**/*.ts"],
+	"exclude": ["node_modules", "dist"]
+}

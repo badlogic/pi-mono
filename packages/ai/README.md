@@ -710,6 +710,7 @@ interface OpenAICompat {
   supportsStore?: boolean;           // Whether provider supports the `store` field (default: true)
   supportsDeveloperRole?: boolean;   // Whether provider supports `developer` role vs `system` (default: true)
   supportsReasoningEffort?: boolean; // Whether provider supports `reasoning_effort` (default: true)
+  strictResponsesPairing?: boolean;  // Enforce strict reasoning/message pairing for OpenAI Responses history replay (default: false)
   maxTokensField?: 'max_completion_tokens' | 'max_tokens';  // Which field name to use (default: max_completion_tokens)
   thinkingFormat?: 'openai' | 'zai'; // Format for reasoning param: 'openai' uses reasoning_effort, 'zai' uses thinking: { type: "enabled" } (default: openai)
 }

@@ -204,7 +204,7 @@ export type AssistantMessageEvent =
 	| { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: AssistantMessage };
 
 /**
- * Compatibility settings for openai-completions API.
+ * Compatibility settings for OpenAI-compatible APIs.
  * Use this to override URL-based auto-detection for custom providers.
  */
 export interface OpenAICompat {
@@ -228,6 +228,8 @@ export interface OpenAICompat {
 	requiresMistralToolIds?: boolean;
 	/** Format for reasoning/thinking parameter. "openai" uses reasoning_effort, "zai" uses thinking: { type: "enabled" }. Default: "openai". */
 	thinkingFormat?: "openai" | "zai";
+	/** Whether OpenAI Responses history replay requires strict reasoning/message pairing. */
+	strictResponsesPairing?: boolean;
 }
 
 // Model interface for the unified model system
@@ -247,16 +249,7 @@ export interface Model<TApi extends Api> {
 	};
 	contextWindow: number;
 	maxTokens: number;
-	/**
-	 * Enable strict OpenAI Responses item pairing during history replay.
-	 *
-	 * Some OpenAI-compatible providers (notably Azure OpenAI `/responses`) enforce strict pairing
-	 * rules between `reasoning` and the following output item (`message` or `function_call`) when
-	 * replaying conversation history. If enabled, the OpenAI Responses provider applies
-	 * provider-compatible replay rules to avoid 400 validation errors.
-	 */
-	strictResponsesPairing?: boolean;
 	headers?: Record<string, string>;
-	/** Compatibility overrides for openai-completions API. If not set, auto-detected from baseUrl. */
-	compat?: TApi extends "openai-completions" ? OpenAICompat : never;
+	/** Compatibility overrides for OpenAI-compatible APIs. If not set, auto-detected from baseUrl. */
+	compat?: TApi extends "openai-completions" | "openai-responses" | "openai-codex-responses" ? OpenAICompat : never;
 }

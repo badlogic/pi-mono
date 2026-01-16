@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- OpenAI Responses (Azure): added optional `strictResponsesPairing` model flag to avoid 400 validation errors caused by strict `reasoning` ↔ `message`/`function_call` pairing during history replay.
+- OpenAI Responses (Azure): added optional `compat.strictResponsesPairing` flag to avoid 400 validation errors caused by strict `reasoning` ↔ `message`/`function_call` pairing during history replay.
 
 ## [0.47.0] - 2026-01-16
 
