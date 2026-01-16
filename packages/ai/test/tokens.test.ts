@@ -220,7 +220,7 @@ describe("Token Statistics on Abort", () => {
 	describe("GitLab Duo Provider", () => {
 		it.skipIf(!gitlabDuoToken)(
 			"duo-chat-sonnet-4-5 - should include token stats when aborted mid-stream",
-			{ retry: 3, timeout: 30000 },
+			{ retry: 3, timeout: 60000 },
 			async () => {
 				const llm = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
 				await testTokensOnAbort(llm, { apiKey: gitlabDuoToken });
