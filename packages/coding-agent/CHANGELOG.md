@@ -6,6 +6,7 @@
 
 - New `input` event in extension system for intercepting, transforming, or handling user input before the agent processes it. Supports three result types: `continue` (pass through), `transform` (modify text/images), `handled` (respond without LLM). Handlers chain transforms and short-circuit on handled.
 - Extension example: `input-transform.ts` demonstrating input interception patterns (quick mode, instant commands, source routing)
+- Extension commands can provide argument auto-completions via `getArgumentCompletions` in `pi.registerCommand()`.
 
 ### Fixed
 
