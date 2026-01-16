@@ -289,7 +289,7 @@ describe("Coding Agent Tools", () => {
 
 		it("should prepend shell init command when configured", async () => {
 			const bashWithInit = createBashToolWithAgentSettings(testDir, {
-				shellInitCommand: "export TEST_VAR=testValue",
+				shellInitCommand: "export TEST_VAR=testValue\n",
 			});
 
 			const result = await bashWithInit.execute("test-call-shell-init", { command: "echo $TEST_VAR" });
@@ -297,29 +297,26 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("should include output from shell init and command", async () => {
-			const bashWithInit = createBashToolWithAgentSettings(testDir, { shellInitCommand: "echo init-ready" });
+			const bashWithInit = createBashToolWithAgentSettings(testDir, { shellInitCommand: "echo init-ready\n" });
 
 			const result = await bashWithInit.execute("test-call-shell-init-output", { command: "echo command-ready" });
 			expect(getTextOutput(result).trim()).toBe("init-ready\ncommand-ready");
 		});
 
-		it("should normalize trailing semicolons in shell init", async () => {
-			const bashWithInit = createBashToolWithAgentSettings(testDir, { shellInitCommand: "echo init-ready;;  " });
+		it("should not add separators between init and command", async () => {
+			const bashWithInit = createBashToolWithAgentSettings(testDir, { shellInitCommand: "echo init-ready" });
 
-			const result = await bashWithInit.execute("test-call-shell-init-semicolons", {
-				command: "echo command-ready",
-			});
-			expect(getTextOutput(result).trim()).toBe("init-ready\ncommand-ready");
+			const result = await bashWithInit.execute("test-call-shell-init-raw", { command: "echo command-ready" });
+			expect(getTextOutput(result).trim()).toBe("init-readyecho command-ready");
 		});
 
-		it("should not run command when shell init fails", async () => {
-			const bashWithInit = createBashToolWithAgentSettings(testDir, { shellInitCommand: "false" });
+		it("should execute command even when shell init fails", async () => {
+			const bashWithInit = createBashToolWithAgentSettings(testDir, { shellInitCommand: "false\n" });
 
-			await expect(
-				bashWithInit.execute("test-call-shell-init-fail", {
-					command: "echo should-not-run",
-				}),
-			).rejects.toThrow(/Command exited with code 1/);
+			const result = await bashWithInit.execute("test-call-shell-init-fail", {
+				command: "echo should-run",
+			});
+			expect(getTextOutput(result).trim()).toBe("should-run");
 		});
 
 		it("should handle command errors", async () => {

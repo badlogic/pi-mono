@@ -133,18 +133,11 @@ const defaultBashOperations: BashOperations = {
 	},
 };
 
-const resolveBashCommand = (cwd: string, command: string): string => {
-	const settings = SettingsManager.create(cwd);
+export const resolveBashCommand = (settings: SettingsManager, command: string): string => {
 	const rawInitCommand = settings.getShellInitCommand();
 	if (!rawInitCommand) return command;
 
-	const initCommand = rawInitCommand
-		.trim()
-		.replace(/;+\s*$/, "")
-		.trim();
-	if (!initCommand) return command;
-
-	return `${initCommand} && ${command}`;
+	return `${rawInitCommand}${command}`;
 };
 
 export interface BashToolOptions {
@@ -221,7 +214,8 @@ export function createBashTool(cwd: string, options?: BashToolOptions): AgentToo
 					}
 				};
 
-				const resolvedCommand = resolveBashCommand(cwd, command);
+				const settings = SettingsManager.create(cwd);
+				const resolvedCommand = resolveBashCommand(settings, command);
 
 				ops.exec(resolvedCommand, cwd, { onData: handleData, signal, timeout })
 					.then(({ exitCode }) => {
