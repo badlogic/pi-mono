@@ -47,10 +47,6 @@ export interface ThinkingBudgetsSettings {
 	high?: number;
 }
 
-export interface StartupSettings {
-	quiet?: boolean;
-}
-
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
@@ -64,7 +60,7 @@ export interface Settings {
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
-	startup?: StartupSettings;
+	quietStartup?: boolean;
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 	extensions?: string[]; // Array of extension file paths
 	skills?: SkillsSettings;
@@ -352,14 +348,11 @@ export class SettingsManager {
 	}
 
 	getQuietStartup(): boolean {
-		return this.settings.startup?.quiet ?? false;
+		return this.settings.quietStartup ?? false;
 	}
 
 	setQuietStartup(quiet: boolean): void {
-		if (!this.globalSettings.startup) {
-			this.globalSettings.startup = {};
-		}
-		this.globalSettings.startup.quiet = quiet;
+		this.globalSettings.quietStartup = quiet;
 		this.save();
 	}
 
