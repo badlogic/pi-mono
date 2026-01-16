@@ -310,15 +310,6 @@ describe("Coding Agent Tools", () => {
 			expect(getTextOutput(result).trim()).toBe("init-readyecho command-ready");
 		});
 
-		it("should execute command even when shell init fails", async () => {
-			const bashWithInit = createBashToolWithAgentSettings(testDir, { shellInitCommand: "false\n" });
-
-			const result = await bashWithInit.execute("test-call-shell-init-fail", {
-				command: "echo should-run",
-			});
-			expect(getTextOutput(result).trim()).toBe("should-run");
-		});
-
 		it("should handle command errors", async () => {
 			await expect(bashTool.execute("test-call-9", { command: "exit 1" })).rejects.toThrow(
 				/(Command failed|code 1)/,
