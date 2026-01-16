@@ -416,7 +416,6 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 
 function convertMessages(model: Model<"openai-responses">, context: Context): ResponseInput {
 	const messages: ResponseInput = [];
-	const toolCallIds = new Set<string>();
 
 	const transformedMessages = transformMessages(context.messages, model);
 
@@ -506,12 +505,10 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 					// Do not submit toolcall blocks if the completion had an error (i.e. abort)
 				} else if (block.type === "toolCall" && msg.stopReason !== "error") {
 					const toolCall = block as ToolCall;
-					const callId = toolCall.id.split("|")[0];
-					toolCallIds.add(callId);
 					output.push({
 						type: "function_call",
 						id: toolCall.id.split("|")[1],
-						call_id: callId,
+						call_id: toolCall.id.split("|")[0],
 						name: toolCall.name,
 						arguments: JSON.stringify(toolCall.arguments),
 					});
@@ -520,49 +517,46 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 			if (output.length === 0) continue;
 			messages.push(...output);
 		} else if (msg.role === "toolResult") {
-			const callId = msg.toolCallId.split("|")[0];
-			if (toolCallIds.has(callId)) {
-				// Extract text and image content
-				const textResult = msg.content
-					.filter((c) => c.type === "text")
-					.map((c) => (c as any).text)
-					.join("\n");
-				const hasImages = msg.content.some((c) => c.type === "image");
+			// Extract text and image content
+			const textResult = msg.content
+				.filter((c) => c.type === "text")
+				.map((c) => (c as any).text)
+				.join("\n");
+			const hasImages = msg.content.some((c) => c.type === "image");
 
-				// Always send function_call_output with text (or placeholder if only images)
-				const hasText = textResult.length > 0;
-				messages.push({
-					type: "function_call_output",
-					call_id: callId,
-					output: sanitizeSurrogates(hasText ? textResult : "(see attached image)"),
-				});
+			// Always send function_call_output with text (or placeholder if only images)
+			const hasText = textResult.length > 0;
+			messages.push({
+				type: "function_call_output",
+				call_id: msg.toolCallId.split("|")[0],
+				output: sanitizeSurrogates(hasText ? textResult : "(see attached image)"),
+			});
 
-				// If there are images and model supports them, send a follow-up user message with images
-				if (hasImages && model.input.includes("image")) {
-					const contentParts: ResponseInputContent[] = [];
+			// If there are images and model supports them, send a follow-up user message with images
+			if (hasImages && model.input.includes("image")) {
+				const contentParts: ResponseInputContent[] = [];
 
-					// Add text prefix
-					contentParts.push({
-						type: "input_text",
-						text: "Attached image(s) from tool result:",
-					} satisfies ResponseInputText);
+				// Add text prefix
+				contentParts.push({
+					type: "input_text",
+					text: "Attached image(s) from tool result:",
+				} satisfies ResponseInputText);
 
-					// Add images
-					for (const block of msg.content) {
-						if (block.type === "image") {
-							contentParts.push({
-								type: "input_image",
-								detail: "auto",
-								image_url: `data:${(block as any).mimeType};base64,${(block as any).data}`,
-							} satisfies ResponseInputImage);
-						}
+				// Add images
+				for (const block of msg.content) {
+					if (block.type === "image") {
+						contentParts.push({
+							type: "input_image",
+							detail: "auto",
+							image_url: `data:${(block as any).mimeType};base64,${(block as any).data}`,
+						} satisfies ResponseInputImage);
 					}
-
-					messages.push({
-						role: "user",
-						content: contentParts,
-					});
 				}
+
+				messages.push({
+					role: "user",
+					content: contentParts,
+				});
 			}
 		}
 		msgIndex++;
