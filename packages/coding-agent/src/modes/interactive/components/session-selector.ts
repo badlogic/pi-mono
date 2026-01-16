@@ -95,7 +95,9 @@ class SessionSelectorHeader implements Component {
 		const availableLeft = Math.max(0, width - visibleWidth(rightText) - 1);
 		const left = truncateToWidth(leftText, availableLeft, "");
 		const spacing = Math.max(0, width - visibleWidth(left) - visibleWidth(rightText));
-		const hint = theme.fg("muted", 'Tab: scope · Ctrl+R: sort · re:<pattern> for regex · "phrase" for exact phrase');
+		const hintText = 'Tab: scope · Ctrl+R: sort · re:<pattern> for regex · "phrase" for exact phrase';
+		const truncatedHint = truncateToWidth(hintText, width, "…");
+		const hint = theme.fg("muted", truncatedHint);
 		return [`${left}${" ".repeat(spacing)}${rightText}`, hint];
 	}
 }
@@ -163,10 +165,15 @@ class SessionList implements Component {
 		if (this.filteredSessions.length === 0) {
 			if (this.showCwd) {
 				// "All" scope - no sessions anywhere that match filter
-				lines.push(theme.fg("muted", "  No sessions found"));
+				lines.push(theme.fg("muted", truncateToWidth("  No sessions found", width, "…")));
 			} else {
 				// "Current folder" scope - hint to try "all"
-				lines.push(theme.fg("muted", "  No sessions in current folder. Press Tab to view all."));
+				lines.push(
+					theme.fg(
+						"muted",
+						truncateToWidth("  No sessions in current folder. Press Tab to view all.", width, "…"),
+					),
+				);
 			}
 			return lines;
 		}

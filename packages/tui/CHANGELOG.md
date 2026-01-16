@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Hardware cursor is now disabled by default for better terminal compatibility. Set `PI_HARDWARE_CURSOR=1` to enable (replaces `PI_NO_HARDWARE_CURSOR=1` which disabled it).
+
+### Fixed
+
+- Decode Kitty CSI-u printable sequences in the editor so shifted symbol keys (e.g., `@`, `?`) work in terminals that enable Kitty keyboard protocol ([#779](https://github.com/badlogic/pi-mono/pull/779) by [@iamd3vil](https://github.com/iamd3vil))
+
 ## [0.47.0] - 2026-01-16
 
 ### Breaking Changes

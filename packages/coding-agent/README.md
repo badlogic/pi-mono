@@ -151,6 +151,8 @@ return config
 
 **Windows Terminal:** Does not support the Kitty keyboard protocol. Shift+Enter cannot be distinguished from Enter. Use Ctrl+Enter for multi-line input instead. All other keybindings work correctly.
 
+**IntelliJ IDEA (Integrated Terminal):** The built-in terminal has limited escape sequence support. Note that Shift+Enter cannot be distinguished from Enter in IntelliJ's terminal. If you want the hardware cursor visible, set `PI_HARDWARE_CURSOR=1` before running pi (disabled by default for compatibility). Consider using a dedicated terminal emulator for the best experience.
+
 ### API Keys & OAuth
 
 **Option 1: Auth file** (recommended)
@@ -179,6 +181,7 @@ Add API keys to `~/.pi/agent/auth.json`:
 | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
 | Vercel AI Gateway | `vercel-ai-gateway` | `AI_GATEWAY_API_KEY` |
 | ZAI | `zai` | `ZAI_API_KEY` |
+| OpenCode Zen | `opencode` | `OPENCODE_API_KEY` |
 | MiniMax | `minimax` | `MINIMAX_API_KEY` |
 | MiniMax (China) | `minimax-cn` | `MINIMAX_CN_API_KEY` |
 
@@ -848,6 +851,8 @@ Create a React component named $1 with features: $@
 Usage: `/component Button "onClick handler" "disabled support"`
 - `$1` = `Button`
 - `$@` or `$ARGUMENTS` = all arguments joined (`Button onClick handler disabled support`)
+- `${@:N}` = arguments from the Nth position onwards (1-indexed)
+- `${@:N:L}` = `L` arguments starting from the Nth position
 
 **Namespacing:** Subdirectories create prefixes. `.pi/prompts/frontend/component.md` → `/component (project:frontend)`
 
@@ -1166,7 +1171,7 @@ pi [options] [@files...] [messages...]
 
 | Option | Description |
 |--------|-------------|
-| `--provider <name>` | Provider: `anthropic`, `openai`, `openai-codex`, `google`, `google-vertex`, `amazon-bedrock`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`, `vercel-ai-gateway`, `zai`, `minimax`, `minimax-cn`, `github-copilot`, `google-gemini-cli`, `google-antigravity`, or custom |
+| `--provider <name>` | Provider: `anthropic`, `openai`, `openai-codex`, `google`, `google-vertex`, `amazon-bedrock`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`, `vercel-ai-gateway`, `zai`, `opencode`, `minimax`, `minimax-cn`, `github-copilot`, `google-gemini-cli`, `google-antigravity`, or custom |
 | `--model <id>` | Model ID |
 | `--api-key <key>` | API key (overrides environment) |
 | `--system-prompt <text\|file>` | Custom system prompt (text or file path) |

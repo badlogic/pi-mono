@@ -16,6 +16,7 @@ import type {
 } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
 import type {
+	AutocompleteItem,
 	Component,
 	EditorComponent,
 	EditorTheme,
@@ -236,7 +237,10 @@ export interface ExtensionCommandContext extends ExtensionContext {
 	fork(entryId: string): Promise<{ cancelled: boolean }>;
 
 	/** Navigate to a different point in the session tree. */
-	navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ cancelled: boolean }>;
+	navigateTree(
+		targetId: string,
+		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
+	): Promise<{ cancelled: boolean }>;
 }
 
 // ============================================================================
@@ -343,6 +347,12 @@ export interface TreePreparation {
 	commonAncestorId: string | null;
 	entriesToSummarize: SessionEntry[];
 	userWantsSummary: boolean;
+	/** Custom instructions for summarization */
+	customInstructions?: string;
+	/** If true, customInstructions replaces the default prompt instead of being appended */
+	replaceInstructions?: boolean;
+	/** Label to attach to the branch summary entry */
+	label?: string;
 }
 
 /** Fired before navigating in the session tree (can be cancelled) */
@@ -632,6 +642,12 @@ export interface SessionBeforeTreeResult {
 		summary: string;
 		details?: unknown;
 	};
+	/** Override custom instructions for summarization */
+	customInstructions?: string;
+	/** Override whether customInstructions replaces the default prompt */
+	replaceInstructions?: boolean;
+	/** Override label to attach to the branch summary entry */
+	label?: string;
 }
 
 // ============================================================================
@@ -655,6 +671,7 @@ export type MessageRenderer<T = unknown> = (
 export interface RegisteredCommand {
 	name: string;
 	description?: string;
+	getArgumentCompletions?: (argumentPrefix: string) => AutocompleteItem[] | null;
 	handler: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 }
 
@@ -714,7 +731,7 @@ export interface ExtensionAPI {
 	// =========================================================================
 
 	/** Register a custom command. */
-	registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void;
+	registerCommand(name: string, options: Omit<RegisteredCommand, "name">): void;
 
 	/** Register a keyboard shortcut. */
 	registerShortcut(
@@ -915,7 +932,10 @@ export interface ExtensionCommandContextActions {
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 	}) => Promise<{ cancelled: boolean }>;
 	fork: (entryId: string) => Promise<{ cancelled: boolean }>;
-	navigateTree: (targetId: string, options?: { summarize?: boolean }) => Promise<{ cancelled: boolean }>;
+	navigateTree: (
+		targetId: string,
+		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
+	) => Promise<{ cancelled: boolean }>;
 }
 
 /**

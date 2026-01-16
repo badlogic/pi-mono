@@ -317,6 +317,11 @@ function buildSystemPrompt(
 	return blocks;
 }
 
+function sanitizeToolCallId(id: string): string {
+	const sanitized = id.replace(/[^a-zA-Z0-9_-]/g, "_");
+	return sanitized.length > 64 ? sanitized.slice(0, 64) : sanitized;
+}
+
 function convertMessages(context: Context, model: Model<"bedrock-converse-stream">): Message[] {
 	const result: Message[] = [];
 	const transformedMessages = transformMessages(context.messages, model);
@@ -359,7 +364,7 @@ function convertMessages(context: Context, model: Model<"bedrock-converse-stream
 							break;
 						case "toolCall":
 							contentBlocks.push({
-								toolUse: { toolUseId: c.id, name: c.name, input: c.arguments },
+								toolUse: { toolUseId: sanitizeToolCallId(c.id), name: c.name, input: c.arguments },
 							});
 							break;
 						case "thinking":
@@ -404,7 +409,7 @@ function convertMessages(context: Context, model: Model<"bedrock-converse-stream
 				// Add current tool result with all content blocks combined
 				toolResults.push({
 					toolResult: {
-						toolUseId: m.toolCallId,
+						toolUseId: sanitizeToolCallId(m.toolCallId),
 						content: m.content.map((c) =>
 							c.type === "image"
 								? { image: createImageBlock(c.mimeType, c.data) }
@@ -420,7 +425,7 @@ function convertMessages(context: Context, model: Model<"bedrock-converse-stream
 					const nextMsg = transformedMessages[j] as ToolResultMessage;
 					toolResults.push({
 						toolResult: {
-							toolUseId: nextMsg.toolCallId,
+							toolUseId: sanitizeToolCallId(nextMsg.toolCallId),
 							content: nextMsg.content.map((c) =>
 								c.type === "image"
 									? { image: createImageBlock(c.mimeType, c.data) }
