@@ -50,6 +50,15 @@ const ModelDefinitionSchema = Type.Object({
 	}),
 	contextWindow: Type.Number(),
 	maxTokens: Type.Number(),
+	/**
+	 * strictResponsesPairing: Enable strict OpenAI Responses item pairing during history replay.
+	 *
+	 * Some OpenAI-compatible providers (notably Azure OpenAI `/responses`) enforce strict pairing
+	 * rules between `reasoning` and the following output item (`message` or `function_call`) when
+	 * replaying conversation history. If enabled, pi applies provider-compatible replay rules to
+	 * avoid 400 validation errors.
+	 */
+	strictResponsesPairing: Type.Optional(Type.Boolean()),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
 	compat: Type.Optional(OpenAICompatSchema),
 });
@@ -336,6 +345,7 @@ export class ModelRegistry {
 					cost: modelDef.cost,
 					contextWindow: modelDef.contextWindow,
 					maxTokens: modelDef.maxTokens,
+					strictResponsesPairing: modelDef.strictResponsesPairing,
 					headers,
 					compat: modelDef.compat,
 				} as Model<Api>);

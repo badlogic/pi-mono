@@ -247,6 +247,15 @@ export interface Model<TApi extends Api> {
 	};
 	contextWindow: number;
 	maxTokens: number;
+	/**
+	 * Enable strict OpenAI Responses item pairing during history replay.
+	 *
+	 * Some OpenAI-compatible providers (notably Azure OpenAI `/responses`) enforce strict pairing
+	 * rules between `reasoning` and the following output item (`message` or `function_call`) when
+	 * replaying conversation history. If enabled, the OpenAI Responses provider applies
+	 * provider-compatible replay rules to avoid 400 validation errors.
+	 */
+	strictResponsesPairing?: boolean;
 	headers?: Record<string, string>;
 	/** Compatibility overrides for openai-completions API. If not set, auto-detected from baseUrl. */
 	compat?: TApi extends "openai-completions" ? OpenAICompat : never;

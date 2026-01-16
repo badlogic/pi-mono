@@ -707,6 +707,12 @@ To fully replace a built-in provider with custom models, include the `models` ar
 | `supportsUsageInStreaming` | Whether provider supports `stream_options: { include_usage: true }`. Default: `true` |
 | `maxTokensField` | Use `max_completion_tokens` or `max_tokens` |
 
+**Azure /responses compatibility (`strictResponsesPairing` field):**
+
+Some OpenAI-compatible providers (notably Azure OpenAI `/responses`) enforce strict pairing rules between `reasoning` and the following output item (`message` or `function_call`) when replaying conversation history. If you see 400 errors like "item of type 'reasoning' was provided without its required following item" or "message/function_call was provided without its required reasoning item", set:
+
+- `strictResponsesPairing: true` on the affected model in `models.json`.
+
 **Live reload:** The file reloads each time you open `/model`. Edit during session; no restart needed.
 
 **Model selection priority:**

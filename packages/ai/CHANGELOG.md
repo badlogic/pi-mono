@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenAI Responses: added optional `strictResponsesPairing` model flag to avoid 400 validation errors from strict reasoning/message pairing during history replay.
+
 ## [0.47.0] - 2026-01-16
 
 ### Fixed
