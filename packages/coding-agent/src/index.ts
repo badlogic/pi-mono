@@ -280,3 +280,5 @@ export {
 	type ThemeColor,
 } from "./modes/interactive/theme/theme.js";
 export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.js";
+// Shell utilities
+export { getShellConfig } from "./utils/shell.js";
