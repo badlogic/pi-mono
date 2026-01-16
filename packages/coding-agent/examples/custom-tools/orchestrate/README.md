@@ -15,6 +15,7 @@ The orchestrate tool implements a **Memory-First Task Agent Architecture** with 
 7. **Checkbox Updates** - Marks tasks `[x]` in the file upon completion
 8. **Session Archiving** - Archives to episodic memory on completion
 9. **Full Output Logging** - Complete task outputs saved to `/tmp/pi-orchestrate-*/`
+10. **Pause/Resume** - State persistence allows resuming interrupted orchestrations
 
 ## Installation
 
@@ -150,6 +151,12 @@ The body after frontmatter becomes the agent's system prompt.
 | `agent` | string | "general-purpose" | Agent config to use |
 | `prompt` | string | - | Task description for the agent |
 
+### Pause/Resume Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `resume` | string | Resume a paused session by ID, or `"list"` to see all paused sessions |
+
 ## Execution Modes
 
 ### Standard Execution (Task File)
@@ -221,6 +228,34 @@ All task outputs are written to `/tmp/pi-orchestrate-{uuid}/`:
 - `task-{id}-self-review-{n}.log` - Self-review logs
 
 The output directory path is included in the orchestration summary.
+
+### Pause/Resume (State Persistence)
+
+Orchestration state is persisted to `.orchestrate/<session-id>.state.json` in the project directory. This enables:
+
+1. **Automatic pause on abort** - If orchestration is interrupted (Ctrl+C, timeout, etc.), state is saved
+2. **Resume from last checkpoint** - Continue from where you left off
+3. **Session listing** - View all paused sessions
+4. **Progress preservation** - Completed tasks don't need to re-run
+
+**State File Location:** `.orchestrate/<session-id>.state.json`
+
+**Listing Paused Sessions:**
+```
+orchestrate({ resume: "list" })
+```
+
+**Resuming a Session:**
+```
+orchestrate({ resume: "abc12345" })
+```
+
+**Starting Fresh (ignoring paused state):**
+Delete the state file first: `rm .orchestrate/<session-id>.state.json`
+
+**Auto-detection:** When starting orchestration for a task file that has a paused session, you'll be prompted to resume or start fresh.
+
+**State Cleanup:** State files are automatically deleted when orchestration completes (success or failure). Only paused sessions retain their state files.
 
 ## Workflow Diagram
 
@@ -370,6 +405,68 @@ Result: success [2m34s]
 Full output: /tmp/pi-orchestrate-direct-abc123/
 ```
 
+### Pause/Resume
+
+```
+$ pi
+> Orchestrate 01_TASKS.md
+
+Running Task 1/3: Implement feature X (general-purpose)
+  [Executing] ...
+  [Quality gate] PASSED
+
+Running Task 2/3: Add tests for feature X (general-purpose)
+  [Executing] ...
+^C   <-- User interrupts
+
+Orchestration paused.
+
+Session ID: a1b2c3d4
+Completed: 1/3 tasks
+
+To resume: orchestrate({ resume: "a1b2c3d4" })
+To list paused sessions: orchestrate({ resume: "list" })
+```
+
+Later, resume:
+```
+$ pi
+> Resume the paused orchestration
+
+Resuming session a1b2c3d4...
+
+Running Task 2/3: Add tests for feature X (general-purpose)
+  [Executing] ...
+  [Quality gate] PASSED
+
+Running Task 3/3: Update documentation (general-purpose)
+  [Executing] ...
+  [Quality gate] PASSED
+
+Orchestration completed: 3/3 tasks
+Full task outputs: /tmp/pi-orchestrate-abc123/
+```
+
+List paused sessions:
+```
+$ pi
+> List paused orchestration sessions
+
+## Paused Orchestration Sessions
+
+- **a1b2c3d4**
+  File: 01_TASKS.md
+  Paused: 1/16/2026, 10:30:00 AM
+  Progress: 1/3 tasks
+
+- **e5f6g7h8**
+  File: 02_REFACTOR.md
+  Paused: 1/15/2026, 3:45:00 PM
+  Progress: 4/7 tasks
+
+To resume, use: orchestrate({ resume: "<session-id>" })
+```
+
 ## Comparison: orchestrate vs tasks_loop
 
 The orchestrate tool consolidates features from `tasks_loop`:
@@ -387,6 +484,7 @@ The orchestrate tool consolidates features from `tasks_loop`:
 | Artifacts per attempt | ./artifacts/ | /tmp/pi-orchestrate-*/ |
 | Context.md recovery | Supported | Via memory recall |
 | Session archiving | Not supported | Supported |
+| Pause/Resume | Not supported | Supported via state persistence |
 
 **Direct mode fully replaces tasks_loop functionality** while also supporting the richer task-file-based workflows.
 

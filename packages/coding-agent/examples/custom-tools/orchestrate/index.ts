@@ -12,6 +12,7 @@
  * - Self-review: Agent reviews work before marking complete
  * - CLARIFY handling: Exit code 42 stops for human intervention
  * - Session archiving: Archives to episodic memory on completion
+ * - Pause/Resume: State persistence to .orchestrate/<session>.state.json
  *
  * Usage: orchestrate({ taskFile: "01_TASKS.md" })
  *
@@ -23,6 +24,11 @@
  *
  * Usage: orchestrate({ gate: "gates/gate_s05.py", maxRetries: 5 })
  *
+ * ## Pause/Resume
+ * - List paused sessions: orchestrate({ resume: "list" })
+ * - Resume a session: orchestrate({ resume: "<session-id>" })
+ * - State saved on abort, cleaned up on completion
+ *
  * ## Task File Workflow
  * 1. Parse task file, validate no unresolved questions/blockers
  * 2. For each task:
@@ -31,7 +37,9 @@
  *    c. POST-HOOK: Quality gate - run tests, fail if they don't pass
  *    d. If retry-until-pass: retry with agent fixes until gate passes
  *    e. If self-review enabled: agent reviews before marking complete
+ *    f. Save state checkpoint after each completed task
  * 3. Archive session if all tasks completed successfully
+ * 4. Clean up state file on completion
  *
  * ## Full Output Logging
  * All task outputs saved to /tmp/pi-orchestrate-{uuid}/ for debugging.
@@ -103,13 +111,145 @@ interface TaskResult {
 
 interface OrchestrateDetails {
 	taskFile: string;
-	status: "running" | "completed" | "failed" | "cancelled";
+	status: "running" | "completed" | "failed" | "cancelled" | "paused";
 	totalTasks: number;
 	completedTasks: number;
 	currentTask?: string;
 	results: TaskResult[];
 	archived: boolean;
 	outputDir?: string; // Directory containing full task outputs
+	sessionId?: string; // For pause/resume
+}
+
+/**
+ * State persistence for pause/resume functionality.
+ * Stored in .orchestrate/<session-id>.state.json
+ */
+interface OrchestrationState {
+	sessionId: string;
+	version: 1; // Schema version for future migrations
+	taskFile: string; // Absolute path
+	startedAt: string; // ISO timestamp
+	pausedAt?: string; // ISO timestamp if paused
+	status: "running" | "paused" | "completed" | "failed";
+
+	// Config
+	continueOnError: boolean;
+	archive: boolean;
+	taskTimeoutMs: number;
+
+	// Progress
+	completedTaskIds: number[];
+	currentTaskId?: number;
+	results: TaskResult[];
+
+	// Direct mode (if applicable)
+	directMode?: {
+		gate: string;
+		maxRetries: number;
+		selfReview: boolean;
+		agentName: string;
+		prompt?: string;
+		currentAttempt: number;
+	};
+
+	outputDir: string;
+}
+
+// State directory name (relative to cwd)
+const STATE_DIR = ".orchestrate";
+
+/**
+ * Get the state directory path for the given cwd.
+ */
+function getStateDir(cwd: string): string {
+	return path.join(cwd, STATE_DIR);
+}
+
+/**
+ * Get the state file path for a session.
+ */
+function getStateFilePath(cwd: string, sessionId: string): string {
+	return path.join(getStateDir(cwd), `${sessionId}.state.json`);
+}
+
+/**
+ * Save orchestration state to disk.
+ */
+function saveState(cwd: string, state: OrchestrationState): void {
+	const stateDir = getStateDir(cwd);
+	if (!fs.existsSync(stateDir)) {
+		fs.mkdirSync(stateDir, { recursive: true });
+	}
+	const statePath = getStateFilePath(cwd, state.sessionId);
+	fs.writeFileSync(statePath, JSON.stringify(state, null, 2), "utf-8");
+}
+
+/**
+ * Load orchestration state from disk.
+ */
+function loadState(cwd: string, sessionId: string): OrchestrationState | null {
+	const statePath = getStateFilePath(cwd, sessionId);
+	if (!fs.existsSync(statePath)) {
+		return null;
+	}
+	try {
+		const content = fs.readFileSync(statePath, "utf-8");
+		return JSON.parse(content) as OrchestrationState;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Find paused sessions for a given task file.
+ */
+function findPausedSessions(cwd: string, taskFile: string): OrchestrationState[] {
+	const stateDir = getStateDir(cwd);
+	if (!fs.existsSync(stateDir)) {
+		return [];
+	}
+
+	const paused: OrchestrationState[] = [];
+	const absoluteTaskFile = path.isAbsolute(taskFile) ? taskFile : path.join(cwd, taskFile);
+
+	try {
+		const files = fs.readdirSync(stateDir);
+		for (const file of files) {
+			if (!file.endsWith(".state.json")) continue;
+			const statePath = path.join(stateDir, file);
+			try {
+				const content = fs.readFileSync(statePath, "utf-8");
+				const state = JSON.parse(content) as OrchestrationState;
+				if (state.status === "paused" && state.taskFile === absoluteTaskFile) {
+					paused.push(state);
+				}
+			} catch {
+				// Ignore invalid state files
+			}
+		}
+	} catch {
+		// Ignore directory read errors
+	}
+
+	// Sort by pausedAt descending (most recent first)
+	return paused.sort((a, b) => {
+		const aTime = a.pausedAt ? new Date(a.pausedAt).getTime() : 0;
+		const bTime = b.pausedAt ? new Date(b.pausedAt).getTime() : 0;
+		return bTime - aTime;
+	});
+}
+
+/**
+ * Delete a state file.
+ */
+function deleteState(cwd: string, sessionId: string): void {
+	const statePath = getStateFilePath(cwd, sessionId);
+	try {
+		fs.unlinkSync(statePath);
+	} catch {
+		// Ignore if file doesn't exist
+	}
 }
 
 const OrchestrateParams = Type.Object({
@@ -164,6 +304,12 @@ const OrchestrateParams = Type.Object({
 	prompt: Type.Optional(
 		Type.String({
 			description: "Direct mode: Task description/prompt for the agent",
+		})
+	),
+	// Resume/pause parameters
+	resume: Type.Optional(
+		Type.String({
+			description: "Resume a paused orchestration session by its session ID. Use 'list' to see available paused sessions.",
 		})
 	),
 });
@@ -1594,6 +1740,221 @@ async function executeDirectMode(
 	};
 }
 
+/**
+ * Task file mode execution with state persistence for pause/resume.
+ * Extracted to allow both fresh starts and resuming paused sessions.
+ */
+async function executeTaskFileMode(
+	parsed: TaskFileContent,
+	absolutePath: string,
+	initialPendingTasks: ParsedTask[],
+	initialCompletedIds: Set<number>,
+	initialResults: TaskResult[],
+	outputDir: string,
+	existingState: OrchestrationState | null,
+	cwd: string,
+	continueOnError: boolean,
+	archive: boolean,
+	taskTimeoutMs: number,
+	signal?: AbortSignal,
+	onUpdate?: (result: AgentToolResult<OrchestrateDetails>) => void
+): Promise<AgentToolResult<OrchestrateDetails>> {
+	// Create or use existing session ID
+	const sessionId = existingState?.sessionId ?? randomUUID().slice(0, 8);
+
+	// Initialize or restore state
+	const completedIds = new Set(initialCompletedIds);
+	const results = [...initialResults];
+
+	// Create initial state if starting fresh
+	const state: OrchestrationState = existingState ?? {
+		sessionId,
+		version: 1,
+		taskFile: absolutePath,
+		startedAt: new Date().toISOString(),
+		status: "running",
+		continueOnError,
+		archive,
+		taskTimeoutMs,
+		completedTaskIds: Array.from(completedIds),
+		results: [],
+		outputDir,
+	};
+
+	// Save initial state
+	state.status = "running";
+	saveState(cwd, state);
+
+	const details: OrchestrateDetails = {
+		taskFile: absolutePath,
+		status: "running",
+		totalTasks: parsed.tasks.length,
+		completedTasks: completedIds.size,
+		results,
+		archived: false,
+		outputDir,
+		sessionId,
+	};
+
+	// Multi-pass execution: retry skipped tasks until no progress
+	let remainingTasks = [...initialPendingTasks];
+	let wasPaused = false;
+
+	while (remainingTasks.length > 0) {
+		let madeProgress = false;
+		const stillPending: ParsedTask[] = [];
+
+		for (const task of remainingTasks) {
+			// Check for abort/pause
+			if (signal?.aborted) {
+				// Save paused state
+				state.status = "paused";
+				state.pausedAt = new Date().toISOString();
+				state.completedTaskIds = Array.from(completedIds);
+				state.results = results;
+				state.currentTaskId = task.id;
+				saveState(cwd, state);
+
+				details.status = "paused";
+				details.sessionId = sessionId;
+				wasPaused = true;
+				break;
+			}
+
+			// Check dependencies - must be in completedIds
+			const unmetDeps = task.dependencies.filter((depId) => !completedIds.has(depId));
+
+			if (unmetDeps.length > 0) {
+				// Defer to next pass
+				stillPending.push(task);
+				continue;
+			}
+
+			details.currentTask = `Task ${task.id}: ${task.title}`;
+			state.currentTaskId = task.id;
+			saveState(cwd, state);
+
+			// Update progress
+			if (onUpdate) {
+				onUpdate({
+					content: [
+						{
+							type: "text" as const,
+							text: `Running Task ${task.id}/${parsed.tasks.length}: ${task.title} (${task.agent})`,
+						},
+					],
+					details,
+				});
+			}
+
+			// Execute task (uses retry-until-pass if configured)
+			const result = await runTaskWithRetry(task, parsed, cwd, taskTimeoutMs, outputDir, signal);
+			results.push(result);
+			madeProgress = true;
+
+			if (result.status === "success") {
+				// Update checkbox in file
+				updateTaskCheckbox(absolutePath, task.lineStart, task.id, true);
+				completedIds.add(task.id);
+				details.completedTasks++;
+
+				// Save progress after each successful task
+				state.completedTaskIds = Array.from(completedIds);
+				state.results = results;
+				saveState(cwd, state);
+			} else if (!continueOnError) {
+				details.status = "failed";
+				state.status = "failed";
+				saveState(cwd, state);
+				break;
+			}
+		}
+
+		if (wasPaused || details.status === "failed") {
+			break;
+		}
+
+		remainingTasks = stillPending;
+
+		// Exit if no progress was made this pass (prevents infinite loop)
+		if (!madeProgress && remainingTasks.length > 0) {
+			break;
+		}
+	}
+
+	// Handle paused state - return early with pause info
+	if (wasPaused) {
+		return {
+			content: [
+				{
+					type: "text" as const,
+					text: `Orchestration paused.\n\nSession ID: ${sessionId}\nCompleted: ${completedIds.size}/${parsed.tasks.length} tasks\n\nTo resume: orchestrate({ resume: "${sessionId}" })\nTo list paused sessions: orchestrate({ resume: "list" })`,
+				},
+			],
+			details,
+		};
+	}
+
+	// Mark any remaining tasks as skipped with unmet deps
+	for (const task of remainingTasks) {
+		const unmetDeps = task.dependencies.filter((depId) => !completedIds.has(depId));
+		results.push({
+			taskId: task.id,
+			title: task.title,
+			agent: task.agent,
+			status: "skipped",
+			output: `Skipped: unmet dependencies (Task ${unmetDeps.join(", ")})`,
+			durationMs: 0,
+		});
+	}
+
+	// Determine final status
+	if (details.status !== "paused" && details.status !== "failed") {
+		const allSuccess = results.every((r) => r.status === "success" || r.status === "skipped");
+		details.status = allSuccess ? "completed" : "failed";
+	}
+
+	// Update final state
+	state.status = details.status === "completed" ? "completed" : "failed";
+	state.completedTaskIds = Array.from(completedIds);
+	state.results = results;
+
+	// Archive session if requested and completed
+	if (archive && details.status === "completed") {
+		const archiveResult = archiveSession(parsed, results, cwd);
+		details.archived = archiveResult.success;
+	}
+
+	// Clean up state file on completion (success or failure)
+	if (details.status === "completed" || details.status === "failed") {
+		deleteState(cwd, sessionId);
+	}
+
+	// Build summary
+	const summary = [
+		`Orchestration ${details.status}`,
+		`Tasks: ${details.completedTasks}/${details.totalTasks} completed`,
+		"",
+		"Results:",
+		...results.map(
+			(r) =>
+				`- Task ${r.taskId} (${r.agent}): ${r.status}${r.durationMs ? ` [${formatDuration(r.durationMs)}]` : ""}${r.error ? ` - ${r.error}` : ""}`
+		),
+	];
+
+	if (details.archived) {
+		summary.push("", "Session archived to episodic memory.");
+	}
+
+	// Include output directory for debugging
+	summary.push("", `Full task outputs: ${outputDir}`);
+
+	return {
+		content: [{ type: "text" as const, text: summary.join("\n") }],
+		details,
+	};
+}
+
 // Minimal theme interface for the methods we use (avoids internal dependency)
 interface ThemeInterface {
 	fg(color: string, text: string): string;
@@ -1629,11 +1990,165 @@ const factory: CustomToolFactory = (pi) => ({
 			selfReview = false,
 			agent: agentName = "general-purpose",
 			prompt,
+			// Resume parameter
+			resume,
 		} = params;
 
 		// Validate timeout parameter
 		if (!Number.isFinite(taskTimeoutMs) || taskTimeoutMs <= 0) {
 			throw new Error(`taskTimeoutMs must be a positive number, got ${taskTimeoutMs}`);
+		}
+
+		// ============================================================
+		// LIST PAUSED SESSIONS
+		// ============================================================
+		if (resume === "list") {
+			const stateDir = getStateDir(pi.cwd);
+			if (!fs.existsSync(stateDir)) {
+				return {
+					content: [{ type: "text" as const, text: "No paused orchestration sessions found." }],
+					details: {
+						taskFile: "",
+						status: "completed",
+						totalTasks: 0,
+						completedTasks: 0,
+						results: [],
+						archived: false,
+					} as OrchestrateDetails,
+				};
+			}
+
+			const pausedSessions: OrchestrationState[] = [];
+			try {
+				const files = fs.readdirSync(stateDir);
+				for (const file of files) {
+					if (!file.endsWith(".state.json")) continue;
+					try {
+						const content = fs.readFileSync(path.join(stateDir, file), "utf-8");
+						const state = JSON.parse(content) as OrchestrationState;
+						if (state.status === "paused") {
+							pausedSessions.push(state);
+						}
+					} catch {
+						// Ignore invalid files
+					}
+				}
+			} catch {
+				// Ignore errors
+			}
+
+			if (pausedSessions.length === 0) {
+				return {
+					content: [{ type: "text" as const, text: "No paused orchestration sessions found." }],
+					details: {
+						taskFile: "",
+						status: "completed",
+						totalTasks: 0,
+						completedTasks: 0,
+						results: [],
+						archived: false,
+					} as OrchestrateDetails,
+				};
+			}
+
+			// Sort by pausedAt descending
+			pausedSessions.sort((a, b) => {
+				const aTime = a.pausedAt ? new Date(a.pausedAt).getTime() : 0;
+				const bTime = b.pausedAt ? new Date(b.pausedAt).getTime() : 0;
+				return bTime - aTime;
+			});
+
+			const sessionList = pausedSessions.map((s) => {
+				const pausedAt = s.pausedAt ? new Date(s.pausedAt).toLocaleString() : "unknown";
+				const taskFileName = path.basename(s.taskFile);
+				const progress = `${s.completedTaskIds.length}/${s.completedTaskIds.length + (s.results.filter(r => r.status !== "success").length)} tasks`;
+				return `- **${s.sessionId}**\n  File: ${taskFileName}\n  Paused: ${pausedAt}\n  Progress: ${progress}`;
+			}).join("\n\n");
+
+			return {
+				content: [{ type: "text" as const, text: `## Paused Orchestration Sessions\n\n${sessionList}\n\nTo resume, use: orchestrate({ resume: "<session-id>" })` }],
+				details: {
+					taskFile: "",
+					status: "completed",
+					totalTasks: pausedSessions.length,
+					completedTasks: 0,
+					results: [],
+					archived: false,
+				} as OrchestrateDetails,
+			};
+		}
+
+		// ============================================================
+		// RESUME A PAUSED SESSION
+		// ============================================================
+		if (resume) {
+			const savedState = loadState(pi.cwd, resume);
+			if (!savedState) {
+				throw new Error(`No paused session found with ID: ${resume}. Use resume: "list" to see available sessions.`);
+			}
+			if (savedState.status !== "paused") {
+				throw new Error(`Session ${resume} is not paused (status: ${savedState.status})`);
+			}
+
+			// Restore state and continue execution
+			const absolutePath = savedState.taskFile;
+			if (!fs.existsSync(absolutePath)) {
+				throw new Error(`Task file no longer exists: ${absolutePath}`);
+			}
+
+			// Re-parse task file to get current state
+			const parsed = parseTaskFile(absolutePath);
+			validateTaskFile(parsed);
+
+			// Restore completed IDs from saved state
+			const completedIds = new Set(savedState.completedTaskIds);
+			const results = [...savedState.results];
+			const outputDir = savedState.outputDir;
+
+			// Update state to running
+			savedState.status = "running";
+			savedState.pausedAt = undefined;
+			saveState(pi.cwd, savedState);
+
+			// Get remaining pending tasks
+			const pendingTasks = parsed.tasks.filter((t) => !t.completed && !completedIds.has(t.id));
+
+			const details: OrchestrateDetails = {
+				taskFile: absolutePath,
+				status: "running",
+				totalTasks: parsed.tasks.length,
+				completedTasks: completedIds.size,
+				results,
+				archived: false,
+				outputDir,
+				sessionId: savedState.sessionId,
+			};
+
+			if (pendingTasks.length === 0) {
+				details.status = "completed";
+				deleteState(pi.cwd, savedState.sessionId);
+				return {
+					content: [{ type: "text" as const, text: "Resumed session - all tasks are already completed." }],
+					details,
+				};
+			}
+
+			// Continue with task execution (shared logic below)
+			return executeTaskFileMode(
+				parsed,
+				absolutePath,
+				pendingTasks,
+				completedIds,
+				results,
+				outputDir,
+				savedState,
+				pi.cwd,
+				savedState.continueOnError,
+				savedState.archive,
+				savedState.taskTimeoutMs,
+				signal,
+				onUpdate
+			);
 		}
 
 		// ============================================================
@@ -1690,134 +2205,51 @@ const factory: CustomToolFactory = (pi) => ({
 			};
 		}
 
+		// Check for existing paused session for this task file
+		const pausedSessions = findPausedSessions(pi.cwd, absolutePath);
+		if (pausedSessions.length > 0) {
+			const mostRecent = pausedSessions[0];
+			// Notify user about existing paused session
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Found paused session for this task file.\n\nSession ID: ${mostRecent.sessionId}\nPaused: ${mostRecent.pausedAt ? new Date(mostRecent.pausedAt).toLocaleString() : "unknown"}\nProgress: ${mostRecent.completedTaskIds.length} tasks completed\n\nTo resume: orchestrate({ resume: "${mostRecent.sessionId}" })\nTo start fresh: delete .orchestrate/${mostRecent.sessionId}.state.json first`,
+					},
+				],
+				details: {
+					taskFile: absolutePath,
+					status: "paused",
+					totalTasks: parsed.tasks.length,
+					completedTasks: mostRecent.completedTaskIds.length,
+					results: [],
+					archived: false,
+					sessionId: mostRecent.sessionId,
+				} as OrchestrateDetails,
+			};
+		}
+
 		// Create output directory for complete task outputs
 		const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-orchestrate-"));
 
-		const results: TaskResult[] = [];
+		// Initialize state for fresh start
 		const completedIds = new Set(parsed.tasks.filter((t) => t.completed).map((t) => t.id));
-		const details: OrchestrateDetails = {
-			taskFile: absolutePath,
-			status: "running",
-			totalTasks: parsed.tasks.length,
-			completedTasks: completedIds.size,
-			results,
-			archived: false,
+
+		return executeTaskFileMode(
+			parsed,
+			absolutePath,
+			pendingTasks,
+			completedIds,
+			[], // No prior results
 			outputDir,
-		};
-
-		// Multi-pass execution: retry skipped tasks until no progress
-		let remainingTasks = [...pendingTasks];
-
-		while (remainingTasks.length > 0) {
-			let madeProgress = false;
-			const stillPending: ParsedTask[] = [];
-
-			for (const task of remainingTasks) {
-				if (signal?.aborted) {
-					details.status = "cancelled";
-					break;
-				}
-
-				// Check dependencies - must be in completedIds
-				const unmetDeps = task.dependencies.filter((depId) => !completedIds.has(depId));
-
-				if (unmetDeps.length > 0) {
-					// Defer to next pass
-					stillPending.push(task);
-					continue;
-				}
-
-				details.currentTask = `Task ${task.id}: ${task.title}`;
-
-				// Update progress
-				if (onUpdate) {
-					onUpdate({
-						content: [
-							{
-								type: "text" as const,
-								text: `Running Task ${task.id}/${parsed.tasks.length}: ${task.title} (${task.agent})`,
-							},
-						],
-						details,
-					});
-				}
-
-				// Execute task (uses retry-until-pass if configured)
-				const result = await runTaskWithRetry(task, parsed, pi.cwd, taskTimeoutMs, outputDir, signal);
-				results.push(result);
-				madeProgress = true;
-
-				if (result.status === "success") {
-					// Update checkbox in file
-					updateTaskCheckbox(absolutePath, task.lineStart, task.id, true);
-					completedIds.add(task.id);
-					details.completedTasks++;
-				} else if (!continueOnError) {
-					details.status = "failed";
-					break;
-				}
-			}
-
-			if (signal?.aborted || details.status === "failed") {
-				break;
-			}
-
-			remainingTasks = stillPending;
-
-			// Exit if no progress was made this pass (prevents infinite loop)
-			if (!madeProgress && remainingTasks.length > 0) {
-				break;
-			}
-		}
-
-		// Mark any remaining tasks as skipped with unmet deps
-		for (const task of remainingTasks) {
-			const unmetDeps = task.dependencies.filter((depId) => !completedIds.has(depId));
-			results.push({
-				taskId: task.id,
-				title: task.title,
-				agent: task.agent,
-				status: "skipped",
-				output: `Skipped: unmet dependencies (Task ${unmetDeps.join(", ")})`,
-				durationMs: 0,
-			});
-		}
-
-		// Determine final status
-		if (details.status !== "cancelled" && details.status !== "failed") {
-			const allSuccess = results.every((r) => r.status === "success" || r.status === "skipped");
-			details.status = allSuccess ? "completed" : "failed";
-		}
-
-		// Archive session if requested
-		if (archive && details.status === "completed") {
-			const archiveResult = archiveSession(parsed, results, pi.cwd);
-			details.archived = archiveResult.success;
-		}
-
-		// Build summary
-		const summary = [
-			`Orchestration ${details.status}`,
-			`Tasks: ${details.completedTasks}/${details.totalTasks} completed`,
-			"",
-			"Results:",
-			...results.map(
-				(r) =>
-					`- Task ${r.taskId} (${r.agent}): ${r.status}${r.durationMs ? ` [${formatDuration(r.durationMs)}]` : ""}${r.error ? ` - ${r.error}` : ""}`
-			),
-		];
-
-		if (details.archived) {
-			summary.push("", "Session archived to episodic memory.");
-		}
-
-		// Include output directory for debugging
-		summary.push("", `Full task outputs: ${outputDir}`);
-
-		return {
-			content: [{ type: "text" as const, text: summary.join("\n") }],
-			details,
-		};
+			null, // No existing state
+			pi.cwd,
+			continueOnError,
+			archive,
+			taskTimeoutMs,
+			signal,
+			onUpdate
+		);
 	},
 
 	renderCall(args: OrchestrateParamsType, theme: ThemeInterface) {
