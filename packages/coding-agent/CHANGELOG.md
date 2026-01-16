@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- API keys in `models.json` can now be retrieved via shell command using `!` prefix (e.g., `"apiKey": "!security find-generic-password -ws 'anthropic'"` for macOS Keychain) ([#697](https://github.com/badlogic/pi-mono/issues/697))
+
 ### Fixed
 
 - Session tree now preserves branch connectors and indentation when filters hide intermediate entries so descendants attach to the nearest visible ancestor and sibling branches align. Fixed in both TUI and HTML export ([#739](https://github.com/badlogic/pi-mono/pull/739) by [@w-winter](https://github.com/w-winter))

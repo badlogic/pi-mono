@@ -246,4 +246,139 @@ describe("ModelRegistry", () => {
 			expect(anthropicModels.some((m) => m.id.includes("claude"))).toBe(true);
 		});
 	});
+
+	describe("API key resolution", () => {
+		/** Create provider config with custom apiKey */
+		function providerWithApiKey(apiKey: string) {
+			return {
+				baseUrl: "https://example.com/v1",
+				apiKey,
+				api: "anthropic-messages",
+				models: [
+					{
+						id: "test-model",
+						name: "Test Model",
+						reasoning: false,
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 100000,
+						maxTokens: 8000,
+					},
+				],
+			};
+		}
+
+		test("apiKey with ! prefix executes command and uses stdout", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("!echo test-api-key-from-command"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBe("test-api-key-from-command");
+		});
+
+		test("apiKey with ! prefix trims whitespace from command output", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("!echo '  spaced-key  '"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBe("spaced-key");
+		});
+
+		test("apiKey with ! prefix handles multiline output (uses trimmed result)", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("!printf 'line1\\nline2'"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBe("line1\nline2");
+		});
+
+		test("apiKey with ! prefix returns undefined on command failure", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("!exit 1"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBeUndefined();
+		});
+
+		test("apiKey with ! prefix returns undefined on nonexistent command", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("!nonexistent-command-12345"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBeUndefined();
+		});
+
+		test("apiKey with ! prefix returns undefined on empty output", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("!printf ''"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBeUndefined();
+		});
+
+		test("apiKey as environment variable name resolves to env value", async () => {
+			const originalEnv = process.env.TEST_API_KEY_12345;
+			process.env.TEST_API_KEY_12345 = "env-api-key-value";
+
+			try {
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey("TEST_API_KEY_12345"),
+				});
+
+				const registry = new ModelRegistry(authStorage, modelsJsonPath);
+				const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+				expect(apiKey).toBe("env-api-key-value");
+			} finally {
+				if (originalEnv === undefined) {
+					delete process.env.TEST_API_KEY_12345;
+				} else {
+					process.env.TEST_API_KEY_12345 = originalEnv;
+				}
+			}
+		});
+
+		test("apiKey as literal value is used directly when not an env var", async () => {
+			// Make sure this isn't an env var
+			delete process.env.literal_api_key_value;
+
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("literal_api_key_value"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBe("literal_api_key_value");
+		});
+
+		test("apiKey command can use shell features like pipes", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("!echo 'hello world' | tr ' ' '-'"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBe("hello-world");
+		});
+	});
 });

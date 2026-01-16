@@ -13,6 +13,7 @@ import {
 } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
+import { execSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import type { AuthStorage } from "./auth-storage.js";
 
@@ -101,9 +102,27 @@ function emptyCustomModelsResult(error?: string): CustomModelsResult {
 
 /**
  * Resolve an API key config value to an actual key.
- * Checks environment variable first, then treats as literal.
+ * - If starts with "!", executes the rest as a shell command and uses stdout
+ * - Otherwise checks environment variable first, then treats as literal
  */
 function resolveApiKeyConfig(keyConfig: string): string | undefined {
+	// Command execution: "!command args"
+	if (keyConfig.startsWith("!")) {
+		const command = keyConfig.slice(1);
+		try {
+			const result = execSync(command, {
+				encoding: "utf-8",
+				timeout: 10000, // 10 second timeout
+				stdio: ["ignore", "pipe", "ignore"], // ignore stdin/stderr
+			});
+			// Trim whitespace/newlines from output
+			return result.trim() || undefined;
+		} catch {
+			// Command failed - return undefined so auth falls back to other methods
+			return undefined;
+		}
+	}
+
 	const envValue = process.env[keyConfig];
 	if (envValue) return envValue;
 	return keyConfig;
