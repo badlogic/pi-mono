@@ -31,3 +31,8 @@ syntax.jsonl
 out.jsonl
 pi-*.html
 out.html
+local/
+
+# Fork-specific local files (not for upstream)
+.pi/skills/
+restore_registry.sh

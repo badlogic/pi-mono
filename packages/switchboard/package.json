@@ -1,0 +1,18 @@
+{
+  "name": "@mariozechner/pi-switchboard",
+  "version": "1.0.0",
+  "description": "Real-time inter-agent communication service for Pi agents",
+  "type": "module",
+  "scripts": {
+    "start": "tsx index.ts",
+    "dev": "tsx watch index.ts"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0"
+  }
+}
