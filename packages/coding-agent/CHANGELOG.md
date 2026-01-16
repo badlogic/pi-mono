@@ -13,6 +13,7 @@
 
 ### Fixed
 
+- Fixed `--no-extensions` flag not preventing extension discovery ([#776](https://github.com/badlogic/pi-mono/issues/776))
 - Fixed extension messages rendering twice on startup when `pi.sendMessage({ display: true })` is called during `session_start` ([#765](https://github.com/badlogic/pi-mono/pull/765) by [@dannote](https://github.com/dannote))
 - Fixed `PI_CODING_AGENT_DIR` env var not expanding tilde (`~`) to home directory ([#778](https://github.com/badlogic/pi-mono/pull/778) by [@aliou](https://github.com/aliou))
 - Fixed session picker hint text overflow ([#764](https://github.com/badlogic/pi-mono/issues/764))

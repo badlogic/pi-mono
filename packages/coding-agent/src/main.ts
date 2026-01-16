@@ -304,7 +304,7 @@ function buildSessionOptions(
 	}
 
 	// Pre-loaded extensions (from early CLI flag discovery)
-	if (extensionsResult && extensionsResult.extensions.length > 0) {
+	if (extensionsResult) {
 		options.preloadedExtensions = extensionsResult;
 	}
 
