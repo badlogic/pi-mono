@@ -30,6 +30,29 @@ import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 
+/**
+ * Read all content from piped stdin.
+ * Returns undefined if stdin is a TTY (interactive terminal).
+ */
+async function readPipedStdin(): Promise<string | undefined> {
+	// If stdin is a TTY, we're running interactively - don't read stdin
+	if (process.stdin.isTTY) {
+		return undefined;
+	}
+
+	return new Promise((resolve) => {
+		let data = "";
+		process.stdin.setEncoding("utf8");
+		process.stdin.on("data", (chunk) => {
+			data += chunk;
+		});
+		process.stdin.on("end", () => {
+			resolve(data.trim() || undefined);
+		});
+		process.stdin.resume();
+	});
+}
+
 async function prepareInitialMessage(
 	parsed: Args,
 	autoResizeImages: boolean,
@@ -308,6 +331,18 @@ export async function main(args: string[]) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
 		await listModels(modelRegistry, searchPattern);
 		return;
+	}
+
+	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
+	if (parsed.mode !== "rpc") {
+		const stdinContent = await readPipedStdin();
+		if (stdinContent !== undefined) {
+			// Force print mode since interactive mode requires a TTY for keyboard input
+			parsed.print = true;
+			// Prepend stdin content to messages
+			parsed.messages.unshift(stdinContent);
+		}
+		time("readPipedStdin");
 	}
 
 	if (parsed.export) {
