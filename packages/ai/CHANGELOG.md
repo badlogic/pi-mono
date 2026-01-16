@@ -4,7 +4,8 @@
 
 ### Fixed
 
-- OpenAI Responses: added optional `strictResponsesPairing` model flag to avoid 400 validation errors from strict reasoning/message pairing during history replay.
+- OpenAI Responses: added optional `compat.strictResponsesPairing` flag to avoid 400 validation errors from strict reasoning/message pairing during history replay.
+- OpenAI Responses: skip tool results without matching tool calls to avoid 400 validation errors when replaying tool results.
 
 ## [0.47.0] - 2026-01-16
 
