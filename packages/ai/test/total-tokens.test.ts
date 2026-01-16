@@ -23,11 +23,13 @@ import { resolveApiKey } from "./oauth.js";
 const oauthTokens = await Promise.all([
 	resolveApiKey("anthropic"),
 	resolveApiKey("github-copilot"),
+	resolveApiKey("gitlab-duo"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
 	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, gitlabDuoToken, geminiCliToken, antigravityToken, openaiCodexToken] =
+	oauthTokens;
 
 // Generate a long system prompt to trigger caching (>2k bytes for most providers)
 const LONG_SYSTEM_PROMPT = `You are a helpful assistant. Be concise in your responses.
@@ -614,6 +616,29 @@ describe("totalTokens field", () => {
 
 				console.log(`\nOpenAI Codex / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: openaiCodexToken });
+
+				logUsage("First request", first);
+				logUsage("Second request", second);
+
+				assertTotalTokensEqualsComponents(first);
+				assertTotalTokensEqualsComponents(second);
+			},
+		);
+	});
+
+	// =========================================================================
+	// GitLab Duo (OAuth)
+	// =========================================================================
+
+	describe("GitLab Duo (OAuth)", () => {
+		it.skipIf(!gitlabDuoToken)(
+			"duo-chat-sonnet-4-5 - should return totalTokens equal to sum of components",
+			{ retry: 3, timeout: 60000 },
+			async () => {
+				const llm = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
+
+				console.log(`\nGitLab Duo / ${llm.id}:`);
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: gitlabDuoToken });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);

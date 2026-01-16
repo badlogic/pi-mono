@@ -10,11 +10,13 @@ import { resolveApiKey } from "./oauth.js";
 const oauthTokens = await Promise.all([
 	resolveApiKey("anthropic"),
 	resolveApiKey("github-copilot"),
+	resolveApiKey("gitlab-duo"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
 	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, gitlabDuoToken, geminiCliToken, antigravityToken, openaiCodexToken] =
+	oauthTokens;
 
 // Simple calculate tool
 const calculateSchema = Type.Object({
@@ -278,6 +280,17 @@ describe("Tool Call Without Result Tests", () => {
 			async () => {
 				const model = getModel("openai-codex", "gpt-5.2-codex");
 				await testToolCallWithoutResult(model, { apiKey: openaiCodexToken });
+			},
+		);
+	});
+
+	describe("GitLab Duo Provider", () => {
+		it.skipIf(!gitlabDuoToken)(
+			"duo-chat-sonnet-4-5 - should filter out tool calls without corresponding tool results",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const model = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
+				await testToolCallWithoutResult(model, { apiKey: gitlabDuoToken });
 			},
 		);
 	});

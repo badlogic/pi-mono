@@ -9,11 +9,13 @@ import { resolveApiKey } from "./oauth.js";
 const oauthTokens = await Promise.all([
 	resolveApiKey("anthropic"),
 	resolveApiKey("github-copilot"),
+	resolveApiKey("gitlab-duo"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
 	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, gitlabDuoToken, geminiCliToken, antigravityToken, openaiCodexToken] =
+	oauthTokens;
 
 async function testEmptyMessage<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
 	// Test with completely empty content array
@@ -670,6 +672,44 @@ describe("AI Providers Empty Message Tests", () => {
 			async () => {
 				const llm = getModel("openai-codex", "gpt-5.2-codex");
 				await testEmptyAssistantMessage(llm, { apiKey: openaiCodexToken });
+			},
+		);
+	});
+
+	describe("GitLab Duo Provider Empty Messages", () => {
+		it.skipIf(!gitlabDuoToken)(
+			"duo-chat-sonnet-4-5 - should handle empty content array",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
+				await testEmptyMessage(llm, { apiKey: gitlabDuoToken });
+			},
+		);
+
+		it.skipIf(!gitlabDuoToken)(
+			"duo-chat-sonnet-4-5 - should handle empty string content",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
+				await testEmptyStringMessage(llm, { apiKey: gitlabDuoToken });
+			},
+		);
+
+		it.skipIf(!gitlabDuoToken)(
+			"duo-chat-sonnet-4-5 - should handle whitespace-only content",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
+				await testWhitespaceOnlyMessage(llm, { apiKey: gitlabDuoToken });
+			},
+		);
+
+		it.skipIf(!gitlabDuoToken)(
+			"duo-chat-sonnet-4-5 - should handle empty assistant message in conversation",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
+				await testEmptyAssistantMessage(llm, { apiKey: gitlabDuoToken });
 			},
 		);
 	});

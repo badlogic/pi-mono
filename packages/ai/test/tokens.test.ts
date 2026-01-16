@@ -9,11 +9,13 @@ import { resolveApiKey } from "./oauth.js";
 const oauthTokens = await Promise.all([
 	resolveApiKey("anthropic"),
 	resolveApiKey("github-copilot"),
+	resolveApiKey("gitlab-duo"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
 	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, gitlabDuoToken, geminiCliToken, antigravityToken, openaiCodexToken] =
+	oauthTokens;
 
 async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
 	const context: Context = {
@@ -211,6 +213,17 @@ describe("Token Statistics on Abort", () => {
 			async () => {
 				const llm = getModel("google-gemini-cli", "gemini-2.5-flash");
 				await testTokensOnAbort(llm, { apiKey: geminiCliToken });
+			},
+		);
+	});
+
+	describe("GitLab Duo Provider", () => {
+		it.skipIf(!gitlabDuoToken)(
+			"duo-chat-sonnet-4-5 - should include token stats when aborted mid-stream",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
+				await testTokensOnAbort(llm, { apiKey: gitlabDuoToken });
 			},
 		);
 	});

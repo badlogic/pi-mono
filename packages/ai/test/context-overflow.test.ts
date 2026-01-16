@@ -24,11 +24,12 @@ import { resolveApiKey } from "./oauth.js";
 // Resolve OAuth tokens at module level (async, runs before tests)
 const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
+	resolveApiKey("gitlab-duo"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
 	resolveApiKey("openai-codex"),
 ]);
-const [githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
+const [githubCopilotToken, gitlabDuoToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 // Lorem ipsum paragraph for realistic token estimation
 const LOREM_IPSUM = `Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. `;
@@ -276,6 +277,26 @@ describe("Context overflow error handling", () => {
 			async () => {
 				const model = getModel("openai-codex", "gpt-5.2-codex");
 				const result = await testContextOverflow(model, openaiCodexToken!);
+				logResult(result);
+
+				expect(result.stopReason).toBe("error");
+				expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+			},
+			120000,
+		);
+	});
+
+	// =============================================================================
+	// GitLab Duo (OAuth)
+	// Uses GitLab's Anthropic proxy
+	// =============================================================================
+
+	describe("GitLab Duo (OAuth)", () => {
+		it.skipIf(!gitlabDuoToken)(
+			"duo-chat-sonnet-4-5 - should detect overflow via isContextOverflow",
+			async () => {
+				const model = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
+				const result = await testContextOverflow(model, gitlabDuoToken!);
 				logResult(result);
 
 				expect(result.stopReason).toBe("error");

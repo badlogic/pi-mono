@@ -13,11 +13,13 @@ const emptySchema = Type.Object({});
 const oauthTokens = await Promise.all([
 	resolveApiKey("anthropic"),
 	resolveApiKey("github-copilot"),
+	resolveApiKey("gitlab-duo"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
 	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, gitlabDuoToken, geminiCliToken, antigravityToken, openaiCodexToken] =
+	oauthTokens;
 
 /**
  * Test for Unicode surrogate pair handling in tool results.
@@ -691,6 +693,35 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 			async () => {
 				const llm = getModel("openai-codex", "gpt-5.2-codex");
 				await testUnpairedHighSurrogate(llm, { apiKey: openaiCodexToken });
+			},
+		);
+	});
+
+	describe("GitLab Duo Provider Unicode Handling", () => {
+		it.skipIf(!gitlabDuoToken)(
+			"duo-chat-sonnet-4-5 - should handle emoji in tool results",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
+				await testEmojiInToolResults(llm, { apiKey: gitlabDuoToken });
+			},
+		);
+
+		it.skipIf(!gitlabDuoToken)(
+			"duo-chat-sonnet-4-5 - should handle real-world LinkedIn comment data with emoji",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
+				await testRealWorldLinkedInData(llm, { apiKey: gitlabDuoToken });
+			},
+		);
+
+		it.skipIf(!gitlabDuoToken)(
+			"duo-chat-sonnet-4-5 - should handle unpaired high surrogate (0xD83D) in tool results",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
+				await testUnpairedHighSurrogate(llm, { apiKey: gitlabDuoToken });
 			},
 		);
 	});

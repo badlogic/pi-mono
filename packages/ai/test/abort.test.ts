@@ -6,8 +6,9 @@ import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
-const [geminiCliToken, openaiCodexToken] = await Promise.all([
+const [geminiCliToken, gitlabDuoToken, openaiCodexToken] = await Promise.all([
 	resolveApiKey("google-gemini-cli"),
+	resolveApiKey("gitlab-duo"),
 	resolveApiKey("openai-codex"),
 ]);
 
@@ -206,6 +207,18 @@ describe("AI Providers Abort Tests", () => {
 		it.skipIf(!openaiCodexToken)("should handle immediate abort", { retry: 3 }, async () => {
 			const llm = getModel("openai-codex", "gpt-5.2-codex");
 			await testImmediateAbort(llm, { apiKey: openaiCodexToken });
+		});
+	});
+
+	describe("GitLab Duo Provider Abort", () => {
+		it.skipIf(!gitlabDuoToken)("should abort mid-stream", { retry: 3 }, async () => {
+			const llm = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
+			await testAbortSignal(llm, { apiKey: gitlabDuoToken });
+		});
+
+		it.skipIf(!gitlabDuoToken)("should handle immediate abort", { retry: 3 }, async () => {
+			const llm = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
+			await testImmediateAbort(llm, { apiKey: gitlabDuoToken });
 		});
 	});
 
