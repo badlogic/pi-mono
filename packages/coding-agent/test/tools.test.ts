@@ -12,23 +12,15 @@ import { readTool } from "../src/core/tools/read.js";
 import { writeTool } from "../src/core/tools/write.js";
 import * as shellModule from "../src/utils/shell.js";
 
-type ToolTextBlock = { type: "text"; text: string };
-type ToolImageBlock = { type: "image"; mimeType: string; data: string };
-type ToolUnknownBlock = { type: string; [key: string]: unknown };
-type ToolContentBlock = ToolTextBlock | ToolImageBlock | ToolUnknownBlock;
-
-type ToolResult = {
-	content: ToolContentBlock[];
-	details?: unknown;
-};
-
 // Helper to extract text from content blocks
-const getTextOutput = (result: ToolResult): string => {
-	return result.content
-		.filter((c): c is ToolTextBlock => c.type === "text")
-		.map((c) => c.text)
-		.join("\n");
-};
+function getTextOutput(result: any): string {
+	return (
+		result.content
+			?.filter((c: any) => c.type === "text")
+			.map((c: any) => c.text)
+			.join("\n") || ""
+	);
+}
 
 type AgentSettingsFile = {
 	shellInitCommand?: string;
@@ -208,7 +200,7 @@ describe("Coding Agent Tools", () => {
 			const output = getTextOutput(result);
 
 			expect(output).toContain("definitely not a png");
-			expect(result.content.some((c) => c.type === "image")).toBe(false);
+			expect(result.content.some((c: any) => c.type === "image")).toBe(false);
 		});
 	});
 
