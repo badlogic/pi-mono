@@ -187,6 +187,44 @@ function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
 	return chunks.length > 0 ? chunks : [{ text: "", startIndex: 0, endIndex: 0 }];
 }
 
+// Kitty CSI-u sequences for printable keys, including optional shifted/base codepoints.
+const KITTY_CSI_U_REGEX = /^\x1b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$/;
+const KITTY_MOD_SHIFT = 1;
+const KITTY_MOD_ALT = 2;
+const KITTY_MOD_CTRL = 4;
+
+// Decode a printable CSI-u sequence, preferring the shifted key when present.
+function decodeKittyPrintable(data: string): string | undefined {
+	const match = data.match(KITTY_CSI_U_REGEX);
+	if (!match) return undefined;
+
+	// CSI-u groups: <codepoint>[:<shifted>[:<base>]];<mod>u
+	const codepoint = Number.parseInt(match[1] ?? "", 10);
+	if (!Number.isFinite(codepoint)) return undefined;
+
+	const shiftedKey = match[2] && match[2].length > 0 ? Number.parseInt(match[2], 10) : undefined;
+	const modValue = match[4] ? Number.parseInt(match[4], 10) : 1;
+	// Modifiers are 1-indexed in CSI-u; normalize to our bitmask.
+	const modifier = Number.isFinite(modValue) ? modValue - 1 : 0;
+
+	// Ignore CSI-u sequences used for Alt/Ctrl shortcuts.
+	if (modifier & (KITTY_MOD_ALT | KITTY_MOD_CTRL)) return undefined;
+
+	// Prefer the shifted keycode when Shift is held.
+	let effectiveCodepoint = codepoint;
+	if (modifier & KITTY_MOD_SHIFT && typeof shiftedKey === "number") {
+		effectiveCodepoint = shiftedKey;
+	}
+	// Drop control characters or invalid codepoints.
+	if (!Number.isFinite(effectiveCodepoint) || effectiveCodepoint < 32) return undefined;
+
+	try {
+		return String.fromCodePoint(effectiveCodepoint);
+	} catch {
+		return undefined;
+	}
+}
+
 interface EditorState {
 	lines: string[];
 	cursorLine: number;
@@ -673,6 +711,12 @@ export class Editor implements Component, Focusable {
 		// Shift+Space - insert regular space
 		if (matchesKey(data, "shift+space")) {
 			this.insertCharacter(" ");
+			return;
+		}
+
+		const kittyPrintable = decodeKittyPrintable(data);
+		if (kittyPrintable !== undefined) {
+			this.insertCharacter(kittyPrintable);
 			return;
 		}
 
