@@ -733,8 +733,17 @@ Navigate to a different point in the session tree:
 ```typescript
 const result = await ctx.navigateTree("entry-id-456", {
   summarize: true,
+  customInstructions: "Focus on error handling changes",
+  replaceInstructions: false, // true = replace default prompt entirely
+  label: "review-checkpoint",
 });
 ```
+
+Options:
+- `summarize`: Whether to generate a summary of the abandoned branch
+- `customInstructions`: Custom instructions for the summarizer
+- `replaceInstructions`: If true, `customInstructions` replaces the default prompt instead of being appended
+- `label`: Label to attach to the branch summary entry (or target entry if not summarizing)
 
 ## ExtensionAPI Methods
 

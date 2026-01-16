@@ -57,7 +57,7 @@ export type ForkHandler = (entryId: string) => Promise<{ cancelled: boolean }>;
 
 export type NavigateTreeHandler = (
 	targetId: string,
-	options?: { summarize?: boolean },
+	options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
 ) => Promise<{ cancelled: boolean }>;
 
 export type ShutdownHandler = () => void;

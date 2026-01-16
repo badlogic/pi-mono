@@ -237,7 +237,10 @@ export interface ExtensionCommandContext extends ExtensionContext {
 	fork(entryId: string): Promise<{ cancelled: boolean }>;
 
 	/** Navigate to a different point in the session tree. */
-	navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ cancelled: boolean }>;
+	navigateTree(
+		targetId: string,
+		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
+	): Promise<{ cancelled: boolean }>;
 }
 
 // ============================================================================
@@ -344,6 +347,12 @@ export interface TreePreparation {
 	commonAncestorId: string | null;
 	entriesToSummarize: SessionEntry[];
 	userWantsSummary: boolean;
+	/** Custom instructions for summarization */
+	customInstructions?: string;
+	/** If true, customInstructions replaces the default prompt instead of being appended */
+	replaceInstructions?: boolean;
+	/** Label to attach to the branch summary entry */
+	label?: string;
 }
 
 /** Fired before navigating in the session tree (can be cancelled) */
@@ -633,6 +642,12 @@ export interface SessionBeforeTreeResult {
 		summary: string;
 		details?: unknown;
 	};
+	/** Override custom instructions for summarization */
+	customInstructions?: string;
+	/** Override whether customInstructions replaces the default prompt */
+	replaceInstructions?: boolean;
+	/** Override label to attach to the branch summary entry */
+	label?: string;
 }
 
 // ============================================================================
@@ -917,7 +932,10 @@ export interface ExtensionCommandContextActions {
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 	}) => Promise<{ cancelled: boolean }>;
 	fork: (entryId: string) => Promise<{ cancelled: boolean }>;
-	navigateTree: (targetId: string, options?: { summarize?: boolean }) => Promise<{ cancelled: boolean }>;
+	navigateTree: (
+		targetId: string,
+		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
+	) => Promise<{ cancelled: boolean }>;
 }
 
 /**
