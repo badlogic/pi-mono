@@ -131,22 +131,49 @@ The body after frontmatter becomes the agent's system prompt.
 
 ## Parameters
 
+### Task File Mode (default)
+
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `taskFile` | string | (required) | Path to task file |
+| `taskFile` | string | - | Path to task file (required unless using direct mode) |
 | `continueOnError` | boolean | false | Continue if a task fails |
 | `archive` | boolean | true | Archive session on completion |
 | `taskTimeoutMs` | number | 1800000 | Timeout per task (30 min) |
 
+### Direct Mode Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `gate` | string | - | Path to gate script (triggers direct mode) |
+| `maxRetries` | number | 3 | Max retry attempts |
+| `selfReview` | boolean | false | Run self-review before completion |
+| `agent` | string | "general-purpose" | Agent config to use |
+| `prompt` | string | - | Task description for the agent |
+
 ## Execution Modes
 
-### Standard Execution
+### Standard Execution (Task File)
 
-Default mode. Runs the task once with memory recall pre-hook and quality gate post-hook.
+Default mode. Runs tasks from a file with memory recall pre-hook and quality gate post-hook.
 
-### Retry-Until-Pass Mode
+### Direct Mode
 
-Consolidated from `tasks_loop`. When `Mode: retry-until-pass` is set:
+For simple single-gate workflows without creating a task file:
+
+```
+orchestrate({ gate: "gates/gate_s05.py", maxRetries: 5, selfReview: true })
+```
+
+Or via natural language:
+```
+Run the gate gates/gate_s05.py until it passes
+```
+
+Direct mode creates a synthetic retry-until-pass task and runs it.
+
+### Retry-Until-Pass Mode (in Task Files)
+
+When `Mode: retry-until-pass` is set in a task file:
 
 1. Initial task execution
 2. Run the gate script
@@ -305,7 +332,7 @@ Orchestration completed: 2/2 tasks
 Full task outputs: /tmp/pi-orchestrate-abc123/
 ```
 
-### Retry-Until-Pass Mode
+### Retry-Until-Pass Mode (Task File)
 
 ```
 $ pi
@@ -324,22 +351,44 @@ Orchestration completed: 1/1 tasks
 Full task outputs: /tmp/pi-orchestrate-xyz789/
 ```
 
+### Direct Mode (No Task File)
+
+```
+$ pi
+> Run the gate gates/gate_s05.py until it passes with 5 retries
+
+Running gate: gates/gate_s05.py
+  [Gate attempt 1] FAIL (exit 1)
+  [Fix attempt 1] Agent fixing...
+  [Gate attempt 2] FAIL (exit 1)
+  [Fix attempt 2] Agent fixing...
+  [Gate attempt 3] PASS
+
+Direct mode completed
+Gate: gates/gate_s05.py
+Result: success [2m34s]
+Full output: /tmp/pi-orchestrate-direct-abc123/
+```
+
 ## Comparison: orchestrate vs tasks_loop
 
 The orchestrate tool consolidates features from `tasks_loop`:
 
 | Feature | tasks_loop | orchestrate |
 |---------|-----------|-------------|
-| Single gate retry loop | Core feature | Via `Mode: retry-until-pass` |
+| Single gate retry loop | Core feature | Via `gate` param (direct mode) |
+| No task file needed | Yes | Yes (direct mode) |
 | Multi-task orchestration | Not supported | Core feature |
 | Task dependencies | Not supported | Supported |
 | Memory recall pre-hook | Not supported | Supported |
 | Quality gate post-hook | Gate is the check | Both gate and quality-gate |
-| Self-review | Supported | Supported via `SelfReview: true` |
+| Self-review | Supported | Supported via `selfReview` param |
 | CLARIFY exit code | Supported (42) | Supported (42) |
 | Artifacts per attempt | ./artifacts/ | /tmp/pi-orchestrate-*/ |
 | Context.md recovery | Supported | Via memory recall |
 | Session archiving | Not supported | Supported |
+
+**Direct mode fully replaces tasks_loop functionality** while also supporting the richer task-file-based workflows.
 
 ## Limitations
 

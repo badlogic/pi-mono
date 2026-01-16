@@ -94,9 +94,12 @@ interface OrchestrateDetails {
 }
 
 const OrchestrateParams = Type.Object({
-	taskFile: Type.String({
-		description: "Path to task file (e.g., 01_TASKS.md)",
-	}),
+	// Task file mode (default)
+	taskFile: Type.Optional(
+		Type.String({
+			description: "Path to task file (e.g., 01_TASKS.md). Required unless using direct mode with 'gate' parameter.",
+		})
+	),
 	continueOnError: Type.Optional(
 		Type.Boolean({
 			description: "Continue executing tasks even if one fails",
@@ -113,6 +116,35 @@ const OrchestrateParams = Type.Object({
 		Type.Number({
 			description: "Timeout per task in milliseconds (default: 30 minutes)",
 			default: DEFAULT_TASK_TIMEOUT_MS,
+		})
+	),
+	// Direct mode parameters (alternative to taskFile)
+	gate: Type.Optional(
+		Type.String({
+			description: "Direct mode: Path to gate script to run until it passes. Use instead of taskFile for simple single-gate workflows.",
+		})
+	),
+	maxRetries: Type.Optional(
+		Type.Number({
+			description: "Direct mode: Maximum retry attempts (default: 3)",
+			default: 3,
+		})
+	),
+	selfReview: Type.Optional(
+		Type.Boolean({
+			description: "Direct mode: Run self-review before marking complete (default: false)",
+			default: false,
+		})
+	),
+	agent: Type.Optional(
+		Type.String({
+			description: "Direct mode: Agent config to use (default: general-purpose)",
+			default: "general-purpose",
+		})
+	),
+	prompt: Type.Optional(
+		Type.String({
+			description: "Direct mode: Task description/prompt for the agent",
 		})
 	),
 });
@@ -1427,6 +1459,122 @@ function formatDuration(ms: number): string {
 	return `${Math.floor(ms / 60000)}m${Math.floor((ms % 60000) / 1000)}s`;
 }
 
+/**
+ * Direct mode execution: Run a single gate without a task file.
+ * Equivalent to tasks_loop but integrated into orchestrate.
+ */
+async function executeDirectMode(
+	gate: string,
+	maxRetries: number,
+	selfReview: boolean,
+	agentName: string,
+	prompt: string | undefined,
+	taskTimeoutMs: number,
+	archive: boolean,
+	cwd: string,
+	signal?: AbortSignal,
+	onUpdate?: (result: AgentToolResult<OrchestrateDetails>) => void
+): Promise<AgentToolResult<OrchestrateDetails>> {
+	// Create output directory
+	const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-orchestrate-direct-"));
+
+	// Resolve gate path
+	const absoluteGate = path.isAbsolute(gate) ? gate : path.join(cwd, gate);
+
+	// Create a synthetic task for the gate
+	const syntheticTask: ParsedTask = {
+		id: 1,
+		title: prompt || `Make ${path.basename(gate)} pass`,
+		description: prompt || `Run the gate script until it passes: ${gate}`,
+		agent: agentName,
+		dependencies: [],
+		notes: "",
+		completed: false,
+		lineStart: 0,
+		lineEnd: 0,
+		mode: "retry-until-pass",
+		gate: absoluteGate,
+		maxRetries,
+		selfReview,
+	};
+
+	// Create synthetic task file content
+	const syntheticTaskFile: TaskFileContent = {
+		title: `Direct Gate: ${path.basename(gate)}`,
+		context: `Running gate in direct mode: ${gate}`,
+		tasks: [syntheticTask],
+		questionsBlockers: [],
+		rawLines: [],
+	};
+
+	const details: OrchestrateDetails = {
+		taskFile: `[direct mode: ${gate}]`,
+		status: "running",
+		totalTasks: 1,
+		completedTasks: 0,
+		currentTask: syntheticTask.title,
+		results: [],
+		archived: false,
+		outputDir,
+	};
+
+	// Update progress
+	if (onUpdate) {
+		onUpdate({
+			content: [{ type: "text" as const, text: `Running gate: ${gate}` }],
+			details,
+		});
+	}
+
+	// Execute the task with retry-until-pass
+	const result = await runTaskWithRetry(
+		syntheticTask,
+		syntheticTaskFile,
+		cwd,
+		taskTimeoutMs,
+		outputDir,
+		signal
+	);
+
+	details.results.push(result);
+
+	if (result.status === "success") {
+		details.completedTasks = 1;
+		details.status = "completed";
+	} else {
+		details.status = "failed";
+	}
+
+	// Archive if requested and successful
+	if (archive && details.status === "completed") {
+		const archiveResult = archiveSession(syntheticTaskFile, [result], cwd);
+		details.archived = archiveResult.success;
+	}
+
+	// Build summary
+	const summary = [
+		`Direct mode ${details.status}`,
+		`Gate: ${gate}`,
+		"",
+		`Result: ${result.status}${result.durationMs ? ` [${formatDuration(result.durationMs)}]` : ""}`,
+	];
+
+	if (result.error) {
+		summary.push(`Error: ${result.error}`);
+	}
+
+	if (details.archived) {
+		summary.push("", "Session archived to episodic memory.");
+	}
+
+	summary.push("", `Full output: ${outputDir}`);
+
+	return {
+		content: [{ type: "text" as const, text: summary.join("\n") }],
+		details,
+	};
+}
+
 // Minimal theme interface for the methods we use (avoids internal dependency)
 interface ThemeInterface {
 	fg(color: string, text: string): string;
@@ -1441,7 +1589,8 @@ const factory: CustomToolFactory = (pi) => ({
 	description:
 		"Execute tasks from a collaborative task file (e.g., 0N_TASKS.md) with memory-first approach, " +
 		"quality gates, and session archiving. Use when user says 'run the tasks', 'execute the task file', " +
-		"or 'orchestrate'. Each task runs in protected context with pre/post hooks from agent configs.",
+		"or 'orchestrate'. Each task runs in protected context with pre/post hooks from agent configs. " +
+		"Direct mode: Use 'gate' parameter instead of 'taskFile' for simple single-gate retry workflows.",
 	parameters: OrchestrateParams,
 
 	async execute(
@@ -1455,11 +1604,42 @@ const factory: CustomToolFactory = (pi) => ({
 			continueOnError = false,
 			archive = true,
 			taskTimeoutMs = DEFAULT_TASK_TIMEOUT_MS,
+			// Direct mode parameters
+			gate,
+			maxRetries = 3,
+			selfReview = false,
+			agent: agentName = "general-purpose",
+			prompt,
 		} = params;
 
 		// Validate timeout parameter
 		if (!Number.isFinite(taskTimeoutMs) || taskTimeoutMs <= 0) {
 			throw new Error(`taskTimeoutMs must be a positive number, got ${taskTimeoutMs}`);
+		}
+
+		// ============================================================
+		// DIRECT MODE: Run a single gate without a task file
+		// ============================================================
+		if (gate) {
+			return executeDirectMode(
+				gate,
+				maxRetries,
+				selfReview,
+				agentName,
+				prompt,
+				taskTimeoutMs,
+				archive,
+				pi.cwd,
+				signal,
+				onUpdate
+			);
+		}
+
+		// ============================================================
+		// TASK FILE MODE: Parse and execute tasks from file
+		// ============================================================
+		if (!taskFile) {
+			throw new Error("Either 'taskFile' or 'gate' parameter is required");
 		}
 
 		// Resolve task file path
@@ -1622,8 +1802,15 @@ const factory: CustomToolFactory = (pi) => ({
 	},
 
 	renderCall(args: OrchestrateParamsType, theme: ThemeInterface) {
-		const { taskFile } = args;
-		const label = taskFile ? `Orchestrate: ${path.basename(taskFile)}` : "Orchestrate Tasks";
+		const { taskFile, gate } = args;
+		let label: string;
+		if (gate) {
+			label = `Orchestrate (direct): ${path.basename(gate)}`;
+		} else if (taskFile) {
+			label = `Orchestrate: ${path.basename(taskFile)}`;
+		} else {
+			label = "Orchestrate Tasks";
+		}
 		return new Text(theme.fg("toolTitle", theme.bold(label)), 0, 0);
 	},
 
