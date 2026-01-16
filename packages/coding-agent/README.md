@@ -739,7 +739,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
   "steeringMode": "one-at-a-time",
   "followUpMode": "one-at-a-time",
   "shellPath": "C:\\path\\to\\bash.exe",
-  "shellCommandPrefix": "shopt -s expand_aliases; eval ",
+  "shellCommandPrefix": "echo 'before command' && ",
   "hideThinkingBlock": false,
   "collapseChangelog": false,
   "compaction": {
