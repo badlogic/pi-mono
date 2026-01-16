@@ -70,6 +70,7 @@ import { CompactionSummaryMessageComponent } from "./components/compaction-summa
 import { CustomEditor } from "./components/custom-editor.js";
 import { CustomMessageComponent } from "./components/custom-message.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
+import { EmbeddedSessionRefComponent } from "./components/embedded-session-ref.js";
 import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
@@ -664,6 +665,7 @@ export class InteractiveMode {
 			// ExtensionContextActions - for ctx.* in event handlers
 			{
 				getModel: () => this.session.model,
+				getSession: () => this.session,
 				isIdle: () => !this.session.isStreaming,
 				abort: () => this.session.abort(),
 				hasPendingMessages: () => this.session.pendingMessageCount > 0,
@@ -786,6 +788,7 @@ export class InteractiveMode {
 			sessionManager: this.sessionManager,
 			modelRegistry: this.session.modelRegistry,
 			model: this.session.model,
+			session: this.session,
 			isIdle: () => !this.session.isStreaming,
 			abort: () => this.session.abort(),
 			hasPendingMessages: () => this.session.pendingMessageCount > 0,
@@ -1320,6 +1323,21 @@ export class InteractiveMode {
 			}
 		}
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Render embedded_session_ref entries from the current path (root to leaf).
+	 * Called during initial render and after resuming a session.
+	 */
+	private renderEmbeddedSessionRefs(): void {
+		const entries = this.session.sessionManager.getEntriesInPath();
+		for (const entry of entries) {
+			if (entry.type === "embedded_session_ref") {
+				const component = new EmbeddedSessionRefComponent({ entry });
+				this.chatContainer.addChild(component);
+				this.chatContainer.addChild(new Spacer(1));
+			}
+		}
 	}
 
 	// =========================================================================
@@ -2024,6 +2042,9 @@ export class InteractiveMode {
 			populateHistory: true,
 		});
 
+		// Render embedded session references (not in LLM context, just for display)
+		this.renderEmbeddedSessionRefs();
+
 		// Show compaction info if session was compacted
 		const allEntries = this.sessionManager.getEntries();
 		const compactionCount = allEntries.filter((e) => e.type === "compaction").length;
@@ -2046,6 +2067,8 @@ export class InteractiveMode {
 		this.chatContainer.clear();
 		const context = this.sessionManager.buildSessionContext();
 		this.renderSessionContext(context);
+		// Render embedded session references (not in LLM context, just for display)
+		this.renderEmbeddedSessionRefs();
 	}
 
 	// =========================================================================

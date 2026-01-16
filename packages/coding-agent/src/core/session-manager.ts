@@ -10,11 +10,13 @@ import {
 	readdirSync,
 	readFileSync,
 	readSync,
+	rmdirSync,
 	statSync,
+	unlinkSync,
 	writeFileSync,
 } from "fs";
 import { readdir, readFile, stat } from "fs/promises";
-import { join, resolve } from "path";
+import { dirname, join, resolve } from "path";
 import { getAgentDir as getDefaultAgentDir, getSessionsDir } from "../config.js";
 import {
 	type BashExecutionMessage,
@@ -113,6 +115,32 @@ export interface SessionInfoEntry extends SessionEntryBase {
 }
 
 /**
+ * Reference to an embedded session, stored in parent session.
+ * Does NOT participate in LLM context (like CustomEntry).
+ * Rendered as a collapsible block in parent chat.
+ */
+export interface EmbeddedSessionRefEntry extends SessionEntryBase {
+	type: "embedded_session_ref";
+	embeddedSessionId: string;
+	embeddedSessionFile?: string;
+	title?: string;
+	summary?: string;
+	durationMs: number;
+	messageCount: number;
+	model: { provider: string; modelId: string };
+	thinkingLevel: string;
+	cancelled: boolean;
+	filesRead?: string[];
+	filesModified?: string[];
+	tokens?: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+	};
+}
+
+/**
  * Custom message entry for extensions to inject messages into LLM context.
  * Use customType to identify your extension's entries.
  *
@@ -142,7 +170,8 @@ export type SessionEntry =
 	| CustomEntry
 	| CustomMessageEntry
 	| LabelEntry
-	| SessionInfoEntry;
+	| SessionInfoEntry
+	| EmbeddedSessionRefEntry;
 
 /** Raw file entry (includes header) */
 export type FileEntry = SessionHeader | SessionEntry;
@@ -628,7 +657,13 @@ export class SessionManager {
 	private labelsById: Map<string, string> = new Map();
 	private leafId: string | null = null;
 
-	private constructor(cwd: string, sessionDir: string, sessionFile: string | undefined, persist: boolean) {
+	private constructor(
+		cwd: string,
+		sessionDir: string,
+		sessionFile: string | undefined,
+		persist: boolean,
+		newSessionOptions?: NewSessionOptions,
+	) {
 		this.cwd = cwd;
 		this.sessionDir = sessionDir;
 		this.persist = persist;
@@ -639,7 +674,7 @@ export class SessionManager {
 		if (sessionFile) {
 			this.setSessionFile(sessionFile);
 		} else {
-			this.newSession();
+			this.newSession(newSessionOptions);
 		}
 	}
 
@@ -891,6 +926,23 @@ export class SessionManager {
 		return entry.id;
 	}
 
+	/**
+	 * Append an embedded session reference as child of current leaf.
+	 * This entry does NOT participate in LLM context - it's for UI display only.
+	 * @returns Entry id
+	 */
+	appendEmbeddedSessionRef(ref: Omit<EmbeddedSessionRefEntry, "id" | "parentId" | "timestamp" | "type">): string {
+		const entry: EmbeddedSessionRefEntry = {
+			type: "embedded_session_ref",
+			id: generateId(this.byId),
+			parentId: this.leafId,
+			timestamp: new Date().toISOString(),
+			...ref,
+		};
+		this._appendEntry(entry);
+		return entry.id;
+	}
+
 	// =========================================================================
 	// Tree Traversal
 	// =========================================================================
@@ -986,12 +1038,46 @@ export class SessionManager {
 	}
 
 	/**
+	 * Whether this is an embedded session (has a parent session).
+	 */
+	isEmbedded(): boolean {
+		const header = this.getHeader();
+		return header?.parentSession !== undefined;
+	}
+
+	/**
+	 * Get parent session ID (embedded sessions only).
+	 */
+	getParentSessionId(): string | undefined {
+		const header = this.getHeader();
+		return header?.parentSession;
+	}
+
+	/**
 	 * Get all session entries (excludes header). Returns a shallow copy.
 	 * The session is append-only: use appendXXX() to add entries, branch() to
 	 * change the leaf pointer. Entries cannot be modified or deleted.
 	 */
 	getEntries(): SessionEntry[] {
 		return this.fileEntries.filter((e): e is SessionEntry => e.type !== "session");
+	}
+
+	/**
+	 * Get entries in the current path (from root to leaf).
+	 * Only includes entries that are ancestors of the current leaf.
+	 */
+	getEntriesInPath(): SessionEntry[] {
+		if (!this.leafId) {
+			return [];
+		}
+
+		const path: SessionEntry[] = [];
+		let current = this.byId.get(this.leafId);
+		while (current) {
+			path.unshift(current);
+			current = current.parentId ? this.byId.get(current.parentId) : undefined;
+		}
+		return path;
 	}
 
 	/**
@@ -1270,6 +1356,44 @@ export class SessionManager {
 	}
 
 	/**
+	 * Create a session manager for an embedded session.
+	 *
+	 * If sessionFile is provided, persists to that path.
+	 * Otherwise creates in: ~/.pi/agent/sessions/embedded/{parent-id}/{timestamp}_{id}.jsonl
+	 *
+	 * The session header includes parentSession reference.
+	 */
+	static createEmbedded(
+		parentSessionId: string,
+		cwd: string,
+		options?: {
+			sessionFile?: string;
+		},
+	): SessionManager {
+		// Determine the session directory
+		const embeddedDir = join(getDefaultAgentDir(), "sessions", "embedded", parentSessionId);
+
+		// If a specific session file is provided, use its directory
+		if (options?.sessionFile) {
+			const resolvedPath = resolve(options.sessionFile);
+			const dir = dirname(resolvedPath);
+			// Create manager - newSession will be called with parentSession option
+			// Then we override the generated sessionFile path
+			const manager = new SessionManager(cwd, dir, undefined, true, {
+				parentSession: parentSessionId,
+			});
+			// Override the auto-generated path with the specified one
+			// Note: The header with parentSession is already in fileEntries from newSession()
+			// It will be written when the session is flushed or entries are appended
+			manager.sessionFile = resolvedPath;
+			return manager;
+		}
+
+		// Create the manager with persistence enabled, passing parentSession to newSession
+		return new SessionManager(cwd, embeddedDir, undefined, true, { parentSession: parentSessionId });
+	}
+
+	/**
 	 * List all sessions for a directory.
 	 * @param cwd Working directory (used to compute default session directory)
 	 * @param sessionDir Optional session directory. If omitted, uses default (~/.pi/agent/sessions/<encoded-cwd>/).
@@ -1334,5 +1458,65 @@ export class SessionManager {
 		} catch {
 			return [];
 		}
+	}
+
+	/**
+	 * Clean up old embedded sessions.
+	 * Called during startup to remove sessions older than maxAgeDays.
+	 */
+	static async cleanupEmbeddedSessions(options?: {
+		maxAgeDays?: number; // Default: 30
+		dryRun?: boolean;
+	}): Promise<{ deleted: string[]; errors: string[] }> {
+		const maxAge = (options?.maxAgeDays ?? 30) * 24 * 60 * 60 * 1000;
+		const cutoff = Date.now() - maxAge;
+		const embeddedDir = join(getDefaultAgentDir(), "sessions", "embedded");
+
+		const deleted: string[] = [];
+		const errors: string[] = [];
+
+		if (!existsSync(embeddedDir)) {
+			return { deleted, errors };
+		}
+
+		// Iterate parent session directories
+		for (const parentDir of readdirSync(embeddedDir)) {
+			const parentPath = join(embeddedDir, parentDir);
+			try {
+				if (!statSync(parentPath).isDirectory()) continue;
+			} catch {
+				continue;
+			}
+
+			// Check each embedded session file
+			for (const file of readdirSync(parentPath)) {
+				if (!file.endsWith(".jsonl")) continue;
+
+				const filePath = join(parentPath, file);
+				try {
+					const fileStat = statSync(filePath);
+					if (fileStat.mtime.getTime() < cutoff) {
+						if (!options?.dryRun) {
+							unlinkSync(filePath);
+						}
+						deleted.push(filePath);
+					}
+				} catch (err) {
+					errors.push(`${filePath}: ${err}`);
+				}
+			}
+
+			// Remove empty parent directories
+			try {
+				const remaining = readdirSync(parentPath);
+				if (remaining.length === 0 && !options?.dryRun) {
+					rmdirSync(parentPath);
+				}
+			} catch {
+				// Ignore errors when removing directories
+			}
+		}
+
+		return { deleted, errors };
 	}
 }

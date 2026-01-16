@@ -117,6 +117,9 @@ export class ExtensionRunner {
 	private forkHandler: ForkHandler = async () => ({ cancelled: false });
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
 	private shutdownHandler: ShutdownHandler = () => {};
+	private getSessionFn: ExtensionContextActions["getSession"] = () => {
+		throw new Error("session not available yet");
+	};
 
 	constructor(
 		extensions: Extension[],
@@ -154,6 +157,7 @@ export class ExtensionRunner {
 
 		// Context actions (required)
 		this.getModel = contextActions.getModel;
+		this.getSessionFn = contextActions.getSession;
 		this.isIdleFn = contextActions.isIdle;
 		this.abortFn = contextActions.abort;
 		this.hasPendingMessagesFn = contextActions.hasPendingMessages;
@@ -324,6 +328,7 @@ export class ExtensionRunner {
 	 */
 	createContext(): ExtensionContext {
 		const getModel = this.getModel;
+		const getSession = this.getSessionFn;
 		return {
 			ui: this.uiContext,
 			hasUI: this.hasUI(),
@@ -332,6 +337,9 @@ export class ExtensionRunner {
 			modelRegistry: this.modelRegistry,
 			get model() {
 				return getModel();
+			},
+			get session() {
+				return getSession();
 			},
 			isIdle: () => this.isIdleFn(),
 			abort: () => this.abortFn(),
@@ -347,6 +355,8 @@ export class ExtensionRunner {
 			newSession: (options) => this.newSessionHandler(options),
 			fork: (entryId) => this.forkHandler(entryId),
 			navigateTree: (targetId, options) => this.navigateTreeHandler(targetId, options),
+			isEmbeddedSession: this.sessionManager.isEmbedded(),
+			parentSessionId: this.sessionManager.getParentSessionId(),
 		};
 	}
 

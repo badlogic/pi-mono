@@ -120,6 +120,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 			// ExtensionContextActions
 			{
 				getModel: () => session.model,
+				getSession: () => session,
 				isIdle: () => !session.isStreaming,
 				abort: () => session.abort(),
 				hasPendingMessages: () => session.pendingMessageCount > 0,

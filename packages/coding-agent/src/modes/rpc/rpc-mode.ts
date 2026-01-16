@@ -288,6 +288,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			// ExtensionContextActions
 			{
 				getModel: () => session.agent.state.model,
+				getSession: () => session,
 				isIdle: () => !session.isStreaming,
 				abort: () => session.abort(),
 				hasPendingMessages: () => session.pendingMessageCount > 0,

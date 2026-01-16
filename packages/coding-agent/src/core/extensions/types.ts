@@ -27,6 +27,7 @@ import type {
 } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
+import type { AgentSession } from "../agent-session.js";
 import type { BashResult } from "../bash-executor.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
 import type { EventBus } from "../event-bus.js";
@@ -209,6 +210,15 @@ export interface ExtensionContext {
 	modelRegistry: ModelRegistry;
 	/** Current model (may be undefined) */
 	model: Model<any> | undefined;
+	/**
+	 * The current AgentSession. Provides access to:
+	 * - `agent.state` (systemPrompt, tools, messages, model, thinkingLevel)
+	 * - `settingsManager`, `modelRegistry`, `promptTemplates`, `skills`
+	 * - `subscribe()` for event handling
+	 *
+	 * Use for advanced scenarios like creating embedded sessions.
+	 */
+	session: AgentSession;
 	/** Whether the agent is idle (not streaming) */
 	isIdle(): boolean;
 	/** Abort the current agent operation */
@@ -241,6 +251,12 @@ export interface ExtensionCommandContext extends ExtensionContext {
 		targetId: string,
 		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
 	): Promise<{ cancelled: boolean }>;
+
+	/** Whether currently in an embedded session */
+	isEmbeddedSession: boolean;
+
+	/** Parent session ID (if in embedded session) */
+	parentSessionId?: string;
 }
 
 // ============================================================================
@@ -915,6 +931,7 @@ export interface ExtensionActions {
  */
 export interface ExtensionContextActions {
 	getModel: () => Model<any> | undefined;
+	getSession: () => AgentSession;
 	isIdle: () => boolean;
 	abort: () => void;
 	hasPendingMessages: () => boolean;

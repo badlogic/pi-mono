@@ -1,0 +1,10 @@
+{
+  "name": "pi-embedded-sessions",
+  "version": "1.0.0",
+  "description": "Embedded sessions extension for pi - create child agent sessions in overlays",
+  "main": "index.ts",
+  "type": "module",
+  "keywords": ["pi", "extension", "embedded-sessions"],
+  "author": "nicobailon",
+  "license": "MIT"
+}

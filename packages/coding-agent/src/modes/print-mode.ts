@@ -75,6 +75,7 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 			// ExtensionContextActions
 			{
 				getModel: () => session.model,
+				getSession: () => session,
 				isIdle: () => !session.isStreaming,
 				abort: () => session.abort(),
 				hasPendingMessages: () => session.pendingMessageCount > 0,

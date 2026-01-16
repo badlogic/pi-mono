@@ -148,6 +148,7 @@ export {
 	CURRENT_SESSION_VERSION,
 	type CustomEntry,
 	type CustomMessageEntry,
+	type EmbeddedSessionRefEntry,
 	type FileEntry,
 	getLatestCompactionEntry,
 	type ModelChangeEntry,
@@ -244,6 +245,8 @@ export {
 	CustomEditor,
 	CustomMessageComponent,
 	DynamicBorder,
+	EmbeddedSessionRefComponent,
+	type EmbeddedSessionRefComponentConfig,
 	ExtensionEditorComponent,
 	ExtensionInputComponent,
 	ExtensionSelectorComponent,
@@ -270,6 +273,7 @@ export {
 } from "./modes/interactive/components/index.js";
 // Theme utilities for custom tools and extensions
 export {
+	getEditorTheme,
 	getLanguageFromPath,
 	getMarkdownTheme,
 	getSelectListTheme,
@@ -278,6 +282,7 @@ export {
 	initTheme,
 	Theme,
 	type ThemeColor,
+	theme,
 } from "./modes/interactive/theme/theme.js";
 export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.js";
 // Shell utilities
