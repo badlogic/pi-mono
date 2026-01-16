@@ -165,7 +165,7 @@ class SessionList implements Component {
 		if (this.filteredSessions.length === 0) {
 			if (this.showCwd) {
 				// "All" scope - no sessions anywhere that match filter
-				lines.push(theme.fg("muted", "  No sessions found"));
+				lines.push(theme.fg("muted", truncateToWidth("  No sessions found", width, "…")));
 			} else {
 				// "Current folder" scope - hint to try "all"
 				lines.push(
