@@ -95,7 +95,9 @@ class SessionSelectorHeader implements Component {
 		const availableLeft = Math.max(0, width - visibleWidth(rightText) - 1);
 		const left = truncateToWidth(leftText, availableLeft, "");
 		const spacing = Math.max(0, width - visibleWidth(left) - visibleWidth(rightText));
-		const hint = theme.fg("muted", 'Tab: scope · Ctrl+R: sort · re:<pattern> for regex · "phrase" for exact phrase');
+		const hintText = 'Tab: scope · Ctrl+R: sort · re:<pattern> for regex · "phrase" for exact phrase';
+		const truncatedHint = truncateToWidth(hintText, width, "…");
+		const hint = theme.fg("muted", truncatedHint);
 		return [`${left}${" ".repeat(spacing)}${rightText}`, hint];
 	}
 }
