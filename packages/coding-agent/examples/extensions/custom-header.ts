@@ -6,6 +6,7 @@
  */
 
 import type { ExtensionAPI, Theme } from "@mariozechner/pi-coding-agent";
+import { VERSION } from "@mariozechner/pi-coding-agent";
 
 // --- PI MASCOT ---
 // Based on pi_mascot.ts - the pi agent character
@@ -52,7 +53,7 @@ export default function (pi: ExtensionAPI) {
 					render(_width: number): string[] {
 						const mascotLines = getPiMascot(theme);
 						// Add a subtitle with hint
-						const subtitle = theme.fg("muted", "   shitty coding agent");
+						const subtitle = `${theme.fg("muted", "   shitty coding agent")}${theme.fg("dim", ` v${VERSION}`)}`;
 						return [...mascotLines, subtitle];
 					},
 					invalidate() {},
