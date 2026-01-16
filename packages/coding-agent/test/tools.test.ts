@@ -22,11 +22,7 @@ function getTextOutput(result: any): string {
 	);
 }
 
-type AgentSettingsFile = {
-	shellCommandPrefix?: string;
-};
-
-const createBashToolWithAgentSettings = (cwd: string, settings: AgentSettingsFile) => {
+const createBashToolWithAgentSettings = (cwd: string, settings: { shellCommandPrefix?: string }) => {
 	const agentDir = join(cwd, "agent");
 	mkdirSync(agentDir, { recursive: true });
 	writeFileSync(join(agentDir, "settings.json"), JSON.stringify(settings));
