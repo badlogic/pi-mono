@@ -1820,6 +1820,10 @@ export class InteractiveMode {
 						timestamp: Date.now(),
 					});
 					this.footer.invalidate();
+				} else if (event.errorMessage) {
+					// Compaction failed (e.g., quota exceeded, API error)
+					this.chatContainer.addChild(new Spacer(1));
+					this.chatContainer.addChild(new Text(theme.fg("error", event.errorMessage), 1, 0));
 				}
 				void this.flushCompactionQueue({ willRetry: event.willRetry });
 				this.ui.requestRender();

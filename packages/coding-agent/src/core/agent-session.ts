@@ -62,7 +62,13 @@ import type { BashOperations } from "./tools/bash.js";
 export type AgentSessionEvent =
 	| AgentEvent
 	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
-	| { type: "auto_compaction_end"; result: CompactionResult | undefined; aborted: boolean; willRetry: boolean }
+	| {
+			type: "auto_compaction_end";
+			result: CompactionResult | undefined;
+			aborted: boolean;
+			willRetry: boolean;
+			errorMessage?: string;
+	  }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
 
@@ -1544,13 +1550,17 @@ export class AgentSession {
 				}, 100);
 			}
 		} catch (error) {
-			this._emit({ type: "auto_compaction_end", result: undefined, aborted: false, willRetry: false });
-
-			if (reason === "overflow") {
-				throw new Error(
-					`Context overflow: ${error instanceof Error ? error.message : "compaction failed"}. Your input may be too large for the context window.`,
-				);
-			}
+			const errorMessage = error instanceof Error ? error.message : "compaction failed";
+			this._emit({
+				type: "auto_compaction_end",
+				result: undefined,
+				aborted: false,
+				willRetry: false,
+				errorMessage:
+					reason === "overflow"
+						? `Context overflow recovery failed: ${errorMessage}`
+						: `Auto-compaction failed: ${errorMessage}`,
+			});
 		} finally {
 			this._autoCompactionAbortController = undefined;
 		}
