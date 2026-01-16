@@ -229,12 +229,34 @@ function validateTaskFile(parsed: TaskFileContent): void {
 	}
 }
 
-function updateTaskCheckbox(filePath: string, taskLineStart: number, completed: boolean): void {
+function updateTaskCheckbox(
+	filePath: string,
+	taskLineStart: number,
+	taskId: number,
+	completed: boolean
+): void {
 	// Re-read file to avoid stale data issues
 	const lines = fs.readFileSync(filePath, "utf-8").split("\n");
 	const taskLine = lines[taskLineStart];
 	if (!taskLine) {
 		throw new Error(`Cannot update checkbox: line ${taskLineStart} not found in ${filePath}`);
+	}
+
+	// Verify the line still looks like the expected task (guards against file mutation during execution)
+	// Check for task patterns: "- [ ] **Task N**:", "- [ ] Task N:", "- [ ] N."
+	const taskPatternMatch = taskLine.match(/^-\s*\[[ x]\]\s*(?:\*\*Task\s*(\d+)\*\*|Task\s*(\d+)|(\d+)\.)/i);
+	if (!taskPatternMatch) {
+		throw new Error(
+			`Task file changed during execution; line ${taskLineStart} in ${filePath} no longer matches task format. ` +
+			`Cannot safely update checkbox for Task ${taskId}.`
+		);
+	}
+	const lineTaskId = parseInt(taskPatternMatch[1] || taskPatternMatch[2] || taskPatternMatch[3], 10);
+	if (lineTaskId !== taskId) {
+		throw new Error(
+			`Task file changed during execution; line ${taskLineStart} in ${filePath} is now Task ${lineTaskId}, ` +
+			`expected Task ${taskId}. Cannot safely update checkbox.`
+		);
 	}
 
 	// Replace checkbox (handle [ ], [], [  ], etc.)
@@ -301,9 +323,8 @@ function loadAgentConfig(agentName: string): AgentConfig | AgentConfigError {
 		}
 	}
 
-	if (!frontmatter.name) {
-		return { error: `Agent config ${agentName}.md missing required "name" field in frontmatter` };
-	}
+	// Fallback: use agentName if name field is missing (backwards compatibility)
+	const name = frontmatter.name || agentName;
 
 	if (!body.trim()) {
 		return { error: `Agent config ${agentName}.md has empty system prompt (body after frontmatter)` };
@@ -315,7 +336,7 @@ function loadAgentConfig(agentName: string): AgentConfig | AgentConfigError {
 		.filter(Boolean);
 
 	return {
-		name: frontmatter.name,
+		name,
 		description: frontmatter.description || "",
 		tools,
 		model: frontmatter.model,
@@ -334,20 +355,11 @@ function writePromptFile(agent: string, prompt: string): { dir: string; path: st
 	return { dir, path: p };
 }
 
-function truncateOutput(output: string, maxBytes: number): string {
-	if (Buffer.byteLength(output, "utf-8") <= maxBytes) {
-		return output;
-	}
-	// Keep tail (most useful for debugging)
-	const buf = Buffer.from(output, "utf-8");
-	const truncated = buf.subarray(buf.length - maxBytes).toString("utf-8");
-	return `...[truncated ${buf.length - maxBytes} bytes]...\n${truncated}`;
-}
-
-/** Helper for inline output truncation during execution */
+/** Helper for inline output truncation during execution - keeps tail without repeated headers */
 class OutputAccumulator {
 	private buffer = "";
 	private readonly maxBytes: number;
+	private totalTruncatedBytes = 0;
 
 	constructor(maxBytes: number) {
 		this.maxBytes = maxBytes;
@@ -356,8 +368,13 @@ class OutputAccumulator {
 	append(text: string): void {
 		this.buffer += text;
 		// Truncate inline when buffer exceeds 2x max to avoid unbounded growth
-		if (Buffer.byteLength(this.buffer, "utf-8") > this.maxBytes * 2) {
-			this.buffer = truncateOutput(this.buffer, this.maxBytes);
+		const currentBytes = Buffer.byteLength(this.buffer, "utf-8");
+		if (currentBytes > this.maxBytes * 2) {
+			// Keep only the tail, track total truncated
+			const buf = Buffer.from(this.buffer, "utf-8");
+			const bytesToTruncate = buf.length - this.maxBytes;
+			this.totalTruncatedBytes += bytesToTruncate;
+			this.buffer = buf.subarray(bytesToTruncate).toString("utf-8");
 		}
 	}
 
@@ -365,13 +382,29 @@ class OutputAccumulator {
 		return this.buffer;
 	}
 
-	truncate(): string {
-		return truncateOutput(this.buffer, this.maxBytes);
+	/** Get final output with single truncation header if needed */
+	finalize(): string {
+		if (this.totalTruncatedBytes > 0) {
+			return `...[truncated ${this.totalTruncatedBytes} bytes]...\n${this.buffer}`;
+		}
+		// Apply final truncation if buffer is still over limit
+		const currentBytes = Buffer.byteLength(this.buffer, "utf-8");
+		if (currentBytes > this.maxBytes) {
+			const buf = Buffer.from(this.buffer, "utf-8");
+			const bytesToTruncate = buf.length - this.maxBytes;
+			const truncated = buf.subarray(bytesToTruncate).toString("utf-8");
+			return `...[truncated ${bytesToTruncate} bytes]...\n${truncated}`;
+		}
+		return this.buffer;
 	}
 }
 
-/** Kill process with SIGTERM, escalate to SIGKILL after grace period */
-function killWithEscalation(proc: ChildProcess, onKilled?: () => void): void {
+/**
+ * Kill process with SIGTERM, escalate to SIGKILL after grace period.
+ * Does NOT wait for close - returns immediately after initiating termination.
+ * The close listener is purely for cleanup (clearing the SIGKILL timer).
+ */
+function killWithEscalation(proc: ChildProcess): void {
 	try {
 		proc.kill("SIGTERM");
 	} catch {
@@ -385,9 +418,9 @@ function killWithEscalation(proc: ChildProcess, onKilled?: () => void): void {
 		}
 	}, SIGKILL_GRACE_MS);
 
+	// Clear the SIGKILL timer when process closes (best-effort cleanup)
 	proc.once("close", () => {
 		clearTimeout(killTimer);
-		onKilled?.();
 	});
 }
 
@@ -483,9 +516,8 @@ When done, summarize what was accomplished.
 				if (!settled) {
 					settled = true;
 					cleanup();
-					killWithEscalation(proc, () => {
-						reject(new Error("Task aborted"));
-					});
+					killWithEscalation(proc); // Best-effort cleanup, don't wait
+					reject(new Error("Task aborted")); // Settle immediately
 				}
 			};
 			signal?.addEventListener("abort", abortHandler, { once: true });
@@ -495,9 +527,8 @@ When done, summarize what was accomplished.
 				if (!settled) {
 					settled = true;
 					cleanup();
-					killWithEscalation(proc, () => {
-						reject(new Error(`Task timed out after ${Math.round(timeoutMs / 1000)}s`));
-					});
+					killWithEscalation(proc); // Best-effort cleanup, don't wait
+					reject(new Error(`Task timed out after ${Math.round(timeoutMs / 1000)}s`)); // Settle immediately
 				}
 			}, timeoutMs);
 
@@ -570,7 +601,7 @@ When done, summarize what was accomplished.
 			title: task.title,
 			agent: task.agent,
 			status: "failed",
-			output: output.truncate(),
+			output: output.finalize(),
 			durationMs: Date.now() - startTime,
 			error: err instanceof Error ? err.message : String(err),
 		};
@@ -588,7 +619,7 @@ When done, summarize what was accomplished.
 		title: task.title,
 		agent: task.agent,
 		status: exitCode === 0 ? "success" : "failed",
-		output: output.truncate(),
+		output: output.finalize(),
 		durationMs: Date.now() - startTime,
 		error: exitCode !== 0 ? `Exit code: ${exitCode}` : undefined,
 	};
@@ -661,7 +692,7 @@ interface ThemeInterface {
 	bold(text: string): string;
 }
 
-type OrchestrateParams = Static<typeof OrchestrateParams>;
+type OrchestrateParamsType = Static<typeof OrchestrateParams>;
 
 const factory: CustomToolFactory = (pi) => ({
 	name: "orchestrate",
@@ -674,7 +705,7 @@ const factory: CustomToolFactory = (pi) => ({
 
 	async execute(
 		_toolCallId: string,
-		params: OrchestrateParams,
+		params: OrchestrateParamsType,
 		signal?: AbortSignal,
 		onUpdate?: (result: AgentToolResult<OrchestrateDetails>) => void
 	) {
@@ -774,7 +805,7 @@ const factory: CustomToolFactory = (pi) => ({
 
 				if (result.status === "success") {
 					// Update checkbox in file
-					updateTaskCheckbox(absolutePath, task.lineStart, true);
+					updateTaskCheckbox(absolutePath, task.lineStart, task.id, true);
 					completedIds.add(task.id);
 					details.completedTasks++;
 				} else if (!continueOnError) {
@@ -842,7 +873,7 @@ const factory: CustomToolFactory = (pi) => ({
 		};
 	},
 
-	renderCall(args: OrchestrateParams, theme: ThemeInterface) {
+	renderCall(args: OrchestrateParamsType, theme: ThemeInterface) {
 		const { taskFile } = args;
 		const label = taskFile ? `Orchestrate: ${path.basename(taskFile)}` : "Orchestrate Tasks";
 		return new Text(theme.fg("toolTitle", theme.bold(label)), 0, 0);
