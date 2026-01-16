@@ -6286,23 +6286,6 @@ export const MODELS = {
 			contextWindow: 128000,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
-		"openai/codex-mini": {
-			id: "openai/codex-mini",
-			name: "OpenAI: Codex Mini",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: true,
-			input: ["text", "image"],
-			cost: {
-				input: 1.5,
-				output: 6,
-				cacheRead: 0.375,
-				cacheWrite: 0,
-			},
-			contextWindow: 200000,
-			maxTokens: 100000,
-		} satisfies Model<"openai-completions">,
 		"openai/gpt-3.5-turbo": {
 			id: "openai/gpt-3.5-turbo",
 			name: "OpenAI: GPT-3.5 Turbo",

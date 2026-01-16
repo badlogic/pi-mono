@@ -1,7 +1,7 @@
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
 import { getEditorKeybindings } from "../keybindings.js";
 import { matchesKey } from "../keys.js";
-import type { Component } from "../tui.js";
+import type { Component, TUI } from "../tui.js";
 import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
 import { SelectList, type SelectListTheme } from "./select-list.js";
 
@@ -211,10 +211,14 @@ export class Editor implements Component {
 		cursorCol: 0,
 	};
 
+	protected tui: TUI;
 	private theme: EditorTheme;
 
 	// Store last render width for cursor navigation
 	private lastWidth: number = 80;
+
+	// Vertical scrolling support
+	private scrollOffset: number = 0;
 
 	// Border color (can be changed dynamically)
 	public borderColor: (str: string) => string;
@@ -242,7 +246,8 @@ export class Editor implements Component {
 	public onChange?: (text: string) => void;
 	public disableSubmit: boolean = false;
 
-	constructor(theme: EditorTheme) {
+	constructor(tui: TUI, theme: EditorTheme) {
+		this.tui = tui;
 		this.theme = theme;
 		this.borderColor = theme.borderColor;
 	}
@@ -305,6 +310,8 @@ export class Editor implements Component {
 		this.state.lines = lines.length === 0 ? [""] : lines;
 		this.state.cursorLine = this.state.lines.length - 1;
 		this.state.cursorCol = this.state.lines[this.state.cursorLine]?.length || 0;
+		// Reset scroll - render() will adjust to show cursor
+		this.scrollOffset = 0;
 
 		if (this.onChange) {
 			this.onChange(this.getText());
@@ -324,13 +331,41 @@ export class Editor implements Component {
 		// Layout the text - use full width
 		const layoutLines = this.layoutText(width);
 
+		// Calculate max visible lines: 30% of terminal height, minimum 5 lines
+		const terminalRows = this.tui.terminal.rows;
+		const maxVisibleLines = Math.max(5, Math.floor(terminalRows * 0.3));
+
+		// Find the cursor line index in layoutLines
+		let cursorLineIndex = layoutLines.findIndex((line) => line.hasCursor);
+		if (cursorLineIndex === -1) cursorLineIndex = 0;
+
+		// Adjust scroll offset to keep cursor visible
+		if (cursorLineIndex < this.scrollOffset) {
+			this.scrollOffset = cursorLineIndex;
+		} else if (cursorLineIndex >= this.scrollOffset + maxVisibleLines) {
+			this.scrollOffset = cursorLineIndex - maxVisibleLines + 1;
+		}
+
+		// Clamp scroll offset to valid range
+		const maxScrollOffset = Math.max(0, layoutLines.length - maxVisibleLines);
+		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxScrollOffset));
+
+		// Get visible lines slice
+		const visibleLines = layoutLines.slice(this.scrollOffset, this.scrollOffset + maxVisibleLines);
+
 		const result: string[] = [];
 
-		// Render top border
-		result.push(horizontal.repeat(width));
+		// Render top border (with scroll indicator if scrolled down)
+		if (this.scrollOffset > 0) {
+			const indicator = `─── ↑ ${this.scrollOffset} more `;
+			const remaining = width - visibleWidth(indicator);
+			result.push(this.borderColor(indicator + "─".repeat(Math.max(0, remaining))));
+		} else {
+			result.push(horizontal.repeat(width));
+		}
 
-		// Render each layout line
-		for (const layoutLine of layoutLines) {
+		// Render each visible layout line
+		for (const layoutLine of visibleLines) {
 			let displayText = layoutLine.text;
 			let lineVisibleWidth = visibleWidth(layoutLine.text);
 
@@ -382,8 +417,15 @@ export class Editor implements Component {
 			result.push(displayText + padding);
 		}
 
-		// Render bottom border
-		result.push(horizontal.repeat(width));
+		// Render bottom border (with scroll indicator if more content below)
+		const linesBelow = layoutLines.length - (this.scrollOffset + visibleLines.length);
+		if (linesBelow > 0) {
+			const indicator = `─── ↓ ${linesBelow} more `;
+			const remaining = width - visibleWidth(indicator);
+			result.push(this.borderColor(indicator + "─".repeat(Math.max(0, remaining))));
+		} else {
+			result.push(horizontal.repeat(width));
+		}
 
 		// Add autocomplete list if active
 		if (this.isAutocompleting && this.autocompleteList) {
@@ -574,6 +616,7 @@ export class Editor implements Component {
 			this.pastes.clear();
 			this.pasteCounter = 0;
 			this.historyIndex = -1;
+			this.scrollOffset = 0;
 
 			if (this.onChange) this.onChange("");
 			if (this.onSubmit) this.onSubmit(result);
@@ -605,6 +648,16 @@ export class Editor implements Component {
 		}
 		if (kb.matches(data, "cursorLeft")) {
 			this.moveCursor(0, -1);
+			return;
+		}
+
+		// Page up/down - scroll by page and move cursor
+		if (kb.matches(data, "pageUp")) {
+			this.pageScroll(-1);
+			return;
+		}
+		if (kb.matches(data, "pageDown")) {
+			this.pageScroll(1);
 			return;
 		}
 
@@ -1212,6 +1265,36 @@ export class Editor implements Component {
 					this.state.cursorCol = prevLine.length;
 				}
 			}
+		}
+	}
+
+	/**
+	 * Scroll by a page (direction: -1 for up, 1 for down).
+	 * Moves cursor by the page size while keeping it in bounds.
+	 */
+	private pageScroll(direction: -1 | 1): void {
+		const width = this.lastWidth;
+		const terminalRows = this.tui.terminal.rows;
+		const pageSize = Math.max(5, Math.floor(terminalRows * 0.3));
+
+		// Build visual line map
+		const visualLines = this.buildVisualLineMap(width);
+		const currentVisualLine = this.findCurrentVisualLine(visualLines);
+
+		// Calculate target visual line
+		const targetVisualLine = Math.max(0, Math.min(visualLines.length - 1, currentVisualLine + direction * pageSize));
+
+		// Move cursor to target visual line
+		const targetVL = visualLines[targetVisualLine];
+		if (targetVL) {
+			// Preserve column position within the line
+			const currentVL = visualLines[currentVisualLine];
+			const visualCol = currentVL ? this.state.cursorCol - currentVL.startCol : 0;
+
+			this.state.cursorLine = targetVL.logicalLine;
+			const targetCol = targetVL.startCol + Math.min(visualCol, targetVL.length);
+			const logicalLine = this.state.lines[targetVL.logicalLine] || "";
+			this.state.cursorCol = Math.min(targetCol, logicalLine.length);
 		}
 	}
 

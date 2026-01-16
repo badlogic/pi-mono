@@ -240,7 +240,7 @@ export class InteractiveMode {
 		this.statusContainer = new Container();
 		this.widgetContainer = new Container();
 		this.keybindings = KeybindingsManager.create();
-		this.defaultEditor = new CustomEditor(getEditorTheme(), this.keybindings);
+		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings);
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);

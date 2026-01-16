@@ -27,7 +27,7 @@ const tui = new TUI(terminal);
 // Add components
 tui.addChild(new Text("Welcome to my app!"));
 
-const editor = new Editor(editorTheme);
+const editor = new Editor(tui, editorTheme);
 editor.onSubmit = (text) => {
   console.log("Submitted:", text);
   tui.addChild(new Text(`You said: ${text}`));
@@ -212,7 +212,7 @@ input.getValue();
 
 ### Editor
 
-Multi-line text editor with autocomplete, file completion, and paste handling.
+Multi-line text editor with autocomplete, file completion, paste handling, and vertical scrolling when content exceeds terminal height.
 
 ```typescript
 interface EditorTheme {
@@ -220,7 +220,7 @@ interface EditorTheme {
   selectList: SelectListTheme;
 }
 
-const editor = new Editor(theme);
+const editor = new Editor(tui, theme);  // tui is required for height-aware scrolling
 editor.onSubmit = (text) => console.log(text);
 editor.onChange = (text) => console.log("Changed:", text);
 editor.disableSubmit = true; // Disable submit temporarily
