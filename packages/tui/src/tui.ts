@@ -208,6 +208,7 @@ export class TUI extends Container {
 	private hardwareCursorRow = 0; // Actual terminal cursor row (may differ due to IME positioning)
 	private inputBuffer = ""; // Buffer for parsing terminal responses
 	private cellSizeQueryPending = false;
+	private useHardwareCursor = process.env.PI_HARDWARE_CURSOR === "1";
 
 	// Overlay stack for modal components rendered on top of base content
 	private overlayStack: {
@@ -981,8 +982,8 @@ export class TUI extends Container {
 	 * @param totalLines Total number of rendered lines
 	 */
 	private positionHardwareCursor(cursorPos: { row: number; col: number } | null, totalLines: number): void {
-		// PI_NO_HARDWARE_CURSOR=1 disables hardware cursor for terminals that don't handle it well
-		if (process.env.PI_NO_HARDWARE_CURSOR === "1") {
+		// PI_HARDWARE_CURSOR=1 enables hardware cursor (disabled by default due to terminal compatibility issues)
+		if (!this.useHardwareCursor) {
 			this.terminal.hideCursor();
 			return;
 		}
