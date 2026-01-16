@@ -32,11 +32,12 @@ export interface ApiOptionsMap {
 }
 
 // Compile-time exhaustiveness check - this will fail if ApiOptionsMap doesn't have all KnownApi keys
-type _CheckExhaustive = ApiOptionsMap extends Record<Api, StreamOptions>
-	? Record<Api, StreamOptions> extends ApiOptionsMap
-		? true
-		: ["ApiOptionsMap is missing some KnownApi values", Exclude<Api, keyof ApiOptionsMap>]
-	: ["ApiOptionsMap doesn't extend Record<KnownApi, StreamOptions>"];
+type _CheckExhaustive =
+	ApiOptionsMap extends Record<Api, StreamOptions>
+		? Record<Api, StreamOptions> extends ApiOptionsMap
+			? true
+			: ["ApiOptionsMap is missing some KnownApi values", Exclude<Api, keyof ApiOptionsMap>]
+		: ["ApiOptionsMap doesn't extend Record<KnownApi, StreamOptions>"];
 const _exhaustive: _CheckExhaustive = true;
 
 // Helper type to get options for a specific API

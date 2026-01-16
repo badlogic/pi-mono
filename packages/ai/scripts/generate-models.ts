@@ -46,6 +46,23 @@ interface AiGatewayModel {
 	};
 }
 
+interface ZenModelListItem {
+	id: string;
+	object: string;
+	created: number;
+	owned_by: string;
+}
+
+interface ZenModelsResponse {
+	object: string;
+	data: ZenModelListItem[];
+}
+
+interface ModelsDevResult {
+	models: Model<any>[];
+	opencodeModels: Record<string, ModelsDevModel>;
+}
+
 const COPILOT_STATIC_HEADERS = {
 	"User-Agent": "GitHubCopilotChat/0.35.0",
 	"Editor-Version": "vscode/1.107.0",
@@ -55,6 +72,7 @@ const COPILOT_STATIC_HEADERS = {
 
 const AI_GATEWAY_MODELS_URL = "https://ai-gateway.vercel.sh/v1";
 const AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh";
+const ZEN_MODELS_URL = "https://opencode.ai/zen/v1/models";
 
 async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 	try {
@@ -172,13 +190,91 @@ async function fetchAiGatewayModels(): Promise<Model<any>[]> {
 	}
 }
 
-async function loadModelsDevData(): Promise<Model<any>[]> {
+const ZEN_OPENAI_RESPONSES_MODELS = new Set([
+	"gpt-5",
+	"gpt-5.1",
+	"gpt-5.1-codex",
+	"gpt-5.1-codex-max",
+	"gpt-5.1-codex-mini",
+	"gpt-5.2",
+	"gpt-5.2-codex",
+	"gpt-5-codex",
+	"gpt-5-nano",
+]);
+
+const ZEN_ANTHROPIC_MODELS = new Set([
+	"claude-3-5-haiku",
+	"claude-haiku-4-5",
+	"claude-opus-4-1",
+	"claude-opus-4-5",
+	"claude-sonnet-4",
+	"claude-sonnet-4-5",
+	"minimax-m2.1-free",
+]);
+
+const ZEN_GOOGLE_MODELS = new Set(["gemini-3-pro", "gemini-3-flash"]);
+
+async function fetchZenModels(opencodeCatalog: Record<string, ModelsDevModel>): Promise<Model<any>[]> {
+	try {
+		console.log("Fetching models from OpenCode Zen API...");
+		const response = await fetch(ZEN_MODELS_URL);
+		const data = (await response.json()) as ZenModelsResponse;
+		const models: Model<any>[] = [];
+		const items = Array.isArray(data.data) ? data.data : [];
+
+		for (const item of items) {
+			if (!item?.id) continue;
+
+			let api: Api = "openai-completions";
+			let baseUrl = "https://opencode.ai/zen/v1";
+			const catalogEntry = opencodeCatalog[item.id];
+
+			if (ZEN_OPENAI_RESPONSES_MODELS.has(item.id)) {
+				api = "openai-responses";
+				baseUrl = "https://opencode.ai/zen/v1";
+			} else if (ZEN_ANTHROPIC_MODELS.has(item.id)) {
+				api = "anthropic-messages";
+				baseUrl = "https://opencode.ai/zen";
+			} else if (ZEN_GOOGLE_MODELS.has(item.id)) {
+				api = "google-generative-ai";
+				baseUrl = "https://opencode.ai/zen/v1";
+			}
+
+			models.push({
+				id: item.id,
+				name: catalogEntry?.name || item.id,
+				api,
+				provider: "opencode",
+				baseUrl,
+				reasoning: catalogEntry?.reasoning === true,
+				input: catalogEntry?.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+				cost: {
+					input: catalogEntry?.cost?.input || 0,
+					output: catalogEntry?.cost?.output || 0,
+					cacheRead: catalogEntry?.cost?.cache_read || 0,
+					cacheWrite: catalogEntry?.cost?.cache_write || 0,
+				},
+				contextWindow: catalogEntry?.limit?.context || 4096,
+				maxTokens: catalogEntry?.limit?.output || 4096,
+			});
+		}
+
+		console.log(`Fetched ${models.length} models from OpenCode Zen`);
+		return models;
+	} catch (error) {
+		console.error("Failed to fetch OpenCode Zen models:", error);
+		return [];
+	}
+}
+
+async function loadModelsDevData(): Promise<ModelsDevResult> {
 	try {
 		console.log("Fetching models from models.dev API...");
 		const response = await fetch("https://models.dev/api.json");
 		const data = await response.json();
 
 		const models: Model<any>[] = [];
+		const opencodeModels: Record<string, ModelsDevModel> = {};
 
 		// Process Amazon Bedrock models
 		if (data["amazon-bedrock"]?.models) {
@@ -474,54 +570,13 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
-		// Process OpenCode Zen models
-		// API mapping based on provider.npm field:
-		// - @ai-sdk/openai → openai-responses
-		// - @ai-sdk/anthropic → anthropic-messages
-		// - @ai-sdk/google → google-generative-ai
-		// - null/undefined/@ai-sdk/openai-compatible → openai-completions
+
+		// Process OpenCode Zen models (for metadata only)
 		if (data.opencode?.models) {
 			for (const [modelId, model] of Object.entries(data.opencode.models)) {
 				const m = model as ModelsDevModel;
 				if (m.tool_call !== true) continue;
-
-				const npm = m.provider?.npm;
-				let api: Api;
-				let baseUrl: string;
-
-				if (npm === "@ai-sdk/openai") {
-					api = "openai-responses";
-					baseUrl = "https://opencode.ai/zen/v1";
-				} else if (npm === "@ai-sdk/anthropic") {
-					api = "anthropic-messages";
-					// Anthropic SDK appends /v1/messages to baseURL
-					baseUrl = "https://opencode.ai/zen";
-				} else if (npm === "@ai-sdk/google") {
-					api = "google-generative-ai";
-					baseUrl = "https://opencode.ai/zen/v1";
-				} else {
-					// null, undefined, or @ai-sdk/openai-compatible
-					api = "openai-completions";
-					baseUrl = "https://opencode.ai/zen/v1";
-				}
-
-				models.push({
-					id: modelId,
-					name: m.name || modelId,
-					api,
-					provider: "opencode",
-					baseUrl,
-					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
-					cost: {
-						input: m.cost?.input || 0,
-						output: m.cost?.output || 0,
-						cacheRead: m.cost?.cache_read || 0,
-						cacheWrite: m.cost?.cache_write || 0,
-					},
-					contextWindow: m.limit?.context || 4096,
-					maxTokens: m.limit?.output || 4096,
-				});
+				opencodeModels[modelId] = m;
 			}
 		}
 
@@ -601,10 +656,10 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 		}
 
 		console.log(`Loaded ${models.length} tool-capable models from models.dev`);
-		return models;
+		return { models, opencodeModels };
 	} catch (error) {
 		console.error("Failed to load models.dev data:", error);
-		return [];
+		return { models: [], opencodeModels: {} };
 	}
 }
 
@@ -613,12 +668,14 @@ async function generateModels() {
 	// models.dev: Anthropic, Google, OpenAI, Groq, Cerebras
 	// OpenRouter: xAI and other providers (excluding Anthropic, Google, OpenAI)
 	// AI Gateway: OpenAI-compatible catalog with tool-capable models
-	const modelsDevModels = await loadModelsDevData();
+	// OpenCode Zen: curated models and endpoints
+	const modelsDevResult = await loadModelsDevData();
 	const openRouterModels = await fetchOpenRouterModels();
 	const aiGatewayModels = await fetchAiGatewayModels();
+	const zenModels = await fetchZenModels(modelsDevResult.opencodeModels);
 
 	// Combine models (models.dev has priority)
-	const allModels = [...modelsDevModels, ...openRouterModels, ...aiGatewayModels];
+	const allModels = [...modelsDevResult.models, ...zenModels, ...openRouterModels, ...aiGatewayModels];
 
 	// Fix incorrect cache pricing for Claude Opus 4.5 from models.dev
 	// models.dev has 3x the correct pricing (1.5/18.75 instead of 0.5/6.25)

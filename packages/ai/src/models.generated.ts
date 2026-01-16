@@ -3907,9 +3907,9 @@ export const MODELS = {
 		"alpha-gd4": {
 			id: "alpha-gd4",
 			name: "Alpha GD4",
-			api: "anthropic-messages",
+			api: "openai-completions",
 			provider: "opencode",
-			baseUrl: "https://opencode.ai/zen",
+			baseUrl: "https://opencode.ai/zen/v1",
 			reasoning: true,
 			input: ["text"],
 			cost: {
@@ -3920,7 +3920,7 @@ export const MODELS = {
 			},
 			contextWindow: 262144,
 			maxTokens: 32768,
-		} satisfies Model<"anthropic-messages">,
+		} satisfies Model<"openai-completions">,
 		"alpha-glm-4.7": {
 			id: "alpha-glm-4.7",
 			name: "Alpha GLM-4.7",
