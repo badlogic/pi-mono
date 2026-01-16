@@ -18,6 +18,10 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
+// Constants
+const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const MAX_OUTPUT_BYTES = 100 * 1024; // 100KB tail buffer
+
 interface ParsedTask {
 	id: number;
 	title: string;
@@ -71,6 +75,12 @@ const OrchestrateParams = Type.Object({
 		Type.Boolean({
 			description: "Archive session to episodic memory when complete",
 			default: true,
+		})
+	),
+	taskTimeoutMs: Type.Optional(
+		Type.Number({
+			description: "Timeout per task in milliseconds (default: 30 minutes)",
+			default: DEFAULT_TASK_TIMEOUT_MS,
 		})
 	),
 });
@@ -194,14 +204,38 @@ function parseTaskFile(filePath: string): TaskFileContent {
 	return { title, context, tasks, rawLines: lines };
 }
 
-function updateTaskCheckbox(filePath: string, rawLines: string[], taskLineStart: number, completed: boolean): void {
-	const lines = [...rawLines];
+function validateTaskFile(parsed: TaskFileContent): void {
+	// Check for duplicate task IDs
+	const seenIds = new Set<number>();
+	for (const task of parsed.tasks) {
+		if (seenIds.has(task.id)) {
+			throw new Error(`Duplicate task ID found: Task ${task.id}. Each task must have a unique ID.`);
+		}
+		seenIds.add(task.id);
+	}
+
+	// Check for missing dependency references
+	const allIds = new Set(parsed.tasks.map((t) => t.id));
+	for (const task of parsed.tasks) {
+		for (const depId of task.dependencies) {
+			if (!allIds.has(depId)) {
+				throw new Error(
+					`Task ${task.id} depends on Task ${depId}, but Task ${depId} does not exist in the file.`
+				);
+			}
+		}
+	}
+}
+
+function updateTaskCheckbox(filePath: string, taskLineStart: number, completed: boolean): void {
+	// Re-read file to avoid stale data issues
+	const lines = fs.readFileSync(filePath, "utf-8").split("\n");
 	const taskLine = lines[taskLineStart];
 	if (!taskLine) return;
 
-	// Replace checkbox
+	// Replace checkbox (handle both [ ] and [] formats)
 	const updatedLine = completed
-		? taskLine.replace(/\[\s\]/, "[x]")
+		? taskLine.replace(/\[(?:\s|)\]/, "[x]")
 		: taskLine.replace(/\[x\]/i, "[ ]");
 
 	lines[taskLineStart] = updatedLine;
@@ -216,28 +250,40 @@ interface AgentConfig {
 	systemPrompt: string;
 }
 
-function loadAgentConfig(agentName: string): AgentConfig | null {
+interface AgentConfigError {
+	error: string;
+}
+
+function loadAgentConfig(agentName: string): AgentConfig | AgentConfigError {
 	const userAgentsDir = path.join(os.homedir(), ".pi", "agent", "agents");
 	const agentPath = path.join(userAgentsDir, `${agentName}.md`);
 
 	if (!fs.existsSync(agentPath)) {
-		return null;
+		return { error: `Agent config not found: ${agentPath}. Create ${agentName}.md in ~/.pi/agent/agents/` };
 	}
 
 	const content = fs.readFileSync(agentPath, "utf-8");
 	const normalized = content.replace(/\r\n/g, "\n");
 
 	if (!normalized.startsWith("---")) {
-		return null;
+		return { error: `Agent config ${agentName}.md missing opening "---" frontmatter delimiter` };
 	}
 
 	const endIndex = normalized.indexOf("\n---", 3);
 	if (endIndex === -1) {
-		return null;
+		return { error: `Agent config ${agentName}.md missing closing "---" frontmatter delimiter` };
 	}
 
 	const frontmatterBlock = normalized.slice(4, endIndex);
 	const body = normalized.slice(endIndex + 4).trim();
+
+	// Check for unsupported YAML features
+	if (frontmatterBlock.includes(": |") || frontmatterBlock.includes(": >")) {
+		return { error: `Agent config ${agentName}.md uses unsupported multiline YAML syntax (| or >). Use single-line values.` };
+	}
+	if (/^\s*-\s+/m.test(frontmatterBlock)) {
+		return { error: `Agent config ${agentName}.md uses unsupported YAML list syntax. Use comma-separated values for tools.` };
+	}
 
 	const frontmatter: Record<string, string> = {};
 	for (const line of frontmatterBlock.split("\n")) {
@@ -251,18 +297,30 @@ function loadAgentConfig(agentName: string): AgentConfig | null {
 		}
 	}
 
+	if (!frontmatter.name) {
+		return { error: `Agent config ${agentName}.md missing required "name" field in frontmatter` };
+	}
+
+	if (!body.trim()) {
+		return { error: `Agent config ${agentName}.md has empty system prompt (body after frontmatter)` };
+	}
+
 	const tools = frontmatter.tools
 		?.split(",")
 		.map((t) => t.trim())
 		.filter(Boolean);
 
 	return {
-		name: frontmatter.name || agentName,
+		name: frontmatter.name,
 		description: frontmatter.description || "",
 		tools,
 		model: frontmatter.model,
 		systemPrompt: body,
 	};
+}
+
+function isAgentConfigError(result: AgentConfig | AgentConfigError): result is AgentConfigError {
+	return "error" in result;
 }
 
 function writePromptFile(agent: string, prompt: string): { dir: string; path: string } {
@@ -272,16 +330,27 @@ function writePromptFile(agent: string, prompt: string): { dir: string; path: st
 	return { dir, path: p };
 }
 
+function truncateOutput(output: string, maxBytes: number): string {
+	if (Buffer.byteLength(output, "utf-8") <= maxBytes) {
+		return output;
+	}
+	// Keep tail (most useful for debugging)
+	const buf = Buffer.from(output, "utf-8");
+	const truncated = buf.slice(buf.length - maxBytes).toString("utf-8");
+	return `...[truncated ${buf.length - maxBytes} bytes]...\n${truncated}`;
+}
+
 async function runTask(
 	task: ParsedTask,
 	taskFile: TaskFileContent,
 	cwd: string,
+	timeoutMs: number,
 	signal?: AbortSignal
 ): Promise<TaskResult> {
 	const startTime = Date.now();
-	const agent = loadAgentConfig(task.agent);
+	const agentResult = loadAgentConfig(task.agent);
 
-	if (!agent) {
+	if (isAgentConfigError(agentResult)) {
 		return {
 			taskId: task.id,
 			title: task.title,
@@ -289,9 +358,11 @@ async function runTask(
 			status: "failed",
 			output: "",
 			durationMs: Date.now() - startTime,
-			error: `Unknown agent: ${task.agent}. Create ${task.agent}.md in ~/.pi/agent/agents/`,
+			error: agentResult.error,
 		};
 	}
+
+	const agent = agentResult;
 
 	// Build the task prompt with context
 	const taskPrompt = `
@@ -339,6 +410,7 @@ When done, summarize what was accomplished.
 
 	let output = "";
 	let exitCode = 0;
+	let settled = false;
 
 	try {
 		exitCode = await new Promise<number>((resolve, reject) => {
@@ -347,40 +419,63 @@ When done, summarize what was accomplished.
 				stdio: ["ignore", "pipe", "pipe"],
 			});
 
+			// Timeout handler
+			const timeoutId = setTimeout(() => {
+				if (!settled) {
+					settled = true;
+					proc.kill("SIGTERM");
+					reject(new Error(`Task timed out after ${Math.round(timeoutMs / 1000)}s`));
+				}
+			}, timeoutMs);
+
+			// Abort handler with guard against multiple settlements
 			const abortHandler = () => {
-				proc.kill("SIGTERM");
-				reject(new Error("Task aborted"));
+				if (!settled) {
+					settled = true;
+					clearTimeout(timeoutId);
+					signal?.removeEventListener("abort", abortHandler);
+					proc.kill("SIGTERM");
+					reject(new Error("Task aborted"));
+				}
 			};
 			signal?.addEventListener("abort", abortHandler, { once: true });
 
-			proc.stdout.on("data", (chunk) => {
-				// Parse JSONL output for messages
-				// pi outputs: message_start, message_update (deltas), message_end (final)
-				const lines = chunk.toString().split("\n").filter(Boolean);
-				for (const line of lines) {
-					try {
-						const evt = JSON.parse(line);
-						// Capture final message content from message_end events
-						if (evt.type === "message_end" && evt.message?.content) {
-							for (const part of evt.message.content) {
-								if (part.type === "text" && part.text) {
-									output += part.text + "\n";
-								}
+			// JSONL line buffer for proper chunk handling
+			let stdoutBuf = "";
+
+			const processJsonlLine = (line: string) => {
+				if (!line.trim()) return;
+				try {
+					const evt = JSON.parse(line);
+					// Capture final message content from message_end events
+					if (evt.type === "message_end" && evt.message?.content) {
+						for (const part of evt.message.content) {
+							if (part.type === "text" && part.text) {
+								output += part.text + "\n";
 							}
 						}
-						// Also capture tool results for visibility
-						if (evt.type === "tool_result" && evt.result?.content) {
-							for (const part of evt.result.content) {
-								if (part.type === "text" && part.text) {
-									// Only include first 500 chars of tool output
-									const text = part.text.slice(0, 500);
-									output += `[tool: ${evt.toolName || "unknown"}] ${text}\n`;
-								}
-							}
-						}
-					} catch {
-						// Not JSON, skip non-JSONL output
 					}
+					// Also capture tool results for visibility
+					if (evt.type === "tool_result" && evt.result?.content) {
+						for (const part of evt.result.content) {
+							if (part.type === "text" && part.text) {
+								const text = part.text.slice(0, 500);
+								output += `[tool: ${evt.toolName || "unknown"}] ${text}\n`;
+							}
+						}
+					}
+				} catch {
+					// Not valid JSON, skip
+				}
+			};
+
+			proc.stdout.on("data", (chunk) => {
+				stdoutBuf += chunk.toString("utf-8");
+				let idx;
+				while ((idx = stdoutBuf.indexOf("\n")) !== -1) {
+					const line = stdoutBuf.slice(0, idx);
+					stdoutBuf = stdoutBuf.slice(idx + 1);
+					processJsonlLine(line);
 				}
 			});
 
@@ -389,13 +484,25 @@ When done, summarize what was accomplished.
 			});
 
 			proc.on("close", (code) => {
-				signal?.removeEventListener("abort", abortHandler);
-				resolve(code ?? 0);
+				if (!settled) {
+					settled = true;
+					clearTimeout(timeoutId);
+					signal?.removeEventListener("abort", abortHandler);
+					// Process any remaining buffer content
+					if (stdoutBuf.trim()) {
+						processJsonlLine(stdoutBuf);
+					}
+					resolve(code ?? 0);
+				}
 			});
 
 			proc.on("error", (err) => {
-				signal?.removeEventListener("abort", abortHandler);
-				reject(err);
+				if (!settled) {
+					settled = true;
+					clearTimeout(timeoutId);
+					signal?.removeEventListener("abort", abortHandler);
+					reject(err);
+				}
 			});
 		});
 	} catch (err) {
@@ -404,7 +511,7 @@ When done, summarize what was accomplished.
 			title: task.title,
 			agent: task.agent,
 			status: "failed",
-			output,
+			output: truncateOutput(output, MAX_OUTPUT_BYTES),
 			durationMs: Date.now() - startTime,
 			error: err instanceof Error ? err.message : String(err),
 		};
@@ -422,7 +529,7 @@ When done, summarize what was accomplished.
 		title: task.title,
 		agent: task.agent,
 		status: exitCode === 0 ? "success" : "failed",
-		output: output.trim(),
+		output: truncateOutput(output.trim(), MAX_OUTPUT_BYTES),
 		durationMs: Date.now() - startTime,
 		error: exitCode !== 0 ? `Exit code: ${exitCode}` : undefined,
 	};
@@ -504,10 +611,12 @@ export default function registerOrchestrateExtension(pi: ExtensionAPI): void {
 				taskFile,
 				continueOnError = false,
 				archive = true,
+				taskTimeoutMs = DEFAULT_TASK_TIMEOUT_MS,
 			} = params as {
 				taskFile: string;
 				continueOnError?: boolean;
 				archive?: boolean;
+				taskTimeoutMs?: number;
 			};
 
 			// Resolve task file path
@@ -519,8 +628,10 @@ export default function registerOrchestrateExtension(pi: ExtensionAPI): void {
 				throw new Error(`Task file not found: ${absolutePath}`);
 			}
 
-			// Parse task file
+			// Parse and validate task file
 			const parsed = parseTaskFile(absolutePath);
+			validateTaskFile(parsed);
+
 			const pendingTasks = parsed.tasks.filter((t) => !t.completed);
 
 			if (pendingTasks.length === 0) {
@@ -538,68 +649,87 @@ export default function registerOrchestrateExtension(pi: ExtensionAPI): void {
 			}
 
 			const results: TaskResult[] = [];
+			const completedIds = new Set(parsed.tasks.filter((t) => t.completed).map((t) => t.id));
 			const details: OrchestrateDetails = {
 				taskFile: absolutePath,
 				status: "running",
 				totalTasks: parsed.tasks.length,
-				completedTasks: parsed.tasks.filter((t) => t.completed).length,
+				completedTasks: completedIds.size,
 				results,
 				archived: false,
 			};
 
-			// Execute tasks
-			for (const task of pendingTasks) {
-				if (signal?.aborted) {
-					details.status = "cancelled";
+			// Multi-pass execution: retry skipped tasks until no progress
+			let remainingTasks = [...pendingTasks];
+			let lastPassCompleted = -1;
+
+			while (remainingTasks.length > 0 && completedIds.size > lastPassCompleted) {
+				lastPassCompleted = completedIds.size;
+				const stillPending: ParsedTask[] = [];
+
+				for (const task of remainingTasks) {
+					if (signal?.aborted) {
+						details.status = "cancelled";
+						break;
+					}
+
+					// Check dependencies - must be in completedIds
+					const unmetDeps = task.dependencies.filter((depId) => !completedIds.has(depId));
+
+					if (unmetDeps.length > 0) {
+						// Defer to next pass
+						stillPending.push(task);
+						continue;
+					}
+
+					details.currentTask = `Task ${task.id}: ${task.title}`;
+
+					// Update progress
+					if (onUpdate) {
+						onUpdate({
+							content: [
+								{
+									type: "text",
+									text: `Running Task ${task.id}/${parsed.tasks.length}: ${task.title} (${task.agent})`,
+								},
+							],
+							details,
+						});
+					}
+
+					// Execute task
+					const result = await runTask(task, parsed, ctx.cwd, taskTimeoutMs, signal);
+					results.push(result);
+
+					if (result.status === "success") {
+						// Update checkbox in file
+						updateTaskCheckbox(absolutePath, task.lineStart, true);
+						completedIds.add(task.id);
+						details.completedTasks++;
+					} else if (!continueOnError) {
+						details.status = "failed";
+						break;
+					}
+				}
+
+				if (signal?.aborted || details.status === "failed") {
 					break;
 				}
 
-				// Check dependencies
-				const unmetDeps = task.dependencies.filter((depId) => {
-					const depTask = parsed.tasks.find((t) => t.id === depId);
-					const depResult = results.find((r) => r.taskId === depId);
-					return depTask && !depTask.completed && (!depResult || depResult.status !== "success");
+				remainingTasks = stillPending;
+			}
+
+			// Mark any remaining tasks as skipped with unmet deps
+			for (const task of remainingTasks) {
+				const unmetDeps = task.dependencies.filter((depId) => !completedIds.has(depId));
+				results.push({
+					taskId: task.id,
+					title: task.title,
+					agent: task.agent,
+					status: "skipped",
+					output: `Skipped: unmet dependencies (Task ${unmetDeps.join(", ")})`,
+					durationMs: 0,
 				});
-
-				if (unmetDeps.length > 0) {
-					results.push({
-						taskId: task.id,
-						title: task.title,
-						agent: task.agent,
-						status: "skipped",
-						output: `Skipped: unmet dependencies (Task ${unmetDeps.join(", ")})`,
-						durationMs: 0,
-					});
-					continue;
-				}
-
-				details.currentTask = `Task ${task.id}: ${task.title}`;
-
-				// Update progress
-				if (onUpdate) {
-					onUpdate({
-						content: [
-							{
-								type: "text",
-								text: `Running Task ${task.id}/${parsed.tasks.length}: ${task.title} (${task.agent})`,
-							},
-						],
-						details,
-					});
-				}
-
-				// Execute task
-				const result = await runTask(task, parsed, ctx.cwd, signal);
-				results.push(result);
-
-				if (result.status === "success") {
-					// Update checkbox in file
-					updateTaskCheckbox(absolutePath, parsed.rawLines, task.lineStart, true);
-					details.completedTasks++;
-				} else if (!continueOnError) {
-					details.status = "failed";
-					break;
-				}
 			}
 
 			// Determine final status
