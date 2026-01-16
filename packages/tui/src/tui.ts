@@ -981,6 +981,12 @@ export class TUI extends Container {
 	 * @param totalLines Total number of rendered lines
 	 */
 	private positionHardwareCursor(cursorPos: { row: number; col: number } | null, totalLines: number): void {
+		// PI_NO_HARDWARE_CURSOR=1 disables hardware cursor for terminals that don't handle it well
+		if (process.env.PI_NO_HARDWARE_CURSOR === "1") {
+			this.terminal.hideCursor();
+			return;
+		}
+
 		if (!cursorPos || totalLines <= 0) {
 			this.terminal.hideCursor();
 			return;

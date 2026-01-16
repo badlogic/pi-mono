@@ -882,6 +882,25 @@ pi.registerCommand("stats", {
 });
 ```
 
+Optional: add argument auto-completion for `/command ...`:
+
+```typescript
+import type { AutocompleteItem } from "@mariozechner/pi-tui";
+
+pi.registerCommand("deploy", {
+  description: "Deploy to an environment",
+  getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
+    const envs = ["dev", "staging", "prod"];
+    const items = envs.map((e) => ({ value: e, label: e }));
+    const filtered = items.filter((i) => i.value.startsWith(prefix));
+    return filtered.length > 0 ? filtered : null;
+  },
+  handler: async (args, ctx) => {
+    ctx.ui.notify(`Deploying: ${args}`, "info");
+  },
+});
+```
+
 **Examples:** [custom-footer.ts](../examples/extensions/custom-footer.ts), [custom-header.ts](../examples/extensions/custom-header.ts), [handoff.ts](../examples/extensions/handoff.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [send-user-message.ts](../examples/extensions/send-user-message.ts), [snake.ts](../examples/extensions/snake.ts), [summarize.ts](../examples/extensions/summarize.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts)
 
 ### pi.registerMessageRenderer(customType, renderer)

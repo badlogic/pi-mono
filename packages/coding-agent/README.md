@@ -151,6 +151,8 @@ return config
 
 **Windows Terminal:** Does not support the Kitty keyboard protocol. Shift+Enter cannot be distinguished from Enter. Use Ctrl+Enter for multi-line input instead. All other keybindings work correctly.
 
+**IntelliJ IDEA (Integrated Terminal):** The built-in terminal has limited escape sequence support. If you experience cursor visibility issues, set `PI_NO_HARDWARE_CURSOR=1` before running pi. Note that Shift+Enter cannot be distinguished from Enter in IntelliJ's terminal. Consider using a dedicated terminal emulator for the best experience.
+
 ### API Keys & OAuth
 
 **Option 1: Auth file** (recommended)
@@ -850,6 +852,8 @@ Create a React component named $1 with features: $@
 Usage: `/component Button "onClick handler" "disabled support"`
 - `$1` = `Button`
 - `$@` or `$ARGUMENTS` = all arguments joined (`Button onClick handler disabled support`)
+- `${@:N}` = arguments from the Nth position onwards (1-indexed)
+- `${@:N:L}` = `L` arguments starting from the Nth position
 
 **Namespacing:** Subdirectories create prefixes. `.pi/prompts/frontend/component.md` → `/component (project:frontend)`
 

@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Fixed OpenAI-compatible provider feature detection to use `model.provider` in addition to URL, allowing custom base URLs (e.g., proxies) to work correctly with provider-specific settings ([#774](https://github.com/badlogic/pi-mono/issues/774))
 - OpenAI Responses: added optional `compat.strictResponsesPairing` flag to avoid 400 validation errors from strict reasoning/message pairing during history replay.
 - OpenAI Responses: skip tool results without matching tool calls to avoid 400 validation errors when replaying tool results.
 
