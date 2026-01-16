@@ -168,7 +168,12 @@ class SessionList implements Component {
 				lines.push(theme.fg("muted", "  No sessions found"));
 			} else {
 				// "Current folder" scope - hint to try "all"
-				lines.push(theme.fg("muted", "  No sessions in current folder. Press Tab to view all."));
+				lines.push(
+					theme.fg(
+						"muted",
+						truncateToWidth("  No sessions in current folder. Press Tab to view all.", width, "…"),
+					),
+				);
 			}
 			return lines;
 		}
