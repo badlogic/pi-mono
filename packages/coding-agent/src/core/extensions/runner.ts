@@ -224,6 +224,7 @@ export class ExtensionRunner {
 		"ctrl+k",
 		"ctrl+p",
 		"ctrl+l",
+		"ctrl+x",
 		"ctrl+o",
 		"ctrl+t",
 		"ctrl+g",

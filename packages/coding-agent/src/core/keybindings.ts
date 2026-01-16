@@ -17,6 +17,7 @@ import { getAgentDir } from "../config.js";
 export type AppAction =
 	| "interrupt"
 	| "clear"
+	| "clearScreen"
 	| "exit"
 	| "suspend"
 	| "cycleThinkingLevel"
@@ -48,12 +49,13 @@ export type KeybindingsConfig = {
 export const DEFAULT_APP_KEYBINDINGS: Record<AppAction, KeyId | KeyId[]> = {
 	interrupt: "escape",
 	clear: "ctrl+c",
+	clearScreen: "ctrl+l",
 	exit: "ctrl+d",
 	suspend: "ctrl+z",
 	cycleThinkingLevel: "shift+tab",
 	cycleModelForward: "ctrl+p",
 	cycleModelBackward: "shift+ctrl+p",
-	selectModel: "ctrl+l",
+	selectModel: "ctrl+x",
 	expandTools: "ctrl+o",
 	toggleThinking: "ctrl+t",
 	externalEditor: "ctrl+g",
@@ -74,6 +76,7 @@ export const DEFAULT_KEYBINDINGS: Required<KeybindingsConfig> = {
 const APP_ACTIONS: AppAction[] = [
 	"interrupt",
 	"clear",
+	"clearScreen",
 	"exit",
 	"suspend",
 	"cycleThinkingLevel",

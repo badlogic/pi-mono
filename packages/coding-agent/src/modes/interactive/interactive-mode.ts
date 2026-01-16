@@ -369,6 +369,7 @@ export class InteractiveMode {
 			const instructions = [
 				hint("interrupt", "to interrupt"),
 				hint("clear", "to clear"),
+				hint("clearScreen", "to clear screen"),
 				rawKeyHint(`${appKey(kb, "clear")} twice`, "to exit"),
 				hint("exit", "to exit (empty)"),
 				hint("suspend", "to suspend"),
@@ -1377,6 +1378,7 @@ export class InteractiveMode {
 
 		// Register app action handlers
 		this.defaultEditor.onAction("clear", () => this.handleCtrlC());
+		this.defaultEditor.onAction("clearScreen", () => this.handleClearScreen());
 		this.defaultEditor.onCtrlD = () => this.handleCtrlD();
 		this.defaultEditor.onAction("suspend", () => this.handleCtrlZ());
 		this.defaultEditor.onAction("cycleThinkingLevel", () => this.cycleThinkingLevel());
@@ -2178,6 +2180,11 @@ export class InteractiveMode {
 		} else {
 			this.showStatus(`Restored ${restored} queued message${restored > 1 ? "s" : ""} to editor`);
 		}
+	}
+
+	private handleClearScreen(): void {
+		this.chatContainer.clear();
+		this.ui.requestRender(true);
 	}
 
 	private updateEditorBorderColor(): void {
@@ -3414,6 +3421,9 @@ export class InteractiveMode {
 		const suspend = this.getAppKeyDisplay("suspend");
 		const cycleThinkingLevel = this.getAppKeyDisplay("cycleThinkingLevel");
 		const cycleModelForward = this.getAppKeyDisplay("cycleModelForward");
+		const cycleModelBackward = this.getAppKeyDisplay("cycleModelBackward");
+		const selectModel = this.getAppKeyDisplay("selectModel");
+		const clearScreen = this.getAppKeyDisplay("clearScreen");
 		const expandTools = this.getAppKeyDisplay("expandTools");
 		const toggleThinking = this.getAppKeyDisplay("toggleThinking");
 		const externalEditor = this.getAppKeyDisplay("externalEditor");
@@ -3444,10 +3454,12 @@ export class InteractiveMode {
 | \`${tab}\` | Path completion / accept autocomplete |
 | \`${interrupt}\` | Cancel autocomplete / abort streaming |
 | \`${clear}\` | Clear editor (first) / exit (second) |
+| \`${clearScreen}\` | Clear screen |
 | \`${exit}\` | Exit (when editor is empty) |
 | \`${suspend}\` | Suspend to background |
 | \`${cycleThinkingLevel}\` | Cycle thinking level |
-| \`${cycleModelForward}\` | Cycle models |
+| \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
+| \`${selectModel}\` | Open model selector |
 | \`${expandTools}\` | Toggle tool output expansion |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${externalEditor}\` | Edit message in external editor |

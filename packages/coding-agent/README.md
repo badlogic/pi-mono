@@ -364,7 +364,8 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 | Ctrl+Z | Suspend to background (use `fg` in shell to resume) |
 | Shift+Tab | Cycle thinking level |
 | Ctrl+P / Shift+Ctrl+P | Cycle models forward/backward (scoped by `--models`) |
-| Ctrl+L | Open model selector |
+| Ctrl+L | Clear screen |
+| Ctrl+X | Open model selector |
 | Ctrl+O | Toggle tool output expansion |
 | Ctrl+T | Toggle thinking block visibility |
 | Ctrl+G | Edit message in external editor (`$VISUAL` or `$EDITOR`) |
@@ -403,13 +404,14 @@ All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Eac
 | `submit` | `enter` | Submit input |
 | `tab` | `tab` | Tab/autocomplete |
 | `interrupt` | `escape` | Interrupt operation |
-| `clear` | `ctrl+c` | Clear editor |
+| `clear` | `ctrl+c` | Clear editor (first) / exit (second) |
+| `clearScreen` | `ctrl+l` | Clear screen |
 | `exit` | `ctrl+d` | Exit (when empty) |
 | `suspend` | `ctrl+z` | Suspend process |
 | `cycleThinkingLevel` | `shift+tab` | Cycle thinking level |
 | `cycleModelForward` | `ctrl+p` | Next model |
 | `cycleModelBackward` | `shift+ctrl+p` | Previous model |
-| `selectModel` | `ctrl+l` | Open model selector |
+| `selectModel` | `ctrl+x` | Open model selector |
 | `expandTools` | `ctrl+o` | Expand tool output |
 | `toggleThinking` | `ctrl+t` | Toggle thinking |
 | `externalEditor` | `ctrl+g` | Open external editor |
