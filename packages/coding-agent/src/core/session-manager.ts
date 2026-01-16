@@ -498,38 +498,70 @@ function extractTextContent(message: Message): string {
 		.join(" ");
 }
 
+/** Cached session info entry with mtime for invalidation */
+interface CachedSessionInfo {
+	mtime: number;
+	info: Omit<SessionInfo, "path" | "modified">;
+}
+
+/** In-memory cache for session metadata, keyed by file path */
+const sessionInfoCache = new Map<string, CachedSessionInfo>();
+
+/** Parse a session file and extract metadata for listing */
 async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 	try {
-		const content = await readFile(filePath, "utf8");
-		const entries: FileEntry[] = [];
-		const lines = content.trim().split("\n");
+		const stats = await stat(filePath);
+		const mtime = stats.mtime.getTime();
 
-		for (const line of lines) {
-			if (!line.trim()) continue;
-			try {
-				entries.push(JSON.parse(line) as FileEntry);
-			} catch {
-				// Skip malformed lines
-			}
+		// Check cache first
+		const cached = sessionInfoCache.get(filePath);
+		if (cached && cached.mtime === mtime) {
+			return {
+				...cached.info,
+				path: filePath,
+				modified: stats.mtime,
+			};
 		}
 
-		if (entries.length === 0) return null;
-		const header = entries[0];
-		if (header.type !== "session") return null;
+		// Cache miss or stale - parse file
+		const content = await readFile(filePath, "utf8");
+		const lines = content.split("\n");
 
-		const stats = await stat(filePath);
+		if (lines.length === 0) return null;
+
+		// Parse header (first line)
+		let header: SessionHeader;
+		try {
+			header = JSON.parse(lines[0]) as SessionHeader;
+			if (header.type !== "session") return null;
+		} catch {
+			return null;
+		}
+
 		let messageCount = 0;
 		let firstMessage = "";
 		const allMessages: string[] = [];
 		let name: string | undefined;
 
-		for (const entry of entries) {
+		// Parse all entries
+		for (let i = 1; i < lines.length; i++) {
+			const line = lines[i];
+			if (!line.trim()) continue;
+
+			let entry: FileEntry;
+			try {
+				entry = JSON.parse(line) as FileEntry;
+			} catch {
+				continue;
+			}
+
 			// Extract session name (use latest)
 			if (entry.type === "session_info") {
 				const infoEntry = entry as SessionInfoEntry;
 				if (infoEntry.name) {
 					name = infoEntry.name.trim();
 				}
+				continue;
 			}
 
 			if (entry.type !== "message") continue;
@@ -548,18 +580,24 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 			}
 		}
 
-		const cwd = typeof (header as SessionHeader).cwd === "string" ? (header as SessionHeader).cwd : "";
+		const cwd = typeof header.cwd === "string" ? header.cwd : "";
 
-		return {
-			path: filePath,
-			id: (header as SessionHeader).id,
+		// Store in cache
+		const info = {
+			id: header.id,
 			cwd,
 			name,
-			created: new Date((header as SessionHeader).timestamp),
-			modified: stats.mtime,
+			created: new Date(header.timestamp),
 			messageCount,
 			firstMessage: firstMessage || "(no messages)",
 			allMessagesText: allMessages.join(" "),
+		};
+		sessionInfoCache.set(filePath, { mtime, info });
+
+		return {
+			...info,
+			path: filePath,
+			modified: stats.mtime,
 		};
 	} catch {
 		return null;
