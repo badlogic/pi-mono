@@ -4,8 +4,12 @@
 
 ### Added
 
-- New `input` event in extension system for intercepting, transforming, or handling user input before the agent processes it. Supports three result types: `continue` (pass through), `transform` (modify text/images), `handled` (respond without LLM). Handlers chain transforms and short-circuit on handled.
-- Extension example: `input-transform.ts` demonstrating input interception patterns (quick mode, instant commands, source routing)
+- New `input` event in extension system for intercepting, transforming, or handling user input before the agent processes it. Supports three result types: `continue` (pass through), `transform` (modify text/images), `handled` (respond without LLM). Handlers chain transforms and short-circuit on handled. ([#761](https://github.com/badlogic/pi-mono/pull/761) by [@nicobailon](https://github.com/nicobailon))
+- Extension example: `input-transform.ts` demonstrating input interception patterns (quick mode, instant commands, source routing) ([#761](https://github.com/badlogic/pi-mono/pull/761) by [@nicobailon](https://github.com/nicobailon))
+
+### Changed
+
+- Skill commands (`/skill:name`) are now expanded in AgentSession instead of interactive mode. This enables skill commands in RPC and print modes, and allows the `input` event to intercept `/skill:name` before expansion.
 
 ### Fixed
 

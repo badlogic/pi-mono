@@ -256,7 +256,9 @@ pi starts
       ▼
 user sends prompt ─────────────────────────────────────────┐
   │                                                        │
-  ├─► input (can transform or handle completely)           │
+  ├─► (extension commands checked first, bypass if found)  │
+  ├─► input (can intercept, transform, or handle)          │
+  ├─► (skill/template expansion if not handled)            │
   ├─► before_agent_start (can inject message, modify system prompt)
   ├─► agent_start                                          │
   │                                                        │
@@ -579,25 +581,49 @@ pi.on("user_bash", (event, ctx) => {
 
 #### input
 
-Fired when user input is received, before agent processing. Can transform or handle completely.
+Fired when user input is received, after extension commands are checked but before skill and template expansion. The event sees the raw input text, so `/skill:foo` and `/template` are not yet expanded.
+
+**Processing order:**
+1. Extension commands (`/cmd`) checked first - if found, handler runs and input event is skipped
+2. `input` event fires - can intercept, transform, or handle
+3. If not handled: skill commands (`/skill:name`) expanded to skill content
+4. If not handled: prompt templates (`/template`) expanded to template content
+5. Agent processing begins (`before_agent_start`, etc.)
 
 ```typescript
 pi.on("input", async (event, ctx) => {
-  // event.text, event.images, event.source ("interactive" | "rpc" | "extension")
+  // event.text - raw input (before skill/template expansion)
+  // event.images - attached images, if any
+  // event.source - "interactive" (typed), "rpc" (API), or "extension" (via sendUserMessage)
 
+  // Transform: rewrite input before expansion
   if (event.text.startsWith("?quick "))
     return { action: "transform", text: `Respond briefly: ${event.text.slice(7)}` };
 
+  // Handle: respond without LLM (extension shows its own feedback)
   if (event.text === "ping") {
-    ctx.ui.notify("pong", "info");  // Extension handles its own feedback
-    return { action: "handled" };   // Skip LLM
+    ctx.ui.notify("pong", "info");
+    return { action: "handled" };
   }
 
-  return { action: "continue" };  // Default: pass through
+  // Route by source: skip processing for extension-injected messages
+  if (event.source === "extension") return { action: "continue" };
+
+  // Intercept skill commands before expansion
+  if (event.text.startsWith("/skill:")) {
+    // Could transform, block, or let pass through
+  }
+
+  return { action: "continue" };  // Default: pass through to expansion
 });
 ```
 
-**Results:** `continue` (pass through), `transform` (modify text/images), `handled` (skip LLM). Transforms chain; first "handled" wins. See [input-transform.ts](../examples/extensions/input-transform.ts).
+**Results:**
+- `continue` - pass through unchanged (default if handler returns nothing)
+- `transform` - modify text/images, then continue to expansion
+- `handled` - skip agent entirely (first handler to return this wins)
+
+Transforms chain across handlers. See [input-transform.ts](../examples/extensions/input-transform.ts).
 
 ## ExtensionContext
 
