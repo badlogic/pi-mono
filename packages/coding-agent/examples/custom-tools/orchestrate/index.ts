@@ -9,18 +9,20 @@
  * Usage: orchestrate({ taskFile: "01_TASKS.md" })
  */
 
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { CustomToolFactory, RenderResultOptions } from "@mariozechner/pi-coding-agent";
+import type { AgentToolResult } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "@sinclair/typebox";
 
 // Constants
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_OUTPUT_BYTES = 100 * 1024; // 100KB tail buffer
+const SIGKILL_GRACE_MS = 5000; // Grace period before SIGKILL
 
 interface ParsedTask {
 	id: number;
@@ -231,11 +233,13 @@ function updateTaskCheckbox(filePath: string, taskLineStart: number, completed: 
 	// Re-read file to avoid stale data issues
 	const lines = fs.readFileSync(filePath, "utf-8").split("\n");
 	const taskLine = lines[taskLineStart];
-	if (!taskLine) return;
+	if (!taskLine) {
+		throw new Error(`Cannot update checkbox: line ${taskLineStart} not found in ${filePath}`);
+	}
 
-	// Replace checkbox (handle both [ ] and [] formats)
+	// Replace checkbox (handle [ ], [], [  ], etc.)
 	const updatedLine = completed
-		? taskLine.replace(/\[(?:\s|)\]/, "[x]")
+		? taskLine.replace(/\[\s*\]/, "[x]")
 		: taskLine.replace(/\[x\]/i, "[ ]");
 
 	lines[taskLineStart] = updatedLine;
@@ -336,8 +340,55 @@ function truncateOutput(output: string, maxBytes: number): string {
 	}
 	// Keep tail (most useful for debugging)
 	const buf = Buffer.from(output, "utf-8");
-	const truncated = buf.slice(buf.length - maxBytes).toString("utf-8");
+	const truncated = buf.subarray(buf.length - maxBytes).toString("utf-8");
 	return `...[truncated ${buf.length - maxBytes} bytes]...\n${truncated}`;
+}
+
+/** Helper for inline output truncation during execution */
+class OutputAccumulator {
+	private buffer = "";
+	private readonly maxBytes: number;
+
+	constructor(maxBytes: number) {
+		this.maxBytes = maxBytes;
+	}
+
+	append(text: string): void {
+		this.buffer += text;
+		// Truncate inline when buffer exceeds 2x max to avoid unbounded growth
+		if (Buffer.byteLength(this.buffer, "utf-8") > this.maxBytes * 2) {
+			this.buffer = truncateOutput(this.buffer, this.maxBytes);
+		}
+	}
+
+	get value(): string {
+		return this.buffer;
+	}
+
+	truncate(): string {
+		return truncateOutput(this.buffer, this.maxBytes);
+	}
+}
+
+/** Kill process with SIGTERM, escalate to SIGKILL after grace period */
+function killWithEscalation(proc: ChildProcess, onKilled?: () => void): void {
+	try {
+		proc.kill("SIGTERM");
+	} catch {
+		// Process may already be dead
+	}
+	const killTimer = setTimeout(() => {
+		try {
+			proc.kill("SIGKILL");
+		} catch {
+			// Process may already be dead
+		}
+	}, SIGKILL_GRACE_MS);
+
+	proc.once("close", () => {
+		clearTimeout(killTimer);
+		onKilled?.();
+	});
 }
 
 async function runTask(
@@ -408,7 +459,7 @@ When done, summarize what was accomplished.
 
 	args.push(taskPrompt);
 
-	let output = "";
+	const output = new OutputAccumulator(MAX_OUTPUT_BYTES);
 	let exitCode = 0;
 	let settled = false;
 
@@ -419,26 +470,36 @@ When done, summarize what was accomplished.
 				stdio: ["ignore", "pipe", "pipe"],
 			});
 
-			// Timeout handler
-			const timeoutId = setTimeout(() => {
-				if (!settled) {
-					settled = true;
-					proc.kill("SIGTERM");
-					reject(new Error(`Task timed out after ${Math.round(timeoutMs / 1000)}s`));
-				}
-			}, timeoutMs);
+			let timeoutId: NodeJS.Timeout | null = null;
+
+			// Cleanup helper - call before settling
+			const cleanup = () => {
+				if (timeoutId) clearTimeout(timeoutId);
+				signal?.removeEventListener("abort", abortHandler);
+			};
 
 			// Abort handler with guard against multiple settlements
 			const abortHandler = () => {
 				if (!settled) {
 					settled = true;
-					clearTimeout(timeoutId);
-					signal?.removeEventListener("abort", abortHandler);
-					proc.kill("SIGTERM");
-					reject(new Error("Task aborted"));
+					cleanup();
+					killWithEscalation(proc, () => {
+						reject(new Error("Task aborted"));
+					});
 				}
 			};
 			signal?.addEventListener("abort", abortHandler, { once: true });
+
+			// Timeout handler with SIGKILL escalation
+			timeoutId = setTimeout(() => {
+				if (!settled) {
+					settled = true;
+					cleanup();
+					killWithEscalation(proc, () => {
+						reject(new Error(`Task timed out after ${Math.round(timeoutMs / 1000)}s`));
+					});
+				}
+			}, timeoutMs);
 
 			// JSONL line buffer for proper chunk handling
 			let stdoutBuf = "";
@@ -451,7 +512,7 @@ When done, summarize what was accomplished.
 					if (evt.type === "message_end" && evt.message?.content) {
 						for (const part of evt.message.content) {
 							if (part.type === "text" && part.text) {
-								output += part.text + "\n";
+								output.append(part.text + "\n");
 							}
 						}
 					}
@@ -460,7 +521,7 @@ When done, summarize what was accomplished.
 						for (const part of evt.result.content) {
 							if (part.type === "text" && part.text) {
 								const text = part.text.slice(0, 500);
-								output += `[tool: ${evt.toolName || "unknown"}] ${text}\n`;
+								output.append(`[tool: ${evt.toolName || "unknown"}] ${text}\n`);
 							}
 						}
 					}
@@ -480,14 +541,13 @@ When done, summarize what was accomplished.
 			});
 
 			proc.stderr.on("data", (chunk) => {
-				output += chunk.toString();
+				output.append(chunk.toString());
 			});
 
 			proc.on("close", (code) => {
 				if (!settled) {
 					settled = true;
-					clearTimeout(timeoutId);
-					signal?.removeEventListener("abort", abortHandler);
+					cleanup();
 					// Process any remaining buffer content
 					if (stdoutBuf.trim()) {
 						processJsonlLine(stdoutBuf);
@@ -499,8 +559,7 @@ When done, summarize what was accomplished.
 			proc.on("error", (err) => {
 				if (!settled) {
 					settled = true;
-					clearTimeout(timeoutId);
-					signal?.removeEventListener("abort", abortHandler);
+					cleanup();
 					reject(err);
 				}
 			});
@@ -511,7 +570,7 @@ When done, summarize what was accomplished.
 			title: task.title,
 			agent: task.agent,
 			status: "failed",
-			output: truncateOutput(output, MAX_OUTPUT_BYTES),
+			output: output.truncate(),
 			durationMs: Date.now() - startTime,
 			error: err instanceof Error ? err.message : String(err),
 		};
@@ -529,7 +588,7 @@ When done, summarize what was accomplished.
 		title: task.title,
 		agent: task.agent,
 		status: exitCode === 0 ? "success" : "failed",
-		output: truncateOutput(output.trim(), MAX_OUTPUT_BYTES),
+		output: output.truncate(),
 		durationMs: Date.now() - startTime,
 		error: exitCode !== 0 ? `Exit code: ${exitCode}` : undefined,
 	};
@@ -596,206 +655,228 @@ function formatDuration(ms: number): string {
 	return `${Math.floor(ms / 60000)}m${Math.floor((ms % 60000) / 1000)}s`;
 }
 
-export default function registerOrchestrateExtension(pi: ExtensionAPI): void {
-	pi.registerTool({
-		name: "orchestrate",
-		label: "Orchestrate Tasks",
-		description:
-			"Execute tasks from a collaborative task file (e.g., 0N_TASKS.md) with memory-first approach, " +
-			"quality gates, and session archiving. Use when user says 'run the tasks', 'execute the task file', " +
-			"or 'orchestrate'. Each task runs in protected context with pre/post hooks from agent configs.",
-		parameters: OrchestrateParams,
+// Minimal theme interface for the methods we use (avoids internal dependency)
+interface ThemeInterface {
+	fg(color: string, text: string): string;
+	bold(text: string): string;
+}
 
-		async execute(_toolCallId, params, onUpdate, ctx, signal) {
-			const {
-				taskFile,
-				continueOnError = false,
-				archive = true,
-				taskTimeoutMs = DEFAULT_TASK_TIMEOUT_MS,
-			} = params as {
-				taskFile: string;
-				continueOnError?: boolean;
-				archive?: boolean;
-				taskTimeoutMs?: number;
+type OrchestrateParams = Static<typeof OrchestrateParams>;
+
+const factory: CustomToolFactory = (pi) => ({
+	name: "orchestrate",
+	label: "Orchestrate Tasks",
+	description:
+		"Execute tasks from a collaborative task file (e.g., 0N_TASKS.md) with memory-first approach, " +
+		"quality gates, and session archiving. Use when user says 'run the tasks', 'execute the task file', " +
+		"or 'orchestrate'. Each task runs in protected context with pre/post hooks from agent configs.",
+	parameters: OrchestrateParams,
+
+	async execute(
+		_toolCallId: string,
+		params: OrchestrateParams,
+		signal?: AbortSignal,
+		onUpdate?: (result: AgentToolResult<OrchestrateDetails>) => void
+	) {
+		const {
+			taskFile,
+			continueOnError = false,
+			archive = true,
+			taskTimeoutMs = DEFAULT_TASK_TIMEOUT_MS,
+		} = params;
+
+		// Validate timeout parameter
+		if (!Number.isFinite(taskTimeoutMs) || taskTimeoutMs <= 0) {
+			throw new Error(`taskTimeoutMs must be a positive number, got ${taskTimeoutMs}`);
+		}
+
+		// Resolve task file path
+		const absolutePath = path.isAbsolute(taskFile)
+			? taskFile
+			: path.join(pi.cwd, taskFile);
+
+		if (!fs.existsSync(absolutePath)) {
+			throw new Error(`Task file not found: ${absolutePath}`);
+		}
+
+		// Parse and validate task file
+		const parsed = parseTaskFile(absolutePath);
+		validateTaskFile(parsed);
+
+		const pendingTasks = parsed.tasks.filter((t) => !t.completed);
+
+		if (pendingTasks.length === 0) {
+			return {
+				content: [{ type: "text" as const, text: "All tasks are already completed." }],
+				details: {
+					taskFile: absolutePath,
+					status: "completed",
+					totalTasks: parsed.tasks.length,
+					completedTasks: parsed.tasks.length,
+					results: [],
+					archived: false,
+				} as OrchestrateDetails,
 			};
+		}
 
-			// Resolve task file path
-			const absolutePath = path.isAbsolute(taskFile)
-				? taskFile
-				: path.join(ctx.cwd, taskFile);
+		const results: TaskResult[] = [];
+		const completedIds = new Set(parsed.tasks.filter((t) => t.completed).map((t) => t.id));
+		const details: OrchestrateDetails = {
+			taskFile: absolutePath,
+			status: "running",
+			totalTasks: parsed.tasks.length,
+			completedTasks: completedIds.size,
+			results,
+			archived: false,
+		};
 
-			if (!fs.existsSync(absolutePath)) {
-				throw new Error(`Task file not found: ${absolutePath}`);
-			}
+		// Multi-pass execution: retry skipped tasks until no progress
+		let remainingTasks = [...pendingTasks];
 
-			// Parse and validate task file
-			const parsed = parseTaskFile(absolutePath);
-			validateTaskFile(parsed);
+		while (remainingTasks.length > 0) {
+			let madeProgress = false;
+			const stillPending: ParsedTask[] = [];
 
-			const pendingTasks = parsed.tasks.filter((t) => !t.completed);
-
-			if (pendingTasks.length === 0) {
-				return {
-					content: [{ type: "text", text: "All tasks are already completed." }],
-					details: {
-						taskFile: absolutePath,
-						status: "completed",
-						totalTasks: parsed.tasks.length,
-						completedTasks: parsed.tasks.length,
-						results: [],
-						archived: false,
-					} as OrchestrateDetails,
-				};
-			}
-
-			const results: TaskResult[] = [];
-			const completedIds = new Set(parsed.tasks.filter((t) => t.completed).map((t) => t.id));
-			const details: OrchestrateDetails = {
-				taskFile: absolutePath,
-				status: "running",
-				totalTasks: parsed.tasks.length,
-				completedTasks: completedIds.size,
-				results,
-				archived: false,
-			};
-
-			// Multi-pass execution: retry skipped tasks until no progress
-			let remainingTasks = [...pendingTasks];
-			let lastPassCompleted = -1;
-
-			while (remainingTasks.length > 0 && completedIds.size > lastPassCompleted) {
-				lastPassCompleted = completedIds.size;
-				const stillPending: ParsedTask[] = [];
-
-				for (const task of remainingTasks) {
-					if (signal?.aborted) {
-						details.status = "cancelled";
-						break;
-					}
-
-					// Check dependencies - must be in completedIds
-					const unmetDeps = task.dependencies.filter((depId) => !completedIds.has(depId));
-
-					if (unmetDeps.length > 0) {
-						// Defer to next pass
-						stillPending.push(task);
-						continue;
-					}
-
-					details.currentTask = `Task ${task.id}: ${task.title}`;
-
-					// Update progress
-					if (onUpdate) {
-						onUpdate({
-							content: [
-								{
-									type: "text",
-									text: `Running Task ${task.id}/${parsed.tasks.length}: ${task.title} (${task.agent})`,
-								},
-							],
-							details,
-						});
-					}
-
-					// Execute task
-					const result = await runTask(task, parsed, ctx.cwd, taskTimeoutMs, signal);
-					results.push(result);
-
-					if (result.status === "success") {
-						// Update checkbox in file
-						updateTaskCheckbox(absolutePath, task.lineStart, true);
-						completedIds.add(task.id);
-						details.completedTasks++;
-					} else if (!continueOnError) {
-						details.status = "failed";
-						break;
-					}
-				}
-
-				if (signal?.aborted || details.status === "failed") {
+			for (const task of remainingTasks) {
+				if (signal?.aborted) {
+					details.status = "cancelled";
 					break;
 				}
 
-				remainingTasks = stillPending;
-			}
-
-			// Mark any remaining tasks as skipped with unmet deps
-			for (const task of remainingTasks) {
+				// Check dependencies - must be in completedIds
 				const unmetDeps = task.dependencies.filter((depId) => !completedIds.has(depId));
-				results.push({
-					taskId: task.id,
-					title: task.title,
-					agent: task.agent,
-					status: "skipped",
-					output: `Skipped: unmet dependencies (Task ${unmetDeps.join(", ")})`,
-					durationMs: 0,
-				});
+
+				if (unmetDeps.length > 0) {
+					// Defer to next pass
+					stillPending.push(task);
+					continue;
+				}
+
+				details.currentTask = `Task ${task.id}: ${task.title}`;
+
+				// Update progress
+				if (onUpdate) {
+					onUpdate({
+						content: [
+							{
+								type: "text" as const,
+								text: `Running Task ${task.id}/${parsed.tasks.length}: ${task.title} (${task.agent})`,
+							},
+						],
+						details,
+					});
+				}
+
+				// Execute task
+				const result = await runTask(task, parsed, pi.cwd, taskTimeoutMs, signal);
+				results.push(result);
+				madeProgress = true;
+
+				if (result.status === "success") {
+					// Update checkbox in file
+					updateTaskCheckbox(absolutePath, task.lineStart, true);
+					completedIds.add(task.id);
+					details.completedTasks++;
+				} else if (!continueOnError) {
+					details.status = "failed";
+					break;
+				}
 			}
 
-			// Determine final status
-			if (details.status !== "cancelled" && details.status !== "failed") {
-				const allSuccess = results.every((r) => r.status === "success" || r.status === "skipped");
-				details.status = allSuccess ? "completed" : "failed";
+			if (signal?.aborted || details.status === "failed") {
+				break;
 			}
 
-			// Archive session if requested
-			if (archive && details.status === "completed") {
-				const archiveResult = archiveSession(parsed, results, ctx.cwd);
-				details.archived = archiveResult.success;
+			remainingTasks = stillPending;
+
+			// Exit if no progress was made this pass (prevents infinite loop)
+			if (!madeProgress && remainingTasks.length > 0) {
+				break;
 			}
+		}
 
-			// Build summary
-			const summary = [
-				`Orchestration ${details.status}`,
-				`Tasks: ${details.completedTasks}/${details.totalTasks} completed`,
-				"",
-				"Results:",
-				...results.map(
-					(r) =>
-						`- Task ${r.taskId} (${r.agent}): ${r.status}${r.durationMs ? ` [${formatDuration(r.durationMs)}]` : ""}${r.error ? ` - ${r.error}` : ""}`
-				),
-			];
+		// Mark any remaining tasks as skipped with unmet deps
+		for (const task of remainingTasks) {
+			const unmetDeps = task.dependencies.filter((depId) => !completedIds.has(depId));
+			results.push({
+				taskId: task.id,
+				title: task.title,
+				agent: task.agent,
+				status: "skipped",
+				output: `Skipped: unmet dependencies (Task ${unmetDeps.join(", ")})`,
+				durationMs: 0,
+			});
+		}
 
-			if (details.archived) {
-				summary.push("", "Session archived to episodic memory.");
-			}
+		// Determine final status
+		if (details.status !== "cancelled" && details.status !== "failed") {
+			const allSuccess = results.every((r) => r.status === "success" || r.status === "skipped");
+			details.status = allSuccess ? "completed" : "failed";
+		}
 
-			return {
-				content: [{ type: "text", text: summary.join("\n") }],
-				details,
-			};
-		},
+		// Archive session if requested
+		if (archive && details.status === "completed") {
+			const archiveResult = archiveSession(parsed, results, pi.cwd);
+			details.archived = archiveResult.success;
+		}
 
-		renderCall(args, theme) {
-			const { taskFile } = args as { taskFile?: string };
-			const label = taskFile ? `Orchestrate: ${path.basename(taskFile)}` : "Orchestrate Tasks";
-			return new Text(theme.fg("toolTitle", theme.bold(label)), 0, 0);
-		},
+		// Build summary
+		const summary = [
+			`Orchestration ${details.status}`,
+			`Tasks: ${details.completedTasks}/${details.totalTasks} completed`,
+			"",
+			"Results:",
+			...results.map(
+				(r) =>
+					`- Task ${r.taskId} (${r.agent}): ${r.status}${r.durationMs ? ` [${formatDuration(r.durationMs)}]` : ""}${r.error ? ` - ${r.error}` : ""}`
+			),
+		];
 
-		renderResult(result, _options, theme) {
-			const details = result.details as OrchestrateDetails | undefined;
-			if (!details) return new Text("Orchestrate", 0, 0);
+		if (details.archived) {
+			summary.push("", "Session archived to episodic memory.");
+		}
 
-			const statusColor =
-				details.status === "completed"
-					? "success"
-					: details.status === "running"
-						? "info"
-						: details.status === "cancelled"
-							? "warning"
-							: "error";
+		return {
+			content: [{ type: "text" as const, text: summary.join("\n") }],
+			details,
+		};
+	},
 
-			const statusText = `${details.status.toUpperCase()} (${details.completedTasks}/${details.totalTasks} tasks)`;
+	renderCall(args: OrchestrateParams, theme: ThemeInterface) {
+		const { taskFile } = args;
+		const label = taskFile ? `Orchestrate: ${path.basename(taskFile)}` : "Orchestrate Tasks";
+		return new Text(theme.fg("toolTitle", theme.bold(label)), 0, 0);
+	},
 
-			if (details.currentTask && details.status === "running") {
-				return new Text(
-					`${theme.fg(statusColor, statusText)}\n${theme.fg("dim", details.currentTask)}`,
-					0,
-					0
-				);
-			}
+	renderResult(
+		result: AgentToolResult<OrchestrateDetails>,
+		_options: RenderResultOptions,
+		theme: ThemeInterface
+	) {
+		const details = result.details;
+		if (!details) return new Text("Orchestrate", 0, 0);
 
-			return new Text(theme.fg(statusColor, statusText), 0, 0);
-		},
-	});
-}
+		const statusColor =
+			details.status === "completed"
+				? "success"
+				: details.status === "running"
+					? "info"
+					: details.status === "cancelled"
+						? "warning"
+						: "error";
+
+		const statusText = `${details.status.toUpperCase()} (${details.completedTasks}/${details.totalTasks} tasks)`;
+
+		if (details.currentTask && details.status === "running") {
+			return new Text(
+				`${theme.fg(statusColor, statusText)}\n${theme.fg("dim", details.currentTask)}`,
+				0,
+				0
+			);
+		}
+
+		return new Text(theme.fg(statusColor, statusText), 0, 0);
+	},
+});
+
+export default factory;
