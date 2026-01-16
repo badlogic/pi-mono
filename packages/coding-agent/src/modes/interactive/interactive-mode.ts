@@ -2075,6 +2075,10 @@ export class InteractiveMode {
 			});
 		}
 
+		// Wait for any pending renders to complete
+		// requestRender() uses process.nextTick(), so we wait one tick
+		await new Promise((resolve) => process.nextTick(resolve));
+
 		this.stop();
 		process.exit(0);
 	}

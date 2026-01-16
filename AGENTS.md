@@ -49,7 +49,7 @@ When closing issues via commit:
 ## Tools
 - GitHub CLI for issues/PRs
 - Add package labels to issues/PRs: pkg:agent, pkg:ai, pkg:coding-agent, pkg:mom, pkg:pods, pkg:tui, pkg:web-ui
-- TUI interaction: use tmux
+- See pi-tmux-test skill if you need to test pi interactive mode
 
 ## Style
 - Keep answers short and concise
