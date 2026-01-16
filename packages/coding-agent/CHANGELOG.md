@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added bash-style argument slicing for prompt templates ([#770](https://github.com/badlogic/pi-mono/pull/770) by [@airtonix](https://github.com/airtonix))
+
 ## [0.47.0] - 2026-01-16
 
 ### Breaking Changes

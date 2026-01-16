@@ -182,6 +182,110 @@ describe("substituteArgs", () => {
 });
 
 // ============================================================================
+// substituteArgs - Array Slicing (Bash-Style)
+// ============================================================================
+
+describe("substituteArgs - array slicing", () => {
+	test(`should slice from index (\${@:N})`, () => {
+		expect(substituteArgs(`\${@:2}`, ["a", "b", "c", "d"])).toBe("b c d");
+		expect(substituteArgs(`\${@:1}`, ["a", "b", "c"])).toBe("a b c");
+		expect(substituteArgs(`\${@:3}`, ["a", "b", "c", "d"])).toBe("c d");
+	});
+
+	test(`should slice with length (\${@:N:L})`, () => {
+		expect(substituteArgs(`\${@:2:2}`, ["a", "b", "c", "d"])).toBe("b c");
+		expect(substituteArgs(`\${@:1:1}`, ["a", "b", "c"])).toBe("a");
+		expect(substituteArgs(`\${@:3:1}`, ["a", "b", "c", "d"])).toBe("c");
+		expect(substituteArgs(`\${@:2:3}`, ["a", "b", "c", "d", "e"])).toBe("b c d");
+	});
+
+	test("should handle out of range slices", () => {
+		expect(substituteArgs(`\${@:99}`, ["a", "b"])).toBe("");
+		expect(substituteArgs(`\${@:5}`, ["a", "b"])).toBe("");
+		expect(substituteArgs(`\${@:10:5}`, ["a", "b"])).toBe("");
+	});
+
+	test("should handle zero-length slices", () => {
+		expect(substituteArgs(`\${@:2:0}`, ["a", "b", "c"])).toBe("");
+		expect(substituteArgs(`\${@:1:0}`, ["a", "b"])).toBe("");
+	});
+
+	test("should handle length exceeding array", () => {
+		expect(substituteArgs(`\${@:2:99}`, ["a", "b", "c"])).toBe("b c");
+		expect(substituteArgs(`\${@:1:10}`, ["a", "b"])).toBe("a b");
+	});
+
+	test("should process slice before simple $@", () => {
+		expect(substituteArgs(`\${@:2} vs $@`, ["a", "b", "c"])).toBe("b c vs a b c");
+		expect(substituteArgs(`First: \${@:1:1}, All: $@`, ["x", "y", "z"])).toBe("First: x, All: x y z");
+	});
+
+	test("should not recursively substitute slice patterns in args", () => {
+		expect(substituteArgs(`\${@:1}`, [`\${@:2}`, "test"])).toBe(`\${@:2} test`);
+		expect(substituteArgs(`\${@:2}`, ["a", `\${@:3}`, "c"])).toBe(`\${@:3} c`);
+	});
+
+	test("should handle mixed usage with positional args", () => {
+		expect(substituteArgs(`$1: \${@:2}`, ["cmd", "arg1", "arg2"])).toBe("cmd: arg1 arg2");
+		expect(substituteArgs(`$1 $2 \${@:3}`, ["a", "b", "c", "d"])).toBe("a b c d");
+	});
+
+	test(`should treat \${@:0} as all args`, () => {
+		expect(substituteArgs(`\${@:0}`, ["a", "b", "c"])).toBe("a b c");
+	});
+
+	test("should handle empty args array", () => {
+		expect(substituteArgs(`\${@:2}`, [])).toBe("");
+		expect(substituteArgs(`\${@:1}`, [])).toBe("");
+	});
+
+	test("should handle single arg array", () => {
+		expect(substituteArgs(`\${@:1}`, ["only"])).toBe("only");
+		expect(substituteArgs(`\${@:2}`, ["only"])).toBe("");
+	});
+
+	test("should handle slice in middle of text", () => {
+		expect(substituteArgs(`Process \${@:2} with $1`, ["tool", "file1", "file2"])).toBe(
+			"Process file1 file2 with tool",
+		);
+	});
+
+	test("should handle multiple slices in one template", () => {
+		expect(substituteArgs(`\${@:1:1} and \${@:2}`, ["a", "b", "c"])).toBe("a and b c");
+		expect(substituteArgs(`\${@:1:2} vs \${@:3:2}`, ["a", "b", "c", "d", "e"])).toBe("a b vs c d");
+	});
+
+	test("should handle quoted arguments in slices", () => {
+		expect(substituteArgs(`\${@:2}`, ["cmd", "first arg", "second arg"])).toBe("first arg second arg");
+	});
+
+	test("should handle special characters in sliced args", () => {
+		expect(substituteArgs(`\${@:2}`, ["cmd", "$100", "@user", "#tag"])).toBe("$100 @user #tag");
+	});
+
+	test("should handle unicode in sliced args", () => {
+		expect(substituteArgs(`\${@:1}`, ["日本語", "🎉", "café"])).toBe("日本語 🎉 café");
+	});
+
+	test("should combine positional, slice, and wildcard placeholders", () => {
+		const template = `Run $1 on \${@:2:2}, then process $@`;
+		const args = ["eslint", "file1.ts", "file2.ts", "file3.ts"];
+		expect(substituteArgs(template, args)).toBe(
+			"Run eslint on file1.ts file2.ts, then process eslint file1.ts file2.ts file3.ts",
+		);
+	});
+
+	test("should handle slice with no spacing", () => {
+		expect(substituteArgs(`prefix\${@:2}suffix`, ["a", "b", "c"])).toBe("prefixb csuffix");
+	});
+
+	test("should handle large slice lengths gracefully", () => {
+		const args = Array.from({ length: 10 }, (_, i) => `arg${i + 1}`);
+		expect(substituteArgs(`\${@:5:100}`, args)).toBe("arg5 arg6 arg7 arg8 arg9 arg10");
+	});
+});
+
+// ============================================================================
 // parseCommandArgs
 // ============================================================================
 
