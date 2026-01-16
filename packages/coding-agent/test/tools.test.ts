@@ -12,15 +12,37 @@ import { readTool } from "../src/core/tools/read.js";
 import { writeTool } from "../src/core/tools/write.js";
 import * as shellModule from "../src/utils/shell.js";
 
+type ToolTextBlock = { type: "text"; text: string };
+type ToolImageBlock = { type: "image"; mimeType: string; data: string };
+type ToolUnknownBlock = { type: string; [key: string]: unknown };
+type ToolContentBlock = ToolTextBlock | ToolImageBlock | ToolUnknownBlock;
+
+type ToolResult = {
+	content: ToolContentBlock[];
+	details?: unknown;
+};
+
 // Helper to extract text from content blocks
-function getTextOutput(result: any): string {
-	return (
-		result.content
-			?.filter((c: any) => c.type === "text")
-			.map((c: any) => c.text)
-			.join("\n") || ""
-	);
-}
+const getTextOutput = (result: ToolResult): string => {
+	return result.content
+		.filter((c): c is ToolTextBlock => c.type === "text")
+		.map((c) => c.text)
+		.join("\n");
+};
+
+type AgentSettingsFile = {
+	shellInitCommand?: string;
+};
+
+const createBashToolWithAgentSettings = (cwd: string, settings: AgentSettingsFile) => {
+	const agentDir = join(cwd, "agent");
+	mkdirSync(agentDir, { recursive: true });
+	writeFileSync(join(agentDir, "settings.json"), JSON.stringify(settings));
+
+	vi.stubEnv(ENV_AGENT_DIR, agentDir);
+
+	return createBashTool(cwd);
+};
 
 describe("Coding Agent Tools", () => {
 	let testDir: string;
@@ -186,7 +208,7 @@ describe("Coding Agent Tools", () => {
 			const output = getTextOutput(result);
 
 			expect(output).toContain("definitely not a png");
-			expect(result.content.some((c: any) => c.type === "image")).toBe(false);
+			expect(result.content.some((c) => c.type === "image")).toBe(false);
 		});
 	});
 
@@ -262,6 +284,7 @@ describe("Coding Agent Tools", () => {
 
 	describe("bash tool", () => {
 		afterEach(() => {
+			vi.restoreAllMocks();
 			vi.unstubAllEnvs();
 		});
 
@@ -273,31 +296,38 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("should prepend shell init command when configured", async () => {
-			const agentDir = join(testDir, "agent");
-			mkdirSync(agentDir, { recursive: true });
-			const settingsPath = join(agentDir, "settings.json");
-			writeFileSync(settingsPath, JSON.stringify({ shellInitCommand: "export TEST_VAR=testValue" }));
+			const bashWithInit = createBashToolWithAgentSettings(testDir, {
+				shellInitCommand: "export TEST_VAR=testValue",
+			});
 
-			vi.stubEnv(ENV_AGENT_DIR, agentDir);
-
-			const bashWithInit = createBashTool(testDir);
 			const result = await bashWithInit.execute("test-call-shell-init", { command: "echo $TEST_VAR" });
 			expect(getTextOutput(result).trim()).toBe("testValue");
 		});
 
 		it("should include output from shell init and command", async () => {
-			const agentDir = join(testDir, "agent");
-			mkdirSync(agentDir, { recursive: true });
-			const settingsPath = join(agentDir, "settings.json");
-			writeFileSync(settingsPath, JSON.stringify({ shellInitCommand: "echo init-ready" }));
+			const bashWithInit = createBashToolWithAgentSettings(testDir, { shellInitCommand: "echo init-ready" });
 
-			vi.stubEnv(ENV_AGENT_DIR, agentDir);
-
-			const bashWithInit = createBashTool(testDir);
 			const result = await bashWithInit.execute("test-call-shell-init-output", { command: "echo command-ready" });
-			const output = getTextOutput(result).trim();
+			expect(getTextOutput(result).trim()).toBe("init-ready\ncommand-ready");
+		});
 
-			expect(output).toBe("init-ready\ncommand-ready");
+		it("should normalize trailing semicolons in shell init", async () => {
+			const bashWithInit = createBashToolWithAgentSettings(testDir, { shellInitCommand: "echo init-ready;;  " });
+
+			const result = await bashWithInit.execute("test-call-shell-init-semicolons", {
+				command: "echo command-ready",
+			});
+			expect(getTextOutput(result).trim()).toBe("init-ready\ncommand-ready");
+		});
+
+		it("should not run command when shell init fails", async () => {
+			const bashWithInit = createBashToolWithAgentSettings(testDir, { shellInitCommand: "false" });
+
+			await expect(
+				bashWithInit.execute("test-call-shell-init-fail", {
+					command: "echo should-not-run",
+				}),
+			).rejects.toThrow(/Command exited with code 1/);
 		});
 
 		it("should handle command errors", async () => {

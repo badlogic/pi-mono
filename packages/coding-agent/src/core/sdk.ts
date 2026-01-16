@@ -299,6 +299,7 @@ export function loadSettings(cwd?: string, agentDir?: string): Settings {
 		retry: manager.getRetrySettings(),
 		hideThinkingBlock: manager.getHideThinkingBlock(),
 		shellPath: manager.getShellPath(),
+		shellInitCommand: manager.getShellInitCommand(),
 		collapseChangelog: manager.getCollapseChangelog(),
 		extensions: manager.getExtensionPaths(),
 		skills: manager.getSkillsSettings(),

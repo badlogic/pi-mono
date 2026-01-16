@@ -6,6 +6,7 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
 import { getShellConfig, killProcessTree } from "../../utils/shell.js";
+import { SettingsManager } from "../settings-manager.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateTail } from "./truncate.js";
 
 /**
@@ -132,6 +133,20 @@ const defaultBashOperations: BashOperations = {
 	},
 };
 
+const resolveBashCommand = (cwd: string, command: string): string => {
+	const settings = SettingsManager.create(cwd);
+	const rawInitCommand = settings.getShellInitCommand();
+	if (!rawInitCommand) return command;
+
+	const initCommand = rawInitCommand
+		.trim()
+		.replace(/;+\s*$/, "")
+		.trim();
+	if (!initCommand) return command;
+
+	return `${initCommand} && ${command}`;
+};
+
 export interface BashToolOptions {
 	/** Custom operations for command execution. Default: local shell */
 	operations?: BashOperations;
@@ -206,7 +221,9 @@ export function createBashTool(cwd: string, options?: BashToolOptions): AgentToo
 					}
 				};
 
-				ops.exec(command, cwd, { onData: handleData, signal, timeout })
+				const resolvedCommand = resolveBashCommand(cwd, command);
+
+				ops.exec(resolvedCommand, cwd, { onData: handleData, signal, timeout })
 					.then(({ exitCode }) => {
 						// Close temp file stream
 						if (tempFileStream) {

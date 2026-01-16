@@ -105,4 +105,29 @@ describe("SettingsManager", () => {
 			expect(savedSettings.defaultThinkingLevel).toBe("high");
 		});
 	});
+
+	describe("shellInitCommand", () => {
+		it("loads shellInitCommand from settings", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ shellInitCommand: "shopt -s expand_aliases" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getShellInitCommand()).toBe("shopt -s expand_aliases");
+		});
+
+		it("preserves shellInitCommand when saving unrelated settings", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ shellInitCommand: "shopt -s expand_aliases" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			manager.setTheme("light");
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+
+			expect(savedSettings.shellInitCommand).toBe("shopt -s expand_aliases");
+			expect(savedSettings.theme).toBe("light");
+		});
+	});
 });
