@@ -577,13 +577,6 @@ export class AgentSession {
 				options?.source ?? "interactive",
 			);
 			if (inputResult.action === "handled") {
-				if (inputResult.response) {
-					if (this._extensionRunner.hasUI()) {
-						this._extensionRunner.getUIContext().notify(inputResult.response, "info");
-					} else {
-						console.log(inputResult.response);
-					}
-				}
 				return;
 			}
 			if (inputResult.action === "transform") {

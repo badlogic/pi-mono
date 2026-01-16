@@ -468,7 +468,7 @@ export interface InputEvent {
 export type InputEventResult =
 	| { action: "continue" }
 	| { action: "transform"; text: string; images?: ImageContent[] }
-	| { action: "handled"; response?: string };
+	| { action: "handled" };
 
 // ============================================================================
 // Tool Events

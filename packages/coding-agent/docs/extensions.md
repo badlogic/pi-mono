@@ -588,8 +588,10 @@ pi.on("input", async (event, ctx) => {
   if (event.text.startsWith("?quick "))
     return { action: "transform", text: `Respond briefly: ${event.text.slice(7)}` };
 
-  if (event.text === "ping")
-    return { action: "handled", response: "pong" };  // No LLM call
+  if (event.text === "ping") {
+    ctx.ui.notify("pong", "info");  // Extension handles its own feedback
+    return { action: "handled" };   // Skip LLM
+  }
 
   return { action: "continue" };  // Default: pass through
 });

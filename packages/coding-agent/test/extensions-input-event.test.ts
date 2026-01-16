@@ -77,10 +77,10 @@ describe("Input Event", () => {
 	it("short-circuits on handled and skips subsequent handlers", async () => {
 		(globalThis as any).testVar = false;
 		const r = await createRunner(
-			`export default p => p.on("input", async () => ({ action: "handled", response: "done" }));`,
+			`export default p => p.on("input", async () => ({ action: "handled" }));`,
 			`export default p => p.on("input", async () => { globalThis.testVar = true; });`,
 		);
-		expect(await r.emitInput("X", undefined, "interactive")).toEqual({ action: "handled", response: "done" });
+		expect(await r.emitInput("X", undefined, "interactive")).toEqual({ action: "handled" });
 		expect((globalThis as any).testVar).toBe(false);
 	});
 
