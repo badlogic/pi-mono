@@ -847,6 +847,8 @@ Create a React component named $1 with features: $@
 Usage: `/component Button "onClick handler" "disabled support"`
 - `$1` = `Button`
 - `$@` or `$ARGUMENTS` = all arguments joined (`Button onClick handler disabled support`)
+- `${@:N}` = arguments from the Nth position onwards (1-indexed)
+- `${@:N:L}` = `L` arguments starting from the Nth position
 
 **Namespacing:** Subdirectories create prefixes. `.pi/prompts/frontend/component.md` → `/component (project:frontend)`
 
