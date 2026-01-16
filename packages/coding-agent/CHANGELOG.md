@@ -860,7 +860,7 @@ The hooks API has been restructured with more granular events and better session
 
 - `ctx.waitForIdle()` - wait for agent to finish streaming
 - `ctx.newSession(options?)` - create new sessions with optional setup callback
-- `ctx.branch(entryId)` - branch from a specific entry
+- `ctx.fork(entryId) - fork from a specific entry, creating a new session file
 - `ctx.navigateTree(targetId, options?)` - navigate the session tree
 
 These methods are only on `HookCommandContext` (not `HookContext`) because they can deadlock if called from event handlers that run inside the agent loop.
