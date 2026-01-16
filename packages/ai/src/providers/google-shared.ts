@@ -71,6 +71,9 @@ export function requiresToolCallId(modelId: string): boolean {
 export function convertMessages<T extends GoogleApiType>(model: Model<T>, context: Context): Content[] {
 	const contents: Content[] = [];
 	const transformedMessages = transformMessages(context.messages, model);
+	// Track tool call IDs that were skipped (e.g., unsigned Gemini 3 calls)
+	// so we can also skip their corresponding toolResults
+	const skippedToolCallIds = new Set<string>();
 
 	for (const msg of transformedMessages) {
 		if (msg.role === "user") {
@@ -134,26 +137,27 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 					const thoughtSignature = resolveThoughtSignature(isSameProviderAndModel, block.thoughtSignature);
 					// Gemini 3 requires thoughtSignature on all function calls when thinking mode is enabled.
 					// When replaying history from providers without thought signatures (e.g. Claude via Antigravity),
-					// convert unsigned function calls to text to avoid API validation errors.
+					// skip the tool call entirely to avoid API validation errors.
+					// Previously we converted to text like "[Tool Call: name]\nArguments: {...}" but this caused
+					// the model to mimic that format instead of making actual function calls.
 					const isGemini3 = model.id.toLowerCase().includes("gemini-3");
 					if (isGemini3 && !thoughtSignature) {
-						const argsStr = JSON.stringify(block.arguments, null, 2);
-						parts.push({
-							text: `[Tool Call: ${block.name}]\nArguments: ${argsStr}`,
-						});
-					} else {
-						const part: Part = {
-							functionCall: {
-								name: block.name,
-								args: block.arguments,
-								...(requiresToolCallId(model.id) ? { id: block.id } : {}),
-							},
-						};
-						if (thoughtSignature) {
-							part.thoughtSignature = thoughtSignature;
-						}
-						parts.push(part);
+						// Skip unsigned tool calls - they can't be replayed properly anyway
+						// Track the ID so we also skip the corresponding toolResult
+						skippedToolCallIds.add(block.id);
+						continue;
 					}
+					const part: Part = {
+						functionCall: {
+							name: block.name,
+							args: block.arguments,
+							...(requiresToolCallId(model.id) ? { id: block.id } : {}),
+						},
+					};
+					if (thoughtSignature) {
+						part.thoughtSignature = thoughtSignature;
+					}
+					parts.push(part);
 				}
 			}
 
@@ -163,6 +167,11 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 				parts,
 			});
 		} else if (msg.role === "toolResult") {
+			// Skip results for tool calls that were skipped (e.g., unsigned Gemini 3 calls)
+			if (skippedToolCallIds.has(msg.toolCallId)) {
+				continue;
+			}
+
 			// Extract text and image content
 			const textContent = msg.content.filter((c): c is TextContent => c.type === "text");
 			const textResult = textContent.map((c) => c.text).join("\n");
