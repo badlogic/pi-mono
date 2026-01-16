@@ -5,6 +5,8 @@
 ### Added
 
 - API keys in `models.json` can now be retrieved via shell command using `!` prefix (e.g., `"apiKey": "!security find-generic-password -ws 'anthropic'"` for macOS Keychain) ([#697](https://github.com/badlogic/pi-mono/issues/697))
+- New `input` event in extension system for intercepting, transforming, or handling user input before the agent processes it. Supports three result types: `continue` (pass through), `transform` (modify text/images), `handled` (respond without LLM). Handlers chain transforms and short-circuit on handled.
+- Extension example: `input-transform.ts` demonstrating input interception patterns (quick mode, instant commands, source routing)
 
 ### Fixed
 

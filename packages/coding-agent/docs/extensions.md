@@ -256,6 +256,7 @@ pi starts
       ▼
 user sends prompt ─────────────────────────────────────────┐
   │                                                        │
+  ├─► input (can transform or handle completely)           │
   ├─► before_agent_start (can inject message, modify system prompt)
   ├─► agent_start                                          │
   │                                                        │
@@ -573,6 +574,30 @@ pi.on("user_bash", (event, ctx) => {
 ```
 
 **Examples:** [ssh.ts](../examples/extensions/ssh.ts), [interactive-shell.ts](../examples/extensions/interactive-shell.ts)
+
+### Input Events
+
+#### input
+
+Fired when user input is received, before agent processing. Can transform or handle completely.
+
+```typescript
+pi.on("input", async (event, ctx) => {
+  // event.text, event.images, event.source ("interactive" | "rpc" | "extension")
+
+  if (event.text.startsWith("?quick "))
+    return { action: "transform", text: `Respond briefly: ${event.text.slice(7)}` };
+
+  if (event.text === "ping") {
+    ctx.ui.notify("pong", "info");  // Extension handles its own feedback
+    return { action: "handled" };   // Skip LLM
+  }
+
+  return { action: "continue" };  // Default: pass through
+});
+```
+
+**Results:** `continue` (pass through), `transform` (modify text/images), `handled` (skip LLM). Transforms chain; first "handled" wins. See [input-transform.ts](../examples/extensions/input-transform.ts).
 
 ## ExtensionContext
 
