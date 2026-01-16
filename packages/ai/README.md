@@ -481,9 +481,9 @@ await complete(googleModel, context, {
 });
 
 // GitLab Duo (uses Claude via GitLab's Anthropic proxy)
+// Note: thinking/reasoning is not currently supported by GitLab Duo
 const gitlabDuoModel = getModel('gitlab-duo', 'duo-chat');
 await complete(gitlabDuoModel, context, {
-  thinking: true,
   instanceUrl: 'https://gitlab.example.com', // Optional: self-hosted GitLab URL
 });
 ```

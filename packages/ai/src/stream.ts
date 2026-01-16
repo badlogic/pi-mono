@@ -397,11 +397,9 @@ function mapOptionsForApi<TApi extends Api>(
 		}
 
 		case "gitlab-duo": {
+			// GitLab Duo does not currently support thinking/reasoning
 			return {
 				...base,
-				thinking: {
-					enabled: options?.reasoning !== undefined && options.reasoning !== "minimal",
-				},
 			} satisfies GitLabDuoOptions;
 		}
 

@@ -19,10 +19,6 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { transformMessages } from "./transform-messages.js";
 
 export interface GitLabDuoOptions extends StreamOptions {
-	/** Enable thinking/reasoning mode */
-	thinking?: {
-		enabled: boolean;
-	};
 	/** GitLab instance URL (defaults to https://gitlab.com) */
 	instanceUrl?: string;
 	/** The Anthropic model to use via GitLab's proxy */
