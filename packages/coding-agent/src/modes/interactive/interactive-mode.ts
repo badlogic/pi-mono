@@ -145,6 +145,7 @@ export class InteractiveMode {
 	private keybindings: KeybindingsManager;
 	private version: string;
 	private isInitialized = false;
+	private hasRenderedInitialMessages = false;
 	private onInputCallback?: (text: string) => void;
 	private loadingAnimation: Loader | undefined = undefined;
 	private readonly defaultWorkingMessage = "Working...";
@@ -619,7 +620,9 @@ export class InteractiveMode {
 					this.session
 						.sendCustomMessage(message, options)
 						.then(() => {
-							if (!wasStreaming && message.display) {
+							// Don't rebuild if initial render hasn't happened yet
+							// (renderInitialMessages will handle it)
+							if (!wasStreaming && message.display && this.hasRenderedInitialMessages) {
 								this.rebuildChatFromMessages();
 							}
 						})
@@ -2007,6 +2010,7 @@ export class InteractiveMode {
 	}
 
 	renderInitialMessages(): void {
+		this.hasRenderedInitialMessages = true;
 		// Get aligned messages and entries from session context
 		const context = this.sessionManager.buildSessionContext();
 		this.renderSessionContext(context, {

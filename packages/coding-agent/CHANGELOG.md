@@ -6,6 +6,10 @@
 
 - Added bash-style argument slicing for prompt templates ([#770](https://github.com/badlogic/pi-mono/pull/770) by [@airtonix](https://github.com/airtonix))
 
+### Fixed
+
+- Fixed extension messages rendering twice on startup when `pi.sendMessage({ display: true })` is called during `session_start` ([#765](https://github.com/badlogic/pi-mono/pull/765) by [@dannote](https://github.com/dannote))
+
 ## [0.47.0] - 2026-01-16
 
 ### Breaking Changes
