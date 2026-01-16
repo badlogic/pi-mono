@@ -320,6 +320,7 @@ interface AgentConfig {
 	name: string;
 	description: string;
 	tools?: string[];
+	provider?: string;
 	model?: string;
 	systemPrompt: string;
 }
@@ -387,6 +388,7 @@ function loadAgentConfig(agentName: string): AgentConfig | AgentConfigError {
 		name,
 		description: frontmatter.description || "",
 		tools,
+		provider: frontmatter.provider,
 		model: frontmatter.model,
 		systemPrompt: body,
 	};
@@ -600,6 +602,10 @@ When done, summarize what was accomplished.
 
 	// Build pi arguments
 	const args = ["--mode", "json", "-p", "--no-session"];
+
+	if (agent.provider) {
+		args.push("--provider", agent.provider);
+	}
 
 	if (agent.model) {
 		args.push("--model", agent.model);
