@@ -241,7 +241,8 @@ export class InteractiveMode {
 		this.statusContainer = new Container();
 		this.widgetContainer = new Container();
 		this.keybindings = KeybindingsManager.create();
-		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings);
+		const editorPaddingX = this.settingsManager.getEditorPaddingX();
+		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings, { paddingX: editorPaddingX });
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
@@ -2520,6 +2521,7 @@ export class InteractiveMode {
 					hideThinkingBlock: this.hideThinkingBlock,
 					collapseChangelog: this.settingsManager.getCollapseChangelog(),
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
+					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -2586,6 +2588,10 @@ export class InteractiveMode {
 					},
 					onDoubleEscapeActionChange: (action) => {
 						this.settingsManager.setDoubleEscapeAction(action);
+					},
+					onEditorPaddingXChange: (padding) => {
+						this.settingsManager.setEditorPaddingX(padding);
+						this.defaultEditor.setPaddingX(padding);
 					},
 					onCancel: () => {
 						done();

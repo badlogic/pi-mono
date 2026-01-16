@@ -300,6 +300,18 @@ export class Editor implements Component, Focusable {
 		this.paddingX = Number.isFinite(paddingX) ? Math.max(0, Math.floor(paddingX)) : 0;
 	}
 
+	getPaddingX(): number {
+		return this.paddingX;
+	}
+
+	setPaddingX(padding: number): void {
+		const newPadding = Number.isFinite(padding) ? Math.max(0, Math.floor(padding)) : 0;
+		if (this.paddingX !== newPadding) {
+			this.paddingX = newPadding;
+			this.tui.requestRender();
+		}
+	}
+
 	setAutocompleteProvider(provider: AutocompleteProvider): void {
 		this.autocompleteProvider = provider;
 	}

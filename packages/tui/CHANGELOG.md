@@ -4,7 +4,7 @@
 
 ### Added
 
-- `EditorOptions` with optional `paddingX` for horizontal content padding ([#791](https://github.com/badlogic/pi-mono/pull/791) by [@ferologics](https://github.com/ferologics))
+- `EditorOptions` with optional `paddingX` for horizontal content padding, plus `getPaddingX()`/`setPaddingX()` methods ([#791](https://github.com/badlogic/pi-mono/pull/791) by [@ferologics](https://github.com/ferologics))
 
 ### Changed
 

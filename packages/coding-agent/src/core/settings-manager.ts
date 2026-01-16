@@ -70,6 +70,7 @@ export interface Settings {
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
 	doubleEscapeAction?: "fork" | "tree"; // Action for double-escape with empty editor (default: "tree")
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
+	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -478,6 +479,15 @@ export class SettingsManager {
 
 	setDoubleEscapeAction(action: "fork" | "tree"): void {
 		this.globalSettings.doubleEscapeAction = action;
+		this.save();
+	}
+
+	getEditorPaddingX(): number {
+		return this.settings.editorPaddingX ?? 0;
+	}
+
+	setEditorPaddingX(padding: number): void {
+		this.globalSettings.editorPaddingX = Math.max(0, Math.min(3, Math.floor(padding)));
 		this.save();
 	}
 }
