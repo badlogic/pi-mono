@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added `quietStartup` setting to silence startup output (version header, loaded context info, model scope line). Changelog notifications are still shown. ([#777](https://github.com/badlogic/pi-mono/pull/777) by [@ribelo](https://github.com/ribelo))
 - Added `editorPaddingX` setting for horizontal padding in input editor (0-3, default: 0)
 - Added `shellCommandPrefix` setting to prepend commands to every bash execution, enabling alias expansion in non-interactive shells (e.g., `"shellCommandPrefix": "shopt -s expand_aliases"`) ([#790](https://github.com/badlogic/pi-mono/pull/790) by [@richardgill](https://github.com/richardgill))
 - Added bash-style argument slicing for prompt templates ([#770](https://github.com/badlogic/pi-mono/pull/770) by [@airtonix](https://github.com/airtonix))
@@ -16,6 +17,9 @@
 ### Fixed
 
 - Fixed crash during auto-compaction when summarization fails (e.g., quota exceeded). Now displays error message instead of crashing ([#792](https://github.com/badlogic/pi-mono/issues/792))
+- Fixed `--session <UUID>` to search globally across projects if not found locally, with option to fork sessions from other projects ([#785](https://github.com/badlogic/pi-mono/pull/785) by [@ribelo](https://github.com/ribelo))
+- Fixed standalone binary WASM loading on Linux ([#784](https://github.com/badlogic/pi-mono/issues/784))
+- Fixed string numbers in tool arguments not being coerced to numbers during validation ([#786](https://github.com/badlogic/pi-mono/pull/786) by [@dannote](https://github.com/dannote))
 - Fixed `--no-extensions` flag not preventing extension discovery ([#776](https://github.com/badlogic/pi-mono/issues/776))
 - Fixed extension messages rendering twice on startup when `pi.sendMessage({ display: true })` is called during `session_start` ([#765](https://github.com/badlogic/pi-mono/pull/765) by [@dannote](https://github.com/dannote))
 - Fixed `PI_CODING_AGENT_DIR` env var not expanding tilde (`~`) to home directory ([#778](https://github.com/badlogic/pi-mono/pull/778) by [@aliou](https://github.com/aliou))
