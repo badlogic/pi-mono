@@ -137,7 +137,7 @@ describe("matchesKey", () => {
 			assert.strictEqual(parseKey("\x00"), "ctrl+space");
 		});
 
-		it("should parse legacy alt-prefixed sequences only when kitty inactive", () => {
+		it("should parse legacy alt-prefixed sequences when kitty inactive", () => {
 			setKittyProtocolActive(false);
 			assert.strictEqual(matchesKey("\x1b ", "alt+space"), true);
 			assert.strictEqual(parseKey("\x1b "), "alt+space");
@@ -153,8 +153,8 @@ describe("matchesKey", () => {
 			setKittyProtocolActive(true);
 			assert.strictEqual(matchesKey("\x1b ", "alt+space"), false);
 			assert.strictEqual(parseKey("\x1b "), undefined);
-			assert.strictEqual(matchesKey("\x1b\b", "alt+backspace"), false);
-			assert.strictEqual(parseKey("\x1b\b"), undefined);
+			assert.strictEqual(matchesKey("\x1b\b", "alt+backspace"), true);
+			assert.strictEqual(parseKey("\x1b\b"), "alt+backspace");
 			assert.strictEqual(matchesKey("\x1b\x03", "ctrl+alt+c"), false);
 			assert.strictEqual(parseKey("\x1b\x03"), undefined);
 			assert.strictEqual(matchesKey("\x1bB", "alt+left"), false);

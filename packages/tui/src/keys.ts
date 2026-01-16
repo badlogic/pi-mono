@@ -771,8 +771,8 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 
 		case "backspace":
 			if (alt && !ctrl && !shift) {
-				if (!_kittyProtocolActive) {
-					return data === "\x1b\x7f" || data === "\x1b\b";
+				if (data === "\x1b\x7f" || data === "\x1b\b") {
+					return true;
 				}
 				return matchesKittySequence(data, CODEPOINTS.backspace, MODIFIERS.alt);
 			}
@@ -1065,7 +1065,7 @@ export function parseKey(data: string): string | undefined {
 	if (data === "\x1b[Z") return "shift+tab";
 	if (!_kittyProtocolActive && data === "\x1b\r") return "alt+enter";
 	if (!_kittyProtocolActive && data === "\x1b ") return "alt+space";
-	if (!_kittyProtocolActive && (data === "\x1b\x7f" || data === "\x1b\b")) return "alt+backspace";
+	if (data === "\x1b\x7f" || data === "\x1b\b") return "alt+backspace";
 	if (!_kittyProtocolActive && data === "\x1bB") return "alt+left";
 	if (!_kittyProtocolActive && data === "\x1bF") return "alt+right";
 	if (!_kittyProtocolActive && data.length === 2 && data[0] === "\x1b") {
