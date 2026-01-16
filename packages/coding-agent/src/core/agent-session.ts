@@ -39,6 +39,7 @@ import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import type {
 	ExtensionRunner,
+	InputSource,
 	SessionBeforeCompactResult,
 	SessionBeforeForkResult,
 	SessionBeforeSwitchResult,
@@ -101,6 +102,8 @@ export interface PromptOptions {
 	images?: ImageContent[];
 	/** When streaming, how to queue the message: "steer" (interrupt) or "followUp" (wait). Required if streaming. */
 	streamingBehavior?: "steer" | "followUp";
+	/** Source of input for extension input event handlers. Defaults to "interactive". */
+	source?: InputSource;
 }
 
 /** Result from cycleModel() */
@@ -566,8 +569,28 @@ export class AgentSession {
 			}
 		}
 
+		// Emit input event for extension interception (before template expansion)
+		let currentText = text;
+		let currentImages = options?.images;
+		if (this._extensionRunner?.hasHandlers("input")) {
+			const inputResult = await this._extensionRunner.emitInput(
+				currentText,
+				currentImages,
+				options?.source ?? "interactive",
+			);
+			if (inputResult.action === "handled") {
+				return;
+			}
+			if (inputResult.action === "transform") {
+				currentText = inputResult.text;
+				currentImages = inputResult.images ?? currentImages;
+			}
+		}
+
 		// Expand file-based prompt templates if requested
-		const expandedText = expandPromptTemplates ? expandPromptTemplate(text, [...this._promptTemplates]) : text;
+		const expandedText = expandPromptTemplates
+			? expandPromptTemplate(currentText, [...this._promptTemplates])
+			: currentText;
 
 		// If streaming, queue via steer() or followUp() based on option
 		if (this.isStreaming) {
@@ -616,8 +639,8 @@ export class AgentSession {
 
 		// Add user message
 		const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
-		if (options?.images) {
-			userContent.push(...options.images);
+		if (currentImages) {
+			userContent.push(...currentImages);
 		}
 		messages.push({
 			role: "user",
@@ -635,7 +658,7 @@ export class AgentSession {
 		if (this._extensionRunner) {
 			const result = await this._extensionRunner.emitBeforeAgentStart(
 				expandedText,
-				options?.images,
+				currentImages,
 				this._baseSystemPrompt,
 			);
 			// Add all custom messages from extensions
@@ -853,6 +876,7 @@ export class AgentSession {
 			expandPromptTemplates: false,
 			streamingBehavior: options?.deliverAs,
 			images,
+			source: "extension",
 		});
 	}
 
