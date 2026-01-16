@@ -442,12 +442,13 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 							type: "input_text",
 							text: sanitizeSurrogates(item.text),
 						} satisfies ResponseInputText;
+					} else {
+						return {
+							type: "input_image",
+							detail: "auto",
+							image_url: `data:${item.mimeType};base64,${item.data}`,
+						} satisfies ResponseInputImage;
 					}
-					return {
-						type: "input_image",
-						detail: "auto",
-						image_url: `data:${item.mimeType};base64,${item.data}`,
-					} satisfies ResponseInputImage;
 				});
 				const filteredContent = !model.input.includes("image")
 					? content.filter((c) => c.type !== "input_image")
