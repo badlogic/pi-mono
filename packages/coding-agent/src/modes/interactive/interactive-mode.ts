@@ -357,56 +357,69 @@ export class InteractiveMode {
 		this.fdPath = await ensureTool("fd");
 		this.setupAutocomplete(this.fdPath);
 
-		// Add header with keybindings from config
-		const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
+		// Add header with keybindings from config (unless silenced)
+		if (!this.settingsManager.getQuietStartup()) {
+			const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
 
-		// Build startup instructions using keybinding hint helpers
-		const kb = this.keybindings;
-		const hint = (action: AppAction, desc: string) => appKeyHint(kb, action, desc);
+			// Build startup instructions using keybinding hint helpers
+			const kb = this.keybindings;
+			const hint = (action: AppAction, desc: string) => appKeyHint(kb, action, desc);
 
-		const instructions = [
-			hint("interrupt", "to interrupt"),
-			hint("clear", "to clear"),
-			rawKeyHint(`${appKey(kb, "clear")} twice`, "to exit"),
-			hint("exit", "to exit (empty)"),
-			hint("suspend", "to suspend"),
-			keyHint("deleteToLineEnd", "to delete to end"),
-			hint("cycleThinkingLevel", "to cycle thinking"),
-			rawKeyHint(`${appKey(kb, "cycleModelForward")}/${appKey(kb, "cycleModelBackward")}`, "to cycle models"),
-			hint("selectModel", "to select model"),
-			hint("expandTools", "to expand tools"),
-			hint("toggleThinking", "to toggle thinking"),
-			hint("externalEditor", "for external editor"),
-			rawKeyHint("/", "for commands"),
-			rawKeyHint("!", "to run bash"),
-			rawKeyHint("!!", "to run bash (no context)"),
-			hint("followUp", "to queue follow-up"),
-			hint("dequeue", "to edit all queued messages"),
-			hint("pasteImage", "to paste image"),
-			rawKeyHint("drop files", "to attach"),
-		].join("\n");
-		this.builtInHeader = new Text(`${logo}\n${instructions}`, 1, 0);
+			const instructions = [
+				hint("interrupt", "to interrupt"),
+				hint("clear", "to clear"),
+				rawKeyHint(`${appKey(kb, "clear")} twice`, "to exit"),
+				hint("exit", "to exit (empty)"),
+				hint("suspend", "to suspend"),
+				keyHint("deleteToLineEnd", "to delete to end"),
+				hint("cycleThinkingLevel", "to cycle thinking"),
+				rawKeyHint(`${appKey(kb, "cycleModelForward")}/${appKey(kb, "cycleModelBackward")}`, "to cycle models"),
+				hint("selectModel", "to select model"),
+				hint("expandTools", "to expand tools"),
+				hint("toggleThinking", "to toggle thinking"),
+				hint("externalEditor", "for external editor"),
+				rawKeyHint("/", "for commands"),
+				rawKeyHint("!", "to run bash"),
+				rawKeyHint("!!", "to run bash (no context)"),
+				hint("followUp", "to queue follow-up"),
+				hint("dequeue", "to edit all queued messages"),
+				hint("pasteImage", "to paste image"),
+				rawKeyHint("drop files", "to attach"),
+			].join("\n");
+			this.builtInHeader = new Text(`${logo}\n${instructions}`, 1, 0);
 
-		// Setup UI layout
-		this.ui.addChild(new Spacer(1));
-		this.ui.addChild(this.builtInHeader);
-		this.ui.addChild(new Spacer(1));
+			// Setup UI layout
+			this.ui.addChild(new Spacer(1));
+			this.ui.addChild(this.builtInHeader);
+			this.ui.addChild(new Spacer(1));
 
-		// Add changelog if provided
-		if (this.changelogMarkdown) {
-			this.ui.addChild(new DynamicBorder());
-			if (this.settingsManager.getCollapseChangelog()) {
+			// Add changelog if provided
+			if (this.changelogMarkdown) {
+				this.ui.addChild(new DynamicBorder());
+				if (this.settingsManager.getCollapseChangelog()) {
+					const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
+					const latestVersion = versionMatch ? versionMatch[1] : this.version;
+					const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
+					this.ui.addChild(new Text(condensedText, 1, 0));
+				} else {
+					this.ui.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
+					this.ui.addChild(new Spacer(1));
+					this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0, getMarkdownTheme()));
+					this.ui.addChild(new Spacer(1));
+				}
+				this.ui.addChild(new DynamicBorder());
+			}
+		} else {
+			// Minimal header when silenced
+			this.builtInHeader = new Text("", 0, 0);
+			if (this.changelogMarkdown) {
+				// Still show changelog notification even in silent mode
+				this.ui.addChild(new Spacer(1));
 				const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
 				const latestVersion = versionMatch ? versionMatch[1] : this.version;
 				const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
 				this.ui.addChild(new Text(condensedText, 1, 0));
-			} else {
-				this.ui.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
-				this.ui.addChild(new Spacer(1));
-				this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0, getMarkdownTheme()));
-				this.ui.addChild(new Spacer(1));
 			}
-			this.ui.addChild(new DynamicBorder());
 		}
 
 		this.ui.addChild(this.chatContainer);
@@ -573,36 +586,41 @@ export class InteractiveMode {
 	 * Initialize the extension system with TUI-based UI context.
 	 */
 	private async initExtensions(): Promise<void> {
-		// Show loaded project context files
-		const contextFiles = loadProjectContextFiles();
-		if (contextFiles.length > 0) {
-			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${f.path}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded context:\n") + contextList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+		// Show discovery info unless silenced
+		if (!this.settingsManager.getQuietStartup()) {
+			// Show loaded project context files
+			const contextFiles = loadProjectContextFiles();
+			if (contextFiles.length > 0) {
+				const contextList = contextFiles.map((f) => theme.fg("dim", `  ${f.path}`)).join("\n");
+				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded context:\n") + contextList, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 
-		// Show loaded skills (already discovered by SDK)
-		const skills = this.session.skills;
-		if (skills.length > 0) {
-			const skillList = skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+			// Show loaded skills (already discovered by SDK)
+			const skills = this.session.skills;
+			if (skills.length > 0) {
+				const skillList = skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
+				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 
-		// Show skill warnings if any
-		const skillWarnings = this.session.skillWarnings;
-		if (skillWarnings.length > 0) {
-			const warningList = skillWarnings.map((w) => theme.fg("warning", `  ${w.skillPath}: ${w.message}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+			// Show skill warnings if any
+			const skillWarnings = this.session.skillWarnings;
+			if (skillWarnings.length > 0) {
+				const warningList = skillWarnings
+					.map((w) => theme.fg("warning", `  ${w.skillPath}: ${w.message}`))
+					.join("\n");
+				this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 
-		// Show loaded prompt templates
-		const templates = this.session.promptTemplates;
-		if (templates.length > 0) {
-			const templateList = templates.map((t) => theme.fg("dim", `  /${t.name} ${t.source}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded prompt templates:\n") + templateList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
+			// Show loaded prompt templates
+			const templates = this.session.promptTemplates;
+			if (templates.length > 0) {
+				const templateList = templates.map((t) => theme.fg("dim", `  /${t.name} ${t.source}`)).join("\n");
+				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded prompt templates:\n") + templateList, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 		}
 
 		const extensionRunner = this.session.extensionRunner;
@@ -748,12 +766,14 @@ export class InteractiveMode {
 		// Set up extension-registered shortcuts
 		this.setupExtensionShortcuts(extensionRunner);
 
-		// Show loaded extensions
-		const extensionPaths = extensionRunner.getExtensionPaths();
-		if (extensionPaths.length > 0) {
-			const extList = extensionPaths.map((p) => theme.fg("dim", `  ${p}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded extensions:\n") + extList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
+		// Show loaded extensions (unless silenced)
+		if (!this.settingsManager.getQuietStartup()) {
+			const extensionPaths = extensionRunner.getExtensionPaths();
+			if (extensionPaths.length > 0) {
+				const extList = extensionPaths.map((p) => theme.fg("dim", `  ${p}`)).join("\n");
+				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded extensions:\n") + extList, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 		}
 
 		// Emit session_start event

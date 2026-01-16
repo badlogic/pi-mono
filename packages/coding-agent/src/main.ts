@@ -503,7 +503,7 @@ export async function main(args: string[]) {
 	if (mode === "rpc") {
 		await runRpcMode(session);
 	} else if (isInteractive) {
-		if (scopedModels.length > 0) {
+		if (scopedModels.length > 0 && !settingsManager.getQuietStartup()) {
 			const modelList = scopedModels
 				.map((sm) => {
 					const thinkingStr = sm.thinkingLevel ? `:${sm.thinkingLevel}` : "";
