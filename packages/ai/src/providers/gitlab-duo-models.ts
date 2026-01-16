@@ -9,6 +9,8 @@ import type { Model } from "../types.js";
  * - duo-chat-sonnet-4-5 → claude-sonnet-4-5-20250929
  * - duo-chat-haiku-4-5 → claude-haiku-4-5-20251001
  * - duo-chat → claude-sonnet-4-5-20250929 (default)
+ *
+ * Note: reasoning/thinking is not currently supported by GitLab Duo.
  */
 export function getGitLabDuoModels(): Model<"gitlab-duo">[] {
 	return [
@@ -18,8 +20,8 @@ export function getGitLabDuoModels(): Model<"gitlab-duo">[] {
 			api: "gitlab-duo",
 			baseUrl: "https://cloud.gitlab.com/ai/v1/proxy/anthropic/",
 			provider: "gitlab-duo",
-			reasoning: true,
-			input: ["text", "image"],
+			reasoning: false,
+			input: ["text"],
 			cost: {
 				// Costs are handled by GitLab subscription, not per-token
 				input: 0,
@@ -28,7 +30,7 @@ export function getGitLabDuoModels(): Model<"gitlab-duo">[] {
 				cacheWrite: 0,
 			},
 			contextWindow: 200000,
-			maxTokens: 8192,
+			maxTokens: 4096,
 		},
 		{
 			id: "duo-chat-opus-4-5",
@@ -36,8 +38,8 @@ export function getGitLabDuoModels(): Model<"gitlab-duo">[] {
 			api: "gitlab-duo",
 			baseUrl: "https://cloud.gitlab.com/ai/v1/proxy/anthropic/",
 			provider: "gitlab-duo",
-			reasoning: true,
-			input: ["text", "image"],
+			reasoning: false,
+			input: ["text"],
 			cost: {
 				input: 0,
 				output: 0,
@@ -45,7 +47,7 @@ export function getGitLabDuoModels(): Model<"gitlab-duo">[] {
 				cacheWrite: 0,
 			},
 			contextWindow: 200000,
-			maxTokens: 8192,
+			maxTokens: 4096,
 		},
 		{
 			id: "duo-chat-sonnet-4-5",
@@ -53,8 +55,8 @@ export function getGitLabDuoModels(): Model<"gitlab-duo">[] {
 			api: "gitlab-duo",
 			baseUrl: "https://cloud.gitlab.com/ai/v1/proxy/anthropic/",
 			provider: "gitlab-duo",
-			reasoning: true,
-			input: ["text", "image"],
+			reasoning: false,
+			input: ["text"],
 			cost: {
 				input: 0,
 				output: 0,
@@ -62,7 +64,7 @@ export function getGitLabDuoModels(): Model<"gitlab-duo">[] {
 				cacheWrite: 0,
 			},
 			contextWindow: 200000,
-			maxTokens: 8192,
+			maxTokens: 4096,
 		},
 		{
 			id: "duo-chat-haiku-4-5",
@@ -71,7 +73,7 @@ export function getGitLabDuoModels(): Model<"gitlab-duo">[] {
 			baseUrl: "https://cloud.gitlab.com/ai/v1/proxy/anthropic/",
 			provider: "gitlab-duo",
 			reasoning: false,
-			input: ["text", "image"],
+			input: ["text"],
 			cost: {
 				input: 0,
 				output: 0,
@@ -79,7 +81,7 @@ export function getGitLabDuoModels(): Model<"gitlab-duo">[] {
 				cacheWrite: 0,
 			},
 			contextWindow: 200000,
-			maxTokens: 8192,
+			maxTokens: 4096,
 		},
 	];
 }

@@ -18,11 +18,13 @@ const __dirname = dirname(__filename);
 const oauthTokens = await Promise.all([
 	resolveApiKey("anthropic"),
 	resolveApiKey("github-copilot"),
+	resolveApiKey("gitlab-duo"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
 	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, gitlabDuoToken, geminiCliToken, antigravityToken, openaiCodexToken] =
+	oauthTokens;
 
 // Calculator tool definition (same as examples)
 // Note: Using StringEnum helper because Google's API doesn't support anyOf/const patterns
@@ -864,6 +866,29 @@ describe("Generate E2E Tests", () => {
 
 		it.skipIf(!githubCopilotToken)("should handle image input", { retry: 3 }, async () => {
 			await handleImage(llm, { apiKey: githubCopilotToken });
+		});
+	});
+
+	describe("GitLab Duo Provider (duo-chat-sonnet-4-5)", () => {
+		const llm = getModel("gitlab-duo", "duo-chat-sonnet-4-5");
+
+		it.skipIf(!gitlabDuoToken)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm, { apiKey: gitlabDuoToken });
+		});
+
+		it.skipIf(!gitlabDuoToken)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm, { apiKey: gitlabDuoToken });
+		});
+
+		it.skipIf(!gitlabDuoToken)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm, { apiKey: gitlabDuoToken });
+		});
+
+		// Note: GitLab Duo doesn't support thinking/reasoning mode
+		// Note: GitLab Duo doesn't support image input
+
+		it.skipIf(!gitlabDuoToken)("should handle multi-turn with tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { apiKey: gitlabDuoToken });
 		});
 	});
 
