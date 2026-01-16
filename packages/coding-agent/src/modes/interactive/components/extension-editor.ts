@@ -7,7 +7,15 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { Container, Editor, getEditorKeybindings, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
+import {
+	Container,
+	Editor,
+	type EditorOptions,
+	getEditorKeybindings,
+	Spacer,
+	Text,
+	type TUI,
+} from "@mariozechner/pi-tui";
 import type { KeybindingsManager } from "../../../core/keybindings.js";
 import { getEditorTheme, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -27,6 +35,7 @@ export class ExtensionEditorComponent extends Container {
 		prefill: string | undefined,
 		onSubmit: (value: string) => void,
 		onCancel: () => void,
+		options?: EditorOptions,
 	) {
 		super();
 
@@ -44,7 +53,7 @@ export class ExtensionEditorComponent extends Container {
 		this.addChild(new Spacer(1));
 
 		// Create editor
-		this.editor = new Editor(tui, getEditorTheme());
+		this.editor = new Editor(tui, getEditorTheme(), options);
 		if (prefill) {
 			this.editor.setText(prefill);
 		}
