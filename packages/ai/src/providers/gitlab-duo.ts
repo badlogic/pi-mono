@@ -446,12 +446,19 @@ export const streamGitLabDuo: StreamFunction<"gitlab-duo"> = (
 
 						case "error": {
 							output.stopReason = "error";
-							output.errorMessage = event.error instanceof Error ? event.error.message : String(event.error);
+							const errorMsg = event.error instanceof Error ? event.error.message : String(event.error);
 
 							// Check if this is a token refresh needed error
-							if (output.errorMessage === "TOKEN_REFRESH_NEEDED") {
-								// The provider handles retry internally, but if we get here it means retry failed
-								output.errorMessage = "Authentication failed. Please re-authenticate with GitLab.";
+							if (errorMsg === "TOKEN_REFRESH_NEEDED") {
+								// Try to get the original cause for better error messages
+								const cause = event.error instanceof Error ? (event.error as any).cause : undefined;
+								if (cause instanceof Error && cause.message) {
+									output.errorMessage = cause.message;
+								} else {
+									output.errorMessage = "Authentication failed. Please re-authenticate with GitLab.";
+								}
+							} else {
+								output.errorMessage = errorMsg;
 							}
 
 							stream.push({ type: "error", reason: "error", error: output });
