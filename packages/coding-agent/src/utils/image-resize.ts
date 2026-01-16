@@ -1,5 +1,7 @@
 import type { ImageContent } from "@mariozechner/pi-ai";
-import photon from "@silvia-odwyer/photon-node";
+// Use ESM entry point so Bun can embed the WASM in compiled binaries
+// (the CJS entry uses fs.readFileSync which breaks in standalone binaries)
+import { PhotonImage, resize, SamplingFilter } from "@silvia-odwyer/photon-node/photon_rs_bg.js";
 
 export interface ImageResizeOptions {
 	maxWidth?: number; // Default: 2000
@@ -53,9 +55,9 @@ export async function resizeImage(img: ImageContent, options?: ImageResizeOption
 	const opts = { ...DEFAULT_OPTIONS, ...options };
 	const inputBuffer = Buffer.from(img.data, "base64");
 
-	let image: ReturnType<typeof photon.PhotonImage.new_from_byteslice> | undefined;
+	let image: ReturnType<typeof PhotonImage.new_from_byteslice> | undefined;
 	try {
-		image = photon.PhotonImage.new_from_byteslice(new Uint8Array(inputBuffer));
+		image = PhotonImage.new_from_byteslice(new Uint8Array(inputBuffer));
 
 		const originalWidth = image.get_width();
 		const originalHeight = image.get_height();
@@ -94,7 +96,7 @@ export async function resizeImage(img: ImageContent, options?: ImageResizeOption
 			height: number,
 			jpegQuality: number,
 		): { buffer: Uint8Array; mimeType: string } {
-			const resized = photon.resize(image!, width, height, photon.SamplingFilter.Lanczos3);
+			const resized = resize(image!, width, height, SamplingFilter.Lanczos3);
 
 			try {
 				const pngBuffer = resized.get_bytes();
