@@ -717,7 +717,12 @@ export class InteractiveMode {
 					return { cancelled: false };
 				},
 				navigateTree: async (targetId, options) => {
-					const result = await this.session.navigateTree(targetId, { summarize: options?.summarize });
+					const result = await this.session.navigateTree(targetId, {
+						summarize: options?.summarize,
+						customInstructions: options?.customInstructions,
+						replaceInstructions: options?.replaceInstructions,
+						label: options?.label,
+					});
 					if (result.cancelled) {
 						return { cancelled: true };
 					}

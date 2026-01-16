@@ -1972,11 +1972,13 @@ export class AgentSession {
 	 * @param targetId The entry ID to navigate to
 	 * @param options.summarize Whether user wants to summarize abandoned branch
 	 * @param options.customInstructions Custom instructions for summarizer
+	 * @param options.replaceInstructions If true, customInstructions replaces the default prompt
+	 * @param options.label Label to attach to the branch summary entry
 	 * @returns Result with editorText (if user message) and cancelled status
 	 */
 	async navigateTree(
 		targetId: string,
-		options: { summarize?: boolean; customInstructions?: string } = {},
+		options: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string } = {},
 	): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: BranchSummaryEntry }> {
 		const oldLeafId = this.sessionManager.getLeafId();
 
@@ -2002,13 +2004,20 @@ export class AgentSession {
 			targetId,
 		);
 
-		// Prepare event data
+		// Prepare event data - mutable so extensions can override
+		let customInstructions = options.customInstructions;
+		let replaceInstructions = options.replaceInstructions;
+		let label = options.label;
+
 		const preparation: TreePreparation = {
 			targetId,
 			oldLeafId,
 			commonAncestorId,
 			entriesToSummarize,
 			userWantsSummary: options.summarize ?? false,
+			customInstructions,
+			replaceInstructions,
+			label,
 		};
 
 		// Set up abort controller for summarization
@@ -2032,6 +2041,17 @@ export class AgentSession {
 				extensionSummary = result.summary;
 				fromExtension = true;
 			}
+
+			// Allow extensions to override instructions and label
+			if (result?.customInstructions !== undefined) {
+				customInstructions = result.customInstructions;
+			}
+			if (result?.replaceInstructions !== undefined) {
+				replaceInstructions = result.replaceInstructions;
+			}
+			if (result?.label !== undefined) {
+				label = result.label;
+			}
 		}
 
 		// Run default summarizer if needed
@@ -2048,7 +2068,8 @@ export class AgentSession {
 				model,
 				apiKey,
 				signal: this._branchSummaryAbortController.signal,
-				customInstructions: options.customInstructions,
+				customInstructions,
+				replaceInstructions,
 				reserveTokens: branchSummarySettings.reserveTokens,
 			});
 			this._branchSummaryAbortController = undefined;
@@ -2098,12 +2119,22 @@ export class AgentSession {
 			// Create summary at target position (can be null for root)
 			const summaryId = this.sessionManager.branchWithSummary(newLeafId, summaryText, summaryDetails, fromExtension);
 			summaryEntry = this.sessionManager.getEntry(summaryId) as BranchSummaryEntry;
+
+			// Attach label to the summary entry
+			if (label) {
+				this.sessionManager.appendLabelChange(summaryId, label);
+			}
 		} else if (newLeafId === null) {
 			// No summary, navigating to root - reset leaf
 			this.sessionManager.resetLeaf();
 		} else {
 			// No summary, navigating to non-root
 			this.sessionManager.branch(newLeafId);
+		}
+
+		// Attach label to target entry when not summarizing (no summary entry to label)
+		if (label && !summaryText) {
+			this.sessionManager.appendLabelChange(targetId, label);
 		}
 
 		// Update agent state
