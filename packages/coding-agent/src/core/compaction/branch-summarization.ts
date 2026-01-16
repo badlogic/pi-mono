@@ -71,6 +71,8 @@ export interface GenerateBranchSummaryOptions {
 	signal: AbortSignal;
 	/** Optional custom instructions for summarization */
 	customInstructions?: string;
+	/** If true, customInstructions replaces the default prompt instead of being appended */
+	replaceInstructions?: boolean;
 	/** Tokens reserved for prompt + LLM response (default 16384) */
 	reserveTokens?: number;
 }
@@ -279,7 +281,7 @@ export async function generateBranchSummary(
 	entries: SessionEntry[],
 	options: GenerateBranchSummaryOptions,
 ): Promise<BranchSummaryResult> {
-	const { model, apiKey, signal, customInstructions, reserveTokens = 16384 } = options;
+	const { model, apiKey, signal, customInstructions, replaceInstructions, reserveTokens = 16384 } = options;
 
 	// Token budget = context window minus reserved space for prompt + response
 	const contextWindow = model.contextWindow || 128000;
@@ -297,9 +299,14 @@ export async function generateBranchSummary(
 	const conversationText = serializeConversation(llmMessages);
 
 	// Build prompt
-	const instructions = customInstructions
-		? `${BRANCH_SUMMARY_PROMPT}\n\nAdditional focus: ${customInstructions}`
-		: BRANCH_SUMMARY_PROMPT;
+	let instructions: string;
+	if (replaceInstructions && customInstructions) {
+		instructions = customInstructions;
+	} else if (customInstructions) {
+		instructions = `${BRANCH_SUMMARY_PROMPT}\n\nAdditional focus: ${customInstructions}`;
+	} else {
+		instructions = BRANCH_SUMMARY_PROMPT;
+	}
 	const promptText = `<conversation>\n${conversationText}\n</conversation>\n\n${instructions}`;
 
 	const summarizationMessages = [
