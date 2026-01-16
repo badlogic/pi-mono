@@ -52,9 +52,9 @@ With images:
 
 If the agent is streaming and no `streamingBehavior` is specified, the command returns an error.
 
-**Extension commands**: If the message is a hook command (e.g., `/mycommand`), it executes immediately even during streaming. Extension commands manage their own LLM interaction via `pi.sendMessage()`.
+**Extension commands**: If the message is an extension command (e.g., `/mycommand`), it executes immediately even during streaming. Extension commands manage their own LLM interaction via `pi.sendMessage()`.
 
-**Prompt templates**: File-based prompt templates (from `.md` files) are expanded before sending/queueing.
+**Input expansion**: Skill commands (`/skill:name`) and prompt templates (`/template`) are expanded before sending/queueing.
 
 Response:
 ```json
@@ -65,7 +65,7 @@ The `images` field is optional. Each image uses `ImageContent` format with base6
 
 #### steer
 
-Queue a steering message to interrupt the agent mid-run. Delivered after current tool execution, remaining tools are skipped. File-based prompt templates are expanded. Extension commands are not allowed (use `prompt` instead).
+Queue a steering message to interrupt the agent mid-run. Delivered after current tool execution, remaining tools are skipped. Skill commands and prompt templates are expanded. Extension commands are not allowed (use `prompt` instead).
 
 ```json
 {"type": "steer", "message": "Stop and do this instead"}
@@ -80,7 +80,7 @@ See [set_steering_mode](#set_steering_mode) for controlling how steering message
 
 #### follow_up
 
-Queue a follow-up message to be processed after the agent finishes. Delivered only when agent has no more tool calls or steering messages. File-based prompt templates are expanded. Extension commands are not allowed (use `prompt` instead).
+Queue a follow-up message to be processed after the agent finishes. Delivered only when agent has no more tool calls or steering messages. Skill commands and prompt templates are expanded. Extension commands are not allowed (use `prompt` instead).
 
 ```json
 {"type": "follow_up", "message": "After you're done, also do this"}
@@ -108,7 +108,7 @@ Response:
 
 #### new_session
 
-Start a fresh session. Can be cancelled by a `session_before_switch` hook.
+Start a fresh session. Can be cancelled by a `session_before_switch` extension event handler.
 
 ```json
 {"type": "new_session"}
@@ -124,7 +124,7 @@ Response:
 {"type": "response", "command": "new_session", "success": true, "data": {"cancelled": false}}
 ```
 
-If a hook cancelled:
+If an extension cancelled:
 ```json
 {"type": "response", "command": "new_session", "success": true, "data": {"cancelled": true}}
 ```
@@ -525,7 +525,7 @@ Response:
 
 #### switch_session
 
-Load a different session file. Can be cancelled by a `before_switch` hook.
+Load a different session file. Can be cancelled by a `session_before_switch` extension event handler.
 
 ```json
 {"type": "switch_session", "sessionPath": "/path/to/session.jsonl"}
@@ -536,14 +536,14 @@ Response:
 {"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": false}}
 ```
 
-If a hook cancelled the switch:
+If an extension cancelled the switch:
 ```json
 {"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": true}}
 ```
 
 #### fork
 
-Create a new fork from a previous user message. Can be cancelled by a `before_fork` hook. Returns the text of the message being forked from.
+Create a new fork from a previous user message. Can be cancelled by a `session_before_fork` extension event handler. Returns the text of the message being forked from.
 
 ```json
 {"type": "fork", "entryId": "abc123"}
@@ -559,7 +559,7 @@ Response:
 }
 ```
 
-If a hook cancelled the fork:
+If an extension cancelled the fork:
 ```json
 {
   "type": "response",
@@ -634,7 +634,7 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `auto_compaction_end` | Auto-compaction completes |
 | `auto_retry_start` | Auto-retry begins (after transient error) |
 | `auto_retry_end` | Auto-retry completes (success or final failure) |
-| `hook_error` | Hook threw an error |
+| `extension_error` | Extension threw an error |
 
 ### agent_start
 
@@ -827,14 +827,14 @@ On final failure (max retries exceeded):
 }
 ```
 
-### hook_error
+### extension_error
 
-Emitted when a hook throws an error.
+Emitted when an extension throws an error.
 
 ```json
 {
-  "type": "hook_error",
-  "hookPath": "/path/to/hook.ts",
+  "type": "extension_error",
+  "extensionPath": "/path/to/extension.ts",
   "event": "tool_call",
   "error": "Error message..."
 }
