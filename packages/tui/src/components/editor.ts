@@ -1,7 +1,7 @@
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
 import { getEditorKeybindings } from "../keybindings.js";
 import { matchesKey } from "../keys.js";
-import type { Component, TUI } from "../tui.js";
+import { type Component, CURSOR_MARKER, type Focusable, type TUI } from "../tui.js";
 import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
 import { SelectList, type SelectListTheme } from "./select-list.js";
 
@@ -204,12 +204,15 @@ export interface EditorTheme {
 	selectList: SelectListTheme;
 }
 
-export class Editor implements Component {
+export class Editor implements Component, Focusable {
 	private state: EditorState = {
 		lines: [""],
 		cursorLine: 0,
 		cursorCol: 0,
 	};
+
+	/** Focusable interface - set by TUI when focus changes */
+	focused: boolean = false;
 
 	protected tui: TUI;
 	private theme: EditorTheme;
@@ -365,6 +368,9 @@ export class Editor implements Component {
 		}
 
 		// Render each visible layout line
+		// Emit hardware cursor marker only when focused and not showing autocomplete
+		const emitCursorMarker = this.focused && !this.isAutocompleting;
+
 		for (const layoutLine of visibleLines) {
 			let displayText = layoutLine.text;
 			let lineVisibleWidth = visibleWidth(layoutLine.text);
@@ -374,6 +380,9 @@ export class Editor implements Component {
 				const before = displayText.slice(0, layoutLine.cursorPos);
 				const after = displayText.slice(layoutLine.cursorPos);
 
+				// Hardware cursor marker (zero-width, emitted before fake cursor for IME positioning)
+				const marker = emitCursorMarker ? CURSOR_MARKER : "";
+
 				if (after.length > 0) {
 					// Cursor is on a character (grapheme) - replace it with highlighted version
 					// Get the first grapheme from 'after'
@@ -381,14 +390,14 @@ export class Editor implements Component {
 					const firstGrapheme = afterGraphemes[0]?.segment || "";
 					const restAfter = after.slice(firstGrapheme.length);
 					const cursor = `\x1b[7m${firstGrapheme}\x1b[0m`;
-					displayText = before + cursor + restAfter;
+					displayText = before + marker + cursor + restAfter;
 					// lineVisibleWidth stays the same - we're replacing, not adding
 				} else {
 					// Cursor is at the end - check if we have room for the space
 					if (lineVisibleWidth < width) {
 						// We have room - add highlighted space
 						const cursor = "\x1b[7m \x1b[0m";
-						displayText = before + cursor;
+						displayText = before + marker + cursor;
 						// lineVisibleWidth increases by 1 - we're adding a space
 						lineVisibleWidth = lineVisibleWidth + 1;
 					} else {
@@ -403,7 +412,7 @@ export class Editor implements Component {
 								.slice(0, -1)
 								.map((g) => g.segment)
 								.join("");
-							displayText = beforeWithoutLast + cursor;
+							displayText = beforeWithoutLast + marker + cursor;
 						}
 						// lineVisibleWidth stays the same
 					}

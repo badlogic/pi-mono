@@ -1,5 +1,5 @@
 import { getEditorKeybindings } from "../keybindings.js";
-import type { Component } from "../tui.js";
+import { type Component, CURSOR_MARKER, type Focusable } from "../tui.js";
 import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
 
 const segmenter = getSegmenter();
@@ -7,11 +7,14 @@ const segmenter = getSegmenter();
 /**
  * Input component - single-line text input with horizontal scrolling
  */
-export class Input implements Component {
+export class Input implements Component, Focusable {
 	private value: string = "";
 	private cursor: number = 0; // Cursor position in the value
 	public onSubmit?: (value: string) => void;
 	public onEscape?: () => void;
+
+	/** Focusable interface - set by TUI when focus changes */
+	focused: boolean = false;
 
 	// Bracketed paste mode buffering
 	private pasteBuffer: string = "";
@@ -325,9 +328,12 @@ export class Input implements Component {
 		const atCursor = visibleText[cursorDisplay] || " "; // Character at cursor, or space if at end
 		const afterCursor = visibleText.slice(cursorDisplay + 1);
 
+		// Hardware cursor marker (zero-width, emitted before fake cursor for IME positioning)
+		const marker = this.focused ? CURSOR_MARKER : "";
+
 		// Use inverse video to show cursor
 		const cursorChar = `\x1b[7m${atCursor}\x1b[27m`; // ESC[7m = reverse video, ESC[27m = normal
-		const textWithCursor = beforeCursor + cursorChar + afterCursor;
+		const textWithCursor = beforeCursor + marker + cursorChar + afterCursor;
 
 		// Calculate visual width
 		const visualLength = visibleWidth(textWithCursor);
