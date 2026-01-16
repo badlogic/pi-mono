@@ -110,7 +110,7 @@ interface AgentSession {
   
   // Forking
   fork(entryId: string): Promise<{ selectedText: string; cancelled: boolean }>;  // Creates new session file
-  navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ editorText?: string; cancelled: boolean }>;  // In-place navigation
+  navigateTree(targetId: string, options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string }): Promise<{ editorText?: string; cancelled: boolean }>;  // In-place navigation
   
   // Hook message injection
   sendHookMessage(message: HookMessage, triggerTurn?: boolean): Promise<void>;
