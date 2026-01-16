@@ -1,21 +1,40 @@
 /**
  * Task Orchestration Extension
  *
- * Executes tasks from a collaborative task file (e.g., 0N_TASKS.md) with:
- * - Questions/Blockers gate: BLOCKS if unresolved questions exist in task file
- * - Memory-first pre-hook: Queries memory/run.sh recall BEFORE each task
- * - Quality-gate post-hook: Runs quality-gate.sh AFTER each task (tests must pass)
- * - Session archiving: Archives via episodic-archiver on completion
+ * A comprehensive task execution tool with two modes:
  *
- * Workflow:
+ * ## Task File Mode (default)
+ * Executes tasks from a collaborative task file (e.g., 01_TASKS.md):
+ * - Questions/Blockers gate: BLOCKS if unresolved questions exist
+ * - Memory-first pre-hook: Queries memory for prior solutions
+ * - Quality-gate post-hook: Runs tests after each task
+ * - Retry-until-pass mode: Iteratively fix until gate passes
+ * - Self-review: Agent reviews work before marking complete
+ * - CLARIFY handling: Exit code 42 stops for human intervention
+ * - Session archiving: Archives to episodic memory on completion
+ *
+ * Usage: orchestrate({ taskFile: "01_TASKS.md" })
+ *
+ * ## Direct Mode
+ * Run a single gate without a task file (equivalent to tasks_loop):
+ * - No task file needed
+ * - Retry until gate passes or max retries exhausted
+ * - Optional self-review before completion
+ *
+ * Usage: orchestrate({ gate: "gates/gate_s05.py", maxRetries: 5 })
+ *
+ * ## Task File Workflow
  * 1. Parse task file, validate no unresolved questions/blockers
  * 2. For each task:
  *    a. PRE-HOOK: Memory recall - inject prior solutions as context
  *    b. Execute task in protected context (pi --no-session)
  *    c. POST-HOOK: Quality gate - run tests, fail if they don't pass
+ *    d. If retry-until-pass: retry with agent fixes until gate passes
+ *    e. If self-review enabled: agent reviews before marking complete
  * 3. Archive session if all tasks completed successfully
  *
- * Usage: orchestrate({ taskFile: "01_TASKS.md" })
+ * ## Full Output Logging
+ * All task outputs saved to /tmp/pi-orchestrate-{uuid}/ for debugging.
  */
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
