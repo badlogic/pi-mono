@@ -145,6 +145,29 @@ const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "hi
 /** Thinking levels including xhigh (for supported models) */
 const THINKING_LEVELS_WITH_XHIGH: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 
+const resolveBashCommand = (command: string, initCommand?: string): string => {
+	const rawInitCommand = initCommand;
+	if (!rawInitCommand) return command;
+
+	const sanitizedInitCommand = rawInitCommand
+		.trim()
+		.replace(/;+\s*$/, "")
+		.trim();
+	if (!sanitizedInitCommand) return command;
+
+	const heredocToken = `__PI_EOF_${Math.random().toString(36).slice(2)}__`;
+
+	return [
+		sanitizedInitCommand,
+		"__pi_shell_init_status=$?",
+		"if [ $__pi_shell_init_status -ne 0 ]; then exit $__pi_shell_init_status; fi",
+		`__pi_user_command=$(cat <<'${heredocToken}')`,
+		command,
+		heredocToken,
+		'eval "$__pi_user_command"',
+	].join("\n");
+};
+
 // ============================================================================
 // AgentSession Class
 // ============================================================================
@@ -1739,14 +1762,15 @@ export class AgentSession {
 		options?: { excludeFromContext?: boolean; operations?: BashOperations },
 	): Promise<BashResult> {
 		this._bashAbortController = new AbortController();
+		const resolvedCommand = resolveBashCommand(command, this.settingsManager.getShellInitCommand());
 
 		try {
 			const result = options?.operations
-				? await executeBashWithOperations(command, process.cwd(), options.operations, {
+				? await executeBashWithOperations(resolvedCommand, process.cwd(), options.operations, {
 						onChunk,
 						signal: this._bashAbortController.signal,
 					})
-				: await executeBashCommand(command, {
+				: await executeBashCommand(resolvedCommand, {
 						onChunk,
 						signal: this._bashAbortController.signal,
 					});
