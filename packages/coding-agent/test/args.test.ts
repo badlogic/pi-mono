@@ -133,15 +133,53 @@ describe("parseArgs", () => {
 		});
 	});
 
-	describe("--hook flag", () => {
-		test("parses single --hook", () => {
-			const result = parseArgs(["--hook", "./my-hook.ts"]);
-			expect(result.hooks).toEqual(["./my-hook.ts"]);
+	describe("--extension flag", () => {
+		test("parses single --extension", () => {
+			const result = parseArgs(["--extension", "./my-extension.ts"]);
+			expect(result.extensions).toEqual(["./my-extension.ts"]);
 		});
 
-		test("parses multiple --hook flags", () => {
-			const result = parseArgs(["--hook", "./hook1.ts", "--hook", "./hook2.ts"]);
-			expect(result.hooks).toEqual(["./hook1.ts", "./hook2.ts"]);
+		test("parses -e shorthand", () => {
+			const result = parseArgs(["-e", "./my-extension.ts"]);
+			expect(result.extensions).toEqual(["./my-extension.ts"]);
+		});
+
+		test("parses multiple --extension flags", () => {
+			const result = parseArgs(["--extension", "./ext1.ts", "-e", "./ext2.ts"]);
+			expect(result.extensions).toEqual(["./ext1.ts", "./ext2.ts"]);
+		});
+	});
+
+	describe("--no-extensions flag", () => {
+		test("parses --no-extensions flag", () => {
+			const result = parseArgs(["--no-extensions"]);
+			expect(result.noExtensions).toBe(true);
+		});
+
+		test("parses --no-extensions with explicit -e flags", () => {
+			const result = parseArgs(["--no-extensions", "-e", "foo.ts", "-e", "bar.ts"]);
+			expect(result.noExtensions).toBe(true);
+			expect(result.extensions).toEqual(["foo.ts", "bar.ts"]);
+		});
+	});
+
+	describe("--no-skills flag", () => {
+		test("parses --no-skills flag", () => {
+			const result = parseArgs(["--no-skills"]);
+			expect(result.noSkills).toBe(true);
+		});
+	});
+
+	describe("--no-tools flag", () => {
+		test("parses --no-tools flag", () => {
+			const result = parseArgs(["--no-tools"]);
+			expect(result.noTools).toBe(true);
+		});
+
+		test("parses --no-tools with explicit --tools flags", () => {
+			const result = parseArgs(["--no-tools", "--tools", "read,bash"]);
+			expect(result.noTools).toBe(true);
+			expect(result.tools).toEqual(["read", "bash"]);
 		});
 	});
 

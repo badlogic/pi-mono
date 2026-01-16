@@ -343,7 +343,7 @@ function extractTextFromElement(element: any): string {
 				}
 			}
 			if (tableTexts.length > 0) {
-				text = "\n[Table]\n" + tableTexts.join("\n") + "\n[/Table]\n";
+				text = `\n[Table]\n${tableTexts.join("\n")}\n[/Table]\n`;
 			}
 		}
 	}
@@ -397,7 +397,7 @@ async function processPptx(arrayBuffer: ArrayBuffer, fileName: string): Promise<
 						.filter((t) => t.trim());
 
 					if (slideTexts.length > 0) {
-						extractedText += "\n" + slideTexts.join("\n");
+						extractedText += `\n${slideTexts.join("\n")}`;
 					}
 					extractedText += "\n</slide>";
 				}

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
-import { complete, resolveApiKey } from "../src/stream.js";
+import { complete } from "../src/stream.js";
 import type { Api, AssistantMessage, Context, Model, OptionsForApi, UserMessage } from "../src/types.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
+import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
 const oauthTokens = await Promise.all([
@@ -9,8 +11,9 @@ const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
+	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 async function testEmptyMessage<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
 	// Test with completely empty content array
@@ -319,6 +322,66 @@ describe("AI Providers Empty Message Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider Empty Messages", () => {
+		const llm = getModel("minimax", "MiniMax-M2.1");
+
+		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyMessage(llm);
+		});
+
+		it("should handle empty string content", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyStringMessage(llm);
+		});
+
+		it("should handle whitespace-only content", { retry: 3, timeout: 30000 }, async () => {
+			await testWhitespaceOnlyMessage(llm);
+		});
+
+		it("should handle empty assistant message in conversation", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyAssistantMessage(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway Provider Empty Messages", () => {
+		const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+
+		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyMessage(llm);
+		});
+
+		it("should handle empty string content", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyStringMessage(llm);
+		});
+
+		it("should handle whitespace-only content", { retry: 3, timeout: 30000 }, async () => {
+			await testWhitespaceOnlyMessage(llm);
+		});
+
+		it("should handle empty assistant message in conversation", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyAssistantMessage(llm);
+		});
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider Empty Messages", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyMessage(llm);
+		});
+
+		it("should handle empty string content", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyStringMessage(llm);
+		});
+
+		it("should handle whitespace-only content", { retry: 3, timeout: 30000 }, async () => {
+			await testWhitespaceOnlyMessage(llm);
+		});
+
+		it("should handle empty assistant message in conversation", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyAssistantMessage(llm);
+		});
+	});
+
 	// =========================================================================
 	// OAuth-based providers (credentials from ~/.pi/agent/oauth.json)
 	// =========================================================================
@@ -569,6 +632,44 @@ describe("AI Providers Empty Message Tests", () => {
 			async () => {
 				const llm = getModel("google-antigravity", "gpt-oss-120b-medium");
 				await testEmptyAssistantMessage(llm, { apiKey: antigravityToken });
+			},
+		);
+	});
+
+	describe("OpenAI Codex Provider Empty Messages", () => {
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-codex - should handle empty content array",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-codex");
+				await testEmptyMessage(llm, { apiKey: openaiCodexToken });
+			},
+		);
+
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-codex - should handle empty string content",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-codex");
+				await testEmptyStringMessage(llm, { apiKey: openaiCodexToken });
+			},
+		);
+
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-codex - should handle whitespace-only content",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-codex");
+				await testWhitespaceOnlyMessage(llm, { apiKey: openaiCodexToken });
+			},
+		);
+
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-codex - should handle empty assistant message in conversation",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-codex");
+				await testEmptyAssistantMessage(llm, { apiKey: openaiCodexToken });
 			},
 		);
 	});

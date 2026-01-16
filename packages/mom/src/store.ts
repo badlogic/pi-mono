@@ -139,7 +139,7 @@ export class ChannelStore {
 			message.date = date.toISOString();
 		}
 
-		const line = JSON.stringify(message) + "\n";
+		const line = `${JSON.stringify(message)}\n`;
 		await appendFile(logPath, line, "utf-8");
 		return true;
 	}

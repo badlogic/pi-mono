@@ -1,31 +1,177 @@
-import stringWidth from "string-width";
+import { eastAsianWidth } from "get-east-asian-width";
+
+// Grapheme segmenter (shared instance)
+const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * Get the shared grapheme segmenter instance.
+ */
+export function getSegmenter(): Intl.Segmenter {
+	return segmenter;
+}
+
+/**
+ * Check if a grapheme cluster (after segmentation) could possibly be an RGI emoji.
+ * This is a fast heuristic to avoid the expensive rgiEmojiRegex test.
+ * The tested Unicode blocks are deliberately broad to account for future
+ * Unicode additions.
+ */
+function couldBeEmoji(segment: string): boolean {
+	const cp = segment.codePointAt(0)!;
+	return (
+		(cp >= 0x1f000 && cp <= 0x1fbff) || // Emoji and Pictograph
+		(cp >= 0x2300 && cp <= 0x23ff) || // Misc technical
+		(cp >= 0x2600 && cp <= 0x27bf) || // Misc symbols, dingbats
+		(cp >= 0x2b50 && cp <= 0x2b55) || // Specific stars/circles
+		segment.includes("\uFE0F") || // Contains VS16 (emoji presentation selector)
+		segment.length > 2 // Multi-codepoint sequences (ZWJ, skin tones, etc.)
+	);
+}
+
+// Regexes for character classification (same as string-width library)
+const zeroWidthRegex = /^(?:\p{Default_Ignorable_Code_Point}|\p{Control}|\p{Mark}|\p{Surrogate})+$/v;
+const leadingNonPrintingRegex = /^[\p{Default_Ignorable_Code_Point}\p{Control}\p{Format}\p{Mark}\p{Surrogate}]+/v;
+const rgiEmojiRegex = /^\p{RGI_Emoji}$/v;
+
+// Cache for non-ASCII strings
+const WIDTH_CACHE_SIZE = 512;
+const widthCache = new Map<string, number>();
+
+/**
+ * Calculate the terminal width of a single grapheme cluster.
+ * Based on code from the string-width library, but includes a possible-emoji
+ * check to avoid running the RGI_Emoji regex unnecessarily.
+ */
+function graphemeWidth(segment: string): number {
+	// Zero-width clusters
+	if (zeroWidthRegex.test(segment)) {
+		return 0;
+	}
+
+	// Emoji check with pre-filter
+	if (couldBeEmoji(segment) && rgiEmojiRegex.test(segment)) {
+		return 2;
+	}
+
+	// Get base visible codepoint
+	const base = segment.replace(leadingNonPrintingRegex, "");
+	const cp = base.codePointAt(0);
+	if (cp === undefined) {
+		return 0;
+	}
+
+	let width = eastAsianWidth(cp);
+
+	// Trailing halfwidth/fullwidth forms
+	if (segment.length > 1) {
+		for (const char of segment.slice(1)) {
+			const c = char.codePointAt(0)!;
+			if (c >= 0xff00 && c <= 0xffef) {
+				width += eastAsianWidth(c);
+			}
+		}
+	}
+
+	return width;
+}
 
 /**
  * Calculate the visible width of a string in terminal columns.
  */
 export function visibleWidth(str: string): number {
-	const normalized = str.replace(/\t/g, "   ");
-	return stringWidth(normalized);
+	if (str.length === 0) {
+		return 0;
+	}
+
+	// Fast path: pure ASCII printable
+	let isPureAscii = true;
+	for (let i = 0; i < str.length; i++) {
+		const code = str.charCodeAt(i);
+		if (code < 0x20 || code > 0x7e) {
+			isPureAscii = false;
+			break;
+		}
+	}
+	if (isPureAscii) {
+		return str.length;
+	}
+
+	// Check cache
+	const cached = widthCache.get(str);
+	if (cached !== undefined) {
+		return cached;
+	}
+
+	// Normalize: tabs to 3 spaces, strip ANSI escape codes
+	let clean = str;
+	if (str.includes("\t")) {
+		clean = clean.replace(/\t/g, "   ");
+	}
+	if (clean.includes("\x1b")) {
+		// Strip SGR codes (\x1b[...m) and cursor codes (\x1b[...G/K/H/J)
+		clean = clean.replace(/\x1b\[[0-9;]*[mGKHJ]/g, "");
+		// Strip OSC 8 hyperlinks: \x1b]8;;URL\x07 and \x1b]8;;\x07
+		clean = clean.replace(/\x1b\]8;;[^\x07]*\x07/g, "");
+		// Strip APC sequences: \x1b_...\x07 or \x1b_...\x1b\\ (used for cursor marker)
+		clean = clean.replace(/\x1b_[^\x07\x1b]*(?:\x07|\x1b\\)/g, "");
+	}
+
+	// Calculate width
+	let width = 0;
+	for (const { segment } of segmenter.segment(clean)) {
+		width += graphemeWidth(segment);
+	}
+
+	// Cache result
+	if (widthCache.size >= WIDTH_CACHE_SIZE) {
+		const firstKey = widthCache.keys().next().value;
+		if (firstKey !== undefined) {
+			widthCache.delete(firstKey);
+		}
+	}
+	widthCache.set(str, width);
+
+	return width;
 }
 
 /**
  * Extract ANSI escape sequences from a string at the given position.
  */
-function extractAnsiCode(str: string, pos: number): { code: string; length: number } | null {
-	if (pos >= str.length || str[pos] !== "\x1b" || str[pos + 1] !== "[") {
+export function extractAnsiCode(str: string, pos: number): { code: string; length: number } | null {
+	if (pos >= str.length || str[pos] !== "\x1b") return null;
+
+	const next = str[pos + 1];
+
+	// CSI sequence: ESC [ ... m/G/K/H/J
+	if (next === "[") {
+		let j = pos + 2;
+		while (j < str.length && !/[mGKHJ]/.test(str[j]!)) j++;
+		if (j < str.length) return { code: str.substring(pos, j + 1), length: j + 1 - pos };
 		return null;
 	}
 
-	let j = pos + 2;
-	while (j < str.length && str[j] && !/[mGKHJ]/.test(str[j]!)) {
-		j++;
+	// OSC sequence: ESC ] ... BEL or ESC ] ... ST (ESC \)
+	// Used for hyperlinks (OSC 8), window titles, etc.
+	if (next === "]") {
+		let j = pos + 2;
+		while (j < str.length) {
+			if (str[j] === "\x07") return { code: str.substring(pos, j + 1), length: j + 1 - pos };
+			if (str[j] === "\x1b" && str[j + 1] === "\\") return { code: str.substring(pos, j + 2), length: j + 2 - pos };
+			j++;
+		}
+		return null;
 	}
 
-	if (j < str.length) {
-		return {
-			code: str.substring(pos, j + 1),
-			length: j + 1 - pos,
-		};
+	// APC sequence: ESC _ ... BEL or ESC _ ... ST (ESC \)
+	// Used for cursor marker and application-specific commands
+	if (next === "_") {
+		let j = pos + 2;
+		while (j < str.length) {
+			if (str[j] === "\x07") return { code: str.substring(pos, j + 1), length: j + 1 - pos };
+			if (str[j] === "\x1b" && str[j + 1] === "\\") return { code: str.substring(pos, j + 2), length: j + 2 - pos };
+			j++;
+		}
+		return null;
 	}
 
 	return null;
@@ -182,6 +328,11 @@ class AnsiCodeTracker {
 		this.strikethrough = false;
 		this.fgColor = null;
 		this.bgColor = null;
+	}
+
+	/** Clear all state for reuse. */
+	clear(): void {
+		this.reset();
 	}
 
 	getActiveCodes(): string {
@@ -374,7 +525,7 @@ function wrapSingleLine(line: string, width: number): string[] {
 		const totalNeeded = currentVisibleLength + tokenVisibleLength;
 
 		if (totalNeeded > width && currentVisibleLength > 0) {
-			// Add specific reset for underline only (preserves background)
+			// Trim trailing whitespace, then add underline reset (not full reset, to preserve background)
 			let lineToWrap = currentLine.trimEnd();
 			const lineEndReset = tracker.getLineEndReset();
 			if (lineEndReset) {
@@ -403,11 +554,25 @@ function wrapSingleLine(line: string, width: number): string[] {
 		wrapped.push(currentLine);
 	}
 
-	return wrapped.length > 0 ? wrapped : [""];
+	// Trailing whitespace can cause lines to exceed the requested width
+	return wrapped.length > 0 ? wrapped.map((line) => line.trimEnd()) : [""];
 }
 
-// Grapheme segmenter for proper Unicode iteration (handles emojis, etc.)
-const segmenter = new Intl.Segmenter();
+const PUNCTUATION_REGEX = /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/;
+
+/**
+ * Check if a character is whitespace.
+ */
+export function isWhitespaceChar(char: string): boolean {
+	return /\s/.test(char);
+}
+
+/**
+ * Check if a character is punctuation.
+ */
+export function isPunctuationChar(char: string): boolean {
+	return PUNCTUATION_REGEX.test(char);
+}
 
 function breakLongWord(word: string, width: number, tracker: AnsiCodeTracker): string[] {
 	const lines: string[] = [];
@@ -450,6 +615,9 @@ function breakLongWord(word: string, width: number, tracker: AnsiCodeTracker): s
 		}
 
 		const grapheme = seg.value;
+		// Skip empty graphemes to avoid issues with string-width calculation
+		if (!grapheme) continue;
+
 		const graphemeWidth = visibleWidth(grapheme);
 
 		if (currentWidth + graphemeWidth > width) {
@@ -496,18 +664,25 @@ export function applyBackgroundToLine(line: string, width: number, bgFn: (text: 
 
 /**
  * Truncate text to fit within a maximum visible width, adding ellipsis if needed.
+ * Optionally pad with spaces to reach exactly maxWidth.
  * Properly handles ANSI escape codes (they don't count toward width).
  *
  * @param text - Text to truncate (may contain ANSI codes)
  * @param maxWidth - Maximum visible width
  * @param ellipsis - Ellipsis string to append when truncating (default: "...")
- * @returns Truncated text with ellipsis if it exceeded maxWidth
+ * @param pad - If true, pad result with spaces to exactly maxWidth (default: false)
+ * @returns Truncated text, optionally padded to exactly maxWidth
  */
-export function truncateToWidth(text: string, maxWidth: number, ellipsis: string = "..."): string {
+export function truncateToWidth(
+	text: string,
+	maxWidth: number,
+	ellipsis: string = "...",
+	pad: boolean = false,
+): string {
 	const textVisibleWidth = visibleWidth(text);
 
 	if (textVisibleWidth <= maxWidth) {
-		return text;
+		return pad ? text + " ".repeat(maxWidth - textVisibleWidth) : text;
 	}
 
 	const ellipsisWidth = visibleWidth(ellipsis);
@@ -554,6 +729,9 @@ export function truncateToWidth(text: string, maxWidth: number, ellipsis: string
 		}
 
 		const grapheme = seg.value;
+		// Skip empty graphemes to avoid issues with string-width calculation
+		if (!grapheme) continue;
+
 		const graphemeWidth = visibleWidth(grapheme);
 
 		if (currentWidth + graphemeWidth > targetWidth) {
@@ -565,5 +743,147 @@ export function truncateToWidth(text: string, maxWidth: number, ellipsis: string
 	}
 
 	// Add reset code before ellipsis to prevent styling leaking into it
-	return result + "\x1b[0m" + ellipsis;
+	const truncated = `${result}\x1b[0m${ellipsis}`;
+	if (pad) {
+		const truncatedWidth = visibleWidth(truncated);
+		return truncated + " ".repeat(Math.max(0, maxWidth - truncatedWidth));
+	}
+	return truncated;
+}
+
+/**
+ * Extract a range of visible columns from a line. Handles ANSI codes and wide chars.
+ * @param strict - If true, exclude wide chars at boundary that would extend past the range
+ */
+export function sliceByColumn(line: string, startCol: number, length: number, strict = false): string {
+	return sliceWithWidth(line, startCol, length, strict).text;
+}
+
+/** Like sliceByColumn but also returns the actual visible width of the result. */
+export function sliceWithWidth(
+	line: string,
+	startCol: number,
+	length: number,
+	strict = false,
+): { text: string; width: number } {
+	if (length <= 0) return { text: "", width: 0 };
+	const endCol = startCol + length;
+	let result = "",
+		resultWidth = 0,
+		currentCol = 0,
+		i = 0,
+		pendingAnsi = "";
+
+	while (i < line.length) {
+		const ansi = extractAnsiCode(line, i);
+		if (ansi) {
+			if (currentCol >= startCol && currentCol < endCol) result += ansi.code;
+			else if (currentCol < startCol) pendingAnsi += ansi.code;
+			i += ansi.length;
+			continue;
+		}
+
+		let textEnd = i;
+		while (textEnd < line.length && !extractAnsiCode(line, textEnd)) textEnd++;
+
+		for (const { segment } of segmenter.segment(line.slice(i, textEnd))) {
+			const w = graphemeWidth(segment);
+			const inRange = currentCol >= startCol && currentCol < endCol;
+			const fits = !strict || currentCol + w <= endCol;
+			if (inRange && fits) {
+				if (pendingAnsi) {
+					result += pendingAnsi;
+					pendingAnsi = "";
+				}
+				result += segment;
+				resultWidth += w;
+			}
+			currentCol += w;
+			if (currentCol >= endCol) break;
+		}
+		i = textEnd;
+		if (currentCol >= endCol) break;
+	}
+	return { text: result, width: resultWidth };
+}
+
+// Pooled tracker instance for extractSegments (avoids allocation per call)
+const pooledStyleTracker = new AnsiCodeTracker();
+
+/**
+ * Extract "before" and "after" segments from a line in a single pass.
+ * Used for overlay compositing where we need content before and after the overlay region.
+ * Preserves styling from before the overlay that should affect content after it.
+ */
+export function extractSegments(
+	line: string,
+	beforeEnd: number,
+	afterStart: number,
+	afterLen: number,
+	strictAfter = false,
+): { before: string; beforeWidth: number; after: string; afterWidth: number } {
+	let before = "",
+		beforeWidth = 0,
+		after = "",
+		afterWidth = 0;
+	let currentCol = 0,
+		i = 0;
+	let pendingAnsiBefore = "";
+	let afterStarted = false;
+	const afterEnd = afterStart + afterLen;
+
+	// Track styling state so "after" inherits styling from before the overlay
+	pooledStyleTracker.clear();
+
+	while (i < line.length) {
+		const ansi = extractAnsiCode(line, i);
+		if (ansi) {
+			// Track all SGR codes to know styling state at afterStart
+			pooledStyleTracker.process(ansi.code);
+			// Include ANSI codes in their respective segments
+			if (currentCol < beforeEnd) {
+				pendingAnsiBefore += ansi.code;
+			} else if (currentCol >= afterStart && currentCol < afterEnd && afterStarted) {
+				// Only include after we've started "after" (styling already prepended)
+				after += ansi.code;
+			}
+			i += ansi.length;
+			continue;
+		}
+
+		let textEnd = i;
+		while (textEnd < line.length && !extractAnsiCode(line, textEnd)) textEnd++;
+
+		for (const { segment } of segmenter.segment(line.slice(i, textEnd))) {
+			const w = graphemeWidth(segment);
+
+			if (currentCol < beforeEnd) {
+				if (pendingAnsiBefore) {
+					before += pendingAnsiBefore;
+					pendingAnsiBefore = "";
+				}
+				before += segment;
+				beforeWidth += w;
+			} else if (currentCol >= afterStart && currentCol < afterEnd) {
+				const fits = !strictAfter || currentCol + w <= afterEnd;
+				if (fits) {
+					// On first "after" grapheme, prepend inherited styling from before overlay
+					if (!afterStarted) {
+						after += pooledStyleTracker.getActiveCodes();
+						afterStarted = true;
+					}
+					after += segment;
+					afterWidth += w;
+				}
+			}
+
+			currentCol += w;
+			// Early exit: done with "before" only, or done with both segments
+			if (afterLen <= 0 ? currentCol >= beforeEnd : currentCol >= afterEnd) break;
+		}
+		i = textEnd;
+		if (afterLen <= 0 ? currentCol >= beforeEnd : currentCol >= afterEnd) break;
+	}
+
+	return { before, beforeWidth, after, afterWidth };
 }

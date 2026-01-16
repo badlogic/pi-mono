@@ -55,6 +55,11 @@ export class VirtualTerminal implements Terminal {
 		return this._rows;
 	}
 
+	get kittyProtocolActive(): boolean {
+		// Virtual terminal always reports Kitty protocol as active for testing
+		return true;
+	}
+
 	moveBy(lines: number): void {
 		if (lines > 0) {
 			// Move down
@@ -84,6 +89,11 @@ export class VirtualTerminal implements Terminal {
 
 	clearScreen(): void {
 		this.xterm.write("\x1b[2J\x1b[H"); // Clear screen and move to home (1,1)
+	}
+
+	setTitle(title: string): void {
+		// OSC 0;title BEL - set terminal window title
+		this.xterm.write(`\x1b]0;${title}\x07`);
 	}
 
 	// Test-specific methods not in Terminal interface

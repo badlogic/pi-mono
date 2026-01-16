@@ -31,12 +31,6 @@ export class AttachmentTile extends LitElement {
 		const hasPreview = !!this.attachment.preview;
 		const isImage = this.attachment.type === "image";
 		const isPdf = this.attachment.mimeType === "application/pdf";
-		const isDocx =
-			this.attachment.mimeType?.includes("wordprocessingml") ||
-			this.attachment.fileName.toLowerCase().endsWith(".docx");
-		const isPptx =
-			this.attachment.mimeType?.includes("presentationml") ||
-			this.attachment.fileName.toLowerCase().endsWith(".pptx");
 		const isExcel =
 			this.attachment.mimeType?.includes("spreadsheetml") ||
 			this.attachment.fileName.toLowerCase().endsWith(".xlsx") ||
@@ -84,7 +78,7 @@ export class AttachmentTile extends LitElement {
 								<div class="text-[10px] text-center truncate w-full">
 									${
 										this.attachment.fileName.length > 10
-											? this.attachment.fileName.substring(0, 8) + "..."
+											? `${this.attachment.fileName.substring(0, 8)}...`
 											: this.attachment.fileName
 									}
 								</div>

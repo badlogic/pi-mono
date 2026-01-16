@@ -45,14 +45,21 @@
 				"muted",
 				"dim",
 				"text",
+				"thinkingText",
+				"selectedBg",
 				"userMessageBg",
 				"userMessageText",
+				"customMessageBg",
+				"customMessageText",
+				"customMessageLabel",
 				"toolPendingBg",
 				"toolSuccessBg",
 				"toolErrorBg",
-				"toolText",
+				"toolTitle",
+				"toolOutput",
 				"mdHeading",
 				"mdLink",
+				"mdLinkUrl",
 				"mdCode",
 				"mdCodeBlock",
 				"mdCodeBlockBorder",
@@ -114,6 +121,14 @@
 					"$ref": "#/$defs/colorValue",
 					"description": "Default text color (usually empty string)"
 				},
+				"thinkingText": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Thinking block text color"
+				},
+				"selectedBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Selected item background"
+				},
 				"userMessageBg": {
 					"$ref": "#/$defs/colorValue",
 					"description": "User message background"
@@ -121,6 +136,18 @@
 				"userMessageText": {
 					"$ref": "#/$defs/colorValue",
 					"description": "User message text color"
+				},
+				"customMessageBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Custom message background (hook-injected messages)"
+				},
+				"customMessageText": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Custom message text color"
+				},
+				"customMessageLabel": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Custom message type label color"
 				},
 				"toolPendingBg": {
 					"$ref": "#/$defs/colorValue",
@@ -134,9 +161,13 @@
 					"$ref": "#/$defs/colorValue",
 					"description": "Tool execution box (error state)"
 				},
-				"toolText": {
+				"toolTitle": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Tool execution box text color"
+					"description": "Tool execution box title color"
+				},
+				"toolOutput": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Tool execution box output text color"
 				},
 				"mdHeading": {
 					"$ref": "#/$defs/colorValue",
@@ -145,6 +176,10 @@
 				"mdLink": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Markdown link text"
+				},
+				"mdLinkUrl": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Markdown link URL"
 				},
 				"mdCode": {
 					"$ref": "#/$defs/colorValue",
@@ -249,6 +284,25 @@
 				"bashMode": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Editor border color in bash mode"
+				}
+			},
+			"additionalProperties": false
+		},
+		"export": {
+			"type": "object",
+			"description": "Optional colors for HTML export (defaults derived from userMessageBg if not specified)",
+			"properties": {
+				"pageBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Page background color"
+				},
+				"cardBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Card/container background color"
+				},
+				"infoBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Info sections background (system prompt, notices)"
 				}
 			},
 			"additionalProperties": false

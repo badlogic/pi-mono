@@ -2,6 +2,122 @@
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-01-16
+
+## [0.46.0] - 2026-01-15
+
+## [0.45.7] - 2026-01-13
+
+## [0.45.6] - 2026-01-13
+
+## [0.45.5] - 2026-01-13
+
+## [0.45.4] - 2026-01-13
+
+## [0.45.3] - 2026-01-13
+
+## [0.45.2] - 2026-01-13
+
+## [0.45.1] - 2026-01-13
+
+## [0.45.0] - 2026-01-13
+
+## [0.44.0] - 2026-01-12
+
+## [0.43.0] - 2026-01-11
+
+## [0.42.5] - 2026-01-11
+
+### Fixed
+
+- Use coding-agent's SessionManager instead of custom MomSessionManager to fix API mismatch crash ([#595](https://github.com/badlogic/pi-mono/issues/595))
+
+## [0.42.4] - 2026-01-10
+
+## [0.42.3] - 2026-01-10
+
+## [0.42.2] - 2026-01-10
+
+## [0.42.1] - 2026-01-09
+
+## [0.42.0] - 2026-01-09
+
+## [0.41.0] - 2026-01-09
+
+## [0.40.1] - 2026-01-09
+
+## [0.40.0] - 2026-01-08
+
+## [0.39.1] - 2026-01-08
+
+## [0.39.0] - 2026-01-08
+
+## [0.38.0] - 2026-01-08
+
+## [0.37.8] - 2026-01-07
+
+## [0.37.7] - 2026-01-07
+
+## [0.37.6] - 2026-01-06
+
+## [0.37.5] - 2026-01-06
+
+## [0.37.4] - 2026-01-06
+
+## [0.37.3] - 2026-01-06
+
+## [0.37.2] - 2026-01-05
+
+## [0.37.1] - 2026-01-05
+
+## [0.37.0] - 2026-01-05
+
+## [0.36.0] - 2026-01-05
+
+## [0.35.0] - 2026-01-05
+
+## [0.34.2] - 2026-01-04
+
+## [0.34.1] - 2026-01-04
+
+## [0.34.0] - 2026-01-04
+
+## [0.33.0] - 2026-01-04
+
+## [0.32.3] - 2026-01-03
+
+## [0.32.2] - 2026-01-03
+
+## [0.32.1] - 2026-01-03
+
+## [0.32.0] - 2026-01-03
+
+## [0.31.1] - 2026-01-02
+
+## [0.31.0] - 2026-01-02
+
+### Breaking Changes
+
+- `AgentTool` import moved from `@mariozechner/pi-ai` to `@mariozechner/pi-agent-core`
+- `AppMessage` type renamed to `AgentMessage`
+- `Attachment` type replaced with `ImageContent` for image handling
+- `MomSessionManager.loadSession()` renamed to `buildSessionContex()`
+- `MomSessionManager.createBranchedSessionFromEntries()` signature changed to `createBranchedSession(leafId)`
+- `ProviderTransport` removed from Agent config, replaced with direct `getApiKey` callback
+- `messageTransformer` renamed to `convertToLlm`
+- `ANTHROPIC_API_KEY`/`ANTHROPIC_OAUTH_TOKEN` no longer checked at startup (deferred to first API call)
+
+### Changed
+
+- Session entries now include `id` and `parentId` fields for tree structure support
+- Auth lookup now uses `AuthStorage` class instead of direct environment variable access
+- Image attachments use `ImageContent` type with `data` field instead of `Attachment` with `content`
+- `session.prompt()` now uses `images` option instead of `attachments`
+
+### Added
+
+- Support for OAuth login via coding agent's `/login` command (link `~/.pi/agent/auth.json` to `~/.pi/mom/auth.json`)
+
 ## [0.20.2] - 2025-12-13
 
 ### Fixed

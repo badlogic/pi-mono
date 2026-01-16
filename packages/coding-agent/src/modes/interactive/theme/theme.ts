@@ -4,7 +4,7 @@ import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@mariozechner/
 import { type Static, Type } from "@sinclair/typebox";
 import { TypeCompiler } from "@sinclair/typebox/compiler";
 import chalk from "chalk";
-import { highlight } from "cli-highlight";
+import { highlight, supportsLanguage } from "cli-highlight";
 import { getCustomThemesDir, getThemesDir } from "../../../config.js";
 
 // ============================================================================
@@ -34,9 +34,14 @@ const ThemeJsonSchema = Type.Object({
 		muted: ColorValueSchema,
 		dim: ColorValueSchema,
 		text: ColorValueSchema,
-		// Backgrounds & Content Text (7 colors)
+		thinkingText: ColorValueSchema,
+		// Backgrounds & Content Text (11 colors)
+		selectedBg: ColorValueSchema,
 		userMessageBg: ColorValueSchema,
 		userMessageText: ColorValueSchema,
+		customMessageBg: ColorValueSchema,
+		customMessageText: ColorValueSchema,
+		customMessageLabel: ColorValueSchema,
 		toolPendingBg: ColorValueSchema,
 		toolSuccessBg: ColorValueSchema,
 		toolErrorBg: ColorValueSchema,
@@ -77,6 +82,13 @@ const ThemeJsonSchema = Type.Object({
 		// Bash Mode (1 color)
 		bashMode: ColorValueSchema,
 	}),
+	export: Type.Optional(
+		Type.Object({
+			pageBg: Type.Optional(ColorValueSchema),
+			cardBg: Type.Optional(ColorValueSchema),
+			infoBg: Type.Optional(ColorValueSchema),
+		}),
+	),
 });
 
 type ThemeJson = Static<typeof ThemeJsonSchema>;
@@ -94,7 +106,10 @@ export type ThemeColor =
 	| "muted"
 	| "dim"
 	| "text"
+	| "thinkingText"
 	| "userMessageText"
+	| "customMessageText"
+	| "customMessageLabel"
 	| "toolTitle"
 	| "toolOutput"
 	| "mdHeading"
@@ -127,7 +142,13 @@ export type ThemeColor =
 	| "thinkingXhigh"
 	| "bashMode";
 
-export type ThemeBg = "userMessageBg" | "toolPendingBg" | "toolSuccessBg" | "toolErrorBg";
+export type ThemeBg =
+	| "selectedBg"
+	| "userMessageBg"
+	| "customMessageBg"
+	| "toolPendingBg"
+	| "toolSuccessBg"
+	| "toolErrorBg";
 
 type ColorMode = "truecolor" | "256color";
 
@@ -145,10 +166,12 @@ function detectColorMode(): ColorMode {
 		return "truecolor";
 	}
 	const term = process.env.TERM || "";
-	if (term.includes("256color")) {
+	// Only fall back to 256color for truly limited terminals
+	if (term === "dumb" || term === "" || term === "linux") {
 		return "256color";
 	}
-	return "256color";
+	// Assume truecolor for everything else - virtually all modern terminals support it
+	return "truecolor";
 }
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -355,6 +378,10 @@ export class Theme {
 		return chalk.inverse(text);
 	}
 
+	strikethrough(text: string): string {
+		return chalk.strikethrough(text);
+	}
+
 	getFgAnsi(color: ThemeColor): string {
 		const ansi = this.fgColors.get(color);
 		if (!ansi) throw new Error(`Unknown theme color: ${color}`);
@@ -429,6 +456,36 @@ export function getAvailableThemes(): string[] {
 	return Array.from(themes).sort();
 }
 
+export interface ThemeInfo {
+	name: string;
+	path: string | undefined;
+}
+
+export function getAvailableThemesWithPaths(): ThemeInfo[] {
+	const themesDir = getThemesDir();
+	const customThemesDir = getCustomThemesDir();
+	const result: ThemeInfo[] = [];
+
+	// Built-in themes
+	for (const name of Object.keys(getBuiltinThemes())) {
+		result.push({ name, path: path.join(themesDir, `${name}.json`) });
+	}
+
+	// Custom themes
+	if (fs.existsSync(customThemesDir)) {
+		for (const file of fs.readdirSync(customThemesDir)) {
+			if (file.endsWith(".json")) {
+				const name = file.slice(0, -5);
+				if (!result.some((t) => t.name === name)) {
+					result.push({ name, path: path.join(customThemesDir, file) });
+				}
+			}
+		}
+	}
+
+	return result.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function loadThemeJson(name: string): ThemeJson {
 	const builtinThemes = getBuiltinThemes();
 	if (name in builtinThemes) {
@@ -482,7 +539,14 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode): Theme {
 	const resolvedColors = resolveThemeColors(themeJson.colors, themeJson.vars);
 	const fgColors: Record<ThemeColor, string | number> = {} as Record<ThemeColor, string | number>;
 	const bgColors: Record<ThemeBg, string | number> = {} as Record<ThemeBg, string | number>;
-	const bgColorKeys: Set<string> = new Set(["userMessageBg", "toolPendingBg", "toolSuccessBg", "toolErrorBg"]);
+	const bgColorKeys: Set<string> = new Set([
+		"selectedBg",
+		"userMessageBg",
+		"customMessageBg",
+		"toolPendingBg",
+		"toolSuccessBg",
+		"toolErrorBg",
+	]);
 	for (const [key, value] of Object.entries(resolvedColors)) {
 		if (bgColorKeys.has(key)) {
 			bgColors[key as ThemeBg] = value;
@@ -496,6 +560,14 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode): Theme {
 function loadTheme(name: string, mode?: ColorMode): Theme {
 	const themeJson = loadThemeJson(name);
 	return createTheme(themeJson, mode);
+}
+
+export function getThemeByName(name: string): Theme | undefined {
+	try {
+		return loadTheme(name);
+	} catch {
+		return undefined;
+	}
 }
 
 function detectTerminalBackground(): "dark" | "light" {
@@ -521,7 +593,23 @@ function getDefaultTheme(): string {
 // Global Theme Instance
 // ============================================================================
 
-export let theme: Theme;
+// Use globalThis to share theme across module loaders (tsx + jiti in dev mode)
+const THEME_KEY = Symbol.for("@mariozechner/pi-coding-agent:theme");
+
+// Export theme as a getter that reads from globalThis
+// This ensures all module instances (tsx, jiti) see the same theme
+export const theme: Theme = new Proxy({} as Theme, {
+	get(_target, prop) {
+		const t = (globalThis as Record<symbol, Theme>)[THEME_KEY];
+		if (!t) throw new Error("Theme not initialized. Call initTheme() first.");
+		return (t as unknown as Record<string | symbol, unknown>)[prop];
+	},
+});
+
+function setGlobalTheme(t: Theme): void {
+	(globalThis as Record<symbol, Theme>)[THEME_KEY] = t;
+}
+
 let currentThemeName: string | undefined;
 let themeWatcher: fs.FSWatcher | undefined;
 let onThemeChangeCallback: (() => void) | undefined;
@@ -530,14 +618,14 @@ export function initTheme(themeName?: string, enableWatcher: boolean = false): v
 	const name = themeName ?? getDefaultTheme();
 	currentThemeName = name;
 	try {
-		theme = loadTheme(name);
+		setGlobalTheme(loadTheme(name));
 		if (enableWatcher) {
 			startThemeWatcher();
 		}
-	} catch (error) {
+	} catch (_error) {
 		// Theme is invalid - fall back to dark theme silently
 		currentThemeName = "dark";
-		theme = loadTheme("dark");
+		setGlobalTheme(loadTheme("dark"));
 		// Don't start watcher for fallback theme
 	}
 }
@@ -545,20 +633,32 @@ export function initTheme(themeName?: string, enableWatcher: boolean = false): v
 export function setTheme(name: string, enableWatcher: boolean = false): { success: boolean; error?: string } {
 	currentThemeName = name;
 	try {
-		theme = loadTheme(name);
+		setGlobalTheme(loadTheme(name));
 		if (enableWatcher) {
 			startThemeWatcher();
+		}
+		if (onThemeChangeCallback) {
+			onThemeChangeCallback();
 		}
 		return { success: true };
 	} catch (error) {
 		// Theme is invalid - fall back to dark theme
 		currentThemeName = "dark";
-		theme = loadTheme("dark");
+		setGlobalTheme(loadTheme("dark"));
 		// Don't start watcher for fallback theme
 		return {
 			success: false,
 			error: error instanceof Error ? error.message : String(error),
 		};
+	}
+}
+
+export function setThemeInstance(themeInstance: Theme): void {
+	setGlobalTheme(themeInstance);
+	currentThemeName = "<in-memory>";
+	stopThemeWatcher(); // Can't watch a direct instance
+	if (onThemeChangeCallback) {
+		onThemeChangeCallback();
 	}
 }
 
@@ -593,12 +693,12 @@ function startThemeWatcher(): void {
 				setTimeout(() => {
 					try {
 						// Reload the theme
-						theme = loadTheme(currentThemeName!);
+						setGlobalTheme(loadTheme(currentThemeName!));
 						// Notify callback (to invalidate UI)
 						if (onThemeChangeCallback) {
 							onThemeChangeCallback();
 						}
-					} catch (error) {
+					} catch (_error) {
 						// Ignore errors (file might be in invalid state while being edited)
 					}
 				}, 100);
@@ -607,7 +707,7 @@ function startThemeWatcher(): void {
 				setTimeout(() => {
 					if (!fs.existsSync(themeFile)) {
 						currentThemeName = "dark";
-						theme = loadTheme("dark");
+						setGlobalTheme(loadTheme("dark"));
 						if (themeWatcher) {
 							themeWatcher.close();
 							themeWatcher = undefined;
@@ -619,7 +719,7 @@ function startThemeWatcher(): void {
 				}, 100);
 			}
 		});
-	} catch (error) {
+	} catch (_error) {
 		// Ignore errors starting watcher
 	}
 }
@@ -628,6 +728,129 @@ export function stopThemeWatcher(): void {
 	if (themeWatcher) {
 		themeWatcher.close();
 		themeWatcher = undefined;
+	}
+}
+
+// ============================================================================
+// HTML Export Helpers
+// ============================================================================
+
+/**
+ * Convert a 256-color index to hex string.
+ * Indices 0-15: basic colors (approximate)
+ * Indices 16-231: 6x6x6 color cube
+ * Indices 232-255: grayscale ramp
+ */
+function ansi256ToHex(index: number): string {
+	// Basic colors (0-15) - approximate common terminal values
+	const basicColors = [
+		"#000000",
+		"#800000",
+		"#008000",
+		"#808000",
+		"#000080",
+		"#800080",
+		"#008080",
+		"#c0c0c0",
+		"#808080",
+		"#ff0000",
+		"#00ff00",
+		"#ffff00",
+		"#0000ff",
+		"#ff00ff",
+		"#00ffff",
+		"#ffffff",
+	];
+	if (index < 16) {
+		return basicColors[index];
+	}
+
+	// Color cube (16-231): 6x6x6 = 216 colors
+	if (index < 232) {
+		const cubeIndex = index - 16;
+		const r = Math.floor(cubeIndex / 36);
+		const g = Math.floor((cubeIndex % 36) / 6);
+		const b = cubeIndex % 6;
+		const toHex = (n: number) => (n === 0 ? 0 : 55 + n * 40).toString(16).padStart(2, "0");
+		return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+	}
+
+	// Grayscale (232-255): 24 shades
+	const gray = 8 + (index - 232) * 10;
+	const grayHex = gray.toString(16).padStart(2, "0");
+	return `#${grayHex}${grayHex}${grayHex}`;
+}
+
+/**
+ * Get resolved theme colors as CSS-compatible hex strings.
+ * Used by HTML export to generate CSS custom properties.
+ */
+export function getResolvedThemeColors(themeName?: string): Record<string, string> {
+	const name = themeName ?? getDefaultTheme();
+	const isLight = name === "light";
+	const themeJson = loadThemeJson(name);
+	const resolved = resolveThemeColors(themeJson.colors, themeJson.vars);
+
+	// Default text color for empty values (terminal uses default fg color)
+	const defaultText = isLight ? "#000000" : "#e5e5e7";
+
+	const cssColors: Record<string, string> = {};
+	for (const [key, value] of Object.entries(resolved)) {
+		if (typeof value === "number") {
+			cssColors[key] = ansi256ToHex(value);
+		} else if (value === "") {
+			// Empty means default terminal color - use sensible fallback for HTML
+			cssColors[key] = defaultText;
+		} else {
+			cssColors[key] = value;
+		}
+	}
+	return cssColors;
+}
+
+/**
+ * Check if a theme is a "light" theme (for CSS that needs light/dark variants).
+ */
+export function isLightTheme(themeName?: string): boolean {
+	// Currently just check the name - could be extended to analyze colors
+	return themeName === "light";
+}
+
+/**
+ * Get explicit export colors from theme JSON, if specified.
+ * Returns undefined for each color that isn't explicitly set.
+ */
+export function getThemeExportColors(themeName?: string): {
+	pageBg?: string;
+	cardBg?: string;
+	infoBg?: string;
+} {
+	const name = themeName ?? getDefaultTheme();
+	try {
+		const themeJson = loadThemeJson(name);
+		const exportSection = themeJson.export;
+		if (!exportSection) return {};
+
+		const vars = themeJson.vars ?? {};
+		const resolve = (value: string | number | undefined): string | undefined => {
+			if (value === undefined) return undefined;
+			if (typeof value === "number") return ansi256ToHex(value);
+			if (value.startsWith("$")) {
+				const resolved = vars[value];
+				if (resolved === undefined) return undefined;
+				if (typeof resolved === "number") return ansi256ToHex(resolved);
+				return resolved;
+			}
+			return value;
+		};
+
+		return {
+			pageBg: resolve(exportSection.pageBg),
+			cardBg: resolve(exportSection.cardBg),
+			infoBg: resolve(exportSection.infoBg),
+		};
+	} catch {
+		return {};
 	}
 }
 
@@ -673,8 +896,10 @@ function getCliHighlightTheme(t: Theme): CliHighlightTheme {
  * Returns array of highlighted lines.
  */
 export function highlightCode(code: string, lang?: string): string[] {
+	// Validate language before highlighting to avoid stderr spam from cli-highlight
+	const validLang = lang && supportsLanguage(lang) ? lang : undefined;
 	const opts = {
-		language: lang,
+		language: validLang,
 		ignoreIllegals: true,
 		theme: getCliHighlightTheme(theme),
 	};
@@ -773,8 +998,10 @@ export function getMarkdownTheme(): MarkdownTheme {
 		underline: (text: string) => theme.underline(text),
 		strikethrough: (text: string) => chalk.strikethrough(text),
 		highlightCode: (code: string, lang?: string): string[] => {
+			// Validate language before highlighting to avoid stderr spam from cli-highlight
+			const validLang = lang && supportsLanguage(lang) ? lang : undefined;
 			const opts = {
-				language: lang,
+				language: validLang,
 				ignoreIllegals: true,
 				theme: getCliHighlightTheme(theme),
 			};
@@ -801,5 +1028,15 @@ export function getEditorTheme(): EditorTheme {
 	return {
 		borderColor: (text: string) => theme.fg("borderMuted", text),
 		selectList: getSelectListTheme(),
+	};
+}
+
+export function getSettingsListTheme(): import("@mariozechner/pi-tui").SettingsListTheme {
+	return {
+		label: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : text),
+		value: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : theme.fg("muted", text)),
+		description: (text: string) => theme.fg("dim", text),
+		cursor: theme.fg("accent", "→ "),
+		hint: (text: string) => theme.fg("dim", text),
 	};
 }

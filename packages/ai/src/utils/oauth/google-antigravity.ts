@@ -1,14 +1,17 @@
 /**
  * Antigravity OAuth flow (Gemini 3, Claude, GPT-OSS via Google Cloud)
  * Uses different OAuth credentials than google-gemini-cli for access to additional models.
+ *
+ * NOTE: This module uses Node.js http.createServer for the OAuth callback.
+ * It is only intended for CLI use, not browser environments.
  */
 
-import { createHash, randomBytes } from "crypto";
-import { createServer, type Server } from "http";
-import { type OAuthCredentials, saveOAuthCredentials } from "./storage.js";
+import type { Server } from "http";
+import { generatePKCE } from "./pkce.js";
+import type { OAuthCredentials } from "./types.js";
 
 // Antigravity OAuth credentials (different from Gemini CLI)
-const decode = (s: string) => Buffer.from(s, "base64").toString();
+const decode = (s: string) => atob(s);
 const CLIENT_ID = decode(
 	"MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlcC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==",
 );
@@ -27,38 +30,24 @@ const SCOPES = [
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
-// Antigravity uses sandbox endpoint
-const CODE_ASSIST_ENDPOINT = "https://daily-cloudcode-pa.sandbox.googleapis.com";
-
 // Fallback project ID when discovery fails
 const DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 
-export interface AntigravityCredentials extends OAuthCredentials {
-	projectId: string;
-	email?: string;
-}
-
-/**
- * Generate PKCE code verifier and challenge
- */
-function generatePKCE(): { verifier: string; challenge: string } {
-	const verifier = randomBytes(32).toString("base64url");
-	const challenge = createHash("sha256").update(verifier).digest("base64url");
-	return { verifier, challenge };
-}
+type CallbackServerInfo = {
+	server: Server;
+	cancelWait: () => void;
+	waitForCode: () => Promise<{ code: string; state: string } | null>;
+};
 
 /**
  * Start a local HTTP server to receive the OAuth callback
  */
-function startCallbackServer(): Promise<{ server: Server; getCode: () => Promise<{ code: string; state: string }> }> {
-	return new Promise((resolve, reject) => {
-		let codeResolve: (value: { code: string; state: string }) => void;
-		let codeReject: (error: Error) => void;
+async function startCallbackServer(): Promise<CallbackServerInfo> {
+	const { createServer } = await import("http");
 
-		const codePromise = new Promise<{ code: string; state: string }>((res, rej) => {
-			codeResolve = res;
-			codeReject = rej;
-		});
+	return new Promise((resolve, reject) => {
+		let result: { code: string; state: string } | null = null;
+		let cancelled = false;
 
 		const server = createServer((req, res) => {
 			const url = new URL(req.url || "", `http://localhost:51121`);
@@ -73,7 +62,6 @@ function startCallbackServer(): Promise<{ server: Server; getCode: () => Promise
 					res.end(
 						`<html><body><h1>Authentication Failed</h1><p>Error: ${error}</p><p>You can close this window.</p></body></html>`,
 					);
-					codeReject(new Error(`OAuth error: ${error}`));
 					return;
 				}
 
@@ -82,13 +70,12 @@ function startCallbackServer(): Promise<{ server: Server; getCode: () => Promise
 					res.end(
 						`<html><body><h1>Authentication Successful</h1><p>You can close this window and return to the terminal.</p></body></html>`,
 					);
-					codeResolve({ code, state });
+					result = { code, state };
 				} else {
 					res.writeHead(400, { "Content-Type": "text/html" });
 					res.end(
 						`<html><body><h1>Authentication Failed</h1><p>Missing code or state parameter.</p></body></html>`,
 					);
-					codeReject(new Error("Missing code or state in callback"));
 				}
 			} else {
 				res.writeHead(404);
@@ -103,23 +90,44 @@ function startCallbackServer(): Promise<{ server: Server; getCode: () => Promise
 		server.listen(51121, "127.0.0.1", () => {
 			resolve({
 				server,
-				getCode: () => codePromise,
+				cancelWait: () => {
+					cancelled = true;
+				},
+				waitForCode: async () => {
+					const sleep = () => new Promise((r) => setTimeout(r, 100));
+					while (!result && !cancelled) {
+						await sleep();
+					}
+					return result;
+				},
 			});
 		});
 	});
+}
+
+/**
+ * Parse redirect URL to extract code and state
+ */
+function parseRedirectUrl(input: string): { code?: string; state?: string } {
+	const value = input.trim();
+	if (!value) return {};
+
+	try {
+		const url = new URL(value);
+		return {
+			code: url.searchParams.get("code") ?? undefined,
+			state: url.searchParams.get("state") ?? undefined,
+		};
+	} catch {
+		// Not a URL, return empty
+		return {};
+	}
 }
 
 interface LoadCodeAssistPayload {
 	cloudaicompanionProject?: string | { id?: string };
 	currentTier?: { id?: string };
 	allowedTiers?: Array<{ id?: string; isDefault?: boolean }>;
-}
-
-/**
- * Wait helper for onboarding retries
- */
-function wait(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -230,7 +238,6 @@ export async function refreshAntigravityToken(refreshToken: string, projectId: s
 	};
 
 	return {
-		type: "oauth",
 		refresh: data.refresh_token || refreshToken,
 		access: data.access_token,
 		expires: Date.now() + data.expires_in * 1000 - 5 * 60 * 1000,
@@ -243,16 +250,21 @@ export async function refreshAntigravityToken(refreshToken: string, projectId: s
  *
  * @param onAuth - Callback with URL and optional instructions
  * @param onProgress - Optional progress callback
+ * @param onManualCodeInput - Optional promise that resolves with user-pasted redirect URL.
+ *                            Races with browser callback - whichever completes first wins.
  */
 export async function loginAntigravity(
 	onAuth: (info: { url: string; instructions?: string }) => void,
 	onProgress?: (message: string) => void,
-): Promise<AntigravityCredentials> {
-	const { verifier, challenge } = generatePKCE();
+	onManualCodeInput?: () => Promise<string>,
+): Promise<OAuthCredentials> {
+	const { verifier, challenge } = await generatePKCE();
 
 	// Start local server for callback
 	onProgress?.("Starting local server for OAuth callback...");
-	const { server, getCode } = await startCallbackServer();
+	const server = await startCallbackServer();
+
+	let code: string | undefined;
 
 	try {
 		// Build authorization URL
@@ -273,16 +285,75 @@ export async function loginAntigravity(
 		// Notify caller with URL to open
 		onAuth({
 			url: authUrl,
-			instructions: "Complete the sign-in in your browser. The callback will be captured automatically.",
+			instructions: "Complete the sign-in in your browser.",
 		});
 
-		// Wait for the callback
+		// Wait for the callback, racing with manual input if provided
 		onProgress?.("Waiting for OAuth callback...");
-		const { code, state } = await getCode();
 
-		// Verify state matches
-		if (state !== verifier) {
-			throw new Error("OAuth state mismatch - possible CSRF attack");
+		if (onManualCodeInput) {
+			// Race between browser callback and manual input
+			let manualInput: string | undefined;
+			let manualError: Error | undefined;
+			const manualPromise = onManualCodeInput()
+				.then((input) => {
+					manualInput = input;
+					server.cancelWait();
+				})
+				.catch((err) => {
+					manualError = err instanceof Error ? err : new Error(String(err));
+					server.cancelWait();
+				});
+
+			const result = await server.waitForCode();
+
+			// If manual input was cancelled, throw that error
+			if (manualError) {
+				throw manualError;
+			}
+
+			if (result?.code) {
+				// Browser callback won - verify state
+				if (result.state !== verifier) {
+					throw new Error("OAuth state mismatch - possible CSRF attack");
+				}
+				code = result.code;
+			} else if (manualInput) {
+				// Manual input won
+				const parsed = parseRedirectUrl(manualInput);
+				if (parsed.state && parsed.state !== verifier) {
+					throw new Error("OAuth state mismatch - possible CSRF attack");
+				}
+				code = parsed.code;
+			}
+
+			// If still no code, wait for manual promise and try that
+			if (!code) {
+				await manualPromise;
+				if (manualError) {
+					throw manualError;
+				}
+				if (manualInput) {
+					const parsed = parseRedirectUrl(manualInput);
+					if (parsed.state && parsed.state !== verifier) {
+						throw new Error("OAuth state mismatch - possible CSRF attack");
+					}
+					code = parsed.code;
+				}
+			}
+		} else {
+			// Original flow: just wait for callback
+			const result = await server.waitForCode();
+			if (result?.code) {
+				if (result.state !== verifier) {
+					throw new Error("OAuth state mismatch - possible CSRF attack");
+				}
+				code = result.code;
+			}
+		}
+
+		if (!code) {
+			throw new Error("No authorization code received");
 		}
 
 		// Exchange code for tokens
@@ -327,8 +398,7 @@ export async function loginAntigravity(
 		// Calculate expiry time (current time + expires_in seconds - 5 min buffer)
 		const expiresAt = Date.now() + tokenData.expires_in * 1000 - 5 * 60 * 1000;
 
-		const credentials: AntigravityCredentials = {
-			type: "oauth",
+		const credentials: OAuthCredentials = {
 			refresh: tokenData.refresh_token,
 			access: tokenData.access_token,
 			expires: expiresAt,
@@ -336,10 +406,8 @@ export async function loginAntigravity(
 			email,
 		};
 
-		saveOAuthCredentials("google-antigravity", credentials);
-
 		return credentials;
 	} finally {
-		server.close();
+		server.server.close();
 	}
 }

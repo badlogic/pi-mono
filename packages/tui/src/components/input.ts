@@ -1,33 +1,25 @@
-import {
-	isAltBackspace,
-	isArrowLeft,
-	isArrowRight,
-	isBackspace,
-	isCtrlA,
-	isCtrlE,
-	isCtrlK,
-	isCtrlU,
-	isCtrlW,
-	isDelete,
-	isEnter,
-} from "../keys.js";
-import type { Component } from "../tui.js";
-import { visibleWidth } from "../utils.js";
+import { getEditorKeybindings } from "../keybindings.js";
+import { type Component, CURSOR_MARKER, type Focusable } from "../tui.js";
+import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
 
-// Grapheme segmenter for proper Unicode iteration (handles emojis, etc.)
-const segmenter = new Intl.Segmenter();
+const segmenter = getSegmenter();
 
 /**
  * Input component - single-line text input with horizontal scrolling
  */
-export class Input implements Component {
+export class Input implements Component, Focusable {
 	private value: string = "";
 	private cursor: number = 0; // Cursor position in the value
 	public onSubmit?: (value: string) => void;
+	public onEscape?: () => void;
+
+	/** Focusable interface - set by TUI when focus changes */
+	focused: boolean = false;
 
 	// Bracketed paste mode buffering
 	private pasteBuffer: string = "";
 	private isInPaste: boolean = false;
+	private pendingShiftEnter: boolean = false;
 
 	getValue(): string {
 		return this.value;
@@ -75,17 +67,39 @@ export class Input implements Component {
 			}
 			return;
 		}
-		// Handle special keys
-		if (isEnter(data) || data === "\n") {
-			// Enter - submit
-			if (this.onSubmit) {
-				this.onSubmit(this.value);
+
+		if (this.pendingShiftEnter) {
+			if (data === "\r") {
+				this.pendingShiftEnter = false;
+				if (this.onSubmit) this.onSubmit(this.value);
+				return;
 			}
+			this.pendingShiftEnter = false;
+			this.value = `${this.value.slice(0, this.cursor)}\\${this.value.slice(this.cursor)}`;
+			this.cursor += 1;
+		}
+
+		if (data === "\\") {
+			this.pendingShiftEnter = true;
 			return;
 		}
 
-		if (isBackspace(data)) {
-			// Backspace - delete grapheme before cursor (handles emojis, etc.)
+		const kb = getEditorKeybindings();
+
+		// Escape/Cancel
+		if (kb.matches(data, "selectCancel")) {
+			if (this.onEscape) this.onEscape();
+			return;
+		}
+
+		// Submit
+		if (kb.matches(data, "submit") || data === "\n") {
+			if (this.onSubmit) this.onSubmit(this.value);
+			return;
+		}
+
+		// Deletion
+		if (kb.matches(data, "deleteCharBackward")) {
 			if (this.cursor > 0) {
 				const beforeCursor = this.value.slice(0, this.cursor);
 				const graphemes = [...segmenter.segment(beforeCursor)];
@@ -97,30 +111,7 @@ export class Input implements Component {
 			return;
 		}
 
-		if (isArrowLeft(data)) {
-			// Left arrow - move by one grapheme (handles emojis, etc.)
-			if (this.cursor > 0) {
-				const beforeCursor = this.value.slice(0, this.cursor);
-				const graphemes = [...segmenter.segment(beforeCursor)];
-				const lastGrapheme = graphemes[graphemes.length - 1];
-				this.cursor -= lastGrapheme ? lastGrapheme.segment.length : 1;
-			}
-			return;
-		}
-
-		if (isArrowRight(data)) {
-			// Right arrow - move by one grapheme (handles emojis, etc.)
-			if (this.cursor < this.value.length) {
-				const afterCursor = this.value.slice(this.cursor);
-				const graphemes = [...segmenter.segment(afterCursor)];
-				const firstGrapheme = graphemes[0];
-				this.cursor += firstGrapheme ? firstGrapheme.segment.length : 1;
-			}
-			return;
-		}
-
-		if (isDelete(data)) {
-			// Delete - delete grapheme at cursor (handles emojis, etc.)
+		if (kb.matches(data, "deleteCharForward")) {
 			if (this.cursor < this.value.length) {
 				const afterCursor = this.value.slice(this.cursor);
 				const graphemes = [...segmenter.segment(afterCursor)];
@@ -131,47 +122,72 @@ export class Input implements Component {
 			return;
 		}
 
-		if (isCtrlA(data)) {
-			// Ctrl+A - beginning of line
-			this.cursor = 0;
-			return;
-		}
-
-		if (isCtrlE(data)) {
-			// Ctrl+E - end of line
-			this.cursor = this.value.length;
-			return;
-		}
-
-		if (isCtrlW(data)) {
-			// Ctrl+W - delete word backwards
+		if (kb.matches(data, "deleteWordBackward")) {
 			this.deleteWordBackwards();
 			return;
 		}
 
-		if (isAltBackspace(data)) {
-			// Option/Alt+Backspace - delete word backwards
-			this.deleteWordBackwards();
-			return;
-		}
-
-		if (isCtrlU(data)) {
-			// Ctrl+U - delete from cursor to start of line
+		if (kb.matches(data, "deleteToLineStart")) {
 			this.value = this.value.slice(this.cursor);
 			this.cursor = 0;
 			return;
 		}
 
-		if (isCtrlK(data)) {
-			// Ctrl+K - delete from cursor to end of line
+		if (kb.matches(data, "deleteToLineEnd")) {
 			this.value = this.value.slice(0, this.cursor);
 			return;
 		}
 
-		// Regular character input
-		if (data.length === 1 && data >= " " && data <= "~") {
+		// Cursor movement
+		if (kb.matches(data, "cursorLeft")) {
+			if (this.cursor > 0) {
+				const beforeCursor = this.value.slice(0, this.cursor);
+				const graphemes = [...segmenter.segment(beforeCursor)];
+				const lastGrapheme = graphemes[graphemes.length - 1];
+				this.cursor -= lastGrapheme ? lastGrapheme.segment.length : 1;
+			}
+			return;
+		}
+
+		if (kb.matches(data, "cursorRight")) {
+			if (this.cursor < this.value.length) {
+				const afterCursor = this.value.slice(this.cursor);
+				const graphemes = [...segmenter.segment(afterCursor)];
+				const firstGrapheme = graphemes[0];
+				this.cursor += firstGrapheme ? firstGrapheme.segment.length : 1;
+			}
+			return;
+		}
+
+		if (kb.matches(data, "cursorLineStart")) {
+			this.cursor = 0;
+			return;
+		}
+
+		if (kb.matches(data, "cursorLineEnd")) {
+			this.cursor = this.value.length;
+			return;
+		}
+
+		if (kb.matches(data, "cursorWordLeft")) {
+			this.moveWordBackwards();
+			return;
+		}
+
+		if (kb.matches(data, "cursorWordRight")) {
+			this.moveWordForwards();
+			return;
+		}
+
+		// Regular character input - accept printable characters including Unicode,
+		// but reject control characters (C0: 0x00-0x1F, DEL: 0x7F, C1: 0x80-0x9F)
+		const hasControlChars = [...data].some((ch) => {
+			const code = ch.charCodeAt(0);
+			return code < 32 || code === 0x7f || (code >= 0x80 && code <= 0x9f);
+		});
+		if (!hasControlChars) {
 			this.value = this.value.slice(0, this.cursor) + data + this.value.slice(this.cursor);
-			this.cursor++;
+			this.cursor += data.length;
 		}
 	}
 
@@ -180,30 +196,80 @@ export class Input implements Component {
 			return;
 		}
 
-		const text = this.value.slice(0, this.cursor);
-		let deleteFrom = this.cursor;
+		const oldCursor = this.cursor;
+		this.moveWordBackwards();
+		const deleteFrom = this.cursor;
+		this.cursor = oldCursor;
 
-		const isWhitespace = (char: string): boolean => /\s/.test(char);
-		const isPunctuation = (char: string): boolean => /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/.test(char);
+		this.value = this.value.slice(0, deleteFrom) + this.value.slice(this.cursor);
+		this.cursor = deleteFrom;
+	}
 
-		const charBeforeCursor = text[deleteFrom - 1] ?? "";
-
-		// If immediately on whitespace or punctuation, delete that single boundary char
-		if (isWhitespace(charBeforeCursor) || isPunctuation(charBeforeCursor)) {
-			deleteFrom -= 1;
-		} else {
-			// Otherwise, delete a run of non-boundary characters (the "word")
-			while (deleteFrom > 0) {
-				const ch = text[deleteFrom - 1] ?? "";
-				if (isWhitespace(ch) || isPunctuation(ch)) {
-					break;
-				}
-				deleteFrom -= 1;
-			}
+	private moveWordBackwards(): void {
+		if (this.cursor === 0) {
+			return;
 		}
 
-		this.value = text.slice(0, deleteFrom) + this.value.slice(this.cursor);
-		this.cursor = deleteFrom;
+		const textBeforeCursor = this.value.slice(0, this.cursor);
+		const graphemes = [...segmenter.segment(textBeforeCursor)];
+
+		// Skip trailing whitespace
+		while (graphemes.length > 0 && isWhitespaceChar(graphemes[graphemes.length - 1]?.segment || "")) {
+			this.cursor -= graphemes.pop()?.segment.length || 0;
+		}
+
+		if (graphemes.length > 0) {
+			const lastGrapheme = graphemes[graphemes.length - 1]?.segment || "";
+			if (isPunctuationChar(lastGrapheme)) {
+				// Skip punctuation run
+				while (graphemes.length > 0 && isPunctuationChar(graphemes[graphemes.length - 1]?.segment || "")) {
+					this.cursor -= graphemes.pop()?.segment.length || 0;
+				}
+			} else {
+				// Skip word run
+				while (
+					graphemes.length > 0 &&
+					!isWhitespaceChar(graphemes[graphemes.length - 1]?.segment || "") &&
+					!isPunctuationChar(graphemes[graphemes.length - 1]?.segment || "")
+				) {
+					this.cursor -= graphemes.pop()?.segment.length || 0;
+				}
+			}
+		}
+	}
+
+	private moveWordForwards(): void {
+		if (this.cursor >= this.value.length) {
+			return;
+		}
+
+		const textAfterCursor = this.value.slice(this.cursor);
+		const segments = segmenter.segment(textAfterCursor);
+		const iterator = segments[Symbol.iterator]();
+		let next = iterator.next();
+
+		// Skip leading whitespace
+		while (!next.done && isWhitespaceChar(next.value.segment)) {
+			this.cursor += next.value.segment.length;
+			next = iterator.next();
+		}
+
+		if (!next.done) {
+			const firstGrapheme = next.value.segment;
+			if (isPunctuationChar(firstGrapheme)) {
+				// Skip punctuation run
+				while (!next.done && isPunctuationChar(next.value.segment)) {
+					this.cursor += next.value.segment.length;
+					next = iterator.next();
+				}
+			} else {
+				// Skip word run
+				while (!next.done && !isWhitespaceChar(next.value.segment) && !isPunctuationChar(next.value.segment)) {
+					this.cursor += next.value.segment.length;
+					next = iterator.next();
+				}
+			}
+		}
 	}
 
 	private handlePaste(pastedText: string): void {
@@ -262,9 +328,12 @@ export class Input implements Component {
 		const atCursor = visibleText[cursorDisplay] || " "; // Character at cursor, or space if at end
 		const afterCursor = visibleText.slice(cursorDisplay + 1);
 
+		// Hardware cursor marker (zero-width, emitted before fake cursor for IME positioning)
+		const marker = this.focused ? CURSOR_MARKER : "";
+
 		// Use inverse video to show cursor
 		const cursorChar = `\x1b[7m${atCursor}\x1b[27m`; // ESC[7m = reverse video, ESC[27m = normal
-		const textWithCursor = beforeCursor + cursorChar + afterCursor;
+		const textWithCursor = beforeCursor + marker + cursorChar + afterCursor;
 
 		// Calculate visual width
 		const visualLength = visibleWidth(textWithCursor);

@@ -140,7 +140,7 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 			return;
 		}
 
-		const { action, filename, content, mimeType } = message;
+		const { action, filename, content } = message;
 
 		try {
 			switch (action) {

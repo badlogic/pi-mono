@@ -1,6 +1,6 @@
 {
 	"name": "@mariozechner/pi-tui",
-	"version": "0.25.3",
+	"version": "0.47.0",
 	"description": "Terminal User Interface library with differential rendering for efficient text-based applications",
 	"type": "module",
 	"main": "dist/index.js",
@@ -8,7 +8,6 @@
 		"clean": "rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
-		"check": "biome check --write . && tsgo --noEmit",
 		"test": "node --test --import tsx test/*.test.ts",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
@@ -39,9 +38,9 @@
 	"dependencies": {
 		"@types/mime-types": "^2.1.4",
 		"chalk": "^5.5.0",
+		"get-east-asian-width": "^1.3.0",
 		"marked": "^15.0.12",
-		"mime-types": "^3.0.1",
-		"string-width": "^8.1.0"
+		"mime-types": "^3.0.1"
 	},
 	"devDependencies": {
 		"@xterm/headless": "^5.5.0",

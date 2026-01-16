@@ -9,50 +9,44 @@ export {
 } from "./autocomplete.js";
 // Components
 export { Box } from "./components/box.js";
+export { CancellableLoader } from "./components/cancellable-loader.js";
 export { Editor, type EditorTheme } from "./components/editor.js";
 export { Image, type ImageOptions, type ImageTheme } from "./components/image.js";
 export { Input } from "./components/input.js";
 export { Loader } from "./components/loader.js";
 export { type DefaultTextStyle, Markdown, type MarkdownTheme } from "./components/markdown.js";
 export { type SelectItem, SelectList, type SelectListTheme } from "./components/select-list.js";
+export { type SettingItem, SettingsList, type SettingsListTheme } from "./components/settings-list.js";
 export { Spacer } from "./components/spacer.js";
 export { Text } from "./components/text.js";
 export { TruncatedText } from "./components/truncated-text.js";
-// Kitty keyboard protocol helpers
+// Editor component interface (for custom editors)
+export type { EditorComponent } from "./editor-component.js";
+// Fuzzy matching
+export { type FuzzyMatch, fuzzyFilter, fuzzyMatch } from "./fuzzy.js";
+// Keybindings
 export {
-	isAltBackspace,
-	isAltEnter,
-	isAltLeft,
-	isAltRight,
-	isArrowDown,
-	isArrowLeft,
-	isArrowRight,
-	isArrowUp,
-	isBackspace,
-	isCtrlA,
-	isCtrlC,
-	isCtrlD,
-	isCtrlE,
-	isCtrlG,
-	isCtrlK,
-	isCtrlLeft,
-	isCtrlO,
-	isCtrlP,
-	isCtrlRight,
-	isCtrlT,
-	isCtrlU,
-	isCtrlW,
-	isCtrlZ,
-	isDelete,
-	isEnd,
-	isEnter,
-	isEscape,
-	isHome,
-	isShiftEnter,
-	isShiftTab,
-	isTab,
-	Keys,
+	DEFAULT_EDITOR_KEYBINDINGS,
+	type EditorAction,
+	type EditorKeybindingsConfig,
+	EditorKeybindingsManager,
+	getEditorKeybindings,
+	setEditorKeybindings,
+} from "./keybindings.js";
+// Keyboard input handling
+export {
+	isKeyRelease,
+	isKeyRepeat,
+	isKittyProtocolActive,
+	Key,
+	type KeyEventType,
+	type KeyId,
+	matchesKey,
+	parseKey,
+	setKittyProtocolActive,
 } from "./keys.js";
+// Input buffering for batch splitting
+export { StdinBuffer, type StdinBufferEventMap, type StdinBufferOptions } from "./stdin-buffer.js";
 // Terminal interface and implementations
 export { ProcessTerminal, type Terminal } from "./terminal.js";
 // Terminal image support
@@ -78,6 +72,18 @@ export {
 	setCellDimensions,
 	type TerminalCapabilities,
 } from "./terminal-image.js";
-export { type Component, Container, TUI } from "./tui.js";
+export {
+	type Component,
+	Container,
+	CURSOR_MARKER,
+	type Focusable,
+	isFocusable,
+	type OverlayAnchor,
+	type OverlayHandle,
+	type OverlayMargin,
+	type OverlayOptions,
+	type SizeValue,
+	TUI,
+} from "./tui.js";
 // Utilities
-export { truncateToWidth, visibleWidth } from "./utils.js";
+export { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "./utils.js";

@@ -2,12 +2,13 @@
  * System prompt construction and project context loading
  */
 
+import { PI_STATIC_INSTRUCTIONS } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { existsSync, readFileSync } from "fs";
 import { join, resolve } from "path";
-import { getAgentDir, getDocsPath, getReadmePath } from "../config.js";
+import { getAgentDir, getReadmePath } from "../config.js";
 import type { SkillsSettings } from "./settings-manager.js";
-import { formatSkillsForPrompt, loadSkills } from "./skills.js";
+import { formatSkillsForPrompt, loadSkills, type Skill } from "./skills.js";
 import type { ToolName } from "./tools/index.js";
 
 /** Tool descriptions for system prompt */
@@ -22,7 +23,7 @@ const toolDescriptions: Record<ToolName, string> = {
 };
 
 /** Resolve input as file path or literal string */
-function resolvePromptInput(input: string | undefined, description: string): string | undefined {
+export function resolvePromptInput(input: string | undefined, description: string): string | undefined {
 	if (!input) {
 		return undefined;
 	}
@@ -58,29 +59,39 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
 	return null;
 }
 
+export interface LoadContextFilesOptions {
+	/** Working directory to start walking up from. Default: process.cwd() */
+	cwd?: string;
+	/** Agent config directory for global context. Default: from getAgentDir() */
+	agentDir?: string;
+}
+
 /**
  * Load all project context files in order:
- * 1. Global: ~/{CONFIG_DIR_NAME}/agent/AGENTS.md or CLAUDE.md
+ * 1. Global: agentDir/AGENTS.md or CLAUDE.md
  * 2. Parent directories (top-most first) down to cwd
  * Each returns {path, content} for separate messages
  */
-export function loadProjectContextFiles(): Array<{ path: string; content: string }> {
+export function loadProjectContextFiles(
+	options: LoadContextFilesOptions = {},
+): Array<{ path: string; content: string }> {
+	const resolvedCwd = options.cwd ?? process.cwd();
+	const resolvedAgentDir = options.agentDir ?? getAgentDir();
+
 	const contextFiles: Array<{ path: string; content: string }> = [];
 	const seenPaths = new Set<string>();
 
-	// 1. Load global context from ~/{CONFIG_DIR_NAME}/agent/
-	const globalContextDir = getAgentDir();
-	const globalContext = loadContextFileFromDir(globalContextDir);
+	// 1. Load global context from agentDir
+	const globalContext = loadContextFileFromDir(resolvedAgentDir);
 	if (globalContext) {
 		contextFiles.push(globalContext);
 		seenPaths.add(globalContext.path);
 	}
 
 	// 2. Walk up from cwd to root, collecting all context files
-	const cwd = process.cwd();
 	const ancestorContextFiles: Array<{ path: string; content: string }> = [];
 
-	let currentDir = cwd;
+	let currentDir = resolvedCwd;
 	const root = resolve("/");
 
 	while (true) {
@@ -107,15 +118,48 @@ export function loadProjectContextFiles(): Array<{ path: string; content: string
 }
 
 export interface BuildSystemPromptOptions {
+	/** Custom system prompt (replaces default). */
 	customPrompt?: string;
+	/** Tools to include in prompt. Default: [read, bash, edit, write] */
 	selectedTools?: ToolName[];
+	/** Text to append to system prompt. */
 	appendSystemPrompt?: string;
+	/** Skills settings for discovery. */
 	skillsSettings?: SkillsSettings;
+	/** Working directory. Default: process.cwd() */
+	cwd?: string;
+	/** Agent config directory. Default: from getAgentDir() */
+	agentDir?: string;
+	/** Pre-loaded context files (skips discovery if provided). */
+	contextFiles?: Array<{ path: string; content: string }>;
+	/** Pre-loaded skills (skips discovery if provided). */
+	skills?: Skill[];
+}
+
+/**
+ * Get the Pi installation path for documentation references.
+ * This resolves the pi-internal:// scheme used in the static instructions.
+ */
+function getPiPath(): string {
+	// getReadmePath returns something like /path/to/pi/README.md
+	// We want the parent directory
+	const readmePath = getReadmePath();
+	return resolve(readmePath, "..");
 }
 
 /** Build the system prompt with tools, guidelines, and context */
 export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): string {
-	const { customPrompt, selectedTools, appendSystemPrompt, skillsSettings } = options;
+	const {
+		customPrompt,
+		selectedTools,
+		appendSystemPrompt,
+		skillsSettings,
+		cwd,
+		agentDir,
+		contextFiles: providedContextFiles,
+		skills: providedSkills,
+	} = options;
+	const resolvedCwd = cwd ?? process.cwd();
 	const resolvedCustomPrompt = resolvePromptInput(customPrompt, "system prompt");
 	const resolvedAppendPrompt = resolvePromptInput(appendSystemPrompt, "append system prompt");
 
@@ -133,6 +177,15 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	const appendSection = resolvedAppendPrompt ? `\n\n${resolvedAppendPrompt}` : "";
 
+	// Resolve context files: use provided or discover
+	const contextFiles = providedContextFiles ?? loadProjectContextFiles({ cwd: resolvedCwd, agentDir });
+
+	// Resolve skills: use provided or discover
+	const skills =
+		providedSkills ??
+		(skillsSettings?.enabled !== false ? loadSkills({ ...skillsSettings, cwd: resolvedCwd, agentDir }).skills : []);
+
+	// Handle custom prompt (full replacement)
 	if (resolvedCustomPrompt) {
 		let prompt = resolvedCustomPrompt;
 
@@ -141,7 +194,6 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		}
 
 		// Append project context files
-		const contextFiles = loadProjectContextFiles();
 		if (contextFiles.length > 0) {
 			prompt += "\n\n# Project Context\n\n";
 			prompt += "The following project context files have been loaded:\n\n";
@@ -152,25 +204,20 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 		// Append skills section (only if read tool is available)
 		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
-		if (skillsSettings?.enabled !== false && customPromptHasRead) {
-			const { skills } = loadSkills(skillsSettings ?? {});
+		if (customPromptHasRead && skills.length > 0) {
 			prompt += formatSkillsForPrompt(skills);
 		}
 
 		// Add date/time and working directory last
 		prompt += `\nCurrent date and time: ${dateTime}`;
-		prompt += `\nCurrent working directory: ${process.cwd()}`;
+		prompt += `\nCurrent working directory: ${resolvedCwd}`;
 
 		return prompt;
 	}
 
-	// Get absolute paths to documentation
-	const readmePath = getReadmePath();
-	const docsPath = getDocsPath();
-
 	// Build tools list based on selected tools
 	const tools = selectedTools || (["read", "bash", "edit", "write"] as ToolName[]);
-	const toolsList = tools.map((t) => `- ${t}: ${toolDescriptions[t]}`).join("\n");
+	const toolsList = tools.length > 0 ? tools.map((t) => `- ${t}: ${toolDescriptions[t]}`).join("\n") : "(none)";
 
 	// Build guidelines based on which tools are actually available
 	const guidelinesList: string[] = [];
@@ -182,11 +229,6 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 	const hasFind = tools.includes("find");
 	const hasLs = tools.includes("ls");
 	const hasRead = tools.includes("read");
-
-	// Read-only mode notice (no bash, edit, or write)
-	if (!hasBash && !hasEdit && !hasWrite) {
-		guidelinesList.push("You are in READ-ONLY mode - you cannot modify files or execute arbitrary commands");
-	}
 
 	// Bash without edit/write = read-only bash mode
 	if (hasBash && !hasEdit && !hasWrite) {
@@ -204,7 +246,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	// Read before edit guideline
 	if (hasRead && hasEdit) {
-		guidelinesList.push("Use read to examine files before editing");
+		guidelinesList.push("Use read to examine files before editing. You must use this tool instead of cat or sed.");
 	}
 
 	// Edit guideline
@@ -230,25 +272,26 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
-	let prompt = `You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
+	// Build prompt with static prefix + dynamic parts
+	const piPath = getPiPath();
+
+	let prompt = `${PI_STATIC_INSTRUCTIONS}
+Pi path:
+pi-internal:// refers to paths in ${piPath}
 
 Available tools:
 ${toolsList}
 
-Guidelines:
-${guidelines}
+In addition to the tools above, you may have access to other custom tools depending on the project.
 
-Documentation:
-- Main documentation: ${readmePath}
-- Additional docs: ${docsPath}
-- When asked about: custom models/providers (README sufficient), themes (docs/theme.md), skills (docs/skills.md), hooks (docs/hooks.md), custom tools (docs/custom-tools.md), RPC (docs/rpc.md)`;
+Guidelines:
+${guidelines}`;
 
 	if (appendSection) {
 		prompt += appendSection;
 	}
 
 	// Append project context files
-	const contextFiles = loadProjectContextFiles();
 	if (contextFiles.length > 0) {
 		prompt += "\n\n# Project Context\n\n";
 		prompt += "The following project context files have been loaded:\n\n";
@@ -258,14 +301,13 @@ Documentation:
 	}
 
 	// Append skills section (only if read tool is available)
-	if (skillsSettings?.enabled !== false && hasRead) {
-		const { skills } = loadSkills(skillsSettings ?? {});
+	if (hasRead && skills.length > 0) {
 		prompt += formatSkillsForPrompt(skills);
 	}
 
 	// Add date/time and working directory last
 	prompt += `\nCurrent date and time: ${dateTime}`;
-	prompt += `\nCurrent working directory: ${process.cwd()}`;
+	prompt += `\nCurrent working directory: ${resolvedCwd}`;
 
 	return prompt;
 }

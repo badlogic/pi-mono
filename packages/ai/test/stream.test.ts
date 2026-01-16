@@ -5,9 +5,11 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
-import { complete, resolveApiKey, stream } from "../src/stream.js";
+import { complete, stream } from "../src/stream.js";
 import type { Api, Context, ImageContent, Model, OptionsForApi, Tool, ToolResultMessage } from "../src/types.js";
 import { StringEnum } from "../src/utils/typebox-helpers.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
+import { resolveApiKey } from "./oauth.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -18,8 +20,9 @@ const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
+	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 // Calculator tool definition (same as examples)
 // Note: Using StringEnum helper because Google's API doesn't support anyOf/const patterns
@@ -354,7 +357,7 @@ describe("Generate E2E Tests", () => {
 			await handleStreaming(llm);
 		});
 
-		it("should handle ", { retry: 3 }, async () => {
+		it("should handle thinking", { retry: 3 }, async () => {
 			await handleThinking(llm, { thinking: { enabled: true, budgetTokens: 1024 } });
 		});
 
@@ -364,6 +367,46 @@ describe("Generate E2E Tests", () => {
 
 		it("should handle image input", { retry: 3 }, async () => {
 			await handleImage(llm);
+		});
+	});
+
+	describe("Google Vertex Provider (gemini-3-flash-preview)", () => {
+		const vertexProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+		const vertexLocation = process.env.GOOGLE_CLOUD_LOCATION;
+		const isVertexConfigured = Boolean(vertexProject && vertexLocation);
+		const vertexOptions = { project: vertexProject, location: vertexLocation } as const;
+		const llm = getModel("google-vertex", "gemini-3-flash-preview");
+
+		it.skipIf(!isVertexConfigured)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm, vertexOptions);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm, vertexOptions);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle thinking", { retry: 3 }, async () => {
+			const { ThinkingLevel } = await import("@google/genai");
+			await handleThinking(llm, {
+				...vertexOptions,
+				thinking: { enabled: true, budgetTokens: 1024, level: ThinkingLevel.LOW },
+			});
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm, vertexOptions);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			const { ThinkingLevel } = await import("@google/genai");
+			await multiTurn(llm, {
+				...vertexOptions,
+				thinking: { enabled: true, budgetTokens: 1024, level: ThinkingLevel.MEDIUM },
+			});
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm, vertexOptions);
 		});
 	});
 
@@ -555,7 +598,88 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5-air via Anthropic Messages)", () => {
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
+		"Vercel AI Gateway Provider (google/gemini-2.5-flash via Anthropic Messages)",
+		() => {
+			const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+
+			it("should complete basic text generation", { retry: 3 }, async () => {
+				await basicTextGeneration(llm);
+			});
+
+			it("should handle tool calling", { retry: 3 }, async () => {
+				await handleToolCall(llm);
+			});
+
+			it("should handle streaming", { retry: 3 }, async () => {
+				await handleStreaming(llm);
+			});
+
+			it("should handle image input", { retry: 3 }, async () => {
+				await handleImage(llm);
+			});
+
+			it("should handle multi-turn with tools", { retry: 3 }, async () => {
+				await multiTurn(llm);
+			});
+		},
+	);
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
+		"Vercel AI Gateway Provider (anthropic/claude-opus-4.5 via Anthropic Messages)",
+		() => {
+			const llm = getModel("vercel-ai-gateway", "anthropic/claude-opus-4.5");
+
+			it("should complete basic text generation", { retry: 3 }, async () => {
+				await basicTextGeneration(llm);
+			});
+
+			it("should handle tool calling", { retry: 3 }, async () => {
+				await handleToolCall(llm);
+			});
+
+			it("should handle streaming", { retry: 3 }, async () => {
+				await handleStreaming(llm);
+			});
+
+			it("should handle image input", { retry: 3 }, async () => {
+				await handleImage(llm);
+			});
+
+			it("should handle multi-turn with tools", { retry: 3 }, async () => {
+				await multiTurn(llm);
+			});
+		},
+	);
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)(
+		"Vercel AI Gateway Provider (openai/gpt-5.1-codex-max via Anthropic Messages)",
+		() => {
+			const llm = getModel("vercel-ai-gateway", "openai/gpt-5.1-codex-max");
+
+			it("should complete basic text generation", { retry: 3 }, async () => {
+				await basicTextGeneration(llm);
+			});
+
+			it("should handle tool calling", { retry: 3 }, async () => {
+				await handleToolCall(llm);
+			});
+
+			it("should handle streaming", { retry: 3 }, async () => {
+				await handleStreaming(llm);
+			});
+
+			it("should handle image input", { retry: 3 }, async () => {
+				await handleImage(llm);
+			});
+
+			it("should handle multi-turn with tools", { retry: 3 }, async () => {
+				await multiTurn(llm);
+			});
+		},
+	);
+
+	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5-air via OpenAI Completions)", () => {
 		const llm = getModel("zai", "glm-4.5-air");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
@@ -570,17 +694,16 @@ describe("Generate E2E Tests", () => {
 			await handleStreaming(llm);
 		});
 
-		it("should handle thinking", { retry: 3 }, async () => {
-			// Prompt doesn't trigger thinking
-			// await handleThinking(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+		it.skip("should handle thinking mode", { retry: 3 }, async () => {
+			await handleThinking(llm, { reasoningEffort: "medium" });
 		});
 
 		it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			await multiTurn(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+			await multiTurn(llm, { reasoningEffort: "medium" });
 		});
 	});
 
-	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5v via Anthropic Messages)", () => {
+	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5v via OpenAI Completions)", () => {
 		const llm = getModel("zai", "glm-4.5v");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
@@ -595,18 +718,16 @@ describe("Generate E2E Tests", () => {
 			await handleStreaming(llm);
 		});
 
-		it("should handle thinking", { retry: 3 }, async () => {
-			// Prompt doesn't trigger thinking
-			// await handleThinking(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+		it("should handle thinking mode", { retry: 3 }, async () => {
+			await handleThinking(llm, { reasoningEffort: "medium" });
 		});
 
 		it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			await multiTurn(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+			await multiTurn(llm, { reasoningEffort: "medium" });
 		});
 
 		it("should handle image input", { retry: 3 }, async () => {
-			// Can't see image for some reason?
-			// await handleImage(llm);
+			await handleImage(llm);
 		});
 	});
 
@@ -656,6 +777,30 @@ describe("Generate E2E Tests", () => {
 
 		it("should handle image input", { retry: 3 }, async () => {
 			await handleImage(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider (MiniMax-M2.1 via Anthropic Messages)", () => {
+		const llm = getModel("minimax", "MiniMax-M2.1");
+
+		it("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm);
+		});
+
+		it("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm);
+		});
+
+		it("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm);
+		});
+
+		it("should handle thinking mode", { retry: 3 }, async () => {
+			await handleThinking(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+		});
+
+		it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
 		});
 	});
 
@@ -754,13 +899,11 @@ describe("Generate E2E Tests", () => {
 		const llm = getModel("google-gemini-cli", "gemini-3-flash-preview");
 
 		it.skipIf(!geminiCliToken)("should handle thinking with thinkingLevel", { retry: 3 }, async () => {
-			const { ThinkingLevel } = await import("@google/genai");
-			await handleThinking(llm, { apiKey: geminiCliToken, thinking: { enabled: true, level: ThinkingLevel.LOW } });
+			await handleThinking(llm, { apiKey: geminiCliToken, thinking: { enabled: true, level: "LOW" } });
 		});
 
 		it.skipIf(!geminiCliToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			const { ThinkingLevel } = await import("@google/genai");
-			await multiTurn(llm, { apiKey: geminiCliToken, thinking: { enabled: true, level: ThinkingLevel.MEDIUM } });
+			await multiTurn(llm, { apiKey: geminiCliToken, thinking: { enabled: true, level: "MEDIUM" } });
 		});
 	});
 
@@ -780,17 +923,15 @@ describe("Generate E2E Tests", () => {
 		});
 
 		it.skipIf(!antigravityToken)("should handle thinking with thinkingLevel", { retry: 3 }, async () => {
-			const { ThinkingLevel } = await import("@google/genai");
 			// gemini-3-flash supports all four levels: MINIMAL, LOW, MEDIUM, HIGH
 			await handleThinking(llm, {
 				apiKey: antigravityToken,
-				thinking: { enabled: true, level: ThinkingLevel.LOW },
+				thinking: { enabled: true, level: "LOW" },
 			});
 		});
 
 		it.skipIf(!antigravityToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			const { ThinkingLevel } = await import("@google/genai");
-			await multiTurn(llm, { apiKey: antigravityToken, thinking: { enabled: true, level: ThinkingLevel.MEDIUM } });
+			await multiTurn(llm, { apiKey: antigravityToken, thinking: { enabled: true, level: "MEDIUM" } });
 		});
 
 		it.skipIf(!antigravityToken)("should handle image input", { retry: 3 }, async () => {
@@ -802,11 +943,10 @@ describe("Generate E2E Tests", () => {
 		const llm = getModel("google-antigravity", "gemini-3-pro-high");
 
 		it.skipIf(!antigravityToken)("should handle thinking with thinkingLevel HIGH", { retry: 3 }, async () => {
-			const { ThinkingLevel } = await import("@google/genai");
 			// gemini-3-pro only supports LOW/HIGH
 			await handleThinking(llm, {
 				apiKey: antigravityToken,
-				thinking: { enabled: true, level: ThinkingLevel.HIGH },
+				thinking: { enabled: true, level: "HIGH" },
 			});
 		});
 	});
@@ -845,13 +985,71 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	// Check if ollama is installed
+	describe("OpenAI Codex Provider (gpt-5.2-codex)", () => {
+		const llm = getModel("openai-codex", "gpt-5.2-codex");
+
+		it.skipIf(!openaiCodexToken)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle thinking", { retry: 3 }, async () => {
+			await handleThinking(llm, { apiKey: openaiCodexToken, reasoningEffort: "high" });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm, { apiKey: openaiCodexToken });
+		});
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider (claude-sonnet-4-5)", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+		it("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm);
+		});
+
+		it("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm);
+		});
+
+		it("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm);
+		});
+
+		it("should handle thinking", { retry: 3 }, async () => {
+			await handleThinking(llm, { reasoning: "medium" });
+		});
+
+		it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { reasoning: "high" });
+		});
+
+		it("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm);
+		});
+	});
+
+	// Check if ollama is installed and local LLM tests are enabled
 	let ollamaInstalled = false;
-	try {
-		execSync("which ollama", { stdio: "ignore" });
-		ollamaInstalled = true;
-	} catch {
-		ollamaInstalled = false;
+	if (!process.env.PI_NO_LOCAL_LLM) {
+		try {
+			execSync("which ollama", { stdio: "ignore" });
+			ollamaInstalled = true;
+		} catch {
+			ollamaInstalled = false;
+		}
 	}
 
 	describe.skipIf(!ollamaInstalled)("Ollama Provider (gpt-oss-20b via OpenAI Completions)", () => {
@@ -866,7 +1064,7 @@ describe("Generate E2E Tests", () => {
 				console.log("Pulling gpt-oss:20b model for Ollama tests...");
 				try {
 					execSync("ollama pull gpt-oss:20b", { stdio: "inherit" });
-				} catch (e) {
+				} catch (_e) {
 					console.warn("Failed to pull gpt-oss:20b model, tests will be skipped");
 					return;
 				}

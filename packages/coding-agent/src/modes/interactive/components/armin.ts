@@ -95,13 +95,13 @@ export class ArminComponent implements Component {
 			// Clip row to available width before applying color
 			const clipped = row.slice(0, availableWidth).join("");
 			const padRight = Math.max(0, width - padding - clipped.length);
-			return " " + theme.fg("accent", clipped) + " ".repeat(padRight);
+			return ` ${theme.fg("accent", clipped)}${" ".repeat(padRight)}`;
 		});
 
 		// Add "ARMIN SAYS HI" at the end
 		const message = "ARMIN SAYS HI";
 		const msgPadRight = Math.max(0, width - padding - message.length);
-		this.cachedLines.push(" " + theme.fg("accent", message) + " ".repeat(msgPadRight));
+		this.cachedLines.push(` ${theme.fg("accent", message)}${" ".repeat(msgPadRight)}`);
 
 		this.cachedWidth = width;
 		this.cachedVersion = this.gridVersion;

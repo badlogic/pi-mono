@@ -1,4 +1,5 @@
-import type { AgentTool, ToolResultMessage } from "@mariozechner/pi-ai";
+import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { ToolResultMessage } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import { html } from "lit";
 import { createRef, ref } from "lit/directives/ref.js";
@@ -137,7 +138,7 @@ export function createExtractDocumentTool(): AgentTool<typeof extractDocumentSch
 			const urlParts = url.split("/");
 			let fileName = urlParts[urlParts.length - 1]?.split("?")[0] || "document";
 			if (url.startsWith("https://arxiv.org/")) {
-				fileName = fileName + ".pdf";
+				fileName = `${fileName}.pdf`;
 			}
 
 			// Use loadAttachment to process the document

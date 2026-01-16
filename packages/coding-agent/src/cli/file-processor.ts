@@ -3,25 +3,32 @@
  */
 
 import { access, readFile, stat } from "node:fs/promises";
-import type { Attachment } from "@mariozechner/pi-agent-core";
+import type { ImageContent } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { resolve } from "path";
 import { resolveReadPath } from "../core/tools/path-utils.js";
+import { formatDimensionNote, resizeImage } from "../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../utils/mime.js";
 
 export interface ProcessedFiles {
-	textContent: string;
-	imageAttachments: Attachment[];
+	text: string;
+	images: ImageContent[];
+}
+
+export interface ProcessFileOptions {
+	/** Whether to auto-resize images to 2000x2000 max. Default: true */
+	autoResizeImages?: boolean;
 }
 
 /** Process @file arguments into text content and image attachments */
-export async function processFileArguments(fileArgs: string[]): Promise<ProcessedFiles> {
-	let textContent = "";
-	const imageAttachments: Attachment[] = [];
+export async function processFileArguments(fileArgs: string[], options?: ProcessFileOptions): Promise<ProcessedFiles> {
+	const autoResizeImages = options?.autoResizeImages ?? true;
+	let text = "";
+	const images: ImageContent[] = [];
 
 	for (const fileArg of fileArgs) {
 		// Expand and resolve path (handles ~ expansion and macOS screenshot Unicode spaces)
-		const absolutePath = resolve(resolveReadPath(fileArg));
+		const absolutePath = resolve(resolveReadPath(fileArg, process.cwd()));
 
 		// Check if file exists
 		try {
@@ -45,24 +52,38 @@ export async function processFileArguments(fileArgs: string[]): Promise<Processe
 			const content = await readFile(absolutePath);
 			const base64Content = content.toString("base64");
 
-			const attachment: Attachment = {
-				id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-				type: "image",
-				fileName: absolutePath.split("/").pop() || absolutePath,
-				mimeType,
-				size: stats.size,
-				content: base64Content,
-			};
+			let attachment: ImageContent;
+			let dimensionNote: string | undefined;
 
-			imageAttachments.push(attachment);
+			if (autoResizeImages) {
+				const resized = await resizeImage({ type: "image", data: base64Content, mimeType });
+				dimensionNote = formatDimensionNote(resized);
+				attachment = {
+					type: "image",
+					mimeType: resized.mimeType,
+					data: resized.data,
+				};
+			} else {
+				attachment = {
+					type: "image",
+					mimeType,
+					data: base64Content,
+				};
+			}
 
-			// Add text reference to image
-			textContent += `<file name="${absolutePath}"></file>\n`;
+			images.push(attachment);
+
+			// Add text reference to image with optional dimension note
+			if (dimensionNote) {
+				text += `<file name="${absolutePath}">${dimensionNote}</file>\n`;
+			} else {
+				text += `<file name="${absolutePath}"></file>\n`;
+			}
 		} else {
 			// Handle text file
 			try {
 				const content = await readFile(absolutePath, "utf-8");
-				textContent += `<file name="${absolutePath}">\n${content}\n</file>\n`;
+				text += `<file name="${absolutePath}">\n${content}\n</file>\n`;
 			} catch (error: unknown) {
 				const message = error instanceof Error ? error.message : String(error);
 				console.error(chalk.red(`Error: Could not read file ${absolutePath}: ${message}`));
@@ -71,5 +92,5 @@ export async function processFileArguments(fileArgs: string[]): Promise<Processe
 		}
 	}
 
-	return { textContent, imageAttachments };
+	return { text, images };
 }

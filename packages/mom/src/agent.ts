@@ -1,16 +1,20 @@
-import { Agent, type AgentEvent, type Attachment, ProviderTransport } from "@mariozechner/pi-agent-core";
-import { getModel } from "@mariozechner/pi-ai";
+import { Agent, type AgentEvent } from "@mariozechner/pi-agent-core";
+import { getModel, type ImageContent } from "@mariozechner/pi-ai";
 import {
 	AgentSession,
+	AuthStorage,
+	convertToLlm,
 	formatSkillsForPrompt,
 	loadSkillsFromDir,
-	messageTransformer,
+	ModelRegistry,
+	SessionManager,
 	type Skill,
 } from "@mariozechner/pi-coding-agent";
-import { existsSync, readFileSync, statSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
+import { homedir } from "os";
 import { join } from "path";
-import { MomSessionManager, MomSettingsManager } from "./context.js";
+import { MomSettingsManager, syncLogToSessionManager } from "./context.js";
 import * as log from "./log.js";
 import { createExecutor, type SandboxConfig } from "./sandbox.js";
 import type { ChannelInfo, SlackContext, UserInfo } from "./slack.js";
@@ -19,26 +23,6 @@ import { createMomTools, setUploadFunction } from "./tools/index.js";
 
 // Hardcoded model for now - TODO: make configurable (issue #63)
 const model = getModel("anthropic", "claude-sonnet-4-5");
-
-/**
- * Convert Date.now() to Slack timestamp format (seconds.microseconds)
- * Uses a monotonic counter to ensure ordering even within the same millisecond
- */
-let lastTsMs = 0;
-let tsCounter = 0;
-
-function toSlackTs(): string {
-	const now = Date.now();
-	if (now === lastTsMs) {
-		tsCounter++;
-	} else {
-		lastTsMs = now;
-		tsCounter = 0;
-	}
-	const seconds = Math.floor(now / 1000);
-	const micros = (now % 1000) * 1000 + tsCounter;
-	return `${seconds}.${micros.toString().padStart(6, "0")}`;
-}
 
 export interface PendingMessage {
 	userName: string;
@@ -56,10 +40,14 @@ export interface AgentRunner {
 	abort(): void;
 }
 
-function getAnthropicApiKey(): string {
-	const key = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
+async function getAnthropicApiKey(authStorage: AuthStorage): Promise<string> {
+	const key = await authStorage.getApiKey("anthropic");
 	if (!key) {
-		throw new Error("ANTHROPIC_OAUTH_TOKEN or ANTHROPIC_API_KEY must be set");
+		throw new Error(
+			"No API key found for anthropic.\n\n" +
+				"Set an API key environment variable, or use /login with Anthropic and link to auth.json from " +
+				join(homedir(), ".pi", "mom", "auth.json"),
+		);
 	}
 	return key;
 }
@@ -85,7 +73,7 @@ function getMemory(channelDir: string): string {
 		try {
 			const content = readFileSync(workspaceMemoryPath, "utf-8").trim();
 			if (content) {
-				parts.push("### Global Workspace Memory\n" + content);
+				parts.push(`### Global Workspace Memory\n${content}`);
 			}
 		} catch (error) {
 			log.logWarning("Failed to read workspace memory", `${workspaceMemoryPath}: ${error}`);
@@ -98,7 +86,7 @@ function getMemory(channelDir: string): string {
 		try {
 			const content = readFileSync(channelMemoryPath, "utf-8").trim();
 			if (content) {
-				parts.push("### Channel-Specific Memory\n" + content);
+				parts.push(`### Channel-Specific Memory\n${content}`);
 			}
 		} catch (error) {
 			log.logWarning("Failed to read channel memory", `${channelMemoryPath}: ${error}`);
@@ -340,7 +328,7 @@ Each tool requires a "label" parameter (shown to user).
 
 function truncate(text: string, maxLen: number): string {
 	if (text.length <= maxLen) return text;
-	return text.substring(0, maxLen - 3) + "...";
+	return `${text.substring(0, maxLen - 3)}...`;
 }
 
 function extractToolResultText(result: unknown): string {
@@ -431,13 +419,15 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	const systemPrompt = buildSystemPrompt(workspacePath, channelId, memory, sandboxConfig, [], [], skills);
 
 	// Create session manager and settings manager
-	// Pass model info so new sessions get a header written immediately
-	const sessionManager = new MomSessionManager(channelDir, {
-		provider: model.provider,
-		id: model.id,
-		thinkingLevel: "off",
-	});
+	// Use a fixed context.jsonl file per channel (not timestamped like coding-agent)
+	const contextFile = join(channelDir, "context.jsonl");
+	const sessionManager = SessionManager.open(contextFile, channelDir);
 	const settingsManager = new MomSettingsManager(join(channelDir, ".."));
+
+	// Create AuthStorage and ModelRegistry
+	// Auth stored outside workspace so agent can't access it
+	const authStorage = new AuthStorage(join(homedir(), ".pi", "mom", "auth.json"));
+	const modelRegistry = new ModelRegistry(authStorage);
 
 	// Create agent
 	const agent = new Agent({
@@ -447,14 +437,12 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			thinkingLevel: "off",
 			tools,
 		},
-		messageTransformer,
-		transport: new ProviderTransport({
-			getApiKey: async () => getAnthropicApiKey(),
-		}),
+		convertToLlm,
+		getApiKey: async () => getAnthropicApiKey(authStorage),
 	});
 
 	// Load existing messages
-	const loadedSession = sessionManager.loadSession();
+	const loadedSession = sessionManager.buildSessionContext();
 	if (loadedSession.messages.length > 0) {
 		agent.replaceMessages(loadedSession.messages);
 		log.logInfo(`[${channelId}] Loaded ${loadedSession.messages.length} messages from context.jsonl`);
@@ -463,8 +451,9 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	// Create AgentSession wrapper
 	const session = new AgentSession({
 		agent,
-		sessionManager: sessionManager as any,
+		sessionManager,
 		settingsManager: settingsManager as any,
+		modelRegistry,
 	});
 
 	// Mutable per-run state - event handler references this
@@ -530,8 +519,8 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			let threadMessage = `*${agentEvent.isError ? "✗" : "✓"} ${agentEvent.toolName}*`;
 			if (label) threadMessage += `: ${label}`;
 			threadMessage += ` (${duration}s)\n`;
-			if (argsFormatted) threadMessage += "```\n" + argsFormatted + "\n```\n";
-			threadMessage += "*Result:*\n```\n" + resultStr + "\n```";
+			if (argsFormatted) threadMessage += `\`\`\`\n${argsFormatted}\n\`\`\`\n`;
+			threadMessage += `*Result:*\n\`\`\`\n${resultStr}\n\`\`\``;
 
 			queue.enqueueMessage(threadMessage, "thread", "tool result thread", false);
 
@@ -638,9 +627,16 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			// Ensure channel directory exists
 			await mkdir(channelDir, { recursive: true });
 
+			// Sync messages from log.jsonl that arrived while we were offline or busy
+			// Exclude the current message (it will be added via prompt())
+			const syncedCount = syncLogToSessionManager(sessionManager, channelDir, ctx.message.ts);
+			if (syncedCount > 0) {
+				log.logInfo(`[${channelId}] Synced ${syncedCount} messages from log.jsonl`);
+			}
+
 			// Reload messages from context.jsonl
-			// This picks up any messages synced from log.jsonl before this run
-			const reloadedSession = sessionManager.loadSession();
+			// This picks up any messages synced above
+			const reloadedSession = sessionManager.buildSessionContext();
 			if (reloadedSession.messages.length > 0) {
 				agent.replaceMessages(reloadedSession.messages);
 				log.logInfo(`[${channelId}] Reloaded ${reloadedSession.messages.length} messages from context`);
@@ -728,7 +724,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}${offsetSign}${offsetHours}:${offsetMins}`;
 			let userMessage = `[${timestamp}] [${ctx.message.userName || "unknown"}]: ${ctx.message.text}`;
 
-			const imageAttachments: Attachment[] = [];
+			const imageAttachments: ImageContent[] = [];
 			const nonImagePaths: string[] = [];
 
 			for (const a of ctx.message.attachments || []) {
@@ -737,14 +733,10 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 
 				if (mimeType && existsSync(fullPath)) {
 					try {
-						const stats = statSync(fullPath);
 						imageAttachments.push({
-							id: a.local,
 							type: "image",
-							fileName: a.local.split("/").pop() || a.local,
 							mimeType,
-							size: stats.size,
-							content: readFileSync(fullPath).toString("base64"),
+							data: readFileSync(fullPath).toString("base64"),
 						});
 					} catch {
 						nonImagePaths.push(fullPath);
@@ -767,7 +759,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			};
 			await writeFile(join(channelDir, "last_prompt.jsonl"), JSON.stringify(debugContext, null, 2));
 
-			await session.prompt(userMessage, imageAttachments.length > 0 ? { attachments: imageAttachments } : undefined);
+			await session.prompt(userMessage, imageAttachments.length > 0 ? { images: imageAttachments } : undefined);
 
 			// Wait for queued messages
 			await queueChain;
@@ -804,7 +796,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 					try {
 						const mainText =
 							finalText.length > SLACK_MAX_LENGTH
-								? finalText.substring(0, SLACK_MAX_LENGTH - 50) + "\n\n_(see thread for full response)_"
+								? `${finalText.substring(0, SLACK_MAX_LENGTH - 50)}\n\n_(see thread for full response)_`
 								: finalText;
 						await ctx.replaceMessage(mainText);
 					} catch (err) {

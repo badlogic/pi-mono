@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
-import { resolveApiKey, stream } from "../src/stream.js";
+import { stream } from "../src/stream.js";
 import type { Api, Context, Model, OptionsForApi } from "../src/types.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
+import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
 const oauthTokens = await Promise.all([
@@ -9,8 +11,9 @@ const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
+	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
 	const context: Context = {
@@ -42,16 +45,24 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: Op
 
 	expect(msg.stopReason).toBe("aborted");
 
-	// OpenAI providers, Gemini CLI, zai, and the GPT-OSS model on Antigravity only send usage in the final chunk,
-	// so when aborted they have no token stats Anthropic and Google send usage information early in the stream
+	// OpenAI providers, OpenAI Codex, Gemini CLI, zai, Amazon Bedrock, and the GPT-OSS model on Antigravity only send usage in the final chunk,
+	// so when aborted they have no token stats. Anthropic and Google send usage information early in the stream.
+	// MiniMax reports input tokens but not output tokens when aborted.
 	if (
 		llm.api === "openai-completions" ||
 		llm.api === "openai-responses" ||
+		llm.api === "openai-codex-responses" ||
 		llm.provider === "google-gemini-cli" ||
 		llm.provider === "zai" ||
+		llm.provider === "amazon-bedrock" ||
+		llm.provider === "vercel-ai-gateway" ||
 		(llm.provider === "google-antigravity" && llm.id.includes("gpt-oss"))
 	) {
 		expect(msg.usage.input).toBe(0);
+		expect(msg.usage.output).toBe(0);
+	} else if (llm.provider === "minimax") {
+		// MiniMax reports input tokens early but output tokens only in final chunk
+		expect(msg.usage.input).toBeGreaterThan(0);
 		expect(msg.usage.output).toBe(0);
 	} else {
 		expect(msg.usage.input).toBeGreaterThan(0);
@@ -141,6 +152,22 @@ describe("Token Statistics on Abort", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider", () => {
+		const llm = getModel("minimax", "MiniMax-M2.1");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway Provider", () => {
+		const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
+	});
+
 	// =========================================================================
 	// OAuth-based providers (credentials from ~/.pi/agent/oauth.json)
 	// =========================================================================
@@ -215,5 +242,24 @@ describe("Token Statistics on Abort", () => {
 				await testTokensOnAbort(llm, { apiKey: antigravityToken });
 			},
 		);
+	});
+
+	describe("OpenAI Codex Provider", () => {
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-codex - should include token stats when aborted mid-stream",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-codex");
+				await testTokensOnAbort(llm, { apiKey: openaiCodexToken });
+			},
+		);
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
 	});
 });

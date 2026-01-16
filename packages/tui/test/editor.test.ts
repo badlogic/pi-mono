@@ -2,13 +2,20 @@ import assert from "node:assert";
 import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { Editor } from "../src/components/editor.js";
+import { TUI } from "../src/tui.js";
 import { visibleWidth } from "../src/utils.js";
 import { defaultEditorTheme } from "./test-themes.js";
+import { VirtualTerminal } from "./virtual-terminal.js";
+
+/** Create a TUI with a virtual terminal for testing */
+function createTestTUI(cols = 80, rows = 24): TUI {
+	return new TUI(new VirtualTerminal(cols, rows));
+}
 
 describe("Editor component", () => {
 	describe("Prompt history navigation", () => {
 		it("does nothing on Up arrow when history is empty", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("\x1b[A"); // Up arrow
 
@@ -16,7 +23,7 @@ describe("Editor component", () => {
 		});
 
 		it("shows most recent history entry on Up arrow when editor is empty", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("first prompt");
 			editor.addToHistory("second prompt");
@@ -27,7 +34,7 @@ describe("Editor component", () => {
 		});
 
 		it("cycles through history entries on repeated Up arrow", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("first");
 			editor.addToHistory("second");
@@ -47,7 +54,7 @@ describe("Editor component", () => {
 		});
 
 		it("returns to empty editor on Down arrow after browsing history", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("prompt");
 
@@ -59,7 +66,7 @@ describe("Editor component", () => {
 		});
 
 		it("navigates forward through history with Down arrow", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("first");
 			editor.addToHistory("second");
@@ -82,7 +89,7 @@ describe("Editor component", () => {
 		});
 
 		it("exits history mode when typing a character", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("old prompt");
 
@@ -93,7 +100,7 @@ describe("Editor component", () => {
 		});
 
 		it("exits history mode on setText", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("first");
 			editor.addToHistory("second");
@@ -107,7 +114,7 @@ describe("Editor component", () => {
 		});
 
 		it("does not add empty strings to history", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("");
 			editor.addToHistory("   ");
@@ -122,7 +129,7 @@ describe("Editor component", () => {
 		});
 
 		it("does not add consecutive duplicates to history", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("same");
 			editor.addToHistory("same");
@@ -136,7 +143,7 @@ describe("Editor component", () => {
 		});
 
 		it("allows non-consecutive duplicates in history", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("first");
 			editor.addToHistory("second");
@@ -153,7 +160,7 @@ describe("Editor component", () => {
 		});
 
 		it("uses cursor movement instead of history when editor has content", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("history item");
 			editor.setText("line1\nline2");
@@ -169,7 +176,7 @@ describe("Editor component", () => {
 		});
 
 		it("limits history to 100 entries", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			// Add 105 entries
 			for (let i = 0; i < 105; i++) {
@@ -190,7 +197,7 @@ describe("Editor component", () => {
 		});
 
 		it("allows cursor movement within multi-line history entry with Down", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("line1\nline2\nline3");
 
@@ -204,7 +211,7 @@ describe("Editor component", () => {
 		});
 
 		it("allows cursor movement within multi-line history entry with Up", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("older entry");
 			editor.addToHistory("line1\nline2\nline3");
@@ -225,7 +232,7 @@ describe("Editor component", () => {
 		});
 
 		it("navigates from multi-line entry back to newer via Down after cursor movement", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("line1\nline2\nline3");
 
@@ -249,7 +256,7 @@ describe("Editor component", () => {
 
 	describe("public state accessors", () => {
 		it("returns cursor position", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
 
@@ -264,7 +271,7 @@ describe("Editor component", () => {
 		});
 
 		it("returns lines as a defensive copy", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			editor.setText("a\nb");
 
 			const lines = editor.getLines();
@@ -275,9 +282,29 @@ describe("Editor component", () => {
 		});
 	});
 
+	describe("Shift+Enter handling", () => {
+		it("treats split VS Code Shift+Enter as a newline", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("\\");
+			editor.handleInput("\r");
+
+			assert.strictEqual(editor.getText(), "\n");
+		});
+
+		it("inserts a literal backslash when not followed by Enter", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("\\");
+			editor.handleInput("x");
+
+			assert.strictEqual(editor.getText(), "\\x");
+		});
+	});
+
 	describe("Unicode text editing behavior", () => {
 		it("inserts mixed ASCII, umlauts, and emojis as literal text", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("H");
 			editor.handleInput("e");
@@ -296,7 +323,7 @@ describe("Editor component", () => {
 		});
 
 		it("deletes single-code-unit unicode characters (umlauts) with Backspace", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("ä");
 			editor.handleInput("ö");
@@ -310,7 +337,7 @@ describe("Editor component", () => {
 		});
 
 		it("deletes multi-code-unit emojis with single Backspace", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("😀");
 			editor.handleInput("👍");
@@ -323,7 +350,7 @@ describe("Editor component", () => {
 		});
 
 		it("inserts characters at the correct position after cursor movement over umlauts", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("ä");
 			editor.handleInput("ö");
@@ -341,7 +368,7 @@ describe("Editor component", () => {
 		});
 
 		it("moves cursor across multi-code-unit emojis with single arrow key", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("😀");
 			editor.handleInput("👍");
@@ -361,7 +388,7 @@ describe("Editor component", () => {
 		});
 
 		it("preserves umlauts across line breaks", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("ä");
 			editor.handleInput("ö");
@@ -376,7 +403,7 @@ describe("Editor component", () => {
 		});
 
 		it("replaces the entire document with unicode text via setText (paste simulation)", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			// Simulate bracketed paste / programmatic replacement
 			editor.setText("Hällö Wörld! 😀 äöüÄÖÜß");
@@ -386,7 +413,7 @@ describe("Editor component", () => {
 		});
 
 		it("moves cursor to document start on Ctrl+A and inserts at the beginning", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("a");
 			editor.handleInput("b");
@@ -396,11 +423,89 @@ describe("Editor component", () => {
 			const text = editor.getText();
 			assert.strictEqual(text, "xab");
 		});
+
+		it("deletes words correctly with Ctrl+W and Alt+Backspace", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Basic word deletion
+			editor.setText("foo bar baz");
+			editor.handleInput("\x17"); // Ctrl+W
+			assert.strictEqual(editor.getText(), "foo bar ");
+
+			// Trailing whitespace
+			editor.setText("foo bar   ");
+			editor.handleInput("\x17");
+			assert.strictEqual(editor.getText(), "foo ");
+
+			// Punctuation run
+			editor.setText("foo bar...");
+			editor.handleInput("\x17");
+			assert.strictEqual(editor.getText(), "foo bar");
+
+			// Delete across multiple lines
+			editor.setText("line one\nline two");
+			editor.handleInput("\x17");
+			assert.strictEqual(editor.getText(), "line one\nline ");
+
+			// Delete empty line (merge)
+			editor.setText("line one\n");
+			editor.handleInput("\x17");
+			assert.strictEqual(editor.getText(), "line one");
+
+			// Grapheme safety (emoji as a word)
+			editor.setText("foo 😀😀 bar");
+			editor.handleInput("\x17");
+			assert.strictEqual(editor.getText(), "foo 😀😀 ");
+			editor.handleInput("\x17");
+			assert.strictEqual(editor.getText(), "foo ");
+
+			// Alt+Backspace
+			editor.setText("foo bar");
+			editor.handleInput("\x1b\x7f"); // Alt+Backspace (legacy)
+			assert.strictEqual(editor.getText(), "foo ");
+		});
+
+		it("navigates words correctly with Ctrl+Left/Right", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("foo bar... baz");
+			// Cursor at end
+
+			// Move left over baz
+			editor.handleInput("\x1b[1;5D"); // Ctrl+Left
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 11 }); // after '...'
+
+			// Move left over punctuation
+			editor.handleInput("\x1b[1;5D"); // Ctrl+Left
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 7 }); // after 'bar'
+
+			// Move left over bar
+			editor.handleInput("\x1b[1;5D"); // Ctrl+Left
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 4 }); // after 'foo '
+
+			// Move right over bar
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 7 }); // at end of 'bar'
+
+			// Move right over punctuation run
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 10 }); // after '...'
+
+			// Move right skips space and lands after baz
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 14 }); // end of line
+
+			// Test forward from start with leading whitespace
+			editor.setText("   foo bar");
+			editor.handleInput("\x01"); // Ctrl+A to go to start
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 6 }); // after 'foo'
+		});
 	});
 
 	describe("Grapheme-aware text wrapping", () => {
 		it("wraps lines correctly when text contains wide emojis", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 20;
 
 			// ✅ is 2 columns wide, so "Hello ✅ World" is 14 columns
@@ -415,7 +520,7 @@ describe("Editor component", () => {
 		});
 
 		it("wraps long text with emojis at correct positions", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 10;
 
 			// Each ✅ is 2 columns. "✅✅✅✅✅" = 10 columns, fits exactly
@@ -432,7 +537,7 @@ describe("Editor component", () => {
 		});
 
 		it("wraps CJK characters correctly (each is 2 columns wide)", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 10;
 
 			// Each CJK char is 2 columns. "日本語テスト" = 6 chars = 12 columns
@@ -452,7 +557,7 @@ describe("Editor component", () => {
 		});
 
 		it("handles mixed ASCII and wide characters in wrapping", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 15;
 
 			// "Test ✅ OK 日本" = 4 + 1 + 2 + 1 + 2 + 1 + 4 = 15 columns (fits exactly)
@@ -468,7 +573,7 @@ describe("Editor component", () => {
 		});
 
 		it("renders cursor correctly on wide characters", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 20;
 
 			editor.setText("A✅B");
@@ -484,7 +589,7 @@ describe("Editor component", () => {
 		});
 
 		it("does not exceed terminal width with emoji at wrap boundary", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 11;
 
 			// "0123456789✅" = 10 ASCII + 2-wide emoji = 12 columns
@@ -496,6 +601,101 @@ describe("Editor component", () => {
 				const lineWidth = visibleWidth(lines[i]!);
 				assert.ok(lineWidth <= width, `Line ${i} has width ${lineWidth}, exceeds max ${width}`);
 			}
+		});
+	});
+
+	describe("Word wrapping", () => {
+		it("wraps at word boundaries instead of mid-word", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const width = 40;
+
+			editor.setText("Hello world this is a test of word wrapping functionality");
+			const lines = editor.render(width);
+
+			// Get content lines (between borders)
+			const contentLines = lines.slice(1, -1).map((l) => stripVTControlCharacters(l).trim());
+
+			// Should NOT break mid-word
+			// Line 1 should end with a complete word
+			assert.ok(!contentLines[0]!.endsWith("-"), "Line should not end with hyphen (mid-word break)");
+
+			// Each content line should be complete words
+			for (const line of contentLines) {
+				// Words at end of line should be complete (no partial words)
+				const lastChar = line.trimEnd().slice(-1);
+				assert.ok(lastChar === "" || /[\w.,!?;:]/.test(lastChar), `Line ends unexpectedly with: "${lastChar}"`);
+			}
+		});
+
+		it("does not start lines with leading whitespace after word wrap", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const width = 20;
+
+			editor.setText("Word1 Word2 Word3 Word4 Word5 Word6");
+			const lines = editor.render(width);
+
+			// Get content lines (between borders)
+			const contentLines = lines.slice(1, -1);
+
+			// No line should start with whitespace (except for padding at the end)
+			for (let i = 0; i < contentLines.length; i++) {
+				const line = stripVTControlCharacters(contentLines[i]!);
+				const trimmedStart = line.trimStart();
+				// The line should either be all padding or start with a word character
+				if (trimmedStart.length > 0) {
+					assert.ok(!/^\s+\S/.test(line.trimEnd()), `Line ${i} starts with unexpected whitespace before content`);
+				}
+			}
+		});
+
+		it("breaks long words (URLs) at character level", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const width = 30;
+
+			editor.setText("Check https://example.com/very/long/path/that/exceeds/width here");
+			const lines = editor.render(width);
+
+			// All lines should fit within width
+			for (let i = 1; i < lines.length - 1; i++) {
+				const lineWidth = visibleWidth(lines[i]!);
+				assert.strictEqual(lineWidth, width, `Line ${i} has width ${lineWidth}, expected ${width}`);
+			}
+		});
+
+		it("preserves multiple spaces within words on same line", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const width = 50;
+
+			editor.setText("Word1   Word2    Word3");
+			const lines = editor.render(width);
+
+			const contentLine = stripVTControlCharacters(lines[1]!).trim();
+			// Multiple spaces should be preserved
+			assert.ok(contentLine.includes("Word1   Word2"), "Multiple spaces should be preserved");
+		});
+
+		it("handles empty string", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const width = 40;
+
+			editor.setText("");
+			const lines = editor.render(width);
+
+			// Should have border + empty content + border
+			assert.strictEqual(lines.length, 3);
+		});
+
+		it("handles single word that fits exactly", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const width = 10;
+
+			editor.setText("1234567890");
+			const lines = editor.render(width);
+
+			// Should have exactly 3 lines (top border, content, bottom border)
+			assert.strictEqual(lines.length, 3);
+			const contentLine = stripVTControlCharacters(lines[1]!);
+			assert.ok(contentLine.includes("1234567890"), "Content should contain the word");
 		});
 	});
 });

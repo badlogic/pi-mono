@@ -2,6 +2,1276 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added bash-style argument slicing for prompt templates ([#770](https://github.com/badlogic/pi-mono/pull/770) by [@airtonix](https://github.com/airtonix))
+- Extension commands can provide argument auto-completions via `getArgumentCompletions` in `pi.registerCommand()` ([#775](https://github.com/badlogic/pi-mono/pull/775) by [@ribelo](https://github.com/ribelo))
+
+### Fixed
+
+- Fixed extension messages rendering twice on startup when `pi.sendMessage({ display: true })` is called during `session_start` ([#765](https://github.com/badlogic/pi-mono/pull/765) by [@dannote](https://github.com/dannote))
+
+## [0.47.0] - 2026-01-16
+
+### Breaking Changes
+
+- Extensions using `Editor` directly must now pass `TUI` as the first constructor argument: `new Editor(tui, theme)`. The `tui` parameter is available in extension factory functions. ([#732](https://github.com/badlogic/pi-mono/issues/732))
+
+### Added
+
+- **OpenAI Codex official support**: Full compatibility with OpenAI's Codex CLI models (`gpt-5.1`, `gpt-5.2`, `gpt-5.1-codex-mini`, `gpt-5.2-codex`). Features include static system prompt for OpenAI allowlisting, prompt caching via session ID, and reasoning signature retention across turns. Set `OPENAI_API_KEY` and use `--provider openai-codex` or select a Codex model. ([#737](https://github.com/badlogic/pi-mono/pull/737))
+- `pi-internal://` URL scheme in read tool for accessing internal documentation. The model can read files from the coding-agent package (README, docs, examples) to learn about extending pi.
+- New `input` event in extension system for intercepting, transforming, or handling user input before the agent processes it. Supports three result types: `continue` (pass through), `transform` (modify text/images), `handled` (respond without LLM). Handlers chain transforms and short-circuit on handled. ([#761](https://github.com/badlogic/pi-mono/pull/761) by [@nicobailon](https://github.com/nicobailon))
+- Extension example: `input-transform.ts` demonstrating input interception patterns (quick mode, instant commands, source routing) ([#761](https://github.com/badlogic/pi-mono/pull/761) by [@nicobailon](https://github.com/nicobailon))
+- Custom tool HTML export: extensions with `renderCall`/`renderResult` now render in `/share` and `/export` output with ANSI-to-HTML color conversion ([#702](https://github.com/badlogic/pi-mono/pull/702) by [@aliou](https://github.com/aliou))
+- Direct filter shortcuts in Tree mode: Ctrl+D (default), Ctrl+T (no-tools), Ctrl+U (user-only), Ctrl+L (labeled-only), Ctrl+A (all) ([#747](https://github.com/badlogic/pi-mono/pull/747) by [@kaofelix](https://github.com/kaofelix))
+
+### Changed
+
+- Skill commands (`/skill:name`) are now expanded in AgentSession instead of interactive mode. This enables skill commands in RPC and print modes, and allows the `input` event to intercept `/skill:name` before expansion.
+
+### Fixed
+
+- Editor no longer corrupts terminal display when loading large prompts via `setEditorText`. Content now scrolls vertically with indicators showing lines above/below the viewport. ([#732](https://github.com/badlogic/pi-mono/issues/732))
+- Piped stdin now works correctly: `echo foo | pi` is equivalent to `pi -p foo`. When stdin is piped, print mode is automatically enabled since interactive mode requires a TTY ([#708](https://github.com/badlogic/pi-mono/issues/708))
+- Session tree now preserves branch connectors and indentation when filters hide intermediate entries so descendants attach to the nearest visible ancestor and sibling branches align. Fixed in both TUI and HTML export ([#739](https://github.com/badlogic/pi-mono/pull/739) by [@w-winter](https://github.com/w-winter))
+- Added `upstream connect`, `connection refused`, and `reset before headers` patterns to auto-retry error detection ([#733](https://github.com/badlogic/pi-mono/issues/733))
+- Multi-line YAML frontmatter in skills and prompt templates now parses correctly. Centralized frontmatter parsing using the `yaml` library. ([#728](https://github.com/badlogic/pi-mono/pull/728) by [@richardgill](https://github.com/richardgill))
+- `ctx.shutdown()` now waits for pending UI renders to complete before exiting, ensuring notifications and final output are visible ([#756](https://github.com/badlogic/pi-mono/issues/756))
+- OpenAI Codex provider now retries on transient errors (429, 5xx, connection failures) with exponential backoff ([#733](https://github.com/badlogic/pi-mono/issues/733))
+
+## [0.46.0] - 2026-01-15
+
+### Fixed
+
+- Scoped models (`--models` or `enabledModels`) now remember the last selected model across sessions instead of always starting with the first model in the scope ([#736](https://github.com/badlogic/pi-mono/pull/736) by [@ogulcancelik](https://github.com/ogulcancelik))
+- Show `bun install` instead of `npm install` in update notification when running under Bun ([#714](https://github.com/badlogic/pi-mono/pull/714) by [@dannote](https://github.com/dannote))
+- `/skill` prompts now include the skill path ([#711](https://github.com/badlogic/pi-mono/pull/711) by [@jblwilliams](https://github.com/jblwilliams))
+- Use configurable `expandTools` keybinding instead of hardcoded Ctrl+O ([#717](https://github.com/badlogic/pi-mono/pull/717) by [@dannote](https://github.com/dannote))
+- Compaction turn prefix summaries now merge correctly ([#738](https://github.com/badlogic/pi-mono/pull/738) by [@vsabavat](https://github.com/vsabavat))
+- Avoid unsigned Gemini 3 tool calls ([#741](https://github.com/badlogic/pi-mono/pull/741) by [@roshanasingh4](https://github.com/roshanasingh4))
+- Fixed signature support for non-Anthropic models in Amazon Bedrock provider ([#727](https://github.com/badlogic/pi-mono/pull/727) by [@unexge](https://github.com/unexge))
+- Keyboard shortcuts (Ctrl+C, Ctrl+D, etc.) now work on non-Latin keyboard layouts (Russian, Ukrainian, Bulgarian, etc.) in terminals supporting Kitty keyboard protocol with alternate key reporting ([#718](https://github.com/badlogic/pi-mono/pull/718) by [@dannote](https://github.com/dannote))
+
+### Added
+
+- Edit tool now uses fuzzy matching as fallback when exact match fails, tolerating trailing whitespace, smart quotes, Unicode dashes, and special spaces ([#713](https://github.com/badlogic/pi-mono/pull/713) by [@dannote](https://github.com/dannote))
+- Support `APPEND_SYSTEM.md` to append instructions to the system prompt ([#716](https://github.com/badlogic/pi-mono/pull/716) by [@tallshort](https://github.com/tallshort))
+- Session picker search: Ctrl+R toggles sorting between fuzzy match (default) and most recent; supports quoted phrase matching and `re:` regex mode ([#731](https://github.com/badlogic/pi-mono/pull/731) by [@ogulcancelik](https://github.com/ogulcancelik))
+- Export `getAgentDir` for extensions ([#749](https://github.com/badlogic/pi-mono/pull/749) by [@dannote](https://github.com/dannote))
+- Show loaded prompt templates on startup ([#743](https://github.com/badlogic/pi-mono/pull/743) by [@tallshort](https://github.com/tallshort))
+- MiniMax China (`minimax-cn`) provider support ([#725](https://github.com/badlogic/pi-mono/pull/725) by [@tallshort](https://github.com/tallshort))
+- `gpt-5.2-codex` models for GitHub Copilot and OpenCode Zen providers ([#734](https://github.com/badlogic/pi-mono/pull/734) by [@aadishv](https://github.com/aadishv))
+
+### Changed
+
+- Replaced `wasm-vips` with `@silvia-odwyer/photon-node` for image processing ([#710](https://github.com/badlogic/pi-mono/pull/710) by [@can1357](https://github.com/can1357))
+- Extension example: `plan-mode/` shortcut changed from Shift+P to Ctrl+Alt+P to avoid conflict with typing capital P ([#746](https://github.com/badlogic/pi-mono/pull/746) by [@ferologics](https://github.com/ferologics))
+- UI keybinding hints now respect configured keybindings across components ([#724](https://github.com/badlogic/pi-mono/pull/724) by [@dannote](https://github.com/dannote))
+- CLI process title is now set to `pi` for easier process identification ([#742](https://github.com/badlogic/pi-mono/pull/742) by [@richardgill](https://github.com/richardgill))
+
+## [0.45.7] - 2026-01-13
+
+### Added
+
+- Exported `highlightCode` and `getLanguageFromPath` for extensions ([#703](https://github.com/badlogic/pi-mono/pull/703) by [@dannote](https://github.com/dannote))
+
+## [0.45.6] - 2026-01-13
+
+### Added
+
+- `ctx.ui.custom()` now accepts `overlayOptions` for overlay positioning and sizing (anchor, margins, offsets, percentages, absolute positioning) ([#667](https://github.com/badlogic/pi-mono/pull/667) by [@nicobailon](https://github.com/nicobailon))
+- `ctx.ui.custom()` now accepts `onHandle` callback to receive the `OverlayHandle` for controlling overlay visibility ([#667](https://github.com/badlogic/pi-mono/pull/667) by [@nicobailon](https://github.com/nicobailon))
+- Extension example: `overlay-qa-tests.ts` with 10 commands for testing overlay positioning, animation, and toggle scenarios ([#667](https://github.com/badlogic/pi-mono/pull/667) by [@nicobailon](https://github.com/nicobailon))
+- Extension example: `doom-overlay/` - DOOM game running as an overlay at 35 FPS (auto-downloads WAD on first run) ([#667](https://github.com/badlogic/pi-mono/pull/667) by [@nicobailon](https://github.com/nicobailon))
+
+## [0.45.5] - 2026-01-13
+
+### Fixed
+
+- Skip changelog display on fresh install (only show on upgrades)
+
+## [0.45.4] - 2026-01-13
+
+### Changed
+
+- Light theme colors adjusted for WCAG AA compliance (4.5:1 contrast ratio against white backgrounds)
+- Replaced `sharp` with `wasm-vips` for image processing (resize, PNG conversion). Eliminates native build requirements that caused installation failures on some systems. ([#696](https://github.com/badlogic/pi-mono/issues/696))
+
+### Added
+
+- Extension example: `summarize.ts` for summarizing conversations using custom UI and an external model ([#684](https://github.com/badlogic/pi-mono/pull/684) by [@scutifer](https://github.com/scutifer))
+- Extension example: `question.ts` enhanced with custom UI for asking user questions ([#693](https://github.com/badlogic/pi-mono/pull/693) by [@ferologics](https://github.com/ferologics))
+- Extension example: `plan-mode/` enhanced with explicit step tracking and progress widget ([#694](https://github.com/badlogic/pi-mono/pull/694) by [@ferologics](https://github.com/ferologics))
+- Extension example: `questionnaire.ts` for multi-question input with tab bar navigation ([#695](https://github.com/badlogic/pi-mono/pull/695) by [@ferologics](https://github.com/ferologics))
+- Experimental Vercel AI Gateway provider support: set `AI_GATEWAY_API_KEY` and use `--provider vercel-ai-gateway`. Token usage is currently reported incorrectly by Anthropic Messages compatible endpoint. ([#689](https://github.com/badlogic/pi-mono/pull/689) by [@timolins](https://github.com/timolins))
+
+### Fixed
+
+- Fix API key resolution after model switches by using provider argument ([#691](https://github.com/badlogic/pi-mono/pull/691) by [@joshp123](https://github.com/joshp123))
+- Fixed z.ai thinking/reasoning: thinking toggle now correctly enables/disables thinking for z.ai models ([#688](https://github.com/badlogic/pi-mono/issues/688))
+- Fixed extension loading in compiled Bun binary: extensions with local file imports now work correctly. Updated `@mariozechner/jiti` to v2.6.5 which bundles babel for Bun binary compatibility. ([#681](https://github.com/badlogic/pi-mono/issues/681))
+- Fixed theme loading when installed via mise: use wrapper directory in release tarballs for compatibility with mise's `strip_components=1` extraction. ([#681](https://github.com/badlogic/pi-mono/issues/681))
+
+## [0.45.3] - 2026-01-13
+
+## [0.45.2] - 2026-01-13
+
+### Fixed
+
+- Extensions now load correctly in compiled Bun binary using `@mariozechner/jiti` fork with `virtualModules` support. Bundled packages (`@sinclair/typebox`, `@mariozechner/pi-tui`, `@mariozechner/pi-ai`, `@mariozechner/pi-coding-agent`) are accessible to extensions without filesystem node_modules.
+
+## [0.45.1] - 2026-01-13
+
+### Changed
+
+- `/share` now outputs `buildwithpi.ai` session preview URLs instead of `shittycodingagent.ai`
+
+## [0.45.0] - 2026-01-13
+
+### Added
+
+- MiniMax provider support: set `MINIMAX_API_KEY` and use `minimax/MiniMax-M2.1` ([#656](https://github.com/badlogic/pi-mono/pull/656) by [@dannote](https://github.com/dannote))
+- `/scoped-models`: Alt+Up/Down to reorder enabled models. Order is preserved when saving with Ctrl+S and determines Ctrl+P cycling order. ([#676](https://github.com/badlogic/pi-mono/pull/676) by [@thomasmhr](https://github.com/thomasmhr))
+- Amazon Bedrock provider support (experimental, tested with Anthropic Claude models only) ([#494](https://github.com/badlogic/pi-mono/pull/494) by [@unexge](https://github.com/unexge))
+- Extension example: `sandbox/` for OS-level bash sandboxing using `@anthropic-ai/sandbox-runtime` with per-project config ([#673](https://github.com/badlogic/pi-mono/pull/673) by [@dannote](https://github.com/dannote))
+- Print mode JSON output now emits the session header as the first line.
+
+## [0.44.0] - 2026-01-12
+
+### Breaking Changes
+
+- `pi.getAllTools()` now returns `ToolInfo[]` (with `name` and `description`) instead of `string[]`. Extensions that only need names can use `.map(t => t.name)`. ([#648](https://github.com/badlogic/pi-mono/pull/648) by [@carsonfarmer](https://github.com/carsonfarmer))
+
+### Added
+
+- Session naming: `/name <name>` command sets a display name shown in the session selector instead of the first message. Useful for distinguishing forked sessions. Extensions can use `pi.setSessionName()` and `pi.getSessionName()`. ([#650](https://github.com/badlogic/pi-mono/pull/650) by [@scutifer](https://github.com/scutifer))
+- Extension example: `notify.ts` for desktop notifications via OSC 777 escape sequence ([#658](https://github.com/badlogic/pi-mono/pull/658) by [@ferologics](https://github.com/ferologics))
+- Inline hint for queued messages showing the `Alt+Up` restore shortcut ([#657](https://github.com/badlogic/pi-mono/pull/657) by [@tmustier](https://github.com/tmustier))
+- Page-up/down navigation in `/resume` session selector to jump by 5 items ([#662](https://github.com/badlogic/pi-mono/pull/662) by [@aliou](https://github.com/aliou))
+- Fuzzy search in `/settings` menu: type to filter settings by label ([#643](https://github.com/badlogic/pi-mono/pull/643) by [@ninlds](https://github.com/ninlds))
+
+### Fixed
+
+- Session selector now stays open when current folder has no sessions, allowing Tab to switch to "all" scope ([#661](https://github.com/badlogic/pi-mono/pull/661) by [@aliou](https://github.com/aliou))
+- Extensions using theme utilities like `getSettingsListTheme()` now work in dev mode with tsx
+
+## [0.43.0] - 2026-01-11
+
+### Breaking Changes
+
+- Extension editor (`ctx.ui.editor()`) now uses Enter to submit and Shift+Enter for newlines, matching the main editor. Previously used Ctrl+Enter to submit. Extensions with hardcoded "ctrl+enter" hints need updating. ([#642](https://github.com/badlogic/pi-mono/pull/642) by [@mitsuhiko](https://github.com/mitsuhiko))
+- Renamed `/branch` command to `/fork` ([#641](https://github.com/badlogic/pi-mono/issues/641))
+  - RPC: `branch` → `fork`, `get_branch_messages` → `get_fork_messages`
+  - SDK: `branch()` → `fork()`, `getBranchMessages()` → `getForkMessages()`
+  - AgentSession: `branch()` → `fork()`, `getUserMessagesForBranching()` → `getUserMessagesForForking()`
+  - Extension events: `session_before_branch` → `session_before_fork`, `session_branch` → `session_fork`
+  - Settings: `doubleEscapeAction: "branch" | "tree"` → `"fork" | "tree"`
+- `SessionManager.list()` and `SessionManager.listAll()` are now async, returning `Promise<SessionInfo[]>`. Callers must await them. ([#620](https://github.com/badlogic/pi-mono/pull/620) by [@tmustier](https://github.com/tmustier))
+
+### Added
+- `/resume` selector now toggles between current-folder and all sessions with Tab, showing the session cwd in the All view and loading progress. ([#620](https://github.com/badlogic/pi-mono/pull/620) by [@tmustier](https://github.com/tmustier))
+- `SessionManager.list()` and `SessionManager.listAll()` accept optional `onProgress` callback for progress updates
+- `SessionInfo.cwd` field containing the session's working directory (empty string for old sessions)
+- `SessionListProgress` type export for progress callbacks
+- `/scoped-models` command to enable/disable models for Ctrl+P cycling. Changes are session-only by default; press Ctrl+S to persist to settings.json. ([#626](https://github.com/badlogic/pi-mono/pull/626) by [@CarlosGtrz](https://github.com/CarlosGtrz))
+- `model_select` extension hook fires when model changes via `/model`, model cycling, or session restore with `source` field and `previousModel` ([#628](https://github.com/badlogic/pi-mono/pull/628) by [@marckrenn](https://github.com/marckrenn))
+- `ctx.ui.setWorkingMessage()` extension API to customize the "Working..." message during streaming ([#625](https://github.com/badlogic/pi-mono/pull/625) by [@nicobailon](https://github.com/nicobailon))
+- Skill slash commands: loaded skills are registered as `/skill:name` commands for quick access. Toggle via `/settings` or `skills.enableSkillCommands` in settings.json. ([#630](https://github.com/badlogic/pi-mono/pull/630) by [@Dwsy](https://github.com/Dwsy))
+- Slash command autocomplete now uses fuzzy matching (type `/skbra` to match `/skill:brave-search`)
+- `/tree` branch summarization now offers three options: "No summary", "Summarize", and "Summarize with custom prompt". Custom prompts are appended as additional focus to the default summarization instructions. ([#642](https://github.com/badlogic/pi-mono/pull/642) by [@mitsuhiko](https://github.com/mitsuhiko))
+
+### Fixed
+
+- Missing spacer between assistant message and text editor ([#655](https://github.com/badlogic/pi-mono/issues/655))
+- Session picker respects custom keybindings when using `--resume` ([#633](https://github.com/badlogic/pi-mono/pull/633) by [@aos](https://github.com/aos))
+- Custom footer extensions now see model changes: `ctx.model` is now a getter that returns the current model instead of a snapshot from when the context was created ([#634](https://github.com/badlogic/pi-mono/pull/634) by [@ogulcancelik](https://github.com/ogulcancelik))
+- Footer git branch not updating after external branch switches. Git uses atomic writes (temp file + rename), which changes the inode and breaks `fs.watch` on the file. Now watches the directory instead.
+- Extension loading errors are now displayed to the user instead of being silently ignored ([#639](https://github.com/badlogic/pi-mono/pull/639) by [@aliou](https://github.com/aliou))
+
+## [0.42.5] - 2026-01-11
+
+### Fixed
+
+- Reduced flicker by only re-rendering changed lines ([#617](https://github.com/badlogic/pi-mono/pull/617) by [@ogulcancelik](https://github.com/ogulcancelik)). No worries tho, there's still a little flicker in the VS Code Terminal. Praise the flicker.
+- Cursor position tracking when content shrinks with unchanged remaining lines
+- TUI renders with wrong dimensions after suspend/resume if terminal was resized while suspended ([#599](https://github.com/badlogic/pi-mono/issues/599))
+- Pasted content containing Kitty key release patterns (e.g., `:3F` in MAC addresses) was incorrectly filtered out ([#623](https://github.com/badlogic/pi-mono/pull/623) by [@ogulcancelik](https://github.com/ogulcancelik))
+
+## [0.42.4] - 2026-01-10
+
+### Fixed
+
+- Bash output expanded hint now says "(ctrl+o to collapse)" ([#610](https://github.com/badlogic/pi-mono/pull/610) by [@tallshort](https://github.com/tallshort))
+- Fixed UTF-8 text corruption in remote bash execution (SSH, containers) by using streaming TextDecoder ([#608](https://github.com/badlogic/pi-mono/issues/608))
+
+## [0.42.3] - 2026-01-10
+
+### Changed
+
+- OpenAI Codex: updated to use bundled system prompt from upstream
+
+## [0.42.2] - 2026-01-10
+
+### Added
+
+- `/model <search>` now pre-filters the model selector or auto-selects on exact match. Use `provider/model` syntax to disambiguate (e.g., `/model openai/gpt-4`). ([#587](https://github.com/badlogic/pi-mono/pull/587) by [@zedrdave](https://github.com/zedrdave))
+- `FooterDataProvider` for custom footers: `ctx.ui.setFooter()` now receives a third `footerData` parameter providing `getGitBranch()`, `getExtensionStatuses()`, and `onBranchChange()` for reactive updates ([#600](https://github.com/badlogic/pi-mono/pull/600) by [@nicobailon](https://github.com/nicobailon))
+- `Alt+Up` hotkey to restore queued steering/follow-up messages back into the editor without aborting the current run ([#604](https://github.com/badlogic/pi-mono/pull/604) by [@tmustier](https://github.com/tmustier))
+
+### Fixed
+
+- Fixed LM Studio compatibility for OpenAI Responses tool strict mapping in the ai provider ([#598](https://github.com/badlogic/pi-mono/pull/598) by [@gnattu](https://github.com/gnattu))
+
+## [0.42.1] - 2026-01-09
+
+### Fixed
+
+- Symlinked directories in `prompts/` folders are now followed when loading prompt templates ([#601](https://github.com/badlogic/pi-mono/pull/601) by [@aliou](https://github.com/aliou))
+
+## [0.42.0] - 2026-01-09
+
+### Added
+
+- Added OpenCode Zen provider support. Set `OPENCODE_API_KEY` env var and use `opencode/<model-id>` (e.g., `opencode/claude-opus-4-5`).
+
+## [0.41.0] - 2026-01-09
+
+### Added
+
+- Anthropic OAuth support is back! Use `/login` to authenticate with your Claude Pro/Max subscription.
+
+## [0.40.1] - 2026-01-09
+
+### Removed
+
+- Anthropic OAuth support (`/login`). Use API keys instead.
+
+## [0.40.0] - 2026-01-08
+
+### Added
+
+- Documentation on component invalidation and theme changes in `docs/tui.md`
+
+### Fixed
+
+- Components now properly rebuild their content on theme change (tool executions, assistant messages, bash executions, custom messages, branch/compaction summaries)
+
+## [0.39.1] - 2026-01-08
+
+### Fixed
+
+- `setTheme()` now triggers a full rerender so previously rendered components update with the new theme colors
+- `mac-system-theme.ts` example now polls every 2 seconds and uses `osascript` for real-time macOS appearance detection
+
+## [0.39.0] - 2026-01-08
+
+### Breaking Changes
+
+- `before_agent_start` event now receives `systemPrompt` in the event object and returns `systemPrompt` (full replacement) instead of `systemPromptAppend`. Extensions that were appending must now use `event.systemPrompt + extra` pattern. ([#575](https://github.com/badlogic/pi-mono/issues/575))
+- `discoverSkills()` now returns `{ skills: Skill[], warnings: SkillWarning[] }` instead of `Skill[]`. This allows callers to handle skill loading warnings. ([#577](https://github.com/badlogic/pi-mono/pull/577) by [@cv](https://github.com/cv))
+
+### Added
+
+- `ctx.ui.getAllThemes()`, `ctx.ui.getTheme(name)`, and `ctx.ui.setTheme(name | Theme)` methods for extensions to list, load, and switch themes at runtime ([#576](https://github.com/badlogic/pi-mono/pull/576))
+- `--no-tools` flag to disable all built-in tools, allowing extension-only tool setups ([#557](https://github.com/badlogic/pi-mono/pull/557) by [@cv](https://github.com/cv))
+- Pluggable operations for built-in tools enabling remote execution via SSH or other transports ([#564](https://github.com/badlogic/pi-mono/issues/564)). Interfaces: `ReadOperations`, `WriteOperations`, `EditOperations`, `BashOperations`, `LsOperations`, `GrepOperations`, `FindOperations`
+- `user_bash` event for intercepting user `!`/`!!` commands, allowing extensions to redirect to remote systems ([#528](https://github.com/badlogic/pi-mono/issues/528))
+- `setActiveTools()` in ExtensionAPI for dynamic tool management
+- Built-in renderers used automatically for tool overrides without custom `renderCall`/`renderResult`
+- `ssh.ts` example: remote tool execution via `--ssh user@host:/path`
+- `interactive-shell.ts` example: run interactive commands (vim, git rebase, htop) with full terminal access via `!i` prefix or auto-detection
+- Wayland clipboard support for `/copy` command using wl-copy with xclip/xsel fallback ([#570](https://github.com/badlogic/pi-mono/pull/570) by [@OgulcanCelik](https://github.com/OgulcanCelik))
+- **Experimental:** `ctx.ui.custom()` now accepts `{ overlay: true }` option for floating modal components that composite over existing content without clearing the screen ([#558](https://github.com/badlogic/pi-mono/pull/558) by [@nicobailon](https://github.com/nicobailon))
+- `AgentSession.skills` and `AgentSession.skillWarnings` properties to access loaded skills without rediscovery ([#577](https://github.com/badlogic/pi-mono/pull/577) by [@cv](https://github.com/cv))
+
+### Fixed
+
+- String `systemPrompt` in `createAgentSession()` now works as a full replacement instead of having context files and skills appended, matching documented behavior ([#543](https://github.com/badlogic/pi-mono/issues/543))
+- Update notification for bun binary installs now shows release download URL instead of npm command ([#567](https://github.com/badlogic/pi-mono/pull/567) by [@ferologics](https://github.com/ferologics))
+- ESC key now works during "Working..." state after auto-retry ([#568](https://github.com/badlogic/pi-mono/pull/568) by [@tmustier](https://github.com/tmustier))
+- Abort messages now show correct retry attempt count (e.g., "Aborted after 2 retry attempts") ([#568](https://github.com/badlogic/pi-mono/pull/568) by [@tmustier](https://github.com/tmustier))
+- Fixed Antigravity provider returning 429 errors despite available quota ([#571](https://github.com/badlogic/pi-mono/pull/571) by [@ben-vargas](https://github.com/ben-vargas))
+- Fixed malformed thinking text in Gemini/Antigravity responses where thinking content appeared as regular text or vice versa. Cross-model conversations now properly convert thinking blocks to plain text. ([#561](https://github.com/badlogic/pi-mono/issues/561))
+- `--no-skills` flag now correctly prevents skills from loading in interactive mode ([#577](https://github.com/badlogic/pi-mono/pull/577) by [@cv](https://github.com/cv))
+
+## [0.38.0] - 2026-01-08
+
+### Breaking Changes
+
+- `ctx.ui.custom()` factory signature changed from `(tui, theme, done)` to `(tui, theme, keybindings, done)` for keybinding access in custom components
+- `LoadedExtension` type renamed to `Extension`
+- `LoadExtensionsResult.setUIContext()` removed, replaced with `runtime: ExtensionRuntime`
+- `ExtensionRunner` constructor now requires `runtime: ExtensionRuntime` as second parameter
+- `ExtensionRunner.initialize()` signature changed from options object to positional params `(actions, contextActions, commandContextActions?, uiContext?)`
+- `ExtensionRunner.getHasUI()` renamed to `hasUI()`
+- OpenAI Codex model aliases removed (`gpt-5`, `gpt-5-mini`, `gpt-5-nano`, `codex-mini-latest`). Use canonical IDs: `gpt-5.1`, `gpt-5.1-codex-mini`, `gpt-5.2`, `gpt-5.2-codex`. ([#536](https://github.com/badlogic/pi-mono/pull/536) by [@ghoulr](https://github.com/ghoulr))
+
+### Added
+
+- `--no-extensions` flag to disable extension discovery while still allowing explicit `-e` paths ([#524](https://github.com/badlogic/pi-mono/pull/524) by [@cv](https://github.com/cv))
+- SDK: `InteractiveMode`, `runPrintMode()`, `runRpcMode()` exported for building custom run modes. See `docs/sdk.md`.
+- `PI_SKIP_VERSION_CHECK` environment variable to disable new version notifications at startup ([#549](https://github.com/badlogic/pi-mono/pull/549) by [@aos](https://github.com/aos))
+- `thinkingBudgets` setting to customize token budgets per thinking level for token-based providers ([#529](https://github.com/badlogic/pi-mono/pull/529) by [@melihmucuk](https://github.com/melihmucuk))
+- Extension UI dialogs (`ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`) now support a `timeout` option with live countdown display ([#522](https://github.com/badlogic/pi-mono/pull/522) by [@nicobailon](https://github.com/nicobailon))
+- Extensions can now provide custom editor components via `ctx.ui.setEditorComponent()`. See `examples/extensions/modal-editor.ts` and `docs/tui.md` Pattern 7.
+- Extension factories can now be async, enabling dynamic imports and lazy-loaded dependencies ([#513](https://github.com/badlogic/pi-mono/pull/513) by [@austinm911](https://github.com/austinm911))
+- `ctx.shutdown()` is now available in extension contexts for requesting a graceful shutdown. In interactive mode, shutdown is deferred until the agent becomes idle (after processing all queued steering and follow-up messages). In RPC mode, shutdown is deferred until after completing the current command response. In print mode, shutdown is a no-op as the process exits automatically when prompts complete. ([#542](https://github.com/badlogic/pi-mono/pull/542) by [@kaofelix](https://github.com/kaofelix))
+
+### Fixed
+
+- Default thinking level from settings now applies correctly when `enabledModels` is configured ([#540](https://github.com/badlogic/pi-mono/pull/540) by [@ferologics](https://github.com/ferologics))
+- External edits to `settings.json` while pi is running are now preserved when pi saves settings ([#527](https://github.com/badlogic/pi-mono/pull/527) by [@ferologics](https://github.com/ferologics))
+- Overflow-based compaction now skips if error came from a different model or was already handled by a previous compaction ([#535](https://github.com/badlogic/pi-mono/pull/535) by [@mitsuhiko](https://github.com/mitsuhiko))
+- OpenAI Codex context window reduced from 400k to 272k tokens to match Codex CLI defaults and prevent 400 errors ([#536](https://github.com/badlogic/pi-mono/pull/536) by [@ghoulr](https://github.com/ghoulr))
+- Context overflow detection now recognizes `context_length_exceeded` errors.
+- Key presses no longer dropped when input is batched over SSH ([#538](https://github.com/badlogic/pi-mono/issues/538))
+- Clipboard image support now works on Alpine Linux and other musl-based distros ([#533](https://github.com/badlogic/pi-mono/issues/533))
+
+## [0.37.8] - 2026-01-07
+
+## [0.37.7] - 2026-01-07
+
+## [0.37.6] - 2026-01-06
+
+### Added
+
+- Extension UI dialogs (`ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`) now accept an optional `AbortSignal` to programmatically dismiss dialogs. Useful for implementing timeouts. See `examples/extensions/timed-confirm.ts`. ([#474](https://github.com/badlogic/pi-mono/issues/474))
+- HTML export now shows bridge prompts in model change messages for Codex sessions ([#510](https://github.com/badlogic/pi-mono/pull/510) by [@mitsuhiko](https://github.com/mitsuhiko))
+
+## [0.37.5] - 2026-01-06
+
+### Added
+
+- ExtensionAPI: `setModel()`, `getThinkingLevel()`, `setThinkingLevel()` methods for extensions to change model and thinking level at runtime ([#509](https://github.com/badlogic/pi-mono/issues/509))
+- Exported truncation utilities for custom tools: `truncateHead`, `truncateTail`, `truncateLine`, `formatSize`, `DEFAULT_MAX_BYTES`, `DEFAULT_MAX_LINES`, `TruncationOptions`, `TruncationResult`
+- New example `truncated-tool.ts` demonstrating proper output truncation with custom rendering for extensions
+- New example `preset.ts` demonstrating preset configurations with model/thinking/tools switching ([#347](https://github.com/badlogic/pi-mono/issues/347))
+- Documentation for output truncation best practices in `docs/extensions.md`
+- Exported all UI components for extensions: `ArminComponent`, `AssistantMessageComponent`, `BashExecutionComponent`, `BorderedLoader`, `BranchSummaryMessageComponent`, `CompactionSummaryMessageComponent`, `CustomEditor`, `CustomMessageComponent`, `DynamicBorder`, `ExtensionEditorComponent`, `ExtensionInputComponent`, `ExtensionSelectorComponent`, `FooterComponent`, `LoginDialogComponent`, `ModelSelectorComponent`, `OAuthSelectorComponent`, `SessionSelectorComponent`, `SettingsSelectorComponent`, `ShowImagesSelectorComponent`, `ThemeSelectorComponent`, `ThinkingSelectorComponent`, `ToolExecutionComponent`, `TreeSelectorComponent`, `UserMessageComponent`, `UserMessageSelectorComponent`, plus utilities `renderDiff`, `truncateToVisualLines`
+- `docs/tui.md`: Common Patterns section with copy-paste code for SelectList, BorderedLoader, SettingsList, setStatus, setWidget, setFooter
+- `docs/tui.md`: Key Rules section documenting critical patterns for extension UI development
+- `docs/extensions.md`: Exhaustive example links for all ExtensionAPI methods and events
+- System prompt now references `docs/tui.md` for TUI component development
+
+## [0.37.4] - 2026-01-06
+
+### Added
+
+- Session picker (`pi -r`) and `--session` flag now support searching/resuming by session ID (UUID prefix) ([#495](https://github.com/badlogic/pi-mono/issues/495) by [@arunsathiya](https://github.com/arunsathiya))
+- Extensions can now replace the startup header with `ctx.ui.setHeader()`, see `examples/extensions/custom-header.ts` ([#500](https://github.com/badlogic/pi-mono/pull/500) by [@tudoroancea](https://github.com/tudoroancea))
+
+### Changed
+
+- Startup help text: fixed misleading "ctrl+k to delete line" to "ctrl+k to delete to end"
+- Startup help text and `/hotkeys`: added `!!` shortcut for running bash without adding output to context
+
+### Fixed
+
+- Queued steering/follow-up messages no longer wipe unsent editor input ([#503](https://github.com/badlogic/pi-mono/pull/503) by [@tmustier](https://github.com/tmustier))
+- OAuth token refresh failure no longer crashes app at startup, allowing user to `/login` to re-authenticate ([#498](https://github.com/badlogic/pi-mono/issues/498))
+
+## [0.37.3] - 2026-01-06
+
+### Added
+
+- Extensions can now replace the footer with `ctx.ui.setFooter()`, see `examples/extensions/custom-footer.ts` ([#481](https://github.com/badlogic/pi-mono/issues/481))
+- Session ID is now forwarded to LLM providers for session-based caching (used by OpenAI Codex for prompt caching).
+- Added `blockImages` setting to prevent images from being sent to LLM providers ([#492](https://github.com/badlogic/pi-mono/pull/492) by [@jsinge97](https://github.com/jsinge97))
+- Extensions can now send user messages via `pi.sendUserMessage()` ([#483](https://github.com/badlogic/pi-mono/issues/483))
+
+### Fixed
+
+- Add `minimatch` as a direct dependency for explicit imports.
+- Status bar now shows correct git branch when running in a git worktree ([#490](https://github.com/badlogic/pi-mono/pull/490) by [@kcosr](https://github.com/kcosr))
+- Interactive mode: Ctrl+V clipboard image paste now works on Wayland sessions by using `wl-paste` with `xclip` fallback ([#488](https://github.com/badlogic/pi-mono/pull/488) by [@ghoulr](https://github.com/ghoulr))
+
+## [0.37.2] - 2026-01-05
+
+### Fixed
+
+- Extension directories in `settings.json` now respect `package.json` manifests, matching global extension behavior ([#480](https://github.com/badlogic/pi-mono/pull/480) by [@prateekmedia](https://github.com/prateekmedia))
+- Share viewer: deep links now scroll to the target message when opened via `/share`
+- Bash tool now handles spawn errors gracefully instead of crashing the agent (missing cwd, invalid shell path) ([#479](https://github.com/badlogic/pi-mono/pull/479) by [@robinwander](https://github.com/robinwander))
+
+## [0.37.1] - 2026-01-05
+
+### Fixed
+
+- Share viewer: copy-link buttons now generate correct URLs when session is viewed via `/share` (iframe context)
+
+## [0.37.0] - 2026-01-05
+
+### Added
+
+- Share viewer: copy-link button on messages to share URLs that navigate directly to a specific message ([#477](https://github.com/badlogic/pi-mono/pull/477) by [@lockmeister](https://github.com/lockmeister))
+- Extension example: add `claude-rules` to load `.claude/rules/` entries into the system prompt ([#461](https://github.com/badlogic/pi-mono/pull/461) by [@vaayne](https://github.com/vaayne))
+- Headless OAuth login: all providers now show paste input for manual URL/code entry, works over SSH without DISPLAY ([#428](https://github.com/badlogic/pi-mono/pull/428) by [@ben-vargas](https://github.com/ben-vargas), [#468](https://github.com/badlogic/pi-mono/pull/468) by [@crcatala](https://github.com/crcatala))
+
+### Changed
+
+- OAuth login UI now uses dedicated dialog component with consistent borders
+- Assume truecolor support for all terminals except `dumb`, empty, or `linux` (fixes colors over SSH)
+- OpenAI Codex clean-up: removed per-thinking-level model variants, thinking level is now set separately and the provider clamps to what each model supports internally (initial implementation in [#472](https://github.com/badlogic/pi-mono/pull/472) by [@ben-vargas](https://github.com/ben-vargas))
+
+### Fixed
+
+- Messages submitted during compaction are queued and delivered after compaction completes, preserving steering and follow-up behavior. Extension commands execute immediately during compaction. ([#476](https://github.com/badlogic/pi-mono/pull/476) by [@tmustier](https://github.com/tmustier))
+- Managed binaries (`fd`, `rg`) now stored in `~/.pi/agent/bin/` instead of `tools/`, eliminating false deprecation warnings ([#470](https://github.com/badlogic/pi-mono/pull/470) by [@mcinteerj](https://github.com/mcinteerj))
+- Extensions defined in `settings.json` were not loaded ([#463](https://github.com/badlogic/pi-mono/pull/463) by [@melihmucuk](https://github.com/melihmucuk))
+- OAuth refresh no longer logs users out when multiple pi instances are running ([#466](https://github.com/badlogic/pi-mono/pull/466) by [@Cursivez](https://github.com/Cursivez))
+- Migration warnings now ignore `fd.exe` and `rg.exe` in `tools/` on Windows ([#458](https://github.com/badlogic/pi-mono/pull/458) by [@carlosgtrz](https://github.com/carlosgtrz))
+- CI: add `examples/extensions/with-deps` to workspaces to fix typecheck ([#467](https://github.com/badlogic/pi-mono/pull/467) by [@aliou](https://github.com/aliou))
+- SDK: passing `extensions: []` now disables extension discovery as documented ([#465](https://github.com/badlogic/pi-mono/pull/465) by [@aliou](https://github.com/aliou))
+
+## [0.36.0] - 2026-01-05
+
+### Added
+
+- Experimental: OpenAI Codex OAuth provider support: access Codex models via ChatGPT Plus/Pro subscription using `/login openai-codex` ([#451](https://github.com/badlogic/pi-mono/pull/451) by [@kim0](https://github.com/kim0))
+
+## [0.35.0] - 2026-01-05
+
+This release unifies hooks and custom tools into a single "extensions" system and renames "slash commands" to "prompt templates". ([#454](https://github.com/badlogic/pi-mono/issues/454))
+
+**Before migrating, read:**
+
+- [docs/extensions.md](docs/extensions.md) - Full API reference
+- [README.md](README.md) - Extensions section with examples
+- [examples/extensions/](examples/extensions/) - Working examples
+
+### Extensions Migration
+
+Hooks and custom tools are now unified as **extensions**. Both were TypeScript modules exporting a factory function that receives an API object. Now there's one concept, one discovery location, one CLI flag, one settings.json entry.
+
+**Automatic migration:**
+
+- `commands/` directories are automatically renamed to `prompts/` on startup (both `~/.pi/agent/commands/` and `.pi/commands/`)
+
+**Manual migration required:**
+
+1. Move files from `hooks/` and `tools/` directories to `extensions/` (deprecation warnings shown on startup)
+2. Update imports and type names in your extension code
+3. Update `settings.json` if you have explicit hook and custom tool paths configured
+
+**Directory changes:**
+
+```
+# Before
+~/.pi/agent/hooks/*.ts       →  ~/.pi/agent/extensions/*.ts
+~/.pi/agent/tools/*.ts       →  ~/.pi/agent/extensions/*.ts
+.pi/hooks/*.ts               →  .pi/extensions/*.ts
+.pi/tools/*.ts               →  .pi/extensions/*.ts
+```
+
+**Extension discovery rules** (in `extensions/` directories):
+
+1. **Direct files:** `extensions/*.ts` or `*.js` → loaded directly
+2. **Subdirectory with index:** `extensions/myext/index.ts` → loaded as single extension
+3. **Subdirectory with package.json:** `extensions/myext/package.json` with `"pi"` field → loads declared paths
+
+```json
+// extensions/my-package/package.json
+{
+  "name": "my-extension-package",
+  "dependencies": { "zod": "^3.0.0" },
+  "pi": {
+    "extensions": ["./src/main.ts", "./src/tools.ts"]
+  }
+}
+```
+
+No recursion beyond one level. Complex packages must use the `package.json` manifest. Dependencies are resolved via jiti, and extensions can be published to and installed from npm.
+
+**Type renames:**
+
+- `HookAPI` → `ExtensionAPI`
+- `HookContext` → `ExtensionContext`
+- `HookCommandContext` → `ExtensionCommandContext`
+- `HookUIContext` → `ExtensionUIContext`
+- `CustomToolAPI` → `ExtensionAPI` (merged)
+- `CustomToolContext` → `ExtensionContext` (merged)
+- `CustomToolUIContext` → `ExtensionUIContext`
+- `CustomTool` → `ToolDefinition`
+- `CustomToolFactory` → `ExtensionFactory`
+- `HookMessage` → `CustomMessage`
+
+**Import changes:**
+
+```typescript
+// Before (hook)
+import type { HookAPI, HookContext } from "@mariozechner/pi-coding-agent";
+export default function (pi: HookAPI) { ... }
+
+// Before (custom tool)
+import type { CustomToolFactory } from "@mariozechner/pi-coding-agent";
+const factory: CustomToolFactory = (pi) => ({ name: "my_tool", ... });
+export default factory;
+
+// After (both are now extensions)
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+export default function (pi: ExtensionAPI) {
+  pi.on("tool_call", async (event, ctx) => { ... });
+  pi.registerTool({ name: "my_tool", ... });
+}
+```
+
+**Custom tools now have full context access.** Tools registered via `pi.registerTool()` now receive the same `ctx` object that event handlers receive. Previously, custom tools had limited context. Now all extension code shares the same capabilities:
+
+- `pi.registerTool()` - Register tools the LLM can call
+- `pi.registerCommand()` - Register commands like `/mycommand`
+- `pi.registerShortcut()` - Register keyboard shortcuts (shown in `/hotkeys`)
+- `pi.registerFlag()` - Register CLI flags (shown in `--help`)
+- `pi.registerMessageRenderer()` - Custom TUI rendering for message types
+- `pi.on()` - Subscribe to lifecycle events (tool_call, session_start, etc.)
+- `pi.sendMessage()` - Inject messages into the conversation
+- `pi.appendEntry()` - Persist custom data in session (survives restart/branch)
+- `pi.exec()` - Run shell commands
+- `pi.getActiveTools()` / `pi.setActiveTools()` - Dynamic tool enable/disable
+- `pi.getAllTools()` - List all available tools
+- `pi.events` - Event bus for cross-extension communication
+- `ctx.ui.confirm()` / `select()` / `input()` - User prompts
+- `ctx.ui.notify()` - Toast notifications
+- `ctx.ui.setStatus()` - Persistent status in footer (multiple extensions can set their own)
+- `ctx.ui.setWidget()` - Widget display above editor
+- `ctx.ui.setTitle()` - Set terminal window title
+- `ctx.ui.custom()` - Full TUI component with keyboard handling
+- `ctx.ui.editor()` - Multi-line text editor with external editor support
+- `ctx.sessionManager` - Read session entries, get branch history
+
+**Settings changes:**
+
+```json
+// Before
+{
+  "hooks": ["./my-hook.ts"],
+  "customTools": ["./my-tool.ts"]
+}
+
+// After
+{
+  "extensions": ["./my-extension.ts"]
+}
+```
+
+**CLI changes:**
+
+```bash
+# Before
+pi --hook ./safety.ts --tool ./todo.ts
+
+# After
+pi --extension ./safety.ts -e ./todo.ts
+```
+
+### Prompt Templates Migration
+
+"Slash commands" (markdown files defining reusable prompts invoked via `/name`) are renamed to "prompt templates" to avoid confusion with extension-registered commands.
+
+**Automatic migration:** The `commands/` directory is automatically renamed to `prompts/` on startup (if `prompts/` doesn't exist). Works for both regular directories and symlinks.
+
+**Directory changes:**
+
+```
+~/.pi/agent/commands/*.md    →  ~/.pi/agent/prompts/*.md
+.pi/commands/*.md            →  .pi/prompts/*.md
+```
+
+**SDK type renames:**
+
+- `FileSlashCommand` → `PromptTemplate`
+- `LoadSlashCommandsOptions` → `LoadPromptTemplatesOptions`
+
+**SDK function renames:**
+
+- `discoverSlashCommands()` → `discoverPromptTemplates()`
+- `loadSlashCommands()` → `loadPromptTemplates()`
+- `expandSlashCommand()` → `expandPromptTemplate()`
+- `getCommandsDir()` → `getPromptsDir()`
+
+**SDK option renames:**
+
+- `CreateAgentSessionOptions.slashCommands` → `.promptTemplates`
+- `AgentSession.fileCommands` → `.promptTemplates`
+- `PromptOptions.expandSlashCommands` → `.expandPromptTemplates`
+
+### SDK Migration
+
+**Discovery functions:**
+
+- `discoverAndLoadHooks()` → `discoverAndLoadExtensions()`
+- `discoverAndLoadCustomTools()` → merged into `discoverAndLoadExtensions()`
+- `loadHooks()` → `loadExtensions()`
+- `loadCustomTools()` → merged into `loadExtensions()`
+
+**Runner and wrapper:**
+
+- `HookRunner` → `ExtensionRunner`
+- `wrapToolsWithHooks()` → `wrapToolsWithExtensions()`
+- `wrapToolWithHooks()` → `wrapToolWithExtensions()`
+
+**CreateAgentSessionOptions:**
+
+- `.hooks` → removed (use `.additionalExtensionPaths` for paths)
+- `.additionalHookPaths` → `.additionalExtensionPaths`
+- `.preloadedHooks` → `.preloadedExtensions`
+- `.customTools` type changed: `Array<{ path?; tool: CustomTool }>` → `ToolDefinition[]`
+- `.additionalCustomToolPaths` → merged into `.additionalExtensionPaths`
+- `.slashCommands` → `.promptTemplates`
+
+**AgentSession:**
+
+- `.hookRunner` → `.extensionRunner`
+- `.fileCommands` → `.promptTemplates`
+- `.sendHookMessage()` → `.sendCustomMessage()`
+
+### Session Migration
+
+**Automatic.** Session version bumped from 2 to 3. Existing sessions are migrated on first load:
+
+- Message role `"hookMessage"` → `"custom"`
+
+### Breaking Changes
+
+- **Settings:** `hooks` and `customTools` arrays replaced with single `extensions` array
+- **CLI:** `--hook` and `--tool` flags replaced with `--extension` / `-e`
+- **Directories:** `hooks/`, `tools/` → `extensions/`; `commands/` → `prompts/`
+- **Types:** See type renames above
+- **SDK:** See SDK migration above
+
+### Changed
+
+- Extensions can have their own `package.json` with dependencies (resolved via jiti)
+- Documentation: `docs/hooks.md` and `docs/custom-tools.md` merged into `docs/extensions.md`
+- Examples: `examples/hooks/` and `examples/custom-tools/` merged into `examples/extensions/`
+- README: Extensions section expanded with custom tools, commands, events, state persistence, shortcuts, flags, and UI examples
+- SDK: `customTools` option now accepts `ToolDefinition[]` directly (simplified from `Array<{ path?, tool }>`)
+- SDK: `extensions` option accepts `ExtensionFactory[]` for inline extensions
+- SDK: `additionalExtensionPaths` replaces both `additionalHookPaths` and `additionalCustomToolPaths`
+
+## [0.34.2] - 2026-01-04
+
+## [0.34.1] - 2026-01-04
+
+### Added
+
+- Hook API: `ctx.ui.setTitle(title)` allows hooks to set the terminal window/tab title ([#446](https://github.com/badlogic/pi-mono/pull/446) by [@aliou](https://github.com/aliou))
+
+### Changed
+
+- Expanded keybinding documentation to list all 32 supported symbol keys with notes on ctrl+symbol behavior ([#450](https://github.com/badlogic/pi-mono/pull/450) by [@kaofelix](https://github.com/kaofelix))
+
+## [0.34.0] - 2026-01-04
+
+### Added
+
+- Hook API: `pi.getActiveTools()` and `pi.setActiveTools(toolNames)` for dynamically enabling/disabling tools from hooks
+- Hook API: `pi.getAllTools()` to enumerate all configured tools (built-in via --tools or default, plus custom tools)
+- Hook API: `pi.registerFlag(name, options)` and `pi.getFlag(name)` for hooks to register custom CLI flags (parsed automatically)
+- Hook API: `pi.registerShortcut(shortcut, options)` for hooks to register custom keyboard shortcuts using `KeyId` (e.g., `Key.shift("p")`). Conflicts with built-in shortcuts are skipped, conflicts between hooks logged as warnings.
+- Hook API: `ctx.ui.setWidget(key, content)` for status displays above the editor. Accepts either a string array or a component factory function.
+- Hook API: `theme.strikethrough(text)` for strikethrough text styling
+- Hook API: `before_agent_start` handlers can now return `systemPromptAppend` to dynamically append text to the system prompt for that turn. Multiple hooks' appends are concatenated.
+- Hook API: `before_agent_start` handlers can now return multiple messages (all are injected, not just the first)
+- `/hotkeys` command now shows hook-registered shortcuts in a separate "Hooks" section
+- New example hook: `plan-mode.ts` - Claude Code-style read-only exploration mode:
+  - Toggle via `/plan` command, `Shift+P` shortcut, or `--plan` CLI flag
+  - Read-only tools: `read`, `bash`, `grep`, `find`, `ls` (no `edit`/`write`)
+  - Bash commands restricted to non-destructive operations (blocks `rm`, `mv`, `git commit`, `npm install`, etc.)
+  - Interactive prompt after each response: execute plan, stay in plan mode, or refine
+  - Todo list widget showing progress with checkboxes and strikethrough for completed items
+  - Each todo has a unique ID; agent marks items done by outputting `[DONE:id]`
+  - Progress updates via `agent_end` hook (parses completed items from final message)
+  - `/todos` command to view current plan progress
+  - Shows `⏸ plan` indicator in footer when in plan mode, `📋 2/5` when executing
+  - State persists across sessions (including todo progress)
+- New example hook: `tools.ts` - Interactive `/tools` command to enable/disable tools with session persistence
+- New example hook: `pirate.ts` - Demonstrates `systemPromptAppend` to make the agent speak like a pirate
+- Tool registry now contains all built-in tools (read, bash, edit, write, grep, find, ls) even when `--tools` limits the initially active set. Hooks can enable any tool from the registry via `pi.setActiveTools()`.
+- System prompt now automatically rebuilds when tools change via `setActiveTools()`, updating tool descriptions and guidelines to match the new tool set
+- Hook errors now display full stack traces for easier debugging
+- Event bus (`pi.events`) for tool/hook communication: shared pub/sub between custom tools and hooks
+- Custom tools now have `pi.sendMessage()` to send messages directly to the agent session without needing the event bus
+- `sendMessage()` supports `deliverAs: "nextTurn"` to queue messages for the next user prompt
+
+### Changed
+
+- Removed image placeholders after copy & paste, replaced with inserting image file paths directly. ([#442](https://github.com/badlogic/pi-mono/pull/442) by [@mitsuhiko](https://github.com/mitsuhiko))
+
+### Fixed
+
+- Fixed potential text decoding issues in bash executor by using streaming TextDecoder instead of Buffer.toString()
+- External editor (Ctrl-G) now shows full pasted content instead of `[paste #N ...]` placeholders ([#444](https://github.com/badlogic/pi-mono/pull/444) by [@aliou](https://github.com/aliou))
+
+## [0.33.0] - 2026-01-04
+
+### Breaking Changes
+
+- **Key detection functions removed from `@mariozechner/pi-tui`**: All `isXxx()` key detection functions (`isEnter()`, `isEscape()`, `isCtrlC()`, etc.) have been removed. Use `matchesKey(data, keyId)` instead (e.g., `matchesKey(data, "enter")`, `matchesKey(data, "ctrl+c")`). This affects hooks and custom tools that use `ctx.ui.custom()` with keyboard input handling. ([#405](https://github.com/badlogic/pi-mono/pull/405))
+
+### Added
+
+- Clipboard image paste support via `Ctrl+V`. Images are saved to a temp file and attached to the message. Works on macOS, Windows, and Linux (X11). ([#419](https://github.com/badlogic/pi-mono/issues/419))
+- Configurable keybindings via `~/.pi/agent/keybindings.json`. All keyboard shortcuts (editor navigation, deletion, app actions like model cycling, etc.) can now be customized. Supports multiple bindings per action. ([#405](https://github.com/badlogic/pi-mono/pull/405) by [@hjanuschka](https://github.com/hjanuschka))
+- `/quit` and `/exit` slash commands to gracefully exit the application. Unlike double Ctrl+C, these properly await hook and custom tool cleanup handlers before exiting. ([#426](https://github.com/badlogic/pi-mono/pull/426) by [@ben-vargas](https://github.com/ben-vargas))
+
+### Fixed
+
+- Subagent example README referenced incorrect filename `subagent.ts` instead of `index.ts` ([#427](https://github.com/badlogic/pi-mono/pull/427) by [@Whamp](https://github.com/Whamp))
+
+## [0.32.3] - 2026-01-03
+
+### Fixed
+
+- `--list-models` no longer shows Google Vertex AI models without explicit authentication configured
+- JPEG/GIF/WebP images not displaying in terminals using Kitty graphics protocol (Kitty, Ghostty, WezTerm). The protocol requires PNG format, so non-PNG images are now converted before display.
+- Version check URL typo preventing update notifications from working ([#423](https://github.com/badlogic/pi-mono/pull/423) by [@skuridin](https://github.com/skuridin))
+- Large images exceeding Anthropic's 5MB limit now retry with progressive quality/size reduction ([#424](https://github.com/badlogic/pi-mono/pull/424) by [@mitsuhiko](https://github.com/mitsuhiko))
+
+## [0.32.2] - 2026-01-03
+
+### Added
+
+- `$ARGUMENTS` syntax for custom slash commands as alternative to `$@` for all arguments joined. Aligns with patterns used by Claude, Codex, and OpenCode. Both syntaxes remain fully supported. ([#418](https://github.com/badlogic/pi-mono/pull/418) by [@skuridin](https://github.com/skuridin))
+
+### Changed
+
+- **Slash commands and hook commands now work during streaming**: Previously, using a slash command or hook command while the agent was streaming would crash with "Agent is already processing". Now:
+  - Hook commands execute immediately (they manage their own LLM interaction via `pi.sendMessage()`)
+  - File-based slash commands are expanded and queued via steer/followUp
+  - `steer()` and `followUp()` now expand file-based slash commands and error on hook commands (hook commands cannot be queued)
+  - `prompt()` accepts new `streamingBehavior` option (`"steer"` or `"followUp"`) to specify queueing behavior during streaming
+  - RPC `prompt` command now accepts optional `streamingBehavior` field
+    ([#420](https://github.com/badlogic/pi-mono/issues/420))
+
+### Fixed
+
+- Slash command argument substitution now processes positional arguments (`$1`, `$2`, etc.) before all-arguments (`$@`, `$ARGUMENTS`) to prevent recursive substitution when argument values contain dollar-digit patterns like `$100`. ([#418](https://github.com/badlogic/pi-mono/pull/418) by [@skuridin](https://github.com/skuridin))
+
+## [0.32.1] - 2026-01-03
+
+### Added
+
+- Shell commands without context contribution: use `!!command` to execute a bash command that is shown in the TUI and saved to session history but excluded from LLM context. Useful for running commands you don't want the AI to see. ([#414](https://github.com/badlogic/pi-mono/issues/414))
+
+### Fixed
+
+- Edit tool diff not displaying in TUI due to race condition between async preview computation and tool execution
+
+## [0.32.0] - 2026-01-03
+
+### Breaking Changes
+
+- **Queue API replaced with steer/followUp**: The `queueMessage()` method has been split into two methods with different delivery semantics ([#403](https://github.com/badlogic/pi-mono/issues/403)):
+  - `steer(text)`: Interrupts the agent mid-run (Enter while streaming). Delivered after current tool execution.
+  - `followUp(text)`: Waits until the agent finishes (Alt+Enter while streaming). Delivered only when agent stops.
+- **Settings renamed**: `queueMode` setting renamed to `steeringMode`. Added new `followUpMode` setting. Old settings.json files are migrated automatically.
+- **AgentSession methods renamed**:
+  - `queueMessage()` → `steer()` and `followUp()`
+  - `queueMode` getter → `steeringMode` and `followUpMode` getters
+  - `setQueueMode()` → `setSteeringMode()` and `setFollowUpMode()`
+  - `queuedMessageCount` → `pendingMessageCount`
+  - `getQueuedMessages()` → `getSteeringMessages()` and `getFollowUpMessages()`
+  - `clearQueue()` now returns `{ steering: string[], followUp: string[] }`
+  - `hasQueuedMessages()` → `hasPendingMessages()`
+- **Hook API signature changed**: `pi.sendMessage()` second parameter changed from `triggerTurn?: boolean` to `options?: { triggerTurn?, deliverAs? }`. Use `deliverAs: "followUp"` for follow-up delivery. Affects both hooks and internal `sendHookMessage()` method.
+- **RPC API changes**:
+  - `queue_message` command → `steer` and `follow_up` commands
+  - `set_queue_mode` command → `set_steering_mode` and `set_follow_up_mode` commands
+  - `RpcSessionState.queueMode` → `steeringMode` and `followUpMode`
+- **Settings UI**: "Queue mode" setting split into "Steering mode" and "Follow-up mode"
+
+### Added
+
+- Configurable double-escape action: choose whether double-escape with empty editor opens `/tree` (default) or `/branch`. Configure via `/settings` or `doubleEscapeAction` in settings.json ([#404](https://github.com/badlogic/pi-mono/issues/404))
+- Vertex AI provider (`google-vertex`): access Gemini models via Google Cloud Vertex AI using Application Default Credentials ([#300](https://github.com/badlogic/pi-mono/pull/300) by [@default-anton](https://github.com/default-anton))
+- Built-in provider overrides in `models.json`: override just `baseUrl` to route a built-in provider through a proxy while keeping all its models, or define `models` to fully replace the provider ([#406](https://github.com/badlogic/pi-mono/pull/406) by [@yevhen](https://github.com/yevhen))
+- Automatic image resizing: images larger than 2000x2000 are resized for better model compatibility. Original dimensions are injected into the prompt. Controlled via `/settings` or `images.autoResize` in settings.json. ([#402](https://github.com/badlogic/pi-mono/pull/402) by [@mitsuhiko](https://github.com/mitsuhiko))
+- Alt+Enter keybind to queue follow-up messages while agent is streaming
+- `Theme` and `ThemeColor` types now exported for hooks using `ctx.ui.custom()`
+- Terminal window title now displays "pi - dirname" to identify which project session you're in ([#407](https://github.com/badlogic/pi-mono/pull/407) by [@kaofelix](https://github.com/kaofelix))
+
+### Changed
+
+- Editor component now uses word wrapping instead of character-level wrapping for better readability ([#382](https://github.com/badlogic/pi-mono/pull/382) by [@nickseelert](https://github.com/nickseelert))
+
+### Fixed
+
+- `/model` selector now opens instantly instead of waiting for OAuth token refresh. Token refresh is deferred until a model is actually used.
+- Shift+Space, Shift+Backspace, and Shift+Delete now work correctly in Kitty-protocol terminals (Kitty, WezTerm, etc.) instead of being silently ignored ([#411](https://github.com/badlogic/pi-mono/pull/411) by [@nathyong](https://github.com/nathyong))
+- `AgentSession.prompt()` now throws if called while the agent is already streaming, preventing race conditions. Use `steer()` or `followUp()` to queue messages during streaming.
+- Ctrl+C now works like Escape in selector components, so mashing Ctrl+C will eventually close the program ([#400](https://github.com/badlogic/pi-mono/pull/400) by [@mitsuhiko](https://github.com/mitsuhiko))
+
+## [0.31.1] - 2026-01-02
+
+### Fixed
+
+- Model selector no longer allows negative index when pressing arrow keys before models finish loading ([#398](https://github.com/badlogic/pi-mono/pull/398) by [@mitsuhiko](https://github.com/mitsuhiko))
+- Type guard functions (`isBashToolResult`, etc.) now exported at runtime, not just in type declarations ([#397](https://github.com/badlogic/pi-mono/issues/397))
+
+## [0.31.0] - 2026-01-02
+
+This release introduces session trees for in-place branching, major API changes to hooks and custom tools, and structured compaction with file tracking.
+
+### Session Tree
+
+Sessions now use a tree structure with `id`/`parentId` fields. This enables in-place branching: navigate to any previous point with `/tree`, continue from there, and switch between branches while preserving all history in a single file.
+
+**Existing sessions are automatically migrated** (v1 → v2) on first load. No manual action required.
+
+New entry types: `BranchSummaryEntry` (context from abandoned branches), `CustomEntry` (hook state), `CustomMessageEntry` (hook-injected messages), `LabelEntry` (bookmarks).
+
+See [docs/session.md](docs/session.md) for the file format and `SessionManager` API.
+
+### Hooks Migration
+
+The hooks API has been restructured with more granular events and better session access.
+
+**Type renames:**
+
+- `HookEventContext` → `HookContext`
+- `HookCommandContext` is now a new interface extending `HookContext` with session control methods
+
+**Event changes:**
+
+- The monolithic `session` event is now split into granular events: `session_start`, `session_before_switch`, `session_switch`, `session_before_branch`, `session_branch`, `session_before_compact`, `session_compact`, `session_shutdown`
+- `session_before_switch` and `session_switch` events now include `reason: "new" | "resume"` to distinguish between `/new` and `/resume`
+- New `session_before_tree` and `session_tree` events for `/tree` navigation (hook can provide custom branch summary)
+- New `before_agent_start` event: inject messages before the agent loop starts
+- New `context` event: modify messages non-destructively before each LLM call
+- Session entries are no longer passed in events. Use `ctx.sessionManager.getEntries()` or `ctx.sessionManager.getBranch()` instead
+
+**API changes:**
+
+- `pi.send(text, attachments?)` → `pi.sendMessage(message, triggerTurn?)` (creates `CustomMessageEntry`)
+- New `pi.appendEntry(customType, data?)` for hook state persistence (not in LLM context)
+- New `pi.registerCommand(name, options)` for custom slash commands (handler receives `HookCommandContext`)
+- New `pi.registerMessageRenderer(customType, renderer)` for custom TUI rendering
+- New `ctx.isIdle()`, `ctx.abort()`, `ctx.hasQueuedMessages()` for agent state (available in all events)
+- New `ctx.ui.editor(title, prefill?)` for multi-line text editing with Ctrl+G external editor support
+- New `ctx.ui.custom(component)` for full TUI component rendering with keyboard focus
+- New `ctx.ui.setStatus(key, text)` for persistent status text in footer (multiple hooks can set their own)
+- New `ctx.ui.theme` getter for styling text with theme colors
+- `ctx.exec()` moved to `pi.exec()`
+- `ctx.sessionFile` → `ctx.sessionManager.getSessionFile()`
+- New `ctx.modelRegistry` and `ctx.model` for API key resolution
+
+**HookCommandContext (slash commands only):**
+
+- `ctx.waitForIdle()` - wait for agent to finish streaming
+- `ctx.newSession(options?)` - create new sessions with optional setup callback
+- `ctx.fork(entryId) - fork from a specific entry, creating a new session file
+- `ctx.navigateTree(targetId, options?)` - navigate the session tree
+
+These methods are only on `HookCommandContext` (not `HookContext`) because they can deadlock if called from event handlers that run inside the agent loop.
+
+**Removed:**
+
+- `hookTimeout` setting (hooks no longer have timeouts; use Ctrl+C to abort)
+- `resolveApiKey` parameter (use `ctx.modelRegistry.getApiKey(model)`)
+
+See [docs/hooks.md](docs/hooks.md) and [examples/hooks/](examples/hooks/) for the current API.
+
+### Custom Tools Migration
+
+The custom tools API has been restructured to mirror the hooks pattern with a context object.
+
+**Type renames:**
+
+- `CustomAgentTool` → `CustomTool`
+- `ToolAPI` → `CustomToolAPI`
+- `ToolContext` → `CustomToolContext`
+- `ToolSessionEvent` → `CustomToolSessionEvent`
+
+**Execute signature changed:**
+
+```typescript
+// Before (v0.30.2)
+execute(toolCallId, params, signal, onUpdate)
+
+// After
+execute(toolCallId, params, onUpdate, ctx, signal?)
+```
+
+The new `ctx: CustomToolContext` provides `sessionManager`, `modelRegistry`, `model`, and agent state methods:
+
+- `ctx.isIdle()` - check if agent is streaming
+- `ctx.hasQueuedMessages()` - check if user has queued messages (skip interactive prompts)
+- `ctx.abort()` - abort current operation (fire-and-forget)
+
+**Session event changes:**
+
+- `CustomToolSessionEvent` now only has `reason` and `previousSessionFile`
+- Session entries are no longer in the event. Use `ctx.sessionManager.getBranch()` or `ctx.sessionManager.getEntries()` to reconstruct state
+- Reasons: `"start" | "switch" | "branch" | "tree" | "shutdown"` (no separate `"new"` reason; `/new` triggers `"switch"`)
+- `dispose()` method removed. Use `onSession` with `reason: "shutdown"` for cleanup
+
+See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](examples/custom-tools/) for the current API.
+
+### SDK Migration
+
+**Type changes:**
+
+- `CustomAgentTool` → `CustomTool`
+- `AppMessage` → `AgentMessage`
+- `sessionFile` returns `string | undefined` (was `string | null`)
+- `model` returns `Model | undefined` (was `Model | null`)
+- `Attachment` type removed. Use `ImageContent` from `@mariozechner/pi-ai` instead. Add images directly to message content arrays.
+
+**AgentSession API:**
+
+- `branch(entryIndex: number)` → `branch(entryId: string)`
+- `getUserMessagesForBranching()` returns `{ entryId, text }` instead of `{ entryIndex, text }`
+- `reset()` → `newSession(options?)` where options has optional `parentSession` for lineage tracking
+- `newSession()` and `switchSession()` now return `Promise<boolean>` (false if cancelled by hook)
+- New `navigateTree(targetId, options?)` for in-place tree navigation
+
+**Hook integration:**
+
+- New `sendHookMessage(message, triggerTurn?)` for hook message injection
+
+**SessionManager API:**
+
+- Method renames: `saveXXX()` → `appendXXX()` (e.g., `appendMessage`, `appendCompaction`)
+- `branchInPlace()` → `branch()`
+- `reset()` → `newSession(options?)` with optional `parentSession` for lineage tracking
+- `createBranchedSessionFromEntries(entries, index)` → `createBranchedSession(leafId)`
+- `SessionHeader.branchedFrom` → `SessionHeader.parentSession`
+- `saveCompaction(entry)` → `appendCompaction(summary, firstKeptEntryId, tokensBefore, details?)`
+- `getEntries()` now excludes the session header (use `getHeader()` separately)
+- `getSessionFile()` returns `string | undefined` (undefined for in-memory sessions)
+- New tree methods: `getTree()`, `getBranch()`, `getLeafId()`, `getLeafEntry()`, `getEntry()`, `getChildren()`, `getLabel()`
+- New append methods: `appendCustomEntry()`, `appendCustomMessageEntry()`, `appendLabelChange()`
+- New branch methods: `branch(entryId)`, `branchWithSummary()`
+
+**ModelRegistry (new):**
+
+`ModelRegistry` is a new class that manages model discovery and API key resolution. It combines built-in models with custom models from `models.json` and resolves API keys via `AuthStorage`.
+
+```typescript
+import {
+  discoverAuthStorage,
+  discoverModels,
+} from "@mariozechner/pi-coding-agent";
+
+const authStorage = discoverAuthStorage(); // ~/.pi/agent/auth.json
+const modelRegistry = discoverModels(authStorage); // + ~/.pi/agent/models.json
+
+// Get all models (built-in + custom)
+const allModels = modelRegistry.getAll();
+
+// Get only models with valid API keys
+const available = await modelRegistry.getAvailable();
+
+// Find specific model
+const model = modelRegistry.find("anthropic", "claude-sonnet-4-20250514");
+
+// Get API key for a model
+const apiKey = await modelRegistry.getApiKey(model);
+```
+
+This replaces the old `resolveApiKey` callback pattern. Hooks and custom tools access it via `ctx.modelRegistry`.
+
+**Renamed exports:**
+
+- `messageTransformer` → `convertToLlm`
+- `SessionContext` alias `LoadedSession` removed
+
+See [docs/sdk.md](docs/sdk.md) and [examples/sdk/](examples/sdk/) for the current API.
+
+### RPC Migration
+
+**Session commands:**
+
+- `reset` command → `new_session` command with optional `parentSession` field
+
+**Branching commands:**
+
+- `branch` command: `entryIndex` → `entryId`
+- `get_branch_messages` response: `entryIndex` → `entryId`
+
+**Type changes:**
+
+- Messages are now `AgentMessage` (was `AppMessage`)
+- `prompt` command: `attachments` field replaced with `images` field using `ImageContent` format
+
+**Compaction events:**
+
+- `auto_compaction_start` now includes `reason` field (`"threshold"` or `"overflow"`)
+- `auto_compaction_end` now includes `willRetry` field
+- `compact` response includes full `CompactionResult` (`summary`, `firstKeptEntryId`, `tokensBefore`, `details`)
+
+See [docs/rpc.md](docs/rpc.md) for the current protocol.
+
+### Structured Compaction
+
+Compaction and branch summarization now use a structured output format:
+
+- Clear sections: Goal, Progress, Key Information, File Operations
+- File tracking: `readFiles` and `modifiedFiles` arrays in `details`, accumulated across compactions
+- Conversations are serialized to text before summarization to prevent the model from "continuing" them
+
+The `before_compact` and `before_tree` hook events allow custom compaction implementations. See [docs/compaction.md](docs/compaction.md).
+
+### Interactive Mode
+
+**`/tree` command:**
+
+- Navigate the full session tree in-place
+- Search by typing, page with ←/→
+- Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
+- Press `l` to label entries as bookmarks
+- Selecting a branch switches context and optionally injects a summary of the abandoned branch
+
+**Entry labels:**
+
+- Bookmark any entry via `/tree` → select → `l`
+- Labels appear in tree view and persist as `LabelEntry`
+
+**Theme changes (breaking for custom themes):**
+
+Custom themes must add these new color tokens or they will fail to load:
+
+- `selectedBg`: background for selected/highlighted items in tree selector and other components
+- `customMessageBg`: background for hook-injected messages (`CustomMessageEntry`)
+- `customMessageText`: text color for hook messages
+- `customMessageLabel`: label color for hook messages (the `[customType]` prefix)
+
+Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) for the full color list and copy values from the built-in dark/light themes.
+
+**Settings:**
+
+- `enabledModels`: allowlist models in `settings.json` (same format as `--models` CLI)
+
+### Added
+
+- `ctx.ui.setStatus(key, text)` for hooks to display persistent status text in the footer ([#385](https://github.com/badlogic/pi-mono/pull/385) by [@prateekmedia](https://github.com/prateekmedia))
+- `ctx.ui.theme` getter for styling status text and other output with theme colors
+- `/share` command to upload session as a secret GitHub gist and get a shareable URL via shittycodingagent.ai ([#380](https://github.com/badlogic/pi-mono/issues/380))
+- HTML export now includes a tree visualization sidebar for navigating session branches ([#375](https://github.com/badlogic/pi-mono/issues/375))
+- HTML export supports keyboard shortcuts: Ctrl+T to toggle thinking blocks, Ctrl+O to toggle tool outputs
+- HTML export supports theme-configurable background colors via optional `export` section in theme JSON ([#387](https://github.com/badlogic/pi-mono/pull/387) by [@mitsuhiko](https://github.com/mitsuhiko))
+- HTML export syntax highlighting now uses theme colors and matches TUI rendering
+- **Snake game example hook**: Demonstrates `ui.custom()`, `registerCommand()`, and session persistence. See [examples/hooks/snake.ts](examples/hooks/snake.ts).
+- **`thinkingText` theme token**: Configurable color for thinking block text. ([#366](https://github.com/badlogic/pi-mono/pull/366) by [@paulbettner](https://github.com/paulbettner))
+
+### Changed
+
+- **Entry IDs**: Session entries now use short 8-character hex IDs instead of full UUIDs
+- **API key priority**: `ANTHROPIC_OAUTH_TOKEN` now takes precedence over `ANTHROPIC_API_KEY`
+- HTML export template split into separate files (template.html, template.css, template.js) for easier maintenance
+
+### Fixed
+
+- HTML export now properly sanitizes user messages containing HTML tags like `<style>` that could break DOM rendering
+- Crash when displaying bash output containing Unicode format characters like U+0600-U+0604 ([#372](https://github.com/badlogic/pi-mono/pull/372) by [@HACKE-RC](https://github.com/HACKE-RC))
+- **Footer shows full session stats**: Token usage and cost now include all messages, not just those after compaction. ([#322](https://github.com/badlogic/pi-mono/issues/322))
+- **Status messages spam chat log**: Rapidly changing settings (e.g., thinking level via Shift+Tab) would add multiple status lines. Sequential status updates now coalesce into a single line. ([#365](https://github.com/badlogic/pi-mono/pull/365) by [@paulbettner](https://github.com/paulbettner))
+- **Toggling thinking blocks during streaming shows nothing**: Pressing Ctrl+T while streaming would hide the current message until streaming completed.
+- **Resuming session resets thinking level to off**: Initial model and thinking level were not saved to session file, causing `--resume`/`--continue` to default to `off`. ([#342](https://github.com/badlogic/pi-mono/issues/342) by [@aliou](https://github.com/aliou))
+- **Hook `tool_result` event ignores errors from custom tools**: The `tool_result` hook event was never emitted when tools threw errors, and always had `isError: false` for successful executions. Now emits the event with correct `isError` value in both success and error cases. ([#374](https://github.com/badlogic/pi-mono/issues/374) by [@nicobailon](https://github.com/nicobailon))
+- **Edit tool fails on Windows due to CRLF line endings**: Files with CRLF line endings now match correctly when LLMs send LF-only text. Line endings are normalized before matching and restored to original style on write. ([#355](https://github.com/badlogic/pi-mono/issues/355) by [@Pratham-Dubey](https://github.com/Pratham-Dubey))
+- **Edit tool fails on files with UTF-8 BOM**: Files with UTF-8 BOM marker could cause "text not found" errors since the LLM doesn't include the invisible BOM character. BOM is now stripped before matching and restored on write. ([#394](https://github.com/badlogic/pi-mono/pull/394) by [@prathamdby](https://github.com/prathamdby))
+- **Use bash instead of sh on Unix**: Fixed shell commands using `/bin/sh` instead of `/bin/bash` on Unix systems. ([#328](https://github.com/badlogic/pi-mono/pull/328) by [@dnouri](https://github.com/dnouri))
+- **OAuth login URL clickable**: Made OAuth login URLs clickable in terminal. ([#349](https://github.com/badlogic/pi-mono/pull/349) by [@Cursivez](https://github.com/Cursivez))
+- **Improved error messages**: Better error messages when `apiKey` or `model` are missing. ([#346](https://github.com/badlogic/pi-mono/pull/346) by [@ronyrus](https://github.com/ronyrus))
+- **Session file validation**: `findMostRecentSession()` now validates session headers before returning, preventing non-session JSONL files from being loaded
+- **Compaction error handling**: `generateSummary()` and `generateTurnPrefixSummary()` now throw on LLM errors instead of returning empty strings
+- **Compaction with branched sessions**: Fixed compaction incorrectly including entries from abandoned branches, causing token overflow errors. Compaction now uses `sessionManager.getPath()` to work only on the current branch path, eliminating 80+ lines of duplicate entry collection logic between `prepareCompaction()` and `compact()`
+- **enabledModels glob patterns**: `--models` and `enabledModels` now support glob patterns like `github-copilot/*` or `*sonnet*`. Previously, patterns were only matched literally or via substring search. ([#337](https://github.com/badlogic/pi-mono/issues/337))
+
+## [0.30.2] - 2025-12-26
+
+### Changed
+
+- **Consolidated migrations**: Moved auth migration from `AuthStorage.migrateLegacy()` to new `migrations.ts` module.
+
+## [0.30.1] - 2025-12-26
+
+### Fixed
+
+- **Sessions saved to wrong directory**: In v0.30.0, sessions were being saved to `~/.pi/agent/` instead of `~/.pi/agent/sessions/<encoded-cwd>/`, breaking `--resume` and `/resume`. Misplaced sessions are automatically migrated on startup. ([#320](https://github.com/badlogic/pi-mono/issues/320) by [@aliou](https://github.com/aliou))
+- **Custom system prompts missing context**: When using a custom system prompt string, project context files (AGENTS.md), skills, date/time, and working directory were not appended. ([#321](https://github.com/badlogic/pi-mono/issues/321))
+
+## [0.30.0] - 2025-12-25
+
+### Breaking Changes
+
+- **SessionManager API**: The second parameter of `create()`, `continueRecent()`, and `list()` changed from `agentDir` to `sessionDir`. When provided, it specifies the session directory directly (no cwd encoding). When omitted, uses default (`~/.pi/agent/sessions/<encoded-cwd>/`). `open()` no longer takes `agentDir`. ([#313](https://github.com/badlogic/pi-mono/pull/313))
+
+### Added
+
+- **`--session-dir` flag**: Use a custom directory for sessions instead of the default `~/.pi/agent/sessions/<encoded-cwd>/`. Works with `-c` (continue) and `-r` (resume) flags. ([#313](https://github.com/badlogic/pi-mono/pull/313) by [@scutifer](https://github.com/scutifer))
+- **Reverse model cycling and model selector**: Shift+Ctrl+P cycles models backward, Ctrl+L opens model selector (retaining text in editor). ([#315](https://github.com/badlogic/pi-mono/pull/315) by [@mitsuhiko](https://github.com/mitsuhiko))
+
+## [0.29.1] - 2025-12-25
+
+### Added
+
+- **Automatic custom system prompt loading**: Pi now auto-loads `SYSTEM.md` files to replace the default system prompt. Project-local `.pi/SYSTEM.md` takes precedence over global `~/.pi/agent/SYSTEM.md`. CLI `--system-prompt` flag overrides both. ([#309](https://github.com/badlogic/pi-mono/issues/309))
+- **Unified `/settings` command**: New settings menu consolidating thinking level, theme, queue mode, auto-compact, show images, hide thinking, and collapse changelog. Replaces individual `/thinking`, `/queue`, `/theme`, `/autocompact`, and `/show-images` commands. ([#310](https://github.com/badlogic/pi-mono/issues/310))
+
+### Fixed
+
+- **Custom tools/hooks with typebox subpath imports**: Fixed jiti alias for `@sinclair/typebox` to point to package root instead of entry file, allowing imports like `@sinclair/typebox/compiler` to resolve correctly. ([#311](https://github.com/badlogic/pi-mono/issues/311) by [@kim0](https://github.com/kim0))
+
+## [0.29.0] - 2025-12-25
+
+### Breaking Changes
+
+- **Renamed `/clear` to `/new`**: The command to start a fresh session is now `/new`. Hook event reasons `before_clear`/`clear` are now `before_new`/`new`. Merry Christmas [@mitsuhiko](https://github.com/mitsuhiko)! ([#305](https://github.com/badlogic/pi-mono/pull/305))
+
+### Added
+
+- **Auto-space before pasted file paths**: When pasting a file path (starting with `/`, `~`, or `.`) after a word character, a space is automatically prepended. ([#307](https://github.com/badlogic/pi-mono/pull/307) by [@mitsuhiko](https://github.com/mitsuhiko))
+- **Word navigation in input fields**: Added Ctrl+Left/Right and Alt+Left/Right for word-by-word cursor movement. ([#306](https://github.com/badlogic/pi-mono/pull/306) by [@kim0](https://github.com/kim0))
+- **Full Unicode input**: Input fields now accept Unicode characters beyond ASCII. ([#306](https://github.com/badlogic/pi-mono/pull/306) by [@kim0](https://github.com/kim0))
+
+### Fixed
+
+- **Readline-style Ctrl+W**: Now skips trailing whitespace before deleting the preceding word, matching standard readline behavior. ([#306](https://github.com/badlogic/pi-mono/pull/306) by [@kim0](https://github.com/kim0))
+
+## [0.28.0] - 2025-12-25
+
+### Changed
+
+- **Credential storage refactored**: API keys and OAuth tokens are now stored in `~/.pi/agent/auth.json` instead of `oauth.json` and `settings.json`. Existing credentials are automatically migrated on first run. ([#296](https://github.com/badlogic/pi-mono/issues/296))
+
+- **SDK API changes** ([#296](https://github.com/badlogic/pi-mono/issues/296)):
+
+  - Added `AuthStorage` class for credential management (API keys and OAuth tokens)
+  - Added `ModelRegistry` class for model discovery and API key resolution
+  - Added `discoverAuthStorage()` and `discoverModels()` discovery functions
+  - `createAgentSession()` now accepts `authStorage` and `modelRegistry` options
+  - Removed `configureOAuthStorage()`, `defaultGetApiKey()`, `findModel()`, `discoverAvailableModels()`
+  - Removed `getApiKey` callback option (use `AuthStorage.setRuntimeApiKey()` for runtime overrides)
+  - Use `getModel()` from `@mariozechner/pi-ai` for built-in models, `modelRegistry.find()` for custom models + built-in models
+  - See updated [SDK documentation](docs/sdk.md) and [README](README.md)
+
+- **Settings changes**: Removed `apiKeys` from `settings.json`. Use `auth.json` instead. ([#296](https://github.com/badlogic/pi-mono/issues/296))
+
+### Fixed
+
+- **Duplicate skill warnings for symlinks**: Skills loaded via symlinks pointing to the same file are now silently deduplicated instead of showing name collision warnings. ([#304](https://github.com/badlogic/pi-mono/pull/304) by [@mitsuhiko](https://github.com/mitsuhiko))
+
+## [0.27.9] - 2025-12-24
+
+### Fixed
+
+- **Model selector and --list-models with settings.json API keys**: Models with API keys configured in settings.json (but not in environment variables) now properly appear in the /model selector and `--list-models` output. ([#295](https://github.com/badlogic/pi-mono/issues/295))
+
+## [0.27.8] - 2025-12-24
+
+### Fixed
+
+- **API key priority**: OAuth tokens now take priority over settings.json API keys. Previously, an API key in settings.json would trump OAuth, causing users logged in with a plan (unlimited tokens) to be billed via PAYG instead.
+
+## [0.27.7] - 2025-12-24
+
+### Fixed
+
+- **Thinking tag leakage**: Fixed Claude mimicking literal `</thinking>` tags in responses. Unsigned thinking blocks (from aborted streams) are now converted to plain text without `<thinking>` tags. The TUI still displays them as thinking blocks. ([#302](https://github.com/badlogic/pi-mono/pull/302) by [@nicobailon](https://github.com/nicobailon))
+
+## [0.27.6] - 2025-12-24
+
+### Added
+
+- **Compaction hook improvements**: The `before_compact` session event now includes:
+
+  - `previousSummary`: Summary from the last compaction (if any), so hooks can preserve accumulated context
+  - `messagesToKeep`: Messages that will be kept after the summary (recent turns), in addition to `messagesToSummarize`
+  - `resolveApiKey`: Function to resolve API keys for any model (checks settings, OAuth, env vars)
+  - Removed `apiKey` string in favor of `resolveApiKey` for more flexibility
+
+- **SessionManager API cleanup**:
+  - Renamed `loadSessionFromEntries()` to `buildSessionContext()` (builds LLM context from entries, handling compaction)
+  - Renamed `loadEntries()` to `getEntries()` (returns defensive copy of all session entries)
+  - Added `buildSessionContext()` method to SessionManager
+
+## [0.27.5] - 2025-12-24
+
+### Added
+
+- **HTML export syntax highlighting**: Code blocks in markdown and tool outputs (read, write) now have syntax highlighting using highlight.js with theme-aware colors matching the TUI.
+- **HTML export improvements**: Render markdown server-side using marked (tables, headings, code blocks, etc.), honor user's chosen theme (light/dark), add image rendering for user messages, and style code blocks with TUI-like language markers. ([@scutifer](https://github.com/scutifer))
+
+### Fixed
+
+- **Ghostty inline images in tmux**: Fixed terminal detection for Ghostty when running inside tmux by checking `GHOSTTY_RESOURCES_DIR` env var. ([#299](https://github.com/badlogic/pi-mono/pull/299) by [@nicobailon](https://github.com/nicobailon))
+
+## [0.27.4] - 2025-12-24
+
+### Fixed
+
+- **Symlinked skill directories**: Skills in symlinked directories (e.g., `~/.pi/agent/skills/my-skills -> /path/to/skills`) are now correctly discovered and loaded.
+
+## [0.27.3] - 2025-12-24
+
+### Added
+
+- **API keys in settings.json**: Store API keys in `~/.pi/agent/settings.json` under the `apiKeys` field (e.g., `{ "apiKeys": { "anthropic": "sk-..." } }`). Settings keys take priority over environment variables. ([#295](https://github.com/badlogic/pi-mono/issues/295))
+
+### Fixed
+
+- **Allow startup without API keys**: Interactive mode no longer throws when no API keys are configured. Users can now start the agent and use `/login` to authenticate. ([#288](https://github.com/badlogic/pi-mono/issues/288))
+- **`--system-prompt` file path support**: The `--system-prompt` argument now correctly resolves file paths (like `--append-system-prompt` already did). ([#287](https://github.com/badlogic/pi-mono/pull/287) by [@scutifer](https://github.com/scutifer))
+
+## [0.27.2] - 2025-12-23
+
+### Added
+
+- **Skip conversation restore on branch**: Hooks can return `{ skipConversationRestore: true }` from `before_branch` to create the branched session file without restoring conversation messages. Useful for checkpoint hooks that restore files separately. ([#286](https://github.com/badlogic/pi-mono/pull/286) by [@nicobarray](https://github.com/nicobarray))
+
+## [0.27.1] - 2025-12-22
+
+### Fixed
+
+- **Skill discovery performance**: Skip `node_modules` directories when recursively scanning for skills. Fixes ~60ms startup delay when skill directories contain npm dependencies.
+
+### Added
+
+- **Startup timing instrumentation**: Set `PI_TIMING=1` to see startup performance breakdown (interactive mode only).
+
+## [0.27.0] - 2025-12-22
+
+### Breaking
+
+- **Session hooks API redesign**: Merged `branch` event into `session` event. `BranchEvent`, `BranchEventResult` types and `pi.on("branch", ...)` removed. Use `pi.on("session", ...)` with `reason: "before_branch" | "branch"` instead. `AgentSession.branch()` returns `{ cancelled }` instead of `{ skipped }`. `AgentSession.reset()` and `switchSession()` now return `boolean` (false if cancelled by hook). RPC commands `reset`, `switch_session`, and `branch` now include `cancelled` in response data. ([#278](https://github.com/badlogic/pi-mono/issues/278))
+
+### Added
+
+- **Session lifecycle hooks**: Added `before_*` variants (`before_switch`, `before_clear`, `before_branch`) that fire before actions and can be cancelled with `{ cancel: true }`. Added `shutdown` reason for graceful exit handling. ([#278](https://github.com/badlogic/pi-mono/issues/278))
+
+### Fixed
+
+- **File tab completion display**: File paths no longer get cut off early. Folders now show trailing `/` and removed redundant "directory"/"file" labels to maximize horizontal space. ([#280](https://github.com/badlogic/pi-mono/issues/280))
+
+- **Bash tool visual line truncation**: Fixed bash tool output in collapsed mode to use visual line counting (accounting for line wrapping) instead of logical line counting. Now consistent with bash-execution.ts behavior. Extracted shared `truncateToVisualLines` utility. ([#275](https://github.com/badlogic/pi-mono/issues/275))
+
+## [0.26.1] - 2025-12-22
+
+### Fixed
+
+- **SDK tools respect cwd**: Core tools (bash, read, edit, write, grep, find, ls) now properly use the `cwd` option from `createAgentSession()`. Added tool factory functions (`createBashTool`, `createReadTool`, etc.) for SDK users who specify custom `cwd` with explicit tools. ([#279](https://github.com/badlogic/pi-mono/issues/279))
+
+## [0.26.0] - 2025-12-22
+
+### Added
+
+- **SDK for programmatic usage**: New `createAgentSession()` factory with full control over model, tools, hooks, skills, session persistence, and settings. Philosophy: "omit to discover, provide to override". Includes 12 examples and comprehensive documentation. ([#272](https://github.com/badlogic/pi-mono/issues/272))
+
+- **Project-specific settings**: Settings now load from both `~/.pi/agent/settings.json` (global) and `<cwd>/.pi/settings.json` (project). Project settings override global with deep merge for nested objects. Project settings are read-only (for version control). ([#276](https://github.com/badlogic/pi-mono/pull/276))
+
+- **SettingsManager static factories**: `SettingsManager.create(cwd?, agentDir?)` for file-based settings, `SettingsManager.inMemory(settings?)` for testing. Added `applyOverrides()` for programmatic overrides.
+
+- **SessionManager static factories**: `SessionManager.create()`, `SessionManager.open()`, `SessionManager.continueRecent()`, `SessionManager.inMemory()`, `SessionManager.list()` for flexible session management.
+
+## [0.25.4] - 2025-12-22
+
+### Fixed
+
+- **Syntax highlighting stderr spam**: Fixed cli-highlight logging errors to stderr when markdown contains malformed code fences (e.g., missing newlines around closing backticks). Now validates language identifiers before highlighting and falls back silently to plain text. ([#274](https://github.com/badlogic/pi-mono/issues/274))
+
 ## [0.25.3] - 2025-12-21
 
 ### Added
@@ -170,6 +1440,7 @@
 - Improved system prompt documentation section with clearer pointers to specific doc files for custom models, themes, skills, hooks, custom tools, and RPC.
 
 - Cleaned up documentation:
+
   - `theme.md`: Added missing color tokens (`thinkingXhigh`, `bashMode`)
   - `skills.md`: Rewrote with better framing and examples
   - `hooks.md`: Fixed timeout/error handling docs, added import aliases section

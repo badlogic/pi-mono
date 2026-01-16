@@ -1,0 +1,4 @@
+# Runtime files
+switchboard.pid
+messages.json
+node_modules/

@@ -1,23 +1,23 @@
 # @mariozechner/pi-web-ui
 
-Reusable web UI components for building AI chat interfaces powered by [@mariozechner/pi-ai](../ai).
+Reusable web UI components for building AI chat interfaces powered by [@mariozechner/pi-ai](../ai) and [@mariozechner/pi-agent-core](../agent).
 
- Built with [mini-lit](https://github.com/badlogic/mini-lit) web components and Tailwind CSS v4.
+Built with [mini-lit](https://github.com/badlogic/mini-lit) web components and Tailwind CSS v4.
 
 ## Features
 
-- Modern Chat Interface - Complete chat UI with message history, streaming responses, and tool execution
-- Tool Support - Built-in renderers for calculator, bash, time, and custom tools
-- Attachments - PDF, Office documents, images with preview and text extraction
-- Artifacts - HTML, SVG, Markdown, and text artifact rendering with sandboxed execution
-- Pluggable Transports - Direct API calls or proxy server support
-- Platform Agnostic - Works in browser extensions, web apps, VS Code extensions, Electron apps
-- TypeScript - Full type safety with TypeScript
+- **Chat UI**: Complete interface with message history, streaming, and tool execution
+- **Tools**: JavaScript REPL, document extraction, and artifacts (HTML, SVG, Markdown, etc.)
+- **Attachments**: PDF, DOCX, XLSX, PPTX, images with preview and text extraction
+- **Artifacts**: Interactive HTML, SVG, Markdown with sandboxed execution
+- **Storage**: IndexedDB-backed storage for sessions, API keys, and settings
+- **CORS Proxy**: Automatic proxy handling for browser environments
+- **Custom Providers**: Support for Ollama, LM Studio, vLLM, and OpenAI-compatible APIs
 
 ## Installation
 
 ```bash
-npm install @mariozechner/pi-web-ui
+npm install @mariozechner/pi-web-ui @mariozechner/pi-agent-core @mariozechner/pi-ai
 ```
 
 ## Quick Start
@@ -25,19 +25,43 @@ npm install @mariozechner/pi-web-ui
 See the [example](./example) directory for a complete working application.
 
 ```typescript
-import { Agent, ChatPanel, ProviderTransport, AppStorage,
-         SessionIndexedDBBackend, setAppStorage } from '@mariozechner/pi-web-ui';
+import { Agent } from '@mariozechner/pi-agent-core';
 import { getModel } from '@mariozechner/pi-ai';
+import {
+  ChatPanel,
+  AppStorage,
+  IndexedDBStorageBackend,
+  ProviderKeysStore,
+  SessionsStore,
+  SettingsStore,
+  setAppStorage,
+  defaultConvertToLlm,
+  ApiKeyPromptDialog,
+} from '@mariozechner/pi-web-ui';
 import '@mariozechner/pi-web-ui/app.css';
 
 // Set up storage
-const storage = new AppStorage({
-  sessions: new SessionIndexedDBBackend('my-app-sessions'),
-});
-setAppStorage(storage);
+const settings = new SettingsStore();
+const providerKeys = new ProviderKeysStore();
+const sessions = new SessionsStore();
 
-// Create transport
-const transport = new ProviderTransport();
+const backend = new IndexedDBStorageBackend({
+  dbName: 'my-app',
+  version: 1,
+  stores: [
+    settings.getConfig(),
+    providerKeys.getConfig(),
+    sessions.getConfig(),
+    SessionsStore.getMetadataConfig(),
+  ],
+});
+
+settings.setBackend(backend);
+providerKeys.setBackend(backend);
+sessions.setBackend(backend);
+
+const storage = new AppStorage(settings, providerKeys, sessions, undefined, backend);
+setAppStorage(storage);
 
 // Create agent
 const agent = new Agent({
@@ -48,135 +72,286 @@ const agent = new Agent({
     messages: [],
     tools: [],
   },
-  transport,
+  convertToLlm: defaultConvertToLlm,
 });
 
-// Create chat panel and attach agent
+// Create chat panel
 const chatPanel = new ChatPanel();
-await chatPanel.setAgent(agent);
+await chatPanel.setAgent(agent, {
+  onApiKeyRequired: (provider) => ApiKeyPromptDialog.prompt(provider),
+});
 
 document.body.appendChild(chatPanel);
 ```
 
-**Run the example:**
+## Architecture
 
-```bash
-cd example
-npm install
-npm run dev
+```
+┌─────────────────────────────────────────────────────┐
+│                    ChatPanel                         │
+│  ┌─────────────────────┐  ┌─────────────────────┐   │
+│  │   AgentInterface    │  │   ArtifactsPanel    │   │
+│  │  (messages, input)  │  │  (HTML, SVG, MD)    │   │
+│  └─────────────────────┘  └─────────────────────┘   │
+└─────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────┐
+│              Agent (from pi-agent-core)              │
+│  - State management (messages, model, tools)         │
+│  - Event emission (agent_start, message_update, ...) │
+│  - Tool execution                                    │
+└─────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────┐
+│                   AppStorage                         │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐            │
+│  │ Settings │ │ Provider │ │ Sessions │            │
+│  │  Store   │ │Keys Store│ │  Store   │            │
+│  └──────────┘ └──────────┘ └──────────┘            │
+│                     │                               │
+│              IndexedDBStorageBackend                │
+└─────────────────────────────────────────────────────┘
 ```
 
-## Core Components
+## Components
 
 ### ChatPanel
 
-The main chat interface component. Displays messages, handles input, and coordinates with the Agent.
+High-level chat interface with built-in artifacts panel.
 
 ```typescript
-import { ChatPanel, ApiKeyPromptDialog } from '@mariozechner/pi-web-ui';
-
 const chatPanel = new ChatPanel();
+await chatPanel.setAgent(agent, {
+  // Prompt for API key when needed
+  onApiKeyRequired: async (provider) => ApiKeyPromptDialog.prompt(provider),
 
-// Optional: Handle API key prompts
-chatPanel.onApiKeyRequired = async (provider: string) => {
-  return await ApiKeyPromptDialog.prompt(provider);
-};
+  // Hook before sending messages
+  onBeforeSend: async () => { /* save draft, etc. */ },
 
-// Attach an agent
-await chatPanel.setAgent(agent);
-```
+  // Handle cost display click
+  onCostClick: () => { /* show cost breakdown */ },
 
-### Agent
+  // Custom sandbox URL for browser extensions
+  sandboxUrlProvider: () => chrome.runtime.getURL('sandbox.html'),
 
-Core state manager that handles conversation state, tool execution, and streaming.
-
-```typescript
-import { Agent, ProviderTransport } from '@mariozechner/pi-web-ui';
-import { getModel } from '@mariozechner/pi-ai';
-
-const agent = new Agent({
-  initialState: {
-    model: getModel('anthropic', 'claude-sonnet-4-5-20250929'),
-    systemPrompt: 'You are a helpful assistant.',
-    thinkingLevel: 'off',
-    messages: [],
-    tools: [],
+  // Add custom tools
+  toolsFactory: (agent, agentInterface, artifactsPanel, runtimeProvidersFactory) => {
+    const replTool = createJavaScriptReplTool();
+    replTool.runtimeProvidersFactory = runtimeProvidersFactory;
+    return [replTool];
   },
-  transport: new ProviderTransport(),
 });
-
-// Subscribe to events
-agent.subscribe((event) => {
-  if (event.type === 'state-update') {
-    console.log('Messages:', event.state.messages);
-  }
-});
-
-// Send a message
-await agent.send('Hello!');
 ```
 
 ### AgentInterface
 
-Lower-level chat interface for custom implementations. Used internally by ChatPanel.
+Lower-level chat interface for custom layouts.
 
 ```typescript
-import { AgentInterface } from '@mariozechner/pi-web-ui';
-
-const chat = new AgentInterface();
-await chat.setAgent(agent);
+const chat = document.createElement('agent-interface') as AgentInterface;
+chat.session = agent;
+chat.enableAttachments = true;
+chat.enableModelSelector = true;
+chat.enableThinkingSelector = true;
+chat.onApiKeyRequired = async (provider) => { /* ... */ };
+chat.onBeforeSend = async () => { /* ... */ };
 ```
 
-## Transports
+Properties:
+- `session`: Agent instance
+- `enableAttachments`: Show attachment button (default: true)
+- `enableModelSelector`: Show model selector (default: true)
+- `enableThinkingSelector`: Show thinking level selector (default: true)
+- `showThemeToggle`: Show theme toggle (default: false)
 
-Transport layers handle communication with AI providers.
-
-### ProviderTransport
-
-The main transport that calls AI provider APIs using stored API keys.
+### Agent (from pi-agent-core)
 
 ```typescript
-import { ProviderTransport } from '@mariozechner/pi-web-ui';
-
-const transport = new ProviderTransport();
+import { Agent } from '@mariozechner/pi-agent-core';
 
 const agent = new Agent({
-  initialState: { /* ... */ },
-  transport,
+  initialState: {
+    model: getModel('anthropic', 'claude-sonnet-4-5-20250929'),
+    systemPrompt: 'You are helpful.',
+    thinkingLevel: 'off',
+    messages: [],
+    tools: [],
+  },
+  convertToLlm: defaultConvertToLlm,
 });
+
+// Events
+agent.subscribe((event) => {
+  switch (event.type) {
+    case 'agent_start': // Agent loop started
+    case 'agent_end':   // Agent loop finished
+    case 'turn_start':  // LLM call started
+    case 'turn_end':    // LLM call finished
+    case 'message_start':
+    case 'message_update': // Streaming update
+    case 'message_end':
+      break;
+  }
+});
+
+// Send message
+await agent.prompt('Hello!');
+await agent.prompt({ role: 'user-with-attachments', content: 'Check this', attachments, timestamp: Date.now() });
+
+// Control
+agent.abort();
+agent.setModel(newModel);
+agent.setThinkingLevel('medium');
+agent.setTools([...]);
+agent.queueMessage(customMessage);
 ```
 
-### AppTransport
+## Message Types
 
-Alternative transport for proxying requests through a custom server.
+### UserMessageWithAttachments
+
+User message with file attachments:
 
 ```typescript
-import { AppTransport } from '@mariozechner/pi-web-ui';
+const message: UserMessageWithAttachments = {
+  role: 'user-with-attachments',
+  content: 'Analyze this document',
+  attachments: [pdfAttachment],
+  timestamp: Date.now(),
+};
 
-const transport = new AppTransport();
-
-const agent = new Agent({
-  initialState: { /* ... */ },
-  transport,
-});
+// Type guard
+if (isUserMessageWithAttachments(msg)) {
+  console.log(msg.attachments);
+}
 ```
 
-## Tool Renderers
+### ArtifactMessage
 
-Customize how tool calls and results are displayed.
+For session persistence of artifacts:
+
+```typescript
+const artifact: ArtifactMessage = {
+  role: 'artifact',
+  action: 'create', // or 'update', 'delete'
+  filename: 'chart.html',
+  content: '<div>...</div>',
+  timestamp: new Date().toISOString(),
+};
+
+// Type guard
+if (isArtifactMessage(msg)) {
+  console.log(msg.filename);
+}
+```
+
+### Custom Message Types
+
+Extend via declaration merging:
+
+```typescript
+interface SystemNotification {
+  role: 'system-notification';
+  message: string;
+  level: 'info' | 'warning' | 'error';
+  timestamp: string;
+}
+
+declare module '@mariozechner/pi-agent-core' {
+  interface CustomAgentMessages {
+    'system-notification': SystemNotification;
+  }
+}
+
+// Register renderer
+registerMessageRenderer('system-notification', {
+  render: (msg) => html`<div class="alert">${msg.message}</div>`,
+});
+
+// Extend convertToLlm
+function myConvertToLlm(messages: AgentMessage[]): Message[] {
+  const processed = messages.map((m) => {
+    if (m.role === 'system-notification') {
+      return { role: 'user', content: `<system>${m.message}</system>`, timestamp: Date.now() };
+    }
+    return m;
+  });
+  return defaultConvertToLlm(processed);
+}
+```
+
+## Message Transformer
+
+`convertToLlm` transforms app messages to LLM-compatible format:
+
+```typescript
+import { defaultConvertToLlm, convertAttachments } from '@mariozechner/pi-web-ui';
+
+// defaultConvertToLlm handles:
+// - UserMessageWithAttachments → user message with image/text content blocks
+// - ArtifactMessage → filtered out (UI-only)
+// - Standard messages (user, assistant, toolResult) → passed through
+```
+
+## Tools
+
+### JavaScript REPL
+
+Execute JavaScript in a sandboxed browser environment:
+
+```typescript
+import { createJavaScriptReplTool } from '@mariozechner/pi-web-ui';
+
+const replTool = createJavaScriptReplTool();
+
+// Configure runtime providers for artifact/attachment access
+replTool.runtimeProvidersFactory = () => [
+  new AttachmentsRuntimeProvider(attachments),
+  new ArtifactsRuntimeProvider(artifactsPanel, agent, true), // read-write
+];
+
+agent.setTools([replTool]);
+```
+
+### Extract Document
+
+Extract text from documents at URLs:
+
+```typescript
+import { createExtractDocumentTool } from '@mariozechner/pi-web-ui';
+
+const extractTool = createExtractDocumentTool();
+extractTool.corsProxyUrl = 'https://corsproxy.io/?';
+
+agent.setTools([extractTool]);
+```
+
+### Artifacts Tool
+
+Built into ArtifactsPanel, supports: HTML, SVG, Markdown, text, JSON, images, PDF, DOCX, XLSX.
+
+```typescript
+const artifactsPanel = new ArtifactsPanel();
+artifactsPanel.agent = agent;
+
+// The tool is available as artifactsPanel.tool
+agent.setTools([artifactsPanel.tool]);
+```
+
+### Custom Tool Renderers
 
 ```typescript
 import { registerToolRenderer, type ToolRenderer } from '@mariozechner/pi-web-ui';
-import { html } from '@mariozechner/mini-lit';
 
 const myRenderer: ToolRenderer = {
-  renderParams(params, isStreaming) {
-    return html`<div>Calling tool with: ${JSON.stringify(params)}</div>`;
+  render(params, result, isStreaming) {
+    return {
+      content: html`<div>...</div>`,
+      isCustom: false, // true = no card wrapper
+    };
   },
-
-  renderResult(params, result) {
-    return html`<div>Result: ${result.output}</div>`;
-  }
 };
 
 registerToolRenderer('my_tool', myRenderer);
@@ -184,55 +359,211 @@ registerToolRenderer('my_tool', myRenderer);
 
 ## Storage
 
-The package provides flexible storage backends for API keys, settings, and session persistence.
-
-### AppStorage
-
-Central storage configuration for the application.
+### Setup
 
 ```typescript
-import { AppStorage, setAppStorage, SessionIndexedDBBackend } from '@mariozechner/pi-web-ui';
+import {
+  AppStorage,
+  IndexedDBStorageBackend,
+  SettingsStore,
+  ProviderKeysStore,
+  SessionsStore,
+  CustomProvidersStore,
+  setAppStorage,
+  getAppStorage,
+} from '@mariozechner/pi-web-ui';
 
-const storage = new AppStorage({
-  sessions: new SessionIndexedDBBackend('my-app-sessions'),
+// Create stores
+const settings = new SettingsStore();
+const providerKeys = new ProviderKeysStore();
+const sessions = new SessionsStore();
+const customProviders = new CustomProvidersStore();
+
+// Create backend with all store configs
+const backend = new IndexedDBStorageBackend({
+  dbName: 'my-app',
+  version: 1,
+  stores: [
+    settings.getConfig(),
+    providerKeys.getConfig(),
+    sessions.getConfig(),
+    SessionsStore.getMetadataConfig(),
+    customProviders.getConfig(),
+  ],
 });
 
+// Wire stores to backend
+settings.setBackend(backend);
+providerKeys.setBackend(backend);
+sessions.setBackend(backend);
+customProviders.setBackend(backend);
+
+// Create and set global storage
+const storage = new AppStorage(settings, providerKeys, sessions, customProviders, backend);
 setAppStorage(storage);
 ```
 
-### Available Backends
+### SettingsStore
 
-- `LocalStorageBackend` - Uses browser localStorage
-- `IndexedDBBackend` - Uses IndexedDB for larger data
-- `SessionIndexedDBBackend` - Specialized for session storage
-- `WebExtensionStorageBackend` - For browser extensions using chrome.storage API
-
-### Session Management
+Key-value settings:
 
 ```typescript
-import { getAppStorage } from '@mariozechner/pi-web-ui';
+await storage.settings.set('proxy.enabled', true);
+await storage.settings.set('proxy.url', 'https://proxy.example.com');
+const enabled = await storage.settings.get<boolean>('proxy.enabled');
+```
 
-const storage = getAppStorage();
+### ProviderKeysStore
 
+API keys by provider:
+
+```typescript
+await storage.providerKeys.set('anthropic', 'sk-ant-...');
+const key = await storage.providerKeys.get('anthropic');
+const providers = await storage.providerKeys.list();
+```
+
+### SessionsStore
+
+Chat sessions with metadata:
+
+```typescript
 // Save session
-await storage.sessions?.saveSession(sessionId, agentState, undefined, title);
+await storage.sessions.save(sessionData, metadata);
 
 // Load session
-const sessionData = await storage.sessions?.loadSession(sessionId);
+const data = await storage.sessions.get(sessionId);
+const metadata = await storage.sessions.getMetadata(sessionId);
 
-// List sessions
-const sessions = await storage.sessions?.listSessions();
+// List sessions (sorted by lastModified)
+const allMetadata = await storage.sessions.getAllMetadata();
+
+// Update title
+await storage.sessions.updateTitle(sessionId, 'New Title');
+
+// Delete
+await storage.sessions.delete(sessionId);
+```
+
+### CustomProvidersStore
+
+Custom LLM providers:
+
+```typescript
+const provider: CustomProvider = {
+  id: crypto.randomUUID(),
+  name: 'My Ollama',
+  type: 'ollama',
+  baseUrl: 'http://localhost:11434',
+};
+
+await storage.customProviders.set(provider);
+const all = await storage.customProviders.getAll();
+```
+
+## Attachments
+
+Load and process files:
+
+```typescript
+import { loadAttachment, type Attachment } from '@mariozechner/pi-web-ui';
+
+// From File input
+const file = inputElement.files[0];
+const attachment = await loadAttachment(file);
+
+// From URL
+const attachment = await loadAttachment('https://example.com/doc.pdf');
+
+// From ArrayBuffer
+const attachment = await loadAttachment(arrayBuffer, 'document.pdf');
+
+// Attachment structure
+interface Attachment {
+  id: string;
+  type: 'image' | 'document';
+  fileName: string;
+  mimeType: string;
+  size: number;
+  content: string;        // base64 encoded
+  extractedText?: string; // For documents
+  preview?: string;       // base64 preview image
+}
+```
+
+Supported formats: PDF, DOCX, XLSX, PPTX, images, text files.
+
+## CORS Proxy
+
+For browser environments with CORS restrictions:
+
+```typescript
+import { createStreamFn, shouldUseProxyForProvider, isCorsError } from '@mariozechner/pi-web-ui';
+
+// AgentInterface auto-configures proxy from settings
+// For manual setup:
+agent.streamFn = createStreamFn(async () => {
+  const enabled = await storage.settings.get<boolean>('proxy.enabled');
+  return enabled ? await storage.settings.get<string>('proxy.url') : undefined;
+});
+
+// Providers requiring proxy:
+// - zai: always
+// - anthropic: only OAuth tokens (sk-ant-oat-*)
+```
+
+## Dialogs
+
+### SettingsDialog
+
+```typescript
+import { SettingsDialog, ProvidersModelsTab, ProxyTab, ApiKeysTab } from '@mariozechner/pi-web-ui';
+
+SettingsDialog.open([
+  new ProvidersModelsTab(), // Custom providers + model list
+  new ProxyTab(),           // CORS proxy settings
+  new ApiKeysTab(),         // API keys per provider
+]);
+```
+
+### SessionListDialog
+
+```typescript
+import { SessionListDialog } from '@mariozechner/pi-web-ui';
+
+SessionListDialog.open(
+  async (sessionId) => { /* load session */ },
+  (deletedId) => { /* handle deletion */ },
+);
+```
+
+### ApiKeyPromptDialog
+
+```typescript
+import { ApiKeyPromptDialog } from '@mariozechner/pi-web-ui';
+
+const success = await ApiKeyPromptDialog.prompt('anthropic');
+```
+
+### ModelSelector
+
+```typescript
+import { ModelSelector } from '@mariozechner/pi-web-ui';
+
+ModelSelector.open(currentModel, (selectedModel) => {
+  agent.setModel(selectedModel);
+});
 ```
 
 ## Styling
 
-The package includes pre-built Tailwind CSS with the Claude theme:
+Import the pre-built CSS:
 
 ```typescript
 import '@mariozechner/pi-web-ui/app.css';
 ```
 
-Or customize with your own Tailwind config:
+Or use Tailwind with custom config:
 
 ```css
 @import '@mariozechner/mini-lit/themes/claude.css';
@@ -241,90 +572,29 @@ Or customize with your own Tailwind config:
 @tailwind utilities;
 ```
 
-## Dialogs
-
-The package includes several dialog components for common interactions.
-
-### SettingsDialog
-
-Settings dialog with tabbed interface for API keys, proxy configuration, etc.
+## Internationalization
 
 ```typescript
-import { SettingsDialog, ApiKeysTab, ProxyTab } from '@mariozechner/pi-web-ui';
+import { i18n, setLanguage, translations } from '@mariozechner/pi-web-ui';
 
-// Open settings with tabs
-SettingsDialog.open([new ApiKeysTab(), new ProxyTab()]);
-```
+// Add translations
+translations.de = {
+  'Loading...': 'Laden...',
+  'No sessions yet': 'Noch keine Sitzungen',
+};
 
-### SessionListDialog
-
-Display and load saved sessions.
-
-```typescript
-import { SessionListDialog } from '@mariozechner/pi-web-ui';
-
-SessionListDialog.open(async (sessionId) => {
-  await loadSession(sessionId);
-});
-```
-
-### ApiKeyPromptDialog
-
-Prompt user for API key when needed.
-
-```typescript
-import { ApiKeyPromptDialog } from '@mariozechner/pi-web-ui';
-
-const apiKey = await ApiKeyPromptDialog.prompt('anthropic');
-```
-
-### PersistentStorageDialog
-
-Request persistent storage permission.
-
-```typescript
-import { PersistentStorageDialog } from '@mariozechner/pi-web-ui';
-
-await PersistentStorageDialog.request();
-```
-
-## Platform Integration
-
-### Browser Extension
-
-```typescript
-import { AppStorage, WebExtensionStorageBackend, Agent, ProviderTransport } from '@mariozechner/pi-web-ui';
-
-const storage = new AppStorage({
-  providerKeys: new WebExtensionStorageBackend(),
-  settings: new WebExtensionStorageBackend(),
-});
-setAppStorage(storage);
-```
-
-### Web Application
-
-```typescript
-import { AppStorage, SessionIndexedDBBackend, setAppStorage } from '@mariozechner/pi-web-ui';
-
-const storage = new AppStorage({
-  sessions: new SessionIndexedDBBackend('my-app-sessions'),
-});
-setAppStorage(storage);
+setLanguage('de');
+console.log(i18n('Loading...')); // "Laden..."
 ```
 
 ## Examples
 
-- [example/](./example) - Complete web application with session management
-- [sitegeist](https://github.com/badlogic/sitegeist) - Browser extension for AI-powered web navigation
+- [example/](./example) - Complete web app with sessions, artifacts, custom messages
+- [sitegeist](https://sitegeist.ai) - Browser extension using pi-web-ui
 
-## API Reference
+## Known Issues
 
-See [src/index.ts](src/index.ts) for the full public API.
-
-## Known Bugs
-
-- **PersistentStorageDialog**: Currently broken and commented out in examples. The dialog for requesting persistent storage does not work correctly and needs to be fixed.
+- **PersistentStorageDialog**: Currently broken
 
 ## License
 

@@ -45,15 +45,15 @@
  * All task outputs saved to /tmp/pi-orchestrate-{uuid}/ for debugging.
  */
 
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { CustomToolFactory, RenderResultOptions } from "@mariozechner/pi-coding-agent";
 import type { AgentToolResult } from "@mariozechner/pi-ai";
+import type { CustomToolFactory, RenderResultOptions } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type, type Static } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
 
 // Constants
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
@@ -257,67 +257,69 @@ const OrchestrateParams = Type.Object({
 	taskFile: Type.Optional(
 		Type.String({
 			description: "Path to task file (e.g., 01_TASKS.md). Required unless using direct mode with 'gate' parameter.",
-		})
+		}),
 	),
 	continueOnError: Type.Optional(
 		Type.Boolean({
 			description: "Continue executing tasks even if one fails",
 			default: false,
-		})
+		}),
 	),
 	archive: Type.Optional(
 		Type.Boolean({
 			description: "Archive session to episodic memory when complete",
 			default: true,
-		})
+		}),
 	),
 	taskTimeoutMs: Type.Optional(
 		Type.Number({
 			description: "Timeout per task in milliseconds (default: 30 minutes)",
 			default: DEFAULT_TASK_TIMEOUT_MS,
-		})
+		}),
 	),
 	// Direct mode parameters (alternative to taskFile)
 	gate: Type.Optional(
 		Type.String({
-			description: "Direct mode: Path to gate script to run until it passes. Use instead of taskFile for simple single-gate workflows.",
-		})
+			description:
+				"Direct mode: Path to gate script to run until it passes. Use instead of taskFile for simple single-gate workflows.",
+		}),
 	),
 	maxRetries: Type.Optional(
 		Type.Number({
 			description: "Direct mode: Maximum retry attempts (default: 3)",
 			default: 3,
-		})
+		}),
 	),
 	selfReview: Type.Optional(
 		Type.Boolean({
 			description: "Direct mode: Run self-review before marking complete (default: false)",
 			default: false,
-		})
+		}),
 	),
 	agent: Type.Optional(
 		Type.String({
 			description: "Direct mode: Agent config to use (default: general-purpose)",
 			default: "general-purpose",
-		})
+		}),
 	),
 	prompt: Type.Optional(
 		Type.String({
 			description: "Direct mode: Task description/prompt for the agent",
-		})
+		}),
 	),
 	// Resume/pause parameters
 	resume: Type.Optional(
 		Type.String({
-			description: "Resume a paused orchestration session by its session ID. Use 'list' to see available paused sessions.",
-		})
+			description:
+				"Resume a paused orchestration session by its session ID. Use 'list' to see available paused sessions.",
+		}),
 	),
 });
 
 function finalizeTask(
 	currentTask: Partial<ParsedTask> | null,
 	taskLineStart: number,
-	lineEnd: number
+	lineEnd: number,
 ): ParsedTask | null {
 	if (!currentTask || !currentTask.title) return null;
 	return {
@@ -353,7 +355,10 @@ function parseTaskFile(filePath: string): TaskFileContent {
 
 		// Detect title
 		if (trimmed.startsWith("# ")) {
-			title = trimmed.slice(2).replace(/^Task List:\s*/i, "").trim();
+			title = trimmed
+				.slice(2)
+				.replace(/^Task List:\s*/i, "")
+				.trim();
 			continue;
 		}
 
@@ -432,7 +437,7 @@ function parseTaskFile(filePath: string): TaskFileContent {
 						currentTask.dependencies = depsStr
 							.split(/[,\s]+/)
 							.map((d) => parseInt(d.replace(/\D/g, ""), 10))
-							.filter((n) => !isNaN(n));
+							.filter((n) => !Number.isNaN(n));
 					}
 				} else if (notesMatch) {
 					currentTask.notes = notesMatch[1].trim();
@@ -449,7 +454,8 @@ function parseTaskFile(filePath: string): TaskFileContent {
 					const value = selfReviewMatch[1].toLowerCase();
 					currentTask.selfReview = value === "true" || value === "yes";
 				} else if (trimmed && !trimmed.startsWith("-")) {
-					currentTask.description = (currentTask.description || "") + (currentTask.description ? "\n" : "") + trimmed;
+					currentTask.description =
+						(currentTask.description || "") + (currentTask.description ? "\n" : "") + trimmed;
 				}
 			}
 		}
@@ -469,9 +475,9 @@ function validateTaskFile(parsed: TaskFileContent): void {
 		const questions = parsed.questionsBlockers.map((q, i) => `  ${i + 1}. ${q}`).join("\n");
 		throw new Error(
 			`Cannot start orchestration: ${parsed.questionsBlockers.length} unresolved question(s)/blocker(s):\n\n` +
-			`${questions}\n\n` +
-			`Resolve these questions in the task file before running orchestration. ` +
-			`Remove them or mark them as "None" when resolved.`
+				`${questions}\n\n` +
+				`Resolve these questions in the task file before running orchestration. ` +
+				`Remove them or mark them as "None" when resolved.`,
 		);
 	}
 
@@ -489,20 +495,13 @@ function validateTaskFile(parsed: TaskFileContent): void {
 	for (const task of parsed.tasks) {
 		for (const depId of task.dependencies) {
 			if (!allIds.has(depId)) {
-				throw new Error(
-					`Task ${task.id} depends on Task ${depId}, but Task ${depId} does not exist in the file.`
-				);
+				throw new Error(`Task ${task.id} depends on Task ${depId}, but Task ${depId} does not exist in the file.`);
 			}
 		}
 	}
 }
 
-function updateTaskCheckbox(
-	filePath: string,
-	taskLineStart: number,
-	taskId: number,
-	completed: boolean
-): void {
+function updateTaskCheckbox(filePath: string, taskLineStart: number, taskId: number, completed: boolean): void {
 	// Re-read file to avoid stale data issues
 	const lines = fs.readFileSync(filePath, "utf-8").split("\n");
 	const taskLine = lines[taskLineStart];
@@ -516,21 +515,19 @@ function updateTaskCheckbox(
 	if (!taskPatternMatch) {
 		throw new Error(
 			`Task file changed during execution; line ${taskLineStart} in ${filePath} no longer matches task format. ` +
-			`Cannot safely update checkbox for Task ${taskId}.`
+				`Cannot safely update checkbox for Task ${taskId}.`,
 		);
 	}
 	const lineTaskId = parseInt(taskPatternMatch[1] || taskPatternMatch[2] || taskPatternMatch[3], 10);
 	if (lineTaskId !== taskId) {
 		throw new Error(
 			`Task file changed during execution; line ${taskLineStart} in ${filePath} is now Task ${lineTaskId}, ` +
-			`expected Task ${taskId}. Cannot safely update checkbox.`
+				`expected Task ${taskId}. Cannot safely update checkbox.`,
 		);
 	}
 
 	// Replace checkbox (handle [ ], [], [  ], etc.)
-	const updatedLine = completed
-		? taskLine.replace(/\[\s*\]/, "[x]")
-		: taskLine.replace(/\[x\]/i, "[ ]");
+	const updatedLine = completed ? taskLine.replace(/\[\s*\]/, "[x]") : taskLine.replace(/\[x\]/i, "[ ]");
 
 	lines[taskLineStart] = updatedLine;
 	fs.writeFileSync(filePath, lines.join("\n"), "utf-8");
@@ -574,10 +571,14 @@ function loadAgentConfig(agentName: string): AgentConfig | AgentConfigError {
 
 	// Check for unsupported YAML features
 	if (frontmatterBlock.includes(": |") || frontmatterBlock.includes(": >")) {
-		return { error: `Agent config ${agentName}.md uses unsupported multiline YAML syntax (| or >). Use single-line values.` };
+		return {
+			error: `Agent config ${agentName}.md uses unsupported multiline YAML syntax (| or >). Use single-line values.`,
+		};
 	}
 	if (/^\s*-\s+/m.test(frontmatterBlock)) {
-		return { error: `Agent config ${agentName}.md uses unsupported YAML list syntax. Use comma-separated values for tools.` };
+		return {
+			error: `Agent config ${agentName}.md uses unsupported YAML list syntax. Use comma-separated values for tools.`,
+		};
 	}
 
 	const frontmatter: Record<string, string> = {};
@@ -699,10 +700,7 @@ function killWithEscalation(proc: ChildProcess): void {
  * Query memory for prior solutions before each task.
  * Returns recalled items to inject as context into the task prompt.
  */
-function runMemoryRecall(
-	task: ParsedTask,
-	cwd: string
-): MemoryRecallResult | null {
+function runMemoryRecall(task: ParsedTask, cwd: string): MemoryRecallResult | null {
 	if (!fs.existsSync(MEMORY_RECALL_SCRIPT)) {
 		return null;
 	}
@@ -745,11 +743,15 @@ function runQualityGate(cwd: string): { passed: boolean; error?: string } {
 
 	try {
 		const inputJson = JSON.stringify({ cwd });
-		const result = spawnSync("bash", ["-c", `echo '${inputJson.replace(/'/g, "'\\''")}' | "${QUALITY_GATE_SCRIPT}"`], {
-			cwd,
-			encoding: "utf-8",
-			timeout: 120000, // 2 minute timeout for tests
-		});
+		const result = spawnSync(
+			"bash",
+			["-c", `echo '${inputJson.replace(/'/g, "'\\''")}' | "${QUALITY_GATE_SCRIPT}"`],
+			{
+				cwd,
+				encoding: "utf-8",
+				timeout: 120000, // 2 minute timeout for tests
+			},
+		);
 
 		if (result.status === 0) {
 			return { passed: true };
@@ -833,7 +835,7 @@ async function runAgentFix(
 	maxRetries: number,
 	agent: AgentConfig,
 	cwd: string,
-	outputDir: string
+	outputDir: string,
 ): Promise<{ fixed: boolean; output: string }> {
 	// Build fix prompt with failure context
 	const tailLines = 160;
@@ -921,11 +923,16 @@ Analyze the failure and make the minimal fix needed. Do NOT introduce unrelated 
 			proc.stdout.on("data", (chunk) => {
 				const text = chunk.toString("utf-8");
 				if (fixFd !== null) {
-					try { fs.writeSync(fixFd, text); } catch {}
+					try {
+						fs.writeSync(fixFd, text);
+					} catch {}
 				}
 				stdoutBuf += text;
-				let idx;
-				while ((idx = stdoutBuf.indexOf("\n")) !== -1) {
+				for (
+					let idx = stdoutBuf.indexOf("\n");
+					idx !== -1;
+					idx = stdoutBuf.indexOf("\n")
+				) {
 					const line = stdoutBuf.slice(0, idx);
 					stdoutBuf = stdoutBuf.slice(idx + 1);
 					if (line.trim()) {
@@ -934,7 +941,7 @@ Analyze the failure and make the minimal fix needed. Do NOT introduce unrelated 
 							if (evt.type === "message_end" && evt.message?.content) {
 								for (const part of evt.message.content) {
 									if (part.type === "text" && part.text) {
-										output.append(part.text + "\n");
+										output.append(`${part.text}\n`);
 									}
 								}
 							}
@@ -946,7 +953,9 @@ Analyze the failure and make the minimal fix needed. Do NOT introduce unrelated 
 			proc.stderr.on("data", (chunk) => {
 				const text = chunk.toString();
 				if (fixFd !== null) {
-					try { fs.writeSync(fixFd, `[stderr] ${text}`); } catch {}
+					try {
+						fs.writeSync(fixFd, `[stderr] ${text}`);
+					} catch {}
 				}
 				output.append(text);
 			});
@@ -960,10 +969,14 @@ Analyze the failure and make the minimal fix needed. Do NOT introduce unrelated 
 		return { fixed: false, output: `Agent fix error: ${err instanceof Error ? err.message : String(err)}` };
 	} finally {
 		if (fixFd !== null) {
-			try { fs.closeSync(fixFd); } catch {}
+			try {
+				fs.closeSync(fixFd);
+			} catch {}
 		}
 		if (tmpDir) {
-			try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+			try {
+				fs.rmSync(tmpDir, { recursive: true });
+			} catch {}
 		}
 	}
 }
@@ -978,7 +991,7 @@ async function runSelfReview(
 	task: ParsedTask,
 	agent: AgentConfig,
 	cwd: string,
-	outputDir: string
+	outputDir: string,
 ): Promise<{ passed: boolean; output: string }> {
 	const output = new OutputAccumulator(MAX_OUTPUT_BYTES);
 
@@ -1068,11 +1081,16 @@ If issues found, fix them now.
 				proc.stdout.on("data", (chunk) => {
 					const text = chunk.toString("utf-8");
 					if (reviewFd !== null) {
-						try { fs.writeSync(reviewFd, text); } catch {}
+						try {
+							fs.writeSync(reviewFd, text);
+						} catch {}
 					}
 					stdoutBuf += text;
-					let idx;
-					while ((idx = stdoutBuf.indexOf("\n")) !== -1) {
+					for (
+						let idx = stdoutBuf.indexOf("\n");
+						idx !== -1;
+						idx = stdoutBuf.indexOf("\n")
+					) {
 						const line = stdoutBuf.slice(0, idx);
 						stdoutBuf = stdoutBuf.slice(idx + 1);
 						if (line.trim()) {
@@ -1081,8 +1099,8 @@ If issues found, fix them now.
 								if (evt.type === "message_end" && evt.message?.content) {
 									for (const part of evt.message.content) {
 										if (part.type === "text" && part.text) {
-											reviewOutput += part.text + "\n";
-											output.append(part.text + "\n");
+											reviewOutput += `${part.text}\n`;
+											output.append(`${part.text}\n`);
 										}
 									}
 								}
@@ -1094,7 +1112,9 @@ If issues found, fix them now.
 				proc.stderr.on("data", (chunk) => {
 					const text = chunk.toString();
 					if (reviewFd !== null) {
-						try { fs.writeSync(reviewFd, `[stderr] ${text}`); } catch {}
+						try {
+							fs.writeSync(reviewFd, `[stderr] ${text}`);
+						} catch {}
 					}
 					output.append(text);
 				});
@@ -1104,10 +1124,14 @@ If issues found, fix them now.
 			});
 		} finally {
 			if (reviewFd !== null) {
-				try { fs.closeSync(reviewFd); } catch {}
+				try {
+					fs.closeSync(reviewFd);
+				} catch {}
 			}
 			if (tmpDir) {
-				try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+				try {
+					fs.rmSync(tmpDir, { recursive: true });
+				} catch {}
 			}
 		}
 
@@ -1131,7 +1155,7 @@ async function runTask(
 	cwd: string,
 	timeoutMs: number,
 	outputDir: string,
-	signal?: AbortSignal
+	signal?: AbortSignal,
 ): Promise<TaskResult> {
 	const startTime = Date.now();
 
@@ -1305,7 +1329,7 @@ When done, summarize what was accomplished.
 					if (evt.type === "message_end" && evt.message?.content) {
 						for (const part of evt.message.content) {
 							if (part.type === "text" && part.text) {
-								output.append(part.text + "\n");
+								output.append(`${part.text}\n`);
 							}
 						}
 					}
@@ -1325,8 +1349,11 @@ When done, summarize what was accomplished.
 
 			proc.stdout.on("data", (chunk) => {
 				stdoutBuf += chunk.toString("utf-8");
-				let idx;
-				while ((idx = stdoutBuf.indexOf("\n")) !== -1) {
+				for (
+					let idx = stdoutBuf.indexOf("\n");
+					idx !== -1;
+					idx = stdoutBuf.indexOf("\n")
+				) {
 					const line = stdoutBuf.slice(0, idx);
 					stdoutBuf = stdoutBuf.slice(idx + 1);
 					processJsonlLine(line);
@@ -1439,7 +1466,7 @@ async function runTaskWithRetry(
 	cwd: string,
 	timeoutMs: number,
 	outputDir: string,
-	signal?: AbortSignal
+	signal?: AbortSignal,
 ): Promise<TaskResult> {
 	const startTime = Date.now();
 
@@ -1544,7 +1571,7 @@ async function runTaskWithRetry(
 				maxRetries,
 				agent,
 				cwd,
-				outputDir
+				outputDir,
 			);
 			allOutput.push(`=== FIX ATTEMPT ${attempt} ===\n${fixResult.output}`);
 		}
@@ -1566,7 +1593,7 @@ async function runTaskWithRetry(
 function archiveSession(
 	taskFile: TaskFileContent,
 	results: TaskResult[],
-	cwd: string
+	cwd: string,
 ): { success: boolean; error?: string } {
 	const archiverPath = path.join(os.homedir(), ".pi", "agent", "skills", "episodic-archiver", "run.sh");
 
@@ -1638,7 +1665,7 @@ async function executeDirectMode(
 	archive: boolean,
 	cwd: string,
 	signal?: AbortSignal,
-	onUpdate?: (result: AgentToolResult<OrchestrateDetails>) => void
+	onUpdate?: (result: AgentToolResult<OrchestrateDetails>) => void,
 ): Promise<AgentToolResult<OrchestrateDetails>> {
 	// Create output directory
 	const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-orchestrate-direct-"));
@@ -1692,14 +1719,7 @@ async function executeDirectMode(
 	}
 
 	// Execute the task with retry-until-pass
-	const result = await runTaskWithRetry(
-		syntheticTask,
-		syntheticTaskFile,
-		cwd,
-		taskTimeoutMs,
-		outputDir,
-		signal
-	);
+	const result = await runTaskWithRetry(syntheticTask, syntheticTaskFile, cwd, taskTimeoutMs, outputDir, signal);
 
 	details.results.push(result);
 
@@ -1757,7 +1777,7 @@ async function executeTaskFileMode(
 	archive: boolean,
 	taskTimeoutMs: number,
 	signal?: AbortSignal,
-	onUpdate?: (result: AgentToolResult<OrchestrateDetails>) => void
+	onUpdate?: (result: AgentToolResult<OrchestrateDetails>) => void,
 ): Promise<AgentToolResult<OrchestrateDetails>> {
 	// Create or use existing session ID
 	const sessionId = existingState?.sessionId ?? randomUUID().slice(0, 8);
@@ -1938,7 +1958,7 @@ async function executeTaskFileMode(
 		"Results:",
 		...results.map(
 			(r) =>
-				`- Task ${r.taskId} (${r.agent}): ${r.status}${r.durationMs ? ` [${formatDuration(r.durationMs)}]` : ""}${r.error ? ` - ${r.error}` : ""}`
+				`- Task ${r.taskId} (${r.agent}): ${r.status}${r.durationMs ? ` [${formatDuration(r.durationMs)}]` : ""}${r.error ? ` - ${r.error}` : ""}`,
 		),
 	];
 
@@ -1977,7 +1997,7 @@ const factory: CustomToolFactory = (pi) => ({
 		_toolCallId: string,
 		params: OrchestrateParamsType,
 		signal?: AbortSignal,
-		onUpdate?: (result: AgentToolResult<OrchestrateDetails>) => void
+		onUpdate?: (result: AgentToolResult<OrchestrateDetails>) => void,
 	) {
 		const {
 			taskFile,
@@ -2058,15 +2078,22 @@ const factory: CustomToolFactory = (pi) => ({
 				return bTime - aTime;
 			});
 
-			const sessionList = pausedSessions.map((s) => {
-				const pausedAt = s.pausedAt ? new Date(s.pausedAt).toLocaleString() : "unknown";
-				const taskFileName = path.basename(s.taskFile);
-				const progress = `${s.completedTaskIds.length}/${s.completedTaskIds.length + (s.results.filter(r => r.status !== "success").length)} tasks`;
-				return `- **${s.sessionId}**\n  File: ${taskFileName}\n  Paused: ${pausedAt}\n  Progress: ${progress}`;
-			}).join("\n\n");
+			const sessionList = pausedSessions
+				.map((s) => {
+					const pausedAt = s.pausedAt ? new Date(s.pausedAt).toLocaleString() : "unknown";
+					const taskFileName = path.basename(s.taskFile);
+					const progress = `${s.completedTaskIds.length}/${s.completedTaskIds.length + s.results.filter((r) => r.status !== "success").length} tasks`;
+					return `- **${s.sessionId}**\n  File: ${taskFileName}\n  Paused: ${pausedAt}\n  Progress: ${progress}`;
+				})
+				.join("\n\n");
 
 			return {
-				content: [{ type: "text" as const, text: `## Paused Orchestration Sessions\n\n${sessionList}\n\nTo resume, use: orchestrate({ resume: "<session-id>" })` }],
+				content: [
+					{
+						type: "text" as const,
+						text: `## Paused Orchestration Sessions\n\n${sessionList}\n\nTo resume, use: orchestrate({ resume: "<session-id>" })`,
+					},
+				],
 				details: {
 					taskFile: "",
 					status: "completed",
@@ -2084,7 +2111,9 @@ const factory: CustomToolFactory = (pi) => ({
 		if (resume) {
 			const savedState = loadState(pi.cwd, resume);
 			if (!savedState) {
-				throw new Error(`No paused session found with ID: ${resume}. Use resume: "list" to see available sessions.`);
+				throw new Error(
+					`No paused session found with ID: ${resume}. Use resume: "list" to see available sessions.`,
+				);
 			}
 			if (savedState.status !== "paused") {
 				throw new Error(`Session ${resume} is not paused (status: ${savedState.status})`);
@@ -2147,7 +2176,7 @@ const factory: CustomToolFactory = (pi) => ({
 				savedState.archive,
 				savedState.taskTimeoutMs,
 				signal,
-				onUpdate
+				onUpdate,
 			);
 		}
 
@@ -2165,7 +2194,7 @@ const factory: CustomToolFactory = (pi) => ({
 				archive,
 				pi.cwd,
 				signal,
-				onUpdate
+				onUpdate,
 			);
 		}
 
@@ -2177,9 +2206,7 @@ const factory: CustomToolFactory = (pi) => ({
 		}
 
 		// Resolve task file path
-		const absolutePath = path.isAbsolute(taskFile)
-			? taskFile
-			: path.join(pi.cwd, taskFile);
+		const absolutePath = path.isAbsolute(taskFile) ? taskFile : path.join(pi.cwd, taskFile);
 
 		if (!fs.existsSync(absolutePath)) {
 			throw new Error(`Task file not found: ${absolutePath}`);
@@ -2248,7 +2275,7 @@ const factory: CustomToolFactory = (pi) => ({
 			archive,
 			taskTimeoutMs,
 			signal,
-			onUpdate
+			onUpdate,
 		);
 	},
 
@@ -2265,11 +2292,7 @@ const factory: CustomToolFactory = (pi) => ({
 		return new Text(theme.fg("toolTitle", theme.bold(label)), 0, 0);
 	},
 
-	renderResult(
-		result: AgentToolResult<OrchestrateDetails>,
-		_options: RenderResultOptions,
-		theme: ThemeInterface
-	) {
+	renderResult(result: AgentToolResult<OrchestrateDetails>, _options: RenderResultOptions, theme: ThemeInterface) {
 		const details = result.details;
 		if (!details) return new Text("Orchestrate", 0, 0);
 
@@ -2285,11 +2308,7 @@ const factory: CustomToolFactory = (pi) => ({
 		const statusText = `${details.status.toUpperCase()} (${details.completedTasks}/${details.totalTasks} tasks)`;
 
 		if (details.currentTask && details.status === "running") {
-			return new Text(
-				`${theme.fg(statusColor, statusText)}\n${theme.fg("dim", details.currentTask)}`,
-				0,
-				0
-			);
+			return new Text(`${theme.fg(statusColor, statusText)}\n${theme.fg("dim", details.currentTask)}`, 0, 0);
 		}
 
 		return new Text(theme.fg(statusColor, statusText), 0, 0);

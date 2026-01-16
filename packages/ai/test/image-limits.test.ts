@@ -75,6 +75,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete } from "../src/stream.js";
 import type { Api, Context, ImageContent, Model, OptionsForApi, UserMessage } from "../src/types.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -840,6 +841,122 @@ describe("Image Limits E2E Tests", () => {
 		});
 	});
 
+	// -------------------------------------------------------------------------
+	// Vercel AI Gateway (google/gemini-2.5-flash)
+	// -------------------------------------------------------------------------
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway (google/gemini-2.5-flash)", () => {
+		const model = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+
+		it("should accept a small number of images (5)", async () => {
+			const result = await testImageCount(model, 5, smallImage);
+			expect(result.success, result.error).toBe(true);
+		});
+
+		it("should find maximum image count limit", { timeout: 600000 }, async () => {
+			const { limit, lastError } = await findLimit((count) => testImageCount(model, count, smallImage), 10, 100, 10);
+			console.log(`\n  Vercel AI Gateway max images: ~${limit} (last error: ${lastError})`);
+			expect(limit).toBeGreaterThanOrEqual(5);
+		});
+
+		it("should find maximum image size limit", { timeout: 600000 }, async () => {
+			const MB = 1024 * 1024;
+			const sizes = [5, 10, 15, 20];
+
+			let lastSuccess = 0;
+			let lastError: string | undefined;
+
+			for (const sizeMB of sizes) {
+				console.log(`  Testing size: ${sizeMB}MB...`);
+				const imageBase64 = generateImageWithSize(sizeMB * MB, `size-${sizeMB}mb.png`);
+				const result = await testImageSize(model, imageBase64);
+				if (result.success) {
+					lastSuccess = sizeMB;
+					console.log(`    SUCCESS`);
+				} else {
+					lastError = result.error;
+					console.log(`    FAILED: ${result.error?.substring(0, 100)}`);
+					break;
+				}
+			}
+
+			console.log(`\n  Vercel AI Gateway max image size: ~${lastSuccess}MB (last error: ${lastError})`);
+			expect(lastSuccess).toBeGreaterThanOrEqual(5);
+		});
+	});
+
+	// -------------------------------------------------------------------------
+	// Amazon Bedrock (claude-sonnet-4-5)
+	// Limits: 100 images (Anthropic), 5MB per image, 8000px max dimension
+	// -------------------------------------------------------------------------
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock (claude-sonnet-4-5)", () => {
+		const model = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+		it("should accept a small number of images (5)", async () => {
+			const result = await testImageCount(model, 5, smallImage);
+			expect(result.success, result.error).toBe(true);
+		});
+
+		it("should find maximum image count limit", { timeout: 600000 }, async () => {
+			// Anthropic limit: 100 images
+			const { limit, lastError } = await findLimit((count) => testImageCount(model, count, smallImage), 20, 120, 20);
+			console.log(`\n  Bedrock max images: ~${limit} (last error: ${lastError})`);
+			expect(limit).toBeGreaterThanOrEqual(80);
+			expect(limit).toBeLessThanOrEqual(100);
+		});
+
+		it("should find maximum image size limit", { timeout: 600000 }, async () => {
+			const MB = 1024 * 1024;
+			// Anthropic limit: 5MB per image
+			const sizes = [1, 2, 3, 4, 5, 6];
+
+			let lastSuccess = 0;
+			let lastError: string | undefined;
+
+			for (const sizeMB of sizes) {
+				console.log(`  Testing size: ${sizeMB}MB...`);
+				const imageBase64 = generateImageWithSize(sizeMB * MB, `size-${sizeMB}mb.png`);
+				const result = await testImageSize(model, imageBase64);
+				if (result.success) {
+					lastSuccess = sizeMB;
+					console.log(`    SUCCESS`);
+				} else {
+					lastError = result.error;
+					console.log(`    FAILED: ${result.error?.substring(0, 100)}`);
+					break;
+				}
+			}
+
+			console.log(`\n  Bedrock max image size: ~${lastSuccess}MB (last error: ${lastError})`);
+			expect(lastSuccess).toBeGreaterThanOrEqual(1);
+		});
+
+		it("should find maximum image dimension limit", { timeout: 600000 }, async () => {
+			// Anthropic limit: 8000px
+			const dimensions = [1000, 2000, 4000, 6000, 8000, 10000];
+
+			let lastSuccess = 0;
+			let lastError: string | undefined;
+
+			for (const dim of dimensions) {
+				console.log(`  Testing dimension: ${dim}x${dim}...`);
+				const imageBase64 = generateImage(dim, dim, `dim-${dim}.png`);
+				const result = await testImageDimensions(model, imageBase64);
+				if (result.success) {
+					lastSuccess = dim;
+					console.log(`    SUCCESS`);
+				} else {
+					lastError = result.error;
+					console.log(`    FAILED: ${result.error?.substring(0, 100)}`);
+					break;
+				}
+			}
+
+			console.log(`\n  Bedrock max dimension: ~${lastSuccess}px (last error: ${lastError})`);
+			expect(lastSuccess).toBeGreaterThanOrEqual(6000);
+			expect(lastSuccess).toBeLessThanOrEqual(8000);
+		});
+	});
+
 	// =========================================================================
 	// MAX SIZE IMAGES TEST
 	// =========================================================================
@@ -894,6 +1011,38 @@ describe("Image Limits E2E Tests", () => {
 				}
 
 				console.log(`\n  Anthropic max ~3MB images: ${lastSuccess} (last error: ${lastError})`);
+				expect(lastSuccess).toBeGreaterThanOrEqual(1);
+			},
+		);
+
+		// Amazon Bedrock (Claude) - 5MB per image limit, same as Anthropic direct
+		// Using 3MB to stay under 5MB limit
+		it.skipIf(!hasBedrockCredentials())(
+			"Bedrock: max ~3MB images before rejection",
+			{ timeout: 900000 },
+			async () => {
+				const model = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+				const image3mb = getImageAtSize(3);
+				// Similar to Anthropic, test progressively
+				const counts = [1, 2, 4, 6, 8, 10, 12];
+
+				let lastSuccess = 0;
+				let lastError: string | undefined;
+
+				for (const count of counts) {
+					console.log(`  Testing ${count} x ~3MB images...`);
+					const result = await testImageCount(model, count, image3mb);
+					if (result.success) {
+						lastSuccess = count;
+						console.log(`    SUCCESS`);
+					} else {
+						lastError = result.error;
+						console.log(`    FAILED: ${result.error?.substring(0, 150)}`);
+						break;
+					}
+				}
+
+				console.log(`\n  Bedrock max ~3MB images: ${lastSuccess} (last error: ${lastError})`);
 				expect(lastSuccess).toBeGreaterThanOrEqual(1);
 			},
 		);

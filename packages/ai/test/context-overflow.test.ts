@@ -15,17 +15,20 @@ import type { ChildProcess } from "child_process";
 import { execSync, spawn } from "child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
-import { complete, resolveApiKey } from "../src/stream.js";
+import { complete } from "../src/stream.js";
 import type { AssistantMessage, Context, Model, Usage } from "../src/types.js";
 import { isContextOverflow } from "../src/utils/overflow.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
+import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
 const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
+	resolveApiKey("openai-codex"),
 ]);
-const [githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 // Lorem ipsum paragraph for realistic token estimation
 const LOREM_IPSUM = `Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. `;
@@ -263,6 +266,42 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
+	// OpenAI Codex (OAuth)
+	// Uses ChatGPT Plus/Pro subscription via OAuth
+	// =============================================================================
+
+	describe("OpenAI Codex (OAuth)", () => {
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-codex - should detect overflow via isContextOverflow",
+			async () => {
+				const model = getModel("openai-codex", "gpt-5.2-codex");
+				const result = await testContextOverflow(model, openaiCodexToken!);
+				logResult(result);
+
+				expect(result.stopReason).toBe("error");
+				expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+			},
+			120000,
+		);
+	});
+
+	// =============================================================================
+	// Amazon Bedrock
+	// Expected pattern: "Input is too long for requested model"
+	// =============================================================================
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock", () => {
+		it("claude-sonnet-4-5 - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+			const result = await testContextOverflow(model, "");
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
 	// xAI
 	// Expected pattern: "maximum prompt length is X but the request contains Y"
 	// =============================================================================
@@ -358,6 +397,37 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
+	// MiniMax
+	// Expected pattern: TBD - need to test actual error message
+	// =============================================================================
+
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax", () => {
+		it("MiniMax-M2.1 - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("minimax", "MiniMax-M2.1");
+			const result = await testContextOverflow(model, process.env.MINIMAX_API_KEY!);
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
+	// Vercel AI Gateway - Unified API for multiple providers
+	// =============================================================================
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway", () => {
+		it("google/gemini-2.5-flash via AI Gateway - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+			const result = await testContextOverflow(model, process.env.AI_GATEWAY_API_KEY!);
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
 	// OpenRouter - Multiple backend providers
 	// Expected pattern: "maximum context length is X tokens"
 	// =============================================================================
@@ -423,13 +493,15 @@ describe("Context overflow error handling", () => {
 	// Ollama (local)
 	// =============================================================================
 
-	// Check if ollama is installed
+	// Check if ollama is installed and local LLM tests are enabled
 	let ollamaInstalled = false;
-	try {
-		execSync("which ollama", { stdio: "ignore" });
-		ollamaInstalled = true;
-	} catch {
-		ollamaInstalled = false;
+	if (!process.env.PI_NO_LOCAL_LLM) {
+		try {
+			execSync("which ollama", { stdio: "ignore" });
+			ollamaInstalled = true;
+		} catch {
+			ollamaInstalled = false;
+		}
 	}
 
 	describe.skipIf(!ollamaInstalled)("Ollama (local)", () => {
@@ -444,7 +516,7 @@ describe("Context overflow error handling", () => {
 				console.log("Pulling gpt-oss:20b model for Ollama overflow tests...");
 				try {
 					execSync("ollama pull gpt-oss:20b", { stdio: "inherit" });
-				} catch (e) {
+				} catch (_e) {
 					console.warn("Failed to pull gpt-oss:20b model, tests will be skipped");
 					return;
 				}
@@ -513,15 +585,17 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
-	// LM Studio (local) - Skip if not running
+	// LM Studio (local) - Skip if not running or local LLM tests disabled
 	// =============================================================================
 
 	let lmStudioRunning = false;
-	try {
-		execSync("curl -s --max-time 1 http://localhost:1234/v1/models > /dev/null", { stdio: "ignore" });
-		lmStudioRunning = true;
-	} catch {
-		lmStudioRunning = false;
+	if (!process.env.PI_NO_LOCAL_LLM) {
+		try {
+			execSync("curl -s --max-time 1 http://localhost:1234/v1/models > /dev/null", { stdio: "ignore" });
+			lmStudioRunning = true;
+		} catch {
+			lmStudioRunning = false;
+		}
 	}
 
 	describe.skipIf(!lmStudioRunning)("LM Studio (local)", () => {

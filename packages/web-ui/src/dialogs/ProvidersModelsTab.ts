@@ -65,7 +65,7 @@ export class ProvidersModelsTab extends SettingsTab {
 			);
 
 			this.providerStatus.set(provider.id, { modelCount: models.length, status: "connected" });
-		} catch (error) {
+		} catch (_error) {
 			this.providerStatus.set(provider.id, { modelCount: 0, status: "disconnected" });
 		}
 		this.requestUpdate();

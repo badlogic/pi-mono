@@ -23,10 +23,12 @@ export interface Args {
 	mode?: Mode;
 	noSession?: boolean;
 	session?: string;
+	sessionDir?: string;
 	models?: string[];
 	tools?: ToolName[];
-	hooks?: string[];
-	customTools?: string[];
+	noTools?: boolean;
+	extensions?: string[];
+	noExtensions?: boolean;
 	print?: boolean;
 	export?: string;
 	noSkills?: boolean;
@@ -34,6 +36,8 @@ export interface Args {
 	listModels?: string | true;
 	messages: string[];
 	fileArgs: string[];
+	/** Unknown flags (potentially extension flags) - map of flag name to value */
+	unknownFlags: Map<string, boolean | string>;
 }
 
 const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
@@ -42,10 +46,11 @@ export function isValidThinkingLevel(level: string): level is ThinkingLevel {
 	return VALID_THINKING_LEVELS.includes(level as ThinkingLevel);
 }
 
-export function parseArgs(args: string[]): Args {
+export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "boolean" | "string" }>): Args {
 	const result: Args = {
 		messages: [],
 		fileArgs: [],
+		unknownFlags: new Map(),
 	};
 
 	for (let i = 0; i < args.length; i++) {
@@ -78,8 +83,12 @@ export function parseArgs(args: string[]): Args {
 			result.noSession = true;
 		} else if (arg === "--session" && i + 1 < args.length) {
 			result.session = args[++i];
+		} else if (arg === "--session-dir" && i + 1 < args.length) {
+			result.sessionDir = args[++i];
 		} else if (arg === "--models" && i + 1 < args.length) {
 			result.models = args[++i].split(",").map((s) => s.trim());
+		} else if (arg === "--no-tools") {
+			result.noTools = true;
 		} else if (arg === "--tools" && i + 1 < args.length) {
 			const toolNames = args[++i].split(",").map((s) => s.trim());
 			const validTools: ToolName[] = [];
@@ -108,12 +117,11 @@ export function parseArgs(args: string[]): Args {
 			result.print = true;
 		} else if (arg === "--export" && i + 1 < args.length) {
 			result.export = args[++i];
-		} else if (arg === "--hook" && i + 1 < args.length) {
-			result.hooks = result.hooks ?? [];
-			result.hooks.push(args[++i]);
-		} else if (arg === "--tool" && i + 1 < args.length) {
-			result.customTools = result.customTools ?? [];
-			result.customTools.push(args[++i]);
+		} else if ((arg === "--extension" || arg === "-e") && i + 1 < args.length) {
+			result.extensions = result.extensions ?? [];
+			result.extensions.push(args[++i]);
+		} else if (arg === "--no-extensions") {
+			result.noExtensions = true;
 		} else if (arg === "--no-skills") {
 			result.noSkills = true;
 		} else if (arg === "--skills" && i + 1 < args.length) {
@@ -128,6 +136,18 @@ export function parseArgs(args: string[]): Args {
 			}
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
+		} else if (arg.startsWith("--") && extensionFlags) {
+			// Check if it's an extension-registered flag
+			const flagName = arg.slice(2);
+			const extFlag = extensionFlags.get(flagName);
+			if (extFlag) {
+				if (extFlag.type === "boolean") {
+					result.unknownFlags.set(flagName, true);
+				} else if (extFlag.type === "string" && i + 1 < args.length) {
+					result.unknownFlags.set(flagName, args[++i]);
+				}
+			}
+			// Unknown flags without extensionFlags are silently ignored (first pass)
 		} else if (!arg.startsWith("-")) {
 			result.messages.push(arg);
 		}
@@ -153,19 +173,24 @@ ${chalk.bold("Options:")}
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume
   --session <path>               Use specific session file
+  --session-dir <dir>            Directory for session storage and lookup
   --no-session                   Don't save session (ephemeral)
-  --models <patterns>            Comma-separated model patterns for quick cycling with Ctrl+P
+  --models <patterns>            Comma-separated model patterns for Ctrl+P cycling
+                                 Supports globs (anthropic/*, *sonnet*) and fuzzy matching
+  --no-tools                     Disable all built-in tools
   --tools <tools>                Comma-separated list of tools to enable (default: read,bash,edit,write)
                                  Available: read, bash, edit, write, grep, find, ls
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
-  --hook <path>                  Load a hook file (can be used multiple times)
-  --tool <path>                  Load a custom tool file (can be used multiple times)
+  --extension, -e <path>         Load an extension file (can be used multiple times)
+  --no-extensions                Disable extension discovery (explicit -e paths still work)
   --no-skills                    Disable skills discovery and loading
   --skills <patterns>            Comma-separated glob patterns to filter skills (e.g., git-*,docker)
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
   --help, -h                     Show this help
   --version, -v                  Show version number
+
+Extensions can register additional flags (e.g., --plan from plan-mode extension).
 
 ${chalk.bold("Examples:")}
   # Interactive mode
@@ -192,6 +217,9 @@ ${chalk.bold("Examples:")}
   # Limit model cycling to specific models
   ${APP_NAME} --models claude-sonnet,claude-haiku,gpt-4o
 
+  # Limit to a specific provider with glob pattern
+  ${APP_NAME} --models "github-copilot/*"
+
   # Cycle models with fixed thinking levels
   ${APP_NAME} --models sonnet:high,haiku:low
 
@@ -214,7 +242,15 @@ ${chalk.bold("Environment Variables:")}
   CEREBRAS_API_KEY        - Cerebras API key
   XAI_API_KEY             - xAI Grok API key
   OPENROUTER_API_KEY      - OpenRouter API key
+  AI_GATEWAY_API_KEY      - Vercel AI Gateway API key
   ZAI_API_KEY             - ZAI API key
+  MISTRAL_API_KEY         - Mistral API key
+  MINIMAX_API_KEY         - MiniMax API key
+  AWS_PROFILE             - AWS profile for Amazon Bedrock
+  AWS_ACCESS_KEY_ID       - AWS access key for Amazon Bedrock
+  AWS_SECRET_ACCESS_KEY   - AWS secret key for Amazon Bedrock
+  AWS_BEARER_TOKEN_BEDROCK - Bedrock API key (bearer token)
+  AWS_REGION              - AWS region for Amazon Bedrock (e.g., us-east-1)
   ${ENV_AGENT_DIR.padEnd(23)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
 
 ${chalk.bold("Available Tools (default: read, bash, edit, write):")}

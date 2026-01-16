@@ -27,6 +27,23 @@ interface ModelsDevModel {
 	modalities?: {
 		input?: string[];
 	};
+	provider?: {
+		npm?: string;
+	};
+}
+
+interface AiGatewayModel {
+	id: string;
+	name?: string;
+	context_window?: number;
+	max_tokens?: number;
+	tags?: string[];
+	pricing?: {
+		input?: string | number;
+		output?: string | number;
+		input_cache_read?: string | number;
+		input_cache_write?: string | number;
+	};
 }
 
 const COPILOT_STATIC_HEADERS = {
@@ -35,6 +52,9 @@ const COPILOT_STATIC_HEADERS = {
 	"Editor-Plugin-Version": "copilot-chat/0.35.0",
 	"Copilot-Integration-Id": "vscode-chat",
 } as const;
+
+const AI_GATEWAY_MODELS_URL = "https://ai-gateway.vercel.sh/v1";
+const AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh";
 
 async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 	try {
@@ -94,6 +114,64 @@ async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 	}
 }
 
+async function fetchAiGatewayModels(): Promise<Model<any>[]> {
+	try {
+		console.log("Fetching models from Vercel AI Gateway API...");
+		const response = await fetch(`${AI_GATEWAY_MODELS_URL}/models`);
+		const data = await response.json();
+		const models: Model<any>[] = [];
+
+		const toNumber = (value: string | number | undefined): number => {
+			if (typeof value === "number") {
+				return Number.isFinite(value) ? value : 0;
+			}
+			const parsed = parseFloat(value ?? "0");
+			return Number.isFinite(parsed) ? parsed : 0;
+		};
+
+		const items = Array.isArray(data.data) ? (data.data as AiGatewayModel[]) : [];
+		for (const model of items) {
+			const tags = Array.isArray(model.tags) ? model.tags : [];
+			// Only include models that support tools
+			if (!tags.includes("tool-use")) continue;
+
+			const input: ("text" | "image")[] = ["text"];
+			if (tags.includes("vision")) {
+				input.push("image");
+			}
+
+			const inputCost = toNumber(model.pricing?.input) * 1_000_000;
+			const outputCost = toNumber(model.pricing?.output) * 1_000_000;
+			const cacheReadCost = toNumber(model.pricing?.input_cache_read) * 1_000_000;
+			const cacheWriteCost = toNumber(model.pricing?.input_cache_write) * 1_000_000;
+
+			models.push({
+				id: model.id,
+				name: model.name || model.id,
+				api: "anthropic-messages",
+				baseUrl: AI_GATEWAY_BASE_URL,
+				provider: "vercel-ai-gateway",
+				reasoning: tags.includes("reasoning"),
+				input,
+				cost: {
+					input: inputCost,
+					output: outputCost,
+					cacheRead: cacheReadCost,
+					cacheWrite: cacheWriteCost,
+				},
+				contextWindow: model.context_window || 4096,
+				maxTokens: model.max_tokens || 4096,
+			});
+		}
+
+		console.log(`Fetched ${models.length} tool-capable models from Vercel AI Gateway`);
+		return models;
+	} catch (error) {
+		console.error("Failed to fetch Vercel AI Gateway models:", error);
+		return [];
+	}
+}
+
 async function loadModelsDevData(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from models.dev API...");
@@ -101,6 +179,87 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 		const data = await response.json();
 
 		const models: Model<any>[] = [];
+
+		// Process Amazon Bedrock models
+		if (data["amazon-bedrock"]?.models) {
+			for (const [modelId, model] of Object.entries(data["amazon-bedrock"].models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				let id = modelId;
+
+				if (id.startsWith("ai21.jamba")) {
+					// These models doesn't support tool use in streaming mode
+					continue;
+				}
+
+				if (id.startsWith("amazon.titan-text-express") ||
+				    id.startsWith("mistral.mistral-7b-instruct-v0")) {
+					// These models doesn't support system messages
+					continue;
+				}
+
+				// Some Amazon Bedrock models require cross-region inference profiles to work.
+				// To use cross-region inference, we need to add a region prefix to the models.
+				// See https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html#inference-profiles-support-system
+				// TODO: Remove Claude models once https://github.com/anomalyco/models.dev/pull/607 is merged, and follow-up with other models.
+
+				// Models with global cross-region inference profiles
+				if (id.startsWith("anthropic.claude-haiku-4-5") ||
+						id.startsWith("anthropic.claude-sonnet-4") ||
+						id.startsWith("anthropic.claude-opus-4-5") ||
+						id.startsWith("amazon.nova-2-lite") ||
+						id.startsWith("cohere.embed-v4") ||
+						id.startsWith("twelvelabs.pegasus-1-2")) {
+						id = "global." + id;
+				}
+
+				// Models with US cross-region inference profiles
+				if (id.startsWith("amazon.nova-lite") ||
+						id.startsWith("amazon.nova-micro") ||
+						id.startsWith("amazon.nova-premier") ||
+						id.startsWith("amazon.nova-pro") ||
+						id.startsWith("anthropic.claude-3-7-sonnet") ||
+						id.startsWith("anthropic.claude-opus-4-1") ||
+						id.startsWith("anthropic.claude-opus-4-20250514") ||
+						id.startsWith("deepseek.r1") ||
+						id.startsWith("meta.llama3-2") ||
+						id.startsWith("meta.llama3-3") ||
+						id.startsWith("meta.llama4")) {
+						id = "us." + id;
+				}
+
+				const bedrockModel = {
+					id,
+					name: m.name || id,
+					api: "bedrock-converse-stream" as const,
+					provider: "amazon-bedrock" as const,
+					baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+					reasoning: m.reasoning === true,
+					input: (m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"]) as ("text" | "image")[],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+				};
+				models.push(bedrockModel);
+
+				// Add EU cross-region inference variants for Claude models
+				if (modelId.startsWith("anthropic.claude-haiku-4-5") ||
+						modelId.startsWith("anthropic.claude-sonnet-4-5") ||
+						modelId.startsWith("anthropic.claude-opus-4-5")) {
+					models.push({
+						...bedrockModel,
+						id: "eu." + modelId,
+						name: (m.name || modelId) + " (EU)",
+					});
+				}
+			}
+		}
 
 		// Process Anthropic models
 		if (data.anthropic?.models) {
@@ -258,28 +417,33 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
-		// Process xAi models
+		// Process zAi models
 		if (data.zai?.models) {
 			for (const [modelId, model] of Object.entries(data.zai.models)) {
 				const m = model as ModelsDevModel;
 				if (m.tool_call !== true) continue;
+				const supportsImage = m.modalities?.input?.includes("image")
 
 				models.push({
-					id: modelId,
-					name: m.name || modelId,
-					api: "anthropic-messages",
-					provider: "zai",
-					baseUrl: "https://api.z.ai/api/anthropic",
-					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
-					cost: {
-						input: m.cost?.input || 0,
-						output: m.cost?.output || 0,
-						cacheRead: m.cost?.cache_read || 0,
-						cacheWrite: m.cost?.cache_write || 0,
-					},
-					contextWindow: m.limit?.context || 4096,
-					maxTokens: m.limit?.output || 4096,
+				id: modelId,
+				name: m.name || modelId,
+				api: "openai-completions",
+				provider: "zai",
+				baseUrl: "https://api.z.ai/api/coding/paas/v4",
+				reasoning: m.reasoning === true,
+				input: supportsImage ? ["text", "image"] : ["text"],
+				cost: {
+					input: m.cost?.input || 0,
+					output: m.cost?.output || 0,
+					cacheRead: m.cost?.cache_read || 0,
+					cacheWrite: m.cost?.cache_write || 0,
+				},
+				compat: {
+					supportsDeveloperRole: false,
+					thinkingFormat: "zai",
+				},
+				contextWindow: m.limit?.context || 4096,
+				maxTokens: m.limit?.output || 4096,
 				});
 			}
 		}
@@ -296,6 +460,57 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					api: "openai-completions",
 					provider: "mistral",
 					baseUrl: "https://api.mistral.ai/v1",
+					reasoning: m.reasoning === true,
+					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+				});
+			}
+		}
+
+		// Process OpenCode Zen models
+		// API mapping based on provider.npm field:
+		// - @ai-sdk/openai → openai-responses
+		// - @ai-sdk/anthropic → anthropic-messages
+		// - @ai-sdk/google → google-generative-ai
+		// - null/undefined/@ai-sdk/openai-compatible → openai-completions
+		if (data.opencode?.models) {
+			for (const [modelId, model] of Object.entries(data.opencode.models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				const npm = m.provider?.npm;
+				let api: Api;
+				let baseUrl: string;
+
+				if (npm === "@ai-sdk/openai") {
+					api = "openai-responses";
+					baseUrl = "https://opencode.ai/zen/v1";
+				} else if (npm === "@ai-sdk/anthropic") {
+					api = "anthropic-messages";
+					// Anthropic SDK appends /v1/messages to baseURL
+					baseUrl = "https://opencode.ai/zen";
+				} else if (npm === "@ai-sdk/google") {
+					api = "google-generative-ai";
+					baseUrl = "https://opencode.ai/zen/v1";
+				} else {
+					// null, undefined, or @ai-sdk/openai-compatible
+					api = "openai-completions";
+					baseUrl = "https://opencode.ai/zen/v1";
+				}
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					api,
+					provider: "opencode",
+					baseUrl,
 					reasoning: m.reasoning === true,
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					cost: {
@@ -351,6 +566,40 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
+		// Process MiniMax models
+		const minimaxVariants = [
+			{ key: "minimax", provider: "minimax", baseUrl: "https://api.minimax.io/anthropic" },
+			{ key: "minimax-cn", provider: "minimax-cn", baseUrl: "https://api.minimaxi.com/anthropic" },
+		] as const;
+
+		for (const { key, provider, baseUrl } of minimaxVariants) {
+			if (data[key]?.models) {
+				for (const [modelId, model] of Object.entries(data[key].models)) {
+					const m = model as ModelsDevModel;
+					if (m.tool_call !== true) continue;
+
+					models.push({
+						id: modelId,
+						name: m.name || modelId,
+						api: "anthropic-messages",
+						provider,
+						// MiniMax's Anthropic-compatible API - SDK appends /v1/messages
+						baseUrl,
+						reasoning: m.reasoning === true,
+						input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+						cost: {
+							input: m.cost?.input || 0,
+							output: m.cost?.output || 0,
+							cacheRead: m.cost?.cache_read || 0,
+							cacheWrite: m.cost?.cache_write || 0,
+						},
+						contextWindow: m.limit?.context || 4096,
+						maxTokens: m.limit?.output || 4096,
+					});
+				}
+			}
+		}
+
 		console.log(`Loaded ${models.length} tool-capable models from models.dev`);
 		return models;
 	} catch (error) {
@@ -363,11 +612,13 @@ async function generateModels() {
 	// Fetch models from both sources
 	// models.dev: Anthropic, Google, OpenAI, Groq, Cerebras
 	// OpenRouter: xAI and other providers (excluding Anthropic, Google, OpenAI)
+	// AI Gateway: OpenAI-compatible catalog with tool-capable models
 	const modelsDevModels = await loadModelsDevData();
 	const openRouterModels = await fetchOpenRouterModels();
+	const aiGatewayModels = await fetchAiGatewayModels();
 
 	// Combine models (models.dev has priority)
-	const allModels = [...modelsDevModels, ...openRouterModels];
+	const allModels = [...modelsDevModels, ...openRouterModels, ...aiGatewayModels];
 
 	// Fix incorrect cache pricing for Claude Opus 4.5 from models.dev
 	// models.dev has 3x the correct pricing (1.5/18.75 instead of 0.5/6.25)
@@ -437,6 +688,76 @@ async function generateModels() {
 			maxTokens: 128000,
 		});
 	}
+
+	// OpenAI Codex (ChatGPT OAuth) models
+	// NOTE: These are not fetched from models.dev; we keep a small, explicit list to avoid aliases.
+	// Context window is based on observed server limits (400s above ~272k), not marketing numbers.
+	const CODEX_BASE_URL = "https://chatgpt.com/backend-api";
+	const CODEX_CONTEXT = 272000;
+	const CODEX_MAX_TOKENS = 128000;
+	const codexModels: Model<"openai-codex-responses">[] = [
+		{
+			id: "gpt-5.1",
+			name: "GPT-5.1",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: CODEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
+			contextWindow: CODEX_CONTEXT,
+			maxTokens: CODEX_MAX_TOKENS,
+		},
+		{
+			id: "gpt-5.1-codex-max",
+			name: "GPT-5.1 Codex Max",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: CODEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
+			contextWindow: CODEX_CONTEXT,
+			maxTokens: CODEX_MAX_TOKENS,
+		},
+		{
+			id: "gpt-5.1-codex-mini",
+			name: "GPT-5.1 Codex Mini",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: CODEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0.25, output: 2, cacheRead: 0.025, cacheWrite: 0 },
+			contextWindow: CODEX_CONTEXT,
+			maxTokens: CODEX_MAX_TOKENS,
+		},
+		{
+			id: "gpt-5.2",
+			name: "GPT-5.2",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: CODEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 },
+			contextWindow: CODEX_CONTEXT,
+			maxTokens: CODEX_MAX_TOKENS,
+		},
+		{
+			id: "gpt-5.2-codex",
+			name: "GPT-5.2 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: CODEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 },
+			contextWindow: CODEX_CONTEXT,
+			maxTokens: CODEX_MAX_TOKENS,
+		},
+	];
+	allModels.push(...codexModels);
 
 	// Add missing Grok models
 	if (!allModels.some(m => m.provider === "xai" && m.id === "grok-code-fast-1")) {
@@ -561,7 +882,8 @@ async function generateModels() {
 			baseUrl: ANTIGRAVITY_ENDPOINT,
 			reasoning: true,
 			input: ["text", "image"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			// the Model type doesn't seem to support having extended-context costs, so I'm just using the pricing for <200k input
+			cost: { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.375 },
 			contextWindow: 1048576,
 			maxTokens: 65535,
 		},
@@ -573,7 +895,8 @@ async function generateModels() {
 			baseUrl: ANTIGRAVITY_ENDPOINT,
 			reasoning: true,
 			input: ["text", "image"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			// the Model type doesn't seem to support having extended-context costs, so I'm just using the pricing for <200k input
+			cost: { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.375 },
 			contextWindow: 1048576,
 			maxTokens: 65535,
 		},
@@ -585,7 +908,7 @@ async function generateModels() {
 			baseUrl: ANTIGRAVITY_ENDPOINT,
 			reasoning: true,
 			input: ["text", "image"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			cost: { input: 0.5, output: 3, cacheRead: 0.5, cacheWrite: 0 },
 			contextWindow: 1048576,
 			maxTokens: 65535,
 		},
@@ -597,7 +920,7 @@ async function generateModels() {
 			baseUrl: ANTIGRAVITY_ENDPOINT,
 			reasoning: false,
 			input: ["text", "image"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
 			contextWindow: 200000,
 			maxTokens: 64000,
 		},
@@ -609,7 +932,7 @@ async function generateModels() {
 			baseUrl: ANTIGRAVITY_ENDPOINT,
 			reasoning: true,
 			input: ["text", "image"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
 			contextWindow: 200000,
 			maxTokens: 64000,
 		},
@@ -621,7 +944,7 @@ async function generateModels() {
 			baseUrl: ANTIGRAVITY_ENDPOINT,
 			reasoning: true,
 			input: ["text", "image"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
 			contextWindow: 200000,
 			maxTokens: 64000,
 		},
@@ -633,12 +956,149 @@ async function generateModels() {
 			baseUrl: ANTIGRAVITY_ENDPOINT,
 			reasoning: false,
 			input: ["text"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			cost: { input: 0.09, output: 0.36, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: 131072,
 			maxTokens: 32768,
 		},
 	];
 	allModels.push(...antigravityModels);
+
+	const VERTEX_BASE_URL = "https://{location}-aiplatform.googleapis.com";
+	const vertexModels: Model<"google-vertex">[] = [
+		{
+			id: "gemini-3-pro-preview",
+			name: "Gemini 3 Pro Preview (Vertex)",
+			api: "google-vertex",
+			provider: "google-vertex",
+			baseUrl: VERTEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0 },
+			contextWindow: 1000000,
+			maxTokens: 64000,
+		},
+		{
+			id: "gemini-3-flash-preview",
+			name: "Gemini 3 Flash Preview (Vertex)",
+			api: "google-vertex",
+			provider: "google-vertex",
+			baseUrl: VERTEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0.5, output: 3, cacheRead: 0.05, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65536,
+		},
+		{
+			id: "gemini-2.0-flash",
+			name: "Gemini 2.0 Flash (Vertex)",
+			api: "google-vertex",
+			provider: "google-vertex",
+			baseUrl: VERTEX_BASE_URL,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 0.15, output: 0.6, cacheRead: 0.0375, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 8192,
+		},
+		{
+			id: "gemini-2.0-flash-lite",
+			name: "Gemini 2.0 Flash Lite (Vertex)",
+			api: "google-vertex",
+			provider: "google-vertex",
+			baseUrl: VERTEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0.075, output: 0.3, cacheRead: 0.01875, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65536,
+		},
+		{
+			id: "gemini-2.5-pro",
+			name: "Gemini 2.5 Pro (Vertex)",
+			api: "google-vertex",
+			provider: "google-vertex",
+			baseUrl: VERTEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65536,
+		},
+		{
+			id: "gemini-2.5-flash",
+			name: "Gemini 2.5 Flash (Vertex)",
+			api: "google-vertex",
+			provider: "google-vertex",
+			baseUrl: VERTEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65536,
+		},
+		{
+			id: "gemini-2.5-flash-lite-preview-09-2025",
+			name: "Gemini 2.5 Flash Lite Preview 09-25 (Vertex)",
+			api: "google-vertex",
+			provider: "google-vertex",
+			baseUrl: VERTEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0.1, output: 0.4, cacheRead: 0.01, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65536,
+		},
+		{
+			id: "gemini-2.5-flash-lite",
+			name: "Gemini 2.5 Flash Lite (Vertex)",
+			api: "google-vertex",
+			provider: "google-vertex",
+			baseUrl: VERTEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0.1, output: 0.4, cacheRead: 0.01, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65536,
+		},
+		{
+			id: "gemini-1.5-pro",
+			name: "Gemini 1.5 Pro (Vertex)",
+			api: "google-vertex",
+			provider: "google-vertex",
+			baseUrl: VERTEX_BASE_URL,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 1.25, output: 5, cacheRead: 0.3125, cacheWrite: 0 },
+			contextWindow: 1000000,
+			maxTokens: 8192,
+		},
+		{
+			id: "gemini-1.5-flash",
+			name: "Gemini 1.5 Flash (Vertex)",
+			api: "google-vertex",
+			provider: "google-vertex",
+			baseUrl: VERTEX_BASE_URL,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 0.075, output: 0.3, cacheRead: 0.01875, cacheWrite: 0 },
+			contextWindow: 1000000,
+			maxTokens: 8192,
+		},
+		{
+			id: "gemini-1.5-flash-8b",
+			name: "Gemini 1.5 Flash-8B (Vertex)",
+			api: "google-vertex",
+			provider: "google-vertex",
+			baseUrl: VERTEX_BASE_URL,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 0.0375, output: 0.15, cacheRead: 0.01, cacheWrite: 0 },
+			contextWindow: 1000000,
+			maxTokens: 8192,
+		},
+	];
+	allModels.push(...vertexModels);
 
 	// Group by provider and deduplicate by model ID
 	const providers: Record<string, Record<string, Model<any>>> = {};
@@ -662,11 +1122,15 @@ import type { Model } from "./types.js";
 export const MODELS = {
 `;
 
-	// Generate provider sections
-	for (const [providerId, models] of Object.entries(providers)) {
+	// Generate provider sections (sorted for deterministic output)
+	const sortedProviderIds = Object.keys(providers).sort();
+	for (const providerId of sortedProviderIds) {
+		const models = providers[providerId];
 		output += `\t${JSON.stringify(providerId)}: {\n`;
 
-		for (const model of Object.values(models)) {
+		const sortedModelIds = Object.keys(models).sort();
+		for (const modelId of sortedModelIds) {
+			const model = models[modelId];
 			output += `\t\t"${model.id}": {\n`;
 			output += `\t\t\tid: "${model.id}",\n`;
 			output += `\t\t\tname: "${model.name}",\n`;

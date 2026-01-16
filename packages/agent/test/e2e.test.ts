@@ -1,25 +1,9 @@
 import type { AssistantMessage, Model, ToolResultMessage, UserMessage } from "@mariozechner/pi-ai";
-import { calculateTool, getModel } from "@mariozechner/pi-ai";
+import { getModel } from "@mariozechner/pi-ai";
 import { describe, expect, it } from "vitest";
-import { Agent, ProviderTransport } from "../src/index.js";
-
-function createTransport() {
-	return new ProviderTransport({
-		getApiKey: async (provider) => {
-			const envVarMap: Record<string, string> = {
-				google: "GEMINI_API_KEY",
-				openai: "OPENAI_API_KEY",
-				anthropic: "ANTHROPIC_API_KEY",
-				xai: "XAI_API_KEY",
-				groq: "GROQ_API_KEY",
-				cerebras: "CEREBRAS_API_KEY",
-				zai: "ZAI_API_KEY",
-			};
-			const envVar = envVarMap[provider] || `${provider.toUpperCase()}_API_KEY`;
-			return process.env[envVar];
-		},
-	});
-}
+import { Agent } from "../src/index.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
+import { calculateTool } from "./utils/calculate.js";
 
 async function basicPrompt(model: Model<any>) {
 	const agent = new Agent({
@@ -29,7 +13,6 @@ async function basicPrompt(model: Model<any>) {
 			thinkingLevel: "off",
 			tools: [],
 		},
-		transport: createTransport(),
 	});
 
 	await agent.prompt("What is 2+2? Answer with just the number.");
@@ -57,7 +40,6 @@ async function toolExecution(model: Model<any>) {
 			thinkingLevel: "off",
 			tools: [calculateTool],
 		},
-		transport: createTransport(),
 	});
 
 	await agent.prompt("Calculate 123 * 456 using the calculator tool.");
@@ -99,7 +81,6 @@ async function abortExecution(model: Model<any>) {
 			thinkingLevel: "off",
 			tools: [calculateTool],
 		},
-		transport: createTransport(),
 	});
 
 	const promptPromise = agent.prompt("Calculate 100 * 200, then 300 * 400, then sum the results.");
@@ -129,7 +110,6 @@ async function stateUpdates(model: Model<any>) {
 			thinkingLevel: "off",
 			tools: [],
 		},
-		transport: createTransport(),
 	});
 
 	const events: Array<string> = [];
@@ -162,7 +142,6 @@ async function multiTurnConversation(model: Model<any>) {
 			thinkingLevel: "off",
 			tools: [],
 		},
-		transport: createTransport(),
 	});
 
 	await agent.prompt("My name is Alice.");
@@ -346,6 +325,30 @@ describe("Agent E2E Tests", () => {
 			await multiTurnConversation(model);
 		});
 	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider (claude-sonnet-4-5)", () => {
+		const model = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+		it("should handle basic text prompt", async () => {
+			await basicPrompt(model);
+		});
+
+		it("should execute tools correctly", async () => {
+			await toolExecution(model);
+		});
+
+		it("should handle abort during execution", async () => {
+			await abortExecution(model);
+		});
+
+		it("should emit state updates during streaming", async () => {
+			await stateUpdates(model);
+		});
+
+		it("should maintain context across multiple turns", async () => {
+			await multiTurnConversation(model);
+		});
+	});
 });
 
 describe("Agent.continue()", () => {
@@ -356,7 +359,6 @@ describe("Agent.continue()", () => {
 					systemPrompt: "Test",
 					model: getModel("anthropic", "claude-haiku-4-5"),
 				},
-				transport: createTransport(),
 			});
 
 			await expect(agent.continue()).rejects.toThrow("No messages to continue from");
@@ -368,7 +370,6 @@ describe("Agent.continue()", () => {
 					systemPrompt: "Test",
 					model: getModel("anthropic", "claude-haiku-4-5"),
 				},
-				transport: createTransport(),
 			});
 
 			const assistantMessage: AssistantMessage = {
@@ -405,7 +406,6 @@ describe("Agent.continue()", () => {
 					thinkingLevel: "off",
 					tools: [],
 				},
-				transport: createTransport(),
 			});
 
 			// Manually add a user message without calling prompt()
@@ -445,7 +445,6 @@ describe("Agent.continue()", () => {
 					thinkingLevel: "off",
 					tools: [calculateTool],
 				},
-				transport: createTransport(),
 			});
 
 			// Set up a conversation state as if tool was just executed

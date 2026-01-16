@@ -1,12 +1,44 @@
-import { getModel } from "@mariozechner/pi-ai";
+import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel } from "@mariozechner/pi-ai";
 import { describe, expect, it } from "vitest";
-import { Agent, ProviderTransport } from "../src/index.js";
+import { Agent } from "../src/index.js";
+
+// Mock stream that mimics AssistantMessageEventStream
+class MockAssistantStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
+	constructor() {
+		super(
+			(event) => event.type === "done" || event.type === "error",
+			(event) => {
+				if (event.type === "done") return event.message;
+				if (event.type === "error") return event.error;
+				throw new Error("Unexpected event type");
+			},
+		);
+	}
+}
+
+function createAssistantMessage(text: string): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [{ type: "text", text }],
+		api: "openai-responses",
+		provider: "openai",
+		model: "mock",
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "stop",
+		timestamp: Date.now(),
+	};
+}
 
 describe("Agent", () => {
 	it("should create an agent instance with default state", () => {
-		const agent = new Agent({
-			transport: new ProviderTransport(),
-		});
+		const agent = new Agent();
 
 		expect(agent.state).toBeDefined();
 		expect(agent.state.systemPrompt).toBe("");
@@ -23,7 +55,6 @@ describe("Agent", () => {
 	it("should create an agent instance with custom initial state", () => {
 		const customModel = getModel("openai", "gpt-4o-mini");
 		const agent = new Agent({
-			transport: new ProviderTransport(),
 			initialState: {
 				systemPrompt: "You are a helpful assistant.",
 				model: customModel,
@@ -37,9 +68,7 @@ describe("Agent", () => {
 	});
 
 	it("should subscribe to events", () => {
-		const agent = new Agent({
-			transport: new ProviderTransport(),
-		});
+		const agent = new Agent();
 
 		let eventCount = 0;
 		const unsubscribe = agent.subscribe((_event) => {
@@ -61,9 +90,7 @@ describe("Agent", () => {
 	});
 
 	it("should update state with mutators", () => {
-		const agent = new Agent({
-			transport: new ProviderTransport(),
-		});
+		const agent = new Agent();
 
 		// Test setSystemPrompt
 		agent.setSystemPrompt("Custom prompt");
@@ -100,39 +127,132 @@ describe("Agent", () => {
 		expect(agent.state.messages).toEqual([]);
 	});
 
-	it("should support message queueing", async () => {
-		const agent = new Agent({
-			transport: new ProviderTransport(),
-		});
+	it("should support steering message queue", async () => {
+		const agent = new Agent();
 
-		const message = { role: "user" as const, content: "Queued message", timestamp: Date.now() };
-		await agent.queueMessage(message);
+		const message = { role: "user" as const, content: "Steering message", timestamp: Date.now() };
+		agent.steer(message);
+
+		// The message is queued but not yet in state.messages
+		expect(agent.state.messages).not.toContainEqual(message);
+	});
+
+	it("should support follow-up message queue", async () => {
+		const agent = new Agent();
+
+		const message = { role: "user" as const, content: "Follow-up message", timestamp: Date.now() };
+		agent.followUp(message);
 
 		// The message is queued but not yet in state.messages
 		expect(agent.state.messages).not.toContainEqual(message);
 	});
 
 	it("should handle abort controller", () => {
-		const agent = new Agent({
-			transport: new ProviderTransport(),
-		});
+		const agent = new Agent();
 
 		// Should not throw even if nothing is running
 		expect(() => agent.abort()).not.toThrow();
 	});
-});
 
-describe("ProviderTransport", () => {
-	it("should create a provider transport instance", () => {
-		const transport = new ProviderTransport();
-		expect(transport).toBeDefined();
+	it("should throw when prompt() called while streaming", async () => {
+		let abortSignal: AbortSignal | undefined;
+		const agent = new Agent({
+			// Use a stream function that responds to abort
+			streamFn: (_model, _context, options) => {
+				abortSignal = options?.signal;
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					stream.push({ type: "start", partial: createAssistantMessage("") });
+					// Check abort signal periodically
+					const checkAbort = () => {
+						if (abortSignal?.aborted) {
+							stream.push({ type: "error", reason: "aborted", error: createAssistantMessage("Aborted") });
+						} else {
+							setTimeout(checkAbort, 5);
+						}
+					};
+					checkAbort();
+				});
+				return stream;
+			},
+		});
+
+		// Start first prompt (don't await, it will block until abort)
+		const firstPrompt = agent.prompt("First message");
+
+		// Wait a tick for isStreaming to be set
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(agent.state.isStreaming).toBe(true);
+
+		// Second prompt should reject
+		await expect(agent.prompt("Second message")).rejects.toThrow(
+			"Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion.",
+		);
+
+		// Cleanup - abort to stop the stream
+		agent.abort();
+		await firstPrompt.catch(() => {}); // Ignore abort error
 	});
 
-	it("should create a provider transport with options", () => {
-		const transport = new ProviderTransport({
-			getApiKey: async (provider) => `test-key-${provider}`,
-			corsProxyUrl: "https://proxy.example.com",
+	it("should throw when continue() called while streaming", async () => {
+		let abortSignal: AbortSignal | undefined;
+		const agent = new Agent({
+			streamFn: (_model, _context, options) => {
+				abortSignal = options?.signal;
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					stream.push({ type: "start", partial: createAssistantMessage("") });
+					const checkAbort = () => {
+						if (abortSignal?.aborted) {
+							stream.push({ type: "error", reason: "aborted", error: createAssistantMessage("Aborted") });
+						} else {
+							setTimeout(checkAbort, 5);
+						}
+					};
+					checkAbort();
+				});
+				return stream;
+			},
 		});
-		expect(transport).toBeDefined();
+
+		// Start first prompt
+		const firstPrompt = agent.prompt("First message");
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(agent.state.isStreaming).toBe(true);
+
+		// continue() should reject
+		await expect(agent.continue()).rejects.toThrow(
+			"Agent is already processing. Wait for completion before continuing.",
+		);
+
+		// Cleanup
+		agent.abort();
+		await firstPrompt.catch(() => {});
+	});
+
+	it("forwards sessionId to streamFn options", async () => {
+		let receivedSessionId: string | undefined;
+		const agent = new Agent({
+			sessionId: "session-abc",
+			streamFn: (_model, _context, options) => {
+				receivedSessionId = options?.sessionId;
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					const message = createAssistantMessage("ok");
+					stream.push({ type: "done", reason: "stop", message });
+				});
+				return stream;
+			},
+		});
+
+		await agent.prompt("hello");
+		expect(receivedSessionId).toBe("session-abc");
+
+		// Test setter
+		agent.sessionId = "session-def";
+		expect(agent.sessionId).toBe("session-def");
+
+		await agent.prompt("hello again");
+		expect(receivedSessionId).toBe("session-def");
 	});
 });

@@ -6,9 +6,11 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import * as readline from "node:readline";
-import type { AgentEvent, AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { CompactionResult, SessionStats } from "../../core/agent-session.js";
+import type { AgentEvent, AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ImageContent } from "@mariozechner/pi-ai";
+import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
+import type { CompactionResult } from "../../core/compaction/index.js";
 import type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.js";
 
 // ============================================================================
@@ -166,15 +168,22 @@ export class RpcClient {
 	 * Returns immediately after sending; use onEvent() to receive streaming events.
 	 * Use waitForIdle() to wait for completion.
 	 */
-	async prompt(message: string, attachments?: Attachment[]): Promise<void> {
-		await this.send({ type: "prompt", message, attachments });
+	async prompt(message: string, images?: ImageContent[]): Promise<void> {
+		await this.send({ type: "prompt", message, images });
 	}
 
 	/**
-	 * Queue a message while agent is streaming.
+	 * Queue a steering message to interrupt the agent mid-run.
 	 */
-	async queueMessage(message: string): Promise<void> {
-		await this.send({ type: "queue_message", message });
+	async steer(message: string): Promise<void> {
+		await this.send({ type: "steer", message });
+	}
+
+	/**
+	 * Queue a follow-up message to be processed after the agent finishes.
+	 */
+	async followUp(message: string): Promise<void> {
+		await this.send({ type: "follow_up", message });
 	}
 
 	/**
@@ -185,10 +194,13 @@ export class RpcClient {
 	}
 
 	/**
-	 * Reset session (clear all messages).
+	 * Start a new session, optionally with parent tracking.
+	 * @param parentSession - Optional parent session path for lineage tracking
+	 * @returns Object with `cancelled: true` if an extension cancelled the new session
 	 */
-	async reset(): Promise<void> {
-		await this.send({ type: "reset" });
+	async newSession(parentSession?: string): Promise<{ cancelled: boolean }> {
+		const response = await this.send({ type: "new_session", parentSession });
+		return this.getData(response);
 	}
 
 	/**
@@ -243,10 +255,17 @@ export class RpcClient {
 	}
 
 	/**
-	 * Set queue mode.
+	 * Set steering mode.
 	 */
-	async setQueueMode(mode: "all" | "one-at-a-time"): Promise<void> {
-		await this.send({ type: "set_queue_mode", mode });
+	async setSteeringMode(mode: "all" | "one-at-a-time"): Promise<void> {
+		await this.send({ type: "set_steering_mode", mode });
+	}
+
+	/**
+	 * Set follow-up mode.
+	 */
+	async setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<void> {
+		await this.send({ type: "set_follow_up_mode", mode });
 	}
 
 	/**
@@ -311,25 +330,28 @@ export class RpcClient {
 
 	/**
 	 * Switch to a different session file.
+	 * @returns Object with `cancelled: true` if an extension cancelled the switch
 	 */
-	async switchSession(sessionPath: string): Promise<void> {
-		await this.send({ type: "switch_session", sessionPath });
-	}
-
-	/**
-	 * Branch from a specific message.
-	 */
-	async branch(entryIndex: number): Promise<{ text: string }> {
-		const response = await this.send({ type: "branch", entryIndex });
+	async switchSession(sessionPath: string): Promise<{ cancelled: boolean }> {
+		const response = await this.send({ type: "switch_session", sessionPath });
 		return this.getData(response);
 	}
 
 	/**
-	 * Get messages available for branching.
+	 * Fork from a specific message.
+	 * @returns Object with `text` (the message text) and `cancelled` (if extension cancelled)
 	 */
-	async getBranchMessages(): Promise<Array<{ entryIndex: number; text: string }>> {
-		const response = await this.send({ type: "get_branch_messages" });
-		return this.getData<{ messages: Array<{ entryIndex: number; text: string }> }>(response).messages;
+	async fork(entryId: string): Promise<{ text: string; cancelled: boolean }> {
+		const response = await this.send({ type: "fork", entryId });
+		return this.getData(response);
+	}
+
+	/**
+	 * Get messages available for forking.
+	 */
+	async getForkMessages(): Promise<Array<{ entryId: string; text: string }>> {
+		const response = await this.send({ type: "get_fork_messages" });
+		return this.getData<{ messages: Array<{ entryId: string; text: string }> }>(response).messages;
 	}
 
 	/**
@@ -343,9 +365,9 @@ export class RpcClient {
 	/**
 	 * Get all messages in the session.
 	 */
-	async getMessages(): Promise<AppMessage[]> {
+	async getMessages(): Promise<AgentMessage[]> {
 		const response = await this.send({ type: "get_messages" });
-		return this.getData<{ messages: AppMessage[] }>(response).messages;
+		return this.getData<{ messages: AgentMessage[] }>(response).messages;
 	}
 
 	// =========================================================================
@@ -398,9 +420,9 @@ export class RpcClient {
 	/**
 	 * Send prompt and wait for completion, returning all events.
 	 */
-	async promptAndWait(message: string, attachments?: Attachment[], timeout = 60000): Promise<AgentEvent[]> {
+	async promptAndWait(message: string, images?: ImageContent[], timeout = 60000): Promise<AgentEvent[]> {
 		const eventsPromise = this.collectEvents(timeout);
-		await this.prompt(message, attachments);
+		await this.prompt(message, images);
 		return eventsPromise;
 	}
 
@@ -456,7 +478,7 @@ export class RpcClient {
 				},
 			});
 
-			this.process!.stdin!.write(JSON.stringify(fullCommand) + "\n");
+			this.process!.stdin!.write(`${JSON.stringify(fullCommand)}\n`);
 		});
 	}
 

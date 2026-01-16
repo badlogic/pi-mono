@@ -7,11 +7,7 @@
 			"style": {
 				"noNonNullAssertion": "off",
 				"useConst": "error",
-				"useNodejsImportProtocol": "off",
-				"useTemplate": "off"
-			},
-			"correctness": {
-				"noUnusedVariables": "off"
+				"useNodejsImportProtocol": "off"
 			},
 			"suspicious": {
 				"noExplicitAny": "off",
@@ -29,10 +25,11 @@
 	},
 	"files": {
 		"includes": [
-			"packages/*/src/**/*",
-			"packages/*/test/**/*",
-			"*.json",
-			"*.md",
+			"packages/*/src/**/*.ts",
+			"packages/*/test/**/*.ts",
+			"packages/coding-agent/examples/**/*.ts",
+			"packages/web-ui/src/**/*.ts",
+			"packages/web-ui/example/**/*.ts",
 			"!**/node_modules/**/*",
 			"!**/test-sessions.ts",
 			"!**/models.generated.ts",

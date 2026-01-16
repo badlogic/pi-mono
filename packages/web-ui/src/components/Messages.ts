@@ -1,6 +1,7 @@
 import type {
-	AgentTool,
 	AssistantMessage as AssistantMessageType,
+	ImageContent,
+	TextContent,
 	ToolCall,
 	ToolResultMessage as ToolResultMessageType,
 	UserMessage as UserMessageType,
@@ -12,8 +13,14 @@ import type { Attachment } from "../utils/attachment-utils.js";
 import { formatUsage } from "../utils/format.js";
 import { i18n } from "../utils/i18n.js";
 import "./ThinkingBlock.js";
+import type { AgentTool } from "@mariozechner/pi-agent-core";
 
-export type UserMessageWithAttachments = UserMessageType & { attachments?: Attachment[] };
+export type UserMessageWithAttachments = {
+	role: "user-with-attachments";
+	content: string | (TextContent | ImageContent)[];
+	timestamp: number;
+	attachments?: Attachment[];
+};
 
 // Artifact message type for session persistence
 export interface ArtifactMessage {
@@ -25,26 +32,16 @@ export interface ArtifactMessage {
 	timestamp: string;
 }
 
-// Base message union
-type BaseMessage = AssistantMessageType | UserMessageWithAttachments | ToolResultMessageType | ArtifactMessage;
-
-// Extensible interface - apps can extend via declaration merging
-// Example:
-// declare module "@mariozechner/pi-web-ui" {
-//   interface CustomMessages {
-//     "system-notification": SystemNotificationMessage;
-//   }
-// }
-export interface CustomMessages {
-	// Empty by default - apps extend via declaration merging
+declare module "@mariozechner/pi-agent-core" {
+	interface CustomAgentMessages {
+		"user-with-attachments": UserMessageWithAttachments;
+		artifact: ArtifactMessage;
+	}
 }
-
-// AppMessage is union of base messages + custom messages
-export type AppMessage = BaseMessage | CustomMessages[keyof CustomMessages];
 
 @customElement("user-message")
 export class UserMessage extends LitElement {
-	@property({ type: Object }) message!: UserMessageWithAttachments;
+	@property({ type: Object }) message!: UserMessageWithAttachments | UserMessageType;
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
 		return this;
@@ -66,7 +63,9 @@ export class UserMessage extends LitElement {
 				<div class="user-message-container py-2 px-4 rounded-xl">
 					<markdown-block .content=${content}></markdown-block>
 					${
-						this.message.attachments && this.message.attachments.length > 0
+						this.message.role === "user-with-attachments" &&
+						this.message.attachments &&
+						this.message.attachments.length > 0
 							? html`
 								<div class="mt-3 flex flex-wrap gap-2">
 									${this.message.attachments.map(
@@ -285,4 +284,94 @@ export class AbortedMessage extends LitElement {
 	protected override render(): unknown {
 		return html`<span class="text-sm text-destructive italic">${i18n("Request aborted")}</span>`;
 	}
+}
+
+// ============================================================================
+// Default Message Transformer
+// ============================================================================
+
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { Message } from "@mariozechner/pi-ai";
+
+/**
+ * Convert attachments to content blocks for LLM.
+ * - Images become ImageContent blocks
+ * - Documents with extractedText become TextContent blocks with filename header
+ */
+export function convertAttachments(attachments: Attachment[]): (TextContent | ImageContent)[] {
+	const content: (TextContent | ImageContent)[] = [];
+	for (const attachment of attachments) {
+		if (attachment.type === "image") {
+			content.push({
+				type: "image",
+				data: attachment.content,
+				mimeType: attachment.mimeType,
+			} as ImageContent);
+		} else if (attachment.type === "document" && attachment.extractedText) {
+			content.push({
+				type: "text",
+				text: `\n\n[Document: ${attachment.fileName}]\n${attachment.extractedText}`,
+			} as TextContent);
+		}
+	}
+	return content;
+}
+
+/**
+ * Check if a message is a UserMessageWithAttachments.
+ */
+export function isUserMessageWithAttachments(msg: AgentMessage): msg is UserMessageWithAttachments {
+	return (msg as UserMessageWithAttachments).role === "user-with-attachments";
+}
+
+/**
+ * Check if a message is an ArtifactMessage.
+ */
+export function isArtifactMessage(msg: AgentMessage): msg is ArtifactMessage {
+	return (msg as ArtifactMessage).role === "artifact";
+}
+
+/**
+ * Default convertToLlm for web-ui apps.
+ *
+ * Handles:
+ * - UserMessageWithAttachments: converts to user message with content blocks
+ * - ArtifactMessage: filtered out (UI-only, for session reconstruction)
+ * - Standard LLM messages (user, assistant, toolResult): passed through
+ */
+export function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
+	return messages
+		.filter((m) => {
+			// Filter out artifact messages - they're for session reconstruction only
+			if (isArtifactMessage(m)) {
+				return false;
+			}
+			return true;
+		})
+		.map((m): Message | null => {
+			// Convert user-with-attachments to user message with content blocks
+			if (isUserMessageWithAttachments(m)) {
+				const textContent: (TextContent | ImageContent)[] =
+					typeof m.content === "string" ? [{ type: "text", text: m.content }] : [...m.content];
+
+				if (m.attachments) {
+					textContent.push(...convertAttachments(m.attachments));
+				}
+
+				return {
+					role: "user",
+					content: textContent,
+					timestamp: m.timestamp,
+				} as Message;
+			}
+
+			// Pass through standard LLM roles
+			if (m.role === "user" || m.role === "assistant" || m.role === "toolResult") {
+				return m as Message;
+			}
+
+			// Filter out unknown message types
+			return null;
+		})
+		.filter((m): m is Message => m !== null);
 }

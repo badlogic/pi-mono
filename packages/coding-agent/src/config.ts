@@ -17,6 +17,9 @@ const __dirname = dirname(__filename);
 export const isBunBinary =
 	import.meta.url.includes("$bunfs") || import.meta.url.includes("~BUN") || import.meta.url.includes("%7EBUN");
 
+/** Detect if Bun is the runtime (compiled binary or bun run) */
+export const isBunRuntime = !!process.versions.bun;
+
 // =============================================================================
 // Package Asset Paths (shipped with executable)
 // =============================================================================
@@ -60,6 +63,21 @@ export function getThemesDir(): string {
 	return join(packageDir, srcOrDist, "modes", "interactive", "theme");
 }
 
+/**
+ * Get path to HTML export template directory (shipped with package)
+ * - For Bun binary: export-html/ next to executable
+ * - For Node.js (dist/): dist/core/export-html/
+ * - For tsx (src/): src/core/export-html/
+ */
+export function getExportTemplateDir(): string {
+	if (isBunBinary) {
+		return join(dirname(process.execPath), "export-html");
+	}
+	const packageDir = getPackageDir();
+	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";
+	return join(packageDir, srcOrDist, "core", "export-html");
+}
+
 /** Get path to package.json */
 export function getPackageJsonPath(): string {
 	return join(getPackageDir(), "package.json");
@@ -73,6 +91,11 @@ export function getReadmePath(): string {
 /** Get path to docs directory */
 export function getDocsPath(): string {
 	return resolve(join(getPackageDir(), "docs"));
+}
+
+/** Get path to examples directory */
+export function getExamplesPath(): string {
+	return resolve(join(getPackageDir(), "examples"));
 }
 
 /** Get path to CHANGELOG.md */
@@ -112,9 +135,9 @@ export function getModelsPath(): string {
 	return join(getAgentDir(), "models.json");
 }
 
-/** Get path to oauth.json */
-export function getOAuthPath(): string {
-	return join(getAgentDir(), "oauth.json");
+/** Get path to auth.json */
+export function getAuthPath(): string {
+	return join(getAgentDir(), "auth.json");
 }
 
 /** Get path to settings.json */
@@ -127,9 +150,14 @@ export function getToolsDir(): string {
 	return join(getAgentDir(), "tools");
 }
 
-/** Get path to slash commands directory */
-export function getCommandsDir(): string {
-	return join(getAgentDir(), "commands");
+/** Get path to managed binaries directory (fd, rg) */
+export function getBinDir(): string {
+	return join(getAgentDir(), "bin");
+}
+
+/** Get path to prompt templates directory */
+export function getPromptsDir(): string {
+	return join(getAgentDir(), "prompts");
 }
 
 /** Get path to sessions directory */

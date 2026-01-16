@@ -3,9 +3,9 @@
  */
 
 import { getModels } from "../../models.js";
-import { type OAuthCredentials, saveOAuthCredentials } from "./storage.js";
+import type { OAuthCredentials } from "./types.js";
 
-const decode = (s: string) => Buffer.from(s, "base64").toString();
+const decode = (s: string) => atob(s);
 const CLIENT_ID = decode("SXYxLmI1MDdhMDhjODdlY2ZlOTg=");
 
 const COPILOT_HEADERS = {
@@ -63,7 +63,7 @@ function getUrls(domain: string): {
  * Token format: tid=...;exp=...;proxy-ep=proxy.individual.githubcopilot.com;...
  * Returns API URL like https://api.individual.githubcopilot.com
  */
-export function getBaseUrlFromToken(token: string): string | null {
+function getBaseUrlFromToken(token: string): string | null {
 	const match = token.match(/proxy-ep=([^;]+)/);
 	if (!match) return null;
 	const proxyHost = match[1];
@@ -136,17 +136,45 @@ async function startDeviceFlow(domain: string): Promise<DeviceCodeResponse> {
 	};
 }
 
+/**
+ * Sleep that can be interrupted by an AbortSignal
+ */
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new Error("Login cancelled"));
+			return;
+		}
+
+		const timeout = setTimeout(resolve, ms);
+
+		signal?.addEventListener(
+			"abort",
+			() => {
+				clearTimeout(timeout);
+				reject(new Error("Login cancelled"));
+			},
+			{ once: true },
+		);
+	});
+}
+
 async function pollForGitHubAccessToken(
 	domain: string,
 	deviceCode: string,
 	intervalSeconds: number,
 	expiresIn: number,
+	signal?: AbortSignal,
 ) {
 	const urls = getUrls(domain);
 	const deadline = Date.now() + expiresIn * 1000;
 	let intervalMs = Math.max(1000, Math.floor(intervalSeconds * 1000));
 
 	while (Date.now() < deadline) {
+		if (signal?.aborted) {
+			throw new Error("Login cancelled");
+		}
+
 		const raw = await fetchJson(urls.accessTokenUrl, {
 			method: "POST",
 			headers: {
@@ -168,20 +196,20 @@ async function pollForGitHubAccessToken(
 		if (raw && typeof raw === "object" && typeof (raw as DeviceTokenErrorResponse).error === "string") {
 			const err = (raw as DeviceTokenErrorResponse).error;
 			if (err === "authorization_pending") {
-				await new Promise((resolve) => setTimeout(resolve, intervalMs));
+				await abortableSleep(intervalMs, signal);
 				continue;
 			}
 
 			if (err === "slow_down") {
 				intervalMs += 5000;
-				await new Promise((resolve) => setTimeout(resolve, intervalMs));
+				await abortableSleep(intervalMs, signal);
 				continue;
 			}
 
 			throw new Error(`Device flow failed: ${err}`);
 		}
 
-		await new Promise((resolve) => setTimeout(resolve, intervalMs));
+		await abortableSleep(intervalMs, signal);
 	}
 
 	throw new Error("Device flow timed out");
@@ -217,7 +245,6 @@ export async function refreshGitHubCopilotToken(
 	}
 
 	return {
-		type: "oauth",
 		refresh: refreshToken,
 		access: token,
 		expires: expiresAt * 1000 - 5 * 60 * 1000,
@@ -229,11 +256,7 @@ export async function refreshGitHubCopilotToken(
  * Enable a model for the user's GitHub Copilot account.
  * This is required for some models (like Claude, Grok) before they can be used.
  */
-export async function enableGitHubCopilotModel(
-	token: string,
-	modelId: string,
-	enterpriseDomain?: string,
-): Promise<boolean> {
+async function enableGitHubCopilotModel(token: string, modelId: string, enterpriseDomain?: string): Promise<boolean> {
 	const baseUrl = getGitHubCopilotBaseUrl(token, enterpriseDomain);
 	const url = `${baseUrl}/models/${modelId}/policy`;
 
@@ -259,7 +282,7 @@ export async function enableGitHubCopilotModel(
  * Enable all known GitHub Copilot models that may require policy acceptance.
  * Called after successful login to ensure all models are available.
  */
-export async function enableAllGitHubCopilotModels(
+async function enableAllGitHubCopilotModels(
 	token: string,
 	enterpriseDomain?: string,
 	onProgress?: (model: string, success: boolean) => void,
@@ -279,17 +302,23 @@ export async function enableAllGitHubCopilotModels(
  * @param options.onAuth - Callback with URL and optional instructions (user code)
  * @param options.onPrompt - Callback to prompt user for input
  * @param options.onProgress - Optional progress callback
+ * @param options.signal - Optional AbortSignal for cancellation
  */
 export async function loginGitHubCopilot(options: {
 	onAuth: (url: string, instructions?: string) => void;
 	onPrompt: (prompt: { message: string; placeholder?: string; allowEmpty?: boolean }) => Promise<string>;
 	onProgress?: (message: string) => void;
+	signal?: AbortSignal;
 }): Promise<OAuthCredentials> {
 	const input = await options.onPrompt({
 		message: "GitHub Enterprise URL/domain (blank for github.com)",
 		placeholder: "company.ghe.com",
 		allowEmpty: true,
 	});
+
+	if (options.signal?.aborted) {
+		throw new Error("Login cancelled");
+	}
 
 	const trimmed = input.trim();
 	const enterpriseDomain = normalizeDomain(input);
@@ -306,15 +335,12 @@ export async function loginGitHubCopilot(options: {
 		device.device_code,
 		device.interval,
 		device.expires_in,
+		options.signal,
 	);
 	const credentials = await refreshGitHubCopilotToken(githubAccessToken, enterpriseDomain ?? undefined);
 
 	// Enable all models after successful login
 	options.onProgress?.("Enabling models...");
 	await enableAllGitHubCopilotModels(credentials.access, enterpriseDomain ?? undefined);
-
-	// Save credentials
-	saveOAuthCredentials("github-copilot", credentials);
-
 	return credentials;
 }

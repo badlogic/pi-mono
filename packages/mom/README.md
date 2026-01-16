@@ -64,8 +64,7 @@ export MOM_SLACK_APP_TOKEN=xapp-...
 export MOM_SLACK_BOT_TOKEN=xoxb-...
 # Option 1: Anthropic API key
 export ANTHROPIC_API_KEY=sk-ant-...
-# Option 2: Anthropic Pro/Max (use `claude setup-token`)
-export ANTHROPIC_OAUTH_TOKEN=sk-ant-...
+# Option 2: use /login command in pi agent, then copy/link auth.json to ~/.pi/mom/
 
 # Create Docker sandbox (recommended)
 docker run -d \
@@ -96,8 +95,24 @@ Options:
 |----------|-------------|
 | `MOM_SLACK_APP_TOKEN` | Slack app-level token (xapp-...) |
 | `MOM_SLACK_BOT_TOKEN` | Slack bot token (xoxb-...) |
-| `ANTHROPIC_API_KEY` | Anthropic API key |
-| `ANTHROPIC_OAUTH_TOKEN` | Alternative: Anthropic OAuth token |
+| `ANTHROPIC_API_KEY` | (Optional) Anthropic API key |
+
+## Authentication
+
+Mom needs credentials for Anthropic API. The options to set it are:
+
+1. **Environment Variable**
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+2. **OAuth Login via coding agent command** (Recommended for Claude Pro/Max)
+
+- run interactive coding agent session: `npx @mariozechner/pi-coding-agent`
+- enter `/login` command
+  - choose "Anthropic" provider
+  - follow instructions in the browser
+- link `auth.json` to mom: `ln -s ~/.pi/agent/auth.json ~/.pi/mom/auth.json`
 
 ## How Mom Works
 

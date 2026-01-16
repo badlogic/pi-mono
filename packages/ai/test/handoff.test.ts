@@ -554,7 +554,7 @@ describe("Cross-Provider Handoff Tests", () => {
 			let successCount = 0;
 			const totalTests = contextTests.length;
 
-			for (const { label, context, sourceModel } of contextTests) {
+			for (const { label, context } of contextTests) {
 				const success = await testProviderHandoff(model, label, context);
 				if (success) successCount++;
 			}

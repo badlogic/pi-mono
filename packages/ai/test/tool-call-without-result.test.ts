@@ -1,8 +1,10 @@
-import { type Static, Type } from "@sinclair/typebox";
+import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
-import { complete, resolveApiKey } from "../src/stream.js";
+import { complete } from "../src/stream.js";
 import type { Api, Context, Model, OptionsForApi, Tool } from "../src/types.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
+import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
 const oauthTokens = await Promise.all([
@@ -10,15 +12,14 @@ const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
+	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 // Simple calculate tool
 const calculateSchema = Type.Object({
 	expression: Type.String({ description: "The mathematical expression to evaluate" }),
 });
-
-type CalculateParams = Static<typeof calculateSchema>;
 
 const calculateTool: Tool = {
 	name: "calculate",
@@ -170,6 +171,30 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider", () => {
+		const model = getModel("minimax", "MiniMax-M2.1");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway Provider", () => {
+		const model = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider", () => {
+		const model = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
 	// =========================================================================
 	// OAuth-based providers (credentials from ~/.pi/agent/oauth.json)
 	// =========================================================================
@@ -242,6 +267,17 @@ describe("Tool Call Without Result Tests", () => {
 			async () => {
 				const model = getModel("google-antigravity", "gpt-oss-120b-medium");
 				await testToolCallWithoutResult(model, { apiKey: antigravityToken });
+			},
+		);
+	});
+
+	describe("OpenAI Codex Provider", () => {
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-codex - should filter out tool calls without corresponding tool results",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const model = getModel("openai-codex", "gpt-5.2-codex");
+				await testToolCallWithoutResult(model, { apiKey: openaiCodexToken });
 			},
 		);
 	});

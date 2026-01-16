@@ -1,4 +1,13 @@
-# pi
+<p align="center">
+  <a href="https://shittycodingagent.ai">
+    <img src="https://shittycodingagent.ai/logo.svg" alt="pi logo" width="128">
+  </a>
+</p>
+<p align="center">
+  <a href="https://discord.com/invite/nKXTsAcmbT"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
+  <a href="https://www.npmjs.com/package/@mariozechner/pi-coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@mariozechner/pi-coding-agent?style=flat-square" /></a>
+  <a href="https://github.com/badlogic/pi-mono/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/badlogic/pi-mono/ci.yml?style=flat-square&branch=main" /></a>
+</p>
 
 A terminal-based coding agent with multi-model support, mid-session model switching, and a simple CLI for headless coding tasks.
 
@@ -9,12 +18,14 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
 - [Getting Started](#getting-started)
   - [Installation](#installation)
   - [Windows Setup](#windows-setup)
+  - [Terminal Setup](#terminal-setup)
   - [API Keys & OAuth](#api-keys--oauth)
   - [Quick Start](#quick-start)
 - [Usage](#usage)
   - [Slash Commands](#slash-commands)
   - [Editor Features](#editor-features)
   - [Keyboard Shortcuts](#keyboard-shortcuts)
+  - [Custom Keybindings](#custom-keybindings)
   - [Bash Mode](#bash-mode)
   - [Image Support](#image-support)
 - [Sessions](#sessions)
@@ -23,16 +34,20 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
   - [Branching](#branching)
 - [Configuration](#configuration)
   - [Project Context Files](#project-context-files)
+  - [Custom System Prompt](#custom-system-prompt)
   - [Custom Models and Providers](#custom-models-and-providers)
-  - [Themes](#themes)
-  - [Custom Slash Commands](#custom-slash-commands)
-  - [Skills](#skills)
-  - [Hooks](#hooks)
-  - [Custom Tools](#custom-tools)
   - [Settings File](#settings-file)
+- [Customization](#customization)
+  - [Themes](#themes)
+  - [Prompt Templates](#prompt-templates)
+  - [Skills](#skills)
+  - [Extensions](#extensions)
 - [CLI Reference](#cli-reference)
 - [Tools](#tools)
 - [Programmatic Usage](#programmatic-usage)
+  - [SDK](#sdk)
+  - [RPC Mode](#rpc-mode)
+  - [HTML Export](#html-export)
 - [Philosophy](#philosophy)
 - [Development](#development)
 - [License](#license)
@@ -77,7 +92,7 @@ pi.exe
 
 ```bash
 git clone https://github.com/badlogic/pi-mono.git
-cd pi-mono && npm install
+cd pi-mono && npm install && npm run build
 cd packages/coding-agent && npm run build:binary
 ./dist/pi
 ```
@@ -101,21 +116,75 @@ For most users, [Git for Windows](https://git-scm.com/download/win) is sufficien
 }
 ```
 
+### Terminal Setup
+
+Pi uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Most modern terminals support this protocol, but some require configuration.
+
+**Kitty, iTerm2:** Work out of the box.
+
+**Ghostty:** Add to your Ghostty config (`~/.config/ghostty/config`):
+
+```
+keybind = alt+backspace=text:\x1b\x7f
+keybind = shift+enter=text:\n
+```
+
+**wezterm:** Create `~/.wezterm.lua`:
+
+```lua
+local wezterm = require 'wezterm'
+local config = wezterm.config_builder()
+config.enable_kitty_keyboard = true
+return config
+```
+
+**VS Code (Integrated Terminal):** Add to `keybindings.json` to enable `Shift+Enter` for multi-line input:
+
+```json
+{
+  "key": "shift+enter",
+  "command": "workbench.action.terminal.sendSequence",
+  "args": { "text": "\u001b[13;2u" },
+  "when": "terminalFocus"
+}
+```
+
+**Windows Terminal:** Does not support the Kitty keyboard protocol. Shift+Enter cannot be distinguished from Enter. Use Ctrl+Enter for multi-line input instead. All other keybindings work correctly.
+
+**IntelliJ IDEA (Integrated Terminal):** The built-in terminal has limited escape sequence support. If you experience cursor visibility issues, set `PI_NO_HARDWARE_CURSOR=1` before running pi. Note that Shift+Enter cannot be distinguished from Enter in IntelliJ's terminal. Consider using a dedicated terminal emulator for the best experience.
+
 ### API Keys & OAuth
 
-Set the environment variable for your provider:
+**Option 1: Auth file** (recommended)
 
-| Provider | Environment Variable |
-|----------|---------------------|
-| Anthropic | `ANTHROPIC_API_KEY` |
-| OpenAI | `OPENAI_API_KEY` |
-| Google | `GEMINI_API_KEY` |
-| Mistral | `MISTRAL_API_KEY` |
-| Groq | `GROQ_API_KEY` |
-| Cerebras | `CEREBRAS_API_KEY` |
-| xAI | `XAI_API_KEY` |
-| OpenRouter | `OPENROUTER_API_KEY` |
-| ZAI | `ZAI_API_KEY` |
+Add API keys to `~/.pi/agent/auth.json`:
+
+```json
+{
+  "anthropic": { "type": "api_key", "key": "sk-ant-..." },
+  "openai": { "type": "api_key", "key": "sk-..." },
+  "google": { "type": "api_key", "key": "..." }
+}
+```
+
+**Option 2: Environment variables**
+
+| Provider | Auth Key | Environment Variable |
+|----------|--------------|---------------------|
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
+| OpenAI | `openai` | `OPENAI_API_KEY` |
+| Google | `google` | `GEMINI_API_KEY` |
+| Mistral | `mistral` | `MISTRAL_API_KEY` |
+| Groq | `groq` | `GROQ_API_KEY` |
+| Cerebras | `cerebras` | `CEREBRAS_API_KEY` |
+| xAI | `xai` | `XAI_API_KEY` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
+| Vercel AI Gateway | `vercel-ai-gateway` | `AI_GATEWAY_API_KEY` |
+| ZAI | `zai` | `ZAI_API_KEY` |
+| MiniMax | `minimax` | `MINIMAX_API_KEY` |
+| MiniMax (China) | `minimax-cn` | `MINIMAX_CN_API_KEY` |
+
+Auth file keys take priority over environment variables.
 
 **OAuth Providers:**
 
@@ -127,11 +196,14 @@ Use `/login` to authenticate with subscription-based or free-tier providers:
 | GitHub Copilot | GPT-4o, Claude, Gemini via Copilot subscription | Subscription |
 | Google Gemini CLI | Gemini 2.0/2.5 models | Free (Google account) |
 | Google Antigravity | Gemini 3, Claude, GPT-OSS | Free (Google account) |
+| OpenAI Codex (ChatGPT Plus/Pro) | Codex models via ChatGPT subscription | Subscription |
 
 ```bash
 pi
 /login  # Select provider, authorize in browser
 ```
+
+**Note:** `/login` replaces any existing API key for that provider with OAuth credentials in `auth.json`.
 
 **GitHub Copilot notes:**
 - Press Enter for github.com, or enter your GitHub Enterprise Server domain
@@ -141,8 +213,42 @@ pi
 - Gemini CLI uses the production Cloud Code Assist endpoint (standard Gemini models)
 - Antigravity uses a sandbox endpoint with access to Gemini 3, Claude (sonnet/opus thinking), and GPT-OSS models
 - Both are free with any Google account, subject to rate limits
+- Paid Cloud Code Assist subscriptions: set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_CLOUD_PROJECT_ID` env var to your project ID
 
-Tokens stored in `~/.pi/agent/oauth.json`. Use `/logout` to clear.
+**OpenAI Codex notes:**
+- Requires ChatGPT Plus/Pro OAuth (`/login openai-codex`)
+- Prompt cache stored under `~/.pi/agent/cache/openai-codex/`
+- Intended for personal use with your own subscription; not for resale or multi-user services. For production, use the OpenAI Platform API.
+
+Credentials stored in `~/.pi/agent/auth.json`. Use `/logout` to clear.
+
+**Troubleshooting (OAuth):**
+- **Port 1455 in use:** Close the conflicting process or paste the auth code/URL when prompted.
+- **Token expired / refresh failed:** Run `/login` again for the provider to refresh credentials.
+- **Usage limits (429):** Wait for the reset window; pi will surface a friendly message with the approximate retry time.
+
+**Amazon Bedrock:**
+
+Amazon Bedrock supports multiple authentication methods:
+
+```bash
+# Option 1: AWS Profile (from ~/.aws/credentials)
+export AWS_PROFILE=your-profile-name
+
+# Option 2: IAM Access Keys
+export AWS_ACCESS_KEY_ID=AKIA...
+export AWS_SECRET_ACCESS_KEY=...
+
+# Option 3: Bedrock API Key (bearer token)
+export AWS_BEARER_TOKEN_BEDROCK=...
+
+# Optional: Set region (defaults to us-east-1)
+export AWS_REGION=us-east-1
+
+pi --provider amazon-bedrock --model global.anthropic.claude-sonnet-4-5-20250929-v1:0
+```
+
+See [Supported foundation models in Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html).
 
 ### Quick Start
 
@@ -167,23 +273,23 @@ The agent reads, writes, and edits files, and executes commands via bash.
 
 | Command | Description |
 |---------|-------------|
-| `/model` | Switch models mid-session (fuzzy search, arrow keys, Enter to select) |
-| `/thinking` | Adjust thinking level for reasoning models (off/minimal/low/medium/high) |
-| `/queue` | Set message queue mode: one-at-a-time (default) or all-at-once |
+| `/settings` | Open settings menu (thinking, theme, message delivery modes, toggles) |
+| `/model` | Switch models mid-session. Use `/model <search>` or `provider/model` to prefilter/disambiguate. |
+| `/scoped-models` | Enable/disable models for Ctrl+P cycling |
 | `/export [file]` | Export session to self-contained HTML |
+| `/share` | Upload session as secret GitHub gist, get shareable URL (requires `gh` CLI) |
 | `/session` | Show session info: path, message counts, token usage, cost |
+| `/name <name>` | Set session display name (shown in session selector) |
 | `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display full version history |
-| `/branch` | Create new conversation branch from a previous message |
+| `/tree` | Navigate session tree in-place (search, filter, label entries) |
+| `/fork` | Create new conversation fork from a previous message |
 | `/resume` | Switch to a different session (interactive selector) |
 | `/login` | OAuth login for subscription-based models |
 | `/logout` | Clear OAuth tokens |
-| `/clear` | Clear context and start fresh session |
+| `/new` | Start a new session |
 | `/copy` | Copy last agent message to clipboard |
 | `/compact [instructions]` | Manually compact conversation context |
-| `/autocompact` | Toggle automatic context compaction |
-| `/theme` | Select color theme |
-| `/show-images` | Toggle inline image display (supported terminals only) |
 
 ### Editor Features
 
@@ -195,7 +301,11 @@ The agent reads, writes, and edits files, and executes commands via bash.
 
 **Multi-line paste:** Pasted content is collapsed to `[paste #N <lines> lines]` but sent in full.
 
-**Message queuing:** Submit messages while the agent is working. They queue and process based on `/queue` mode. Press Escape to abort and restore queued messages to editor.
+**Message queuing:** Submit messages while the agent is working:
+- **Enter** queues a *steering* message, delivered after current tool execution (interrupts remaining tools)
+- **Alt+Enter** queues a *follow-up* message, delivered only after the agent finishes all work
+
+Both modes are configurable via `/settings`: "one-at-a-time" delivers messages one by one waiting for responses, "all" delivers all queued messages at once. Press Escape to abort and restore queued messages to editor.
 
 ### Keyboard Shortcuts
 
@@ -213,7 +323,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | Key | Action |
 |-----|--------|
 | Enter | Send message |
-| Shift+Enter / Alt+Enter | New line (Ctrl+Enter on WSL) |
+| Shift+Enter | New line (Ctrl+Enter on Windows Terminal) |
 | Ctrl+W / Option+Backspace | Delete word backwards |
 | Ctrl+U | Delete to start of line |
 | Ctrl+K | Delete to end of line |
@@ -228,10 +338,108 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | Ctrl+D | Exit (when editor is empty) |
 | Ctrl+Z | Suspend to background (use `fg` in shell to resume) |
 | Shift+Tab | Cycle thinking level |
-| Ctrl+P | Cycle models (scoped by `--models`) |
+| Ctrl+P / Shift+Ctrl+P | Cycle models forward/backward (scoped by `--models`) |
+| Ctrl+L | Open model selector |
 | Ctrl+O | Toggle tool output expansion |
 | Ctrl+T | Toggle thinking block visibility |
 | Ctrl+G | Edit message in external editor (`$VISUAL` or `$EDITOR`) |
+| Ctrl+V | Paste image from clipboard |
+| Alt+Up | Restore queued messages to editor |
+
+### Custom Keybindings
+
+All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Each action can be bound to one or more keys.
+
+**Key format:** `modifier+key` where modifiers are `ctrl`, `shift`, `alt` and keys are:
+
+- Letters: `a-z`
+- Numbers: `0-9`
+- Special keys: `escape`, `tab`, `enter`, `space`, `backspace`, `delete`, `home`, `end`, `up`, `down`, `left`, `right`
+- Symbol keys: `` ` ``, `-`, `=`, `[`, `]`, `\`, `;`, `'`, `,`, `.`, `/`, `!`, `@`, `#`, `$`, `%`, `^`, `&`, `*`, `(`, `)`, `_`, `+`, `|`, `~`, `{`, `}`, `:`, `<`, `>`, `?`
+
+**Configurable actions:**
+
+| Action | Default | Description |
+|--------|---------|-------------|
+| `cursorUp` | `up` | Move cursor up |
+| `cursorDown` | `down` | Move cursor down |
+| `cursorLeft` | `left` | Move cursor left |
+| `cursorRight` | `right` | Move cursor right |
+| `cursorWordLeft` | `alt+left`, `ctrl+left` | Move cursor word left |
+| `cursorWordRight` | `alt+right`, `ctrl+right` | Move cursor word right |
+| `cursorLineStart` | `home`, `ctrl+a` | Move to line start |
+| `cursorLineEnd` | `end`, `ctrl+e` | Move to line end |
+| `deleteCharBackward` | `backspace` | Delete char backward |
+| `deleteCharForward` | `delete` | Delete char forward |
+| `deleteWordBackward` | `ctrl+w`, `alt+backspace` | Delete word backward |
+| `deleteToLineStart` | `ctrl+u` | Delete to line start |
+| `deleteToLineEnd` | `ctrl+k` | Delete to line end |
+| `newLine` | `shift+enter` | Insert new line |
+| `submit` | `enter` | Submit input |
+| `tab` | `tab` | Tab/autocomplete |
+| `interrupt` | `escape` | Interrupt operation |
+| `clear` | `ctrl+c` | Clear editor |
+| `exit` | `ctrl+d` | Exit (when empty) |
+| `suspend` | `ctrl+z` | Suspend process |
+| `cycleThinkingLevel` | `shift+tab` | Cycle thinking level |
+| `cycleModelForward` | `ctrl+p` | Next model |
+| `cycleModelBackward` | `shift+ctrl+p` | Previous model |
+| `selectModel` | `ctrl+l` | Open model selector |
+| `expandTools` | `ctrl+o` | Expand tool output |
+| `toggleThinking` | `ctrl+t` | Toggle thinking |
+| `externalEditor` | `ctrl+g` | Open external editor |
+| `followUp` | `alt+enter` | Queue follow-up message |
+| `dequeue` | `alt+up` | Restore queued messages to editor |
+| `selectUp` | `up` | Move selection up in lists (session picker, model selector) |
+| `selectDown` | `down` | Move selection down in lists |
+| `selectConfirm` | `enter` | Confirm selection |
+| `selectCancel` | `escape`, `ctrl+c` | Cancel selection |
+
+**Example (Emacs-style):**
+
+```json
+{
+  "cursorUp": ["up", "ctrl+p"],
+  "cursorDown": ["down", "ctrl+n"],
+  "cursorLeft": ["left", "ctrl+b"],
+  "cursorRight": ["right", "ctrl+f"],
+  "cursorWordLeft": ["alt+left", "alt+b"],
+  "cursorWordRight": ["alt+right", "alt+f"],
+  "deleteCharForward": ["delete", "ctrl+d"],
+  "deleteCharBackward": ["backspace", "ctrl+h"],
+  "newLine": ["shift+enter", "ctrl+j"]
+}
+```
+
+**Example (Vim-style):**
+
+```json
+{
+  "cursorUp": ["up", "alt+k"],
+  "cursorDown": ["down", "alt+j"],
+  "cursorLeft": ["left", "alt+h"],
+  "cursorRight": ["right", "alt+l"],
+  "cursorWordLeft": ["alt+left", "alt+b"],
+  "cursorWordRight": ["alt+right", "alt+w"],
+  "deleteCharBackward": ["backspace", "ctrl+h"],
+  "deleteWordBackward": ["ctrl+w", "alt+backspace"]
+}
+```
+
+**Example (symbol keys):**
+
+```json
+{
+  "submit": ["enter", "ctrl+j"],
+  "newLine": ["shift+enter", "ctrl+;"],
+  "toggleThinking": "ctrl+/",
+  "cycleModelForward": "ctrl+.",
+  "cycleModelBackward": "ctrl+,",
+  "interrupt": ["escape", "ctrl+`"]
+}
+```
+
+> **Note:** Some `ctrl+symbol` combinations overlap with ASCII control characters due to terminal legacy behavior (e.g., `ctrl+[` is the same as Escape, `ctrl+M` is the same as Enter). These can still be used with `ctrl+shift+key` (e.g., `ctrl+shift+]`). See [Kitty keyboard protocol: legacy ctrl mapping of ASCII keys](https://sw.kovidgoyal.net/kitty/keyboard-protocol/#legacy-ctrl-mapping-of-ascii-keys) for all unsupported keys.
 
 ### Bash Mode
 
@@ -249,14 +457,19 @@ The output becomes part of your next prompt, formatted as:
 
 ```
 Ran `ls -la`
-```
+
 <output here>
-```
 ```
 
 Run multiple commands before prompting; all outputs are included together.
 
 ### Image Support
+
+**Pasting images:** Press `Ctrl+V` to paste an image from your clipboard.
+
+> **Note:** On macOS, pressing Cmd+C on an image file in Finder copies the file path, not the image contents. Use Preview or another image viewer to copy the actual image, or drag the file onto the terminal instead.
+
+**Dragging images:** Drag image files onto the terminal to insert their path. On macOS, you can also drag the screenshot thumbnail (after Cmd+Shift+4) directly onto the terminal.
 
 **Attaching images:** Include image paths in your message:
 
@@ -266,13 +479,19 @@ You: What's in this screenshot? /path/to/image.png
 
 Supported formats: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`
 
+**Auto-resize:** Images larger than 2000x2000 pixels are automatically resized to fit within this limit for better compatibility with Anthropic models. The original dimensions are noted in the context so the model can map coordinates back if needed. Disable via `images.autoResize: false` in settings.
+
 **Inline rendering:** On terminals that support the Kitty graphics protocol (Kitty, Ghostty, WezTerm) or iTerm2 inline images, images in tool output are rendered inline. On unsupported terminals, a text placeholder is shown instead.
 
-Toggle inline images with `/show-images` or set `terminal.showImages: false` in settings.
+Toggle inline images via `/settings` or set `terminal.showImages: false` in settings.
 
 ---
 
 ## Sessions
+
+Sessions are stored as JSONL files with a **tree structure**. Each entry has an `id` and `parentId`, enabling in-place branching: navigate to any previous point with `/tree`, continue from there, and switch between branches while preserving all history in a single file.
+
+See [docs/session.md](docs/session.md) for the file format and programmatic API.
 
 ### Session Management
 
@@ -282,13 +501,16 @@ Sessions auto-save to `~/.pi/agent/sessions/` organized by working directory.
 pi --continue      # Continue most recent session
 pi -c              # Short form
 
-pi --resume        # Browse and select from past sessions
+pi --resume        # Browse and select from past sessions (Tab to toggle Current Folder / All)
 pi -r              # Short form
 
 pi --no-session    # Ephemeral mode (don't save)
 
 pi --session /path/to/file.jsonl  # Use specific session file
+pi --session a8ec1c2a             # Resume by session ID (partial UUID)
 ```
+
+**Resuming by session ID:** The `--session` flag accepts a session UUID (or prefix). Session IDs are visible in filenames under `~/.pi/agent/sessions/<project>/` (e.g., `2025-12-13T17-47-46-817Z_a8ec1c2a-5a5f-4699-88cb-03e7d3cb9292.jsonl`). The UUID is the part after the underscore. You can also search by session ID in the `pi -r` picker.
 
 ### Context Compaction
 
@@ -296,19 +518,11 @@ Long sessions can exhaust context windows. Compaction summarizes older messages 
 
 **Manual:** `/compact` or `/compact Focus on the API changes`
 
-**Automatic:** Enable with `/autocompact`. When enabled, triggers in two cases:
+**Automatic:** Enable via `/settings`. When enabled, triggers in two cases:
 - **Overflow recovery**: LLM returns context overflow error. Compacts and auto-retries.
 - **Threshold maintenance**: Context exceeds `contextWindow - reserveTokens` after a successful turn. Compacts without retry.
 
 When disabled, neither case triggers automatic compaction (use `/compact` manually if needed).
-
-**How it works:**
-1. Cut point calculated to keep ~20k tokens of recent messages
-2. Messages before cut point are summarized
-3. Summary replaces old messages as "context handoff"
-4. Previous compaction summaries chain into new ones
-
-Compaction does not create a new session, but continues the existing one, with a marker in the `.jsonl` file that encodes the compaction point.
 
 **Configuration** (`~/.pi/agent/settings.json`):
 
@@ -322,14 +536,23 @@ Compaction does not create a new session, but continues the existing one, with a
 }
 ```
 
-> **Note:** Compaction is lossy. The agent loses full conversation access afterward. Size tasks to avoid context limits when possible. For critical context, ask the agent to write a summary to a file, iterate on it until it covers everything, then start a new session with that file. The full session history is preserved in the JSONL file; use `/branch` to revisit any previous point.
+> **Note:** Compaction is lossy. The agent loses full conversation access afterward. Size tasks to avoid context limits when possible. For critical context, ask the agent to write a summary to a file, iterate on it until it covers everything, then start a new session with that file. The full session history is preserved in the JSONL file; use `/tree` to revisit any previous point.
+
+See [docs/compaction.md](docs/compaction.md) for how compaction works internally and how to customize it via extensions.
 
 ### Branching
 
-Use `/branch` to explore alternative conversation paths:
+**In-place navigation (`/tree`):** Navigate the session tree without creating new files. Select any previous point, continue from there, and switch between branches while preserving all history.
+
+- Search by typing, page with ←/→
+- Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
+- Press `l` to label entries as bookmarks
+- When switching branches, you're prompted whether to generate a summary of the abandoned branch (messages up to the common ancestor)
+
+**Create new session (`/fork`):** Fork to a new session file:
 
 1. Opens selector showing all your user messages
-2. Select a message to branch from
+2. Select a message to fork from
 3. Creates new session with history up to that point
 4. Selected message placed in editor for modification
 
@@ -362,6 +585,35 @@ Use these for:
 - Prefer async/await over promises
 ```
 
+### Custom System Prompt
+
+Replace the default system prompt **entirely** by creating a `SYSTEM.md` file:
+
+1. **Project-local:** `.pi/SYSTEM.md` (takes precedence)
+2. **Global:** `~/.pi/agent/SYSTEM.md` (fallback)
+
+This is useful when using pi as different types of agents across repos (coding assistant, personal assistant, domain-specific agent, etc.).
+
+```markdown
+You are a technical writing assistant. Help users write clear documentation.
+
+Focus on:
+- Concise explanations
+- Code examples
+- Proper formatting
+```
+
+The `--system-prompt` CLI flag overrides both files.
+
+### Appending to the System Prompt
+
+To add instructions to the system prompt **without** replacing the default (preserving automatic loading of `AGENTS.md` context files, skills, and tools guidelines), create an `APPEND_SYSTEM.md` file:
+
+1. **Project-local:** `.pi/APPEND_SYSTEM.md` (takes precedence)
+2. **Global:** `~/.pi/agent/APPEND_SYSTEM.md` (fallback)
+
+The `--append-system-prompt` CLI flag overrides both files.
+
 ### Custom Models and Providers
 
 Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
@@ -389,7 +641,7 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 }
 ```
 
-**Supported APIs:** `openai-completions`, `openai-responses`, `anthropic-messages`, `google-generative-ai`
+**Supported APIs:** `openai-completions`, `openai-responses`, `openai-codex-responses`, `anthropic-messages`, `google-generative-ai`
 
 **API key resolution:** The `apiKey` field is checked as environment variable name first, then used as literal value.
 
@@ -414,6 +666,37 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 }
 ```
 
+**Overriding built-in providers:**
+
+To route a built-in provider (anthropic, openai, google, etc.) through a proxy without redefining all models, just specify the `baseUrl`:
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "baseUrl": "https://my-proxy.example.com/v1"
+    }
+  }
+}
+```
+
+All built-in Anthropic models remain available with the new endpoint. Existing OAuth or API key auth continues to work.
+
+To fully replace a built-in provider with custom models, include the `models` array:
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "baseUrl": "https://my-proxy.example.com/v1",
+      "apiKey": "ANTHROPIC_API_KEY",
+      "api": "anthropic-messages",
+      "models": [...]
+    }
+  }
+}
+```
+
 **Authorization header:** Set `authHeader: true` to add `Authorization: Bearer <apiKey>` automatically.
 
 **OpenAI compatibility (`compat` field):**
@@ -423,6 +706,7 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 | `supportsStore` | Whether provider supports `store` field |
 | `supportsDeveloperRole` | Use `developer` vs `system` role |
 | `supportsReasoningEffort` | Support for `reasoning_effort` parameter |
+| `supportsUsageInStreaming` | Whether provider supports `stream_options: { include_usage: true }`. Default: `true` |
 | `maxTokensField` | Use `max_completion_tokens` or `max_tokens` |
 
 **Live reload:** The file reloads each time you open `/model`. Edit during session; no restart needed.
@@ -436,13 +720,87 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 
 > pi can help you create custom provider and model configurations.
 
+### Settings File
+
+Settings are loaded from two locations and merged:
+
+1. **Global:** `~/.pi/agent/settings.json` - user preferences
+2. **Project:** `<cwd>/.pi/settings.json` - project-specific overrides (version control friendly)
+
+Project settings override global settings. For nested objects, individual keys merge. Settings changed via TUI (model, thinking level, etc.) are saved to global preferences only.
+
+Global `~/.pi/agent/settings.json` stores persistent preferences:
+
+```json
+{
+  "theme": "dark",
+  "defaultProvider": "anthropic",
+  "defaultModel": "claude-sonnet-4-20250514",
+  "defaultThinkingLevel": "medium",
+  "enabledModels": ["anthropic/*", "*gpt*", "gemini-2.5-pro:high"],
+  "steeringMode": "one-at-a-time",
+  "followUpMode": "one-at-a-time",
+  "shellPath": "C:\\path\\to\\bash.exe",
+  "hideThinkingBlock": false,
+  "collapseChangelog": false,
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 16384,
+    "keepRecentTokens": 20000
+  },
+  "skills": {
+    "enabled": true
+  },
+  "retry": {
+    "enabled": true,
+    "maxRetries": 3,
+    "baseDelayMs": 2000
+  },
+  "terminal": {
+    "showImages": true
+  },
+  "images": {
+    "autoResize": true,
+    "blockImages": false
+  },
+  "extensions": ["/path/to/extension.ts"]
+}
+```
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `theme` | Color theme name | auto-detected |
+| `defaultProvider` | Default model provider | - |
+| `defaultModel` | Default model ID | - |
+| `defaultThinkingLevel` | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | - |
+| `enabledModels` | Model patterns for cycling. Supports glob patterns (`github-copilot/*`, `*sonnet*`) and fuzzy matching. Same as `--models` CLI flag | - |
+| `steeringMode` | Steering message delivery: `all` or `one-at-a-time` | `one-at-a-time` |
+| `followUpMode` | Follow-up message delivery: `all` or `one-at-a-time` | `one-at-a-time` |
+| `shellPath` | Custom bash path (Windows) | auto-detected |
+| `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
+| `collapseChangelog` | Show condensed changelog after update | `false` |
+| `compaction.enabled` | Enable auto-compaction | `true` |
+| `compaction.reserveTokens` | Tokens to reserve before compaction triggers | `16384` |
+| `compaction.keepRecentTokens` | Recent tokens to keep after compaction | `20000` |
+| `skills.enabled` | Enable skills discovery | `true` |
+| `retry.enabled` | Auto-retry on transient errors | `true` |
+| `retry.maxRetries` | Maximum retry attempts | `3` |
+| `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
+| `terminal.showImages` | Render images inline (supported terminals) | `true` |
+| `images.autoResize` | Auto-resize images to 2000x2000 max for better model compatibility | `true` |
+| `images.blockImages` | Prevent images from being sent to LLM providers | `false` |
+| `doubleEscapeAction` | Action for double-escape with empty editor: `tree` or `branch` | `tree` |
+| `extensions` | Additional extension file paths | `[]` |
+
+---
+
+## Customization
+
 ### Themes
 
 Built-in themes: `dark` (default), `light`. Auto-detected on first run.
 
-```bash
-/theme  # Interactive selector
-```
+Select theme via `/settings` or set in `~/.pi/agent/settings.json`.
 
 **Custom themes:** Create `~/.pi/agent/themes/*.json`. Custom themes support live reload.
 
@@ -451,19 +809,19 @@ mkdir -p ~/.pi/agent/themes
 cp $(npm root -g)/@mariozechner/pi-coding-agent/dist/theme/dark.json ~/.pi/agent/themes/my-theme.json
 ```
 
-Select with `/theme`, then edit the file. Changes apply on save.
+Select with `/settings`, then edit the file. Changes apply on save.
 
 > See [Theme Documentation](docs/theme.md) on how to create custom themes in detail. Pi can help you create a new one.
 
 **VS Code terminal fix:** Set `terminal.integrated.minimumContrastRatio` to `1` for accurate colors.
 
-### Custom Slash Commands
+### Prompt Templates
 
 Define reusable prompts as Markdown files:
 
 **Locations:**
-- Global: `~/.pi/agent/commands/*.md`
-- Project: `.pi/commands/*.md`
+- Global: `~/.pi/agent/prompts/*.md`
+- Project: `.pi/prompts/*.md`
 
 **Format:**
 
@@ -490,16 +848,18 @@ Create a React component named $1 with features: $@
 
 Usage: `/component Button "onClick handler" "disabled support"`
 - `$1` = `Button`
-- `$@` = all arguments joined
+- `$@` or `$ARGUMENTS` = all arguments joined (`Button onClick handler disabled support`)
+- `${@:N}` = arguments from the Nth position onwards (1-indexed)
+- `${@:N:L}` = `L` arguments starting from the Nth position
 
-**Namespacing:** Subdirectories create prefixes. `.pi/commands/frontend/component.md` → `/component (project:frontend)`
+**Namespacing:** Subdirectories create prefixes. `.pi/prompts/frontend/component.md` → `/component (project:frontend)`
 
 
 ### Skills
 
 Skills are self-contained capability packages that the agent loads on-demand. Pi implements the [Agent Skills standard](https://agentskills.io/specification), warning about violations but remaining lenient.
 
-A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks. Skills are loaded when the agent decides a task matches the description, or when you explicitly ask to use one.
+A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks. Skills are loaded when the agent decides a task matches the description, or when you explicitly ask to use one. You can also invoke skills directly via `/skill:name` commands (e.g., `/skill:brave-search`).
 
 **Example use cases:**
 - Web search and content extraction (Brave Search API)
@@ -544,166 +904,258 @@ cd /path/to/brave-search && npm install
 
 > See [docs/skills.md](docs/skills.md) for details, examples, and links to skill repositories. pi can help you create new skills.
 
-### Hooks
+### Extensions
 
-Hooks are TypeScript modules that extend pi's behavior by subscribing to lifecycle events. Use them to:
+Extensions are TypeScript modules that extend pi's behavior.
 
-- **Block dangerous commands** (permission gates for `rm -rf`, `sudo`, etc.)
-- **Checkpoint code state** (git stash at each turn, restore on `/branch`)
-- **Protect paths** (block writes to `.env`, `node_modules/`, etc.)
-- **Modify tool output** (filter or transform results before the LLM sees them)
-- **Inject messages from external sources to wake up the agent** (file watchers, webhooks, CI systems)
+**Use cases:**
+- **Custom tools** - Register tools callable by the LLM with custom UI and rendering
+- **Custom commands** - Add `/commands` for users (e.g., `/deploy`, `/stats`)
+- **Event interception** - Block tool calls, modify results, customize compaction
+- **State persistence** - Store data in session, reconstruct on reload/fork
+- **External integrations** - File watchers, webhooks, git checkpointing
+- **Custom UI** - Full TUI control from tools, commands, or event handlers
 
-**Hook locations:**
-- Global: `~/.pi/agent/hooks/*.ts`
-- Project: `.pi/hooks/*.ts`
-- CLI: `--hook <path>` (for debugging)
+**Locations:**
+- Global: `~/.pi/agent/extensions/*.ts` or `~/.pi/agent/extensions/*/index.ts`
+- Project: `.pi/extensions/*.ts` or `.pi/extensions/*/index.ts`
+- CLI: `--extension <path>` or `-e <path>`
 
-**Quick example** (permission gate):
+**Dependencies:** Extensions can have their own dependencies. Place a `package.json` next to the extension (or in a parent directory), run `npm install`, and imports are resolved via [jiti](https://github.com/unjs/jiti). See [examples/extensions/with-deps/](examples/extensions/with-deps/).
+
+#### Custom Tools
+
+Tools are functions the LLM can call. They appear in the system prompt and can have custom rendering.
 
 ```typescript
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+import { Text } from "@mariozechner/pi-tui";
 
-export default function (pi: HookAPI) {
+export default function (pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "deploy",
+    label: "Deploy",
+    description: "Deploy the application to production",
+    parameters: Type.Object({
+      environment: Type.String({ description: "Target environment" }),
+    }),
+
+    async execute(toolCallId, params, onUpdate, ctx, signal) {
+      // Show progress via onUpdate
+      onUpdate({ status: "Deploying..." });
+
+      // Ask user for confirmation
+      const ok = await ctx.ui.confirm("Deploy?", `Deploy to ${params.environment}?`);
+      if (!ok) {
+        return { content: [{ type: "text", text: "Cancelled" }], details: { cancelled: true } };
+      }
+
+      // Run shell commands
+      const result = await ctx.exec("./deploy.sh", [params.environment], { signal });
+
+      return {
+        content: [{ type: "text", text: result.stdout }],
+        details: { environment: params.environment, exitCode: result.exitCode },
+      };
+    },
+
+    // Custom TUI rendering (optional)
+    renderCall(args, theme) {
+      return new Text(theme.bold("deploy ") + theme.fg("accent", args.environment), 0, 0);
+    },
+    renderResult(result, options, theme) {
+      const ok = result.details?.exitCode === 0;
+      return new Text(ok ? theme.fg("success", "✓ Deployed") : theme.fg("error", "✗ Failed"), 0, 0);
+    },
+  });
+}
+```
+
+#### Custom Commands
+
+Commands are user-invoked via `/name`. They can show custom UI, modify state, or trigger agent turns.
+
+```typescript
+export default function (pi: ExtensionAPI) {
+  pi.registerCommand("stats", {
+    description: "Show session statistics",
+    handler: async (args, ctx) => {
+      // Simple notification
+      ctx.ui.notify(`${ctx.sessionManager.getEntries().length} entries`, "info");
+    },
+  });
+
+  pi.registerCommand("todos", {
+    description: "Interactive todo viewer",
+    handler: async (args, ctx) => {
+      // Full custom UI with keyboard handling
+      await ctx.ui.custom((tui, theme, done) => {
+        return {
+          render(width) {
+            return [
+              theme.bold("Todos"),
+              "- [ ] Item 1",
+              "- [x] Item 2",
+              "",
+              theme.fg("dim", "Press Escape to close"),
+            ];
+          },
+          handleInput(data) {
+            if (matchesKey(data, "escape")) done();
+          },
+        };
+      });
+    },
+  });
+}
+```
+
+#### Event Interception
+
+Subscribe to lifecycle events to block, modify, or observe agent behavior.
+
+```typescript
+export default function (pi: ExtensionAPI) {
+  // Block dangerous commands
   pi.on("tool_call", async (event, ctx) => {
-    if (event.toolName === "bash" && /sudo/.test(event.input.command as string)) {
-      const ok = await ctx.ui.confirm("Allow sudo?", event.input.command as string);
+    if (event.toolName === "bash" && /rm -rf/.test(event.input.command as string)) {
+      const ok = await ctx.ui.confirm("Dangerous!", "Allow rm -rf?");
       if (!ok) return { block: true, reason: "Blocked by user" };
     }
-    return undefined;
+  });
+
+  // Modify tool results
+  pi.on("tool_result", async (event, ctx) => {
+    if (event.toolName === "read") {
+      // Redact secrets from file contents
+      return { modifiedResult: event.result.replace(/API_KEY=\w+/g, "API_KEY=***") };
+    }
+  });
+
+  // Custom compaction
+  pi.on("session_before_compact", async (event, ctx) => {
+    return { customSummary: "My custom summary of the conversation so far..." };
+  });
+
+  // Git checkpoint on each turn
+  pi.on("turn_end", async (event, ctx) => {
+    await ctx.exec("git", ["stash", "push", "-m", `pi-checkpoint-${Date.now()}`]);
   });
 }
 ```
 
-**Sending messages from hooks:**
+#### State Persistence
 
-Use `pi.send(text, attachments?)` to inject messages into the session. If the agent is streaming, the message is queued; otherwise a new agent loop starts immediately.
+Store state in session entries that survive reload and work correctly with branching.
 
 ```typescript
-import * as fs from "node:fs";
-import type { HookAPI } from "@mariozechner/pi-coding-agent/hooks";
+export default function (pi: ExtensionAPI) {
+  let counter = 0;
 
-export default function (pi: HookAPI) {
-  pi.on("session", async (event) => {
-    if (event.reason !== "start") return;
-    fs.watch("/tmp/trigger.txt", () => {
-      const content = fs.readFileSync("/tmp/trigger.txt", "utf-8").trim();
-      if (content) pi.send(content);
-    });
+  // Reconstruct state from session history
+  const reconstruct = (ctx) => {
+    counter = 0;
+    for (const entry of ctx.sessionManager.getBranch()) {
+      if (entry.type === "custom" && entry.customType === "my_counter") {
+        counter = entry.data.value;
+      }
+    }
+  };
+
+  pi.on("session_start", async (e, ctx) => reconstruct(ctx));
+  pi.on("session_fork", async (e, ctx) => reconstruct(ctx));
+  pi.on("session_tree", async (e, ctx) => reconstruct(ctx));
+
+  pi.registerCommand("increment", {
+    handler: async (args, ctx) => {
+      counter++;
+      ctx.appendEntry("my_counter", { value: counter }); // Persisted in session
+      ctx.ui.notify(`Counter: ${counter}`, "info");
+    },
   });
 }
 ```
 
-> See [Hooks Documentation](docs/hooks.md) for full API reference. pi can help you create new hooks
+#### Keyboard Shortcuts
 
-> See [examples/hooks/](examples/hooks/) for working examples including permission gates, git checkpointing, and path protection.
-
-### Custom Tools
-
-Custom tools let you extend the built-in toolset (read, write, edit, bash, ...) and are called by the LLM directly. They are TypeScript modules that define tools with optional custom TUI integration for getting user input and custom tool call and result rendering.
-
-**Tool locations (auto-discovered):**
-- Global: `~/.pi/agent/tools/*/index.ts`
-- Project: `.pi/tools/*/index.ts`
-
-**Explicit paths:**
-- CLI: `--tool <path>` (any .ts file)
-- Settings: `customTools` array in `settings.json`
-
-**Quick example:**
+Register custom keyboard shortcuts (shown in `/hotkeys`):
 
 ```typescript
-import { Type } from "@sinclair/typebox";
-import type { CustomToolFactory } from "@mariozechner/pi-coding-agent";
-
-const factory: CustomToolFactory = (pi) => ({
-  name: "greet",
-  label: "Greeting",
-  description: "Generate a greeting",
-  parameters: Type.Object({
-    name: Type.String({ description: "Name to greet" }),
-  }),
-
-  async execute(toolCallId, params) {
-    return {
-      content: [{ type: "text", text: `Hello, ${params.name}!` }],
-      details: { greeted: params.name },
-    };
-  },
-});
-
-export default factory;
-```
-
-**Features:**
-- Access to `pi.cwd`, `pi.exec()`, `pi.ui` (select/confirm/input dialogs)
-- Session lifecycle via `onSession` callback (for state reconstruction)
-- Custom rendering via `renderCall()` and `renderResult()` methods
-- Streaming results via `onUpdate` callback
-- Abort handling via `signal` parameter
-- Multiple tools from one factory (return an array)
-
-> See [Custom Tools Documentation](docs/custom-tools.md) for the full API reference, TUI component guide, and examples. pi can help you create custom tools.
-
-> See [examples/custom-tools/](examples/custom-tools/) for working examples including a todo list with session state management and a question tool with UI interaction.
-
-### Settings File
-
-`~/.pi/agent/settings.json` stores persistent preferences:
-
-```json
-{
-  "theme": "dark",
-  "defaultProvider": "anthropic",
-  "defaultModel": "claude-sonnet-4-20250514",
-  "defaultThinkingLevel": "medium",
-  "queueMode": "one-at-a-time",
-  "shellPath": "C:\\path\\to\\bash.exe",
-  "hideThinkingBlock": false,
-  "collapseChangelog": false,
-  "compaction": {
-    "enabled": true,
-    "reserveTokens": 16384,
-    "keepRecentTokens": 20000
-  },
-  "skills": {
-    "enabled": true
-  },
-  "retry": {
-    "enabled": true,
-    "maxRetries": 3,
-    "baseDelayMs": 2000
-  },
-  "terminal": {
-    "showImages": true
-  },
-  "hooks": ["/path/to/hook.ts"],
-  "hookTimeout": 30000,
-  "customTools": ["/path/to/tool.ts"]
+export default function (pi: ExtensionAPI) {
+  pi.registerShortcut("ctrl+shift+d", {
+    description: "Deploy to production",
+    handler: async (ctx) => {
+      ctx.ui.notify("Deploying...", "info");
+      await ctx.exec("./deploy.sh", []);
+    },
+  });
 }
 ```
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `theme` | Color theme name | auto-detected |
-| `defaultProvider` | Default model provider | - |
-| `defaultModel` | Default model ID | - |
-| `defaultThinkingLevel` | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | - |
-| `queueMode` | Message queue mode: `all` or `one-at-a-time` | `one-at-a-time` |
-| `shellPath` | Custom bash path (Windows) | auto-detected |
-| `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
-| `collapseChangelog` | Show condensed changelog after update | `false` |
-| `compaction.enabled` | Enable auto-compaction | `true` |
-| `compaction.reserveTokens` | Tokens to reserve before compaction triggers | `16384` |
-| `compaction.keepRecentTokens` | Recent tokens to keep after compaction | `20000` |
-| `skills.enabled` | Enable skills discovery | `true` |
-| `retry.enabled` | Auto-retry on transient errors | `true` |
-| `retry.maxRetries` | Maximum retry attempts | `3` |
-| `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
-| `terminal.showImages` | Render images inline (supported terminals) | `true` |
-| `hooks` | Additional hook file paths | `[]` |
-| `hookTimeout` | Timeout for hook operations (ms) | `30000` |
-| `customTools` | Additional custom tool file paths | `[]` |
+#### CLI Flags
+
+Register custom CLI flags (parsed automatically, shown in `--help`):
+
+```typescript
+export default function (pi: ExtensionAPI) {
+  pi.registerFlag("dry-run", {
+    description: "Run without making changes",
+    type: "boolean",
+  });
+
+  pi.on("tool_call", async (event, ctx) => {
+    if (pi.getFlag("dry-run") && event.toolName === "write") {
+      return { block: true, reason: "Dry run mode" };
+    }
+  });
+}
+```
+
+#### Custom UI
+
+Extensions have full TUI access via `ctx.ui`:
+
+```typescript
+// Simple prompts
+const confirmed = await ctx.ui.confirm("Title", "Are you sure?");
+const choice = await ctx.ui.select("Pick one", ["Option A", "Option B"]);
+const text = await ctx.ui.input("Enter value");
+
+// Notifications
+ctx.ui.notify("Done!", "success"); // success, info, warning, error
+
+// Status line (persistent in footer, multiple extensions can set their own)
+ctx.ui.setStatus("my-ext", "Processing...");
+ctx.ui.setStatus("my-ext", null); // Clear
+
+// Widgets (above editor)
+ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"]);
+
+// Custom footer (replaces built-in footer)
+ctx.ui.setFooter((tui, theme) => ({
+  render(width) { return [theme.fg("dim", "Custom footer")]; },
+  invalidate() {},
+}));
+ctx.ui.setFooter(undefined); // Restore built-in footer
+
+// Full custom component with keyboard handling
+await ctx.ui.custom((tui, theme, done) => ({
+  render(width) {
+    return [
+      theme.bold("My Component"),
+      theme.fg("dim", "Press Escape to close"),
+    ];
+  },
+  handleInput(data) {
+    if (matchesKey(data, "escape")) done();
+  },
+}));
+```
+
+> See [docs/extensions.md](docs/extensions.md) for full API reference.
+> See [docs/tui.md](docs/tui.md) for TUI components and custom rendering.
+> See [examples/extensions/](examples/extensions/) for working examples.
 
 ---
 
@@ -717,7 +1169,7 @@ pi [options] [@files...] [messages...]
 
 | Option | Description |
 |--------|-------------|
-| `--provider <name>` | Provider: `anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`, `zai`, `github-copilot`, `google-gemini-cli`, `google-antigravity`, or custom |
+| `--provider <name>` | Provider: `anthropic`, `openai`, `openai-codex`, `google`, `google-vertex`, `amazon-bedrock`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`, `vercel-ai-gateway`, `zai`, `minimax`, `minimax-cn`, `github-copilot`, `google-gemini-cli`, `google-antigravity`, or custom |
 | `--model <id>` | Model ID |
 | `--api-key <key>` | API key (overrides environment) |
 | `--system-prompt <text\|file>` | Custom system prompt (text or file path) |
@@ -726,12 +1178,15 @@ pi [options] [@files...] [messages...]
 | `--print`, `-p` | Non-interactive: process prompt and exit |
 | `--no-session` | Don't save session |
 | `--session <path>` | Use specific session file |
+| `--session-dir <dir>` | Directory for session storage and lookup |
 | `--continue`, `-c` | Continue most recent session |
 | `--resume`, `-r` | Select session to resume |
-| `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling (e.g., `sonnet:high,haiku:low`) |
+| `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling. Supports glob patterns (e.g., `anthropic/*`, `*sonnet*:high`) and fuzzy matching (e.g., `sonnet,haiku:low`) |
+| `--no-tools` | Disable all built-in tools |
 | `--tools <tools>` | Comma-separated tool list (default: `read,bash,edit,write`) |
 | `--thinking <level>` | Thinking level: `off`, `minimal`, `low`, `medium`, `high` |
-| `--hook <path>` | Load a hook file (can be used multiple times) |
+| `--extension <path>`, `-e` | Load an extension file (can be used multiple times) |
+| `--no-extensions` | Disable extension discovery (explicit `-e` paths still work) |
 | `--no-skills` | Disable skills discovery and loading |
 | `--skills <patterns>` | Comma-separated glob patterns to filter skills (e.g., `git-*,docker`) |
 | `--export <file> [output]` | Export session to HTML |
@@ -780,12 +1235,24 @@ pi --provider openai --model gpt-4o "Help me refactor"
 # Model cycling with thinking levels
 pi --models sonnet:high,haiku:low
 
+# Limit to specific provider with glob pattern
+pi --models "github-copilot/*"
+
 # Read-only mode
 pi --tools read,grep,find,ls -p "Review the architecture"
 
 # Export session
 pi --export session.jsonl output.html
 ```
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc. | API keys for providers (see [API Keys & OAuth](#api-keys--oauth)) |
+| `PI_CODING_AGENT_DIR` | Override the agent config directory (default: `~/.pi/agent`) |
+| `PI_SKIP_VERSION_CHECK` | Skip new version check at startup (useful for Nix or other package manager installs) |
+| `VISUAL`, `EDITOR` | External editor for Ctrl+G (e.g., `vim`, `code --wait`) |
 
 ---
 
@@ -812,15 +1279,54 @@ Available via `--tools` flag:
 
 Example: `--tools read,grep,find,ls` for code review without modification.
 
-For adding new tools, see [Custom Tools](#custom-tools) in the Configuration section.
+For adding new tools, see [Extensions](#extensions) in the Customization section.
 
 ---
 
 ## Programmatic Usage
 
+### SDK
+
+For embedding pi in Node.js/TypeScript applications, use the SDK:
+
+```typescript
+import { createAgentSession, discoverAuthStorage, discoverModels, SessionManager } from "@mariozechner/pi-coding-agent";
+
+const authStorage = discoverAuthStorage();
+const modelRegistry = discoverModels(authStorage);
+
+const { session } = await createAgentSession({
+  sessionManager: SessionManager.inMemory(),
+  authStorage,
+  modelRegistry,
+});
+
+session.subscribe((event) => {
+  if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+    process.stdout.write(event.assistantMessageEvent.delta);
+  }
+});
+
+await session.prompt("What files are in the current directory?");
+```
+
+The SDK provides full control over:
+- Model selection and thinking level
+- System prompt (replace or modify)
+- Tools (built-in subsets, custom tools)
+- Extensions (discovered or via paths)
+- Skills, context files, prompt templates
+- Session persistence (`SessionManager`)
+- Settings (`SettingsManager`)
+- API key resolution and OAuth
+
+**Philosophy:** "Omit to discover, provide to override." Omit an option and pi discovers from standard locations. Provide an option and your value is used.
+
+> See [SDK Documentation](docs/sdk.md) for the full API reference. See [examples/sdk/](examples/sdk/) for working examples from minimal to full control.
+
 ### RPC Mode
 
-For embedding pi in other applications:
+For embedding pi from other languages or with process isolation:
 
 ```bash
 pi --mode rpc --no-session
@@ -832,9 +1338,7 @@ Send JSON commands on stdin:
 {"type":"abort"}
 ```
 
-See [RPC documentation](docs/rpc.md) for full protocol.
-
-**Node.js/TypeScript:** Consider using `AgentSession` directly from `@mariozechner/pi-coding-agent` instead of subprocess. See [`src/core/agent-session.ts`](src/core/agent-session.ts) and [`src/modes/rpc/rpc-client.ts`](src/modes/rpc/rpc-client.ts).
+> See [RPC Documentation](docs/rpc.md) for the full protocol.
 
 ### HTML Export
 
@@ -843,7 +1347,7 @@ pi --export session.jsonl              # Auto-generated filename
 pi --export session.jsonl output.html  # Custom filename
 ```
 
-Works with both session files and streaming event logs from `--mode json`.
+Works with session files.
 
 ---
 
@@ -853,13 +1357,13 @@ Pi is opinionated about what it won't do. These are intentional design decisions
 
 **No MCP.** Build CLI tools with READMEs (see [Skills](#skills)). The agent reads them on demand. [Would you like to know more?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
 
-**No sub-agents.** Spawn pi instances via tmux, or [build your own sub-agent tool](examples/custom-tools/subagent/) with [custom tools](#custom-tools). Full observability and steerability.
+**No sub-agents.** Spawn pi instances via tmux, or [build your own sub-agent tool](examples/extensions/subagent/) with [Extensions](#extensions). Full observability and steerability.
 
-**No permission popups.** Security theater. Run in a container or build your own with [Hooks](#hooks).
+**No permission popups.** Security theater. Run in a container or build your own with [Extensions](#extensions).
 
 **No plan mode.** Gather context in one session, write plans to file, start fresh for implementation.
 
-**No built-in to-dos.** They confuse models. Use a TODO.md file, or [build your own](examples/custom-tools/todo.ts) with [custom tools](#custom-tools).
+**No built-in to-dos.** They confuse models. Use a TODO.md file, or [build your own](examples/extensions/todo.ts) with [Extensions](#extensions).
 
 **No background bash.** Use tmux. Full observability, direct interaction.
 
@@ -900,8 +1404,6 @@ Never use `__dirname` directly for package assets.
 
 `/debug` (hidden) writes rendered lines with ANSI codes to `~/.pi/agent/pi-debug.log` for TUI debugging, as well as the last set of messages that were sent to the LLM.
 
-For architecture and contribution guidelines, see [DEVELOPMENT.md](./DEVELOPMENT.md).
-
 ---
 
 ## License
@@ -912,3 +1414,4 @@ MIT
 
 - [@mariozechner/pi-ai](https://www.npmjs.com/package/@mariozechner/pi-ai): Core LLM toolkit
 - [@mariozechner/pi-agent](https://www.npmjs.com/package/@mariozechner/pi-agent): Agent framework
+- [@mariozechner/pi-tui](https://www.npmjs.com/package/@mariozechner/pi-tui): Terminal UI components

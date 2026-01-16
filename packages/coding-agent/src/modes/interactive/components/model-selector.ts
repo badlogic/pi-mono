@@ -1,18 +1,7 @@
-import type { Model } from "@mariozechner/pi-ai";
-import {
-	Container,
-	Input,
-	isArrowDown,
-	isArrowUp,
-	isEnter,
-	isEscape,
-	Spacer,
-	Text,
-	type TUI,
-} from "@mariozechner/pi-tui";
-import { getAvailableModels } from "../../../core/model-config.js";
+import { type Model, modelsAreEqual } from "@mariozechner/pi-ai";
+import { Container, fuzzyFilter, getEditorKeybindings, Input, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
+import type { ModelRegistry } from "../../../core/model-registry.js";
 import type { SettingsManager } from "../../../core/settings-manager.js";
-import { fuzzyFilter } from "../../../utils/fuzzy.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -36,27 +25,31 @@ export class ModelSelectorComponent extends Container {
 	private allModels: ModelItem[] = [];
 	private filteredModels: ModelItem[] = [];
 	private selectedIndex: number = 0;
-	private currentModel: Model<any> | null;
+	private currentModel?: Model<any>;
 	private settingsManager: SettingsManager;
+	private modelRegistry: ModelRegistry;
 	private onSelectCallback: (model: Model<any>) => void;
 	private onCancelCallback: () => void;
-	private errorMessage: string | null = null;
+	private errorMessage?: string;
 	private tui: TUI;
 	private scopedModels: ReadonlyArray<ScopedModelItem>;
 
 	constructor(
 		tui: TUI,
-		currentModel: Model<any> | null,
+		currentModel: Model<any> | undefined,
 		settingsManager: SettingsManager,
+		modelRegistry: ModelRegistry,
 		scopedModels: ReadonlyArray<ScopedModelItem>,
 		onSelect: (model: Model<any>) => void,
 		onCancel: () => void,
+		initialSearchInput?: string,
 	) {
 		super();
 
 		this.tui = tui;
 		this.currentModel = currentModel;
 		this.settingsManager = settingsManager;
+		this.modelRegistry = modelRegistry;
 		this.scopedModels = scopedModels;
 		this.onSelectCallback = onSelect;
 		this.onCancelCallback = onCancel;
@@ -75,6 +68,9 @@ export class ModelSelectorComponent extends Container {
 
 		// Create search input
 		this.searchInput = new Input();
+		if (initialSearchInput) {
+			this.searchInput.setValue(initialSearchInput);
+		}
 		this.searchInput.onSubmit = () => {
 			// Enter on search input selects the first filtered item
 			if (this.filteredModels[this.selectedIndex]) {
@@ -96,7 +92,11 @@ export class ModelSelectorComponent extends Container {
 
 		// Load models and do initial render
 		this.loadModels().then(() => {
-			this.updateList();
+			if (initialSearchInput) {
+				this.filterModels(initialSearchInput);
+			} else {
+				this.updateList();
+			}
 			// Request re-render after models are loaded
 			this.tui.requestRender();
 		});
@@ -113,29 +113,35 @@ export class ModelSelectorComponent extends Container {
 				model: scoped.model,
 			}));
 		} else {
-			// Load available models fresh (includes custom models from models.json)
-			const { models: availableModels, error } = await getAvailableModels();
+			// Refresh to pick up any changes to models.json
+			this.modelRegistry.refresh();
 
-			// If there's an error loading models.json, we'll show it via the "no models" path
-			// The error will be displayed to the user
-			if (error) {
-				this.allModels = [];
-				this.filteredModels = [];
-				this.errorMessage = error;
-				return;
+			// Check for models.json errors
+			const loadError = this.modelRegistry.getError();
+			if (loadError) {
+				this.errorMessage = loadError;
 			}
 
-			models = availableModels.map((model) => ({
-				provider: model.provider,
-				id: model.id,
-				model,
-			}));
+			// Load available models (built-in models still work even if models.json failed)
+			try {
+				const availableModels = await this.modelRegistry.getAvailable();
+				models = availableModels.map((model: Model<any>) => ({
+					provider: model.provider,
+					id: model.id,
+					model,
+				}));
+			} catch (error) {
+				this.allModels = [];
+				this.filteredModels = [];
+				this.errorMessage = error instanceof Error ? error.message : String(error);
+				return;
+			}
 		}
 
 		// Sort: current model first, then by provider
 		models.sort((a, b) => {
-			const aIsCurrent = this.currentModel?.id === a.model.id && this.currentModel?.provider === a.provider;
-			const bIsCurrent = this.currentModel?.id === b.model.id && this.currentModel?.provider === b.provider;
+			const aIsCurrent = modelsAreEqual(this.currentModel, a.model);
+			const bIsCurrent = modelsAreEqual(this.currentModel, b.model);
 			if (aIsCurrent && !bIsCurrent) return -1;
 			if (!aIsCurrent && bIsCurrent) return 1;
 			return a.provider.localeCompare(b.provider);
@@ -143,6 +149,7 @@ export class ModelSelectorComponent extends Container {
 
 		this.allModels = models;
 		this.filteredModels = models;
+		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, models.length - 1));
 	}
 
 	private filterModels(query: string): void {
@@ -167,7 +174,7 @@ export class ModelSelectorComponent extends Container {
 			if (!item) continue;
 
 			const isSelected = i === this.selectedIndex;
-			const isCurrent = this.currentModel?.id === item.model.id;
+			const isCurrent = modelsAreEqual(this.currentModel, item.model);
 
 			let line = "";
 			if (isSelected) {
@@ -175,12 +182,12 @@ export class ModelSelectorComponent extends Container {
 				const modelText = `${item.id}`;
 				const providerBadge = theme.fg("muted", `[${item.provider}]`);
 				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
-				line = prefix + theme.fg("accent", modelText) + " " + providerBadge + checkmark;
+				line = `${prefix + theme.fg("accent", modelText)} ${providerBadge}${checkmark}`;
 			} else {
 				const modelText = `  ${item.id}`;
 				const providerBadge = theme.fg("muted", `[${item.provider}]`);
 				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
-				line = modelText + " " + providerBadge + checkmark;
+				line = `${modelText} ${providerBadge}${checkmark}`;
 			}
 
 			this.listContainer.addChild(new Text(line, 0, 0));
@@ -205,25 +212,28 @@ export class ModelSelectorComponent extends Container {
 	}
 
 	handleInput(keyData: string): void {
+		const kb = getEditorKeybindings();
 		// Up arrow - wrap to bottom when at top
-		if (isArrowUp(keyData)) {
+		if (kb.matches(keyData, "selectUp")) {
+			if (this.filteredModels.length === 0) return;
 			this.selectedIndex = this.selectedIndex === 0 ? this.filteredModels.length - 1 : this.selectedIndex - 1;
 			this.updateList();
 		}
 		// Down arrow - wrap to top when at bottom
-		else if (isArrowDown(keyData)) {
+		else if (kb.matches(keyData, "selectDown")) {
+			if (this.filteredModels.length === 0) return;
 			this.selectedIndex = this.selectedIndex === this.filteredModels.length - 1 ? 0 : this.selectedIndex + 1;
 			this.updateList();
 		}
 		// Enter
-		else if (isEnter(keyData)) {
+		else if (kb.matches(keyData, "selectConfirm")) {
 			const selectedModel = this.filteredModels[this.selectedIndex];
 			if (selectedModel) {
 				this.handleSelect(selectedModel.model);
 			}
 		}
-		// Escape
-		else if (isEscape(keyData)) {
+		// Escape or Ctrl+C
+		else if (kb.matches(keyData, "selectCancel")) {
 			this.onCancelCallback();
 		}
 		// Pass everything else to search input

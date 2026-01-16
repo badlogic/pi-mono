@@ -2,7 +2,6 @@
 
 import { join, resolve } from "path";
 import { type AgentRunner, getOrCreateRunner } from "./agent.js";
-import { syncLogToContext } from "./context.js";
 import { downloadChannel } from "./download.js";
 import { createEventsWatcher } from "./events.js";
 import * as log from "./log.js";
@@ -16,8 +15,6 @@ import { ChannelStore } from "./store.js";
 
 const MOM_SLACK_APP_TOKEN = process.env.MOM_SLACK_APP_TOKEN;
 const MOM_SLACK_BOT_TOKEN = process.env.MOM_SLACK_BOT_TOKEN;
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const ANTHROPIC_OAUTH_TOKEN = process.env.ANTHROPIC_OAUTH_TOKEN;
 
 interface ParsedArgs {
 	workingDir?: string;
@@ -74,8 +71,8 @@ if (!parsedArgs.workingDir) {
 
 const { workingDir, sandbox } = { workingDir: parsedArgs.workingDir, sandbox: parsedArgs.sandbox };
 
-if (!MOM_SLACK_APP_TOKEN || !MOM_SLACK_BOT_TOKEN || (!ANTHROPIC_API_KEY && !ANTHROPIC_OAUTH_TOKEN)) {
-	console.error("Missing env: MOM_SLACK_APP_TOKEN, MOM_SLACK_BOT_TOKEN, ANTHROPIC_API_KEY or ANTHROPIC_OAUTH_TOKEN");
+if (!MOM_SLACK_APP_TOKEN || !MOM_SLACK_BOT_TOKEN) {
+	console.error("Missing env: MOM_SLACK_APP_TOKEN, MOM_SLACK_BOT_TOKEN");
 	process.exit(1);
 }
 
@@ -144,7 +141,7 @@ function createSlackContext(event: SlackEvent, slack: SlackBot, state: ChannelSt
 
 		respond: async (text: string, shouldLog = true) => {
 			updatePromise = updatePromise.then(async () => {
-				accumulatedText = accumulatedText ? accumulatedText + "\n" + text : text;
+				accumulatedText = accumulatedText ? `${accumulatedText}\n${text}` : text;
 				const displayText = isWorking ? accumulatedText + workingIndicator : accumulatedText;
 
 				if (messageTs) {
@@ -256,7 +253,6 @@ const handler: MomHandler = {
 
 	async handleEvent(event: SlackEvent, slack: SlackBot, isEvent?: boolean): Promise<void> {
 		const state = getState(event.channel);
-		const channelDir = join(workingDir, event.channel);
 
 		// Start run
 		state.running = true;
@@ -265,14 +261,6 @@ const handler: MomHandler = {
 		log.logInfo(`[${event.channel}] Starting run: ${event.text.substring(0, 50)}`);
 
 		try {
-			// SYNC context from log.jsonl BEFORE processing
-			// This adds any messages that were logged while mom wasn't running
-			// Exclude messages >= current ts (will be handled by agent)
-			const syncedCount = syncLogToContext(channelDir, event.ts);
-			if (syncedCount > 0) {
-				log.logInfo(`[${event.channel}] Synced ${syncedCount} messages from log to context`);
-			}
-
 			// Create context adapter
 			const ctx = createSlackContext(event, slack, state, isEvent);
 

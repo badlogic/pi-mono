@@ -5,10 +5,11 @@
  * Responses and events are emitted as JSON lines on stdout.
  */
 
-import type { AppMessage, Attachment, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { Model } from "@mariozechner/pi-ai";
-import type { CompactionResult, SessionStats } from "../../core/agent-session.js";
+import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ImageContent, Model } from "@mariozechner/pi-ai";
+import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
+import type { CompactionResult } from "../../core/compaction/index.js";
 
 // ============================================================================
 // RPC Commands (stdin)
@@ -16,10 +17,11 @@ import type { BashResult } from "../../core/bash-executor.js";
 
 export type RpcCommand =
 	// Prompting
-	| { id?: string; type: "prompt"; message: string; attachments?: Attachment[] }
-	| { id?: string; type: "queue_message"; message: string }
+	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
+	| { id?: string; type: "steer"; message: string }
+	| { id?: string; type: "follow_up"; message: string }
 	| { id?: string; type: "abort" }
-	| { id?: string; type: "reset" }
+	| { id?: string; type: "new_session"; parentSession?: string }
 
 	// State
 	| { id?: string; type: "get_state" }
@@ -33,8 +35,9 @@ export type RpcCommand =
 	| { id?: string; type: "set_thinking_level"; level: ThinkingLevel }
 	| { id?: string; type: "cycle_thinking_level" }
 
-	// Queue mode
-	| { id?: string; type: "set_queue_mode"; mode: "all" | "one-at-a-time" }
+	// Queue modes
+	| { id?: string; type: "set_steering_mode"; mode: "all" | "one-at-a-time" }
+	| { id?: string; type: "set_follow_up_mode"; mode: "all" | "one-at-a-time" }
 
 	// Compaction
 	| { id?: string; type: "compact"; customInstructions?: string }
@@ -52,8 +55,8 @@ export type RpcCommand =
 	| { id?: string; type: "get_session_stats" }
 	| { id?: string; type: "export_html"; outputPath?: string }
 	| { id?: string; type: "switch_session"; sessionPath: string }
-	| { id?: string; type: "branch"; entryIndex: number }
-	| { id?: string; type: "get_branch_messages" }
+	| { id?: string; type: "fork"; entryId: string }
+	| { id?: string; type: "get_fork_messages" }
 	| { id?: string; type: "get_last_assistant_text" }
 
 	// Messages
@@ -64,16 +67,17 @@ export type RpcCommand =
 // ============================================================================
 
 export interface RpcSessionState {
-	model: Model<any> | null;
+	model?: Model<any>;
 	thinkingLevel: ThinkingLevel;
 	isStreaming: boolean;
 	isCompacting: boolean;
-	queueMode: "all" | "one-at-a-time";
-	sessionFile: string | null;
+	steeringMode: "all" | "one-at-a-time";
+	followUpMode: "all" | "one-at-a-time";
+	sessionFile?: string;
 	sessionId: string;
 	autoCompactionEnabled: boolean;
 	messageCount: number;
-	queuedMessageCount: number;
+	pendingMessageCount: number;
 }
 
 // ============================================================================
@@ -84,9 +88,10 @@ export interface RpcSessionState {
 export type RpcResponse =
 	// Prompting (async - events follow)
 	| { id?: string; type: "response"; command: "prompt"; success: true }
-	| { id?: string; type: "response"; command: "queue_message"; success: true }
+	| { id?: string; type: "response"; command: "steer"; success: true }
+	| { id?: string; type: "response"; command: "follow_up"; success: true }
 	| { id?: string; type: "response"; command: "abort"; success: true }
-	| { id?: string; type: "response"; command: "reset"; success: true }
+	| { id?: string; type: "response"; command: "new_session"; success: true; data: { cancelled: boolean } }
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
@@ -124,8 +129,9 @@ export type RpcResponse =
 			data: { level: ThinkingLevel } | null;
 	  }
 
-	// Queue mode
-	| { id?: string; type: "response"; command: "set_queue_mode"; success: true }
+	// Queue modes
+	| { id?: string; type: "response"; command: "set_steering_mode"; success: true }
+	| { id?: string; type: "response"; command: "set_follow_up_mode"; success: true }
 
 	// Compaction
 	| { id?: string; type: "response"; command: "compact"; success: true; data: CompactionResult }
@@ -142,14 +148,14 @@ export type RpcResponse =
 	// Session
 	| { id?: string; type: "response"; command: "get_session_stats"; success: true; data: SessionStats }
 	| { id?: string; type: "response"; command: "export_html"; success: true; data: { path: string } }
-	| { id?: string; type: "response"; command: "switch_session"; success: true }
-	| { id?: string; type: "response"; command: "branch"; success: true; data: { text: string } }
+	| { id?: string; type: "response"; command: "switch_session"; success: true; data: { cancelled: boolean } }
+	| { id?: string; type: "response"; command: "fork"; success: true; data: { text: string; cancelled: boolean } }
 	| {
 			id?: string;
 			type: "response";
-			command: "get_branch_messages";
+			command: "get_fork_messages";
 			success: true;
-			data: { messages: Array<{ entryIndex: number; text: string }> };
+			data: { messages: Array<{ entryId: string; text: string }> };
 	  }
 	| {
 			id?: string;
@@ -160,37 +166,61 @@ export type RpcResponse =
 	  }
 
 	// Messages
-	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AppMessage[] } }
+	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };
 
 // ============================================================================
-// Hook UI Events (stdout)
+// Extension UI Events (stdout)
 // ============================================================================
 
-/** Emitted when a hook needs user input */
-export type RpcHookUIRequest =
-	| { type: "hook_ui_request"; id: string; method: "select"; title: string; options: string[] }
-	| { type: "hook_ui_request"; id: string; method: "confirm"; title: string; message: string }
-	| { type: "hook_ui_request"; id: string; method: "input"; title: string; placeholder?: string }
+/** Emitted when an extension needs user input */
+export type RpcExtensionUIRequest =
+	| { type: "extension_ui_request"; id: string; method: "select"; title: string; options: string[]; timeout?: number }
+	| { type: "extension_ui_request"; id: string; method: "confirm"; title: string; message: string; timeout?: number }
 	| {
-			type: "hook_ui_request";
+			type: "extension_ui_request";
+			id: string;
+			method: "input";
+			title: string;
+			placeholder?: string;
+			timeout?: number;
+	  }
+	| { type: "extension_ui_request"; id: string; method: "editor"; title: string; prefill?: string }
+	| {
+			type: "extension_ui_request";
 			id: string;
 			method: "notify";
 			message: string;
 			notifyType?: "info" | "warning" | "error";
-	  };
+	  }
+	| {
+			type: "extension_ui_request";
+			id: string;
+			method: "setStatus";
+			statusKey: string;
+			statusText: string | undefined;
+	  }
+	| {
+			type: "extension_ui_request";
+			id: string;
+			method: "setWidget";
+			widgetKey: string;
+			widgetLines: string[] | undefined;
+	  }
+	| { type: "extension_ui_request"; id: string; method: "setTitle"; title: string }
+	| { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string };
 
 // ============================================================================
-// Hook UI Commands (stdin)
+// Extension UI Commands (stdin)
 // ============================================================================
 
-/** Response to a hook UI request */
-export type RpcHookUIResponse =
-	| { type: "hook_ui_response"; id: string; value: string }
-	| { type: "hook_ui_response"; id: string; confirmed: boolean }
-	| { type: "hook_ui_response"; id: string; cancelled: true };
+/** Response to an extension UI request */
+export type RpcExtensionUIResponse =
+	| { type: "extension_ui_response"; id: string; value: string }
+	| { type: "extension_ui_response"; id: string; confirmed: boolean }
+	| { type: "extension_ui_response"; id: string; cancelled: true };
 
 // ============================================================================
 // Helper type for extracting command types

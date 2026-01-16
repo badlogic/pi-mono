@@ -3,9 +3,9 @@ import {
 	type GenerateContentParameters,
 	GoogleGenAI,
 	type ThinkingConfig,
-	type ThinkingLevel,
 } from "@google/genai";
 import { calculateCost } from "../models.js";
+import { getEnvApiKey } from "../stream.js";
 import type {
 	Api,
 	AssistantMessage,
@@ -19,14 +19,22 @@ import type {
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-import { convertMessages, convertTools, mapStopReason, mapToolChoice } from "./google-shared.js";
+import type { GoogleThinkingLevel } from "./google-gemini-cli.js";
+import {
+	convertMessages,
+	convertTools,
+	isThinkingPart,
+	mapStopReason,
+	mapToolChoice,
+	retainThoughtSignature,
+} from "./google-shared.js";
 
 export interface GoogleOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
 	thinking?: {
 		enabled: boolean;
 		budgetTokens?: number; // -1 for dynamic, 0 to disable
-		level?: ThinkingLevel;
+		level?: GoogleThinkingLevel;
 	};
 }
 
@@ -60,7 +68,8 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 		};
 
 		try {
-			const client = createClient(model, options?.apiKey);
+			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
+			const client = createClient(model, apiKey);
 			const params = buildParams(model, context, options);
 			const googleStream = await client.models.generateContentStream(params);
 
@@ -73,7 +82,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 				if (candidate?.content?.parts) {
 					for (const part of candidate.content.parts) {
 						if (part.text !== undefined) {
-							const isThinking = part.thought === true;
+							const isThinking = isThinkingPart(part);
 							if (
 								!currentBlock ||
 								(isThinking && currentBlock.type !== "thinking") ||
@@ -108,7 +117,10 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 							}
 							if (currentBlock.type === "thinking") {
 								currentBlock.thinking += part.text;
-								currentBlock.thinkingSignature = part.thoughtSignature;
+								currentBlock.thinkingSignature = retainThoughtSignature(
+									currentBlock.thinkingSignature,
+									part.thoughtSignature,
+								);
 								stream.push({
 									type: "thinking_delta",
 									contentIndex: blockIndex(),
@@ -117,6 +129,10 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 								});
 							} else {
 								currentBlock.text += part.text;
+								currentBlock.textSignature = retainThoughtSignature(
+									currentBlock.textSignature,
+									part.thoughtSignature,
+								);
 								stream.push({
 									type: "text_delta",
 									contentIndex: blockIndex(),
@@ -248,15 +264,6 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 };
 
 function createClient(model: Model<"google-generative-ai">, apiKey?: string): GoogleGenAI {
-	if (!apiKey) {
-		if (!process.env.GEMINI_API_KEY) {
-			throw new Error(
-				"Gemini API key is required. Set GEMINI_API_KEY environment variable or pass it as an argument.",
-			);
-		}
-		apiKey = process.env.GEMINI_API_KEY;
-	}
-
 	const httpOptions: { baseUrl?: string; apiVersion?: string; headers?: Record<string, string> } = {};
 	if (model.baseUrl) {
 		httpOptions.baseUrl = model.baseUrl;
@@ -306,7 +313,8 @@ function buildParams(
 	if (options.thinking?.enabled && model.reasoning) {
 		const thinkingConfig: ThinkingConfig = { includeThoughts: true };
 		if (options.thinking.level !== undefined) {
-			thinkingConfig.thinkingLevel = options.thinking.level;
+			// Cast to any since our GoogleThinkingLevel mirrors Google's ThinkingLevel enum values
+			thinkingConfig.thinkingLevel = options.thinking.level as any;
 		} else if (options.thinking.budgetTokens !== undefined) {
 			thinkingConfig.thinkingBudget = options.thinking.budgetTokens;
 		}

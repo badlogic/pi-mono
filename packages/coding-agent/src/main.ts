@@ -1,180 +1,321 @@
 /**
- * Main entry point for the coding agent
+ * Main entry point for the coding agent CLI.
+ *
+ * This file handles CLI argument parsing and translates them into
+ * createAgentSession() options. The SDK does the heavy lifting.
  */
 
-import { Agent, type Attachment, ProviderTransport, type ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { setOAuthStorage, supportsXhigh } from "@mariozechner/pi-ai";
+import { type ImageContent, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname } from "path";
+import { existsSync } from "fs";
+import { join } from "path";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
-import { getModelsPath, getOAuthPath, VERSION } from "./config.js";
-import { AgentSession } from "./core/agent-session.js";
-import { discoverAndLoadCustomTools, type LoadedCustomTool } from "./core/custom-tools/index.js";
-import { exportFromFile } from "./core/export-html.js";
-import { discoverAndLoadHooks, HookRunner, wrapToolsWithHooks } from "./core/hooks/index.js";
-import { messageTransformer } from "./core/messages.js";
-import { findModel, getApiKeyForModel, getAvailableModels } from "./core/model-config.js";
-import { resolveModelScope, restoreModelFromSession, type ScopedModel } from "./core/model-resolver.js";
+import { CONFIG_DIR_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
+import { createEventBus } from "./core/event-bus.js";
+import { exportFromFile } from "./core/export-html/index.js";
+import { discoverAndLoadExtensions, type LoadExtensionsResult, loadExtensions } from "./core/extensions/index.js";
+import { KeybindingsManager } from "./core/keybindings.js";
+import type { ModelRegistry } from "./core/model-registry.js";
+import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
+import { type CreateAgentSessionOptions, createAgentSession, discoverAuthStorage, discoverModels } from "./core/sdk.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
-import { loadSlashCommands } from "./core/slash-commands.js";
-import { buildSystemPrompt } from "./core/system-prompt.js";
-import { allTools, codingTools } from "./core/tools/index.js";
+import { resolvePromptInput } from "./core/system-prompt.js";
+import { printTimings, time } from "./core/timings.js";
+import { allTools } from "./core/tools/index.js";
+import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
-import { getChangelogPath, getNewEntries, parseChangelog } from "./utils/changelog.js";
-import { ensureTool } from "./utils/tools-manager.js";
 
-/** Configure OAuth storage to use the coding-agent's configurable path */
-function configureOAuthStorage(): void {
-	const oauthPath = getOAuthPath();
+/**
+ * Read all content from piped stdin.
+ * Returns undefined if stdin is a TTY (interactive terminal).
+ */
+async function readPipedStdin(): Promise<string | undefined> {
+	// If stdin is a TTY, we're running interactively - don't read stdin
+	if (process.stdin.isTTY) {
+		return undefined;
+	}
 
-	setOAuthStorage({
-		load: () => {
-			if (!existsSync(oauthPath)) {
-				return {};
-			}
-			try {
-				return JSON.parse(readFileSync(oauthPath, "utf-8"));
-			} catch {
-				return {};
-			}
-		},
-		save: (storage) => {
-			const dir = dirname(oauthPath);
-			if (!existsSync(dir)) {
-				mkdirSync(dir, { recursive: true, mode: 0o700 });
-			}
-			writeFileSync(oauthPath, JSON.stringify(storage, null, 2), "utf-8");
-			chmodSync(oauthPath, 0o600);
-		},
+	return new Promise((resolve) => {
+		let data = "";
+		process.stdin.setEncoding("utf8");
+		process.stdin.on("data", (chunk) => {
+			data += chunk;
+		});
+		process.stdin.on("end", () => {
+			resolve(data.trim() || undefined);
+		});
+		process.stdin.resume();
 	});
 }
 
-/** Check npm registry for new version (non-blocking) */
-async function checkForNewVersion(currentVersion: string): Promise<string | null> {
-	try {
-		const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest");
-		if (!response.ok) return null;
-
-		const data = (await response.json()) as { version?: string };
-		const latestVersion = data.version;
-
-		if (latestVersion && latestVersion !== currentVersion) {
-			return latestVersion;
-		}
-
-		return null;
-	} catch {
-		// Silently fail - don't disrupt the user experience
-		return null;
-	}
-}
-
-/** Run interactive mode with TUI */
-async function runInteractiveMode(
-	session: AgentSession,
-	version: string,
-	changelogMarkdown: string | null,
-	modelFallbackMessage: string | null,
-	versionCheckPromise: Promise<string | null>,
-	initialMessages: string[],
-	customTools: LoadedCustomTool[],
-	setToolUIContext: (uiContext: import("./core/hooks/types.js").HookUIContext, hasUI: boolean) => void,
-	initialMessage?: string,
-	initialAttachments?: Attachment[],
-	fdPath: string | null = null,
-): Promise<void> {
-	const mode = new InteractiveMode(session, version, changelogMarkdown, customTools, setToolUIContext, fdPath);
-
-	// Initialize TUI (subscribes to agent events internally)
-	await mode.init();
-
-	// Handle version check result when it completes (don't block)
-	versionCheckPromise.then((newVersion) => {
-		if (newVersion) {
-			mode.showNewVersionNotification(newVersion);
-		}
-	});
-
-	// Render any existing messages (from --continue mode)
-	mode.renderInitialMessages(session.state);
-
-	// Show model fallback warning at the end of the chat if applicable
-	if (modelFallbackMessage) {
-		mode.showWarning(modelFallbackMessage);
-	}
-
-	// Process initial message with attachments if provided (from @file args)
-	if (initialMessage) {
-		try {
-			await session.prompt(initialMessage, { attachments: initialAttachments });
-		} catch (error: unknown) {
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-			mode.showError(errorMessage);
-		}
-	}
-
-	// Process remaining initial messages if provided (from CLI args)
-	for (const message of initialMessages) {
-		try {
-			await session.prompt(message);
-		} catch (error: unknown) {
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-			mode.showError(errorMessage);
-		}
-	}
-
-	// Interactive loop
-	while (true) {
-		const userInput = await mode.getUserInput();
-
-		// Process the message
-		try {
-			await session.prompt(userInput);
-		} catch (error: unknown) {
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-			mode.showError(errorMessage);
-		}
-	}
-}
-
-/** Prepare initial message from @file arguments */
-async function prepareInitialMessage(parsed: Args): Promise<{
+async function prepareInitialMessage(
+	parsed: Args,
+	autoResizeImages: boolean,
+): Promise<{
 	initialMessage?: string;
-	initialAttachments?: Attachment[];
+	initialImages?: ImageContent[];
 }> {
 	if (parsed.fileArgs.length === 0) {
 		return {};
 	}
 
-	const { textContent, imageAttachments } = await processFileArguments(parsed.fileArgs);
+	const { text, images } = await processFileArguments(parsed.fileArgs, { autoResizeImages });
 
-	// Combine file content with first plain text message (if any)
 	let initialMessage: string;
 	if (parsed.messages.length > 0) {
-		initialMessage = textContent + parsed.messages[0];
-		parsed.messages.shift(); // Remove first message as it's been combined
+		initialMessage = text + parsed.messages[0];
+		parsed.messages.shift();
 	} else {
-		initialMessage = textContent;
+		initialMessage = text;
 	}
 
 	return {
 		initialMessage,
-		initialAttachments: imageAttachments.length > 0 ? imageAttachments : undefined,
+		initialImages: images.length > 0 ? images : undefined,
 	};
 }
 
-export async function main(args: string[]) {
-	// Configure OAuth storage to use the coding-agent's configurable path
-	// This must happen before any OAuth operations
-	configureOAuthStorage();
+/**
+ * Resolve a session argument to a file path.
+ * If it looks like a path, use as-is. Otherwise try to match as session ID prefix.
+ */
+async function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: string): Promise<string> {
+	// If it looks like a file path, use as-is
+	if (sessionArg.includes("/") || sessionArg.includes("\\") || sessionArg.endsWith(".jsonl")) {
+		return sessionArg;
+	}
 
-	const parsed = parseArgs(args);
+	// Try to match as session ID (full or partial UUID)
+	const sessions = await SessionManager.list(cwd, sessionDir);
+	const matches = sessions.filter((s) => s.id.startsWith(sessionArg));
+
+	if (matches.length >= 1) {
+		return matches[0].path; // Already sorted by modified time (most recent first)
+	}
+
+	// No match - return original (will create new session)
+	return sessionArg;
+}
+
+async function createSessionManager(parsed: Args, cwd: string): Promise<SessionManager | undefined> {
+	if (parsed.noSession) {
+		return SessionManager.inMemory();
+	}
+	if (parsed.session) {
+		const resolvedPath = await resolveSessionPath(parsed.session, cwd, parsed.sessionDir);
+		return SessionManager.open(resolvedPath, parsed.sessionDir);
+	}
+	if (parsed.continue) {
+		return SessionManager.continueRecent(cwd, parsed.sessionDir);
+	}
+	// --resume is handled separately (needs picker UI)
+	// If --session-dir provided without --continue/--resume, create new session there
+	if (parsed.sessionDir) {
+		return SessionManager.create(cwd, parsed.sessionDir);
+	}
+	// Default case (new session) returns undefined, SDK will create one
+	return undefined;
+}
+
+/** Discover SYSTEM.md file if no CLI system prompt was provided */
+function discoverSystemPromptFile(): string | undefined {
+	// Check project-local first: .pi/SYSTEM.md
+	const projectPath = join(process.cwd(), CONFIG_DIR_NAME, "SYSTEM.md");
+	if (existsSync(projectPath)) {
+		return projectPath;
+	}
+
+	// Fall back to global: ~/.pi/agent/SYSTEM.md
+	const globalPath = join(getAgentDir(), "SYSTEM.md");
+	if (existsSync(globalPath)) {
+		return globalPath;
+	}
+
+	return undefined;
+}
+
+/** Discover APPEND_SYSTEM.md file if no CLI append system prompt was provided */
+function discoverAppendSystemPromptFile(): string | undefined {
+	// Check project-local first: .pi/APPEND_SYSTEM.md
+	const projectPath = join(process.cwd(), CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
+	if (existsSync(projectPath)) {
+		return projectPath;
+	}
+
+	// Fall back to global: ~/.pi/agent/APPEND_SYSTEM.md
+	const globalPath = join(getAgentDir(), "APPEND_SYSTEM.md");
+	if (existsSync(globalPath)) {
+		return globalPath;
+	}
+
+	return undefined;
+}
+
+function buildSessionOptions(
+	parsed: Args,
+	scopedModels: ScopedModel[],
+	sessionManager: SessionManager | undefined,
+	modelRegistry: ModelRegistry,
+	settingsManager: SettingsManager,
+	extensionsResult?: LoadExtensionsResult,
+): CreateAgentSessionOptions {
+	const options: CreateAgentSessionOptions = {};
+
+	// Auto-discover SYSTEM.md if no CLI system prompt provided
+	const systemPromptSource = parsed.systemPrompt ?? discoverSystemPromptFile();
+	// Auto-discover APPEND_SYSTEM.md if no CLI append system prompt provided
+	const appendSystemPromptSource = parsed.appendSystemPrompt ?? discoverAppendSystemPromptFile();
+
+	const resolvedSystemPrompt = resolvePromptInput(systemPromptSource, "system prompt");
+	const resolvedAppendPrompt = resolvePromptInput(appendSystemPromptSource, "append system prompt");
+
+	if (sessionManager) {
+		options.sessionManager = sessionManager;
+	}
+
+	// Model from CLI
+	if (parsed.provider && parsed.model) {
+		const model = modelRegistry.find(parsed.provider, parsed.model);
+		if (!model) {
+			console.error(chalk.red(`Model ${parsed.provider}/${parsed.model} not found`));
+			process.exit(1);
+		}
+		options.model = model;
+	} else if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
+		// Check if saved default is in scoped models - use it if so, otherwise first scoped model
+		const savedProvider = settingsManager.getDefaultProvider();
+		const savedModelId = settingsManager.getDefaultModel();
+		const savedModel = savedProvider && savedModelId ? modelRegistry.find(savedProvider, savedModelId) : undefined;
+		const savedInScope = savedModel ? scopedModels.find((sm) => modelsAreEqual(sm.model, savedModel)) : undefined;
+
+		if (savedInScope) {
+			options.model = savedInScope.model;
+			// Use thinking level from scoped model config if explicitly set
+			if (!parsed.thinking && savedInScope.thinkingLevel) {
+				options.thinkingLevel = savedInScope.thinkingLevel;
+			}
+		} else {
+			options.model = scopedModels[0].model;
+			// Use thinking level from first scoped model if explicitly set
+			if (!parsed.thinking && scopedModels[0].thinkingLevel) {
+				options.thinkingLevel = scopedModels[0].thinkingLevel;
+			}
+		}
+	}
+
+	// Thinking level from CLI (takes precedence over scoped model thinking levels set above)
+	if (parsed.thinking) {
+		options.thinkingLevel = parsed.thinking;
+	}
+
+	// Scoped models for Ctrl+P cycling - fill in default thinking level for models without explicit level
+	if (scopedModels.length > 0) {
+		const defaultThinkingLevel = settingsManager.getDefaultThinkingLevel() ?? "off";
+		options.scopedModels = scopedModels.map((sm) => ({
+			model: sm.model,
+			thinkingLevel: sm.thinkingLevel ?? defaultThinkingLevel,
+		}));
+	}
+
+	// API key from CLI - set in authStorage
+	// (handled by caller before createAgentSession)
+
+	// System prompt
+	if (resolvedSystemPrompt && resolvedAppendPrompt) {
+		options.systemPrompt = `${resolvedSystemPrompt}\n\n${resolvedAppendPrompt}`;
+	} else if (resolvedSystemPrompt) {
+		options.systemPrompt = resolvedSystemPrompt;
+	} else if (resolvedAppendPrompt) {
+		options.systemPrompt = (defaultPrompt) => `${defaultPrompt}\n\n${resolvedAppendPrompt}`;
+	}
+
+	// Tools
+	if (parsed.noTools) {
+		// --no-tools: start with no built-in tools
+		// --tools can still add specific ones back
+		if (parsed.tools && parsed.tools.length > 0) {
+			options.tools = parsed.tools.map((name) => allTools[name]);
+		} else {
+			options.tools = [];
+		}
+	} else if (parsed.tools) {
+		options.tools = parsed.tools.map((name) => allTools[name]);
+	}
+
+	// Skills
+	if (parsed.noSkills) {
+		options.skills = [];
+	}
+
+	// Pre-loaded extensions (from early CLI flag discovery)
+	if (extensionsResult && extensionsResult.extensions.length > 0) {
+		options.preloadedExtensions = extensionsResult;
+	}
+
+	return options;
+}
+
+export async function main(args: string[]) {
+	time("start");
+
+	// Run migrations (pass cwd for project-local migrations)
+	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd());
+
+	// Create AuthStorage and ModelRegistry upfront
+	const authStorage = discoverAuthStorage();
+	const modelRegistry = discoverModels(authStorage);
+	time("discoverModels");
+
+	// First pass: parse args to get --extension paths
+	const firstPass = parseArgs(args);
+	time("parseArgs-firstPass");
+
+	// Early load extensions to discover their CLI flags (unless --no-extensions)
+	const cwd = process.cwd();
+	const agentDir = getAgentDir();
+	const eventBus = createEventBus();
+	const settingsManager = SettingsManager.create(cwd);
+	time("SettingsManager.create");
+
+	let extensionsResult: LoadExtensionsResult;
+	if (firstPass.noExtensions) {
+		// --no-extensions disables discovery, but explicit -e flags still work
+		const explicitPaths = firstPass.extensions ?? [];
+		extensionsResult = await loadExtensions(explicitPaths, cwd, eventBus);
+		time("loadExtensions");
+	} else {
+		// Merge CLI --extension args with settings.json extensions
+		const extensionPaths = [...settingsManager.getExtensionPaths(), ...(firstPass.extensions ?? [])];
+		extensionsResult = await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus);
+		time("discoverExtensionFlags");
+	}
+
+	// Log extension loading errors
+	for (const { path, error } of extensionsResult.errors) {
+		console.error(chalk.red(`Failed to load extension "${path}": ${error}`));
+	}
+
+	// Collect all extension flags
+	const extensionFlags = new Map<string, { type: "boolean" | "string" }>();
+	for (const ext of extensionsResult.extensions) {
+		for (const [name, flag] of ext.flags) {
+			extensionFlags.set(name, { type: flag.type });
+		}
+	}
+
+	// Second pass: parse args with extension flags
+	const parsed = parseArgs(args, extensionFlags);
+	time("parseArgs");
+
+	// Pass flag values to extensions via runtime
+	for (const [name, value] of parsed.unknownFlags) {
+		extensionsResult.runtime.flagValues.set(name, value);
+	}
 
 	if (parsed.version) {
 		console.log(VERSION);
@@ -186,18 +327,28 @@ export async function main(args: string[]) {
 		return;
 	}
 
-	// Handle --list-models flag: list available models and exit
 	if (parsed.listModels !== undefined) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
-		await listModels(searchPattern);
+		await listModels(modelRegistry, searchPattern);
 		return;
 	}
 
-	// Handle --export flag: convert session file to HTML and exit
+	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
+	if (parsed.mode !== "rpc") {
+		const stdinContent = await readPipedStdin();
+		if (stdinContent !== undefined) {
+			// Force print mode since interactive mode requires a TTY for keyboard input
+			parsed.print = true;
+			// Prepend stdin content to messages
+			parsed.messages.unshift(stdinContent);
+		}
+		time("readPipedStdin");
+	}
+
 	if (parsed.export) {
 		try {
 			const outputPath = parsed.messages.length > 0 ? parsed.messages[0] : undefined;
-			const result = exportFromFile(parsed.export, outputPath);
+			const result = await exportFromFile(parsed.export, outputPath);
 			console.log(`Exported to: ${result}`);
 			return;
 		} catch (error: unknown) {
@@ -207,67 +358,77 @@ export async function main(args: string[]) {
 		}
 	}
 
-	// Validate: RPC mode doesn't support @file arguments
 	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
 		console.error(chalk.red("Error: @file arguments are not supported in RPC mode"));
 		process.exit(1);
 	}
 
-	// Process @file arguments
-	const { initialMessage, initialAttachments } = await prepareInitialMessage(parsed);
-
-	// Determine if we're in interactive mode (needed for theme watcher)
+	const { initialMessage, initialImages } = await prepareInitialMessage(parsed, settingsManager.getImageAutoResize());
+	time("prepareInitialMessage");
 	const isInteractive = !parsed.print && parsed.mode === undefined;
+	const mode = parsed.mode || "text";
+	initTheme(settingsManager.getTheme(), isInteractive);
+	time("initTheme");
 
-	// Initialize theme (before any TUI rendering)
-	const settingsManager = new SettingsManager();
-	const themeName = settingsManager.getTheme();
-	initTheme(themeName, isInteractive);
-
-	// Setup session manager
-	const sessionManager = new SessionManager(parsed.continue && !parsed.resume, parsed.session);
-
-	if (parsed.noSession) {
-		sessionManager.disable();
+	// Show deprecation warnings in interactive mode
+	if (isInteractive && deprecationWarnings.length > 0) {
+		await showDeprecationWarnings(deprecationWarnings);
 	}
 
-	// Handle --resume flag: show session selector
+	let scopedModels: ScopedModel[] = [];
+	const modelPatterns = parsed.models ?? settingsManager.getEnabledModels();
+	if (modelPatterns && modelPatterns.length > 0) {
+		scopedModels = await resolveModelScope(modelPatterns, modelRegistry);
+		time("resolveModelScope");
+	}
+
+	// Create session manager based on CLI flags
+	let sessionManager = await createSessionManager(parsed, cwd);
+	time("createSessionManager");
+
+	// Handle --resume: show session picker
 	if (parsed.resume) {
-		const selectedSession = await selectSession(sessionManager);
-		if (!selectedSession) {
+		// Initialize keybindings so session picker respects user config
+		KeybindingsManager.create();
+
+		const selectedPath = await selectSession(
+			(onProgress) => SessionManager.list(cwd, parsed.sessionDir, onProgress),
+			SessionManager.listAll,
+		);
+		time("selectSession");
+		if (!selectedPath) {
 			console.log(chalk.dim("No session selected"));
 			return;
 		}
-		sessionManager.setSessionFile(selectedSession);
+		sessionManager = SessionManager.open(selectedPath);
 	}
 
-	// Resolve model scope early if provided
-	let scopedModels: ScopedModel[] = [];
-	if (parsed.models && parsed.models.length > 0) {
-		scopedModels = await resolveModelScope(parsed.models);
-	}
+	const sessionOptions = buildSessionOptions(
+		parsed,
+		scopedModels,
+		sessionManager,
+		modelRegistry,
+		settingsManager,
+		extensionsResult,
+	);
+	sessionOptions.authStorage = authStorage;
+	sessionOptions.modelRegistry = modelRegistry;
+	sessionOptions.eventBus = eventBus;
 
-	// Determine mode and output behavior
-	const mode = parsed.mode || "text";
-	const shouldPrintMessages = isInteractive;
-
-	// Find initial model
-	let initialModel = await findInitialModelForSession(parsed, scopedModels, settingsManager);
-	let initialThinking: ThinkingLevel = "off";
-
-	// Get thinking level from scoped models if applicable
-	if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
-		initialThinking = scopedModels[0].thinkingLevel;
-	} else {
-		// Try saved thinking level
-		const savedThinking = settingsManager.getDefaultThinkingLevel();
-		if (savedThinking) {
-			initialThinking = savedThinking;
+	// Handle CLI --api-key as runtime override (not persisted)
+	if (parsed.apiKey) {
+		if (!sessionOptions.model) {
+			console.error(chalk.red("--api-key requires a model to be specified via --provider/--model or -m/--models"));
+			process.exit(1);
 		}
+		authStorage.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey);
 	}
 
-	// Non-interactive mode: fail early if no model available
-	if (!isInteractive && !initialModel) {
+	time("buildSessionOptions");
+	const { session, modelFallbackMessage } = await createAgentSession(sessionOptions);
+	time("createAgentSession");
+
+	if (!isInteractive && !session.model) {
 		console.error(chalk.red("No models available."));
 		console.error(chalk.yellow("\nSet an API key environment variable:"));
 		console.error("  ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, etc.");
@@ -275,304 +436,52 @@ export async function main(args: string[]) {
 		process.exit(1);
 	}
 
-	// Non-interactive mode: validate API key exists
-	if (!isInteractive && initialModel) {
-		const apiKey = parsed.apiKey || (await getApiKeyForModel(initialModel));
-		if (!apiKey) {
-			console.error(chalk.red(`No API key found for ${initialModel.provider}`));
-			process.exit(1);
+	// Clamp thinking level to model capabilities (for CLI override case)
+	if (session.model && parsed.thinking) {
+		let effectiveThinking = parsed.thinking;
+		if (!session.model.reasoning) {
+			effectiveThinking = "off";
+		} else if (effectiveThinking === "xhigh" && !supportsXhigh(session.model)) {
+			effectiveThinking = "high";
+		}
+		if (effectiveThinking !== session.thinkingLevel) {
+			session.setThinkingLevel(effectiveThinking);
 		}
 	}
 
-	// Build system prompt
-	const skillsSettings = settingsManager.getSkillsSettings();
-	if (parsed.noSkills) {
-		skillsSettings.enabled = false;
-	}
-	if (parsed.skills && parsed.skills.length > 0) {
-		skillsSettings.includeSkills = parsed.skills;
-	}
-	const systemPrompt = buildSystemPrompt({
-		customPrompt: parsed.systemPrompt,
-		selectedTools: parsed.tools,
-		appendSystemPrompt: parsed.appendSystemPrompt,
-		skillsSettings,
-	});
-
-	// Handle session restoration
-	let modelFallbackMessage: string | null = null;
-
-	if (parsed.continue || parsed.resume || parsed.session) {
-		const savedModel = sessionManager.loadModel();
-		if (savedModel) {
-			const result = await restoreModelFromSession(
-				savedModel.provider,
-				savedModel.modelId,
-				initialModel,
-				shouldPrintMessages,
-			);
-
-			if (result.model) {
-				initialModel = result.model;
-			}
-			modelFallbackMessage = result.fallbackMessage;
-		}
-
-		// Load and restore thinking level
-		const thinkingLevel = sessionManager.loadThinkingLevel() as ThinkingLevel;
-		if (thinkingLevel) {
-			initialThinking = thinkingLevel;
-			if (shouldPrintMessages) {
-				console.log(chalk.dim(`Restored thinking level: ${thinkingLevel}`));
-			}
-		}
-	}
-
-	// CLI --thinking flag takes highest priority
-	if (parsed.thinking) {
-		initialThinking = parsed.thinking;
-	}
-
-	// Clamp thinking level to model capabilities
-	if (initialModel) {
-		if (!initialModel.reasoning) {
-			initialThinking = "off";
-		} else if (initialThinking === "xhigh" && !supportsXhigh(initialModel)) {
-			initialThinking = "high";
-		}
-	}
-
-	// Determine which tools to use
-	let selectedTools = parsed.tools ? parsed.tools.map((name) => allTools[name]) : codingTools;
-
-	// Discover and load hooks from:
-	// 1. ~/.pi/agent/hooks/*.ts (global)
-	// 2. cwd/.pi/hooks/*.ts (project-local)
-	// 3. Explicit paths in settings.json
-	// 4. CLI --hook flags
-	let hookRunner: HookRunner | null = null;
-	const cwd = process.cwd();
-	const configuredHookPaths = [...settingsManager.getHookPaths(), ...(parsed.hooks ?? [])];
-	const { hooks, errors } = await discoverAndLoadHooks(configuredHookPaths, cwd);
-
-	// Report hook loading errors
-	for (const { path, error } of errors) {
-		console.error(chalk.red(`Failed to load hook "${path}": ${error}`));
-	}
-
-	if (hooks.length > 0) {
-		const timeout = settingsManager.getHookTimeout();
-		hookRunner = new HookRunner(hooks, cwd, timeout);
-	}
-
-	// Discover and load custom tools from:
-	// 1. ~/.pi/agent/tools/*.ts (global)
-	// 2. cwd/.pi/tools/*.ts (project-local)
-	// 3. Explicit paths in settings.json
-	// 4. CLI --tool flags
-	const configuredToolPaths = [...settingsManager.getCustomToolPaths(), ...(parsed.customTools ?? [])];
-	const builtInToolNames = Object.keys(allTools);
-	const {
-		tools: loadedCustomTools,
-		errors: toolErrors,
-		setUIContext: setToolUIContext,
-	} = await discoverAndLoadCustomTools(configuredToolPaths, cwd, builtInToolNames);
-
-	// Report custom tool loading errors
-	for (const { path, error } of toolErrors) {
-		console.error(chalk.red(`Failed to load custom tool "${path}": ${error}`));
-	}
-
-	// Add custom tools to selected tools
-	if (loadedCustomTools.length > 0) {
-		const customToolInstances = loadedCustomTools.map((lt) => lt.tool);
-		selectedTools = [...selectedTools, ...customToolInstances] as typeof selectedTools;
-	}
-
-	// Wrap tools with hook callbacks (built-in and custom)
-	if (hookRunner) {
-		selectedTools = wrapToolsWithHooks(selectedTools, hookRunner);
-	}
-
-	// Create agent
-	const agent = new Agent({
-		initialState: {
-			systemPrompt,
-			model: initialModel as any, // Can be null in interactive mode
-			thinkingLevel: initialThinking,
-			tools: selectedTools,
-		},
-		messageTransformer,
-		queueMode: settingsManager.getQueueMode(),
-		transport: new ProviderTransport({
-			getApiKey: async () => {
-				const currentModel = agent.state.model;
-				if (!currentModel) {
-					throw new Error("No model selected");
-				}
-
-				if (parsed.apiKey) {
-					return parsed.apiKey;
-				}
-
-				const key = await getApiKeyForModel(currentModel);
-				if (!key) {
-					throw new Error(
-						`No API key found for provider "${currentModel.provider}". Please set the appropriate environment variable or update ${getModelsPath()}`,
-					);
-				}
-				return key;
-			},
-		}),
-	});
-
-	// Load previous messages if continuing, resuming, or using --session
-	if (parsed.continue || parsed.resume || parsed.session) {
-		const messages = sessionManager.loadMessages();
-		if (messages.length > 0) {
-			agent.replaceMessages(messages);
-		}
-	}
-
-	// Load file commands for slash command expansion
-	const fileCommands = loadSlashCommands();
-
-	// Create session
-	const session = new AgentSession({
-		agent,
-		sessionManager,
-		settingsManager,
-		scopedModels,
-		fileCommands,
-		hookRunner,
-		customTools: loadedCustomTools,
-		skillsSettings,
-	});
-
-	// Route to appropriate mode
 	if (mode === "rpc") {
 		await runRpcMode(session);
 	} else if (isInteractive) {
-		// Check for new version in the background
-		const versionCheckPromise = checkForNewVersion(VERSION).catch(() => null);
-
-		// Check if we should show changelog
-		const changelogMarkdown = getChangelogForDisplay(parsed, settingsManager);
-
-		// Show model scope if provided
 		if (scopedModels.length > 0) {
 			const modelList = scopedModels
 				.map((sm) => {
-					const thinkingStr = sm.thinkingLevel !== "off" ? `:${sm.thinkingLevel}` : "";
+					const thinkingStr = sm.thinkingLevel ? `:${sm.thinkingLevel}` : "";
 					return `${sm.model.id}${thinkingStr}`;
 				})
 				.join(", ");
 			console.log(chalk.dim(`Model scope: ${modelList} ${chalk.gray("(Ctrl+P to cycle)")}`));
 		}
 
-		// Ensure fd tool is available for file autocomplete
-		const fdPath = await ensureTool("fd");
-
-		await runInteractiveMode(
-			session,
-			VERSION,
-			changelogMarkdown,
+		printTimings();
+		const mode = new InteractiveMode(session, {
+			migratedProviders,
 			modelFallbackMessage,
-			versionCheckPromise,
-			parsed.messages,
-			loadedCustomTools,
-			setToolUIContext,
 			initialMessage,
-			initialAttachments,
-			fdPath,
-		);
+			initialImages,
+			initialMessages: parsed.messages,
+		});
+		await mode.run();
 	} else {
-		// Non-interactive mode (--print flag or --mode flag)
-		await runPrintMode(session, mode, parsed.messages, initialMessage, initialAttachments);
-		// Clean up and exit (file watchers keep process alive)
+		await runPrintMode(session, {
+			mode,
+			messages: parsed.messages,
+			initialMessage,
+			initialImages,
+		});
 		stopThemeWatcher();
-		// Wait for stdout to fully flush before exiting
 		if (process.stdout.writableLength > 0) {
 			await new Promise<void>((resolve) => process.stdout.once("drain", resolve));
 		}
 		process.exit(0);
 	}
-}
-
-/** Find initial model based on CLI args, scoped models, settings, or available models */
-async function findInitialModelForSession(parsed: Args, scopedModels: ScopedModel[], settingsManager: SettingsManager) {
-	// 1. CLI args take priority
-	if (parsed.provider && parsed.model) {
-		const { model, error } = findModel(parsed.provider, parsed.model);
-		if (error) {
-			console.error(chalk.red(error));
-			process.exit(1);
-		}
-		if (!model) {
-			console.error(chalk.red(`Model ${parsed.provider}/${parsed.model} not found`));
-			process.exit(1);
-		}
-		return model;
-	}
-
-	// 2. Use first model from scoped models (skip if continuing/resuming)
-	if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
-		return scopedModels[0].model;
-	}
-
-	// 3. Try saved default from settings
-	const defaultProvider = settingsManager.getDefaultProvider();
-	const defaultModelId = settingsManager.getDefaultModel();
-	if (defaultProvider && defaultModelId) {
-		const { model, error } = findModel(defaultProvider, defaultModelId);
-		if (error) {
-			console.error(chalk.red(error));
-			process.exit(1);
-		}
-		if (model) {
-			return model;
-		}
-	}
-
-	// 4. Try first available model with valid API key
-	const { models: availableModels, error } = await getAvailableModels();
-
-	if (error) {
-		console.error(chalk.red(error));
-		process.exit(1);
-	}
-
-	if (availableModels.length > 0) {
-		return availableModels[0];
-	}
-
-	return null;
-}
-
-/** Get changelog markdown to display (only for new sessions with updates) */
-function getChangelogForDisplay(parsed: Args, settingsManager: SettingsManager): string | null {
-	if (parsed.continue || parsed.resume) {
-		return null;
-	}
-
-	const lastVersion = settingsManager.getLastChangelogVersion();
-	const changelogPath = getChangelogPath();
-	const entries = parseChangelog(changelogPath);
-
-	if (!lastVersion) {
-		// First run - show all entries
-		if (entries.length > 0) {
-			settingsManager.setLastChangelogVersion(VERSION);
-			return entries.map((e) => e.content).join("\n\n");
-		}
-	} else {
-		// Check for new entries since last version
-		const newEntries = getNewEntries(entries, lastVersion);
-		if (newEntries.length > 0) {
-			settingsManager.setLastChangelogVersion(VERSION);
-			return newEntries.map((e) => e.content).join("\n\n");
-		}
-	}
-
-	return null;
 }

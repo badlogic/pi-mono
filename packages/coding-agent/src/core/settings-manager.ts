@@ -1,11 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
-import { getAgentDir } from "../config.js";
+import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
 	reserveTokens?: number; // default: 16384
 	keepRecentTokens?: number; // default: 20000
+}
+
+export interface BranchSummarySettings {
+	reserveTokens?: number; // default: 16384 (tokens reserved for prompt + LLM response)
 }
 
 export interface RetrySettings {
@@ -21,6 +25,7 @@ export interface SkillsSettings {
 	enableClaudeProject?: boolean; // default: true
 	enablePiUser?: boolean; // default: true
 	enablePiProject?: boolean; // default: true
+	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	customDirectories?: string[]; // default: []
 	ignoredSkills?: string[]; // default: [] (glob patterns to exclude; takes precedence over includeSkills)
 	includeSkills?: string[]; // default: [] (empty = include all; glob patterns to filter)
@@ -30,61 +35,174 @@ export interface TerminalSettings {
 	showImages?: boolean; // default: true (only relevant if terminal supports images)
 }
 
+export interface ImageSettings {
+	autoResize?: boolean; // default: true (resize images to 2000x2000 max for better model compatibility)
+	blockImages?: boolean; // default: false - when true, prevents all images from being sent to LLM providers
+}
+
+export interface ThinkingBudgetsSettings {
+	minimal?: number;
+	low?: number;
+	medium?: number;
+	high?: number;
+}
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
 	defaultModel?: string;
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-	queueMode?: "all" | "one-at-a-time";
+	steeringMode?: "all" | "one-at-a-time";
+	followUpMode?: "all" | "one-at-a-time";
 	theme?: string;
 	compaction?: CompactionSettings;
+	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
-	hooks?: string[]; // Array of hook file paths
-	hookTimeout?: number; // Timeout for hook execution in ms (default: 30000)
-	customTools?: string[]; // Array of custom tool file paths
+	extensions?: string[]; // Array of extension file paths
 	skills?: SkillsSettings;
 	terminal?: TerminalSettings;
+	images?: ImageSettings;
+	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
+	doubleEscapeAction?: "fork" | "tree"; // Action for double-escape with empty editor (default: "tree")
+	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
+}
+
+/** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
+function deepMergeSettings(base: Settings, overrides: Settings): Settings {
+	const result: Settings = { ...base };
+
+	for (const key of Object.keys(overrides) as (keyof Settings)[]) {
+		const overrideValue = overrides[key];
+		const baseValue = base[key];
+
+		if (overrideValue === undefined) {
+			continue;
+		}
+
+		// For nested objects, merge recursively
+		if (
+			typeof overrideValue === "object" &&
+			overrideValue !== null &&
+			!Array.isArray(overrideValue) &&
+			typeof baseValue === "object" &&
+			baseValue !== null &&
+			!Array.isArray(baseValue)
+		) {
+			(result as Record<string, unknown>)[key] = { ...baseValue, ...overrideValue };
+		} else {
+			// For primitives and arrays, override value wins
+			(result as Record<string, unknown>)[key] = overrideValue;
+		}
+	}
+
+	return result;
 }
 
 export class SettingsManager {
-	private settingsPath: string;
+	private settingsPath: string | null;
+	private projectSettingsPath: string | null;
+	private globalSettings: Settings;
 	private settings: Settings;
+	private persist: boolean;
 
-	constructor(baseDir?: string) {
-		const dir = baseDir || getAgentDir();
-		this.settingsPath = join(dir, "settings.json");
-		this.settings = this.load();
+	private constructor(
+		settingsPath: string | null,
+		projectSettingsPath: string | null,
+		initialSettings: Settings,
+		persist: boolean,
+	) {
+		this.settingsPath = settingsPath;
+		this.projectSettingsPath = projectSettingsPath;
+		this.persist = persist;
+		this.globalSettings = initialSettings;
+		const projectSettings = this.loadProjectSettings();
+		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
 	}
 
-	private load(): Settings {
-		if (!existsSync(this.settingsPath)) {
+	/** Create a SettingsManager that loads from files */
+	static create(cwd: string = process.cwd(), agentDir: string = getAgentDir()): SettingsManager {
+		const settingsPath = join(agentDir, "settings.json");
+		const projectSettingsPath = join(cwd, CONFIG_DIR_NAME, "settings.json");
+		const globalSettings = SettingsManager.loadFromFile(settingsPath);
+		return new SettingsManager(settingsPath, projectSettingsPath, globalSettings, true);
+	}
+
+	/** Create an in-memory SettingsManager (no file I/O) */
+	static inMemory(settings: Partial<Settings> = {}): SettingsManager {
+		return new SettingsManager(null, null, settings, false);
+	}
+
+	private static loadFromFile(path: string): Settings {
+		if (!existsSync(path)) {
+			return {};
+		}
+		try {
+			const content = readFileSync(path, "utf-8");
+			const settings = JSON.parse(content);
+			return SettingsManager.migrateSettings(settings);
+		} catch (error) {
+			console.error(`Warning: Could not read settings file ${path}: ${error}`);
+			return {};
+		}
+	}
+
+	/** Migrate old settings format to new format */
+	private static migrateSettings(settings: Record<string, unknown>): Settings {
+		// Migrate queueMode -> steeringMode
+		if ("queueMode" in settings && !("steeringMode" in settings)) {
+			settings.steeringMode = settings.queueMode;
+			delete settings.queueMode;
+		}
+		return settings as Settings;
+	}
+
+	private loadProjectSettings(): Settings {
+		if (!this.projectSettingsPath || !existsSync(this.projectSettingsPath)) {
 			return {};
 		}
 
 		try {
-			const content = readFileSync(this.settingsPath, "utf-8");
-			return JSON.parse(content);
+			const content = readFileSync(this.projectSettingsPath, "utf-8");
+			const settings = JSON.parse(content);
+			return SettingsManager.migrateSettings(settings);
 		} catch (error) {
-			console.error(`Warning: Could not read settings file: ${error}`);
+			console.error(`Warning: Could not read project settings file: ${error}`);
 			return {};
 		}
+	}
+
+	/** Apply additional overrides on top of current settings */
+	applyOverrides(overrides: Partial<Settings>): void {
+		this.settings = deepMergeSettings(this.settings, overrides);
 	}
 
 	private save(): void {
-		try {
-			// Ensure directory exists
-			const dir = dirname(this.settingsPath);
-			if (!existsSync(dir)) {
-				mkdirSync(dir, { recursive: true });
-			}
+		if (this.persist && this.settingsPath) {
+			try {
+				const dir = dirname(this.settingsPath);
+				if (!existsSync(dir)) {
+					mkdirSync(dir, { recursive: true });
+				}
 
-			writeFileSync(this.settingsPath, JSON.stringify(this.settings, null, 2), "utf-8");
-		} catch (error) {
-			console.error(`Warning: Could not save settings file: ${error}`);
+				// Re-read current file to preserve any settings added externally while running
+				const currentFileSettings = SettingsManager.loadFromFile(this.settingsPath);
+				// Merge: file settings as base, globalSettings (in-memory changes) as overrides
+				const mergedSettings = deepMergeSettings(currentFileSettings, this.globalSettings);
+				this.globalSettings = mergedSettings;
+
+				// Save merged settings (project settings are read-only)
+				writeFileSync(this.settingsPath, JSON.stringify(this.globalSettings, null, 2), "utf-8");
+			} catch (error) {
+				console.error(`Warning: Could not save settings file: ${error}`);
+			}
 		}
+
+		// Always re-merge to update active settings (needed for both file and inMemory modes)
+		const projectSettings = this.loadProjectSettings();
+		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
 	}
 
 	getLastChangelogVersion(): string | undefined {
@@ -92,7 +210,7 @@ export class SettingsManager {
 	}
 
 	setLastChangelogVersion(version: string): void {
-		this.settings.lastChangelogVersion = version;
+		this.globalSettings.lastChangelogVersion = version;
 		this.save();
 	}
 
@@ -105,27 +223,36 @@ export class SettingsManager {
 	}
 
 	setDefaultProvider(provider: string): void {
-		this.settings.defaultProvider = provider;
+		this.globalSettings.defaultProvider = provider;
 		this.save();
 	}
 
 	setDefaultModel(modelId: string): void {
-		this.settings.defaultModel = modelId;
+		this.globalSettings.defaultModel = modelId;
 		this.save();
 	}
 
 	setDefaultModelAndProvider(provider: string, modelId: string): void {
-		this.settings.defaultProvider = provider;
-		this.settings.defaultModel = modelId;
+		this.globalSettings.defaultProvider = provider;
+		this.globalSettings.defaultModel = modelId;
 		this.save();
 	}
 
-	getQueueMode(): "all" | "one-at-a-time" {
-		return this.settings.queueMode || "one-at-a-time";
+	getSteeringMode(): "all" | "one-at-a-time" {
+		return this.settings.steeringMode || "one-at-a-time";
 	}
 
-	setQueueMode(mode: "all" | "one-at-a-time"): void {
-		this.settings.queueMode = mode;
+	setSteeringMode(mode: "all" | "one-at-a-time"): void {
+		this.globalSettings.steeringMode = mode;
+		this.save();
+	}
+
+	getFollowUpMode(): "all" | "one-at-a-time" {
+		return this.settings.followUpMode || "one-at-a-time";
+	}
+
+	setFollowUpMode(mode: "all" | "one-at-a-time"): void {
+		this.globalSettings.followUpMode = mode;
 		this.save();
 	}
 
@@ -134,7 +261,7 @@ export class SettingsManager {
 	}
 
 	setTheme(theme: string): void {
-		this.settings.theme = theme;
+		this.globalSettings.theme = theme;
 		this.save();
 	}
 
@@ -143,7 +270,7 @@ export class SettingsManager {
 	}
 
 	setDefaultThinkingLevel(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh"): void {
-		this.settings.defaultThinkingLevel = level;
+		this.globalSettings.defaultThinkingLevel = level;
 		this.save();
 	}
 
@@ -152,10 +279,10 @@ export class SettingsManager {
 	}
 
 	setCompactionEnabled(enabled: boolean): void {
-		if (!this.settings.compaction) {
-			this.settings.compaction = {};
+		if (!this.globalSettings.compaction) {
+			this.globalSettings.compaction = {};
 		}
-		this.settings.compaction.enabled = enabled;
+		this.globalSettings.compaction.enabled = enabled;
 		this.save();
 	}
 
@@ -175,15 +302,21 @@ export class SettingsManager {
 		};
 	}
 
+	getBranchSummarySettings(): { reserveTokens: number } {
+		return {
+			reserveTokens: this.settings.branchSummary?.reserveTokens ?? 16384,
+		};
+	}
+
 	getRetryEnabled(): boolean {
 		return this.settings.retry?.enabled ?? true;
 	}
 
 	setRetryEnabled(enabled: boolean): void {
-		if (!this.settings.retry) {
-			this.settings.retry = {};
+		if (!this.globalSettings.retry) {
+			this.globalSettings.retry = {};
 		}
-		this.settings.retry.enabled = enabled;
+		this.globalSettings.retry.enabled = enabled;
 		this.save();
 	}
 
@@ -200,7 +333,7 @@ export class SettingsManager {
 	}
 
 	setHideThinkingBlock(hide: boolean): void {
-		this.settings.hideThinkingBlock = hide;
+		this.globalSettings.hideThinkingBlock = hide;
 		this.save();
 	}
 
@@ -209,7 +342,7 @@ export class SettingsManager {
 	}
 
 	setShellPath(path: string | undefined): void {
-		this.settings.shellPath = path;
+		this.globalSettings.shellPath = path;
 		this.save();
 	}
 
@@ -218,34 +351,16 @@ export class SettingsManager {
 	}
 
 	setCollapseChangelog(collapse: boolean): void {
-		this.settings.collapseChangelog = collapse;
+		this.globalSettings.collapseChangelog = collapse;
 		this.save();
 	}
 
-	getHookPaths(): string[] {
-		return this.settings.hooks ?? [];
+	getExtensionPaths(): string[] {
+		return [...(this.settings.extensions ?? [])];
 	}
 
-	setHookPaths(paths: string[]): void {
-		this.settings.hooks = paths;
-		this.save();
-	}
-
-	getHookTimeout(): number {
-		return this.settings.hookTimeout ?? 30000;
-	}
-
-	setHookTimeout(timeout: number): void {
-		this.settings.hookTimeout = timeout;
-		this.save();
-	}
-
-	getCustomToolPaths(): string[] {
-		return this.settings.customTools ?? [];
-	}
-
-	setCustomToolPaths(paths: string[]): void {
-		this.settings.customTools = paths;
+	setExtensionPaths(paths: string[]): void {
+		this.globalSettings.extensions = paths;
 		this.save();
 	}
 
@@ -254,10 +369,10 @@ export class SettingsManager {
 	}
 
 	setSkillsEnabled(enabled: boolean): void {
-		if (!this.settings.skills) {
-			this.settings.skills = {};
+		if (!this.globalSettings.skills) {
+			this.globalSettings.skills = {};
 		}
-		this.settings.skills.enabled = enabled;
+		this.globalSettings.skills.enabled = enabled;
 		this.save();
 	}
 
@@ -269,10 +384,27 @@ export class SettingsManager {
 			enableClaudeProject: this.settings.skills?.enableClaudeProject ?? true,
 			enablePiUser: this.settings.skills?.enablePiUser ?? true,
 			enablePiProject: this.settings.skills?.enablePiProject ?? true,
-			customDirectories: this.settings.skills?.customDirectories ?? [],
-			ignoredSkills: this.settings.skills?.ignoredSkills ?? [],
-			includeSkills: this.settings.skills?.includeSkills ?? [],
+			enableSkillCommands: this.settings.skills?.enableSkillCommands ?? true,
+			customDirectories: [...(this.settings.skills?.customDirectories ?? [])],
+			ignoredSkills: [...(this.settings.skills?.ignoredSkills ?? [])],
+			includeSkills: [...(this.settings.skills?.includeSkills ?? [])],
 		};
+	}
+
+	getEnableSkillCommands(): boolean {
+		return this.settings.skills?.enableSkillCommands ?? true;
+	}
+
+	setEnableSkillCommands(enabled: boolean): void {
+		if (!this.globalSettings.skills) {
+			this.globalSettings.skills = {};
+		}
+		this.globalSettings.skills.enableSkillCommands = enabled;
+		this.save();
+	}
+
+	getThinkingBudgets(): ThinkingBudgetsSettings | undefined {
+		return this.settings.thinkingBudgets;
 	}
 
 	getShowImages(): boolean {
@@ -280,10 +412,52 @@ export class SettingsManager {
 	}
 
 	setShowImages(show: boolean): void {
-		if (!this.settings.terminal) {
-			this.settings.terminal = {};
+		if (!this.globalSettings.terminal) {
+			this.globalSettings.terminal = {};
 		}
-		this.settings.terminal.showImages = show;
+		this.globalSettings.terminal.showImages = show;
+		this.save();
+	}
+
+	getImageAutoResize(): boolean {
+		return this.settings.images?.autoResize ?? true;
+	}
+
+	setImageAutoResize(enabled: boolean): void {
+		if (!this.globalSettings.images) {
+			this.globalSettings.images = {};
+		}
+		this.globalSettings.images.autoResize = enabled;
+		this.save();
+	}
+
+	getBlockImages(): boolean {
+		return this.settings.images?.blockImages ?? false;
+	}
+
+	setBlockImages(blocked: boolean): void {
+		if (!this.globalSettings.images) {
+			this.globalSettings.images = {};
+		}
+		this.globalSettings.images.blockImages = blocked;
+		this.save();
+	}
+
+	getEnabledModels(): string[] | undefined {
+		return this.settings.enabledModels;
+	}
+
+	setEnabledModels(patterns: string[] | undefined): void {
+		this.globalSettings.enabledModels = patterns;
+		this.save();
+	}
+
+	getDoubleEscapeAction(): "fork" | "tree" {
+		return this.settings.doubleEscapeAction ?? "tree";
+	}
+
+	setDoubleEscapeAction(action: "fork" | "tree"): void {
+		this.globalSettings.doubleEscapeAction = action;
 		this.save();
 	}
 }

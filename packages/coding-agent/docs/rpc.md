@@ -36,32 +36,62 @@ Send a user prompt to the agent. Returns immediately; events stream asynchronous
 {"id": "req-1", "type": "prompt", "message": "Hello, world!"}
 ```
 
-With attachments:
+With images:
 ```json
-{"type": "prompt", "message": "What's in this image?", "attachments": [...]}
+{"type": "prompt", "message": "What's in this image?", "images": [{"type": "image", "source": {"type": "base64", "mediaType": "image/png", "data": "..."}}]}
 ```
+
+**During streaming**: If the agent is already streaming, you must specify `streamingBehavior` to queue the message:
+
+```json
+{"type": "prompt", "message": "New instruction", "streamingBehavior": "steer"}
+```
+
+- `"steer"`: Interrupt the agent mid-run. Message is delivered after current tool execution, remaining tools are skipped.
+- `"followUp"`: Wait until the agent finishes. Message is delivered only when agent stops.
+
+If the agent is streaming and no `streamingBehavior` is specified, the command returns an error.
+
+**Extension commands**: If the message is an extension command (e.g., `/mycommand`), it executes immediately even during streaming. Extension commands manage their own LLM interaction via `pi.sendMessage()`.
+
+**Input expansion**: Skill commands (`/skill:name`) and prompt templates (`/template`) are expanded before sending/queueing.
 
 Response:
 ```json
 {"id": "req-1", "type": "response", "command": "prompt", "success": true}
 ```
 
-The `attachments` field is optional. See [Attachments](#attachments) for the schema.
+The `images` field is optional. Each image uses `ImageContent` format with base64 or URL source.
 
-#### queue_message
+#### steer
 
-Queue a message to be injected at the next agent turn. Queued messages are added to the conversation without triggering a new prompt. Useful for injecting context mid-conversation.
+Queue a steering message to interrupt the agent mid-run. Delivered after current tool execution, remaining tools are skipped. Skill commands and prompt templates are expanded. Extension commands are not allowed (use `prompt` instead).
 
 ```json
-{"type": "queue_message", "message": "Additional context"}
+{"type": "steer", "message": "Stop and do this instead"}
 ```
 
 Response:
 ```json
-{"type": "response", "command": "queue_message", "success": true}
+{"type": "response", "command": "steer", "success": true}
 ```
 
-See [set_queue_mode](#set_queue_mode) for controlling how queued messages are processed.
+See [set_steering_mode](#set_steering_mode) for controlling how steering messages are processed.
+
+#### follow_up
+
+Queue a follow-up message to be processed after the agent finishes. Delivered only when agent has no more tool calls or steering messages. Skill commands and prompt templates are expanded. Extension commands are not allowed (use `prompt` instead).
+
+```json
+{"type": "follow_up", "message": "After you're done, also do this"}
+```
+
+Response:
+```json
+{"type": "response", "command": "follow_up", "success": true}
+```
+
+See [set_follow_up_mode](#set_follow_up_mode) for controlling how follow-up messages are processed.
 
 #### abort
 
@@ -76,17 +106,27 @@ Response:
 {"type": "response", "command": "abort", "success": true}
 ```
 
-#### reset
+#### new_session
 
-Clear context and start a fresh session.
+Start a fresh session. Can be cancelled by a `session_before_switch` extension event handler.
 
 ```json
-{"type": "reset"}
+{"type": "new_session"}
+```
+
+With optional parent session tracking:
+```json
+{"type": "new_session", "parentSession": "/path/to/parent-session.jsonl"}
 ```
 
 Response:
 ```json
-{"type": "response", "command": "reset", "success": true}
+{"type": "response", "command": "new_session", "success": true, "data": {"cancelled": false}}
+```
+
+If an extension cancelled:
+```json
+{"type": "response", "command": "new_session", "success": true, "data": {"cancelled": true}}
 ```
 
 ### State
@@ -110,12 +150,13 @@ Response:
     "thinkingLevel": "medium",
     "isStreaming": false,
     "isCompacting": false,
-    "queueMode": "all",
+    "steeringMode": "all",
+    "followUpMode": "one-at-a-time",
     "sessionFile": "/path/to/session.jsonl",
     "sessionId": "abc123",
     "autoCompactionEnabled": true,
     "messageCount": 5,
-    "queuedMessageCount": 0
+    "pendingMessageCount": 0
   }
 }
 ```
@@ -140,7 +181,7 @@ Response:
 }
 ```
 
-Messages are `AppMessage` objects (see [Message Types](#message-types)).
+Messages are `AgentMessage` objects (see [Message Types](#message-types)).
 
 ### Model
 
@@ -243,23 +284,40 @@ Response:
 }
 ```
 
-### Queue Mode
+### Queue Modes
 
-#### set_queue_mode
+#### set_steering_mode
 
-Control how queued messages (from `queue_message`) are injected into the conversation.
+Control how steering messages (from `steer`) are delivered.
 
 ```json
-{"type": "set_queue_mode", "mode": "one-at-a-time"}
+{"type": "set_steering_mode", "mode": "one-at-a-time"}
 ```
 
 Modes:
-- `"all"`: Inject all queued messages at the next turn
-- `"one-at-a-time"`: Inject one queued message per turn (default)
+- `"all"`: Deliver all steering messages at the next interruption point
+- `"one-at-a-time"`: Deliver one steering message per interruption (default)
 
 Response:
 ```json
-{"type": "response", "command": "set_queue_mode", "success": true}
+{"type": "response", "command": "set_steering_mode", "success": true}
+```
+
+#### set_follow_up_mode
+
+Control how follow-up messages (from `follow_up`) are delivered.
+
+```json
+{"type": "set_follow_up_mode", "mode": "one-at-a-time"}
+```
+
+Modes:
+- `"all"`: Deliver all follow-up messages when agent finishes
+- `"one-at-a-time"`: Deliver one follow-up message per agent completion (default)
+
+Response:
+```json
+{"type": "response", "command": "set_follow_up_mode", "success": true}
 ```
 
 ### Compaction
@@ -284,8 +342,10 @@ Response:
   "command": "compact",
   "success": true,
   "data": {
+    "summary": "Summary of conversation...",
+    "firstKeptEntryId": "abc123",
     "tokensBefore": 150000,
-    "summary": "Summary of conversation..."
+    "details": {}
   }
 }
 ```
@@ -465,7 +525,7 @@ Response:
 
 #### switch_session
 
-Load a different session file.
+Load a different session file. Can be cancelled by a `session_before_switch` extension event handler.
 
 ```json
 {"type": "switch_session", "sessionPath": "/path/to/session.jsonl"}
@@ -473,45 +533,60 @@ Load a different session file.
 
 Response:
 ```json
-{"type": "response", "command": "switch_session", "success": true}
+{"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": false}}
 ```
 
-#### branch
+If an extension cancelled the switch:
+```json
+{"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": true}}
+```
 
-Create a new branch from a previous user message. Returns the text of the message being branched from.
+#### fork
+
+Create a new fork from a previous user message. Can be cancelled by a `session_before_fork` extension event handler. Returns the text of the message being forked from.
 
 ```json
-{"type": "branch", "entryIndex": 2}
+{"type": "fork", "entryId": "abc123"}
 ```
 
 Response:
 ```json
 {
   "type": "response",
-  "command": "branch",
+  "command": "fork",
   "success": true,
-  "data": {"text": "The original prompt text..."}
+  "data": {"text": "The original prompt text...", "cancelled": false}
 }
 ```
 
-#### get_branch_messages
+If an extension cancelled the fork:
+```json
+{
+  "type": "response",
+  "command": "fork",
+  "success": true,
+  "data": {"text": "The original prompt text...", "cancelled": true}
+}
+```
 
-Get user messages available for branching.
+#### get_fork_messages
+
+Get user messages available for forking.
 
 ```json
-{"type": "get_branch_messages"}
+{"type": "get_fork_messages"}
 ```
 
 Response:
 ```json
 {
   "type": "response",
-  "command": "get_branch_messages",
+  "command": "get_fork_messages",
   "success": true,
   "data": {
     "messages": [
-      {"entryIndex": 0, "text": "First prompt..."},
-      {"entryIndex": 2, "text": "Second prompt..."}
+      {"entryId": "abc123", "text": "First prompt..."},
+      {"entryId": "def456", "text": "Second prompt..."}
     ]
   }
 }
@@ -559,7 +634,7 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `auto_compaction_end` | Auto-compaction completes |
 | `auto_retry_start` | Auto-retry begins (after transient error) |
 | `auto_retry_end` | Auto-retry completes (success or final failure) |
-| `hook_error` | Hook threw an error |
+| `extension_error` | Extension threw an error |
 
 ### agent_start
 
@@ -598,7 +673,7 @@ A turn consists of one assistant response plus any resulting tool calls and resu
 
 ### message_start / message_end
 
-Emitted when a message begins and completes. The `message` field contains an `AppMessage`.
+Emitted when a message begins and completes. The `message` field contains an `AgentMessage`.
 
 ```json
 {"type": "message_start", "message": {...}}
@@ -697,19 +772,26 @@ Use `toolCallId` to correlate events. The `partialResult` in `tool_execution_upd
 Emitted when automatic compaction runs (when context is nearly full).
 
 ```json
-{"type": "auto_compaction_start"}
+{"type": "auto_compaction_start", "reason": "threshold"}
 ```
+
+The `reason` field is `"threshold"` (context getting large) or `"overflow"` (context exceeded limit).
 
 ```json
 {
   "type": "auto_compaction_end",
   "result": {
+    "summary": "Summary of conversation...",
+    "firstKeptEntryId": "abc123",
     "tokensBefore": 150000,
-    "summary": "Summary of conversation..."
+    "details": {}
   },
-  "aborted": false
+  "aborted": false,
+  "willRetry": false
 }
 ```
+
+If `reason` was `"overflow"` and compaction succeeds, `willRetry` is `true` and the agent will automatically retry the prompt.
 
 If compaction was aborted, `result` is `null` and `aborted` is `true`.
 
@@ -745,14 +827,14 @@ On final failure (max retries exceeded):
 }
 ```
 
-### hook_error
+### extension_error
 
-Emitted when a hook throws an error.
+Emitted when an extension throws an error.
 
 ```json
 {
-  "type": "hook_error",
-  "hookPath": "/path/to/hook.ts",
+  "type": "extension_error",
+  "extensionPath": "/path/to/extension.ts",
   "event": "tool_call",
   "error": "Error message..."
 }
@@ -786,7 +868,7 @@ Parse errors:
 
 Source files:
 - [`packages/ai/src/types.ts`](../../ai/src/types.ts) - `Model`, `UserMessage`, `AssistantMessage`, `ToolResultMessage`
-- [`packages/agent/src/types.ts`](../../agent/src/types.ts) - `AppMessage`, `Attachment`, `AgentEvent`
+- [`packages/agent/src/types.ts`](../../agent/src/types.ts) - `AgentMessage`, `AgentEvent`
 - [`src/core/messages.ts`](../src/core/messages.ts) - `BashExecutionMessage`
 - [`src/modes/rpc/rpc-types.ts`](../src/modes/rpc/rpc-types.ts) - RPC command/response types
 

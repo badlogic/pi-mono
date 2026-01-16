@@ -1,11 +1,24 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
+import type { Terminal as XtermTerminalType } from "@xterm/headless";
 import { Chalk } from "chalk";
 import { Markdown } from "../src/components/markdown.js";
+import { type Component, TUI } from "../src/tui.js";
 import { defaultMarkdownTheme } from "./test-themes.js";
+import { VirtualTerminal } from "./virtual-terminal.js";
 
 // Force full color in CI so ANSI assertions are deterministic
 const chalk = new Chalk({ level: 3 });
+
+function getCellItalic(terminal: VirtualTerminal, row: number, col: number): number {
+	const xterm = (terminal as unknown as { xterm: XtermTerminalType }).xterm;
+	const buffer = xterm.buffer.active;
+	const line = buffer.getLine(buffer.viewportY + row);
+	assert.ok(line, `Missing buffer line at row ${row}`);
+	const cell = line.getCell(col);
+	assert.ok(cell, `Missing cell at row ${row} col ${col}`);
+	return cell.isItalic();
+}
 
 describe("Markdown component", () => {
 	describe("Nested lists", () => {
@@ -94,6 +107,43 @@ describe("Markdown component", () => {
 			assert.ok(plainLines.some((line) => line.includes("1. Ordered item")));
 			assert.ok(plainLines.some((line) => line.includes("  - Unordered nested")));
 			assert.ok(plainLines.some((line) => line.includes("2. Second ordered")));
+		});
+
+		it("should maintain numbering when code blocks are not indented (LLM output)", () => {
+			// When code blocks aren't indented, marked parses each item as a separate list.
+			// We use token.start to preserve the original numbering.
+			const markdown = new Markdown(
+				`1. First item
+
+\`\`\`typescript
+// code block
+\`\`\`
+
+2. Second item
+
+\`\`\`typescript
+// another code block
+\`\`\`
+
+3. Third item`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trim());
+
+			// Find all lines that start with a number and period
+			const numberedLines = plainLines.filter((line) => /^\d+\./.test(line));
+
+			// Should have 3 numbered items
+			assert.strictEqual(numberedLines.length, 3, `Expected 3 numbered items, got: ${numberedLines.join(", ")}`);
+
+			// Check the actual numbers
+			assert.ok(numberedLines[0].startsWith("1."), `First item should be "1.", got: ${numberedLines[0]}`);
+			assert.ok(numberedLines[1].startsWith("2."), `Second item should be "2.", got: ${numberedLines[1]}`);
+			assert.ok(numberedLines[2].startsWith("3."), `Third item should be "3.", got: ${numberedLines[2]}`);
 		});
 	});
 
@@ -436,6 +486,41 @@ describe("Markdown component", () => {
 
 			// Should have bold codes (1 or 22 for bold on/off)
 			assert.ok(joinedOutput.includes("\x1b[1m"), "Should have bold code");
+		});
+
+		it("should not leak styles into following lines when rendered in TUI", async () => {
+			class MarkdownWithInput implements Component {
+				public markdownLineCount = 0;
+
+				constructor(private readonly markdown: Markdown) {}
+
+				render(width: number): string[] {
+					const lines = this.markdown.render(width);
+					this.markdownLineCount = lines.length;
+					return [...lines, "INPUT"];
+				}
+
+				invalidate(): void {
+					this.markdown.invalidate();
+				}
+			}
+
+			const markdown = new Markdown("This is thinking with `inline code`", 1, 0, defaultMarkdownTheme, {
+				color: (text) => chalk.gray(text),
+				italic: true,
+			});
+
+			const terminal = new VirtualTerminal(80, 6);
+			const tui = new TUI(terminal);
+			const component = new MarkdownWithInput(markdown);
+			tui.addChild(component);
+			tui.start();
+			await terminal.flush();
+
+			assert.ok(component.markdownLineCount > 0);
+			const inputRow = component.markdownLineCount;
+			assert.strictEqual(getCellItalic(terminal, inputRow, 0), 0);
+			tui.stop();
 		});
 	});
 

@@ -3,8 +3,10 @@ import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import type { Api, Context, Model, Tool, ToolResultMessage } from "../src/index.js";
-import { complete, getModel, resolveApiKey } from "../src/index.js";
+import { complete, getModel } from "../src/index.js";
 import type { OptionsForApi } from "../src/types.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
+import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
 const oauthTokens = await Promise.all([
@@ -12,8 +14,9 @@ const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
 	resolveApiKey("google-gemini-cli"),
 	resolveApiKey("google-antigravity"),
+	resolveApiKey("openai-codex"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
 /**
  * Test that tool results containing only images work correctly across all providers.
@@ -271,6 +274,30 @@ describe("Tool Results with Images", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway Provider (google/gemini-2.5-flash)", () => {
+		const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+
+		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithImageResult(llm);
+		});
+
+		it("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithTextAndImageResult(llm);
+		});
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider (claude-sonnet-4-5)", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithImageResult(llm);
+		});
+
+		it("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithTextAndImageResult(llm);
+		});
+	});
+
 	// =========================================================================
 	// OAuth-based providers (credentials from ~/.pi/agent/oauth.json)
 	// =========================================================================
@@ -392,5 +419,25 @@ describe("Tool Results with Images", () => {
 		);**/
 
 		// Note: gpt-oss-120b-medium does not support images, so not tested here
+	});
+
+	describe("OpenAI Codex Provider", () => {
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-codex - should handle tool result with only image",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-codex");
+				await handleToolWithImageResult(llm, { apiKey: openaiCodexToken });
+			},
+		);
+
+		it.skipIf(!openaiCodexToken)(
+			"gpt-5.2-codex - should handle tool result with text and image",
+			{ retry: 3, timeout: 30000 },
+			async () => {
+				const llm = getModel("openai-codex", "gpt-5.2-codex");
+				await handleToolWithTextAndImageResult(llm, { apiKey: openaiCodexToken });
+			},
+		);
 	});
 });

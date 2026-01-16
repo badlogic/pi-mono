@@ -1,62 +1,82 @@
-import type { ImageContent, Message, QueuedMessage, ReasoningEffort, TextContent } from "@mariozechner/pi-ai";
-import { getModel } from "@mariozechner/pi-ai";
-import type { AgentTransport } from "./transports/types.js";
-import type { AgentEvent, AgentState, AppMessage, Attachment, ThinkingLevel } from "./types.js";
+/**
+ * Agent class that uses the agent-loop directly.
+ * No transport abstraction - calls streamSimple via the loop.
+ */
+
+import {
+	getModel,
+	type ImageContent,
+	type Message,
+	type Model,
+	streamSimple,
+	type TextContent,
+	type ThinkingBudgets,
+} from "@mariozechner/pi-ai";
+import { agentLoop, agentLoopContinue } from "./agent-loop.js";
+import type {
+	AgentContext,
+	AgentEvent,
+	AgentLoopConfig,
+	AgentMessage,
+	AgentState,
+	AgentTool,
+	StreamFn,
+	ThinkingLevel,
+} from "./types.js";
 
 /**
- * Default message transformer: Keep only LLM-compatible messages, strip app-specific fields.
- * Converts attachments to proper content blocks (images → ImageContent, documents → TextContent).
+ * Default convertToLlm: Keep only LLM-compatible messages, convert attachments.
  */
-function defaultMessageTransformer(messages: AppMessage[]): Message[] {
-	return messages
-		.filter((m) => {
-			// Only keep standard LLM message roles
-			return m.role === "user" || m.role === "assistant" || m.role === "toolResult";
-		})
-		.map((m) => {
-			if (m.role === "user") {
-				const { attachments, ...rest } = m as any;
-
-				// If no attachments, return as-is
-				if (!attachments || attachments.length === 0) {
-					return rest as Message;
-				}
-
-				// Convert attachments to content blocks
-				const content = Array.isArray(rest.content) ? [...rest.content] : [{ type: "text", text: rest.content }];
-
-				for (const attachment of attachments as Attachment[]) {
-					// Add image blocks for image attachments
-					if (attachment.type === "image") {
-						content.push({
-							type: "image",
-							data: attachment.content,
-							mimeType: attachment.mimeType,
-						} as ImageContent);
-					}
-					// Add text blocks for documents with extracted text
-					else if (attachment.type === "document" && attachment.extractedText) {
-						content.push({
-							type: "text",
-							text: `\n\n[Document: ${attachment.fileName}]\n${attachment.extractedText}`,
-							isDocument: true,
-						} as TextContent);
-					}
-				}
-
-				return { ...rest, content } as Message;
-			}
-			return m as Message;
-		});
+function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
+	return messages.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult");
 }
 
 export interface AgentOptions {
 	initialState?: Partial<AgentState>;
-	transport: AgentTransport;
-	// Transform app messages to LLM-compatible messages before sending to transport
-	messageTransformer?: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
-	// Queue mode: "all" = send all queued messages at once, "one-at-a-time" = send one queued message per turn
-	queueMode?: "all" | "one-at-a-time";
+
+	/**
+	 * Converts AgentMessage[] to LLM-compatible Message[] before each LLM call.
+	 * Default filters to user/assistant/toolResult and converts attachments.
+	 */
+	convertToLlm?: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
+
+	/**
+	 * Optional transform applied to context before convertToLlm.
+	 * Use for context pruning, injecting external context, etc.
+	 */
+	transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+
+	/**
+	 * Steering mode: "all" = send all steering messages at once, "one-at-a-time" = one per turn
+	 */
+	steeringMode?: "all" | "one-at-a-time";
+
+	/**
+	 * Follow-up mode: "all" = send all follow-up messages at once, "one-at-a-time" = one per turn
+	 */
+	followUpMode?: "all" | "one-at-a-time";
+
+	/**
+	 * Custom stream function (for proxy backends, etc.). Default uses streamSimple.
+	 */
+	streamFn?: StreamFn;
+
+	/**
+	 * Optional session identifier forwarded to LLM providers.
+	 * Used by providers that support session-based caching (e.g., OpenAI Codex).
+	 */
+	sessionId?: string;
+
+	/**
+	 * Resolves an API key dynamically for each LLM call.
+	 * Useful for expiring tokens (e.g., GitHub Copilot OAuth).
+	 */
+	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+
+	/**
+	 * Custom token budgets for thinking levels (token-based providers only).
+	 */
+	thinkingBudgets?: ThinkingBudgets;
 }
 
 export class Agent {
@@ -71,20 +91,61 @@ export class Agent {
 		pendingToolCalls: new Set<string>(),
 		error: undefined,
 	};
+
 	private listeners = new Set<(e: AgentEvent) => void>();
 	private abortController?: AbortController;
-	private transport: AgentTransport;
-	private messageTransformer: (messages: AppMessage[]) => Message[] | Promise<Message[]>;
-	private messageQueue: Array<QueuedMessage<AppMessage>> = [];
-	private queueMode: "all" | "one-at-a-time";
+	private convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
+	private transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+	private steeringQueue: AgentMessage[] = [];
+	private followUpQueue: AgentMessage[] = [];
+	private steeringMode: "all" | "one-at-a-time";
+	private followUpMode: "all" | "one-at-a-time";
+	public streamFn: StreamFn;
+	private _sessionId?: string;
+	public getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
 	private runningPrompt?: Promise<void>;
 	private resolveRunningPrompt?: () => void;
+	private _thinkingBudgets?: ThinkingBudgets;
 
-	constructor(opts: AgentOptions) {
+	constructor(opts: AgentOptions = {}) {
 		this._state = { ...this._state, ...opts.initialState };
-		this.transport = opts.transport;
-		this.messageTransformer = opts.messageTransformer || defaultMessageTransformer;
-		this.queueMode = opts.queueMode || "one-at-a-time";
+		this.convertToLlm = opts.convertToLlm || defaultConvertToLlm;
+		this.transformContext = opts.transformContext;
+		this.steeringMode = opts.steeringMode || "one-at-a-time";
+		this.followUpMode = opts.followUpMode || "one-at-a-time";
+		this.streamFn = opts.streamFn || streamSimple;
+		this._sessionId = opts.sessionId;
+		this.getApiKey = opts.getApiKey;
+		this._thinkingBudgets = opts.thinkingBudgets;
+	}
+
+	/**
+	 * Get the current session ID used for provider caching.
+	 */
+	get sessionId(): string | undefined {
+		return this._sessionId;
+	}
+
+	/**
+	 * Set the session ID for provider caching.
+	 * Call this when switching sessions (new session, branch, resume).
+	 */
+	set sessionId(value: string | undefined) {
+		this._sessionId = value;
+	}
+
+	/**
+	 * Get the current thinking budgets.
+	 */
+	get thinkingBudgets(): ThinkingBudgets | undefined {
+		return this._thinkingBudgets;
+	}
+
+	/**
+	 * Set custom thinking budgets for token-based providers.
+	 */
+	set thinkingBudgets(value: ThinkingBudgets | undefined) {
+		this._thinkingBudgets = value;
 	}
 
 	get state(): AgentState {
@@ -96,12 +157,12 @@ export class Agent {
 		return () => this.listeners.delete(fn);
 	}
 
-	// State mutators - update internal state without emitting events
+	// State mutators
 	setSystemPrompt(v: string) {
 		this._state.systemPrompt = v;
 	}
 
-	setModel(m: typeof this._state.model) {
+	setModel(m: Model<any>) {
 		this._state.model = m;
 	}
 
@@ -109,37 +170,61 @@ export class Agent {
 		this._state.thinkingLevel = l;
 	}
 
-	setQueueMode(mode: "all" | "one-at-a-time") {
-		this.queueMode = mode;
+	setSteeringMode(mode: "all" | "one-at-a-time") {
+		this.steeringMode = mode;
 	}
 
-	getQueueMode(): "all" | "one-at-a-time" {
-		return this.queueMode;
+	getSteeringMode(): "all" | "one-at-a-time" {
+		return this.steeringMode;
 	}
 
-	setTools(t: typeof this._state.tools) {
+	setFollowUpMode(mode: "all" | "one-at-a-time") {
+		this.followUpMode = mode;
+	}
+
+	getFollowUpMode(): "all" | "one-at-a-time" {
+		return this.followUpMode;
+	}
+
+	setTools(t: AgentTool<any>[]) {
 		this._state.tools = t;
 	}
 
-	replaceMessages(ms: AppMessage[]) {
+	replaceMessages(ms: AgentMessage[]) {
 		this._state.messages = ms.slice();
 	}
 
-	appendMessage(m: AppMessage) {
+	appendMessage(m: AgentMessage) {
 		this._state.messages = [...this._state.messages, m];
 	}
 
-	async queueMessage(m: AppMessage) {
-		// Transform message and queue it for injection at next turn
-		const transformed = await this.messageTransformer([m]);
-		this.messageQueue.push({
-			original: m,
-			llm: transformed[0], // undefined if filtered out
-		});
+	/**
+	 * Queue a steering message to interrupt the agent mid-run.
+	 * Delivered after current tool execution, skips remaining tools.
+	 */
+	steer(m: AgentMessage) {
+		this.steeringQueue.push(m);
 	}
 
-	clearMessageQueue() {
-		this.messageQueue = [];
+	/**
+	 * Queue a follow-up message to be processed after the agent finishes.
+	 * Delivered only when agent has no more tool calls or steering messages.
+	 */
+	followUp(m: AgentMessage) {
+		this.followUpQueue.push(m);
+	}
+
+	clearSteeringQueue() {
+		this.steeringQueue = [];
+	}
+
+	clearFollowUpQueue() {
+		this.followUpQueue = [];
+	}
+
+	clearAllQueues() {
+		this.steeringQueue = [];
+		this.followUpQueue = [];
 	}
 
 	clearMessages() {
@@ -150,106 +235,81 @@ export class Agent {
 		this.abortController?.abort();
 	}
 
-	/**
-	 * Returns a promise that resolves when the current prompt completes.
-	 * Returns immediately resolved promise if no prompt is running.
-	 */
 	waitForIdle(): Promise<void> {
 		return this.runningPrompt ?? Promise.resolve();
 	}
 
-	/**
-	 * Clear all messages and state. Call abort() first if a prompt is in flight.
-	 */
 	reset() {
 		this._state.messages = [];
 		this._state.isStreaming = false;
 		this._state.streamMessage = null;
 		this._state.pendingToolCalls = new Set<string>();
 		this._state.error = undefined;
-		this.messageQueue = [];
+		this.steeringQueue = [];
+		this.followUpQueue = [];
 	}
 
-	async prompt(input: string, attachments?: Attachment[]) {
+	/** Send a prompt with an AgentMessage */
+	async prompt(message: AgentMessage | AgentMessage[]): Promise<void>;
+	async prompt(input: string, images?: ImageContent[]): Promise<void>;
+	async prompt(input: string | AgentMessage | AgentMessage[], images?: ImageContent[]) {
+		if (this._state.isStreaming) {
+			throw new Error(
+				"Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion.",
+			);
+		}
+
 		const model = this._state.model;
-		if (!model) {
-			throw new Error("No model configured");
-		}
+		if (!model) throw new Error("No model configured");
 
-		// Build user message with attachments
-		const content: Array<TextContent | ImageContent> = [{ type: "text", text: input }];
-		if (attachments?.length) {
-			for (const a of attachments) {
-				if (a.type === "image") {
-					content.push({ type: "image", data: a.content, mimeType: a.mimeType });
-				} else if (a.type === "document" && a.extractedText) {
-					content.push({
-						type: "text",
-						text: `\n\n[Document: ${a.fileName}]\n${a.extractedText}`,
-						isDocument: true,
-					} as TextContent);
-				}
+		let msgs: AgentMessage[];
+
+		if (Array.isArray(input)) {
+			msgs = input;
+		} else if (typeof input === "string") {
+			const content: Array<TextContent | ImageContent> = [{ type: "text", text: input }];
+			if (images && images.length > 0) {
+				content.push(...images);
 			}
+			msgs = [
+				{
+					role: "user",
+					content,
+					timestamp: Date.now(),
+				},
+			];
+		} else {
+			msgs = [input];
 		}
 
-		const userMessage: AppMessage = {
-			role: "user",
-			content,
-			attachments: attachments?.length ? attachments : undefined,
-			timestamp: Date.now(),
-		};
-
-		await this._runAgentLoop(userMessage);
+		await this._runLoop(msgs);
 	}
 
-	/**
-	 * Continue from the current context without adding a new user message.
-	 * Used for retry after overflow recovery when context already has user message or tool results.
-	 */
+	/** Continue from current context (for retry after overflow) */
 	async continue() {
+		if (this._state.isStreaming) {
+			throw new Error("Agent is already processing. Wait for completion before continuing.");
+		}
+
 		const messages = this._state.messages;
 		if (messages.length === 0) {
 			throw new Error("No messages to continue from");
 		}
-
-		const lastMessage = messages[messages.length - 1];
-		if (lastMessage.role !== "user" && lastMessage.role !== "toolResult") {
-			throw new Error(`Cannot continue from message role: ${lastMessage.role}`);
+		if (messages[messages.length - 1].role === "assistant") {
+			throw new Error("Cannot continue from message role: assistant");
 		}
 
-		await this._runAgentLoopContinue();
+		await this._runLoop(undefined);
 	}
 
 	/**
-	 * Internal: Run the agent loop with a new user message.
+	 * Run the agent loop.
+	 * If messages are provided, starts a new conversation turn with those messages.
+	 * Otherwise, continues from existing context.
 	 */
-	private async _runAgentLoop(userMessage: AppMessage) {
-		const { llmMessages, cfg } = await this._prepareRun();
-
-		const events = this.transport.run(llmMessages, userMessage as Message, cfg, this.abortController!.signal);
-
-		await this._processEvents(events);
-	}
-
-	/**
-	 * Internal: Continue the agent loop from current context.
-	 */
-	private async _runAgentLoopContinue() {
-		const { llmMessages, cfg } = await this._prepareRun();
-
-		const events = this.transport.continue(llmMessages, cfg, this.abortController!.signal);
-
-		await this._processEvents(events);
-	}
-
-	/**
-	 * Prepare for running the agent loop.
-	 */
-	private async _prepareRun() {
+	private async _runLoop(messages?: AgentMessage[]) {
 		const model = this._state.model;
-		if (!model) {
-			throw new Error("No model configured");
-		}
+		if (!model) throw new Error("No model configured");
 
 		this.runningPrompt = new Promise<void>((resolve) => {
 			this.resolveRunningPrompt = resolve;
@@ -260,92 +320,106 @@ export class Agent {
 		this._state.streamMessage = null;
 		this._state.error = undefined;
 
-		const reasoning: ReasoningEffort | undefined =
-			this._state.thinkingLevel === "off"
-				? undefined
-				: this._state.thinkingLevel === "minimal"
-					? "low"
-					: this._state.thinkingLevel;
+		const reasoning = this._state.thinkingLevel === "off" ? undefined : this._state.thinkingLevel;
 
-		const cfg = {
+		const context: AgentContext = {
 			systemPrompt: this._state.systemPrompt,
+			messages: this._state.messages.slice(),
 			tools: this._state.tools,
+		};
+
+		const config: AgentLoopConfig = {
 			model,
 			reasoning,
-			getQueuedMessages: async <T>() => {
-				if (this.queueMode === "one-at-a-time") {
-					if (this.messageQueue.length > 0) {
-						const first = this.messageQueue[0];
-						this.messageQueue = this.messageQueue.slice(1);
-						return [first] as QueuedMessage<T>[];
+			sessionId: this._sessionId,
+			thinkingBudgets: this._thinkingBudgets,
+			convertToLlm: this.convertToLlm,
+			transformContext: this.transformContext,
+			getApiKey: this.getApiKey,
+			getSteeringMessages: async () => {
+				if (this.steeringMode === "one-at-a-time") {
+					if (this.steeringQueue.length > 0) {
+						const first = this.steeringQueue[0];
+						this.steeringQueue = this.steeringQueue.slice(1);
+						return [first];
 					}
 					return [];
 				} else {
-					const queued = this.messageQueue.slice();
-					this.messageQueue = [];
-					return queued as QueuedMessage<T>[];
+					const steering = this.steeringQueue.slice();
+					this.steeringQueue = [];
+					return steering;
+				}
+			},
+			getFollowUpMessages: async () => {
+				if (this.followUpMode === "one-at-a-time") {
+					if (this.followUpQueue.length > 0) {
+						const first = this.followUpQueue[0];
+						this.followUpQueue = this.followUpQueue.slice(1);
+						return [first];
+					}
+					return [];
+				} else {
+					const followUp = this.followUpQueue.slice();
+					this.followUpQueue = [];
+					return followUp;
 				}
 			},
 		};
 
-		const llmMessages = await this.messageTransformer(this._state.messages);
-
-		return { llmMessages, cfg, model };
-	}
-
-	/**
-	 * Process events from the transport.
-	 */
-	private async _processEvents(events: AsyncIterable<AgentEvent>) {
-		const model = this._state.model!;
-		const generatedMessages: AppMessage[] = [];
-		let partial: AppMessage | null = null;
+		let partial: AgentMessage | null = null;
 
 		try {
-			for await (const ev of events) {
-				switch (ev.type) {
-					case "message_start": {
-						partial = ev.message as AppMessage;
-						this._state.streamMessage = ev.message as Message;
+			const stream = messages
+				? agentLoop(messages, context, config, this.abortController.signal, this.streamFn)
+				: agentLoopContinue(context, config, this.abortController.signal, this.streamFn);
+
+			for await (const event of stream) {
+				// Update internal state based on events
+				switch (event.type) {
+					case "message_start":
+						partial = event.message;
+						this._state.streamMessage = event.message;
 						break;
-					}
-					case "message_update": {
-						partial = ev.message as AppMessage;
-						this._state.streamMessage = ev.message as Message;
+
+					case "message_update":
+						partial = event.message;
+						this._state.streamMessage = event.message;
 						break;
-					}
-					case "message_end": {
+
+					case "message_end":
 						partial = null;
 						this._state.streamMessage = null;
-						this.appendMessage(ev.message as AppMessage);
-						generatedMessages.push(ev.message as AppMessage);
+						this.appendMessage(event.message);
 						break;
-					}
+
 					case "tool_execution_start": {
 						const s = new Set(this._state.pendingToolCalls);
-						s.add(ev.toolCallId);
+						s.add(event.toolCallId);
 						this._state.pendingToolCalls = s;
 						break;
 					}
+
 					case "tool_execution_end": {
 						const s = new Set(this._state.pendingToolCalls);
-						s.delete(ev.toolCallId);
+						s.delete(event.toolCallId);
 						this._state.pendingToolCalls = s;
 						break;
 					}
-					case "turn_end": {
-						if (ev.message.role === "assistant" && ev.message.errorMessage) {
-							this._state.error = ev.message.errorMessage;
+
+					case "turn_end":
+						if (event.message.role === "assistant" && (event.message as any).errorMessage) {
+							this._state.error = (event.message as any).errorMessage;
 						}
 						break;
-					}
-					case "agent_end": {
+
+					case "agent_end":
+						this._state.isStreaming = false;
 						this._state.streamMessage = null;
 						break;
-					}
 				}
 
-				this.emit(ev as AgentEvent);
+				// Emit to listeners
+				this.emit(event);
 			}
 
 			// Handle any remaining partial message
@@ -357,8 +431,7 @@ export class Agent {
 						(c.type === "toolCall" && c.name.trim().length > 0),
 				);
 				if (!onlyEmpty) {
-					this.appendMessage(partial as AppMessage);
-					generatedMessages.push(partial as AppMessage);
+					this.appendMessage(partial);
 				} else {
 					if (this.abortController?.signal.aborted) {
 						throw new Error("Request was aborted");
@@ -366,7 +439,7 @@ export class Agent {
 				}
 			}
 		} catch (err: any) {
-			const msg: Message = {
+			const errorMsg: AgentMessage = {
 				role: "assistant",
 				content: [{ type: "text", text: "" }],
 				api: model.api,
@@ -383,10 +456,11 @@ export class Agent {
 				stopReason: this.abortController?.signal.aborted ? "aborted" : "error",
 				errorMessage: err?.message || String(err),
 				timestamp: Date.now(),
-			};
-			this.appendMessage(msg as AppMessage);
-			generatedMessages.push(msg as AppMessage);
+			} as AgentMessage;
+
+			this.appendMessage(errorMsg);
 			this._state.error = err?.message || String(err);
+			this.emit({ type: "agent_end", messages: [errorMsg] });
 		} finally {
 			this._state.isStreaming = false;
 			this._state.streamMessage = null;

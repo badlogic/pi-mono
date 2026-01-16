@@ -1,20 +1,9 @@
-import {
-	type Component,
-	Container,
-	isArrowDown,
-	isArrowUp,
-	isCtrlC,
-	isEnter,
-	isEscape,
-	Spacer,
-	Text,
-	truncateToWidth,
-} from "@mariozechner/pi-tui";
+import { type Component, Container, getEditorKeybindings, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
 interface UserMessageItem {
-	index: number; // Index in the full messages array
+	id: string; // Entry ID in the session
 	text: string; // The message text
 	timestamp?: string; // Optional timestamp if available
 }
@@ -25,7 +14,7 @@ interface UserMessageItem {
 class UserMessageList implements Component {
 	private messages: UserMessageItem[] = [];
 	private selectedIndex: number = 0;
-	public onSelect?: (messageIndex: number) => void;
+	public onSelect?: (entryId: string) => void;
 	public onCancel?: () => void;
 	private maxVisible: number = 10; // Max messages visible
 
@@ -89,29 +78,24 @@ class UserMessageList implements Component {
 	}
 
 	handleInput(keyData: string): void {
+		const kb = getEditorKeybindings();
 		// Up arrow - go to previous (older) message, wrap to bottom when at top
-		if (isArrowUp(keyData)) {
+		if (kb.matches(keyData, "selectUp")) {
 			this.selectedIndex = this.selectedIndex === 0 ? this.messages.length - 1 : this.selectedIndex - 1;
 		}
 		// Down arrow - go to next (newer) message, wrap to top when at bottom
-		else if (isArrowDown(keyData)) {
+		else if (kb.matches(keyData, "selectDown")) {
 			this.selectedIndex = this.selectedIndex === this.messages.length - 1 ? 0 : this.selectedIndex + 1;
 		}
 		// Enter - select message and branch
-		else if (isEnter(keyData)) {
+		else if (kb.matches(keyData, "selectConfirm")) {
 			const selected = this.messages[this.selectedIndex];
 			if (selected && this.onSelect) {
-				this.onSelect(selected.index);
+				this.onSelect(selected.id);
 			}
 		}
 		// Escape - cancel
-		else if (isEscape(keyData)) {
-			if (this.onCancel) {
-				this.onCancel();
-			}
-		}
-		// Ctrl+C - cancel
-		else if (isCtrlC(keyData)) {
+		else if (kb.matches(keyData, "selectCancel")) {
 			if (this.onCancel) {
 				this.onCancel();
 			}
@@ -125,7 +109,7 @@ class UserMessageList implements Component {
 export class UserMessageSelectorComponent extends Container {
 	private messageList: UserMessageList;
 
-	constructor(messages: UserMessageItem[], onSelect: (messageIndex: number) => void, onCancel: () => void) {
+	constructor(messages: UserMessageItem[], onSelect: (entryId: string) => void, onCancel: () => void) {
 		super();
 
 		// Add header

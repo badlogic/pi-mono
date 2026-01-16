@@ -235,7 +235,7 @@ export class Markdown implements Component {
 		switch (token.type) {
 			case "heading": {
 				const headingLevel = token.depth;
-				const headingPrefix = "#".repeat(headingLevel) + " ";
+				const headingPrefix = `${"#".repeat(headingLevel)} `;
 				const headingText = this.renderInlineTokens(token.tokens || []);
 				let styledHeading: string;
 				if (headingLevel === 1) {
@@ -263,17 +263,17 @@ export class Markdown implements Component {
 			}
 
 			case "code": {
-				lines.push(this.theme.codeBlockBorder("```" + (token.lang || "")));
+				lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
 				if (this.theme.highlightCode) {
 					const highlightedLines = this.theme.highlightCode(token.text, token.lang);
 					for (const hlLine of highlightedLines) {
-						lines.push("  " + hlLine);
+						lines.push(`  ${hlLine}`);
 					}
 				} else {
 					// Split code by newlines and style each line
 					const codeLines = token.text.split("\n");
 					for (const codeLine of codeLines) {
-						lines.push("  " + this.theme.codeBlock(codeLine));
+						lines.push(`  ${this.theme.codeBlock(codeLine)}`);
 					}
 				}
 				lines.push(this.theme.codeBlockBorder("```"));
@@ -317,7 +317,10 @@ export class Markdown implements Component {
 				break;
 
 			case "html":
-				// Skip HTML for terminal output
+				// Render HTML as plain text (escaped for terminal)
+				if ("raw" in token && typeof token.raw === "string") {
+					lines.push(this.applyDefaultStyle(token.raw.trim()));
+				}
 				break;
 
 			case "space":
@@ -394,6 +397,13 @@ export class Markdown implements Component {
 					break;
 				}
 
+				case "html":
+					// Render inline HTML as plain text
+					if ("raw" in token && typeof token.raw === "string") {
+						result += this.applyDefaultStyle(token.raw);
+					}
+					break;
+
 				default:
 					// Handle any other inline token types as plain text
 					if ("text" in token && typeof token.text === "string") {
@@ -408,13 +418,15 @@ export class Markdown implements Component {
 	/**
 	 * Render a list with proper nesting support
 	 */
-	private renderList(token: Token & { items: any[]; ordered: boolean }, depth: number): string[] {
+	private renderList(token: Token & { items: any[]; ordered: boolean; start?: number }, depth: number): string[] {
 		const lines: string[] = [];
 		const indent = "  ".repeat(depth);
+		// Use the list's start property (defaults to 1 for ordered lists)
+		const startNumber = token.start ?? 1;
 
 		for (let i = 0; i < token.items.length; i++) {
 			const item = token.items[i];
-			const bullet = token.ordered ? `${i + 1}. ` : "- ";
+			const bullet = token.ordered ? `${startNumber + i}. ` : "- ";
 
 			// Process item tokens to handle nested lists
 			const itemLines = this.renderListItem(item.tokens || [], depth);
@@ -443,7 +455,7 @@ export class Markdown implements Component {
 						lines.push(line);
 					} else {
 						// Regular content - add parent indent + 2 spaces for continuation
-						lines.push(indent + "  " + line);
+						lines.push(`${indent}  ${line}`);
 					}
 				}
 			} else {
@@ -478,16 +490,16 @@ export class Markdown implements Component {
 				lines.push(text);
 			} else if (token.type === "code") {
 				// Code block in list item
-				lines.push(this.theme.codeBlockBorder("```" + (token.lang || "")));
+				lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
 				if (this.theme.highlightCode) {
 					const highlightedLines = this.theme.highlightCode(token.text, token.lang);
 					for (const hlLine of highlightedLines) {
-						lines.push("  " + hlLine);
+						lines.push(`  ${hlLine}`);
 					}
 				} else {
 					const codeLines = token.text.split("\n");
 					for (const codeLine of codeLines) {
-						lines.push("  " + this.theme.codeBlock(codeLine));
+						lines.push(`  ${this.theme.codeBlock(codeLine)}`);
 					}
 				}
 				lines.push(this.theme.codeBlockBorder("```"));
@@ -587,7 +599,7 @@ export class Markdown implements Component {
 
 		// Render top border
 		const topBorderCells = columnWidths.map((w) => "─".repeat(w));
-		lines.push("┌─" + topBorderCells.join("─┬─") + "─┐");
+		lines.push(`┌─${topBorderCells.join("─┬─")}─┐`);
 
 		// Render header with wrapping
 		const headerCellLines: string[][] = token.header.map((cell, i) => {
@@ -602,12 +614,12 @@ export class Markdown implements Component {
 				const padded = text + " ".repeat(Math.max(0, columnWidths[colIdx] - visibleWidth(text)));
 				return this.theme.bold(padded);
 			});
-			lines.push("│ " + rowParts.join(" │ ") + " │");
+			lines.push(`│ ${rowParts.join(" │ ")} │`);
 		}
 
 		// Render separator
 		const separatorCells = columnWidths.map((w) => "─".repeat(w));
-		lines.push("├─" + separatorCells.join("─┼─") + "─┤");
+		lines.push(`├─${separatorCells.join("─┼─")}─┤`);
 
 		// Render rows with wrapping
 		for (const row of token.rows) {
@@ -622,13 +634,13 @@ export class Markdown implements Component {
 					const text = cellLines[lineIdx] || "";
 					return text + " ".repeat(Math.max(0, columnWidths[colIdx] - visibleWidth(text)));
 				});
-				lines.push("│ " + rowParts.join(" │ ") + " │");
+				lines.push(`│ ${rowParts.join(" │ ")} │`);
 			}
 		}
 
 		// Render bottom border
 		const bottomBorderCells = columnWidths.map((w) => "─".repeat(w));
-		lines.push("└─" + bottomBorderCells.join("─┴─") + "─┘");
+		lines.push(`└─${bottomBorderCells.join("─┴─")}─┘`);
 
 		lines.push(""); // Add spacing after table
 		return lines;

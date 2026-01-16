@@ -5,9 +5,9 @@ import { arch, platform } from "os";
 import { join } from "path";
 import { Readable } from "stream";
 import { finished } from "stream/promises";
-import { APP_NAME, getToolsDir } from "../config.js";
+import { APP_NAME, getBinDir } from "../config.js";
 
-const TOOLS_DIR = getToolsDir();
+const TOOLS_DIR = getBinDir();
 
 interface ToolConfig {
 	name: string;
@@ -184,14 +184,14 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 
 // Ensure a tool is available, downloading if necessary
 // Returns the path to the tool, or null if unavailable
-export async function ensureTool(tool: "fd" | "rg", silent: boolean = false): Promise<string | null> {
+export async function ensureTool(tool: "fd" | "rg", silent: boolean = false): Promise<string | undefined> {
 	const existingPath = getToolPath(tool);
 	if (existingPath) {
 		return existingPath;
 	}
 
 	const config = TOOLS[tool];
-	if (!config) return null;
+	if (!config) return undefined;
 
 	// Tool not found - download it
 	if (!silent) {
@@ -208,6 +208,6 @@ export async function ensureTool(tool: "fd" | "rg", silent: boolean = false): Pr
 		if (!silent) {
 			console.log(chalk.yellow(`Failed to download ${config.name}: ${e instanceof Error ? e.message : e}`));
 		}
-		return null;
+		return undefined;
 	}
 }

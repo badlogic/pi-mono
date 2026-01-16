@@ -8,7 +8,8 @@ Minimal terminal UI framework with differential rendering and synchronized outpu
 - **Synchronized Output**: Uses CSI 2026 for atomic screen updates (no flicker)
 - **Bracketed Paste Mode**: Handles large pastes correctly with markers for >10 line pastes
 - **Component-based**: Simple Component interface with render() method
-- **Built-in Components**: Text, Input, Editor, Markdown, Loader, SelectList, Spacer, Image, Box, Container
+- **Theme Support**: Components accept theme interfaces for customizable styling
+- **Built-in Components**: Text, TruncatedText, Input, Editor, Markdown, Loader, SelectList, SettingsList, Spacer, Image, Box, Container
 - **Inline Images**: Renders images in terminals that support Kitty or iTerm2 graphics protocols
 - **Autocomplete Support**: File paths and slash commands
 
@@ -26,10 +27,10 @@ const tui = new TUI(terminal);
 // Add components
 tui.addChild(new Text("Welcome to my app!"));
 
-const editor = new Editor();
+const editor = new Editor(tui, editorTheme);
 editor.onSubmit = (text) => {
-	console.log("Submitted:", text);
-	tui.addChild(new Text(`You said: ${text}`));
+  console.log("Submitted:", text);
+  tui.addChild(new Text(`You said: ${text}`));
 };
 tui.addChild(editor);
 
@@ -50,7 +51,70 @@ tui.removeChild(component);
 tui.start();
 tui.stop();
 tui.requestRender(); // Request a re-render
+
+// Global debug key handler (Shift+Ctrl+D)
+tui.onDebug = () => console.log("Debug triggered");
 ```
+
+### Overlays
+
+Overlays render components on top of existing content without replacing it. Useful for dialogs, menus, and modal UI.
+
+```typescript
+// Show overlay with default options (centered, max 80 cols)
+const handle = tui.showOverlay(component);
+
+// Show overlay with custom positioning and sizing
+// Values can be numbers (absolute) or percentage strings (e.g., "50%")
+const handle = tui.showOverlay(component, {
+  // Sizing
+  width: 60,              // Fixed width in columns
+  width: "80%",           // Width as percentage of terminal
+  minWidth: 40,           // Minimum width floor
+  maxHeight: 20,          // Maximum height in rows
+  maxHeight: "50%",       // Maximum height as percentage of terminal
+
+  // Anchor-based positioning (default: 'center')
+  anchor: 'bottom-right', // Position relative to anchor point
+  offsetX: 2,             // Horizontal offset from anchor
+  offsetY: -1,            // Vertical offset from anchor
+
+  // Percentage-based positioning (alternative to anchor)
+  row: "25%",             // Vertical position (0%=top, 100%=bottom)
+  col: "50%",             // Horizontal position (0%=left, 100%=right)
+
+  // Absolute positioning (overrides anchor/percent)
+  row: 5,                 // Exact row position
+  col: 10,                // Exact column position
+
+  // Margin from terminal edges
+  margin: 2,              // All sides
+  margin: { top: 1, right: 2, bottom: 1, left: 2 },
+
+  // Responsive visibility
+  visible: (termWidth, termHeight) => termWidth >= 100  // Hide on narrow terminals
+});
+
+// OverlayHandle methods
+handle.hide();              // Permanently remove the overlay
+handle.setHidden(true);     // Temporarily hide (can show again)
+handle.setHidden(false);    // Show again after hiding
+handle.isHidden();          // Check if temporarily hidden
+
+// Hide topmost overlay
+tui.hideOverlay();
+
+// Check if any visible overlay is active
+tui.hasOverlay();
+```
+
+**Anchor values**: `'center'`, `'top-left'`, `'top-right'`, `'bottom-left'`, `'bottom-right'`, `'top-center'`, `'bottom-center'`, `'left-center'`, `'right-center'`
+
+**Resolution order**:
+1. `minWidth` is applied as a floor after width calculation
+2. For position: absolute `row`/`col` > percentage `row`/`col` > `anchor`
+3. `margin` clamps final position to stay within terminal bounds
+4. `visible` callback controls whether overlay renders (called each frame)
 
 ### Component Interface
 
@@ -58,10 +122,19 @@ All components implement:
 
 ```typescript
 interface Component {
-	render(width: number): string[];
-	handleInput?(data: string): void;
+  render(width: number): string[];
+  handleInput?(data: string): void;
+  invalidate?(): void;
 }
 ```
+
+| Method | Description |
+|--------|-------------|
+| `render(width)` | Returns an array of strings, one per line. Each line **must not exceed `width`** or the TUI will error. Use `truncateToWidth()` or manual wrapping to ensure this. |
+| `handleInput?(data)` | Called when the component has focus and receives keyboard input. The `data` string contains raw terminal input (may include ANSI escape sequences). |
+| `invalidate?()` | Called to clear any cached render state. Components should re-render from scratch on the next `render()` call. |
+
+The TUI appends a full SGR reset and OSC 8 reset at the end of each rendered line. Styles do not carry across lines. If you emit multi-line text with styling, reapply styles per line or use `wrapTextWithAnsi()` so styles are preserved for each wrapped line.
 
 ## Built-in Components
 
@@ -81,11 +154,11 @@ Container that applies padding and background color to all children.
 
 ```typescript
 const box = new Box(
-	1,                  // paddingX (default: 1)
-	1,                  // paddingY (default: 1)
-	(text) => chalk.bgGray(text)  // optional background function
+  1,                              // paddingX (default: 1)
+  1,                              // paddingY (default: 1)
+  (text) => chalk.bgGray(text)   // optional background function
 );
-box.addChild(new Text("Content", 0, 0));
+box.addChild(new Text("Content"));
 box.setBgFn((text) => chalk.bgBlue(text));  // Change background dynamically
 ```
 
@@ -94,8 +167,26 @@ box.setBgFn((text) => chalk.bgBlue(text));  // Change background dynamically
 Displays multi-line text with word wrapping and padding.
 
 ```typescript
-const text = new Text("Hello World", paddingX, paddingY); // defaults: 1, 1
+const text = new Text(
+  "Hello World",                  // text content
+  1,                              // paddingX (default: 1)
+  1,                              // paddingY (default: 1)
+  (text) => chalk.bgGray(text)   // optional background function
+);
 text.setText("Updated text");
+text.setCustomBgFn((text) => chalk.bgBlue(text));
+```
+
+### TruncatedText
+
+Single-line text that truncates to fit viewport width. Useful for status lines and headers.
+
+```typescript
+const truncated = new TruncatedText(
+  "This is a very long line that will be truncated...",
+  0,  // paddingX (default: 0)
+  0   // paddingY (default: 0)
+);
 ```
 
 ### Input
@@ -106,26 +197,35 @@ Single-line text input with horizontal scrolling.
 const input = new Input();
 input.onSubmit = (value) => console.log(value);
 input.setValue("initial");
+input.getValue();
 ```
 
 **Key Bindings:**
 - `Enter` - Submit
 - `Ctrl+A` / `Ctrl+E` - Line start/end
-- `Ctrl+W` or `Option+Backspace` - Delete word backwards
+- `Ctrl+W` or `Alt+Backspace` - Delete word backwards
 - `Ctrl+U` - Delete to start of line
 - `Ctrl+K` - Delete to end of line
+- `Ctrl+Left` / `Ctrl+Right` - Word navigation
+- `Alt+Left` / `Alt+Right` - Word navigation
 - Arrow keys, Backspace, Delete work as expected
 
 ### Editor
 
-Multi-line text editor with autocomplete, file completion, and paste handling.
+Multi-line text editor with autocomplete, file completion, paste handling, and vertical scrolling when content exceeds terminal height.
 
 ```typescript
-const editor = new Editor();
+interface EditorTheme {
+  borderColor: (str: string) => string;
+  selectList: SelectListTheme;
+}
+
+const editor = new Editor(tui, theme);  // tui is required for height-aware scrolling
 editor.onSubmit = (text) => console.log(text);
 editor.onChange = (text) => console.log("Changed:", text);
 editor.disableSubmit = true; // Disable submit temporarily
 editor.setAutocompleteProvider(provider);
+editor.borderColor = (s) => chalk.blue(s); // Change border dynamically
 ```
 
 **Features:**
@@ -146,24 +246,50 @@ editor.setAutocompleteProvider(provider);
 
 ### Markdown
 
-Renders markdown with syntax highlighting and optional background colors.
+Renders markdown with syntax highlighting and theming support.
 
 ```typescript
+interface MarkdownTheme {
+  heading: (text: string) => string;
+  link: (text: string) => string;
+  linkUrl: (text: string) => string;
+  code: (text: string) => string;
+  codeBlock: (text: string) => string;
+  codeBlockBorder: (text: string) => string;
+  quote: (text: string) => string;
+  quoteBorder: (text: string) => string;
+  hr: (text: string) => string;
+  listBullet: (text: string) => string;
+  bold: (text: string) => string;
+  italic: (text: string) => string;
+  strikethrough: (text: string) => string;
+  underline: (text: string) => string;
+  highlightCode?: (code: string, lang?: string) => string[];
+}
+
+interface DefaultTextStyle {
+  color?: (text: string) => string;
+  bgColor?: (text: string) => string;
+  bold?: boolean;
+  italic?: boolean;
+  strikethrough?: boolean;
+  underline?: boolean;
+}
+
 const md = new Markdown(
-	"# Hello\n\nSome **bold** text",
-	bgColor,           // optional: "bgRed", "bgBlue", etc.
-	fgColor,           // optional: "white", "cyan", etc.
-	customBgRgb,       // optional: { r: 52, g: 53, b: 65 }
-	paddingX,          // optional: default 1
-	paddingY           // optional: default 1
+  "# Hello\n\nSome **bold** text",
+  1,              // paddingX
+  1,              // paddingY
+  theme,          // MarkdownTheme
+  defaultStyle    // optional DefaultTextStyle
 );
 md.setText("Updated markdown");
 ```
 
 **Features:**
 - Headings, bold, italic, code blocks, lists, links, blockquotes
-- Syntax highlighting with chalk
-- Optional background colors (including custom RGB)
+- HTML tags rendered as plain text
+- Optional syntax highlighting via `highlightCode`
 - Padding support
 - Render caching for performance
 
@@ -172,29 +298,114 @@ md.setText("Updated markdown");
 Animated loading spinner.
 
 ```typescript
-const loader = new Loader(tui, "Loading...");
+const loader = new Loader(
+  tui,                              // TUI instance for render updates
+  (s) => chalk.cyan(s),            // spinner color function
+  (s) => chalk.gray(s),            // message color function
+  "Loading..."                      // message (default: "Loading...")
+);
 loader.start();
+loader.setMessage("Still loading...");
 loader.stop();
 ```
+
+### CancellableLoader
+
+Extends Loader with Escape key handling and an AbortSignal for cancelling async operations.
+
+```typescript
+const loader = new CancellableLoader(
+  tui,                              // TUI instance for render updates
+  (s) => chalk.cyan(s),            // spinner color function
+  (s) => chalk.gray(s),            // message color function
+  "Working..."                      // message
+);
+loader.onAbort = () => done(null); // Called when user presses Escape
+doAsyncWork(loader.signal).then(done);
+```
+
+**Properties:**
+- `signal: AbortSignal` - Aborted when user presses Escape
+- `aborted: boolean` - Whether the loader was aborted
+- `onAbort?: () => void` - Callback when user presses Escape
 
 ### SelectList
 
 Interactive selection list with keyboard navigation.
 
 ```typescript
-const list = new SelectList([
-	{ value: "opt1", label: "Option 1", description: "First option" },
-	{ value: "opt2", label: "Option 2", description: "Second option" },
-], 5); // maxVisible
+interface SelectItem {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+interface SelectListTheme {
+  selectedPrefix: (text: string) => string;
+  selectedText: (text: string) => string;
+  description: (text: string) => string;
+  scrollInfo: (text: string) => string;
+  noMatch: (text: string) => string;
+}
+
+const list = new SelectList(
+  [
+    { value: "opt1", label: "Option 1", description: "First option" },
+    { value: "opt2", label: "Option 2", description: "Second option" },
+  ],
+  5,      // maxVisible
+  theme   // SelectListTheme
+);
 
 list.onSelect = (item) => console.log("Selected:", item);
 list.onCancel = () => console.log("Cancelled");
+list.onSelectionChange = (item) => console.log("Highlighted:", item);
 list.setFilter("opt"); // Filter items
 ```
 
 **Controls:**
 - Arrow keys: Navigate
-- Enter or Tab: Select
+- Enter: Select
+- Escape: Cancel
+
+### SettingsList
+
+Settings panel with value cycling and submenus.
+
+```typescript
+interface SettingItem {
+  id: string;
+  label: string;
+  description?: string;
+  currentValue: string;
+  values?: string[];  // If provided, Enter/Space cycles through these
+  submenu?: (currentValue: string, done: (selectedValue?: string) => void) => Component;
+}
+
+interface SettingsListTheme {
+  label: (text: string, selected: boolean) => string;
+  value: (text: string, selected: boolean) => string;
+  description: (text: string) => string;
+  cursor: string;
+  hint: (text: string) => string;
+}
+
+const settings = new SettingsList(
+  [
+    { id: "theme", label: "Theme", currentValue: "dark", values: ["dark", "light"] },
+    { id: "model", label: "Model", currentValue: "gpt-4", submenu: (val, done) => modelSelector },
+  ],
+  10,      // maxVisible
+  theme,   // SettingsListTheme
+  (id, newValue) => console.log(`${id} changed to ${newValue}`),
+  () => console.log("Cancelled")
+);
+settings.updateValue("theme", "light");
+```
+
+**Controls:**
+- Arrow keys: Navigate
+- Enter/Space: Activate (cycle value or open submenu)
 - Escape: Cancel
 
 ### Spacer
@@ -210,13 +421,21 @@ const spacer = new Spacer(2); // 2 empty lines (default: 1)
 Renders images inline for terminals that support the Kitty graphics protocol (Kitty, Ghostty, WezTerm) or iTerm2 inline images. Falls back to a text placeholder on unsupported terminals.
 
 ```typescript
-import { Image } from "@mariozechner/pi-tui";
+interface ImageTheme {
+  fallbackColor: (str: string) => string;
+}
+
+interface ImageOptions {
+  maxWidthCells?: number;
+  maxHeightCells?: number;
+  filename?: string;
+}
 
 const image = new Image(
-	base64Data,        // base64-encoded image data
-	"image/png",       // MIME type
-	{ fallbackColor: (s) => s },  // theme for fallback text
-	{ maxWidthCells: 60 }         // optional: limit width
+  base64Data,       // base64-encoded image data
+  "image/png",      // MIME type
+  theme,            // ImageTheme
+  options           // optional ImageOptions
 );
 tui.addChild(image);
 ```
@@ -233,12 +452,12 @@ Supports both slash commands and file paths.
 import { CombinedAutocompleteProvider } from "@mariozechner/pi-tui";
 
 const provider = new CombinedAutocompleteProvider(
-	[
-		{ name: "help", description: "Show help" },
-		{ name: "clear", description: "Clear screen" },
-		{ name: "delete", description: "Delete last message" },
-	],
-	process.cwd() // base path for file completion
+  [
+    { name: "help", description: "Show help" },
+    { name: "clear", description: "Clear screen" },
+    { name: "delete", description: "Delete last message" },
+  ],
+  process.cwd() // base path for file completion
 );
 
 editor.setAutocompleteProvider(provider);
@@ -249,6 +468,32 @@ editor.setAutocompleteProvider(provider);
 - Press `Tab` for file path completion
 - Works with `~/`, `./`, `../`, and `@` prefix
 - Filters to attachable files for `@` prefix
+
+## Key Detection
+
+Use `matchesKey()` with the `Key` helper for detecting keyboard input (supports Kitty keyboard protocol):
+
+```typescript
+import { matchesKey, Key } from "@mariozechner/pi-tui";
+
+if (matchesKey(data, Key.ctrl("c"))) {
+  process.exit(0);
+}
+
+if (matchesKey(data, Key.enter)) {
+  submit();
+} else if (matchesKey(data, Key.escape)) {
+  cancel();
+} else if (matchesKey(data, Key.up)) {
+  moveUp();
+}
+```
+
+**Key identifiers** (use `Key.*` for autocomplete, or string literals):
+- Basic keys: `Key.enter`, `Key.escape`, `Key.tab`, `Key.space`, `Key.backspace`, `Key.delete`, `Key.home`, `Key.end`
+- Arrow keys: `Key.up`, `Key.down`, `Key.left`, `Key.right`
+- With modifiers: `Key.ctrl("c")`, `Key.shift("tab")`, `Key.alt("left")`, `Key.ctrlShift("p")`
+- String format also works: `"enter"`, `"ctrl+c"`, `"shift+tab"`, `"ctrl+shift+p"`
 
 ## Differential Rendering
 
@@ -266,23 +511,157 @@ The TUI works with any object implementing the `Terminal` interface:
 
 ```typescript
 interface Terminal {
-	start(onInput: (data: string) => void, onResize: () => void): void;
-	stop(): void;
-	write(data: string): void;
-	get columns(): number;
-	get rows(): number;
-	moveBy(lines: number): void;
-	hideCursor(): void;
-	showCursor(): void;
-	clearLine(): void;
-	clearFromCursor(): void;
-	clearScreen(): void;
+  start(onInput: (data: string) => void, onResize: () => void): void;
+  stop(): void;
+  write(data: string): void;
+  get columns(): number;
+  get rows(): number;
+  moveBy(lines: number): void;
+  hideCursor(): void;
+  showCursor(): void;
+  clearLine(): void;
+  clearFromCursor(): void;
+  clearScreen(): void;
 }
 ```
 
 **Built-in implementations:**
 - `ProcessTerminal` - Uses `process.stdin/stdout`
 - `VirtualTerminal` - For testing (uses `@xterm/headless`)
+
+## Utilities
+
+```typescript
+import { visibleWidth, truncateToWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
+
+// Get visible width of string (ignoring ANSI codes)
+const width = visibleWidth("\x1b[31mHello\x1b[0m"); // 5
+
+// Truncate string to width (preserving ANSI codes, adds ellipsis)
+const truncated = truncateToWidth("Hello World", 8); // "Hello..."
+
+// Truncate without ellipsis
+const truncatedNoEllipsis = truncateToWidth("Hello World", 8, ""); // "Hello Wo"
+
+// Wrap text to width (preserving ANSI codes across line breaks)
+const lines = wrapTextWithAnsi("This is a long line that needs wrapping", 20);
+// ["This is a long line", "that needs wrapping"]
+```
+
+## Creating Custom Components
+
+When creating custom components, **each line returned by `render()` must not exceed the `width` parameter**. The TUI will error if any line is wider than the terminal.
+
+### Handling Input
+
+Use `matchesKey()` with the `Key` helper for keyboard input:
+
+```typescript
+import { matchesKey, Key, truncateToWidth } from "@mariozechner/pi-tui";
+import type { Component } from "@mariozechner/pi-tui";
+
+class MyInteractiveComponent implements Component {
+  private selectedIndex = 0;
+  private items = ["Option 1", "Option 2", "Option 3"];
+  
+  public onSelect?: (index: number) => void;
+  public onCancel?: () => void;
+
+  handleInput(data: string): void {
+    if (matchesKey(data, Key.up)) {
+      this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+    } else if (matchesKey(data, Key.down)) {
+      this.selectedIndex = Math.min(this.items.length - 1, this.selectedIndex + 1);
+    } else if (matchesKey(data, Key.enter)) {
+      this.onSelect?.(this.selectedIndex);
+    } else if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+      this.onCancel?.();
+    }
+  }
+
+  render(width: number): string[] {
+    return this.items.map((item, i) => {
+      const prefix = i === this.selectedIndex ? "> " : "  ";
+      return truncateToWidth(prefix + item, width);
+    });
+  }
+}
+```
+
+### Handling Line Width
+
+Use the provided utilities to ensure lines fit:
+
+```typescript
+import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
+import type { Component } from "@mariozechner/pi-tui";
+
+class MyComponent implements Component {
+  private text: string;
+
+  constructor(text: string) {
+    this.text = text;
+  }
+
+  render(width: number): string[] {
+    // Option 1: Truncate long lines
+    return [truncateToWidth(this.text, width)];
+
+    // Option 2: Check and pad to exact width
+    const line = this.text;
+    const visible = visibleWidth(line);
+    if (visible > width) {
+      return [truncateToWidth(line, width)];
+    }
+    // Pad to exact width (optional, for backgrounds)
+    return [line + " ".repeat(width - visible)];
+  }
+}
+```
+
+### ANSI Code Considerations
+
+Both `visibleWidth()` and `truncateToWidth()` correctly handle ANSI escape codes:
+
+- `visibleWidth()` ignores ANSI codes when calculating width
+- `truncateToWidth()` preserves ANSI codes and properly closes them when truncating
+
+```typescript
+import chalk from "chalk";
+
+const styled = chalk.red("Hello") + " " + chalk.blue("World");
+const width = visibleWidth(styled); // 11 (not counting ANSI codes)
+const truncated = truncateToWidth(styled, 8); // Red "Hello" + " W..." with proper reset
+```
+
+### Caching
+
+For performance, components should cache their rendered output and only re-render when necessary:
+
+```typescript
+class CachedComponent implements Component {
+  private text: string;
+  private cachedWidth?: number;
+  private cachedLines?: string[];
+
+  render(width: number): string[] {
+    if (this.cachedLines && this.cachedWidth === width) {
+      return this.cachedLines;
+    }
+
+    const lines = [truncateToWidth(this.text, width)];
+
+    this.cachedWidth = width;
+    this.cachedLines = lines;
+    return lines;
+  }
+
+  invalidate(): void {
+    this.cachedWidth = undefined;
+    this.cachedLines = undefined;
+  }
+}
+```
 
 ## Example
 

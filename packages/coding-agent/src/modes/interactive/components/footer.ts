@@ -1,155 +1,86 @@
-import type { AgentState } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
-import { type Component, visibleWidth } from "@mariozechner/pi-tui";
-import { existsSync, type FSWatcher, readFileSync, watch } from "fs";
-import { dirname, join } from "path";
-import { isModelUsingOAuth } from "../../../core/model-config.js";
+import { type Component, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import type { AgentSession } from "../../../core/agent-session.js";
+import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
 import { theme } from "../theme/theme.js";
 
 /**
- * Find the git root directory by walking up from cwd.
- * Returns the path to .git/HEAD if found, null otherwise.
+ * Sanitize text for display in a single-line status.
+ * Removes newlines, tabs, carriage returns, and other control characters.
  */
-function findGitHeadPath(): string | null {
-	let dir = process.cwd();
-	while (true) {
-		const gitHeadPath = join(dir, ".git", "HEAD");
-		if (existsSync(gitHeadPath)) {
-			return gitHeadPath;
-		}
-		const parent = dirname(dir);
-		if (parent === dir) {
-			// Reached filesystem root
-			return null;
-		}
-		dir = parent;
-	}
+function sanitizeStatusText(text: string): string {
+	// Replace newlines, tabs, carriage returns with space, then collapse multiple spaces
+	return text
+		.replace(/[\r\n\t]/g, " ")
+		.replace(/ +/g, " ")
+		.trim();
 }
 
 /**
- * Footer component that shows pwd, token stats, and context usage
+ * Format token counts (similar to web-ui)
+ */
+function formatTokens(count: number): string {
+	if (count < 1000) return count.toString();
+	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+	if (count < 1000000) return `${Math.round(count / 1000)}k`;
+	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
+	return `${Math.round(count / 1000000)}M`;
+}
+
+/**
+ * Footer component that shows pwd, token stats, and context usage.
+ * Computes token/context stats from session, gets git branch and extension statuses from provider.
  */
 export class FooterComponent implements Component {
-	private state: AgentState;
-	private cachedBranch: string | null | undefined = undefined; // undefined = not checked yet, null = not in git repo, string = branch name
-	private gitWatcher: FSWatcher | null = null;
-	private onBranchChange: (() => void) | null = null;
-	private autoCompactEnabled: boolean = true;
+	private autoCompactEnabled = true;
 
-	constructor(state: AgentState) {
-		this.state = state;
-	}
+	constructor(
+		private session: AgentSession,
+		private footerData: ReadonlyFooterDataProvider,
+	) {}
 
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.autoCompactEnabled = enabled;
 	}
 
 	/**
-	 * Set up a file watcher on .git/HEAD to detect branch changes.
-	 * Call the provided callback when branch changes.
+	 * No-op: git branch caching now handled by provider.
+	 * Kept for compatibility with existing call sites in interactive-mode.
 	 */
-	watchBranch(onBranchChange: () => void): void {
-		this.onBranchChange = onBranchChange;
-		this.setupGitWatcher();
-	}
-
-	private setupGitWatcher(): void {
-		// Clean up existing watcher
-		if (this.gitWatcher) {
-			this.gitWatcher.close();
-			this.gitWatcher = null;
-		}
-
-		const gitHeadPath = findGitHeadPath();
-		if (!gitHeadPath) {
-			return;
-		}
-
-		try {
-			this.gitWatcher = watch(gitHeadPath, () => {
-				this.cachedBranch = undefined; // Invalidate cache
-				if (this.onBranchChange) {
-					this.onBranchChange();
-				}
-			});
-		} catch {
-			// Silently fail if we can't watch
-		}
+	invalidate(): void {
+		// No-op: git branch is cached/invalidated by provider
 	}
 
 	/**
-	 * Clean up the file watcher
+	 * Clean up resources.
+	 * Git watcher cleanup now handled by provider.
 	 */
 	dispose(): void {
-		if (this.gitWatcher) {
-			this.gitWatcher.close();
-			this.gitWatcher = null;
-		}
-	}
-
-	updateState(state: AgentState): void {
-		this.state = state;
-	}
-
-	invalidate(): void {
-		// Invalidate cached branch so it gets re-read on next render
-		this.cachedBranch = undefined;
-	}
-
-	/**
-	 * Get current git branch by reading .git/HEAD directly.
-	 * Returns null if not in a git repo, branch name otherwise.
-	 */
-	private getCurrentBranch(): string | null {
-		// Return cached value if available
-		if (this.cachedBranch !== undefined) {
-			return this.cachedBranch;
-		}
-
-		try {
-			const gitHeadPath = findGitHeadPath();
-			if (!gitHeadPath) {
-				this.cachedBranch = null;
-				return null;
-			}
-			const content = readFileSync(gitHeadPath, "utf8").trim();
-
-			if (content.startsWith("ref: refs/heads/")) {
-				// Normal branch: extract branch name
-				this.cachedBranch = content.slice(16);
-			} else {
-				// Detached HEAD state
-				this.cachedBranch = "detached";
-			}
-		} catch {
-			// Not in a git repo or error reading file
-			this.cachedBranch = null;
-		}
-
-		return this.cachedBranch;
+		// Git watcher cleanup handled by provider
 	}
 
 	render(width: number): string[] {
-		// Calculate cumulative usage from all assistant messages
+		const state = this.session.state;
+
+		// Calculate cumulative usage from ALL session entries (not just post-compaction messages)
 		let totalInput = 0;
 		let totalOutput = 0;
 		let totalCacheRead = 0;
 		let totalCacheWrite = 0;
 		let totalCost = 0;
 
-		for (const message of this.state.messages) {
-			if (message.role === "assistant") {
-				const assistantMsg = message as AssistantMessage;
-				totalInput += assistantMsg.usage.input;
-				totalOutput += assistantMsg.usage.output;
-				totalCacheRead += assistantMsg.usage.cacheRead;
-				totalCacheWrite += assistantMsg.usage.cacheWrite;
-				totalCost += assistantMsg.usage.cost.total;
+		for (const entry of this.session.sessionManager.getEntries()) {
+			if (entry.type === "message" && entry.message.role === "assistant") {
+				totalInput += entry.message.usage.input;
+				totalOutput += entry.message.usage.output;
+				totalCacheRead += entry.message.usage.cacheRead;
+				totalCacheWrite += entry.message.usage.cacheWrite;
+				totalCost += entry.message.usage.cost.total;
 			}
 		}
 
 		// Get last assistant message for context percentage calculation (skip aborted messages)
-		const lastAssistantMessage = this.state.messages
+		const lastAssistantMessage = state.messages
 			.slice()
 			.reverse()
 			.find((m) => m.role === "assistant" && m.stopReason !== "aborted") as AssistantMessage | undefined;
@@ -161,28 +92,19 @@ export class FooterComponent implements Component {
 				lastAssistantMessage.usage.cacheRead +
 				lastAssistantMessage.usage.cacheWrite
 			: 0;
-		const contextWindow = this.state.model?.contextWindow || 0;
+		const contextWindow = state.model?.contextWindow || 0;
 		const contextPercentValue = contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0;
 		const contextPercent = contextPercentValue.toFixed(1);
-
-		// Format token counts (similar to web-ui)
-		const formatTokens = (count: number): string => {
-			if (count < 1000) return count.toString();
-			if (count < 10000) return (count / 1000).toFixed(1) + "k";
-			if (count < 1000000) return Math.round(count / 1000) + "k";
-			if (count < 10000000) return (count / 1000000).toFixed(1) + "M";
-			return Math.round(count / 1000000) + "M";
-		};
 
 		// Replace home directory with ~
 		let pwd = process.cwd();
 		const home = process.env.HOME || process.env.USERPROFILE;
 		if (home && pwd.startsWith(home)) {
-			pwd = "~" + pwd.slice(home.length);
+			pwd = `~${pwd.slice(home.length)}`;
 		}
 
 		// Add git branch if available
-		const branch = this.getCurrentBranch();
+		const branch = this.footerData.getGitBranch();
 		if (branch) {
 			pwd = `${pwd} (${branch})`;
 		}
@@ -207,7 +129,7 @@ export class FooterComponent implements Component {
 		if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
 
 		// Show cost with "(sub)" indicator if using OAuth subscription
-		const usingSubscription = this.state.model ? isModelUsingOAuth(this.state.model) : false;
+		const usingSubscription = state.model ? this.session.modelRegistry.isUsingOAuth(state.model) : false;
 		if (totalCost || usingSubscription) {
 			const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
 			statsParts.push(costStr);
@@ -229,12 +151,12 @@ export class FooterComponent implements Component {
 		let statsLeft = statsParts.join(" ");
 
 		// Add model name on the right side, plus thinking level if model supports it
-		const modelName = this.state.model?.id || "no-model";
+		const modelName = state.model?.id || "no-model";
 
 		// Add thinking level hint if model supports reasoning and thinking is enabled
 		let rightSide = modelName;
-		if (this.state.model?.reasoning) {
-			const thinkingLevel = this.state.thinkingLevel || "off";
+		if (state.model?.reasoning) {
+			const thinkingLevel = state.thinkingLevel || "off";
 			if (thinkingLevel !== "off") {
 				rightSide = `${modelName} • ${thinkingLevel}`;
 			}
@@ -247,7 +169,7 @@ export class FooterComponent implements Component {
 		if (statsLeftWidth > width) {
 			// Truncate statsLeft to fit width (no room for right side)
 			const plainStatsLeft = statsLeft.replace(/\x1b\[[0-9;]*m/g, "");
-			statsLeft = plainStatsLeft.substring(0, width - 3) + "...";
+			statsLeft = `${plainStatsLeft.substring(0, width - 3)}...`;
 			statsLeftWidth = visibleWidth(statsLeft);
 		}
 
@@ -283,6 +205,19 @@ export class FooterComponent implements Component {
 		const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
 		const dimRemainder = theme.fg("dim", remainder);
 
-		return [theme.fg("dim", pwd), dimStatsLeft + dimRemainder];
+		const lines = [theme.fg("dim", pwd), dimStatsLeft + dimRemainder];
+
+		// Add extension statuses on a single line, sorted by key alphabetically
+		const extensionStatuses = this.footerData.getExtensionStatuses();
+		if (extensionStatuses.size > 0) {
+			const sortedStatuses = Array.from(extensionStatuses.entries())
+				.sort(([a], [b]) => a.localeCompare(b))
+				.map(([, text]) => sanitizeStatusText(text));
+			const statusLine = sortedStatuses.join(" ");
+			// Truncate to terminal width with dim ellipsis for consistency with footer style
+			lines.push(truncateToWidth(statusLine, width, theme.fg("dim", "...")));
+		}
+
+		return lines;
 	}
 }

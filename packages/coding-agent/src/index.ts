@@ -1,69 +1,100 @@
 // Core session management
+
+// Config paths
+export { getAgentDir } from "./config.js";
 export {
 	AgentSession,
 	type AgentSessionConfig,
 	type AgentSessionEvent,
 	type AgentSessionEventListener,
-	type CompactionResult,
 	type ModelCycleResult,
 	type PromptOptions,
 	type SessionStats,
 } from "./core/agent-session.js";
+// Auth and model registry
+export { type ApiKeyCredential, type AuthCredential, AuthStorage, type OAuthCredential } from "./core/auth-storage.js";
 // Compaction
 export {
+	type BranchPreparation,
+	type BranchSummaryResult,
+	type CollectEntriesResult,
+	type CompactionResult,
 	type CutPointResult,
 	calculateContextTokens,
+	collectEntriesForBranchSummary,
 	compact,
 	DEFAULT_COMPACTION_SETTINGS,
 	estimateTokens,
+	type FileOperations,
 	findCutPoint,
 	findTurnStartIndex,
+	type GenerateBranchSummaryOptions,
+	generateBranchSummary,
 	generateSummary,
 	getLastAssistantUsage,
+	prepareBranchEntries,
+	serializeConversation,
 	shouldCompact,
-} from "./core/compaction.js";
-// Custom tools
-export type {
-	AgentToolUpdateCallback,
-	CustomAgentTool,
-	CustomToolFactory,
-	CustomToolsLoadResult,
-	ExecResult,
-	LoadedCustomTool,
-	RenderResultOptions,
-	SessionEvent as ToolSessionEvent,
-	ToolAPI,
-	ToolUIContext,
-} from "./core/custom-tools/index.js";
-export { discoverAndLoadCustomTools, loadCustomTools } from "./core/custom-tools/index.js";
+} from "./core/compaction/index.js";
+export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.js";
+// Extension system
 export type {
 	AgentEndEvent,
 	AgentStartEvent,
-	BashToolResultEvent,
-	BranchEvent,
-	BranchEventResult,
-	CustomToolResultEvent,
-	EditToolResultEvent,
-	FindToolResultEvent,
-	GrepToolResultEvent,
-	HookAPI,
-	HookEvent,
-	HookEventContext,
-	HookFactory,
-	HookUIContext,
-	LsToolResultEvent,
-	ReadToolResultEvent,
-	SessionEvent,
+	AgentToolResult,
+	AgentToolUpdateCallback,
+	AppAction,
+	BeforeAgentStartEvent,
+	ContextEvent,
+	ExecOptions,
+	ExecResult,
+	Extension,
+	ExtensionActions,
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionCommandContextActions,
+	ExtensionContext,
+	ExtensionContextActions,
+	ExtensionError,
+	ExtensionEvent,
+	ExtensionFactory,
+	ExtensionFlag,
+	ExtensionHandler,
+	ExtensionRuntime,
+	ExtensionShortcut,
+	ExtensionUIContext,
+	ExtensionUIDialogOptions,
+	InputEvent,
+	InputEventResult,
+	InputSource,
+	KeybindingsManager,
+	LoadExtensionsResult,
+	MessageRenderer,
+	MessageRenderOptions,
+	RegisteredCommand,
+	RegisteredTool,
+	SessionBeforeCompactEvent,
+	SessionBeforeForkEvent,
+	SessionBeforeSwitchEvent,
+	SessionBeforeTreeEvent,
+	SessionCompactEvent,
+	SessionForkEvent,
+	SessionShutdownEvent,
+	SessionStartEvent,
+	SessionSwitchEvent,
+	SessionTreeEvent,
 	ToolCallEvent,
-	ToolCallEventResult,
+	ToolDefinition,
+	ToolInfo,
+	ToolRenderResultOptions,
 	ToolResultEvent,
-	ToolResultEventResult,
 	TurnEndEvent,
 	TurnStartEvent,
-	WriteToolResultEvent,
-} from "./core/hooks/index.js";
-// Hook system types and type guards
+	UserBashEvent,
+	UserBashEventResult,
+} from "./core/extensions/index.js";
 export {
+	ExtensionRunner,
 	isBashToolResult,
 	isEditToolResult,
 	isFindToolResult,
@@ -71,36 +102,71 @@ export {
 	isLsToolResult,
 	isReadToolResult,
 	isWriteToolResult,
-} from "./core/hooks/index.js";
-export { messageTransformer } from "./core/messages.js";
-// Model configuration and OAuth
-export { findModel, getApiKeyForModel, getAvailableModels } from "./core/model-config.js";
+	wrapRegisteredTool,
+	wrapRegisteredTools,
+	wrapToolsWithExtensions,
+	wrapToolWithExtensions,
+} from "./core/extensions/index.js";
+// Footer data provider (git branch + extension statuses - data not otherwise available to extensions)
+export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.js";
+export { convertToLlm } from "./core/messages.js";
+export { ModelRegistry } from "./core/model-registry.js";
+// SDK for programmatic usage
 export {
-	getOAuthProviders,
-	login,
-	logout,
-	type OAuthAuthInfo,
-	type OAuthPrompt,
-	type OAuthProvider,
-} from "./core/oauth/index.js";
+	type BuildSystemPromptOptions,
+	buildSystemPrompt,
+	type CreateAgentSessionOptions,
+	type CreateAgentSessionResult,
+	// Factory
+	createAgentSession,
+	createBashTool,
+	// Tool factories (for custom cwd)
+	createCodingTools,
+	createEditTool,
+	createFindTool,
+	createGrepTool,
+	createLsTool,
+	createReadOnlyTools,
+	createReadTool,
+	createWriteTool,
+	// Discovery
+	discoverAuthStorage,
+	discoverContextFiles,
+	discoverExtensions,
+	discoverModels,
+	discoverPromptTemplates,
+	discoverSkills,
+	loadSettings,
+	type PromptTemplate,
+	// Pre-built tools (use process.cwd())
+	readOnlyTools,
+} from "./core/sdk.js";
 export {
+	type BranchSummaryEntry,
+	buildSessionContext,
 	type CompactionEntry,
-	createSummaryMessage,
+	CURRENT_SESSION_VERSION,
+	type CustomEntry,
+	type CustomMessageEntry,
+	type FileEntry,
 	getLatestCompactionEntry,
-	type LoadedSession,
-	loadSessionFromEntries,
 	type ModelChangeEntry,
+	migrateSessionEntries,
+	type NewSessionOptions,
 	parseSessionEntries,
+	type SessionContext,
 	type SessionEntry,
+	type SessionEntryBase,
 	type SessionHeader,
+	type SessionInfo,
+	type SessionInfoEntry,
 	SessionManager,
 	type SessionMessageEntry,
-	SUMMARY_PREFIX,
-	SUMMARY_SUFFIX,
 	type ThinkingLevelChangeEntry,
 } from "./core/session-manager.js";
 export {
 	type CompactionSettings,
+	type ImageSettings,
 	type RetrySettings,
 	type Settings,
 	SettingsManager,
@@ -119,22 +185,100 @@ export {
 } from "./core/skills.js";
 // Tools
 export {
+	type BashOperations,
 	type BashToolDetails,
+	type BashToolOptions,
 	bashTool,
 	codingTools,
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINES,
+	type EditOperations,
+	type EditToolDetails,
+	type EditToolOptions,
 	editTool,
+	type FindOperations,
 	type FindToolDetails,
+	type FindToolOptions,
 	findTool,
+	formatSize,
+	type GrepOperations,
 	type GrepToolDetails,
+	type GrepToolOptions,
 	grepTool,
+	type LsOperations,
 	type LsToolDetails,
+	type LsToolOptions,
 	lsTool,
+	type ReadOperations,
 	type ReadToolDetails,
+	type ReadToolOptions,
 	readTool,
+	type ToolsOptions,
+	type TruncationOptions,
 	type TruncationResult,
+	truncateHead,
+	truncateLine,
+	truncateTail,
+	type WriteOperations,
+	type WriteToolOptions,
 	writeTool,
 } from "./core/tools/index.js";
 // Main entry point
 export { main } from "./main.js";
-// Theme utilities for custom tools
-export { getMarkdownTheme } from "./modes/interactive/theme/theme.js";
+// Run modes for programmatic SDK usage
+export {
+	InteractiveMode,
+	type InteractiveModeOptions,
+	type PrintModeOptions,
+	runPrintMode,
+	runRpcMode,
+} from "./modes/index.js";
+// UI components for extensions
+export {
+	ArminComponent,
+	AssistantMessageComponent,
+	BashExecutionComponent,
+	BorderedLoader,
+	BranchSummaryMessageComponent,
+	CompactionSummaryMessageComponent,
+	CustomEditor,
+	CustomMessageComponent,
+	DynamicBorder,
+	ExtensionEditorComponent,
+	ExtensionInputComponent,
+	ExtensionSelectorComponent,
+	FooterComponent,
+	LoginDialogComponent,
+	ModelSelectorComponent,
+	OAuthSelectorComponent,
+	type RenderDiffOptions,
+	renderDiff,
+	SessionSelectorComponent,
+	type SettingsCallbacks,
+	type SettingsConfig,
+	SettingsSelectorComponent,
+	ShowImagesSelectorComponent,
+	ThemeSelectorComponent,
+	ThinkingSelectorComponent,
+	ToolExecutionComponent,
+	type ToolExecutionOptions,
+	TreeSelectorComponent,
+	truncateToVisualLines,
+	UserMessageComponent,
+	UserMessageSelectorComponent,
+	type VisualTruncateResult,
+} from "./modes/interactive/components/index.js";
+// Theme utilities for custom tools and extensions
+export {
+	getLanguageFromPath,
+	getMarkdownTheme,
+	getSelectListTheme,
+	getSettingsListTheme,
+	highlightCode,
+	initTheme,
+	Theme,
+	type ThemeColor,
+} from "./modes/interactive/theme/theme.js";
+export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.js";
+// Shell utilities
+export { getShellConfig } from "./utils/shell.js";

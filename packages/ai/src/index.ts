@@ -1,12 +1,16 @@
-export * from "./agent/index.js";
+export * from "./constants.js";
 export * from "./models.js";
 export * from "./providers/anthropic.js";
 export * from "./providers/google.js";
 export * from "./providers/google-gemini-cli.js";
+export * from "./providers/google-vertex.js";
+
 export * from "./providers/openai-completions.js";
 export * from "./providers/openai-responses.js";
 export * from "./stream.js";
 export * from "./types.js";
+export * from "./utils/event-stream.js";
+export * from "./utils/json-parse.js";
 export * from "./utils/oauth/index.js";
 export * from "./utils/overflow.js";
 export * from "./utils/typebox-helpers.js";

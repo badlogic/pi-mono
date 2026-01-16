@@ -1,8 +1,9 @@
-import { existsSync, readdirSync, readFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "fs";
 import { minimatch } from "minimatch";
 import { homedir } from "os";
 import { basename, dirname, join, resolve } from "path";
-import { CONFIG_DIR_NAME } from "../config.js";
+import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
+import { parseFrontmatter } from "../utils/frontmatter.js";
 import type { SkillsSettings } from "./settings-manager.js";
 
 /**
@@ -49,48 +50,6 @@ export interface LoadSkillsResult {
 }
 
 type SkillFormat = "recursive" | "claude";
-
-function stripQuotes(value: string): string {
-	if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-		return value.slice(1, -1);
-	}
-	return value;
-}
-
-function parseFrontmatter(content: string): { frontmatter: SkillFrontmatter; body: string; allKeys: string[] } {
-	const frontmatter: SkillFrontmatter = {};
-	const allKeys: string[] = [];
-
-	const normalizedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-	if (!normalizedContent.startsWith("---")) {
-		return { frontmatter, body: normalizedContent, allKeys };
-	}
-
-	const endIndex = normalizedContent.indexOf("\n---", 3);
-	if (endIndex === -1) {
-		return { frontmatter, body: normalizedContent, allKeys };
-	}
-
-	const frontmatterBlock = normalizedContent.slice(4, endIndex);
-	const body = normalizedContent.slice(endIndex + 4).trim();
-
-	for (const line of frontmatterBlock.split("\n")) {
-		const match = line.match(/^(\w[\w-]*):\s*(.*)$/);
-		if (match) {
-			const key = match[1];
-			const value = stripQuotes(match[2].trim());
-			allKeys.push(key);
-			if (key === "name") {
-				frontmatter.name = value;
-			} else if (key === "description") {
-				frontmatter.description = value;
-			}
-		}
-	}
-
-	return { frontmatter, body, allKeys };
-}
 
 /**
  * Validate skill name per Agent Skills spec.
@@ -182,19 +141,34 @@ function loadSkillsFromDirInternal(dir: string, source: string, format: SkillFor
 				continue;
 			}
 
-			if (entry.isSymbolicLink()) {
+			// Skip node_modules to avoid scanning dependencies
+			if (entry.name === "node_modules") {
 				continue;
 			}
 
 			const fullPath = join(dir, entry.name);
 
+			// For symlinks, check if they point to a directory and follow them
+			let isDirectory = entry.isDirectory();
+			let isFile = entry.isFile();
+			if (entry.isSymbolicLink()) {
+				try {
+					const stats = statSync(fullPath);
+					isDirectory = stats.isDirectory();
+					isFile = stats.isFile();
+				} catch {
+					// Broken symlink, skip it
+					continue;
+				}
+			}
+
 			if (format === "recursive") {
 				// Recursive format: scan directories, look for SKILL.md files
-				if (entry.isDirectory()) {
+				if (isDirectory) {
 					const subResult = loadSkillsFromDirInternal(fullPath, source, format);
 					skills.push(...subResult.skills);
 					warnings.push(...subResult.warnings);
-				} else if (entry.isFile() && entry.name === "SKILL.md") {
+				} else if (isFile && entry.name === "SKILL.md") {
 					const result = loadSkillFromFile(fullPath, source);
 					if (result.skill) {
 						skills.push(result.skill);
@@ -203,7 +177,7 @@ function loadSkillsFromDirInternal(dir: string, source: string, format: SkillFor
 				}
 			} else if (format === "claude") {
 				// Claude format: only one level deep, each directory must contain SKILL.md
-				if (!entry.isDirectory()) {
+				if (!isDirectory) {
 					continue;
 				}
 
@@ -229,7 +203,8 @@ function loadSkillFromFile(filePath: string, source: string): { skill: Skill | n
 
 	try {
 		const rawContent = readFileSync(filePath, "utf-8");
-		const { frontmatter, allKeys } = parseFrontmatter(rawContent);
+		const { frontmatter } = parseFrontmatter<SkillFrontmatter>(rawContent);
+		const allKeys = Object.keys(frontmatter);
 		const skillDir = dirname(filePath);
 		const parentDirName = basename(skillDir);
 
@@ -269,7 +244,9 @@ function loadSkillFromFile(filePath: string, source: string): { skill: Skill | n
 			},
 			warnings,
 		};
-	} catch {
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "failed to parse skill file";
+		warnings.push({ skillPath: filePath, message });
 		return { skill: null, warnings };
 	}
 }
@@ -313,12 +290,21 @@ function escapeXml(str: string): string {
 		.replace(/'/g, "&apos;");
 }
 
+export interface LoadSkillsOptions extends SkillsSettings {
+	/** Working directory for project-local skills. Default: process.cwd() */
+	cwd?: string;
+	/** Agent config directory for global skills. Default: ~/.pi/agent */
+	agentDir?: string;
+}
+
 /**
  * Load skills from all configured locations.
  * Returns skills and any validation warnings.
  */
-export function loadSkills(options: SkillsSettings = {}): LoadSkillsResult {
+export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
 	const {
+		cwd = process.cwd(),
+		agentDir,
 		enableCodexUser = true,
 		enableClaudeUser = true,
 		enableClaudeProject = true,
@@ -329,7 +315,11 @@ export function loadSkills(options: SkillsSettings = {}): LoadSkillsResult {
 		includeSkills = [],
 	} = options;
 
+	// Resolve agentDir - if not provided, use default from config
+	const resolvedAgentDir = agentDir ?? getAgentDir();
+
 	const skillMap = new Map<string, Skill>();
+	const realPathSet = new Set<string>();
 	const allWarnings: SkillWarning[] = [];
 	const collisionWarnings: SkillWarning[] = [];
 
@@ -356,6 +346,20 @@ export function loadSkills(options: SkillsSettings = {}): LoadSkillsResult {
 			if (!matchesIncludePatterns(skill.name)) {
 				continue;
 			}
+
+			// Resolve symlinks to detect duplicate files
+			let realPath: string;
+			try {
+				realPath = realpathSync(skill.filePath);
+			} catch {
+				realPath = skill.filePath;
+			}
+
+			// Skip silently if we've already loaded this exact file (via symlink)
+			if (realPathSet.has(realPath)) {
+				continue;
+			}
+
 			const existing = skillMap.get(skill.name);
 			if (existing) {
 				collisionWarnings.push({
@@ -364,6 +368,7 @@ export function loadSkills(options: SkillsSettings = {}): LoadSkillsResult {
 				});
 			} else {
 				skillMap.set(skill.name, skill);
+				realPathSet.add(realPath);
 			}
 		}
 	}
@@ -375,13 +380,13 @@ export function loadSkills(options: SkillsSettings = {}): LoadSkillsResult {
 		addSkills(loadSkillsFromDirInternal(join(homedir(), ".claude", "skills"), "claude-user", "claude"));
 	}
 	if (enableClaudeProject) {
-		addSkills(loadSkillsFromDirInternal(resolve(process.cwd(), ".claude", "skills"), "claude-project", "claude"));
+		addSkills(loadSkillsFromDirInternal(resolve(cwd, ".claude", "skills"), "claude-project", "claude"));
 	}
 	if (enablePiUser) {
-		addSkills(loadSkillsFromDirInternal(join(homedir(), CONFIG_DIR_NAME, "agent", "skills"), "user", "recursive"));
+		addSkills(loadSkillsFromDirInternal(join(resolvedAgentDir, "skills"), "user", "recursive"));
 	}
 	if (enablePiProject) {
-		addSkills(loadSkillsFromDirInternal(resolve(process.cwd(), CONFIG_DIR_NAME, "skills"), "project", "recursive"));
+		addSkills(loadSkillsFromDirInternal(resolve(cwd, CONFIG_DIR_NAME, "skills"), "project", "recursive"));
 	}
 	for (const customDir of customDirectories) {
 		addSkills(loadSkillsFromDirInternal(customDir.replace(/^~(?=$|[\\/])/, homedir()), "custom", "recursive"));

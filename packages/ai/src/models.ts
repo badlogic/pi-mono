@@ -21,7 +21,8 @@ export function getModel<TProvider extends KnownProvider, TModelId extends keyof
 	provider: TProvider,
 	modelId: TModelId,
 ): Model<ModelApi<TProvider, TModelId>> {
-	return modelRegistry.get(provider)?.get(modelId as string) as Model<ModelApi<TProvider, TModelId>>;
+	const providerModels = modelRegistry.get(provider);
+	return providerModels?.get(modelId as string) as Model<ModelApi<TProvider, TModelId>>;
 }
 
 export function getProviders(): KnownProvider[] {
@@ -49,8 +50,20 @@ const XHIGH_MODELS = new Set(["gpt-5.1-codex-max", "gpt-5.2", "gpt-5.2-codex"]);
 
 /**
  * Check if a model supports xhigh thinking level.
- * Currently only certain OpenAI models support this.
+ * Currently only certain OpenAI Codex models support this.
  */
 export function supportsXhigh<TApi extends Api>(model: Model<TApi>): boolean {
 	return XHIGH_MODELS.has(model.id);
+}
+
+/**
+ * Check if two models are equal by comparing both their id and provider.
+ * Returns false if either model is null or undefined.
+ */
+export function modelsAreEqual<TApi extends Api>(
+	a: Model<TApi> | null | undefined,
+	b: Model<TApi> | null | undefined,
+): boolean {
+	if (!a || !b) return false;
+	return a.id === b.id && a.provider === b.provider;
 }
