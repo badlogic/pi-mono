@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ENV_AGENT_DIR } from "../src/config.js";
 import { bashTool, createBashTool } from "../src/core/tools/bash.js";
 import { editTool } from "../src/core/tools/edit.js";
 import { findTool } from "../src/core/tools/find.js";
@@ -260,11 +261,43 @@ describe("Coding Agent Tools", () => {
 	});
 
 	describe("bash tool", () => {
+		afterEach(() => {
+			vi.unstubAllEnvs();
+		});
+
 		it("should execute simple commands", async () => {
 			const result = await bashTool.execute("test-call-8", { command: "echo 'test output'" });
 
 			expect(getTextOutput(result)).toContain("test output");
 			expect(result.details).toBeUndefined();
+		});
+
+		it("should prepend shell init command when configured", async () => {
+			const agentDir = join(testDir, "agent");
+			mkdirSync(agentDir, { recursive: true });
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ shellInitCommand: "export TEST_VAR=testValue" }));
+
+			vi.stubEnv(ENV_AGENT_DIR, agentDir);
+
+			const bashWithInit = createBashTool(testDir);
+			const result = await bashWithInit.execute("test-call-shell-init", { command: "echo $TEST_VAR" });
+			expect(getTextOutput(result).trim()).toBe("testValue");
+		});
+
+		it("should include output from shell init and command", async () => {
+			const agentDir = join(testDir, "agent");
+			mkdirSync(agentDir, { recursive: true });
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ shellInitCommand: "echo init-ready" }));
+
+			vi.stubEnv(ENV_AGENT_DIR, agentDir);
+
+			const bashWithInit = createBashTool(testDir);
+			const result = await bashWithInit.execute("test-call-shell-init-output", { command: "echo command-ready" });
+			const output = getTextOutput(result).trim();
+
+			expect(output).toBe("init-ready\ncommand-ready");
 		});
 
 		it("should handle command errors", async () => {
