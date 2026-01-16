@@ -1314,7 +1314,7 @@ When done, summarize what was accomplished.
 			const processJsonlLine = (line: string) => {
 				if (!line.trim()) return;
 				// Write raw JSONL to file (complete, no truncation)
-				writeToFile(line + "\n");
+				writeToFile(`${line}\n`);
 				try {
 					const evt = JSON.parse(line);
 					// Capture final message content from message_end events
@@ -1422,7 +1422,7 @@ When done, summarize what was accomplished.
 			title: task.title,
 			agent: task.agent,
 			status: "failed",
-			output: output.finalize() + "\n\n--- QUALITY GATE FAILED ---\n" + (qualityResult.error || ""),
+			output: `${output.finalize()}\n\n--- QUALITY GATE FAILED ---\n${qualityResult.error || ""}`,
 			outputFile,
 			durationMs: Date.now() - startTime,
 			error: "Quality gate failed - tests or checks did not pass",
