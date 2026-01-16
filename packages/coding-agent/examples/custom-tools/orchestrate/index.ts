@@ -928,11 +928,7 @@ Analyze the failure and make the minimal fix needed. Do NOT introduce unrelated 
 					} catch {}
 				}
 				stdoutBuf += text;
-				for (
-					let idx = stdoutBuf.indexOf("\n");
-					idx !== -1;
-					idx = stdoutBuf.indexOf("\n")
-				) {
+				for (let idx = stdoutBuf.indexOf("\n"); idx !== -1; idx = stdoutBuf.indexOf("\n")) {
 					const line = stdoutBuf.slice(0, idx);
 					stdoutBuf = stdoutBuf.slice(idx + 1);
 					if (line.trim()) {
@@ -1086,11 +1082,7 @@ If issues found, fix them now.
 						} catch {}
 					}
 					stdoutBuf += text;
-					for (
-						let idx = stdoutBuf.indexOf("\n");
-						idx !== -1;
-						idx = stdoutBuf.indexOf("\n")
-					) {
+					for (let idx = stdoutBuf.indexOf("\n"); idx !== -1; idx = stdoutBuf.indexOf("\n")) {
 						const line = stdoutBuf.slice(0, idx);
 						stdoutBuf = stdoutBuf.slice(idx + 1);
 						if (line.trim()) {
@@ -1349,11 +1341,7 @@ When done, summarize what was accomplished.
 
 			proc.stdout.on("data", (chunk) => {
 				stdoutBuf += chunk.toString("utf-8");
-				for (
-					let idx = stdoutBuf.indexOf("\n");
-					idx !== -1;
-					idx = stdoutBuf.indexOf("\n")
-				) {
+				for (let idx = stdoutBuf.indexOf("\n"); idx !== -1; idx = stdoutBuf.indexOf("\n")) {
 					const line = stdoutBuf.slice(0, idx);
 					stdoutBuf = stdoutBuf.slice(idx + 1);
 					processJsonlLine(line);

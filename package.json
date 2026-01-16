@@ -4,15 +4,14 @@
 	"type": "module",
 	"workspaces": [
 		"packages/*",
-		"packages/web-ui/example",
-		"packages/coding-agent/examples/extensions/with-deps"
+		"packages/web-ui/example"
 	],
 	"scripts": {
 		"clean": "npm run clean --workspaces",
-		"build": "npm run build -w @mariozechner/pi-tui && npm run build -w @mariozechner/pi-ai && npm run build -w @mariozechner/pi-agent-core && npm run build -w @mariozechner/pi-coding-agent && npm run build -w @mariozechner/pi-mom && npm run build -w @mariozechner/pi-web-ui && npm run build -w @mariozechner/pi",
-		"dev": "concurrently --names \"ai,agent,coding-agent,mom,web-ui,tui\" --prefix-colors \"cyan,yellow,red,white,green,magenta\" \"npm run dev -w @mariozechner/pi-ai\" \"npm run dev -w @mariozechner/pi-agent-core\" \"npm run dev -w @mariozechner/pi-coding-agent\" \"npm run dev -w @mariozechner/pi-mom\" \"npm run dev -w @mariozechner/pi-web-ui\" \"npm run dev -w @mariozechner/pi-tui\"",
+		"build": "npm run build -w @mariozechner/pi-tui && npm run build -w @mariozechner/pi-ai && npm run build -w @mariozechner/pi-agent-core && npm run build -w @mariozechner/pi-coding-agent && npm run build -w @mariozechner/pi-mom && npm run build -w @mariozechner/pi-web-ui && npm run build -w @mariozechner/pi-proxy && npm run build -w @mariozechner/pi",
+		"dev": "concurrently --names \"ai,agent,coding-agent,mom,web-ui,tui,proxy\" --prefix-colors \"cyan,yellow,red,white,green,magenta,blue\" \"npm run dev -w @mariozechner/pi-ai\" \"npm run dev -w @mariozechner/pi-agent-core\" \"npm run dev -w @mariozechner/pi-coding-agent\" \"npm run dev -w @mariozechner/pi-mom\" \"npm run dev -w @mariozechner/pi-web-ui\" \"npm run dev -w @mariozechner/pi-tui\" \"npm run dev -w @mariozechner/pi-proxy\"",
 		"dev:tsc": "concurrently --names \"ai,web-ui\" --prefix-colors \"cyan,green\" \"npm run dev:tsc -w @mariozechner/pi-ai\" \"npm run dev:tsc -w @mariozechner/pi-web-ui\"",
-		"check": "biome check --write . && tsgo --noEmit && npm run check -w @mariozechner/pi-web-ui",
+		"check": "biome check --write . && npm run check --workspaces --if-present && tsgo --noEmit",
 		"test": "npm run test --workspaces --if-present",
 		"version:patch": "npm version patch -ws --no-git-tag-version && node scripts/sync-versions.js && rm -rf node_modules packages/*/node_modules package-lock.json && npm install",
 		"version:minor": "npm version minor -ws --no-git-tag-version && node scripts/sync-versions.js && rm -rf node_modules packages/*/node_modules package-lock.json && npm install",
@@ -21,14 +20,12 @@
 		"prepublishOnly": "npm run clean && npm run build && npm run check",
 		"publish": "npm run prepublishOnly && npm publish -ws --access public",
 		"publish:dry": "npm run prepublishOnly && npm publish -ws --access public --dry-run",
-		"release:patch": "node scripts/release.mjs patch",
-		"release:minor": "node scripts/release.mjs minor",
-		"release:major": "node scripts/release.mjs major",
 		"prepare": "husky"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.3.5",
 		"@types/node": "^22.10.5",
+		"@types/proper-lockfile": "^4.1.4",
 		"@typescript/native-preview": "7.0.0-dev.20251212.1",
 		"concurrently": "^9.2.1",
 		"husky": "^9.1.7",
@@ -41,7 +38,9 @@
 	"version": "0.0.3",
 	"dependencies": {
 		"@mariozechner/jiti": "^2.6.5",
-		"@mariozechner/pi-coding-agent": "^0.30.2",
-		"get-east-asian-width": "^1.4.0"
+		"@silvia-odwyer/photon-node": "^0.3.4",
+		"get-east-asian-width": "^1.4.0",
+		"proper-lockfile": "^4.1.2",
+		"yaml": "^2.8.2"
 	}
 }
