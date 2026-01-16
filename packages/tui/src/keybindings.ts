@@ -13,6 +13,8 @@ export type EditorAction =
 	| "cursorWordRight"
 	| "cursorLineStart"
 	| "cursorLineEnd"
+	| "pageUp"
+	| "pageDown"
 	// Deletion
 	| "deleteCharBackward"
 	| "deleteCharForward"
@@ -58,6 +60,8 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	cursorWordRight: ["alt+right", "ctrl+right"],
 	cursorLineStart: ["home", "ctrl+a"],
 	cursorLineEnd: ["end", "ctrl+e"],
+	pageUp: "pageUp",
+	pageDown: "pageDown",
 	// Deletion
 	deleteCharBackward: "backspace",
 	deleteCharForward: "delete",

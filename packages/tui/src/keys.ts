@@ -835,7 +835,7 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 			}
 			return matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.end, modifier);
 
-		case "pageUp":
+		case "pageup":
 			if (modifier === 0) {
 				return (
 					matchesLegacySequence(data, LEGACY_KEY_SEQUENCES.pageUp) ||
@@ -847,7 +847,7 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 			}
 			return matchesKittySequence(data, FUNCTIONAL_CODEPOINTS.pageUp, modifier);
 
-		case "pageDown":
+		case "pagedown":
 			if (modifier === 0) {
 				return (
 					matchesLegacySequence(data, LEGACY_KEY_SEQUENCES.pageDown) ||

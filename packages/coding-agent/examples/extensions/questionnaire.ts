@@ -119,7 +119,7 @@ export default function questionnaire(pi: ExtensionAPI) {
 						noMatch: (t) => theme.fg("warning", t),
 					},
 				};
-				const editor = new Editor(editorTheme);
+				const editor = new Editor(tui, editorTheme);
 
 				// Helpers
 				function refresh() {

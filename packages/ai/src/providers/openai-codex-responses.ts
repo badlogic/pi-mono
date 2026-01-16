@@ -30,6 +30,8 @@ import { transformMessages } from "./transform-messages.js";
 
 const CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";
 const JWT_CLAIM_PATH = "https://api.openai.com/auth" as const;
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1000;
 
 // ============================================================================
 // Types
@@ -56,6 +58,31 @@ interface RequestBody {
 	include?: string[];
 	prompt_cache_key?: string;
 	[key: string]: unknown;
+}
+
+// ============================================================================
+// Retry Helpers
+// ============================================================================
+
+function isRetryableError(status: number, errorText: string): boolean {
+	if (status === 429 || status === 500 || status === 502 || status === 503 || status === 504) {
+		return true;
+	}
+	return /rate.?limit|overloaded|service.?unavailable|upstream.?connect|connection.?refused/i.test(errorText);
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new Error("Request was aborted"));
+			return;
+		}
+		const timeout = setTimeout(resolve, ms);
+		signal?.addEventListener("abort", () => {
+			clearTimeout(timeout);
+			reject(new Error("Request was aborted"));
+		});
+	});
 }
 
 // ============================================================================
@@ -97,17 +124,62 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 			const accountId = extractAccountId(apiKey);
 			const body = buildRequestBody(model, context, options);
 			const headers = buildHeaders(model.headers, accountId, apiKey, options?.sessionId);
+			const bodyJson = JSON.stringify(body);
 
-			const response = await fetch(CODEX_URL, {
-				method: "POST",
-				headers,
-				body: JSON.stringify(body),
-				signal: options?.signal,
-			});
+			// Fetch with retry logic for rate limits and transient errors
+			let response: Response | undefined;
+			let lastError: Error | undefined;
 
-			if (!response.ok) {
-				const info = await parseErrorResponse(response);
-				throw new Error(info.friendlyMessage || info.message);
+			for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+				if (options?.signal?.aborted) {
+					throw new Error("Request was aborted");
+				}
+
+				try {
+					response = await fetch(CODEX_URL, {
+						method: "POST",
+						headers,
+						body: bodyJson,
+						signal: options?.signal,
+					});
+
+					if (response.ok) {
+						break;
+					}
+
+					const errorText = await response.text();
+					if (attempt < MAX_RETRIES && isRetryableError(response.status, errorText)) {
+						const delayMs = BASE_DELAY_MS * 2 ** attempt;
+						await sleep(delayMs, options?.signal);
+						continue;
+					}
+
+					// Parse error for friendly message on final attempt or non-retryable error
+					const fakeResponse = new Response(errorText, {
+						status: response.status,
+						statusText: response.statusText,
+					});
+					const info = await parseErrorResponse(fakeResponse);
+					throw new Error(info.friendlyMessage || info.message);
+				} catch (error) {
+					if (error instanceof Error) {
+						if (error.name === "AbortError" || error.message === "Request was aborted") {
+							throw new Error("Request was aborted");
+						}
+					}
+					lastError = error instanceof Error ? error : new Error(String(error));
+					// Network errors are retryable
+					if (attempt < MAX_RETRIES && !lastError.message.includes("usage limit")) {
+						const delayMs = BASE_DELAY_MS * 2 ** attempt;
+						await sleep(delayMs, options?.signal);
+						continue;
+					}
+					throw lastError;
+				}
+			}
+
+			if (!response?.ok) {
+				throw lastError ?? new Error("Failed after retries");
 			}
 
 			if (!response.body) {

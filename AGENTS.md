@@ -27,6 +27,10 @@ read README.md, then ask which module(s) to work on. Based on the answer, read t
 ## GitHub Issues
 When reading issues:
 - Always read all comments on the issue
+- Use this command to get everything in one call:
+  ```bash
+  gh issue view <number> --json title,body,comments,labels,state
+  ```
 
 When creating issues:
 - Add `pkg:*` labels to indicate which package(s) the issue affects
@@ -45,7 +49,7 @@ When closing issues via commit:
 ## Tools
 - GitHub CLI for issues/PRs
 - Add package labels to issues/PRs: pkg:agent, pkg:ai, pkg:coding-agent, pkg:mom, pkg:pods, pkg:tui, pkg:web-ui
-- TUI interaction: use tmux
+- See pi-tmux-test skill if you need to test pi interactive mode
 
 ## Style
 - Keep answers short and concise
@@ -138,3 +142,43 @@ The script handles: version bump, CHANGELOG finalization, commit, tag, publish, 
 ## **CRITICAL** Tool Usage Rules **CRITICAL**
 - NEVER use sed/cat to read a file or a range of a file. Always use the read tool (use offset + limit for ranged reads).
 - You MUST read every file you modify in full before editing.
+
+## **CRITICAL** Git Rules for Parallel Agents **CRITICAL**
+
+Multiple agents may work on different files in the same worktree simultaneously. You MUST follow these rules:
+
+### Committing
+- **ONLY commit files YOU changed in THIS session**
+- NEVER use `git add -A` or `git add .` - these sweep up changes from other agents
+- ALWAYS use `git add <specific-file-paths>` listing only files you modified
+- Before committing, run `git status` and verify you are only staging YOUR files
+- Track which files you created/modified/deleted during the session
+
+### Forbidden Git Operations
+These commands can destroy other agents' work:
+- `git reset --hard` - destroys uncommitted changes
+- `git checkout .` - destroys uncommitted changes
+- `git clean -fd` - deletes untracked files
+- `git stash` - stashes ALL changes including other agents' work
+- `git add -A` / `git add .` - stages other agents' uncommitted work
+
+### Safe Workflow
+```bash
+# 1. Check status first
+git status
+
+# 2. Add ONLY your specific files
+git add packages/ai/src/providers/transform-messages.ts
+git add packages/ai/CHANGELOG.md
+
+# 3. Commit
+git commit -m "fix(ai): description"
+
+# 4. Push (pull --rebase if needed, but NEVER reset/checkout)
+git pull --rebase && git push
+```
+
+### If Rebase Conflicts Occur
+- Resolve conflicts in YOUR files only
+- If conflict is in a file you didn't modify, abort and ask the user
+- NEVER force push

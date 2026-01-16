@@ -715,14 +715,14 @@ if (result.cancelled) {
 }
 ```
 
-### ctx.branch(entryId)
+### ctx.fork(entryId)
 
-Branch from a specific entry:
+Fork from a specific entry, creating a new session file:
 
 ```typescript
-const result = await ctx.branch("entry-id-123");
+const result = await ctx.fork("entry-id-123");
 if (!result.cancelled) {
-  // Now in the branched session
+  // Now in the forked session
 }
 ```
 
@@ -733,8 +733,17 @@ Navigate to a different point in the session tree:
 ```typescript
 const result = await ctx.navigateTree("entry-id-456", {
   summarize: true,
+  customInstructions: "Focus on error handling changes",
+  replaceInstructions: false, // true = replace default prompt entirely
+  label: "review-checkpoint",
 });
 ```
+
+Options:
+- `summarize`: Whether to generate a summary of the abandoned branch
+- `customInstructions`: Custom instructions for the summarizer
+- `replaceInstructions`: If true, `customInstructions` replaces the default prompt instead of being appended
+- `label`: Label to attach to the branch summary entry (or target entry if not summarizing)
 
 ## ExtensionAPI Methods
 
@@ -879,6 +888,25 @@ pi.registerCommand("stats", {
     const count = ctx.sessionManager.getEntries().length;
     ctx.ui.notify(`${count} entries`, "info");
   }
+});
+```
+
+Optional: add argument auto-completion for `/command ...`:
+
+```typescript
+import type { AutocompleteItem } from "@mariozechner/pi-tui";
+
+pi.registerCommand("deploy", {
+  description: "Deploy to an environment",
+  getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
+    const envs = ["dev", "staging", "prod"];
+    const items = envs.map((e) => ({ value: e, label: e }));
+    const filtered = items.filter((i) => i.value.startsWith(prefix));
+    return filtered.length > 0 ? filtered : null;
+  },
+  handler: async (args, ctx) => {
+    ctx.ui.notify(`Deploying: ${args}`, "info");
+  },
 });
 ```
 

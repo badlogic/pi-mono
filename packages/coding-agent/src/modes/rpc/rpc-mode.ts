@@ -311,7 +311,12 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					return { cancelled: result.cancelled };
 				},
 				navigateTree: async (targetId, options) => {
-					const result = await session.navigateTree(targetId, { summarize: options?.summarize });
+					const result = await session.navigateTree(targetId, {
+						summarize: options?.summarize,
+						customInstructions: options?.customInstructions,
+						replaceInstructions: options?.replaceInstructions,
+						label: options?.label,
+					});
 					return { cancelled: result.cancelled };
 				},
 			},

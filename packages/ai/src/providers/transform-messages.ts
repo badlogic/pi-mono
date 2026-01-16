@@ -118,6 +118,14 @@ export function transformMessages<TApi extends Api>(messages: Message[], model: 
 				existingToolResultIds = new Set();
 			}
 
+			// Skip empty assistant messages (no content and no tool calls)
+			// This handles error responses (e.g., 429/500) that produced no content
+			// All providers already filter these in convertMessages, but we do it here
+			// centrally to prevent issues with the tool_use -> tool_result chain
+			if (assistantMsg.content.length === 0 && toolCalls.length === 0) {
+				continue;
+			}
+
 			result.push(msg);
 		} else if (msg.role === "toolResult") {
 			existingToolResultIds.add(msg.toolCallId);

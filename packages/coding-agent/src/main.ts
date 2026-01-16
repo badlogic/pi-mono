@@ -9,6 +9,7 @@ import { type ImageContent, modelsAreEqual, supportsXhigh } from "@mariozechner/
 import chalk from "chalk";
 import { existsSync } from "fs";
 import { join } from "path";
+import { createInterface } from "readline";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
@@ -29,6 +30,29 @@ import { allTools } from "./core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
+
+/**
+ * Read all content from piped stdin.
+ * Returns undefined if stdin is a TTY (interactive terminal).
+ */
+async function readPipedStdin(): Promise<string | undefined> {
+	// If stdin is a TTY, we're running interactively - don't read stdin
+	if (process.stdin.isTTY) {
+		return undefined;
+	}
+
+	return new Promise((resolve) => {
+		let data = "";
+		process.stdin.setEncoding("utf8");
+		process.stdin.on("data", (chunk) => {
+			data += chunk;
+		});
+		process.stdin.on("end", () => {
+			resolve(data.trim() || undefined);
+		});
+		process.stdin.resume();
+	});
+}
 
 async function prepareInitialMessage(
 	parsed: Args,
@@ -57,26 +81,56 @@ async function prepareInitialMessage(
 	};
 }
 
+/** Result from resolving a session argument */
+type ResolvedSession =
+	| { type: "path"; path: string } // Direct file path
+	| { type: "local"; path: string } // Found in current project
+	| { type: "global"; path: string; cwd: string } // Found in different project
+	| { type: "not_found"; arg: string }; // Not found anywhere
+
 /**
  * Resolve a session argument to a file path.
  * If it looks like a path, use as-is. Otherwise try to match as session ID prefix.
  */
-async function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: string): Promise<string> {
+async function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: string): Promise<ResolvedSession> {
 	// If it looks like a file path, use as-is
 	if (sessionArg.includes("/") || sessionArg.includes("\\") || sessionArg.endsWith(".jsonl")) {
-		return sessionArg;
+		return { type: "path", path: sessionArg };
 	}
 
-	// Try to match as session ID (full or partial UUID)
-	const sessions = await SessionManager.list(cwd, sessionDir);
-	const matches = sessions.filter((s) => s.id.startsWith(sessionArg));
+	// Try to match as session ID in current project first
+	const localSessions = await SessionManager.list(cwd, sessionDir);
+	const localMatches = localSessions.filter((s) => s.id.startsWith(sessionArg));
 
-	if (matches.length >= 1) {
-		return matches[0].path; // Already sorted by modified time (most recent first)
+	if (localMatches.length >= 1) {
+		return { type: "local", path: localMatches[0].path };
 	}
 
-	// No match - return original (will create new session)
-	return sessionArg;
+	// Try global search across all projects
+	const allSessions = await SessionManager.listAll();
+	const globalMatches = allSessions.filter((s) => s.id.startsWith(sessionArg));
+
+	if (globalMatches.length >= 1) {
+		const match = globalMatches[0];
+		return { type: "global", path: match.path, cwd: match.cwd };
+	}
+
+	// Not found anywhere
+	return { type: "not_found", arg: sessionArg };
+}
+
+/** Prompt user for yes/no confirmation */
+async function promptConfirm(message: string): Promise<boolean> {
+	return new Promise((resolve) => {
+		const rl = createInterface({
+			input: process.stdin,
+			output: process.stdout,
+		});
+		rl.question(`${message} [y/N] `, (answer) => {
+			rl.close();
+			resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
+		});
+	});
 }
 
 async function createSessionManager(parsed: Args, cwd: string): Promise<SessionManager | undefined> {
@@ -84,8 +138,28 @@ async function createSessionManager(parsed: Args, cwd: string): Promise<SessionM
 		return SessionManager.inMemory();
 	}
 	if (parsed.session) {
-		const resolvedPath = await resolveSessionPath(parsed.session, cwd, parsed.sessionDir);
-		return SessionManager.open(resolvedPath, parsed.sessionDir);
+		const resolved = await resolveSessionPath(parsed.session, cwd, parsed.sessionDir);
+
+		switch (resolved.type) {
+			case "path":
+			case "local":
+				return SessionManager.open(resolved.path, parsed.sessionDir);
+
+			case "global": {
+				// Session found in different project - ask user if they want to fork
+				console.log(chalk.yellow(`Session found in different project: ${resolved.cwd}`));
+				const shouldFork = await promptConfirm("Fork this session into current directory?");
+				if (!shouldFork) {
+					console.log(chalk.dim("Aborted."));
+					process.exit(0);
+				}
+				return SessionManager.forkFrom(resolved.path, cwd, parsed.sessionDir);
+			}
+
+			case "not_found":
+				console.error(chalk.red(`No session found matching '${resolved.arg}'`));
+				process.exit(1);
+		}
 	}
 	if (parsed.continue) {
 		return SessionManager.continueRecent(cwd, parsed.sessionDir);
@@ -230,7 +304,7 @@ function buildSessionOptions(
 	}
 
 	// Pre-loaded extensions (from early CLI flag discovery)
-	if (extensionsResult && extensionsResult.extensions.length > 0) {
+	if (extensionsResult) {
 		options.preloadedExtensions = extensionsResult;
 	}
 
@@ -308,6 +382,18 @@ export async function main(args: string[]) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
 		await listModels(modelRegistry, searchPattern);
 		return;
+	}
+
+	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
+	if (parsed.mode !== "rpc") {
+		const stdinContent = await readPipedStdin();
+		if (stdinContent !== undefined) {
+			// Force print mode since interactive mode requires a TTY for keyboard input
+			parsed.print = true;
+			// Prepend stdin content to messages
+			parsed.messages.unshift(stdinContent);
+		}
+		time("readPipedStdin");
 	}
 
 	if (parsed.export) {
@@ -417,7 +503,7 @@ export async function main(args: string[]) {
 	if (mode === "rpc") {
 		await runRpcMode(session);
 	} else if (isInteractive) {
-		if (scopedModels.length > 0) {
+		if (scopedModels.length > 0 && !settingsManager.getQuietStartup()) {
 			const modelList = scopedModels
 				.map((sm) => {
 					const thinkingStr = sm.thinkingLevel ? `:${sm.thinkingLevel}` : "";

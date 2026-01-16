@@ -1,4 +1,4 @@
-import photon from "@silvia-odwyer/photon-node";
+import { getPhoton } from "./photon.js";
 
 /**
  * Convert image to PNG format for terminal display.
@@ -11,6 +11,12 @@ export async function convertToPng(
 	// Already PNG, no conversion needed
 	if (mimeType === "image/png") {
 		return { data: base64Data, mimeType };
+	}
+
+	const photon = getPhoton();
+	if (!photon) {
+		// Photon not available, can't convert
+		return null;
 	}
 
 	try {

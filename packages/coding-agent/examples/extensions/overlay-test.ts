@@ -9,7 +9,7 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
-import { matchesKey, visibleWidth } from "@mariozechner/pi-tui";
+import { CURSOR_MARKER, type Focusable, matchesKey, visibleWidth } from "@mariozechner/pi-tui";
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("overlay-test", {
@@ -28,8 +28,11 @@ export default function (pi: ExtensionAPI) {
 	});
 }
 
-class OverlayTestComponent {
+class OverlayTestComponent implements Focusable {
 	readonly width = 70;
+
+	/** Focusable interface - set by TUI when focus changes */
+	focused = false;
 
 	private selected = 0;
 	private items = [
@@ -123,7 +126,9 @@ class OverlayTestComponent {
 					const before = inputDisplay.slice(0, item.cursor);
 					const cursorChar = item.cursor < inputDisplay.length ? inputDisplay[item.cursor] : " ";
 					const after = inputDisplay.slice(item.cursor + 1);
-					inputDisplay = `${before}\x1b[7m${cursorChar}\x1b[27m${after}`;
+					// Emit hardware cursor marker for IME support when focused
+					const marker = this.focused ? CURSOR_MARKER : "";
+					inputDisplay = `${before}${marker}\x1b[7m${cursorChar}\x1b[27m${after}`;
 				}
 				content = `${prefix + label} ${inputDisplay}`;
 			} else {

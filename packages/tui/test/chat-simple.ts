@@ -24,7 +24,7 @@ tui.addChild(
 );
 
 // Create editor with autocomplete
-const editor = new Editor(defaultEditorTheme);
+const editor = new Editor(tui, defaultEditorTheme);
 
 // Set up autocomplete provider with slash commands and file completion
 const autocompleteProvider = new CombinedAutocompleteProvider(

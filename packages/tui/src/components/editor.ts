@@ -1,7 +1,7 @@
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
 import { getEditorKeybindings } from "../keybindings.js";
 import { matchesKey } from "../keys.js";
-import type { Component } from "../tui.js";
+import { type Component, CURSOR_MARKER, type Focusable, type TUI } from "../tui.js";
 import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
 import { SelectList, type SelectListTheme } from "./select-list.js";
 
@@ -187,6 +187,44 @@ function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
 	return chunks.length > 0 ? chunks : [{ text: "", startIndex: 0, endIndex: 0 }];
 }
 
+// Kitty CSI-u sequences for printable keys, including optional shifted/base codepoints.
+const KITTY_CSI_U_REGEX = /^\x1b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$/;
+const KITTY_MOD_SHIFT = 1;
+const KITTY_MOD_ALT = 2;
+const KITTY_MOD_CTRL = 4;
+
+// Decode a printable CSI-u sequence, preferring the shifted key when present.
+function decodeKittyPrintable(data: string): string | undefined {
+	const match = data.match(KITTY_CSI_U_REGEX);
+	if (!match) return undefined;
+
+	// CSI-u groups: <codepoint>[:<shifted>[:<base>]];<mod>u
+	const codepoint = Number.parseInt(match[1] ?? "", 10);
+	if (!Number.isFinite(codepoint)) return undefined;
+
+	const shiftedKey = match[2] && match[2].length > 0 ? Number.parseInt(match[2], 10) : undefined;
+	const modValue = match[4] ? Number.parseInt(match[4], 10) : 1;
+	// Modifiers are 1-indexed in CSI-u; normalize to our bitmask.
+	const modifier = Number.isFinite(modValue) ? modValue - 1 : 0;
+
+	// Ignore CSI-u sequences used for Alt/Ctrl shortcuts.
+	if (modifier & (KITTY_MOD_ALT | KITTY_MOD_CTRL)) return undefined;
+
+	// Prefer the shifted keycode when Shift is held.
+	let effectiveCodepoint = codepoint;
+	if (modifier & KITTY_MOD_SHIFT && typeof shiftedKey === "number") {
+		effectiveCodepoint = shiftedKey;
+	}
+	// Drop control characters or invalid codepoints.
+	if (!Number.isFinite(effectiveCodepoint) || effectiveCodepoint < 32) return undefined;
+
+	try {
+		return String.fromCodePoint(effectiveCodepoint);
+	} catch {
+		return undefined;
+	}
+}
+
 interface EditorState {
 	lines: string[];
 	cursorLine: number;
@@ -204,17 +242,29 @@ export interface EditorTheme {
 	selectList: SelectListTheme;
 }
 
-export class Editor implements Component {
+export interface EditorOptions {
+	paddingX?: number;
+}
+
+export class Editor implements Component, Focusable {
 	private state: EditorState = {
 		lines: [""],
 		cursorLine: 0,
 		cursorCol: 0,
 	};
 
+	/** Focusable interface - set by TUI when focus changes */
+	focused: boolean = false;
+
+	protected tui: TUI;
 	private theme: EditorTheme;
+	private paddingX: number = 0;
 
 	// Store last render width for cursor navigation
 	private lastWidth: number = 80;
+
+	// Vertical scrolling support
+	private scrollOffset: number = 0;
 
 	// Border color (can be changed dynamically)
 	public borderColor: (str: string) => string;
@@ -242,9 +292,24 @@ export class Editor implements Component {
 	public onChange?: (text: string) => void;
 	public disableSubmit: boolean = false;
 
-	constructor(theme: EditorTheme) {
+	constructor(tui: TUI, theme: EditorTheme, options: EditorOptions = {}) {
+		this.tui = tui;
 		this.theme = theme;
 		this.borderColor = theme.borderColor;
+		const paddingX = options.paddingX ?? 0;
+		this.paddingX = Number.isFinite(paddingX) ? Math.max(0, Math.floor(paddingX)) : 0;
+	}
+
+	getPaddingX(): number {
+		return this.paddingX;
+	}
+
+	setPaddingX(padding: number): void {
+		const newPadding = Number.isFinite(padding) ? Math.max(0, Math.floor(padding)) : 0;
+		if (this.paddingX !== newPadding) {
+			this.paddingX = newPadding;
+			this.tui.requestRender();
+		}
 	}
 
 	setAutocompleteProvider(provider: AutocompleteProvider): void {
@@ -305,6 +370,8 @@ export class Editor implements Component {
 		this.state.lines = lines.length === 0 ? [""] : lines;
 		this.state.cursorLine = this.state.lines.length - 1;
 		this.state.cursorCol = this.state.lines[this.state.cursorLine]?.length || 0;
+		// Reset scroll - render() will adjust to show cursor
+		this.scrollOffset = 0;
 
 		if (this.onChange) {
 			this.onChange(this.getText());
@@ -316,21 +383,58 @@ export class Editor implements Component {
 	}
 
 	render(width: number): string[] {
+		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
+		const paddingX = Math.min(this.paddingX, maxPadding);
+		const contentWidth = Math.max(1, width - paddingX * 2);
+
 		// Store width for cursor navigation
-		this.lastWidth = width;
+		this.lastWidth = contentWidth;
 
 		const horizontal = this.borderColor("─");
 
-		// Layout the text - use full width
-		const layoutLines = this.layoutText(width);
+		// Layout the text - use content width
+		const layoutLines = this.layoutText(contentWidth);
+
+		// Calculate max visible lines: 30% of terminal height, minimum 5 lines
+		const terminalRows = this.tui.terminal.rows;
+		const maxVisibleLines = Math.max(5, Math.floor(terminalRows * 0.3));
+
+		// Find the cursor line index in layoutLines
+		let cursorLineIndex = layoutLines.findIndex((line) => line.hasCursor);
+		if (cursorLineIndex === -1) cursorLineIndex = 0;
+
+		// Adjust scroll offset to keep cursor visible
+		if (cursorLineIndex < this.scrollOffset) {
+			this.scrollOffset = cursorLineIndex;
+		} else if (cursorLineIndex >= this.scrollOffset + maxVisibleLines) {
+			this.scrollOffset = cursorLineIndex - maxVisibleLines + 1;
+		}
+
+		// Clamp scroll offset to valid range
+		const maxScrollOffset = Math.max(0, layoutLines.length - maxVisibleLines);
+		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxScrollOffset));
+
+		// Get visible lines slice
+		const visibleLines = layoutLines.slice(this.scrollOffset, this.scrollOffset + maxVisibleLines);
 
 		const result: string[] = [];
+		const leftPadding = " ".repeat(paddingX);
+		const rightPadding = leftPadding;
 
-		// Render top border
-		result.push(horizontal.repeat(width));
+		// Render top border (with scroll indicator if scrolled down)
+		if (this.scrollOffset > 0) {
+			const indicator = `─── ↑ ${this.scrollOffset} more `;
+			const remaining = width - visibleWidth(indicator);
+			result.push(this.borderColor(indicator + "─".repeat(Math.max(0, remaining))));
+		} else {
+			result.push(horizontal.repeat(width));
+		}
 
-		// Render each layout line
-		for (const layoutLine of layoutLines) {
+		// Render each visible layout line
+		// Emit hardware cursor marker only when focused and not showing autocomplete
+		const emitCursorMarker = this.focused && !this.isAutocompleting;
+
+		for (const layoutLine of visibleLines) {
 			let displayText = layoutLine.text;
 			let lineVisibleWidth = visibleWidth(layoutLine.text);
 
@@ -339,6 +443,9 @@ export class Editor implements Component {
 				const before = displayText.slice(0, layoutLine.cursorPos);
 				const after = displayText.slice(layoutLine.cursorPos);
 
+				// Hardware cursor marker (zero-width, emitted before fake cursor for IME positioning)
+				const marker = emitCursorMarker ? CURSOR_MARKER : "";
+
 				if (after.length > 0) {
 					// Cursor is on a character (grapheme) - replace it with highlighted version
 					// Get the first grapheme from 'after'
@@ -346,14 +453,14 @@ export class Editor implements Component {
 					const firstGrapheme = afterGraphemes[0]?.segment || "";
 					const restAfter = after.slice(firstGrapheme.length);
 					const cursor = `\x1b[7m${firstGrapheme}\x1b[0m`;
-					displayText = before + cursor + restAfter;
+					displayText = before + marker + cursor + restAfter;
 					// lineVisibleWidth stays the same - we're replacing, not adding
 				} else {
 					// Cursor is at the end - check if we have room for the space
-					if (lineVisibleWidth < width) {
+					if (lineVisibleWidth < contentWidth) {
 						// We have room - add highlighted space
 						const cursor = "\x1b[7m \x1b[0m";
-						displayText = before + cursor;
+						displayText = before + marker + cursor;
 						// lineVisibleWidth increases by 1 - we're adding a space
 						lineVisibleWidth = lineVisibleWidth + 1;
 					} else {
@@ -368,7 +475,7 @@ export class Editor implements Component {
 								.slice(0, -1)
 								.map((g) => g.segment)
 								.join("");
-							displayText = beforeWithoutLast + cursor;
+							displayText = beforeWithoutLast + marker + cursor;
 						}
 						// lineVisibleWidth stays the same
 					}
@@ -376,19 +483,30 @@ export class Editor implements Component {
 			}
 
 			// Calculate padding based on actual visible width
-			const padding = " ".repeat(Math.max(0, width - lineVisibleWidth));
+			const padding = " ".repeat(Math.max(0, contentWidth - lineVisibleWidth));
 
 			// Render the line (no side borders, just horizontal lines above and below)
-			result.push(displayText + padding);
+			result.push(`${leftPadding}${displayText}${padding}${rightPadding}`);
 		}
 
-		// Render bottom border
-		result.push(horizontal.repeat(width));
+		// Render bottom border (with scroll indicator if more content below)
+		const linesBelow = layoutLines.length - (this.scrollOffset + visibleLines.length);
+		if (linesBelow > 0) {
+			const indicator = `─── ↓ ${linesBelow} more `;
+			const remaining = width - visibleWidth(indicator);
+			result.push(this.borderColor(indicator + "─".repeat(Math.max(0, remaining))));
+		} else {
+			result.push(horizontal.repeat(width));
+		}
 
 		// Add autocomplete list if active
 		if (this.isAutocompleting && this.autocompleteList) {
-			const autocompleteResult = this.autocompleteList.render(width);
-			result.push(...autocompleteResult);
+			const autocompleteResult = this.autocompleteList.render(contentWidth);
+			for (const line of autocompleteResult) {
+				const lineWidth = visibleWidth(line);
+				const linePadding = " ".repeat(Math.max(0, contentWidth - lineWidth));
+				result.push(`${leftPadding}${line}${linePadding}${rightPadding}`);
+			}
 		}
 
 		return result;
@@ -574,6 +692,7 @@ export class Editor implements Component {
 			this.pastes.clear();
 			this.pasteCounter = 0;
 			this.historyIndex = -1;
+			this.scrollOffset = 0;
 
 			if (this.onChange) this.onChange("");
 			if (this.onSubmit) this.onSubmit(result);
@@ -608,9 +727,25 @@ export class Editor implements Component {
 			return;
 		}
 
+		// Page up/down - scroll by page and move cursor
+		if (kb.matches(data, "pageUp")) {
+			this.pageScroll(-1);
+			return;
+		}
+		if (kb.matches(data, "pageDown")) {
+			this.pageScroll(1);
+			return;
+		}
+
 		// Shift+Space - insert regular space
 		if (matchesKey(data, "shift+space")) {
 			this.insertCharacter(" ");
+			return;
+		}
+
+		const kittyPrintable = decodeKittyPrintable(data);
+		if (kittyPrintable !== undefined) {
+			this.insertCharacter(kittyPrintable);
 			return;
 		}
 
@@ -1212,6 +1347,36 @@ export class Editor implements Component {
 					this.state.cursorCol = prevLine.length;
 				}
 			}
+		}
+	}
+
+	/**
+	 * Scroll by a page (direction: -1 for up, 1 for down).
+	 * Moves cursor by the page size while keeping it in bounds.
+	 */
+	private pageScroll(direction: -1 | 1): void {
+		const width = this.lastWidth;
+		const terminalRows = this.tui.terminal.rows;
+		const pageSize = Math.max(5, Math.floor(terminalRows * 0.3));
+
+		// Build visual line map
+		const visualLines = this.buildVisualLineMap(width);
+		const currentVisualLine = this.findCurrentVisualLine(visualLines);
+
+		// Calculate target visual line
+		const targetVisualLine = Math.max(0, Math.min(visualLines.length - 1, currentVisualLine + direction * pageSize));
+
+		// Move cursor to target visual line
+		const targetVL = visualLines[targetVisualLine];
+		if (targetVL) {
+			// Preserve column position within the line
+			const currentVL = visualLines[currentVisualLine];
+			const visualCol = currentVL ? this.state.cursorCol - currentVL.startCol : 0;
+
+			this.state.cursorLine = targetVL.logicalLine;
+			const targetCol = targetVL.startCol + Math.min(visualCol, targetVL.length);
+			const logicalLine = this.state.lines[targetVL.logicalLine] || "";
+			this.state.cursorCol = Math.min(targetCol, logicalLine.length);
 		}
 	}
 

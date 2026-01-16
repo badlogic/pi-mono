@@ -62,7 +62,13 @@ import type { BashOperations } from "./tools/bash.js";
 export type AgentSessionEvent =
 	| AgentEvent
 	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
-	| { type: "auto_compaction_end"; result: CompactionResult | undefined; aborted: boolean; willRetry: boolean }
+	| {
+			type: "auto_compaction_end";
+			result: CompactionResult | undefined;
+			aborted: boolean;
+			willRetry: boolean;
+			errorMessage?: string;
+	  }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
 
@@ -1544,13 +1550,17 @@ export class AgentSession {
 				}, 100);
 			}
 		} catch (error) {
-			this._emit({ type: "auto_compaction_end", result: undefined, aborted: false, willRetry: false });
-
-			if (reason === "overflow") {
-				throw new Error(
-					`Context overflow: ${error instanceof Error ? error.message : "compaction failed"}. Your input may be too large for the context window.`,
-				);
-			}
+			const errorMessage = error instanceof Error ? error.message : "compaction failed";
+			this._emit({
+				type: "auto_compaction_end",
+				result: undefined,
+				aborted: false,
+				willRetry: false,
+				errorMessage:
+					reason === "overflow"
+						? `Context overflow recovery failed: ${errorMessage}`
+						: `Auto-compaction failed: ${errorMessage}`,
+			});
 		} finally {
 			this._autoCompactionAbortController = undefined;
 		}
@@ -1584,8 +1594,8 @@ export class AgentSession {
 		if (isContextOverflow(message, contextWindow)) return false;
 
 		const err = message.errorMessage;
-		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection error, other side closed, fetch failed
-		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server error|internal error|connection.?error|other side closed|fetch failed/i.test(
+		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection errors, fetch failed
+		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server error|internal error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers/i.test(
 			err,
 		);
 	}
@@ -1740,13 +1750,17 @@ export class AgentSession {
 	): Promise<BashResult> {
 		this._bashAbortController = new AbortController();
 
+		// Apply command prefix if configured (e.g., "shopt -s expand_aliases" for alias support)
+		const prefix = this.settingsManager.getShellCommandPrefix();
+		const resolvedCommand = prefix ? `${prefix}\n${command}` : command;
+
 		try {
 			const result = options?.operations
-				? await executeBashWithOperations(command, process.cwd(), options.operations, {
+				? await executeBashWithOperations(resolvedCommand, process.cwd(), options.operations, {
 						onChunk,
 						signal: this._bashAbortController.signal,
 					})
-				: await executeBashCommand(command, {
+				: await executeBashCommand(resolvedCommand, {
 						onChunk,
 						signal: this._bashAbortController.signal,
 					});
@@ -1972,11 +1986,13 @@ export class AgentSession {
 	 * @param targetId The entry ID to navigate to
 	 * @param options.summarize Whether user wants to summarize abandoned branch
 	 * @param options.customInstructions Custom instructions for summarizer
+	 * @param options.replaceInstructions If true, customInstructions replaces the default prompt
+	 * @param options.label Label to attach to the branch summary entry
 	 * @returns Result with editorText (if user message) and cancelled status
 	 */
 	async navigateTree(
 		targetId: string,
-		options: { summarize?: boolean; customInstructions?: string } = {},
+		options: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string } = {},
 	): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: BranchSummaryEntry }> {
 		const oldLeafId = this.sessionManager.getLeafId();
 
@@ -2002,13 +2018,20 @@ export class AgentSession {
 			targetId,
 		);
 
-		// Prepare event data
+		// Prepare event data - mutable so extensions can override
+		let customInstructions = options.customInstructions;
+		let replaceInstructions = options.replaceInstructions;
+		let label = options.label;
+
 		const preparation: TreePreparation = {
 			targetId,
 			oldLeafId,
 			commonAncestorId,
 			entriesToSummarize,
 			userWantsSummary: options.summarize ?? false,
+			customInstructions,
+			replaceInstructions,
+			label,
 		};
 
 		// Set up abort controller for summarization
@@ -2032,6 +2055,17 @@ export class AgentSession {
 				extensionSummary = result.summary;
 				fromExtension = true;
 			}
+
+			// Allow extensions to override instructions and label
+			if (result?.customInstructions !== undefined) {
+				customInstructions = result.customInstructions;
+			}
+			if (result?.replaceInstructions !== undefined) {
+				replaceInstructions = result.replaceInstructions;
+			}
+			if (result?.label !== undefined) {
+				label = result.label;
+			}
 		}
 
 		// Run default summarizer if needed
@@ -2048,7 +2082,8 @@ export class AgentSession {
 				model,
 				apiKey,
 				signal: this._branchSummaryAbortController.signal,
-				customInstructions: options.customInstructions,
+				customInstructions,
+				replaceInstructions,
 				reserveTokens: branchSummarySettings.reserveTokens,
 			});
 			this._branchSummaryAbortController = undefined;
@@ -2098,12 +2133,22 @@ export class AgentSession {
 			// Create summary at target position (can be null for root)
 			const summaryId = this.sessionManager.branchWithSummary(newLeafId, summaryText, summaryDetails, fromExtension);
 			summaryEntry = this.sessionManager.getEntry(summaryId) as BranchSummaryEntry;
+
+			// Attach label to the summary entry
+			if (label) {
+				this.sessionManager.appendLabelChange(summaryId, label);
+			}
 		} else if (newLeafId === null) {
 			// No summary, navigating to root - reset leaf
 			this.sessionManager.resetLeaf();
 		} else {
 			// No summary, navigating to non-root
 			this.sessionManager.branch(newLeafId);
+		}
+
+		// Attach label to target entry when not summarizing (no summary entry to label)
+		if (label && !summaryText) {
+			this.sessionManager.appendLabelChange(targetId, label);
 		}
 
 		// Update agent state

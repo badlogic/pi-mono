@@ -299,6 +299,31 @@ describe("Coding Agent Tools", () => {
 
 			await expect(bashWithBadShell.execute("test-call-12", { command: "echo test" })).rejects.toThrow(/ENOENT/);
 		});
+
+		it("should prepend command prefix when configured", async () => {
+			const bashWithPrefix = createBashTool(testDir, {
+				commandPrefix: "export TEST_VAR=hello",
+			});
+
+			const result = await bashWithPrefix.execute("test-prefix-1", { command: "echo $TEST_VAR" });
+			expect(getTextOutput(result).trim()).toBe("hello");
+		});
+
+		it("should include output from both prefix and command", async () => {
+			const bashWithPrefix = createBashTool(testDir, {
+				commandPrefix: "echo prefix-output",
+			});
+
+			const result = await bashWithPrefix.execute("test-prefix-2", { command: "echo command-output" });
+			expect(getTextOutput(result).trim()).toBe("prefix-output\ncommand-output");
+		});
+
+		it("should work without command prefix", async () => {
+			const bashWithoutPrefix = createBashTool(testDir, {});
+
+			const result = await bashWithoutPrefix.execute("test-prefix-3", { command: "echo no-prefix" });
+			expect(getTextOutput(result).trim()).toBe("no-prefix");
+		});
 	});
 
 	describe("grep tool", () => {
