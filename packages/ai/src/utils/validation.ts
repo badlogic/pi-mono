@@ -19,6 +19,7 @@ if (!isBrowserExtension) {
 		ajv = new Ajv({
 			allErrors: true,
 			strict: false,
+			coerceTypes: true,
 		});
 		addFormats(ajv);
 	} catch (_e) {
