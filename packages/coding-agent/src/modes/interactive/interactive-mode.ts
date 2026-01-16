@@ -241,7 +241,7 @@ export class InteractiveMode {
 		this.statusContainer = new Container();
 		this.widgetContainer = new Container();
 		this.keybindings = KeybindingsManager.create();
-		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings, { paddingX: 1 });
+		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings);
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
@@ -1150,7 +1150,6 @@ export class InteractiveMode {
 					this.hideExtensionEditor();
 					resolve(undefined);
 				},
-				{ paddingX: 1 },
 			);
 
 			this.editorContainer.clear();
