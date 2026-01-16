@@ -1220,6 +1220,56 @@ export class SessionManager {
 	}
 
 	/**
+	 * Fork a session from another project directory into the current project.
+	 * Creates a new session in the target cwd with the full history from the source session.
+	 * @param sourcePath Path to the source session file
+	 * @param targetCwd Target working directory (where the new session will be stored)
+	 * @param sessionDir Optional session directory. If omitted, uses default for targetCwd.
+	 */
+	static forkFrom(sourcePath: string, targetCwd: string, sessionDir?: string): SessionManager {
+		const sourceEntries = loadEntriesFromFile(sourcePath);
+		if (sourceEntries.length === 0) {
+			throw new Error(`Cannot fork: source session file is empty or invalid: ${sourcePath}`);
+		}
+
+		const sourceHeader = sourceEntries.find((e) => e.type === "session") as SessionHeader | undefined;
+		if (!sourceHeader) {
+			throw new Error(`Cannot fork: source session has no header: ${sourcePath}`);
+		}
+
+		const dir = sessionDir ?? getDefaultSessionDir(targetCwd);
+		if (!existsSync(dir)) {
+			mkdirSync(dir, { recursive: true });
+		}
+
+		// Create new session file with new ID but forked content
+		const newSessionId = randomUUID();
+		const timestamp = new Date().toISOString();
+		const fileTimestamp = timestamp.replace(/[:.]/g, "-");
+		const newSessionFile = join(dir, `${fileTimestamp}_${newSessionId}.jsonl`);
+
+		// Write new header pointing to source as parent, with updated cwd
+		const newHeader: SessionHeader = {
+			type: "session",
+			version: CURRENT_SESSION_VERSION,
+			id: newSessionId,
+			timestamp,
+			cwd: targetCwd,
+			parentSession: sourcePath,
+		};
+		appendFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`);
+
+		// Copy all non-header entries from source
+		for (const entry of sourceEntries) {
+			if (entry.type !== "session") {
+				appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
+			}
+		}
+
+		return new SessionManager(targetCwd, dir, newSessionFile, true);
+	}
+
+	/**
 	 * List all sessions for a directory.
 	 * @param cwd Working directory (used to compute default session directory)
 	 * @param sessionDir Optional session directory. If omitted, uses default (~/.pi/agent/sessions/<encoded-cwd>/).

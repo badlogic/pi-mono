@@ -715,14 +715,14 @@ if (result.cancelled) {
 }
 ```
 
-### ctx.branch(entryId)
+### ctx.fork(entryId)
 
-Branch from a specific entry:
+Fork from a specific entry, creating a new session file:
 
 ```typescript
-const result = await ctx.branch("entry-id-123");
+const result = await ctx.fork("entry-id-123");
 if (!result.cancelled) {
-  // Now in the branched session
+  // Now in the forked session
 }
 ```
 

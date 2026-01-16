@@ -341,10 +341,16 @@ export class ToolExecutionComponent extends Container {
 	 */
 	private renderBashContent(): void {
 		const command = this.args?.command || "";
+		const timeout = this.args?.timeout as number | undefined;
 
 		// Header
+		const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
 		this.contentBox.addChild(
-			new Text(theme.fg("toolTitle", theme.bold(`$ ${command || theme.fg("toolOutput", "...")}`)), 0, 0),
+			new Text(
+				theme.fg("toolTitle", theme.bold(`$ ${command || theme.fg("toolOutput", "...")}`)) + timeoutSuffix,
+				0,
+				0,
+			),
 		);
 
 		if (this.result) {

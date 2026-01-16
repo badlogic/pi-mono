@@ -6,11 +6,12 @@
 
 - Added bash-style argument slicing for prompt templates ([#770](https://github.com/badlogic/pi-mono/pull/770) by [@airtonix](https://github.com/airtonix))
 - Extension commands can provide argument auto-completions via `getArgumentCompletions` in `pi.registerCommand()` ([#775](https://github.com/badlogic/pi-mono/pull/775) by [@ribelo](https://github.com/ribelo))
+- OpenAI Responses (Azure): added optional `compat.strictResponsesPairing` flag to avoid 400 validation errors caused by strict `reasoning` ↔ `message`/`function_call` pairing during history replay.
 
 ### Fixed
 
 - Fixed extension messages rendering twice on startup when `pi.sendMessage({ display: true })` is called during `session_start` ([#765](https://github.com/badlogic/pi-mono/pull/765) by [@dannote](https://github.com/dannote))
-- OpenAI Responses (Azure): added optional `compat.strictResponsesPairing` flag to avoid 400 validation errors caused by strict `reasoning` ↔ `message`/`function_call` pairing during history replay.
+- Fixed `PI_CODING_AGENT_DIR` env var not expanding tilde (`~`) to home directory ([#768](https://github.com/badlogic/pi-mono/pull/778) by [@aliou](https://github.com/aliou))
 
 ## [0.47.0] - 2026-01-16
 
@@ -861,7 +862,7 @@ The hooks API has been restructured with more granular events and better session
 
 - `ctx.waitForIdle()` - wait for agent to finish streaming
 - `ctx.newSession(options?)` - create new sessions with optional setup callback
-- `ctx.branch(entryId)` - branch from a specific entry
+- `ctx.fork(entryId) - fork from a specific entry, creating a new session file
 - `ctx.navigateTree(targetId, options?)` - navigate the session tree
 
 These methods are only on `HookCommandContext` (not `HookContext`) because they can deadlock if called from event handlers that run inside the agent loop.
