@@ -47,6 +47,11 @@ interface ParsedTask {
 	completed: boolean;
 	lineStart: number;
 	lineEnd: number;
+	// Retry-until-pass mode (from tasks_loop)
+	mode?: "execute" | "retry-until-pass";
+	gate?: string; // Path to gate script for retry-until-pass mode
+	maxRetries?: number; // Max retry attempts (default: 3)
+	selfReview?: boolean; // Run self-review before marking complete (default: false)
 }
 
 interface TaskFileContent {
@@ -72,6 +77,7 @@ interface TaskResult {
 	agent: string;
 	status: "success" | "failed" | "skipped";
 	output: string;
+	outputFile?: string; // Full output written to disk (not truncated)
 	durationMs: number;
 	error?: string;
 }
@@ -84,6 +90,7 @@ interface OrchestrateDetails {
 	currentTask?: string;
 	results: TaskResult[];
 	archived: boolean;
+	outputDir?: string; // Directory containing full task outputs
 }
 
 const OrchestrateParams = Type.Object({
@@ -215,6 +222,10 @@ function parseTaskFile(filePath: string): TaskFileContent {
 				const agentMatch = trimmed.match(/^-\s*Agent:\s*(.+)/i);
 				const depsMatch = trimmed.match(/^-\s*Dependencies:\s*(.+)/i);
 				const notesMatch = trimmed.match(/^-\s*Notes:\s*(.+)/i);
+				const modeMatch = trimmed.match(/^-\s*Mode:\s*(.+)/i);
+				const gateMatch = trimmed.match(/^-\s*Gate:\s*(.+)/i);
+				const maxRetriesMatch = trimmed.match(/^-\s*MaxRetries:\s*(\d+)/i);
+				const selfReviewMatch = trimmed.match(/^-\s*SelfReview:\s*(true|false|yes|no)/i);
 
 				if (agentMatch) {
 					currentTask.agent = agentMatch[1].trim();
@@ -228,6 +239,18 @@ function parseTaskFile(filePath: string): TaskFileContent {
 					}
 				} else if (notesMatch) {
 					currentTask.notes = notesMatch[1].trim();
+				} else if (modeMatch) {
+					const mode = modeMatch[1].trim().toLowerCase();
+					if (mode === "retry-until-pass" || mode === "execute") {
+						currentTask.mode = mode;
+					}
+				} else if (gateMatch) {
+					currentTask.gate = gateMatch[1].trim();
+				} else if (maxRetriesMatch) {
+					currentTask.maxRetries = parseInt(maxRetriesMatch[1], 10);
+				} else if (selfReviewMatch) {
+					const value = selfReviewMatch[1].toLowerCase();
+					currentTask.selfReview = value === "true" || value === "yes";
 				} else if (trimmed && !trimmed.startsWith("-")) {
 					currentTask.description = (currentTask.description || "") + (currentTask.description ? "\n" : "") + trimmed;
 				}
@@ -543,23 +566,422 @@ function runQualityGate(cwd: string): { passed: boolean; error?: string } {
 	}
 }
 
+// Exit codes for gate scripts (from tasks_loop)
+const CLARIFY_CODE = 42;
+
+interface GateResult {
+	passed: boolean;
+	exitCode: number;
+	output: string;
+	needsClarification?: boolean;
+}
+
+/**
+ * Run a custom gate script for retry-until-pass mode.
+ * Returns full output for feeding back to agent on failure.
+ */
+function runGate(gatePath: string, cwd: string): GateResult {
+	const absoluteGate = path.isAbsolute(gatePath) ? gatePath : path.join(cwd, gatePath);
+
+	if (!fs.existsSync(absoluteGate)) {
+		return {
+			passed: false,
+			exitCode: 1,
+			output: `Gate script not found: ${absoluteGate}`,
+		};
+	}
+
+	try {
+		const result = spawnSync("bash", [absoluteGate], {
+			cwd,
+			encoding: "utf-8",
+			timeout: 300000, // 5 minute timeout for gate scripts
+		});
+
+		const output = (result.stdout || "") + (result.stderr || "");
+		const exitCode = result.status ?? 1;
+
+		if (exitCode === 0) {
+			return { passed: true, exitCode: 0, output };
+		}
+
+		if (exitCode === CLARIFY_CODE) {
+			return {
+				passed: false,
+				exitCode: CLARIFY_CODE,
+				output,
+				needsClarification: true,
+			};
+		}
+
+		return { passed: false, exitCode, output };
+	} catch (err) {
+		return {
+			passed: false,
+			exitCode: 1,
+			output: `Gate script error: ${err instanceof Error ? err.message : String(err)}`,
+		};
+	}
+}
+
+/**
+ * Run agent to fix issues based on gate failure.
+ * This is the core of retry-until-pass mode from tasks_loop.
+ */
+async function runAgentFix(
+	task: ParsedTask,
+	taskFile: TaskFileContent,
+	gateOutput: string,
+	attempt: number,
+	maxRetries: number,
+	agent: AgentConfig,
+	cwd: string,
+	outputDir: string
+): Promise<{ fixed: boolean; output: string }> {
+	// Build fix prompt with failure context
+	const tailLines = 160;
+	const failureTail = gateOutput.split("\n").slice(-tailLines).join("\n");
+
+	const fixPrompt = `
+You are a repo-scoped coding agent.
+
+Goal: make the gate script pass.
+
+Rules:
+- DO NOT edit gate scripts unless explicitly instructed
+- Make minimal, localized changes to fix the issue
+- The runner will re-run the gate after you finish
+
+## Attempt ${attempt}/${maxRetries}
+
+## Task Context
+${taskFile.context}
+
+## Task ${task.id}: ${task.title}
+${task.description}
+
+## Gate Failure Output (last ${tailLines} lines):
+${failureTail}
+
+## Instructions
+Analyze the failure and make the minimal fix needed. Do NOT introduce unrelated changes.
+`.trim();
+
+	// Write fix prompt to output file
+	const fixLogPath = path.join(outputDir, `task-${task.id}-fix-attempt-${attempt}.log`);
+	let fixFd: number | null = null;
+	try {
+		fixFd = fs.openSync(fixLogPath, "w");
+		fs.writeSync(fixFd, `=== FIX ATTEMPT ${attempt} ===\n\n${fixPrompt}\n\n=== AGENT OUTPUT ===\n`);
+	} catch {
+		// Ignore file errors
+	}
+
+	const output = new OutputAccumulator(MAX_OUTPUT_BYTES);
+
+	// Build pi arguments
+	const args = ["--mode", "json", "-p", "--no-session"];
+
+	if (agent.provider) {
+		args.push("--provider", agent.provider);
+	}
+
+	if (agent.model) {
+		args.push("--model", agent.model);
+	}
+
+	if (agent.tools?.length) {
+		const builtinTools: string[] = [];
+		for (const tool of agent.tools) {
+			if (!tool.includes("/") && !tool.endsWith(".ts") && !tool.endsWith(".js")) {
+				builtinTools.push(tool);
+			}
+		}
+		if (builtinTools.length > 0) {
+			args.push("--tools", builtinTools.join(","));
+		}
+	}
+
+	// Add system prompt
+	let tmpDir: string | null = null;
+	if (agent.systemPrompt?.trim()) {
+		const tmp = writePromptFile(agent.name, agent.systemPrompt);
+		tmpDir = tmp.dir;
+		args.push("--append-system-prompt", tmp.path);
+	}
+
+	args.push(fixPrompt);
+
+	try {
+		await new Promise<number>((resolve, reject) => {
+			const proc = spawn("pi", args, {
+				cwd,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+
+			let stdoutBuf = "";
+
+			proc.stdout.on("data", (chunk) => {
+				const text = chunk.toString("utf-8");
+				if (fixFd !== null) {
+					try { fs.writeSync(fixFd, text); } catch {}
+				}
+				stdoutBuf += text;
+				let idx;
+				while ((idx = stdoutBuf.indexOf("\n")) !== -1) {
+					const line = stdoutBuf.slice(0, idx);
+					stdoutBuf = stdoutBuf.slice(idx + 1);
+					if (line.trim()) {
+						try {
+							const evt = JSON.parse(line);
+							if (evt.type === "message_end" && evt.message?.content) {
+								for (const part of evt.message.content) {
+									if (part.type === "text" && part.text) {
+										output.append(part.text + "\n");
+									}
+								}
+							}
+						} catch {}
+					}
+				}
+			});
+
+			proc.stderr.on("data", (chunk) => {
+				const text = chunk.toString();
+				if (fixFd !== null) {
+					try { fs.writeSync(fixFd, `[stderr] ${text}`); } catch {}
+				}
+				output.append(text);
+			});
+
+			proc.on("close", (code) => resolve(code ?? 0));
+			proc.on("error", reject);
+		});
+
+		return { fixed: true, output: output.finalize() };
+	} catch (err) {
+		return { fixed: false, output: `Agent fix error: ${err instanceof Error ? err.message : String(err)}` };
+	} finally {
+		if (fixFd !== null) {
+			try { fs.closeSync(fixFd); } catch {}
+		}
+		if (tmpDir) {
+			try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+		}
+	}
+}
+
+const MAX_SELF_REVIEW_CYCLES = 3;
+
+/**
+ * Self-review: agent reviews its own work before marking complete.
+ * From tasks_loop - helps catch issues before declaring success.
+ */
+async function runSelfReview(
+	task: ParsedTask,
+	agent: AgentConfig,
+	cwd: string,
+	outputDir: string
+): Promise<{ passed: boolean; output: string }> {
+	const output = new OutputAccumulator(MAX_OUTPUT_BYTES);
+
+	// Get recent git changes for context
+	let gitDiff = "";
+	try {
+		const diffResult = spawnSync("git", ["diff", "--stat"], {
+			cwd,
+			encoding: "utf-8",
+			timeout: 10000,
+		});
+		gitDiff = diffResult.stdout || "No git diff available";
+	} catch {
+		gitDiff = "Could not get git diff";
+	}
+
+	for (let cycle = 1; cycle <= MAX_SELF_REVIEW_CYCLES; cycle++) {
+		const reviewPrompt = `
+You just made changes to complete Task ${task.id}: ${task.title}
+
+Before marking complete, review with fresh eyes:
+
+1. Did you make the minimal change needed?
+2. Are there any obvious issues or regressions?
+3. Does the fix address the root cause?
+
+Recent changes:
+${gitDiff}
+
+If no issues found, respond with EXACTLY: "No issues found."
+If issues found, fix them now.
+`.trim();
+
+		// Write review to file
+		const reviewLogPath = path.join(outputDir, `task-${task.id}-self-review-${cycle}.log`);
+		let reviewFd: number | null = null;
+		try {
+			reviewFd = fs.openSync(reviewLogPath, "w");
+			fs.writeSync(reviewFd, `=== SELF-REVIEW CYCLE ${cycle} ===\n\n${reviewPrompt}\n\n=== AGENT OUTPUT ===\n`);
+		} catch {
+			// Ignore file errors
+		}
+
+		// Build pi arguments
+		const args = ["--mode", "json", "-p", "--no-session"];
+
+		if (agent.provider) {
+			args.push("--provider", agent.provider);
+		}
+
+		if (agent.model) {
+			args.push("--model", agent.model);
+		}
+
+		if (agent.tools?.length) {
+			const builtinTools: string[] = [];
+			for (const tool of agent.tools) {
+				if (!tool.includes("/") && !tool.endsWith(".ts") && !tool.endsWith(".js")) {
+					builtinTools.push(tool);
+				}
+			}
+			if (builtinTools.length > 0) {
+				args.push("--tools", builtinTools.join(","));
+			}
+		}
+
+		let tmpDir: string | null = null;
+		if (agent.systemPrompt?.trim()) {
+			const tmp = writePromptFile(agent.name, agent.systemPrompt);
+			tmpDir = tmp.dir;
+			args.push("--append-system-prompt", tmp.path);
+		}
+
+		args.push(reviewPrompt);
+
+		let reviewOutput = "";
+
+		try {
+			await new Promise<number>((resolve, reject) => {
+				const proc = spawn("pi", args, {
+					cwd,
+					stdio: ["ignore", "pipe", "pipe"],
+				});
+
+				let stdoutBuf = "";
+
+				proc.stdout.on("data", (chunk) => {
+					const text = chunk.toString("utf-8");
+					if (reviewFd !== null) {
+						try { fs.writeSync(reviewFd, text); } catch {}
+					}
+					stdoutBuf += text;
+					let idx;
+					while ((idx = stdoutBuf.indexOf("\n")) !== -1) {
+						const line = stdoutBuf.slice(0, idx);
+						stdoutBuf = stdoutBuf.slice(idx + 1);
+						if (line.trim()) {
+							try {
+								const evt = JSON.parse(line);
+								if (evt.type === "message_end" && evt.message?.content) {
+									for (const part of evt.message.content) {
+										if (part.type === "text" && part.text) {
+											reviewOutput += part.text + "\n";
+											output.append(part.text + "\n");
+										}
+									}
+								}
+							} catch {}
+						}
+					}
+				});
+
+				proc.stderr.on("data", (chunk) => {
+					const text = chunk.toString();
+					if (reviewFd !== null) {
+						try { fs.writeSync(reviewFd, `[stderr] ${text}`); } catch {}
+					}
+					output.append(text);
+				});
+
+				proc.on("close", (code) => resolve(code ?? 0));
+				proc.on("error", reject);
+			});
+		} finally {
+			if (reviewFd !== null) {
+				try { fs.closeSync(reviewFd); } catch {}
+			}
+			if (tmpDir) {
+				try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+			}
+		}
+
+		// Check if review passed (no issues found)
+		if (/no issues found/i.test(reviewOutput)) {
+			return { passed: true, output: output.finalize() };
+		}
+
+		// Issues found - agent is fixing, will retry on next cycle
+		output.append(`\n[Self-review cycle ${cycle}: issues found, agent fixing...]\n`);
+	}
+
+	// Max cycles reached
+	output.append(`\n[Self-review: max cycles (${MAX_SELF_REVIEW_CYCLES}) reached, proceeding anyway]\n`);
+	return { passed: true, output: output.finalize() };
+}
+
 async function runTask(
 	task: ParsedTask,
 	taskFile: TaskFileContent,
 	cwd: string,
 	timeoutMs: number,
+	outputDir: string,
 	signal?: AbortSignal
 ): Promise<TaskResult> {
 	const startTime = Date.now();
+
+	// Create output file for complete (non-truncated) output
+	const outputFile = path.join(outputDir, `task-${task.id}.log`);
+	let outputFd: number | null = null;
+	try {
+		outputFd = fs.openSync(outputFile, "w");
+	} catch {
+		// If we can't create the output file, continue without it
+	}
+
+	// Helper to write to file (full output, no truncation)
+	const writeToFile = (text: string) => {
+		if (outputFd !== null) {
+			try {
+				fs.writeSync(outputFd, text);
+			} catch {
+				// Ignore write errors
+			}
+		}
+	};
+
+	// Helper to close the output file
+	const closeOutputFile = () => {
+		if (outputFd !== null) {
+			try {
+				fs.closeSync(outputFd);
+			} catch {
+				// Ignore close errors
+			}
+			outputFd = null;
+		}
+	};
+
 	const agentResult = loadAgentConfig(task.agent);
 
 	if (isAgentConfigError(agentResult)) {
+		writeToFile(`ERROR: ${agentResult.error}\n`);
+		closeOutputFile();
 		return {
 			taskId: task.id,
 			title: task.title,
 			agent: task.agent,
 			status: "failed",
 			output: "",
+			outputFile,
 			durationMs: Date.now() - startTime,
 			error: agentResult.error,
 		};
@@ -678,6 +1100,8 @@ When done, summarize what was accomplished.
 
 			const processJsonlLine = (line: string) => {
 				if (!line.trim()) return;
+				// Write raw JSONL to file (complete, no truncation)
+				writeToFile(line + "\n");
 				try {
 					const evt = JSON.parse(line);
 					// Capture final message content from message_end events
@@ -713,7 +1137,9 @@ When done, summarize what was accomplished.
 			});
 
 			proc.stderr.on("data", (chunk) => {
-				output.append(chunk.toString());
+				const text = chunk.toString();
+				writeToFile(`[stderr] ${text}`);
+				output.append(text);
 			});
 
 			proc.on("close", (code) => {
@@ -737,12 +1163,15 @@ When done, summarize what was accomplished.
 			});
 		});
 	} catch (err) {
+		writeToFile(`\nERROR: ${err instanceof Error ? err.message : String(err)}\n`);
+		closeOutputFile();
 		return {
 			taskId: task.id,
 			title: task.title,
 			agent: task.agent,
 			status: "failed",
 			output: output.finalize(),
+			outputFile,
 			durationMs: Date.now() - startTime,
 			error: err instanceof Error ? err.message : String(err),
 		};
@@ -757,12 +1186,15 @@ When done, summarize what was accomplished.
 
 	// If pi subprocess failed, return failure immediately
 	if (exitCode !== 0) {
+		writeToFile(`\nExit code: ${exitCode}\n`);
+		closeOutputFile();
 		return {
 			taskId: task.id,
 			title: task.title,
 			agent: task.agent,
 			status: "failed",
 			output: output.finalize(),
+			outputFile,
 			durationMs: Date.now() - startTime,
 			error: `Exit code: ${exitCode}`,
 		};
@@ -771,25 +1203,166 @@ When done, summarize what was accomplished.
 	// POST-HOOK: Quality Gate - validate code quality
 	const qualityResult = runQualityGate(cwd);
 	if (!qualityResult.passed) {
+		writeToFile(`\n--- QUALITY GATE FAILED ---\n${qualityResult.error || ""}\n`);
+		closeOutputFile();
 		return {
 			taskId: task.id,
 			title: task.title,
 			agent: task.agent,
 			status: "failed",
 			output: output.finalize() + "\n\n--- QUALITY GATE FAILED ---\n" + (qualityResult.error || ""),
+			outputFile,
 			durationMs: Date.now() - startTime,
 			error: "Quality gate failed - tests or checks did not pass",
 		};
 	}
 
 	// Both pi subprocess and quality gate passed
+	closeOutputFile();
 	return {
 		taskId: task.id,
 		title: task.title,
 		agent: task.agent,
 		status: "success",
 		output: output.finalize(),
+		outputFile,
 		durationMs: Date.now() - startTime,
+	};
+}
+
+const DEFAULT_MAX_RETRIES = 3;
+
+/**
+ * Run task with retry-until-pass mode (from tasks_loop).
+ * If task has mode "retry-until-pass" and a gate, will retry with agent fixes until gate passes.
+ */
+async function runTaskWithRetry(
+	task: ParsedTask,
+	taskFile: TaskFileContent,
+	cwd: string,
+	timeoutMs: number,
+	outputDir: string,
+	signal?: AbortSignal
+): Promise<TaskResult> {
+	const startTime = Date.now();
+
+	// If not retry-until-pass mode or no gate, use normal execution
+	if (task.mode !== "retry-until-pass" || !task.gate) {
+		const result = await runTask(task, taskFile, cwd, timeoutMs, outputDir, signal);
+
+		// Run self-review if enabled and task succeeded
+		if (task.selfReview && result.status === "success") {
+			const agentResult = loadAgentConfig(task.agent);
+			if (!isAgentConfigError(agentResult)) {
+				const reviewResult = await runSelfReview(task, agentResult, cwd, outputDir);
+				result.output += `\n\n=== SELF-REVIEW ===\n${reviewResult.output}`;
+			}
+		}
+
+		return result;
+	}
+
+	const maxRetries = task.maxRetries ?? DEFAULT_MAX_RETRIES;
+	const agentResult = loadAgentConfig(task.agent);
+
+	if (isAgentConfigError(agentResult)) {
+		return {
+			taskId: task.id,
+			title: task.title,
+			agent: task.agent,
+			status: "failed",
+			output: "",
+			outputFile: path.join(outputDir, `task-${task.id}.log`),
+			durationMs: Date.now() - startTime,
+			error: agentResult.error,
+		};
+	}
+
+	const agent = agentResult;
+	const allOutput: string[] = [];
+
+	// First, run the initial task to set up the work
+	const initialResult = await runTask(task, taskFile, cwd, timeoutMs, outputDir, signal);
+	allOutput.push(`=== INITIAL EXECUTION ===\n${initialResult.output}`);
+
+	// Now enter the retry loop
+	for (let attempt = 1; attempt <= maxRetries; attempt++) {
+		if (signal?.aborted) {
+			return {
+				taskId: task.id,
+				title: task.title,
+				agent: task.agent,
+				status: "failed",
+				output: allOutput.join("\n\n"),
+				outputFile: initialResult.outputFile,
+				durationMs: Date.now() - startTime,
+				error: "Task aborted",
+			};
+		}
+
+		// Run the gate
+		const gateResult = runGate(task.gate, cwd);
+		allOutput.push(`=== GATE ATTEMPT ${attempt} ===\nExit code: ${gateResult.exitCode}\n${gateResult.output}`);
+
+		if (gateResult.passed) {
+			// Gate passed! Run self-review if enabled
+			if (task.selfReview) {
+				const reviewResult = await runSelfReview(task, agent, cwd, outputDir);
+				allOutput.push(`=== SELF-REVIEW ===\n${reviewResult.output}`);
+			}
+
+			// Task is complete
+			return {
+				taskId: task.id,
+				title: task.title,
+				agent: task.agent,
+				status: "success",
+				output: allOutput.join("\n\n"),
+				outputFile: initialResult.outputFile,
+				durationMs: Date.now() - startTime,
+			};
+		}
+
+		if (gateResult.needsClarification) {
+			// CLARIFY exit code - stop and return for human intervention
+			return {
+				taskId: task.id,
+				title: task.title,
+				agent: task.agent,
+				status: "failed",
+				output: allOutput.join("\n\n"),
+				outputFile: initialResult.outputFile,
+				durationMs: Date.now() - startTime,
+				error: `Gate returned CLARIFY (exit ${CLARIFY_CODE}) - human intervention required`,
+			};
+		}
+
+		// Gate failed - run agent fix (except on last attempt)
+		if (attempt < maxRetries) {
+			const fixResult = await runAgentFix(
+				task,
+				taskFile,
+				gateResult.output,
+				attempt,
+				maxRetries,
+				agent,
+				cwd,
+				outputDir
+			);
+			allOutput.push(`=== FIX ATTEMPT ${attempt} ===\n${fixResult.output}`);
+		}
+	}
+
+	// Exhausted all retries
+	return {
+		taskId: task.id,
+		title: task.title,
+		agent: task.agent,
+		status: "failed",
+		output: allOutput.join("\n\n"),
+		outputFile: initialResult.outputFile,
+		durationMs: Date.now() - startTime,
+		error: `Exhausted ${maxRetries} retries - gate still failing`,
 	};
 }
 
@@ -918,6 +1491,9 @@ const factory: CustomToolFactory = (pi) => ({
 			};
 		}
 
+		// Create output directory for complete task outputs
+		const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-orchestrate-"));
+
 		const results: TaskResult[] = [];
 		const completedIds = new Set(parsed.tasks.filter((t) => t.completed).map((t) => t.id));
 		const details: OrchestrateDetails = {
@@ -927,6 +1503,7 @@ const factory: CustomToolFactory = (pi) => ({
 			completedTasks: completedIds.size,
 			results,
 			archived: false,
+			outputDir,
 		};
 
 		// Multi-pass execution: retry skipped tasks until no progress
@@ -966,8 +1543,8 @@ const factory: CustomToolFactory = (pi) => ({
 					});
 				}
 
-				// Execute task
-				const result = await runTask(task, parsed, pi.cwd, taskTimeoutMs, signal);
+				// Execute task (uses retry-until-pass if configured)
+				const result = await runTaskWithRetry(task, parsed, pi.cwd, taskTimeoutMs, outputDir, signal);
 				results.push(result);
 				madeProgress = true;
 
@@ -1034,6 +1611,9 @@ const factory: CustomToolFactory = (pi) => ({
 		if (details.archived) {
 			summary.push("", "Session archived to episodic memory.");
 		}
+
+		// Include output directory for debugging
+		summary.push("", `Full task outputs: ${outputDir}`);
 
 		return {
 			content: [{ type: "text" as const, text: summary.join("\n") }],

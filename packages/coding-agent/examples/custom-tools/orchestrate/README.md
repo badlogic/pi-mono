@@ -4,13 +4,17 @@ Execute tasks from collaborative task files (e.g., `01_TASKS.md`) with memory-fi
 
 ## Overview
 
-The orchestrate tool implements a **Memory-First Task Agent Architecture**:
+The orchestrate tool implements a **Memory-First Task Agent Architecture** with features consolidated from `tasks_loop`:
 
 1. **Questions/Blockers Gate** - BLOCKS execution if unresolved questions exist
 2. **Memory Recall Pre-Hook** - Queries memory for prior solutions before each task
 3. **Quality Gate Post-Hook** - Runs tests after each task (must pass to continue)
-4. **Checkbox Updates** - Marks tasks `[x]` in the file upon completion
-5. **Session Archiving** - Archives to episodic memory on completion
+4. **Retry-Until-Pass Mode** - Iteratively fixes failures with agent assistance
+5. **Self-Review** - Agent reviews its own work before marking complete
+6. **CLARIFY Handling** - Exit code 42 stops execution for human intervention
+7. **Checkbox Updates** - Marks tasks `[x]` in the file upon completion
+8. **Session Archiving** - Archives to episodic memory on completion
+9. **Full Output Logging** - Complete task outputs saved to `/tmp/pi-orchestrate-*/`
 
 ## Installation
 
@@ -39,6 +43,8 @@ Execute the pending tasks
 
 ## Task File Format
 
+### Standard Execution Mode
+
 ```markdown
 # Task List: Feature Name
 
@@ -64,6 +70,20 @@ All tests pass and code is reviewed.
 None
 ```
 
+### Retry-Until-Pass Mode (from tasks_loop)
+
+For tasks that need iterative fixing until a gate passes:
+
+```markdown
+- [ ] **Task 3**: Make gate_s05 pass
+  - Agent: general-purpose
+  - Mode: retry-until-pass
+  - Gate: gates/gate_s05.py
+  - MaxRetries: 5
+  - SelfReview: true
+  - Notes: Fix extraction issues
+```
+
 ### Task Attributes
 
 | Attribute | Required | Description |
@@ -72,6 +92,10 @@ None
 | `Agent` | No | Agent config to use (default: `general-purpose`) |
 | `Dependencies` | No | Task IDs that must complete first |
 | `Notes` | No | Additional context for the agent |
+| `Mode` | No | `execute` (default) or `retry-until-pass` |
+| `Gate` | No | Path to gate script (required for retry-until-pass) |
+| `MaxRetries` | No | Max retry attempts (default: 3) |
+| `SelfReview` | No | Run self-review before completion (default: false) |
 
 ### Questions/Blockers Section
 
@@ -114,7 +138,34 @@ The body after frontmatter becomes the agent's system prompt.
 | `archive` | boolean | true | Archive session on completion |
 | `taskTimeoutMs` | number | 1800000 | Timeout per task (30 min) |
 
-## Hooks
+## Execution Modes
+
+### Standard Execution
+
+Default mode. Runs the task once with memory recall pre-hook and quality gate post-hook.
+
+### Retry-Until-Pass Mode
+
+Consolidated from `tasks_loop`. When `Mode: retry-until-pass` is set:
+
+1. Initial task execution
+2. Run the gate script
+3. If gate fails:
+   - Feed failure output (last 160 lines) to agent
+   - Agent makes minimal fix
+   - Retry gate
+4. Repeat until pass or max retries
+5. Optional self-review before completion
+
+**Gate Exit Codes:**
+
+| Code | Meaning | Action |
+|------|---------|--------|
+| 0 | PASS | Task complete |
+| 1 | FAIL | Retry with agent fix |
+| 42 | CLARIFY | Stop - human intervention required |
+
+## Features
 
 ### Memory Recall Pre-Hook
 
@@ -125,6 +176,24 @@ Before each task, queries `~/.pi/agent/skills/memory/run.sh recall` with the tas
 After each task, runs the quality gate script. If tests fail, the task is marked failed and orchestration stops (unless `continueOnError` is true).
 
 Configure in: `/home/graham/workspace/experiments/memory/.claude/hooks/quality-gate.sh`
+
+### Self-Review
+
+When `SelfReview: true` is set, the agent reviews its own work before marking complete:
+
+1. Reviews recent git changes
+2. Checks: minimal change? obvious issues? root cause addressed?
+3. If issues found, agent fixes them
+4. Up to 3 review cycles
+
+### Full Output Logging
+
+All task outputs are written to `/tmp/pi-orchestrate-{uuid}/`:
+- `task-{id}.log` - Complete JSONL output (not truncated)
+- `task-{id}-fix-attempt-{n}.log` - Fix attempt logs (retry-until-pass mode)
+- `task-{id}-self-review-{n}.log` - Self-review logs
+
+The output directory path is included in the orchestration summary.
 
 ## Workflow Diagram
 
@@ -160,51 +229,46 @@ Configure in: `/home/graham/workspace/experiments/memory/.claude/hooks/quality-g
                  │      FOR EACH PENDING TASK     │◄────────┐
                  └────────────────────────────────┘         │
                               │                             │
-                              ▼                             │
-              ┌───────────────────────────────┐             │
-              │ 1. PRE-HOOK: Memory Recall    │             │
-              │    Query: memory/run.sh recall│             │
-              │    Inject prior solutions     │             │
-              └───────────────────────────────┘             │
-                              │                             │
-                              ▼                             │
-              ┌───────────────────────────────┐             │
-              │ 2. EXECUTE TASK               │             │
-              │    pi --mode json -p          │             │
-              │    --no-session               │             │
-              │    --provider <provider>      │             │
-              │    --model <model>            │             │
-              └───────────────────────────────┘             │
-                              │                             │
-                              ▼                             │
-              ┌───────────────────────────────┐             │
-              │ 3. POST-HOOK: Quality Gate    │             │
-              │    Run: quality-gate.sh       │             │
-              │    Tests must pass            │             │
-              └───────────────────────────────┘             │
-                     │                │                     │
-                   PASS             FAIL                    │
-                     │                │                     │
-                     ▼                ▼                     │
-          ┌──────────────┐   ┌──────────────┐              │
-          │ Update [ ]   │   │ STOP or      │              │
-          │ to [x]       │   │ continue     │              │
-          └──────────────┘   │ (if flag set)│              │
-                  │          └──────────────┘              │
-                  │                                        │
-                  └────────── More tasks? ─────────────────┘
-                                      │
-                                     NO
-                                      │
-                                      ▼
-              ┌───────────────────────────────┐
-              │  Archive to Episodic Memory   │
-              │  (if archive=true)            │
-              └───────────────────────────────┘
-                              │
-                              ▼
+               ┌──────────────┴──────────────┐              │
+               │                             │              │
+          Standard Mode              Retry-Until-Pass       │
+               │                             │              │
+               ▼                             ▼              │
+   ┌─────────────────────┐     ┌─────────────────────┐     │
+   │ 1. Memory Recall    │     │ 1. Memory Recall    │     │
+   │ 2. Execute Task     │     │ 2. Execute Task     │     │
+   │ 3. Quality Gate     │     │ 3. Run Gate         │     │
+   │ 4. Self-Review?     │     │ 4. If FAIL: Fix →   │──┐  │
+   └─────────────────────┘     │    Retry gate       │  │  │
+               │               │ 5. Self-Review?     │  │  │
+               │               └─────────────────────┘  │  │
+               │                         │              │  │
+               │                    ◄────┘ (retry)      │  │
+               │                         │              │  │
+               └──────────┬──────────────┘              │  │
+                          │                             │  │
+                     PASS │ FAIL                        │  │
+                          │                             │  │
+                          ▼                             │  │
+               ┌──────────────────┐                     │  │
+               │ Update checkbox  │                     │  │
+               │ [ ] → [x]        │                     │  │
+               └──────────────────┘                     │  │
+                          │                             │  │
+                          └─────────── More tasks? ─────┘  │
+                                             │             │
+                                            NO             │
+                                             │             │
+                                             ▼             │
+                          ┌───────────────────────────────┐
+                          │  Archive to Episodic Memory   │
+                          │  (if archive=true)            │
+                          └───────────────────────────────┘
+                                             │
+                                             ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                     ORCHESTRATION COMPLETE                      │
+│         Full outputs: /tmp/pi-orchestrate-{uuid}/               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -218,6 +282,8 @@ Each task runs in **protected context** using:
 This prevents sub-agents from affecting the orchestrator's state.
 
 ## Example Session
+
+### Standard Mode
 
 ```
 $ pi
@@ -235,14 +301,45 @@ Running Task 2/3: Add tests for feature X (general-purpose)
   [Executing] ...
   [Quality gate] PASSED
 
-Running Task 3/3: Update documentation (general-purpose)
-  [Memory recall] Found 1 prior solution
-  [Executing] ...
-  [Quality gate] PASSED
-
-Orchestration completed: 3/3 tasks
-Session archived to episodic memory.
+Orchestration completed: 2/2 tasks
+Full task outputs: /tmp/pi-orchestrate-abc123/
 ```
+
+### Retry-Until-Pass Mode
+
+```
+$ pi
+> Orchestrate 01_TASKS.md
+
+Running Task 1/1: Make gate_s05 pass (general-purpose)
+  [Initial execution] ...
+  [Gate attempt 1] FAIL (exit 1)
+  [Fix attempt 1] Agent fixing...
+  [Gate attempt 2] FAIL (exit 1)
+  [Fix attempt 2] Agent fixing...
+  [Gate attempt 3] PASS
+  [Self-review] No issues found.
+
+Orchestration completed: 1/1 tasks
+Full task outputs: /tmp/pi-orchestrate-xyz789/
+```
+
+## Comparison: orchestrate vs tasks_loop
+
+The orchestrate tool consolidates features from `tasks_loop`:
+
+| Feature | tasks_loop | orchestrate |
+|---------|-----------|-------------|
+| Single gate retry loop | Core feature | Via `Mode: retry-until-pass` |
+| Multi-task orchestration | Not supported | Core feature |
+| Task dependencies | Not supported | Supported |
+| Memory recall pre-hook | Not supported | Supported |
+| Quality gate post-hook | Gate is the check | Both gate and quality-gate |
+| Self-review | Supported | Supported via `SelfReview: true` |
+| CLARIFY exit code | Supported (42) | Supported (42) |
+| Artifacts per attempt | ./artifacts/ | /tmp/pi-orchestrate-*/ |
+| Context.md recovery | Supported | Via memory recall |
+| Session archiving | Not supported | Supported |
 
 ## Limitations
 
