@@ -716,8 +716,7 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 			},
 		);
 
-		// Skip unpaired surrogate test - GitLab Duo's Anthropic proxy rejects malformed unicode
-		it.skip(
+		it.skipIf(!gitlabDuoToken)(
 			"duo-chat-sonnet-4-5 - should handle unpaired high surrogate (0xD83D) in tool results",
 			{ retry: 3, timeout: 30000 },
 			async () => {

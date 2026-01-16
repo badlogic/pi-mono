@@ -15,6 +15,7 @@ import type {
 	ToolCall,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { transformMessages } from "./transform-messages.js";
 
 export interface GitLabDuoOptions extends StreamOptions {
@@ -64,7 +65,7 @@ function convertToAiSdkPrompt(context: Context, model: Model<"gitlab-duo">) {
 	if (context.systemPrompt) {
 		prompt.push({
 			role: "system",
-			content: context.systemPrompt,
+			content: sanitizeSurrogates(context.systemPrompt),
 		});
 	}
 
@@ -76,11 +77,11 @@ function convertToAiSdkPrompt(context: Context, model: Model<"gitlab-duo">) {
 			const content: Array<{ type: "text"; text: string } | { type: "file"; data: string; mimeType: string }> = [];
 
 			if (typeof msg.content === "string") {
-				content.push({ type: "text", text: msg.content });
+				content.push({ type: "text", text: sanitizeSurrogates(msg.content) });
 			} else {
 				for (const part of msg.content) {
 					if (part.type === "text") {
-						content.push({ type: "text", text: part.text });
+						content.push({ type: "text", text: sanitizeSurrogates(part.text) });
 					} else if (part.type === "image") {
 						content.push({
 							type: "file",
@@ -99,7 +100,7 @@ function convertToAiSdkPrompt(context: Context, model: Model<"gitlab-duo">) {
 
 			for (const part of msg.content) {
 				if (part.type === "text") {
-					content.push({ type: "text", text: part.text });
+					content.push({ type: "text", text: sanitizeSurrogates(part.text) });
 				} else if (part.type === "toolCall") {
 					content.push({
 						type: "tool-call",
@@ -116,7 +117,7 @@ function convertToAiSdkPrompt(context: Context, model: Model<"gitlab-duo">) {
 			}
 		} else if (msg.role === "toolResult") {
 			const resultContent = msg.content
-				.map((c) => (c.type === "text" ? c.text : `[Image: ${c.mimeType}]`))
+				.map((c) => (c.type === "text" ? sanitizeSurrogates(c.text) : `[Image: ${c.mimeType}]`))
 				.join("\n");
 
 			prompt.push({
