@@ -242,6 +242,10 @@ export interface EditorTheme {
 	selectList: SelectListTheme;
 }
 
+export interface EditorOptions {
+	paddingX?: number;
+}
+
 export class Editor implements Component, Focusable {
 	private state: EditorState = {
 		lines: [""],
@@ -254,6 +258,7 @@ export class Editor implements Component, Focusable {
 
 	protected tui: TUI;
 	private theme: EditorTheme;
+	private paddingX: number = 0;
 
 	// Store last render width for cursor navigation
 	private lastWidth: number = 80;
@@ -287,10 +292,12 @@ export class Editor implements Component, Focusable {
 	public onChange?: (text: string) => void;
 	public disableSubmit: boolean = false;
 
-	constructor(tui: TUI, theme: EditorTheme) {
+	constructor(tui: TUI, theme: EditorTheme, options: EditorOptions = {}) {
 		this.tui = tui;
 		this.theme = theme;
 		this.borderColor = theme.borderColor;
+		const paddingX = options.paddingX ?? 0;
+		this.paddingX = Number.isFinite(paddingX) ? Math.max(0, Math.floor(paddingX)) : 0;
 	}
 
 	setAutocompleteProvider(provider: AutocompleteProvider): void {
@@ -364,13 +371,17 @@ export class Editor implements Component, Focusable {
 	}
 
 	render(width: number): string[] {
+		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
+		const paddingX = Math.min(this.paddingX, maxPadding);
+		const contentWidth = Math.max(1, width - paddingX * 2);
+
 		// Store width for cursor navigation
-		this.lastWidth = width;
+		this.lastWidth = contentWidth;
 
 		const horizontal = this.borderColor("─");
 
-		// Layout the text - use full width
-		const layoutLines = this.layoutText(width);
+		// Layout the text - use content width
+		const layoutLines = this.layoutText(contentWidth);
 
 		// Calculate max visible lines: 30% of terminal height, minimum 5 lines
 		const terminalRows = this.tui.terminal.rows;
@@ -395,6 +406,8 @@ export class Editor implements Component, Focusable {
 		const visibleLines = layoutLines.slice(this.scrollOffset, this.scrollOffset + maxVisibleLines);
 
 		const result: string[] = [];
+		const leftPadding = " ".repeat(paddingX);
+		const rightPadding = leftPadding;
 
 		// Render top border (with scroll indicator if scrolled down)
 		if (this.scrollOffset > 0) {
@@ -432,7 +445,7 @@ export class Editor implements Component, Focusable {
 					// lineVisibleWidth stays the same - we're replacing, not adding
 				} else {
 					// Cursor is at the end - check if we have room for the space
-					if (lineVisibleWidth < width) {
+					if (lineVisibleWidth < contentWidth) {
 						// We have room - add highlighted space
 						const cursor = "\x1b[7m \x1b[0m";
 						displayText = before + marker + cursor;
@@ -458,10 +471,10 @@ export class Editor implements Component, Focusable {
 			}
 
 			// Calculate padding based on actual visible width
-			const padding = " ".repeat(Math.max(0, width - lineVisibleWidth));
+			const padding = " ".repeat(Math.max(0, contentWidth - lineVisibleWidth));
 
 			// Render the line (no side borders, just horizontal lines above and below)
-			result.push(displayText + padding);
+			result.push(`${leftPadding}${displayText}${padding}${rightPadding}`);
 		}
 
 		// Render bottom border (with scroll indicator if more content below)
@@ -476,8 +489,12 @@ export class Editor implements Component, Focusable {
 
 		// Add autocomplete list if active
 		if (this.isAutocompleting && this.autocompleteList) {
-			const autocompleteResult = this.autocompleteList.render(width);
-			result.push(...autocompleteResult);
+			const autocompleteResult = this.autocompleteList.render(contentWidth);
+			for (const line of autocompleteResult) {
+				const lineWidth = visibleWidth(line);
+				const linePadding = " ".repeat(Math.max(0, contentWidth - lineWidth));
+				result.push(`${leftPadding}${line}${linePadding}${rightPadding}`);
+			}
 		}
 
 		return result;

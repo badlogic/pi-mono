@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `EditorOptions` with optional `paddingX` for horizontal content padding ([#791](https://github.com/badlogic/pi-mono/pull/791) by [@ferologics](https://github.com/ferologics))
+
 ### Changed
 
 - Hardware cursor is now disabled by default for better terminal compatibility. Set `PI_HARDWARE_CURSOR=1` to enable (replaces `PI_NO_HARDWARE_CURSOR=1` which disabled it).
