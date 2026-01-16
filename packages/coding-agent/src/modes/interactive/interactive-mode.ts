@@ -60,7 +60,6 @@ import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
-
 import { ensureTool } from "../../utils/tools-manager.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
@@ -241,7 +240,7 @@ export class InteractiveMode {
 		this.statusContainer = new Container();
 		this.widgetContainer = new Container();
 		this.keybindings = KeybindingsManager.create();
-		this.defaultEditor = new CustomEditor(getEditorTheme(), this.keybindings);
+		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings);
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
@@ -1508,20 +1507,6 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Handle skill commands (/skill:name [args])
-			if (text.startsWith("/skill:")) {
-				const spaceIndex = text.indexOf(" ");
-				const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
-				const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
-				const skillPath = this.skillCommands.get(commandName);
-				if (skillPath) {
-					this.editor.addToHistory?.(text);
-					this.editor.setText("");
-					await this.handleSkillCommand(skillPath, args);
-					return;
-				}
-			}
-
 			// Handle bash command (! for normal, !! for excluded from context)
 			if (text.startsWith("!")) {
 				const isExcluded = text.startsWith("!!");
@@ -2089,6 +2074,10 @@ export class InteractiveMode {
 				type: "session_shutdown",
 			});
 		}
+
+		// Wait for any pending renders to complete
+		// requestRender() uses process.nextTick(), so we wait one tick
+		await new Promise((resolve) => process.nextTick(resolve));
 
 		this.stop();
 		process.exit(0);
@@ -3311,21 +3300,6 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(info, 1, 0));
 		this.ui.requestRender();
-	}
-
-	private async handleSkillCommand(skillPath: string, args: string): Promise<void> {
-		try {
-			const content = fs.readFileSync(skillPath, "utf-8");
-			// Strip YAML frontmatter if present
-			const body = content.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
-			const skillDir = path.dirname(skillPath);
-			const header = `Skill location: ${skillPath}\nReferences are relative to ${skillDir}.`;
-			const skillMessage = `${header}\n\n${body}`;
-			const message = args ? `${skillMessage}\n\n---\n\nUser: ${args}` : skillMessage;
-			await this.session.prompt(message);
-		} catch (err) {
-			this.showError(`Failed to load skill: ${err instanceof Error ? err.message : String(err)}`);
-		}
 	}
 
 	private handleChangelogCommand(): void {

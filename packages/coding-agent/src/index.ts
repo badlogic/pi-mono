@@ -64,6 +64,9 @@ export type {
 	ExtensionShortcut,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	InputEvent,
+	InputEventResult,
+	InputSource,
 	KeybindingsManager,
 	LoadExtensionsResult,
 	MessageRenderer,
@@ -276,3 +279,4 @@ export {
 	Theme,
 	type ThemeColor,
 } from "./modes/interactive/theme/theme.js";
+export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.js";

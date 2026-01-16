@@ -75,6 +75,9 @@ export {
 export {
 	type Component,
 	Container,
+	CURSOR_MARKER,
+	type Focusable,
+	isFocusable,
 	type OverlayAnchor,
 	type OverlayHandle,
 	type OverlayMargin,

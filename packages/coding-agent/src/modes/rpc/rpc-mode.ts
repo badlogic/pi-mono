@@ -348,6 +348,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					.prompt(command.message, {
 						images: command.images,
 						streamingBehavior: command.streamingBehavior,
+						source: "rpc",
 					})
 					.catch((e) => output(error(id, "prompt", e.message)));
 				return success(id, "prompt");

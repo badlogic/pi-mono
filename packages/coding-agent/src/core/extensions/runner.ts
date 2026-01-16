@@ -25,6 +25,9 @@ import type {
 	ExtensionRuntime,
 	ExtensionShortcut,
 	ExtensionUIContext,
+	InputEvent,
+	InputEventResult,
+	InputSource,
 	MessageRenderer,
 	RegisteredCommand,
 	RegisteredTool,
@@ -187,6 +190,17 @@ export class ExtensionRunner {
 			}
 		}
 		return tools;
+	}
+
+	/** Get a tool definition by name. Returns undefined if not found. */
+	getToolDefinition(toolName: string): RegisteredTool["definition"] | undefined {
+		for (const ext of this.extensions) {
+			const tool = ext.tools.get(toolName);
+			if (tool) {
+				return tool.definition;
+			}
+		}
+		return undefined;
 	}
 
 	getFlags(): Map<string, ExtensionFlag> {
@@ -526,5 +540,36 @@ export class ExtensionRunner {
 		}
 
 		return undefined;
+	}
+
+	/** Emit input event. Transforms chain, "handled" short-circuits. */
+	async emitInput(text: string, images: ImageContent[] | undefined, source: InputSource): Promise<InputEventResult> {
+		const ctx = this.createContext();
+		let currentText = text;
+		let currentImages = images;
+
+		for (const ext of this.extensions) {
+			for (const handler of ext.handlers.get("input") ?? []) {
+				try {
+					const event: InputEvent = { type: "input", text: currentText, images: currentImages, source };
+					const result = (await handler(event, ctx)) as InputEventResult | undefined;
+					if (result?.action === "handled") return result;
+					if (result?.action === "transform") {
+						currentText = result.text;
+						currentImages = result.images ?? currentImages;
+					}
+				} catch (err) {
+					this.emitError({
+						extensionPath: ext.path,
+						event: "input",
+						error: err instanceof Error ? err.message : String(err),
+						stack: err instanceof Error ? err.stack : undefined,
+					});
+				}
+			}
+		}
+		return currentText !== text || currentImages !== images
+			? { action: "transform", text: currentText, images: currentImages }
+			: { action: "continue" };
 	}
 }

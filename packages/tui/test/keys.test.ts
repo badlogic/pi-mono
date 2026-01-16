@@ -117,11 +117,86 @@ describe("matchesKey", () => {
 			assert.strictEqual(matchesKey("\x1b", "escape"), true);
 		});
 
+		it("should match legacy linefeed as enter", () => {
+			setKittyProtocolActive(false);
+			assert.strictEqual(matchesKey("\n", "enter"), true);
+			assert.strictEqual(parseKey("\n"), "enter");
+		});
+
+		it("should treat linefeed as shift+enter when kitty active", () => {
+			setKittyProtocolActive(true);
+			assert.strictEqual(matchesKey("\n", "shift+enter"), true);
+			assert.strictEqual(matchesKey("\n", "enter"), false);
+			assert.strictEqual(parseKey("\n"), "shift+enter");
+			setKittyProtocolActive(false);
+		});
+
+		it("should parse ctrl+space", () => {
+			setKittyProtocolActive(false);
+			assert.strictEqual(matchesKey("\x00", "ctrl+space"), true);
+			assert.strictEqual(parseKey("\x00"), "ctrl+space");
+		});
+
+		it("should parse legacy alt-prefixed sequences when kitty inactive", () => {
+			setKittyProtocolActive(false);
+			assert.strictEqual(matchesKey("\x1b ", "alt+space"), true);
+			assert.strictEqual(parseKey("\x1b "), "alt+space");
+			assert.strictEqual(matchesKey("\x1b\b", "alt+backspace"), true);
+			assert.strictEqual(parseKey("\x1b\b"), "alt+backspace");
+			assert.strictEqual(matchesKey("\x1b\x03", "ctrl+alt+c"), true);
+			assert.strictEqual(parseKey("\x1b\x03"), "ctrl+alt+c");
+			assert.strictEqual(matchesKey("\x1bB", "alt+left"), true);
+			assert.strictEqual(parseKey("\x1bB"), "alt+left");
+			assert.strictEqual(matchesKey("\x1bF", "alt+right"), true);
+			assert.strictEqual(parseKey("\x1bF"), "alt+right");
+
+			setKittyProtocolActive(true);
+			assert.strictEqual(matchesKey("\x1b ", "alt+space"), false);
+			assert.strictEqual(parseKey("\x1b "), undefined);
+			assert.strictEqual(matchesKey("\x1b\b", "alt+backspace"), true);
+			assert.strictEqual(parseKey("\x1b\b"), "alt+backspace");
+			assert.strictEqual(matchesKey("\x1b\x03", "ctrl+alt+c"), false);
+			assert.strictEqual(parseKey("\x1b\x03"), undefined);
+			assert.strictEqual(matchesKey("\x1bB", "alt+left"), false);
+			assert.strictEqual(parseKey("\x1bB"), undefined);
+			assert.strictEqual(matchesKey("\x1bF", "alt+right"), false);
+			assert.strictEqual(parseKey("\x1bF"), undefined);
+			setKittyProtocolActive(false);
+		});
+
 		it("should match arrow keys", () => {
 			assert.strictEqual(matchesKey("\x1b[A", "up"), true);
 			assert.strictEqual(matchesKey("\x1b[B", "down"), true);
 			assert.strictEqual(matchesKey("\x1b[C", "right"), true);
 			assert.strictEqual(matchesKey("\x1b[D", "left"), true);
+		});
+
+		it("should match SS3 arrows and home/end", () => {
+			assert.strictEqual(matchesKey("\x1bOA", "up"), true);
+			assert.strictEqual(matchesKey("\x1bOB", "down"), true);
+			assert.strictEqual(matchesKey("\x1bOC", "right"), true);
+			assert.strictEqual(matchesKey("\x1bOD", "left"), true);
+			assert.strictEqual(matchesKey("\x1bOH", "home"), true);
+			assert.strictEqual(matchesKey("\x1bOF", "end"), true);
+		});
+
+		it("should match legacy function keys and clear", () => {
+			assert.strictEqual(matchesKey("\x1bOP", "f1"), true);
+			assert.strictEqual(matchesKey("\x1b[24~", "f12"), true);
+			assert.strictEqual(matchesKey("\x1b[E", "clear"), true);
+		});
+
+		it("should match alt+arrows", () => {
+			assert.strictEqual(matchesKey("\x1bp", "alt+up"), true);
+			assert.strictEqual(matchesKey("\x1bp", "up"), false);
+		});
+
+		it("should match rxvt modifier sequences", () => {
+			assert.strictEqual(matchesKey("\x1b[a", "shift+up"), true);
+			assert.strictEqual(matchesKey("\x1bOa", "ctrl+up"), true);
+			assert.strictEqual(matchesKey("\x1b[2$", "shift+insert"), true);
+			assert.strictEqual(matchesKey("\x1b[2^", "ctrl+insert"), true);
+			assert.strictEqual(matchesKey("\x1b[7$", "shift+home"), true);
 		});
 	});
 });
@@ -155,6 +230,8 @@ describe("parseKey", () => {
 			assert.strictEqual(parseKey("\x1b"), "escape");
 			assert.strictEqual(parseKey("\t"), "tab");
 			assert.strictEqual(parseKey("\r"), "enter");
+			assert.strictEqual(parseKey("\n"), "enter");
+			assert.strictEqual(parseKey("\x00"), "ctrl+space");
 			assert.strictEqual(parseKey(" "), "space");
 		});
 
@@ -163,6 +240,27 @@ describe("parseKey", () => {
 			assert.strictEqual(parseKey("\x1b[B"), "down");
 			assert.strictEqual(parseKey("\x1b[C"), "right");
 			assert.strictEqual(parseKey("\x1b[D"), "left");
+		});
+
+		it("should parse SS3 arrows and home/end", () => {
+			assert.strictEqual(parseKey("\x1bOA"), "up");
+			assert.strictEqual(parseKey("\x1bOB"), "down");
+			assert.strictEqual(parseKey("\x1bOC"), "right");
+			assert.strictEqual(parseKey("\x1bOD"), "left");
+			assert.strictEqual(parseKey("\x1bOH"), "home");
+			assert.strictEqual(parseKey("\x1bOF"), "end");
+		});
+
+		it("should parse legacy function and modifier sequences", () => {
+			assert.strictEqual(parseKey("\x1bOP"), "f1");
+			assert.strictEqual(parseKey("\x1b[24~"), "f12");
+			assert.strictEqual(parseKey("\x1b[E"), "clear");
+			assert.strictEqual(parseKey("\x1b[2^"), "ctrl+insert");
+			assert.strictEqual(parseKey("\x1bp"), "alt+up");
+		});
+
+		it("should parse double bracket pageUp", () => {
+			assert.strictEqual(parseKey("\x1b[[5~"), "pageUp");
 		});
 	});
 });

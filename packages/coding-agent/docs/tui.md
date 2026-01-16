@@ -26,6 +26,32 @@ interface Component {
 
 The TUI appends a full SGR reset and OSC 8 reset at the end of each rendered line. Styles do not carry across lines. If you emit multi-line text with styling, reapply styles per line or use `wrapTextWithAnsi()` so styles are preserved for each wrapped line.
 
+## Focusable Interface (IME Support)
+
+Components that display a text cursor and need IME (Input Method Editor) support should implement the `Focusable` interface:
+
+```typescript
+import { CURSOR_MARKER, type Component, type Focusable } from "@mariozechner/pi-tui";
+
+class MyInput implements Component, Focusable {
+  focused: boolean = false;  // Set by TUI when focus changes
+  
+  render(width: number): string[] {
+    const marker = this.focused ? CURSOR_MARKER : "";
+    // Emit marker right before the fake cursor
+    return [`> ${beforeCursor}${marker}\x1b[7m${atCursor}\x1b[27m${afterCursor}`];
+  }
+}
+```
+
+When a `Focusable` component has focus, TUI:
+1. Sets `focused = true` on the component
+2. Scans rendered output for `CURSOR_MARKER` (a zero-width APC escape sequence)
+3. Positions the hardware terminal cursor at that location
+4. Shows the hardware cursor
+
+This enables IME candidate windows to appear at the correct position for CJK input methods. The `Editor` and `Input` built-in components already implement this interface.
+
 ## Using Components
 
 **In hooks** via `ctx.ui.custom()`:

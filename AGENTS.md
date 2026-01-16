@@ -27,6 +27,10 @@ read README.md, then ask which module(s) to work on. Based on the answer, read t
 ## GitHub Issues
 When reading issues:
 - Always read all comments on the issue
+- Use this command to get everything in one call:
+  ```bash
+  gh issue view <number> --json title,body,comments,labels,state
+  ```
 
 When creating issues:
 - Add `pkg:*` labels to indicate which package(s) the issue affects
@@ -45,7 +49,7 @@ When closing issues via commit:
 ## Tools
 - GitHub CLI for issues/PRs
 - Add package labels to issues/PRs: pkg:agent, pkg:ai, pkg:coding-agent, pkg:mom, pkg:pods, pkg:tui, pkg:web-ui
-- TUI interaction: use tmux
+- See pi-tmux-test skill if you need to test pi interactive mode
 
 ## Style
 - Keep answers short and concise

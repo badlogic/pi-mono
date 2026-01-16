@@ -13,6 +13,7 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
+import { readFileSync } from "node:fs";
 import type {
 	Agent,
 	AgentEvent,
@@ -24,6 +25,8 @@ import type {
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import { getAuthPath } from "../config.js";
+import { theme } from "../modes/interactive/theme/theme.js";
+import { stripFrontmatter } from "../utils/frontmatter.js";
 import { type BashResult, executeBash as executeBashCommand, executeBashWithOperations } from "./bash-executor.js";
 import {
 	type CompactionResult,
@@ -34,9 +37,11 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.js";
-import { exportSessionToHtml } from "./export-html/index.js";
+import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.js";
+import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import type {
 	ExtensionRunner,
+	InputSource,
 	SessionBeforeCompactResult,
 	SessionBeforeForkResult,
 	SessionBeforeSwitchResult,
@@ -99,6 +104,8 @@ export interface PromptOptions {
 	images?: ImageContent[];
 	/** When streaming, how to queue the message: "steer" (interrupt) or "followUp" (wait). Required if streaming. */
 	streamingBehavior?: "steer" | "followUp";
+	/** Source of input for extension input event handlers. Defaults to "interactive". */
+	source?: InputSource;
 }
 
 /** Result from cycleModel() */
@@ -564,8 +571,30 @@ export class AgentSession {
 			}
 		}
 
-		// Expand file-based prompt templates if requested
-		const expandedText = expandPromptTemplates ? expandPromptTemplate(text, [...this._promptTemplates]) : text;
+		// Emit input event for extension interception (before skill/template expansion)
+		let currentText = text;
+		let currentImages = options?.images;
+		if (this._extensionRunner?.hasHandlers("input")) {
+			const inputResult = await this._extensionRunner.emitInput(
+				currentText,
+				currentImages,
+				options?.source ?? "interactive",
+			);
+			if (inputResult.action === "handled") {
+				return;
+			}
+			if (inputResult.action === "transform") {
+				currentText = inputResult.text;
+				currentImages = inputResult.images ?? currentImages;
+			}
+		}
+
+		// Expand skill commands (/skill:name args) and prompt templates (/template args)
+		let expandedText = currentText;
+		if (expandPromptTemplates) {
+			expandedText = this._expandSkillCommand(expandedText);
+			expandedText = expandPromptTemplate(expandedText, [...this._promptTemplates]);
+		}
 
 		// If streaming, queue via steer() or followUp() based on option
 		if (this.isStreaming) {
@@ -614,8 +643,8 @@ export class AgentSession {
 
 		// Add user message
 		const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
-		if (options?.images) {
-			userContent.push(...options.images);
+		if (currentImages) {
+			userContent.push(...currentImages);
 		}
 		messages.push({
 			role: "user",
@@ -633,7 +662,7 @@ export class AgentSession {
 		if (this._extensionRunner) {
 			const result = await this._extensionRunner.emitBeforeAgentStart(
 				expandedText,
-				options?.images,
+				currentImages,
 				this._baseSystemPrompt,
 			);
 			// Add all custom messages from extensions
@@ -694,9 +723,41 @@ export class AgentSession {
 	}
 
 	/**
+	 * Expand skill commands (/skill:name args) to their full content.
+	 * Returns the expanded text, or the original text if not a skill command or skill not found.
+	 * Emits errors via extension runner if file read fails.
+	 */
+	private _expandSkillCommand(text: string): string {
+		if (!text.startsWith("/skill:")) return text;
+
+		const spaceIndex = text.indexOf(" ");
+		const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
+		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+
+		const skill = this._skills.find((s) => s.name === skillName);
+		if (!skill) return text; // Unknown skill, pass through
+
+		try {
+			const content = readFileSync(skill.filePath, "utf-8");
+			const body = stripFrontmatter(content).trim();
+			const header = `Skill location: ${skill.filePath}\nReferences are relative to ${skill.baseDir}.`;
+			const skillMessage = `${header}\n\n${body}`;
+			return args ? `${skillMessage}\n\n---\n\nUser: ${args}` : skillMessage;
+		} catch (err) {
+			// Emit error like extension commands do
+			this._extensionRunner?.emitError({
+				extensionPath: skill.filePath,
+				event: "skill_expansion",
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return text; // Return original on error
+		}
+	}
+
+	/**
 	 * Queue a steering message to interrupt the agent mid-run.
 	 * Delivered after current tool execution, skips remaining tools.
-	 * Expands file-based prompt templates. Errors on extension commands.
+	 * Expands skill commands and prompt templates. Errors on extension commands.
 	 * @throws Error if text is an extension command
 	 */
 	async steer(text: string): Promise<void> {
@@ -705,8 +766,9 @@ export class AgentSession {
 			this._throwIfExtensionCommand(text);
 		}
 
-		// Expand file-based prompt templates
-		const expandedText = expandPromptTemplate(text, [...this._promptTemplates]);
+		// Expand skill commands and prompt templates
+		let expandedText = this._expandSkillCommand(text);
+		expandedText = expandPromptTemplate(expandedText, [...this._promptTemplates]);
 
 		await this._queueSteer(expandedText);
 	}
@@ -714,7 +776,7 @@ export class AgentSession {
 	/**
 	 * Queue a follow-up message to be processed after the agent finishes.
 	 * Delivered only when agent has no more tool calls or steering messages.
-	 * Expands file-based prompt templates. Errors on extension commands.
+	 * Expands skill commands and prompt templates. Errors on extension commands.
 	 * @throws Error if text is an extension command
 	 */
 	async followUp(text: string): Promise<void> {
@@ -723,8 +785,9 @@ export class AgentSession {
 			this._throwIfExtensionCommand(text);
 		}
 
-		// Expand file-based prompt templates
-		const expandedText = expandPromptTemplate(text, [...this._promptTemplates]);
+		// Expand skill commands and prompt templates
+		let expandedText = this._expandSkillCommand(text);
+		expandedText = expandPromptTemplate(expandedText, [...this._promptTemplates]);
 
 		await this._queueFollowUp(expandedText);
 	}
@@ -851,6 +914,7 @@ export class AgentSession {
 			expandPromptTemplates: false,
 			streamingBehavior: options?.deliverAs,
 			images,
+			source: "extension",
 		});
 	}
 
@@ -1520,8 +1584,8 @@ export class AgentSession {
 		if (isContextOverflow(message, contextWindow)) return false;
 
 		const err = message.errorMessage;
-		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection error, other side closed, fetch failed
-		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server error|internal error|connection.?error|other side closed|fetch failed/i.test(
+		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection errors, fetch failed
+		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server error|internal error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers/i.test(
 			err,
 		);
 	}
@@ -2148,7 +2212,21 @@ export class AgentSession {
 	 */
 	async exportToHtml(outputPath?: string): Promise<string> {
 		const themeName = this.settingsManager.getTheme();
-		return await exportSessionToHtml(this.sessionManager, this.state, { outputPath, themeName });
+
+		// Create tool renderer if we have an extension runner (for custom tool HTML rendering)
+		let toolRenderer: ToolHtmlRenderer | undefined;
+		if (this._extensionRunner) {
+			toolRenderer = createToolHtmlRenderer({
+				getToolDefinition: (name) => this._extensionRunner!.getToolDefinition(name),
+				theme,
+			});
+		}
+
+		return await exportSessionToHtml(this.sessionManager, this.state, {
+			outputPath,
+			themeName,
+			toolRenderer,
+		});
 	}
 
 	// =========================================================================

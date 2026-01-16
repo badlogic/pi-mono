@@ -816,6 +816,26 @@ class TreeList implements Component {
 			} else {
 				this.onCancel?.();
 			}
+		} else if (matchesKey(keyData, "ctrl+d")) {
+			// Direct filter: default
+			this.filterMode = "default";
+			this.applyFilter();
+		} else if (matchesKey(keyData, "ctrl+t")) {
+			// Toggle filter: no-tools ↔ default
+			this.filterMode = this.filterMode === "no-tools" ? "default" : "no-tools";
+			this.applyFilter();
+		} else if (matchesKey(keyData, "ctrl+u")) {
+			// Toggle filter: user-only ↔ default
+			this.filterMode = this.filterMode === "user-only" ? "default" : "user-only";
+			this.applyFilter();
+		} else if (matchesKey(keyData, "ctrl+l")) {
+			// Toggle filter: labeled-only ↔ default
+			this.filterMode = this.filterMode === "labeled-only" ? "default" : "labeled-only";
+			this.applyFilter();
+		} else if (matchesKey(keyData, "ctrl+a")) {
+			// Toggle filter: all ↔ default
+			this.filterMode = this.filterMode === "all" ? "default" : "all";
+			this.applyFilter();
 		} else if (matchesKey(keyData, "shift+ctrl+o")) {
 			// Cycle filter backwards
 			const modes: FilterMode[] = ["default", "no-tools", "user-only", "labeled-only", "all"];
@@ -860,9 +880,9 @@ class SearchLine implements Component {
 	render(width: number): string[] {
 		const query = this.treeList.getSearchQuery();
 		if (query) {
-			return [truncateToWidth(`  ${theme.fg("muted", "Search:")} ${theme.fg("accent", query)}`, width)];
+			return [truncateToWidth(`  ${theme.fg("muted", "Type to search:")} ${theme.fg("accent", query)}`, width)];
 		}
-		return [truncateToWidth(`  ${theme.fg("muted", "Search:")}`, width)];
+		return [truncateToWidth(`  ${theme.fg("muted", "Type to search:")}`, width)];
 	}
 
 	handleInput(_keyData: string): void {}
@@ -950,8 +970,7 @@ export class TreeSelectorComponent extends Container {
 		this.addChild(
 			new TruncatedText(
 				theme.fg("muted", "  ↑/↓: move. ←/→: page. l: label. ") +
-					theme.fg("dim", "^O/⇧^O") +
-					theme.fg("muted", ": filter. Type to search"),
+					theme.fg("muted", "^D/^T/^U/^L/^A: filters (^O/⇧^O cycle)"),
 				0,
 				0,
 			),

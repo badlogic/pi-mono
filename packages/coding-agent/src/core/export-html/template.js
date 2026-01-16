@@ -12,7 +12,7 @@
         bytes[i] = binary.charCodeAt(i);
       }
       const data = JSON.parse(new TextDecoder('utf-8').decode(bytes));
-      const { header, entries, leafId: defaultLeafId, systemPrompt, codexInjectionInfo, tools } = data;
+      const { header, entries, leafId: defaultLeafId, systemPrompt, tools, renderedTools } = data;
 
       // ============================================================
       // URL PARAMETER HANDLING
@@ -911,11 +911,41 @@
             break;
           }
           default: {
-            html += `<div class="tool-header"><span class="tool-name">${escapeHtml(name)}</span></div>`;
-            html += `<div class="tool-output"><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></div>`;
-            if (result) {
-              const output = getResultText();
-              if (output) html += formatExpandableOutput(output, 10);
+            // Check for pre-rendered custom tool HTML
+            const rendered = renderedTools?.[call.id];
+            if (rendered?.callHtml || rendered?.resultHtml) {
+              // Custom tool with pre-rendered HTML from TUI renderer
+              if (rendered.callHtml) {
+                html += `<div class="tool-header ansi-rendered">${rendered.callHtml}</div>`;
+              } else {
+                html += `<div class="tool-header"><span class="tool-name">${escapeHtml(name)}</span></div>`;
+              }
+              
+              if (rendered.resultHtml) {
+                // Apply same truncation as built-in tools (10 lines)
+                const lines = rendered.resultHtml.split('\n');
+                if (lines.length > 10) {
+                  const preview = lines.slice(0, 10).join('\n');
+                  html += `<div class="tool-output expandable ansi-rendered" onclick="this.classList.toggle('expanded')">
+                    <div class="output-preview">${preview}<div class="expand-hint">... (${lines.length - 10} more lines)</div></div>
+                    <div class="output-full">${rendered.resultHtml}</div>
+                  </div>`;
+                } else {
+                  html += `<div class="tool-output ansi-rendered">${rendered.resultHtml}</div>`;
+                }
+              } else if (result) {
+                // Fallback to JSON for result if no pre-rendered HTML
+                const output = getResultText();
+                if (output) html += formatExpandableOutput(output, 10);
+              }
+            } else {
+              // Fallback to JSON display (existing behavior)
+              html += `<div class="tool-header"><span class="tool-name">${escapeHtml(name)}</span></div>`;
+              html += `<div class="tool-output"><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></div>`;
+              if (result) {
+                const output = getResultText();
+                if (output) html += formatExpandableOutput(output, 10);
+              }
             }
           }
         }
@@ -1087,17 +1117,7 @@
         }
 
         if (entry.type === 'model_change') {
-          let html = `<div class="model-change" id="${entryId}">${tsHtml}Switched to model: <span class="model-name">${escapeHtml(entry.provider)}/${escapeHtml(entry.modelId)}</span>`;
-          
-          // Show expandable bridge prompt info when switching to openai-codex
-          if (entry.provider === 'openai-codex' && codexInjectionInfo) {
-            const fullContent = `# Codex Instructions\n${codexInjectionInfo.instructions}\n\n# Codex-Pi Bridge\n${codexInjectionInfo.bridge}`;
-            html += ` <span class="codex-bridge-toggle" onclick="event.stopPropagation(); this.parentElement.classList.toggle('show-bridge')">[bridge prompt]</span>`;
-            html += `<div class="codex-bridge-content"><pre>${escapeHtml(fullContent)}</pre></div>`;
-          }
-          
-          html += '</div>';
-          return html;
+          return `<div class="model-change" id="${entryId}">${tsHtml}Switched to model: <span class="model-name">${escapeHtml(entry.provider)}/${escapeHtml(entry.modelId)}</span></div>`;
         }
 
         if (entry.type === 'compaction') {

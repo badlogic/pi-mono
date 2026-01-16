@@ -44,7 +44,7 @@ export class ExtensionEditorComponent extends Container {
 		this.addChild(new Spacer(1));
 
 		// Create editor
-		this.editor = new Editor(getEditorTheme());
+		this.editor = new Editor(tui, getEditorTheme());
 		if (prefill) {
 			this.editor.setText(prefill);
 		}

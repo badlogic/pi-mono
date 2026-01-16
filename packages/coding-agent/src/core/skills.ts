@@ -3,6 +3,7 @@ import { minimatch } from "minimatch";
 import { homedir } from "os";
 import { basename, dirname, join, resolve } from "path";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
+import { parseFrontmatter } from "../utils/frontmatter.js";
 import type { SkillsSettings } from "./settings-manager.js";
 
 /**
@@ -49,48 +50,6 @@ export interface LoadSkillsResult {
 }
 
 type SkillFormat = "recursive" | "claude";
-
-function stripQuotes(value: string): string {
-	if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-		return value.slice(1, -1);
-	}
-	return value;
-}
-
-function parseFrontmatter(content: string): { frontmatter: SkillFrontmatter; body: string; allKeys: string[] } {
-	const frontmatter: SkillFrontmatter = {};
-	const allKeys: string[] = [];
-
-	const normalizedContent = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-	if (!normalizedContent.startsWith("---")) {
-		return { frontmatter, body: normalizedContent, allKeys };
-	}
-
-	const endIndex = normalizedContent.indexOf("\n---", 3);
-	if (endIndex === -1) {
-		return { frontmatter, body: normalizedContent, allKeys };
-	}
-
-	const frontmatterBlock = normalizedContent.slice(4, endIndex);
-	const body = normalizedContent.slice(endIndex + 4).trim();
-
-	for (const line of frontmatterBlock.split("\n")) {
-		const match = line.match(/^(\w[\w-]*):\s*(.*)$/);
-		if (match) {
-			const key = match[1];
-			const value = stripQuotes(match[2].trim());
-			allKeys.push(key);
-			if (key === "name") {
-				frontmatter.name = value;
-			} else if (key === "description") {
-				frontmatter.description = value;
-			}
-		}
-	}
-
-	return { frontmatter, body, allKeys };
-}
 
 /**
  * Validate skill name per Agent Skills spec.
@@ -244,7 +203,8 @@ function loadSkillFromFile(filePath: string, source: string): { skill: Skill | n
 
 	try {
 		const rawContent = readFileSync(filePath, "utf-8");
-		const { frontmatter, allKeys } = parseFrontmatter(rawContent);
+		const { frontmatter } = parseFrontmatter<SkillFrontmatter>(rawContent);
+		const allKeys = Object.keys(frontmatter);
 		const skillDir = dirname(filePath);
 		const parentDirName = basename(skillDir);
 
@@ -284,7 +244,9 @@ function loadSkillFromFile(filePath: string, source: string): { skill: Skill | n
 			},
 			warnings,
 		};
-	} catch {
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "failed to parse skill file";
+		warnings.push({ skillPath: filePath, message });
 		return { skill: null, warnings };
 	}
 }
