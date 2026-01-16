@@ -116,6 +116,17 @@ For most users, [Git for Windows](https://git-scm.com/download/win) is sufficien
 }
 ```
 
+**Alias expansion:** Pi runs bash in non-interactive mode (`bash -c`), which doesn't expand aliases by default. To enable your shell aliases:
+
+```json
+// ~/.pi/agent/settings.json
+{
+  "shellCommandPrefix": "shopt -s expand_aliases\neval \"$(grep '^alias ' ~/.zshrc)\""
+}
+```
+
+Adjust the path (`~/.zshrc`, `~/.bashrc`, etc.) to match your shell config.
+
 ### Terminal Setup
 
 Pi uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Most modern terminals support this protocol, but some require configuration.
@@ -742,6 +753,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
   "steeringMode": "one-at-a-time",
   "followUpMode": "one-at-a-time",
   "shellPath": "C:\\path\\to\\bash.exe",
+  "shellCommandPrefix": "shopt -s expand_aliases",
   "hideThinkingBlock": false,
   "collapseChangelog": false,
   "compaction": {
@@ -778,6 +790,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `steeringMode` | Steering message delivery: `all` or `one-at-a-time` | `one-at-a-time` |
 | `followUpMode` | Follow-up message delivery: `all` or `one-at-a-time` | `one-at-a-time` |
 | `shellPath` | Custom bash path (Windows) | auto-detected |
+| `shellCommandPrefix` | Command prefix for bash (e.g., `shopt -s expand_aliases` for alias support) | - |
 | `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
 | `collapseChangelog` | Show condensed changelog after update | `false` |
 | `compaction.enabled` | Enable auto-compaction | `true` |

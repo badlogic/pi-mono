@@ -438,8 +438,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	time("discoverContextFiles");
 
 	const autoResizeImages = settingsManager.getImageAutoResize();
+	const shellCommandPrefix = settingsManager.getShellCommandPrefix();
 	// Create ALL built-in tools for the registry (extensions can enable any of them)
-	const allBuiltInToolsMap = createAllTools(cwd, { read: { autoResizeImages } });
+	const allBuiltInToolsMap = createAllTools(cwd, {
+		read: { autoResizeImages },
+		bash: { commandPrefix: shellCommandPrefix },
+	});
 	// Determine initially active built-in tools (default: read, bash, edit, write)
 	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
 	const initialActiveToolNames: ToolName[] = options.tools

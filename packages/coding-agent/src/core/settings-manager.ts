@@ -61,6 +61,7 @@ export interface Settings {
 	hideThinkingBlock?: boolean;
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
 	quietStartup?: boolean;
+	shellCommandPrefix?: string; // Prefix prepended to every bash command (e.g., "shopt -s expand_aliases" for alias support)
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 	extensions?: string[]; // Array of extension file paths
 	skills?: SkillsSettings;
@@ -353,6 +354,15 @@ export class SettingsManager {
 
 	setQuietStartup(quiet: boolean): void {
 		this.globalSettings.quietStartup = quiet;
+		this.save();
+	}
+
+	getShellCommandPrefix(): string | undefined {
+		return this.settings.shellCommandPrefix;
+	}
+
+	setShellCommandPrefix(prefix: string | undefined): void {
+		this.globalSettings.shellCommandPrefix = prefix;
 		this.save();
 	}
 
