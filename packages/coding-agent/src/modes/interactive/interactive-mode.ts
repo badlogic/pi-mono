@@ -319,6 +319,7 @@ export class InteractiveMode {
 			(cmd) => ({
 				name: cmd.name,
 				description: cmd.description ?? "(extension command)",
+				getArgumentCompletions: cmd.getArgumentCompletions,
 			}),
 		);
 
