@@ -16,6 +16,8 @@ export interface RetrySettings {
 	enabled?: boolean; // default: true
 	maxRetries?: number; // default: 3
 	baseDelayMs?: number; // default: 2000 (exponential backoff: 2s, 4s, 8s)
+	streamMaxRetries?: number;
+	streamIdleTimeoutMs?: number;
 }
 
 export interface SkillsSettings {
@@ -320,11 +322,19 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getRetrySettings(): { enabled: boolean; maxRetries: number; baseDelayMs: number } {
+	getRetrySettings(): {
+		enabled: boolean;
+		maxRetries: number;
+		baseDelayMs: number;
+		streamMaxRetries: number;
+		streamIdleTimeoutMs: number;
+	} {
 		return {
 			enabled: this.getRetryEnabled(),
 			maxRetries: this.settings.retry?.maxRetries ?? 3,
 			baseDelayMs: this.settings.retry?.baseDelayMs ?? 2000,
+			streamMaxRetries: this.settings.retry?.streamMaxRetries ?? 5,
+			streamIdleTimeoutMs: this.settings.retry?.streamIdleTimeoutMs ?? 300000,
 		};
 	}
 

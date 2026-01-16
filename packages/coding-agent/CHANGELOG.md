@@ -2,9 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `retry.streamMaxRetries` and `retry.streamIdleTimeoutMs` settings for Codex stream reconnect handling.
+
 ### Fixed
 
 - Session tree now preserves branch connectors and indentation when filters hide intermediate entries so descendants attach to the nearest visible ancestor and sibling branches align. Fixed in both TUI and HTML export ([#739](https://github.com/badlogic/pi-mono/pull/739) by [@w-winter](https://github.com/w-winter))
+- Auto-retry now treats Codex stream disconnects and rate limits as retryable, honoring retry-after delays when provided.
 
 ## [0.46.0] - 2026-01-15
 

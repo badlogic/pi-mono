@@ -77,6 +77,9 @@ export interface AgentOptions {
 	 * Custom token budgets for thinking levels (token-based providers only).
 	 */
 	thinkingBudgets?: ThinkingBudgets;
+	requestMaxRetries?: number;
+	requestBaseDelayMs?: number;
+	streamIdleTimeoutMs?: number;
 }
 
 export class Agent {
@@ -106,6 +109,9 @@ export class Agent {
 	private runningPrompt?: Promise<void>;
 	private resolveRunningPrompt?: () => void;
 	private _thinkingBudgets?: ThinkingBudgets;
+	private _requestMaxRetries?: number;
+	private _requestBaseDelayMs?: number;
+	private _streamIdleTimeoutMs?: number;
 
 	constructor(opts: AgentOptions = {}) {
 		this._state = { ...this._state, ...opts.initialState };
@@ -117,6 +123,9 @@ export class Agent {
 		this._sessionId = opts.sessionId;
 		this.getApiKey = opts.getApiKey;
 		this._thinkingBudgets = opts.thinkingBudgets;
+		this._requestMaxRetries = opts.requestMaxRetries;
+		this._requestBaseDelayMs = opts.requestBaseDelayMs;
+		this._streamIdleTimeoutMs = opts.streamIdleTimeoutMs;
 	}
 
 	/**
@@ -333,6 +342,9 @@ export class Agent {
 			reasoning,
 			sessionId: this._sessionId,
 			thinkingBudgets: this._thinkingBudgets,
+			requestMaxRetries: this._requestMaxRetries,
+			requestBaseDelayMs: this._requestBaseDelayMs,
+			streamIdleTimeoutMs: this._streamIdleTimeoutMs,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,

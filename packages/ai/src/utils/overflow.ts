@@ -86,16 +86,21 @@ const OVERFLOW_PATTERNS = [
  */
 export function isContextOverflow(message: AssistantMessage, contextWindow?: number): boolean {
 	// Case 1: Check error message patterns
-	if (message.stopReason === "error" && message.errorMessage) {
-		// Check known patterns
-		if (OVERFLOW_PATTERNS.some((p) => p.test(message.errorMessage!))) {
+	if (message.stopReason === "error") {
+		if (message.errorDetails?.kind === "context_length_exceeded") {
 			return true;
 		}
+		if (message.errorMessage) {
+			// Check known patterns
+			if (OVERFLOW_PATTERNS.some((p) => p.test(message.errorMessage!))) {
+				return true;
+			}
 
-		// Cerebras and Mistral return 400/413/429 with no body - check for status code pattern
-		// 429 can indicate token-based rate limiting which correlates with context overflow
-		if (/^4(00|13|29)\s*(status code)?\s*\(no body\)/i.test(message.errorMessage)) {
-			return true;
+			// Cerebras and Mistral return 400/413/429 with no body - check for status code pattern
+			// 429 can indicate token-based rate limiting which correlates with context overflow
+			if (/^4(00|13|29)\s*(status code)?\s*\(no body\)/i.test(message.errorMessage)) {
+				return true;
+			}
 		}
 	}
 

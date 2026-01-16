@@ -86,6 +86,9 @@ export interface StreamOptions {
 	 * session-aware features. Ignored by providers that don't support it.
 	 */
 	sessionId?: string;
+	requestMaxRetries?: number;
+	requestBaseDelayMs?: number;
+	streamIdleTimeoutMs?: number;
 }
 
 // Unified options with reasoning passed to streamSimple() and completeSimple()
@@ -145,6 +148,12 @@ export interface Usage {
 
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
 
+export interface ErrorDetails {
+	retryable?: boolean;
+	retryAfterMs?: number;
+	kind?: string;
+}
+
 export interface UserMessage {
 	role: "user";
 	content: string | (TextContent | ImageContent)[];
@@ -160,6 +169,7 @@ export interface AssistantMessage {
 	usage: Usage;
 	stopReason: StopReason;
 	errorMessage?: string;
+	errorDetails?: ErrorDetails;
 	timestamp: number; // Unix timestamp in milliseconds
 }
 

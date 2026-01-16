@@ -437,6 +437,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const contextFiles = options.contextFiles ?? discoverContextFiles(cwd, agentDir);
 	time("discoverContextFiles");
 
+	const retrySettings = settingsManager.getRetrySettings();
+	const requestRetryOverrides = retrySettings.enabled ? {} : { requestMaxRetries: 0 };
 	const autoResizeImages = settingsManager.getImageAutoResize();
 	// Create ALL built-in tools for the registry (extensions can enable any of them)
 	const allBuiltInToolsMap = createAllTools(cwd, { read: { autoResizeImages } });
@@ -628,6 +630,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		steeringMode: settingsManager.getSteeringMode(),
 		followUpMode: settingsManager.getFollowUpMode(),
 		thinkingBudgets: settingsManager.getThinkingBudgets(),
+		streamIdleTimeoutMs: retrySettings.streamIdleTimeoutMs,
+		...requestRetryOverrides,
 		getApiKey: async (provider) => {
 			// Use the provider argument from the in-flight request;
 			// agent.state.model may already be switched mid-turn.

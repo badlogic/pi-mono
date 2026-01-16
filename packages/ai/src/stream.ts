@@ -212,6 +212,9 @@ function mapOptionsForApi<TApi extends Api>(
 		signal: options?.signal,
 		apiKey: apiKey || options?.apiKey,
 		sessionId: options?.sessionId,
+		requestMaxRetries: options?.requestMaxRetries,
+		requestBaseDelayMs: options?.requestBaseDelayMs,
+		streamIdleTimeoutMs: options?.streamIdleTimeoutMs,
 	};
 
 	// Helper to clamp xhigh to high for providers that don't support it

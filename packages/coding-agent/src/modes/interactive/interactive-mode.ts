@@ -1821,11 +1821,13 @@ export class InteractiveMode {
 				// Show retry indicator
 				this.statusContainer.clear();
 				const delaySeconds = Math.round(event.delayMs / 1000);
+				const isStreamRetry = event.errorKind === "stream_disconnect" || event.errorKind === "stream_idle_timeout";
+				const retryLabel = isStreamRetry ? "Reconnecting" : "Retrying";
 				this.retryLoader = new Loader(
 					this.ui,
 					(spinner) => theme.fg("warning", spinner),
 					(text) => theme.fg("muted", text),
-					`Retrying (${event.attempt}/${event.maxAttempts}) in ${delaySeconds}s... (${appKey(this.keybindings, "interrupt")} to cancel)`,
+					`${retryLabel} (${event.attempt}/${event.maxAttempts}) in ${delaySeconds}s... (${appKey(this.keybindings, "interrupt")} to cancel)`,
 				);
 				this.statusContainer.addChild(this.retryLoader);
 				this.ui.requestRender();

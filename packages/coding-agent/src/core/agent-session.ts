@@ -60,7 +60,14 @@ export type AgentSessionEvent =
 	| AgentEvent
 	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
 	| { type: "auto_compaction_end"; result: CompactionResult | undefined; aborted: boolean; willRetry: boolean }
-	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
+	| {
+			type: "auto_retry_start";
+			attempt: number;
+			maxAttempts: number;
+			delayMs: number;
+			errorMessage: string;
+			errorKind?: string;
+	  }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
 
 /** Listener function for agent session events */
@@ -1521,11 +1528,18 @@ export class AgentSession {
 		const contextWindow = this.model?.contextWindow ?? 0;
 		if (isContextOverflow(message, contextWindow)) return false;
 
+		const retryable = message.errorDetails?.retryable;
+		if (retryable !== undefined) return retryable;
+
 		const err = message.errorMessage;
 		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection error, other side closed, fetch failed
 		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server error|internal error|connection.?error|other side closed|fetch failed/i.test(
 			err,
 		);
+	}
+
+	private _isStreamRetry(message: AssistantMessage): boolean {
+		return message.errorDetails?.kind === "stream_disconnect" || message.errorDetails?.kind === "stream_idle_timeout";
 	}
 
 	/**
@@ -1536,6 +1550,8 @@ export class AgentSession {
 		const settings = this.settingsManager.getRetrySettings();
 		if (!settings.enabled) return false;
 
+		const maxAttempts = this._isStreamRetry(message) ? settings.streamMaxRetries : settings.maxRetries;
+
 		this._retryAttempt++;
 
 		// Create retry promise on first attempt so waitForRetry() can await it
@@ -1545,7 +1561,7 @@ export class AgentSession {
 			});
 		}
 
-		if (this._retryAttempt > settings.maxRetries) {
+		if (this._retryAttempt > maxAttempts) {
 			// Max retries exceeded, emit final failure and reset
 			this._emit({
 				type: "auto_retry_end",
@@ -1558,14 +1574,18 @@ export class AgentSession {
 			return false;
 		}
 
-		const delayMs = settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
+		const baseDelayMs = settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
+		const retryAfterMs =
+			message.errorDetails?.retryAfterMs !== undefined ? Math.max(0, message.errorDetails.retryAfterMs) : undefined;
+		const delayMs = retryAfterMs !== undefined ? Math.max(retryAfterMs, baseDelayMs) : baseDelayMs;
 
 		this._emit({
 			type: "auto_retry_start",
 			attempt: this._retryAttempt,
-			maxAttempts: settings.maxRetries,
+			maxAttempts: maxAttempts,
 			delayMs,
 			errorMessage: message.errorMessage || "Unknown error",
+			errorKind: message.errorDetails?.kind,
 		});
 
 		// Remove error message from agent state (keep in session for history)

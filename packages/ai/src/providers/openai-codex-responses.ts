@@ -30,6 +30,9 @@ import { transformMessages } from "./transform-messages.js";
 
 const CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";
 const JWT_CLAIM_PATH = "https://api.openai.com/auth" as const;
+const DEFAULT_REQUEST_MAX_RETRIES = 4;
+const DEFAULT_REQUEST_BASE_DELAY_MS = 200;
+const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300000;
 
 // ============================================================================
 // Types
@@ -55,7 +58,21 @@ interface RequestBody {
 	text?: { verbosity?: string };
 	include?: string[];
 	prompt_cache_key?: string;
+	prompt_cache_retention?: "in-memory";
 	[key: string]: unknown;
+}
+
+type CodexErrorDetails = AssistantMessage["errorDetails"];
+type StreamReadResult = { done: boolean; value?: Uint8Array };
+
+class CodexError extends Error {
+	readonly details?: CodexErrorDetails;
+
+	constructor(message: string, details?: CodexErrorDetails) {
+		super(message);
+		this.name = "CodexError";
+		this.details = details;
+	}
 }
 
 // ============================================================================
@@ -98,24 +115,32 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 			const body = buildRequestBody(model, context, options);
 			const headers = buildHeaders(model.headers, accountId, apiKey, options?.sessionId);
 
-			const response = await fetch(CODEX_URL, {
-				method: "POST",
-				headers,
-				body: JSON.stringify(body),
-				signal: options?.signal,
-			});
+			const response = await fetchWithRetry(
+				CODEX_URL,
+				{
+					method: "POST",
+					headers,
+					body: JSON.stringify(body),
+					signal: options?.signal,
+				},
+				{
+					maxRetries: options?.requestMaxRetries ?? DEFAULT_REQUEST_MAX_RETRIES,
+					baseDelayMs: options?.requestBaseDelayMs ?? DEFAULT_REQUEST_BASE_DELAY_MS,
+					signal: options?.signal,
+				},
+			);
 
 			if (!response.ok) {
 				const info = await parseErrorResponse(response);
-				throw new Error(info.friendlyMessage || info.message);
+				throw new CodexError(info.message, info.errorDetails);
 			}
 
 			if (!response.body) {
-				throw new Error("No response body");
+				throw new CodexError("No response body", { retryable: true, kind: "transport" });
 			}
 
 			stream.push({ type: "start", partial: output });
-			await processStream(response, output, stream, model);
+			await processStream(response, output, stream, model, options);
 
 			if (options?.signal?.aborted) {
 				throw new Error("Request was aborted");
@@ -126,6 +151,9 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 		} catch (error) {
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
 			output.errorMessage = error instanceof Error ? error.message : String(error);
+			if (error instanceof CodexError) {
+				output.errorDetails = error.details;
+			}
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}
@@ -165,6 +193,10 @@ function buildRequestBody(
 		tool_choice: "auto",
 		parallel_tool_calls: true,
 	};
+
+	if (options?.sessionId) {
+		body.prompt_cache_retention = "in-memory";
+	}
 
 	if (options?.temperature !== undefined) {
 		body.temperature = options.temperature;
@@ -333,12 +365,15 @@ async function processStream(
 	output: AssistantMessage,
 	stream: AssistantMessageEventStream,
 	model: Model<"openai-codex-responses">,
+	options?: OpenAICodexResponsesOptions,
 ): Promise<void> {
 	let currentItem: ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall | null = null;
 	let currentBlock: ThinkingContent | TextContent | (ToolCall & { partialJson: string }) | null = null;
 	const blockIndex = () => output.content.length - 1;
+	const streamIdleTimeoutMs = options?.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS;
+	let sawCompletion = false;
 
-	for await (const event of parseSSE(response)) {
+	for await (const event of parseSSE(response, { idleTimeoutMs: streamIdleTimeoutMs, signal: options?.signal })) {
 		const type = event.type as string;
 
 		switch (type) {
@@ -498,6 +533,7 @@ async function processStream(
 						};
 					}
 				).response;
+				sawCompletion = true;
 				if (resp?.usage) {
 					const cached = resp.usage.input_tokens_details?.cached_tokens || 0;
 					output.usage = {
@@ -520,14 +556,46 @@ async function processStream(
 			case "error": {
 				const code = (event as { code?: string }).code || "";
 				const message = (event as { message?: string }).message || "";
-				throw new Error(`Codex error: ${message || code || JSON.stringify(event)}`);
+				const errorMessage = message || code || JSON.stringify(event);
+				const retryAfterMs = parseRetryAfterFromMessage(errorMessage);
+				const errorDetails = buildCodexErrorDetails({ code, message: errorMessage, retryAfterMs });
+				throw new CodexError(`Codex error: ${errorMessage}`, errorDetails);
 			}
 
 			case "response.failed": {
-				const msg = (event as { response?: { error?: { message?: string } } }).response?.error?.message;
-				throw new Error(msg || "Codex response failed");
+				const error = (
+					event as {
+						response?: {
+							error?: {
+								code?: string;
+								type?: string;
+								message?: string;
+								status?: number;
+								resets_at?: number;
+							};
+						};
+					}
+				).response?.error;
+				const code = error?.code || error?.type || "";
+				const message = error?.message;
+				const retryAfterMs = parseRetryAfterFromMessage(message) ?? parseRetryAfterFromResetAt(error?.resets_at);
+				const errorDetails = buildCodexErrorDetails({
+					code,
+					status: error?.status,
+					message,
+					retryAfterMs,
+				});
+				const errorMessage = message || (code ? `Codex response failed (${code})` : "Codex response failed");
+				throw new CodexError(errorMessage, errorDetails);
 			}
 		}
+	}
+
+	if (!sawCompletion) {
+		throw new CodexError("Codex stream disconnected before completion", {
+			retryable: true,
+			kind: "stream_disconnect",
+		});
 	}
 }
 
@@ -549,15 +617,22 @@ function mapStopReason(status?: string): StopReason {
 // SSE Parsing
 // ============================================================================
 
-async function* parseSSE(response: Response): AsyncGenerator<Record<string, unknown>> {
+async function* parseSSE(
+	response: Response,
+	options?: { idleTimeoutMs?: number; signal?: AbortSignal },
+): AsyncGenerator<Record<string, unknown>> {
 	if (!response.body) return;
 
 	const reader = response.body.getReader();
 	const decoder = new TextDecoder();
 	let buffer = "";
+	const idleTimeoutMs = options?.idleTimeoutMs;
 
 	while (true) {
-		const { done, value } = await reader.read();
+		if (options?.signal?.aborted) {
+			throw new Error("Request was aborted");
+		}
+		const { done, value } = await readWithTimeout(reader, idleTimeoutMs, options?.signal);
 		if (done) break;
 		buffer += decoder.decode(value, { stream: true });
 
@@ -583,14 +658,209 @@ async function* parseSSE(response: Response): AsyncGenerator<Record<string, unkn
 	}
 }
 
+async function readWithTimeout(
+	reader: ReadableStreamDefaultReader<Uint8Array>,
+	idleTimeoutMs: number | undefined,
+	signal?: AbortSignal,
+): Promise<StreamReadResult> {
+	if (signal?.aborted) {
+		throw new Error("Request was aborted");
+	}
+
+	if (!idleTimeoutMs || idleTimeoutMs <= 0) {
+		return reader.read();
+	}
+
+	let timeoutId: ReturnType<typeof setTimeout> | undefined;
+	const timeoutPromise = new Promise<StreamReadResult>((_, reject) => {
+		timeoutId = setTimeout(() => {
+			reader.cancel().catch(() => {});
+			reject(
+				new CodexError("Codex stream idle timeout", {
+					retryable: true,
+					kind: "stream_idle_timeout",
+				}),
+			);
+		}, idleTimeoutMs);
+	});
+
+	const readPromise = reader.read().catch((error) => {
+		if (signal?.aborted || isAbortError(error)) {
+			throw error;
+		}
+		throw new CodexError("Codex stream disconnected", {
+			retryable: true,
+			kind: "stream_disconnect",
+		});
+	});
+
+	try {
+		return (await Promise.race([readPromise, timeoutPromise])) as StreamReadResult;
+	} finally {
+		if (timeoutId) clearTimeout(timeoutId);
+	}
+}
+
 // ============================================================================
 // Error Handling
 // ============================================================================
 
-async function parseErrorResponse(response: Response): Promise<{ message: string; friendlyMessage?: string }> {
+function buildCodexErrorDetails({
+	code,
+	status,
+	message,
+	retryAfterMs,
+}: {
+	code?: string;
+	status?: number;
+	message?: string;
+	retryAfterMs?: number;
+}): CodexErrorDetails | undefined {
+	const normalizedCode = code?.toLowerCase() ?? "";
+	if (normalizedCode === "context_length_exceeded") {
+		return { retryable: false, kind: "context_length_exceeded" };
+	}
+	if (normalizedCode === "insufficient_quota") {
+		return { retryable: false, kind: "insufficient_quota" };
+	}
+	if (normalizedCode.includes("usage_limit_reached")) {
+		return { retryable: false, kind: "usage_limit_reached" };
+	}
+	if (normalizedCode === "usage_not_included") {
+		return { retryable: false, kind: "usage_not_included" };
+	}
+	if (normalizedCode && /invalid_request|invalid_params/.test(normalizedCode)) {
+		return { retryable: false, kind: "invalid_request" };
+	}
+
+	const isRateLimit =
+		normalizedCode.includes("rate_limit") ||
+		status === 429 ||
+		(message ? /rate.?limit|too many requests/i.test(message) : false);
+
+	if (isRateLimit) {
+		return { retryable: true, kind: "rate_limit", retryAfterMs };
+	}
+
+	if (status && status >= 500 && status <= 599) {
+		return { retryable: true, kind: "server_error" };
+	}
+
+	return undefined;
+}
+
+function parseRetryAfterFromMessage(message?: string): number | undefined {
+	if (!message) return undefined;
+	const match = message.match(/try again in\s*(\d+(?:\.\d+)?)\s*(s|ms|seconds?)/i);
+	if (!match) return undefined;
+	const value = Number.parseFloat(match[1]);
+	if (Number.isNaN(value)) return undefined;
+	const unit = match[2].toLowerCase();
+	if (unit === "ms") return Math.round(value);
+	return Math.round(value * 1000);
+}
+
+function parseRetryAfterFromResetAt(resetsAt?: number): number | undefined {
+	if (typeof resetsAt !== "number") return undefined;
+	return Math.max(0, resetsAt * 1000 - Date.now());
+}
+
+function parseRetryAfterHeader(value?: string | null): number | undefined {
+	if (!value) return undefined;
+	const trimmed = value.trim();
+	const seconds = Number.parseInt(trimmed, 10);
+	if (!Number.isNaN(seconds)) {
+		return Math.max(0, seconds * 1000);
+	}
+	const dateMs = Date.parse(trimmed);
+	if (!Number.isNaN(dateMs)) {
+		return Math.max(0, dateMs - Date.now());
+	}
+	return undefined;
+}
+
+function isRetryableStatus(status: number): boolean {
+	return status >= 500 && status <= 599;
+}
+
+function getRetryDelayMs(baseDelayMs: number, attempt: number, retryAfterMs?: number): number {
+	const backoffMs = baseDelayMs * 2 ** attempt;
+	const jitterFactor = 0.9 + Math.random() * 0.2;
+	const candidateDelay = Math.round(backoffMs * jitterFactor);
+	if (retryAfterMs !== undefined) {
+		return Math.max(retryAfterMs, candidateDelay);
+	}
+	return candidateDelay;
+}
+
+function isAbortError(error: unknown): boolean {
+	return error instanceof Error && error.name === "AbortError";
+}
+
+async function sleepWithSignal(delayMs: number, signal?: AbortSignal): Promise<void> {
+	if (delayMs <= 0) return;
+	if (signal?.aborted) {
+		throw new Error("Request was aborted");
+	}
+	await new Promise<void>((resolve, reject) => {
+		const timeout = setTimeout(resolve, delayMs);
+		signal?.addEventListener("abort", () => {
+			clearTimeout(timeout);
+			reject(new Error("Request was aborted"));
+		});
+	});
+}
+
+async function fetchWithRetry(
+	url: string,
+	init: RequestInit,
+	options: { maxRetries: number; baseDelayMs: number; signal?: AbortSignal },
+): Promise<Response> {
+	const maxRetries = Math.max(0, options.maxRetries);
+	const baseDelayMs = options.baseDelayMs;
+	let attempt = 0;
+
+	while (true) {
+		if (options.signal?.aborted) {
+			throw new Error("Request was aborted");
+		}
+
+		try {
+			const response = await fetch(url, { ...init, signal: options.signal });
+			if (!response.ok && isRetryableStatus(response.status) && attempt < maxRetries) {
+				const retryAfterMs = parseRetryAfterHeader(response.headers.get("retry-after"));
+				const delayMs = getRetryDelayMs(baseDelayMs, attempt, retryAfterMs);
+				await sleepWithSignal(delayMs, options.signal);
+				attempt++;
+				continue;
+			}
+			return response;
+		} catch (error) {
+			if (options.signal?.aborted || isAbortError(error)) {
+				throw error;
+			}
+			if (attempt < maxRetries) {
+				const delayMs = getRetryDelayMs(baseDelayMs, attempt);
+				await sleepWithSignal(delayMs, options.signal);
+				attempt++;
+				continue;
+			}
+			throw new CodexError(error instanceof Error ? error.message : String(error), {
+				retryable: true,
+				kind: "transport",
+			});
+		}
+	}
+}
+
+async function parseErrorResponse(
+	response: Response,
+): Promise<{ message: string; friendlyMessage?: string; errorDetails?: CodexErrorDetails }> {
 	const raw = await response.text();
 	let message = raw || response.statusText || "Request failed";
 	let friendlyMessage: string | undefined;
+	let code: string | undefined;
+	let retryAfterMs = parseRetryAfterHeader(response.headers.get("retry-after"));
 
 	try {
 		const parsed = JSON.parse(raw) as {
@@ -598,8 +868,14 @@ async function parseErrorResponse(response: Response): Promise<{ message: string
 		};
 		const err = parsed?.error;
 		if (err) {
-			const code = err.code || err.type || "";
-			if (/usage_limit_reached|usage_not_included|rate_limit_exceeded/i.test(code) || response.status === 429) {
+			code = err.code || err.type;
+			if (err.resets_at !== undefined) {
+				retryAfterMs = parseRetryAfterFromResetAt(err.resets_at) ?? retryAfterMs;
+			}
+			if (
+				(code && /usage_limit_reached|usage_not_included|rate_limit_exceeded/i.test(code)) ||
+				response.status === 429
+			) {
 				const plan = err.plan_type ? ` (${err.plan_type.toLowerCase()} plan)` : "";
 				const mins = err.resets_at
 					? Math.max(0, Math.round((err.resets_at * 1000 - Date.now()) / 60000))
@@ -611,7 +887,18 @@ async function parseErrorResponse(response: Response): Promise<{ message: string
 		}
 	} catch {}
 
-	return { message, friendlyMessage };
+	if (retryAfterMs === undefined) {
+		retryAfterMs = parseRetryAfterFromMessage(message);
+	}
+
+	const errorDetails = buildCodexErrorDetails({
+		code,
+		status: response.status,
+		message,
+		retryAfterMs,
+	});
+
+	return { message, friendlyMessage, errorDetails };
 }
 
 // ============================================================================
@@ -647,6 +934,7 @@ function buildHeaders(
 	headers.set("content-type", "application/json");
 
 	if (sessionId) {
+		headers.set("conversation_id", sessionId);
 		headers.set("session_id", sessionId);
 	}
 

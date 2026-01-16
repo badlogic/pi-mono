@@ -5,6 +5,7 @@
 ### Fixed
 
 - Fixed OpenCode provider's `/v1` endpoint to use `system` role instead of `developer` role, fixing `400 Incorrect role information` error for models using `openai-completions` API ([#755](https://github.com/badlogic/pi-mono/pull/755) by [@melihmucuk](https://github.com/melihmucuk))
+- OpenAI Codex responses now retry transport failures, add session routing headers, and classify stream disconnects/rate limits with idle timeouts for retry handling.
 
 ## [0.46.0] - 2026-01-15
 
