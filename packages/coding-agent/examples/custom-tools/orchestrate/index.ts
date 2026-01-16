@@ -2,9 +2,18 @@
  * Task Orchestration Extension
  *
  * Executes tasks from a collaborative task file (e.g., 0N_TASKS.md) with:
- * - Memory-first pre-hooks (via agent configs)
- * - Quality-gate post-hooks (via agent configs)
- * - Session archiving (episodic-archiver)
+ * - Questions/Blockers gate: BLOCKS if unresolved questions exist in task file
+ * - Memory-first pre-hook: Queries memory/run.sh recall BEFORE each task
+ * - Quality-gate post-hook: Runs quality-gate.sh AFTER each task (tests must pass)
+ * - Session archiving: Archives via episodic-archiver on completion
+ *
+ * Workflow:
+ * 1. Parse task file, validate no unresolved questions/blockers
+ * 2. For each task:
+ *    a. PRE-HOOK: Memory recall - inject prior solutions as context
+ *    b. Execute task in protected context (pi --no-session)
+ *    c. POST-HOOK: Quality gate - run tests, fail if they don't pass
+ * 3. Archive session if all tasks completed successfully
  *
  * Usage: orchestrate({ taskFile: "01_TASKS.md" })
  */
@@ -24,6 +33,10 @@ const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_OUTPUT_BYTES = 100 * 1024; // 100KB tail buffer
 const SIGKILL_GRACE_MS = 5000; // Grace period before SIGKILL
 
+// Hook script paths
+const MEMORY_RECALL_SCRIPT = path.join(os.homedir(), ".pi", "agent", "skills", "memory", "run.sh");
+const QUALITY_GATE_SCRIPT = "/home/graham/workspace/experiments/memory/.claude/hooks/quality-gate.sh";
+
 interface ParsedTask {
 	id: number;
 	title: string;
@@ -40,7 +53,17 @@ interface TaskFileContent {
 	title: string;
 	context: string;
 	tasks: ParsedTask[];
+	questionsBlockers: string[]; // Unresolved questions/blockers - must be empty to proceed
 	rawLines: string[];
+}
+
+interface MemoryRecallResult {
+	found: boolean;
+	items?: Array<{
+		problem: string;
+		solution: string;
+		confidence?: number;
+	}>;
 }
 
 interface TaskResult {
@@ -113,6 +136,7 @@ function parseTaskFile(filePath: string): TaskFileContent {
 	let title = "";
 	let context = "";
 	const tasks: ParsedTask[] = [];
+	const questionsBlockers: string[] = [];
 
 	let currentSection = "";
 	let taskId = 0;
@@ -140,6 +164,8 @@ function parseTaskFile(filePath: string): TaskFileContent {
 				currentSection = "context";
 			} else if (section.includes("task")) {
 				currentSection = "tasks";
+			} else if (section.includes("question") || section.includes("blocker")) {
+				currentSection = "questions";
 			} else {
 				currentSection = "other";
 			}
@@ -149,6 +175,16 @@ function parseTaskFile(filePath: string): TaskFileContent {
 		// Parse based on section
 		if (currentSection === "context" && trimmed) {
 			context += (context ? "\n" : "") + trimmed;
+		} else if (currentSection === "questions") {
+			// Capture questions/blockers - lines starting with - or * that aren't "none"
+			const itemMatch = trimmed.match(/^[-*]\s*(.+)/);
+			if (itemMatch) {
+				const item = itemMatch[1].trim();
+				// Ignore placeholder entries like "None", "N/A", "Nothing", etc.
+				if (!/^(none|n\/a|nothing|no\s+questions?|no\s+blockers?)\.?$/i.test(item)) {
+					questionsBlockers.push(item);
+				}
+			}
 		} else if (currentSection === "tasks") {
 			// Task line formats supported:
 			// - [ ] **Task N**: Description (bold format)
@@ -203,10 +239,22 @@ function parseTaskFile(filePath: string): TaskFileContent {
 	const finalized = finalizeTask(currentTask, taskLineStart, lines.length - 1);
 	if (finalized) tasks.push(finalized);
 
-	return { title, context, tasks, rawLines: lines };
+	return { title, context, tasks, questionsBlockers, rawLines: lines };
 }
 
 function validateTaskFile(parsed: TaskFileContent): void {
+	// CRITICAL: Block execution if there are unresolved questions/blockers
+	// This prevents starting work before clarifying requirements
+	if (parsed.questionsBlockers.length > 0) {
+		const questions = parsed.questionsBlockers.map((q, i) => `  ${i + 1}. ${q}`).join("\n");
+		throw new Error(
+			`Cannot start orchestration: ${parsed.questionsBlockers.length} unresolved question(s)/blocker(s):\n\n` +
+			`${questions}\n\n` +
+			`Resolve these questions in the task file before running orchestration. ` +
+			`Remove them or mark them as "None" when resolved.`
+		);
+	}
+
 	// Check for duplicate task IDs
 	const seenIds = new Set<number>();
 	for (const task of parsed.tasks) {
@@ -424,6 +472,75 @@ function killWithEscalation(proc: ChildProcess): void {
 	});
 }
 
+/**
+ * PRE-HOOK: Memory Recall
+ * Query memory for prior solutions before each task.
+ * Returns recalled items to inject as context into the task prompt.
+ */
+function runMemoryRecall(
+	task: ParsedTask,
+	cwd: string
+): MemoryRecallResult | null {
+	if (!fs.existsSync(MEMORY_RECALL_SCRIPT)) {
+		return null;
+	}
+
+	// Build query from task context
+	const query = `${task.title}. ${task.description}`.trim();
+	if (!query) {
+		return null;
+	}
+
+	try {
+		const result = spawnSync(MEMORY_RECALL_SCRIPT, ["recall", "--q", query, "--json"], {
+			cwd,
+			encoding: "utf-8",
+			timeout: 30000,
+		});
+
+		if (result.status !== 0 || !result.stdout) {
+			return null;
+		}
+
+		const data = JSON.parse(result.stdout) as MemoryRecallResult;
+		return data;
+	} catch {
+		// Memory recall failure shouldn't block task execution
+		return null;
+	}
+}
+
+/**
+ * POST-HOOK: Quality Gate
+ * Validate code quality after task completion.
+ * Returns true if quality gate passes, false otherwise with error details.
+ */
+function runQualityGate(cwd: string): { passed: boolean; error?: string } {
+	if (!fs.existsSync(QUALITY_GATE_SCRIPT)) {
+		// No quality gate script = pass by default
+		return { passed: true };
+	}
+
+	try {
+		const inputJson = JSON.stringify({ cwd });
+		const result = spawnSync("bash", ["-c", `echo '${inputJson.replace(/'/g, "'\\''")}' | "${QUALITY_GATE_SCRIPT}"`], {
+			cwd,
+			encoding: "utf-8",
+			timeout: 120000, // 2 minute timeout for tests
+		});
+
+		if (result.status === 0) {
+			return { passed: true };
+		}
+
+		// Quality gate failed - extract error details
+		const errorOutput = result.stderr || result.stdout || "Quality gate failed with no output";
+		return { passed: false, error: errorOutput.slice(0, 2000) }; // Truncate error output
+	} catch (err) {
+		return { passed: false, error: `Quality gate script error: ${err instanceof Error ? err.message : String(err)}` };
+	}
+}
+
 async function runTask(
 	task: ParsedTask,
 	taskFile: TaskFileContent,
@@ -448,9 +565,27 @@ async function runTask(
 
 	const agent = agentResult;
 
-	// Build the task prompt with context
+	// PRE-HOOK: Memory Recall - query for prior solutions
+	const memoryResult = runMemoryRecall(task, cwd);
+	let memoryContext = "";
+	if (memoryResult?.found && memoryResult.items?.length) {
+		const recalledItems = memoryResult.items
+			.map((item, i) => `${i + 1}. **Problem**: ${item.problem}\n   **Solution**: ${item.solution}`)
+			.join("\n\n");
+		memoryContext = `
+## Memory Recall (Prior Solutions Found)
+
+The following relevant solutions were found in memory. Review and adapt as needed:
+
+${recalledItems}
+
+---
+`;
+	}
+
+	// Build the task prompt with context and memory
 	const taskPrompt = `
-## Context
+${memoryContext}## Context
 ${taskFile.context}
 
 ## Task ${task.id}: ${task.title}
@@ -614,14 +749,41 @@ When done, summarize what was accomplished.
 		}
 	}
 
+	// If pi subprocess failed, return failure immediately
+	if (exitCode !== 0) {
+		return {
+			taskId: task.id,
+			title: task.title,
+			agent: task.agent,
+			status: "failed",
+			output: output.finalize(),
+			durationMs: Date.now() - startTime,
+			error: `Exit code: ${exitCode}`,
+		};
+	}
+
+	// POST-HOOK: Quality Gate - validate code quality
+	const qualityResult = runQualityGate(cwd);
+	if (!qualityResult.passed) {
+		return {
+			taskId: task.id,
+			title: task.title,
+			agent: task.agent,
+			status: "failed",
+			output: output.finalize() + "\n\n--- QUALITY GATE FAILED ---\n" + (qualityResult.error || ""),
+			durationMs: Date.now() - startTime,
+			error: "Quality gate failed - tests or checks did not pass",
+		};
+	}
+
+	// Both pi subprocess and quality gate passed
 	return {
 		taskId: task.id,
 		title: task.title,
 		agent: task.agent,
-		status: exitCode === 0 ? "success" : "failed",
+		status: "success",
 		output: output.finalize(),
 		durationMs: Date.now() - startTime,
-		error: exitCode !== 0 ? `Exit code: ${exitCode}` : undefined,
 	};
 }
 
