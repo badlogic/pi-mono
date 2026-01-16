@@ -151,6 +151,8 @@ return config
 
 **Windows Terminal:** Does not support the Kitty keyboard protocol. Shift+Enter cannot be distinguished from Enter. Use Ctrl+Enter for multi-line input instead. All other keybindings work correctly.
 
+**IntelliJ IDEA (Integrated Terminal):** The built-in terminal has limited escape sequence support. If you experience cursor visibility issues, set `PI_NO_HARDWARE_CURSOR=1` before running pi. Note that Shift+Enter cannot be distinguished from Enter in IntelliJ's terminal. Consider using a dedicated terminal emulator for the best experience.
+
 ### API Keys & OAuth
 
 **Option 1: Auth file** (recommended)

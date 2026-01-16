@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `PI_NO_HARDWARE_CURSOR=1` environment variable to disable hardware cursor positioning for terminals with limited escape sequence support (e.g., IntelliJ IDEA's built-in terminal)
+
 ## [0.47.0] - 2026-01-16
 
 ### Breaking Changes
