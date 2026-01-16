@@ -804,6 +804,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `images.autoResize` | Auto-resize images to 2000x2000 max for better model compatibility | `true` |
 | `images.blockImages` | Prevent images from being sent to LLM providers | `false` |
 | `doubleEscapeAction` | Action for double-escape with empty editor: `tree` or `branch` | `tree` |
+| `editorPaddingX` | Horizontal padding for input editor (0-3) | `0` |
 | `extensions` | Additional extension file paths | `[]` |
 
 ---

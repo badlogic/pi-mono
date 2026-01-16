@@ -220,12 +220,18 @@ interface EditorTheme {
   selectList: SelectListTheme;
 }
 
-const editor = new Editor(tui, theme);  // tui is required for height-aware scrolling
+interface EditorOptions {
+  paddingX?: number;  // Horizontal padding (default: 0)
+}
+
+const editor = new Editor(tui, theme, options?);  // tui is required for height-aware scrolling
 editor.onSubmit = (text) => console.log(text);
 editor.onChange = (text) => console.log("Changed:", text);
 editor.disableSubmit = true; // Disable submit temporarily
 editor.setAutocompleteProvider(provider);
 editor.borderColor = (s) => chalk.blue(s); // Change border dynamically
+editor.setPaddingX(1); // Update horizontal padding dynamically
+editor.getPaddingX();  // Get current padding
 ```
 
 **Features:**
