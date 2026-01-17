@@ -1,4 +1,4 @@
-import { getPhoton } from "./photon.js";
+import { loadPhoton } from "./photon.js";
 
 /**
  * Convert image to PNG format for terminal display.
@@ -13,14 +13,15 @@ export async function convertToPng(
 		return { data: base64Data, mimeType };
 	}
 
-	const photon = getPhoton();
+	const photon = await loadPhoton();
 	if (!photon) {
 		// Photon not available, can't convert
 		return null;
 	}
 
 	try {
-		const image = photon.PhotonImage.new_from_byteslice(new Uint8Array(Buffer.from(base64Data, "base64")));
+		const bytes = new Uint8Array(Buffer.from(base64Data, "base64"));
+		const image = photon.PhotonImage.new_from_byteslice(bytes);
 		try {
 			const pngBuffer = image.get_bytes();
 			return {

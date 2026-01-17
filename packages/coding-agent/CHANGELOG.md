@@ -10,6 +10,10 @@
 - Added `ctx.compact()` and `ctx.getContextUsage()` to extension contexts for programmatic compaction and context usage checks.
 - Added documentation for delete word forward and kill ring keybindings in interactive mode. ([#810](https://github.com/badlogic/pi-mono/pull/810) by [@Perlence](https://github.com/Perlence))
 
+### Fixed
+
+- Fixed photon module failing to load in ESM context with "require is not defined" error ([#795](https://github.com/badlogic/pi-mono/pull/795) by [@dannote](https://github.com/dannote))
+
 ## [0.48.0] - 2026-01-16
 
 ### Added
