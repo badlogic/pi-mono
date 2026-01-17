@@ -3439,6 +3439,8 @@ export class InteractiveMode {
 		const deleteWordBackward = this.getEditorKeyDisplay("deleteWordBackward");
 		const deleteToLineStart = this.getEditorKeyDisplay("deleteToLineStart");
 		const deleteToLineEnd = this.getEditorKeyDisplay("deleteToLineEnd");
+		const yank = this.getEditorKeyDisplay("yank");
+		const yankPop = this.getEditorKeyDisplay("yankPop");
 		const tab = this.getEditorKeyDisplay("tab");
 
 		// App keybindings
@@ -3471,6 +3473,8 @@ export class InteractiveMode {
 | \`${deleteWordBackward}\` | Delete word backwards |
 | \`${deleteToLineStart}\` | Delete to start of line |
 | \`${deleteToLineEnd}\` | Delete to end of line |
+| \`${yank}\` | Paste the most-recently-deleted text |
+| \`${yankPop}\` | Cycle through the deleted text after pasting |
 
 **Other**
 | Key | Action |

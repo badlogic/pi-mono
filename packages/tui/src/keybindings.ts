@@ -34,6 +34,9 @@ export type EditorAction =
 	| "selectCancel"
 	// Clipboard
 	| "copy"
+	// Kill ring
+	| "yank"
+	| "yankPop"
 	// Tool output
 	| "expandTools";
 
@@ -81,6 +84,9 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	selectCancel: ["escape", "ctrl+c"],
 	// Clipboard
 	copy: "ctrl+c",
+	// Kill ring
+	yank: "ctrl+y",
+	yankPop: "alt+y",
 	// Tool output
 	expandTools: "ctrl+o",
 };
