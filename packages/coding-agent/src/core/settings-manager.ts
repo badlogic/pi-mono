@@ -71,6 +71,7 @@ export interface Settings {
 	doubleEscapeAction?: "fork" | "tree"; // Action for double-escape with empty editor (default: "tree")
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
 	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
+	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -479,6 +480,15 @@ export class SettingsManager {
 
 	setDoubleEscapeAction(action: "fork" | "tree"): void {
 		this.globalSettings.doubleEscapeAction = action;
+		this.save();
+	}
+
+	getShowHardwareCursor(): boolean {
+		return this.settings.showHardwareCursor ?? process.env.PI_HARDWARE_CURSOR === "1";
+	}
+
+	setShowHardwareCursor(enabled: boolean): void {
+		this.globalSettings.showHardwareCursor = enabled;
 		this.save();
 	}
 

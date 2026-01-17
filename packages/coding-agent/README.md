@@ -789,6 +789,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
     "autoResize": true,
     "blockImages": false
   },
+  "showHardwareCursor": false,
   "extensions": ["/path/to/extension.ts"]
 }
 ```
@@ -816,6 +817,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `terminal.showImages` | Render images inline (supported terminals) | `true` |
 | `images.autoResize` | Auto-resize images to 2000x2000 max for better model compatibility | `true` |
 | `images.blockImages` | Prevent images from being sent to LLM providers | `false` |
+| `showHardwareCursor` | Show terminal cursor while still positioning it for IME support | `false` |
 | `doubleEscapeAction` | Action for double-escape with empty editor: `tree` or `branch` | `tree` |
 | `editorPaddingX` | Horizontal padding for input editor (0-3) | `0` |
 | `extensions` | Additional extension file paths | `[]` |

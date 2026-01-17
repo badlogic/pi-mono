@@ -384,7 +384,7 @@ pi.on("session_compact", async (event, ctx) => {
 });
 ```
 
-**Examples:** [custom-compaction.ts](../examples/extensions/custom-compaction.ts)
+**Examples:** [custom-compaction.ts](../examples/extensions/custom-compaction.ts), [trigger-compact.ts](../examples/extensions/trigger-compact.ts)
 
 #### session_before_tree / session_tree
 
@@ -674,6 +674,33 @@ pi.on("tool_call", (event, ctx) => {
   if (isFatal(event.input)) {
     ctx.shutdown();
   }
+});
+```
+
+### ctx.getContextUsage()
+
+Returns current context usage for the active model. Uses last assistant usage when available, then estimates tokens for trailing messages.
+
+```typescript
+const usage = ctx.getContextUsage();
+if (usage && usage.tokens > 100_000) {
+  // ...
+}
+```
+
+### ctx.compact()
+
+Trigger compaction without awaiting completion. Use `onComplete` and `onError` for follow-up actions.
+
+```typescript
+ctx.compact({
+  customInstructions: "Focus on recent changes",
+  onComplete: (result) => {
+    ctx.ui.notify("Compaction completed", "info");
+  },
+  onError: (error) => {
+    ctx.ui.notify(`Compaction failed: ${error.message}`, "error");
+  },
 });
 ```
 
