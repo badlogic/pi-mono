@@ -221,7 +221,9 @@ export class TUI extends Container {
 	constructor(terminal: Terminal, useHardwareCursor?: boolean) {
 		super();
 		this.terminal = terminal;
-		this.useHardwareCursor = useHardwareCursor ?? process.env.PI_HARDWARE_CURSOR === "1";
+		if (useHardwareCursor !== undefined) {
+			this.useHardwareCursor = useHardwareCursor;
+		}
 	}
 
 	setUseHardwareCursor(enabled: boolean): void {

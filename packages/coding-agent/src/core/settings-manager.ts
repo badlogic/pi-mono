@@ -161,12 +161,6 @@ export class SettingsManager {
 			delete settings.queueMode;
 		}
 
-		// Migrate useHardwareCursor -> hardwareCursor
-		if ("useHardwareCursor" in settings && !("hardwareCursor" in settings)) {
-			settings.hardwareCursor = settings.useHardwareCursor;
-			delete settings.useHardwareCursor;
-		}
-
 		return settings as Settings;
 	}
 
