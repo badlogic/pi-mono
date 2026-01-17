@@ -31,8 +31,8 @@ import { transformMessages } from "./transform-messages.js";
 // Stealth mode: Mimic Claude Code's tool naming exactly
 const claudeCodeVersion = "2.1.2";
 
-// Map pi! tool names to Claude Code's exact tool names
-const claudeCodeToolNames: Record<string, string> = {
+// Map pi tool names to Claude Code's exact tool names
+const claudeCodePiToolNames: Record<string, string> = {
 	read: "Read",
 	write: "Write",
 	edit: "Edit",
@@ -42,7 +42,41 @@ const claudeCodeToolNames: Record<string, string> = {
 	ls: "Ls",
 };
 
-const toClaudeCodeName = (name: string) => claudeCodeToolNames[name] || name;
+// Other Claude Code builtin tool names (not provided by pi).
+// Prevents CC errors if user defines these with non-matching case.
+const claudeCodeExtraToolNames = [
+	"AgentOutputTool",
+	"AskUserQuestion",
+	"BashOutput",
+	"EnterPlanMode",
+	"ExitPlanMode",
+	"KillBash",
+	"KillShell",
+	"LSP",
+	"MultiEdit",
+	"NotebookEdit",
+	"NotebookRead",
+	"Skill",
+	"SlashCommand",
+	"Task",
+	"TaskOutput",
+	"TodoRead",
+	"TodoWrite",
+	"WebFetch",
+	"WebSearch",
+	"exit_plan_mode",
+];
+
+const claudeCodeBuiltinToolNames = [...Object.values(claudeCodePiToolNames), ...claudeCodeExtraToolNames];
+
+const claudeCodeToolNameLookup = new Map(
+	claudeCodeBuiltinToolNames.map((toolName) => [toolName.toLowerCase(), toolName]),
+);
+
+const toClaudeCodeName = (name: string) => {
+	const lowerName = name.toLowerCase();
+	return claudeCodePiToolNames[lowerName] ?? claudeCodeToolNameLookup.get(lowerName) ?? name;
+};
 const fromClaudeCodeName = (name: string, tools?: Tool[]) => {
 	if (tools && tools.length > 0) {
 		const lowerName = name.toLowerCase();
