@@ -294,6 +294,18 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				shutdown: () => {
 					shutdownRequested = true;
 				},
+				getContextUsage: () => session.getContextUsage(),
+				compact: (options) => {
+					void (async () => {
+						try {
+							const result = await session.compact(options?.customInstructions);
+							options?.onComplete?.(result);
+						} catch (error) {
+							const err = error instanceof Error ? error : new Error(String(error));
+							options?.onError?.(err);
+						}
+					})();
+				},
 			},
 			// ExtensionCommandContextActions - commands invokable via prompt("/command")
 			{

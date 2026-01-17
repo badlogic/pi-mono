@@ -11,8 +11,10 @@ import type { SessionManager } from "../session-manager.js";
 import type {
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	CompactOptions,
 	ContextEvent,
 	ContextEventResult,
+	ContextUsage,
 	Extension,
 	ExtensionActions,
 	ExtensionCommandContext,
@@ -113,6 +115,8 @@ export class ExtensionRunner {
 	private waitForIdleFn: () => Promise<void> = async () => {};
 	private abortFn: () => void = () => {};
 	private hasPendingMessagesFn: () => boolean = () => false;
+	private getContextUsageFn: () => ContextUsage | undefined = () => undefined;
+	private compactFn: (options?: CompactOptions) => void = () => {};
 	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
 	private forkHandler: ForkHandler = async () => ({ cancelled: false });
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
@@ -158,6 +162,8 @@ export class ExtensionRunner {
 		this.abortFn = contextActions.abort;
 		this.hasPendingMessagesFn = contextActions.hasPendingMessages;
 		this.shutdownHandler = contextActions.shutdown;
+		this.getContextUsageFn = contextActions.getContextUsage;
+		this.compactFn = contextActions.compact;
 
 		// Command context actions (optional, only for interactive mode)
 		if (commandContextActions) {
@@ -337,6 +343,8 @@ export class ExtensionRunner {
 			abort: () => this.abortFn(),
 			hasPendingMessages: () => this.hasPendingMessagesFn(),
 			shutdown: () => this.shutdownHandler(),
+			getContextUsage: () => this.getContextUsageFn(),
+			compact: (options) => this.compactFn(options),
 		};
 	}
 
