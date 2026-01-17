@@ -31,18 +31,33 @@ import { transformMessages } from "./transform-messages.js";
 // Stealth mode: Mimic Claude Code's tool naming exactly
 const claudeCodeVersion = "2.1.2";
 
-// Map pi! tool names to Claude Code's exact tool names
-const claudeCodeToolNames: Record<string, string> = {
-	read: "Read",
-	write: "Write",
-	edit: "Edit",
-	bash: "Bash",
-	grep: "Grep",
-	find: "Glob",
-	ls: "Ls",
-};
+// Claude Code 2.x tool names (canonical casing)
+// Source: https://cchistory.mariozechner.at/data/prompts-2.1.11.md
+// To update: https://github.com/badlogic/cchistory
+const claudeCodeTools = [
+	"Read",
+	"Write",
+	"Edit",
+	"Bash",
+	"Grep",
+	"Glob",
+	"AskUserQuestion",
+	"EnterPlanMode",
+	"ExitPlanMode",
+	"KillShell",
+	"NotebookEdit",
+	"Skill",
+	"Task",
+	"TaskOutput",
+	"TodoWrite",
+	"WebFetch",
+	"WebSearch",
+];
 
-const toClaudeCodeName = (name: string) => claudeCodeToolNames[name] || name;
+const ccToolLookup = new Map(claudeCodeTools.map((t) => [t.toLowerCase(), t]));
+
+// Convert tool name to CC canonical casing if it matches (case-insensitive)
+const toClaudeCodeName = (name: string) => ccToolLookup.get(name.toLowerCase()) ?? name;
 const fromClaudeCodeName = (name: string, tools?: Tool[]) => {
 	if (tools && tools.length > 0) {
 		const lowerName = name.toLowerCase();
