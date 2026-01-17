@@ -218,9 +218,19 @@ export class TUI extends Container {
 		hidden: boolean;
 	}[] = [];
 
-	constructor(terminal: Terminal) {
+	constructor(terminal: Terminal, useHardwareCursor?: boolean) {
 		super();
 		this.terminal = terminal;
+		this.useHardwareCursor = useHardwareCursor ?? process.env.PI_HARDWARE_CURSOR === "1";
+	}
+
+	setUseHardwareCursor(enabled: boolean): void {
+		if (this.useHardwareCursor === enabled) return;
+		this.useHardwareCursor = enabled;
+		if (!enabled) {
+			this.terminal.hideCursor();
+		}
+		this.requestRender();
 	}
 
 	setFocus(component: Component | null): void {

@@ -36,6 +36,7 @@ export interface SettingsConfig {
 	hideThinkingBlock: boolean;
 	collapseChangelog: boolean;
 	doubleEscapeAction: "fork" | "tree";
+	hardwareCursor: boolean;
 	editorPaddingX: number;
 }
 
@@ -53,6 +54,7 @@ export interface SettingsCallbacks {
 	onHideThinkingBlockChange: (hidden: boolean) => void;
 	onCollapseChangelogChange: (collapsed: boolean) => void;
 	onDoubleEscapeActionChange: (action: "fork" | "tree") => void;
+	onHardwareCursorChange: (enabled: boolean) => void;
 	onEditorPaddingXChange: (padding: number) => void;
 	onCancel: () => void;
 }
@@ -269,9 +271,19 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
-		// Editor padding toggle (insert after skill-commands)
+		// Hardware cursor toggle (insert after skill-commands)
 		const skillCommandsIndex = items.findIndex((item) => item.id === "skill-commands");
 		items.splice(skillCommandsIndex + 1, 0, {
+			id: "hardware-cursor",
+			label: "Hardware cursor",
+			description: "Position the terminal cursor at the editor cursor (IME support). May not work in all terminals.",
+			currentValue: config.hardwareCursor ? "true" : "false",
+			values: ["true", "false"],
+		});
+
+		// Editor padding toggle (insert after hardware-cursor)
+		const hardwareCursorIndex = items.findIndex((item) => item.id === "hardware-cursor");
+		items.splice(hardwareCursorIndex + 1, 0, {
 			id: "editor-padding",
 			label: "Editor padding",
 			description: "Horizontal padding for input editor (0-3)",
@@ -317,6 +329,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "double-escape-action":
 						callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree");
+						break;
+					case "hardware-cursor":
+						callbacks.onHardwareCursorChange(newValue === "true");
 						break;
 					case "editor-padding":
 						callbacks.onEditorPaddingXChange(parseInt(newValue, 10));

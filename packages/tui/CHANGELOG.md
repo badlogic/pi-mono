@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Per-instance hardware cursor configuration and runtime toggling: pass `useHardwareCursor` to `new TUI(terminal, useHardwareCursor?)` and toggle via `setUseHardwareCursor()`.
+
 ## [0.48.0] - 2026-01-16
 
 ### Added

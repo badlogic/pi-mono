@@ -5,6 +5,7 @@
 ### Added
 
 - Export `keyHint`, `appKeyHint`, `editorKey`, `appKey`, `rawKeyHint` for extensions to format keybinding hints consistently
+- Added `hardwareCursor` setting (configurable via `/settings`) to enable hardware cursor positioning for IME support.
 
 ## [0.48.0] - 2026-01-16
 
