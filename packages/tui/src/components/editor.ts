@@ -605,15 +605,9 @@ export class Editor implements Component, Focusable {
 					this.state.lines = result.lines;
 					this.state.cursorLine = result.cursorLine;
 					this.state.cursorCol = result.cursorCol;
-
-					if (this.autocompletePrefix.startsWith("/")) {
-						this.cancelAutocomplete();
-						// Fall through to submit
-					} else {
-						this.cancelAutocomplete();
-						if (this.onChange) this.onChange(this.getText());
-						return;
-					}
+					this.cancelAutocomplete();
+					if (this.onChange) this.onChange(this.getText());
+					return;
 				}
 			}
 		}
