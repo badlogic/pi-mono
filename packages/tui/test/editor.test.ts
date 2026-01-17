@@ -698,4 +698,401 @@ describe("Editor component", () => {
 			assert.ok(contentLine.includes("1234567890"), "Content should contain the word");
 		});
 	});
+
+	describe("Kill ring", () => {
+		it("Ctrl+W saves deleted text to kill ring and Ctrl+Y yanks it", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("foo bar baz");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "baz"
+			assert.strictEqual(editor.getText(), "foo bar ");
+
+			// Move to beginning and yank
+			editor.handleInput("\x01"); // Ctrl+A
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "bazfoo bar ");
+		});
+
+		it("Ctrl+U saves deleted text to kill ring", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			// Move cursor to middle
+			editor.handleInput("\x01"); // Ctrl+A (start)
+			editor.handleInput("\x1b[C"); // Right 5 times
+			editor.handleInput("\x1b[C");
+			editor.handleInput("\x1b[C");
+			editor.handleInput("\x1b[C");
+			editor.handleInput("\x1b[C");
+			editor.handleInput("\x1b[C"); // After "hello "
+
+			editor.handleInput("\x15"); // Ctrl+U - deletes "hello "
+			assert.strictEqual(editor.getText(), "world");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("Ctrl+K saves deleted text to kill ring", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A (start)
+			editor.handleInput("\x0b"); // Ctrl+K - deletes "hello world"
+
+			assert.strictEqual(editor.getText(), "");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("Ctrl+Y does nothing when kill ring is empty", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("test");
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "test");
+		});
+
+		it("Alt+Y cycles through kill ring after Ctrl+Y", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create kill ring with multiple entries
+			editor.setText("first");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "first"
+			editor.setText("second");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "second"
+			editor.setText("third");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "third"
+
+			// Kill ring now has: [first, second, third]
+			assert.strictEqual(editor.getText(), "");
+
+			editor.handleInput("\x19"); // Ctrl+Y - yanks "third" (most recent)
+			assert.strictEqual(editor.getText(), "third");
+
+			editor.handleInput("\x1by"); // Alt+Y - cycles to "second"
+			assert.strictEqual(editor.getText(), "second");
+
+			editor.handleInput("\x1by"); // Alt+Y - cycles to "first"
+			assert.strictEqual(editor.getText(), "first");
+
+			editor.handleInput("\x1by"); // Alt+Y - cycles back to "third"
+			assert.strictEqual(editor.getText(), "third");
+		});
+
+		it("Alt+Y does nothing if not preceded by yank", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("test");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "test"
+			editor.setText("other");
+
+			// Type something to break the yank chain
+			editor.handleInput("x");
+			assert.strictEqual(editor.getText(), "otherx");
+
+			// Alt+Y should do nothing
+			editor.handleInput("\x1by"); // Alt+Y
+			assert.strictEqual(editor.getText(), "otherx");
+		});
+
+		it("Alt+Y does nothing if kill ring has ≤1 entry", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("only");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "only"
+
+			editor.handleInput("\x19"); // Ctrl+Y - yanks "only"
+			assert.strictEqual(editor.getText(), "only");
+
+			editor.handleInput("\x1by"); // Alt+Y - should do nothing (only 1 entry)
+			assert.strictEqual(editor.getText(), "only");
+		});
+
+		it("consecutive Ctrl+W accumulates into one kill ring entry", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("one two three");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "three"
+			editor.handleInput("\x17"); // Ctrl+W - deletes "two " (prepended)
+			editor.handleInput("\x17"); // Ctrl+W - deletes "one " (prepended)
+
+			assert.strictEqual(editor.getText(), "");
+
+			// Should be one combined entry
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "one two three");
+		});
+
+		it("Ctrl+U accumulates multiline deletes including newlines", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Start with multiline text, cursor at end
+			editor.setText("line1\nline2\nline3");
+			// Cursor is at end of line3 (line 2, col 5)
+
+			// Delete "line3"
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "line1\nline2\n");
+
+			// Delete newline (at start of empty line 2, merges with line1)
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "line1\nline2");
+
+			// Delete "line2"
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "line1\n");
+
+			// Delete newline
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "line1");
+
+			// Delete "line1"
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "");
+
+			// All deletions accumulated into one entry: "line1\nline2\nline3"
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "line1\nline2\nline3");
+		});
+
+		it("backward deletions prepend, forward deletions append during accumulation", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("prefix|suffix");
+			// Position cursor at |
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C"); // Move right 6 times
+
+			editor.handleInput("\x0b"); // Ctrl+K - deletes "suffix" (forward)
+			editor.handleInput("\x0b"); // Ctrl+K - deletes "|" (forward, appended)
+			assert.strictEqual(editor.getText(), "prefix");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "prefix|suffix");
+		});
+
+		it("non-delete actions break kill accumulation", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Delete "baz", then type "x" to break accumulation, then delete "x"
+			editor.setText("foo bar baz");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "baz"
+			assert.strictEqual(editor.getText(), "foo bar ");
+
+			editor.handleInput("x"); // Typing breaks accumulation
+			assert.strictEqual(editor.getText(), "foo bar x");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes "x" (separate entry, not accumulated)
+			assert.strictEqual(editor.getText(), "foo bar ");
+
+			// Yank most recent - should be "x", not "xbaz"
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "foo bar x");
+
+			// Cycle to previous - should be "baz" (separate entry)
+			editor.handleInput("\x1by"); // Alt+Y
+			assert.strictEqual(editor.getText(), "foo bar baz");
+		});
+
+		it("non-yank actions break Alt+Y chain", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("first");
+			editor.handleInput("\x17"); // Ctrl+W
+			editor.setText("second");
+			editor.handleInput("\x17"); // Ctrl+W
+			editor.setText("");
+
+			editor.handleInput("\x19"); // Ctrl+Y - yanks "second"
+			assert.strictEqual(editor.getText(), "second");
+
+			editor.handleInput("x"); // Type breaks yank chain
+			assert.strictEqual(editor.getText(), "secondx");
+
+			editor.handleInput("\x1by"); // Alt+Y - should do nothing
+			assert.strictEqual(editor.getText(), "secondx");
+		});
+
+		it("kill ring rotation persists after cycling", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("first");
+			editor.handleInput("\x17"); // deletes "first"
+			editor.setText("second");
+			editor.handleInput("\x17"); // deletes "second"
+			editor.setText("third");
+			editor.handleInput("\x17"); // deletes "third"
+			editor.setText("");
+
+			// Ring: [first, second, third]
+
+			editor.handleInput("\x19"); // Ctrl+Y - yanks "third"
+			editor.handleInput("\x1by"); // Alt+Y - cycles to "second", ring rotates
+
+			// Now ring is: [third, first, second]
+			assert.strictEqual(editor.getText(), "second");
+
+			// Do something else
+			editor.handleInput("x");
+			editor.setText("");
+
+			// New yank should get "second" (now at end after rotation)
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "second");
+		});
+
+		it("consecutive deletions across lines coalesce into one entry", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// "1\n2\n3" with cursor at end, delete everything with Ctrl+W
+			editor.setText("1\n2\n3");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "3"
+			assert.strictEqual(editor.getText(), "1\n2\n");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes newline (merge with prev line)
+			assert.strictEqual(editor.getText(), "1\n2");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes "2"
+			assert.strictEqual(editor.getText(), "1\n");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes newline
+			assert.strictEqual(editor.getText(), "1");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes "1"
+			assert.strictEqual(editor.getText(), "");
+
+			// All deletions should have accumulated into one entry
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "1\n2\n3");
+		});
+
+		it("Ctrl+K at line end deletes newline and coalesces", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// "ab" on line 1, "cd" on line 2, cursor at end of line 1
+			editor.setText("");
+			editor.handleInput("a");
+			editor.handleInput("b");
+			editor.handleInput("\n");
+			editor.handleInput("c");
+			editor.handleInput("d");
+			// Move to end of first line
+			editor.handleInput("\x1b[A"); // Up arrow
+			editor.handleInput("\x05"); // Ctrl+E - end of line
+
+			// Now at end of "ab", Ctrl+K should delete newline (merge with "cd")
+			editor.handleInput("\x0b"); // Ctrl+K - deletes newline
+			assert.strictEqual(editor.getText(), "abcd");
+
+			// Continue deleting
+			editor.handleInput("\x0b"); // Ctrl+K - deletes "cd"
+			assert.strictEqual(editor.getText(), "ab");
+
+			// Both deletions should accumulate
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "ab\ncd");
+		});
+
+		it("handles yank in middle of text", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("word");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "word"
+			editor.setText("hello world");
+
+			// Move to middle (after "hello ")
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello wordworld");
+		});
+
+		it("handles yank-pop in middle of text", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create two kill ring entries
+			editor.setText("FIRST");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "FIRST"
+			editor.setText("SECOND");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "SECOND"
+
+			// Ring: ["FIRST", "SECOND"]
+
+			// Set up "hello world" and position cursor after "hello "
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start of line
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C"); // Move right 6
+
+			// Yank "SECOND" in the middle
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello SECONDworld");
+
+			// Yank-pop replaces "SECOND" with "FIRST"
+			editor.handleInput("\x1by"); // Alt+Y
+			assert.strictEqual(editor.getText(), "hello FIRSTworld");
+		});
+
+		it("multiline yank and yank-pop in middle of text", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create single-line entry
+			editor.setText("SINGLE");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "SINGLE"
+
+			// Create multiline entry via consecutive Ctrl+U
+			editor.setText("A\nB");
+			editor.handleInput("\x15"); // Ctrl+U - deletes "B"
+			editor.handleInput("\x15"); // Ctrl+U - deletes newline
+			editor.handleInput("\x15"); // Ctrl+U - deletes "A"
+			// Ring: ["SINGLE", "A\nB"]
+
+			// Insert in middle of "hello world"
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C");
+
+			// Yank multiline "A\nB"
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello A\nBworld");
+
+			// Yank-pop replaces with "SINGLE"
+			editor.handleInput("\x1by"); // Alt+Y
+			assert.strictEqual(editor.getText(), "hello SINGLEworld");
+		});
+
+		it("Alt+D deletes word forward and saves to kill ring", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world test");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+
+			editor.handleInput("\x1bd"); // Alt+D - deletes "hello"
+			assert.strictEqual(editor.getText(), " world test");
+
+			editor.handleInput("\x1bd"); // Alt+D - deletes " world" (skips whitespace, then word)
+			assert.strictEqual(editor.getText(), " test");
+
+			// Yank should get accumulated text
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello world test");
+		});
+
+		it("Alt+D at end of line deletes newline", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("line1\nline2");
+			// Move to start of document, then to end of first line
+			editor.handleInput("\x1b[A"); // Up arrow - go to first line
+			editor.handleInput("\x05"); // Ctrl+E - end of line
+
+			editor.handleInput("\x1bd"); // Alt+D - deletes newline (merges lines)
+			assert.strictEqual(editor.getText(), "line1line2");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "line1\nline2");
+		});
+	});
 });
