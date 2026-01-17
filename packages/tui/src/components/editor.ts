@@ -1565,6 +1565,7 @@ export class Editor implements Component, Focusable {
 	 * Insert text at cursor position (used by yank operations).
 	 */
 	private insertYankedText(text: string): void {
+		this.historyIndex = -1; // Exit history browsing mode
 		const lines = text.split("\n");
 
 		if (lines.length === 1) {
