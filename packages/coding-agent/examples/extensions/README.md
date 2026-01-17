@@ -137,7 +137,18 @@ export default function (pi: ExtensionAPI) {
 
 ## Key Patterns
 
-**Use StringEnum for string parameters** (required for Google API compatibility):
+**Schema libraries**: TypeBox or Standard Schema (Zod v4+, Valibot v1+, ArkType v2+):
+```typescript
+// TypeBox (bundled, no extra dependencies)
+import { Type } from "@sinclair/typebox";
+parameters: Type.Object({ name: Type.String() })
+
+// Zod v4+ (requires npm install zod@4)
+import { z } from "zod";
+parameters: z.object({ name: z.string() })
+```
+
+**Use StringEnum for string enums with TypeBox** (required for Google API compatibility):
 ```typescript
 import { StringEnum } from "@mariozechner/pi-ai";
 

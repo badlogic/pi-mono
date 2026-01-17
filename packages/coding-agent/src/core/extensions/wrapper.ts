@@ -4,11 +4,13 @@
 
 import type { AgentTool, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
 import type { ExtensionRunner } from "./runner.js";
+import { toJSONSchema } from "./schema.js";
 import type { RegisteredTool, ToolCallEventResult, ToolResultEventResult } from "./types.js";
 
 /**
  * Wrap a RegisteredTool into an AgentTool.
  * Uses the runner's createContext() for consistent context across tools and event handlers.
+ * Converts Standard Schema parameters to JSON Schema for LLM compatibility.
  */
 export function wrapRegisteredTool(registeredTool: RegisteredTool, runner: ExtensionRunner): AgentTool {
 	const { definition } = registeredTool;
@@ -16,7 +18,7 @@ export function wrapRegisteredTool(registeredTool: RegisteredTool, runner: Exten
 		name: definition.name,
 		label: definition.label,
 		description: definition.description,
-		parameters: definition.parameters,
+		parameters: toJSONSchema(definition.parameters),
 		execute: (toolCallId, params, signal, onUpdate) =>
 			definition.execute(toolCallId, params, onUpdate, runner.createContext(), signal),
 	};

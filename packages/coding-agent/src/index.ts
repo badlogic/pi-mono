@@ -1,5 +1,7 @@
 // Core session management
 
+// Re-export Standard Schema types for extension authors
+export type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec";
 // Config paths
 export { getAgentDir } from "./config.js";
 export {
@@ -64,6 +66,8 @@ export type {
 	ExtensionShortcut,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	FlexibleSchema,
+	InferSchemaOutput,
 	InputEvent,
 	InputEventResult,
 	InputSource,
@@ -95,13 +99,16 @@ export type {
 } from "./core/extensions/index.js";
 export {
 	ExtensionRunner,
+	hasJSONSchemaConverter,
 	isBashToolResult,
 	isEditToolResult,
 	isFindToolResult,
 	isGrepToolResult,
 	isLsToolResult,
 	isReadToolResult,
+	isStandardSchema,
 	isWriteToolResult,
+	toJSONSchema,
 	wrapRegisteredTool,
 	wrapRegisteredTools,
 	wrapToolsWithExtensions,

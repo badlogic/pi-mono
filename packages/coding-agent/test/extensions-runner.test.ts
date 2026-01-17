@@ -114,6 +114,54 @@ describe("ExtensionRunner", () => {
 			expect(tools.length).toBe(2);
 			expect(tools.map((t) => t.definition.name).sort()).toEqual(["tool_a", "tool_b"]);
 		});
+
+		it("converts Standard Schema parameters to JSON Schema", async () => {
+			// Mock a Standard Schema with jsonSchema converter (like Zod v4+)
+			const toolCode = `
+				export default function(pi) {
+					const standardSchema = {
+						"~standard": {
+							version: 1,
+							vendor: "test",
+							validate: (v) => ({ value: v }),
+							jsonSchema: {
+								input: (opts) => ({
+									type: "object",
+									properties: { name: { type: "string" } },
+									required: ["name"],
+								}),
+							},
+						},
+					};
+					pi.registerTool({
+						name: "std_tool",
+						label: "Standard Schema Tool",
+						description: "Tool with Standard Schema",
+						parameters: standardSchema,
+						execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
+					});
+				}
+			`;
+			fs.writeFileSync(path.join(extensionsDir, "std-tool.ts"), toolCode);
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const tools = runner.getAllRegisteredTools();
+
+			expect(tools.length).toBe(1);
+			expect(tools[0].definition.name).toBe("std_tool");
+
+			// Wrap the tool and verify JSON Schema conversion
+			const { wrapRegisteredTool } = await import("../src/core/extensions/wrapper.js");
+			const wrapped = wrapRegisteredTool(tools[0], runner);
+
+			// The wrapped tool should have converted parameters (no ~standard property)
+			expect(wrapped.parameters).toEqual({
+				type: "object",
+				properties: { name: { type: "string" } },
+				required: ["name"],
+			});
+		});
 	});
 
 	describe("command collection", () => {

@@ -16,6 +16,7 @@ export type {
 	ShutdownHandler,
 } from "./runner.js";
 export { ExtensionRunner } from "./runner.js";
+export { hasJSONSchemaConverter, isStandardSchema, toJSONSchema } from "./schema.js";
 export type {
 	AgentEndEvent,
 	AgentStartEvent,
@@ -57,10 +58,13 @@ export type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	FindToolResultEvent,
+	// Schema types (Standard Schema support)
+	FlexibleSchema,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
 	GetThinkingLevelHandler,
 	GrepToolResultEvent,
+	InferSchemaOutput,
 	// Events - Input
 	InputEvent,
 	InputEventResult,

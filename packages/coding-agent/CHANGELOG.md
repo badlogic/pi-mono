@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Extension tools now support [Standard Schema](https://standardschema.dev/) for parameter definitions. Use Zod v4+, Valibot v1+, ArkType v2+, or any Standard Schema-compatible library instead of TypeBox. See [extensions.md](docs/extensions.md#tool-definition) for examples.
+
 ## [0.48.0] - 2026-01-16
 
 ### Added

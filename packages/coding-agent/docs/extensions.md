@@ -162,7 +162,8 @@ The `package.json` approach enables:
 | Package | Purpose |
 |---------|---------|
 | `@mariozechner/pi-coding-agent` | Extension types (`ExtensionAPI`, `ExtensionContext`, events) |
-| `@sinclair/typebox` | Schema definitions for tool parameters |
+| `@sinclair/typebox` | Schema definitions for tool parameters (TypeBox) |
+| `@standard-schema/spec` | Standard Schema types (for Zod, Valibot, ArkType) |
 | `@mariozechner/pi-ai` | AI utilities (`StringEnum` for Google-compatible enums) |
 | `@mariozechner/pi-tui` | TUI components for custom rendering |
 
@@ -1050,6 +1051,31 @@ Register tools the LLM can call via `pi.registerTool()`. Tools appear in the sys
 
 ### Tool Definition
 
+The `parameters` field accepts **TypeBox** schemas or any [Standard Schema](https://standardschema.dev/) library (Zod v4+, Valibot v1+, ArkType v2+).
+
+```typescript
+// TypeBox (bundled)
+import { Type } from "@sinclair/typebox";
+parameters: Type.Object({ name: Type.String() })
+
+// Zod v4+ (npm install zod@4)
+import { z } from "zod";
+parameters: z.object({ name: z.string() })
+
+// Valibot v1+ (npm install valibot @valibot/to-json-schema)
+import * as v from "valibot";
+import { toStandardJsonSchema } from "@valibot/to-json-schema";
+parameters: toStandardJsonSchema(v.object({ name: v.string() }))
+
+// ArkType v2+ (npm install arktype)
+import { type } from "arktype";
+parameters: type({ name: "string" })
+```
+
+**Important:** Use `StringEnum` from `@mariozechner/pi-ai` for string enums with TypeBox. `Type.Union`/`Type.Literal` doesn't work with Google's API.
+
+### Full Example
+
 ```typescript
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
@@ -1060,7 +1086,7 @@ pi.registerTool({
   label: "My Tool",
   description: "What this tool does (shown to LLM)",
   parameters: Type.Object({
-    action: StringEnum(["list", "add"] as const),  // Use StringEnum for Google compatibility
+    action: StringEnum(["list", "add"] as const),
     text: Type.Optional(Type.String()),
   }),
 
@@ -1091,8 +1117,6 @@ pi.registerTool({
   renderResult(result, options, theme) { ... },
 });
 ```
-
-**Important:** Use `StringEnum` from `@mariozechner/pi-ai` for string enums. `Type.Union`/`Type.Literal` doesn't work with Google's API.
 
 ### Overriding Built-in Tools
 

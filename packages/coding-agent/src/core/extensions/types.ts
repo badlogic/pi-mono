@@ -26,6 +26,7 @@ import type {
 	TUI,
 } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { BashResult } from "../bash-executor.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
@@ -255,30 +256,57 @@ export interface ToolRenderResultOptions {
 	isPartial: boolean;
 }
 
+// ============================================================================
+// Schema Types (Standard Schema support)
+// ============================================================================
+
+/**
+ * A flexible schema type that accepts:
+ * - TypeBox schemas (TSchema)
+ * - Standard Schema v1 (Zod v4+, Valibot v1+, ArkType v2+, etc.)
+ */
+export type FlexibleSchema = TSchema | StandardSchemaV1;
+
+/**
+ * Infer the output type from a flexible schema.
+ * Works with both TypeBox and Standard Schema.
+ */
+export type InferSchemaOutput<T> = T extends TSchema
+	? Static<T>
+	: T extends StandardSchemaV1<unknown, infer Output>
+		? Output
+		: unknown;
+
 /**
  * Tool definition for registerTool().
+ * The `parameters` field accepts TypeBox or Standard Schema (Zod v4+, Valibot v1+, ArkType v2+).
  */
-export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = unknown> {
+export interface ToolDefinition<TParams extends FlexibleSchema = FlexibleSchema, TDetails = unknown> {
 	/** Tool name (used in LLM tool calls) */
 	name: string;
 	/** Human-readable label for UI */
 	label: string;
 	/** Description for LLM */
 	description: string;
-	/** Parameter schema (TypeBox) */
+	/**
+	 * Parameter schema. Accepts TypeBox or Standard Schema (Zod v4+, Valibot v1+, ArkType v2+).
+	 *
+	 * For Google compatibility with string enums, use `StringEnum` from `@mariozechner/pi-ai`
+	 * instead of `Type.Union`/`Type.Literal` when using TypeBox.
+	 */
 	parameters: TParams;
 
 	/** Execute the tool. */
 	execute(
 		toolCallId: string,
-		params: Static<TParams>,
+		params: InferSchemaOutput<TParams>,
 		onUpdate: AgentToolUpdateCallback<TDetails> | undefined,
 		ctx: ExtensionContext,
 		signal?: AbortSignal,
 	): Promise<AgentToolResult<TDetails>>;
 
 	/** Custom rendering for tool call display */
-	renderCall?: (args: Static<TParams>, theme: Theme) => Component;
+	renderCall?: (args: InferSchemaOutput<TParams>, theme: Theme) => Component;
 
 	/** Custom rendering for tool result display */
 	renderResult?: (result: AgentToolResult<TDetails>, options: ToolRenderResultOptions, theme: Theme) => Component;
