@@ -65,12 +65,12 @@ export function getEnvApiKey(provider: any): string | undefined {
 
 	// Vertex AI uses Application Default Credentials, not API keys.
 	// Auth is configured via `gcloud auth application-default login`.
-	// Location is optional as Anthropic models on Vertex have a default region (us-east5).
 	if (provider === "google-vertex") {
 		const hasCredentials = hasVertexAdcCredentials();
 		const hasProject = !!(process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT);
+		const hasLocation = !!process.env.GOOGLE_CLOUD_LOCATION;
 
-		if (hasCredentials && hasProject) {
+		if (hasCredentials && hasProject && hasLocation) {
 			return "<authenticated>";
 		}
 	}
