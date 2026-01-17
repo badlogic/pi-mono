@@ -4,7 +4,6 @@ import type {
 	ResponseOutputMessage,
 	ResponseReasoningItem,
 } from "openai/resources/responses/responses.js";
-import { PI_STATIC_INSTRUCTIONS } from "../constants.js";
 import { calculateCost } from "../models.js";
 import { getEnvApiKey } from "../stream.js";
 import type {
@@ -215,22 +214,14 @@ function buildRequestBody(
 	context: Context,
 	options?: OpenAICodexResponsesOptions,
 ): RequestBody {
-	const systemPrompt = buildSystemPrompt(context.systemPrompt);
 	const messages = convertMessages(model, context);
-
-	// Prepend developer messages
-	const developerMessages = systemPrompt.developerMessages.map((text) => ({
-		type: "message",
-		role: "developer",
-		content: [{ type: "input_text", text }],
-	}));
 
 	const body: RequestBody = {
 		model: model.id,
 		store: false,
 		stream: true,
-		instructions: systemPrompt.instructions,
-		input: [...developerMessages, ...messages],
+		instructions: context.systemPrompt,
+		input: messages,
 		text: { verbosity: options?.textVerbosity || "medium" },
 		include: ["reasoning.encrypted_content"],
 		prompt_cache_key: options?.sessionId,
@@ -260,23 +251,6 @@ function buildRequestBody(
 	}
 
 	return body;
-}
-
-function buildSystemPrompt(userSystemPrompt?: string): { instructions: string; developerMessages: string[] } {
-	// PI_STATIC_INSTRUCTIONS is whitelisted and must be in the instructions field.
-	// User's system prompt goes in developer messages, with the static prefix stripped.
-	const staticPrefix = PI_STATIC_INSTRUCTIONS.trim();
-	const developerMessages: string[] = [];
-
-	if (userSystemPrompt?.trim()) {
-		let dynamicPart = userSystemPrompt.trim();
-		if (dynamicPart.startsWith(staticPrefix)) {
-			dynamicPart = dynamicPart.slice(staticPrefix.length).trim();
-		}
-		if (dynamicPart) developerMessages.push(dynamicPart);
-	}
-
-	return { instructions: staticPrefix, developerMessages };
 }
 
 function clampReasoningEffort(modelId: string, effort: string): string {

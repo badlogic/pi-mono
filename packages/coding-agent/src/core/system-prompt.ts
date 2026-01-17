@@ -2,11 +2,10 @@
  * System prompt construction and project context loading
  */
 
-import { PI_STATIC_INSTRUCTIONS } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { existsSync, readFileSync } from "fs";
 import { join, resolve } from "path";
-import { getAgentDir, getReadmePath } from "../config.js";
+import { getAgentDir, getDocsPath, getExamplesPath, getReadmePath } from "../config.js";
 import type { SkillsSettings } from "./settings-manager.js";
 import { formatSkillsForPrompt, loadSkills, type Skill } from "./skills.js";
 import type { ToolName } from "./tools/index.js";
@@ -136,17 +135,6 @@ export interface BuildSystemPromptOptions {
 	skills?: Skill[];
 }
 
-/**
- * Get the Pi installation path for documentation references.
- * This resolves the pi-internal:// scheme used in the static instructions.
- */
-function getPiPath(): string {
-	// getReadmePath returns something like /path/to/pi/README.md
-	// We want the parent directory
-	const readmePath = getReadmePath();
-	return resolve(readmePath, "..");
-}
-
 /** Build the system prompt with tools, guidelines, and context */
 export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): string {
 	const {
@@ -185,7 +173,6 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		providedSkills ??
 		(skillsSettings?.enabled !== false ? loadSkills({ ...skillsSettings, cwd: resolvedCwd, agentDir }).skills : []);
 
-	// Handle custom prompt (full replacement)
 	if (resolvedCustomPrompt) {
 		let prompt = resolvedCustomPrompt;
 
@@ -196,7 +183,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		// Append project context files
 		if (contextFiles.length > 0) {
 			prompt += "\n\n# Project Context\n\n";
-			prompt += "The following project context files have been loaded:\n\n";
+			prompt += "Project-specific instructions and guidelines:\n\n";
 			for (const { path: filePath, content } of contextFiles) {
 				prompt += `## ${filePath}\n\n${content}\n\n`;
 			}
@@ -214,6 +201,11 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 		return prompt;
 	}
+
+	// Get absolute paths to documentation and examples
+	const readmePath = getReadmePath();
+	const docsPath = getDocsPath();
+	const examplesPath = getExamplesPath();
 
 	// Build tools list based on selected tools
 	const tools = selectedTools || (["read", "bash", "edit", "write"] as ToolName[]);
@@ -272,12 +264,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
-	// Build prompt with static prefix + dynamic parts
-	const piPath = getPiPath();
-
-	let prompt = `${PI_STATIC_INSTRUCTIONS}
-Pi path:
-pi-internal:// refers to paths in ${piPath}
+	let prompt = `You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
 
 Available tools:
 ${toolsList}
@@ -285,7 +272,14 @@ ${toolsList}
 In addition to the tools above, you may have access to other custom tools depending on the project.
 
 Guidelines:
-${guidelines}`;
+${guidelines}
+
+Pi documentation (only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):
+- Main documentation: ${readmePath}
+- Additional docs: ${docsPath}
+- Examples: ${examplesPath} (extensions, custom tools, SDK)
+- When asked to create: custom models/providers (README.md), extensions (docs/extensions.md, examples/extensions/), themes (docs/theme.md), skills (docs/skills.md), TUI components (docs/tui.md - has copy-paste patterns)
+- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing`;
 
 	if (appendSection) {
 		prompt += appendSection;
@@ -294,7 +288,7 @@ ${guidelines}`;
 	// Append project context files
 	if (contextFiles.length > 0) {
 		prompt += "\n\n# Project Context\n\n";
-		prompt += "The following project context files have been loaded:\n\n";
+		prompt += "Project-specific instructions and guidelines:\n\n";
 		for (const { path: filePath, content } of contextFiles) {
 			prompt += `## ${filePath}\n\n${content}\n\n`;
 		}
