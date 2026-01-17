@@ -1041,6 +1041,89 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	// Google Vertex Anthropic Provider - uses ADC (gcloud auth application-default login)
+	describe("Google Vertex Anthropic Provider (claude-sonnet-4-5)", () => {
+		const vertexProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+		const isVertexConfigured = Boolean(vertexProject);
+		const llm = getModel("google-vertex", "claude-sonnet-4-5");
+
+		it.skipIf(!isVertexConfigured)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle thinking", { retry: 3 }, async () => {
+			await handleThinking(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm);
+		});
+	});
+
+	describe("Google Vertex Anthropic Provider (claude-opus-4-5)", () => {
+		const vertexProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+		const isVertexConfigured = Boolean(vertexProject);
+		const llm = getModel("google-vertex", "claude-opus-4-5");
+
+		it.skipIf(!isVertexConfigured)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle thinking", { retry: 3 }, async () => {
+			await handleThinking(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm);
+		});
+	});
+
+	describe("Google Vertex Anthropic Provider (claude-haiku-4-5)", () => {
+		const vertexProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+		const isVertexConfigured = Boolean(vertexProject);
+		const llm = getModel("google-vertex", "claude-haiku-4-5");
+
+		it.skipIf(!isVertexConfigured)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm);
+		});
+
+		it.skipIf(!isVertexConfigured)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm);
+		});
+	});
+
 	// Check if ollama is installed and local LLM tests are enabled
 	let ollamaInstalled = false;
 	if (!process.env.PI_NO_LOCAL_LLM) {

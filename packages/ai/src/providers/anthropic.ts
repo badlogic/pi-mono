@@ -4,6 +4,7 @@ import type {
 	MessageCreateParamsStreaming,
 	MessageParam,
 } from "@anthropic-ai/sdk/resources/messages.js";
+import { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
 import { calculateCost } from "../models.js";
 import { getEnvApiKey } from "../stream.js";
 import type {
@@ -109,6 +110,10 @@ export interface AnthropicOptions extends StreamOptions {
 	thinkingBudgetTokens?: number;
 	interleavedThinking?: boolean;
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
+	/** Google Cloud project ID for Vertex AI (only used when provider is google-vertex) */
+	vertexProject?: string;
+	/** Google Cloud region for Vertex AI (only used when provider is google-vertex) */
+	vertexRegion?: string;
 }
 
 export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
@@ -139,7 +144,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 
 		try {
 			const apiKey = options?.apiKey ?? getEnvApiKey(model.provider) ?? "";
-			const { client, isOAuthToken } = createClient(model, apiKey, options?.interleavedThinking ?? true);
+			const { client, isOAuthToken } = createClient(model, apiKey, options);
 			const params = buildParams(model, context, isOAuthToken, options);
 			const anthropicStream = client.messages.stream({ ...params, stream: true }, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
@@ -311,11 +316,32 @@ function isOAuthToken(apiKey: string): boolean {
 function createClient(
 	model: Model<"anthropic-messages">,
 	apiKey: string,
-	interleavedThinking: boolean,
-): { client: Anthropic; isOAuthToken: boolean } {
+	options?: AnthropicOptions,
+): { client: Anthropic | AnthropicVertex; isOAuthToken: boolean } {
+	const interleavedThinking = options?.interleavedThinking ?? true;
 	const betaFeatures = ["fine-grained-tool-streaming-2025-05-14"];
 	if (interleavedThinking) {
 		betaFeatures.push("interleaved-thinking-2025-05-14");
+	}
+
+	// Handle Google Vertex AI provider
+	if (model.provider === "google-vertex") {
+		const projectId = options?.vertexProject || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+		// Default to global endpoint for better availability; can be overridden with GOOGLE_CLOUD_LOCATION
+		const region = options?.vertexRegion || process.env.GOOGLE_CLOUD_LOCATION || "global";
+
+		if (!projectId) {
+			throw new Error(
+				"Vertex AI requires a project ID. Set GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT or pass vertexProject in options.",
+			);
+		}
+
+		const client = new AnthropicVertex({
+			projectId,
+			region,
+		});
+
+		return { client, isOAuthToken: false };
 	}
 
 	const oauthToken = isOAuthToken(apiKey);

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Google Vertex AI Anthropic Claude models support (`claude-opus-4-5`, `claude-sonnet-4-5`, `claude-haiku-4-5`) using `@anthropic-ai/vertex-sdk`. Uses Application Default Credentials (ADC) for authentication with global endpoint by default.
+
 ## [0.48.0] - 2026-01-16
 
 ### Fixed

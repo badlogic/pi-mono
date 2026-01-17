@@ -1100,6 +1100,50 @@ async function generateModels() {
 	];
 	allModels.push(...vertexModels);
 
+	// Vertex AI Anthropic Claude models (Claude via Google Vertex AI)
+	// These use the Anthropic messages API but are served via Vertex AI
+	// Uses global endpoint by default for better availability
+	// Pricing from: https://cloud.google.com/vertex-ai/generative-ai/pricing#partner-models
+	const vertexAnthropicModels: Model<"anthropic-messages">[] = [
+		{
+			id: "claude-opus-4-5",
+			name: "Claude Opus 4.5 (Vertex)",
+			api: "anthropic-messages",
+			provider: "google-vertex",
+			baseUrl: "https://aiplatform.googleapis.com", // Endpoint handled by AnthropicVertex SDK
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+			contextWindow: 200000,
+			maxTokens: 32000,
+		},
+		{
+			id: "claude-sonnet-4-5",
+			name: "Claude Sonnet 4.5 (Vertex)",
+			api: "anthropic-messages",
+			provider: "google-vertex",
+			baseUrl: "https://aiplatform.googleapis.com", // Endpoint handled by AnthropicVertex SDK
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+			contextWindow: 200000,
+			maxTokens: 64000,
+		},
+		{
+			id: "claude-haiku-4-5",
+			name: "Claude Haiku 4.5 (Vertex)",
+			api: "anthropic-messages",
+			provider: "google-vertex",
+			baseUrl: "https://aiplatform.googleapis.com", // Endpoint handled by AnthropicVertex SDK
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 },
+			contextWindow: 200000,
+			maxTokens: 8192,
+		},
+	];
+	allModels.push(...vertexAnthropicModels);
+
 	// Group by provider and deduplicate by model ID
 	const providers: Record<string, Record<string, Model<any>>> = {};
 	for (const model of allModels) {
