@@ -79,6 +79,8 @@ interface ParsedTask {
 	gate?: string; // Path to gate script for retry-until-pass mode
 	maxRetries?: number; // Max retry attempts (default: 3)
 	selfReview?: boolean; // Run self-review before marking complete (default: false)
+	// Parallel execution (inspired by Ralphy)
+	parallel?: number; // Parallel group number (0 = sequential, same number = run together)
 }
 
 interface TaskFileContent {
@@ -428,6 +430,7 @@ function parseTaskFile(filePath: string): TaskFileContent {
 				const gateMatch = trimmed.match(/^-\s*Gate:\s*(.+)/i);
 				const maxRetriesMatch = trimmed.match(/^-\s*MaxRetries:\s*(\d+)/i);
 				const selfReviewMatch = trimmed.match(/^-\s*SelfReview:\s*(true|false|yes|no)/i);
+				const parallelMatch = trimmed.match(/^-\s*Parallel:\s*(\d+)/i);
 
 				if (agentMatch) {
 					currentTask.agent = agentMatch[1].trim();
@@ -453,6 +456,8 @@ function parseTaskFile(filePath: string): TaskFileContent {
 				} else if (selfReviewMatch) {
 					const value = selfReviewMatch[1].toLowerCase();
 					currentTask.selfReview = value === "true" || value === "yes";
+				} else if (parallelMatch) {
+					currentTask.parallel = parseInt(parallelMatch[1], 10);
 				} else if (trimmed && !trimmed.startsWith("-")) {
 					currentTask.description =
 						(currentTask.description || "") + (currentTask.description ? "\n" : "") + trimmed;
