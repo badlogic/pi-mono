@@ -4,8 +4,16 @@ const COMPACT_THRESHOLD_TOKENS = 100_000;
 
 export default function (pi: ExtensionAPI) {
 	const triggerCompaction = (ctx: ExtensionContext, customInstructions?: string) => {
+		if (ctx.hasUI) {
+			ctx.ui.notify("Compaction started", "info");
+		}
 		ctx.compact({
 			customInstructions,
+			onComplete: () => {
+				if (ctx.hasUI) {
+					ctx.ui.notify("Compaction completed", "info");
+				}
+			},
 			onError: (error) => {
 				if (ctx.hasUI) {
 					ctx.ui.notify(`Compaction failed: ${error.message}`, "error");

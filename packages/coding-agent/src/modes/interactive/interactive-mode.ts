@@ -44,6 +44,7 @@ import {
 import { spawn, spawnSync } from "child_process";
 import { APP_NAME, getAuthPath, getDebugLogPath, isBunBinary, isBunRuntime, VERSION } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
+import type { CompactionResult } from "../../core/compaction/index.js";
 import type {
 	ExtensionContext,
 	ExtensionRunner,
@@ -693,8 +694,10 @@ export class InteractiveMode {
 				compact: (options) => {
 					void (async () => {
 						try {
-							const result = await this.session.compact(options?.customInstructions);
-							options?.onComplete?.(result);
+							const result = await this.executeCompaction(options?.customInstructions, false);
+							if (result) {
+								options?.onComplete?.(result);
+							}
 						} catch (error) {
 							const err = error instanceof Error ? error : new Error(String(error));
 							options?.onError?.(err);
@@ -829,8 +832,10 @@ export class InteractiveMode {
 			compact: (options) => {
 				void (async () => {
 					try {
-						const result = await this.session.compact(options?.customInstructions);
-						options?.onComplete?.(result);
+						const result = await this.executeCompaction(options?.customInstructions, false);
+						if (result) {
+							options?.onComplete?.(result);
+						}
 					} catch (error) {
 						const err = error instanceof Error ? error : new Error(String(error));
 						options?.onError?.(err);
@@ -3677,7 +3682,7 @@ export class InteractiveMode {
 		await this.executeCompaction(customInstructions, false);
 	}
 
-	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<void> {
+	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<CompactionResult | undefined> {
 		// Stop loading animation
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
@@ -3704,8 +3709,10 @@ export class InteractiveMode {
 		this.statusContainer.addChild(compactingLoader);
 		this.ui.requestRender();
 
+		let result: CompactionResult | undefined;
+
 		try {
-			const result = await this.session.compact(customInstructions);
+			result = await this.session.compact(customInstructions);
 
 			// Rebuild UI
 			this.rebuildChatFromMessages();
@@ -3728,6 +3735,7 @@ export class InteractiveMode {
 			this.defaultEditor.onEscape = originalOnEscape;
 		}
 		void this.flushCompactionQueue({ willRetry: false });
+		return result;
 	}
 
 	stop(): void {
