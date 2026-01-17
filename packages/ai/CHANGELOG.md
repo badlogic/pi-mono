@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed Claude Code OAuth errors when user-defined tools collide with CC builtin names by normalizing tool names case-insensitively to CC canonical form
+
 ## [0.48.0] - 2026-01-16
 
 ### Fixed
