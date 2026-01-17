@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Export `keyHint`, `appKeyHint`, `editorKey`, `appKey`, `rawKeyHint` for extensions to format keybinding hints consistently
+
 ## [0.48.0] - 2026-01-16
 
 ### Added
