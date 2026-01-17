@@ -1,5 +1,5 @@
 import type { ImageContent } from "@mariozechner/pi-ai";
-import photon from "@silvia-odwyer/photon-node";
+import { getPhoton } from "./photon.js";
 
 export interface ImageResizeOptions {
 	maxWidth?: number; // Default: 2000
@@ -53,6 +53,20 @@ export async function resizeImage(img: ImageContent, options?: ImageResizeOption
 	const opts = { ...DEFAULT_OPTIONS, ...options };
 	const inputBuffer = Buffer.from(img.data, "base64");
 
+	const photon = getPhoton();
+	if (!photon) {
+		// Photon not available, return original image
+		return {
+			data: img.data,
+			mimeType: img.mimeType,
+			originalWidth: 0,
+			originalHeight: 0,
+			width: 0,
+			height: 0,
+			wasResized: false,
+		};
+	}
+
 	let image: ReturnType<typeof photon.PhotonImage.new_from_byteslice> | undefined;
 	try {
 		image = photon.PhotonImage.new_from_byteslice(new Uint8Array(inputBuffer));
@@ -94,7 +108,7 @@ export async function resizeImage(img: ImageContent, options?: ImageResizeOption
 			height: number,
 			jpegQuality: number,
 		): { buffer: Uint8Array; mimeType: string } {
-			const resized = photon.resize(image!, width, height, photon.SamplingFilter.Lanczos3);
+			const resized = photon!.resize(image!, width, height, photon!.SamplingFilter.Lanczos3);
 
 			try {
 				const pngBuffer = resized.get_bytes();

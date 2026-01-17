@@ -217,6 +217,39 @@ function mapOptionsForApi<TApi extends Api>(
 	// Helper to clamp xhigh to high for providers that don't support it
 	const clampReasoning = (effort: ThinkingLevel | undefined) => (effort === "xhigh" ? "high" : effort);
 
+	/**
+	 * Adjust maxTokens to account for thinking budget.
+	 * APIs like Anthropic and Bedrock require max_tokens > thinking.budget_tokens.
+	 * Returns { adjustedMaxTokens, adjustedThinkingBudget }
+	 */
+	const adjustMaxTokensForThinking = (
+		baseMaxTokens: number,
+		modelMaxTokens: number,
+		reasoningLevel: ThinkingLevel,
+		customBudgets?: ThinkingBudgets,
+	): { maxTokens: number; thinkingBudget: number } => {
+		const defaultBudgets: ThinkingBudgets = {
+			minimal: 1024,
+			low: 2048,
+			medium: 8192,
+			high: 16384,
+		};
+		const budgets = { ...defaultBudgets, ...customBudgets };
+
+		const minOutputTokens = 1024;
+		const level = clampReasoning(reasoningLevel)!;
+		let thinkingBudget = budgets[level]!;
+		// Caller's maxTokens is the desired output; add thinking budget on top, capped at model limit
+		const maxTokens = Math.min(baseMaxTokens + thinkingBudget, modelMaxTokens);
+
+		// If not enough room for thinking + output, reduce thinking budget
+		if (maxTokens <= thinkingBudget) {
+			thinkingBudget = Math.max(0, maxTokens - minOutputTokens);
+		}
+
+		return { maxTokens, thinkingBudget };
+	};
+
 	switch (model.api) {
 		case "anthropic-messages": {
 			// Explicitly disable thinking when reasoning is not specified
@@ -226,39 +259,55 @@ function mapOptionsForApi<TApi extends Api>(
 
 			// Claude requires max_tokens > thinking.budget_tokens
 			// So we need to ensure maxTokens accounts for both thinking and output
-			const defaultBudgets: ThinkingBudgets = {
-				minimal: 1024,
-				low: 2048,
-				medium: 8192,
-				high: 16384,
-			};
-			const budgets = { ...defaultBudgets, ...options?.thinkingBudgets };
-
-			const minOutputTokens = 1024;
-			const level = clampReasoning(options.reasoning)!;
-			let thinkingBudget = budgets[level]!;
-			// Caller's maxTokens is the desired output; add thinking budget on top, capped at model limit
-			const maxTokens = Math.min((base.maxTokens || 0) + thinkingBudget, model.maxTokens);
-
-			// If not enough room for thinking + output, reduce thinking budget
-			if (maxTokens <= thinkingBudget) {
-				thinkingBudget = Math.max(0, maxTokens - minOutputTokens);
-			}
+			const adjusted = adjustMaxTokensForThinking(
+				base.maxTokens || 0,
+				model.maxTokens,
+				options.reasoning,
+				options?.thinkingBudgets,
+			);
 
 			return {
 				...base,
-				maxTokens,
+				maxTokens: adjusted.maxTokens,
 				thinkingEnabled: true,
-				thinkingBudgetTokens: thinkingBudget,
+				thinkingBudgetTokens: adjusted.thinkingBudget,
 			} satisfies AnthropicOptions;
 		}
 
-		case "bedrock-converse-stream":
+		case "bedrock-converse-stream": {
+			// Explicitly disable thinking when reasoning is not specified
+			if (!options?.reasoning) {
+				return { ...base, reasoning: undefined } satisfies BedrockOptions;
+			}
+
+			// Claude requires max_tokens > thinking.budget_tokens (same as Anthropic direct API)
+			// So we need to ensure maxTokens accounts for both thinking and output
+			if (model.id.includes("anthropic.claude") || model.id.includes("anthropic/claude")) {
+				const adjusted = adjustMaxTokensForThinking(
+					base.maxTokens || 0,
+					model.maxTokens,
+					options.reasoning,
+					options?.thinkingBudgets,
+				);
+
+				return {
+					...base,
+					maxTokens: adjusted.maxTokens,
+					reasoning: options.reasoning,
+					thinkingBudgets: {
+						...(options?.thinkingBudgets || {}),
+						[clampReasoning(options.reasoning)!]: adjusted.thinkingBudget,
+					},
+				} satisfies BedrockOptions;
+			}
+
+			// Non-Claude models - pass through
 			return {
 				...base,
 				reasoning: options?.reasoning,
 				thinkingBudgets: options?.thinkingBudgets,
 			} satisfies BedrockOptions;
+		}
 
 		case "openai-completions":
 			return {

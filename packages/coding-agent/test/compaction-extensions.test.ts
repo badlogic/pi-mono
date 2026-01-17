@@ -124,6 +124,18 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 				abort: () => session.abort(),
 				hasPendingMessages: () => session.pendingMessageCount > 0,
 				shutdown: () => {},
+				getContextUsage: () => session.getContextUsage(),
+				compact: (options) => {
+					void (async () => {
+						try {
+							const result = await session.compact(options?.customInstructions);
+							options?.onComplete?.(result);
+						} catch (error) {
+							const err = error instanceof Error ? error : new Error(String(error));
+							options?.onError?.(err);
+						}
+					})();
+				},
 			},
 		);
 

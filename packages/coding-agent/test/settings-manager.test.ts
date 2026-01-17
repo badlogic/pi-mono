@@ -105,4 +105,36 @@ describe("SettingsManager", () => {
 			expect(savedSettings.defaultThinkingLevel).toBe("high");
 		});
 	});
+
+	describe("shellCommandPrefix", () => {
+		it("should load shellCommandPrefix from settings", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ shellCommandPrefix: "shopt -s expand_aliases" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getShellCommandPrefix()).toBe("shopt -s expand_aliases");
+		});
+
+		it("should return undefined when shellCommandPrefix is not set", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getShellCommandPrefix()).toBeUndefined();
+		});
+
+		it("should preserve shellCommandPrefix when saving unrelated settings", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ shellCommandPrefix: "shopt -s expand_aliases" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setTheme("light");
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.shellCommandPrefix).toBe("shopt -s expand_aliases");
+			expect(savedSettings.theme).toBe("light");
+		});
+	});
 });

@@ -116,6 +116,17 @@ For most users, [Git for Windows](https://git-scm.com/download/win) is sufficien
 }
 ```
 
+**Alias expansion:** Pi runs bash in non-interactive mode (`bash -c`), which doesn't expand aliases by default. To enable your shell aliases:
+
+```json
+// ~/.pi/agent/settings.json
+{
+  "shellCommandPrefix": "shopt -s expand_aliases\neval \"$(grep '^alias ' ~/.zshrc)\""
+}
+```
+
+Adjust the path (`~/.zshrc`, `~/.bashrc`, etc.) to match your shell config.
+
 ### Terminal Setup
 
 Pi uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Most modern terminals support this protocol, but some require configuration.
@@ -149,9 +160,22 @@ return config
 }
 ```
 
-**Windows Terminal:** Does not support the Kitty keyboard protocol. Shift+Enter cannot be distinguished from Enter. Use Ctrl+Enter for multi-line input instead. All other keybindings work correctly.
+**Windows Terminal:** Add to `settings.json` (Ctrl+Shift+, or Settings → Open JSON file):
 
-**IntelliJ IDEA (Integrated Terminal):** The built-in terminal has limited escape sequence support. If you experience cursor visibility issues, set `PI_NO_HARDWARE_CURSOR=1` before running pi. Note that Shift+Enter cannot be distinguished from Enter in IntelliJ's terminal. Consider using a dedicated terminal emulator for the best experience.
+```json
+{
+  "actions": [
+    {
+      "command": { "action": "sendInput", "input": "\u001b[13;2u" },
+      "keys": "shift+enter"
+    }
+  ]
+}
+```
+
+If you already have an `actions` array, add the object to it.
+
+**IntelliJ IDEA (Integrated Terminal):** The built-in terminal has limited escape sequence support. Note that Shift+Enter cannot be distinguished from Enter in IntelliJ's terminal. If you want the hardware cursor visible, set `PI_HARDWARE_CURSOR=1` before running pi (disabled by default for compatibility). Consider using a dedicated terminal emulator for the best experience.
 
 ### API Keys & OAuth
 
@@ -181,6 +205,7 @@ Add API keys to `~/.pi/agent/auth.json`:
 | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
 | Vercel AI Gateway | `vercel-ai-gateway` | `AI_GATEWAY_API_KEY` |
 | ZAI | `zai` | `ZAI_API_KEY` |
+| OpenCode Zen | `opencode` | `OPENCODE_API_KEY` |
 | MiniMax | `minimax` | `MINIMAX_API_KEY` |
 | MiniMax (China) | `minimax-cn` | `MINIMAX_CN_API_KEY` |
 
@@ -744,6 +769,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
   "steeringMode": "one-at-a-time",
   "followUpMode": "one-at-a-time",
   "shellPath": "C:\\path\\to\\bash.exe",
+  "shellCommandPrefix": "shopt -s expand_aliases",
   "hideThinkingBlock": false,
   "collapseChangelog": false,
   "compaction": {
@@ -766,6 +792,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
     "autoResize": true,
     "blockImages": false
   },
+  "showHardwareCursor": false,
   "extensions": ["/path/to/extension.ts"]
 }
 ```
@@ -780,6 +807,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `steeringMode` | Steering message delivery: `all` or `one-at-a-time` | `one-at-a-time` |
 | `followUpMode` | Follow-up message delivery: `all` or `one-at-a-time` | `one-at-a-time` |
 | `shellPath` | Custom bash path (Windows) | auto-detected |
+| `shellCommandPrefix` | Command prefix for bash (e.g., `shopt -s expand_aliases` for alias support) | - |
 | `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
 | `collapseChangelog` | Show condensed changelog after update | `false` |
 | `compaction.enabled` | Enable auto-compaction | `true` |
@@ -792,7 +820,9 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `terminal.showImages` | Render images inline (supported terminals) | `true` |
 | `images.autoResize` | Auto-resize images to 2000x2000 max for better model compatibility | `true` |
 | `images.blockImages` | Prevent images from being sent to LLM providers | `false` |
+| `showHardwareCursor` | Show terminal cursor while still positioning it for IME support | `false` |
 | `doubleEscapeAction` | Action for double-escape with empty editor: `tree` or `branch` | `tree` |
+| `editorPaddingX` | Horizontal padding for input editor (0-3) | `0` |
 | `extensions` | Additional extension file paths | `[]` |
 
 ---
@@ -1172,7 +1202,7 @@ pi [options] [@files...] [messages...]
 
 | Option | Description |
 |--------|-------------|
-| `--provider <name>` | Provider: `anthropic`, `openai`, `openai-codex`, `google`, `google-vertex`, `amazon-bedrock`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`, `vercel-ai-gateway`, `zai`, `minimax`, `minimax-cn`, `github-copilot`, `google-gemini-cli`, `google-antigravity`, or custom |
+| `--provider <name>` | Provider: `anthropic`, `openai`, `openai-codex`, `google`, `google-vertex`, `amazon-bedrock`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`, `vercel-ai-gateway`, `zai`, `opencode`, `minimax`, `minimax-cn`, `github-copilot`, `google-gemini-cli`, `google-antigravity`, or custom |
 | `--model <id>` | Model ID |
 | `--api-key <key>` | API key (overrides environment) |
 | `--system-prompt <text\|file>` | Custom system prompt (text or file path) |

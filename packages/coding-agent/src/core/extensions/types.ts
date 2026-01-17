@@ -193,6 +193,21 @@ export interface ExtensionUIContext {
 // Extension Context
 // ============================================================================
 
+export interface ContextUsage {
+	tokens: number;
+	contextWindow: number;
+	percent: number;
+	usageTokens: number;
+	trailingTokens: number;
+	lastUsageIndex: number | null;
+}
+
+export interface CompactOptions {
+	customInstructions?: string;
+	onComplete?: (result: CompactionResult) => void;
+	onError?: (error: Error) => void;
+}
+
 /**
  * Context passed to extension event handlers.
  */
@@ -217,6 +232,10 @@ export interface ExtensionContext {
 	hasPendingMessages(): boolean;
 	/** Gracefully shutdown pi and exit. Available in all contexts. */
 	shutdown(): void;
+	/** Get current context usage for the active model. */
+	getContextUsage(): ContextUsage | undefined;
+	/** Trigger compaction without awaiting completion. */
+	compact(options?: CompactOptions): void;
 }
 
 /**
@@ -237,7 +256,10 @@ export interface ExtensionCommandContext extends ExtensionContext {
 	fork(entryId: string): Promise<{ cancelled: boolean }>;
 
 	/** Navigate to a different point in the session tree. */
-	navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ cancelled: boolean }>;
+	navigateTree(
+		targetId: string,
+		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
+	): Promise<{ cancelled: boolean }>;
 }
 
 // ============================================================================
@@ -344,6 +366,12 @@ export interface TreePreparation {
 	commonAncestorId: string | null;
 	entriesToSummarize: SessionEntry[];
 	userWantsSummary: boolean;
+	/** Custom instructions for summarization */
+	customInstructions?: string;
+	/** If true, customInstructions replaces the default prompt instead of being appended */
+	replaceInstructions?: boolean;
+	/** Label to attach to the branch summary entry */
+	label?: string;
 }
 
 /** Fired before navigating in the session tree (can be cancelled) */
@@ -633,6 +661,12 @@ export interface SessionBeforeTreeResult {
 		summary: string;
 		details?: unknown;
 	};
+	/** Override custom instructions for summarization */
+	customInstructions?: string;
+	/** Override whether customInstructions replaces the default prompt */
+	replaceInstructions?: boolean;
+	/** Override label to attach to the branch summary entry */
+	label?: string;
 }
 
 // ============================================================================
@@ -904,6 +938,8 @@ export interface ExtensionContextActions {
 	abort: () => void;
 	hasPendingMessages: () => boolean;
 	shutdown: () => void;
+	getContextUsage: () => ContextUsage | undefined;
+	compact: (options?: CompactOptions) => void;
 }
 
 /**
@@ -917,7 +953,10 @@ export interface ExtensionCommandContextActions {
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 	}) => Promise<{ cancelled: boolean }>;
 	fork: (entryId: string) => Promise<{ cancelled: boolean }>;
-	navigateTree: (targetId: string, options?: { summarize?: boolean }) => Promise<{ cancelled: boolean }>;
+	navigateTree: (
+		targetId: string,
+		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
+	) => Promise<{ cancelled: boolean }>;
 }
 
 /**

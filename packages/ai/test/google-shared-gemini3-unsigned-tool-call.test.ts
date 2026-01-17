@@ -63,7 +63,10 @@ describe("google-shared convertMessages", () => {
 		expect(toolTurn?.parts?.some((p) => p.functionCall !== undefined)).toBe(false);
 
 		const text = toolTurn?.parts?.map((p) => p.text ?? "").join("\n");
-		expect(text).toContain("[Tool Call: bash]");
+		// Should contain historical context note to prevent mimicry
+		expect(text).toContain("Historical context");
+		expect(text).toContain("bash");
 		expect(text).toContain("ls -la");
+		expect(text).toContain("Do not mimic this format");
 	});
 });

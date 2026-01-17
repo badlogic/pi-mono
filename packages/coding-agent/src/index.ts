@@ -1,7 +1,7 @@
 // Core session management
 
 // Config paths
-export { getAgentDir } from "./config.js";
+export { getAgentDir, VERSION } from "./config.js";
 export {
 	AgentSession,
 	type AgentSessionConfig,
@@ -45,7 +45,9 @@ export type {
 	AgentToolUpdateCallback,
 	AppAction,
 	BeforeAgentStartEvent,
+	CompactOptions,
 	ContextEvent,
+	ContextUsage,
 	ExecOptions,
 	ExecResult,
 	Extension,
@@ -237,6 +239,8 @@ export {
 export {
 	ArminComponent,
 	AssistantMessageComponent,
+	appKey,
+	appKeyHint,
 	BashExecutionComponent,
 	BorderedLoader,
 	BranchSummaryMessageComponent,
@@ -247,11 +251,14 @@ export {
 	ExtensionEditorComponent,
 	ExtensionInputComponent,
 	ExtensionSelectorComponent,
+	editorKey,
 	FooterComponent,
+	keyHint,
 	LoginDialogComponent,
 	ModelSelectorComponent,
 	OAuthSelectorComponent,
 	type RenderDiffOptions,
+	rawKeyHint,
 	renderDiff,
 	SessionSelectorComponent,
 	type SettingsCallbacks,

@@ -384,7 +384,7 @@ pi.on("session_compact", async (event, ctx) => {
 });
 ```
 
-**Examples:** [custom-compaction.ts](../examples/extensions/custom-compaction.ts)
+**Examples:** [custom-compaction.ts](../examples/extensions/custom-compaction.ts), [trigger-compact.ts](../examples/extensions/trigger-compact.ts)
 
 #### session_before_tree / session_tree
 
@@ -677,6 +677,33 @@ pi.on("tool_call", (event, ctx) => {
 });
 ```
 
+### ctx.getContextUsage()
+
+Returns current context usage for the active model. Uses last assistant usage when available, then estimates tokens for trailing messages.
+
+```typescript
+const usage = ctx.getContextUsage();
+if (usage && usage.tokens > 100_000) {
+  // ...
+}
+```
+
+### ctx.compact()
+
+Trigger compaction without awaiting completion. Use `onComplete` and `onError` for follow-up actions.
+
+```typescript
+ctx.compact({
+  customInstructions: "Focus on recent changes",
+  onComplete: (result) => {
+    ctx.ui.notify("Compaction completed", "info");
+  },
+  onError: (error) => {
+    ctx.ui.notify(`Compaction failed: ${error.message}`, "error");
+  },
+});
+```
+
 ## ExtensionCommandContext
 
 Command handlers receive `ExtensionCommandContext`, which extends `ExtensionContext` with session control methods. These are only available in commands because they can deadlock if called from event handlers.
@@ -733,8 +760,17 @@ Navigate to a different point in the session tree:
 ```typescript
 const result = await ctx.navigateTree("entry-id-456", {
   summarize: true,
+  customInstructions: "Focus on error handling changes",
+  replaceInstructions: false, // true = replace default prompt entirely
+  label: "review-checkpoint",
 });
 ```
+
+Options:
+- `summarize`: Whether to generate a summary of the abandoned branch
+- `customInstructions`: Custom instructions for the summarizer
+- `replaceInstructions`: If true, `customInstructions` replaces the default prompt instead of being appended
+- `label`: Label to attach to the branch summary entry (or target entry if not summarizing)
 
 ## ExtensionAPI Methods
 
@@ -1266,6 +1302,28 @@ renderResult(result, { expanded, isPartial }, theme) {
   return new Text(text, 0, 0);
 }
 ```
+
+#### Keybinding Hints
+
+Use `keyHint()` to display keybinding hints that respect user's keybinding configuration:
+
+```typescript
+import { keyHint } from "@mariozechner/pi-coding-agent";
+
+renderResult(result, { expanded }, theme) {
+  let text = theme.fg("success", "✓ Done");
+  if (!expanded) {
+    text += ` (${keyHint("expandTools", "to expand")})`;
+  }
+  return new Text(text, 0, 0);
+}
+```
+
+Available functions:
+- `keyHint(action, description)` - Editor actions (e.g., `"expandTools"`, `"selectConfirm"`)
+- `appKeyHint(keybindings, action, description)` - App actions (requires `KeybindingsManager`)
+- `editorKey(action)` - Get raw key string for editor action
+- `rawKeyHint(key, description)` - Format a raw key string
 
 #### Best Practices
 

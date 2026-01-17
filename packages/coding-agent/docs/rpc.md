@@ -795,6 +795,8 @@ If `reason` was `"overflow"` and compaction succeeds, `willRetry` is `true` and 
 
 If compaction was aborted, `result` is `null` and `aborted` is `true`.
 
+If compaction failed (e.g., API quota exceeded), `result` is `null`, `aborted` is `false`, and `errorMessage` contains the error description.
+
 ### auto_retry_start / auto_retry_end
 
 Emitted when automatic retry is triggered after a transient error (overloaded, rate limit, 5xx).

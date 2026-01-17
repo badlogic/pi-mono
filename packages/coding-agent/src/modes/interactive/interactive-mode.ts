@@ -44,6 +44,7 @@ import {
 import { spawn, spawnSync } from "child_process";
 import { APP_NAME, getAuthPath, getDebugLogPath, isBunBinary, isBunRuntime, VERSION } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
+import type { CompactionResult } from "../../core/compaction/index.js";
 import type {
 	ExtensionContext,
 	ExtensionRunner,
@@ -235,13 +236,14 @@ export class InteractiveMode {
 	) {
 		this.session = session;
 		this.version = VERSION;
-		this.ui = new TUI(new ProcessTerminal());
+		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
 		this.widgetContainer = new Container();
 		this.keybindings = KeybindingsManager.create();
-		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings);
+		const editorPaddingX = this.settingsManager.getEditorPaddingX();
+		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings, { paddingX: editorPaddingX });
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
@@ -357,56 +359,69 @@ export class InteractiveMode {
 		this.fdPath = await ensureTool("fd");
 		this.setupAutocomplete(this.fdPath);
 
-		// Add header with keybindings from config
-		const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
+		// Add header with keybindings from config (unless silenced)
+		if (!this.settingsManager.getQuietStartup()) {
+			const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
 
-		// Build startup instructions using keybinding hint helpers
-		const kb = this.keybindings;
-		const hint = (action: AppAction, desc: string) => appKeyHint(kb, action, desc);
+			// Build startup instructions using keybinding hint helpers
+			const kb = this.keybindings;
+			const hint = (action: AppAction, desc: string) => appKeyHint(kb, action, desc);
 
-		const instructions = [
-			hint("interrupt", "to interrupt"),
-			hint("clear", "to clear"),
-			rawKeyHint(`${appKey(kb, "clear")} twice`, "to exit"),
-			hint("exit", "to exit (empty)"),
-			hint("suspend", "to suspend"),
-			keyHint("deleteToLineEnd", "to delete to end"),
-			hint("cycleThinkingLevel", "to cycle thinking"),
-			rawKeyHint(`${appKey(kb, "cycleModelForward")}/${appKey(kb, "cycleModelBackward")}`, "to cycle models"),
-			hint("selectModel", "to select model"),
-			hint("expandTools", "to expand tools"),
-			hint("toggleThinking", "to toggle thinking"),
-			hint("externalEditor", "for external editor"),
-			rawKeyHint("/", "for commands"),
-			rawKeyHint("!", "to run bash"),
-			rawKeyHint("!!", "to run bash (no context)"),
-			hint("followUp", "to queue follow-up"),
-			hint("dequeue", "to edit all queued messages"),
-			hint("pasteImage", "to paste image"),
-			rawKeyHint("drop files", "to attach"),
-		].join("\n");
-		this.builtInHeader = new Text(`${logo}\n${instructions}`, 1, 0);
+			const instructions = [
+				hint("interrupt", "to interrupt"),
+				hint("clear", "to clear"),
+				rawKeyHint(`${appKey(kb, "clear")} twice`, "to exit"),
+				hint("exit", "to exit (empty)"),
+				hint("suspend", "to suspend"),
+				keyHint("deleteToLineEnd", "to delete to end"),
+				hint("cycleThinkingLevel", "to cycle thinking"),
+				rawKeyHint(`${appKey(kb, "cycleModelForward")}/${appKey(kb, "cycleModelBackward")}`, "to cycle models"),
+				hint("selectModel", "to select model"),
+				hint("expandTools", "to expand tools"),
+				hint("toggleThinking", "to toggle thinking"),
+				hint("externalEditor", "for external editor"),
+				rawKeyHint("/", "for commands"),
+				rawKeyHint("!", "to run bash"),
+				rawKeyHint("!!", "to run bash (no context)"),
+				hint("followUp", "to queue follow-up"),
+				hint("dequeue", "to edit all queued messages"),
+				hint("pasteImage", "to paste image"),
+				rawKeyHint("drop files", "to attach"),
+			].join("\n");
+			this.builtInHeader = new Text(`${logo}\n${instructions}`, 1, 0);
 
-		// Setup UI layout
-		this.ui.addChild(new Spacer(1));
-		this.ui.addChild(this.builtInHeader);
-		this.ui.addChild(new Spacer(1));
+			// Setup UI layout
+			this.ui.addChild(new Spacer(1));
+			this.ui.addChild(this.builtInHeader);
+			this.ui.addChild(new Spacer(1));
 
-		// Add changelog if provided
-		if (this.changelogMarkdown) {
-			this.ui.addChild(new DynamicBorder());
-			if (this.settingsManager.getCollapseChangelog()) {
+			// Add changelog if provided
+			if (this.changelogMarkdown) {
+				this.ui.addChild(new DynamicBorder());
+				if (this.settingsManager.getCollapseChangelog()) {
+					const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
+					const latestVersion = versionMatch ? versionMatch[1] : this.version;
+					const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
+					this.ui.addChild(new Text(condensedText, 1, 0));
+				} else {
+					this.ui.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
+					this.ui.addChild(new Spacer(1));
+					this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0, getMarkdownTheme()));
+					this.ui.addChild(new Spacer(1));
+				}
+				this.ui.addChild(new DynamicBorder());
+			}
+		} else {
+			// Minimal header when silenced
+			this.builtInHeader = new Text("", 0, 0);
+			if (this.changelogMarkdown) {
+				// Still show changelog notification even in silent mode
+				this.ui.addChild(new Spacer(1));
 				const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
 				const latestVersion = versionMatch ? versionMatch[1] : this.version;
 				const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
 				this.ui.addChild(new Text(condensedText, 1, 0));
-			} else {
-				this.ui.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
-				this.ui.addChild(new Spacer(1));
-				this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0, getMarkdownTheme()));
-				this.ui.addChild(new Spacer(1));
 			}
-			this.ui.addChild(new DynamicBorder());
 		}
 
 		this.ui.addChild(this.chatContainer);
@@ -573,36 +588,41 @@ export class InteractiveMode {
 	 * Initialize the extension system with TUI-based UI context.
 	 */
 	private async initExtensions(): Promise<void> {
-		// Show loaded project context files
-		const contextFiles = loadProjectContextFiles();
-		if (contextFiles.length > 0) {
-			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${f.path}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded context:\n") + contextList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+		// Show discovery info unless silenced
+		if (!this.settingsManager.getQuietStartup()) {
+			// Show loaded project context files
+			const contextFiles = loadProjectContextFiles();
+			if (contextFiles.length > 0) {
+				const contextList = contextFiles.map((f) => theme.fg("dim", `  ${f.path}`)).join("\n");
+				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded context:\n") + contextList, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 
-		// Show loaded skills (already discovered by SDK)
-		const skills = this.session.skills;
-		if (skills.length > 0) {
-			const skillList = skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+			// Show loaded skills (already discovered by SDK)
+			const skills = this.session.skills;
+			if (skills.length > 0) {
+				const skillList = skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
+				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 
-		// Show skill warnings if any
-		const skillWarnings = this.session.skillWarnings;
-		if (skillWarnings.length > 0) {
-			const warningList = skillWarnings.map((w) => theme.fg("warning", `  ${w.skillPath}: ${w.message}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+			// Show skill warnings if any
+			const skillWarnings = this.session.skillWarnings;
+			if (skillWarnings.length > 0) {
+				const warningList = skillWarnings
+					.map((w) => theme.fg("warning", `  ${w.skillPath}: ${w.message}`))
+					.join("\n");
+				this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 
-		// Show loaded prompt templates
-		const templates = this.session.promptTemplates;
-		if (templates.length > 0) {
-			const templateList = templates.map((t) => theme.fg("dim", `  /${t.name} ${t.source}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded prompt templates:\n") + templateList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
+			// Show loaded prompt templates
+			const templates = this.session.promptTemplates;
+			if (templates.length > 0) {
+				const templateList = templates.map((t) => theme.fg("dim", `  /${t.name} ${t.source}`)).join("\n");
+				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded prompt templates:\n") + templateList, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 		}
 
 		const extensionRunner = this.session.extensionRunner;
@@ -670,6 +690,20 @@ export class InteractiveMode {
 				shutdown: () => {
 					this.shutdownRequested = true;
 				},
+				getContextUsage: () => this.session.getContextUsage(),
+				compact: (options) => {
+					void (async () => {
+						try {
+							const result = await this.executeCompaction(options?.customInstructions, false);
+							if (result) {
+								options?.onComplete?.(result);
+							}
+						} catch (error) {
+							const err = error instanceof Error ? error : new Error(String(error));
+							options?.onError?.(err);
+						}
+					})();
+				},
 			},
 			// ExtensionCommandContextActions - for ctx.* in command handlers
 			{
@@ -717,7 +751,12 @@ export class InteractiveMode {
 					return { cancelled: false };
 				},
 				navigateTree: async (targetId, options) => {
-					const result = await this.session.navigateTree(targetId, { summarize: options?.summarize });
+					const result = await this.session.navigateTree(targetId, {
+						summarize: options?.summarize,
+						customInstructions: options?.customInstructions,
+						replaceInstructions: options?.replaceInstructions,
+						label: options?.label,
+					});
 					if (result.cancelled) {
 						return { cancelled: true };
 					}
@@ -743,12 +782,14 @@ export class InteractiveMode {
 		// Set up extension-registered shortcuts
 		this.setupExtensionShortcuts(extensionRunner);
 
-		// Show loaded extensions
-		const extensionPaths = extensionRunner.getExtensionPaths();
-		if (extensionPaths.length > 0) {
-			const extList = extensionPaths.map((p) => theme.fg("dim", `  ${p}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded extensions:\n") + extList, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
+		// Show loaded extensions (unless silenced)
+		if (!this.settingsManager.getQuietStartup()) {
+			const extensionPaths = extensionRunner.getExtensionPaths();
+			if (extensionPaths.length > 0) {
+				const extList = extensionPaths.map((p) => theme.fg("dim", `  ${p}`)).join("\n");
+				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded extensions:\n") + extList, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 		}
 
 		// Emit session_start event
@@ -786,6 +827,20 @@ export class InteractiveMode {
 			hasPendingMessages: () => this.session.pendingMessageCount > 0,
 			shutdown: () => {
 				this.shutdownRequested = true;
+			},
+			getContextUsage: () => this.session.getContextUsage(),
+			compact: (options) => {
+				void (async () => {
+					try {
+						const result = await this.executeCompaction(options?.customInstructions, false);
+						if (result) {
+							options?.onComplete?.(result);
+						}
+					} catch (error) {
+						const err = error instanceof Error ? error : new Error(String(error));
+						options?.onError?.(err);
+					}
+				})();
 			},
 		});
 
@@ -1795,6 +1850,10 @@ export class InteractiveMode {
 						timestamp: Date.now(),
 					});
 					this.footer.invalidate();
+				} else if (event.errorMessage) {
+					// Compaction failed (e.g., quota exceeded, API error)
+					this.chatContainer.addChild(new Spacer(1));
+					this.chatContainer.addChild(new Text(theme.fg("error", event.errorMessage), 1, 0));
 				}
 				void this.flushCompactionQueue({ willRetry: event.willRetry });
 				this.ui.requestRender();
@@ -2491,6 +2550,8 @@ export class InteractiveMode {
 					hideThinkingBlock: this.hideThinkingBlock,
 					collapseChangelog: this.settingsManager.getCollapseChangelog(),
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
+					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
+					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -2557,6 +2618,14 @@ export class InteractiveMode {
 					},
 					onDoubleEscapeActionChange: (action) => {
 						this.settingsManager.setDoubleEscapeAction(action);
+					},
+					onShowHardwareCursorChange: (enabled) => {
+						this.settingsManager.setShowHardwareCursor(enabled);
+						this.ui.setShowHardwareCursor(enabled);
+					},
+					onEditorPaddingXChange: (padding) => {
+						this.settingsManager.setEditorPaddingX(padding);
+						this.defaultEditor.setPaddingX(padding);
 					},
 					onCancel: () => {
 						done();
@@ -3613,7 +3682,7 @@ export class InteractiveMode {
 		await this.executeCompaction(customInstructions, false);
 	}
 
-	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<void> {
+	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<CompactionResult | undefined> {
 		// Stop loading animation
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
@@ -3640,8 +3709,10 @@ export class InteractiveMode {
 		this.statusContainer.addChild(compactingLoader);
 		this.ui.requestRender();
 
+		let result: CompactionResult | undefined;
+
 		try {
-			const result = await this.session.compact(customInstructions);
+			result = await this.session.compact(customInstructions);
 
 			// Rebuild UI
 			this.rebuildChatFromMessages();
@@ -3664,6 +3735,7 @@ export class InteractiveMode {
 			this.defaultEditor.onEscape = originalOnEscape;
 		}
 		void this.flushCompactionQueue({ willRetry: false });
+		return result;
 	}
 
 	stop(): void {

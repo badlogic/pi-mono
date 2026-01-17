@@ -36,6 +36,8 @@ export interface SettingsConfig {
 	hideThinkingBlock: boolean;
 	collapseChangelog: boolean;
 	doubleEscapeAction: "fork" | "tree";
+	showHardwareCursor: boolean;
+	editorPaddingX: number;
 }
 
 export interface SettingsCallbacks {
@@ -52,6 +54,8 @@ export interface SettingsCallbacks {
 	onHideThinkingBlockChange: (hidden: boolean) => void;
 	onCollapseChangelogChange: (collapsed: boolean) => void;
 	onDoubleEscapeActionChange: (action: "fork" | "tree") => void;
+	onShowHardwareCursorChange: (enabled: boolean) => void;
+	onEditorPaddingXChange: (padding: number) => void;
 	onCancel: () => void;
 }
 
@@ -267,6 +271,26 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
+		// Hardware cursor toggle (insert after skill-commands)
+		const skillCommandsIndex = items.findIndex((item) => item.id === "skill-commands");
+		items.splice(skillCommandsIndex + 1, 0, {
+			id: "show-hardware-cursor",
+			label: "Show hardware cursor",
+			description: "Show the terminal cursor while still positioning it for IME support",
+			currentValue: config.showHardwareCursor ? "true" : "false",
+			values: ["true", "false"],
+		});
+
+		// Editor padding toggle (insert after show-hardware-cursor)
+		const hardwareCursorIndex = items.findIndex((item) => item.id === "show-hardware-cursor");
+		items.splice(hardwareCursorIndex + 1, 0, {
+			id: "editor-padding",
+			label: "Editor padding",
+			description: "Horizontal padding for input editor (0-3)",
+			currentValue: String(config.editorPaddingX),
+			values: ["0", "1", "2", "3"],
+		});
+
 		// Add borders
 		this.addChild(new DynamicBorder());
 
@@ -305,6 +329,12 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "double-escape-action":
 						callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree");
+						break;
+					case "show-hardware-cursor":
+						callbacks.onShowHardwareCursorChange(newValue === "true");
+						break;
+					case "editor-padding":
+						callbacks.onEditorPaddingXChange(parseInt(newValue, 10));
 						break;
 				}
 			},

@@ -208,6 +208,7 @@ export class TUI extends Container {
 	private hardwareCursorRow = 0; // Actual terminal cursor row (may differ due to IME positioning)
 	private inputBuffer = ""; // Buffer for parsing terminal responses
 	private cellSizeQueryPending = false;
+	private showHardwareCursor = process.env.PI_HARDWARE_CURSOR === "1";
 
 	// Overlay stack for modal components rendered on top of base content
 	private overlayStack: {
@@ -217,9 +218,25 @@ export class TUI extends Container {
 		hidden: boolean;
 	}[] = [];
 
-	constructor(terminal: Terminal) {
+	constructor(terminal: Terminal, showHardwareCursor?: boolean) {
 		super();
 		this.terminal = terminal;
+		if (showHardwareCursor !== undefined) {
+			this.showHardwareCursor = showHardwareCursor;
+		}
+	}
+
+	getShowHardwareCursor(): boolean {
+		return this.showHardwareCursor;
+	}
+
+	setShowHardwareCursor(enabled: boolean): void {
+		if (this.showHardwareCursor === enabled) return;
+		this.showHardwareCursor = enabled;
+		if (!enabled) {
+			this.terminal.hideCursor();
+		}
+		this.requestRender();
 	}
 
 	setFocus(component: Component | null): void {
@@ -981,12 +998,6 @@ export class TUI extends Container {
 	 * @param totalLines Total number of rendered lines
 	 */
 	private positionHardwareCursor(cursorPos: { row: number; col: number } | null, totalLines: number): void {
-		// PI_NO_HARDWARE_CURSOR=1 disables hardware cursor for terminals that don't handle it well
-		if (process.env.PI_NO_HARDWARE_CURSOR === "1") {
-			this.terminal.hideCursor();
-			return;
-		}
-
 		if (!cursorPos || totalLines <= 0) {
 			this.terminal.hideCursor();
 			return;
@@ -1012,6 +1023,10 @@ export class TUI extends Container {
 		}
 
 		this.hardwareCursorRow = targetRow;
-		this.terminal.showCursor();
+		if (this.showHardwareCursor) {
+			this.terminal.showCursor();
+		} else {
+			this.terminal.hideCursor();
+		}
 	}
 }

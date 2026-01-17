@@ -4,14 +4,41 @@
 
 ### Added
 
+- Export `keyHint`, `appKeyHint`, `editorKey`, `appKey`, `rawKeyHint` for extensions to format keybinding hints consistently
+- Added `showHardwareCursor` setting to control cursor visibility while still positioning it for IME support. ([#800](https://github.com/badlogic/pi-mono/pull/800) by [@ghoulr](https://github.com/ghoulr))
+- Added `ctx.compact()` and `ctx.getContextUsage()` to extension contexts for programmatic compaction and context usage checks.
+
+## [0.48.0] - 2026-01-16
+
+### Added
+
+- Added `quietStartup` setting to silence startup output (version header, loaded context info, model scope line). Changelog notifications are still shown. ([#777](https://github.com/badlogic/pi-mono/pull/777) by [@ribelo](https://github.com/ribelo))
+- Added `editorPaddingX` setting for horizontal padding in input editor (0-3, default: 0)
+- Added `shellCommandPrefix` setting to prepend commands to every bash execution, enabling alias expansion in non-interactive shells (e.g., `"shellCommandPrefix": "shopt -s expand_aliases"`) ([#790](https://github.com/badlogic/pi-mono/pull/790) by [@richardgill](https://github.com/richardgill))
 - Added bash-style argument slicing for prompt templates ([#770](https://github.com/badlogic/pi-mono/pull/770) by [@airtonix](https://github.com/airtonix))
 - Extension commands can provide argument auto-completions via `getArgumentCompletions` in `pi.registerCommand()` ([#775](https://github.com/badlogic/pi-mono/pull/775) by [@ribelo](https://github.com/ribelo))
 - OpenAI Responses (Azure): added optional `compat.strictResponsesPairing` flag to avoid 400 validation errors caused by strict `reasoning` ↔ `message`/`function_call` pairing during history replay.
+- Bash tool now displays the timeout value in the UI when a timeout is set ([#780](https://github.com/badlogic/pi-mono/pull/780) by [@dannote](https://github.com/dannote))
+- Export `getShellConfig` for extensions to detect user's shell environment ([#766](https://github.com/badlogic/pi-mono/pull/766) by [@dannote](https://github.com/dannote))
+- Added `thinkingText` and `selectedBg` to theme schema ([#763](https://github.com/badlogic/pi-mono/pull/763) by [@scutifer](https://github.com/scutifer))
+- `navigateTree()` now supports `replaceInstructions` option to replace the default summarization prompt entirely, and `label` option to attach a label to the branch summary entry ([#787](https://github.com/badlogic/pi-mono/pull/787) by [@mitsuhiko](https://github.com/mitsuhiko))
 
 ### Fixed
 
+- Fixed crash during auto-compaction when summarization fails (e.g., quota exceeded). Now displays error message instead of crashing ([#792](https://github.com/badlogic/pi-mono/issues/792))
+- Fixed `--session <UUID>` to search globally across projects if not found locally, with option to fork sessions from other projects ([#785](https://github.com/badlogic/pi-mono/pull/785) by [@ribelo](https://github.com/ribelo))
+- Fixed standalone binary WASM loading on Linux ([#784](https://github.com/badlogic/pi-mono/issues/784))
+- Fixed string numbers in tool arguments not being coerced to numbers during validation ([#786](https://github.com/badlogic/pi-mono/pull/786) by [@dannote](https://github.com/dannote))
+- Fixed `--no-extensions` flag not preventing extension discovery ([#776](https://github.com/badlogic/pi-mono/issues/776))
 - Fixed extension messages rendering twice on startup when `pi.sendMessage({ display: true })` is called during `session_start` ([#765](https://github.com/badlogic/pi-mono/pull/765) by [@dannote](https://github.com/dannote))
-- Fixed `PI_CODING_AGENT_DIR` env var not expanding tilde (`~`) to home directory ([#768](https://github.com/badlogic/pi-mono/pull/778) by [@aliou](https://github.com/aliou))
+- Fixed `PI_CODING_AGENT_DIR` env var not expanding tilde (`~`) to home directory ([#778](https://github.com/badlogic/pi-mono/pull/778) by [@aliou](https://github.com/aliou))
+- Fixed session picker hint text overflow ([#764](https://github.com/badlogic/pi-mono/issues/764))
+- Fixed Kitty keyboard protocol shifted symbol keys (e.g., `@`, `?`) not working in editor ([#779](https://github.com/badlogic/pi-mono/pull/779) by [@iamd3vil](https://github.com/iamd3vil))
+- Fixed Bedrock tool call IDs causing API errors from invalid characters ([#781](https://github.com/badlogic/pi-mono/pull/781) by [@pjtf93](https://github.com/pjtf93))
+
+### Changed
+
+- Hardware cursor is now disabled by default for better terminal compatibility. Set `PI_HARDWARE_CURSOR=1` to enable (replaces `PI_NO_HARDWARE_CURSOR=1` which disabled it).
 
 ## [0.47.0] - 2026-01-16
 

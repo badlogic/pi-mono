@@ -110,9 +110,20 @@ interface BranchSummaryEntry {
 ```typescript
 async navigateTree(
   targetId: string,
-  options?: { summarize?: boolean; customInstructions?: string }
+  options?: {
+    summarize?: boolean;
+    customInstructions?: string;
+    replaceInstructions?: boolean;
+    label?: string;
+  }
 ): Promise<{ editorText?: string; cancelled: boolean }>
 ```
+
+Options:
+- `summarize`: Whether to generate a summary of the abandoned branch
+- `customInstructions`: Custom instructions for the summarizer
+- `replaceInstructions`: If true, `customInstructions` replaces the default prompt instead of being appended
+- `label`: Label to attach to the branch summary entry (or target entry if not summarizing)
 
 Flow:
 1. Validate target, check no-op (target === current leaf)
@@ -153,20 +164,27 @@ interface TreePreparation {
   commonAncestorId: string | null;
   entriesToSummarize: SessionEntry[];
   userWantsSummary: boolean;
+  customInstructions?: string;
+  replaceInstructions?: boolean;
+  label?: string;
 }
 
 interface SessionBeforeTreeEvent {
   type: "session_before_tree";
   preparation: TreePreparation;
-  model: Model;
   signal: AbortSignal;
 }
 
 interface SessionBeforeTreeResult {
   cancel?: boolean;
   summary?: { summary: string; details?: unknown };
+  customInstructions?: string;    // Override custom instructions
+  replaceInstructions?: boolean;  // Override replace mode
+  label?: string;                 // Override label
 }
 ```
+
+Extensions can override `customInstructions`, `replaceInstructions`, and `label` by returning them from the `session_before_tree` handler.
 
 ### `session_tree`
 
