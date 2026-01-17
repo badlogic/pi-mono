@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `showHardwareCursor` getter and setter to control cursor visibility while keeping IME positioning active. ([#800](https://github.com/badlogic/pi-mono/pull/800) by [@ghoulr](https://github.com/ghoulr))
+
 ## [0.48.0] - 2026-01-16
 
 ### Added

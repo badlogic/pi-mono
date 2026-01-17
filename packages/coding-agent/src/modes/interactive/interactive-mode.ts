@@ -235,7 +235,7 @@ export class InteractiveMode {
 	) {
 		this.session = session;
 		this.version = VERSION;
-		this.ui = new TUI(new ProcessTerminal());
+		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
@@ -689,6 +689,18 @@ export class InteractiveMode {
 				shutdown: () => {
 					this.shutdownRequested = true;
 				},
+				getContextUsage: () => this.session.getContextUsage(),
+				compact: (options) => {
+					void (async () => {
+						try {
+							const result = await this.session.compact(options?.customInstructions);
+							options?.onComplete?.(result);
+						} catch (error) {
+							const err = error instanceof Error ? error : new Error(String(error));
+							options?.onError?.(err);
+						}
+					})();
+				},
 			},
 			// ExtensionCommandContextActions - for ctx.* in command handlers
 			{
@@ -812,6 +824,18 @@ export class InteractiveMode {
 			hasPendingMessages: () => this.session.pendingMessageCount > 0,
 			shutdown: () => {
 				this.shutdownRequested = true;
+			},
+			getContextUsage: () => this.session.getContextUsage(),
+			compact: (options) => {
+				void (async () => {
+					try {
+						const result = await this.session.compact(options?.customInstructions);
+						options?.onComplete?.(result);
+					} catch (error) {
+						const err = error instanceof Error ? error : new Error(String(error));
+						options?.onError?.(err);
+					}
+				})();
 			},
 		});
 
@@ -2521,6 +2545,7 @@ export class InteractiveMode {
 					hideThinkingBlock: this.hideThinkingBlock,
 					collapseChangelog: this.settingsManager.getCollapseChangelog(),
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
+					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 				},
 				{
@@ -2588,6 +2613,10 @@ export class InteractiveMode {
 					},
 					onDoubleEscapeActionChange: (action) => {
 						this.settingsManager.setDoubleEscapeAction(action);
+					},
+					onShowHardwareCursorChange: (enabled) => {
+						this.settingsManager.setShowHardwareCursor(enabled);
+						this.ui.setShowHardwareCursor(enabled);
 					},
 					onEditorPaddingXChange: (padding) => {
 						this.settingsManager.setEditorPaddingX(padding);
