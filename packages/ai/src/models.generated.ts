@@ -7663,23 +7663,6 @@ export const MODELS = {
 			contextWindow: 262144,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
-		"qwen/qwen3-vl-235b-a22b-thinking": {
-			id: "qwen/qwen3-vl-235b-a22b-thinking",
-			name: "Qwen: Qwen3 VL 235B A22B Thinking",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: true,
-			input: ["text", "image"],
-			cost: {
-				input: 0.44999999999999996,
-				output: 3.5,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 262144,
-			maxTokens: 262144,
-		} satisfies Model<"openai-completions">,
 		"qwen/qwen3-vl-30b-a3b-instruct": {
 			id: "qwen/qwen3-vl-30b-a3b-instruct",
 			name: "Qwen: Qwen3 VL 30B A3B Instruct",

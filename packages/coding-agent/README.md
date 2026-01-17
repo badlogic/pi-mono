@@ -160,7 +160,20 @@ return config
 }
 ```
 
-**Windows Terminal:** Does not support the Kitty keyboard protocol. Shift+Enter cannot be distinguished from Enter. Use Ctrl+Enter for multi-line input instead. All other keybindings work correctly.
+**Windows Terminal:** Add to `settings.json` (Ctrl+Shift+, or Settings → Open JSON file):
+
+```json
+{
+  "actions": [
+    {
+      "command": { "action": "sendInput", "input": "\u001b[13;2u" },
+      "keys": "shift+enter"
+    }
+  ]
+}
+```
+
+If you already have an `actions` array, add the object to it.
 
 **IntelliJ IDEA (Integrated Terminal):** The built-in terminal has limited escape sequence support. Note that Shift+Enter cannot be distinguished from Enter in IntelliJ's terminal. If you want the hardware cursor visible, set `PI_HARDWARE_CURSOR=1` before running pi (disabled by default for compatibility). Consider using a dedicated terminal emulator for the best experience.
 
