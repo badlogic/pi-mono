@@ -31,7 +31,7 @@ import { transformMessages } from "./transform-messages.js";
 // Stealth mode: Mimic Claude Code's tool naming exactly
 const claudeCodeVersion = "2.1.2";
 
-// Map pi tool names to Claude Code's exact tool names
+// Map pi tool names to Claude Code 2.x tool names
 const piToolNames: Record<string, string> = {
 	read: "Read",
 	write: "Write",
@@ -39,28 +39,21 @@ const piToolNames: Record<string, string> = {
 	bash: "Bash",
 	grep: "Grep",
 	find: "Glob",
-	ls: "LS", // Matches CC system prompt (not "Ls")
 };
 
-// Other Claude Code builtin tool names (not provided by pi).
+// Other Claude Code 2.x builtin tool names (not provided by pi).
 // Prevents CC errors if user defines these with non-matching case.
+// Source: https://cchistory.mariozechner.at/data/prompts-2.1.11.md
+// To update: https://github.com/badlogic/cchistory
 const ccExtraTools = [
-	"AgentOutputTool",
 	"AskUserQuestion",
-	"BashOutput",
 	"EnterPlanMode",
 	"ExitPlanMode",
-	"KillBash",
 	"KillShell",
-	"LSP",
-	"MultiEdit",
 	"NotebookEdit",
-	"NotebookRead",
 	"Skill",
-	"SlashCommand",
 	"Task",
 	"TaskOutput",
-	"TodoRead",
 	"TodoWrite",
 	"WebFetch",
 	"WebSearch",
