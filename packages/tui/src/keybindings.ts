@@ -19,6 +19,7 @@ export type EditorAction =
 	| "deleteCharBackward"
 	| "deleteCharForward"
 	| "deleteWordBackward"
+	| "deleteWordForward"
 	| "deleteToLineStart"
 	| "deleteToLineEnd"
 	// Text input
@@ -69,6 +70,7 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	deleteCharBackward: "backspace",
 	deleteCharForward: "delete",
 	deleteWordBackward: ["ctrl+w", "alt+backspace"],
+	deleteWordForward: "alt+d",
 	deleteToLineStart: "ctrl+u",
 	deleteToLineEnd: "ctrl+k",
 	// Text input
