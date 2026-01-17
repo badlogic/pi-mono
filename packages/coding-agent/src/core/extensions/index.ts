@@ -98,6 +98,7 @@ export type {
 	SessionSwitchEvent,
 	SessionTreeEvent,
 	SetActiveToolsHandler,
+	SetLabelHandler,
 	SetModelHandler,
 	SetThinkingLevelHandler,
 	// Events - Tool

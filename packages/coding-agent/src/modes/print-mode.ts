@@ -60,6 +60,9 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 				getSessionName: () => {
 					return session.sessionManager.getSessionName();
 				},
+				setLabel: (entryId, label) => {
+					session.sessionManager.appendLabelChange(entryId, label);
+				},
 				getActiveTools: () => session.getActiveToolNames(),
 				getAllTools: () => session.getAllTools(),
 				setActiveTools: (toolNames: string[]) => session.setActiveToolsByName(toolNames),

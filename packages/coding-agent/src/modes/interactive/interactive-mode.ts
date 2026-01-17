@@ -669,6 +669,9 @@ export class InteractiveMode {
 				getSessionName: () => {
 					return this.sessionManager.getSessionName();
 				},
+				setLabel: (entryId, label) => {
+					this.sessionManager.appendLabelChange(entryId, label);
+				},
 				getActiveTools: () => this.session.getActiveToolNames(),
 				getAllTools: () => this.session.getAllTools(),
 				setActiveTools: (toolNames) => this.session.setActiveToolsByName(toolNames),

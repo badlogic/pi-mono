@@ -904,6 +904,23 @@ if (name) {
 }
 ```
 
+### pi.setLabel(entryId, label)
+
+Set or clear a label on an entry. Labels are user-defined markers for bookmarking and navigation (shown in `/tree` selector).
+
+```typescript
+// Set a label
+pi.setLabel(entryId, "checkpoint-before-refactor");
+
+// Clear a label
+pi.setLabel(entryId, undefined);
+
+// Read labels via sessionManager
+const label = ctx.sessionManager.getLabel(entryId);
+```
+
+Labels persist in the session and survive restarts. Use them to mark important points (turns, checkpoints) in the conversation tree.
+
 ### pi.registerCommand(name, options)
 
 Register a command.
