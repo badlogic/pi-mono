@@ -1,5 +1,5 @@
 import type { ImageContent } from "@mariozechner/pi-ai";
-import { getPhoton } from "./photon.js";
+import { loadPhoton } from "./photon.js";
 
 export interface ImageResizeOptions {
 	maxWidth?: number; // Default: 2000
@@ -53,7 +53,7 @@ export async function resizeImage(img: ImageContent, options?: ImageResizeOption
 	const opts = { ...DEFAULT_OPTIONS, ...options };
 	const inputBuffer = Buffer.from(img.data, "base64");
 
-	const photon = getPhoton();
+	const photon = await loadPhoton();
 	if (!photon) {
 		// Photon not available, return original image
 		return {
