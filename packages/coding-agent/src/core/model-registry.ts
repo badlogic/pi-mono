@@ -100,32 +100,47 @@ function emptyCustomModelsResult(error?: string): CustomModelsResult {
 	return { models: [], replacedProviders: new Set(), overrides: new Map(), error };
 }
 
+// Cache for shell command results (persists for process lifetime)
+const commandResultCache = new Map<string, string | undefined>();
+
 /**
  * Resolve an API key config value to an actual key.
- * - If starts with "!", executes the rest as a shell command and uses stdout
- * - Otherwise checks environment variable first, then treats as literal
+ * - If starts with "!", executes the rest as a shell command and uses stdout (cached)
+ * - Otherwise checks environment variable first, then treats as literal (not cached)
  */
 function resolveApiKeyConfig(keyConfig: string): string | undefined {
-	// Command execution: "!command args"
 	if (keyConfig.startsWith("!")) {
-		const command = keyConfig.slice(1);
-		try {
-			const result = execSync(command, {
-				encoding: "utf-8",
-				timeout: 10000, // 10 second timeout
-				stdio: ["ignore", "pipe", "ignore"], // ignore stdin/stderr
-			});
-			// Trim whitespace/newlines from output
-			return result.trim() || undefined;
-		} catch {
-			// Command failed - return undefined so auth falls back to other methods
-			return undefined;
-		}
+		return executeApiKeyCommand(keyConfig);
+	}
+	const envValue = process.env[keyConfig];
+	return envValue || keyConfig;
+}
+
+function executeApiKeyCommand(commandConfig: string): string | undefined {
+	if (commandResultCache.has(commandConfig)) {
+		return commandResultCache.get(commandConfig);
 	}
 
-	const envValue = process.env[keyConfig];
-	if (envValue) return envValue;
-	return keyConfig;
+	const command = commandConfig.slice(1);
+	let result: string | undefined;
+	try {
+		const output = execSync(command, {
+			encoding: "utf-8",
+			timeout: 10000,
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+		result = output.trim() || undefined;
+	} catch {
+		result = undefined;
+	}
+
+	commandResultCache.set(commandConfig, result);
+	return result;
+}
+
+/** Clear the API key command cache. Exported for testing. */
+export function clearApiKeyCache(): void {
+	commandResultCache.clear();
 }
 
 /**

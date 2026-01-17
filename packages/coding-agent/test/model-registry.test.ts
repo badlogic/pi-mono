@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
+import { clearApiKeyCache, ModelRegistry } from "../src/core/model-registry.js";
 
 describe("ModelRegistry", () => {
 	let tempDir: string;
@@ -21,6 +21,7 @@ describe("ModelRegistry", () => {
 		if (tempDir && existsSync(tempDir)) {
 			rmSync(tempDir, { recursive: true });
 		}
+		clearApiKeyCache();
 	});
 
 	/** Create minimal provider config  */
@@ -379,6 +380,140 @@ describe("ModelRegistry", () => {
 			const apiKey = await registry.getApiKeyForProvider("custom-provider");
 
 			expect(apiKey).toBe("hello-world");
+		});
+
+		describe("caching", () => {
+			test("command is only executed once per process", async () => {
+				// Use a command that writes to a file to count invocations
+				const counterFile = join(tempDir, "counter");
+				writeFileSync(counterFile, "0");
+
+				const command = `!sh -c 'count=$(cat ${counterFile}); echo $((count + 1)) > ${counterFile}; echo "key-value"'`;
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey(command),
+				});
+
+				const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+				// Call multiple times
+				await registry.getApiKeyForProvider("custom-provider");
+				await registry.getApiKeyForProvider("custom-provider");
+				await registry.getApiKeyForProvider("custom-provider");
+
+				// Command should have only run once
+				const count = parseInt(readFileSync(counterFile, "utf-8").trim(), 10);
+				expect(count).toBe(1);
+			});
+
+			test("cache persists across registry instances", async () => {
+				const counterFile = join(tempDir, "counter");
+				writeFileSync(counterFile, "0");
+
+				const command = `!sh -c 'count=$(cat ${counterFile}); echo $((count + 1)) > ${counterFile}; echo "key-value"'`;
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey(command),
+				});
+
+				// Create multiple registry instances
+				const registry1 = new ModelRegistry(authStorage, modelsJsonPath);
+				await registry1.getApiKeyForProvider("custom-provider");
+
+				const registry2 = new ModelRegistry(authStorage, modelsJsonPath);
+				await registry2.getApiKeyForProvider("custom-provider");
+
+				// Command should still have only run once
+				const count = parseInt(readFileSync(counterFile, "utf-8").trim(), 10);
+				expect(count).toBe(1);
+			});
+
+			test("clearApiKeyCache allows command to run again", async () => {
+				const counterFile = join(tempDir, "counter");
+				writeFileSync(counterFile, "0");
+
+				const command = `!sh -c 'count=$(cat ${counterFile}); echo $((count + 1)) > ${counterFile}; echo "key-value"'`;
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey(command),
+				});
+
+				const registry = new ModelRegistry(authStorage, modelsJsonPath);
+				await registry.getApiKeyForProvider("custom-provider");
+
+				// Clear cache and call again
+				clearApiKeyCache();
+				await registry.getApiKeyForProvider("custom-provider");
+
+				// Command should have run twice
+				const count = parseInt(readFileSync(counterFile, "utf-8").trim(), 10);
+				expect(count).toBe(2);
+			});
+
+			test("different commands are cached separately", async () => {
+				writeRawModelsJson({
+					"provider-a": providerWithApiKey("!echo key-a"),
+					"provider-b": providerWithApiKey("!echo key-b"),
+				});
+
+				const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+				const keyA = await registry.getApiKeyForProvider("provider-a");
+				const keyB = await registry.getApiKeyForProvider("provider-b");
+
+				expect(keyA).toBe("key-a");
+				expect(keyB).toBe("key-b");
+			});
+
+			test("failed commands are cached (not retried)", async () => {
+				const counterFile = join(tempDir, "counter");
+				writeFileSync(counterFile, "0");
+
+				const command = `!sh -c 'count=$(cat ${counterFile}); echo $((count + 1)) > ${counterFile}; exit 1'`;
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey(command),
+				});
+
+				const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+				// Call multiple times - all should return undefined
+				const key1 = await registry.getApiKeyForProvider("custom-provider");
+				const key2 = await registry.getApiKeyForProvider("custom-provider");
+
+				expect(key1).toBeUndefined();
+				expect(key2).toBeUndefined();
+
+				// Command should have only run once despite failures
+				const count = parseInt(readFileSync(counterFile, "utf-8").trim(), 10);
+				expect(count).toBe(1);
+			});
+
+			test("environment variables are not cached (changes are picked up)", async () => {
+				const envVarName = "TEST_API_KEY_CACHE_TEST_98765";
+				const originalEnv = process.env[envVarName];
+
+				try {
+					process.env[envVarName] = "first-value";
+
+					writeRawModelsJson({
+						"custom-provider": providerWithApiKey(envVarName),
+					});
+
+					const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+					const key1 = await registry.getApiKeyForProvider("custom-provider");
+					expect(key1).toBe("first-value");
+
+					// Change env var
+					process.env[envVarName] = "second-value";
+
+					const key2 = await registry.getApiKeyForProvider("custom-provider");
+					expect(key2).toBe("second-value");
+				} finally {
+					if (originalEnv === undefined) {
+						delete process.env[envVarName];
+					} else {
+						process.env[envVarName] = originalEnv;
+					}
+				}
+			});
 		});
 	});
 });
