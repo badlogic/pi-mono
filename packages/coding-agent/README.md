@@ -11,7 +11,7 @@
 
 A terminal-based coding agent with multi-model support, mid-session model switching, and a simple CLI for headless coding tasks.
 
-Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-setup)).
+Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-setup)). [Separately maintained port](https://github.com/VaclavSynacek/pi-coding-agent-termux) works on Termux/Android.
 
 ## Table of Contents
 
