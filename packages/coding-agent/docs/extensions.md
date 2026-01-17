@@ -1276,6 +1276,28 @@ renderResult(result, { expanded, isPartial }, theme) {
 }
 ```
 
+#### Keybinding Hints
+
+Use `keyHint()` to display keybinding hints that respect user's keybinding configuration:
+
+```typescript
+import { keyHint } from "@mariozechner/pi-coding-agent";
+
+renderResult(result, { expanded }, theme) {
+  let text = theme.fg("success", "✓ Done");
+  if (!expanded) {
+    text += ` (${keyHint("expandTools", "to expand")})`;
+  }
+  return new Text(text, 0, 0);
+}
+```
+
+Available functions:
+- `keyHint(action, description)` - Editor actions (e.g., `"expandTools"`, `"selectConfirm"`)
+- `appKeyHint(keybindings, action, description)` - App actions (requires `KeybindingsManager`)
+- `editorKey(action)` - Get raw key string for editor action
+- `rawKeyHint(key, description)` - Format a raw key string
+
 #### Best Practices
 
 - Use `Text` with padding `(0, 0)` - the Box handles padding
