@@ -646,6 +646,10 @@ export class Editor implements Component, Focusable {
 			this.deleteWordBackwards();
 			return;
 		}
+		if (kb.matches(data, "deleteWordForward")) {
+			this.deleteWordForward();
+			return;
+		}
 		if (kb.matches(data, "deleteCharBackward") || matchesKey(data, "shift+backspace")) {
 			this.handleBackspace();
 			return;
@@ -1235,6 +1239,46 @@ export class Editor implements Component, Focusable {
 			this.state.lines[this.state.cursorLine] =
 				currentLine.slice(0, deleteFrom) + currentLine.slice(this.state.cursorCol);
 			this.state.cursorCol = deleteFrom;
+		}
+
+		if (this.onChange) {
+			this.onChange(this.getText());
+		}
+	}
+
+	private deleteWordForward(): void {
+		this.historyIndex = -1; // Exit history browsing mode
+
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+
+		// If at end of line, merge with next line (delete the newline)
+		if (this.state.cursorCol >= currentLine.length) {
+			if (this.state.cursorLine < this.state.lines.length - 1) {
+				// Treat newline as deleted text (forward deletion = append)
+				this.addToKillRing("\n", false);
+				this.lastAction = "kill";
+
+				const nextLine = this.state.lines[this.state.cursorLine + 1] || "";
+				this.state.lines[this.state.cursorLine] = currentLine + nextLine;
+				this.state.lines.splice(this.state.cursorLine + 1, 1);
+			}
+		} else {
+			// Save lastAction before cursor movement (moveWordForwards resets it)
+			const wasKill = this.lastAction === "kill";
+
+			const oldCursorCol = this.state.cursorCol;
+			this.moveWordForwards();
+			const deleteTo = this.state.cursorCol;
+			this.state.cursorCol = oldCursorCol;
+
+			// Restore kill state for accumulation check, then save to kill ring
+			this.lastAction = wasKill ? "kill" : null;
+			const deletedText = currentLine.slice(this.state.cursorCol, deleteTo);
+			this.addToKillRing(deletedText, false);
+			this.lastAction = "kill";
+
+			this.state.lines[this.state.cursorLine] =
+				currentLine.slice(0, this.state.cursorCol) + currentLine.slice(deleteTo);
 		}
 
 		if (this.onChange) {

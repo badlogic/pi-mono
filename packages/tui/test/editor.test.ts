@@ -1062,5 +1062,37 @@ describe("Editor component", () => {
 			editor.handleInput("\x1by"); // Alt+Y
 			assert.strictEqual(editor.getText(), "hello SINGLEworld");
 		});
+
+		it("Alt+D deletes word forward and saves to kill ring", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world test");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+
+			editor.handleInput("\x1bd"); // Alt+D - deletes "hello"
+			assert.strictEqual(editor.getText(), " world test");
+
+			editor.handleInput("\x1bd"); // Alt+D - deletes " world" (skips whitespace, then word)
+			assert.strictEqual(editor.getText(), " test");
+
+			// Yank should get accumulated text
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello world test");
+		});
+
+		it("Alt+D at end of line deletes newline", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("line1\nline2");
+			// Move to start of document, then to end of first line
+			editor.handleInput("\x1b[A"); // Up arrow - go to first line
+			editor.handleInput("\x05"); // Ctrl+E - end of line
+
+			editor.handleInput("\x1bd"); // Alt+D - deletes newline (merges lines)
+			assert.strictEqual(editor.getText(), "line1line2");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "line1\nline2");
+		});
 	});
 });

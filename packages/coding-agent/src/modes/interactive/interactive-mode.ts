@@ -3437,6 +3437,7 @@ export class InteractiveMode {
 		const submit = this.getEditorKeyDisplay("submit");
 		const newLine = this.getEditorKeyDisplay("newLine");
 		const deleteWordBackward = this.getEditorKeyDisplay("deleteWordBackward");
+		const deleteWordForward = this.getEditorKeyDisplay("deleteWordForward");
 		const deleteToLineStart = this.getEditorKeyDisplay("deleteToLineStart");
 		const deleteToLineEnd = this.getEditorKeyDisplay("deleteToLineEnd");
 		const yank = this.getEditorKeyDisplay("yank");
@@ -3471,6 +3472,7 @@ export class InteractiveMode {
 | \`${submit}\` | Send message |
 | \`${newLine}\` | New line${process.platform === "win32" ? " (Ctrl+Enter on Windows Terminal)" : ""} |
 | \`${deleteWordBackward}\` | Delete word backwards |
+| \`${deleteWordForward}\` | Delete word forwards |
 | \`${deleteToLineStart}\` | Delete to start of line |
 | \`${deleteToLineEnd}\` | Delete to end of line |
 | \`${yank}\` | Paste the most-recently-deleted text |
