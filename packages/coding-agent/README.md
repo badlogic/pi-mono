@@ -674,7 +674,10 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 
 **Supported APIs:** `openai-completions`, `openai-responses`, `openai-codex-responses`, `anthropic-messages`, `google-generative-ai`
 
-**API key resolution:** The `apiKey` field is checked as environment variable name first, then used as literal value.
+**API key resolution:** The `apiKey` field supports three formats:
+- `"!command"` - Executes the command and uses stdout (e.g., `"!security find-generic-password -ws 'anthropic'"` for macOS Keychain, `"!op read 'op://vault/item/credential'"` for 1Password)
+- Environment variable name (e.g., `"MY_API_KEY"`) - Uses the value of the environment variable
+- Literal value - Used directly as the API key
 
 **API override:** Set `api` at provider level (default for all models) or model level (override per model).
 

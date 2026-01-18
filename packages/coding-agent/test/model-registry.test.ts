@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
+import { clearApiKeyCache, ModelRegistry } from "../src/core/model-registry.js";
 
 describe("ModelRegistry", () => {
 	let tempDir: string;
@@ -21,6 +21,7 @@ describe("ModelRegistry", () => {
 		if (tempDir && existsSync(tempDir)) {
 			rmSync(tempDir, { recursive: true });
 		}
+		clearApiKeyCache();
 	});
 
 	/** Create minimal provider config  */
@@ -244,6 +245,275 @@ describe("ModelRegistry", () => {
 			const anthropicModels = getModelsForProvider(registry, "anthropic");
 			expect(anthropicModels.length).toBeGreaterThan(1);
 			expect(anthropicModels.some((m) => m.id.includes("claude"))).toBe(true);
+		});
+	});
+
+	describe("API key resolution", () => {
+		/** Create provider config with custom apiKey */
+		function providerWithApiKey(apiKey: string) {
+			return {
+				baseUrl: "https://example.com/v1",
+				apiKey,
+				api: "anthropic-messages",
+				models: [
+					{
+						id: "test-model",
+						name: "Test Model",
+						reasoning: false,
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 100000,
+						maxTokens: 8000,
+					},
+				],
+			};
+		}
+
+		test("apiKey with ! prefix executes command and uses stdout", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("!echo test-api-key-from-command"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBe("test-api-key-from-command");
+		});
+
+		test("apiKey with ! prefix trims whitespace from command output", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("!echo '  spaced-key  '"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBe("spaced-key");
+		});
+
+		test("apiKey with ! prefix handles multiline output (uses trimmed result)", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("!printf 'line1\\nline2'"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBe("line1\nline2");
+		});
+
+		test("apiKey with ! prefix returns undefined on command failure", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("!exit 1"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBeUndefined();
+		});
+
+		test("apiKey with ! prefix returns undefined on nonexistent command", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("!nonexistent-command-12345"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBeUndefined();
+		});
+
+		test("apiKey with ! prefix returns undefined on empty output", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("!printf ''"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBeUndefined();
+		});
+
+		test("apiKey as environment variable name resolves to env value", async () => {
+			const originalEnv = process.env.TEST_API_KEY_12345;
+			process.env.TEST_API_KEY_12345 = "env-api-key-value";
+
+			try {
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey("TEST_API_KEY_12345"),
+				});
+
+				const registry = new ModelRegistry(authStorage, modelsJsonPath);
+				const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+				expect(apiKey).toBe("env-api-key-value");
+			} finally {
+				if (originalEnv === undefined) {
+					delete process.env.TEST_API_KEY_12345;
+				} else {
+					process.env.TEST_API_KEY_12345 = originalEnv;
+				}
+			}
+		});
+
+		test("apiKey as literal value is used directly when not an env var", async () => {
+			// Make sure this isn't an env var
+			delete process.env.literal_api_key_value;
+
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("literal_api_key_value"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBe("literal_api_key_value");
+		});
+
+		test("apiKey command can use shell features like pipes", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithApiKey("!echo 'hello world' | tr ' ' '-'"),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const apiKey = await registry.getApiKeyForProvider("custom-provider");
+
+			expect(apiKey).toBe("hello-world");
+		});
+
+		describe("caching", () => {
+			test("command is only executed once per process", async () => {
+				// Use a command that writes to a file to count invocations
+				const counterFile = join(tempDir, "counter");
+				writeFileSync(counterFile, "0");
+
+				const command = `!sh -c 'count=$(cat ${counterFile}); echo $((count + 1)) > ${counterFile}; echo "key-value"'`;
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey(command),
+				});
+
+				const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+				// Call multiple times
+				await registry.getApiKeyForProvider("custom-provider");
+				await registry.getApiKeyForProvider("custom-provider");
+				await registry.getApiKeyForProvider("custom-provider");
+
+				// Command should have only run once
+				const count = parseInt(readFileSync(counterFile, "utf-8").trim(), 10);
+				expect(count).toBe(1);
+			});
+
+			test("cache persists across registry instances", async () => {
+				const counterFile = join(tempDir, "counter");
+				writeFileSync(counterFile, "0");
+
+				const command = `!sh -c 'count=$(cat ${counterFile}); echo $((count + 1)) > ${counterFile}; echo "key-value"'`;
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey(command),
+				});
+
+				// Create multiple registry instances
+				const registry1 = new ModelRegistry(authStorage, modelsJsonPath);
+				await registry1.getApiKeyForProvider("custom-provider");
+
+				const registry2 = new ModelRegistry(authStorage, modelsJsonPath);
+				await registry2.getApiKeyForProvider("custom-provider");
+
+				// Command should still have only run once
+				const count = parseInt(readFileSync(counterFile, "utf-8").trim(), 10);
+				expect(count).toBe(1);
+			});
+
+			test("clearApiKeyCache allows command to run again", async () => {
+				const counterFile = join(tempDir, "counter");
+				writeFileSync(counterFile, "0");
+
+				const command = `!sh -c 'count=$(cat ${counterFile}); echo $((count + 1)) > ${counterFile}; echo "key-value"'`;
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey(command),
+				});
+
+				const registry = new ModelRegistry(authStorage, modelsJsonPath);
+				await registry.getApiKeyForProvider("custom-provider");
+
+				// Clear cache and call again
+				clearApiKeyCache();
+				await registry.getApiKeyForProvider("custom-provider");
+
+				// Command should have run twice
+				const count = parseInt(readFileSync(counterFile, "utf-8").trim(), 10);
+				expect(count).toBe(2);
+			});
+
+			test("different commands are cached separately", async () => {
+				writeRawModelsJson({
+					"provider-a": providerWithApiKey("!echo key-a"),
+					"provider-b": providerWithApiKey("!echo key-b"),
+				});
+
+				const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+				const keyA = await registry.getApiKeyForProvider("provider-a");
+				const keyB = await registry.getApiKeyForProvider("provider-b");
+
+				expect(keyA).toBe("key-a");
+				expect(keyB).toBe("key-b");
+			});
+
+			test("failed commands are cached (not retried)", async () => {
+				const counterFile = join(tempDir, "counter");
+				writeFileSync(counterFile, "0");
+
+				const command = `!sh -c 'count=$(cat ${counterFile}); echo $((count + 1)) > ${counterFile}; exit 1'`;
+				writeRawModelsJson({
+					"custom-provider": providerWithApiKey(command),
+				});
+
+				const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+				// Call multiple times - all should return undefined
+				const key1 = await registry.getApiKeyForProvider("custom-provider");
+				const key2 = await registry.getApiKeyForProvider("custom-provider");
+
+				expect(key1).toBeUndefined();
+				expect(key2).toBeUndefined();
+
+				// Command should have only run once despite failures
+				const count = parseInt(readFileSync(counterFile, "utf-8").trim(), 10);
+				expect(count).toBe(1);
+			});
+
+			test("environment variables are not cached (changes are picked up)", async () => {
+				const envVarName = "TEST_API_KEY_CACHE_TEST_98765";
+				const originalEnv = process.env[envVarName];
+
+				try {
+					process.env[envVarName] = "first-value";
+
+					writeRawModelsJson({
+						"custom-provider": providerWithApiKey(envVarName),
+					});
+
+					const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+					const key1 = await registry.getApiKeyForProvider("custom-provider");
+					expect(key1).toBe("first-value");
+
+					// Change env var
+					process.env[envVarName] = "second-value";
+
+					const key2 = await registry.getApiKeyForProvider("custom-provider");
+					expect(key2).toBe("second-value");
+				} finally {
+					if (originalEnv === undefined) {
+						delete process.env[envVarName];
+					} else {
+						process.env[envVarName] = originalEnv;
+					}
+				}
+			});
 		});
 	});
 });

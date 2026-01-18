@@ -5,6 +5,7 @@
 ### Changed
 
 - Share URLs now use hash fragments (`#`) instead of query strings (`?`) to prevent session IDs from being sent to buildwithpi.ai ([#828](https://github.com/badlogic/pi-mono/issues/828))
+- API keys in `models.json` can now be retrieved via shell command using `!` prefix (e.g., `"apiKey": "!security find-generic-password -ws 'anthropic'"` for macOS Keychain) ([#697](https://github.com/badlogic/pi-mono/issues/697))
 
 ### Fixed
 

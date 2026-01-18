@@ -13,6 +13,7 @@ import {
 } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
+import { execSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import type { AuthStorage } from "./auth-storage.js";
 
@@ -99,14 +100,47 @@ function emptyCustomModelsResult(error?: string): CustomModelsResult {
 	return { models: [], replacedProviders: new Set(), overrides: new Map(), error };
 }
 
+// Cache for shell command results (persists for process lifetime)
+const commandResultCache = new Map<string, string | undefined>();
+
 /**
  * Resolve an API key config value to an actual key.
- * Checks environment variable first, then treats as literal.
+ * - If starts with "!", executes the rest as a shell command and uses stdout (cached)
+ * - Otherwise checks environment variable first, then treats as literal (not cached)
  */
 function resolveApiKeyConfig(keyConfig: string): string | undefined {
+	if (keyConfig.startsWith("!")) {
+		return executeApiKeyCommand(keyConfig);
+	}
 	const envValue = process.env[keyConfig];
-	if (envValue) return envValue;
-	return keyConfig;
+	return envValue || keyConfig;
+}
+
+function executeApiKeyCommand(commandConfig: string): string | undefined {
+	if (commandResultCache.has(commandConfig)) {
+		return commandResultCache.get(commandConfig);
+	}
+
+	const command = commandConfig.slice(1);
+	let result: string | undefined;
+	try {
+		const output = execSync(command, {
+			encoding: "utf-8",
+			timeout: 10000,
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+		result = output.trim() || undefined;
+	} catch {
+		result = undefined;
+	}
+
+	commandResultCache.set(commandConfig, result);
+	return result;
+}
+
+/** Clear the API key command cache. Exported for testing. */
+export function clearApiKeyCache(): void {
+	commandResultCache.clear();
 }
 
 /**
