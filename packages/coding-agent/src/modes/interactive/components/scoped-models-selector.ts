@@ -185,14 +185,25 @@ export class ScopedModelsSelectorComponent extends Container {
 		const endIndex = Math.min(startIndex + this.maxVisible, this.filteredItems.length);
 		const allEnabled = this.enabledIds === null;
 
+		// Calculate column widths from filtered items
+		let maxIdWidth = 0;
+		let maxProviderWidth = 0;
+		for (const item of this.filteredItems) {
+			maxIdWidth = Math.max(maxIdWidth, item.model.id.length);
+			maxProviderWidth = Math.max(maxProviderWidth, item.model.provider.length);
+		}
+
 		for (let i = startIndex; i < endIndex; i++) {
 			const item = this.filteredItems[i]!;
 			const isSelected = i === this.selectedIndex;
 			const prefix = isSelected ? theme.fg("accent", "→ ") : "  ";
-			const modelText = isSelected ? theme.fg("accent", item.model.name) : item.model.name;
-			const providerBadge = theme.fg("muted", ` [${item.model.provider}/${item.model.id}]`);
+			const id = item.model.id.padEnd(maxIdWidth);
+			const provider = item.model.provider.padEnd(maxProviderWidth);
+			const idText = isSelected ? theme.fg("accent", id) : id;
+			const providerText = theme.fg("muted", provider);
+			const nameText = theme.fg("muted", item.model.name);
 			const status = allEnabled ? "" : item.enabled ? theme.fg("success", " ✓") : theme.fg("dim", " ✗");
-			this.listContainer.addChild(new Text(`${prefix}${modelText}${providerBadge}${status}`, 0, 0));
+			this.listContainer.addChild(new Text(`${prefix}${idText}  ${providerText}  ${nameText}${status}`, 0, 0));
 		}
 
 		// Add scroll indicator if needed

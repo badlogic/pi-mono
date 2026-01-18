@@ -168,6 +168,14 @@ export class ModelSelectorComponent extends Container {
 		);
 		const endIndex = Math.min(startIndex + maxVisible, this.filteredModels.length);
 
+		// Calculate column widths from filtered models
+		let maxIdWidth = 0;
+		let maxProviderWidth = 0;
+		for (const item of this.filteredModels) {
+			maxIdWidth = Math.max(maxIdWidth, item.id.length);
+			maxProviderWidth = Math.max(maxProviderWidth, item.provider.length);
+		}
+
 		// Show visible slice of filtered models
 		for (let i = startIndex; i < endIndex; i++) {
 			const item = this.filteredModels[i];
@@ -176,17 +184,14 @@ export class ModelSelectorComponent extends Container {
 			const isSelected = i === this.selectedIndex;
 			const isCurrent = modelsAreEqual(this.currentModel, item.model);
 
-			let line = "";
-			const providerBadge = theme.fg("muted", `[${item.provider}/${item.id}]`);
+			const prefix = isSelected ? theme.fg("accent", "→ ") : "  ";
+			const id = item.id.padEnd(maxIdWidth);
+			const provider = item.provider.padEnd(maxProviderWidth);
+			const idText = isSelected ? theme.fg("accent", id) : id;
+			const providerText = theme.fg("muted", provider);
+			const nameText = theme.fg("muted", item.model.name);
 			const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
-			if (isSelected) {
-				const prefix = theme.fg("accent", "→ ");
-				const modelText = item.model.name;
-				line = `${prefix + theme.fg("accent", modelText)} ${providerBadge}${checkmark}`;
-			} else {
-				const modelText = `  ${item.model.name}`;
-				line = `${modelText} ${providerBadge}${checkmark}`;
-			}
+			const line = `${prefix}${idText}  ${providerText}  ${nameText}${checkmark}`;
 
 			this.listContainer.addChild(new Text(line, 0, 0));
 		}
