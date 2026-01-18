@@ -72,7 +72,8 @@ const buildBuiltinKeybindings = (effectiveKeybindings: Required<KeybindingsConfi
 		const keyList = Array.isArray(keys) ? keys : [keys];
 		const restrictOverride = RESERVED_ACTIONS_FOR_EXTENSION_CONFLICTS.includes(keyAction);
 		for (const key of keyList) {
-			builtinKeybindings[key] = {
+			const normalizedKey = key.toLowerCase() as KeyId;
+			builtinKeybindings[normalizedKey] = {
 				action: keyAction,
 				restrictOverride: restrictOverride,
 			};
