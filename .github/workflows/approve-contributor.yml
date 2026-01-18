@@ -23,7 +23,6 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const core = require('@actions/core');
 
             const issueAuthor = context.payload.issue.user.login;
             const commenter = context.payload.comment.user.login;
