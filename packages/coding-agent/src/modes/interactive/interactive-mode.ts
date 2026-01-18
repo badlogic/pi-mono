@@ -44,6 +44,7 @@ import {
 import { spawn, spawnSync } from "child_process";
 import { APP_NAME, getAuthPath, getDebugLogPath, isBunBinary, isBunRuntime, VERSION } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
+import type { CompactionResult } from "../../core/compaction/index.js";
 import type {
 	ExtensionContext,
 	ExtensionRunner,
@@ -235,7 +236,7 @@ export class InteractiveMode {
 	) {
 		this.session = session;
 		this.version = VERSION;
-		this.ui = new TUI(new ProcessTerminal());
+		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
@@ -668,6 +669,9 @@ export class InteractiveMode {
 				getSessionName: () => {
 					return this.sessionManager.getSessionName();
 				},
+				setLabel: (entryId, label) => {
+					this.sessionManager.appendLabelChange(entryId, label);
+				},
 				getActiveTools: () => this.session.getActiveToolNames(),
 				getAllTools: () => this.session.getAllTools(),
 				setActiveTools: (toolNames) => this.session.setActiveToolsByName(toolNames),
@@ -688,6 +692,20 @@ export class InteractiveMode {
 				hasPendingMessages: () => this.session.pendingMessageCount > 0,
 				shutdown: () => {
 					this.shutdownRequested = true;
+				},
+				getContextUsage: () => this.session.getContextUsage(),
+				compact: (options) => {
+					void (async () => {
+						try {
+							const result = await this.executeCompaction(options?.customInstructions, false);
+							if (result) {
+								options?.onComplete?.(result);
+							}
+						} catch (error) {
+							const err = error instanceof Error ? error : new Error(String(error));
+							options?.onError?.(err);
+						}
+					})();
 				},
 			},
 			// ExtensionCommandContextActions - for ctx.* in command handlers
@@ -796,7 +814,7 @@ export class InteractiveMode {
 	 * Set up keyboard shortcuts registered by extensions.
 	 */
 	private setupExtensionShortcuts(extensionRunner: ExtensionRunner): void {
-		const shortcuts = extensionRunner.getShortcuts();
+		const shortcuts = extensionRunner.getShortcuts(this.keybindings.getEffectiveConfig());
 		if (shortcuts.size === 0) return;
 
 		// Create a context for shortcut handlers
@@ -812,6 +830,20 @@ export class InteractiveMode {
 			hasPendingMessages: () => this.session.pendingMessageCount > 0,
 			shutdown: () => {
 				this.shutdownRequested = true;
+			},
+			getContextUsage: () => this.session.getContextUsage(),
+			compact: (options) => {
+				void (async () => {
+					try {
+						const result = await this.executeCompaction(options?.customInstructions, false);
+						if (result) {
+							options?.onComplete?.(result);
+						}
+					} catch (error) {
+						const err = error instanceof Error ? error : new Error(String(error));
+						options?.onError?.(err);
+					}
+				})();
 			},
 		});
 
@@ -2521,6 +2553,7 @@ export class InteractiveMode {
 					hideThinkingBlock: this.hideThinkingBlock,
 					collapseChangelog: this.settingsManager.getCollapseChangelog(),
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
+					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 				},
 				{
@@ -2588,6 +2621,10 @@ export class InteractiveMode {
 					},
 					onDoubleEscapeActionChange: (action) => {
 						this.settingsManager.setDoubleEscapeAction(action);
+					},
+					onShowHardwareCursorChange: (enabled) => {
+						this.settingsManager.setShowHardwareCursor(enabled);
+						this.ui.setShowHardwareCursor(enabled);
 					},
 					onEditorPaddingXChange: (padding) => {
 						this.settingsManager.setEditorPaddingX(padding);
@@ -3260,7 +3297,7 @@ export class InteractiveMode {
 			}
 
 			// Create the preview URL
-			const previewUrl = `https://buildwithpi.ai/session?${gistId}`;
+			const previewUrl = `https://buildwithpi.ai/session/#${gistId}`;
 			this.showStatus(`Share URL: ${previewUrl}\nGist: ${gistUrl}`);
 		} catch (error: unknown) {
 			if (!loader.signal.aborted) {
@@ -3403,8 +3440,11 @@ export class InteractiveMode {
 		const submit = this.getEditorKeyDisplay("submit");
 		const newLine = this.getEditorKeyDisplay("newLine");
 		const deleteWordBackward = this.getEditorKeyDisplay("deleteWordBackward");
+		const deleteWordForward = this.getEditorKeyDisplay("deleteWordForward");
 		const deleteToLineStart = this.getEditorKeyDisplay("deleteToLineStart");
 		const deleteToLineEnd = this.getEditorKeyDisplay("deleteToLineEnd");
+		const yank = this.getEditorKeyDisplay("yank");
+		const yankPop = this.getEditorKeyDisplay("yankPop");
 		const tab = this.getEditorKeyDisplay("tab");
 
 		// App keybindings
@@ -3435,8 +3475,11 @@ export class InteractiveMode {
 | \`${submit}\` | Send message |
 | \`${newLine}\` | New line${process.platform === "win32" ? " (Ctrl+Enter on Windows Terminal)" : ""} |
 | \`${deleteWordBackward}\` | Delete word backwards |
+| \`${deleteWordForward}\` | Delete word forwards |
 | \`${deleteToLineStart}\` | Delete to start of line |
 | \`${deleteToLineEnd}\` | Delete to end of line |
+| \`${yank}\` | Paste the most-recently-deleted text |
+| \`${yankPop}\` | Cycle through the deleted text after pasting |
 
 **Other**
 | Key | Action |
@@ -3462,7 +3505,7 @@ export class InteractiveMode {
 		// Add extension-registered shortcuts
 		const extensionRunner = this.session.extensionRunner;
 		if (extensionRunner) {
-			const shortcuts = extensionRunner.getShortcuts();
+			const shortcuts = extensionRunner.getShortcuts(this.keybindings.getEffectiveConfig());
 			if (shortcuts.size > 0) {
 				hotkeys += `
 **Extensions**
@@ -3648,7 +3691,7 @@ export class InteractiveMode {
 		await this.executeCompaction(customInstructions, false);
 	}
 
-	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<void> {
+	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<CompactionResult | undefined> {
 		// Stop loading animation
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
@@ -3675,8 +3718,10 @@ export class InteractiveMode {
 		this.statusContainer.addChild(compactingLoader);
 		this.ui.requestRender();
 
+		let result: CompactionResult | undefined;
+
 		try {
-			const result = await this.session.compact(customInstructions);
+			result = await this.session.compact(customInstructions);
 
 			// Rebuild UI
 			this.rebuildChatFromMessages();
@@ -3699,6 +3744,7 @@ export class InteractiveMode {
 			this.defaultEditor.onEscape = originalOnEscape;
 		}
 		void this.flushCompactionQueue({ willRetry: false });
+		return result;
 	}
 
 	stop(): void {

@@ -11,7 +11,7 @@
 
 A terminal-based coding agent with multi-model support, mid-session model switching, and a simple CLI for headless coding tasks.
 
-Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-setup)).
+Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-setup)). [Separately maintained port](https://github.com/VaclavSynacek/pi-coding-agent-termux) works on Termux/Android.
 
 ## Table of Contents
 
@@ -350,8 +350,11 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 | Enter | Send message |
 | Shift+Enter | New line (Ctrl+Enter on Windows Terminal) |
 | Ctrl+W / Option+Backspace | Delete word backwards |
+| Alt+D | Delete word forwards |
 | Ctrl+U | Delete to start of line |
 | Ctrl+K | Delete to end of line |
+| Ctrl+Y | Paste most recently deleted text |
+| Alt+Y | Cycle through deleted text after pasting |
 
 **Other:**
 
@@ -397,8 +400,11 @@ All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Eac
 | `deleteCharBackward` | `backspace` | Delete char backward |
 | `deleteCharForward` | `delete` | Delete char forward |
 | `deleteWordBackward` | `ctrl+w`, `alt+backspace` | Delete word backward |
+| `deleteWordForward` | `alt+d` | Delete word forward |
 | `deleteToLineStart` | `ctrl+u` | Delete to line start |
 | `deleteToLineEnd` | `ctrl+k` | Delete to line end |
+| `yank` | `ctrl+y` | Paste most recently deleted text |
+| `yankPop` | `alt+y` | Cycle through deleted text after pasting |
 | `newLine` | `shift+enter` | Insert new line |
 | `submit` | `enter` | Submit input |
 | `tab` | `tab` | Tab/autocomplete |
@@ -792,6 +798,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
     "autoResize": true,
     "blockImages": false
   },
+  "showHardwareCursor": false,
   "extensions": ["/path/to/extension.ts"]
 }
 ```
@@ -819,6 +826,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `terminal.showImages` | Render images inline (supported terminals) | `true` |
 | `images.autoResize` | Auto-resize images to 2000x2000 max for better model compatibility | `true` |
 | `images.blockImages` | Prevent images from being sent to LLM providers | `false` |
+| `showHardwareCursor` | Show terminal cursor while still positioning it for IME support | `false` |
 | `doubleEscapeAction` | Action for double-escape with empty editor: `tree` or `branch` | `tree` |
 | `editorPaddingX` | Horizontal padding for input editor (0-3) | `0` |
 | `extensions` | Additional extension file paths | `[]` |

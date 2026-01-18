@@ -144,14 +144,28 @@ const agent = new Agent({
   // Transform context before convertToLlm (for pruning, compaction)
   transformContext: async (messages, signal) => pruneOldMessages(messages),
 
-  // How to handle queued messages: "one-at-a-time" (default) or "all"
-  queueMode: "one-at-a-time",
+  // Steering mode: "one-at-a-time" (default) or "all"
+  steeringMode: "one-at-a-time",
+
+  // Follow-up mode: "one-at-a-time" (default) or "all"
+  followUpMode: "one-at-a-time",
 
   // Custom stream function (for proxy backends)
   streamFn: streamProxy,
 
+  // Session ID for provider caching
+  sessionId: "session-123",
+
   // Dynamic API key resolution (for expiring OAuth tokens)
   getApiKey: async (provider) => refreshToken(),
+
+  // Custom thinking budgets for token-based providers
+  thinkingBudgets: {
+    minimal: 128,
+    low: 512,
+    medium: 1024,
+    high: 2048,
+  },
 });
 ```
 
@@ -206,6 +220,19 @@ agent.clearMessages();
 agent.reset();  // Clear everything
 ```
 
+### Session and Thinking Budgets
+
+```typescript
+agent.sessionId = "session-123";
+
+agent.thinkingBudgets = {
+  minimal: 128,
+  low: 512,
+  medium: 1024,
+  high: 2048,
+};
+```
+
 ### Control
 
 ```typescript
@@ -222,25 +249,44 @@ const unsubscribe = agent.subscribe((event) => {
 unsubscribe();
 ```
 
-## Message Queue
+## Steering and Follow-up
 
-Queue messages to inject during tool execution (for user interruptions):
+Steering messages let you interrupt the agent while tools are running. Follow-up messages let you queue work after the agent would otherwise stop.
 
 ```typescript
-agent.setQueueMode("one-at-a-time");
+agent.setSteeringMode("one-at-a-time");
+agent.setFollowUpMode("one-at-a-time");
 
 // While agent is running tools
-agent.queueMessage({
+agent.steer({
   role: "user",
   content: "Stop! Do this instead.",
   timestamp: Date.now(),
 });
+
+// After the agent finishes its current work
+agent.followUp({
+  role: "user",
+  content: "Also summarize the result.",
+  timestamp: Date.now(),
+});
+
+const steeringMode = agent.getSteeringMode();
+const followUpMode = agent.getFollowUpMode();
+
+agent.clearSteeringQueue();
+agent.clearFollowUpQueue();
+agent.clearAllQueues();
 ```
 
-When queued messages are detected after a tool completes:
+Use clearSteeringQueue, clearFollowUpQueue, or clearAllQueues to drop queued messages.
+
+When steering messages are detected after a tool completes:
 1. Remaining tools are skipped with error results
-2. Queued message is injected
+2. Steering messages are injected
 3. LLM responds to the interruption
+
+Follow-up messages are checked only when there are no more tool calls and no steering messages. If any are queued, they are injected and another turn runs.
 
 ## Custom Message Types
 

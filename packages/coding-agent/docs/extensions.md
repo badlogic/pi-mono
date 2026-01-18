@@ -384,7 +384,7 @@ pi.on("session_compact", async (event, ctx) => {
 });
 ```
 
-**Examples:** [custom-compaction.ts](../examples/extensions/custom-compaction.ts)
+**Examples:** [custom-compaction.ts](../examples/extensions/custom-compaction.ts), [trigger-compact.ts](../examples/extensions/trigger-compact.ts)
 
 #### session_before_tree / session_tree
 
@@ -677,6 +677,33 @@ pi.on("tool_call", (event, ctx) => {
 });
 ```
 
+### ctx.getContextUsage()
+
+Returns current context usage for the active model. Uses last assistant usage when available, then estimates tokens for trailing messages.
+
+```typescript
+const usage = ctx.getContextUsage();
+if (usage && usage.tokens > 100_000) {
+  // ...
+}
+```
+
+### ctx.compact()
+
+Trigger compaction without awaiting completion. Use `onComplete` and `onError` for follow-up actions.
+
+```typescript
+ctx.compact({
+  customInstructions: "Focus on recent changes",
+  onComplete: (result) => {
+    ctx.ui.notify("Compaction completed", "info");
+  },
+  onError: (error) => {
+    ctx.ui.notify(`Compaction failed: ${error.message}`, "error");
+  },
+});
+```
+
 ## ExtensionCommandContext
 
 Command handlers receive `ExtensionCommandContext`, which extends `ExtensionContext` with session control methods. These are only available in commands because they can deadlock if called from event handlers.
@@ -876,6 +903,23 @@ if (name) {
   console.log(`Session: ${name}`);
 }
 ```
+
+### pi.setLabel(entryId, label)
+
+Set or clear a label on an entry. Labels are user-defined markers for bookmarking and navigation (shown in `/tree` selector).
+
+```typescript
+// Set a label
+pi.setLabel(entryId, "checkpoint-before-refactor");
+
+// Clear a label
+pi.setLabel(entryId, undefined);
+
+// Read labels via sessionManager
+const label = ctx.sessionManager.getLabel(entryId);
+```
+
+Labels persist in the session and survive restarts. Use them to mark important points (turns, checkpoints) in the conversation tree.
 
 ### pi.registerCommand(name, options)
 
@@ -1275,6 +1319,28 @@ renderResult(result, { expanded, isPartial }, theme) {
   return new Text(text, 0, 0);
 }
 ```
+
+#### Keybinding Hints
+
+Use `keyHint()` to display keybinding hints that respect user's keybinding configuration:
+
+```typescript
+import { keyHint } from "@mariozechner/pi-coding-agent";
+
+renderResult(result, { expanded }, theme) {
+  let text = theme.fg("success", "✓ Done");
+  if (!expanded) {
+    text += ` (${keyHint("expandTools", "to expand")})`;
+  }
+  return new Text(text, 0, 0);
+}
+```
+
+Available functions:
+- `keyHint(action, description)` - Editor actions (e.g., `"expandTools"`, `"selectConfirm"`)
+- `appKeyHint(keybindings, action, description)` - App actions (requires `KeybindingsManager`)
+- `editorKey(action)` - Get raw key string for editor action
+- `rawKeyHint(key, description)` - Format a raw key string
 
 #### Best Practices
 

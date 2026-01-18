@@ -60,6 +60,9 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 				getSessionName: () => {
 					return session.sessionManager.getSessionName();
 				},
+				setLabel: (entryId, label) => {
+					session.sessionManager.appendLabelChange(entryId, label);
+				},
 				getActiveTools: () => session.getActiveToolNames(),
 				getAllTools: () => session.getAllTools(),
 				setActiveTools: (toolNames: string[]) => session.setActiveToolsByName(toolNames),
@@ -79,6 +82,18 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 				abort: () => session.abort(),
 				hasPendingMessages: () => session.pendingMessageCount > 0,
 				shutdown: () => {},
+				getContextUsage: () => session.getContextUsage(),
+				compact: (options) => {
+					void (async () => {
+						try {
+							const result = await session.compact(options?.customInstructions);
+							options?.onComplete?.(result);
+						} catch (error) {
+							const err = error instanceof Error ? error : new Error(String(error));
+							options?.onError?.(err);
+						}
+					})();
+				},
 			},
 			// ExtensionCommandContextActions - commands invokable via prompt("/command")
 			{

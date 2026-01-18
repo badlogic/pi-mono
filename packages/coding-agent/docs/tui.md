@@ -52,6 +52,36 @@ When a `Focusable` component has focus, TUI:
 
 This enables IME candidate windows to appear at the correct position for CJK input methods. The `Editor` and `Input` built-in components already implement this interface.
 
+### Container Components with Embedded Inputs
+
+When a container component (dialog, selector, etc.) contains an `Input` or `Editor` child, the container must implement `Focusable` and propagate the focus state to the child. Otherwise, the hardware cursor won't be positioned correctly for IME input.
+
+```typescript
+import { Container, type Focusable, Input } from "@mariozechner/pi-tui";
+
+class SearchDialog extends Container implements Focusable {
+  private searchInput: Input;
+
+  // Focusable implementation - propagate to child input for IME cursor positioning
+  private _focused = false;
+  get focused(): boolean {
+    return this._focused;
+  }
+  set focused(value: boolean) {
+    this._focused = value;
+    this.searchInput.focused = value;
+  }
+
+  constructor() {
+    super();
+    this.searchInput = new Input();
+    this.addChild(this.searchInput);
+  }
+}
+```
+
+Without this propagation, typing with an IME (Chinese, Japanese, Korean, etc.) will show the candidate window in the wrong position on screen.
+
 ## Using Components
 
 **In hooks** via `ctx.ui.custom()`:

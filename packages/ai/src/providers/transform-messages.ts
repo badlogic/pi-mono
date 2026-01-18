@@ -111,8 +111,13 @@ export function transformMessages<TApi extends Api>(messages: Message[], model: 
 			}
 
 			// Track tool calls from this assistant message
+			// Don't track tool calls from errored messages - they will be dropped by
+			// provider-specific converters, so we shouldn't create synthetic results for them
 			const assistantMsg = msg as AssistantMessage;
-			const toolCalls = assistantMsg.content.filter((b) => b.type === "toolCall") as ToolCall[];
+			const toolCalls =
+				assistantMsg.stopReason === "error"
+					? []
+					: (assistantMsg.content.filter((b) => b.type === "toolCall") as ToolCall[]);
 			if (toolCalls.length > 0) {
 				pendingToolCalls = toolCalls;
 				existingToolResultIds = new Set();

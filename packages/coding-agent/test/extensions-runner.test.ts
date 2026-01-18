@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { discoverAndLoadExtensions } from "../src/core/extensions/loader.js";
 import { ExtensionRunner } from "../src/core/extensions/runner.js";
+import { DEFAULT_KEYBINDINGS, type KeyId } from "../src/core/keybindings.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 
@@ -47,10 +48,129 @@ describe("ExtensionRunner", () => {
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-			const shortcuts = runner.getShortcuts();
+			const shortcuts = runner.getShortcuts(DEFAULT_KEYBINDINGS);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
 			expect(shortcuts.has("ctrl+c")).toBe(false);
+
+			warnSpy.mockRestore();
+		});
+
+		it("allows a shortcut when the reserved set no longer contains the default key", async () => {
+			const extCode = `
+				export default function(pi) {
+					pi.registerShortcut("ctrl+p", {
+						description: "Uses freed default",
+						handler: async () => {},
+					});
+				}
+			`;
+			fs.writeFileSync(path.join(extensionsDir, "rebinding.ts"), extCode);
+
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const keybindings = { ...DEFAULT_KEYBINDINGS, cycleModelForward: "ctrl+n" as KeyId };
+			const shortcuts = runner.getShortcuts(keybindings);
+
+			expect(shortcuts.has("ctrl+p")).toBe(true);
+			expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
+
+			warnSpy.mockRestore();
+		});
+
+		it("warns but allows when extension uses non-reserved built-in shortcut", async () => {
+			const extCode = `
+				export default function(pi) {
+					pi.registerShortcut("ctrl+v", {
+						description: "Overrides non-reserved",
+						handler: async () => {},
+					});
+				}
+			`;
+			fs.writeFileSync(path.join(extensionsDir, "non-reserved.ts"), extCode);
+
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const shortcuts = runner.getShortcuts(DEFAULT_KEYBINDINGS);
+
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("built-in shortcut for pasteImage"));
+			expect(shortcuts.has("ctrl+v")).toBe(true);
+
+			warnSpy.mockRestore();
+		});
+
+		it("blocks shortcuts for reserved actions even when rebound", async () => {
+			const extCode = `
+				export default function(pi) {
+					pi.registerShortcut("ctrl+x", {
+						description: "Conflicts with rebound reserved",
+						handler: async () => {},
+					});
+				}
+			`;
+			fs.writeFileSync(path.join(extensionsDir, "rebound-reserved.ts"), extCode);
+
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const keybindings = { ...DEFAULT_KEYBINDINGS, interrupt: "ctrl+x" as KeyId };
+			const shortcuts = runner.getShortcuts(keybindings);
+
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
+			expect(shortcuts.has("ctrl+x")).toBe(false);
+
+			warnSpy.mockRestore();
+		});
+
+		it("blocks shortcuts when reserved action has multiple keys", async () => {
+			const extCode = `
+				export default function(pi) {
+					pi.registerShortcut("ctrl+y", {
+						description: "Conflicts with multi-key reserved",
+						handler: async () => {},
+					});
+				}
+			`;
+			fs.writeFileSync(path.join(extensionsDir, "multi-reserved.ts"), extCode);
+
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const keybindings = { ...DEFAULT_KEYBINDINGS, clear: ["ctrl+x", "ctrl+y"] as KeyId[] };
+			const shortcuts = runner.getShortcuts(keybindings);
+
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
+			expect(shortcuts.has("ctrl+y")).toBe(false);
+
+			warnSpy.mockRestore();
+		});
+
+		it("warns but allows when non-reserved action has multiple keys", async () => {
+			const extCode = `
+				export default function(pi) {
+					pi.registerShortcut("ctrl+y", {
+						description: "Overrides multi-key non-reserved",
+						handler: async () => {},
+					});
+				}
+			`;
+			fs.writeFileSync(path.join(extensionsDir, "multi-non-reserved.ts"), extCode);
+
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const keybindings = { ...DEFAULT_KEYBINDINGS, pasteImage: ["ctrl+x", "ctrl+y"] as KeyId[] };
+			const shortcuts = runner.getShortcuts(keybindings);
+
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("built-in shortcut for pasteImage"));
+			expect(shortcuts.has("ctrl+y")).toBe(true);
 
 			warnSpy.mockRestore();
 		});
@@ -80,7 +200,7 @@ describe("ExtensionRunner", () => {
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-			const shortcuts = runner.getShortcuts();
+			const shortcuts = runner.getShortcuts(DEFAULT_KEYBINDINGS);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("shortcut conflict"));
 			// Last one wins

@@ -6,13 +6,16 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model } from "@mariozechner/pi-ai";
 import type { KeyId } from "@mariozechner/pi-tui";
 import { type Theme, theme } from "../../modes/interactive/theme/theme.js";
+import type { KeyAction, KeybindingsConfig } from "../keybindings.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
 import type {
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	CompactOptions,
 	ContextEvent,
 	ContextEventResult,
+	ContextUsage,
 	Extension,
 	ExtensionActions,
 	ExtensionCommandContext,
@@ -39,6 +42,46 @@ import type {
 	UserBashEvent,
 	UserBashEventResult,
 } from "./types.js";
+
+// Keybindings for these actions cannot be overridden by extensions
+const RESERVED_ACTIONS_FOR_EXTENSION_CONFLICTS: ReadonlyArray<KeyAction> = [
+	"interrupt",
+	"clear",
+	"exit",
+	"suspend",
+	"cycleThinkingLevel",
+	"cycleModelForward",
+	"cycleModelBackward",
+	"selectModel",
+	"expandTools",
+	"toggleThinking",
+	"externalEditor",
+	"followUp",
+	"submit",
+	"selectConfirm",
+	"selectCancel",
+	"copy",
+	"deleteToLineEnd",
+];
+
+type BuiltInKeyBindings = Partial<Record<KeyId, { action: KeyAction; restrictOverride: boolean }>>;
+
+const buildBuiltinKeybindings = (effectiveKeybindings: Required<KeybindingsConfig>): BuiltInKeyBindings => {
+	const builtinKeybindings = {} as BuiltInKeyBindings;
+	for (const [action, keys] of Object.entries(effectiveKeybindings)) {
+		const keyAction = action as KeyAction;
+		const keyList = Array.isArray(keys) ? keys : [keys];
+		const restrictOverride = RESERVED_ACTIONS_FOR_EXTENSION_CONFLICTS.includes(keyAction);
+		for (const key of keyList) {
+			const normalizedKey = key.toLowerCase() as KeyId;
+			builtinKeybindings[normalizedKey] = {
+				action: keyAction,
+				restrictOverride: restrictOverride,
+			};
+		}
+	}
+	return builtinKeybindings;
+};
 
 /** Combined result from all before_agent_start handlers */
 interface BeforeAgentStartCombinedResult {
@@ -113,6 +156,8 @@ export class ExtensionRunner {
 	private waitForIdleFn: () => Promise<void> = async () => {};
 	private abortFn: () => void = () => {};
 	private hasPendingMessagesFn: () => boolean = () => false;
+	private getContextUsageFn: () => ContextUsage | undefined = () => undefined;
+	private compactFn: (options?: CompactOptions) => void = () => {};
 	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
 	private forkHandler: ForkHandler = async () => ({ cancelled: false });
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
@@ -145,6 +190,7 @@ export class ExtensionRunner {
 		this.runtime.appendEntry = actions.appendEntry;
 		this.runtime.setSessionName = actions.setSessionName;
 		this.runtime.getSessionName = actions.getSessionName;
+		this.runtime.setLabel = actions.setLabel;
 		this.runtime.getActiveTools = actions.getActiveTools;
 		this.runtime.getAllTools = actions.getAllTools;
 		this.runtime.setActiveTools = actions.setActiveTools;
@@ -158,6 +204,8 @@ export class ExtensionRunner {
 		this.abortFn = contextActions.abort;
 		this.hasPendingMessagesFn = contextActions.hasPendingMessages;
 		this.shutdownHandler = contextActions.shutdown;
+		this.getContextUsageFn = contextActions.getContextUsage;
+		this.compactFn = contextActions.compact;
 
 		// Command context actions (optional, only for interactive mode)
 		if (commandContextActions) {
@@ -217,46 +265,37 @@ export class ExtensionRunner {
 		this.runtime.flagValues.set(name, value);
 	}
 
-	private static readonly RESERVED_SHORTCUTS = new Set([
-		"ctrl+c",
-		"ctrl+d",
-		"ctrl+z",
-		"ctrl+k",
-		"ctrl+p",
-		"ctrl+l",
-		"ctrl+o",
-		"ctrl+t",
-		"ctrl+g",
-		"shift+tab",
-		"shift+ctrl+p",
-		"alt+enter",
-		"escape",
-		"enter",
-	]);
-
-	getShortcuts(): Map<KeyId, ExtensionShortcut> {
-		const allShortcuts = new Map<KeyId, ExtensionShortcut>();
+	getShortcuts(effectiveKeybindings: Required<KeybindingsConfig>): Map<KeyId, ExtensionShortcut> {
+		const builtinKeybindings = buildBuiltinKeybindings(effectiveKeybindings);
+		const extensionShortcuts = new Map<KeyId, ExtensionShortcut>();
 		for (const ext of this.extensions) {
 			for (const [key, shortcut] of ext.shortcuts) {
 				const normalizedKey = key.toLowerCase() as KeyId;
 
-				if (ExtensionRunner.RESERVED_SHORTCUTS.has(normalizedKey)) {
+				const builtInKeybinding = builtinKeybindings[normalizedKey];
+				if (builtInKeybinding?.restrictOverride === true) {
 					console.warn(
 						`Extension shortcut '${key}' from ${shortcut.extensionPath} conflicts with built-in shortcut. Skipping.`,
 					);
 					continue;
 				}
 
-				const existing = allShortcuts.get(normalizedKey);
-				if (existing) {
+				if (builtInKeybinding?.restrictOverride === false) {
 					console.warn(
-						`Extension shortcut conflict: '${key}' registered by both ${existing.extensionPath} and ${shortcut.extensionPath}. Using ${shortcut.extensionPath}.`,
+						`Extension shortcut conflict: '${key}' is built-in shortcut for ${builtInKeybinding.action} and ${shortcut.extensionPath}. Using ${shortcut.extensionPath}.`,
 					);
 				}
-				allShortcuts.set(normalizedKey, shortcut);
+
+				const existingExtensionShortcut = extensionShortcuts.get(normalizedKey);
+				if (existingExtensionShortcut) {
+					console.warn(
+						`Extension shortcut conflict: '${key}' registered by both ${existingExtensionShortcut.extensionPath} and ${shortcut.extensionPath}. Using ${shortcut.extensionPath}.`,
+					);
+				}
+				extensionShortcuts.set(normalizedKey, shortcut);
 			}
 		}
-		return allShortcuts;
+		return extensionShortcuts;
 	}
 
 	onError(listener: ExtensionErrorListener): () => void {
@@ -337,6 +376,8 @@ export class ExtensionRunner {
 			abort: () => this.abortFn(),
 			hasPendingMessages: () => this.hasPendingMessagesFn(),
 			shutdown: () => this.shutdownHandler(),
+			getContextUsage: () => this.getContextUsageFn(),
+			compact: (options) => this.compactFn(options),
 		};
 	}
 

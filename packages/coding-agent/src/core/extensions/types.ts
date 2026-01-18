@@ -193,6 +193,21 @@ export interface ExtensionUIContext {
 // Extension Context
 // ============================================================================
 
+export interface ContextUsage {
+	tokens: number;
+	contextWindow: number;
+	percent: number;
+	usageTokens: number;
+	trailingTokens: number;
+	lastUsageIndex: number | null;
+}
+
+export interface CompactOptions {
+	customInstructions?: string;
+	onComplete?: (result: CompactionResult) => void;
+	onError?: (error: Error) => void;
+}
+
 /**
  * Context passed to extension event handlers.
  */
@@ -217,6 +232,10 @@ export interface ExtensionContext {
 	hasPendingMessages(): boolean;
 	/** Gracefully shutdown pi and exit. Available in all contexts. */
 	shutdown(): void;
+	/** Get current context usage for the active model. */
+	getContextUsage(): ContextUsage | undefined;
+	/** Trigger compaction without awaiting completion. */
+	compact(options?: CompactOptions): void;
 }
 
 /**
@@ -794,6 +813,9 @@ export interface ExtensionAPI {
 	/** Get the current session name, if set. */
 	getSessionName(): string | undefined;
 
+	/** Set or clear a label on an entry. Labels are user-defined markers for bookmarking/navigation. */
+	setLabel(entryId: string, label: string | undefined): void;
+
 	/** Execute a shell command. */
 	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 
@@ -883,6 +905,8 @@ export type GetThinkingLevelHandler = () => ThinkingLevel;
 
 export type SetThinkingLevelHandler = (level: ThinkingLevel) => void;
 
+export type SetLabelHandler = (entryId: string, label: string | undefined) => void;
+
 /**
  * Shared state created by loader, used during registration and runtime.
  * Contains flag values (defaults set during registration, CLI values set after).
@@ -901,6 +925,7 @@ export interface ExtensionActions {
 	appendEntry: AppendEntryHandler;
 	setSessionName: SetSessionNameHandler;
 	getSessionName: GetSessionNameHandler;
+	setLabel: SetLabelHandler;
 	getActiveTools: GetActiveToolsHandler;
 	getAllTools: GetAllToolsHandler;
 	setActiveTools: SetActiveToolsHandler;
@@ -919,6 +944,8 @@ export interface ExtensionContextActions {
 	abort: () => void;
 	hasPendingMessages: () => boolean;
 	shutdown: () => void;
+	getContextUsage: () => ContextUsage | undefined;
+	compact: (options?: CompactOptions) => void;
 }
 
 /**

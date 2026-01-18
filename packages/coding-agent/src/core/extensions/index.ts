@@ -28,10 +28,13 @@ export type {
 	BashToolResultEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	// Context
+	CompactOptions,
 	// Events - Agent
 	ContextEvent,
 	// Event Results
 	ContextEventResult,
+	ContextUsage,
 	CustomToolResultEvent,
 	EditToolResultEvent,
 	ExecOptions,
@@ -42,7 +45,6 @@ export type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionCommandContextActions,
-	// Context
 	ExtensionContext,
 	ExtensionContextActions,
 	// Errors
@@ -96,6 +98,7 @@ export type {
 	SessionSwitchEvent,
 	SessionTreeEvent,
 	SetActiveToolsHandler,
+	SetLabelHandler,
 	SetModelHandler,
 	SetThinkingLevelHandler,
 	// Events - Tool

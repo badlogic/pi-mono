@@ -971,6 +971,11 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 			return data === `\x1b${rawCtrlChar(key)}`;
 		}
 
+		if (alt && !ctrl && !shift && !_kittyProtocolActive && key >= "a" && key <= "z") {
+			// Legacy: alt+letter is ESC followed by the letter
+			if (data === `\x1b${key}`) return true;
+		}
+
 		if (ctrl && !shift && !alt) {
 			const raw = rawCtrlChar(key);
 			if (data === raw) return true;
@@ -1072,6 +1077,10 @@ export function parseKey(data: string): string | undefined {
 		const code = data.charCodeAt(1);
 		if (code >= 1 && code <= 26) {
 			return `ctrl+alt+${String.fromCharCode(code + 96)}`;
+		}
+		// Legacy alt+letter (ESC followed by letter a-z)
+		if (code >= 97 && code <= 122) {
+			return `alt+${String.fromCharCode(code)}`;
 		}
 	}
 	if (data === "\x1b[A") return "up";

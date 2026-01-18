@@ -33,6 +33,7 @@ import {
 	calculateContextTokens,
 	collectEntriesForBranchSummary,
 	compact,
+	estimateContextTokens,
 	generateBranchSummary,
 	prepareCompaction,
 	shouldCompact,
@@ -40,6 +41,7 @@ import {
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.js";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import type {
+	ContextUsage,
 	ExtensionRunner,
 	InputSource,
 	SessionBeforeCompactResult,
@@ -2247,6 +2249,26 @@ export class AgentSession {
 				total: totalInput + totalOutput + totalCacheRead + totalCacheWrite,
 			},
 			cost: totalCost,
+		};
+	}
+
+	getContextUsage(): ContextUsage | undefined {
+		const model = this.model;
+		if (!model) return undefined;
+
+		const contextWindow = model.contextWindow ?? 0;
+		if (contextWindow <= 0) return undefined;
+
+		const estimate = estimateContextTokens(this.messages);
+		const percent = (estimate.tokens / contextWindow) * 100;
+
+		return {
+			tokens: estimate.tokens,
+			contextWindow,
+			percent,
+			usageTokens: estimate.usageTokens,
+			trailingTokens: estimate.trailingTokens,
+			lastUsageIndex: estimate.lastUsageIndex,
 		};
 	}
 

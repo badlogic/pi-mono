@@ -19,6 +19,7 @@ export type EditorAction =
 	| "deleteCharBackward"
 	| "deleteCharForward"
 	| "deleteWordBackward"
+	| "deleteWordForward"
 	| "deleteToLineStart"
 	| "deleteToLineEnd"
 	// Text input
@@ -34,6 +35,9 @@ export type EditorAction =
 	| "selectCancel"
 	// Clipboard
 	| "copy"
+	// Kill ring
+	| "yank"
+	| "yankPop"
 	// Tool output
 	| "expandTools";
 
@@ -66,6 +70,7 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	deleteCharBackward: "backspace",
 	deleteCharForward: "delete",
 	deleteWordBackward: ["ctrl+w", "alt+backspace"],
+	deleteWordForward: "alt+d",
 	deleteToLineStart: "ctrl+u",
 	deleteToLineEnd: "ctrl+k",
 	// Text input
@@ -81,6 +86,9 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	selectCancel: ["escape", "ctrl+c"],
 	// Clipboard
 	copy: "ctrl+c",
+	// Kill ring
+	yank: "ctrl+y",
+	yankPop: "alt+y",
 	// Tool output
 	expandTools: "ctrl+o",
 };

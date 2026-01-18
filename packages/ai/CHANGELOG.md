@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-01-17
+
+### Changed
+
+- OpenAI Codex responses now use the context system prompt directly in the instructions field.
+
+### Fixed
+
+- Fixed orphaned tool results after errored assistant messages causing Codex API errors. When an assistant message has `stopReason: "error"`, its tool calls are now excluded from pending tool tracking, preventing synthetic tool results from being generated for calls that will be dropped by provider-specific converters. ([#812](https://github.com/badlogic/pi-mono/issues/812))
+- Fixed Bedrock Claude max_tokens handling to always exceed thinking budget tokens, preventing compaction failures. ([#797](https://github.com/badlogic/pi-mono/pull/797) by [@pjtf93](https://github.com/pjtf93))
+- Fixed Claude Code tool name normalization to match the Claude Code tool list case-insensitively and remove invalid mappings.
+
 ## [0.48.0] - 2026-01-16
 
 ### Fixed

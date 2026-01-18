@@ -2,6 +2,7 @@ import * as os from "node:os";
 import {
 	type Component,
 	Container,
+	type Focusable,
 	getEditorKeybindings,
 	Input,
 	matchesKey,
@@ -105,7 +106,7 @@ class SessionSelectorHeader implements Component {
 /**
  * Custom session list component with multi-line items and search
  */
-class SessionList implements Component {
+class SessionList implements Component, Focusable {
 	private allSessions: SessionInfo[] = [];
 	private filteredSessions: SessionInfo[] = [];
 	private selectedIndex: number = 0;
@@ -118,6 +119,16 @@ class SessionList implements Component {
 	public onToggleScope?: () => void;
 	public onToggleSort?: () => void;
 	private maxVisible: number = 5; // Max sessions visible (each session is 3 lines: msg + metadata + blank)
+
+	// Focusable implementation - propagate to searchInput for IME cursor positioning
+	private _focused = false;
+	get focused(): boolean {
+		return this._focused;
+	}
+	set focused(value: boolean) {
+		this._focused = value;
+		this.searchInput.focused = value;
+	}
 
 	constructor(sessions: SessionInfo[], showCwd: boolean, sortMode: SortMode) {
 		this.allSessions = sessions;
@@ -290,7 +301,7 @@ type SessionsLoader = (onProgress?: SessionListProgress) => Promise<SessionInfo[
 /**
  * Component that renders a session selector
  */
-export class SessionSelectorComponent extends Container {
+export class SessionSelectorComponent extends Container implements Focusable {
 	private sessionList: SessionList;
 	private header: SessionSelectorHeader;
 	private scope: SessionScope = "current";
@@ -301,6 +312,16 @@ export class SessionSelectorComponent extends Container {
 	private allSessionsLoader: SessionsLoader;
 	private onCancel: () => void;
 	private requestRender: () => void;
+
+	// Focusable implementation - propagate to sessionList for IME cursor positioning
+	private _focused = false;
+	get focused(): boolean {
+		return this._focused;
+	}
+	set focused(value: boolean) {
+		this._focused = value;
+		this.sessionList.focused = value;
+	}
 
 	constructor(
 		currentSessionsLoader: SessionsLoader,

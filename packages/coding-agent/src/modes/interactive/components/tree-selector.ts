@@ -1,6 +1,7 @@
 import {
 	type Component,
 	Container,
+	type Focusable,
 	getEditorKeybindings,
 	Input,
 	matchesKey,
@@ -889,11 +890,21 @@ class SearchLine implements Component {
 }
 
 /** Label input component shown when editing a label */
-class LabelInput implements Component {
+class LabelInput implements Component, Focusable {
 	private input: Input;
 	private entryId: string;
 	public onSubmit?: (entryId: string, label: string | undefined) => void;
 	public onCancel?: () => void;
+
+	// Focusable implementation - propagate to input for IME cursor positioning
+	private _focused = false;
+	get focused(): boolean {
+		return this._focused;
+	}
+	set focused(value: boolean) {
+		this._focused = value;
+		this.input.focused = value;
+	}
 
 	constructor(entryId: string, currentLabel: string | undefined) {
 		this.entryId = entryId;
@@ -933,12 +944,25 @@ class LabelInput implements Component {
 /**
  * Component that renders a session tree selector for navigation
  */
-export class TreeSelectorComponent extends Container {
+export class TreeSelectorComponent extends Container implements Focusable {
 	private treeList: TreeList;
 	private labelInput: LabelInput | null = null;
 	private labelInputContainer: Container;
 	private treeContainer: Container;
 	private onLabelChangeCallback?: (entryId: string, label: string | undefined) => void;
+
+	// Focusable implementation - propagate to labelInput when active for IME cursor positioning
+	private _focused = false;
+	get focused(): boolean {
+		return this._focused;
+	}
+	set focused(value: boolean) {
+		this._focused = value;
+		// Propagate to labelInput when it's active
+		if (this.labelInput) {
+			this.labelInput.focused = value;
+		}
+	}
 
 	constructor(
 		tree: SessionTreeNode[],
@@ -996,6 +1020,9 @@ export class TreeSelectorComponent extends Container {
 			this.hideLabelInput();
 		};
 		this.labelInput.onCancel = () => this.hideLabelInput();
+
+		// Propagate current focused state to the new labelInput
+		this.labelInput.focused = this._focused;
 
 		this.treeContainer.clear();
 		this.labelInputContainer.clear();
