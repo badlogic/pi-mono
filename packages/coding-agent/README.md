@@ -355,6 +355,7 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 | Ctrl+K | Delete to end of line |
 | Ctrl+Y | Paste most recently deleted text |
 | Alt+Y | Cycle through deleted text after pasting |
+| Ctrl+- | Undo |
 
 **Other:**
 
@@ -405,6 +406,7 @@ All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Eac
 | `deleteToLineEnd` | `ctrl+k` | Delete to line end |
 | `yank` | `ctrl+y` | Paste most recently deleted text |
 | `yankPop` | `alt+y` | Cycle through deleted text after pasting |
+| `undo` | `ctrl+-` | Undo last edit |
 | `newLine` | `shift+enter` | Insert new line |
 | `submit` | `enter` | Submit input |
 | `tab` | `tab` | Tab/autocomplete |
