@@ -60,6 +60,7 @@ const RESERVED_ACTIONS_FOR_EXTENSION_CONFLICTS: ReadonlyArray<KeyAction> = [
 	"submit",
 	"selectConfirm",
 	"selectCancel",
+	"copy",
 	"deleteToLineEnd",
 ];
 
