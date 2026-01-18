@@ -16,6 +16,7 @@ import {
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+import { keyHint, rawKeyHint } from "./keybinding-hints.js";
 import { filterAndSortSessions, type SortMode } from "./session-selector-search.js";
 
 type SessionScope = "current" | "all";
@@ -143,10 +144,16 @@ class SessionSelectorHeader implements Component {
 			hintLine2 = "";
 		} else {
 			const pathState = this.showPath ? "(on)" : "(off)";
-			const hint1 = `Tab: scope · re:<pattern> for regex · "phrase" for exact phrase`;
-			const hint2 = `Ctrl+R: sort · Ctrl+D: delete · Ctrl+P: path ${pathState}`;
-			hintLine1 = theme.fg("muted", truncateToWidth(hint1, width, "…"));
-			hintLine2 = theme.fg("muted", truncateToWidth(hint2, width, "…"));
+			const sep = theme.fg("muted", " · ");
+			const hint1 = keyHint("tab", "scope") + sep + theme.fg("muted", 're:<pattern> regex · "phrase" exact');
+			const hint2 =
+				rawKeyHint("ctrl+r", "sort") +
+				sep +
+				rawKeyHint("ctrl+d", "delete") +
+				sep +
+				rawKeyHint("ctrl+p", `path ${pathState}`);
+			hintLine1 = truncateToWidth(hint1, width, "…");
+			hintLine2 = truncateToWidth(hint2, width, "…");
 		}
 
 		return [`${left}${" ".repeat(spacing)}${rightText}`, hintLine1, hintLine2];
@@ -518,9 +525,9 @@ export class SessionSelectorComponent extends Container implements Focusable {
 
 		// Add header
 		this.addChild(new Spacer(1));
-		this.addChild(this.header);
-		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
+		this.addChild(new Spacer(1));
+		this.addChild(this.header);
 		this.addChild(new Spacer(1));
 
 		// Create session list (starts empty, will be populated after load)
