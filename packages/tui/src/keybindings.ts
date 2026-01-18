@@ -38,6 +38,8 @@ export type EditorAction =
 	// Kill ring
 	| "yank"
 	| "yankPop"
+	// Undo
+	| "undo"
 	// Tool output
 	| "expandTools";
 
@@ -89,6 +91,8 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	// Kill ring
 	yank: "ctrl+y",
 	yankPop: "alt+y",
+	// Undo
+	undo: "ctrl+-",
 	// Tool output
 	expandTools: "ctrl+o",
 };

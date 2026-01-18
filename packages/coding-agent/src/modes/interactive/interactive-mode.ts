@@ -3445,6 +3445,7 @@ export class InteractiveMode {
 		const deleteToLineEnd = this.getEditorKeyDisplay("deleteToLineEnd");
 		const yank = this.getEditorKeyDisplay("yank");
 		const yankPop = this.getEditorKeyDisplay("yankPop");
+		const undo = this.getEditorKeyDisplay("undo");
 		const tab = this.getEditorKeyDisplay("tab");
 
 		// App keybindings
@@ -3480,6 +3481,7 @@ export class InteractiveMode {
 | \`${deleteToLineEnd}\` | Delete to end of line |
 | \`${yank}\` | Paste the most-recently-deleted text |
 | \`${yankPop}\` | Cycle through the deleted text after pasting |
+| \`${undo}\` | Undo |
 
 **Other**
 | Key | Action |

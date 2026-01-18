@@ -290,8 +290,12 @@ export class Editor implements Component, Focusable {
 	private historyIndex: number = -1; // -1 = not browsing, 0 = most recent, 1 = older, etc.
 
 	// Kill ring for Emacs-style kill/yank operations
+	// Also tracks undo coalescing: "type-word" means we're mid-word (coalescing)
 	private killRing: string[] = [];
-	private lastAction: "kill" | "yank" | null = null;
+	private lastAction: "kill" | "yank" | "type-word" | null = null;
+
+	// Undo support
+	private undoStack: EditorState[] = [];
 
 	public onSubmit?: (text: string) => void;
 	public onChange?: (text: string) => void;
@@ -359,6 +363,11 @@ export class Editor implements Component, Focusable {
 
 		const newIndex = this.historyIndex - direction; // Up(-1) increases index, Down(1) decreases
 		if (newIndex < -1 || newIndex >= this.history.length) return;
+
+		// Capture state when first entering history browsing mode
+		if (this.historyIndex === -1 && newIndex >= 0) {
+			this.pushUndoSnapshot();
+		}
 
 		this.historyIndex = newIndex;
 
@@ -570,6 +579,12 @@ export class Editor implements Component, Focusable {
 			return;
 		}
 
+		// Undo
+		if (kb.matches(data, "undo")) {
+			this.undo();
+			return;
+		}
+
 		// Handle autocomplete mode
 		if (this.isAutocompleting && this.autocompleteList) {
 			if (kb.matches(data, "selectCancel")) {
@@ -585,6 +600,8 @@ export class Editor implements Component, Focusable {
 			if (kb.matches(data, "tab")) {
 				const selected = this.autocompleteList.getSelectedItem();
 				if (selected && this.autocompleteProvider) {
+					this.pushUndoSnapshot();
+					this.lastAction = null;
 					const result = this.autocompleteProvider.applyCompletion(
 						this.state.lines,
 						this.state.cursorLine,
@@ -604,6 +621,8 @@ export class Editor implements Component, Focusable {
 			if (kb.matches(data, "selectConfirm")) {
 				const selected = this.autocompleteList.getSelectedItem();
 				if (selected && this.autocompleteProvider) {
+					this.pushUndoSnapshot();
+					this.lastAction = null;
 					const result = this.autocompleteProvider.applyCompletion(
 						this.state.lines,
 						this.state.cursorLine,
@@ -716,6 +735,8 @@ export class Editor implements Component, Focusable {
 			this.pasteCounter = 0;
 			this.historyIndex = -1;
 			this.scrollOffset = 0;
+			this.undoStack.length = 0;
+			this.lastAction = null;
 
 			if (this.onChange) this.onChange("");
 			if (this.onSubmit) this.onSubmit(result);
@@ -893,23 +914,43 @@ export class Editor implements Component, Focusable {
 
 	setText(text: string): void {
 		this.historyIndex = -1; // Exit history browsing mode
+		// Push undo snapshot if content differs (makes programmatic changes undoable)
+		if (this.getText() !== text) {
+			this.pushUndoSnapshot();
+		}
 		this.setTextInternal(text);
+		this.lastAction = null;
 	}
 
 	/**
 	 * Insert text at the current cursor position.
 	 * Used for programmatic insertion (e.g., clipboard image markers).
+	 * This is atomic for undo - single undo restores entire pre-insert state.
 	 */
 	insertTextAtCursor(text: string): void {
+		if (!text) return;
+		this.pushUndoSnapshot();
+		this.lastAction = null;
 		for (const char of text) {
-			this.insertCharacter(char);
+			this.insertCharacter(char, true);
 		}
 	}
 
 	// All the editor methods from before...
-	private insertCharacter(char: string): void {
+	private insertCharacter(char: string, skipUndoCoalescing?: boolean): void {
 		this.historyIndex = -1; // Exit history browsing mode
-		this.lastAction = null;
+
+		// Undo coalescing (fish-style):
+		// - Consecutive word chars coalesce into one undo unit
+		// - Space captures state before itself (so undo removes space+following word together)
+		// - Each space is separately undoable
+		// Skip coalescing when called from atomic operations (paste, insertTextAtCursor)
+		if (!skipUndoCoalescing) {
+			if (isWhitespaceChar(char) || this.lastAction !== "type-word") {
+				this.pushUndoSnapshot();
+			}
+			this.lastAction = "type-word";
+		}
 
 		const line = this.state.lines[this.state.cursorLine] || "";
 
@@ -961,6 +1002,8 @@ export class Editor implements Component, Focusable {
 		this.historyIndex = -1; // Exit history browsing mode
 		this.lastAction = null;
 
+		this.pushUndoSnapshot();
+
 		// Clean the pasted text
 		const cleanText = pastedText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
@@ -1000,9 +1043,8 @@ export class Editor implements Component, Focusable {
 					? `[paste #${pasteId} +${pastedLines.length} lines]`
 					: `[paste #${pasteId} ${totalChars} chars]`;
 			for (const char of marker) {
-				this.insertCharacter(char);
+				this.insertCharacter(char, true);
 			}
-
 			return;
 		}
 
@@ -1010,9 +1052,8 @@ export class Editor implements Component, Focusable {
 			// Single line - just insert each character
 			const text = pastedLines[0] || "";
 			for (const char of text) {
-				this.insertCharacter(char);
+				this.insertCharacter(char, true);
 			}
-
 			return;
 		}
 
@@ -1062,6 +1103,8 @@ export class Editor implements Component, Focusable {
 		this.historyIndex = -1; // Exit history browsing mode
 		this.lastAction = null;
 
+		this.pushUndoSnapshot();
+
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 		const before = currentLine.slice(0, this.state.cursorCol);
@@ -1085,6 +1128,8 @@ export class Editor implements Component, Focusable {
 		this.lastAction = null;
 
 		if (this.state.cursorCol > 0) {
+			this.pushUndoSnapshot();
+
 			// Delete grapheme before cursor (handles emojis, combining characters, etc.)
 			const line = this.state.lines[this.state.cursorLine] || "";
 			const beforeCursor = line.slice(0, this.state.cursorCol);
@@ -1100,6 +1145,8 @@ export class Editor implements Component, Focusable {
 			this.state.lines[this.state.cursorLine] = before + after;
 			this.state.cursorCol -= graphemeLength;
 		} else if (this.state.cursorLine > 0) {
+			this.pushUndoSnapshot();
+
 			// Merge with previous line
 			const currentLine = this.state.lines[this.state.cursorLine] || "";
 			const previousLine = this.state.lines[this.state.cursorLine - 1] || "";
@@ -1150,6 +1197,8 @@ export class Editor implements Component, Focusable {
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 		if (this.state.cursorCol > 0) {
+			this.pushUndoSnapshot();
+
 			// Calculate text to be deleted and save to kill ring (backward deletion = prepend)
 			const deletedText = currentLine.slice(0, this.state.cursorCol);
 			this.addToKillRing(deletedText, true);
@@ -1159,6 +1208,8 @@ export class Editor implements Component, Focusable {
 			this.state.lines[this.state.cursorLine] = currentLine.slice(this.state.cursorCol);
 			this.state.cursorCol = 0;
 		} else if (this.state.cursorLine > 0) {
+			this.pushUndoSnapshot();
+
 			// At start of line - merge with previous line, treating newline as deleted text
 			this.addToKillRing("\n", true);
 			this.lastAction = "kill";
@@ -1181,6 +1232,8 @@ export class Editor implements Component, Focusable {
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 		if (this.state.cursorCol < currentLine.length) {
+			this.pushUndoSnapshot();
+
 			// Calculate text to be deleted and save to kill ring (forward deletion = append)
 			const deletedText = currentLine.slice(this.state.cursorCol);
 			this.addToKillRing(deletedText, false);
@@ -1189,6 +1242,8 @@ export class Editor implements Component, Focusable {
 			// Delete from cursor to end of line
 			this.state.lines[this.state.cursorLine] = currentLine.slice(0, this.state.cursorCol);
 		} else if (this.state.cursorLine < this.state.lines.length - 1) {
+			this.pushUndoSnapshot();
+
 			// At end of line - merge with next line, treating newline as deleted text
 			this.addToKillRing("\n", false);
 			this.lastAction = "kill";
@@ -1211,6 +1266,8 @@ export class Editor implements Component, Focusable {
 		// If at start of line, behave like backspace at column 0 (merge with previous line)
 		if (this.state.cursorCol === 0) {
 			if (this.state.cursorLine > 0) {
+				this.pushUndoSnapshot();
+
 				// Treat newline as deleted text (backward deletion = prepend)
 				this.addToKillRing("\n", true);
 				this.lastAction = "kill";
@@ -1222,6 +1279,8 @@ export class Editor implements Component, Focusable {
 				this.state.cursorCol = previousLine.length;
 			}
 		} else {
+			this.pushUndoSnapshot();
+
 			// Save lastAction before cursor movement (moveWordBackwards resets it)
 			const wasKill = this.lastAction === "kill";
 
@@ -1254,6 +1313,8 @@ export class Editor implements Component, Focusable {
 		// If at end of line, merge with next line (delete the newline)
 		if (this.state.cursorCol >= currentLine.length) {
 			if (this.state.cursorLine < this.state.lines.length - 1) {
+				this.pushUndoSnapshot();
+
 				// Treat newline as deleted text (forward deletion = append)
 				this.addToKillRing("\n", false);
 				this.lastAction = "kill";
@@ -1263,6 +1324,8 @@ export class Editor implements Component, Focusable {
 				this.state.lines.splice(this.state.cursorLine + 1, 1);
 			}
 		} else {
+			this.pushUndoSnapshot();
+
 			// Save lastAction before cursor movement (moveWordForwards resets it)
 			const wasKill = this.lastAction === "kill";
 
@@ -1293,6 +1356,8 @@ export class Editor implements Component, Focusable {
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 		if (this.state.cursorCol < currentLine.length) {
+			this.pushUndoSnapshot();
+
 			// Delete grapheme at cursor position (handles emojis, combining characters, etc.)
 			const afterCursor = currentLine.slice(this.state.cursorCol);
 
@@ -1305,6 +1370,8 @@ export class Editor implements Component, Focusable {
 			const after = currentLine.slice(this.state.cursorCol + graphemeLength);
 			this.state.lines[this.state.cursorLine] = before + after;
 		} else if (this.state.cursorLine < this.state.lines.length - 1) {
+			this.pushUndoSnapshot();
+
 			// At end of line - merge with next line
 			const nextLine = this.state.lines[this.state.cursorLine + 1] || "";
 			this.state.lines[this.state.cursorLine] = currentLine + nextLine;
@@ -1532,6 +1599,8 @@ export class Editor implements Component, Focusable {
 	private yank(): void {
 		if (this.killRing.length === 0) return;
 
+		this.pushUndoSnapshot();
+
 		const text = this.killRing[this.killRing.length - 1] || "";
 		this.insertYankedText(text);
 
@@ -1545,6 +1614,8 @@ export class Editor implements Component, Focusable {
 	private yankPop(): void {
 		// Only works if we just yanked and have more than one entry
 		if (this.lastAction !== "yank" || this.killRing.length <= 1) return;
+
+		this.pushUndoSnapshot();
 
 		// Delete the previously yanked text (still at end of ring before rotation)
 		this.deleteYankedText();
@@ -1665,6 +1736,29 @@ export class Editor implements Component, Focusable {
 		} else {
 			// Add new entry to end of ring
 			this.killRing.push(text);
+		}
+	}
+
+	private captureUndoSnapshot(): EditorState {
+		return structuredClone(this.state);
+	}
+
+	private restoreUndoSnapshot(snapshot: EditorState): void {
+		Object.assign(this.state, structuredClone(snapshot));
+	}
+
+	private pushUndoSnapshot(): void {
+		this.undoStack.push(this.captureUndoSnapshot());
+	}
+
+	private undo(): void {
+		this.historyIndex = -1; // Exit history browsing mode
+		if (this.undoStack.length === 0) return;
+		const snapshot = this.undoStack.pop()!;
+		this.restoreUndoSnapshot(snapshot);
+		this.lastAction = null;
+		if (this.onChange) {
+			this.onChange(this.getText());
 		}
 	}
 
