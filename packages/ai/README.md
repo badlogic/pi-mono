@@ -598,6 +598,20 @@ context.messages.push({ role: 'user', content: 'Please continue' });
 const continuation = await complete(model, context);
 ```
 
+### Debugging Provider Payloads
+
+Use the `onPayload` callback to inspect the request payload sent to the provider. This is useful for debugging request formatting issues or provider validation errors.
+
+```typescript
+const response = await complete(model, context, {
+  onPayload: (payload) => {
+    console.log('Provider payload:', JSON.stringify(payload, null, 2));
+  }
+});
+```
+
+The callback is supported by `stream`, `complete`, `streamSimple`, and `completeSimple`.
+
 ## APIs, Models, and Providers
 
 The library implements 4 API interfaces, each with its own streaming function and options:
