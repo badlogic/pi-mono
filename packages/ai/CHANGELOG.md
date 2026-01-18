@@ -10,6 +10,10 @@
 
 - Split `OpenAICompat` into `OpenAICompletionsCompat` and `OpenAIResponsesCompat` for type-safe API-specific compat settings
 
+### Fixed
+
+- Fixed tool call ID normalization for cross-provider handoffs (e.g., Codex to Antigravity Claude) ([#821](https://github.com/badlogic/pi-mono/issues/821))
+
 ## [0.49.0] - 2026-01-17
 
 ### Changed
