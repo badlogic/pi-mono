@@ -43,7 +43,7 @@ import type {
 	UserBashEventResult,
 } from "./types.js";
 
-// These keybindings cannot be overridden by extensions
+// Keybindings for these actions cannot be overridden by extensions
 const RESERVED_ACTIONS_FOR_EXTENSION_CONFLICTS: ReadonlyArray<KeyAction> = [
 	"interrupt",
 	"clear",
