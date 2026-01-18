@@ -356,7 +356,12 @@ describe("Image Limits E2E Tests", () => {
 	// Limits: 500 images, ~20MB per image (documented)
 	// -------------------------------------------------------------------------
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI (gpt-4o-mini)", () => {
-		const model: Model<"openai-completions"> = { ...getModel("openai", "gpt-4o-mini"), api: "openai-completions" };
+		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini");
+		void _compat;
+		const model: Model<"openai-completions"> = {
+			...baseModel,
+			api: "openai-completions",
+		};
 
 		it("should accept a small number of images (5)", async () => {
 			const result = await testImageCount(model, 5, smallImage);

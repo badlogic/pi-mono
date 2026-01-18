@@ -51,8 +51,10 @@ describe.skipIf(!process.env.OPENAI_API_KEY)("xhigh reasoning", () => {
 		});
 
 		it("should error with openai-completions when using xhigh", async () => {
+			const { compat: _compat, ...baseModel } = getModel("openai", "gpt-5-mini");
+			void _compat;
 			const model: Model<"openai-completions"> = {
-				...getModel("openai", "gpt-5-mini"),
+				...baseModel,
 				api: "openai-completions",
 			};
 			const s = stream(model, makeContext(), { reasoningEffort: "xhigh" });

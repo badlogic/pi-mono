@@ -735,6 +735,8 @@ To fully replace a built-in provider with custom models, include the `models` ar
 
 **OpenAI compatibility (`compat` field):**
 
+**OpenAI Completions (`openai-completions`):**
+
 | Field | Description |
 |-------|-------------|
 | `supportsStore` | Whether provider supports `store` field |
@@ -742,6 +744,14 @@ To fully replace a built-in provider with custom models, include the `models` ar
 | `supportsReasoningEffort` | Support for `reasoning_effort` parameter |
 | `supportsUsageInStreaming` | Whether provider supports `stream_options: { include_usage: true }`. Default: `true` |
 | `maxTokensField` | Use `max_completion_tokens` or `max_tokens` |
+
+**OpenAI Responses (`openai-responses`):**
+
+| Field | Description |
+|-------|-------------|
+| `strictResponsesPairing` | Enforce strict reasoning/message pairing when replaying OpenAI Responses history on providers like Azure (default: `false`) |
+
+If you see 400 errors like "item of type 'reasoning' was provided without its required following item" or "message/function_call was provided without its required reasoning item", set `compat.strictResponsesPairing: true` on the affected model in `models.json`.
 
 **Live reload:** The file reloads each time you open `/model`. Edit during session; no restart needed.
 

@@ -703,15 +703,19 @@ const response = await stream(ollamaModel, context, {
 
 ### OpenAI Compatibility Settings
 
-The `openai-completions` API is implemented by many providers with minor differences. By default, the library auto-detects compatibility settings based on `baseUrl` for known providers (Cerebras, xAI, Mistral, Chutes, etc.). For custom proxies or unknown endpoints, you can override these settings via the `compat` field:
+The `openai-completions` API is implemented by many providers with minor differences. By default, the library auto-detects compatibility settings based on `baseUrl` for known providers (Cerebras, xAI, Mistral, Chutes, etc.). For custom proxies or unknown endpoints, you can override these settings via the `compat` field. For `openai-responses` models, the compat field only supports Responses-specific flags.
 
 ```typescript
-interface OpenAICompat {
+interface OpenAICompletionsCompat {
   supportsStore?: boolean;           // Whether provider supports the `store` field (default: true)
   supportsDeveloperRole?: boolean;   // Whether provider supports `developer` role vs `system` (default: true)
   supportsReasoningEffort?: boolean; // Whether provider supports `reasoning_effort` (default: true)
   maxTokensField?: 'max_completion_tokens' | 'max_tokens';  // Which field name to use (default: max_completion_tokens)
   thinkingFormat?: 'openai' | 'zai'; // Format for reasoning param: 'openai' uses reasoning_effort, 'zai' uses thinking: { type: "enabled" } (default: openai)
+}
+
+interface OpenAIResponsesCompat {
+  strictResponsesPairing?: boolean; // Enforce strict reasoning/message pairing for OpenAI Responses history replay on providers like Azure (default: false)
 }
 ```
 

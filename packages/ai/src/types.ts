@@ -204,10 +204,10 @@ export type AssistantMessageEvent =
 	| { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: AssistantMessage };
 
 /**
- * Compatibility settings for openai-completions API.
+ * Compatibility settings for OpenAI-compatible completions APIs.
  * Use this to override URL-based auto-detection for custom providers.
  */
-export interface OpenAICompat {
+export interface OpenAICompletionsCompat {
 	/** Whether the provider supports the `store` field. Default: auto-detected from URL. */
 	supportsStore?: boolean;
 	/** Whether the provider supports the `developer` role (vs `system`). Default: auto-detected from URL. */
@@ -230,6 +230,12 @@ export interface OpenAICompat {
 	thinkingFormat?: "openai" | "zai";
 }
 
+/** Compatibility settings for OpenAI Responses APIs. */
+export interface OpenAIResponsesCompat {
+	/** Whether OpenAI Responses history replay requires strict reasoning/message pairing (for providers like Azure). */
+	strictResponsesPairing?: boolean;
+}
+
 // Model interface for the unified model system
 export interface Model<TApi extends Api> {
 	id: string;
@@ -248,6 +254,10 @@ export interface Model<TApi extends Api> {
 	contextWindow: number;
 	maxTokens: number;
 	headers?: Record<string, string>;
-	/** Compatibility overrides for openai-completions API. If not set, auto-detected from baseUrl. */
-	compat?: TApi extends "openai-completions" ? OpenAICompat : never;
+	/** Compatibility overrides for OpenAI-compatible APIs. If not set, auto-detected from baseUrl. */
+	compat?: TApi extends "openai-completions"
+		? OpenAICompletionsCompat
+		: TApi extends "openai-responses"
+			? OpenAIResponsesCompat
+			: never;
 }

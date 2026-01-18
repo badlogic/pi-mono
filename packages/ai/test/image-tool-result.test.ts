@@ -215,7 +215,12 @@ describe("Tool Results with Images", () => {
 	});
 
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider (gpt-4o-mini)", () => {
-		const llm: Model<"openai-completions"> = { ...getModel("openai", "gpt-4o-mini"), api: "openai-completions" };
+		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini");
+		void _compat;
+		const llm: Model<"openai-completions"> = {
+			...baseModel,
+			api: "openai-completions",
+		};
 
 		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
 			await handleToolWithImageResult(llm);

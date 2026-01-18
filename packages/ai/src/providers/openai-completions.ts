@@ -15,7 +15,7 @@ import type {
 	Context,
 	Message,
 	Model,
-	OpenAICompat,
+	OpenAICompletionsCompat,
 	StopReason,
 	StreamFunction,
 	StreamOptions,
@@ -452,7 +452,7 @@ function maybeAddOpenRouterAnthropicCacheControl(
 function convertMessages(
 	model: Model<"openai-completions">,
 	context: Context,
-	compat: Required<OpenAICompat>,
+	compat: Required<OpenAICompletionsCompat>,
 ): ChatCompletionMessageParam[] {
 	const params: ChatCompletionMessageParam[] = [];
 
@@ -681,9 +681,9 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): Sto
 /**
  * Detect compatibility settings from provider and baseUrl for known providers.
  * Provider takes precedence over URL-based detection since it's explicitly configured.
- * Returns a fully resolved OpenAICompat object with all fields set.
+ * Returns a fully resolved OpenAICompletionsCompat object with all fields set.
  */
-function detectCompat(model: Model<"openai-completions">): Required<OpenAICompat> {
+function detectCompat(model: Model<"openai-completions">): Required<OpenAICompletionsCompat> {
 	const provider = model.provider;
 	const baseUrl = model.baseUrl;
 
@@ -725,7 +725,7 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAICompat
  * Get resolved compatibility settings for a model.
  * Uses explicit model.compat if provided, otherwise auto-detects from provider/URL.
  */
-function getCompat(model: Model<"openai-completions">): Required<OpenAICompat> {
+function getCompat(model: Model<"openai-completions">): Required<OpenAICompletionsCompat> {
 	const detected = detectCompat(model);
 	if (!model.compat) return detected;
 

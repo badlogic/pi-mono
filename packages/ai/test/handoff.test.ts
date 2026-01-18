@@ -466,7 +466,12 @@ describe("Cross-Provider Handoff Tests", () => {
 	});
 
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider Handoff", () => {
-		const model: Model<"openai-completions"> = { ...getModel("openai", "gpt-4o-mini"), api: "openai-completions" };
+		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini");
+		void _compat;
+		const model: Model<"openai-completions"> = {
+			...baseModel,
+			api: "openai-completions",
+		};
 
 		it("should handle contexts from all providers", async () => {
 			console.log("\nTesting OpenAI Completions with pre-built contexts:\n");

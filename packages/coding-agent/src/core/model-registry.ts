@@ -20,12 +20,18 @@ import type { AuthStorage } from "./auth-storage.js";
 const Ajv = (AjvModule as any).default || AjvModule;
 
 // Schema for OpenAI compatibility settings
-const OpenAICompatSchema = Type.Object({
+const OpenAICompletionsCompatSchema = Type.Object({
 	supportsStore: Type.Optional(Type.Boolean()),
 	supportsDeveloperRole: Type.Optional(Type.Boolean()),
 	supportsReasoningEffort: Type.Optional(Type.Boolean()),
 	maxTokensField: Type.Optional(Type.Union([Type.Literal("max_completion_tokens"), Type.Literal("max_tokens")])),
 });
+
+const OpenAIResponsesCompatSchema = Type.Object({
+	strictResponsesPairing: Type.Optional(Type.Boolean()),
+});
+
+const OpenAICompatSchema = Type.Union([OpenAICompletionsCompatSchema, OpenAIResponsesCompatSchema]);
 
 // Schema for custom model definition
 const ModelDefinitionSchema = Type.Object({

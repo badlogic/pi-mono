@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `strictResponsesPairing` compat option for custom OpenAI Responses models on Azure ([#768](https://github.com/badlogic/pi-mono/pull/768) by [@nicobako](https://github.com/nicobako))
+
 ### Changed
 
 - Share URLs now use hash fragments (`#`) instead of query strings (`?`) to prevent session IDs from being sent to buildwithpi.ai ([#828](https://github.com/badlogic/pi-mono/issues/828))
