@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Session selector (`/resume`) now supports path display toggle (`Ctrl+P`) to show/hide `.jsonl` file paths for each session
+- Session selector (`/resume`) now supports session deletion (`Ctrl+D`) with inline confirmation. Uses `trash` command if available, falls back to permanent deletion. Prevents deletion of the currently active session
+
 ### Changed
 
 - Share URLs now use hash fragments (`#`) instead of query strings (`?`) to prevent session IDs from being sent to buildwithpi.ai ([#828](https://github.com/badlogic/pi-mono/issues/828))

@@ -1,3 +1,6 @@
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { unlink } from "node:fs/promises";
 import * as os from "node:os";
 import {
 	type Component,
@@ -45,12 +48,18 @@ function formatSessionDate(date: Date): string {
 class SessionSelectorHeader implements Component {
 	private scope: SessionScope;
 	private sortMode: SortMode;
+	private requestRender: () => void;
 	private loading = false;
 	private loadProgress: { loaded: number; total: number } | null = null;
+	private showPath = false;
+	private confirmingDeletePath: string | null = null;
+	private statusMessage: { type: "info" | "error"; message: string } | null = null;
+	private statusTimeout: ReturnType<typeof setTimeout> | null = null;
 
-	constructor(scope: SessionScope, sortMode: SortMode) {
+	constructor(scope: SessionScope, sortMode: SortMode, requestRender: () => void) {
 		this.scope = scope;
 		this.sortMode = sortMode;
+		this.requestRender = requestRender;
 	}
 
 	setScope(scope: SessionScope): void {
@@ -63,13 +72,38 @@ class SessionSelectorHeader implements Component {
 
 	setLoading(loading: boolean): void {
 		this.loading = loading;
-		if (!loading) {
-			this.loadProgress = null;
-		}
+		// Progress is scoped to the current load; clear whenever the loading state is set
+		this.loadProgress = null;
 	}
 
 	setProgress(loaded: number, total: number): void {
 		this.loadProgress = { loaded, total };
+	}
+
+	setShowPath(showPath: boolean): void {
+		this.showPath = showPath;
+	}
+
+	setConfirmingDeletePath(path: string | null): void {
+		this.confirmingDeletePath = path;
+	}
+
+	private clearStatusTimeout(): void {
+		if (!this.statusTimeout) return;
+		clearTimeout(this.statusTimeout);
+		this.statusTimeout = null;
+	}
+
+	setStatusMessage(msg: { type: "info" | "error"; message: string } | null, autoHideMs?: number): void {
+		this.clearStatusTimeout();
+		this.statusMessage = msg;
+		if (!msg || !autoHideMs) return;
+
+		this.statusTimeout = setTimeout(() => {
+			this.statusMessage = null;
+			this.statusTimeout = null;
+			this.requestRender();
+		}, autoHideMs);
 	}
 
 	invalidate(): void {}
@@ -85,21 +119,37 @@ class SessionSelectorHeader implements Component {
 		if (this.loading) {
 			const progressText = this.loadProgress ? `${this.loadProgress.loaded}/${this.loadProgress.total}` : "...";
 			scopeText = `${theme.fg("muted", "○ Current Folder | ")}${theme.fg("accent", `Loading ${progressText}`)}`;
+		} else if (this.scope === "current") {
+			scopeText = `${theme.fg("accent", "◉ Current Folder")}${theme.fg("muted", " | ○ All")}`;
 		} else {
-			scopeText =
-				this.scope === "current"
-					? `${theme.fg("accent", "◉ Current Folder")}${theme.fg("muted", " | ○ All")}`
-					: `${theme.fg("muted", "○ Current Folder | ")}${theme.fg("accent", "◉ All")}`;
+			scopeText = `${theme.fg("muted", "○ Current Folder | ")}${theme.fg("accent", "◉ All")}`;
 		}
 
 		const rightText = truncateToWidth(`${scopeText}  ${sortText}`, width, "");
 		const availableLeft = Math.max(0, width - visibleWidth(rightText) - 1);
 		const left = truncateToWidth(leftText, availableLeft, "");
 		const spacing = Math.max(0, width - visibleWidth(left) - visibleWidth(rightText));
-		const hintText = 'Tab: scope · Ctrl+R: sort · re:<pattern> for regex · "phrase" for exact phrase';
-		const truncatedHint = truncateToWidth(hintText, width, "…");
-		const hint = theme.fg("muted", truncatedHint);
-		return [`${left}${" ".repeat(spacing)}${rightText}`, hint];
+
+		// Build hint lines - changes based on state (all branches truncate to width)
+		let hintLine1: string;
+		let hintLine2: string;
+		if (this.confirmingDeletePath !== null) {
+			const confirmHint = "Delete session? [Enter] confirm · [Esc/Ctrl+C] cancel";
+			hintLine1 = theme.fg("error", truncateToWidth(confirmHint, width, "…"));
+			hintLine2 = "";
+		} else if (this.statusMessage) {
+			const color = this.statusMessage.type === "error" ? "error" : "accent";
+			hintLine1 = theme.fg(color, truncateToWidth(this.statusMessage.message, width, "…"));
+			hintLine2 = "";
+		} else {
+			const pathState = this.showPath ? "(on)" : "(off)";
+			const hint1 = `Tab: scope · re:<pattern> for regex · "phrase" for exact phrase`;
+			const hint2 = `Ctrl+R: sort · Ctrl+D: delete · Ctrl+P: path ${pathState}`;
+			hintLine1 = theme.fg("muted", truncateToWidth(hint1, width, "…"));
+			hintLine2 = theme.fg("muted", truncateToWidth(hint2, width, "…"));
+		}
+
+		return [`${left}${" ".repeat(spacing)}${rightText}`, hintLine1, hintLine2];
 	}
 }
 
@@ -113,12 +163,19 @@ class SessionList implements Component, Focusable {
 	private searchInput: Input;
 	private showCwd = false;
 	private sortMode: SortMode = "relevance";
+	private showPath = false;
+	private confirmingDeletePath: string | null = null;
+	private currentSessionFilePath?: string;
 	public onSelect?: (sessionPath: string) => void;
 	public onCancel?: () => void;
 	public onExit: () => void = () => {};
 	public onToggleScope?: () => void;
 	public onToggleSort?: () => void;
-	private maxVisible: number = 5; // Max sessions visible (each session is 3 lines: msg + metadata + blank)
+	public onTogglePath?: (showPath: boolean) => void;
+	public onDeleteConfirmationChange?: (path: string | null) => void;
+	public onDeleteSession?: (sessionPath: string) => Promise<void>;
+	public onError?: (message: string) => void;
+	private maxVisible: number = 5; // Max sessions visible (each session: message + metadata + optional path + blank)
 
 	// Focusable implementation - propagate to searchInput for IME cursor positioning
 	private _focused = false;
@@ -130,12 +187,13 @@ class SessionList implements Component, Focusable {
 		this.searchInput.focused = value;
 	}
 
-	constructor(sessions: SessionInfo[], showCwd: boolean, sortMode: SortMode) {
+	constructor(sessions: SessionInfo[], showCwd: boolean, sortMode: SortMode, currentSessionFilePath?: string) {
 		this.allSessions = sessions;
 		this.filteredSessions = sessions;
 		this.searchInput = new Input();
 		this.showCwd = showCwd;
 		this.sortMode = sortMode;
+		this.currentSessionFilePath = currentSessionFilePath;
 
 		// Handle Enter in search input - select current item
 		this.searchInput.onSubmit = () => {
@@ -162,6 +220,24 @@ class SessionList implements Component, Focusable {
 	private filterSessions(query: string): void {
 		this.filteredSessions = filterAndSortSessions(this.allSessions, query, this.sortMode);
 		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredSessions.length - 1));
+	}
+
+	private setConfirmingDeletePath(path: string | null): void {
+		this.confirmingDeletePath = path;
+		this.onDeleteConfirmationChange?.(path);
+	}
+
+	private startDeleteConfirmationForSelectedSession(): void {
+		const selected = this.filteredSessions[this.selectedIndex];
+		if (!selected) return;
+
+		// Prevent deleting current session
+		if (this.currentSessionFilePath && selected.path === this.currentSessionFilePath) {
+			this.onError?.("Cannot delete the currently active session");
+			return;
+		}
+
+		this.setConfirmingDeletePath(selected.path);
 	}
 
 	invalidate(): void {}
@@ -196,10 +272,11 @@ class SessionList implements Component, Focusable {
 		);
 		const endIndex = Math.min(startIndex + this.maxVisible, this.filteredSessions.length);
 
-		// Render visible sessions (2 lines per session + blank line)
+		// Render visible sessions (message + metadata + optional path + blank line)
 		for (let i = startIndex; i < endIndex; i++) {
 			const session = this.filteredSessions[i];
 			const isSelected = i === this.selectedIndex;
+			const isConfirmingDelete = session.path === this.confirmingDeletePath;
 
 			// Use session name if set, otherwise first message
 			const hasName = !!session.name;
@@ -211,10 +288,13 @@ class SessionList implements Component, Focusable {
 			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
 			const maxMsgWidth = width - 2; // Account for cursor (2 visible chars)
 			const truncatedMsg = truncateToWidth(normalizedMessage, maxMsgWidth, "...");
-			let styledMsg = truncatedMsg;
-			if (hasName) {
-				styledMsg = theme.fg("warning", truncatedMsg);
+			let messageColor: "error" | "warning" | null = null;
+			if (isConfirmingDelete) {
+				messageColor = "error";
+			} else if (hasName) {
+				messageColor = "warning";
 			}
+			let styledMsg = messageColor ? theme.fg(messageColor, truncatedMsg) : truncatedMsg;
 			if (isSelected) {
 				styledMsg = theme.bold(styledMsg);
 			}
@@ -228,10 +308,20 @@ class SessionList implements Component, Focusable {
 				metadataParts.push(shortenPath(session.cwd));
 			}
 			const metadata = `  ${metadataParts.join(" · ")}`;
-			const metadataLine = theme.fg("dim", truncateToWidth(metadata, width, ""));
+			const truncatedMetadata = truncateToWidth(metadata, width, "");
+			const metadataLine = theme.fg(isConfirmingDelete ? "error" : "dim", truncatedMetadata);
 
 			lines.push(messageLine);
 			lines.push(metadataLine);
+
+			// Optional third line: file path (when showPath is enabled)
+			if (this.showPath) {
+				const pathText = `  ${shortenPath(session.path)}`;
+				const truncatedPath = truncateToWidth(pathText, width, "…");
+				const pathLine = theme.fg(isConfirmingDelete ? "error" : "muted", truncatedPath);
+				lines.push(pathLine);
+			}
+
 			lines.push(""); // Blank line between sessions
 		}
 
@@ -247,6 +337,24 @@ class SessionList implements Component, Focusable {
 
 	handleInput(keyData: string): void {
 		const kb = getEditorKeybindings();
+
+		// Handle delete confirmation state first - intercept all keys
+		if (this.confirmingDeletePath !== null) {
+			if (kb.matches(keyData, "selectConfirm")) {
+				const pathToDelete = this.confirmingDeletePath;
+				this.setConfirmingDeletePath(null);
+				void this.onDeleteSession?.(pathToDelete);
+				return;
+			}
+			// Allow both Escape and Ctrl+C to cancel (consistent with pi UX)
+			if (kb.matches(keyData, "selectCancel") || matchesKey(keyData, "ctrl+c")) {
+				this.setConfirmingDeletePath(null);
+				return;
+			}
+			// Ignore all other keys while confirming
+			return;
+		}
+
 		if (kb.matches(keyData, "tab")) {
 			if (this.onToggleScope) {
 				this.onToggleScope();
@@ -256,6 +364,32 @@ class SessionList implements Component, Focusable {
 
 		if (matchesKey(keyData, "ctrl+r")) {
 			this.onToggleSort?.();
+			return;
+		}
+
+		// Ctrl+P: toggle path display
+		if (matchesKey(keyData, "ctrl+p")) {
+			this.showPath = !this.showPath;
+			this.onTogglePath?.(this.showPath);
+			return;
+		}
+
+		// Ctrl+D: initiate delete confirmation (useful on terminals that don't distinguish Ctrl+Backspace from Backspace)
+		if (matchesKey(keyData, "ctrl+d")) {
+			this.startDeleteConfirmationForSelectedSession();
+			return;
+		}
+
+		// Ctrl+Backspace: non-invasive convenience alias for delete
+		// Only triggers deletion when the query is empty; otherwise it is forwarded to the input
+		if (matchesKey(keyData, "ctrl+backspace")) {
+			if (this.searchInput.getValue().length > 0) {
+				this.searchInput.handleInput(keyData);
+				this.filterSessions(this.searchInput.getValue());
+				return;
+			}
+
+			this.startDeleteConfirmationForSelectedSession();
 			return;
 		}
 
@@ -299,6 +433,46 @@ class SessionList implements Component, Focusable {
 type SessionsLoader = (onProgress?: SessionListProgress) => Promise<SessionInfo[]>;
 
 /**
+ * Delete a session file, trying the `trash` CLI first, then falling back to unlink
+ */
+async function deleteSessionFile(
+	sessionPath: string,
+): Promise<{ ok: boolean; method: "trash" | "unlink"; error?: string }> {
+	// Try `trash` first (if installed)
+	const trashArgs = sessionPath.startsWith("-") ? ["--", sessionPath] : [sessionPath];
+	const trashResult = spawnSync("trash", trashArgs, { encoding: "utf-8" });
+
+	const getTrashErrorHint = (): string | null => {
+		const parts: string[] = [];
+		if (trashResult.error) {
+			parts.push(trashResult.error.message);
+		}
+		const stderr = trashResult.stderr?.trim();
+		if (stderr) {
+			parts.push(stderr.split("\n")[0] ?? stderr);
+		}
+		if (parts.length === 0) return null;
+		return `trash: ${parts.join(" · ").slice(0, 200)}`;
+	};
+
+	// If trash reports success, or the file is gone afterwards, treat it as successful
+	if (trashResult.status === 0 || !existsSync(sessionPath)) {
+		return { ok: true, method: "trash" };
+	}
+
+	// Fallback to permanent deletion
+	try {
+		await unlink(sessionPath);
+		return { ok: true, method: "unlink" };
+	} catch (err) {
+		const unlinkError = err instanceof Error ? err.message : String(err);
+		const trashErrorHint = getTrashErrorHint();
+		const error = trashErrorHint ? `${unlinkError} (${trashErrorHint})` : unlinkError;
+		return { ok: false, method: "unlink", error };
+	}
+}
+
+/**
  * Component that renders a session selector
  */
 export class SessionSelectorComponent extends Container implements Focusable {
@@ -312,6 +486,9 @@ export class SessionSelectorComponent extends Container implements Focusable {
 	private allSessionsLoader: SessionsLoader;
 	private onCancel: () => void;
 	private requestRender: () => void;
+	private currentLoading = false;
+	private allLoading = false;
+	private allLoadSeq = 0;
 
 	// Focusable implementation - propagate to sessionList for IME cursor positioning
 	private _focused = false;
@@ -330,13 +507,14 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		onCancel: () => void,
 		onExit: () => void,
 		requestRender: () => void,
+		currentSessionFilePath?: string,
 	) {
 		super();
 		this.currentSessionsLoader = currentSessionsLoader;
 		this.allSessionsLoader = allSessionsLoader;
 		this.onCancel = onCancel;
 		this.requestRender = requestRender;
-		this.header = new SessionSelectorHeader(this.scope, this.sortMode);
+		this.header = new SessionSelectorHeader(this.scope, this.sortMode, this.requestRender);
 
 		// Add header
 		this.addChild(new Spacer(1));
@@ -346,12 +524,64 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		this.addChild(new Spacer(1));
 
 		// Create session list (starts empty, will be populated after load)
-		this.sessionList = new SessionList([], false, this.sortMode);
-		this.sessionList.onSelect = onSelect;
-		this.sessionList.onCancel = onCancel;
-		this.sessionList.onExit = onExit;
+		this.sessionList = new SessionList([], false, this.sortMode, currentSessionFilePath);
+
+		// Ensure header status timeouts are cleared when leaving the selector
+		const clearStatusMessage = () => this.header.setStatusMessage(null);
+		this.sessionList.onSelect = (sessionPath) => {
+			clearStatusMessage();
+			onSelect(sessionPath);
+		};
+		this.sessionList.onCancel = () => {
+			clearStatusMessage();
+			onCancel();
+		};
+		this.sessionList.onExit = () => {
+			clearStatusMessage();
+			onExit();
+		};
 		this.sessionList.onToggleScope = () => this.toggleScope();
 		this.sessionList.onToggleSort = () => this.toggleSortMode();
+
+		// Sync list events to header
+		this.sessionList.onTogglePath = (showPath) => {
+			this.header.setShowPath(showPath);
+			this.requestRender();
+		};
+		this.sessionList.onDeleteConfirmationChange = (path) => {
+			this.header.setConfirmingDeletePath(path);
+			this.requestRender();
+		};
+		this.sessionList.onError = (msg) => {
+			this.header.setStatusMessage({ type: "error", message: msg }, 3000);
+			this.requestRender();
+		};
+
+		// Handle session deletion
+		this.sessionList.onDeleteSession = async (sessionPath: string) => {
+			const result = await deleteSessionFile(sessionPath);
+
+			if (result.ok) {
+				if (this.currentSessions) {
+					this.currentSessions = this.currentSessions.filter((s) => s.path !== sessionPath);
+				}
+				if (this.allSessions) {
+					this.allSessions = this.allSessions.filter((s) => s.path !== sessionPath);
+				}
+
+				const sessions = this.scope === "all" ? (this.allSessions ?? []) : (this.currentSessions ?? []);
+				const showCwd = this.scope === "all";
+				this.sessionList.setSessions(sessions, showCwd);
+
+				const msg = result.method === "trash" ? "Session moved to trash" : "Session deleted";
+				this.header.setStatusMessage({ type: "info", message: msg }, 2000);
+			} else {
+				const errorMessage = result.error ?? "Unknown error";
+				this.header.setStatusMessage({ type: "error", message: `Failed to delete: ${errorMessage}` }, 3000);
+			}
+
+			this.requestRender();
+		};
 
 		this.addChild(this.sessionList);
 
@@ -364,17 +594,37 @@ export class SessionSelectorComponent extends Container implements Focusable {
 	}
 
 	private loadCurrentSessions(): void {
+		this.currentLoading = true;
+		this.header.setScope("current");
 		this.header.setLoading(true);
 		this.requestRender();
+
 		this.currentSessionsLoader((loaded, total) => {
+			if (this.scope !== "current") return;
 			this.header.setProgress(loaded, total);
 			this.requestRender();
-		}).then((sessions) => {
-			this.currentSessions = sessions;
-			this.header.setLoading(false);
-			this.sessionList.setSessions(sessions, false);
-			this.requestRender();
-		});
+		})
+			.then((sessions) => {
+				this.currentSessions = sessions;
+				this.currentLoading = false;
+
+				if (this.scope !== "current") return;
+
+				this.header.setLoading(false);
+				this.sessionList.setSessions(sessions, false);
+				this.requestRender();
+			})
+			.catch((error: unknown) => {
+				this.currentLoading = false;
+				const message = error instanceof Error ? error.message : String(error);
+
+				if (this.scope !== "current") return;
+
+				this.header.setLoading(false);
+				this.header.setStatusMessage({ type: "error", message: `Failed to load sessions: ${message}` }, 4000);
+				this.sessionList.setSessions([], false);
+				this.requestRender();
+			});
 	}
 
 	private toggleSortMode(): void {
@@ -386,37 +636,64 @@ export class SessionSelectorComponent extends Container implements Focusable {
 
 	private toggleScope(): void {
 		if (this.scope === "current") {
-			// Switching to "all" - load if not already loaded
-			if (this.allSessions === null) {
-				this.header.setLoading(true);
-				this.header.setScope("all");
-				this.sessionList.setSessions([], true); // Clear list while loading
+			this.scope = "all";
+			this.header.setScope(this.scope);
+
+			if (this.allSessions !== null) {
+				this.header.setLoading(false);
+				this.sessionList.setSessions(this.allSessions, true);
 				this.requestRender();
-				// Load asynchronously with progress updates
-				this.allSessionsLoader((loaded, total) => {
-					this.header.setProgress(loaded, total);
-					this.requestRender();
-				}).then((sessions) => {
+				return;
+			}
+
+			this.header.setLoading(true);
+			this.sessionList.setSessions([], true);
+			this.requestRender();
+
+			if (this.allLoading) return;
+
+			this.allLoading = true;
+			const seq = ++this.allLoadSeq;
+
+			this.allSessionsLoader((loaded, total) => {
+				if (seq !== this.allLoadSeq) return;
+				if (this.scope !== "all") return;
+				this.header.setProgress(loaded, total);
+				this.requestRender();
+			})
+				.then((sessions) => {
 					this.allSessions = sessions;
+					this.allLoading = false;
+
+					if (seq !== this.allLoadSeq) return;
+					if (this.scope !== "all") return;
+
 					this.header.setLoading(false);
-					this.scope = "all";
-					this.sessionList.setSessions(this.allSessions, true);
+					this.sessionList.setSessions(sessions, true);
 					this.requestRender();
-					// If no sessions in All scope either, cancel
-					if (this.allSessions.length === 0 && (this.currentSessions?.length ?? 0) === 0) {
+
+					if (sessions.length === 0 && (this.currentSessions?.length ?? 0) === 0) {
 						this.onCancel();
 					}
+				})
+				.catch((error: unknown) => {
+					this.allLoading = false;
+					const message = error instanceof Error ? error.message : String(error);
+
+					if (seq !== this.allLoadSeq) return;
+					if (this.scope !== "all") return;
+
+					this.header.setLoading(false);
+					this.header.setStatusMessage({ type: "error", message: `Failed to load sessions: ${message}` }, 4000);
+					this.sessionList.setSessions([], true);
+					this.requestRender();
 				});
-			} else {
-				this.scope = "all";
-				this.sessionList.setSessions(this.allSessions, true);
-				this.header.setScope(this.scope);
-			}
 		} else {
-			// Switching back to "current"
 			this.scope = "current";
-			this.sessionList.setSessions(this.currentSessions ?? [], false);
 			this.header.setScope(this.scope);
+			this.header.setLoading(this.currentLoading);
+			this.sessionList.setSessions(this.currentSessions ?? [], false);
+			this.requestRender();
 		}
 	}
 
