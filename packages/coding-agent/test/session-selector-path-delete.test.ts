@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import type { SessionInfo } from "../src/core/session-manager.js";
 import { SessionSelectorComponent } from "../src/modes/interactive/components/session-selector.js";
+import { initTheme } from "../src/modes/interactive/theme/theme.js";
 
 type Deferred<T> = {
 	promise: Promise<T>;
@@ -42,6 +43,10 @@ const CTRL_D = "\x04";
 const CTRL_BACKSPACE = "\x1b[127;5u";
 
 describe("session selector path/delete interactions", () => {
+	beforeAll(() => {
+		// session selector uses the global theme instance
+		initTheme("dark");
+	});
 	it("does not treat Ctrl+Backspace as delete when search query is non-empty", async () => {
 		const sessions = [makeSession({ id: "a" }), makeSession({ id: "b" })];
 
