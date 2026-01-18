@@ -137,6 +137,39 @@ describe("matchesKey", () => {
 			assert.strictEqual(parseKey("\x00"), "ctrl+space");
 		});
 
+		it("should match legacy Ctrl+symbol", () => {
+			setKittyProtocolActive(false);
+			// Ctrl+\ sends ASCII 28 (File Separator) in legacy terminals
+			assert.strictEqual(matchesKey("\x1c", "ctrl+\\"), true);
+			assert.strictEqual(parseKey("\x1c"), "ctrl+\\");
+			// Ctrl+] sends ASCII 29 (Group Separator) in legacy terminals
+			assert.strictEqual(matchesKey("\x1d", "ctrl+]"), true);
+			assert.strictEqual(parseKey("\x1d"), "ctrl+]");
+			// Ctrl+_ sends ASCII 31 (Unit Separator) in legacy terminals
+			// Ctrl+- is on the same physical key on US keyboards
+			assert.strictEqual(matchesKey("\x1f", "ctrl+_"), true);
+			assert.strictEqual(matchesKey("\x1f", "ctrl+-"), true);
+			assert.strictEqual(parseKey("\x1f"), "ctrl+-");
+		});
+
+		it("should match legacy Ctrl+Alt+symbol", () => {
+			setKittyProtocolActive(false);
+			// Ctrl+Alt+[ sends ESC followed by ESC (Ctrl+[ = ESC)
+			assert.strictEqual(matchesKey("\x1b\x1b", "ctrl+alt+["), true);
+			assert.strictEqual(parseKey("\x1b\x1b"), "ctrl+alt+[");
+			// Ctrl+Alt+\ sends ESC followed by ASCII 28
+			assert.strictEqual(matchesKey("\x1b\x1c", "ctrl+alt+\\"), true);
+			assert.strictEqual(parseKey("\x1b\x1c"), "ctrl+alt+\\");
+			// Ctrl+Alt+] sends ESC followed by ASCII 29
+			assert.strictEqual(matchesKey("\x1b\x1d", "ctrl+alt+]"), true);
+			assert.strictEqual(parseKey("\x1b\x1d"), "ctrl+alt+]");
+			// Ctrl+_ sends ASCII 31 (Unit Separator) in legacy terminals
+			// Ctrl+- is on the same physical key on US keyboards
+			assert.strictEqual(matchesKey("\x1b\x1f", "ctrl+alt+_"), true);
+			assert.strictEqual(matchesKey("\x1b\x1f", "ctrl+alt+-"), true);
+			assert.strictEqual(parseKey("\x1b\x1f"), "ctrl+alt+-");
+		});
+
 		it("should parse legacy alt-prefixed sequences when kitty inactive", () => {
 			setKittyProtocolActive(false);
 			assert.strictEqual(matchesKey("\x1b ", "alt+space"), true);
