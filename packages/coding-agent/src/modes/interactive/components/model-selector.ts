@@ -1,5 +1,14 @@
 import { type Model, modelsAreEqual } from "@mariozechner/pi-ai";
-import { Container, fuzzyFilter, getEditorKeybindings, Input, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
+import {
+	Container,
+	type Focusable,
+	fuzzyFilter,
+	getEditorKeybindings,
+	Input,
+	Spacer,
+	Text,
+	type TUI,
+} from "@mariozechner/pi-tui";
 import type { ModelRegistry } from "../../../core/model-registry.js";
 import type { SettingsManager } from "../../../core/settings-manager.js";
 import { theme } from "../theme/theme.js";
@@ -19,8 +28,18 @@ interface ScopedModelItem {
 /**
  * Component that renders a model selector with search
  */
-export class ModelSelectorComponent extends Container {
+export class ModelSelectorComponent extends Container implements Focusable {
 	private searchInput: Input;
+
+	// Focusable implementation - propagate to searchInput for IME cursor positioning
+	private _focused = false;
+	get focused(): boolean {
+		return this._focused;
+	}
+	set focused(value: boolean) {
+		this._focused = value;
+		this.searchInput.focused = value;
+	}
 	private listContainer: Container;
 	private allModels: ModelItem[] = [];
 	private filteredModels: ModelItem[] = [];

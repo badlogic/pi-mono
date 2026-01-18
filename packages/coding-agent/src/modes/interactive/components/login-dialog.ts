@@ -1,5 +1,5 @@
 import { getOAuthProviders } from "@mariozechner/pi-ai";
-import { Container, getEditorKeybindings, Input, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
+import { Container, type Focusable, getEditorKeybindings, Input, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import { exec } from "child_process";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -8,13 +8,23 @@ import { keyHint } from "./keybinding-hints.js";
 /**
  * Login dialog component - replaces editor during OAuth login flow
  */
-export class LoginDialogComponent extends Container {
+export class LoginDialogComponent extends Container implements Focusable {
 	private contentContainer: Container;
 	private input: Input;
 	private tui: TUI;
 	private abortController = new AbortController();
 	private inputResolver?: (value: string) => void;
 	private inputRejecter?: (error: Error) => void;
+
+	// Focusable implementation - propagate to input for IME cursor positioning
+	private _focused = false;
+	get focused(): boolean {
+		return this._focused;
+	}
+	set focused(value: boolean) {
+		this._focused = value;
+		this.input.focused = value;
+	}
 
 	constructor(
 		tui: TUI,

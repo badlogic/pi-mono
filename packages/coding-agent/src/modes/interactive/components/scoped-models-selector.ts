@@ -1,6 +1,7 @@
 import type { Model } from "@mariozechner/pi-ai";
 import {
 	Container,
+	type Focusable,
 	fuzzyFilter,
 	getEditorKeybindings,
 	Input,
@@ -92,13 +93,23 @@ export interface ModelsCallbacks {
  * Component for enabling/disabling models for Ctrl+P cycling.
  * Changes are session-only until explicitly persisted with Ctrl+S.
  */
-export class ScopedModelsSelectorComponent extends Container {
+export class ScopedModelsSelectorComponent extends Container implements Focusable {
 	private modelsById: Map<string, Model<any>> = new Map();
 	private allIds: string[] = [];
 	private enabledIds: EnabledIds = null;
 	private filteredItems: ModelItem[] = [];
 	private selectedIndex = 0;
 	private searchInput: Input;
+
+	// Focusable implementation - propagate to searchInput for IME cursor positioning
+	private _focused = false;
+	get focused(): boolean {
+		return this._focused;
+	}
+	set focused(value: boolean) {
+		this._focused = value;
+		this.searchInput.focused = value;
+	}
 	private listContainer: Container;
 	private footerText: Text;
 	private callbacks: ModelsCallbacks;
