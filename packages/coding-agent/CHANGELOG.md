@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Share URLs now use hash fragments (`#`) instead of query strings (`?`) to prevent session IDs from being sent to buildwithpi.ai ([#828](https://github.com/badlogic/pi-mono/issues/828))
+
 ## [0.49.0] - 2026-01-17
 
 ### Added
