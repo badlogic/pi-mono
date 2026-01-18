@@ -31,6 +31,7 @@ const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken
  */
 
 async function testEmojiInToolResults<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
+	const toolCallId = llm.provider === "mistral" ? "testtool1" : "test_1";
 	// Simulate a tool that returns emoji
 	const context: Context = {
 		systemPrompt: "You are a helpful assistant.",
@@ -45,7 +46,7 @@ async function testEmojiInToolResults<TApi extends Api>(llm: Model<TApi>, option
 				content: [
 					{
 						type: "toolCall",
-						id: "test_1",
+						id: toolCallId,
 						name: "test_tool",
 						arguments: {},
 					},
@@ -77,7 +78,7 @@ async function testEmojiInToolResults<TApi extends Api>(llm: Model<TApi>, option
 	// Add tool result with various problematic Unicode characters
 	const toolResult: ToolResultMessage = {
 		role: "toolResult",
-		toolCallId: "test_1",
+		toolCallId: toolCallId,
 		toolName: "test_tool",
 		content: [
 			{
@@ -117,6 +118,7 @@ async function testEmojiInToolResults<TApi extends Api>(llm: Model<TApi>, option
 }
 
 async function testRealWorldLinkedInData<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
+	const toolCallId = llm.provider === "mistral" ? "linkedin1" : "linkedin_1";
 	const context: Context = {
 		systemPrompt: "You are a helpful assistant.",
 		messages: [
@@ -130,7 +132,7 @@ async function testRealWorldLinkedInData<TApi extends Api>(llm: Model<TApi>, opt
 				content: [
 					{
 						type: "toolCall",
-						id: "linkedin_1",
+						id: toolCallId,
 						name: "linkedin_skill",
 						arguments: {},
 					},
@@ -162,7 +164,7 @@ async function testRealWorldLinkedInData<TApi extends Api>(llm: Model<TApi>, opt
 	// Real-world tool result from LinkedIn with emoji
 	const toolResult: ToolResultMessage = {
 		role: "toolResult",
-		toolCallId: "linkedin_1",
+		toolCallId: toolCallId,
 		toolName: "linkedin_skill",
 		content: [
 			{
@@ -205,6 +207,7 @@ Unanswered Comments: 2
 }
 
 async function testUnpairedHighSurrogate<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
+	const toolCallId = llm.provider === "mistral" ? "testtool2" : "test_2";
 	const context: Context = {
 		systemPrompt: "You are a helpful assistant.",
 		messages: [
@@ -218,7 +221,7 @@ async function testUnpairedHighSurrogate<TApi extends Api>(llm: Model<TApi>, opt
 				content: [
 					{
 						type: "toolCall",
-						id: "test_2",
+						id: toolCallId,
 						name: "test_tool",
 						arguments: {},
 					},
@@ -253,7 +256,7 @@ async function testUnpairedHighSurrogate<TApi extends Api>(llm: Model<TApi>, opt
 
 	const toolResult: ToolResultMessage = {
 		role: "toolResult",
-		toolCallId: "test_2",
+		toolCallId: toolCallId,
 		toolName: "test_tool",
 		content: [{ type: "text", text: `Text with unpaired surrogate: ${unpairedSurrogate} <- should be sanitized` }],
 		isError: false,

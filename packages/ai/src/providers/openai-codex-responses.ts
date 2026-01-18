@@ -122,6 +122,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 
 			const accountId = extractAccountId(apiKey);
 			const body = buildRequestBody(model, context, options);
+			options?.onPayload?.(body);
 			const headers = buildHeaders(model.headers, accountId, apiKey, options?.sessionId);
 			const bodyJson = JSON.stringify(body);
 
@@ -267,7 +268,23 @@ function clampReasoningEffort(modelId: string, effort: string): string {
 
 function convertMessages(model: Model<"openai-codex-responses">, context: Context): unknown[] {
 	const messages: unknown[] = [];
-	const transformed = transformMessages(context.messages, model);
+	const normalizeToolCallId = (id: string): string => {
+		const allowedProviders = new Set(["openai", "openai-codex", "opencode"]);
+		if (!allowedProviders.has(model.provider)) return id;
+		if (!id.includes("|")) return id;
+		const [callId, itemId] = id.split("|");
+		const sanitizedCallId = callId.replace(/[^a-zA-Z0-9_-]/g, "_");
+		let sanitizedItemId = itemId.replace(/[^a-zA-Z0-9_-]/g, "_");
+		// OpenAI Codex Responses API requires item id to start with "fc"
+		if (!sanitizedItemId.startsWith("fc")) {
+			sanitizedItemId = `fc_${sanitizedItemId}`;
+		}
+		const normalizedCallId = sanitizedCallId.length > 64 ? sanitizedCallId.slice(0, 64) : sanitizedCallId;
+		const normalizedItemId = sanitizedItemId.length > 64 ? sanitizedItemId.slice(0, 64) : sanitizedItemId;
+		return `${normalizedCallId}|${normalizedItemId}`;
+	};
+
+	const transformed = transformMessages(context.messages, model, normalizeToolCallId);
 
 	for (const msg of transformed) {
 		if (msg.role === "user") {

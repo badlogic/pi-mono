@@ -33,8 +33,7 @@ import { transformMessages } from "./transform-messages.js";
  * Normalize tool call ID for Mistral.
  * Mistral requires tool IDs to be exactly 9 alphanumeric characters (a-z, A-Z, 0-9).
  */
-function normalizeMistralToolId(id: string, isMistral: boolean): string {
-	if (!isMistral) return id;
+function normalizeMistralToolId(id: string): string {
 	// Remove non-alphanumeric characters
 	let normalized = id.replace(/[^a-zA-Z0-9]/g, "");
 	// Mistral requires exactly 9 characters
@@ -102,6 +101,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
 			const client = createClient(model, context, apiKey);
 			const params = buildParams(model, context, options);
+			options?.onPayload?.(params);
 			const openaiStream = await client.chat.completions.create(params, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
 
@@ -456,7 +456,17 @@ function convertMessages(
 ): ChatCompletionMessageParam[] {
 	const params: ChatCompletionMessageParam[] = [];
 
-	const transformedMessages = transformMessages(context.messages, model);
+	const normalizeToolCallId = (id: string): string => {
+		if (compat.requiresMistralToolIds) return normalizeMistralToolId(id);
+		if (model.provider === "openai") return id.length > 40 ? id.slice(0, 40) : id;
+		// Copilot Claude models route to Claude backend which requires Anthropic ID format
+		if (model.provider === "github-copilot" && model.id.toLowerCase().includes("claude")) {
+			return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+		}
+		return id;
+	};
+
+	const transformedMessages = transformMessages(context.messages, model, (id) => normalizeToolCallId(id));
 
 	if (context.systemPrompt) {
 		const useDeveloperRole = model.reasoning && compat.supportsDeveloperRole;
@@ -555,7 +565,7 @@ function convertMessages(
 			const toolCalls = msg.content.filter((b) => b.type === "toolCall") as ToolCall[];
 			if (toolCalls.length > 0) {
 				assistantMsg.tool_calls = toolCalls.map((tc) => ({
-					id: normalizeMistralToolId(tc.id, compat.requiresMistralToolIds),
+					id: tc.id,
 					type: "function" as const,
 					function: {
 						name: tc.name,
@@ -603,7 +613,7 @@ function convertMessages(
 			const toolResultMsg: ChatCompletionToolMessageParam = {
 				role: "tool",
 				content: sanitizeSurrogates(hasText ? textResult : "(see attached image)"),
-				tool_call_id: normalizeMistralToolId(msg.toolCallId, compat.requiresMistralToolIds),
+				tool_call_id: msg.toolCallId,
 			};
 			if (compat.requiresToolResultName && msg.toolName) {
 				(toolResultMsg as any).name = msg.toolName;

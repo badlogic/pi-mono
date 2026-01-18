@@ -156,6 +156,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 			const apiKey = options?.apiKey ?? getEnvApiKey(model.provider) ?? "";
 			const { client, isOAuthToken } = createClient(model, apiKey, options?.interleavedThinking ?? true);
 			const params = buildParams(model, context, isOAuthToken, options);
+			options?.onPayload?.(params);
 			const anthropicStream = client.messages.stream({ ...params, stream: true }, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
 
@@ -445,10 +446,9 @@ function buildParams(
 	return params;
 }
 
-// Sanitize tool call IDs to match Anthropic's required pattern: ^[a-zA-Z0-9_-]+$
-function sanitizeToolCallId(id: string): string {
-	// Replace any character that isn't alphanumeric, underscore, or hyphen with underscore
-	return id.replace(/[^a-zA-Z0-9_-]/g, "_");
+// Normalize tool call IDs to match Anthropic's required pattern and length
+function normalizeToolCallId(id: string): string {
+	return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
 }
 
 function convertMessages(
@@ -459,7 +459,7 @@ function convertMessages(
 	const params: MessageParam[] = [];
 
 	// Transform messages for cross-provider compatibility
-	const transformedMessages = transformMessages(messages, model);
+	const transformedMessages = transformMessages(messages, model, normalizeToolCallId);
 
 	for (let i = 0; i < transformedMessages.length; i++) {
 		const msg = transformedMessages[i];
@@ -533,7 +533,7 @@ function convertMessages(
 				} else if (block.type === "toolCall") {
 					blocks.push({
 						type: "tool_use",
-						id: sanitizeToolCallId(block.id),
+						id: block.id,
 						name: isOAuthToken ? toClaudeCodeName(block.name) : block.name,
 						input: block.arguments,
 					});
@@ -551,7 +551,7 @@ function convertMessages(
 			// Add the current tool result
 			toolResults.push({
 				type: "tool_result",
-				tool_use_id: sanitizeToolCallId(msg.toolCallId),
+				tool_use_id: msg.toolCallId,
 				content: convertContentBlocks(msg.content),
 				is_error: msg.isError,
 			});
@@ -562,7 +562,7 @@ function convertMessages(
 				const nextMsg = transformedMessages[j] as ToolResultMessage; // We know it's a toolResult
 				toolResults.push({
 					type: "tool_result",
-					tool_use_id: sanitizeToolCallId(nextMsg.toolCallId),
+					tool_use_id: nextMsg.toolCallId,
 					content: convertContentBlocks(nextMsg.content),
 					is_error: nextMsg.isError,
 				});

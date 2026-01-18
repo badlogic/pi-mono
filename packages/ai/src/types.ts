@@ -86,6 +86,10 @@ export interface StreamOptions {
 	 * session-aware features. Ignored by providers that don't support it.
 	 */
 	sessionId?: string;
+	/**
+	 * Optional callback for inspecting provider payloads before sending.
+	 */
+	onPayload?: (payload: unknown) => void;
 }
 
 // Unified options with reasoning passed to streamSimple() and completeSimple()

@@ -4,7 +4,6 @@
  * Uses the Cloud Code Assist API endpoint to access Gemini and Claude models.
  */
 
-import { createHash } from "node:crypto";
 import type { Content, ThinkingConfig } from "@google/genai";
 import { calculateCost } from "../models.js";
 import type {
@@ -426,6 +425,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 			const endpoints = baseUrl ? [baseUrl] : isAntigravity ? ANTIGRAVITY_ENDPOINT_FALLBACKS : [DEFAULT_ENDPOINT];
 
 			const requestBody = buildRequest(model, context, projectId, options, isAntigravity);
+			options?.onPayload?.(requestBody);
 			const headers = isAntigravity ? ANTIGRAVITY_HEADERS : GEMINI_CLI_HEADERS;
 
 			const requestHeaders = {
@@ -829,33 +829,6 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 	return stream;
 };
 
-function deriveSessionId(context: Context): string | undefined {
-	for (const message of context.messages) {
-		if (message.role !== "user") {
-			continue;
-		}
-
-		let text = "";
-		if (typeof message.content === "string") {
-			text = message.content;
-		} else if (Array.isArray(message.content)) {
-			text = message.content
-				.filter((item): item is TextContent => item.type === "text")
-				.map((item) => item.text)
-				.join("\n");
-		}
-
-		if (!text || text.trim().length === 0) {
-			return undefined;
-		}
-
-		const hash = createHash("sha256").update(text).digest("hex");
-		return hash.slice(0, 32);
-	}
-
-	return undefined;
-}
-
 export function buildRequest(
 	model: Model<"google-gemini-cli">,
 	context: Context,
@@ -891,10 +864,7 @@ export function buildRequest(
 		contents,
 	};
 
-	const sessionId = deriveSessionId(context);
-	if (sessionId) {
-		request.sessionId = sessionId;
-	}
+	request.sessionId = options.sessionId;
 
 	// System instruction must be object with parts, not plain string
 	if (context.systemPrompt) {

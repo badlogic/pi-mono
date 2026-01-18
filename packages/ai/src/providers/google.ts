@@ -71,6 +71,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
 			const client = createClient(model, apiKey);
 			const params = buildParams(model, context, options);
+			options?.onPayload?.(params);
 			const googleStream = await client.models.generateContentStream(params);
 
 			stream.push({ type: "start", partial: output });

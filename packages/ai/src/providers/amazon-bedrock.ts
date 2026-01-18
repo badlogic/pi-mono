@@ -88,14 +88,16 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream"> = (
 				profile: options.profile,
 			});
 
-			const command = new ConverseStreamCommand({
+			const commandInput = {
 				modelId: model.id,
 				messages: convertMessages(context, model),
 				system: buildSystemPrompt(context.systemPrompt, model),
 				inferenceConfig: { maxTokens: options.maxTokens, temperature: options.temperature },
 				toolConfig: convertToolConfig(context.tools, options.toolChoice),
 				additionalModelRequestFields: buildAdditionalModelRequestFields(model, options),
-			});
+			};
+			options?.onPayload?.(commandInput);
+			const command = new ConverseStreamCommand(commandInput);
 
 			const response = await client.send(command, { abortSignal: options.signal });
 
@@ -317,14 +319,14 @@ function buildSystemPrompt(
 	return blocks;
 }
 
-function sanitizeToolCallId(id: string): string {
+function normalizeToolCallId(id: string): string {
 	const sanitized = id.replace(/[^a-zA-Z0-9_-]/g, "_");
 	return sanitized.length > 64 ? sanitized.slice(0, 64) : sanitized;
 }
 
 function convertMessages(context: Context, model: Model<"bedrock-converse-stream">): Message[] {
 	const result: Message[] = [];
-	const transformedMessages = transformMessages(context.messages, model);
+	const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId);
 
 	for (let i = 0; i < transformedMessages.length; i++) {
 		const m = transformedMessages[i];
@@ -364,7 +366,7 @@ function convertMessages(context: Context, model: Model<"bedrock-converse-stream
 							break;
 						case "toolCall":
 							contentBlocks.push({
-								toolUse: { toolUseId: sanitizeToolCallId(c.id), name: c.name, input: c.arguments },
+								toolUse: { toolUseId: c.id, name: c.name, input: c.arguments },
 							});
 							break;
 						case "thinking":
@@ -409,7 +411,7 @@ function convertMessages(context: Context, model: Model<"bedrock-converse-stream
 				// Add current tool result with all content blocks combined
 				toolResults.push({
 					toolResult: {
-						toolUseId: sanitizeToolCallId(m.toolCallId),
+						toolUseId: m.toolCallId,
 						content: m.content.map((c) =>
 							c.type === "image"
 								? { image: createImageBlock(c.mimeType, c.data) }
@@ -425,7 +427,7 @@ function convertMessages(context: Context, model: Model<"bedrock-converse-stream
 					const nextMsg = transformedMessages[j] as ToolResultMessage;
 					toolResults.push({
 						toolResult: {
-							toolUseId: sanitizeToolCallId(nextMsg.toolCallId),
+							toolUseId: nextMsg.toolCallId,
 							content: nextMsg.content.map((c) =>
 								c.type === "image"
 									? { image: createImageBlock(c.mimeType, c.data) }

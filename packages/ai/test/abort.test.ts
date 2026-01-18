@@ -20,6 +20,7 @@ async function testAbortSignal<TApi extends Api>(llm: Model<TApi>, options: Opti
 				timestamp: Date.now(),
 			},
 		],
+		systemPrompt: "You are a helpful assistant.",
 	};
 
 	let abortFired = false;

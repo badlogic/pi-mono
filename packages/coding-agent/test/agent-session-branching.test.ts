@@ -90,9 +90,9 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 		// After forking, conversation should be empty (forked before the first message)
 		expect(session.messages.length).toBe(0);
 
-		// Session file should exist (new fork)
+		// Session file path should be set, but file is created lazily after first assistant message
 		expect(session.sessionFile).not.toBeNull();
-		expect(existsSync(session.sessionFile!)).toBe(true);
+		expect(existsSync(session.sessionFile!)).toBe(false);
 	});
 
 	it("should support in-memory forking in --no-session mode", async () => {

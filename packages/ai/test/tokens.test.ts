@@ -24,6 +24,7 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: Op
 				timestamp: Date.now(),
 			},
 		],
+		systemPrompt: "You are a helpful assistant.",
 	};
 
 	const controller = new AbortController();

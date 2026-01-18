@@ -155,6 +155,7 @@ async function handleStreaming<TApi extends Api>(model: Model<TApi>, options?: O
 
 	const context: Context = {
 		messages: [{ role: "user", content: "Count from 1 to 3", timestamp: Date.now() }],
+		systemPrompt: "You are a helpful assistant.",
 	};
 
 	const s = stream(model, context, options);
@@ -190,6 +191,7 @@ async function handleThinking<TApi extends Api>(model: Model<TApi>, options?: Op
 				timestamp: Date.now(),
 			},
 		],
+		systemPrompt: "You are a helpful assistant.",
 	};
 
 	const s = stream(model, context, options);
@@ -245,6 +247,7 @@ async function handleImage<TApi extends Api>(model: Model<TApi>, options?: Optio
 				timestamp: Date.now(),
 			},
 		],
+		systemPrompt: "You are a helpful assistant.",
 	};
 
 	const response = await complete(model, context, options);

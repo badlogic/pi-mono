@@ -5,12 +5,12 @@ import type { Api, AssistantMessage, Message, Model, ToolCall, ToolResultMessage
  * OpenAI Responses API generates IDs that are 450+ chars with special characters like `|`.
  * Anthropic APIs require IDs matching ^[a-zA-Z0-9_-]+$ (max 64 chars).
  */
-function normalizeToolCallId(id: string): string {
-	return id.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
-}
-
-export function transformMessages<TApi extends Api>(messages: Message[], model: Model<TApi>): Message[] {
-	// Build a map of original tool call IDs to normalized IDs for github-copilot cross-API switches
+export function transformMessages<TApi extends Api>(
+	messages: Message[],
+	model: Model<TApi>,
+	normalizeToolCallId?: (id: string, model: Model<TApi>, source: AssistantMessage) => string,
+): Message[] {
+	// Build a map of original tool call IDs to normalized IDs
 	const toolCallIdMap = new Map<string, string>();
 
 	// First pass: transform messages (thinking blocks, tool call ID normalization)
@@ -32,48 +32,56 @@ export function transformMessages<TApi extends Api>(messages: Message[], model: 
 		// Assistant messages need transformation check
 		if (msg.role === "assistant") {
 			const assistantMsg = msg as AssistantMessage;
+			const isSameModel =
+				assistantMsg.provider === model.provider &&
+				assistantMsg.api === model.api &&
+				assistantMsg.model === model.id;
 
-			// If message is from the same provider and API, keep as is
-			if (assistantMsg.provider === model.provider && assistantMsg.api === model.api) {
-				return msg;
-			}
-
-			// Check if we need to normalize tool call IDs
-			// Anthropic APIs require IDs matching ^[a-zA-Z0-9_-]+$ (max 64 chars)
-			// OpenAI Responses API generates IDs with `|` and 450+ chars
-			// GitHub Copilot routes to Anthropic for Claude models
-			const targetRequiresStrictIds = model.api === "anthropic-messages" || model.provider === "github-copilot";
-			const crossProviderSwitch = assistantMsg.provider !== model.provider;
-			const copilotCrossApiSwitch =
-				assistantMsg.provider === "github-copilot" &&
-				model.provider === "github-copilot" &&
-				assistantMsg.api !== model.api;
-			const needsToolCallIdNormalization = targetRequiresStrictIds && (crossProviderSwitch || copilotCrossApiSwitch);
-
-			// Transform message from different provider/model
 			const transformedContent = assistantMsg.content.flatMap((block) => {
 				if (block.type === "thinking") {
+					// For same model: keep thinking blocks with signatures (needed for replay)
+					// even if the thinking text is empty (OpenAI encrypted reasoning)
+					if (isSameModel && block.thinkingSignature) return block;
 					// Skip empty thinking blocks, convert others to plain text
 					if (!block.thinking || block.thinking.trim() === "") return [];
+					if (isSameModel) return block;
 					return {
 						type: "text" as const,
 						text: block.thinking,
 					};
 				}
-				// Normalize tool call IDs when target API requires strict format
-				if (block.type === "toolCall" && needsToolCallIdNormalization) {
-					const toolCall = block as ToolCall;
-					const normalizedId = normalizeToolCallId(toolCall.id);
-					if (normalizedId !== toolCall.id) {
-						toolCallIdMap.set(toolCall.id, normalizedId);
-						return { ...toolCall, id: normalizedId };
-					}
+
+				if (block.type === "text") {
+					if (isSameModel) return block;
+					return {
+						type: "text" as const,
+						text: block.text,
+					};
 				}
-				// All other blocks pass through unchanged
+
+				if (block.type === "toolCall") {
+					const toolCall = block as ToolCall;
+					let normalizedToolCall: ToolCall = toolCall;
+
+					if (!isSameModel && toolCall.thoughtSignature) {
+						normalizedToolCall = { ...toolCall };
+						delete (normalizedToolCall as { thoughtSignature?: string }).thoughtSignature;
+					}
+
+					if (!isSameModel && normalizeToolCallId) {
+						const normalizedId = normalizeToolCallId(toolCall.id, model, assistantMsg);
+						if (normalizedId !== toolCall.id) {
+							toolCallIdMap.set(toolCall.id, normalizedId);
+							normalizedToolCall = { ...normalizedToolCall, id: normalizedId };
+						}
+					}
+
+					return normalizedToolCall;
+				}
+
 				return block;
 			});
 
-			// Return transformed assistant message
 			return {
 				...assistantMsg,
 				content: transformedContent,
