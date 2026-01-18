@@ -507,7 +507,7 @@ export async function main(args: string[]) {
 			const modelList = scopedModels
 				.map((sm) => {
 					const thinkingStr = sm.thinkingLevel ? `:${sm.thinkingLevel}` : "";
-					return `${sm.model.id}${thinkingStr}`;
+					return `${sm.model.name}${thinkingStr}`;
 				})
 				.join(", ");
 			console.log(chalk.dim(`Model scope: ${modelList} ${chalk.gray("(Ctrl+P to cycle)")}`));

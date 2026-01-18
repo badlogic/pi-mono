@@ -177,16 +177,14 @@ export class ModelSelectorComponent extends Container {
 			const isCurrent = modelsAreEqual(this.currentModel, item.model);
 
 			let line = "";
+			const providerBadge = theme.fg("muted", `[${item.provider}/${item.id}]`);
+			const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
 			if (isSelected) {
 				const prefix = theme.fg("accent", "→ ");
-				const modelText = `${item.id}`;
-				const providerBadge = theme.fg("muted", `[${item.provider}]`);
-				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
+				const modelText = item.model.name;
 				line = `${prefix + theme.fg("accent", modelText)} ${providerBadge}${checkmark}`;
 			} else {
-				const modelText = `  ${item.id}`;
-				const providerBadge = theme.fg("muted", `[${item.provider}]`);
-				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
+				const modelText = `  ${item.model.name}`;
 				line = `${modelText} ${providerBadge}${checkmark}`;
 			}
 

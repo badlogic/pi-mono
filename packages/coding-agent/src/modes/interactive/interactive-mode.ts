@@ -277,6 +277,7 @@ export class InteractiveMode {
 					// Create items with provider/id format
 					const items = models.map((m) => ({
 						id: m.id,
+						name: m.name,
 						provider: m.provider,
 						label: `${m.provider}/${m.id}`,
 					}));
@@ -288,7 +289,7 @@ export class InteractiveMode {
 
 					return filtered.map((item) => ({
 						value: item.label,
-						label: item.id,
+						label: item.name,
 						description: item.provider,
 					}));
 				},
@@ -2244,7 +2245,7 @@ export class InteractiveMode {
 				this.updateEditorBorderColor();
 				const thinkingStr =
 					result.model.reasoning && result.thinkingLevel !== "off" ? ` (thinking: ${result.thinkingLevel})` : "";
-				this.showStatus(`Switched to ${result.model.name || result.model.id}${thinkingStr}`);
+				this.showStatus(`Switched to ${result.model.name}${thinkingStr}`);
 			}
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
@@ -2652,7 +2653,7 @@ export class InteractiveMode {
 				await this.session.setModel(model);
 				this.footer.invalidate();
 				this.updateEditorBorderColor();
-				this.showStatus(`Model: ${model.id}`);
+				this.showStatus(`Model: ${model.name}`);
 			} catch (error) {
 				this.showError(error instanceof Error ? error.message : String(error));
 			}
@@ -2716,7 +2717,7 @@ export class InteractiveMode {
 						this.footer.invalidate();
 						this.updateEditorBorderColor();
 						done();
-						this.showStatus(`Model: ${model.id}`);
+						this.showStatus(`Model: ${model.name}`);
 					} catch (error) {
 						done();
 						this.showError(error instanceof Error ? error.message : String(error));

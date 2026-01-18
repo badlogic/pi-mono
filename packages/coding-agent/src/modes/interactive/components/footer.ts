@@ -151,7 +151,7 @@ export class FooterComponent implements Component {
 		let statsLeft = statsParts.join(" ");
 
 		// Add model name on the right side, plus thinking level if model supports it
-		const modelName = state.model?.id || "no-model";
+		const modelName = state.model?.name || "no-model";
 
 		// Add thinking level hint if model supports reasoning and thinking is enabled
 		let rightSide = modelName;
