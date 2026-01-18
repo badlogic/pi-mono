@@ -1,4 +1,3 @@
-import assert from "node:assert";
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
 import { getEditorKeybindings } from "../keybindings.js";
 import { matchesKey } from "../keys.js";
@@ -1621,8 +1620,7 @@ export class Editor implements Component, Focusable {
 		this.deleteYankedText();
 
 		// Rotate the ring: move end to front
-		const lastEntry = this.killRing.pop();
-		assert(lastEntry !== undefined); // Since killRing was not empty
+		const lastEntry = this.killRing.pop()!;
 		this.killRing.unshift(lastEntry);
 
 		// Insert the new most recent entry (now at end after rotation)
