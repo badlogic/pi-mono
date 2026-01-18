@@ -29,7 +29,7 @@ jobs:
             const commentBody = context.payload.comment.body || '';
             const approvedFile = '.github/APPROVED_CONTRIBUTORS';
 
-            if (!/^\s*lgtm\s*$/i.test(commentBody)) {
+            if (!/^\s*lgtm\b/i.test(commentBody)) {
               console.log('Comment does not match lgtm');
               core.setOutput('status', 'skipped');
               return;
