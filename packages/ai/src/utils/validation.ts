@@ -43,6 +43,24 @@ export function validateToolCall(tools: Tool[], toolCall: ToolCall): any {
 	return validateToolArguments(tool, toolCall);
 }
 
+/** Normalize Claude Code param names to pi-coding-agent conventions */
+function normalizeClaudeCodeParams(args: Record<string, any>): Record<string, any> {
+	const normalized = { ...args };
+	if ("file_path" in normalized && !("path" in normalized)) {
+		normalized.path = normalized.file_path;
+		delete normalized.file_path;
+	}
+	if ("old_string" in normalized && !("oldText" in normalized)) {
+		normalized.oldText = normalized.old_string;
+		delete normalized.old_string;
+	}
+	if ("new_string" in normalized && !("newText" in normalized)) {
+		normalized.newText = normalized.new_string;
+		delete normalized.new_string;
+	}
+	return normalized;
+}
+
 /**
  * Validates tool call arguments against the tool's TypeBox schema
  * @param tool The tool definition with TypeBox schema
@@ -55,14 +73,14 @@ export function validateToolArguments(tool: Tool, toolCall: ToolCall): any {
 	if (!ajv || isBrowserExtension) {
 		// Trust the LLM's output without validation
 		// Browser extensions can't use AJV due to Manifest V3 CSP restrictions
-		return toolCall.arguments;
+		return normalizeClaudeCodeParams(toolCall.arguments);
 	}
 
 	// Compile the schema
 	const validate = ajv.compile(tool.parameters);
 
-	// Clone arguments so AJV can safely mutate for type coercion
-	const args = structuredClone(toolCall.arguments);
+	// Clone and normalize arguments
+	const args = normalizeClaudeCodeParams(structuredClone(toolCall.arguments));
 
 	// Validate the arguments (AJV mutates args in-place for type coercion)
 	if (validate(args)) {
