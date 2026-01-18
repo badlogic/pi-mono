@@ -1100,6 +1100,9 @@ Create or update test files to cover the new provider:
 - `tool-call-without-result.test.ts` - Orphaned tool calls
 - `image-tool-result.test.ts` - Images in tool results
 - `total-tokens.test.ts` - Token counting accuracy
+- `cross-provider-handoff.test.ts` - Cross-provider context replay
+
+For `cross-provider-handoff.test.ts`, add at least one provider/model pair. If the provider exposes multiple model families (for example GPT and Claude), add at least one pair per family.
 
 For providers with non-standard auth (AWS, Google Vertex), create a utility like `bedrock-utils.ts` with credential detection helpers.
 
