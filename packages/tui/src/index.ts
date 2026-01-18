@@ -18,6 +18,7 @@ export { type DefaultTextStyle, Markdown, type MarkdownTheme } from "./component
 export { type SelectItem, SelectList, type SelectListTheme } from "./components/select-list.js";
 export { type SettingItem, SettingsList, type SettingsListTheme } from "./components/settings-list.js";
 export { Spacer } from "./components/spacer.js";
+export { type Tab, TabBar, type TabBarTheme } from "./components/tab-bar.js";
 export { Text } from "./components/text.js";
 export { TruncatedText } from "./components/truncated-text.js";
 // Editor component interface (for custom editors)

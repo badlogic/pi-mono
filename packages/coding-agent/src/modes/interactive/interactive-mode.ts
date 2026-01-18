@@ -2555,6 +2555,7 @@ export class InteractiveMode {
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
 					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
+					enableModelProviderTabs: this.settingsManager.getEnableModelProviderTabs(),
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -2629,6 +2630,9 @@ export class InteractiveMode {
 					onEditorPaddingXChange: (padding) => {
 						this.settingsManager.setEditorPaddingX(padding);
 						this.defaultEditor.setPaddingX(padding);
+					},
+					onEnableModelProviderTabsChange: (enabled) => {
+						this.settingsManager.setEnableModelProviderTabs(enabled);
 					},
 					onCancel: () => {
 						done();
@@ -2796,6 +2800,7 @@ export class InteractiveMode {
 					allModels,
 					enabledModelIds: currentEnabledIds,
 					hasEnabledModelsFilter: currentHasFilter,
+					enableProviderTabs: this.settingsManager.getEnableModelProviderTabs(),
 				},
 				{
 					onModelToggle: async (modelId, enabled) => {

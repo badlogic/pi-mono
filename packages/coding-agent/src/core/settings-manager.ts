@@ -2,6 +2,38 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 
+export const RECENT_MODELS_LIMIT = 10;
+
+export interface RecentModelKey {
+	provider: string;
+	modelId: string;
+}
+
+function safeDecodeRecentModelPart(value: string): string | undefined {
+	try {
+		return decodeURIComponent(value);
+	} catch {
+		return undefined;
+	}
+}
+
+export function encodeRecentModelKey(provider: string, modelId: string): string {
+	return `${encodeURIComponent(provider)}/${encodeURIComponent(modelId)}`;
+}
+
+export function decodeRecentModelKey(value: string): RecentModelKey | undefined {
+	const separatorIndex = value.indexOf("/");
+	if (separatorIndex <= 0 || separatorIndex >= value.length - 1) {
+		return undefined;
+	}
+	const provider = safeDecodeRecentModelPart(value.slice(0, separatorIndex));
+	const modelId = safeDecodeRecentModelPart(value.slice(separatorIndex + 1));
+	if (!provider || !modelId) {
+		return undefined;
+	}
+	return { provider, modelId };
+}
+
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
 	reserveTokens?: number; // default: 16384
@@ -72,6 +104,8 @@ export interface Settings {
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
 	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
+	recentModels?: string[]; // Array of recently used models (URL-encoded provider/modelId)
+	enableModelProviderTabs?: boolean; // Enable provider tabs in model selector (default: false)
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -239,6 +273,48 @@ export class SettingsManager {
 	setDefaultModelAndProvider(provider: string, modelId: string): void {
 		this.globalSettings.defaultProvider = provider;
 		this.globalSettings.defaultModel = modelId;
+		this.addRecentModel(provider, modelId);
+		this.save();
+	}
+
+	/** Add model to recent models list (keeps last RECENT_MODELS_LIMIT unique models) */
+	private addRecentModel(provider: string, modelId: string): void {
+		const modelIdStr = encodeRecentModelKey(provider, modelId);
+
+		// Initialize recent models if not exists
+		if (!this.globalSettings.recentModels) {
+			this.globalSettings.recentModels = [];
+		}
+
+		// Remove existing entry for the same model (legacy or v2 encoding)
+		const recentModels = this.globalSettings.recentModels.filter((entry) => {
+			const parsed = decodeRecentModelKey(entry);
+			if (!parsed) {
+				return true;
+			}
+			return parsed.provider !== provider || parsed.modelId !== modelId;
+		});
+
+		// Add to front
+		recentModels.unshift(modelIdStr);
+
+		// Keep only last RECENT_MODELS_LIMIT
+		this.globalSettings.recentModels = recentModels.slice(0, RECENT_MODELS_LIMIT);
+	}
+
+	/** Get list of recently used models */
+	getRecentModels(): string[] {
+		return this.settings.recentModels ?? [];
+	}
+
+	/** Check if provider tabs are enabled in model selector */
+	getEnableModelProviderTabs(): boolean {
+		return this.settings.enableModelProviderTabs ?? false;
+	}
+
+	/** Enable or disable provider tabs in model selector */
+	setEnableModelProviderTabs(enabled: boolean): void {
+		this.globalSettings.enableModelProviderTabs = enabled;
 		this.save();
 	}
 

@@ -7,10 +7,13 @@ import {
 	Key,
 	matchesKey,
 	Spacer,
+	TabBar,
 	Text,
 } from "@mariozechner/pi-tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+
+const ALL_TAB = "ALL";
 
 // EnabledIds: null = all enabled (no filter), string[] = explicit ordered list
 type EnabledIds = string[] | null;
@@ -72,6 +75,7 @@ export interface ModelsConfig {
 	enabledModelIds: Set<string>;
 	/** true if enabledModels setting is defined (empty = all enabled) */
 	hasEnabledModelsFilter: boolean;
+	enableProviderTabs?: boolean;
 }
 
 export interface ModelsCallbacks {
@@ -99,15 +103,19 @@ export class ScopedModelsSelectorComponent extends Container {
 	private filteredItems: ModelItem[] = [];
 	private selectedIndex = 0;
 	private searchInput: Input;
+	private headerContainer: Container;
 	private listContainer: Container;
 	private footerText: Text;
 	private callbacks: ModelsCallbacks;
 	private maxVisible = 15;
 	private isDirty = false;
+	private enableProviderTabs: boolean;
+	private tabBar?: TabBar;
 
 	constructor(config: ModelsConfig, callbacks: ModelsCallbacks) {
 		super();
 		this.callbacks = callbacks;
+		this.enableProviderTabs = config.enableProviderTabs ?? false;
 
 		for (const model of config.allModels) {
 			const fullId = `${model.provider}/${model.id}`;
@@ -124,6 +132,13 @@ export class ScopedModelsSelectorComponent extends Container {
 		this.addChild(new Text(theme.fg("accent", theme.bold("Model Configuration")), 0, 0));
 		this.addChild(new Text(theme.fg("muted", "Session-only. Ctrl+S to save to settings."), 0, 0));
 		this.addChild(new Spacer(1));
+
+		this.headerContainer = new Container();
+		if (this.enableProviderTabs) {
+			this.buildTabBar();
+			this.addChild(this.headerContainer);
+			this.addChild(new Spacer(1));
+		}
 
 		// Search input
 		this.searchInput = new Input();
@@ -143,6 +158,46 @@ export class ScopedModelsSelectorComponent extends Container {
 		this.updateList();
 	}
 
+	private buildTabBar(): void {
+		if (!this.enableProviderTabs) {
+			this.headerContainer.clear();
+			return;
+		}
+
+		const providerSet = new Set<string>();
+		for (const model of this.modelsById.values()) {
+			providerSet.add(model.provider.toUpperCase());
+		}
+		const sortedProviders = Array.from(providerSet).sort();
+
+		const tabs = [{ id: ALL_TAB, label: ALL_TAB }];
+		for (const provider of sortedProviders) {
+			tabs.push({ id: provider, label: provider });
+		}
+
+		this.tabBar = new TabBar("Provider", tabs, {
+			label: (text) => theme.fg("muted", text),
+			activeTab: (text) => theme.fg("accent", text),
+			inactiveTab: (text) => theme.fg("muted", text),
+			hint: (text) => theme.fg("dim", text),
+		});
+
+		this.tabBar.onTabChange = (_tab) => {
+			this.selectedIndex = 0;
+			this.refresh();
+		};
+
+		this.headerContainer.clear();
+		this.headerContainer.addChild(new Text(this.tabBar.render(0)[0], 0, 0));
+	}
+
+	private getActiveProvider(): string {
+		if (!this.tabBar) {
+			return ALL_TAB;
+		}
+		return this.tabBar.getActiveTab().id;
+	}
+
 	private buildItems(): ModelItem[] {
 		return getSortedIds(this.enabledIds, this.allIds).map((id) => ({
 			fullId: id,
@@ -152,10 +207,7 @@ export class ScopedModelsSelectorComponent extends Container {
 	}
 
 	private getFooterText(): string {
-		const enabledCount = this.enabledIds?.length ?? this.allIds.length;
-		const allEnabled = this.enabledIds === null;
-		const countText = allEnabled ? "all enabled" : `${enabledCount}/${this.allIds.length} enabled`;
-		const parts = ["Enter toggle", "^A all", "^X clear", "^P provider", "Alt+↑↓ reorder", "^S save", countText];
+		const parts = ["Enter toggle", "^A all", "^X clear", "^P provider", "Alt+↑↓ reorder", "^S save"];
 		return this.isDirty
 			? theme.fg("dim", `  ${parts.join(" · ")} `) + theme.fg("warning", "(unsaved)")
 			: theme.fg("dim", `  ${parts.join(" · ")}`);
@@ -163,8 +215,27 @@ export class ScopedModelsSelectorComponent extends Container {
 
 	private refresh(): void {
 		const query = this.searchInput.getValue();
-		const items = this.buildItems();
-		this.filteredItems = query ? fuzzyFilter(items, query, (i) => `${i.model.id} ${i.model.provider}`) : items;
+		const activeProvider = this.getActiveProvider();
+		let items = this.buildItems();
+
+		if (activeProvider !== ALL_TAB) {
+			items = items.filter((item) => item.model.provider.toUpperCase() === activeProvider);
+		}
+
+		if (query.trim()) {
+			if (activeProvider !== ALL_TAB && this.tabBar) {
+				const originalCallback = this.tabBar.onTabChange;
+				this.tabBar.onTabChange = undefined;
+				this.tabBar.setActiveIndex(0);
+				this.headerContainer.clear();
+				this.headerContainer.addChild(new Text(this.tabBar.render(0)[0], 0, 0));
+				this.tabBar.onTabChange = originalCallback;
+				items = this.buildItems();
+			}
+			this.filteredItems = fuzzyFilter(items, query, (i) => `${i.model.id} ${i.model.provider}`);
+		} else {
+			this.filteredItems = items;
+		}
 		this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredItems.length - 1));
 		this.updateList();
 		this.footerText.setText(this.getFooterText());
@@ -205,6 +276,23 @@ export class ScopedModelsSelectorComponent extends Container {
 
 	handleInput(data: string): void {
 		const kb = getEditorKeybindings();
+		const hasSearchText = this.searchInput.getValue().trim().length > 0;
+
+		// Tab bar navigation (only when enabled and not searching)
+		if (this.enableProviderTabs && !hasSearchText && this.tabBar) {
+			if (
+				matchesKey(data, Key.tab) ||
+				matchesKey(data, Key.right) ||
+				matchesKey(data, Key.left) ||
+				matchesKey(data, Key.shift("tab"))
+			) {
+				if (this.tabBar.handleInput(data)) {
+					this.headerContainer.clear();
+					this.headerContainer.addChild(new Text(this.tabBar.render(0)[0], 0, 0));
+					return;
+				}
+			}
+		}
 
 		// Navigation
 		if (kb.matches(data, "selectUp")) {

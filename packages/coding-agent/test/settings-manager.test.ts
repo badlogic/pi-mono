@@ -1,7 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SettingsManager } from "../src/core/settings-manager.js";
+import {
+	decodeRecentModelKey,
+	encodeRecentModelKey,
+	RECENT_MODELS_LIMIT,
+	SettingsManager,
+} from "../src/core/settings-manager.js";
 
 describe("SettingsManager", () => {
 	const testDir = join(process.cwd(), "test-settings-tmp");
@@ -135,6 +140,50 @@ describe("SettingsManager", () => {
 			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
 			expect(savedSettings.shellCommandPrefix).toBe("shopt -s expand_aliases");
 			expect(savedSettings.theme).toBe("light");
+		});
+	});
+
+	describe("recentModels", () => {
+		it("should encode and decode recent model keys with slashes", () => {
+			const encoded = encodeRecentModelKey("provider/with/slash", "model/with/slash");
+			expect(decodeRecentModelKey(encoded)).toEqual({
+				provider: "provider/with/slash",
+				modelId: "model/with/slash",
+			});
+		});
+
+		it("should store encoded recent models and enforce the limit", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({}));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			for (let i = 0; i < RECENT_MODELS_LIMIT + 2; i++) {
+				manager.setDefaultModelAndProvider(`provider/${i}`, `model/${i}`);
+			}
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.recentModels).toHaveLength(RECENT_MODELS_LIMIT);
+			expect(decodeRecentModelKey(savedSettings.recentModels[0])).toEqual({
+				provider: `provider/${RECENT_MODELS_LIMIT + 1}`,
+				modelId: `model/${RECENT_MODELS_LIMIT + 1}`,
+			});
+		});
+
+		it("should de-duplicate recent models when re-selected", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({}));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setDefaultModelAndProvider("openai", "gpt-4o-mini");
+			manager.setDefaultModelAndProvider("anthropic", "claude-opus-4-5");
+			manager.setDefaultModelAndProvider("openai", "gpt-4o-mini");
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.recentModels).toHaveLength(2);
+			expect(decodeRecentModelKey(savedSettings.recentModels[0])).toEqual({
+				provider: "openai",
+				modelId: "gpt-4o-mini",
+			});
 		});
 	});
 });

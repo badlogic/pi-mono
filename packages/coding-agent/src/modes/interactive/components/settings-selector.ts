@@ -38,6 +38,7 @@ export interface SettingsConfig {
 	doubleEscapeAction: "fork" | "tree";
 	showHardwareCursor: boolean;
 	editorPaddingX: number;
+	enableModelProviderTabs: boolean;
 }
 
 export interface SettingsCallbacks {
@@ -56,6 +57,7 @@ export interface SettingsCallbacks {
 	onDoubleEscapeActionChange: (action: "fork" | "tree") => void;
 	onShowHardwareCursorChange: (enabled: boolean) => void;
 	onEditorPaddingXChange: (padding: number) => void;
+	onEnableModelProviderTabsChange: (enabled: boolean) => void;
 	onCancel: () => void;
 }
 
@@ -291,6 +293,16 @@ export class SettingsSelectorComponent extends Container {
 			values: ["0", "1", "2", "3"],
 		});
 
+		// Model provider tabs toggle (insert after editor-padding)
+		const editorPaddingIndex = items.findIndex((item) => item.id === "editor-padding");
+		items.splice(editorPaddingIndex + 1, 0, {
+			id: "model-provider-tabs",
+			label: "Model provider tabs",
+			description: "Enable provider tabs and recent models in model selector",
+			currentValue: config.enableModelProviderTabs ? "true" : "false",
+			values: ["true", "false"],
+		});
+
 		// Add borders
 		this.addChild(new DynamicBorder());
 
@@ -335,6 +347,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "editor-padding":
 						callbacks.onEditorPaddingXChange(parseInt(newValue, 10));
+						break;
+					case "model-provider-tabs":
+						callbacks.onEnableModelProviderTabsChange(newValue === "true");
 						break;
 				}
 			},

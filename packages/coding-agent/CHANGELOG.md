@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added provider tabs to the model selector with ALL, RECENT, and per-provider filtering. Use Tab/←/→ keys to switch tabs when searching is empty. The RECENT tab shows the last 10 used models sorted by recency.
+- Added `enableModelProviderTabs` setting to toggle provider tabs in the model selector (default: false).
+- Added recent model tracking with URL encoding for provider/model IDs. Models are automatically added to the recent list when selected and limited to 10 unique entries.
+
 ## [0.49.0] - 2026-01-17
 
 ### Added

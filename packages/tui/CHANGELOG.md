@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `TabBar` component for horizontal tab navigation with `Tab` interface and `TabBarTheme` for styling. Supports Tab/←/→ key navigation, wraps around, and provides `onTabChange` callback. Exported as public API.
+
 ## [0.49.0] - 2026-01-17
 
 ### Added
