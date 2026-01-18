@@ -62,16 +62,18 @@ jobs:
             // Not approved - close PR with comment
             console.log(`${prAuthor} is not approved, closing PR`);
 
-            const message = `Hi @${prAuthor}, thanks for your interest in contributing!
-
-We ask new contributors to open an issue first before submitting a PR. This helps us discuss the approach and avoid wasted effort.
-
-**Next steps:**
-1. Open an issue describing what you want to change and why (keep it concise, write in your human voice, AI slop will be closed)
-2. Once a maintainer approves with \`lgtm\`, you'll be added to the approved contributors list
-3. Then you can submit your PR
-
-This PR will be closed automatically. See https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${defaultBranch}/CONTRIBUTING.md for more details.`;
+            const message = [
+              `Hi @${prAuthor}, thanks for your interest in contributing!`,
+              '',
+              'We ask new contributors to open an issue first before submitting a PR. This helps us discuss the approach and avoid wasted effort.',
+              '',
+              '**Next steps:**',
+              '1. Open an issue describing what you want to change and why (keep it concise, write in your human voice, AI slop will be closed)',
+              '2. Once a maintainer approves with `lgtm`, you\'ll be added to the approved contributors list',
+              '3. Then you can submit your PR',
+              '',
+              `This PR will be closed automatically. See https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${defaultBranch}/CONTRIBUTING.md for more details.`
+            ].join('\n');
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,

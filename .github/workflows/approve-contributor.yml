@@ -6,7 +6,7 @@ on:
 
 jobs:
   approve:
-    if: !github.event.issue.pull_request
+    if: ${{ !github.event.issue.pull_request }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
