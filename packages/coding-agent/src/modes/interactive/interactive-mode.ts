@@ -3035,6 +3035,7 @@ export class InteractiveMode {
 					void this.shutdown();
 				},
 				() => this.ui.requestRender(),
+				this.sessionManager.getSessionFile(),
 			);
 			return { component: selector, focus: selector.getSessionList() };
 		});
