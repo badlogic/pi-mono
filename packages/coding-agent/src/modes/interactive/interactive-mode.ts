@@ -282,15 +282,15 @@ export class InteractiveMode {
 						label: `${m.provider}/${m.id}`,
 					}));
 
-					// Fuzzy filter by model ID + provider (allows "opus anthropic" to match)
-					const filtered = fuzzyFilter(items, prefix, (item) => `${item.id} ${item.provider}`);
+					// Fuzzy filter by model ID, provider, and name
+					const filtered = fuzzyFilter(items, prefix, (item) => `${item.id} ${item.provider} ${item.name}`);
 
 					if (filtered.length === 0) return null;
 
 					return filtered.map((item) => ({
 						value: item.label,
-						label: item.name,
-						description: item.provider,
+						label: item.id,
+						description: `${item.provider}  ${item.name}`,
 					}));
 				},
 			},
