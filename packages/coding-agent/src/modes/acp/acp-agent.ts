@@ -9,6 +9,7 @@ import * as crypto from "node:crypto";
 import type * as acp from "@agentclientprotocol/sdk";
 import { VERSION } from "../../config.js";
 import type { AgentSession } from "../../core/agent-session.js";
+import { acpDebug } from "./acp-mode.js";
 import { AcpSession } from "./acp-session.js";
 
 /** ACP protocol version supported by this implementation */
@@ -37,7 +38,8 @@ export class PiAgent implements acp.Agent {
 	 * support for images and embedded context.
 	 */
 	async initialize(params: acp.InitializeRequest): Promise<acp.InitializeResponse> {
-		return {
+		acpDebug(`initialize: client protocol version ${params.protocolVersion}`);
+		const response = {
 			protocolVersion: Math.min(params.protocolVersion, PROTOCOL_VERSION),
 			agentInfo: {
 				name: "pi",
@@ -52,6 +54,8 @@ export class PiAgent implements acp.Agent {
 			// No auth required for pi
 			authMethods: [],
 		};
+		acpDebug(`initialize: responding with protocol version ${response.protocolVersion}`);
+		return response;
 	}
 
 	/**
@@ -63,13 +67,15 @@ export class PiAgent implements acp.Agent {
 	 * Note: pi ignores the cwd and mcpServers parameters as it manages
 	 * its own working directory and tool system.
 	 */
-	async newSession(_params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
+	async newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
+		acpDebug(`newSession: cwd=${params.cwd}`);
 		const sessionId = crypto.randomUUID();
 
 		// Create AcpSession wrapper
 		const acpSession = new AcpSession(sessionId, this._agentSession, this._connection);
 		this._sessions.set(sessionId, acpSession);
 
+		acpDebug(`newSession: created session ${sessionId}`);
 		return {
 			sessionId,
 		};
@@ -82,12 +88,16 @@ export class PiAgent implements acp.Agent {
 	 * Returns the stop reason when processing completes.
 	 */
 	async prompt(params: acp.PromptRequest): Promise<acp.PromptResponse> {
+		acpDebug(`prompt: session=${params.sessionId}, blocks=${params.prompt.length}`);
 		const session = this._sessions.get(params.sessionId);
 		if (!session) {
+			acpDebug(`prompt: session not found ${params.sessionId}`);
 			throw new Error(`Session not found: ${params.sessionId}`);
 		}
 
-		return session.prompt(params);
+		const response = await session.prompt(params);
+		acpDebug(`prompt: completed with stopReason=${response.stopReason}`);
+		return response;
 	}
 
 	/**
@@ -96,13 +106,16 @@ export class PiAgent implements acp.Agent {
 	 * Delegates to the AcpSession for the given session ID.
 	 */
 	async cancel(params: acp.CancelNotification): Promise<void> {
+		acpDebug(`cancel: session=${params.sessionId}`);
 		const session = this._sessions.get(params.sessionId);
 		if (!session) {
+			acpDebug(`cancel: session not found ${params.sessionId}`);
 			// Session not found - nothing to cancel
 			return;
 		}
 
 		session.cancel();
+		acpDebug(`cancel: cancelled session ${params.sessionId}`);
 	}
 
 	/**

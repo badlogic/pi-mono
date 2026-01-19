@@ -9,6 +9,7 @@ import * as crypto from "node:crypto";
 import type * as acp from "@agentclientprotocol/sdk";
 import type { ImageContent } from "@mariozechner/pi-ai";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
+import { acpDebug } from "./acp-mode.js";
 
 /**
  * AcpSession wraps an AgentSession and translates events to ACP notifications.
@@ -156,6 +157,7 @@ export class AcpSession {
 				const acpToolCallId = crypto.randomUUID();
 				this._toolCallIds.set(event.toolCallId, acpToolCallId);
 
+				acpDebug(`tool_execution_start: ${event.toolName} (${acpToolCallId})`);
 				this._sendUpdate({
 					sessionUpdate: "tool_call",
 					toolCallId: acpToolCallId,
@@ -184,6 +186,7 @@ export class AcpSession {
 				const acpToolCallId = this._toolCallIds.get(event.toolCallId);
 				if (!acpToolCallId) break;
 
+				acpDebug(`tool_execution_end: ${event.toolName} (${acpToolCallId}) isError=${event.isError}`);
 				// Use the isError field from the event
 				this._sendUpdate({
 					sessionUpdate: "tool_call_update",
