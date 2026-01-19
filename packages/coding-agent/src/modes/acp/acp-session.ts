@@ -191,7 +191,7 @@ export class AcpSession {
 				sessionUpdate: "agent_message_chunk",
 				content: {
 					type: "text",
-					text: `Compaction complete. Compacted ${result.tokensBefore} tokens.`,
+					text: `Compaction complete. Context had ${result.tokensBefore} tokens before compaction.`,
 				},
 			});
 		} catch (error) {
@@ -329,13 +329,23 @@ export class AcpSession {
 			return {
 				stopReason: cancelled ? "cancelled" : "end_turn",
 			};
-		} catch {
+		} catch (error) {
 			// If aborted, return cancelled
 			if (this._pendingPrompt?.signal.aborted) {
 				return { stopReason: "cancelled" };
 			}
 
-			// Other errors - return end_turn (error details already sent via events)
+			// Send error message to client
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			acpDebug(`prompt error: ${errorMessage}`);
+			this._sendUpdate({
+				sessionUpdate: "agent_message_chunk",
+				content: {
+					type: "text",
+					text: `Error: ${errorMessage}`,
+				},
+			});
+
 			return { stopReason: "end_turn" };
 		} finally {
 			unsubscribe();
