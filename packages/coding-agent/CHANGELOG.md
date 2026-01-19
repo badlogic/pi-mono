@@ -2,11 +2,6 @@
 
 ## [Unreleased]
 
-### Added
-
-- Added ACP (Agent Client Protocol) mode (`--mode acp`) for integration with ACP-compatible editors like Zed and JetBrains IDEs
-- Added slash commands support to ACP mode, advertising available commands to clients on session creation. Built-in commands include `/compact`, `/new`, and `/thinking`. Prompt templates, skill commands, and extension-registered commands are also exposed when available.
-
 ## [0.49.1] - 2026-01-18
 
 ### Added
