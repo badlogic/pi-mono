@@ -2555,6 +2555,7 @@ export class InteractiveMode {
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
 					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
+					quietStartup: this.settingsManager.getQuietStartup(),
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -2618,6 +2619,9 @@ export class InteractiveMode {
 					},
 					onCollapseChangelogChange: (collapsed) => {
 						this.settingsManager.setCollapseChangelog(collapsed);
+					},
+					onQuietStartupChange: (enabled) => {
+						this.settingsManager.setQuietStartup(enabled);
 					},
 					onDoubleEscapeActionChange: (action) => {
 						this.settingsManager.setDoubleEscapeAction(action);

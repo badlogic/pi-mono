@@ -38,6 +38,7 @@ export interface SettingsConfig {
 	doubleEscapeAction: "fork" | "tree";
 	showHardwareCursor: boolean;
 	editorPaddingX: number;
+	quietStartup: boolean;
 }
 
 export interface SettingsCallbacks {
@@ -56,6 +57,7 @@ export interface SettingsCallbacks {
 	onDoubleEscapeActionChange: (action: "fork" | "tree") => void;
 	onShowHardwareCursorChange: (enabled: boolean) => void;
 	onEditorPaddingXChange: (padding: number) => void;
+	onQuietStartupChange: (enabled: boolean) => void;
 	onCancel: () => void;
 }
 
@@ -168,6 +170,13 @@ export class SettingsSelectorComponent extends Container {
 				label: "Collapse changelog",
 				description: "Show condensed changelog after updates",
 				currentValue: config.collapseChangelog ? "true" : "false",
+				values: ["true", "false"],
+			},
+			{
+				id: "quiet-startup",
+				label: "Quiet startup",
+				description: "Disable verbose printing at startup",
+				currentValue: config.quietStartup ? "true" : "false",
 				values: ["true", "false"],
 			},
 			{
@@ -326,6 +335,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "collapse-changelog":
 						callbacks.onCollapseChangelogChange(newValue === "true");
+						break;
+					case "quiet-startup":
+						callbacks.onQuietStartupChange(newValue === "true");
 						break;
 					case "double-escape-action":
 						callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree");
