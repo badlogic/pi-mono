@@ -542,6 +542,14 @@ export class ToolExecutionComponent extends Container {
 						` ${keyHint("expandTools", "to expand")})`;
 				}
 			}
+
+			// Show error if tool execution failed
+			if (this.result?.isError) {
+				const errorText = this.getTextOutput();
+				if (errorText) {
+					text += `\n\n${theme.fg("error", errorText)}`;
+				}
+			}
 		} else if (this.toolName === "edit") {
 			const rawPath = this.args?.file_path || this.args?.path || "";
 			const path = shortenPath(rawPath);
