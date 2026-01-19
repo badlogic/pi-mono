@@ -75,6 +75,9 @@ export class PiAgent implements acp.Agent {
 		const acpSession = new AcpSession(sessionId, this._agentSession, this._connection);
 		this._sessions.set(sessionId, acpSession);
 
+		// Send available commands after session creation
+		acpSession.sendAvailableCommands();
+
 		acpDebug(`newSession: created session ${sessionId}`);
 		return {
 			sessionId,
