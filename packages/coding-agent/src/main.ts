@@ -384,8 +384,8 @@ export async function main(args: string[]) {
 		return;
 	}
 
-	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
-	if (parsed.mode !== "rpc") {
+	// Read piped stdin content (if any) - skip for RPC/ACP modes which use stdin for JSON-RPC
+	if (parsed.mode !== "rpc" && parsed.mode !== "acp") {
 		const stdinContent = await readPipedStdin();
 		if (stdinContent !== undefined) {
 			// Force print mode since interactive mode requires a TTY for keyboard input
