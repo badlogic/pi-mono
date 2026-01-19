@@ -634,6 +634,14 @@ export class AgentSession {
 		// Validate API key
 		const apiKey = await this._modelRegistry.getApiKey(this.model);
 		if (!apiKey) {
+			const isOAuth = this._modelRegistry.isUsingOAuth(this.model);
+			if (isOAuth) {
+				throw new Error(
+					`Authentication failed for "${this.model.provider}". ` +
+						`Credentials may have expired or network is unavailable. ` +
+						`Run '/login ${this.model.provider}' to re-authenticate.`,
+				);
+			}
 			throw new Error(
 				`No API key found for ${this.model.provider}.\n\n` +
 					`Use /login, set an API key environment variable, or create ${getAuthPath()}`,
