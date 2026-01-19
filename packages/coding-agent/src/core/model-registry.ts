@@ -28,7 +28,7 @@ const OpenAICompletionsCompatSchema = Type.Object({
 });
 
 const OpenAIResponsesCompatSchema = Type.Object({
-	strictResponsesPairing: Type.Optional(Type.Boolean()),
+	// Reserved for future use
 });
 
 const OpenAICompatSchema = Type.Union([OpenAICompletionsCompatSchema, OpenAIResponsesCompatSchema]);

@@ -329,7 +329,7 @@ function convertAssistantMessage(msg: AssistantMessage): unknown[] {
 	const output: unknown[] = [];
 
 	for (const block of msg.content) {
-		if (block.type === "thinking" && msg.stopReason !== "error" && block.thinkingSignature) {
+		if (block.type === "thinking" && block.thinkingSignature) {
 			output.push(JSON.parse(block.thinkingSignature));
 		} else if (block.type === "text") {
 			output.push({
@@ -338,7 +338,7 @@ function convertAssistantMessage(msg: AssistantMessage): unknown[] {
 				content: [{ type: "output_text", text: sanitizeSurrogates(block.text), annotations: [] }],
 				status: "completed",
 			});
-		} else if (block.type === "toolCall" && msg.stopReason !== "error") {
+		} else if (block.type === "toolCall") {
 			const [callId, id] = block.id.split("|");
 			output.push({
 				type: "function_call",

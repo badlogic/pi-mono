@@ -236,8 +236,7 @@ export interface OpenAICompletionsCompat {
 
 /** Compatibility settings for OpenAI Responses APIs. */
 export interface OpenAIResponsesCompat {
-	/** Whether OpenAI Responses history replay requires strict reasoning/message pairing (for providers like Azure). */
-	strictResponsesPairing?: boolean;
+	// Reserved for future use
 }
 
 // Model interface for the unified model system

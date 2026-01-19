@@ -118,25 +118,21 @@ export function transformMessages<TApi extends Api>(
 				existingToolResultIds = new Set();
 			}
 
-			// Track tool calls from this assistant message
-			// Don't track tool calls from errored messages - they will be dropped by
-			// provider-specific converters, so we shouldn't create synthetic results for them
+			// Skip errored/aborted assistant messages entirely.
+			// These are incomplete turns that shouldn't be replayed:
+			// - May have partial content (reasoning without message, incomplete tool calls)
+			// - Replaying them can cause API errors (e.g., OpenAI "reasoning without following item")
+			// - The model should retry from the last valid state
 			const assistantMsg = msg as AssistantMessage;
-			const toolCalls =
-				assistantMsg.stopReason === "error"
-					? []
-					: (assistantMsg.content.filter((b) => b.type === "toolCall") as ToolCall[]);
+			if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
+				continue;
+			}
+
+			// Track tool calls from this assistant message
+			const toolCalls = assistantMsg.content.filter((b) => b.type === "toolCall") as ToolCall[];
 			if (toolCalls.length > 0) {
 				pendingToolCalls = toolCalls;
 				existingToolResultIds = new Set();
-			}
-
-			// Skip empty assistant messages (no content and no tool calls)
-			// This handles error responses (e.g., 429/500) that produced no content
-			// All providers already filter these in convertMessages, but we do it here
-			// centrally to prevent issues with the tool_use -> tool_result chain
-			if (assistantMsg.content.length === 0 && toolCalls.length === 0) {
-				continue;
 			}
 
 			result.push(msg);

@@ -478,22 +478,9 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 			}
 		} else if (msg.role === "assistant") {
 			const output: ResponseInput = [];
-			const strictResponsesPairing = model.compat?.strictResponsesPairing ?? false;
-			let isIncomplete = false;
-			let shouldReplayReasoning = msg.stopReason !== "error";
-			let allowToolCalls = msg.stopReason !== "error";
-			if (strictResponsesPairing) {
-				isIncomplete = msg.stopReason === "error" || msg.stopReason === "aborted";
-				const hasPairedContent = msg.content.some(
-					(b) => b.type === "toolCall" || (b.type === "text" && (b as TextContent).text.trim().length > 0),
-				);
-				shouldReplayReasoning = !isIncomplete && hasPairedContent;
-				allowToolCalls = !isIncomplete;
-			}
 
 			for (const block of msg.content) {
-				// Do not submit thinking blocks if the completion had an error (i.e. abort)
-				if (block.type === "thinking" && shouldReplayReasoning) {
+				if (block.type === "thinking") {
 					if (block.thinkingSignature) {
 						const reasoningItem = JSON.parse(block.thinkingSignature);
 						output.push(reasoningItem);
@@ -504,11 +491,6 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 					let msgId = textBlock.textSignature;
 					if (!msgId) {
 						msgId = `msg_${msgIndex}`;
-					}
-					// For incomplete turns, never replay the original message id (if any).
-					// Generate a stable synthetic id so strict pairing providers do not expect a paired reasoning item.
-					if (strictResponsesPairing && isIncomplete) {
-						msgId = `msg_${msgIndex}_${shortHash(textBlock.text)}`;
 					} else if (msgId.length > 64) {
 						msgId = `msg_${shortHash(msgId)}`;
 					}
@@ -519,8 +501,7 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 						status: "completed",
 						id: msgId,
 					} satisfies ResponseOutputMessage);
-					// Do not submit toolcall blocks if the completion had an error (i.e. abort)
-				} else if (block.type === "toolCall" && allowToolCalls) {
+				} else if (block.type === "toolCall") {
 					const toolCall = block as ToolCall;
 					output.push({
 						type: "function_call",

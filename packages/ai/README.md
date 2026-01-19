@@ -729,7 +729,7 @@ interface OpenAICompletionsCompat {
 }
 
 interface OpenAIResponsesCompat {
-  strictResponsesPairing?: boolean; // Enforce strict reasoning/message pairing for OpenAI Responses history replay on providers like Azure (default: false)
+  // Reserved for future use
 }
 ```
 
