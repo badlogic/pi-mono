@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join, resolve } from "path";
 import { CONFIG_DIR_NAME, getPromptsDir } from "../config.js";
+import { parseFrontmatter } from "../utils/frontmatter.js";
 
 /**
  * Represents a prompt template loaded from a markdown file
@@ -10,36 +11,6 @@ export interface PromptTemplate {
 	description: string;
 	content: string;
 	source: string; // e.g., "(user)", "(project)", "(project:frontend)"
-}
-
-/**
- * Parse YAML frontmatter from markdown content
- * Returns { frontmatter, content } where content has frontmatter stripped
- */
-function parseFrontmatter(content: string): { frontmatter: Record<string, string>; content: string } {
-	const frontmatter: Record<string, string> = {};
-
-	if (!content.startsWith("---")) {
-		return { frontmatter, content };
-	}
-
-	const endIndex = content.indexOf("\n---", 3);
-	if (endIndex === -1) {
-		return { frontmatter, content };
-	}
-
-	const frontmatterBlock = content.slice(4, endIndex);
-	const remainingContent = content.slice(endIndex + 4).trim();
-
-	// Simple YAML parsing - just key: value pairs
-	for (const line of frontmatterBlock.split("\n")) {
-		const match = line.match(/^(\w+):\s*(.*)$/);
-		if (match) {
-			frontmatter[match[1]] = match[2].trim();
-		}
-	}
-
-	return { frontmatter, content: remainingContent };
 }
 
 /**
@@ -81,7 +52,11 @@ export function parseCommandArgs(argsString: string): string[] {
 
 /**
  * Substitute argument placeholders in template content
- * Supports $1, $2, ... for positional args, $@ and $ARGUMENTS for all args
+ * Supports:
+ * - $1, $2, ... for positional args
+ * - $@ and $ARGUMENTS for all args
+ * - ${@:N} for args from Nth onwards (bash-style slicing)
+ * - ${@:N:L} for L args starting from Nth
  *
  * Note: Replacement happens on the template string only. Argument values
  * containing patterns like $1, $@, or $ARGUMENTS are NOT recursively substituted.
@@ -94,6 +69,20 @@ export function substituteArgs(content: string, args: string[]): string {
 	result = result.replace(/\$(\d+)/g, (_, num) => {
 		const index = parseInt(num, 10) - 1;
 		return args[index] ?? "";
+	});
+
+	// Replace ${@:start} or ${@:start:length} with sliced args (bash-style)
+	// Process BEFORE simple $@ to avoid conflicts
+	result = result.replace(/\$\{@:(\d+)(?::(\d+))?\}/g, (_, startStr, lengthStr) => {
+		let start = parseInt(startStr, 10) - 1; // Convert to 0-indexed (user provides 1-indexed)
+		// Treat 0 as 1 (bash convention: args start at 1)
+		if (start < 0) start = 0;
+
+		if (lengthStr) {
+			const length = parseInt(lengthStr, 10);
+			return args.slice(start, start + length).join(" ");
+		}
+		return args.slice(start).join(" ");
 	});
 
 	// Pre-compute all args joined (optimization)
@@ -145,7 +134,7 @@ function loadTemplatesFromDir(dir: string, source: "user" | "project", subdir: s
 			} else if (isFile && entry.name.endsWith(".md")) {
 				try {
 					const rawContent = readFileSync(fullPath, "utf-8");
-					const { frontmatter, content } = parseFrontmatter(rawContent);
+					const { frontmatter, body } = parseFrontmatter<Record<string, string>>(rawContent);
 
 					const name = entry.name.slice(0, -3); // Remove .md extension
 
@@ -160,7 +149,7 @@ function loadTemplatesFromDir(dir: string, source: "user" | "project", subdir: s
 					// Get description from frontmatter or first non-empty line
 					let description = frontmatter.description || "";
 					if (!description) {
-						const firstLine = content.split("\n").find((line) => line.trim());
+						const firstLine = body.split("\n").find((line) => line.trim());
 						if (firstLine) {
 							// Truncate if too long
 							description = firstLine.slice(0, 60);
@@ -174,7 +163,7 @@ function loadTemplatesFromDir(dir: string, source: "user" | "project", subdir: s
 					templates.push({
 						name,
 						description,
-						content,
+						content: body,
 						source: sourceStr,
 					});
 				} catch (_error) {

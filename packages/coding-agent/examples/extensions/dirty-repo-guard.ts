@@ -50,7 +50,7 @@ export default function (pi: ExtensionAPI) {
 		return checkDirtyRepo(pi, ctx, action);
 	});
 
-	pi.on("session_before_branch", async (_event, ctx) => {
-		return checkDirtyRepo(pi, ctx, "branch");
+	pi.on("session_before_fork", async (_event, ctx) => {
+		return checkDirtyRepo(pi, ctx, "fork");
 	});
 }

@@ -12,7 +12,7 @@
         bytes[i] = binary.charCodeAt(i);
       }
       const data = JSON.parse(new TextDecoder('utf-8').decode(bytes));
-      const { header, entries, leafId: defaultLeafId, systemPrompt, codexInjectionInfo, tools } = data;
+      const { header, entries, leafId: defaultLeafId, systemPrompt, tools, renderedTools } = data;
 
       // ============================================================
       // URL PARAMETER HANDLING
@@ -54,11 +54,11 @@
       }
 
       // Label lookup (entryId -> label string)
-      // Labels are stored in 'label' entries that reference their target via parentId
+      // Labels are stored in 'label' entries that reference their target via targetId
       const labelMap = new Map();
       for (const entry of entries) {
-        if (entry.type === 'label' && entry.parentId && entry.label) {
-          labelMap.set(entry.parentId, entry.label);
+        if (entry.type === 'label' && entry.targetId && entry.label) {
+          labelMap.set(entry.targetId, entry.label);
         }
       }
 
@@ -142,6 +142,37 @@
           current = byId.get(current.parentId);
         }
         return path;
+      }
+
+      // Tree node lookup for finding leaves
+      let treeNodeMap = null;
+
+      /**
+       * Find the newest leaf node reachable from a given node.
+       * This allows clicking any node in a branch to show the full branch.
+       * Children are sorted by timestamp, so the newest is always last.
+       */
+      function findNewestLeaf(nodeId) {
+        // Build tree node map lazily
+        if (!treeNodeMap) {
+          treeNodeMap = new Map();
+          const tree = buildTree();
+          function mapNodes(node) {
+            treeNodeMap.set(node.entry.id, node);
+            node.children.forEach(mapNodes);
+          }
+          tree.forEach(mapNodes);
+        }
+
+        const node = treeNodeMap.get(nodeId);
+        if (!node) return nodeId;
+
+        // Follow the newest (last) child at each level
+        let current = node;
+        while (current.children.length > 0) {
+          current = current.children[current.children.length - 1];
+        }
+        return current.entry.id;
       }
 
       /**
@@ -321,7 +352,7 @@
       function filterNodes(flatNodes, currentLeafId) {
         const searchTokens = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
 
-        return flatNodes.filter(flatNode => {
+        const filtered = flatNodes.filter(flatNode => {
           const entry = flatNode.node.entry;
           const label = flatNode.node.label;
           const isCurrentLeaf = entry.id === currentLeafId;
@@ -369,6 +400,139 @@
 
           return true;
         });
+
+        // Recalculate visual structure based on visible tree
+        recalculateVisualStructure(filtered, flatNodes);
+
+        return filtered;
+      }
+
+      /**
+       * Recompute indentation/connectors for the filtered view
+       *
+       * Filtering can hide intermediate entries; descendants attach to the nearest visible ancestor.
+       * Keep indentation semantics aligned with flattenTree() so single-child chains don't drift right.
+       */
+      function recalculateVisualStructure(filteredNodes, allFlatNodes) {
+        if (filteredNodes.length === 0) return;
+
+        const visibleIds = new Set(filteredNodes.map(n => n.node.entry.id));
+
+        // Build entry map for parent lookup (using full tree)
+        const entryMap = new Map();
+        for (const flatNode of allFlatNodes) {
+          entryMap.set(flatNode.node.entry.id, flatNode);
+        }
+
+        // Find nearest visible ancestor for a node
+        function findVisibleAncestor(nodeId) {
+          let currentId = entryMap.get(nodeId)?.node.entry.parentId;
+          while (currentId != null) {
+            if (visibleIds.has(currentId)) {
+              return currentId;
+            }
+            currentId = entryMap.get(currentId)?.node.entry.parentId;
+          }
+          return null;
+        }
+
+        // Build visible tree structure
+        const visibleParent = new Map();
+        const visibleChildren = new Map();
+        visibleChildren.set(null, []); // root-level nodes
+
+        for (const flatNode of filteredNodes) {
+          const nodeId = flatNode.node.entry.id;
+          const ancestorId = findVisibleAncestor(nodeId);
+          visibleParent.set(nodeId, ancestorId);
+
+          if (!visibleChildren.has(ancestorId)) {
+            visibleChildren.set(ancestorId, []);
+          }
+          visibleChildren.get(ancestorId).push(nodeId);
+        }
+
+        // Update multipleRoots based on visible roots
+        const visibleRootIds = visibleChildren.get(null);
+        const multipleRoots = visibleRootIds.length > 1;
+
+        // Build a map for quick lookup: nodeId → FlatNode
+        const filteredNodeMap = new Map();
+        for (const flatNode of filteredNodes) {
+          filteredNodeMap.set(flatNode.node.entry.id, flatNode);
+        }
+
+        // DFS traversal of visible tree, applying same indentation rules as flattenTree()
+        // Stack items: [nodeId, indent, justBranched, showConnector, isLast, gutters, isVirtualRootChild]
+        const stack = [];
+
+        // Add visible roots in reverse order (to process in forward order via stack)
+        for (let i = visibleRootIds.length - 1; i >= 0; i--) {
+          const isLast = i === visibleRootIds.length - 1;
+          stack.push([
+            visibleRootIds[i],
+            multipleRoots ? 1 : 0,
+            multipleRoots,
+            multipleRoots,
+            isLast,
+            [],
+            multipleRoots
+          ]);
+        }
+
+        while (stack.length > 0) {
+          const [nodeId, indent, justBranched, showConnector, isLast, gutters, isVirtualRootChild] = stack.pop();
+
+          const flatNode = filteredNodeMap.get(nodeId);
+          if (!flatNode) continue;
+
+          // Update this node's visual properties
+          flatNode.indent = indent;
+          flatNode.showConnector = showConnector;
+          flatNode.isLast = isLast;
+          flatNode.gutters = gutters;
+          flatNode.isVirtualRootChild = isVirtualRootChild;
+          flatNode.multipleRoots = multipleRoots;
+
+          // Get visible children of this node
+          const children = visibleChildren.get(nodeId) || [];
+          const multipleChildren = children.length > 1;
+
+          // Calculate child indent using same rules as flattenTree():
+          // - Parent branches (multiple children): children get +1
+          // - Just branched and indent > 0: children get +1 for visual grouping
+          // - Single-child chain: stay flat
+          let childIndent;
+          if (multipleChildren) {
+            childIndent = indent + 1;
+          } else if (justBranched && indent > 0) {
+            childIndent = indent + 1;
+          } else {
+            childIndent = indent;
+          }
+
+          // Build gutters for children (same logic as flattenTree)
+          const connectorDisplayed = showConnector && !isVirtualRootChild;
+          const currentDisplayIndent = multipleRoots ? Math.max(0, indent - 1) : indent;
+          const connectorPosition = Math.max(0, currentDisplayIndent - 1);
+          const childGutters = connectorDisplayed
+            ? [...gutters, { position: connectorPosition, show: !isLast }]
+            : gutters;
+
+          // Add children in reverse order (to process in forward order via stack)
+          for (let i = children.length - 1; i >= 0; i--) {
+            const childIsLast = i === children.length - 1;
+            stack.push([
+              children[i],
+              childIndent,
+              multipleChildren,
+              multipleChildren,
+              childIsLast,
+              childGutters,
+              false
+            ]);
+          }
+        }
       }
 
       // ============================================================
@@ -541,7 +705,11 @@
             div.appendChild(prefixSpan);
             div.appendChild(marker);
             div.appendChild(content);
-            div.addEventListener('click', () => navigateTo(entry.id));
+            // Navigate to the newest leaf through this node, but scroll to the clicked node
+            div.addEventListener('click', () => {
+              const leafId = findNewestLeaf(entry.id);
+              navigateTo(leafId, 'target', entry.id);
+            });
 
             container.appendChild(div);
           }
@@ -778,17 +946,74 @@
             break;
           }
           default: {
-            html += `<div class="tool-header"><span class="tool-name">${escapeHtml(name)}</span></div>`;
-            html += `<div class="tool-output"><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></div>`;
-            if (result) {
-              const output = getResultText();
-              if (output) html += formatExpandableOutput(output, 10);
+            // Check for pre-rendered custom tool HTML
+            const rendered = renderedTools?.[call.id];
+            if (rendered?.callHtml || rendered?.resultHtml) {
+              // Custom tool with pre-rendered HTML from TUI renderer
+              if (rendered.callHtml) {
+                html += `<div class="tool-header ansi-rendered">${rendered.callHtml}</div>`;
+              } else {
+                html += `<div class="tool-header"><span class="tool-name">${escapeHtml(name)}</span></div>`;
+              }
+              
+              if (rendered.resultHtml) {
+                // Apply same truncation as built-in tools (10 lines)
+                const lines = rendered.resultHtml.split('\n');
+                if (lines.length > 10) {
+                  const preview = lines.slice(0, 10).join('\n');
+                  html += `<div class="tool-output expandable ansi-rendered" onclick="this.classList.toggle('expanded')">
+                    <div class="output-preview">${preview}<div class="expand-hint">... (${lines.length - 10} more lines)</div></div>
+                    <div class="output-full">${rendered.resultHtml}</div>
+                  </div>`;
+                } else {
+                  html += `<div class="tool-output ansi-rendered">${rendered.resultHtml}</div>`;
+                }
+              } else if (result) {
+                // Fallback to JSON for result if no pre-rendered HTML
+                const output = getResultText();
+                if (output) html += formatExpandableOutput(output, 10);
+              }
+            } else {
+              // Fallback to JSON display (existing behavior)
+              html += `<div class="tool-header"><span class="tool-name">${escapeHtml(name)}</span></div>`;
+              html += `<div class="tool-output"><pre>${escapeHtml(JSON.stringify(args, null, 2))}</pre></div>`;
+              if (result) {
+                const output = getResultText();
+                if (output) html += formatExpandableOutput(output, 10);
+              }
             }
           }
         }
 
         html += '</div>';
         return html;
+      }
+
+      /**
+       * Download the session data as a JSONL file.
+       * Reconstructs the original format: header line + entry lines.
+       */
+      window.downloadSessionJson = function() {
+        // Build JSONL content: header first, then all entries
+        const lines = [];
+        if (header) {
+          lines.push(JSON.stringify({ type: 'header', ...header }));
+        }
+        for (const entry of entries) {
+          lines.push(JSON.stringify(entry));
+        }
+        const jsonlContent = lines.join('\n');
+
+        // Create download
+        const blob = new Blob([jsonlContent], { type: 'application/x-ndjson' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${header?.id || 'session'}.jsonl`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
       }
 
       /**
@@ -954,17 +1179,7 @@
         }
 
         if (entry.type === 'model_change') {
-          let html = `<div class="model-change" id="${entryId}">${tsHtml}Switched to model: <span class="model-name">${escapeHtml(entry.provider)}/${escapeHtml(entry.modelId)}</span>`;
-          
-          // Show expandable bridge prompt info when switching to openai-codex
-          if (entry.provider === 'openai-codex' && codexInjectionInfo) {
-            const fullContent = `# Codex Instructions\n${codexInjectionInfo.instructions}\n\n# Codex-Pi Bridge\n${codexInjectionInfo.bridge}`;
-            html += ` <span class="codex-bridge-toggle" onclick="event.stopPropagation(); this.parentElement.classList.toggle('show-bridge')">[bridge prompt]</span>`;
-            html += `<div class="codex-bridge-content"><pre>${escapeHtml(fullContent)}</pre></div>`;
-          }
-          
-          html += '</div>';
-          return html;
+          return `<div class="model-change" id="${entryId}">${tsHtml}Switched to model: <span class="model-name">${escapeHtml(entry.provider)}/${escapeHtml(entry.modelId)}</span></div>`;
         }
 
         if (entry.type === 'compaction') {
@@ -1059,7 +1274,10 @@
         let html = `
           <div class="header">
             <h1>Session: ${escapeHtml(header?.id || 'unknown')}</h1>
-            <div class="help-bar">Ctrl+T toggle thinking · Ctrl+O toggle tools</div>
+            <div class="help-bar">
+              <span>Ctrl+T toggle thinking · Ctrl+O toggle tools</span>
+              <button class="download-json-btn" onclick="downloadSessionJson()" title="Download session as JSONL">↓ JSONL</button>
+            </div>
             <div class="header-info">
               <div class="info-item"><span class="info-label">Date:</span><span class="info-value">${header?.timestamp ? new Date(header.timestamp).toLocaleString() : 'unknown'}</span></div>
               <div class="info-item"><span class="info-label">Models:</span><span class="info-value">${globalStats.models.join(', ') || 'unknown'}</span></div>

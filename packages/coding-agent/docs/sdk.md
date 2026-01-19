@@ -108,9 +108,9 @@ interface AgentSession {
   newSession(options?: { parentSession?: string }): Promise<boolean>;  // Returns false if cancelled by hook
   switchSession(sessionPath: string): Promise<boolean>;
   
-  // Branching
-  branch(entryId: string): Promise<{ selectedText: string; cancelled: boolean }>;  // Creates new session file
-  navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ editorText?: string; cancelled: boolean }>;  // In-place navigation
+  // Forking
+  fork(entryId: string): Promise<{ selectedText: string; cancelled: boolean }>;  // Creates new session file
+  navigateTree(targetId: string, options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string }): Promise<{ editorText?: string; cancelled: boolean }>;  // In-place navigation
   
   // Hook message injection
   sendHookMessage(message: HookMessage, triggerTurn?: boolean): Promise<void>;
@@ -636,11 +636,16 @@ const { session } = await createAgentSession({
   sessionManager: SessionManager.open("/path/to/session.jsonl"),
 });
 
-// List available sessions
-const sessions = SessionManager.list(process.cwd());
+// List available sessions (async with optional progress callback)
+const sessions = await SessionManager.list(process.cwd());
 for (const info of sessions) {
-  console.log(`${info.id}: ${info.firstMessage} (${info.messageCount} messages)`);
+  console.log(`${info.id}: ${info.firstMessage} (${info.messageCount} messages, cwd: ${info.cwd})`);
 }
+
+// List all sessions across all projects
+const allSessions = await SessionManager.listAll((loaded, total) => {
+  console.log(`Loading ${loaded}/${total}...`);
+});
 
 // Custom session directory (no cwd encoding)
 const customDir = "/path/to/my-sessions";
@@ -730,12 +735,12 @@ import {
   discoverAuthStorage,
   discoverModels,
   discoverSkills,
-  discoverHooks,
-  discoverCustomTools,
+  discoverExtensions,
   discoverContextFiles,
   discoverPromptTemplates,
   loadSettings,
   buildSystemPrompt,
+  createEventBus,
 } from "@mariozechner/pi-coding-agent";
 
 // Auth and Models
@@ -749,19 +754,16 @@ const builtIn = getModel("anthropic", "claude-opus-4-5"); // Built-in only
 // Skills
 const { skills, warnings } = discoverSkills(cwd, agentDir, skillsSettings);
 
-// Hooks (async - loads TypeScript)
-// Pass eventBus to share pi.events across hooks/tools
+// Extensions (async - loads TypeScript)
+// Pass eventBus to share pi.events across extensions
 const eventBus = createEventBus();
-const hooks = await discoverHooks(eventBus, cwd, agentDir);
-
-// Custom tools (async - loads TypeScript)
-const tools = await discoverCustomTools(eventBus, cwd, agentDir);
+const { extensions, errors } = await discoverExtensions(eventBus, cwd, agentDir);
 
 // Context files
 const contextFiles = discoverContextFiles(cwd, agentDir);
 
 // Prompt templates
-const commands = discoverPromptTemplates(cwd, agentDir);
+const templates = discoverPromptTemplates(cwd, agentDir);
 
 // Settings (global + project merged)
 const settings = loadSettings(cwd, agentDir);
@@ -811,8 +813,8 @@ import {
   SettingsManager,
   readTool,
   bashTool,
-  type HookFactory,
-  type CustomTool,
+  type ExtensionFactory,
+  type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 
 // Set up auth storage (custom location)
@@ -826,16 +828,16 @@ if (process.env.MY_KEY) {
 // Model registry (no custom models.json)
 const modelRegistry = new ModelRegistry(authStorage);
 
-// Inline hook
-const auditHook: HookFactory = (api) => {
-  api.on("tool_call", async (event) => {
+// Inline extension
+const auditExtension: ExtensionFactory = (pi) => {
+  pi.on("tool_call", async (event) => {
     console.log(`[Audit] ${event.toolName}`);
     return undefined;
   });
 };
 
 // Inline tool
-const statusTool: CustomTool = {
+const statusTool: ToolDefinition = {
   name: "status",
   label: "Status",
   description: "Get system status",
@@ -867,8 +869,8 @@ const { session } = await createAgentSession({
   systemPrompt: "You are a minimal assistant. Be concise.",
   
   tools: [readTool, bashTool],
-  customTools: [{ tool: statusTool }],
-  hooks: [{ factory: auditHook }],
+  customTools: [statusTool],
+  extensions: [auditExtension],
   skills: [],
   contextFiles: [],
   promptTemplates: [],
@@ -956,7 +958,7 @@ The SDK is preferred when:
 - You want type safety
 - You're in the same Node.js process
 - You need direct access to agent state
-- You want to customize tools/hooks programmatically
+- You want to customize tools/extensions programmatically
 
 RPC mode is preferred when:
 - You're integrating from another language
@@ -979,12 +981,11 @@ discoverModels
 
 // Discovery
 discoverSkills
-discoverHooks
-discoverCustomTools
+discoverExtensions
 discoverContextFiles
 discoverPromptTemplates
 
-// Event Bus (for shared hook/tool communication)
+// Event Bus (for shared extension communication)
 createEventBus
 
 // Helpers
@@ -1010,8 +1011,9 @@ createGrepTool, createFindTool, createLsTool
 // Types
 type CreateAgentSessionOptions
 type CreateAgentSessionResult
-type CustomTool
-type HookFactory
+type ExtensionFactory
+type ExtensionAPI
+type ToolDefinition
 type Skill
 type PromptTemplate
 type Settings
@@ -1019,28 +1021,4 @@ type SkillsSettings
 type Tool
 ```
 
-For hook types, import from the hooks subpath:
-
-```typescript
-import type {
-  HookAPI,
-  HookMessage,
-  HookFactory,
-  HookEventContext,
-  HookCommandContext,
-  ToolCallEvent,
-  ToolResultEvent,
-} from "@mariozechner/pi-coding-agent/hooks";
-```
-
-For message utilities:
-
-```typescript
-import { isHookMessage, createHookMessage } from "@mariozechner/pi-coding-agent";
-```
-
-For config utilities:
-
-```typescript
-import { getAgentDir } from "@mariozechner/pi-coding-agent/config";
-```
+For extension types, see [extensions.md](extensions.md) for the full API.

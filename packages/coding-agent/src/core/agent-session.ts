@@ -13,6 +13,7 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
+import { readFileSync } from "node:fs";
 import type {
 	Agent,
 	AgentEvent,
@@ -24,21 +25,27 @@ import type {
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import { getAuthPath } from "../config.js";
+import { theme } from "../modes/interactive/theme/theme.js";
+import { stripFrontmatter } from "../utils/frontmatter.js";
 import { type BashResult, executeBash as executeBashCommand, executeBashWithOperations } from "./bash-executor.js";
 import {
 	type CompactionResult,
 	calculateContextTokens,
 	collectEntriesForBranchSummary,
 	compact,
+	estimateContextTokens,
 	generateBranchSummary,
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.js";
-import { exportSessionToHtml } from "./export-html/index.js";
+import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.js";
+import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import type {
+	ContextUsage,
 	ExtensionRunner,
-	SessionBeforeBranchResult,
+	InputSource,
 	SessionBeforeCompactResult,
+	SessionBeforeForkResult,
 	SessionBeforeSwitchResult,
 	SessionBeforeTreeResult,
 	TreePreparation,
@@ -57,7 +64,13 @@ import type { BashOperations } from "./tools/bash.js";
 export type AgentSessionEvent =
 	| AgentEvent
 	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
-	| { type: "auto_compaction_end"; result: CompactionResult | undefined; aborted: boolean; willRetry: boolean }
+	| {
+			type: "auto_compaction_end";
+			result: CompactionResult | undefined;
+			aborted: boolean;
+			willRetry: boolean;
+			errorMessage?: string;
+	  }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
 
@@ -99,6 +112,8 @@ export interface PromptOptions {
 	images?: ImageContent[];
 	/** When streaming, how to queue the message: "steer" (interrupt) or "followUp" (wait). Required if streaming. */
 	streamingBehavior?: "steer" | "followUp";
+	/** Source of input for extension input event handlers. Defaults to "interactive". */
+	source?: InputSource;
 }
 
 /** Result from cycleModel() */
@@ -459,10 +474,13 @@ export class AgentSession {
 	}
 
 	/**
-	 * Get all configured tool names (built-in via --tools or default, plus custom tools).
+	 * Get all configured tools with name and description.
 	 */
-	getAllToolNames(): string[] {
-		return Array.from(this._toolRegistry.keys());
+	getAllTools(): Array<{ name: string; description: string }> {
+		return Array.from(this._toolRegistry.values()).map((t) => ({
+			name: t.name,
+			description: t.description,
+		}));
 	}
 
 	/**
@@ -525,6 +543,11 @@ export class AgentSession {
 		return this._scopedModels;
 	}
 
+	/** Update scoped models for cycling */
+	setScopedModels(scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>): void {
+		this._scopedModels = scopedModels;
+	}
+
 	/** File-based prompt templates */
 	get promptTemplates(): ReadonlyArray<PromptTemplate> {
 		return this._promptTemplates;
@@ -556,8 +579,30 @@ export class AgentSession {
 			}
 		}
 
-		// Expand file-based prompt templates if requested
-		const expandedText = expandPromptTemplates ? expandPromptTemplate(text, [...this._promptTemplates]) : text;
+		// Emit input event for extension interception (before skill/template expansion)
+		let currentText = text;
+		let currentImages = options?.images;
+		if (this._extensionRunner?.hasHandlers("input")) {
+			const inputResult = await this._extensionRunner.emitInput(
+				currentText,
+				currentImages,
+				options?.source ?? "interactive",
+			);
+			if (inputResult.action === "handled") {
+				return;
+			}
+			if (inputResult.action === "transform") {
+				currentText = inputResult.text;
+				currentImages = inputResult.images ?? currentImages;
+			}
+		}
+
+		// Expand skill commands (/skill:name args) and prompt templates (/template args)
+		let expandedText = currentText;
+		if (expandPromptTemplates) {
+			expandedText = this._expandSkillCommand(expandedText);
+			expandedText = expandPromptTemplate(expandedText, [...this._promptTemplates]);
+		}
 
 		// If streaming, queue via steer() or followUp() based on option
 		if (this.isStreaming) {
@@ -614,8 +659,8 @@ export class AgentSession {
 
 		// Add user message
 		const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
-		if (options?.images) {
-			userContent.push(...options.images);
+		if (currentImages) {
+			userContent.push(...currentImages);
 		}
 		messages.push({
 			role: "user",
@@ -633,7 +678,7 @@ export class AgentSession {
 		if (this._extensionRunner) {
 			const result = await this._extensionRunner.emitBeforeAgentStart(
 				expandedText,
-				options?.images,
+				currentImages,
 				this._baseSystemPrompt,
 			);
 			// Add all custom messages from extensions
@@ -694,9 +739,41 @@ export class AgentSession {
 	}
 
 	/**
+	 * Expand skill commands (/skill:name args) to their full content.
+	 * Returns the expanded text, or the original text if not a skill command or skill not found.
+	 * Emits errors via extension runner if file read fails.
+	 */
+	private _expandSkillCommand(text: string): string {
+		if (!text.startsWith("/skill:")) return text;
+
+		const spaceIndex = text.indexOf(" ");
+		const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
+		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+
+		const skill = this._skills.find((s) => s.name === skillName);
+		if (!skill) return text; // Unknown skill, pass through
+
+		try {
+			const content = readFileSync(skill.filePath, "utf-8");
+			const body = stripFrontmatter(content).trim();
+			const header = `Skill location: ${skill.filePath}\nReferences are relative to ${skill.baseDir}.`;
+			const skillMessage = `${header}\n\n${body}`;
+			return args ? `${skillMessage}\n\n---\n\nUser: ${args}` : skillMessage;
+		} catch (err) {
+			// Emit error like extension commands do
+			this._extensionRunner?.emitError({
+				extensionPath: skill.filePath,
+				event: "skill_expansion",
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return text; // Return original on error
+		}
+	}
+
+	/**
 	 * Queue a steering message to interrupt the agent mid-run.
 	 * Delivered after current tool execution, skips remaining tools.
-	 * Expands file-based prompt templates. Errors on extension commands.
+	 * Expands skill commands and prompt templates. Errors on extension commands.
 	 * @throws Error if text is an extension command
 	 */
 	async steer(text: string): Promise<void> {
@@ -705,8 +782,9 @@ export class AgentSession {
 			this._throwIfExtensionCommand(text);
 		}
 
-		// Expand file-based prompt templates
-		const expandedText = expandPromptTemplate(text, [...this._promptTemplates]);
+		// Expand skill commands and prompt templates
+		let expandedText = this._expandSkillCommand(text);
+		expandedText = expandPromptTemplate(expandedText, [...this._promptTemplates]);
 
 		await this._queueSteer(expandedText);
 	}
@@ -714,7 +792,7 @@ export class AgentSession {
 	/**
 	 * Queue a follow-up message to be processed after the agent finishes.
 	 * Delivered only when agent has no more tool calls or steering messages.
-	 * Expands file-based prompt templates. Errors on extension commands.
+	 * Expands skill commands and prompt templates. Errors on extension commands.
 	 * @throws Error if text is an extension command
 	 */
 	async followUp(text: string): Promise<void> {
@@ -723,8 +801,9 @@ export class AgentSession {
 			this._throwIfExtensionCommand(text);
 		}
 
-		// Expand file-based prompt templates
-		const expandedText = expandPromptTemplate(text, [...this._promptTemplates]);
+		// Expand skill commands and prompt templates
+		let expandedText = this._expandSkillCommand(text);
+		expandedText = expandPromptTemplate(expandedText, [...this._promptTemplates]);
 
 		await this._queueFollowUp(expandedText);
 	}
@@ -851,6 +930,7 @@ export class AgentSession {
 			expandPromptTemplates: false,
 			streamingBehavior: options?.deliverAs,
 			images,
+			source: "extension",
 		});
 	}
 
@@ -955,6 +1035,21 @@ export class AgentSession {
 	// Model Management
 	// =========================================================================
 
+	private async _emitModelSelect(
+		nextModel: Model<any>,
+		previousModel: Model<any> | undefined,
+		source: "set" | "cycle" | "restore",
+	): Promise<void> {
+		if (!this._extensionRunner) return;
+		if (modelsAreEqual(previousModel, nextModel)) return;
+		await this._extensionRunner.emit({
+			type: "model_select",
+			model: nextModel,
+			previousModel,
+			source,
+		});
+	}
+
 	/**
 	 * Set model directly.
 	 * Validates API key, saves to session and settings.
@@ -966,12 +1061,15 @@ export class AgentSession {
 			throw new Error(`No API key for ${model.provider}/${model.id}`);
 		}
 
+		const previousModel = this.model;
 		this.agent.setModel(model);
 		this.sessionManager.appendModelChange(model.provider, model.id);
 		this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
 
 		// Re-clamp thinking level for new model's capabilities
 		this.setThinkingLevel(this.thinkingLevel);
+
+		await this._emitModelSelect(model, previousModel, "set");
 	}
 
 	/**
@@ -1012,6 +1110,8 @@ export class AgentSession {
 		// Apply thinking level (setThinkingLevel clamps to model capabilities)
 		this.setThinkingLevel(next.thinkingLevel);
 
+		await this._emitModelSelect(next.model, currentModel, "cycle");
+
 		return { model: next.model, thinkingLevel: this.thinkingLevel, isScoped: true };
 	}
 
@@ -1038,6 +1138,8 @@ export class AgentSession {
 
 		// Re-clamp thinking level for new model's capabilities
 		this.setThinkingLevel(this.thinkingLevel);
+
+		await this._emitModelSelect(nextModel, currentModel, "cycle");
 
 		return { model: nextModel, thinkingLevel: this.thinkingLevel, isScoped: false };
 	}
@@ -1458,13 +1560,17 @@ export class AgentSession {
 				}, 100);
 			}
 		} catch (error) {
-			this._emit({ type: "auto_compaction_end", result: undefined, aborted: false, willRetry: false });
-
-			if (reason === "overflow") {
-				throw new Error(
-					`Context overflow: ${error instanceof Error ? error.message : "compaction failed"}. Your input may be too large for the context window.`,
-				);
-			}
+			const errorMessage = error instanceof Error ? error.message : "compaction failed";
+			this._emit({
+				type: "auto_compaction_end",
+				result: undefined,
+				aborted: false,
+				willRetry: false,
+				errorMessage:
+					reason === "overflow"
+						? `Context overflow recovery failed: ${errorMessage}`
+						: `Auto-compaction failed: ${errorMessage}`,
+			});
 		} finally {
 			this._autoCompactionAbortController = undefined;
 		}
@@ -1498,8 +1604,8 @@ export class AgentSession {
 		if (isContextOverflow(message, contextWindow)) return false;
 
 		const err = message.errorMessage;
-		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection error
-		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server error|internal error|connection.?error/i.test(
+		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection errors, fetch failed
+		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server error|internal error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers/i.test(
 			err,
 		);
 	}
@@ -1654,13 +1760,17 @@ export class AgentSession {
 	): Promise<BashResult> {
 		this._bashAbortController = new AbortController();
 
+		// Apply command prefix if configured (e.g., "shopt -s expand_aliases" for alias support)
+		const prefix = this.settingsManager.getShellCommandPrefix();
+		const resolvedCommand = prefix ? `${prefix}\n${command}` : command;
+
 		try {
 			const result = options?.operations
-				? await executeBashWithOperations(command, process.cwd(), options.operations, {
+				? await executeBashWithOperations(resolvedCommand, process.cwd(), options.operations, {
 						onChunk,
 						signal: this._bashAbortController.signal,
 					})
-				: await executeBashCommand(command, {
+				: await executeBashCommand(resolvedCommand, {
 						onChunk,
 						signal: this._bashAbortController.signal,
 					});
@@ -1791,12 +1901,14 @@ export class AgentSession {
 
 		// Restore model if saved
 		if (sessionContext.model) {
+			const previousModel = this.model;
 			const availableModels = await this._modelRegistry.getAvailable();
 			const match = availableModels.find(
 				(m) => m.provider === sessionContext.model!.provider && m.id === sessionContext.model!.modelId,
 			);
 			if (match) {
 				this.agent.setModel(match);
+				await this._emitModelSelect(match, previousModel, "restore");
 			}
 		}
 
@@ -1810,32 +1922,32 @@ export class AgentSession {
 	}
 
 	/**
-	 * Create a branch from a specific entry.
-	 * Emits before_branch/branch session events to extensions.
+	 * Create a fork from a specific entry.
+	 * Emits before_fork/fork session events to extensions.
 	 *
-	 * @param entryId ID of the entry to branch from
+	 * @param entryId ID of the entry to fork from
 	 * @returns Object with:
 	 *   - selectedText: The text of the selected user message (for editor pre-fill)
-	 *   - cancelled: True if an extension cancelled the branch
+	 *   - cancelled: True if an extension cancelled the fork
 	 */
-	async branch(entryId: string): Promise<{ selectedText: string; cancelled: boolean }> {
+	async fork(entryId: string): Promise<{ selectedText: string; cancelled: boolean }> {
 		const previousSessionFile = this.sessionFile;
 		const selectedEntry = this.sessionManager.getEntry(entryId);
 
 		if (!selectedEntry || selectedEntry.type !== "message" || selectedEntry.message.role !== "user") {
-			throw new Error("Invalid entry ID for branching");
+			throw new Error("Invalid entry ID for forking");
 		}
 
 		const selectedText = this._extractUserMessageText(selectedEntry.message.content);
 
 		let skipConversationRestore = false;
 
-		// Emit session_before_branch event (can be cancelled)
-		if (this._extensionRunner?.hasHandlers("session_before_branch")) {
+		// Emit session_before_fork event (can be cancelled)
+		if (this._extensionRunner?.hasHandlers("session_before_fork")) {
 			const result = (await this._extensionRunner.emit({
-				type: "session_before_branch",
+				type: "session_before_fork",
 				entryId,
-			})) as SessionBeforeBranchResult | undefined;
+			})) as SessionBeforeForkResult | undefined;
 
 			if (result?.cancel) {
 				return { selectedText, cancelled: true };
@@ -1856,15 +1968,15 @@ export class AgentSession {
 		// Reload messages from entries (works for both file and in-memory mode)
 		const sessionContext = this.sessionManager.buildSessionContext();
 
-		// Emit session_branch event to extensions (after branch completes)
+		// Emit session_fork event to extensions (after fork completes)
 		if (this._extensionRunner) {
 			await this._extensionRunner.emit({
-				type: "session_branch",
+				type: "session_fork",
 				previousSessionFile,
 			});
 		}
 
-		// Emit session event to custom tools (with reason "branch")
+		// Emit session event to custom tools (with reason "fork")
 
 		if (!skipConversationRestore) {
 			this.agent.replaceMessages(sessionContext.messages);
@@ -1879,16 +1991,18 @@ export class AgentSession {
 
 	/**
 	 * Navigate to a different node in the session tree.
-	 * Unlike branch() which creates a new session file, this stays in the same file.
+	 * Unlike fork() which creates a new session file, this stays in the same file.
 	 *
 	 * @param targetId The entry ID to navigate to
 	 * @param options.summarize Whether user wants to summarize abandoned branch
 	 * @param options.customInstructions Custom instructions for summarizer
+	 * @param options.replaceInstructions If true, customInstructions replaces the default prompt
+	 * @param options.label Label to attach to the branch summary entry
 	 * @returns Result with editorText (if user message) and cancelled status
 	 */
 	async navigateTree(
 		targetId: string,
-		options: { summarize?: boolean; customInstructions?: string } = {},
+		options: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string } = {},
 	): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: BranchSummaryEntry }> {
 		const oldLeafId = this.sessionManager.getLeafId();
 
@@ -1914,13 +2028,20 @@ export class AgentSession {
 			targetId,
 		);
 
-		// Prepare event data
+		// Prepare event data - mutable so extensions can override
+		let customInstructions = options.customInstructions;
+		let replaceInstructions = options.replaceInstructions;
+		let label = options.label;
+
 		const preparation: TreePreparation = {
 			targetId,
 			oldLeafId,
 			commonAncestorId,
 			entriesToSummarize,
 			userWantsSummary: options.summarize ?? false,
+			customInstructions,
+			replaceInstructions,
+			label,
 		};
 
 		// Set up abort controller for summarization
@@ -1944,6 +2065,17 @@ export class AgentSession {
 				extensionSummary = result.summary;
 				fromExtension = true;
 			}
+
+			// Allow extensions to override instructions and label
+			if (result?.customInstructions !== undefined) {
+				customInstructions = result.customInstructions;
+			}
+			if (result?.replaceInstructions !== undefined) {
+				replaceInstructions = result.replaceInstructions;
+			}
+			if (result?.label !== undefined) {
+				label = result.label;
+			}
 		}
 
 		// Run default summarizer if needed
@@ -1960,7 +2092,8 @@ export class AgentSession {
 				model,
 				apiKey,
 				signal: this._branchSummaryAbortController.signal,
-				customInstructions: options.customInstructions,
+				customInstructions,
+				replaceInstructions,
 				reserveTokens: branchSummarySettings.reserveTokens,
 			});
 			this._branchSummaryAbortController = undefined;
@@ -2010,12 +2143,22 @@ export class AgentSession {
 			// Create summary at target position (can be null for root)
 			const summaryId = this.sessionManager.branchWithSummary(newLeafId, summaryText, summaryDetails, fromExtension);
 			summaryEntry = this.sessionManager.getEntry(summaryId) as BranchSummaryEntry;
+
+			// Attach label to the summary entry
+			if (label) {
+				this.sessionManager.appendLabelChange(summaryId, label);
+			}
 		} else if (newLeafId === null) {
 			// No summary, navigating to root - reset leaf
 			this.sessionManager.resetLeaf();
 		} else {
 			// No summary, navigating to non-root
 			this.sessionManager.branch(newLeafId);
+		}
+
+		// Attach label to target entry when not summarizing (no summary entry to label)
+		if (label && !summaryText) {
+			this.sessionManager.appendLabelChange(targetId, label);
 		}
 
 		// Update agent state
@@ -2040,9 +2183,9 @@ export class AgentSession {
 	}
 
 	/**
-	 * Get all user messages from session for branch selector.
+	 * Get all user messages from session for fork selector.
 	 */
-	getUserMessagesForBranching(): Array<{ entryId: string; text: string }> {
+	getUserMessagesForForking(): Array<{ entryId: string; text: string }> {
 		const entries = this.sessionManager.getEntries();
 		const result: Array<{ entryId: string; text: string }> = [];
 
@@ -2117,6 +2260,26 @@ export class AgentSession {
 		};
 	}
 
+	getContextUsage(): ContextUsage | undefined {
+		const model = this.model;
+		if (!model) return undefined;
+
+		const contextWindow = model.contextWindow ?? 0;
+		if (contextWindow <= 0) return undefined;
+
+		const estimate = estimateContextTokens(this.messages);
+		const percent = (estimate.tokens / contextWindow) * 100;
+
+		return {
+			tokens: estimate.tokens,
+			contextWindow,
+			percent,
+			usageTokens: estimate.usageTokens,
+			trailingTokens: estimate.trailingTokens,
+			lastUsageIndex: estimate.lastUsageIndex,
+		};
+	}
+
 	/**
 	 * Export session to HTML.
 	 * @param outputPath Optional output path (defaults to session directory)
@@ -2124,7 +2287,21 @@ export class AgentSession {
 	 */
 	async exportToHtml(outputPath?: string): Promise<string> {
 		const themeName = this.settingsManager.getTheme();
-		return await exportSessionToHtml(this.sessionManager, this.state, { outputPath, themeName });
+
+		// Create tool renderer if we have an extension runner (for custom tool HTML rendering)
+		let toolRenderer: ToolHtmlRenderer | undefined;
+		if (this._extensionRunner) {
+			toolRenderer = createToolHtmlRenderer({
+				getToolDefinition: (name) => this._extensionRunner!.getToolDefinition(name),
+				theme,
+			});
+		}
+
+		return await exportSessionToHtml(this.sessionManager, this.state, {
+			outputPath,
+			themeName,
+			toolRenderer,
+		});
 	}
 
 	// =========================================================================

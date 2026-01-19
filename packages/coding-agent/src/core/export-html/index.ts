@@ -1,45 +1,38 @@
-import type { AgentState, AgentTool } from "@mariozechner/pi-agent-core";
-import { buildCodexPiBridge, getCodexInstructions } from "@mariozechner/pi-ai";
+import type { AgentState } from "@mariozechner/pi-agent-core";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir } from "../../config.js";
 import { getResolvedThemeColors, getThemeExportColors } from "../../modes/interactive/theme/theme.js";
+import type { SessionEntry } from "../session-manager.js";
 import { SessionManager } from "../session-manager.js";
+
+/**
+ * Interface for rendering custom tools to HTML.
+ * Used by agent-session to pre-render extension tool output.
+ */
+export interface ToolHtmlRenderer {
+	/** Render a tool call to HTML. Returns undefined if tool has no custom renderer. */
+	renderCall(toolName: string, args: unknown): string | undefined;
+	/** Render a tool result to HTML. Returns undefined if tool has no custom renderer. */
+	renderResult(
+		toolName: string,
+		result: Array<{ type: string; text?: string; data?: string; mimeType?: string }>,
+		details: unknown,
+		isError: boolean,
+	): string | undefined;
+}
+
+/** Pre-rendered HTML for a custom tool call and result */
+interface RenderedToolHtml {
+	callHtml?: string;
+	resultHtml?: string;
+}
 
 export interface ExportOptions {
 	outputPath?: string;
 	themeName?: string;
-}
-
-/** Info about Codex injection to show inline with model_change entries */
-interface CodexInjectionInfo {
-	/** Codex instructions text */
-	instructions: string;
-	/** Bridge text (tool list) */
-	bridge: string;
-}
-
-/**
- * Build Codex injection info for display inline with model_change entries.
- */
-async function buildCodexInjectionInfo(tools?: AgentTool[]): Promise<CodexInjectionInfo | undefined> {
-	// Try to get cached instructions for default model family
-	let instructions: string | null = null;
-	try {
-		instructions = getCodexInstructions();
-	} catch {
-		// Cache miss - that's fine
-	}
-
-	const bridgeText = buildCodexPiBridge(tools);
-
-	const instructionsText =
-		instructions || "(Codex instructions not cached. Run a Codex request to populate the local cache.)";
-
-	return {
-		instructions: instructionsText,
-		bridge: bridgeText,
-	};
+	/** Optional tool renderer for custom tools */
+	toolRenderer?: ToolHtmlRenderer;
 }
 
 /** Parse a color string to RGB values. Supports hex (#RRGGBB) and rgb(r,g,b) formats. */
@@ -135,9 +128,9 @@ interface SessionData {
 	entries: ReturnType<SessionManager["getEntries"]>;
 	leafId: string | null;
 	systemPrompt?: string;
-	/** Info for rendering Codex injection inline with model_change entries */
-	codexInjectionInfo?: CodexInjectionInfo;
 	tools?: { name: string; description: string }[];
+	/** Pre-rendered HTML for custom tool calls/results, keyed by tool call ID */
+	renderedTools?: Record<string, RenderedToolHtml>;
 }
 
 /**
@@ -176,6 +169,54 @@ function generateHtml(sessionData: SessionData, themeName?: string): string {
 		.replace("{{HIGHLIGHT_JS}}", hljsJs);
 }
 
+/** Built-in tool names that have custom rendering in template.js */
+const BUILTIN_TOOLS = new Set(["bash", "read", "write", "edit", "ls", "find", "grep"]);
+
+/**
+ * Pre-render custom tools to HTML using their TUI renderers.
+ */
+function preRenderCustomTools(
+	entries: SessionEntry[],
+	toolRenderer: ToolHtmlRenderer,
+): Record<string, RenderedToolHtml> {
+	const renderedTools: Record<string, RenderedToolHtml> = {};
+
+	for (const entry of entries) {
+		if (entry.type !== "message") continue;
+		const msg = entry.message;
+
+		// Find tool calls in assistant messages
+		if (msg.role === "assistant" && Array.isArray(msg.content)) {
+			for (const block of msg.content) {
+				if (block.type === "toolCall" && !BUILTIN_TOOLS.has(block.name)) {
+					const callHtml = toolRenderer.renderCall(block.name, block.arguments);
+					if (callHtml) {
+						renderedTools[block.id] = { callHtml };
+					}
+				}
+			}
+		}
+
+		// Find tool results
+		if (msg.role === "toolResult" && msg.toolCallId) {
+			const toolName = msg.toolName || "";
+			// Only render if we have a pre-rendered call OR it's not a built-in tool
+			const existing = renderedTools[msg.toolCallId];
+			if (existing || !BUILTIN_TOOLS.has(toolName)) {
+				const resultHtml = toolRenderer.renderResult(toolName, msg.content, msg.details, msg.isError || false);
+				if (resultHtml) {
+					renderedTools[msg.toolCallId] = {
+						...existing,
+						resultHtml,
+					};
+				}
+			}
+		}
+	}
+
+	return renderedTools;
+}
+
 /**
  * Export session to HTML using SessionManager and AgentState.
  * Used by TUI's /export command.
@@ -195,13 +236,25 @@ export async function exportSessionToHtml(
 		throw new Error("Nothing to export yet - start a conversation first");
 	}
 
+	const entries = sm.getEntries();
+
+	// Pre-render custom tools if a tool renderer is provided
+	let renderedTools: Record<string, RenderedToolHtml> | undefined;
+	if (opts.toolRenderer) {
+		renderedTools = preRenderCustomTools(entries, opts.toolRenderer);
+		// Only include if we actually rendered something
+		if (Object.keys(renderedTools).length === 0) {
+			renderedTools = undefined;
+		}
+	}
+
 	const sessionData: SessionData = {
 		header: sm.getHeader(),
-		entries: sm.getEntries(),
+		entries,
 		leafId: sm.getLeafId(),
 		systemPrompt: state?.systemPrompt,
-		codexInjectionInfo: await buildCodexInjectionInfo(state?.tools),
 		tools: state?.tools?.map((t) => ({ name: t.name, description: t.description })),
+		renderedTools,
 	};
 
 	const html = generateHtml(sessionData, opts.themeName);
@@ -234,7 +287,6 @@ export async function exportFromFile(inputPath: string, options?: ExportOptions 
 		entries: sm.getEntries(),
 		leafId: sm.getLeafId(),
 		systemPrompt: undefined,
-		codexInjectionInfo: await buildCodexInjectionInfo(undefined),
 		tools: undefined,
 	};
 

@@ -1,14 +1,22 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
+import type { AutocompleteProvider } from "../src/autocomplete.js";
 import { Editor } from "../src/components/editor.js";
+import { TUI } from "../src/tui.js";
 import { visibleWidth } from "../src/utils.js";
 import { defaultEditorTheme } from "./test-themes.js";
+import { VirtualTerminal } from "./virtual-terminal.js";
+
+/** Create a TUI with a virtual terminal for testing */
+function createTestTUI(cols = 80, rows = 24): TUI {
+	return new TUI(new VirtualTerminal(cols, rows));
+}
 
 describe("Editor component", () => {
 	describe("Prompt history navigation", () => {
 		it("does nothing on Up arrow when history is empty", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("\x1b[A"); // Up arrow
 
@@ -16,7 +24,7 @@ describe("Editor component", () => {
 		});
 
 		it("shows most recent history entry on Up arrow when editor is empty", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("first prompt");
 			editor.addToHistory("second prompt");
@@ -27,7 +35,7 @@ describe("Editor component", () => {
 		});
 
 		it("cycles through history entries on repeated Up arrow", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("first");
 			editor.addToHistory("second");
@@ -47,7 +55,7 @@ describe("Editor component", () => {
 		});
 
 		it("returns to empty editor on Down arrow after browsing history", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("prompt");
 
@@ -59,7 +67,7 @@ describe("Editor component", () => {
 		});
 
 		it("navigates forward through history with Down arrow", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("first");
 			editor.addToHistory("second");
@@ -82,7 +90,7 @@ describe("Editor component", () => {
 		});
 
 		it("exits history mode when typing a character", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("old prompt");
 
@@ -93,7 +101,7 @@ describe("Editor component", () => {
 		});
 
 		it("exits history mode on setText", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("first");
 			editor.addToHistory("second");
@@ -107,7 +115,7 @@ describe("Editor component", () => {
 		});
 
 		it("does not add empty strings to history", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("");
 			editor.addToHistory("   ");
@@ -122,7 +130,7 @@ describe("Editor component", () => {
 		});
 
 		it("does not add consecutive duplicates to history", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("same");
 			editor.addToHistory("same");
@@ -136,7 +144,7 @@ describe("Editor component", () => {
 		});
 
 		it("allows non-consecutive duplicates in history", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("first");
 			editor.addToHistory("second");
@@ -153,7 +161,7 @@ describe("Editor component", () => {
 		});
 
 		it("uses cursor movement instead of history when editor has content", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("history item");
 			editor.setText("line1\nline2");
@@ -169,7 +177,7 @@ describe("Editor component", () => {
 		});
 
 		it("limits history to 100 entries", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			// Add 105 entries
 			for (let i = 0; i < 105; i++) {
@@ -190,7 +198,7 @@ describe("Editor component", () => {
 		});
 
 		it("allows cursor movement within multi-line history entry with Down", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("line1\nline2\nline3");
 
@@ -204,7 +212,7 @@ describe("Editor component", () => {
 		});
 
 		it("allows cursor movement within multi-line history entry with Up", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("older entry");
 			editor.addToHistory("line1\nline2\nline3");
@@ -225,7 +233,7 @@ describe("Editor component", () => {
 		});
 
 		it("navigates from multi-line entry back to newer via Down after cursor movement", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("line1\nline2\nline3");
 
@@ -249,7 +257,7 @@ describe("Editor component", () => {
 
 	describe("public state accessors", () => {
 		it("returns cursor position", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
 
@@ -264,7 +272,7 @@ describe("Editor component", () => {
 		});
 
 		it("returns lines as a defensive copy", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			editor.setText("a\nb");
 
 			const lines = editor.getLines();
@@ -275,9 +283,29 @@ describe("Editor component", () => {
 		});
 	});
 
+	describe("Shift+Enter handling", () => {
+		it("treats split VS Code Shift+Enter as a newline", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("\\");
+			editor.handleInput("\r");
+
+			assert.strictEqual(editor.getText(), "\n");
+		});
+
+		it("inserts a literal backslash when not followed by Enter", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("\\");
+			editor.handleInput("x");
+
+			assert.strictEqual(editor.getText(), "\\x");
+		});
+	});
+
 	describe("Unicode text editing behavior", () => {
 		it("inserts mixed ASCII, umlauts, and emojis as literal text", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("H");
 			editor.handleInput("e");
@@ -296,7 +324,7 @@ describe("Editor component", () => {
 		});
 
 		it("deletes single-code-unit unicode characters (umlauts) with Backspace", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("ä");
 			editor.handleInput("ö");
@@ -310,7 +338,7 @@ describe("Editor component", () => {
 		});
 
 		it("deletes multi-code-unit emojis with single Backspace", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("😀");
 			editor.handleInput("👍");
@@ -323,7 +351,7 @@ describe("Editor component", () => {
 		});
 
 		it("inserts characters at the correct position after cursor movement over umlauts", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("ä");
 			editor.handleInput("ö");
@@ -341,7 +369,7 @@ describe("Editor component", () => {
 		});
 
 		it("moves cursor across multi-code-unit emojis with single arrow key", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("😀");
 			editor.handleInput("👍");
@@ -361,7 +389,7 @@ describe("Editor component", () => {
 		});
 
 		it("preserves umlauts across line breaks", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("ä");
 			editor.handleInput("ö");
@@ -376,7 +404,7 @@ describe("Editor component", () => {
 		});
 
 		it("replaces the entire document with unicode text via setText (paste simulation)", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			// Simulate bracketed paste / programmatic replacement
 			editor.setText("Hällö Wörld! 😀 äöüÄÖÜß");
@@ -386,7 +414,7 @@ describe("Editor component", () => {
 		});
 
 		it("moves cursor to document start on Ctrl+A and inserts at the beginning", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("a");
 			editor.handleInput("b");
@@ -398,7 +426,7 @@ describe("Editor component", () => {
 		});
 
 		it("deletes words correctly with Ctrl+W and Alt+Backspace", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			// Basic word deletion
 			editor.setText("foo bar baz");
@@ -439,7 +467,7 @@ describe("Editor component", () => {
 		});
 
 		it("navigates words correctly with Ctrl+Left/Right", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.setText("foo bar... baz");
 			// Cursor at end
@@ -478,7 +506,7 @@ describe("Editor component", () => {
 
 	describe("Grapheme-aware text wrapping", () => {
 		it("wraps lines correctly when text contains wide emojis", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 20;
 
 			// ✅ is 2 columns wide, so "Hello ✅ World" is 14 columns
@@ -493,7 +521,7 @@ describe("Editor component", () => {
 		});
 
 		it("wraps long text with emojis at correct positions", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 10;
 
 			// Each ✅ is 2 columns. "✅✅✅✅✅" = 10 columns, fits exactly
@@ -510,7 +538,7 @@ describe("Editor component", () => {
 		});
 
 		it("wraps CJK characters correctly (each is 2 columns wide)", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 10;
 
 			// Each CJK char is 2 columns. "日本語テスト" = 6 chars = 12 columns
@@ -530,7 +558,7 @@ describe("Editor component", () => {
 		});
 
 		it("handles mixed ASCII and wide characters in wrapping", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 15;
 
 			// "Test ✅ OK 日本" = 4 + 1 + 2 + 1 + 2 + 1 + 4 = 15 columns (fits exactly)
@@ -546,7 +574,7 @@ describe("Editor component", () => {
 		});
 
 		it("renders cursor correctly on wide characters", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 20;
 
 			editor.setText("A✅B");
@@ -562,7 +590,7 @@ describe("Editor component", () => {
 		});
 
 		it("does not exceed terminal width with emoji at wrap boundary", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 11;
 
 			// "0123456789✅" = 10 ASCII + 2-wide emoji = 12 columns
@@ -579,7 +607,7 @@ describe("Editor component", () => {
 
 	describe("Word wrapping", () => {
 		it("wraps at word boundaries instead of mid-word", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 40;
 
 			editor.setText("Hello world this is a test of word wrapping functionality");
@@ -601,7 +629,7 @@ describe("Editor component", () => {
 		});
 
 		it("does not start lines with leading whitespace after word wrap", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 20;
 
 			editor.setText("Word1 Word2 Word3 Word4 Word5 Word6");
@@ -622,7 +650,7 @@ describe("Editor component", () => {
 		});
 
 		it("breaks long words (URLs) at character level", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 30;
 
 			editor.setText("Check https://example.com/very/long/path/that/exceeds/width here");
@@ -636,7 +664,7 @@ describe("Editor component", () => {
 		});
 
 		it("preserves multiple spaces within words on same line", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 50;
 
 			editor.setText("Word1   Word2    Word3");
@@ -648,7 +676,7 @@ describe("Editor component", () => {
 		});
 
 		it("handles empty string", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 40;
 
 			editor.setText("");
@@ -659,7 +687,7 @@ describe("Editor component", () => {
 		});
 
 		it("handles single word that fits exactly", () => {
-			const editor = new Editor(defaultEditorTheme);
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			const width = 10;
 
 			editor.setText("1234567890");
@@ -669,6 +697,887 @@ describe("Editor component", () => {
 			assert.strictEqual(lines.length, 3);
 			const contentLine = stripVTControlCharacters(lines[1]!);
 			assert.ok(contentLine.includes("1234567890"), "Content should contain the word");
+		});
+	});
+
+	describe("Kill ring", () => {
+		it("Ctrl+W saves deleted text to kill ring and Ctrl+Y yanks it", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("foo bar baz");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "baz"
+			assert.strictEqual(editor.getText(), "foo bar ");
+
+			// Move to beginning and yank
+			editor.handleInput("\x01"); // Ctrl+A
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "bazfoo bar ");
+		});
+
+		it("Ctrl+U saves deleted text to kill ring", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			// Move cursor to middle
+			editor.handleInput("\x01"); // Ctrl+A (start)
+			editor.handleInput("\x1b[C"); // Right 5 times
+			editor.handleInput("\x1b[C");
+			editor.handleInput("\x1b[C");
+			editor.handleInput("\x1b[C");
+			editor.handleInput("\x1b[C");
+			editor.handleInput("\x1b[C"); // After "hello "
+
+			editor.handleInput("\x15"); // Ctrl+U - deletes "hello "
+			assert.strictEqual(editor.getText(), "world");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("Ctrl+K saves deleted text to kill ring", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A (start)
+			editor.handleInput("\x0b"); // Ctrl+K - deletes "hello world"
+
+			assert.strictEqual(editor.getText(), "");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("Ctrl+Y does nothing when kill ring is empty", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("test");
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "test");
+		});
+
+		it("Alt+Y cycles through kill ring after Ctrl+Y", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create kill ring with multiple entries
+			editor.setText("first");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "first"
+			editor.setText("second");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "second"
+			editor.setText("third");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "third"
+
+			// Kill ring now has: [first, second, third]
+			assert.strictEqual(editor.getText(), "");
+
+			editor.handleInput("\x19"); // Ctrl+Y - yanks "third" (most recent)
+			assert.strictEqual(editor.getText(), "third");
+
+			editor.handleInput("\x1by"); // Alt+Y - cycles to "second"
+			assert.strictEqual(editor.getText(), "second");
+
+			editor.handleInput("\x1by"); // Alt+Y - cycles to "first"
+			assert.strictEqual(editor.getText(), "first");
+
+			editor.handleInput("\x1by"); // Alt+Y - cycles back to "third"
+			assert.strictEqual(editor.getText(), "third");
+		});
+
+		it("Alt+Y does nothing if not preceded by yank", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("test");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "test"
+			editor.setText("other");
+
+			// Type something to break the yank chain
+			editor.handleInput("x");
+			assert.strictEqual(editor.getText(), "otherx");
+
+			// Alt+Y should do nothing
+			editor.handleInput("\x1by"); // Alt+Y
+			assert.strictEqual(editor.getText(), "otherx");
+		});
+
+		it("Alt+Y does nothing if kill ring has ≤1 entry", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("only");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "only"
+
+			editor.handleInput("\x19"); // Ctrl+Y - yanks "only"
+			assert.strictEqual(editor.getText(), "only");
+
+			editor.handleInput("\x1by"); // Alt+Y - should do nothing (only 1 entry)
+			assert.strictEqual(editor.getText(), "only");
+		});
+
+		it("consecutive Ctrl+W accumulates into one kill ring entry", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("one two three");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "three"
+			editor.handleInput("\x17"); // Ctrl+W - deletes "two " (prepended)
+			editor.handleInput("\x17"); // Ctrl+W - deletes "one " (prepended)
+
+			assert.strictEqual(editor.getText(), "");
+
+			// Should be one combined entry
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "one two three");
+		});
+
+		it("Ctrl+U accumulates multiline deletes including newlines", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Start with multiline text, cursor at end
+			editor.setText("line1\nline2\nline3");
+			// Cursor is at end of line3 (line 2, col 5)
+
+			// Delete "line3"
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "line1\nline2\n");
+
+			// Delete newline (at start of empty line 2, merges with line1)
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "line1\nline2");
+
+			// Delete "line2"
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "line1\n");
+
+			// Delete newline
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "line1");
+
+			// Delete "line1"
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "");
+
+			// All deletions accumulated into one entry: "line1\nline2\nline3"
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "line1\nline2\nline3");
+		});
+
+		it("backward deletions prepend, forward deletions append during accumulation", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("prefix|suffix");
+			// Position cursor at |
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C"); // Move right 6 times
+
+			editor.handleInput("\x0b"); // Ctrl+K - deletes "suffix" (forward)
+			editor.handleInput("\x0b"); // Ctrl+K - deletes "|" (forward, appended)
+			assert.strictEqual(editor.getText(), "prefix");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "prefix|suffix");
+		});
+
+		it("non-delete actions break kill accumulation", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Delete "baz", then type "x" to break accumulation, then delete "x"
+			editor.setText("foo bar baz");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "baz"
+			assert.strictEqual(editor.getText(), "foo bar ");
+
+			editor.handleInput("x"); // Typing breaks accumulation
+			assert.strictEqual(editor.getText(), "foo bar x");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes "x" (separate entry, not accumulated)
+			assert.strictEqual(editor.getText(), "foo bar ");
+
+			// Yank most recent - should be "x", not "xbaz"
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "foo bar x");
+
+			// Cycle to previous - should be "baz" (separate entry)
+			editor.handleInput("\x1by"); // Alt+Y
+			assert.strictEqual(editor.getText(), "foo bar baz");
+		});
+
+		it("non-yank actions break Alt+Y chain", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("first");
+			editor.handleInput("\x17"); // Ctrl+W
+			editor.setText("second");
+			editor.handleInput("\x17"); // Ctrl+W
+			editor.setText("");
+
+			editor.handleInput("\x19"); // Ctrl+Y - yanks "second"
+			assert.strictEqual(editor.getText(), "second");
+
+			editor.handleInput("x"); // Type breaks yank chain
+			assert.strictEqual(editor.getText(), "secondx");
+
+			editor.handleInput("\x1by"); // Alt+Y - should do nothing
+			assert.strictEqual(editor.getText(), "secondx");
+		});
+
+		it("kill ring rotation persists after cycling", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("first");
+			editor.handleInput("\x17"); // deletes "first"
+			editor.setText("second");
+			editor.handleInput("\x17"); // deletes "second"
+			editor.setText("third");
+			editor.handleInput("\x17"); // deletes "third"
+			editor.setText("");
+
+			// Ring: [first, second, third]
+
+			editor.handleInput("\x19"); // Ctrl+Y - yanks "third"
+			editor.handleInput("\x1by"); // Alt+Y - cycles to "second", ring rotates
+
+			// Now ring is: [third, first, second]
+			assert.strictEqual(editor.getText(), "second");
+
+			// Do something else
+			editor.handleInput("x");
+			editor.setText("");
+
+			// New yank should get "second" (now at end after rotation)
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "second");
+		});
+
+		it("consecutive deletions across lines coalesce into one entry", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// "1\n2\n3" with cursor at end, delete everything with Ctrl+W
+			editor.setText("1\n2\n3");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "3"
+			assert.strictEqual(editor.getText(), "1\n2\n");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes newline (merge with prev line)
+			assert.strictEqual(editor.getText(), "1\n2");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes "2"
+			assert.strictEqual(editor.getText(), "1\n");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes newline
+			assert.strictEqual(editor.getText(), "1");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes "1"
+			assert.strictEqual(editor.getText(), "");
+
+			// All deletions should have accumulated into one entry
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "1\n2\n3");
+		});
+
+		it("Ctrl+K at line end deletes newline and coalesces", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// "ab" on line 1, "cd" on line 2, cursor at end of line 1
+			editor.setText("");
+			editor.handleInput("a");
+			editor.handleInput("b");
+			editor.handleInput("\n");
+			editor.handleInput("c");
+			editor.handleInput("d");
+			// Move to end of first line
+			editor.handleInput("\x1b[A"); // Up arrow
+			editor.handleInput("\x05"); // Ctrl+E - end of line
+
+			// Now at end of "ab", Ctrl+K should delete newline (merge with "cd")
+			editor.handleInput("\x0b"); // Ctrl+K - deletes newline
+			assert.strictEqual(editor.getText(), "abcd");
+
+			// Continue deleting
+			editor.handleInput("\x0b"); // Ctrl+K - deletes "cd"
+			assert.strictEqual(editor.getText(), "ab");
+
+			// Both deletions should accumulate
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "ab\ncd");
+		});
+
+		it("handles yank in middle of text", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("word");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "word"
+			editor.setText("hello world");
+
+			// Move to middle (after "hello ")
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello wordworld");
+		});
+
+		it("handles yank-pop in middle of text", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create two kill ring entries
+			editor.setText("FIRST");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "FIRST"
+			editor.setText("SECOND");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "SECOND"
+
+			// Ring: ["FIRST", "SECOND"]
+
+			// Set up "hello world" and position cursor after "hello "
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start of line
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C"); // Move right 6
+
+			// Yank "SECOND" in the middle
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello SECONDworld");
+
+			// Yank-pop replaces "SECOND" with "FIRST"
+			editor.handleInput("\x1by"); // Alt+Y
+			assert.strictEqual(editor.getText(), "hello FIRSTworld");
+		});
+
+		it("multiline yank and yank-pop in middle of text", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create single-line entry
+			editor.setText("SINGLE");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "SINGLE"
+
+			// Create multiline entry via consecutive Ctrl+U
+			editor.setText("A\nB");
+			editor.handleInput("\x15"); // Ctrl+U - deletes "B"
+			editor.handleInput("\x15"); // Ctrl+U - deletes newline
+			editor.handleInput("\x15"); // Ctrl+U - deletes "A"
+			// Ring: ["SINGLE", "A\nB"]
+
+			// Insert in middle of "hello world"
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C");
+
+			// Yank multiline "A\nB"
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello A\nBworld");
+
+			// Yank-pop replaces with "SINGLE"
+			editor.handleInput("\x1by"); // Alt+Y
+			assert.strictEqual(editor.getText(), "hello SINGLEworld");
+		});
+
+		it("Alt+D deletes word forward and saves to kill ring", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world test");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+
+			editor.handleInput("\x1bd"); // Alt+D - deletes "hello"
+			assert.strictEqual(editor.getText(), " world test");
+
+			editor.handleInput("\x1bd"); // Alt+D - deletes " world" (skips whitespace, then word)
+			assert.strictEqual(editor.getText(), " test");
+
+			// Yank should get accumulated text
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello world test");
+		});
+
+		it("Alt+D at end of line deletes newline", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("line1\nline2");
+			// Move to start of document, then to end of first line
+			editor.handleInput("\x1b[A"); // Up arrow - go to first line
+			editor.handleInput("\x05"); // Ctrl+E - end of line
+
+			editor.handleInput("\x1bd"); // Alt+D - deletes newline (merges lines)
+			assert.strictEqual(editor.getText(), "line1line2");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "line1\nline2");
+		});
+	});
+
+	describe("Undo", () => {
+		it("does nothing when undo stack is empty", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "");
+		});
+
+		it("coalesces consecutive word characters into one undo unit", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			assert.strictEqual(editor.getText(), "hello world");
+
+			// Undo removes " world" (space captured state before it, so we restore to "hello")
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello");
+
+			// Undo removes "hello"
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "");
+		});
+
+		it("undoes spaces one at a time", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput(" ");
+			assert.strictEqual(editor.getText(), "hello  ");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo) - removes second " "
+			assert.strictEqual(editor.getText(), "hello ");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo) - removes first " "
+			assert.strictEqual(editor.getText(), "hello");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo) - removes "hello"
+			assert.strictEqual(editor.getText(), "");
+		});
+
+		it("undoes newlines and signals next word to capture state", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput("\n");
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			assert.strictEqual(editor.getText(), "hello\nworld");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello\n");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "");
+		});
+
+		it("undoes backspace", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput("\x7f"); // Backspace
+			assert.strictEqual(editor.getText(), "hell");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello");
+		});
+
+		it("undoes forward delete", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			editor.handleInput("\x1b[C"); // Right arrow
+			editor.handleInput("\x1b[3~"); // Delete key
+			assert.strictEqual(editor.getText(), "hllo");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello");
+		});
+
+		it("undoes Ctrl+W (delete word backward)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			assert.strictEqual(editor.getText(), "hello world");
+
+			editor.handleInput("\x17"); // Ctrl+W
+			assert.strictEqual(editor.getText(), "hello ");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("undoes Ctrl+K (delete to line end)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C"); // Move right 6 times
+
+			editor.handleInput("\x0b"); // Ctrl+K
+			assert.strictEqual(editor.getText(), "hello ");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+
+			editor.handleInput("|");
+			assert.strictEqual(editor.getText(), "hello |world");
+		});
+
+		it("undoes Ctrl+U (delete to line start)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C"); // Move right 6 times
+
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "world");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("undoes yank", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput("\x17"); // Ctrl+W - delete "hello "
+			editor.handleInput("\x19"); // Ctrl+Y - yank
+			assert.strictEqual(editor.getText(), "hello ");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "");
+		});
+
+		it("undoes single-line paste atomically", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[C"); // Move right 5 (after "hello", before space)
+
+			// Simulate bracketed paste of "beep boop"
+			editor.handleInput("\x1b[200~beep boop\x1b[201~");
+			assert.strictEqual(editor.getText(), "hellobeep boop world");
+
+			// Single undo should restore entire pre-paste state
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+
+			editor.handleInput("|");
+			assert.strictEqual(editor.getText(), "hello| world");
+		});
+
+		it("undoes multi-line paste atomically", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[C"); // Move right 5 (after "hello", before space)
+
+			// Simulate bracketed paste of multi-line text
+			editor.handleInput("\x1b[200~line1\nline2\nline3\x1b[201~");
+			assert.strictEqual(editor.getText(), "helloline1\nline2\nline3 world");
+
+			// Single undo should restore entire pre-paste state
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+
+			editor.handleInput("|");
+			assert.strictEqual(editor.getText(), "hello| world");
+		});
+
+		it("undoes insertTextAtCursor atomically", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[C"); // Move right 5 (after "hello", before space)
+
+			// Programmatic insertion (e.g., clipboard image path)
+			editor.insertTextAtCursor("/tmp/image.png");
+			assert.strictEqual(editor.getText(), "hello/tmp/image.png world");
+
+			// Single undo should restore entire pre-insert state
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+
+			editor.handleInput("|");
+			assert.strictEqual(editor.getText(), "hello| world");
+		});
+
+		it("undoes setText to empty string", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			assert.strictEqual(editor.getText(), "hello world");
+
+			editor.setText("");
+			assert.strictEqual(editor.getText(), "");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("clears undo stack on submit", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			let submitted = "";
+			editor.onSubmit = (text) => {
+				submitted = text;
+			};
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput("\r"); // Enter - submit
+
+			assert.strictEqual(submitted, "hello");
+			assert.strictEqual(editor.getText(), "");
+
+			// Undo should do nothing - stack was cleared
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "");
+		});
+
+		it("exits history browsing mode on undo", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Add "hello" to history
+			editor.addToHistory("hello");
+			assert.strictEqual(editor.getText(), "");
+
+			// Type "world"
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			assert.strictEqual(editor.getText(), "world");
+
+			// Ctrl+W - delete word
+			editor.handleInput("\x17"); // Ctrl+W
+			assert.strictEqual(editor.getText(), "");
+
+			// Press Up - enter history browsing, shows "hello"
+			editor.handleInput("\x1b[A"); // Up arrow
+			assert.strictEqual(editor.getText(), "hello");
+
+			// Undo should restore to "" (state before entering history browsing)
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "");
+
+			// Undo again should restore to "world" (state before Ctrl+W)
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "world");
+		});
+
+		it("undo restores to pre-history state even after multiple history navigations", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Add history entries
+			editor.addToHistory("first");
+			editor.addToHistory("second");
+			editor.addToHistory("third");
+
+			// Type something
+			editor.handleInput("c");
+			editor.handleInput("u");
+			editor.handleInput("r");
+			editor.handleInput("r");
+			editor.handleInput("e");
+			editor.handleInput("n");
+			editor.handleInput("t");
+			assert.strictEqual(editor.getText(), "current");
+
+			// Clear editor
+			editor.handleInput("\x17"); // Ctrl+W
+			assert.strictEqual(editor.getText(), "");
+
+			// Navigate through history multiple times
+			editor.handleInput("\x1b[A"); // Up - "third"
+			assert.strictEqual(editor.getText(), "third");
+			editor.handleInput("\x1b[A"); // Up - "second"
+			assert.strictEqual(editor.getText(), "second");
+			editor.handleInput("\x1b[A"); // Up - "first"
+			assert.strictEqual(editor.getText(), "first");
+
+			// Undo should go back to "" (state before we started browsing), not intermediate states
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "");
+
+			// Another undo goes back to "current"
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "current");
+		});
+
+		it("cursor movement starts new undo unit", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			assert.strictEqual(editor.getText(), "hello world");
+
+			// Move cursor left 5 (to after "hello ")
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[D");
+
+			// Type "lol" in the middle
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput("l");
+			assert.strictEqual(editor.getText(), "hello lolworld");
+
+			// Undo should restore to "hello world" (before inserting "lol")
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+
+			editor.handleInput("|");
+			assert.strictEqual(editor.getText(), "hello |world");
+		});
+
+		it("no-op delete operations do not push undo snapshots", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			assert.strictEqual(editor.getText(), "hello");
+
+			// Delete word on empty - multiple times (should be no-ops)
+			editor.handleInput("\x17"); // Ctrl+W - deletes "hello"
+			assert.strictEqual(editor.getText(), "");
+			editor.handleInput("\x17"); // Ctrl+W - no-op (nothing to delete)
+			editor.handleInput("\x17"); // Ctrl+W - no-op
+
+			// Single undo should restore "hello"
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello");
+		});
+
+		it("undoes autocomplete", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create a mock autocomplete provider
+			const mockProvider: AutocompleteProvider = {
+				getSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const prefix = text.slice(0, cursorCol);
+					if (prefix === "di") {
+						return {
+							items: [{ value: "dist/", label: "dist/" }],
+							prefix: "di",
+						};
+					}
+					return null;
+				},
+				applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => {
+					const line = lines[cursorLine] || "";
+					const before = line.slice(0, cursorCol - prefix.length);
+					const after = line.slice(cursorCol);
+					const newLines = [...lines];
+					newLines[cursorLine] = before + item.value + after;
+					return {
+						lines: newLines,
+						cursorLine,
+						cursorCol: cursorCol - prefix.length + item.value.length,
+					};
+				},
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Type "di"
+			editor.handleInput("d");
+			editor.handleInput("i");
+			assert.strictEqual(editor.getText(), "di");
+
+			// Press Tab to trigger autocomplete
+			editor.handleInput("\t");
+			// Autocomplete should be showing with "dist/" suggestion
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Press Tab again to accept the suggestion
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "dist/");
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+
+			// Undo should restore to "di"
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "di");
 		});
 	});
 });

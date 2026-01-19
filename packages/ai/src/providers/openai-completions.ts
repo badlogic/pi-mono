@@ -15,7 +15,7 @@ import type {
 	Context,
 	Message,
 	Model,
-	OpenAICompat,
+	OpenAICompletionsCompat,
 	StopReason,
 	StreamFunction,
 	StreamOptions,
@@ -27,14 +27,13 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-import { transformMessages } from "./transorm-messages.js";
+import { transformMessages } from "./transform-messages.js";
 
 /**
  * Normalize tool call ID for Mistral.
  * Mistral requires tool IDs to be exactly 9 alphanumeric characters (a-z, A-Z, 0-9).
  */
-function normalizeMistralToolId(id: string, isMistral: boolean): string {
-	if (!isMistral) return id;
+function normalizeMistralToolId(id: string): string {
 	// Remove non-alphanumeric characters
 	let normalized = id.replace(/[^a-zA-Z0-9]/g, "");
 	// Mistral requires exactly 9 characters
@@ -102,6 +101,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
 			const client = createClient(model, context, apiKey);
 			const params = buildParams(model, context, options);
+			options?.onPayload?.(params);
 			const openaiStream = await client.chat.completions.create(params, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
 
@@ -365,6 +365,7 @@ function createClient(model: Model<"openai-completions">, context: Context, apiK
 function buildParams(model: Model<"openai-completions">, context: Context, options?: OpenAICompletionsOptions) {
 	const compat = getCompat(model);
 	const messages = convertMessages(model, context, compat);
+	maybeAddOpenRouterAnthropicCacheControl(model, messages);
 
 	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
 		model: model.id,
@@ -403,21 +404,69 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		params.tool_choice = options.toolChoice;
 	}
 
-	if (options?.reasoningEffort && model.reasoning && compat.supportsReasoningEffort) {
+	if (compat.thinkingFormat === "zai" && model.reasoning) {
+		// Z.ai uses binary thinking: { type: "enabled" | "disabled" }
+		// Must explicitly disable since z.ai defaults to thinking enabled
+		(params as any).thinking = { type: options?.reasoningEffort ? "enabled" : "disabled" };
+	} else if (options?.reasoningEffort && model.reasoning && compat.supportsReasoningEffort) {
+		// OpenAI-style reasoning_effort
 		params.reasoning_effort = options.reasoningEffort;
 	}
 
 	return params;
 }
 
+function maybeAddOpenRouterAnthropicCacheControl(
+	model: Model<"openai-completions">,
+	messages: ChatCompletionMessageParam[],
+): void {
+	if (model.provider !== "openrouter" || !model.id.startsWith("anthropic/")) return;
+
+	// Anthropic-style caching requires cache_control on a text part. Add a breakpoint
+	// on the last user/assistant message (walking backwards until we find text content).
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role !== "user" && msg.role !== "assistant") continue;
+
+		const content = msg.content;
+		if (typeof content === "string") {
+			msg.content = [
+				Object.assign({ type: "text" as const, text: content }, { cache_control: { type: "ephemeral" } }),
+			];
+			return;
+		}
+
+		if (!Array.isArray(content)) continue;
+
+		// Find last text part and add cache_control
+		for (let j = content.length - 1; j >= 0; j--) {
+			const part = content[j];
+			if (part?.type === "text") {
+				Object.assign(part, { cache_control: { type: "ephemeral" } });
+				return;
+			}
+		}
+	}
+}
+
 function convertMessages(
 	model: Model<"openai-completions">,
 	context: Context,
-	compat: Required<OpenAICompat>,
+	compat: Required<OpenAICompletionsCompat>,
 ): ChatCompletionMessageParam[] {
 	const params: ChatCompletionMessageParam[] = [];
 
-	const transformedMessages = transformMessages(context.messages, model);
+	const normalizeToolCallId = (id: string): string => {
+		if (compat.requiresMistralToolIds) return normalizeMistralToolId(id);
+		if (model.provider === "openai") return id.length > 40 ? id.slice(0, 40) : id;
+		// Copilot Claude models route to Claude backend which requires Anthropic ID format
+		if (model.provider === "github-copilot" && model.id.toLowerCase().includes("claude")) {
+			return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+		}
+		return id;
+	};
+
+	const transformedMessages = transformMessages(context.messages, model, (id) => normalizeToolCallId(id));
 
 	if (context.systemPrompt) {
 		const useDeveloperRole = model.reasoning && compat.supportsDeveloperRole;
@@ -516,7 +565,7 @@ function convertMessages(
 			const toolCalls = msg.content.filter((b) => b.type === "toolCall") as ToolCall[];
 			if (toolCalls.length > 0) {
 				assistantMsg.tool_calls = toolCalls.map((tc) => ({
-					id: normalizeMistralToolId(tc.id, compat.requiresMistralToolIds),
+					id: tc.id,
 					type: "function" as const,
 					function: {
 						name: tc.name,
@@ -564,7 +613,7 @@ function convertMessages(
 			const toolResultMsg: ChatCompletionToolMessageParam = {
 				role: "tool",
 				content: sanitizeSurrogates(hasText ? textResult : "(see attached image)"),
-				tool_call_id: normalizeMistralToolId(msg.toolCallId, compat.requiresMistralToolIds),
+				tool_call_id: msg.toolCallId,
 			};
 			if (compat.requiresToolResultName && msg.toolName) {
 				(toolResultMsg as any).name = msg.toolName;
@@ -640,41 +689,54 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): Sto
 }
 
 /**
- * Detect compatibility settings from baseUrl for known providers.
- * Returns a fully resolved OpenAICompat object with all fields set.
+ * Detect compatibility settings from provider and baseUrl for known providers.
+ * Provider takes precedence over URL-based detection since it's explicitly configured.
+ * Returns a fully resolved OpenAICompletionsCompat object with all fields set.
  */
-function detectCompatFromUrl(baseUrl: string): Required<OpenAICompat> {
+function detectCompat(model: Model<"openai-completions">): Required<OpenAICompletionsCompat> {
+	const provider = model.provider;
+	const baseUrl = model.baseUrl;
+
+	const isZai = provider === "zai" || baseUrl.includes("api.z.ai");
+
 	const isNonStandard =
+		provider === "cerebras" ||
 		baseUrl.includes("cerebras.ai") ||
+		provider === "xai" ||
 		baseUrl.includes("api.x.ai") ||
+		provider === "mistral" ||
 		baseUrl.includes("mistral.ai") ||
-		baseUrl.includes("chutes.ai");
+		baseUrl.includes("chutes.ai") ||
+		isZai ||
+		provider === "opencode" ||
+		baseUrl.includes("opencode.ai");
 
-	const useMaxTokens = baseUrl.includes("mistral.ai") || baseUrl.includes("chutes.ai");
+	const useMaxTokens = provider === "mistral" || baseUrl.includes("mistral.ai") || baseUrl.includes("chutes.ai");
 
-	const isGrok = baseUrl.includes("api.x.ai");
+	const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
 
-	const isMistral = baseUrl.includes("mistral.ai");
+	const isMistral = provider === "mistral" || baseUrl.includes("mistral.ai");
 
 	return {
 		supportsStore: !isNonStandard,
 		supportsDeveloperRole: !isNonStandard,
-		supportsReasoningEffort: !isGrok,
+		supportsReasoningEffort: !isGrok && !isZai,
 		supportsUsageInStreaming: true,
 		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
 		requiresToolResultName: isMistral,
 		requiresAssistantAfterToolResult: false, // Mistral no longer requires this as of Dec 2024
 		requiresThinkingAsText: isMistral,
 		requiresMistralToolIds: isMistral,
+		thinkingFormat: isZai ? "zai" : "openai",
 	};
 }
 
 /**
  * Get resolved compatibility settings for a model.
- * Uses explicit model.compat if provided, otherwise auto-detects from URL.
+ * Uses explicit model.compat if provided, otherwise auto-detects from provider/URL.
  */
-function getCompat(model: Model<"openai-completions">): Required<OpenAICompat> {
-	const detected = detectCompatFromUrl(model.baseUrl);
+function getCompat(model: Model<"openai-completions">): Required<OpenAICompletionsCompat> {
+	const detected = detectCompat(model);
 	if (!model.compat) return detected;
 
 	return {
@@ -688,5 +750,6 @@ function getCompat(model: Model<"openai-completions">): Required<OpenAICompat> {
 			model.compat.requiresAssistantAfterToolResult ?? detected.requiresAssistantAfterToolResult,
 		requiresThinkingAsText: model.compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
 		requiresMistralToolIds: model.compat.requiresMistralToolIds ?? detected.requiresMistralToolIds,
+		thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
 	};
 }

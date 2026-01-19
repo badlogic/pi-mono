@@ -17,6 +17,9 @@ const __dirname = dirname(__filename);
 export const isBunBinary =
 	import.meta.url.includes("$bunfs") || import.meta.url.includes("~BUN") || import.meta.url.includes("%7EBUN");
 
+/** Detect if Bun is the runtime (compiled binary or bun run) */
+export const isBunRuntime = !!process.versions.bun;
+
 // =============================================================================
 // Package Asset Paths (shipped with executable)
 // =============================================================================
@@ -119,7 +122,14 @@ export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
 
 /** Get the agent config directory (e.g., ~/.pi/agent/) */
 export function getAgentDir(): string {
-	return process.env[ENV_AGENT_DIR] || join(homedir(), CONFIG_DIR_NAME, "agent");
+	const envDir = process.env[ENV_AGENT_DIR];
+	if (envDir) {
+		// Expand tilde to home directory
+		if (envDir === "~") return homedir();
+		if (envDir.startsWith("~/")) return homedir() + envDir.slice(1);
+		return envDir;
+	}
+	return join(homedir(), CONFIG_DIR_NAME, "agent");
 }
 
 /** Get path to user's custom themes directory */

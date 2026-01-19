@@ -13,18 +13,25 @@ import {
 } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
+import { execSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import type { AuthStorage } from "./auth-storage.js";
 
 const Ajv = (AjvModule as any).default || AjvModule;
 
 // Schema for OpenAI compatibility settings
-const OpenAICompatSchema = Type.Object({
+const OpenAICompletionsCompatSchema = Type.Object({
 	supportsStore: Type.Optional(Type.Boolean()),
 	supportsDeveloperRole: Type.Optional(Type.Boolean()),
 	supportsReasoningEffort: Type.Optional(Type.Boolean()),
 	maxTokensField: Type.Optional(Type.Union([Type.Literal("max_completion_tokens"), Type.Literal("max_tokens")])),
 });
+
+const OpenAIResponsesCompatSchema = Type.Object({
+	// Reserved for future use
+});
+
+const OpenAICompatSchema = Type.Union([OpenAICompletionsCompatSchema, OpenAIResponsesCompatSchema]);
 
 // Schema for custom model definition
 const ModelDefinitionSchema = Type.Object({
@@ -37,6 +44,7 @@ const ModelDefinitionSchema = Type.Object({
 			Type.Literal("openai-codex-responses"),
 			Type.Literal("anthropic-messages"),
 			Type.Literal("google-generative-ai"),
+			Type.Literal("bedrock-converse-stream"),
 		]),
 	),
 	reasoning: Type.Boolean(),
@@ -63,6 +71,7 @@ const ProviderConfigSchema = Type.Object({
 			Type.Literal("openai-codex-responses"),
 			Type.Literal("anthropic-messages"),
 			Type.Literal("google-generative-ai"),
+			Type.Literal("bedrock-converse-stream"),
 		]),
 	),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
@@ -97,14 +106,47 @@ function emptyCustomModelsResult(error?: string): CustomModelsResult {
 	return { models: [], replacedProviders: new Set(), overrides: new Map(), error };
 }
 
+// Cache for shell command results (persists for process lifetime)
+const commandResultCache = new Map<string, string | undefined>();
+
 /**
  * Resolve an API key config value to an actual key.
- * Checks environment variable first, then treats as literal.
+ * - If starts with "!", executes the rest as a shell command and uses stdout (cached)
+ * - Otherwise checks environment variable first, then treats as literal (not cached)
  */
 function resolveApiKeyConfig(keyConfig: string): string | undefined {
+	if (keyConfig.startsWith("!")) {
+		return executeApiKeyCommand(keyConfig);
+	}
 	const envValue = process.env[keyConfig];
-	if (envValue) return envValue;
-	return keyConfig;
+	return envValue || keyConfig;
+}
+
+function executeApiKeyCommand(commandConfig: string): string | undefined {
+	if (commandResultCache.has(commandConfig)) {
+		return commandResultCache.get(commandConfig);
+	}
+
+	const command = commandConfig.slice(1);
+	let result: string | undefined;
+	try {
+		const output = execSync(command, {
+			encoding: "utf-8",
+			timeout: 10000,
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+		result = output.trim() || undefined;
+	} catch {
+		result = undefined;
+	}
+
+	commandResultCache.set(commandConfig, result);
+	return result;
+}
+
+/** Clear the API key command cache. Exported for testing. */
+export function clearApiKeyCache(): void {
+	commandResultCache.clear();
 }
 
 /**
@@ -371,6 +413,13 @@ export class ModelRegistry {
 	 */
 	async getApiKey(model: Model<Api>): Promise<string | undefined> {
 		return this.authStorage.getApiKey(model.provider);
+	}
+
+	/**
+	 * Get API key for a provider.
+	 */
+	async getApiKeyForProvider(provider: string): Promise<string | undefined> {
+		return this.authStorage.getApiKey(provider);
 	}
 
 	/**

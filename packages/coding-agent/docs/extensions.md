@@ -18,6 +18,7 @@ Extensions are TypeScript modules that extend pi's behavior. They can subscribe 
 - Git checkpointing (stash at each turn, restore on branch)
 - Path protection (block writes to `.env`, `node_modules/`)
 - Custom compaction (summarize conversation your way)
+- Conversation summaries (see `summarize.ts` example)
 - Interactive tools (questions, wizards, custom dialogs)
 - Stateful tools (todo lists, connection pools)
 - External integrations (file watchers, webhooks, CI triggers)
@@ -183,14 +184,14 @@ export default function (pi: ExtensionAPI) {
     const ok = await ctx.ui.confirm("Title", "Are you sure?");
     ctx.ui.notify("Done!", "success");
     ctx.ui.setStatus("my-ext", "Processing...");  // Footer status
-    ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"]);  // Widget above editor
+    ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"]);  // Widget above editor (default)
   });
 
   // Register tools, commands, shortcuts, flags
   pi.registerTool({ ... });
   pi.registerCommand("name", { ... });
   pi.registerShortcut("ctrl+x", { ... });
-  pi.registerFlag("--my-flag", { ... });
+  pi.registerFlag("my-flag", { ... });
 }
 ```
 
@@ -255,6 +256,9 @@ pi starts
       ▼
 user sends prompt ─────────────────────────────────────────┐
   │                                                        │
+  ├─► (extension commands checked first, bypass if found)  │
+  ├─► input (can intercept, transform, or handle)          │
+  ├─► (skill/template expansion if not handled)            │
   ├─► before_agent_start (can inject message, modify system prompt)
   ├─► agent_start                                          │
   │                                                        │
@@ -278,9 +282,9 @@ user sends another prompt ◄─────────────────
   ├─► session_before_switch (can cancel)
   └─► session_switch
 
-/branch
-  ├─► session_before_branch (can cancel)
-  └─► session_branch
+/fork
+  ├─► session_before_fork (can cancel)
+  └─► session_fork
 
 /compact or auto-compaction
   ├─► session_before_compact (can cancel or customize)
@@ -289,6 +293,9 @@ user sends another prompt ◄─────────────────
 /tree navigation
   ├─► session_before_tree (can cancel or customize)
   └─► session_tree
+
+/model or Ctrl+P (model selection/cycling)
+  └─► model_select
 
 exit (Ctrl+C, Ctrl+D)
   └─► session_shutdown
@@ -331,19 +338,19 @@ pi.on("session_switch", async (event, ctx) => {
 
 **Examples:** [confirm-destructive.ts](../examples/extensions/confirm-destructive.ts), [dirty-repo-guard.ts](../examples/extensions/dirty-repo-guard.ts), [status-line.ts](../examples/extensions/status-line.ts), [todo.ts](../examples/extensions/todo.ts)
 
-#### session_before_branch / session_branch
+#### session_before_fork / session_fork
 
-Fired when branching via `/branch`.
+Fired when forking via `/fork`.
 
 ```typescript
-pi.on("session_before_branch", async (event, ctx) => {
-  // event.entryId - ID of the entry being branched from
-  return { cancel: true }; // Cancel branch
+pi.on("session_before_fork", async (event, ctx) => {
+  // event.entryId - ID of the entry being forked from
+  return { cancel: true }; // Cancel fork
   // OR
-  return { skipConversationRestore: true }; // Branch but don't rewind messages
+  return { skipConversationRestore: true }; // Fork but don't rewind messages
 });
 
-pi.on("session_branch", async (event, ctx) => {
+pi.on("session_fork", async (event, ctx) => {
   // event.previousSessionFile - previous session file
 });
 ```
@@ -377,7 +384,7 @@ pi.on("session_compact", async (event, ctx) => {
 });
 ```
 
-**Examples:** [custom-compaction.ts](../examples/extensions/custom-compaction.ts)
+**Examples:** [custom-compaction.ts](../examples/extensions/custom-compaction.ts), [trigger-compact.ts](../examples/extensions/trigger-compact.ts)
 
 #### session_before_tree / session_tree
 
@@ -435,7 +442,7 @@ pi.on("before_agent_start", async (event, ctx) => {
 });
 ```
 
-**Examples:** [claude-rules.ts](../examples/extensions/claude-rules.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [ssh.ts](../examples/extensions/ssh.ts)
+**Examples:** [claude-rules.ts](../examples/extensions/claude-rules.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [ssh.ts](../examples/extensions/ssh.ts)
 
 #### agent_start / agent_end
 
@@ -449,7 +456,7 @@ pi.on("agent_end", async (event, ctx) => {
 });
 ```
 
-**Examples:** [chalk-logger.ts](../examples/extensions/chalk-logger.ts), [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts)
+**Examples:** [chalk-logger.ts](../examples/extensions/chalk-logger.ts), [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 
 #### turn_start / turn_end
 
@@ -465,7 +472,7 @@ pi.on("turn_end", async (event, ctx) => {
 });
 ```
 
-**Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [status-line.ts](../examples/extensions/status-line.ts)
+**Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [status-line.ts](../examples/extensions/status-line.ts)
 
 #### context
 
@@ -479,7 +486,32 @@ pi.on("context", async (event, ctx) => {
 });
 ```
 
-**Examples:** [plan-mode.ts](../examples/extensions/plan-mode.ts)
+**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
+
+### Model Events
+
+#### model_select
+
+Fired when the model changes via `/model` command, model cycling (`Ctrl+P`), or session restore.
+
+```typescript
+pi.on("model_select", async (event, ctx) => {
+  // event.model - newly selected model
+  // event.previousModel - previous model (undefined if first selection)
+  // event.source - "set" | "cycle" | "restore"
+  
+  const prev = event.previousModel 
+    ? `${event.previousModel.provider}/${event.previousModel.id}` 
+    : "none";
+  const next = `${event.model.provider}/${event.model.id}`;
+  
+  ctx.ui.notify(`Model changed (${event.source}): ${prev} -> ${next}`, "info");
+});
+```
+
+Use this to update UI elements (status bars, footers) or perform model-specific initialization when the active model changes.
+
+**Examples:** [model-status.ts](../examples/extensions/model-status.ts)
 
 ### Tool Events
 
@@ -499,7 +531,7 @@ pi.on("tool_call", async (event, ctx) => {
 });
 ```
 
-**Examples:** [chalk-logger.ts](../examples/extensions/chalk-logger.ts), [permission-gate.ts](../examples/extensions/permission-gate.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [protected-paths.ts](../examples/extensions/protected-paths.ts)
+**Examples:** [chalk-logger.ts](../examples/extensions/chalk-logger.ts), [permission-gate.ts](../examples/extensions/permission-gate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [protected-paths.ts](../examples/extensions/protected-paths.ts)
 
 #### tool_result
 
@@ -521,7 +553,7 @@ pi.on("tool_result", async (event, ctx) => {
 });
 ```
 
-**Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts)
+**Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 
 ### User Bash Events
 
@@ -544,6 +576,54 @@ pi.on("user_bash", (event, ctx) => {
 ```
 
 **Examples:** [ssh.ts](../examples/extensions/ssh.ts), [interactive-shell.ts](../examples/extensions/interactive-shell.ts)
+
+### Input Events
+
+#### input
+
+Fired when user input is received, after extension commands are checked but before skill and template expansion. The event sees the raw input text, so `/skill:foo` and `/template` are not yet expanded.
+
+**Processing order:**
+1. Extension commands (`/cmd`) checked first - if found, handler runs and input event is skipped
+2. `input` event fires - can intercept, transform, or handle
+3. If not handled: skill commands (`/skill:name`) expanded to skill content
+4. If not handled: prompt templates (`/template`) expanded to template content
+5. Agent processing begins (`before_agent_start`, etc.)
+
+```typescript
+pi.on("input", async (event, ctx) => {
+  // event.text - raw input (before skill/template expansion)
+  // event.images - attached images, if any
+  // event.source - "interactive" (typed), "rpc" (API), or "extension" (via sendUserMessage)
+
+  // Transform: rewrite input before expansion
+  if (event.text.startsWith("?quick "))
+    return { action: "transform", text: `Respond briefly: ${event.text.slice(7)}` };
+
+  // Handle: respond without LLM (extension shows its own feedback)
+  if (event.text === "ping") {
+    ctx.ui.notify("pong", "info");
+    return { action: "handled" };
+  }
+
+  // Route by source: skip processing for extension-injected messages
+  if (event.source === "extension") return { action: "continue" };
+
+  // Intercept skill commands before expansion
+  if (event.text.startsWith("/skill:")) {
+    // Could transform, block, or let pass through
+  }
+
+  return { action: "continue" };  // Default: pass through to expansion
+});
+```
+
+**Results:**
+- `continue` - pass through unchanged (default if handler returns nothing)
+- `transform` - modify text/images, then continue to expansion
+- `handled` - skip agent entirely (first handler to return this wins)
+
+Transforms chain across handlers. See [input-transform.ts](../examples/extensions/input-transform.ts).
 
 ## ExtensionContext
 
@@ -597,6 +677,33 @@ pi.on("tool_call", (event, ctx) => {
 });
 ```
 
+### ctx.getContextUsage()
+
+Returns current context usage for the active model. Uses last assistant usage when available, then estimates tokens for trailing messages.
+
+```typescript
+const usage = ctx.getContextUsage();
+if (usage && usage.tokens > 100_000) {
+  // ...
+}
+```
+
+### ctx.compact()
+
+Trigger compaction without awaiting completion. Use `onComplete` and `onError` for follow-up actions.
+
+```typescript
+ctx.compact({
+  customInstructions: "Focus on recent changes",
+  onComplete: (result) => {
+    ctx.ui.notify("Compaction completed", "info");
+  },
+  onError: (error) => {
+    ctx.ui.notify(`Compaction failed: ${error.message}`, "error");
+  },
+});
+```
+
 ## ExtensionCommandContext
 
 Command handlers receive `ExtensionCommandContext`, which extends `ExtensionContext` with session control methods. These are only available in commands because they can deadlock if called from event handlers.
@@ -635,14 +742,14 @@ if (result.cancelled) {
 }
 ```
 
-### ctx.branch(entryId)
+### ctx.fork(entryId)
 
-Branch from a specific entry:
+Fork from a specific entry, creating a new session file:
 
 ```typescript
-const result = await ctx.branch("entry-id-123");
+const result = await ctx.fork("entry-id-123");
 if (!result.cancelled) {
-  // Now in the branched session
+  // Now in the forked session
 }
 ```
 
@@ -653,8 +760,17 @@ Navigate to a different point in the session tree:
 ```typescript
 const result = await ctx.navigateTree("entry-id-456", {
   summarize: true,
+  customInstructions: "Focus on error handling changes",
+  replaceInstructions: false, // true = replace default prompt entirely
+  label: "review-checkpoint",
 });
 ```
+
+Options:
+- `summarize`: Whether to generate a summary of the abandoned branch
+- `customInstructions`: Custom instructions for the summarizer
+- `replaceInstructions`: If true, `customInstructions` replaces the default prompt instead of being appended
+- `label`: Label to attach to the branch summary entry (or target entry if not summarizing)
 
 ## ExtensionAPI Methods
 
@@ -695,7 +811,7 @@ pi.registerTool({
 });
 ```
 
-**Examples:** [hello.ts](../examples/extensions/hello.ts), [question.ts](../examples/extensions/question.ts), [todo.ts](../examples/extensions/todo.ts), [truncated-tool.ts](../examples/extensions/truncated-tool.ts)
+**Examples:** [hello.ts](../examples/extensions/hello.ts), [question.ts](../examples/extensions/question.ts), [questionnaire.ts](../examples/extensions/questionnaire.ts), [todo.ts](../examples/extensions/todo.ts), [truncated-tool.ts](../examples/extensions/truncated-tool.ts)
 
 ### pi.sendMessage(message, options?)
 
@@ -720,7 +836,7 @@ pi.sendMessage({
   - `"nextTurn"` - Queued for next user prompt. Does not interrupt or trigger anything.
 - `triggerTurn: true` - If agent is idle, trigger an LLM response immediately. Only applies to `"steer"` and `"followUp"` modes (ignored for `"nextTurn"`).
 
-**Examples:** [file-trigger.ts](../examples/extensions/file-trigger.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts)
+**Examples:** [file-trigger.ts](../examples/extensions/file-trigger.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 
 ### pi.sendUserMessage(content, options?)
 
@@ -767,7 +883,43 @@ pi.on("session_start", async (_event, ctx) => {
 });
 ```
 
-**Examples:** [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [snake.ts](../examples/extensions/snake.ts), [tools.ts](../examples/extensions/tools.ts)
+**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [snake.ts](../examples/extensions/snake.ts), [tools.ts](../examples/extensions/tools.ts)
+
+### pi.setSessionName(name)
+
+Set the session display name (shown in session selector instead of first message).
+
+```typescript
+pi.setSessionName("Refactor auth module");
+```
+
+### pi.getSessionName()
+
+Get the current session name, if set.
+
+```typescript
+const name = pi.getSessionName();
+if (name) {
+  console.log(`Session: ${name}`);
+}
+```
+
+### pi.setLabel(entryId, label)
+
+Set or clear a label on an entry. Labels are user-defined markers for bookmarking and navigation (shown in `/tree` selector).
+
+```typescript
+// Set a label
+pi.setLabel(entryId, "checkpoint-before-refactor");
+
+// Clear a label
+pi.setLabel(entryId, undefined);
+
+// Read labels via sessionManager
+const label = ctx.sessionManager.getLabel(entryId);
+```
+
+Labels persist in the session and survive restarts. Use them to mark important points (turns, checkpoints) in the conversation tree.
 
 ### pi.registerCommand(name, options)
 
@@ -783,7 +935,26 @@ pi.registerCommand("stats", {
 });
 ```
 
-**Examples:** [custom-footer.ts](../examples/extensions/custom-footer.ts), [custom-header.ts](../examples/extensions/custom-header.ts), [handoff.ts](../examples/extensions/handoff.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [send-user-message.ts](../examples/extensions/send-user-message.ts), [snake.ts](../examples/extensions/snake.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts)
+Optional: add argument auto-completion for `/command ...`:
+
+```typescript
+import type { AutocompleteItem } from "@mariozechner/pi-tui";
+
+pi.registerCommand("deploy", {
+  description: "Deploy to an environment",
+  getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
+    const envs = ["dev", "staging", "prod"];
+    const items = envs.map((e) => ({ value: e, label: e }));
+    const filtered = items.filter((i) => i.value.startsWith(prefix));
+    return filtered.length > 0 ? filtered : null;
+  },
+  handler: async (args, ctx) => {
+    ctx.ui.notify(`Deploying: ${args}`, "info");
+  },
+});
+```
+
+**Examples:** [custom-footer.ts](../examples/extensions/custom-footer.ts), [custom-header.ts](../examples/extensions/custom-header.ts), [handoff.ts](../examples/extensions/handoff.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [send-user-message.ts](../examples/extensions/send-user-message.ts), [snake.ts](../examples/extensions/snake.ts), [summarize.ts](../examples/extensions/summarize.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts)
 
 ### pi.registerMessageRenderer(customType, renderer)
 
@@ -802,14 +973,14 @@ pi.registerShortcut("ctrl+shift+p", {
 });
 ```
 
-**Examples:** [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts)
+**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts)
 
 ### pi.registerFlag(name, options)
 
 Register a CLI flag.
 
 ```typescript
-pi.registerFlag("--plan", {
+pi.registerFlag("plan", {
   description: "Start in plan mode",
   type: "boolean",
   default: false,
@@ -821,7 +992,7 @@ if (pi.getFlag("--plan")) {
 }
 ```
 
-**Examples:** [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts)
+**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts)
 
 ### pi.exec(command, args, options?)
 
@@ -840,10 +1011,12 @@ Manage active tools.
 
 ```typescript
 const active = pi.getActiveTools();  // ["read", "bash", "edit", "write"]
+const all = pi.getAllTools();        // [{ name: "read", description: "Read file contents..." }, ...]
+const names = all.map(t => t.name);  // Just names if needed
 pi.setActiveTools(["read", "bash"]); // Switch to read-only
 ```
 
-**Examples:** [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [tools.ts](../examples/extensions/tools.ts)
+**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [tools.ts](../examples/extensions/tools.ts)
 
 ### pi.setModel(model)
 
@@ -1147,6 +1320,28 @@ renderResult(result, { expanded, isPartial }, theme) {
 }
 ```
 
+#### Keybinding Hints
+
+Use `keyHint()` to display keybinding hints that respect user's keybinding configuration:
+
+```typescript
+import { keyHint } from "@mariozechner/pi-coding-agent";
+
+renderResult(result, { expanded }, theme) {
+  let text = theme.fg("success", "✓ Done");
+  if (!expanded) {
+    text += ` (${keyHint("expandTools", "to expand")})`;
+  }
+  return new Text(text, 0, 0);
+}
+```
+
+Available functions:
+- `keyHint(action, description)` - Editor actions (e.g., `"expandTools"`, `"selectConfirm"`)
+- `appKeyHint(keybindings, action, description)` - App actions (requires `KeybindingsManager`)
+- `editorKey(action)` - Get raw key string for editor action
+- `rawKeyHint(key, description)` - Format a raw key string
+
 #### Best Practices
 
 - Use `Text` with padding `(0, 0)` - the Box handles padding
@@ -1170,7 +1365,8 @@ Extensions can interact with users via `ctx.ui` methods and customize how messag
 - Async operations with cancel (BorderedLoader)
 - Settings toggles (SettingsList)
 - Status indicators (setStatus)
-- Widgets above editor (setWidget)
+- Working message during streaming (setWorkingMessage)
+- Widgets above/below editor (setWidget)
 - Custom footers (setFooter)
 
 ### Dialogs
@@ -1193,7 +1389,7 @@ ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
 ```
 
 **Examples:**
-- `ctx.ui.select()`: [confirm-destructive.ts](../examples/extensions/confirm-destructive.ts), [dirty-repo-guard.ts](../examples/extensions/dirty-repo-guard.ts), [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [permission-gate.ts](../examples/extensions/permission-gate.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [question.ts](../examples/extensions/question.ts)
+- `ctx.ui.select()`: [confirm-destructive.ts](../examples/extensions/confirm-destructive.ts), [dirty-repo-guard.ts](../examples/extensions/dirty-repo-guard.ts), [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [permission-gate.ts](../examples/extensions/permission-gate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [question.ts](../examples/extensions/question.ts), [questionnaire.ts](../examples/extensions/questionnaire.ts)
 - `ctx.ui.confirm()`: [confirm-destructive.ts](../examples/extensions/confirm-destructive.ts)
 - `ctx.ui.editor()`: [handoff.ts](../examples/extensions/handoff.ts)
 - `ctx.ui.setEditorText()`: [handoff.ts](../examples/extensions/handoff.ts), [qna.ts](../examples/extensions/qna.ts)
@@ -1256,8 +1452,14 @@ See [examples/extensions/timed-confirm.ts](../examples/extensions/timed-confirm.
 ctx.ui.setStatus("my-ext", "Processing...");
 ctx.ui.setStatus("my-ext", undefined);  // Clear
 
-// Widget above editor (string array or factory function)
+// Working message (shown during streaming)
+ctx.ui.setWorkingMessage("Thinking deeply...");
+ctx.ui.setWorkingMessage();  // Restore default
+
+// Widget above editor (default)
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
+// Widget below editor
+ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"], { placement: "belowEditor" });
 ctx.ui.setWidget("my-widget", (tui, theme) => new Text(theme.fg("accent", "Custom"), 0, 0));
 ctx.ui.setWidget("my-widget", undefined);  // Clear
 
@@ -1291,8 +1493,8 @@ ctx.ui.theme.fg("accent", "styled text");  // Access current theme
 ```
 
 **Examples:**
-- `ctx.ui.setStatus()`: [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [status-line.ts](../examples/extensions/status-line.ts)
-- `ctx.ui.setWidget()`: [plan-mode.ts](../examples/extensions/plan-mode.ts)
+- `ctx.ui.setStatus()`: [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [status-line.ts](../examples/extensions/status-line.ts)
+- `ctx.ui.setWidget()`: [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 - `ctx.ui.setFooter()`: [custom-footer.ts](../examples/extensions/custom-footer.ts)
 - `ctx.ui.setHeader()`: [custom-header.ts](../examples/extensions/custom-header.ts)
 - `ctx.ui.setEditorComponent()`: [modal-editor.ts](../examples/extensions/modal-editor.ts)
@@ -1341,9 +1543,22 @@ const result = await ctx.ui.custom<string | null>(
 );
 ```
 
-Overlay components should define a `width` property to control their size. The overlay is centered by default. See [overlay-test.ts](../examples/extensions/overlay-test.ts) for a complete example.
+For advanced positioning (anchors, margins, percentages, responsive visibility), pass `overlayOptions`. Use `onHandle` to control visibility programmatically:
 
-**Examples:** [handoff.ts](../examples/extensions/handoff.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [snake.ts](../examples/extensions/snake.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts), [overlay-test.ts](../examples/extensions/overlay-test.ts)
+```typescript
+const result = await ctx.ui.custom<string | null>(
+  (tui, theme, keybindings, done) => new MyOverlayComponent({ onClose: done }),
+  {
+    overlay: true,
+    overlayOptions: { anchor: "top-right", width: "50%", margin: 2 },
+    onHandle: (handle) => { /* handle.setHidden(true/false) */ }
+  }
+);
+```
+
+See [tui.md](tui.md) for the full `OverlayOptions` API and [overlay-qa-tests.ts](../examples/extensions/overlay-qa-tests.ts) for examples.
+
+**Examples:** [handoff.ts](../examples/extensions/handoff.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [snake.ts](../examples/extensions/snake.ts), [summarize.ts](../examples/extensions/summarize.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts), [overlay-test.ts](../examples/extensions/overlay-test.ts)
 
 ### Custom Editor
 

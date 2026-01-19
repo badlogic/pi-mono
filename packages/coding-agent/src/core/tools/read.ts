@@ -117,8 +117,9 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 										{ type: "image", data: resized.data, mimeType: resized.mimeType },
 									];
 								} else {
+									const textNote = `Read image file [${mimeType}]`;
 									content = [
-										{ type: "text", text: `Read image file [${mimeType}]` },
+										{ type: "text", text: textNote },
 										{ type: "image", data: base64, mimeType },
 									];
 								}

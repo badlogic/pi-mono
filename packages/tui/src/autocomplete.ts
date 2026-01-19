@@ -2,6 +2,7 @@ import { spawnSync } from "child_process";
 import { readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join } from "path";
+import { fuzzyFilter } from "./fuzzy.js";
 
 // Use fd to walk directory tree (fast, respects .gitignore)
 function walkDirectoryWithFd(
@@ -126,18 +127,19 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			const spaceIndex = textBeforeCursor.indexOf(" ");
 
 			if (spaceIndex === -1) {
-				// No space yet - complete command names
+				// No space yet - complete command names with fuzzy matching
 				const prefix = textBeforeCursor.slice(1); // Remove the "/"
-				const filtered = this.commands
-					.filter((cmd) => {
-						const name = "name" in cmd ? cmd.name : cmd.value; // Check if SlashCommand or AutocompleteItem
-						return name?.toLowerCase().startsWith(prefix.toLowerCase());
-					})
-					.map((cmd) => ({
-						value: "name" in cmd ? cmd.name : cmd.value,
-						label: "name" in cmd ? cmd.name : cmd.label,
-						...(cmd.description && { description: cmd.description }),
-					}));
+				const commandItems = this.commands.map((cmd) => ({
+					name: "name" in cmd ? cmd.name : cmd.value,
+					label: "name" in cmd ? cmd.name : cmd.label,
+					description: cmd.description,
+				}));
+
+				const filtered = fuzzyFilter(commandItems, prefix, (item) => item.name).map((item) => ({
+					value: item.name,
+					label: item.label,
+					...(item.description && { description: item.description }),
+				}));
 
 				if (filtered.length === 0) return null;
 

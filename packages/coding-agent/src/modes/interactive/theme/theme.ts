@@ -593,7 +593,23 @@ function getDefaultTheme(): string {
 // Global Theme Instance
 // ============================================================================
 
-export let theme: Theme;
+// Use globalThis to share theme across module loaders (tsx + jiti in dev mode)
+const THEME_KEY = Symbol.for("@mariozechner/pi-coding-agent:theme");
+
+// Export theme as a getter that reads from globalThis
+// This ensures all module instances (tsx, jiti) see the same theme
+export const theme: Theme = new Proxy({} as Theme, {
+	get(_target, prop) {
+		const t = (globalThis as Record<symbol, Theme>)[THEME_KEY];
+		if (!t) throw new Error("Theme not initialized. Call initTheme() first.");
+		return (t as unknown as Record<string | symbol, unknown>)[prop];
+	},
+});
+
+function setGlobalTheme(t: Theme): void {
+	(globalThis as Record<symbol, Theme>)[THEME_KEY] = t;
+}
+
 let currentThemeName: string | undefined;
 let themeWatcher: fs.FSWatcher | undefined;
 let onThemeChangeCallback: (() => void) | undefined;
@@ -602,14 +618,14 @@ export function initTheme(themeName?: string, enableWatcher: boolean = false): v
 	const name = themeName ?? getDefaultTheme();
 	currentThemeName = name;
 	try {
-		theme = loadTheme(name);
+		setGlobalTheme(loadTheme(name));
 		if (enableWatcher) {
 			startThemeWatcher();
 		}
 	} catch (_error) {
 		// Theme is invalid - fall back to dark theme silently
 		currentThemeName = "dark";
-		theme = loadTheme("dark");
+		setGlobalTheme(loadTheme("dark"));
 		// Don't start watcher for fallback theme
 	}
 }
@@ -617,7 +633,7 @@ export function initTheme(themeName?: string, enableWatcher: boolean = false): v
 export function setTheme(name: string, enableWatcher: boolean = false): { success: boolean; error?: string } {
 	currentThemeName = name;
 	try {
-		theme = loadTheme(name);
+		setGlobalTheme(loadTheme(name));
 		if (enableWatcher) {
 			startThemeWatcher();
 		}
@@ -628,7 +644,7 @@ export function setTheme(name: string, enableWatcher: boolean = false): { succes
 	} catch (error) {
 		// Theme is invalid - fall back to dark theme
 		currentThemeName = "dark";
-		theme = loadTheme("dark");
+		setGlobalTheme(loadTheme("dark"));
 		// Don't start watcher for fallback theme
 		return {
 			success: false,
@@ -638,7 +654,7 @@ export function setTheme(name: string, enableWatcher: boolean = false): { succes
 }
 
 export function setThemeInstance(themeInstance: Theme): void {
-	theme = themeInstance;
+	setGlobalTheme(themeInstance);
 	currentThemeName = "<in-memory>";
 	stopThemeWatcher(); // Can't watch a direct instance
 	if (onThemeChangeCallback) {
@@ -677,7 +693,7 @@ function startThemeWatcher(): void {
 				setTimeout(() => {
 					try {
 						// Reload the theme
-						theme = loadTheme(currentThemeName!);
+						setGlobalTheme(loadTheme(currentThemeName!));
 						// Notify callback (to invalidate UI)
 						if (onThemeChangeCallback) {
 							onThemeChangeCallback();
@@ -691,7 +707,7 @@ function startThemeWatcher(): void {
 				setTimeout(() => {
 					if (!fs.existsSync(themeFile)) {
 						currentThemeName = "dark";
-						theme = loadTheme("dark");
+						setGlobalTheme(loadTheme("dark"));
 						if (themeWatcher) {
 							themeWatcher.close();
 							themeWatcher = undefined;

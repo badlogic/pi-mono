@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { supportsXhigh } from "./models.js";
+import { type BedrockOptions, streamBedrock } from "./providers/amazon-bedrock.js";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
 import {
@@ -74,6 +75,20 @@ export function getEnvApiKey(provider: any): string | undefined {
 		}
 	}
 
+	if (provider === "amazon-bedrock") {
+		// Amazon Bedrock supports multiple credential sources:
+		// 1. AWS_PROFILE - named profile from ~/.aws/credentials
+		// 2. AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY - standard IAM keys
+		// 3. AWS_BEARER_TOKEN_BEDROCK - Bedrock API keys (bearer token)
+		if (
+			process.env.AWS_PROFILE ||
+			(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) ||
+			process.env.AWS_BEARER_TOKEN_BEDROCK
+		) {
+			return "<authenticated>";
+		}
+	}
+
 	const envMap: Record<string, string> = {
 		openai: "OPENAI_API_KEY",
 		google: "GEMINI_API_KEY",
@@ -81,8 +96,11 @@ export function getEnvApiKey(provider: any): string | undefined {
 		cerebras: "CEREBRAS_API_KEY",
 		xai: "XAI_API_KEY",
 		openrouter: "OPENROUTER_API_KEY",
+		"vercel-ai-gateway": "AI_GATEWAY_API_KEY",
 		zai: "ZAI_API_KEY",
 		mistral: "MISTRAL_API_KEY",
+		minimax: "MINIMAX_API_KEY",
+		"minimax-cn": "MINIMAX_CN_API_KEY",
 		opencode: "OPENCODE_API_KEY",
 	};
 
@@ -98,6 +116,9 @@ export function stream<TApi extends Api>(
 	// Vertex AI uses Application Default Credentials, not API keys
 	if (model.api === "google-vertex") {
 		return streamGoogleVertex(model as Model<"google-vertex">, context, options as GoogleVertexOptions);
+	} else if (model.api === "bedrock-converse-stream") {
+		// Bedrock doesn't have any API keys instead it sources credentials from standard AWS env variables or from given AWS profile.
+		return streamBedrock(model as Model<"bedrock-converse-stream">, context, (options || {}) as BedrockOptions);
 	}
 
 	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
@@ -156,6 +177,10 @@ export function streamSimple<TApi extends Api>(
 	if (model.api === "google-vertex") {
 		const providerOptions = mapOptionsForApi(model, options, undefined);
 		return stream(model, context, providerOptions);
+	} else if (model.api === "bedrock-converse-stream") {
+		// Bedrock doesn't have any API keys instead it sources credentials from standard AWS env variables or from given AWS profile.
+		const providerOptions = mapOptionsForApi(model, options, undefined);
+		return stream(model, context, providerOptions);
 	}
 
 	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
@@ -192,6 +217,39 @@ function mapOptionsForApi<TApi extends Api>(
 	// Helper to clamp xhigh to high for providers that don't support it
 	const clampReasoning = (effort: ThinkingLevel | undefined) => (effort === "xhigh" ? "high" : effort);
 
+	/**
+	 * Adjust maxTokens to account for thinking budget.
+	 * APIs like Anthropic and Bedrock require max_tokens > thinking.budget_tokens.
+	 * Returns { adjustedMaxTokens, adjustedThinkingBudget }
+	 */
+	const adjustMaxTokensForThinking = (
+		baseMaxTokens: number,
+		modelMaxTokens: number,
+		reasoningLevel: ThinkingLevel,
+		customBudgets?: ThinkingBudgets,
+	): { maxTokens: number; thinkingBudget: number } => {
+		const defaultBudgets: ThinkingBudgets = {
+			minimal: 1024,
+			low: 2048,
+			medium: 8192,
+			high: 16384,
+		};
+		const budgets = { ...defaultBudgets, ...customBudgets };
+
+		const minOutputTokens = 1024;
+		const level = clampReasoning(reasoningLevel)!;
+		let thinkingBudget = budgets[level]!;
+		// Caller's maxTokens is the desired output; add thinking budget on top, capped at model limit
+		const maxTokens = Math.min(baseMaxTokens + thinkingBudget, modelMaxTokens);
+
+		// If not enough room for thinking + output, reduce thinking budget
+		if (maxTokens <= thinkingBudget) {
+			thinkingBudget = Math.max(0, maxTokens - minOutputTokens);
+		}
+
+		return { maxTokens, thinkingBudget };
+	};
+
 	switch (model.api) {
 		case "anthropic-messages": {
 			// Explicitly disable thinking when reasoning is not specified
@@ -201,31 +259,54 @@ function mapOptionsForApi<TApi extends Api>(
 
 			// Claude requires max_tokens > thinking.budget_tokens
 			// So we need to ensure maxTokens accounts for both thinking and output
-			const defaultBudgets: ThinkingBudgets = {
-				minimal: 1024,
-				low: 2048,
-				medium: 8192,
-				high: 16384,
-			};
-			const budgets = { ...defaultBudgets, ...options?.thinkingBudgets };
-
-			const minOutputTokens = 1024;
-			const level = clampReasoning(options.reasoning)!;
-			let thinkingBudget = budgets[level]!;
-			// Caller's maxTokens is the desired output; add thinking budget on top, capped at model limit
-			const maxTokens = Math.min((base.maxTokens || 0) + thinkingBudget, model.maxTokens);
-
-			// If not enough room for thinking + output, reduce thinking budget
-			if (maxTokens <= thinkingBudget) {
-				thinkingBudget = Math.max(0, maxTokens - minOutputTokens);
-			}
+			const adjusted = adjustMaxTokensForThinking(
+				base.maxTokens || 0,
+				model.maxTokens,
+				options.reasoning,
+				options?.thinkingBudgets,
+			);
 
 			return {
 				...base,
-				maxTokens,
+				maxTokens: adjusted.maxTokens,
 				thinkingEnabled: true,
-				thinkingBudgetTokens: thinkingBudget,
+				thinkingBudgetTokens: adjusted.thinkingBudget,
 			} satisfies AnthropicOptions;
+		}
+
+		case "bedrock-converse-stream": {
+			// Explicitly disable thinking when reasoning is not specified
+			if (!options?.reasoning) {
+				return { ...base, reasoning: undefined } satisfies BedrockOptions;
+			}
+
+			// Claude requires max_tokens > thinking.budget_tokens (same as Anthropic direct API)
+			// So we need to ensure maxTokens accounts for both thinking and output
+			if (model.id.includes("anthropic.claude") || model.id.includes("anthropic/claude")) {
+				const adjusted = adjustMaxTokensForThinking(
+					base.maxTokens || 0,
+					model.maxTokens,
+					options.reasoning,
+					options?.thinkingBudgets,
+				);
+
+				return {
+					...base,
+					maxTokens: adjusted.maxTokens,
+					reasoning: options.reasoning,
+					thinkingBudgets: {
+						...(options?.thinkingBudgets || {}),
+						[clampReasoning(options.reasoning)!]: adjusted.thinkingBudget,
+					},
+				} satisfies BedrockOptions;
+			}
+
+			// Non-Claude models - pass through
+			return {
+				...base,
+				reasoning: options?.reasoning,
+				thinkingBudgets: options?.thinkingBudgets,
+			} satisfies BedrockOptions;
 		}
 
 		case "openai-completions":

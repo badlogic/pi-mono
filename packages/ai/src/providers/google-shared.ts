@@ -5,7 +5,7 @@
 import { type Content, FinishReason, FunctionCallingConfigMode, type Part, type Schema } from "@google/genai";
 import type { Context, ImageContent, Model, StopReason, TextContent, Tool } from "../types.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-import { transformMessages } from "./transorm-messages.js";
+import { transformMessages } from "./transform-messages.js";
 
 type GoogleApiType = "google-generative-ai" | "google-gemini-cli" | "google-vertex";
 
@@ -13,18 +13,19 @@ type GoogleApiType = "google-generative-ai" | "google-gemini-cli" | "google-vert
  * Determines whether a streamed Gemini `Part` should be treated as "thinking".
  *
  * Protocol note (Gemini / Vertex AI thought signatures):
- * - `thoughtSignature` may appear without `thought: true` (including in empty-text parts at the end of streaming).
+ * - `thought: true` is the definitive marker for thinking content (thought summaries).
+ * - `thoughtSignature` is an encrypted representation of the model's internal thought process
+ *   used to preserve reasoning context across multi-turn interactions.
+ * - `thoughtSignature` can appear on ANY part type (text, functionCall, etc.) - it does NOT
+ *   indicate the part itself is thinking content.
+ * - For non-functionCall responses, the signature appears on the last part for context replay.
  * - When persisting/replaying model outputs, signature-bearing parts must be preserved as-is;
  *   do not merge/move signatures across parts.
- * - Our streaming representation uses content blocks, so we classify any non-empty `thoughtSignature`
- *   as thinking to avoid leaking thought content into normal assistant text.
  *
- * Some Google backends send thought content with `thoughtSignature` but omit `thought: true`
- * on subsequent deltas. We treat any non-empty `thoughtSignature` as thinking to avoid
- * leaking thought text into the normal assistant text stream.
+ * See: https://ai.google.dev/gemini-api/docs/thought-signatures
  */
 export function isThinkingPart(part: Pick<Part, "thought" | "thoughtSignature">): boolean {
-	return part.thought === true || (typeof part.thoughtSignature === "string" && part.thoughtSignature.length > 0);
+	return part.thought === true;
 }
 
 /**
@@ -41,12 +42,40 @@ export function retainThoughtSignature(existing: string | undefined, incoming: s
 	return existing;
 }
 
+// Thought signatures must be base64 for Google APIs (TYPE_BYTES).
+const base64SignaturePattern = /^[A-Za-z0-9+/]+={0,2}$/;
+
+function isValidThoughtSignature(signature: string | undefined): boolean {
+	if (!signature) return false;
+	if (signature.length % 4 !== 0) return false;
+	return base64SignaturePattern.test(signature);
+}
+
+/**
+ * Only keep signatures from the same provider/model and with valid base64.
+ */
+function resolveThoughtSignature(isSameProviderAndModel: boolean, signature: string | undefined): string | undefined {
+	return isSameProviderAndModel && isValidThoughtSignature(signature) ? signature : undefined;
+}
+
+/**
+ * Models via Google APIs that require explicit tool call IDs in function calls/responses.
+ */
+export function requiresToolCallId(modelId: string): boolean {
+	return modelId.startsWith("claude-") || modelId.startsWith("gpt-oss-");
+}
+
 /**
  * Convert internal messages to Gemini Content[] format.
  */
 export function convertMessages<T extends GoogleApiType>(model: Model<T>, context: Context): Content[] {
 	const contents: Content[] = [];
-	const transformedMessages = transformMessages(context.messages, model);
+	const normalizeToolCallId = (id: string): string => {
+		if (!requiresToolCallId(model.id)) return id;
+		return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+	};
+
+	const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId);
 
 	for (const msg of transformedMessages) {
 		if (msg.role === "user") {
@@ -84,17 +113,22 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 				if (block.type === "text") {
 					// Skip empty text blocks - they can cause issues with some models (e.g. Claude via Antigravity)
 					if (!block.text || block.text.trim() === "") continue;
-					parts.push({ text: sanitizeSurrogates(block.text) });
+					const thoughtSignature = resolveThoughtSignature(isSameProviderAndModel, block.textSignature);
+					parts.push({
+						text: sanitizeSurrogates(block.text),
+						...(thoughtSignature && { thoughtSignature }),
+					});
 				} else if (block.type === "thinking") {
 					// Skip empty thinking blocks
 					if (!block.thinking || block.thinking.trim() === "") continue;
 					// Only keep as thinking block if same provider AND same model
 					// Otherwise convert to plain text (no tags to avoid model mimicking them)
 					if (isSameProviderAndModel) {
+						const thoughtSignature = resolveThoughtSignature(isSameProviderAndModel, block.thinkingSignature);
 						parts.push({
 							thought: true,
 							text: sanitizeSurrogates(block.thinking),
-							...(block.thinkingSignature && { thoughtSignature: block.thinkingSignature }),
+							...(thoughtSignature && { thoughtSignature }),
 						});
 					} else {
 						parts.push({
@@ -102,20 +136,30 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 						});
 					}
 				} else if (block.type === "toolCall") {
-					const part: Part = {
-						functionCall: {
-							id: block.id,
-							name: block.name,
-							args: block.arguments,
-						},
-					};
-					if (model.provider === "google-vertex" && part?.functionCall?.id) {
-						delete part.functionCall.id; // Vertex AI does not support 'id' in functionCall
+					const thoughtSignature = resolveThoughtSignature(isSameProviderAndModel, block.thoughtSignature);
+					// Gemini 3 requires thoughtSignature on all function calls when thinking mode is enabled.
+					// When replaying history from providers without thought signatures (e.g. Claude via Antigravity),
+					// convert unsigned function calls to text to avoid API validation errors.
+					// We include a note telling the model this is historical context to prevent mimicry.
+					const isGemini3 = model.id.toLowerCase().includes("gemini-3");
+					if (isGemini3 && !thoughtSignature) {
+						const argsStr = JSON.stringify(block.arguments, null, 2);
+						parts.push({
+							text: `[Historical context: a different model called tool "${block.name}" with arguments: ${argsStr}. Do not mimic this format - use proper function calling.]`,
+						});
+					} else {
+						const part: Part = {
+							functionCall: {
+								name: block.name,
+								args: block.arguments,
+								...(requiresToolCallId(model.id) ? { id: block.id } : {}),
+							},
+						};
+						if (thoughtSignature) {
+							part.thoughtSignature = thoughtSignature;
+						}
+						parts.push(part);
 					}
-					if (block.thoughtSignature) {
-						part.thoughtSignature = block.thoughtSignature;
-					}
-					parts.push(part);
 				}
 			}
 
@@ -150,19 +194,16 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 				},
 			}));
 
+			const includeId = requiresToolCallId(model.id);
 			const functionResponsePart: Part = {
 				functionResponse: {
-					id: msg.toolCallId,
 					name: msg.toolName,
 					response: msg.isError ? { error: responseValue } : { output: responseValue },
 					// Nest images inside functionResponse.parts for Gemini 3
 					...(hasImages && supportsMultimodalFunctionResponse && { parts: imageParts }),
+					...(includeId ? { id: msg.toolCallId } : {}),
 				},
 			};
-
-			if (model.provider === "google-vertex" && functionResponsePart.functionResponse?.id) {
-				delete functionResponsePart.functionResponse.id; // Vertex AI does not support 'id' in functionResponse
-			}
 
 			// Cloud Code Assist API requires all function responses to be in a single user turn.
 			// Check if the last content is already a user turn with function responses and merge.

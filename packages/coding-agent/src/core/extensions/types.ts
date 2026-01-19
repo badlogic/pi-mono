@@ -15,7 +15,16 @@ import type {
 	ThinkingLevel,
 } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
-import type { Component, EditorComponent, EditorTheme, KeyId, TUI } from "@mariozechner/pi-tui";
+import type {
+	AutocompleteItem,
+	Component,
+	EditorComponent,
+	EditorTheme,
+	KeyId,
+	OverlayHandle,
+	OverlayOptions,
+	TUI,
+} from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { BashResult } from "../bash-executor.js";
@@ -59,6 +68,15 @@ export interface ExtensionUIDialogOptions {
 	timeout?: number;
 }
 
+/** Placement for extension widgets. */
+export type WidgetPlacement = "aboveEditor" | "belowEditor";
+
+/** Options for extension widgets. */
+export interface ExtensionWidgetOptions {
+	/** Where the widget is rendered. Defaults to "aboveEditor". */
+	placement?: WidgetPlacement;
+}
+
 /**
  * UI context for extensions to request interactive UI.
  * Each mode (interactive, RPC, print) provides its own implementation.
@@ -79,9 +97,16 @@ export interface ExtensionUIContext {
 	/** Set status text in the footer/status bar. Pass undefined to clear. */
 	setStatus(key: string, text: string | undefined): void;
 
-	/** Set a widget to display above the editor. Accepts string array or component factory. */
-	setWidget(key: string, content: string[] | undefined): void;
-	setWidget(key: string, content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
+	/** Set the working/loading message shown during streaming. Call with no argument to restore default. */
+	setWorkingMessage(message?: string): void;
+
+	/** Set a widget to display above or below the editor. Accepts string array or component factory. */
+	setWidget(key: string, content: string[] | undefined, options?: ExtensionWidgetOptions): void;
+	setWidget(
+		key: string,
+		content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined,
+		options?: ExtensionWidgetOptions,
+	): void;
 
 	/** Set a custom footer component, or undefined to restore the built-in footer.
 	 *
@@ -109,7 +134,13 @@ export interface ExtensionUIContext {
 			keybindings: KeybindingsManager,
 			done: (result: T) => void,
 		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
-		options?: { overlay?: boolean },
+		options?: {
+			overlay?: boolean;
+			/** Overlay positioning/sizing options. Can be static or a function for dynamic updates. */
+			overlayOptions?: OverlayOptions | (() => OverlayOptions);
+			/** Called with the overlay handle after the overlay is shown. Use to control visibility. */
+			onHandle?: (handle: OverlayHandle) => void;
+		},
 	): Promise<T>;
 
 	/** Set the text in the core input editor. */
@@ -175,6 +206,21 @@ export interface ExtensionUIContext {
 // Extension Context
 // ============================================================================
 
+export interface ContextUsage {
+	tokens: number;
+	contextWindow: number;
+	percent: number;
+	usageTokens: number;
+	trailingTokens: number;
+	lastUsageIndex: number | null;
+}
+
+export interface CompactOptions {
+	customInstructions?: string;
+	onComplete?: (result: CompactionResult) => void;
+	onError?: (error: Error) => void;
+}
+
 /**
  * Context passed to extension event handlers.
  */
@@ -199,6 +245,10 @@ export interface ExtensionContext {
 	hasPendingMessages(): boolean;
 	/** Gracefully shutdown pi and exit. Available in all contexts. */
 	shutdown(): void;
+	/** Get current context usage for the active model. */
+	getContextUsage(): ContextUsage | undefined;
+	/** Trigger compaction without awaiting completion. */
+	compact(options?: CompactOptions): void;
 }
 
 /**
@@ -215,11 +265,14 @@ export interface ExtensionCommandContext extends ExtensionContext {
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 	}): Promise<{ cancelled: boolean }>;
 
-	/** Branch from a specific entry, creating a new session file. */
-	branch(entryId: string): Promise<{ cancelled: boolean }>;
+	/** Fork from a specific entry, creating a new session file. */
+	fork(entryId: string): Promise<{ cancelled: boolean }>;
 
 	/** Navigate to a different point in the session tree. */
-	navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ cancelled: boolean }>;
+	navigateTree(
+		targetId: string,
+		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
+	): Promise<{ cancelled: boolean }>;
 }
 
 // ============================================================================
@@ -286,15 +339,15 @@ export interface SessionSwitchEvent {
 	previousSessionFile: string | undefined;
 }
 
-/** Fired before branching a session (can be cancelled) */
-export interface SessionBeforeBranchEvent {
-	type: "session_before_branch";
+/** Fired before forking a session (can be cancelled) */
+export interface SessionBeforeForkEvent {
+	type: "session_before_fork";
 	entryId: string;
 }
 
-/** Fired after branching a session */
-export interface SessionBranchEvent {
-	type: "session_branch";
+/** Fired after forking a session */
+export interface SessionForkEvent {
+	type: "session_fork";
 	previousSessionFile: string | undefined;
 }
 
@@ -326,6 +379,12 @@ export interface TreePreparation {
 	commonAncestorId: string | null;
 	entriesToSummarize: SessionEntry[];
 	userWantsSummary: boolean;
+	/** Custom instructions for summarization */
+	customInstructions?: string;
+	/** If true, customInstructions replaces the default prompt instead of being appended */
+	replaceInstructions?: boolean;
+	/** Label to attach to the branch summary entry */
+	label?: string;
 }
 
 /** Fired before navigating in the session tree (can be cancelled) */
@@ -348,8 +407,8 @@ export type SessionEvent =
 	| SessionStartEvent
 	| SessionBeforeSwitchEvent
 	| SessionSwitchEvent
-	| SessionBeforeBranchEvent
-	| SessionBranchEvent
+	| SessionBeforeForkEvent
+	| SessionForkEvent
 	| SessionBeforeCompactEvent
 	| SessionCompactEvent
 	| SessionShutdownEvent
@@ -401,6 +460,20 @@ export interface TurnEndEvent {
 }
 
 // ============================================================================
+// Model Events
+// ============================================================================
+
+export type ModelSelectSource = "set" | "cycle" | "restore";
+
+/** Fired when a new model is selected */
+export interface ModelSelectEvent {
+	type: "model_select";
+	model: Model<any>;
+	previousModel: Model<any> | undefined;
+	source: ModelSelectSource;
+}
+
+// ============================================================================
 // User Bash Events
 // ============================================================================
 
@@ -414,6 +487,30 @@ export interface UserBashEvent {
 	/** Current working directory */
 	cwd: string;
 }
+
+// ============================================================================
+// Input Events
+// ============================================================================
+
+/** Source of user input */
+export type InputSource = "interactive" | "rpc" | "extension";
+
+/** Fired when user input is received, before agent processing */
+export interface InputEvent {
+	type: "input";
+	/** The input text */
+	text: string;
+	/** Attached images, if any */
+	images?: ImageContent[];
+	/** Where the input came from */
+	source: InputSource;
+}
+
+/** Result from input event handler */
+export type InputEventResult =
+	| { action: "continue" }
+	| { action: "transform"; text: string; images?: ImageContent[] }
+	| { action: "handled" };
 
 // ============================================================================
 // Tool Events
@@ -518,7 +615,9 @@ export type ExtensionEvent =
 	| AgentEndEvent
 	| TurnStartEvent
 	| TurnEndEvent
+	| ModelSelectEvent
 	| UserBashEvent
+	| InputEvent
 	| ToolCallEvent
 	| ToolResultEvent;
 
@@ -559,7 +658,7 @@ export interface SessionBeforeSwitchResult {
 	cancel?: boolean;
 }
 
-export interface SessionBeforeBranchResult {
+export interface SessionBeforeForkResult {
 	cancel?: boolean;
 	skipConversationRestore?: boolean;
 }
@@ -575,6 +674,12 @@ export interface SessionBeforeTreeResult {
 		summary: string;
 		details?: unknown;
 	};
+	/** Override custom instructions for summarization */
+	customInstructions?: string;
+	/** Override whether customInstructions replaces the default prompt */
+	replaceInstructions?: boolean;
+	/** Override label to attach to the branch summary entry */
+	label?: string;
 }
 
 // ============================================================================
@@ -598,6 +703,7 @@ export type MessageRenderer<T = unknown> = (
 export interface RegisteredCommand {
 	name: string;
 	description?: string;
+	getArgumentCompletions?: (argumentPrefix: string) => AutocompleteItem[] | null;
 	handler: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 }
 
@@ -623,11 +729,8 @@ export interface ExtensionAPI {
 		handler: ExtensionHandler<SessionBeforeSwitchEvent, SessionBeforeSwitchResult>,
 	): void;
 	on(event: "session_switch", handler: ExtensionHandler<SessionSwitchEvent>): void;
-	on(
-		event: "session_before_branch",
-		handler: ExtensionHandler<SessionBeforeBranchEvent, SessionBeforeBranchResult>,
-	): void;
-	on(event: "session_branch", handler: ExtensionHandler<SessionBranchEvent>): void;
+	on(event: "session_before_fork", handler: ExtensionHandler<SessionBeforeForkEvent, SessionBeforeForkResult>): void;
+	on(event: "session_fork", handler: ExtensionHandler<SessionForkEvent>): void;
 	on(
 		event: "session_before_compact",
 		handler: ExtensionHandler<SessionBeforeCompactEvent, SessionBeforeCompactResult>,
@@ -642,9 +745,11 @@ export interface ExtensionAPI {
 	on(event: "agent_end", handler: ExtensionHandler<AgentEndEvent>): void;
 	on(event: "turn_start", handler: ExtensionHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: ExtensionHandler<TurnEndEvent>): void;
+	on(event: "model_select", handler: ExtensionHandler<ModelSelectEvent>): void;
 	on(event: "tool_call", handler: ExtensionHandler<ToolCallEvent, ToolCallEventResult>): void;
 	on(event: "tool_result", handler: ExtensionHandler<ToolResultEvent, ToolResultEventResult>): void;
 	on(event: "user_bash", handler: ExtensionHandler<UserBashEvent, UserBashEventResult>): void;
+	on(event: "input", handler: ExtensionHandler<InputEvent, InputEventResult>): void;
 
 	// =========================================================================
 	// Tool Registration
@@ -658,7 +763,7 @@ export interface ExtensionAPI {
 	// =========================================================================
 
 	/** Register a custom command. */
-	registerCommand(name: string, options: { description?: string; handler: RegisteredCommand["handler"] }): void;
+	registerCommand(name: string, options: Omit<RegisteredCommand, "name">): void;
 
 	/** Register a keyboard shortcut. */
 	registerShortcut(
@@ -711,14 +816,27 @@ export interface ExtensionAPI {
 	/** Append a custom entry to the session for state persistence (not sent to LLM). */
 	appendEntry<T = unknown>(customType: string, data?: T): void;
 
+	// =========================================================================
+	// Session Metadata
+	// =========================================================================
+
+	/** Set the session display name (shown in session selector). */
+	setSessionName(name: string): void;
+
+	/** Get the current session name, if set. */
+	getSessionName(): string | undefined;
+
+	/** Set or clear a label on an entry. Labels are user-defined markers for bookmarking/navigation. */
+	setLabel(entryId: string, label: string | undefined): void;
+
 	/** Execute a shell command. */
 	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 
 	/** Get the list of currently active tool names. */
 	getActiveTools(): string[];
 
-	/** Get all configured tools (built-in + extension tools). */
-	getAllTools(): string[];
+	/** Get all configured tools with name and description. */
+	getAllTools(): ToolInfo[];
 
 	/** Set the active tools by name. */
 	setActiveTools(toolNames: string[]): void;
@@ -781,9 +899,16 @@ export type SendUserMessageHandler = (
 
 export type AppendEntryHandler = <T = unknown>(customType: string, data?: T) => void;
 
+export type SetSessionNameHandler = (name: string) => void;
+
+export type GetSessionNameHandler = () => string | undefined;
+
 export type GetActiveToolsHandler = () => string[];
 
-export type GetAllToolsHandler = () => string[];
+/** Tool info with name and description */
+export type ToolInfo = Pick<ToolDefinition, "name" | "description">;
+
+export type GetAllToolsHandler = () => ToolInfo[];
 
 export type SetActiveToolsHandler = (toolNames: string[]) => void;
 
@@ -792,6 +917,8 @@ export type SetModelHandler = (model: Model<any>) => Promise<boolean>;
 export type GetThinkingLevelHandler = () => ThinkingLevel;
 
 export type SetThinkingLevelHandler = (level: ThinkingLevel) => void;
+
+export type SetLabelHandler = (entryId: string, label: string | undefined) => void;
 
 /**
  * Shared state created by loader, used during registration and runtime.
@@ -809,6 +936,9 @@ export interface ExtensionActions {
 	sendMessage: SendMessageHandler;
 	sendUserMessage: SendUserMessageHandler;
 	appendEntry: AppendEntryHandler;
+	setSessionName: SetSessionNameHandler;
+	getSessionName: GetSessionNameHandler;
+	setLabel: SetLabelHandler;
 	getActiveTools: GetActiveToolsHandler;
 	getAllTools: GetAllToolsHandler;
 	setActiveTools: SetActiveToolsHandler;
@@ -827,6 +957,8 @@ export interface ExtensionContextActions {
 	abort: () => void;
 	hasPendingMessages: () => boolean;
 	shutdown: () => void;
+	getContextUsage: () => ContextUsage | undefined;
+	compact: (options?: CompactOptions) => void;
 }
 
 /**
@@ -839,8 +971,11 @@ export interface ExtensionCommandContextActions {
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 	}) => Promise<{ cancelled: boolean }>;
-	branch: (entryId: string) => Promise<{ cancelled: boolean }>;
-	navigateTree: (targetId: string, options?: { summarize?: boolean }) => Promise<{ cancelled: boolean }>;
+	fork: (entryId: string) => Promise<{ cancelled: boolean }>;
+	navigateTree: (
+		targetId: string,
+		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
+	) => Promise<{ cancelled: boolean }>;
 }
 
 /**

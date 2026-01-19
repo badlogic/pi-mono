@@ -43,16 +43,16 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("session_before_branch", async (event, ctx) => {
+	pi.on("session_before_fork", async (event, ctx) => {
 		if (!ctx.hasUI) return;
 
-		const choice = await ctx.ui.select(`Branch from entry ${event.entryId.slice(0, 8)}?`, [
-			"Yes, create branch",
+		const choice = await ctx.ui.select(`Fork from entry ${event.entryId.slice(0, 8)}?`, [
+			"Yes, create fork",
 			"No, stay in current session",
 		]);
 
-		if (choice !== "Yes, create branch") {
-			ctx.ui.notify("Branch cancelled", "info");
+		if (choice !== "Yes, create fork") {
+			ctx.ui.notify("Fork cancelled", "info");
 			return { cancel: true };
 		}
 	});

@@ -24,6 +24,64 @@ interface Component {
 | `handleInput?(data)` | Receive keyboard input when component has focus. |
 | `invalidate?()` | Clear cached render state. |
 
+The TUI appends a full SGR reset and OSC 8 reset at the end of each rendered line. Styles do not carry across lines. If you emit multi-line text with styling, reapply styles per line or use `wrapTextWithAnsi()` so styles are preserved for each wrapped line.
+
+## Focusable Interface (IME Support)
+
+Components that display a text cursor and need IME (Input Method Editor) support should implement the `Focusable` interface:
+
+```typescript
+import { CURSOR_MARKER, type Component, type Focusable } from "@mariozechner/pi-tui";
+
+class MyInput implements Component, Focusable {
+  focused: boolean = false;  // Set by TUI when focus changes
+  
+  render(width: number): string[] {
+    const marker = this.focused ? CURSOR_MARKER : "";
+    // Emit marker right before the fake cursor
+    return [`> ${beforeCursor}${marker}\x1b[7m${atCursor}\x1b[27m${afterCursor}`];
+  }
+}
+```
+
+When a `Focusable` component has focus, TUI:
+1. Sets `focused = true` on the component
+2. Scans rendered output for `CURSOR_MARKER` (a zero-width APC escape sequence)
+3. Positions the hardware terminal cursor at that location
+4. Shows the hardware cursor
+
+This enables IME candidate windows to appear at the correct position for CJK input methods. The `Editor` and `Input` built-in components already implement this interface.
+
+### Container Components with Embedded Inputs
+
+When a container component (dialog, selector, etc.) contains an `Input` or `Editor` child, the container must implement `Focusable` and propagate the focus state to the child. Otherwise, the hardware cursor won't be positioned correctly for IME input.
+
+```typescript
+import { Container, type Focusable, Input } from "@mariozechner/pi-tui";
+
+class SearchDialog extends Container implements Focusable {
+  private searchInput: Input;
+
+  // Focusable implementation - propagate to child input for IME cursor positioning
+  private _focused = false;
+  get focused(): boolean {
+    return this._focused;
+  }
+  set focused(value: boolean) {
+    this._focused = value;
+    this.searchInput.focused = value;
+  }
+
+  constructor() {
+    super();
+    this.searchInput = new Input();
+    this.addChild(this.searchInput);
+  }
+}
+```
+
+Without this propagation, typing with an IME (Chinese, Japanese, Korean, etc.) will show the candidate window in the wrong position on screen.
+
 ## Using Components
 
 **In hooks** via `ctx.ui.custom()`:
@@ -45,6 +103,56 @@ async execute(toolCallId, params, onUpdate, ctx, signal) {
   handle.close();
 }
 ```
+
+## Overlays
+
+Overlays render components on top of existing content without clearing the screen. Pass `{ overlay: true }` to `ctx.ui.custom()`:
+
+```typescript
+const result = await ctx.ui.custom<string | null>(
+  (tui, theme, keybindings, done) => new MyDialog({ onClose: done }),
+  { overlay: true }
+);
+```
+
+For positioning and sizing, use `overlayOptions`:
+
+```typescript
+const result = await ctx.ui.custom<string | null>(
+  (tui, theme, keybindings, done) => new SidePanel({ onClose: done }),
+  {
+    overlay: true,
+    overlayOptions: {
+      // Size: number or percentage string
+      width: "50%",          // 50% of terminal width
+      minWidth: 40,          // minimum 40 columns
+      maxHeight: "80%",      // max 80% of terminal height
+
+      // Position: anchor-based (default: "center")
+      anchor: "right-center", // 9 positions: center, top-left, top-center, etc.
+      offsetX: -2,            // offset from anchor
+      offsetY: 0,
+
+      // Or percentage/absolute positioning
+      row: "25%",            // 25% from top
+      col: 10,               // column 10
+
+      // Margins
+      margin: 2,             // all sides, or { top, right, bottom, left }
+
+      // Responsive: hide on narrow terminals
+      visible: (termWidth, termHeight) => termWidth >= 80,
+    },
+    // Get handle for programmatic visibility control
+    onHandle: (handle) => {
+      // handle.setHidden(true/false) - toggle visibility
+      // handle.hide() - permanently remove
+    },
+  }
+);
+```
+
+See [overlay-qa-tests.ts](../examples/extensions/overlay-qa-tests.ts) for comprehensive examples covering anchors, margins, stacking, responsive visibility, and animation.
 
 ## Built-in Components
 
@@ -566,6 +674,7 @@ pi.registerCommand("settings", {
           ctx.ui.notify(`${id} = ${newValue}`, "info");
         },
         () => done(undefined),  // On close
+        { enableSearch: true }, // Optional: enable fuzzy search by label
       );
       container.addChild(settingsList);
 
@@ -595,13 +704,16 @@ ctx.ui.setStatus("my-ext", undefined);
 
 **Examples:** [status-line.ts](../examples/extensions/status-line.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts)
 
-### Pattern 5: Widget Above Editor
+### Pattern 5: Widgets Above/Below Editor
 
-Show persistent content above the input editor. Good for todo lists, progress.
+Show persistent content above or below the input editor. Good for todo lists, progress.
 
 ```typescript
-// Simple string array
+// Simple string array (above editor by default)
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
+
+// Render below the editor
+ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"], { placement: "belowEditor" });
 
 // Or with theme
 ctx.ui.setWidget("my-widget", (_tui, theme) => {

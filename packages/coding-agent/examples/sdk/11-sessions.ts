@@ -26,7 +26,7 @@ if (modelFallbackMessage) console.log("Note:", modelFallbackMessage);
 console.log("Continued session:", continued.sessionFile);
 
 // List and open specific session
-const sessions = SessionManager.list(process.cwd());
+const sessions = await SessionManager.list(process.cwd());
 console.log(`\nFound ${sessions.length} sessions:`);
 for (const info of sessions.slice(0, 3)) {
 	console.log(`  ${info.id.slice(0, 8)}... - "${info.firstMessage.slice(0, 30)}..."`);

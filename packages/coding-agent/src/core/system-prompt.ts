@@ -183,7 +183,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		// Append project context files
 		if (contextFiles.length > 0) {
 			prompt += "\n\n# Project Context\n\n";
-			prompt += "The following project context files have been loaded:\n\n";
+			prompt += "Project-specific instructions and guidelines:\n\n";
 			for (const { path: filePath, content } of contextFiles) {
 				prompt += `## ${filePath}\n\n${content}\n\n`;
 			}
@@ -264,7 +264,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
-	let prompt = `You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
+	let prompt = `You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
 
 Available tools:
 ${toolsList}
@@ -274,12 +274,12 @@ In addition to the tools above, you may have access to other custom tools depend
 Guidelines:
 ${guidelines}
 
-Documentation:
+Pi documentation (only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):
 - Main documentation: ${readmePath}
 - Additional docs: ${docsPath}
 - Examples: ${examplesPath} (extensions, custom tools, SDK)
 - When asked to create: custom models/providers (README.md), extensions (docs/extensions.md, examples/extensions/), themes (docs/theme.md), skills (docs/skills.md), TUI components (docs/tui.md - has copy-paste patterns)
-- Always read the doc, examples, AND follow .md cross-references before implementing`;
+- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing`;
 
 	if (appendSection) {
 		prompt += appendSection;
@@ -288,7 +288,7 @@ Documentation:
 	// Append project context files
 	if (contextFiles.length > 0) {
 		prompt += "\n\n# Project Context\n\n";
-		prompt += "The following project context files have been loaded:\n\n";
+		prompt += "Project-specific instructions and guidelines:\n\n";
 		for (const { path: filePath, content } of contextFiles) {
 			prompt += `## ${filePath}\n\n${content}\n\n`;
 		}

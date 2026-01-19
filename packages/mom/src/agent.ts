@@ -7,13 +7,14 @@ import {
 	formatSkillsForPrompt,
 	loadSkillsFromDir,
 	ModelRegistry,
+	SessionManager,
 	type Skill,
 } from "@mariozechner/pi-coding-agent";
 import { existsSync, readFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
-import { MomSessionManager, MomSettingsManager } from "./context.js";
+import { MomSettingsManager, syncLogToSessionManager } from "./context.js";
 import * as log from "./log.js";
 import { createExecutor, type SandboxConfig } from "./sandbox.js";
 import type { ChannelInfo, SlackContext, UserInfo } from "./slack.js";
@@ -418,7 +419,9 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	const systemPrompt = buildSystemPrompt(workspacePath, channelId, memory, sandboxConfig, [], [], skills);
 
 	// Create session manager and settings manager
-	const sessionManager = new MomSessionManager(channelDir);
+	// Use a fixed context.jsonl file per channel (not timestamped like coding-agent)
+	const contextFile = join(channelDir, "context.jsonl");
+	const sessionManager = SessionManager.open(contextFile, channelDir);
 	const settingsManager = new MomSettingsManager(join(channelDir, ".."));
 
 	// Create AuthStorage and ModelRegistry
@@ -439,7 +442,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	});
 
 	// Load existing messages
-	const loadedSession = sessionManager.buildSessionContex();
+	const loadedSession = sessionManager.buildSessionContext();
 	if (loadedSession.messages.length > 0) {
 		agent.replaceMessages(loadedSession.messages);
 		log.logInfo(`[${channelId}] Loaded ${loadedSession.messages.length} messages from context.jsonl`);
@@ -448,7 +451,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	// Create AgentSession wrapper
 	const session = new AgentSession({
 		agent,
-		sessionManager: sessionManager as any,
+		sessionManager,
 		settingsManager: settingsManager as any,
 		modelRegistry,
 	});
@@ -624,9 +627,16 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			// Ensure channel directory exists
 			await mkdir(channelDir, { recursive: true });
 
+			// Sync messages from log.jsonl that arrived while we were offline or busy
+			// Exclude the current message (it will be added via prompt())
+			const syncedCount = syncLogToSessionManager(sessionManager, channelDir, ctx.message.ts);
+			if (syncedCount > 0) {
+				log.logInfo(`[${channelId}] Synced ${syncedCount} messages from log.jsonl`);
+			}
+
 			// Reload messages from context.jsonl
-			// This picks up any messages synced from log.jsonl before this run
-			const reloadedSession = sessionManager.buildSessionContex();
+			// This picks up any messages synced above
+			const reloadedSession = sessionManager.buildSessionContext();
 			if (reloadedSession.messages.length > 0) {
 				agent.replaceMessages(reloadedSession.messages);
 				log.logInfo(`[${channelId}] Reloaded ${reloadedSession.messages.length} messages from context`);

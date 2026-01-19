@@ -1,0 +1,100 @@
+name: Approve Contributor
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  approve:
+    if: ${{ !github.event.issue.pull_request }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Add contributor to approved list
+        id: update
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            const issueAuthor = context.payload.issue.user.login;
+            const commenter = context.payload.comment.user.login;
+            const commentBody = context.payload.comment.body || '';
+            const approvedFile = '.github/APPROVED_CONTRIBUTORS';
+
+            if (!/^\s*lgtm\b/i.test(commentBody)) {
+              console.log('Comment does not match lgtm');
+              core.setOutput('status', 'skipped');
+              return;
+            }
+
+            try {
+              const { data: permissionLevel } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username: commenter
+              });
+
+              if (!['admin', 'write'].includes(permissionLevel.permission)) {
+                console.log(`${commenter} does not have write access`);
+                core.setOutput('status', 'skipped');
+                return;
+              }
+            } catch (error) {
+              console.log(`${commenter} does not have collaborator access`);
+              core.setOutput('status', 'skipped');
+              return;
+            }
+
+            let content = fs.readFileSync(approvedFile, 'utf8');
+            const approvedList = content
+              .split('\n')
+              .map(line => line.trim().toLowerCase())
+              .filter(line => line && !line.startsWith('#'));
+
+            if (approvedList.includes(issueAuthor.toLowerCase())) {
+              console.log(`${issueAuthor} is already approved`);
+              core.setOutput('status', 'already');
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `@${issueAuthor} is already in the approved contributors list.`
+              });
+              return;
+            }
+
+            content = content.trimEnd() + '\n' + issueAuthor + '\n';
+            fs.writeFileSync(approvedFile, content);
+
+            console.log(`Added ${issueAuthor} to approved contributors`);
+            core.setOutput('status', 'added');
+
+      - name: Commit and push
+        if: steps.update.outputs.status == 'added'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/APPROVED_CONTRIBUTORS
+          git diff --staged --quiet || git commit -m "chore: approve contributor ${{ github.event.issue.user.login }}"
+          git push
+
+      - name: Comment on issue
+        if: steps.update.outputs.status == 'added'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueAuthor = context.payload.issue.user.login;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `@${issueAuthor} has been added to the approved contributors list. You can now submit PRs. Thanks for contributing!`
+            });

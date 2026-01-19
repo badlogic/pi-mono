@@ -45,6 +45,8 @@
 				"muted",
 				"dim",
 				"text",
+				"thinkingText",
+				"selectedBg",
 				"userMessageBg",
 				"userMessageText",
 				"customMessageBg",
@@ -53,9 +55,11 @@
 				"toolPendingBg",
 				"toolSuccessBg",
 				"toolErrorBg",
-				"toolText",
+				"toolTitle",
+				"toolOutput",
 				"mdHeading",
 				"mdLink",
+				"mdLinkUrl",
 				"mdCode",
 				"mdCodeBlock",
 				"mdCodeBlockBorder",
@@ -117,6 +121,14 @@
 					"$ref": "#/$defs/colorValue",
 					"description": "Default text color (usually empty string)"
 				},
+				"thinkingText": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Thinking block text color"
+				},
+				"selectedBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Selected item background"
+				},
 				"userMessageBg": {
 					"$ref": "#/$defs/colorValue",
 					"description": "User message background"
@@ -149,9 +161,13 @@
 					"$ref": "#/$defs/colorValue",
 					"description": "Tool execution box (error state)"
 				},
-				"toolText": {
+				"toolTitle": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Tool execution box text color"
+					"description": "Tool execution box title color"
+				},
+				"toolOutput": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Tool execution box output text color"
 				},
 				"mdHeading": {
 					"$ref": "#/$defs/colorValue",
@@ -160,6 +176,10 @@
 				"mdLink": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Markdown link text"
+				},
+				"mdLinkUrl": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Markdown link URL"
 				},
 				"mdCode": {
 					"$ref": "#/$defs/colorValue",

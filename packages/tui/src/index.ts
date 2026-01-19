@@ -10,7 +10,7 @@ export {
 // Components
 export { Box } from "./components/box.js";
 export { CancellableLoader } from "./components/cancellable-loader.js";
-export { Editor, type EditorTheme } from "./components/editor.js";
+export { Editor, type EditorOptions, type EditorTheme } from "./components/editor.js";
 export { Image, type ImageOptions, type ImageTheme } from "./components/image.js";
 export { Input } from "./components/input.js";
 export { Loader } from "./components/loader.js";
@@ -22,6 +22,8 @@ export { Text } from "./components/text.js";
 export { TruncatedText } from "./components/truncated-text.js";
 // Editor component interface (for custom editors)
 export type { EditorComponent } from "./editor-component.js";
+// Fuzzy matching
+export { type FuzzyMatch, fuzzyFilter, fuzzyMatch } from "./fuzzy.js";
 // Keybindings
 export {
 	DEFAULT_EDITOR_KEYBINDINGS,
@@ -70,6 +72,18 @@ export {
 	setCellDimensions,
 	type TerminalCapabilities,
 } from "./terminal-image.js";
-export { type Component, Container, TUI } from "./tui.js";
+export {
+	type Component,
+	Container,
+	CURSOR_MARKER,
+	type Focusable,
+	isFocusable,
+	type OverlayAnchor,
+	type OverlayHandle,
+	type OverlayMargin,
+	type OverlayOptions,
+	type SizeValue,
+	TUI,
+} from "./tui.js";
 // Utilities
 export { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "./utils.js";

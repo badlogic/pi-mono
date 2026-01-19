@@ -3,8 +3,8 @@
  */
 
 import type { Api, Model } from "@mariozechner/pi-ai";
+import { fuzzyFilter } from "@mariozechner/pi-tui";
 import type { ModelRegistry } from "../core/model-registry.js";
-import { fuzzyFilter } from "../utils/fuzzy.js";
 
 /**
  * Format a number as human-readable (e.g., 200000 -> "200K", 1000000 -> "1M")
@@ -25,7 +25,7 @@ function formatTokenCount(count: number): string {
  * List available models, optionally filtered by search pattern
  */
 export async function listModels(modelRegistry: ModelRegistry, searchPattern?: string): Promise<void> {
-	const models = await modelRegistry.getAvailable();
+	const models = modelRegistry.getAvailable();
 
 	if (models.length === 0) {
 		console.log("No models available. Set API keys in environment variables.");

@@ -5,6 +5,8 @@
  *
  * Test with: npx tsx src/cli-new.ts [args...]
  */
+process.title = "pi";
+
 import { main } from "./main.js";
 
 main(process.argv.slice(2));

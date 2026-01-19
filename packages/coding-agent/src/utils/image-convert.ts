@@ -1,3 +1,5 @@
+import { loadPhoton } from "./photon.js";
+
 /**
  * Convert image to PNG format for terminal display.
  * Kitty graphics protocol requires PNG format (f=100).
@@ -11,16 +13,26 @@ export async function convertToPng(
 		return { data: base64Data, mimeType };
 	}
 
+	const photon = await loadPhoton();
+	if (!photon) {
+		// Photon not available, can't convert
+		return null;
+	}
+
 	try {
-		const sharp = (await import("sharp")).default;
-		const buffer = Buffer.from(base64Data, "base64");
-		const pngBuffer = await sharp(buffer).png().toBuffer();
-		return {
-			data: pngBuffer.toString("base64"),
-			mimeType: "image/png",
-		};
+		const bytes = new Uint8Array(Buffer.from(base64Data, "base64"));
+		const image = photon.PhotonImage.new_from_byteslice(bytes);
+		try {
+			const pngBuffer = image.get_bytes();
+			return {
+				data: Buffer.from(pngBuffer).toString("base64"),
+				mimeType: "image/png",
+			};
+		} finally {
+			image.free();
+		}
 	} catch {
-		// Sharp not available or conversion failed
+		// Conversion failed
 		return null;
 	}
 }

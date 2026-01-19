@@ -27,7 +27,8 @@ export type AppAction =
 	| "toggleThinking"
 	| "externalEditor"
 	| "followUp"
-	| "dequeue";
+	| "dequeue"
+	| "pasteImage";
 
 /**
  * All configurable actions.
@@ -58,6 +59,7 @@ export const DEFAULT_APP_KEYBINDINGS: Record<AppAction, KeyId | KeyId[]> = {
 	externalEditor: "ctrl+g",
 	followUp: "alt+enter",
 	dequeue: "alt+up",
+	pasteImage: "ctrl+v",
 };
 
 /**
@@ -83,6 +85,7 @@ const APP_ACTIONS: AppAction[] = [
 	"externalEditor",
 	"followUp",
 	"dequeue",
+	"pasteImage",
 ];
 
 function isAppAction(action: string): action is AppAction {
@@ -111,9 +114,10 @@ export class KeybindingsManager {
 		const manager = new KeybindingsManager(config);
 
 		// Set up editor keybindings globally
+		// Include both editor actions and expandTools (shared between app and editor)
 		const editorConfig: EditorKeybindingsConfig = {};
 		for (const [action, keys] of Object.entries(config)) {
-			if (!isAppAction(action)) {
+			if (!isAppAction(action) || action === "expandTools") {
 				editorConfig[action as EditorAction] = keys;
 			}
 		}
@@ -172,16 +176,6 @@ export class KeybindingsManager {
 	 */
 	getKeys(action: AppAction): KeyId[] {
 		return this.appActionToKeys.get(action) ?? [];
-	}
-
-	/**
-	 * Get display string for an action.
-	 */
-	getDisplayString(action: AppAction): string {
-		const keys = this.getKeys(action);
-		if (keys.length === 0) return "";
-		if (keys.length === 1) return keys[0]!;
-		return keys.join("/");
 	}
 
 	/**

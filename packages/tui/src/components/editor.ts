@@ -1,7 +1,7 @@
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
 import { getEditorKeybindings } from "../keybindings.js";
 import { matchesKey } from "../keys.js";
-import type { Component } from "../tui.js";
+import { type Component, CURSOR_MARKER, type Focusable, type TUI } from "../tui.js";
 import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
 import { SelectList, type SelectListTheme } from "./select-list.js";
 
@@ -187,6 +187,44 @@ function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
 	return chunks.length > 0 ? chunks : [{ text: "", startIndex: 0, endIndex: 0 }];
 }
 
+// Kitty CSI-u sequences for printable keys, including optional shifted/base codepoints.
+const KITTY_CSI_U_REGEX = /^\x1b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$/;
+const KITTY_MOD_SHIFT = 1;
+const KITTY_MOD_ALT = 2;
+const KITTY_MOD_CTRL = 4;
+
+// Decode a printable CSI-u sequence, preferring the shifted key when present.
+function decodeKittyPrintable(data: string): string | undefined {
+	const match = data.match(KITTY_CSI_U_REGEX);
+	if (!match) return undefined;
+
+	// CSI-u groups: <codepoint>[:<shifted>[:<base>]];<mod>u
+	const codepoint = Number.parseInt(match[1] ?? "", 10);
+	if (!Number.isFinite(codepoint)) return undefined;
+
+	const shiftedKey = match[2] && match[2].length > 0 ? Number.parseInt(match[2], 10) : undefined;
+	const modValue = match[4] ? Number.parseInt(match[4], 10) : 1;
+	// Modifiers are 1-indexed in CSI-u; normalize to our bitmask.
+	const modifier = Number.isFinite(modValue) ? modValue - 1 : 0;
+
+	// Ignore CSI-u sequences used for Alt/Ctrl shortcuts.
+	if (modifier & (KITTY_MOD_ALT | KITTY_MOD_CTRL)) return undefined;
+
+	// Prefer the shifted keycode when Shift is held.
+	let effectiveCodepoint = codepoint;
+	if (modifier & KITTY_MOD_SHIFT && typeof shiftedKey === "number") {
+		effectiveCodepoint = shiftedKey;
+	}
+	// Drop control characters or invalid codepoints.
+	if (!Number.isFinite(effectiveCodepoint) || effectiveCodepoint < 32) return undefined;
+
+	try {
+		return String.fromCodePoint(effectiveCodepoint);
+	} catch {
+		return undefined;
+	}
+}
+
 interface EditorState {
 	lines: string[];
 	cursorLine: number;
@@ -204,17 +242,29 @@ export interface EditorTheme {
 	selectList: SelectListTheme;
 }
 
-export class Editor implements Component {
+export interface EditorOptions {
+	paddingX?: number;
+}
+
+export class Editor implements Component, Focusable {
 	private state: EditorState = {
 		lines: [""],
 		cursorLine: 0,
 		cursorCol: 0,
 	};
 
+	/** Focusable interface - set by TUI when focus changes */
+	focused: boolean = false;
+
+	protected tui: TUI;
 	private theme: EditorTheme;
+	private paddingX: number = 0;
 
 	// Store last render width for cursor navigation
 	private lastWidth: number = 80;
+
+	// Vertical scrolling support
+	private scrollOffset: number = 0;
 
 	// Border color (can be changed dynamically)
 	public borderColor: (str: string) => string;
@@ -232,18 +282,42 @@ export class Editor implements Component {
 	// Bracketed paste mode buffering
 	private pasteBuffer: string = "";
 	private isInPaste: boolean = false;
+	private pendingShiftEnter: boolean = false;
 
 	// Prompt history for up/down navigation
 	private history: string[] = [];
 	private historyIndex: number = -1; // -1 = not browsing, 0 = most recent, 1 = older, etc.
 
+	// Kill ring for Emacs-style kill/yank operations
+	// Also tracks undo coalescing: "type-word" means we're mid-word (coalescing)
+	private killRing: string[] = [];
+	private lastAction: "kill" | "yank" | "type-word" | null = null;
+
+	// Undo support
+	private undoStack: EditorState[] = [];
+
 	public onSubmit?: (text: string) => void;
 	public onChange?: (text: string) => void;
 	public disableSubmit: boolean = false;
 
-	constructor(theme: EditorTheme) {
+	constructor(tui: TUI, theme: EditorTheme, options: EditorOptions = {}) {
+		this.tui = tui;
 		this.theme = theme;
 		this.borderColor = theme.borderColor;
+		const paddingX = options.paddingX ?? 0;
+		this.paddingX = Number.isFinite(paddingX) ? Math.max(0, Math.floor(paddingX)) : 0;
+	}
+
+	getPaddingX(): number {
+		return this.paddingX;
+	}
+
+	setPaddingX(padding: number): void {
+		const newPadding = Number.isFinite(padding) ? Math.max(0, Math.floor(padding)) : 0;
+		if (this.paddingX !== newPadding) {
+			this.paddingX = newPadding;
+			this.tui.requestRender();
+		}
 	}
 
 	setAutocompleteProvider(provider: AutocompleteProvider): void {
@@ -283,10 +357,16 @@ export class Editor implements Component {
 	}
 
 	private navigateHistory(direction: 1 | -1): void {
+		this.lastAction = null;
 		if (this.history.length === 0) return;
 
 		const newIndex = this.historyIndex - direction; // Up(-1) increases index, Down(1) decreases
 		if (newIndex < -1 || newIndex >= this.history.length) return;
+
+		// Capture state when first entering history browsing mode
+		if (this.historyIndex === -1 && newIndex >= 0) {
+			this.pushUndoSnapshot();
+		}
 
 		this.historyIndex = newIndex;
 
@@ -300,10 +380,15 @@ export class Editor implements Component {
 
 	/** Internal setText that doesn't reset history state - used by navigateHistory */
 	private setTextInternal(text: string): void {
+		// Reset kill ring state - external text changes break accumulation/yank chains
+		this.lastAction = null;
+
 		const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
 		this.state.lines = lines.length === 0 ? [""] : lines;
 		this.state.cursorLine = this.state.lines.length - 1;
 		this.state.cursorCol = this.state.lines[this.state.cursorLine]?.length || 0;
+		// Reset scroll - render() will adjust to show cursor
+		this.scrollOffset = 0;
 
 		if (this.onChange) {
 			this.onChange(this.getText());
@@ -315,21 +400,58 @@ export class Editor implements Component {
 	}
 
 	render(width: number): string[] {
+		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
+		const paddingX = Math.min(this.paddingX, maxPadding);
+		const contentWidth = Math.max(1, width - paddingX * 2);
+
 		// Store width for cursor navigation
-		this.lastWidth = width;
+		this.lastWidth = contentWidth;
 
 		const horizontal = this.borderColor("─");
 
-		// Layout the text - use full width
-		const layoutLines = this.layoutText(width);
+		// Layout the text - use content width
+		const layoutLines = this.layoutText(contentWidth);
+
+		// Calculate max visible lines: 30% of terminal height, minimum 5 lines
+		const terminalRows = this.tui.terminal.rows;
+		const maxVisibleLines = Math.max(5, Math.floor(terminalRows * 0.3));
+
+		// Find the cursor line index in layoutLines
+		let cursorLineIndex = layoutLines.findIndex((line) => line.hasCursor);
+		if (cursorLineIndex === -1) cursorLineIndex = 0;
+
+		// Adjust scroll offset to keep cursor visible
+		if (cursorLineIndex < this.scrollOffset) {
+			this.scrollOffset = cursorLineIndex;
+		} else if (cursorLineIndex >= this.scrollOffset + maxVisibleLines) {
+			this.scrollOffset = cursorLineIndex - maxVisibleLines + 1;
+		}
+
+		// Clamp scroll offset to valid range
+		const maxScrollOffset = Math.max(0, layoutLines.length - maxVisibleLines);
+		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxScrollOffset));
+
+		// Get visible lines slice
+		const visibleLines = layoutLines.slice(this.scrollOffset, this.scrollOffset + maxVisibleLines);
 
 		const result: string[] = [];
+		const leftPadding = " ".repeat(paddingX);
+		const rightPadding = leftPadding;
 
-		// Render top border
-		result.push(horizontal.repeat(width));
+		// Render top border (with scroll indicator if scrolled down)
+		if (this.scrollOffset > 0) {
+			const indicator = `─── ↑ ${this.scrollOffset} more `;
+			const remaining = width - visibleWidth(indicator);
+			result.push(this.borderColor(indicator + "─".repeat(Math.max(0, remaining))));
+		} else {
+			result.push(horizontal.repeat(width));
+		}
 
-		// Render each layout line
-		for (const layoutLine of layoutLines) {
+		// Render each visible layout line
+		// Emit hardware cursor marker only when focused and not showing autocomplete
+		const emitCursorMarker = this.focused && !this.isAutocompleting;
+
+		for (const layoutLine of visibleLines) {
 			let displayText = layoutLine.text;
 			let lineVisibleWidth = visibleWidth(layoutLine.text);
 
@@ -338,6 +460,9 @@ export class Editor implements Component {
 				const before = displayText.slice(0, layoutLine.cursorPos);
 				const after = displayText.slice(layoutLine.cursorPos);
 
+				// Hardware cursor marker (zero-width, emitted before fake cursor for IME positioning)
+				const marker = emitCursorMarker ? CURSOR_MARKER : "";
+
 				if (after.length > 0) {
 					// Cursor is on a character (grapheme) - replace it with highlighted version
 					// Get the first grapheme from 'after'
@@ -345,14 +470,14 @@ export class Editor implements Component {
 					const firstGrapheme = afterGraphemes[0]?.segment || "";
 					const restAfter = after.slice(firstGrapheme.length);
 					const cursor = `\x1b[7m${firstGrapheme}\x1b[0m`;
-					displayText = before + cursor + restAfter;
+					displayText = before + marker + cursor + restAfter;
 					// lineVisibleWidth stays the same - we're replacing, not adding
 				} else {
 					// Cursor is at the end - check if we have room for the space
-					if (lineVisibleWidth < width) {
+					if (lineVisibleWidth < contentWidth) {
 						// We have room - add highlighted space
 						const cursor = "\x1b[7m \x1b[0m";
-						displayText = before + cursor;
+						displayText = before + marker + cursor;
 						// lineVisibleWidth increases by 1 - we're adding a space
 						lineVisibleWidth = lineVisibleWidth + 1;
 					} else {
@@ -367,7 +492,7 @@ export class Editor implements Component {
 								.slice(0, -1)
 								.map((g) => g.segment)
 								.join("");
-							displayText = beforeWithoutLast + cursor;
+							displayText = beforeWithoutLast + marker + cursor;
 						}
 						// lineVisibleWidth stays the same
 					}
@@ -375,19 +500,30 @@ export class Editor implements Component {
 			}
 
 			// Calculate padding based on actual visible width
-			const padding = " ".repeat(Math.max(0, width - lineVisibleWidth));
+			const padding = " ".repeat(Math.max(0, contentWidth - lineVisibleWidth));
 
 			// Render the line (no side borders, just horizontal lines above and below)
-			result.push(displayText + padding);
+			result.push(`${leftPadding}${displayText}${padding}${rightPadding}`);
 		}
 
-		// Render bottom border
-		result.push(horizontal.repeat(width));
+		// Render bottom border (with scroll indicator if more content below)
+		const linesBelow = layoutLines.length - (this.scrollOffset + visibleLines.length);
+		if (linesBelow > 0) {
+			const indicator = `─── ↓ ${linesBelow} more `;
+			const remaining = width - visibleWidth(indicator);
+			result.push(this.borderColor(indicator + "─".repeat(Math.max(0, remaining))));
+		} else {
+			result.push(horizontal.repeat(width));
+		}
 
 		// Add autocomplete list if active
 		if (this.isAutocompleting && this.autocompleteList) {
-			const autocompleteResult = this.autocompleteList.render(width);
-			result.push(...autocompleteResult);
+			const autocompleteResult = this.autocompleteList.render(contentWidth);
+			for (const line of autocompleteResult) {
+				const lineWidth = visibleWidth(line);
+				const linePadding = " ".repeat(Math.max(0, contentWidth - lineWidth));
+				result.push(`${leftPadding}${line}${linePadding}${rightPadding}`);
+			}
 		}
 
 		return result;
@@ -422,8 +558,29 @@ export class Editor implements Component {
 			return;
 		}
 
+		if (this.pendingShiftEnter) {
+			if (data === "\r") {
+				this.pendingShiftEnter = false;
+				this.addNewLine();
+				return;
+			}
+			this.pendingShiftEnter = false;
+			this.insertCharacter("\\");
+		}
+
+		if (data === "\\") {
+			this.pendingShiftEnter = true;
+			return;
+		}
+
 		// Ctrl+C - let parent handle (exit/clear)
 		if (kb.matches(data, "copy")) {
+			return;
+		}
+
+		// Undo
+		if (kb.matches(data, "undo")) {
+			this.undo();
 			return;
 		}
 
@@ -442,6 +599,8 @@ export class Editor implements Component {
 			if (kb.matches(data, "tab")) {
 				const selected = this.autocompleteList.getSelectedItem();
 				if (selected && this.autocompleteProvider) {
+					this.pushUndoSnapshot();
+					this.lastAction = null;
 					const result = this.autocompleteProvider.applyCompletion(
 						this.state.lines,
 						this.state.cursorLine,
@@ -461,6 +620,8 @@ export class Editor implements Component {
 			if (kb.matches(data, "selectConfirm")) {
 				const selected = this.autocompleteList.getSelectedItem();
 				if (selected && this.autocompleteProvider) {
+					this.pushUndoSnapshot();
+					this.lastAction = null;
 					const result = this.autocompleteProvider.applyCompletion(
 						this.state.lines,
 						this.state.cursorLine,
@@ -503,12 +664,26 @@ export class Editor implements Component {
 			this.deleteWordBackwards();
 			return;
 		}
+		if (kb.matches(data, "deleteWordForward")) {
+			this.deleteWordForward();
+			return;
+		}
 		if (kb.matches(data, "deleteCharBackward") || matchesKey(data, "shift+backspace")) {
 			this.handleBackspace();
 			return;
 		}
 		if (kb.matches(data, "deleteCharForward") || matchesKey(data, "shift+delete")) {
 			this.handleForwardDelete();
+			return;
+		}
+
+		// Kill ring actions
+		if (kb.matches(data, "yank")) {
+			this.yank();
+			return;
+		}
+		if (kb.matches(data, "yankPop")) {
+			this.yankPop();
 			return;
 		}
 
@@ -558,6 +733,9 @@ export class Editor implements Component {
 			this.pastes.clear();
 			this.pasteCounter = 0;
 			this.historyIndex = -1;
+			this.scrollOffset = 0;
+			this.undoStack.length = 0;
+			this.lastAction = null;
 
 			if (this.onChange) this.onChange("");
 			if (this.onSubmit) this.onSubmit(result);
@@ -592,9 +770,25 @@ export class Editor implements Component {
 			return;
 		}
 
+		// Page up/down - scroll by page and move cursor
+		if (kb.matches(data, "pageUp")) {
+			this.pageScroll(-1);
+			return;
+		}
+		if (kb.matches(data, "pageDown")) {
+			this.pageScroll(1);
+			return;
+		}
+
 		// Shift+Space - insert regular space
 		if (matchesKey(data, "shift+space")) {
 			this.insertCharacter(" ");
+			return;
+		}
+
+		const kittyPrintable = decodeKittyPrintable(data);
+		if (kittyPrintable !== undefined) {
+			this.insertCharacter(kittyPrintable);
 			return;
 		}
 
@@ -719,22 +913,43 @@ export class Editor implements Component {
 
 	setText(text: string): void {
 		this.historyIndex = -1; // Exit history browsing mode
+		// Push undo snapshot if content differs (makes programmatic changes undoable)
+		if (this.getText() !== text) {
+			this.pushUndoSnapshot();
+		}
 		this.setTextInternal(text);
+		this.lastAction = null;
 	}
 
 	/**
 	 * Insert text at the current cursor position.
 	 * Used for programmatic insertion (e.g., clipboard image markers).
+	 * This is atomic for undo - single undo restores entire pre-insert state.
 	 */
 	insertTextAtCursor(text: string): void {
+		if (!text) return;
+		this.pushUndoSnapshot();
+		this.lastAction = null;
 		for (const char of text) {
-			this.insertCharacter(char);
+			this.insertCharacter(char, true);
 		}
 	}
 
 	// All the editor methods from before...
-	private insertCharacter(char: string): void {
+	private insertCharacter(char: string, skipUndoCoalescing?: boolean): void {
 		this.historyIndex = -1; // Exit history browsing mode
+
+		// Undo coalescing (fish-style):
+		// - Consecutive word chars coalesce into one undo unit
+		// - Space captures state before itself (so undo removes space+following word together)
+		// - Each space is separately undoable
+		// Skip coalescing when called from atomic operations (paste, insertTextAtCursor)
+		if (!skipUndoCoalescing) {
+			if (isWhitespaceChar(char) || this.lastAction !== "type-word") {
+				this.pushUndoSnapshot();
+			}
+			this.lastAction = "type-word";
+		}
 
 		const line = this.state.lines[this.state.cursorLine] || "";
 
@@ -784,6 +999,9 @@ export class Editor implements Component {
 
 	private handlePaste(pastedText: string): void {
 		this.historyIndex = -1; // Exit history browsing mode
+		this.lastAction = null;
+
+		this.pushUndoSnapshot();
 
 		// Clean the pasted text
 		const cleanText = pastedText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -824,9 +1042,8 @@ export class Editor implements Component {
 					? `[paste #${pasteId} +${pastedLines.length} lines]`
 					: `[paste #${pasteId} ${totalChars} chars]`;
 			for (const char of marker) {
-				this.insertCharacter(char);
+				this.insertCharacter(char, true);
 			}
-
 			return;
 		}
 
@@ -834,9 +1051,8 @@ export class Editor implements Component {
 			// Single line - just insert each character
 			const text = pastedLines[0] || "";
 			for (const char of text) {
-				this.insertCharacter(char);
+				this.insertCharacter(char, true);
 			}
-
 			return;
 		}
 
@@ -884,6 +1100,9 @@ export class Editor implements Component {
 
 	private addNewLine(): void {
 		this.historyIndex = -1; // Exit history browsing mode
+		this.lastAction = null;
+
+		this.pushUndoSnapshot();
 
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
@@ -905,8 +1124,11 @@ export class Editor implements Component {
 
 	private handleBackspace(): void {
 		this.historyIndex = -1; // Exit history browsing mode
+		this.lastAction = null;
 
 		if (this.state.cursorCol > 0) {
+			this.pushUndoSnapshot();
+
 			// Delete grapheme before cursor (handles emojis, combining characters, etc.)
 			const line = this.state.lines[this.state.cursorLine] || "";
 			const beforeCursor = line.slice(0, this.state.cursorCol);
@@ -922,6 +1144,8 @@ export class Editor implements Component {
 			this.state.lines[this.state.cursorLine] = before + after;
 			this.state.cursorCol -= graphemeLength;
 		} else if (this.state.cursorLine > 0) {
+			this.pushUndoSnapshot();
+
 			// Merge with previous line
 			const currentLine = this.state.lines[this.state.cursorLine] || "";
 			const previousLine = this.state.lines[this.state.cursorLine - 1] || "";
@@ -956,10 +1180,12 @@ export class Editor implements Component {
 	}
 
 	private moveToLineStart(): void {
+		this.lastAction = null;
 		this.state.cursorCol = 0;
 	}
 
 	private moveToLineEnd(): void {
+		this.lastAction = null;
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 		this.state.cursorCol = currentLine.length;
 	}
@@ -970,11 +1196,23 @@ export class Editor implements Component {
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 		if (this.state.cursorCol > 0) {
+			this.pushUndoSnapshot();
+
+			// Calculate text to be deleted and save to kill ring (backward deletion = prepend)
+			const deletedText = currentLine.slice(0, this.state.cursorCol);
+			this.addToKillRing(deletedText, true);
+			this.lastAction = "kill";
+
 			// Delete from start of line up to cursor
 			this.state.lines[this.state.cursorLine] = currentLine.slice(this.state.cursorCol);
 			this.state.cursorCol = 0;
 		} else if (this.state.cursorLine > 0) {
-			// At start of line - merge with previous line
+			this.pushUndoSnapshot();
+
+			// At start of line - merge with previous line, treating newline as deleted text
+			this.addToKillRing("\n", true);
+			this.lastAction = "kill";
+
 			const previousLine = this.state.lines[this.state.cursorLine - 1] || "";
 			this.state.lines[this.state.cursorLine - 1] = previousLine + currentLine;
 			this.state.lines.splice(this.state.cursorLine, 1);
@@ -993,10 +1231,22 @@ export class Editor implements Component {
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 		if (this.state.cursorCol < currentLine.length) {
+			this.pushUndoSnapshot();
+
+			// Calculate text to be deleted and save to kill ring (forward deletion = append)
+			const deletedText = currentLine.slice(this.state.cursorCol);
+			this.addToKillRing(deletedText, false);
+			this.lastAction = "kill";
+
 			// Delete from cursor to end of line
 			this.state.lines[this.state.cursorLine] = currentLine.slice(0, this.state.cursorCol);
 		} else if (this.state.cursorLine < this.state.lines.length - 1) {
-			// At end of line - merge with next line
+			this.pushUndoSnapshot();
+
+			// At end of line - merge with next line, treating newline as deleted text
+			this.addToKillRing("\n", false);
+			this.lastAction = "kill";
+
 			const nextLine = this.state.lines[this.state.cursorLine + 1] || "";
 			this.state.lines[this.state.cursorLine] = currentLine + nextLine;
 			this.state.lines.splice(this.state.cursorLine + 1, 1);
@@ -1015,6 +1265,12 @@ export class Editor implements Component {
 		// If at start of line, behave like backspace at column 0 (merge with previous line)
 		if (this.state.cursorCol === 0) {
 			if (this.state.cursorLine > 0) {
+				this.pushUndoSnapshot();
+
+				// Treat newline as deleted text (backward deletion = prepend)
+				this.addToKillRing("\n", true);
+				this.lastAction = "kill";
+
 				const previousLine = this.state.lines[this.state.cursorLine - 1] || "";
 				this.state.lines[this.state.cursorLine - 1] = previousLine + currentLine;
 				this.state.lines.splice(this.state.cursorLine, 1);
@@ -1022,10 +1278,21 @@ export class Editor implements Component {
 				this.state.cursorCol = previousLine.length;
 			}
 		} else {
+			this.pushUndoSnapshot();
+
+			// Save lastAction before cursor movement (moveWordBackwards resets it)
+			const wasKill = this.lastAction === "kill";
+
 			const oldCursorCol = this.state.cursorCol;
 			this.moveWordBackwards();
 			const deleteFrom = this.state.cursorCol;
 			this.state.cursorCol = oldCursorCol;
+
+			// Restore kill state for accumulation check, then save to kill ring
+			this.lastAction = wasKill ? "kill" : null;
+			const deletedText = currentLine.slice(deleteFrom, this.state.cursorCol);
+			this.addToKillRing(deletedText, true);
+			this.lastAction = "kill";
 
 			this.state.lines[this.state.cursorLine] =
 				currentLine.slice(0, deleteFrom) + currentLine.slice(this.state.cursorCol);
@@ -1037,12 +1304,59 @@ export class Editor implements Component {
 		}
 	}
 
-	private handleForwardDelete(): void {
+	private deleteWordForward(): void {
 		this.historyIndex = -1; // Exit history browsing mode
 
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
+		// If at end of line, merge with next line (delete the newline)
+		if (this.state.cursorCol >= currentLine.length) {
+			if (this.state.cursorLine < this.state.lines.length - 1) {
+				this.pushUndoSnapshot();
+
+				// Treat newline as deleted text (forward deletion = append)
+				this.addToKillRing("\n", false);
+				this.lastAction = "kill";
+
+				const nextLine = this.state.lines[this.state.cursorLine + 1] || "";
+				this.state.lines[this.state.cursorLine] = currentLine + nextLine;
+				this.state.lines.splice(this.state.cursorLine + 1, 1);
+			}
+		} else {
+			this.pushUndoSnapshot();
+
+			// Save lastAction before cursor movement (moveWordForwards resets it)
+			const wasKill = this.lastAction === "kill";
+
+			const oldCursorCol = this.state.cursorCol;
+			this.moveWordForwards();
+			const deleteTo = this.state.cursorCol;
+			this.state.cursorCol = oldCursorCol;
+
+			// Restore kill state for accumulation check, then save to kill ring
+			this.lastAction = wasKill ? "kill" : null;
+			const deletedText = currentLine.slice(this.state.cursorCol, deleteTo);
+			this.addToKillRing(deletedText, false);
+			this.lastAction = "kill";
+
+			this.state.lines[this.state.cursorLine] =
+				currentLine.slice(0, this.state.cursorCol) + currentLine.slice(deleteTo);
+		}
+
+		if (this.onChange) {
+			this.onChange(this.getText());
+		}
+	}
+
+	private handleForwardDelete(): void {
+		this.historyIndex = -1; // Exit history browsing mode
+		this.lastAction = null;
+
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+
 		if (this.state.cursorCol < currentLine.length) {
+			this.pushUndoSnapshot();
+
 			// Delete grapheme at cursor position (handles emojis, combining characters, etc.)
 			const afterCursor = currentLine.slice(this.state.cursorCol);
 
@@ -1055,6 +1369,8 @@ export class Editor implements Component {
 			const after = currentLine.slice(this.state.cursorCol + graphemeLength);
 			this.state.lines[this.state.cursorLine] = before + after;
 		} else if (this.state.cursorLine < this.state.lines.length - 1) {
+			this.pushUndoSnapshot();
+
 			// At end of line - merge with next line
 			const nextLine = this.state.lines[this.state.cursorLine + 1] || "";
 			this.state.lines[this.state.cursorLine] = currentLine + nextLine;
@@ -1141,6 +1457,7 @@ export class Editor implements Component {
 	}
 
 	private moveCursor(deltaLine: number, deltaCol: number): void {
+		this.lastAction = null;
 		const width = this.lastWidth;
 
 		if (deltaLine !== 0) {
@@ -1199,7 +1516,39 @@ export class Editor implements Component {
 		}
 	}
 
+	/**
+	 * Scroll by a page (direction: -1 for up, 1 for down).
+	 * Moves cursor by the page size while keeping it in bounds.
+	 */
+	private pageScroll(direction: -1 | 1): void {
+		this.lastAction = null;
+		const width = this.lastWidth;
+		const terminalRows = this.tui.terminal.rows;
+		const pageSize = Math.max(5, Math.floor(terminalRows * 0.3));
+
+		// Build visual line map
+		const visualLines = this.buildVisualLineMap(width);
+		const currentVisualLine = this.findCurrentVisualLine(visualLines);
+
+		// Calculate target visual line
+		const targetVisualLine = Math.max(0, Math.min(visualLines.length - 1, currentVisualLine + direction * pageSize));
+
+		// Move cursor to target visual line
+		const targetVL = visualLines[targetVisualLine];
+		if (targetVL) {
+			// Preserve column position within the line
+			const currentVL = visualLines[currentVisualLine];
+			const visualCol = currentVL ? this.state.cursorCol - currentVL.startCol : 0;
+
+			this.state.cursorLine = targetVL.logicalLine;
+			const targetCol = targetVL.startCol + Math.min(visualCol, targetVL.length);
+			const logicalLine = this.state.lines[targetVL.logicalLine] || "";
+			this.state.cursorCol = Math.min(targetCol, logicalLine.length);
+		}
+	}
+
 	private moveWordBackwards(): void {
+		this.lastAction = null;
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 		// If at start of line, move to end of previous line
@@ -1243,7 +1592,176 @@ export class Editor implements Component {
 		this.state.cursorCol = newCol;
 	}
 
+	/**
+	 * Yank (paste) the most recent kill ring entry at cursor position.
+	 */
+	private yank(): void {
+		if (this.killRing.length === 0) return;
+
+		this.pushUndoSnapshot();
+
+		const text = this.killRing[this.killRing.length - 1] || "";
+		this.insertYankedText(text);
+
+		this.lastAction = "yank";
+	}
+
+	/**
+	 * Cycle through kill ring (only works immediately after yank or yank-pop).
+	 * Replaces the last yanked text with the previous entry in the ring.
+	 */
+	private yankPop(): void {
+		// Only works if we just yanked and have more than one entry
+		if (this.lastAction !== "yank" || this.killRing.length <= 1) return;
+
+		this.pushUndoSnapshot();
+
+		// Delete the previously yanked text (still at end of ring before rotation)
+		this.deleteYankedText();
+
+		// Rotate the ring: move end to front
+		const lastEntry = this.killRing.pop()!;
+		this.killRing.unshift(lastEntry);
+
+		// Insert the new most recent entry (now at end after rotation)
+		const text = this.killRing[this.killRing.length - 1];
+		this.insertYankedText(text);
+
+		this.lastAction = "yank";
+	}
+
+	/**
+	 * Insert text at cursor position (used by yank operations).
+	 */
+	private insertYankedText(text: string): void {
+		this.historyIndex = -1; // Exit history browsing mode
+		const lines = text.split("\n");
+
+		if (lines.length === 1) {
+			// Single line - insert at cursor
+			const currentLine = this.state.lines[this.state.cursorLine] || "";
+			const before = currentLine.slice(0, this.state.cursorCol);
+			const after = currentLine.slice(this.state.cursorCol);
+			this.state.lines[this.state.cursorLine] = before + text + after;
+			this.state.cursorCol += text.length;
+		} else {
+			// Multi-line insert
+			const currentLine = this.state.lines[this.state.cursorLine] || "";
+			const before = currentLine.slice(0, this.state.cursorCol);
+			const after = currentLine.slice(this.state.cursorCol);
+
+			// First line merges with text before cursor
+			this.state.lines[this.state.cursorLine] = before + (lines[0] || "");
+
+			// Insert middle lines
+			for (let i = 1; i < lines.length - 1; i++) {
+				this.state.lines.splice(this.state.cursorLine + i, 0, lines[i] || "");
+			}
+
+			// Last line merges with text after cursor
+			const lastLineIndex = this.state.cursorLine + lines.length - 1;
+			this.state.lines.splice(lastLineIndex, 0, (lines[lines.length - 1] || "") + after);
+
+			// Update cursor position
+			this.state.cursorLine = lastLineIndex;
+			this.state.cursorCol = (lines[lines.length - 1] || "").length;
+		}
+
+		if (this.onChange) {
+			this.onChange(this.getText());
+		}
+	}
+
+	/**
+	 * Delete the previously yanked text (used by yank-pop).
+	 * The yanked text is derived from killRing[end] since it hasn't been rotated yet.
+	 */
+	private deleteYankedText(): void {
+		const yankedText = this.killRing[this.killRing.length - 1] || "";
+		if (!yankedText) return;
+
+		const yankLines = yankedText.split("\n");
+
+		if (yankLines.length === 1) {
+			// Single line - delete backward from cursor
+			const currentLine = this.state.lines[this.state.cursorLine] || "";
+			const deleteLen = yankedText.length;
+			const before = currentLine.slice(0, this.state.cursorCol - deleteLen);
+			const after = currentLine.slice(this.state.cursorCol);
+			this.state.lines[this.state.cursorLine] = before + after;
+			this.state.cursorCol -= deleteLen;
+		} else {
+			// Multi-line delete - cursor is at end of last yanked line
+			const startLine = this.state.cursorLine - (yankLines.length - 1);
+			const startCol = (this.state.lines[startLine] || "").length - (yankLines[0] || "").length;
+
+			// Get text after cursor on current line
+			const afterCursor = (this.state.lines[this.state.cursorLine] || "").slice(this.state.cursorCol);
+
+			// Get text before yank start position
+			const beforeYank = (this.state.lines[startLine] || "").slice(0, startCol);
+
+			// Remove all lines from startLine to cursorLine and replace with merged line
+			this.state.lines.splice(startLine, yankLines.length, beforeYank + afterCursor);
+
+			// Update cursor
+			this.state.cursorLine = startLine;
+			this.state.cursorCol = startCol;
+		}
+
+		if (this.onChange) {
+			this.onChange(this.getText());
+		}
+	}
+
+	/**
+	 * Add text to the kill ring.
+	 * If lastAction is "kill", accumulates with the previous entry.
+	 * @param text - The text to add
+	 * @param prepend - If accumulating, prepend (true) or append (false) to existing entry
+	 */
+	private addToKillRing(text: string, prepend: boolean): void {
+		if (!text) return;
+
+		if (this.lastAction === "kill" && this.killRing.length > 0) {
+			// Accumulate with the most recent entry (at end of array)
+			const lastEntry = this.killRing.pop();
+			if (prepend) {
+				this.killRing.push(text + lastEntry);
+			} else {
+				this.killRing.push(lastEntry + text);
+			}
+		} else {
+			// Add new entry to end of ring
+			this.killRing.push(text);
+		}
+	}
+
+	private captureUndoSnapshot(): EditorState {
+		return structuredClone(this.state);
+	}
+
+	private restoreUndoSnapshot(snapshot: EditorState): void {
+		Object.assign(this.state, structuredClone(snapshot));
+	}
+
+	private pushUndoSnapshot(): void {
+		this.undoStack.push(this.captureUndoSnapshot());
+	}
+
+	private undo(): void {
+		this.historyIndex = -1; // Exit history browsing mode
+		if (this.undoStack.length === 0) return;
+		const snapshot = this.undoStack.pop()!;
+		this.restoreUndoSnapshot(snapshot);
+		this.lastAction = null;
+		if (this.onChange) {
+			this.onChange(this.getText());
+		}
+	}
+
 	private moveWordForwards(): void {
+		this.lastAction = null;
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
 		// If at end of line, move to start of next line

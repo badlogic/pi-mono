@@ -13,10 +13,13 @@ export type EditorAction =
 	| "cursorWordRight"
 	| "cursorLineStart"
 	| "cursorLineEnd"
+	| "pageUp"
+	| "pageDown"
 	// Deletion
 	| "deleteCharBackward"
 	| "deleteCharForward"
 	| "deleteWordBackward"
+	| "deleteWordForward"
 	| "deleteToLineStart"
 	| "deleteToLineEnd"
 	// Text input
@@ -26,10 +29,19 @@ export type EditorAction =
 	// Selection/autocomplete
 	| "selectUp"
 	| "selectDown"
+	| "selectPageUp"
+	| "selectPageDown"
 	| "selectConfirm"
 	| "selectCancel"
 	// Clipboard
-	| "copy";
+	| "copy"
+	// Kill ring
+	| "yank"
+	| "yankPop"
+	// Undo
+	| "undo"
+	// Tool output
+	| "expandTools";
 
 // Re-export KeyId from keys.ts
 export type { KeyId };
@@ -54,10 +66,13 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	cursorWordRight: ["alt+right", "ctrl+right"],
 	cursorLineStart: ["home", "ctrl+a"],
 	cursorLineEnd: ["end", "ctrl+e"],
+	pageUp: "pageUp",
+	pageDown: "pageDown",
 	// Deletion
 	deleteCharBackward: "backspace",
 	deleteCharForward: "delete",
 	deleteWordBackward: ["ctrl+w", "alt+backspace"],
+	deleteWordForward: "alt+d",
 	deleteToLineStart: "ctrl+u",
 	deleteToLineEnd: "ctrl+k",
 	// Text input
@@ -67,10 +82,19 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	// Selection/autocomplete
 	selectUp: "up",
 	selectDown: "down",
+	selectPageUp: "pageUp",
+	selectPageDown: "pageDown",
 	selectConfirm: "enter",
 	selectCancel: ["escape", "ctrl+c"],
 	// Clipboard
 	copy: "ctrl+c",
+	// Kill ring
+	yank: "ctrl+y",
+	yankPop: "alt+y",
+	// Undo
+	undo: "ctrl+-",
+	// Tool output
+	expandTools: "ctrl+o",
 };
 
 /**

@@ -112,6 +112,8 @@ export function visibleWidth(str: string): number {
 		clean = clean.replace(/\x1b\[[0-9;]*[mGKHJ]/g, "");
 		// Strip OSC 8 hyperlinks: \x1b]8;;URL\x07 and \x1b]8;;\x07
 		clean = clean.replace(/\x1b\]8;;[^\x07]*\x07/g, "");
+		// Strip APC sequences: \x1b_...\x07 or \x1b_...\x1b\\ (used for cursor marker)
+		clean = clean.replace(/\x1b_[^\x07\x1b]*(?:\x07|\x1b\\)/g, "");
 	}
 
 	// Calculate width
@@ -151,6 +153,18 @@ export function extractAnsiCode(str: string, pos: number): { code: string; lengt
 	// OSC sequence: ESC ] ... BEL or ESC ] ... ST (ESC \)
 	// Used for hyperlinks (OSC 8), window titles, etc.
 	if (next === "]") {
+		let j = pos + 2;
+		while (j < str.length) {
+			if (str[j] === "\x07") return { code: str.substring(pos, j + 1), length: j + 1 - pos };
+			if (str[j] === "\x1b" && str[j + 1] === "\\") return { code: str.substring(pos, j + 2), length: j + 2 - pos };
+			j++;
+		}
+		return null;
+	}
+
+	// APC sequence: ESC _ ... BEL or ESC _ ... ST (ESC \)
+	// Used for cursor marker and application-specific commands
+	if (next === "_") {
 		let j = pos + 2;
 		while (j < str.length) {
 			if (str[j] === "\x07") return { code: str.substring(pos, j + 1), length: j + 1 - pos };
@@ -650,18 +664,25 @@ export function applyBackgroundToLine(line: string, width: number, bgFn: (text: 
 
 /**
  * Truncate text to fit within a maximum visible width, adding ellipsis if needed.
+ * Optionally pad with spaces to reach exactly maxWidth.
  * Properly handles ANSI escape codes (they don't count toward width).
  *
  * @param text - Text to truncate (may contain ANSI codes)
  * @param maxWidth - Maximum visible width
  * @param ellipsis - Ellipsis string to append when truncating (default: "...")
- * @returns Truncated text with ellipsis if it exceeded maxWidth
+ * @param pad - If true, pad result with spaces to exactly maxWidth (default: false)
+ * @returns Truncated text, optionally padded to exactly maxWidth
  */
-export function truncateToWidth(text: string, maxWidth: number, ellipsis: string = "..."): string {
+export function truncateToWidth(
+	text: string,
+	maxWidth: number,
+	ellipsis: string = "...",
+	pad: boolean = false,
+): string {
 	const textVisibleWidth = visibleWidth(text);
 
 	if (textVisibleWidth <= maxWidth) {
-		return text;
+		return pad ? text + " ".repeat(maxWidth - textVisibleWidth) : text;
 	}
 
 	const ellipsisWidth = visibleWidth(ellipsis);
@@ -722,7 +743,12 @@ export function truncateToWidth(text: string, maxWidth: number, ellipsis: string
 	}
 
 	// Add reset code before ellipsis to prevent styling leaking into it
-	return `${result}\x1b[0m${ellipsis}`;
+	const truncated = `${result}\x1b[0m${ellipsis}`;
+	if (pad) {
+		const truncatedWidth = visibleWidth(truncated);
+		return truncated + " ".repeat(Math.max(0, maxWidth - truncatedWidth));
+	}
+	return truncated;
 }
 
 /**

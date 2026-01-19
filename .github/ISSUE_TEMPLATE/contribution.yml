@@ -1,0 +1,34 @@
+name: Contribution Proposal
+description: Propose a change or feature (required for new contributors before submitting a PR)
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before you start:** Read [CONTRIBUTING.md](https://github.com/badlogic/pi-mono/blob/main/CONTRIBUTING.md).
+        
+        Keep this short. If it doesn't fit on one screen, it's too long. Write in your own voice.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What do you want to change?
+      description: Be specific and concise.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why?
+      description: What problem does this solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: how
+    attributes:
+      label: How? (optional)
+      description: Brief technical approach if you have one in mind.
+    validations:
+      required: false

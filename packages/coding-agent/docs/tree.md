@@ -6,14 +6,14 @@ The `/tree` command provides tree-based navigation of the session history.
 
 Sessions are stored as trees where each entry has an `id` and `parentId`. The "leaf" pointer tracks the current position. `/tree` lets you navigate to any point and optionally summarize the branch you're leaving.
 
-### Comparison with `/branch`
+### Comparison with `/fork`
 
-| Feature | `/branch` | `/tree` |
-|---------|-----------|---------|
+| Feature | `/fork` | `/tree` |
+|---------|---------|---------|
 | View | Flat list of user messages | Full tree structure |
 | Action | Extracts path to **new session file** | Changes leaf in **same session** |
 | Summary | Never | Optional (user prompted) |
-| Events | `session_before_branch` / `session_branch` | `session_before_tree` / `session_tree` |
+| Events | `session_before_fork` / `session_fork` | `session_before_tree` / `session_tree` |
 
 ## Tree UI
 
@@ -66,7 +66,11 @@ If user selects the very first message (has no parent):
 
 ## Branch Summarization
 
-When switching, user is prompted: "Summarize the branch you're leaving?"
+When switching branches, user is presented with three options:
+
+1. **No summary** - Switch immediately without summarizing
+2. **Summarize** - Generate a summary using the default prompt
+3. **Summarize with custom prompt** - Opens an editor to enter additional focus instructions that are appended to the default summarization prompt
 
 ### What Gets Summarized
 
@@ -106,9 +110,20 @@ interface BranchSummaryEntry {
 ```typescript
 async navigateTree(
   targetId: string,
-  options?: { summarize?: boolean; customInstructions?: string }
+  options?: {
+    summarize?: boolean;
+    customInstructions?: string;
+    replaceInstructions?: boolean;
+    label?: string;
+  }
 ): Promise<{ editorText?: string; cancelled: boolean }>
 ```
+
+Options:
+- `summarize`: Whether to generate a summary of the abandoned branch
+- `customInstructions`: Custom instructions for the summarizer
+- `replaceInstructions`: If true, `customInstructions` replaces the default prompt instead of being appended
+- `label`: Label to attach to the branch summary entry (or target entry if not summarizing)
 
 Flow:
 1. Validate target, check no-op (target === current leaf)
@@ -149,20 +164,27 @@ interface TreePreparation {
   commonAncestorId: string | null;
   entriesToSummarize: SessionEntry[];
   userWantsSummary: boolean;
+  customInstructions?: string;
+  replaceInstructions?: boolean;
+  label?: string;
 }
 
 interface SessionBeforeTreeEvent {
   type: "session_before_tree";
   preparation: TreePreparation;
-  model: Model;
   signal: AbortSignal;
 }
 
 interface SessionBeforeTreeResult {
   cancel?: boolean;
   summary?: { summary: string; details?: unknown };
+  customInstructions?: string;    // Override custom instructions
+  replaceInstructions?: boolean;  // Override replace mode
+  label?: string;                 // Override label
 }
 ```
+
+Extensions can override `customInstructions`, `replaceInstructions`, and `label` by returning them from the `session_before_tree` handler.
 
 ### `session_tree`
 

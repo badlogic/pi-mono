@@ -27,6 +27,10 @@ read README.md, then ask which module(s) to work on. Based on the answer, read t
 ## GitHub Issues
 When reading issues:
 - Always read all comments on the issue
+- Use this command to get everything in one call:
+  ```bash
+  gh issue view <number> --json title,body,comments,labels,state
+  ```
 
 When creating issues:
 - Add `pkg:*` labels to indicate which package(s) the issue affects
@@ -45,7 +49,7 @@ When closing issues via commit:
 ## Tools
 - GitHub CLI for issues/PRs
 - Add package labels to issues/PRs: pkg:agent, pkg:ai, pkg:coding-agent, pkg:mom, pkg:pods, pkg:tui, pkg:web-ui
-- TUI interaction: use tmux
+- See pi-tmux-test skill if you need to test pi interactive mode
 
 ## Style
 - Keep answers short and concise
@@ -75,6 +79,48 @@ Use these sections under `## [Unreleased]`:
 - **Internal changes (from issues)**: `Fixed foo bar ([#123](https://github.com/badlogic/pi-mono/issues/123))`
 - **External contributions**: `Added feature X ([#456](https://github.com/badlogic/pi-mono/pull/456) by [@username](https://github.com/username))`
 
+## Adding a New LLM Provider (packages/ai)
+
+Adding a new provider requires changes across multiple files:
+
+### 1. Core Types (`packages/ai/src/types.ts`)
+- Add API identifier to `Api` type union (e.g., `"bedrock-converse-stream"`)
+- Create options interface extending `StreamOptions`
+- Add mapping to `ApiOptionsMap`
+- Add provider name to `KnownProvider` type union
+
+### 2. Provider Implementation (`packages/ai/src/providers/`)
+Create provider file exporting:
+- `stream<Provider>()` function returning `AssistantMessageEventStream`
+- Message/tool conversion functions
+- Response parsing emitting standardized events (`text`, `tool_call`, `thinking`, `usage`, `stop`)
+
+### 3. Stream Integration (`packages/ai/src/stream.ts`)
+- Import provider's stream function and options type
+- Add credential detection in `getEnvApiKey()`
+- Add case in `mapOptionsForApi()` for `SimpleStreamOptions` mapping
+- Add provider to `streamFunctions` map
+
+### 4. Model Generation (`packages/ai/scripts/generate-models.ts`)
+- Add logic to fetch/parse models from provider source
+- Map to standardized `Model` interface
+
+### 5. Tests (`packages/ai/test/`)
+Add provider to: `stream.test.ts`, `tokens.test.ts`, `abort.test.ts`, `empty.test.ts`, `context-overflow.test.ts`, `image-limits.test.ts`, `unicode-surrogate.test.ts`, `tool-call-without-result.test.ts`, `image-tool-result.test.ts`, `total-tokens.test.ts`, `cross-provider-handoff.test.ts`.
+
+For `cross-provider-handoff.test.ts`, add at least one provider/model pair. If the provider exposes multiple model families (for example GPT and Claude), add at least one pair per family.
+
+For non-standard auth, create utility (e.g., `bedrock-utils.ts`) with credential detection.
+
+### 6. Coding Agent (`packages/coding-agent/`)
+- `src/core/model-resolver.ts`: Add default model ID to `DEFAULT_MODELS`
+- `src/cli/args.ts`: Add env var documentation
+- `README.md`: Add provider setup instructions
+
+### 7. Documentation
+- `packages/ai/README.md`: Add to providers table, document options/auth, add env vars
+- `packages/ai/CHANGELOG.md`: Add entry under `## [Unreleased]`
+
 ## Releasing
 
 **Lockstep versioning**: All packages always share the same version number. Every release updates all packages together.
@@ -95,6 +141,46 @@ Use these sections under `## [Unreleased]`:
 
 The script handles: version bump, CHANGELOG finalization, commit, tag, publish, and adding new `[Unreleased]` sections.
 
-### **CRITICAL** Tool Usage Rules **CRITICAL**
+## **CRITICAL** Tool Usage Rules **CRITICAL**
 - NEVER use sed/cat to read a file or a range of a file. Always use the read tool (use offset + limit for ranged reads).
 - You MUST read every file you modify in full before editing.
+
+## **CRITICAL** Git Rules for Parallel Agents **CRITICAL**
+
+Multiple agents may work on different files in the same worktree simultaneously. You MUST follow these rules:
+
+### Committing
+- **ONLY commit files YOU changed in THIS session**
+- NEVER use `git add -A` or `git add .` - these sweep up changes from other agents
+- ALWAYS use `git add <specific-file-paths>` listing only files you modified
+- Before committing, run `git status` and verify you are only staging YOUR files
+- Track which files you created/modified/deleted during the session
+
+### Forbidden Git Operations
+These commands can destroy other agents' work:
+- `git reset --hard` - destroys uncommitted changes
+- `git checkout .` - destroys uncommitted changes
+- `git clean -fd` - deletes untracked files
+- `git stash` - stashes ALL changes including other agents' work
+- `git add -A` / `git add .` - stages other agents' uncommitted work
+
+### Safe Workflow
+```bash
+# 1. Check status first
+git status
+
+# 2. Add ONLY your specific files
+git add packages/ai/src/providers/transform-messages.ts
+git add packages/ai/CHANGELOG.md
+
+# 3. Commit
+git commit -m "fix(ai): description"
+
+# 4. Push (pull --rebase if needed, but NEVER reset/checkout)
+git pull --rebase && git push
+```
+
+### If Rebase Conflicts Occur
+- Resolve conflicts in YOUR files only
+- If conflict is in a file you didn't modify, abort and ask the user
+- NEVER force push

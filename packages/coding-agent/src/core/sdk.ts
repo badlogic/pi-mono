@@ -438,8 +438,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	time("discoverContextFiles");
 
 	const autoResizeImages = settingsManager.getImageAutoResize();
+	const shellCommandPrefix = settingsManager.getShellCommandPrefix();
 	// Create ALL built-in tools for the registry (extensions can enable any of them)
-	const allBuiltInToolsMap = createAllTools(cwd, { read: { autoResizeImages } });
+	const allBuiltInToolsMap = createAllTools(cwd, {
+		read: { autoResizeImages },
+		bash: { commandPrefix: shellCommandPrefix },
+	});
 	// Determine initially active built-in tools (default: read, bash, edit, write)
 	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
 	const initialActiveToolNames: ToolName[] = options.tools
@@ -628,12 +632,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		steeringMode: settingsManager.getSteeringMode(),
 		followUpMode: settingsManager.getFollowUpMode(),
 		thinkingBudgets: settingsManager.getThinkingBudgets(),
-		getApiKey: async () => {
-			const currentModel = agent.state.model;
-			if (!currentModel) {
+		getApiKey: async (provider) => {
+			// Use the provider argument from the in-flight request;
+			// agent.state.model may already be switched mid-turn.
+			const resolvedProvider = provider || agent.state.model?.provider;
+			if (!resolvedProvider) {
 				throw new Error("No model selected");
 			}
-			const key = await modelRegistry.getApiKey(currentModel);
+			const key = await modelRegistry.getApiKeyForProvider(resolvedProvider);
 			if (!key) {
 				const isOAuth = modelRegistry.isUsingOAuth(currentModel);
 				if (isOAuth) {

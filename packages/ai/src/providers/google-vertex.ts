@@ -84,6 +84,7 @@ export const streamGoogleVertex: StreamFunction<"google-vertex"> = (
 			const location = resolveLocation(options);
 			const client = createClient(model, project, location);
 			const params = buildParams(model, context, options);
+			options?.onPayload?.(params);
 			const googleStream = await client.models.generateContentStream(params);
 
 			stream.push({ type: "start", partial: output });
@@ -142,6 +143,10 @@ export const streamGoogleVertex: StreamFunction<"google-vertex"> = (
 								});
 							} else {
 								currentBlock.text += part.text;
+								currentBlock.textSignature = retainThoughtSignature(
+									currentBlock.textSignature,
+									part.thoughtSignature,
+								);
 								stream.push({
 									type: "text_delta",
 									contentIndex: blockIndex(),

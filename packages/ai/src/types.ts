@@ -1,3 +1,4 @@
+import type { BedrockOptions } from "./providers/amazon-bedrock.js";
 import type { AnthropicOptions } from "./providers/anthropic.js";
 import type { GoogleOptions } from "./providers/google.js";
 import type { GoogleGeminiCliOptions } from "./providers/google-gemini-cli.js";
@@ -14,12 +15,14 @@ export type Api =
 	| "openai-responses"
 	| "openai-codex-responses"
 	| "anthropic-messages"
+	| "bedrock-converse-stream"
 	| "google-generative-ai"
 	| "google-gemini-cli"
 	| "google-vertex";
 
 export interface ApiOptionsMap {
 	"anthropic-messages": AnthropicOptions;
+	"bedrock-converse-stream": BedrockOptions;
 	"openai-completions": OpenAICompletionsOptions;
 	"openai-responses": OpenAIResponsesOptions;
 	"openai-codex-responses": OpenAICodexResponsesOptions;
@@ -40,6 +43,7 @@ const _exhaustive: _CheckExhaustive = true;
 export type OptionsForApi<TApi extends Api> = ApiOptionsMap[TApi];
 
 export type KnownProvider =
+	| "amazon-bedrock"
 	| "anthropic"
 	| "google"
 	| "google-gemini-cli"
@@ -52,8 +56,11 @@ export type KnownProvider =
 	| "groq"
 	| "cerebras"
 	| "openrouter"
+	| "vercel-ai-gateway"
 	| "zai"
 	| "mistral"
+	| "minimax"
+	| "minimax-cn"
 	| "opencode";
 export type Provider = KnownProvider | string;
 
@@ -79,6 +86,10 @@ export interface StreamOptions {
 	 * session-aware features. Ignored by providers that don't support it.
 	 */
 	sessionId?: string;
+	/**
+	 * Optional callback for inspecting provider payloads before sending.
+	 */
+	onPayload?: (payload: unknown) => void;
 }
 
 // Unified options with reasoning passed to streamSimple() and completeSimple()
@@ -197,10 +208,10 @@ export type AssistantMessageEvent =
 	| { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: AssistantMessage };
 
 /**
- * Compatibility settings for openai-completions API.
+ * Compatibility settings for OpenAI-compatible completions APIs.
  * Use this to override URL-based auto-detection for custom providers.
  */
-export interface OpenAICompat {
+export interface OpenAICompletionsCompat {
 	/** Whether the provider supports the `store` field. Default: auto-detected from URL. */
 	supportsStore?: boolean;
 	/** Whether the provider supports the `developer` role (vs `system`). Default: auto-detected from URL. */
@@ -219,6 +230,13 @@ export interface OpenAICompat {
 	requiresThinkingAsText?: boolean;
 	/** Whether tool call IDs must be normalized to Mistral format (exactly 9 alphanumeric chars). Default: auto-detected from URL. */
 	requiresMistralToolIds?: boolean;
+	/** Format for reasoning/thinking parameter. "openai" uses reasoning_effort, "zai" uses thinking: { type: "enabled" }. Default: "openai". */
+	thinkingFormat?: "openai" | "zai";
+}
+
+/** Compatibility settings for OpenAI Responses APIs. */
+export interface OpenAIResponsesCompat {
+	// Reserved for future use
 }
 
 // Model interface for the unified model system
@@ -239,6 +257,10 @@ export interface Model<TApi extends Api> {
 	contextWindow: number;
 	maxTokens: number;
 	headers?: Record<string, string>;
-	/** Compatibility overrides for openai-completions API. If not set, auto-detected from baseUrl. */
-	compat?: TApi extends "openai-completions" ? OpenAICompat : never;
+	/** Compatibility overrides for OpenAI-compatible APIs. If not set, auto-detected from baseUrl. */
+	compat?: TApi extends "openai-completions"
+		? OpenAICompletionsCompat
+		: TApi extends "openai-responses"
+			? OpenAIResponsesCompat
+			: never;
 }

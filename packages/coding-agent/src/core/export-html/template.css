@@ -221,6 +221,25 @@
       font-size: 11px;
       color: var(--warning);
       margin-bottom: var(--line-height);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .download-json-btn {
+      font-size: 10px;
+      padding: 2px 8px;
+      background: var(--container-bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      color: var(--text);
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .download-json-btn:hover {
+      background: var(--hover);
+      border-color: var(--borderAccent);
     }
 
     /* Header */
@@ -510,39 +529,6 @@
     .model-name {
       color: var(--borderAccent);
       font-weight: bold;
-    }
-
-    .codex-bridge-toggle {
-      color: var(--muted);
-      cursor: pointer;
-      text-decoration: underline;
-      font-size: 10px;
-    }
-
-    .codex-bridge-toggle:hover {
-      color: var(--accent);
-    }
-
-    .codex-bridge-content {
-      display: none;
-      margin-top: 8px;
-      padding: 8px;
-      background: var(--exportCardBg);
-      border-radius: 4px;
-      font-size: 11px;
-      max-height: 300px;
-      overflow: auto;
-    }
-
-    .codex-bridge-content pre {
-      margin: 0;
-      white-space: pre-wrap;
-      word-break: break-word;
-      color: var(--muted);
-    }
-
-    .model-change.show-bridge .codex-bridge-content {
-      display: block;
     }
 
     /* Compaction / Branch Summary - matches customMessage colors from TUI */

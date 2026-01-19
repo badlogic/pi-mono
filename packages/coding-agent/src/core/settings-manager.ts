@@ -25,6 +25,7 @@ export interface SkillsSettings {
 	enableClaudeProject?: boolean; // default: true
 	enablePiUser?: boolean; // default: true
 	enablePiProject?: boolean; // default: true
+	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	customDirectories?: string[]; // default: []
 	ignoredSkills?: string[]; // default: [] (glob patterns to exclude; takes precedence over includeSkills)
 	includeSkills?: string[]; // default: [] (empty = include all; glob patterns to filter)
@@ -59,14 +60,18 @@ export interface Settings {
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
+	quietStartup?: boolean;
+	shellCommandPrefix?: string; // Prefix prepended to every bash command (e.g., "shopt -s expand_aliases" for alias support)
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 	extensions?: string[]; // Array of extension file paths
 	skills?: SkillsSettings;
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
-	doubleEscapeAction?: "branch" | "tree"; // Action for double-escape with empty editor (default: "tree")
+	doubleEscapeAction?: "fork" | "tree"; // Action for double-escape with empty editor (default: "tree")
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
+	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
+	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -345,6 +350,24 @@ export class SettingsManager {
 		this.save();
 	}
 
+	getQuietStartup(): boolean {
+		return this.settings.quietStartup ?? false;
+	}
+
+	setQuietStartup(quiet: boolean): void {
+		this.globalSettings.quietStartup = quiet;
+		this.save();
+	}
+
+	getShellCommandPrefix(): string | undefined {
+		return this.settings.shellCommandPrefix;
+	}
+
+	setShellCommandPrefix(prefix: string | undefined): void {
+		this.globalSettings.shellCommandPrefix = prefix;
+		this.save();
+	}
+
 	getCollapseChangelog(): boolean {
 		return this.settings.collapseChangelog ?? false;
 	}
@@ -383,10 +406,23 @@ export class SettingsManager {
 			enableClaudeProject: this.settings.skills?.enableClaudeProject ?? true,
 			enablePiUser: this.settings.skills?.enablePiUser ?? true,
 			enablePiProject: this.settings.skills?.enablePiProject ?? true,
+			enableSkillCommands: this.settings.skills?.enableSkillCommands ?? true,
 			customDirectories: [...(this.settings.skills?.customDirectories ?? [])],
 			ignoredSkills: [...(this.settings.skills?.ignoredSkills ?? [])],
 			includeSkills: [...(this.settings.skills?.includeSkills ?? [])],
 		};
+	}
+
+	getEnableSkillCommands(): boolean {
+		return this.settings.skills?.enableSkillCommands ?? true;
+	}
+
+	setEnableSkillCommands(enabled: boolean): void {
+		if (!this.globalSettings.skills) {
+			this.globalSettings.skills = {};
+		}
+		this.globalSettings.skills.enableSkillCommands = enabled;
+		this.save();
 	}
 
 	getThinkingBudgets(): ThinkingBudgetsSettings | undefined {
@@ -433,12 +469,35 @@ export class SettingsManager {
 		return this.settings.enabledModels;
 	}
 
-	getDoubleEscapeAction(): "branch" | "tree" {
+	setEnabledModels(patterns: string[] | undefined): void {
+		this.globalSettings.enabledModels = patterns;
+		this.save();
+	}
+
+	getDoubleEscapeAction(): "fork" | "tree" {
 		return this.settings.doubleEscapeAction ?? "tree";
 	}
 
-	setDoubleEscapeAction(action: "branch" | "tree"): void {
+	setDoubleEscapeAction(action: "fork" | "tree"): void {
 		this.globalSettings.doubleEscapeAction = action;
+		this.save();
+	}
+
+	getShowHardwareCursor(): boolean {
+		return this.settings.showHardwareCursor ?? process.env.PI_HARDWARE_CURSOR === "1";
+	}
+
+	setShowHardwareCursor(enabled: boolean): void {
+		this.globalSettings.showHardwareCursor = enabled;
+		this.save();
+	}
+
+	getEditorPaddingX(): number {
+		return this.settings.editorPaddingX ?? 0;
+	}
+
+	setEditorPaddingX(padding: number): void {
+		this.globalSettings.editorPaddingX = Math.max(0, Math.min(3, Math.floor(padding)));
 		this.save();
 	}
 }

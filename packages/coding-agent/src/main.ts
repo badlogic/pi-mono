@@ -5,10 +5,11 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
-import { type ImageContent, supportsXhigh } from "@mariozechner/pi-ai";
+import { type ImageContent, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { existsSync } from "fs";
 import { join } from "path";
+import { createInterface } from "readline";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
@@ -17,6 +18,7 @@ import { CONFIG_DIR_NAME, getAgentDir, getModelsPath, VERSION } from "./config.j
 import { createEventBus } from "./core/event-bus.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import { discoverAndLoadExtensions, type LoadExtensionsResult, loadExtensions } from "./core/extensions/index.js";
+import { KeybindingsManager } from "./core/keybindings.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { type CreateAgentSessionOptions, createAgentSession, discoverAuthStorage, discoverModels } from "./core/sdk.js";
@@ -28,6 +30,29 @@ import { allTools } from "./core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
+
+/**
+ * Read all content from piped stdin.
+ * Returns undefined if stdin is a TTY (interactive terminal).
+ */
+async function readPipedStdin(): Promise<string | undefined> {
+	// If stdin is a TTY, we're running interactively - don't read stdin
+	if (process.stdin.isTTY) {
+		return undefined;
+	}
+
+	return new Promise((resolve) => {
+		let data = "";
+		process.stdin.setEncoding("utf8");
+		process.stdin.on("data", (chunk) => {
+			data += chunk;
+		});
+		process.stdin.on("end", () => {
+			resolve(data.trim() || undefined);
+		});
+		process.stdin.resume();
+	});
+}
 
 async function prepareInitialMessage(
 	parsed: Args,
@@ -56,35 +81,85 @@ async function prepareInitialMessage(
 	};
 }
 
+/** Result from resolving a session argument */
+type ResolvedSession =
+	| { type: "path"; path: string } // Direct file path
+	| { type: "local"; path: string } // Found in current project
+	| { type: "global"; path: string; cwd: string } // Found in different project
+	| { type: "not_found"; arg: string }; // Not found anywhere
+
 /**
  * Resolve a session argument to a file path.
  * If it looks like a path, use as-is. Otherwise try to match as session ID prefix.
  */
-function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: string): string {
+async function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: string): Promise<ResolvedSession> {
 	// If it looks like a file path, use as-is
 	if (sessionArg.includes("/") || sessionArg.includes("\\") || sessionArg.endsWith(".jsonl")) {
-		return sessionArg;
+		return { type: "path", path: sessionArg };
 	}
 
-	// Try to match as session ID (full or partial UUID)
-	const sessions = SessionManager.list(cwd, sessionDir);
-	const matches = sessions.filter((s) => s.id.startsWith(sessionArg));
+	// Try to match as session ID in current project first
+	const localSessions = await SessionManager.list(cwd, sessionDir);
+	const localMatches = localSessions.filter((s) => s.id.startsWith(sessionArg));
 
-	if (matches.length >= 1) {
-		return matches[0].path; // Already sorted by modified time (most recent first)
+	if (localMatches.length >= 1) {
+		return { type: "local", path: localMatches[0].path };
 	}
 
-	// No match - return original (will create new session)
-	return sessionArg;
+	// Try global search across all projects
+	const allSessions = await SessionManager.listAll();
+	const globalMatches = allSessions.filter((s) => s.id.startsWith(sessionArg));
+
+	if (globalMatches.length >= 1) {
+		const match = globalMatches[0];
+		return { type: "global", path: match.path, cwd: match.cwd };
+	}
+
+	// Not found anywhere
+	return { type: "not_found", arg: sessionArg };
 }
 
-function createSessionManager(parsed: Args, cwd: string): SessionManager | undefined {
+/** Prompt user for yes/no confirmation */
+async function promptConfirm(message: string): Promise<boolean> {
+	return new Promise((resolve) => {
+		const rl = createInterface({
+			input: process.stdin,
+			output: process.stdout,
+		});
+		rl.question(`${message} [y/N] `, (answer) => {
+			rl.close();
+			resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
+		});
+	});
+}
+
+async function createSessionManager(parsed: Args, cwd: string): Promise<SessionManager | undefined> {
 	if (parsed.noSession) {
 		return SessionManager.inMemory();
 	}
 	if (parsed.session) {
-		const resolvedPath = resolveSessionPath(parsed.session, cwd, parsed.sessionDir);
-		return SessionManager.open(resolvedPath, parsed.sessionDir);
+		const resolved = await resolveSessionPath(parsed.session, cwd, parsed.sessionDir);
+
+		switch (resolved.type) {
+			case "path":
+			case "local":
+				return SessionManager.open(resolved.path, parsed.sessionDir);
+
+			case "global": {
+				// Session found in different project - ask user if they want to fork
+				console.log(chalk.yellow(`Session found in different project: ${resolved.cwd}`));
+				const shouldFork = await promptConfirm("Fork this session into current directory?");
+				if (!shouldFork) {
+					console.log(chalk.dim("Aborted."));
+					process.exit(0);
+				}
+				return SessionManager.forkFrom(resolved.path, cwd, parsed.sessionDir);
+			}
+
+			case "not_found":
+				console.error(chalk.red(`No session found matching '${resolved.arg}'`));
+				process.exit(1);
+		}
 	}
 	if (parsed.continue) {
 		return SessionManager.continueRecent(cwd, parsed.sessionDir);
@@ -115,6 +190,23 @@ function discoverSystemPromptFile(): string | undefined {
 	return undefined;
 }
 
+/** Discover APPEND_SYSTEM.md file if no CLI append system prompt was provided */
+function discoverAppendSystemPromptFile(): string | undefined {
+	// Check project-local first: .pi/APPEND_SYSTEM.md
+	const projectPath = join(process.cwd(), CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
+	if (existsSync(projectPath)) {
+		return projectPath;
+	}
+
+	// Fall back to global: ~/.pi/agent/APPEND_SYSTEM.md
+	const globalPath = join(getAgentDir(), "APPEND_SYSTEM.md");
+	if (existsSync(globalPath)) {
+		return globalPath;
+	}
+
+	return undefined;
+}
+
 function buildSessionOptions(
 	parsed: Args,
 	scopedModels: ScopedModel[],
@@ -127,8 +219,11 @@ function buildSessionOptions(
 
 	// Auto-discover SYSTEM.md if no CLI system prompt provided
 	const systemPromptSource = parsed.systemPrompt ?? discoverSystemPromptFile();
+	// Auto-discover APPEND_SYSTEM.md if no CLI append system prompt provided
+	const appendSystemPromptSource = parsed.appendSystemPrompt ?? discoverAppendSystemPromptFile();
+
 	const resolvedSystemPrompt = resolvePromptInput(systemPromptSource, "system prompt");
-	const resolvedAppendPrompt = resolvePromptInput(parsed.appendSystemPrompt, "append system prompt");
+	const resolvedAppendPrompt = resolvePromptInput(appendSystemPromptSource, "append system prompt");
 
 	if (sessionManager) {
 		options.sessionManager = sessionManager;
@@ -143,16 +238,30 @@ function buildSessionOptions(
 		}
 		options.model = model;
 	} else if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
-		options.model = scopedModels[0].model;
+		// Check if saved default is in scoped models - use it if so, otherwise first scoped model
+		const savedProvider = settingsManager.getDefaultProvider();
+		const savedModelId = settingsManager.getDefaultModel();
+		const savedModel = savedProvider && savedModelId ? modelRegistry.find(savedProvider, savedModelId) : undefined;
+		const savedInScope = savedModel ? scopedModels.find((sm) => modelsAreEqual(sm.model, savedModel)) : undefined;
+
+		if (savedInScope) {
+			options.model = savedInScope.model;
+			// Use thinking level from scoped model config if explicitly set
+			if (!parsed.thinking && savedInScope.thinkingLevel) {
+				options.thinkingLevel = savedInScope.thinkingLevel;
+			}
+		} else {
+			options.model = scopedModels[0].model;
+			// Use thinking level from first scoped model if explicitly set
+			if (!parsed.thinking && scopedModels[0].thinkingLevel) {
+				options.thinkingLevel = scopedModels[0].thinkingLevel;
+			}
+		}
 	}
 
-	// Thinking level
-	// Only use scoped model's thinking level if it was explicitly specified (e.g., "model:high")
-	// Otherwise, let the SDK use defaultThinkingLevel from settings
+	// Thinking level from CLI (takes precedence over scoped model thinking levels set above)
 	if (parsed.thinking) {
 		options.thinkingLevel = parsed.thinking;
-	} else if (scopedModels.length > 0 && scopedModels[0].thinkingLevel && !parsed.continue && !parsed.resume) {
-		options.thinkingLevel = scopedModels[0].thinkingLevel;
 	}
 
 	// Scoped models for Ctrl+P cycling - fill in default thinking level for models without explicit level
@@ -195,7 +304,7 @@ function buildSessionOptions(
 	}
 
 	// Pre-loaded extensions (from early CLI flag discovery)
-	if (extensionsResult && extensionsResult.extensions.length > 0) {
+	if (extensionsResult) {
 		options.preloadedExtensions = extensionsResult;
 	}
 
@@ -237,6 +346,11 @@ export async function main(args: string[]) {
 		time("discoverExtensionFlags");
 	}
 
+	// Log extension loading errors
+	for (const { path, error } of extensionsResult.errors) {
+		console.error(chalk.red(`Failed to load extension "${path}": ${error}`));
+	}
+
 	// Collect all extension flags
 	const extensionFlags = new Map<string, { type: "boolean" | "string" }>();
 	for (const ext of extensionsResult.extensions) {
@@ -268,6 +382,18 @@ export async function main(args: string[]) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
 		await listModels(modelRegistry, searchPattern);
 		return;
+	}
+
+	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
+	if (parsed.mode !== "rpc") {
+		const stdinContent = await readPipedStdin();
+		if (stdinContent !== undefined) {
+			// Force print mode since interactive mode requires a TTY for keyboard input
+			parsed.print = true;
+			// Prepend stdin content to messages
+			parsed.messages.unshift(stdinContent);
+		}
+		time("readPipedStdin");
 	}
 
 	if (parsed.export) {
@@ -308,22 +434,23 @@ export async function main(args: string[]) {
 	}
 
 	// Create session manager based on CLI flags
-	let sessionManager = createSessionManager(parsed, cwd);
+	let sessionManager = await createSessionManager(parsed, cwd);
 	time("createSessionManager");
 
 	// Handle --resume: show session picker
 	if (parsed.resume) {
-		const sessions = SessionManager.list(cwd, parsed.sessionDir);
-		time("SessionManager.list");
-		if (sessions.length === 0) {
-			console.log(chalk.dim("No sessions found"));
-			return;
-		}
-		const selectedPath = await selectSession(sessions);
+		// Initialize keybindings so session picker respects user config
+		KeybindingsManager.create();
+
+		const selectedPath = await selectSession(
+			(onProgress) => SessionManager.list(cwd, parsed.sessionDir, onProgress),
+			SessionManager.listAll,
+		);
 		time("selectSession");
 		if (!selectedPath) {
 			console.log(chalk.dim("No session selected"));
-			return;
+			stopThemeWatcher();
+			process.exit(0);
 		}
 		sessionManager = SessionManager.open(selectedPath);
 	}
@@ -377,7 +504,7 @@ export async function main(args: string[]) {
 	if (mode === "rpc") {
 		await runRpcMode(session);
 	} else if (isInteractive) {
-		if (scopedModels.length > 0) {
+		if (scopedModels.length > 0 && !settingsManager.getQuietStartup()) {
 			const modelList = scopedModels
 				.map((sm) => {
 					const thinkingStr = sm.thinkingLevel ? `:${sm.thinkingLevel}` : "";

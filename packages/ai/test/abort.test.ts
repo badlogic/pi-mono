@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete, stream } from "../src/stream.js";
 import type { Api, Context, Model, OptionsForApi } from "../src/types.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -19,6 +20,7 @@ async function testAbortSignal<TApi extends Api>(llm: Model<TApi>, options: Opti
 				timestamp: Date.now(),
 			},
 		],
+		systemPrompt: "You are a helpful assistant.",
 	};
 
 	let abortFired = false;
@@ -66,6 +68,35 @@ async function testImmediateAbort<TApi extends Api>(llm: Model<TApi>, options: O
 	expect(response.stopReason).toBe("aborted");
 }
 
+async function testAbortThenNewMessage<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
+	// First request: abort immediately before any response content arrives
+	const controller = new AbortController();
+	controller.abort();
+
+	const context: Context = {
+		messages: [{ role: "user", content: "Hello, how are you?", timestamp: Date.now() }],
+	};
+
+	const abortedResponse = await complete(llm, context, { ...options, signal: controller.signal });
+	expect(abortedResponse.stopReason).toBe("aborted");
+	// The aborted message has empty content since we aborted before anything arrived
+	expect(abortedResponse.content.length).toBe(0);
+
+	// Add the aborted assistant message to context (this is what happens in the real coding agent)
+	context.messages.push(abortedResponse);
+
+	// Second request: send a new message - this should work even with the aborted message in context
+	context.messages.push({
+		role: "user",
+		content: "What is 2 + 2?",
+		timestamp: Date.now(),
+	});
+
+	const followUp = await complete(llm, context, options);
+	expect(followUp.stopReason).toBe("stop");
+	expect(followUp.content.length).toBeGreaterThan(0);
+}
+
 describe("AI Providers Abort Tests", () => {
 	describe.skipIf(!process.env.GEMINI_API_KEY)("Google Provider Abort", () => {
 		const llm = getModel("google", "gemini-2.5-flash");
@@ -80,8 +111,10 @@ describe("AI Providers Abort Tests", () => {
 	});
 
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider Abort", () => {
+		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini")!;
+		void _compat;
 		const llm: Model<"openai-completions"> = {
-			...getModel("openai", "gpt-4o-mini")!,
+			...baseModel,
 			api: "openai-completions",
 		};
 
@@ -130,6 +163,30 @@ describe("AI Providers Abort Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider Abort", () => {
+		const llm = getModel("minimax", "MiniMax-M2.1");
+
+		it("should abort mid-stream", { retry: 3 }, async () => {
+			await testAbortSignal(llm);
+		});
+
+		it("should handle immediate abort", { retry: 3 }, async () => {
+			await testImmediateAbort(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway Provider Abort", () => {
+		const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+
+		it("should abort mid-stream", { retry: 3 }, async () => {
+			await testAbortSignal(llm);
+		});
+
+		it("should handle immediate abort", { retry: 3 }, async () => {
+			await testImmediateAbort(llm);
+		});
+	});
+
 	// Google Gemini CLI / Antigravity share the same provider, so one test covers both
 	describe("Google Gemini CLI Provider Abort", () => {
 		it.skipIf(!geminiCliToken)("should abort mid-stream", { retry: 3 }, async () => {
@@ -152,6 +209,22 @@ describe("AI Providers Abort Tests", () => {
 		it.skipIf(!openaiCodexToken)("should handle immediate abort", { retry: 3 }, async () => {
 			const llm = getModel("openai-codex", "gpt-5.2-codex");
 			await testImmediateAbort(llm, { apiKey: openaiCodexToken });
+		});
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider Abort", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+
+		it("should abort mid-stream", { retry: 3 }, async () => {
+			await testAbortSignal(llm, { reasoning: "medium" });
+		});
+
+		it("should handle immediate abort", { retry: 3 }, async () => {
+			await testImmediateAbort(llm);
+		});
+
+		it("should handle abort then new message", { retry: 3 }, async () => {
+			await testAbortThenNewMessage(llm);
 		});
 	});
 });

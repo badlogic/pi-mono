@@ -9,8 +9,8 @@ export {
 	loadExtensions,
 } from "./loader.js";
 export type {
-	BranchHandler,
 	ExtensionErrorListener,
+	ForkHandler,
 	NavigateTreeHandler,
 	NewSessionHandler,
 	ShutdownHandler,
@@ -28,10 +28,13 @@ export type {
 	BashToolResultEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	// Context
+	CompactOptions,
 	// Events - Agent
 	ContextEvent,
 	// Event Results
 	ContextEventResult,
+	ContextUsage,
 	CustomToolResultEvent,
 	EditToolResultEvent,
 	ExecOptions,
@@ -42,7 +45,6 @@ export type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionCommandContextActions,
-	// Context
 	ExtensionContext,
 	ExtensionContextActions,
 	// Errors
@@ -56,40 +58,48 @@ export type {
 	ExtensionShortcut,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	ExtensionWidgetOptions,
 	FindToolResultEvent,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
 	GetThinkingLevelHandler,
 	GrepToolResultEvent,
+	// Events - Input
+	InputEvent,
+	InputEventResult,
+	InputSource,
 	KeybindingsManager,
 	LoadExtensionsResult,
 	LsToolResultEvent,
 	// Message Rendering
 	MessageRenderer,
 	MessageRenderOptions,
+	ModelSelectEvent,
+	ModelSelectSource,
 	ReadToolResultEvent,
 	// Commands
 	RegisteredCommand,
 	RegisteredTool,
 	SendMessageHandler,
 	SendUserMessageHandler,
-	SessionBeforeBranchEvent,
-	SessionBeforeBranchResult,
 	SessionBeforeCompactEvent,
 	SessionBeforeCompactResult,
+	SessionBeforeForkEvent,
+	SessionBeforeForkResult,
 	SessionBeforeSwitchEvent,
 	SessionBeforeSwitchResult,
 	SessionBeforeTreeEvent,
 	SessionBeforeTreeResult,
-	SessionBranchEvent,
 	SessionCompactEvent,
 	SessionEvent,
+	SessionForkEvent,
 	SessionShutdownEvent,
 	// Events - Session
 	SessionStartEvent,
 	SessionSwitchEvent,
 	SessionTreeEvent,
 	SetActiveToolsHandler,
+	SetLabelHandler,
 	SetModelHandler,
 	SetThinkingLevelHandler,
 	// Events - Tool
@@ -97,6 +107,7 @@ export type {
 	ToolCallEventResult,
 	// Tools
 	ToolDefinition,
+	ToolInfo,
 	ToolRenderResultOptions,
 	ToolResultEvent,
 	ToolResultEventResult,
@@ -106,6 +117,7 @@ export type {
 	// Events - User Bash
 	UserBashEvent,
 	UserBashEventResult,
+	WidgetPlacement,
 	WriteToolResultEvent,
 } from "./types.js";
 // Type guards

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete } from "../src/stream.js";
 import type { Api, Context, Model, OptionsForApi, ToolResultMessage } from "../src/types.js";
+import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Empty schema for test tools - must be proper OBJECT type for Cloud Code Assist
@@ -30,6 +31,7 @@ const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken
  */
 
 async function testEmojiInToolResults<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
+	const toolCallId = llm.provider === "mistral" ? "testtool1" : "test_1";
 	// Simulate a tool that returns emoji
 	const context: Context = {
 		systemPrompt: "You are a helpful assistant.",
@@ -44,7 +46,7 @@ async function testEmojiInToolResults<TApi extends Api>(llm: Model<TApi>, option
 				content: [
 					{
 						type: "toolCall",
-						id: "test_1",
+						id: toolCallId,
 						name: "test_tool",
 						arguments: {},
 					},
@@ -76,7 +78,7 @@ async function testEmojiInToolResults<TApi extends Api>(llm: Model<TApi>, option
 	// Add tool result with various problematic Unicode characters
 	const toolResult: ToolResultMessage = {
 		role: "toolResult",
-		toolCallId: "test_1",
+		toolCallId: toolCallId,
 		toolName: "test_tool",
 		content: [
 			{
@@ -116,6 +118,7 @@ async function testEmojiInToolResults<TApi extends Api>(llm: Model<TApi>, option
 }
 
 async function testRealWorldLinkedInData<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
+	const toolCallId = llm.provider === "mistral" ? "linkedin1" : "linkedin_1";
 	const context: Context = {
 		systemPrompt: "You are a helpful assistant.",
 		messages: [
@@ -129,7 +132,7 @@ async function testRealWorldLinkedInData<TApi extends Api>(llm: Model<TApi>, opt
 				content: [
 					{
 						type: "toolCall",
-						id: "linkedin_1",
+						id: toolCallId,
 						name: "linkedin_skill",
 						arguments: {},
 					},
@@ -161,7 +164,7 @@ async function testRealWorldLinkedInData<TApi extends Api>(llm: Model<TApi>, opt
 	// Real-world tool result from LinkedIn with emoji
 	const toolResult: ToolResultMessage = {
 		role: "toolResult",
-		toolCallId: "linkedin_1",
+		toolCallId: toolCallId,
 		toolName: "linkedin_skill",
 		content: [
 			{
@@ -204,6 +207,7 @@ Unanswered Comments: 2
 }
 
 async function testUnpairedHighSurrogate<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
+	const toolCallId = llm.provider === "mistral" ? "testtool2" : "test_2";
 	const context: Context = {
 		systemPrompt: "You are a helpful assistant.",
 		messages: [
@@ -217,7 +221,7 @@ async function testUnpairedHighSurrogate<TApi extends Api>(llm: Model<TApi>, opt
 				content: [
 					{
 						type: "toolCall",
-						id: "test_2",
+						id: toolCallId,
 						name: "test_tool",
 						arguments: {},
 					},
@@ -252,7 +256,7 @@ async function testUnpairedHighSurrogate<TApi extends Api>(llm: Model<TApi>, opt
 
 	const toolResult: ToolResultMessage = {
 		role: "toolResult",
-		toolCallId: "test_2",
+		toolCallId: toolCallId,
 		toolName: "test_tool",
 		content: [{ type: "text", text: `Text with unpaired surrogate: ${unpairedSurrogate} <- should be sanitized` }],
 		isError: false,
@@ -603,6 +607,54 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider Unicode Handling", () => {
 		const llm = getModel("mistral", "devstral-medium-latest");
+
+		it("should handle emoji in tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testEmojiInToolResults(llm);
+		});
+
+		it("should handle real-world LinkedIn comment data with emoji", { retry: 3, timeout: 30000 }, async () => {
+			await testRealWorldLinkedInData(llm);
+		});
+
+		it("should handle unpaired high surrogate (0xD83D) in tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testUnpairedHighSurrogate(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider Unicode Handling", () => {
+		const llm = getModel("minimax", "MiniMax-M2.1");
+
+		it("should handle emoji in tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testEmojiInToolResults(llm);
+		});
+
+		it("should handle real-world LinkedIn comment data with emoji", { retry: 3, timeout: 30000 }, async () => {
+			await testRealWorldLinkedInData(llm);
+		});
+
+		it("should handle unpaired high surrogate (0xD83D) in tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testUnpairedHighSurrogate(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway Provider Unicode Handling", () => {
+		const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
+
+		it("should handle emoji in tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testEmojiInToolResults(llm);
+		});
+
+		it("should handle real-world LinkedIn comment data with emoji", { retry: 3, timeout: 30000 }, async () => {
+			await testRealWorldLinkedInData(llm);
+		});
+
+		it("should handle unpaired high surrogate (0xD83D) in tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testUnpairedHighSurrogate(llm);
+		});
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider Unicode Handling", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
 
 		it("should handle emoji in tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testEmojiInToolResults(llm);

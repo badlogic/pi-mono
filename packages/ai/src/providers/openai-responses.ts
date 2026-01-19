@@ -24,11 +24,12 @@ import type {
 	ThinkingContent,
 	Tool,
 	ToolCall,
+	Usage,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-import { transformMessages } from "./transorm-messages.js";
+import { transformMessages } from "./transform-messages.js";
 
 /** Fast deterministic hash to shorten long strings */
 function shortHash(str: string): string {
@@ -48,6 +49,7 @@ function shortHash(str: string): string {
 export interface OpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
+	serviceTier?: ResponseCreateParamsStreaming["service_tier"];
 }
 
 /**
@@ -85,7 +87,11 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
 			const client = createClient(model, context, apiKey);
 			const params = buildParams(model, context, options);
-			const openaiStream = await client.responses.create(params, { signal: options?.signal });
+			options?.onPayload?.(params);
+			const openaiStream = await client.responses.create(
+				params,
+				options?.signal ? { signal: options.signal } : undefined,
+			);
 			stream.push({ type: "start", partial: output });
 
 			let currentItem: ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall | null = null;
@@ -276,6 +282,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 						};
 					}
 					calculateCost(model, output.usage);
+					applyServiceTierPricing(output.usage, response?.service_tier ?? options?.serviceTier);
 					// Map status to stop reason
 					output.stopReason = mapStopReason(response?.status);
 					if (output.content.some((b) => b.type === "toolCall") && output.stopReason === "stop") {
@@ -363,6 +370,7 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		model: model.id,
 		input: messages,
 		stream: true,
+		prompt_cache_key: options?.sessionId,
 	};
 
 	if (options?.maxTokens) {
@@ -371,6 +379,10 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 
 	if (options?.temperature !== undefined) {
 		params.temperature = options?.temperature;
+	}
+
+	if (options?.serviceTier !== undefined) {
+		params.service_tier = options.serviceTier;
 	}
 
 	if (context.tools) {
@@ -406,7 +418,23 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 function convertMessages(model: Model<"openai-responses">, context: Context): ResponseInput {
 	const messages: ResponseInput = [];
 
-	const transformedMessages = transformMessages(context.messages, model);
+	const normalizeToolCallId = (id: string): string => {
+		const allowedProviders = new Set(["openai", "openai-codex", "opencode"]);
+		if (!allowedProviders.has(model.provider)) return id;
+		if (!id.includes("|")) return id;
+		const [callId, itemId] = id.split("|");
+		const sanitizedCallId = callId.replace(/[^a-zA-Z0-9_-]/g, "_");
+		let sanitizedItemId = itemId.replace(/[^a-zA-Z0-9_-]/g, "_");
+		// OpenAI Responses API requires item id to start with "fc"
+		if (!sanitizedItemId.startsWith("fc")) {
+			sanitizedItemId = `fc_${sanitizedItemId}`;
+		}
+		const normalizedCallId = sanitizedCallId.length > 64 ? sanitizedCallId.slice(0, 64) : sanitizedCallId;
+		const normalizedItemId = sanitizedItemId.length > 64 ? sanitizedItemId.slice(0, 64) : sanitizedItemId;
+		return `${normalizedCallId}|${normalizedItemId}`;
+	};
+
+	const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId);
 
 	if (context.systemPrompt) {
 		const role = model.reasoning ? "developer" : "system";
@@ -452,8 +480,7 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 			const output: ResponseInput = [];
 
 			for (const block of msg.content) {
-				// Do not submit thinking blocks if the completion had an error (i.e. abort)
-				if (block.type === "thinking" && msg.stopReason !== "error") {
+				if (block.type === "thinking") {
 					if (block.thinkingSignature) {
 						const reasoningItem = JSON.parse(block.thinkingSignature);
 						output.push(reasoningItem);
@@ -474,8 +501,7 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 						status: "completed",
 						id: msgId,
 					} satisfies ResponseOutputMessage);
-					// Do not submit toolcall blocks if the completion had an error (i.e. abort)
-				} else if (block.type === "toolCall" && msg.stopReason !== "error") {
+				} else if (block.type === "toolCall") {
 					const toolCall = block as ToolCall;
 					output.push({
 						type: "function_call",
@@ -545,6 +571,28 @@ function convertTools(tools: Tool[]): OpenAITool[] {
 		parameters: tool.parameters as any, // TypeBox already generates JSON Schema
 		strict: false,
 	}));
+}
+
+function getServiceTierCostMultiplier(serviceTier: ResponseCreateParamsStreaming["service_tier"] | undefined): number {
+	switch (serviceTier) {
+		case "flex":
+			return 0.5;
+		case "priority":
+			return 2;
+		default:
+			return 1;
+	}
+}
+
+function applyServiceTierPricing(usage: Usage, serviceTier: ResponseCreateParamsStreaming["service_tier"] | undefined) {
+	const multiplier = getServiceTierCostMultiplier(serviceTier);
+	if (multiplier === 1) return;
+
+	usage.cost.input *= multiplier;
+	usage.cost.output *= multiplier;
+	usage.cost.cacheRead *= multiplier;
+	usage.cost.cacheWrite *= multiplier;
+	usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
 }
 
 function mapStopReason(status: OpenAI.Responses.ResponseStatus | undefined): StopReason {

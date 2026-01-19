@@ -29,6 +29,12 @@ export interface PrintModeOptions {
  */
 export async function runPrintMode(session: AgentSession, options: PrintModeOptions): Promise<void> {
 	const { mode, messages = [], initialMessage, initialImages } = options;
+	if (mode === "json") {
+		const header = session.sessionManager.getHeader();
+		if (header) {
+			console.log(JSON.stringify(header));
+		}
+	}
 	// Set up extensions for print mode (no UI, no command context)
 	const extensionRunner = session.extensionRunner;
 	if (extensionRunner) {
@@ -48,8 +54,17 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 				appendEntry: (customType, data) => {
 					session.sessionManager.appendCustomEntry(customType, data);
 				},
+				setSessionName: (name) => {
+					session.sessionManager.appendSessionInfo(name);
+				},
+				getSessionName: () => {
+					return session.sessionManager.getSessionName();
+				},
+				setLabel: (entryId, label) => {
+					session.sessionManager.appendLabelChange(entryId, label);
+				},
 				getActiveTools: () => session.getActiveToolNames(),
-				getAllTools: () => session.getAllToolNames(),
+				getAllTools: () => session.getAllTools(),
 				setActiveTools: (toolNames: string[]) => session.setActiveToolsByName(toolNames),
 				setModel: async (model) => {
 					const key = await session.modelRegistry.getApiKey(model);
@@ -67,6 +82,18 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 				abort: () => session.abort(),
 				hasPendingMessages: () => session.pendingMessageCount > 0,
 				shutdown: () => {},
+				getContextUsage: () => session.getContextUsage(),
+				compact: (options) => {
+					void (async () => {
+						try {
+							const result = await session.compact(options?.customInstructions);
+							options?.onComplete?.(result);
+						} catch (error) {
+							const err = error instanceof Error ? error : new Error(String(error));
+							options?.onError?.(err);
+						}
+					})();
+				},
 			},
 			// ExtensionCommandContextActions - commands invokable via prompt("/command")
 			{
@@ -78,16 +105,21 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 					}
 					return { cancelled: !success };
 				},
-				branch: async (entryId) => {
-					const result = await session.branch(entryId);
+				fork: async (entryId) => {
+					const result = await session.fork(entryId);
 					return { cancelled: result.cancelled };
 				},
 				navigateTree: async (targetId, options) => {
-					const result = await session.navigateTree(targetId, { summarize: options?.summarize });
+					const result = await session.navigateTree(targetId, {
+						summarize: options?.summarize,
+						customInstructions: options?.customInstructions,
+						replaceInstructions: options?.replaceInstructions,
+						label: options?.label,
+					});
 					return { cancelled: result.cancelled };
 				},
 			},
-			// No UI context
+			// No UI context - hasUI will be false
 		);
 		extensionRunner.onError((err) => {
 			console.error(`Extension error (${err.extensionPath}): ${err.error}`);

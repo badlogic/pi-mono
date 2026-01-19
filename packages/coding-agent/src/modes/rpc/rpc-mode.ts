@@ -14,7 +14,11 @@
 import * as crypto from "node:crypto";
 import * as readline from "readline";
 import type { AgentSession } from "../../core/agent-session.js";
-import type { ExtensionUIContext, ExtensionUIDialogOptions } from "../../core/extensions/index.js";
+import type {
+	ExtensionUIContext,
+	ExtensionUIDialogOptions,
+	ExtensionWidgetOptions,
+} from "../../core/extensions/index.js";
 import { type Theme, theme } from "../interactive/theme/theme.js";
 import type {
 	RpcCommand,
@@ -150,7 +154,11 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			} as RpcExtensionUIRequest);
 		},
 
-		setWidget(key: string, content: unknown): void {
+		setWorkingMessage(_message?: string): void {
+			// Working message not supported in RPC mode - requires TUI loader access
+		},
+
+		setWidget(key: string, content: unknown, options?: ExtensionWidgetOptions): void {
 			// Only support string arrays in RPC mode - factory functions are ignored
 			if (content === undefined || Array.isArray(content)) {
 				output({
@@ -159,6 +167,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					method: "setWidget",
 					widgetKey: key,
 					widgetLines: content as string[] | undefined,
+					widgetPlacement: options?.placement,
 				} as RpcExtensionUIRequest);
 			}
 			// Component factories are not supported in RPC mode - would need TUI access
@@ -263,8 +272,17 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				appendEntry: (customType, data) => {
 					session.sessionManager.appendCustomEntry(customType, data);
 				},
+				setSessionName: (name) => {
+					session.sessionManager.appendSessionInfo(name);
+				},
+				getSessionName: () => {
+					return session.sessionManager.getSessionName();
+				},
+				setLabel: (entryId, label) => {
+					session.sessionManager.appendLabelChange(entryId, label);
+				},
 				getActiveTools: () => session.getActiveToolNames(),
-				getAllTools: () => session.getAllToolNames(),
+				getAllTools: () => session.getAllTools(),
 				setActiveTools: (toolNames: string[]) => session.setActiveToolsByName(toolNames),
 				setModel: async (model) => {
 					const key = await session.modelRegistry.getApiKey(model);
@@ -284,6 +302,18 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				shutdown: () => {
 					shutdownRequested = true;
 				},
+				getContextUsage: () => session.getContextUsage(),
+				compact: (options) => {
+					void (async () => {
+						try {
+							const result = await session.compact(options?.customInstructions);
+							options?.onComplete?.(result);
+						} catch (error) {
+							const err = error instanceof Error ? error : new Error(String(error));
+							options?.onError?.(err);
+						}
+					})();
+				},
 			},
 			// ExtensionCommandContextActions - commands invokable via prompt("/command")
 			{
@@ -296,12 +326,17 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					}
 					return { cancelled: !success };
 				},
-				branch: async (entryId) => {
-					const result = await session.branch(entryId);
+				fork: async (entryId) => {
+					const result = await session.fork(entryId);
 					return { cancelled: result.cancelled };
 				},
 				navigateTree: async (targetId, options) => {
-					const result = await session.navigateTree(targetId, { summarize: options?.summarize });
+					const result = await session.navigateTree(targetId, {
+						summarize: options?.summarize,
+						customInstructions: options?.customInstructions,
+						replaceInstructions: options?.replaceInstructions,
+						label: options?.label,
+					});
 					return { cancelled: result.cancelled };
 				},
 			},
@@ -338,6 +373,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					.prompt(command.message, {
 						images: command.images,
 						streamingBehavior: command.streamingBehavior,
+						source: "rpc",
 					})
 					.catch((e) => output(error(id, "prompt", e.message)));
 				return success(id, "prompt");
@@ -504,14 +540,14 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				return success(id, "switch_session", { cancelled });
 			}
 
-			case "branch": {
-				const result = await session.branch(command.entryId);
-				return success(id, "branch", { text: result.selectedText, cancelled: result.cancelled });
+			case "fork": {
+				const result = await session.fork(command.entryId);
+				return success(id, "fork", { text: result.selectedText, cancelled: result.cancelled });
 			}
 
-			case "get_branch_messages": {
-				const messages = session.getUserMessagesForBranching();
-				return success(id, "get_branch_messages", { messages });
+			case "get_fork_messages": {
+				const messages = session.getUserMessagesForForking();
+				return success(id, "get_fork_messages", { messages });
 			}
 
 			case "get_last_assistant_text": {

@@ -1,4 +1,7 @@
 // Core session management
+
+// Config paths
+export { getAgentDir, VERSION } from "./config.js";
 export {
 	AgentSession,
 	type AgentSessionConfig,
@@ -42,7 +45,9 @@ export type {
 	AgentToolUpdateCallback,
 	AppAction,
 	BeforeAgentStartEvent,
+	CompactOptions,
 	ContextEvent,
+	ContextUsage,
 	ExecOptions,
 	ExecResult,
 	Extension,
@@ -61,34 +66,38 @@ export type {
 	ExtensionShortcut,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	ExtensionWidgetOptions,
+	InputEvent,
+	InputEventResult,
+	InputSource,
 	KeybindingsManager,
 	LoadExtensionsResult,
 	MessageRenderer,
 	MessageRenderOptions,
 	RegisteredCommand,
 	RegisteredTool,
-	SessionBeforeBranchEvent,
 	SessionBeforeCompactEvent,
+	SessionBeforeForkEvent,
 	SessionBeforeSwitchEvent,
 	SessionBeforeTreeEvent,
-	SessionBranchEvent,
 	SessionCompactEvent,
+	SessionForkEvent,
 	SessionShutdownEvent,
 	SessionStartEvent,
 	SessionSwitchEvent,
 	SessionTreeEvent,
 	ToolCallEvent,
 	ToolDefinition,
+	ToolInfo,
 	ToolRenderResultOptions,
 	ToolResultEvent,
 	TurnEndEvent,
 	TurnStartEvent,
 	UserBashEvent,
 	UserBashEventResult,
+	WidgetPlacement,
 } from "./core/extensions/index.js";
 export {
-	createExtensionRuntime,
-	discoverAndLoadExtensions,
 	ExtensionRunner,
 	isBashToolResult,
 	isEditToolResult,
@@ -97,7 +106,6 @@ export {
 	isLsToolResult,
 	isReadToolResult,
 	isWriteToolResult,
-	loadExtensions,
 	wrapRegisteredTool,
 	wrapRegisteredTools,
 	wrapToolsWithExtensions,
@@ -155,6 +163,7 @@ export {
 	type SessionEntryBase,
 	type SessionHeader,
 	type SessionInfo,
+	type SessionInfoEntry,
 	SessionManager,
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,
@@ -232,6 +241,8 @@ export {
 export {
 	ArminComponent,
 	AssistantMessageComponent,
+	appKey,
+	appKeyHint,
 	BashExecutionComponent,
 	BorderedLoader,
 	BranchSummaryMessageComponent,
@@ -242,11 +253,14 @@ export {
 	ExtensionEditorComponent,
 	ExtensionInputComponent,
 	ExtensionSelectorComponent,
+	editorKey,
 	FooterComponent,
+	keyHint,
 	LoginDialogComponent,
 	ModelSelectorComponent,
 	OAuthSelectorComponent,
 	type RenderDiffOptions,
+	rawKeyHint,
 	renderDiff,
 	SessionSelectorComponent,
 	type SettingsCallbacks,
@@ -265,10 +279,15 @@ export {
 } from "./modes/interactive/components/index.js";
 // Theme utilities for custom tools and extensions
 export {
+	getLanguageFromPath,
 	getMarkdownTheme,
 	getSelectListTheme,
 	getSettingsListTheme,
+	highlightCode,
 	initTheme,
 	Theme,
 	type ThemeColor,
 } from "./modes/interactive/theme/theme.js";
+export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.js";
+// Shell utilities
+export { getShellConfig } from "./utils/shell.js";

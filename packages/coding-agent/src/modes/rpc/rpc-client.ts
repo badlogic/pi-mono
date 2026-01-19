@@ -338,19 +338,19 @@ export class RpcClient {
 	}
 
 	/**
-	 * Branch from a specific message.
+	 * Fork from a specific message.
 	 * @returns Object with `text` (the message text) and `cancelled` (if extension cancelled)
 	 */
-	async branch(entryId: string): Promise<{ text: string; cancelled: boolean }> {
-		const response = await this.send({ type: "branch", entryId });
+	async fork(entryId: string): Promise<{ text: string; cancelled: boolean }> {
+		const response = await this.send({ type: "fork", entryId });
 		return this.getData(response);
 	}
 
 	/**
-	 * Get messages available for branching.
+	 * Get messages available for forking.
 	 */
-	async getBranchMessages(): Promise<Array<{ entryId: string; text: string }>> {
-		const response = await this.send({ type: "get_branch_messages" });
+	async getForkMessages(): Promise<Array<{ entryId: string; text: string }>> {
+		const response = await this.send({ type: "get_fork_messages" });
 		return this.getData<{ messages: Array<{ entryId: string; text: string }> }>(response).messages;
 	}
 
