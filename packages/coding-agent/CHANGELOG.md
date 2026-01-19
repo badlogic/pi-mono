@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added ACP (Agent Client Protocol) mode (`--mode acp`) for integration with ACP-compatible editors like Zed and JetBrains IDEs
+
 ## [0.49.1] - 2026-01-18
 
 ### Added

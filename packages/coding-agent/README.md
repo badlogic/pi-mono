@@ -47,6 +47,7 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
 - [Programmatic Usage](#programmatic-usage)
   - [SDK](#sdk)
   - [RPC Mode](#rpc-mode)
+  - [ACP Mode](#acp-mode)
   - [HTML Export](#html-export)
 - [Philosophy](#philosophy)
 - [Development](#development)
@@ -1394,6 +1395,25 @@ Send JSON commands on stdin:
 ```
 
 > See [RPC Documentation](docs/rpc.md) for the full protocol.
+
+### ACP Mode
+
+For integration with ACP-compatible editors (Zed, JetBrains IDEs, etc.):
+
+```bash
+pi --mode acp
+```
+
+ACP (Agent Client Protocol) is a standardized JSON-RPC protocol for communication between code editors and AI coding agents. When running in ACP mode, pi acts as an ACP-compliant agent that can be launched by the editor as a subprocess.
+
+**Supported features:**
+- Session creation and management
+- Prompt processing with streaming responses
+- Tool call notifications (read, write, edit, bash)
+- Thinking/reasoning display
+- Cancellation via `session/cancel`
+
+> See [ACP Protocol Documentation](https://agentclientprotocol.com/) for the full specification.
 
 ### HTML Export
 
