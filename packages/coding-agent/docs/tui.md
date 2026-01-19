@@ -704,13 +704,16 @@ ctx.ui.setStatus("my-ext", undefined);
 
 **Examples:** [status-line.ts](../examples/extensions/status-line.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts)
 
-### Pattern 5: Widget Above Editor
+### Pattern 5: Widgets Above/Below Editor
 
-Show persistent content above the input editor. Good for todo lists, progress.
+Show persistent content above or below the input editor. Good for todo lists, progress.
 
 ```typescript
-// Simple string array
+// Simple string array (above editor by default)
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
+
+// Render below the editor
+ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"], { placement: "belowEditor" });
 
 // Or with theme
 ctx.ui.setWidget("my-widget", (_tui, theme) => {

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added widget placement option for `ctx.ui.setWidget()` to render widgets above or below the editor.
+
 ## [0.49.1] - 2026-01-18
 
 ### Added

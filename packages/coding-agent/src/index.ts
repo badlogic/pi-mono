@@ -66,6 +66,7 @@ export type {
 	ExtensionShortcut,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	ExtensionWidgetOptions,
 	InputEvent,
 	InputEventResult,
 	InputSource,
@@ -94,6 +95,7 @@ export type {
 	TurnStartEvent,
 	UserBashEvent,
 	UserBashEventResult,
+	WidgetPlacement,
 } from "./core/extensions/index.js";
 export {
 	ExtensionRunner,

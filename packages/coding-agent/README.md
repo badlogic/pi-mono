@@ -1184,8 +1184,9 @@ ctx.ui.notify("Done!", "success"); // success, info, warning, error
 ctx.ui.setStatus("my-ext", "Processing...");
 ctx.ui.setStatus("my-ext", null); // Clear
 
-// Widgets (above editor)
+// Widgets (above editor by default)
 ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"]);
+ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"], { placement: "belowEditor" });
 
 // Custom footer (replaces built-in footer)
 ctx.ui.setFooter((tui, theme) => ({

@@ -14,7 +14,11 @@
 import * as crypto from "node:crypto";
 import * as readline from "readline";
 import type { AgentSession } from "../../core/agent-session.js";
-import type { ExtensionUIContext, ExtensionUIDialogOptions } from "../../core/extensions/index.js";
+import type {
+	ExtensionUIContext,
+	ExtensionUIDialogOptions,
+	ExtensionWidgetOptions,
+} from "../../core/extensions/index.js";
 import { type Theme, theme } from "../interactive/theme/theme.js";
 import type {
 	RpcCommand,
@@ -154,7 +158,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			// Working message not supported in RPC mode - requires TUI loader access
 		},
 
-		setWidget(key: string, content: unknown): void {
+		setWidget(key: string, content: unknown, options?: ExtensionWidgetOptions): void {
 			// Only support string arrays in RPC mode - factory functions are ignored
 			if (content === undefined || Array.isArray(content)) {
 				output({
@@ -163,6 +167,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					method: "setWidget",
 					widgetKey: key,
 					widgetLines: content as string[] | undefined,
+					widgetPlacement: options?.placement,
 				} as RpcExtensionUIRequest);
 			}
 			// Component factories are not supported in RPC mode - would need TUI access
