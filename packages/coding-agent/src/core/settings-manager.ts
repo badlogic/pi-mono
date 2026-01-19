@@ -47,6 +47,10 @@ export interface ThinkingBudgetsSettings {
 	high?: number;
 }
 
+export interface MarkdownSettings {
+	codeBlockIndent?: string; // default: "  "
+}
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
@@ -72,6 +76,7 @@ export interface Settings {
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
 	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
+	markdown?: MarkdownSettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -499,5 +504,9 @@ export class SettingsManager {
 	setEditorPaddingX(padding: number): void {
 		this.globalSettings.editorPaddingX = Math.max(0, Math.min(3, Math.floor(padding)));
 		this.save();
+	}
+
+	getCodeBlockIndent(): string {
+		return this.settings.markdown?.codeBlockIndent ?? "  ";
 	}
 }

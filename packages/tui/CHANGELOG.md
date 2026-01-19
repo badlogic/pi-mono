@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `codeBlockIndent` property on `MarkdownTheme` to customize code block content indentation (default: 2 spaces)
+
 ## [0.49.2] - 2026-01-19
 
 ## [0.49.1] - 2026-01-18

@@ -1,5 +1,5 @@
 import type { AssistantMessage } from "@mariozechner/pi-ai";
-import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@mariozechner/pi-tui";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 
 /**
@@ -8,12 +8,18 @@ import { getMarkdownTheme, theme } from "../theme/theme.js";
 export class AssistantMessageComponent extends Container {
 	private contentContainer: Container;
 	private hideThinkingBlock: boolean;
+	private markdownTheme: MarkdownTheme;
 	private lastMessage?: AssistantMessage;
 
-	constructor(message?: AssistantMessage, hideThinkingBlock = false) {
+	constructor(
+		message?: AssistantMessage,
+		hideThinkingBlock = false,
+		markdownTheme: MarkdownTheme = getMarkdownTheme(),
+	) {
 		super();
 
 		this.hideThinkingBlock = hideThinkingBlock;
+		this.markdownTheme = markdownTheme;
 
 		// Container for text/thinking content
 		this.contentContainer = new Container();
@@ -55,7 +61,7 @@ export class AssistantMessageComponent extends Container {
 			if (content.type === "text" && content.text.trim()) {
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
-				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, getMarkdownTheme()));
+				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
 			} else if (content.type === "thinking" && content.thinking.trim()) {
 				// Check if there's text content after this thinking block
 				const hasTextAfter = message.content.slice(i + 1).some((c) => c.type === "text" && c.text.trim());
@@ -69,7 +75,7 @@ export class AssistantMessageComponent extends Container {
 				} else {
 					// Thinking traces in thinkingText color, italic
 					this.contentContainer.addChild(
-						new Markdown(content.thinking.trim(), 1, 0, getMarkdownTheme(), {
+						new Markdown(content.thinking.trim(), 1, 0, this.markdownTheme, {
 							color: (text: string) => theme.fg("thinkingText", text),
 							italic: true,
 						}),
