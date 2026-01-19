@@ -1,4 +1,5 @@
-import type { Model } from "@mariozechner/pi-ai";
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import { type Api, type Model, supportsXhigh } from "@mariozechner/pi-ai";
 import {
 	Container,
 	type Focusable,
@@ -15,6 +16,9 @@ import { DynamicBorder } from "./dynamic-border.js";
 
 // EnabledIds: null = all enabled (no filter), string[] = explicit ordered list
 type EnabledIds = string[] | null;
+
+/** Stores only non-default overrides (no entry = off/default). */
+type ThinkingOverrides = Map<string, ThinkingLevel>;
 
 function isEnabled(enabledIds: EnabledIds, id: string): boolean {
 	return enabledIds === null || enabledIds.includes(id);
@@ -34,7 +38,7 @@ function enableAll(enabledIds: EnabledIds, allIds: string[], targetIds?: string[
 	for (const id of targets) {
 		if (!result.includes(id)) result.push(id);
 	}
-	return result.length === allIds.length ? null : result;
+	return result;
 }
 
 function clearAll(enabledIds: EnabledIds, allIds: string[], targetIds?: string[]): EnabledIds {
@@ -62,30 +66,30 @@ function getSortedIds(enabledIds: EnabledIds, allIds: string[]): string[] {
 	return [...enabledIds, ...allIds.filter((id) => !enabledSet.has(id))];
 }
 
+function getThinkingCycleLevels(model: Model<Api>): ThinkingLevel[] {
+	if (!model.reasoning) return [];
+	return supportsXhigh(model) ? ["minimal", "low", "medium", "high", "xhigh"] : ["minimal", "low", "medium", "high"];
+}
+
 interface ModelItem {
 	fullId: string;
-	model: Model<any>;
+	model: Model<Api>;
 	enabled: boolean;
+	thinkingOverride?: ThinkingLevel;
 }
 
 export interface ModelsConfig {
-	allModels: Model<any>[];
-	enabledModelIds: Set<string>;
-	/** true if enabledModels setting is defined (empty = all enabled) */
-	hasEnabledModelsFilter: boolean;
+	allModels: Model<Api>[];
+	enabledIds: EnabledIds;
+	/** Non-default overrides only (no entry = off/default). */
+	thinkingOverrides?: ThinkingOverrides;
 }
 
 export interface ModelsCallbacks {
-	/** Called when a model is toggled (session-only, no persist) */
-	onModelToggle: (modelId: string, enabled: boolean) => void;
-	/** Called when user wants to persist current selection to settings */
-	onPersist: (enabledModelIds: string[]) => void;
-	/** Called when user enables all models. Returns list of all model IDs. */
-	onEnableAll: (allModelIds: string[]) => void;
-	/** Called when user clears all models */
-	onClearAll: () => void;
-	/** Called when user toggles all models for a provider. Returns affected model IDs. */
-	onToggleProvider: (provider: string, modelIds: string[], enabled: boolean) => void;
+	/** Called whenever the in-memory selection changes (session-only). */
+	onChange: (patterns: string[] | null) => void;
+	/** Called when user wants to persist current selection to settings (Ctrl+S). */
+	onPersist: (patterns: string[] | null) => void;
 	onCancel: () => void;
 }
 
@@ -94,12 +98,16 @@ export interface ModelsCallbacks {
  * Changes are session-only until explicitly persisted with Ctrl+S.
  */
 export class ScopedModelsSelectorComponent extends Container implements Focusable {
-	private modelsById: Map<string, Model<any>> = new Map();
+	private modelsById: Map<string, Model<Api>> = new Map();
 	private allIds: string[] = [];
 	private enabledIds: EnabledIds = null;
+	private thinkingOverrides: ThinkingOverrides = new Map();
 	private filteredItems: ModelItem[] = [];
 	private selectedIndex = 0;
 	private searchInput: Input;
+
+	private readonly initialEnabledIds: EnabledIds;
+	private readonly initialThinkingOverrides: ThinkingOverrides;
 
 	// Focusable implementation - propagate to searchInput for IME cursor positioning
 	private _focused = false;
@@ -110,6 +118,7 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		this._focused = value;
 		this.searchInput.focused = value;
 	}
+
 	private listContainer: Container;
 	private footerText: Text;
 	private callbacks: ModelsCallbacks;
@@ -126,7 +135,12 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 			this.allIds.push(fullId);
 		}
 
-		this.enabledIds = config.hasEnabledModelsFilter ? [...config.enabledModelIds] : null;
+		this.enabledIds = config.enabledIds;
+		this.thinkingOverrides = new Map(config.thinkingOverrides ?? []);
+
+		this.initialEnabledIds = this.enabledIds === null ? null : [...this.enabledIds];
+		this.initialThinkingOverrides = new Map(this.thinkingOverrides);
+
 		this.filteredItems = this.buildItems();
 
 		// Header
@@ -154,11 +168,25 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		this.updateList();
 	}
 
+	private buildPatterns(): string[] | null {
+		// null = no filter (all models enabled). In this mode, thinking overrides are not active/persisted.
+		if (this.enabledIds === null) return null;
+		return this.enabledIds.map((id) => {
+			const override = this.thinkingOverrides.get(id);
+			return override ? `${id}:${override}` : id;
+		});
+	}
+
+	private emitChange(): void {
+		this.callbacks.onChange(this.buildPatterns());
+	}
+
 	private buildItems(): ModelItem[] {
 		return getSortedIds(this.enabledIds, this.allIds).map((id) => ({
 			fullId: id,
 			model: this.modelsById.get(id)!,
 			enabled: isEnabled(this.enabledIds, id),
+			thinkingOverride: this.thinkingOverrides.get(id),
 		}));
 	}
 
@@ -166,7 +194,17 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		const enabledCount = this.enabledIds?.length ?? this.allIds.length;
 		const allEnabled = this.enabledIds === null;
 		const countText = allEnabled ? "all enabled" : `${enabledCount}/${this.allIds.length} enabled`;
-		const parts = ["Enter toggle", "^A all", "^X clear", "^P provider", "Alt+↑↓ reorder", "^S save", countText];
+		const parts = [
+			"Enter toggle",
+			"^A all",
+			"^X clear",
+			"^P provider",
+			"^T thinking",
+			"^R reset",
+			"Alt+↑↓ reorder",
+			"^S save",
+			countText,
+		];
 		return this.isDirty
 			? theme.fg("dim", `  ${parts.join(" · ")} `) + theme.fg("warning", "(unsaved)")
 			: theme.fg("dim", `  ${parts.join(" · ")}`);
@@ -194,15 +232,18 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 			Math.min(this.selectedIndex - Math.floor(this.maxVisible / 2), this.filteredItems.length - this.maxVisible),
 		);
 		const endIndex = Math.min(startIndex + this.maxVisible, this.filteredItems.length);
-		const allEnabled = this.enabledIds === null;
 
 		for (let i = startIndex; i < endIndex; i++) {
 			const item = this.filteredItems[i]!;
 			const isSelected = i === this.selectedIndex;
 			const prefix = isSelected ? theme.fg("accent", "→ ") : "  ";
-			const modelText = isSelected ? theme.fg("accent", item.model.id) : item.model.id;
+
+			const thinkingSuffix = item.enabled && item.thinkingOverride ? `:${item.thinkingOverride}` : "";
+			const displayId = `${item.model.id}${thinkingSuffix}`;
+			const modelText = isSelected ? theme.fg("accent", displayId) : displayId;
 			const providerBadge = theme.fg("muted", ` [${item.model.provider}]`);
-			const status = allEnabled ? "" : item.enabled ? theme.fg("success", " ✓") : theme.fg("dim", " ✗");
+			const status = item.enabled ? theme.fg("success", " ✓") : theme.fg("dim", " ✗");
+
 			this.listContainer.addChild(new Text(`${prefix}${modelText}${providerBadge}${status}`, 0, 0));
 		}
 
@@ -244,6 +285,7 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 					this.enabledIds = move(this.enabledIds, this.allIds, item.fullId, delta);
 					this.isDirty = true;
 					this.selectedIndex += delta;
+					this.emitChange();
 					this.refresh();
 				}
 			}
@@ -254,22 +296,60 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		if (matchesKey(data, Key.enter)) {
 			const item = this.filteredItems[this.selectedIndex];
 			if (item) {
-				const wasAllEnabled = this.enabledIds === null;
 				this.enabledIds = toggle(this.enabledIds, item.fullId);
 				this.isDirty = true;
-				if (wasAllEnabled) this.callbacks.onClearAll();
-				this.callbacks.onModelToggle(item.fullId, isEnabled(this.enabledIds, item.fullId));
+				this.emitChange();
 				this.refresh();
 			}
 			return;
 		}
 
-		// Ctrl+A - Enable all (filtered if search active, otherwise all)
-		if (matchesKey(data, Key.ctrl("a"))) {
-			const targetIds = this.searchInput.getValue() ? this.filteredItems.map((i) => i.fullId) : undefined;
-			this.enabledIds = enableAll(this.enabledIds, this.allIds, targetIds);
+		// Ctrl+T - Cycle per-model thinking override (selected models only)
+		if (matchesKey(data, Key.ctrl("t"))) {
+			const item = this.filteredItems[this.selectedIndex];
+			if (!item) return;
+			// Only for enabled models when a filter is active (not the default "all enabled" mode)
+			if (this.enabledIds === null || !item.enabled) return;
+
+			const levels = getThinkingCycleLevels(item.model);
+			if (levels.length === 0) return;
+
+			const current = this.thinkingOverrides.get(item.fullId);
+			let next: ThinkingLevel | undefined;
+			if (!current) {
+				next = levels[0];
+			} else {
+				const idx = levels.indexOf(current);
+				next = idx === -1 || idx === levels.length - 1 ? undefined : levels[idx + 1];
+			}
+
+			if (next) {
+				this.thinkingOverrides.set(item.fullId, next);
+			} else {
+				this.thinkingOverrides.delete(item.fullId);
+			}
 			this.isDirty = true;
-			this.callbacks.onEnableAll(targetIds ?? this.allIds);
+			this.emitChange();
+			this.refresh();
+			return;
+		}
+
+		// Ctrl+R - Reset to initial state
+		if (matchesKey(data, Key.ctrl("r"))) {
+			this.enabledIds = this.initialEnabledIds === null ? null : [...this.initialEnabledIds];
+			this.thinkingOverrides = new Map(this.initialThinkingOverrides);
+			this.isDirty = false;
+			this.emitChange();
+			this.refresh();
+			return;
+		}
+
+		// Ctrl+A - All enabled (clear filter)
+		if (matchesKey(data, Key.ctrl("a"))) {
+			this.enabledIds = null;
+			this.thinkingOverrides.clear();
+			this.isDirty = true;
+			this.emitChange();
 			this.refresh();
 			return;
 		}
@@ -279,7 +359,7 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 			const targetIds = this.searchInput.getValue() ? this.filteredItems.map((i) => i.fullId) : undefined;
 			this.enabledIds = clearAll(this.enabledIds, this.allIds, targetIds);
 			this.isDirty = true;
-			this.callbacks.onClearAll();
+			this.emitChange();
 			this.refresh();
 			return;
 		}
@@ -295,7 +375,7 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 					? clearAll(this.enabledIds, this.allIds, providerIds)
 					: enableAll(this.enabledIds, this.allIds, providerIds);
 				this.isDirty = true;
-				this.callbacks.onToggleProvider(provider, providerIds, !allEnabled);
+				this.emitChange();
 				this.refresh();
 			}
 			return;
@@ -303,7 +383,7 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 
 		// Ctrl+S - Save/persist to settings
 		if (matchesKey(data, Key.ctrl("s"))) {
-			this.callbacks.onPersist(this.enabledIds ?? [...this.allIds]);
+			this.callbacks.onPersist(this.buildPatterns());
 			this.isDirty = false;
 			this.footerText.setText(this.getFooterText());
 			return;

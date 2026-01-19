@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/scoped-models`: Ctrl+R resets to the initial model selection, and Ctrl+T cycles per-model thinking overrides (persisted via `:level` suffixes).
+
+### Changed
+
+- Ctrl+P model cycling status now includes the provider name.
+- `/scoped-models` now shows ✓ for enabled models even when all models are enabled.
+
 ## [0.49.1] - 2026-01-18
 
 ### Added
