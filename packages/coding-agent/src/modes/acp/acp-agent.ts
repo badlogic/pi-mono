@@ -5,7 +5,6 @@
  * ACP protocol requests and manage sessions.
  */
 
-import * as crypto from "node:crypto";
 import type * as acp from "@agentclientprotocol/sdk";
 import { VERSION } from "../../config.js";
 import type { AgentSession } from "../../core/agent-session.js";
@@ -61,15 +60,18 @@ export class PiAgent implements acp.Agent {
 	/**
 	 * Create a new session.
 	 *
-	 * Creates an AcpSession wrapper around the AgentSession and returns
-	 * a unique session ID for subsequent requests.
+	 * Creates a new pi session via AgentSession.newSession() and wraps it
+	 * with an AcpSession. Returns the pi session ID for subsequent requests.
 	 *
 	 * Note: pi ignores the cwd and mcpServers parameters as it manages
 	 * its own working directory and tool system.
 	 */
 	async newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
 		acpDebug(`newSession: cwd=${params.cwd}`);
-		const sessionId = crypto.randomUUID();
+
+		// Create a new pi session
+		await this._agentSession.newSession();
+		const sessionId = this._agentSession.sessionId;
 
 		// Create AcpSession wrapper
 		const acpSession = new AcpSession(sessionId, this._agentSession, this._connection);
