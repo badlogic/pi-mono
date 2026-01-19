@@ -6,6 +6,10 @@
 
 - Add "quiet startup" setting to `/settings` ([#847](https://github.com/badlogic/pi-mono/pull/847) by [@unexge](https://github.com/unexge))
 
+### Fixed
+
+- Fixed `/model` selector scope toggle so you can switch between all and scoped models when scoped models are saved ([#844](https://github.com/badlogic/pi-mono/issues/844))
+
 ## [0.49.1] - 2026-01-18
 
 ### Added
