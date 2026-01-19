@@ -4,12 +4,19 @@
 
 ### Added
 
+- Added widget placement option for extension widgets via `widgetPlacement` in `pi.addWidget()` ([#850](https://github.com/badlogic/pi-mono/pull/850) by [@marckrenn](https://github.com/marckrenn))
+- Added AWS credential detection for ECS/Kubernetes environments: `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`, `AWS_CONTAINER_CREDENTIALS_FULL_URI`, `AWS_WEB_IDENTITY_TOKEN_FILE` ([#848](https://github.com/badlogic/pi-mono/issues/848))
 - Add "quiet startup" setting to `/settings` ([#847](https://github.com/badlogic/pi-mono/pull/847) by [@unexge](https://github.com/unexge))
 
-### Fixed
+### Changed
 
+- HTML export now includes JSONL download button, jump-to-last-message on click, and fixed missing labels ([#853](https://github.com/badlogic/pi-mono/pull/853) by [@mitsuhiko](https://github.com/mitsuhiko))
+- Improved error message for OAuth authentication failures (expired credentials, offline) instead of generic 'No API key found' ([#849](https://github.com/badlogic/pi-mono/pull/849) by [@zedrdave](https://github.com/zedrdave))
+
+### Fixed
 - Fixed `/model` selector scope toggle so you can switch between all and scoped models when scoped models are saved ([#844](https://github.com/badlogic/pi-mono/issues/844))
 - Fixed OpenAI Responses 400 error "reasoning without following item" when replaying aborted turns ([#838](https://github.com/badlogic/pi-mono/pull/838))
+- Fixed pi exiting with code 0 when cancelling resume session selection
 
 ### Removed
 
