@@ -53,6 +53,11 @@ describe("fuzzyMatch", () => {
 		assert.strictEqual(notAtBoundary.matches, true);
 		assert.ok(atBoundary.score < notAtBoundary.score);
 	});
+
+	it("matches swapped alpha numeric tokens", () => {
+		const result = fuzzyMatch("codex52", "gpt-5.2-codex");
+		assert.strictEqual(result.matches, true);
+	});
 });
 
 describe("fuzzyFilter", () => {
