@@ -641,17 +641,18 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			}
 			const key = await modelRegistry.getApiKeyForProvider(resolvedProvider);
 			if (!key) {
-				const isOAuth = modelRegistry.isUsingOAuth(currentModel);
+				const model = agent.state.model;
+				const isOAuth = model && modelRegistry.isUsingOAuth(model);
 				if (isOAuth) {
 					throw new Error(
-						`Authentication failed for "${currentModel.provider}". ` +
+						`Authentication failed for "${resolvedProvider}". ` +
 							`Credentials may have expired or network is unavailable. ` +
-							`Run '/login ${currentModel.provider}' to re-authenticate.`,
+							`Run '/login ${resolvedProvider}' to re-authenticate.`,
 					);
 				}
 				throw new Error(
-					`No API key found for "${currentModel.provider}". ` +
-						`Set an API key environment variable or run '/login ${currentModel.provider}'.`,
+					`No API key found for "${resolvedProvider}". ` +
+						`Set an API key environment variable or run '/login ${resolvedProvider}'.`,
 				);
 			}
 			return key;
