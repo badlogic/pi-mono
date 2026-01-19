@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add "quiet startup" setting to `/settings` ([#847](https://github.com/badlogic/pi-mono/pull/847) by [@unexge](https://github.com/unexge))
+
 ## [0.49.1] - 2026-01-18
 
 ### Added
