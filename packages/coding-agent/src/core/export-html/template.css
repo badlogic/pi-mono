@@ -221,6 +221,25 @@
       font-size: 11px;
       color: var(--warning);
       margin-bottom: var(--line-height);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .download-json-btn {
+      font-size: 10px;
+      padding: 2px 8px;
+      background: var(--container-bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      color: var(--text);
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .download-json-btn:hover {
+      background: var(--hover);
+      border-color: var(--borderAccent);
     }
 
     /* Header */
