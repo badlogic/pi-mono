@@ -1928,9 +1928,10 @@ export class AgentSession {
 	 * @param entryId ID of the entry to fork from
 	 * @returns Object with:
 	 *   - selectedText: The text of the selected user message (for editor pre-fill)
+	 *   - selectedImages: Images from the selected user message (for restoring clipboard images)
 	 *   - cancelled: True if an extension cancelled the fork
 	 */
-	async fork(entryId: string): Promise<{ selectedText: string; cancelled: boolean }> {
+	async fork(entryId: string): Promise<{ selectedText: string; selectedImages: ImageContent[]; cancelled: boolean }> {
 		const previousSessionFile = this.sessionFile;
 		const selectedEntry = this.sessionManager.getEntry(entryId);
 
@@ -1938,7 +1939,9 @@ export class AgentSession {
 			throw new Error("Invalid entry ID for forking");
 		}
 
-		const selectedText = this._extractUserMessageText(selectedEntry.message.content);
+		const { text: selectedText, images: selectedImages } = this._extractUserMessageContent(
+			selectedEntry.message.content,
+		);
 
 		let skipConversationRestore = false;
 
@@ -1950,7 +1953,7 @@ export class AgentSession {
 			})) as SessionBeforeForkResult | undefined;
 
 			if (result?.cancel) {
-				return { selectedText, cancelled: true };
+				return { selectedText, selectedImages, cancelled: true };
 			}
 			skipConversationRestore = result?.skipConversationRestore ?? false;
 		}
@@ -1982,7 +1985,7 @@ export class AgentSession {
 			this.agent.replaceMessages(sessionContext.messages);
 		}
 
-		return { selectedText, cancelled: false };
+		return { selectedText, selectedImages, cancelled: false };
 	}
 
 	// =========================================================================
@@ -1998,12 +2001,18 @@ export class AgentSession {
 	 * @param options.customInstructions Custom instructions for summarizer
 	 * @param options.replaceInstructions If true, customInstructions replaces the default prompt
 	 * @param options.label Label to attach to the branch summary entry
-	 * @returns Result with editorText (if user message) and cancelled status
+	 * @returns Result with editorText/editorImages (if user message) and cancelled status
 	 */
 	async navigateTree(
 		targetId: string,
 		options: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string } = {},
-	): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: BranchSummaryEntry }> {
+	): Promise<{
+		editorText?: string;
+		editorImages?: ImageContent[];
+		cancelled: boolean;
+		aborted?: boolean;
+		summaryEntry?: BranchSummaryEntry;
+	}> {
 		const oldLeafId = this.sessionManager.getLeafId();
 
 		// No-op if already at target
@@ -2116,11 +2125,14 @@ export class AgentSession {
 		// Determine the new leaf position based on target type
 		let newLeafId: string | null;
 		let editorText: string | undefined;
+		let editorImages: ImageContent[] | undefined;
 
 		if (targetEntry.type === "message" && targetEntry.message.role === "user") {
-			// User message: leaf = parent (null if root), text goes to editor
+			// User message: leaf = parent (null if root), text and images go to editor
 			newLeafId = targetEntry.parentId;
-			editorText = this._extractUserMessageText(targetEntry.message.content);
+			const extracted = this._extractUserMessageContent(targetEntry.message.content);
+			editorText = extracted.text;
+			editorImages = extracted.images.length > 0 ? extracted.images : undefined;
 		} else if (targetEntry.type === "custom_message") {
 			// Custom message: leaf = parent (null if root), text goes to editor
 			newLeafId = targetEntry.parentId;
@@ -2179,7 +2191,7 @@ export class AgentSession {
 		// Emit to custom tools
 
 		this._branchSummaryAbortController = undefined;
-		return { editorText, cancelled: false, summaryEntry };
+		return { editorText, editorImages, cancelled: false, summaryEntry };
 	}
 
 	/**
@@ -2211,6 +2223,29 @@ export class AgentSession {
 				.join("");
 		}
 		return "";
+	}
+
+	/**
+	 * Extract text and images from user message content.
+	 * Used for fork/navigateTree to restore editor state including attached images.
+	 */
+	private _extractUserMessageContent(
+		content: string | Array<{ type: string; text?: string; data?: string; mimeType?: string }>,
+	): { text: string; images: ImageContent[] } {
+		if (typeof content === "string") {
+			return { text: content, images: [] };
+		}
+		if (Array.isArray(content)) {
+			const text = content
+				.filter((c): c is { type: "text"; text: string } => c.type === "text")
+				.map((c) => c.text)
+				.join("");
+			const images = content
+				.filter((c): c is ImageContent => c.type === "image")
+				.map((c) => ({ type: "image" as const, data: c.data, mimeType: c.mimeType }));
+			return { text, images };
+		}
+		return { text: "", images: [] };
 	}
 
 	/**

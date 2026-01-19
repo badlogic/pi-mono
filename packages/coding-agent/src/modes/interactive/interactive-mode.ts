@@ -62,6 +62,11 @@ import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
+import {
+	type PendingClipboardImage,
+	prepareImagesForSubmit as prepareImagesUtil,
+	restoreImagesFromSession,
+} from "../../utils/clipboard-image-markers.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
@@ -142,6 +147,7 @@ export class InteractiveMode {
 	private autocompleteProvider: CombinedAutocompleteProvider | undefined;
 	private fdPath: string | undefined;
 	private editorContainer: Container;
+	private imageAttachmentsContainer: Container;
 	private footer: FooterComponent;
 	private footerDataProvider: FooterDataProvider;
 	private keybindings: KeybindingsManager;
@@ -166,6 +172,13 @@ export class InteractiveMode {
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
+
+	// Clipboard images pasted in current input (cleared on submit)
+	private pendingClipboardImages: PendingClipboardImage[] = [];
+	// Counter for image IDs
+	private clipboardImageCounter = 0;
+	// Track in-flight paste operations to await on submit
+	private pendingPasteOperations: Promise<void>[] = [];
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
@@ -245,6 +258,7 @@ export class InteractiveMode {
 		this.statusContainer = new Container();
 		this.widgetContainerAbove = new Container();
 		this.widgetContainerBelow = new Container();
+		this.imageAttachmentsContainer = new Container();
 		this.keybindings = KeybindingsManager.create();
 		const editorPaddingX = this.settingsManager.getEditorPaddingX();
 		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings, { paddingX: editorPaddingX });
@@ -433,6 +447,7 @@ export class InteractiveMode {
 		this.ui.addChild(this.statusContainer);
 		this.renderWidgets(); // Initialize with default spacer
 		this.ui.addChild(this.widgetContainerAbove);
+		this.ui.addChild(this.imageAttachmentsContainer);
 		this.ui.addChild(this.editorContainer);
 		this.ui.addChild(this.widgetContainerBelow);
 		this.ui.addChild(this.footer);
@@ -525,7 +540,15 @@ export class InteractiveMode {
 		while (true) {
 			const userInput = await this.getUserInput();
 			try {
-				await this.session.prompt(userInput);
+				// Wait for any pending paste operations to complete
+				if (this.pendingPasteOperations.length > 0) {
+					await Promise.all(this.pendingPasteOperations);
+				}
+				const { text, images } = this.prepareImagesForSubmit(userInput);
+				this.pendingClipboardImages = [];
+				this.clipboardImageCounter = 0;
+				this.updateImageAttachmentsIndicator();
+				await this.session.prompt(text, { images });
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 				this.showError(errorMessage);
@@ -754,6 +777,9 @@ export class InteractiveMode {
 					this.chatContainer.clear();
 					this.renderInitialMessages();
 					this.editor.setText(result.selectedText);
+					if (result.selectedImages.length > 0) {
+						this.restoreClipboardImages(result.selectedImages, result.selectedText);
+					}
 					this.showStatus("Forked to new session");
 
 					return { cancelled: false };
@@ -773,6 +799,9 @@ export class InteractiveMode {
 					this.renderInitialMessages();
 					if (result.editorText) {
 						this.editor.setText(result.editorText);
+						if (result.editorImages && result.editorImages.length > 0) {
+							this.restoreClipboardImages(result.editorImages, result.editorText);
+						}
 					}
 					this.showStatus("Navigated to selected point");
 
@@ -1465,7 +1494,13 @@ export class InteractiveMode {
 
 		// Handle clipboard image paste (triggered on Ctrl+V)
 		this.defaultEditor.onPasteImage = () => {
-			this.handleClipboardImagePaste();
+			const operation = this.handleClipboardImagePaste();
+			this.pendingPasteOperations.push(operation);
+			// Clean up completed operations
+			operation.finally(() => {
+				const idx = this.pendingPasteOperations.indexOf(operation);
+				if (idx >= 0) this.pendingPasteOperations.splice(idx, 1);
+			});
 		};
 	}
 
@@ -1476,19 +1511,74 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Write to temp file
+			// Write to temp file (for debugging and potential tool-based reading)
 			const tmpDir = os.tmpdir();
 			const ext = extensionForImageMimeType(image.mimeType) ?? "png";
 			const fileName = `pi-clipboard-${crypto.randomUUID()}.${ext}`;
 			const filePath = path.join(tmpDir, fileName);
 			fs.writeFileSync(filePath, Buffer.from(image.bytes));
 
-			// Insert file path directly
-			this.editor.insertTextAtCursor?.(filePath);
+			// Store image for inline sending on submit (unless blockImages is enabled)
+			if (!this.settingsManager.getBlockImages()) {
+				const imageId = ++this.clipboardImageCounter;
+				this.pendingClipboardImages.push({
+					id: imageId,
+					image: {
+						type: "image",
+						data: Buffer.from(image.bytes).toString("base64"),
+						mimeType: image.mimeType,
+					},
+					path: filePath,
+				});
+				// Insert marker into editor (user can delete to remove image)
+				this.editor.insertTextAtCursor?.(`[image #${imageId}]`);
+				// Update the visual indicator
+				this.updateImageAttachmentsIndicator();
+			}
+
 			this.ui.requestRender();
 		} catch {
 			// Silently ignore clipboard errors (may not have permission, etc.)
 		}
+	}
+
+	private updateImageAttachmentsIndicator(): void {
+		this.imageAttachmentsContainer.clear();
+		if (this.pendingClipboardImages.length === 0) {
+			return;
+		}
+		const count = this.pendingClipboardImages.length;
+		const paths = this.pendingClipboardImages.map((p) => `  ${p.path}`).join("\n");
+		const modelSupportsImages = this.session.model?.input.includes("image") ?? false;
+
+		const headerText = theme.fg("dim", `[${count} image${count > 1 ? "s" : ""} attached]\n${paths}`);
+		if (!modelSupportsImages && this.session.model) {
+			const warningText = theme.fg("warning", `⚠ ${this.session.model.name} doesn't support images`);
+			this.imageAttachmentsContainer.addChild(new Text(headerText, 1, 0));
+			this.imageAttachmentsContainer.addChild(new Text(warningText, 1, 0));
+		} else {
+			this.imageAttachmentsContainer.addChild(new Text(headerText, 1, 0));
+		}
+	}
+
+	/**
+	 * Prepare images and text for submission.
+	 * Uses utility function that scans for [image #N] markers and filters accordingly.
+	 */
+	private prepareImagesForSubmit(text: string): { text: string; images: ImageContent[] | undefined } {
+		const modelSupportsImages = this.session.model?.input.includes("image") ?? false;
+		return prepareImagesUtil(this.pendingClipboardImages, text, modelSupportsImages);
+	}
+
+	/**
+	 * Restore pending clipboard images from session images after fork/tree navigation.
+	 * Matches [image #N] markers in editor text with images from the session entry.
+	 */
+	private restoreClipboardImages(images: ImageContent[], editorText: string): void {
+		const { pendingImages, maxId } = restoreImagesFromSession(images, editorText);
+		this.pendingClipboardImages = pendingImages;
+		this.clipboardImageCounter = maxId;
+		this.updateImageAttachmentsIndicator();
 	}
 
 	private setupEditorSubmitHandler(): void {
@@ -1635,7 +1725,15 @@ export class InteractiveMode {
 			if (this.session.isStreaming) {
 				this.editor.addToHistory?.(text);
 				this.editor.setText("");
-				await this.session.prompt(text, { streamingBehavior: "steer" });
+				// Wait for any pending paste operations to complete
+				if (this.pendingPasteOperations.length > 0) {
+					await Promise.all(this.pendingPasteOperations);
+				}
+				const { text: cleanText, images } = this.prepareImagesForSubmit(text);
+				this.pendingClipboardImages = [];
+				this.clipboardImageCounter = 0;
+				this.updateImageAttachmentsIndicator();
+				await this.session.prompt(cleanText, { streamingBehavior: "steer", images });
 				this.updatePendingMessagesDisplay();
 				this.ui.requestRender();
 				return;
@@ -2908,6 +3006,9 @@ export class InteractiveMode {
 					this.chatContainer.clear();
 					this.renderInitialMessages();
 					this.editor.setText(result.selectedText);
+					if (result.selectedImages.length > 0) {
+						this.restoreClipboardImages(result.selectedImages, result.selectedText);
+					}
 					done();
 					this.showStatus("Branched to new session");
 				},
@@ -3026,6 +3127,9 @@ export class InteractiveMode {
 						this.renderInitialMessages();
 						if (result.editorText) {
 							this.editor.setText(result.editorText);
+							if (result.editorImages && result.editorImages.length > 0) {
+								this.restoreClipboardImages(result.editorImages, result.editorText);
+							}
 						}
 						this.showStatus("Navigated to selected point");
 					} catch (error) {

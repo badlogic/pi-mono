@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Clipboard images (Ctrl+V) are now sent inline as `[image #N]` markers instead of file paths. Delete markers to remove images. Images persist across fork/tree navigation.
+
 ## [0.49.2] - 2026-01-19
 
 ### Added
