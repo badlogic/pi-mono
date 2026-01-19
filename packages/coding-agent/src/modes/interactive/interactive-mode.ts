@@ -7,7 +7,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 import {
 	type AssistantMessage,
 	getOAuthProviders,
@@ -2244,7 +2244,9 @@ export class InteractiveMode {
 				this.updateEditorBorderColor();
 				const thinkingStr =
 					result.model.reasoning && result.thinkingLevel !== "off" ? ` (thinking: ${result.thinkingLevel})` : "";
-				this.showStatus(`Switched to ${result.model.name || result.model.id}${thinkingStr}`);
+				this.showStatus(
+					`Switched to ${result.model.name || result.model.id}${thinkingStr} [${result.model.provider}]`,
+				);
 			}
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
@@ -2746,40 +2748,40 @@ export class InteractiveMode {
 		const sessionScopedModels = this.session.scopedModels;
 		const hasSessionScope = sessionScopedModels.length > 0;
 
-		// Build enabled model IDs from session state or settings
-		const enabledModelIds = new Set<string>();
-		let hasFilter = false;
+		const defaultThinkingLevel = this.settingsManager.getDefaultThinkingLevel() ?? "off";
+		let enabledIds: string[] | null = null;
+		const thinkingOverrides = new Map<string, ThinkingLevel>();
 
 		if (hasSessionScope) {
-			// Use current session's scoped models
+			enabledIds = sessionScopedModels.map((sm) => `${sm.model.provider}/${sm.model.id}`);
 			for (const sm of sessionScopedModels) {
-				enabledModelIds.add(`${sm.model.provider}/${sm.model.id}`);
+				const fullId = `${sm.model.provider}/${sm.model.id}`;
+				if (sm.thinkingLevel !== "off" && sm.thinkingLevel !== defaultThinkingLevel) {
+					thinkingOverrides.set(fullId, sm.thinkingLevel);
+				}
 			}
-			hasFilter = true;
 		} else {
 			// Fall back to settings
 			const patterns = this.settingsManager.getEnabledModels();
 			if (patterns !== undefined && patterns.length > 0) {
-				hasFilter = true;
 				const scopedModels = await resolveModelScope(patterns, this.session.modelRegistry);
+				enabledIds = scopedModels.map((sm) => `${sm.model.provider}/${sm.model.id}`);
 				for (const sm of scopedModels) {
-					enabledModelIds.add(`${sm.model.provider}/${sm.model.id}`);
+					const fullId = `${sm.model.provider}/${sm.model.id}`;
+					if (sm.thinkingLevel && sm.thinkingLevel !== "off" && sm.thinkingLevel !== defaultThinkingLevel) {
+						thinkingOverrides.set(fullId, sm.thinkingLevel);
+					}
 				}
 			}
 		}
 
-		// Track current enabled state (session-only until persisted)
-		const currentEnabledIds = new Set(enabledModelIds);
-		let currentHasFilter = hasFilter;
-
-		// Helper to update session's scoped models (session-only, no persist)
-		const updateSessionModels = async (enabledIds: Set<string>) => {
-			if (enabledIds.size > 0 && enabledIds.size < allModels.length) {
-				// Use current session thinking level, not settings default
+		const applySessionScope = async (patterns: string[] | null) => {
+			if (patterns && patterns.length > 0 && patterns.length < allModels.length) {
+				// Use current session thinking level as default for models without explicit thinking suffix
 				const currentThinkingLevel = this.session.thinkingLevel;
-				const newScopedModels = await resolveModelScope(Array.from(enabledIds), this.session.modelRegistry);
+				const scopedModels = await resolveModelScope(patterns, this.session.modelRegistry);
 				this.session.setScopedModels(
-					newScopedModels.map((sm) => ({
+					scopedModels.map((sm) => ({
 						model: sm.model,
 						thinkingLevel: sm.thinkingLevel ?? currentThinkingLevel,
 					})),
@@ -2794,49 +2796,15 @@ export class InteractiveMode {
 			const selector = new ScopedModelsSelectorComponent(
 				{
 					allModels,
-					enabledModelIds: currentEnabledIds,
-					hasEnabledModelsFilter: currentHasFilter,
+					enabledIds,
+					thinkingOverrides,
 				},
 				{
-					onModelToggle: async (modelId, enabled) => {
-						if (enabled) {
-							currentEnabledIds.add(modelId);
-						} else {
-							currentEnabledIds.delete(modelId);
-						}
-						currentHasFilter = true;
-						await updateSessionModels(currentEnabledIds);
+					onChange: async (patterns) => {
+						await applySessionScope(patterns);
 					},
-					onEnableAll: async (allModelIds) => {
-						currentEnabledIds.clear();
-						for (const id of allModelIds) {
-							currentEnabledIds.add(id);
-						}
-						currentHasFilter = false;
-						await updateSessionModels(currentEnabledIds);
-					},
-					onClearAll: async () => {
-						currentEnabledIds.clear();
-						currentHasFilter = true;
-						await updateSessionModels(currentEnabledIds);
-					},
-					onToggleProvider: async (_provider, modelIds, enabled) => {
-						for (const id of modelIds) {
-							if (enabled) {
-								currentEnabledIds.add(id);
-							} else {
-								currentEnabledIds.delete(id);
-							}
-						}
-						currentHasFilter = true;
-						await updateSessionModels(currentEnabledIds);
-					},
-					onPersist: (enabledIds) => {
-						// Persist to settings
-						const newPatterns =
-							enabledIds.length === allModels.length
-								? undefined // All enabled = clear filter
-								: enabledIds;
+					onPersist: (patterns) => {
+						const newPatterns = patterns === null || patterns.length === allModels.length ? undefined : patterns;
 						this.settingsManager.setEnabledModels(newPatterns);
 						this.showStatus("Model selection saved to settings");
 					},
