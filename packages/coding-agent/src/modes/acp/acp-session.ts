@@ -161,7 +161,7 @@ export class AcpSession {
 				this._sendUpdate({
 					sessionUpdate: "tool_call",
 					toolCallId: acpToolCallId,
-					title: `${event.toolName}`,
+					title: this._formatToolTitle(event.toolName, event.args),
 					status: "in_progress",
 					kind: this._mapToolKind(event.toolName),
 					rawInput: event.args,
@@ -212,6 +212,45 @@ export class AcpSession {
 			sessionId: this.id,
 			update,
 		});
+	}
+
+	/**
+	 * Format a descriptive title for tool calls.
+	 */
+	private _formatToolTitle(toolName: string, args: Record<string, unknown>): string {
+		switch (toolName) {
+			case "bash": {
+				const command = args.command as string | undefined;
+				if (command) {
+					// Truncate long commands
+					const truncated = command.length > 80 ? `${command.slice(0, 77)}...` : command;
+					return `Run \`${truncated}\``;
+				}
+				return "bash";
+			}
+			case "read": {
+				const path = args.path as string | undefined;
+				return path ? `Read ${path}` : "read";
+			}
+			case "write": {
+				const path = args.path as string | undefined;
+				return path ? `Write ${path}` : "write";
+			}
+			case "edit": {
+				const path = args.path as string | undefined;
+				return path ? `Edit ${path}` : "edit";
+			}
+			case "glob": {
+				const pattern = args.pattern as string | undefined;
+				return pattern ? `Glob ${pattern}` : "glob";
+			}
+			case "grep": {
+				const pattern = args.pattern as string | undefined;
+				return pattern ? `Grep "${pattern}"` : "grep";
+			}
+			default:
+				return toolName;
+		}
 	}
 
 	/**
