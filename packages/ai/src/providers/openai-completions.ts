@@ -413,6 +413,11 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		params.reasoning_effort = options.reasoningEffort;
 	}
 
+	// OpenRouter provider routing preferences
+	if (model.baseUrl.includes("openrouter.ai") && model.compat?.openRouterRouting) {
+		(params as any).provider = model.compat.openRouterRouting;
+	}
+
 	return params;
 }
 
@@ -728,6 +733,7 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		requiresThinkingAsText: isMistral,
 		requiresMistralToolIds: isMistral,
 		thinkingFormat: isZai ? "zai" : "openai",
+		openRouterRouting: {},
 	};
 }
 
@@ -751,5 +757,6 @@ function getCompat(model: Model<"openai-completions">): Required<OpenAICompletio
 		requiresThinkingAsText: model.compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
 		requiresMistralToolIds: model.compat.requiresMistralToolIds ?? detected.requiresMistralToolIds,
 		thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
+		openRouterRouting: model.compat.openRouterRouting ?? {},
 	};
 }
