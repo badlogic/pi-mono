@@ -169,7 +169,16 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 	}
 
 	private buildPatterns(): string[] | null {
-		if (this.enabledIds === null) return null;
+		// "null" means "use all available models".
+		// If we have thinking overrides, we must materialize a full list so the overrides can be applied/persisted.
+		if (this.enabledIds === null) {
+			if (this.thinkingOverrides.size === 0) return null;
+			return this.allIds.map((id) => {
+				const override = this.thinkingOverrides.get(id);
+				return override ? `${id}:${override}` : id;
+			});
+		}
+
 		return this.enabledIds.map((id) => {
 			const override = this.thinkingOverrides.get(id);
 			return override ? `${id}:${override}` : id;
@@ -307,8 +316,8 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		if (matchesKey(data, Key.ctrl("t"))) {
 			const item = this.filteredItems[this.selectedIndex];
 			if (!item) return;
-			// Only for explicitly-selected models (not "all enabled" state)
-			if (this.enabledIds === null || !item.enabled) return;
+			// Only for models currently enabled for cycling
+			if (!item.enabled) return;
 
 			const levels = getThinkingCycleLevels(item.model);
 			if (levels.length === 0) return;

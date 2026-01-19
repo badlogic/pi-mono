@@ -42,6 +42,7 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { spawn, spawnSync } from "child_process";
+import { isValidThinkingLevel } from "../../cli/args.js";
 import { APP_NAME, getAuthPath, getDebugLogPath, isBunBinary, isBunRuntime, VERSION } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
@@ -2748,15 +2749,18 @@ export class InteractiveMode {
 		const sessionScopedModels = this.session.scopedModels;
 		const hasSessionScope = sessionScopedModels.length > 0;
 
-		const defaultThinkingLevel = this.settingsManager.getDefaultThinkingLevel() ?? "off";
 		let enabledIds: string[] | null = null;
 		const thinkingOverrides = new Map<string, ThinkingLevel>();
 
 		if (hasSessionScope) {
 			enabledIds = sessionScopedModels.map((sm) => `${sm.model.provider}/${sm.model.id}`);
+
+			// For an active session scope, treat "default" as "use the current session thinking level".
+			// Anything else is shown as an explicit per-model override.
+			const sessionDefaultThinking = this.session.thinkingLevel;
 			for (const sm of sessionScopedModels) {
 				const fullId = `${sm.model.provider}/${sm.model.id}`;
-				if (sm.thinkingLevel !== "off" && sm.thinkingLevel !== defaultThinkingLevel) {
+				if (sm.thinkingLevel !== "off" && sm.thinkingLevel !== sessionDefaultThinking) {
 					thinkingOverrides.set(fullId, sm.thinkingLevel);
 				}
 			}
@@ -2768,7 +2772,7 @@ export class InteractiveMode {
 				enabledIds = scopedModels.map((sm) => `${sm.model.provider}/${sm.model.id}`);
 				for (const sm of scopedModels) {
 					const fullId = `${sm.model.provider}/${sm.model.id}`;
-					if (sm.thinkingLevel && sm.thinkingLevel !== "off" && sm.thinkingLevel !== defaultThinkingLevel) {
+					if (sm.thinkingLevel && sm.thinkingLevel !== "off") {
 						thinkingOverrides.set(fullId, sm.thinkingLevel);
 					}
 				}
@@ -2776,7 +2780,7 @@ export class InteractiveMode {
 		}
 
 		const applySessionScope = async (patterns: string[] | null) => {
-			if (patterns && patterns.length > 0 && patterns.length < allModels.length) {
+			if (patterns && patterns.length > 0) {
 				// Use current session thinking level as default for models without explicit thinking suffix
 				const currentThinkingLevel = this.session.thinkingLevel;
 				const scopedModels = await resolveModelScope(patterns, this.session.modelRegistry);
@@ -2787,7 +2791,7 @@ export class InteractiveMode {
 					})),
 				);
 			} else {
-				// All enabled or none enabled = no filter
+				// No models enabled = clear scope
 				this.session.setScopedModels([]);
 			}
 		};
@@ -2804,7 +2808,33 @@ export class InteractiveMode {
 						await applySessionScope(patterns);
 					},
 					onPersist: (patterns) => {
-						const newPatterns = patterns === null || patterns.length === allModels.length ? undefined : patterns;
+						if (patterns === null) {
+							this.settingsManager.setEnabledModels(undefined);
+							this.showStatus("Model selection saved to settings");
+							return;
+						}
+
+						const stripThinkingSuffix = (pattern: string): string => {
+							const idx = pattern.lastIndexOf(":");
+							if (idx === -1) return pattern;
+							const suffix = pattern.slice(idx + 1);
+							return isValidThinkingLevel(suffix) ? pattern.slice(0, idx) : pattern;
+						};
+
+						const hasThinkingOverrides = patterns.some((p) => {
+							const idx = p.lastIndexOf(":");
+							if (idx === -1) return false;
+							const suffix = p.slice(idx + 1);
+							return isValidThinkingLevel(suffix) && suffix !== "off";
+						});
+
+						// Avoid persisting a redundant full list with no thinking overrides and default order.
+						const defaultIds = allModels.map((m) => `${m.provider}/${m.id}`);
+						const normalized = patterns.map(stripThinkingSuffix);
+						const isDefaultAll =
+							normalized.length === defaultIds.length && normalized.every((p, i) => p === defaultIds[i]);
+
+						const newPatterns = isDefaultAll && !hasThinkingOverrides ? undefined : patterns;
 						this.settingsManager.setEnabledModels(newPatterns);
 						this.showStatus("Model selection saved to settings");
 					},

@@ -72,7 +72,7 @@ describe("ScopedModelsSelectorComponent", () => {
 		expect(onChange).toHaveBeenCalled();
 	});
 
-	test("Ctrl+T is ignored when all models are enabled (no explicit selection)", () => {
+	test("Ctrl+T works when all models are enabled", () => {
 		const selector = new ScopedModelsSelectorComponent(
 			{ allModels: mockModels, enabledIds: null },
 			{ onChange: vi.fn(), onPersist: vi.fn(), onCancel: vi.fn() },
@@ -80,8 +80,7 @@ describe("ScopedModelsSelectorComponent", () => {
 
 		selector.handleInput("\x14");
 		const out = renderAll(selector);
-		expect(out).not.toContain(":minimal");
-		expect(out).not.toContain(":low");
+		expect(out).toContain("claude-sonnet-4-5:minimal");
 	});
 
 	test("Ctrl+R resets selection and thinking overrides", () => {
