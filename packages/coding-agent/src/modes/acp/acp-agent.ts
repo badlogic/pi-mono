@@ -46,9 +46,9 @@ export class PiAgent implements acp.Agent {
 				version: VERSION,
 			},
 			agentCapabilities: {
+				loadSession: true,
 				promptCapabilities: {
 					image: true,
-					embeddedContext: true,
 				},
 			},
 			// No auth required for pi
@@ -78,9 +78,21 @@ export class PiAgent implements acp.Agent {
 		// Send available commands after session creation
 		acpSession.sendAvailableCommands();
 
+		// Build models state
+		const availableModels = await this._agentSession.getAvailableModels();
+		const currentModel = this._agentSession.model;
+		const models: acp.SessionModelState = {
+			availableModels: availableModels.map((m) => ({
+				modelId: `${m.provider}/${m.id}`,
+				name: `${m.name} (${m.provider})`,
+			})),
+			currentModelId: currentModel ? `${currentModel.provider}/${currentModel.id}` : "",
+		};
+
 		acpDebug(`newSession: created session ${sessionId}`);
 		return {
 			sessionId,
+			models,
 		};
 	}
 
