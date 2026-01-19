@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added OpenRouter provider routing support for custom models via `openRouterRouting` compat field ([#859](https://github.com/badlogic/pi-mono/pull/859) by [@v01dpr1mr0s3](https://github.com/v01dpr1mr0s3))
 - Added `azure-openai-responses` provider support for Azure OpenAI Responses API. ([#890](https://github.com/badlogic/pi-mono/pull/890) by [@markusylisiurunen](https://github.com/markusylisiurunen))
 - Added `createAssistantMessageEventStream()` factory function for use in extensions.
 - Added `resetApiProviders()` to clear and re-register built-in API providers.
