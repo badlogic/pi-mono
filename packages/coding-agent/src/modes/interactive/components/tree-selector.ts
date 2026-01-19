@@ -854,7 +854,7 @@ class TreeList implements Component {
 				this.searchQuery = this.searchQuery.slice(0, -1);
 				this.applyFilter();
 			}
-		} else if (keyData === "l" && !this.searchQuery) {
+		} else if (matchesKey(keyData, "shift+l")) {
 			const selected = this.filteredNodes[this.selectedIndex];
 			if (selected && this.onLabelEdit) {
 				this.onLabelEdit(selected.node.entry.id, selected.node.label);
@@ -993,7 +993,7 @@ export class TreeSelectorComponent extends Container implements Focusable {
 		this.addChild(new Text(theme.bold("  Session Tree"), 1, 0));
 		this.addChild(
 			new TruncatedText(
-				theme.fg("muted", "  ↑/↓: move. ←/→: page. l: label. ") +
+				theme.fg("muted", "  ↑/↓: move. ←/→: page. Shift+L: label. ") +
 					theme.fg("muted", "^D/^T/^U/^L/^A: filters (^O/⇧^O cycle)"),
 				0,
 				0,

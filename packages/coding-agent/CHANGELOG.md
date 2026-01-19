@@ -6,6 +6,10 @@
 
 - `markdown.codeBlockIndent` setting to customize code block indentation in rendered output
 
+### Fixed
+
+- Fixed `write` tool not displaying errors in the UI when execution fails ([#856](https://github.com/badlogic/pi-mono/issues/856))
+
 ## [0.49.2] - 2026-01-19
 
 ### Added
