@@ -449,7 +449,8 @@ export async function main(args: string[]) {
 		time("selectSession");
 		if (!selectedPath) {
 			console.log(chalk.dim("No session selected"));
-			return;
+			stopThemeWatcher();
+			process.exit(0);
 		}
 		sessionManager = SessionManager.open(selectedPath);
 	}
