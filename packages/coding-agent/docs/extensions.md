@@ -184,7 +184,7 @@ export default function (pi: ExtensionAPI) {
     const ok = await ctx.ui.confirm("Title", "Are you sure?");
     ctx.ui.notify("Done!", "success");
     ctx.ui.setStatus("my-ext", "Processing...");  // Footer status
-    ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"]);  // Widget above editor
+    ctx.ui.setWidget("my-ext", ["Line 1", "Line 2"]);  // Widget above editor (default)
   });
 
   // Register tools, commands, shortcuts, flags
@@ -1366,7 +1366,7 @@ Extensions can interact with users via `ctx.ui` methods and customize how messag
 - Settings toggles (SettingsList)
 - Status indicators (setStatus)
 - Working message during streaming (setWorkingMessage)
-- Widgets above editor (setWidget)
+- Widgets above/below editor (setWidget)
 - Custom footers (setFooter)
 
 ### Dialogs
@@ -1456,8 +1456,10 @@ ctx.ui.setStatus("my-ext", undefined);  // Clear
 ctx.ui.setWorkingMessage("Thinking deeply...");
 ctx.ui.setWorkingMessage();  // Restore default
 
-// Widget above editor (string array or factory function)
+// Widget above editor (default)
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
+// Widget below editor
+ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"], { placement: "belowEditor" });
 ctx.ui.setWidget("my-widget", (tui, theme) => new Text(theme.fg("accent", "Custom"), 0, 0));
 ctx.ui.setWidget("my-widget", undefined);  // Clear
 

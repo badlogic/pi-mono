@@ -58,6 +58,7 @@ export type {
 	ExtensionShortcut,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	ExtensionWidgetOptions,
 	FindToolResultEvent,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
@@ -116,6 +117,7 @@ export type {
 	// Events - User Bash
 	UserBashEvent,
 	UserBashEventResult,
+	WidgetPlacement,
 	WriteToolResultEvent,
 } from "./types.js";
 // Type guards

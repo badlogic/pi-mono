@@ -50,6 +50,7 @@ import type {
 	ExtensionRunner,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	ExtensionWidgetOptions,
 } from "../../core/extensions/index.js";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
 import { type AppAction, KeybindingsManager } from "../../core/keybindings.js";
@@ -206,9 +207,11 @@ export class InteractiveMode {
 	private extensionInput: ExtensionInputComponent | undefined = undefined;
 	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
 
-	// Extension widgets (components rendered above the editor)
-	private extensionWidgets = new Map<string, Component & { dispose?(): void }>();
-	private widgetContainer!: Container;
+	// Extension widgets (components rendered above/below the editor)
+	private extensionWidgetsAbove = new Map<string, Component & { dispose?(): void }>();
+	private extensionWidgetsBelow = new Map<string, Component & { dispose?(): void }>();
+	private widgetContainerAbove!: Container;
+	private widgetContainerBelow!: Container;
 
 	// Custom footer from extension (undefined = use built-in footer)
 	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
@@ -240,7 +243,8 @@ export class InteractiveMode {
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
-		this.widgetContainer = new Container();
+		this.widgetContainerAbove = new Container();
+		this.widgetContainerBelow = new Container();
 		this.keybindings = KeybindingsManager.create();
 		const editorPaddingX = this.settingsManager.getEditorPaddingX();
 		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings, { paddingX: editorPaddingX });
@@ -427,9 +431,10 @@ export class InteractiveMode {
 		this.ui.addChild(this.chatContainer);
 		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
-		this.ui.addChild(this.widgetContainer);
 		this.renderWidgets(); // Initialize with default spacer
+		this.ui.addChild(this.widgetContainerAbove);
 		this.ui.addChild(this.editorContainer);
+		this.ui.addChild(this.widgetContainerBelow);
 		this.ui.addChild(this.footer);
 		this.ui.setFocus(this.editor);
 
@@ -877,14 +882,26 @@ export class InteractiveMode {
 	private setExtensionWidget(
 		key: string,
 		content: string[] | ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined,
+		options?: ExtensionWidgetOptions,
 	): void {
-		// Dispose and remove existing widget
-		const existing = this.extensionWidgets.get(key);
-		if (existing?.dispose) existing.dispose();
+		const placement = options?.placement ?? "aboveEditor";
+		const removeExisting = (map: Map<string, Component & { dispose?(): void }>) => {
+			const existing = map.get(key);
+			if (existing?.dispose) existing.dispose();
+			map.delete(key);
+		};
+
+		removeExisting(this.extensionWidgetsAbove);
+		removeExisting(this.extensionWidgetsBelow);
 
 		if (content === undefined) {
-			this.extensionWidgets.delete(key);
-		} else if (Array.isArray(content)) {
+			this.renderWidgets();
+			return;
+		}
+
+		let component: Component & { dispose?(): void };
+
+		if (Array.isArray(content)) {
 			// Wrap string array in a Container with Text components
 			const container = new Container();
 			for (const line of content.slice(0, InteractiveMode.MAX_WIDGET_LINES)) {
@@ -893,12 +910,14 @@ export class InteractiveMode {
 			if (content.length > InteractiveMode.MAX_WIDGET_LINES) {
 				container.addChild(new Text(theme.fg("muted", "... (widget truncated)"), 1, 0));
 			}
-			this.extensionWidgets.set(key, container);
+			component = container;
 		} else {
 			// Factory function - create component
-			const component = content(this.ui, theme);
-			this.extensionWidgets.set(key, component);
+			component = content(this.ui, theme);
 		}
+
+		const targetMap = placement === "belowEditor" ? this.extensionWidgetsBelow : this.extensionWidgetsAbove;
+		targetMap.set(key, component);
 		this.renderWidgets();
 	}
 
@@ -909,21 +928,33 @@ export class InteractiveMode {
 	 * Render all extension widgets to the widget container.
 	 */
 	private renderWidgets(): void {
-		if (!this.widgetContainer) return;
-		this.widgetContainer.clear();
+		if (!this.widgetContainerAbove || !this.widgetContainerBelow) return;
+		this.renderWidgetContainer(this.widgetContainerAbove, this.extensionWidgetsAbove, true, true);
+		this.renderWidgetContainer(this.widgetContainerBelow, this.extensionWidgetsBelow, false, false);
+		this.ui.requestRender();
+	}
 
-		if (this.extensionWidgets.size === 0) {
-			this.widgetContainer.addChild(new Spacer(1));
-			this.ui.requestRender();
+	private renderWidgetContainer(
+		container: Container,
+		widgets: Map<string, Component & { dispose?(): void }>,
+		spacerWhenEmpty: boolean,
+		leadingSpacer: boolean,
+	): void {
+		container.clear();
+
+		if (widgets.size === 0) {
+			if (spacerWhenEmpty) {
+				container.addChild(new Spacer(1));
+			}
 			return;
 		}
 
-		this.widgetContainer.addChild(new Spacer(1));
-		for (const [_key, component] of this.extensionWidgets) {
-			this.widgetContainer.addChild(component);
+		if (leadingSpacer) {
+			container.addChild(new Spacer(1));
 		}
-
-		this.ui.requestRender();
+		for (const component of widgets.values()) {
+			container.addChild(component);
+		}
 	}
 
 	/**
@@ -1014,7 +1045,7 @@ export class InteractiveMode {
 					}
 				}
 			},
-			setWidget: (key, content) => this.setExtensionWidget(key, content),
+			setWidget: (key, content, options) => this.setExtensionWidget(key, content, options),
 			setFooter: (factory) => this.setExtensionFooter(factory),
 			setHeader: (factory) => this.setExtensionHeader(factory),
 			setTitle: (title) => this.ui.terminal.setTitle(title),

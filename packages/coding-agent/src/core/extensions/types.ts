@@ -68,6 +68,15 @@ export interface ExtensionUIDialogOptions {
 	timeout?: number;
 }
 
+/** Placement for extension widgets. */
+export type WidgetPlacement = "aboveEditor" | "belowEditor";
+
+/** Options for extension widgets. */
+export interface ExtensionWidgetOptions {
+	/** Where the widget is rendered. Defaults to "aboveEditor". */
+	placement?: WidgetPlacement;
+}
+
 /**
  * UI context for extensions to request interactive UI.
  * Each mode (interactive, RPC, print) provides its own implementation.
@@ -91,9 +100,13 @@ export interface ExtensionUIContext {
 	/** Set the working/loading message shown during streaming. Call with no argument to restore default. */
 	setWorkingMessage(message?: string): void;
 
-	/** Set a widget to display above the editor. Accepts string array or component factory. */
-	setWidget(key: string, content: string[] | undefined): void;
-	setWidget(key: string, content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
+	/** Set a widget to display above or below the editor. Accepts string array or component factory. */
+	setWidget(key: string, content: string[] | undefined, options?: ExtensionWidgetOptions): void;
+	setWidget(
+		key: string,
+		content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined,
+		options?: ExtensionWidgetOptions,
+	): void;
 
 	/** Set a custom footer component, or undefined to restore the built-in footer.
 	 *
