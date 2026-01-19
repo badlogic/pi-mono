@@ -480,19 +480,22 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 			const output: ResponseInput = [];
 			const strictResponsesPairing = model.compat?.strictResponsesPairing ?? false;
 			let isIncomplete = false;
-			let shouldReplayReasoning = msg.stopReason !== "error";
+			const hasPairedContent = msg.content.some(
+				(b) => b.type === "toolCall" || (b.type === "text" && (b as TextContent).text.trim().length > 0),
+			);
+			// OpenAI rejects reasoning items without a following message/function_call in the same turn.
+			// https://community.openai.com/t/how-to-solve-badrequesterror-400-item-rs-of-type-reasoning-was-provided-without-its-required-following-item-error-in-responses-api/1151686
+			// https://github.com/clawdbot/clawdbot/issues/1126
+			let shouldReplayReasoning = msg.stopReason !== "error" && hasPairedContent;
 			let allowToolCalls = msg.stopReason !== "error";
 			if (strictResponsesPairing) {
 				isIncomplete = msg.stopReason === "error" || msg.stopReason === "aborted";
-				const hasPairedContent = msg.content.some(
-					(b) => b.type === "toolCall" || (b.type === "text" && (b as TextContent).text.trim().length > 0),
-				);
 				shouldReplayReasoning = !isIncomplete && hasPairedContent;
 				allowToolCalls = !isIncomplete;
 			}
 
 			for (const block of msg.content) {
-				// Do not submit thinking blocks if the completion had an error (i.e. abort)
+				// Do not submit reasoning-only blocks or incomplete turns.
 				if (block.type === "thinking" && shouldReplayReasoning) {
 					if (block.thinkingSignature) {
 						const reasoningItem = JSON.parse(block.thinkingSignature);

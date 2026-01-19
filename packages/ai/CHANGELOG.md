@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed OpenAI Responses history replay to skip reasoning-only assistant turns (avoids `reasoning` without a following item).
+
 ## [0.49.1] - 2026-01-18
 
 ### Added
