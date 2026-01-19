@@ -22,6 +22,7 @@ import type {
 	EditorComponent,
 	EditorTheme,
 	KeyId,
+	MarkdownTheme,
 	OverlayHandle,
 	OverlayOptions,
 	SlashCommand,
@@ -410,7 +411,7 @@ export class InteractiveMode {
 				} else {
 					this.ui.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
 					this.ui.addChild(new Spacer(1));
-					this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0, getMarkdownTheme()));
+					this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0, this.getMarkdownThemeWithSettings()));
 					this.ui.addChild(new Spacer(1));
 				}
 				this.ui.addChild(new DynamicBorder());
@@ -583,6 +584,13 @@ export class InteractiveMode {
 		}
 
 		return undefined;
+	}
+
+	private getMarkdownThemeWithSettings(): MarkdownTheme {
+		return {
+			...getMarkdownTheme(),
+			codeBlockIndent: this.settingsManager.getCodeBlockIndent(),
+		};
 	}
 
 	// =========================================================================
@@ -1700,7 +1708,11 @@ export class InteractiveMode {
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
-					this.streamingComponent = new AssistantMessageComponent(undefined, this.hideThinkingBlock);
+					this.streamingComponent = new AssistantMessageComponent(
+						undefined,
+						this.hideThinkingBlock,
+						this.getMarkdownThemeWithSettings(),
+					);
 					this.streamingMessage = event.message;
 					this.chatContainer.addChild(this.streamingComponent);
 					this.streamingComponent.updateContent(this.streamingMessage);
@@ -1991,20 +2003,22 @@ export class InteractiveMode {
 			case "custom": {
 				if (message.display) {
 					const renderer = this.session.extensionRunner?.getMessageRenderer(message.customType);
-					this.chatContainer.addChild(new CustomMessageComponent(message, renderer));
+					this.chatContainer.addChild(
+						new CustomMessageComponent(message, renderer, this.getMarkdownThemeWithSettings()),
+					);
 				}
 				break;
 			}
 			case "compactionSummary": {
 				this.chatContainer.addChild(new Spacer(1));
-				const component = new CompactionSummaryMessageComponent(message);
+				const component = new CompactionSummaryMessageComponent(message, this.getMarkdownThemeWithSettings());
 				component.setExpanded(this.toolOutputExpanded);
 				this.chatContainer.addChild(component);
 				break;
 			}
 			case "branchSummary": {
 				this.chatContainer.addChild(new Spacer(1));
-				const component = new BranchSummaryMessageComponent(message);
+				const component = new BranchSummaryMessageComponent(message, this.getMarkdownThemeWithSettings());
 				component.setExpanded(this.toolOutputExpanded);
 				this.chatContainer.addChild(component);
 				break;
@@ -2012,7 +2026,7 @@ export class InteractiveMode {
 			case "user": {
 				const textContent = this.getUserMessageText(message);
 				if (textContent) {
-					const userComponent = new UserMessageComponent(textContent);
+					const userComponent = new UserMessageComponent(textContent, this.getMarkdownThemeWithSettings());
 					this.chatContainer.addChild(userComponent);
 					if (options?.populateHistory) {
 						this.editor.addToHistory?.(textContent);
@@ -2021,7 +2035,11 @@ export class InteractiveMode {
 				break;
 			}
 			case "assistant": {
-				const assistantComponent = new AssistantMessageComponent(message, this.hideThinkingBlock);
+				const assistantComponent = new AssistantMessageComponent(
+					message,
+					this.hideThinkingBlock,
+					this.getMarkdownThemeWithSettings(),
+				);
 				this.chatContainer.addChild(assistantComponent);
 				break;
 			}
@@ -3431,7 +3449,7 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new DynamicBorder());
 		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
 		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1, getMarkdownTheme()));
+		this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1, this.getMarkdownThemeWithSettings()));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();
 	}
@@ -3561,7 +3579,7 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new DynamicBorder());
 		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Keyboard Shortcuts")), 1, 0));
 		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Markdown(hotkeys.trim(), 1, 1, getMarkdownTheme()));
+		this.chatContainer.addChild(new Markdown(hotkeys.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();
 	}

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `markdown.codeBlockIndent` setting to customize code block indentation in rendered output
+
 ## [0.49.2] - 2026-01-19
 
 ### Added

@@ -837,6 +837,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `showHardwareCursor` | Show terminal cursor while still positioning it for IME support | `false` |
 | `doubleEscapeAction` | Action for double-escape with empty editor: `tree` or `branch` | `tree` |
 | `editorPaddingX` | Horizontal padding for input editor (0-3) | `0` |
+| `markdown.codeBlockIndent` | Prefix for each rendered code block line | `"  "` |
 | `extensions` | Additional extension file paths | `[]` |
 
 ---
