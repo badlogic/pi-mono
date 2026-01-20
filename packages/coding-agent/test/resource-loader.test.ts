@@ -1,0 +1,231 @@
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { DefaultResourceLoader } from "../src/core/resource-loader.js";
+import type { Skill } from "../src/core/skills.js";
+
+describe("DefaultResourceLoader", () => {
+	let tempDir: string;
+	let agentDir: string;
+	let cwd: string;
+
+	beforeEach(() => {
+		tempDir = join(tmpdir(), `rl-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		agentDir = join(tempDir, "agent");
+		cwd = join(tempDir, "project");
+		mkdirSync(agentDir, { recursive: true });
+		mkdirSync(cwd, { recursive: true });
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	describe("reload", () => {
+		it("should initialize with empty results before reload", () => {
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+
+			expect(loader.getExtensions().extensions).toEqual([]);
+			expect(loader.getSkills().skills).toEqual([]);
+			expect(loader.getPrompts().prompts).toEqual([]);
+			expect(loader.getThemes().themes).toEqual([]);
+		});
+
+		it("should discover skills from agentDir", async () => {
+			const skillsDir = join(agentDir, "skills");
+			mkdirSync(skillsDir, { recursive: true });
+			writeFileSync(
+				join(skillsDir, "test-skill.md"),
+				`---
+name: test-skill
+description: A test skill
+---
+Skill content here.`,
+			);
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			const { skills } = loader.getSkills();
+			expect(skills.some((s) => s.name === "test-skill")).toBe(true);
+		});
+
+		it("should discover prompts from agentDir", async () => {
+			const promptsDir = join(agentDir, "prompts");
+			mkdirSync(promptsDir, { recursive: true });
+			writeFileSync(
+				join(promptsDir, "test-prompt.md"),
+				`---
+description: A test prompt
+---
+Prompt content.`,
+			);
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			const { prompts } = loader.getPrompts();
+			expect(prompts.some((p) => p.name === "test-prompt")).toBe(true);
+		});
+
+		it("should discover AGENTS.md context files", async () => {
+			writeFileSync(join(cwd, "AGENTS.md"), "# Project Guidelines\n\nBe helpful.");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			const { agentsFiles } = loader.getAgentsFiles();
+			expect(agentsFiles.some((f) => f.path.includes("AGENTS.md"))).toBe(true);
+		});
+
+		it("should discover SYSTEM.md from cwd/.pi", async () => {
+			const piDir = join(cwd, ".pi");
+			mkdirSync(piDir, { recursive: true });
+			writeFileSync(join(piDir, "SYSTEM.md"), "You are a helpful assistant.");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			expect(loader.getSystemPrompt()).toBe("You are a helpful assistant.");
+		});
+
+		it("should discover APPEND_SYSTEM.md", async () => {
+			const piDir = join(cwd, ".pi");
+			mkdirSync(piDir, { recursive: true });
+			writeFileSync(join(piDir, "APPEND_SYSTEM.md"), "Additional instructions.");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			expect(loader.getAppendSystemPrompt()).toContain("Additional instructions.");
+		});
+	});
+
+	describe("noSkills option", () => {
+		it("should skip skill discovery when noSkills is true", async () => {
+			const skillsDir = join(agentDir, "skills");
+			mkdirSync(skillsDir, { recursive: true });
+			writeFileSync(
+				join(skillsDir, "test-skill.md"),
+				`---
+name: test-skill
+description: A test skill
+---
+Content`,
+			);
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, noSkills: true });
+			await loader.reload();
+
+			const { skills } = loader.getSkills();
+			expect(skills).toEqual([]);
+		});
+
+		it("should still load additional skill paths when noSkills is true", async () => {
+			const customSkillDir = join(tempDir, "custom-skills");
+			mkdirSync(customSkillDir, { recursive: true });
+			writeFileSync(
+				join(customSkillDir, "custom.md"),
+				`---
+name: custom
+description: Custom skill
+---
+Content`,
+			);
+
+			const loader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				noSkills: true,
+				additionalSkillPaths: [customSkillDir],
+			});
+			await loader.reload();
+
+			const { skills } = loader.getSkills();
+			expect(skills.some((s) => s.name === "custom")).toBe(true);
+		});
+	});
+
+	describe("override functions", () => {
+		it("should apply skillsOverride", async () => {
+			const injectedSkill: Skill = {
+				name: "injected",
+				description: "Injected skill",
+				filePath: "/fake/path",
+				baseDir: "/fake",
+				source: "custom",
+			};
+			const loader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				skillsOverride: () => ({
+					skills: [injectedSkill],
+					diagnostics: [],
+				}),
+			});
+			await loader.reload();
+
+			const { skills } = loader.getSkills();
+			expect(skills).toHaveLength(1);
+			expect(skills[0].name).toBe("injected");
+		});
+
+		it("should apply systemPromptOverride", async () => {
+			const loader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				systemPromptOverride: () => "Custom system prompt",
+			});
+			await loader.reload();
+
+			expect(loader.getSystemPrompt()).toBe("Custom system prompt");
+		});
+	});
+
+	describe("extension conflict detection", () => {
+		it("should detect tool conflicts between extensions", async () => {
+			// Create two extensions that register the same tool
+			const ext1Dir = join(agentDir, "extensions", "ext1");
+			const ext2Dir = join(agentDir, "extensions", "ext2");
+			mkdirSync(ext1Dir, { recursive: true });
+			mkdirSync(ext2Dir, { recursive: true });
+
+			writeFileSync(
+				join(ext1Dir, "index.ts"),
+				`
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+export default function(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "duplicate-tool",
+    description: "First",
+    parameters: Type.Object({}),
+    execute: async () => ({ result: "1" }),
+  });
+}`,
+			);
+
+			writeFileSync(
+				join(ext2Dir, "index.ts"),
+				`
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+export default function(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "duplicate-tool",
+    description: "Second",
+    parameters: Type.Object({}),
+    execute: async () => ({ result: "2" }),
+  });
+}`,
+			);
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			const { errors } = loader.getExtensions();
+			expect(errors.some((e) => e.error.includes("duplicate-tool") && e.error.includes("conflicts"))).toBe(true);
+		});
+	});
+});

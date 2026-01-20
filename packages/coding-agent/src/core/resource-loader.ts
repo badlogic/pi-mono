@@ -280,6 +280,13 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const inlineExtensions = await this.loadExtensionFactories(extensionsResult.runtime);
 		extensionsResult.extensions.push(...inlineExtensions.extensions);
 		extensionsResult.errors.push(...inlineExtensions.errors);
+
+		// Detect extension conflicts (tools, commands, flags with same names from different extensions)
+		const conflicts = this.detectExtensionConflicts(extensionsResult.extensions);
+		for (const conflict of conflicts) {
+			extensionsResult.errors.push({ path: conflict.path, error: conflict.message });
+		}
+
 		this.extensionsResult = this.extensionsOverride ? this.extensionsOverride(extensionsResult) : extensionsResult;
 
 		const skillPaths = this.noSkills
@@ -512,5 +519,57 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}
 
 		return undefined;
+	}
+
+	private detectExtensionConflicts(extensions: Extension[]): Array<{ path: string; message: string }> {
+		const conflicts: Array<{ path: string; message: string }> = [];
+
+		// Track which extension registered each tool, command, and flag
+		const toolOwners = new Map<string, string>();
+		const commandOwners = new Map<string, string>();
+		const flagOwners = new Map<string, string>();
+
+		for (const ext of extensions) {
+			// Check tools
+			for (const toolName of ext.tools.keys()) {
+				const existingOwner = toolOwners.get(toolName);
+				if (existingOwner && existingOwner !== ext.path) {
+					conflicts.push({
+						path: ext.path,
+						message: `Tool "${toolName}" conflicts with ${existingOwner}`,
+					});
+				} else {
+					toolOwners.set(toolName, ext.path);
+				}
+			}
+
+			// Check commands
+			for (const commandName of ext.commands.keys()) {
+				const existingOwner = commandOwners.get(commandName);
+				if (existingOwner && existingOwner !== ext.path) {
+					conflicts.push({
+						path: ext.path,
+						message: `Command "/${commandName}" conflicts with ${existingOwner}`,
+					});
+				} else {
+					commandOwners.set(commandName, ext.path);
+				}
+			}
+
+			// Check flags
+			for (const flagName of ext.flags.keys()) {
+				const existingOwner = flagOwners.get(flagName);
+				if (existingOwner && existingOwner !== ext.path) {
+					conflicts.push({
+						path: ext.path,
+						message: `Flag "--${flagName}" conflicts with ${existingOwner}`,
+					});
+				} else {
+					flagOwners.set(flagName, ext.path);
+				}
+			}
+		}
+
+		return conflicts;
 	}
 }

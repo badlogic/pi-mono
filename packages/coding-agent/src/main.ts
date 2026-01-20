@@ -134,6 +134,15 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 	const settingsManager = SettingsManager.create(cwd, agentDir);
 	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
 
+	// Set up progress callback for CLI feedback
+	packageManager.setProgressCallback((event) => {
+		if (event.type === "start") {
+			process.stdout.write(chalk.dim(`${event.message}\n`));
+		} else if (event.type === "error") {
+			console.error(chalk.red(`Error: ${event.message}`));
+		}
+	});
+
 	if (options.command === "install") {
 		if (!options.source) {
 			console.error(chalk.red("Missing install source."));
@@ -141,7 +150,7 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 		}
 		await packageManager.install(options.source, { local: options.local });
 		updateExtensionSources(settingsManager, options.source, options.local, "add");
-		console.log(`Installed ${options.source}`);
+		console.log(chalk.green(`Installed ${options.source}`));
 		return true;
 	}
 
@@ -152,15 +161,15 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 		}
 		await packageManager.remove(options.source, { local: options.local });
 		updateExtensionSources(settingsManager, options.source, options.local, "remove");
-		console.log(`Removed ${options.source}`);
+		console.log(chalk.green(`Removed ${options.source}`));
 		return true;
 	}
 
 	await packageManager.update(options.source);
 	if (options.source) {
-		console.log(`Updated ${options.source}`);
+		console.log(chalk.green(`Updated ${options.source}`));
 	} else {
-		console.log("Updated extensions");
+		console.log(chalk.green("Updated extensions"));
 	}
 	return true;
 }

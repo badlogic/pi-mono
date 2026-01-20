@@ -116,6 +116,8 @@ export {
 export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.js";
 export { convertToLlm } from "./core/messages.js";
 export { ModelRegistry } from "./core/model-registry.js";
+export type { PackageManager, ProgressCallback, ProgressEvent } from "./core/package-manager.js";
+export { DefaultPackageManager } from "./core/package-manager.js";
 export type { ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.js";
 export { DefaultResourceLoader } from "./core/resource-loader.js";
 // SDK for programmatic usage

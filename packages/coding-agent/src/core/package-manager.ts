@@ -15,6 +15,15 @@ export interface ResolvedPaths {
 
 export type MissingSourceAction = "install" | "skip" | "error";
 
+export interface ProgressEvent {
+	type: "start" | "progress" | "complete" | "error";
+	action: "install" | "remove" | "update" | "clone" | "pull";
+	source: string;
+	message?: string;
+}
+
+export type ProgressCallback = (event: ProgressEvent) => void;
+
 export interface PackageManager {
 	resolve(onMissing?: (source: string) => Promise<MissingSourceAction>): Promise<ResolvedPaths>;
 	install(source: string, options?: { local?: boolean }): Promise<void>;
@@ -24,6 +33,7 @@ export interface PackageManager {
 		sources: string[],
 		options?: { local?: boolean; temporary?: boolean },
 	): Promise<ResolvedPaths>;
+	setProgressCallback(callback: ProgressCallback | undefined): void;
 }
 
 interface PackageManagerOptions {
@@ -76,11 +86,20 @@ export class DefaultPackageManager implements PackageManager {
 	private agentDir: string;
 	private settingsManager: SettingsManager;
 	private globalNpmRoot: string | undefined;
+	private progressCallback: ProgressCallback | undefined;
 
 	constructor(options: PackageManagerOptions) {
 		this.cwd = options.cwd;
 		this.agentDir = options.agentDir;
 		this.settingsManager = options.settingsManager;
+	}
+
+	setProgressCallback(callback: ProgressCallback | undefined): void {
+		this.progressCallback = callback;
+	}
+
+	private emitProgress(event: ProgressEvent): void {
+		this.progressCallback?.(event);
 	}
 
 	async resolve(onMissing?: (source: string) => Promise<MissingSourceAction>): Promise<ResolvedPaths> {
@@ -134,29 +153,47 @@ export class DefaultPackageManager implements PackageManager {
 	async install(source: string, options?: { local?: boolean }): Promise<void> {
 		const parsed = this.parseSource(source);
 		const scope: SourceScope = options?.local ? "project" : "global";
-		if (parsed.type === "npm") {
-			await this.installNpm(parsed, scope, false);
-			return;
+		this.emitProgress({ type: "start", action: "install", source, message: `Installing ${source}...` });
+		try {
+			if (parsed.type === "npm") {
+				await this.installNpm(parsed, scope, false);
+				this.emitProgress({ type: "complete", action: "install", source });
+				return;
+			}
+			if (parsed.type === "git") {
+				await this.installGit(parsed, scope, false);
+				this.emitProgress({ type: "complete", action: "install", source });
+				return;
+			}
+			throw new Error(`Unsupported install source: ${source}`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.emitProgress({ type: "error", action: "install", source, message });
+			throw error;
 		}
-		if (parsed.type === "git") {
-			await this.installGit(parsed, scope, false);
-			return;
-		}
-		throw new Error(`Unsupported install source: ${source}`);
 	}
 
 	async remove(source: string, options?: { local?: boolean }): Promise<void> {
 		const parsed = this.parseSource(source);
 		const scope: SourceScope = options?.local ? "project" : "global";
-		if (parsed.type === "npm") {
-			await this.uninstallNpm(parsed, scope);
-			return;
+		this.emitProgress({ type: "start", action: "remove", source, message: `Removing ${source}...` });
+		try {
+			if (parsed.type === "npm") {
+				await this.uninstallNpm(parsed, scope);
+				this.emitProgress({ type: "complete", action: "remove", source });
+				return;
+			}
+			if (parsed.type === "git") {
+				await this.removeGit(parsed, scope, false);
+				this.emitProgress({ type: "complete", action: "remove", source });
+				return;
+			}
+			throw new Error(`Unsupported remove source: ${source}`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.emitProgress({ type: "error", action: "remove", source, message });
+			throw error;
 		}
-		if (parsed.type === "git") {
-			await this.removeGit(parsed, scope, false);
-			return;
-		}
-		throw new Error(`Unsupported remove source: ${source}`);
 	}
 
 	async update(source?: string): Promise<void> {
@@ -180,12 +217,28 @@ export class DefaultPackageManager implements PackageManager {
 		const parsed = this.parseSource(source);
 		if (parsed.type === "npm") {
 			if (parsed.pinned) return;
-			await this.installNpm(parsed, scope, false);
+			this.emitProgress({ type: "start", action: "update", source, message: `Updating ${source}...` });
+			try {
+				await this.installNpm(parsed, scope, false);
+				this.emitProgress({ type: "complete", action: "update", source });
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				this.emitProgress({ type: "error", action: "update", source, message });
+				throw error;
+			}
 			return;
 		}
 		if (parsed.type === "git") {
 			if (parsed.pinned) return;
-			await this.updateGit(parsed, scope, false);
+			this.emitProgress({ type: "start", action: "update", source, message: `Updating ${source}...` });
+			try {
+				await this.updateGit(parsed, scope, false);
+				this.emitProgress({ type: "complete", action: "update", source });
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				this.emitProgress({ type: "error", action: "update", source, message });
+				throw error;
+			}
 			return;
 		}
 	}
@@ -281,10 +334,11 @@ export class DefaultPackageManager implements PackageManager {
 			};
 		}
 
-		if (source.startsWith("git:")) {
-			const repoSpec = source.slice("git:".length).trim();
+		// Accept git: prefix or raw URLs (https://github.com/..., github.com/...)
+		if (source.startsWith("git:") || this.looksLikeGitUrl(source)) {
+			const repoSpec = source.startsWith("git:") ? source.slice("git:".length).trim() : source;
 			const [repo, ref] = repoSpec.split("@");
-			const normalized = repo.replace(/^https?:\/\//, "");
+			const normalized = repo.replace(/^https?:\/\//, "").replace(/\.git$/, "");
 			const parts = normalized.split("/");
 			const host = parts.shift() ?? "";
 			const repoPath = parts.join("/");
@@ -299,6 +353,13 @@ export class DefaultPackageManager implements PackageManager {
 		}
 
 		return { type: "local", path: source };
+	}
+
+	private looksLikeGitUrl(source: string): boolean {
+		// Match URLs like https://github.com/..., github.com/..., gitlab.com/...
+		const gitHosts = ["github.com", "gitlab.com", "bitbucket.org", "codeberg.org"];
+		const normalized = source.replace(/^https?:\/\//, "");
+		return gitHosts.some((host) => normalized.startsWith(`${host}/`));
 	}
 
 	private parseNpmSpec(spec: string): { name: string; version?: string } {
