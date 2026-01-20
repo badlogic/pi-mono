@@ -82,7 +82,7 @@ export const streamGoogleVertex: StreamFunction<"google-vertex"> = (
 		try {
 			const project = resolveProject(options);
 			const location = resolveLocation(options);
-			const client = createClient(model, project, location);
+			const client = createClient(model, project, location, options?.headers);
 			const params = buildParams(model, context, options);
 			options?.onPayload?.(params);
 			const googleStream = await client.models.generateContentStream(params);
@@ -276,11 +276,16 @@ export const streamGoogleVertex: StreamFunction<"google-vertex"> = (
 	return stream;
 };
 
-function createClient(model: Model<"google-vertex">, project: string, location: string): GoogleGenAI {
+function createClient(
+	model: Model<"google-vertex">,
+	project: string,
+	location: string,
+	optionsHeaders?: Record<string, string>,
+): GoogleGenAI {
 	const httpOptions: { headers?: Record<string, string> } = {};
 
-	if (model.headers) {
-		httpOptions.headers = { ...model.headers };
+	if (model.headers || optionsHeaders) {
+		httpOptions.headers = { ...model.headers, ...optionsHeaders };
 	}
 
 	const hasHttpOptions = Object.values(httpOptions).some(Boolean);

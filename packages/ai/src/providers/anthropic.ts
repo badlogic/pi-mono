@@ -126,6 +126,16 @@ export interface AnthropicOptions extends StreamOptions {
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
 }
 
+function mergeHeaders(...headerSources: (Record<string, string> | undefined)[]): Record<string, string> {
+	const merged: Record<string, string> = {};
+	for (const headers of headerSources) {
+		if (headers) {
+			Object.assign(merged, headers);
+		}
+	}
+	return merged;
+}
+
 export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 	model: Model<"anthropic-messages">,
 	context: Context,
@@ -154,7 +164,12 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 
 		try {
 			const apiKey = options?.apiKey ?? getEnvApiKey(model.provider) ?? "";
-			const { client, isOAuthToken } = createClient(model, apiKey, options?.interleavedThinking ?? true);
+			const { client, isOAuthToken } = createClient(
+				model,
+				apiKey,
+				options?.interleavedThinking ?? true,
+				options?.headers,
+			);
 			const params = buildParams(model, context, isOAuthToken, options);
 			options?.onPayload?.(params);
 			const anthropicStream = client.messages.stream({ ...params, stream: true }, { signal: options?.signal });
@@ -328,6 +343,7 @@ function createClient(
 	model: Model<"anthropic-messages">,
 	apiKey: string,
 	interleavedThinking: boolean,
+	optionsHeaders?: Record<string, string>,
 ): { client: Anthropic; isOAuthToken: boolean } {
 	const betaFeatures = ["fine-grained-tool-streaming-2025-05-14"];
 	if (interleavedThinking) {
@@ -337,14 +353,17 @@ function createClient(
 	const oauthToken = isOAuthToken(apiKey);
 	if (oauthToken) {
 		// Stealth mode: Mimic Claude Code's headers exactly
-		const defaultHeaders = {
-			accept: "application/json",
-			"anthropic-dangerous-direct-browser-access": "true",
-			"anthropic-beta": `claude-code-20250219,oauth-2025-04-20,${betaFeatures.join(",")}`,
-			"user-agent": `claude-cli/${claudeCodeVersion} (external, cli)`,
-			"x-app": "cli",
-			...(model.headers || {}),
-		};
+		const defaultHeaders = mergeHeaders(
+			{
+				accept: "application/json",
+				"anthropic-dangerous-direct-browser-access": "true",
+				"anthropic-beta": `claude-code-20250219,oauth-2025-04-20,${betaFeatures.join(",")}`,
+				"user-agent": `claude-cli/${claudeCodeVersion} (external, cli)`,
+				"x-app": "cli",
+			},
+			model.headers,
+			optionsHeaders,
+		);
 
 		const client = new Anthropic({
 			apiKey: null,
@@ -357,12 +376,15 @@ function createClient(
 		return { client, isOAuthToken: true };
 	}
 
-	const defaultHeaders = {
-		accept: "application/json",
-		"anthropic-dangerous-direct-browser-access": "true",
-		"anthropic-beta": betaFeatures.join(","),
-		...(model.headers || {}),
-	};
+	const defaultHeaders = mergeHeaders(
+		{
+			accept: "application/json",
+			"anthropic-dangerous-direct-browser-access": "true",
+			"anthropic-beta": betaFeatures.join(","),
+		},
+		model.headers,
+		optionsHeaders,
+	);
 
 	const client = new Anthropic({
 		apiKey,

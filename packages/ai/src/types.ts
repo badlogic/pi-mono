@@ -90,6 +90,12 @@ export interface StreamOptions {
 	 * Optional callback for inspecting provider payloads before sending.
 	 */
 	onPayload?: (payload: unknown) => void;
+	/**
+	 * Optional custom HTTP headers to include in API requests.
+	 * Merged with provider defaults; can override default headers.
+	 * Not supported by all providers (e.g., AWS Bedrock uses SDK auth).
+	 */
+	headers?: Record<string, string>;
 }
 
 // Unified options with reasoning passed to streamSimple() and completeSimple()

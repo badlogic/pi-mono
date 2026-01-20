@@ -434,6 +434,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 				Accept: "text/event-stream",
 				...headers,
 				...(isClaudeThinkingModel(model.id) ? { "anthropic-beta": CLAUDE_THINKING_BETA_HEADER } : {}),
+				...options?.headers,
 			};
 			const requestBodyJson = JSON.stringify(requestBody);
 

@@ -85,7 +85,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 		try {
 			// Create OpenAI client
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
-			const client = createClient(model, context, apiKey);
+			const client = createClient(model, context, apiKey, options?.headers);
 			const params = buildParams(model, context, options);
 			options?.onPayload?.(params);
 			const openaiStream = await client.responses.create(
@@ -319,7 +319,12 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 	return stream;
 };
 
-function createClient(model: Model<"openai-responses">, context: Context, apiKey?: string) {
+function createClient(
+	model: Model<"openai-responses">,
+	context: Context,
+	apiKey?: string,
+	optionsHeaders?: Record<string, string>,
+) {
 	if (!apiKey) {
 		if (!process.env.OPENAI_API_KEY) {
 			throw new Error(
@@ -353,6 +358,11 @@ function createClient(model: Model<"openai-responses">, context: Context, apiKey
 		if (hasImages) {
 			headers["Copilot-Vision-Request"] = "true";
 		}
+	}
+
+	// Merge options headers last so they can override defaults
+	if (optionsHeaders) {
+		Object.assign(headers, optionsHeaders);
 	}
 
 	return new OpenAI({

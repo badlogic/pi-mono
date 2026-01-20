@@ -123,7 +123,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 			const accountId = extractAccountId(apiKey);
 			const body = buildRequestBody(model, context, options);
 			options?.onPayload?.(body);
-			const headers = buildHeaders(model.headers, accountId, apiKey, options?.sessionId);
+			const headers = buildHeaders(model.headers, options?.headers, accountId, apiKey, options?.sessionId);
 			const bodyJson = JSON.stringify(body);
 
 			// Fetch with retry logic for rate limits and transient errors
@@ -697,6 +697,7 @@ function extractAccountId(token: string): string {
 
 function buildHeaders(
 	initHeaders: Record<string, string> | undefined,
+	additionalHeaders: Record<string, string> | undefined,
 	accountId: string,
 	token: string,
 	sessionId?: string,
@@ -709,6 +710,9 @@ function buildHeaders(
 	headers.set("User-Agent", `pi (${os.platform()} ${os.release()}; ${os.arch()})`);
 	headers.set("accept", "text/event-stream");
 	headers.set("content-type", "application/json");
+	for (const [key, value] of Object.entries(additionalHeaders || {})) {
+		headers.set(key, value);
+	}
 
 	if (sessionId) {
 		headers.set("session_id", sessionId);
