@@ -616,6 +616,30 @@ export class InteractiveMode {
 	// Extension System
 	// =========================================================================
 
+	private formatDisplayPath(p: string): string {
+		const home = os.homedir();
+		let result = p;
+
+		// Shorten temp npm paths: /tmp/.../npm/.../node_modules/pkg/... -> npm:pkg/... (temp)
+		const npmTempMatch = result.match(/pi-extensions\/npm\/[^/]+\/node_modules\/([^/]+)(.*)/);
+		if (npmTempMatch) {
+			return `npm:${npmTempMatch[1]}${npmTempMatch[2]} (temp)`;
+		}
+
+		// Shorten temp git paths: /tmp/.../git-host/hash/path/... -> git:host/path/... (temp)
+		const gitTempMatch = result.match(/pi-extensions\/git-([^/]+)\/[^/]+\/(.*)/);
+		if (gitTempMatch) {
+			return `git:${gitTempMatch[1]}/${gitTempMatch[2]} (temp)`;
+		}
+
+		// Replace home directory with ~
+		if (result.startsWith(home)) {
+			result = `~${result.slice(home.length)}`;
+		}
+
+		return result;
+	}
+
 	private showLoadedResources(options?: { extensionPaths?: string[]; force?: boolean }): void {
 		const shouldShow = options?.force || !this.settingsManager.getQuietStartup();
 		if (!shouldShow) {
@@ -624,21 +648,23 @@ export class InteractiveMode {
 
 		const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
 		if (contextFiles.length > 0) {
-			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${f.path}`)).join("\n");
+			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`)).join("\n");
 			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded context:\n") + contextList, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
 		const skills = this.session.skills;
 		if (skills.length > 0) {
-			const skillList = skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
+			const skillList = skills.map((s) => theme.fg("dim", `  ${this.formatDisplayPath(s.filePath)}`)).join("\n");
 			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
 		const skillWarnings = this.session.skillWarnings;
 		if (skillWarnings.length > 0) {
-			const warningList = skillWarnings.map((w) => theme.fg("warning", `  ${w.skillPath}: ${w.message}`)).join("\n");
+			const warningList = skillWarnings
+				.map((w) => theme.fg("warning", `  ${this.formatDisplayPath(w.skillPath)}: ${w.message}`))
+				.join("\n");
 			this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
@@ -652,7 +678,7 @@ export class InteractiveMode {
 
 		const extensionPaths = options?.extensionPaths ?? [];
 		if (extensionPaths.length > 0) {
-			const extList = extensionPaths.map((p) => theme.fg("dim", `  ${p}`)).join("\n");
+			const extList = extensionPaths.map((p) => theme.fg("dim", `  ${this.formatDisplayPath(p)}`)).join("\n");
 			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded extensions:\n") + extList, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
