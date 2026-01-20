@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
-import { getShellConfig, killProcessTree } from "../../utils/shell.js";
+import { getShellConfig, getShellEnv, killProcessTree } from "../../utils/shell.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateTail } from "./truncate.js";
 
 /**
@@ -65,6 +65,7 @@ const defaultBashOperations: BashOperations = {
 			const child = spawn(shell, [...args, command], {
 				cwd,
 				detached: true,
+				env: getShellEnv(),
 				stdio: ["ignore", "pipe", "pipe"],
 			});
 

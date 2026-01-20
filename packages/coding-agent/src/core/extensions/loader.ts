@@ -101,7 +101,7 @@ type HandlerFn = (...args: unknown[]) => Promise<unknown>;
 
 /**
  * Create a runtime with throwing stubs for action methods.
- * Runner.initialize() replaces these with real implementations.
+ * Runner.bindCore() replaces these with real implementations.
  */
 export function createExtensionRuntime(): ExtensionRuntime {
 	const notInitialized = () => {
@@ -246,6 +246,7 @@ function createExtensionAPI(
 
 async function loadExtensionModule(extensionPath: string) {
 	const jiti = createJiti(import.meta.url, {
+		moduleCache: false,
 		// In Bun binary: use virtualModules for bundled packages (no filesystem resolution)
 		// Also disable tryNative so jiti handles ALL imports (not just the entry point)
 		// In Node.js/dev: use aliases to resolve to node_modules paths
@@ -347,6 +348,7 @@ interface PiManifest {
 	extensions?: string[];
 	themes?: string[];
 	skills?: string[];
+	prompts?: string[];
 }
 
 function readPiManifest(packageJsonPath: string): PiManifest | null {

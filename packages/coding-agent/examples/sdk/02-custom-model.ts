@@ -5,11 +5,11 @@
  */
 
 import { getModel } from "@mariozechner/pi-ai";
-import { createAgentSession, discoverAuthStorage, discoverModels } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, createAgentSession, ModelRegistry } from "@mariozechner/pi-coding-agent";
 
 // Set up auth storage and model registry
-const authStorage = discoverAuthStorage();
-const modelRegistry = discoverModels(authStorage);
+const authStorage = new AuthStorage();
+const modelRegistry = new ModelRegistry(authStorage);
 
 // Option 1: Find a specific built-in model by provider/id
 const opus = getModel("anthropic", "claude-opus-4-5");

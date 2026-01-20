@@ -115,8 +115,20 @@ Additional paths via `settings.json`:
 
 ```json
 {
-  "extensions": ["/path/to/extension.ts", "/path/to/extension/dir"]
+  "extensions": [
+    "npm:@foo/bar@1.0.0",
+    "git:github.com/user/repo@v1",
+    "/path/to/extension.ts",
+    "/path/to/extension/dir"
+  ]
 }
+```
+
+Use `pi install` and `pi remove` to manage extension sources in settings:
+
+```bash
+pi install npm:@foo/bar@1.0.0
+pi remove npm:@foo/bar
 ```
 
 **Discovery rules:**
@@ -146,13 +158,17 @@ Additional paths via `settings.json`:
     "zod": "^3.0.0"
   },
   "pi": {
-    "extensions": ["./src/safety-gates.ts", "./src/custom-tools.ts"]
+    "extensions": ["./src/safety-gates.ts", "./src/custom-tools.ts"],
+    "skills": ["./skills/"],
+    "prompts": ["./prompts/"],
+    "themes": ["./themes/dark.json"]
   }
 }
 ```
 
 The `package.json` approach enables:
 - Multiple extensions from one package
+- Skills, prompts, and themes declared alongside extensions
 - Third-party npm dependencies (resolved via jiti)
 - Nested source structure (no depth limit within the package)
 - Deployment to and installation from npm

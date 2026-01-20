@@ -13,6 +13,7 @@ import { AuthStorage } from "../src/core/auth-storage.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
+import { createTestResourceLoader } from "./utilities.js";
 
 // Mock stream that mimics AssistantMessageEventStream
 class MockAssistantStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
@@ -107,7 +108,9 @@ describe("AgentSession concurrent prompt guard", () => {
 			agent,
 			sessionManager,
 			settingsManager,
+			cwd: tempDir,
 			modelRegistry,
+			resourceLoader: createTestResourceLoader(),
 		});
 
 		return session;
@@ -197,7 +200,9 @@ describe("AgentSession concurrent prompt guard", () => {
 			agent,
 			sessionManager,
 			settingsManager,
+			cwd: tempDir,
 			modelRegistry,
+			resourceLoader: createTestResourceLoader(),
 		});
 
 		// First prompt completes

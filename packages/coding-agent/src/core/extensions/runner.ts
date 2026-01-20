@@ -178,12 +178,7 @@ export class ExtensionRunner {
 		this.modelRegistry = modelRegistry;
 	}
 
-	initialize(
-		actions: ExtensionActions,
-		contextActions: ExtensionContextActions,
-		commandContextActions?: ExtensionCommandContextActions,
-		uiContext?: ExtensionUIContext,
-	): void {
+	bindCore(actions: ExtensionActions, contextActions: ExtensionContextActions): void {
 		// Copy actions into the shared runtime (all extension APIs reference this)
 		this.runtime.sendMessage = actions.sendMessage;
 		this.runtime.sendUserMessage = actions.sendUserMessage;
@@ -206,14 +201,24 @@ export class ExtensionRunner {
 		this.shutdownHandler = contextActions.shutdown;
 		this.getContextUsageFn = contextActions.getContextUsage;
 		this.compactFn = contextActions.compact;
+	}
 
-		// Command context actions (optional, only for interactive mode)
-		if (commandContextActions) {
-			this.waitForIdleFn = commandContextActions.waitForIdle;
-			this.newSessionHandler = commandContextActions.newSession;
-			this.forkHandler = commandContextActions.fork;
-			this.navigateTreeHandler = commandContextActions.navigateTree;
+	bindCommandContext(actions?: ExtensionCommandContextActions): void {
+		if (actions) {
+			this.waitForIdleFn = actions.waitForIdle;
+			this.newSessionHandler = actions.newSession;
+			this.forkHandler = actions.fork;
+			this.navigateTreeHandler = actions.navigateTree;
+			return;
 		}
+
+		this.waitForIdleFn = async () => {};
+		this.newSessionHandler = async () => ({ cancelled: false });
+		this.forkHandler = async () => ({ cancelled: false });
+		this.navigateTreeHandler = async () => ({ cancelled: false });
+	}
+
+	setUIContext(uiContext?: ExtensionUIContext): void {
 		this.uiContext = uiContext ?? noOpUIContext;
 	}
 
@@ -263,6 +268,10 @@ export class ExtensionRunner {
 
 	setFlagValue(name: string, value: boolean | string): void {
 		this.runtime.flagValues.set(name, value);
+	}
+
+	getFlagValues(): Map<string, boolean | string> {
+		return new Map(this.runtime.flagValues);
 	}
 
 	getShortcuts(effectiveKeybindings: Required<KeybindingsConfig>): Map<KeyId, ExtensionShortcut> {
@@ -351,7 +360,7 @@ export class ExtensionRunner {
 
 	/**
 	 * Request a graceful shutdown. Called by extension tools and event handlers.
-	 * The actual shutdown behavior is provided by the mode via initialize().
+	 * The actual shutdown behavior is provided by the mode via bindExtensions().
 	 */
 	shutdown(): void {
 		this.shutdownHandler();
@@ -359,7 +368,7 @@ export class ExtensionRunner {
 
 	/**
 	 * Create an ExtensionContext for use in event handlers and tool execution.
-	 * Context values are resolved at call time, so changes via initialize() are reflected.
+	 * Context values are resolved at call time, so changes via bindCore/bindUI are reflected.
 	 */
 	createContext(): ExtensionContext {
 		const getModel = this.getModel;

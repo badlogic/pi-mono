@@ -33,24 +33,18 @@ import { getModel } from "@mariozechner/pi-ai";
 import {
   AuthStorage,
   createAgentSession,
-  discoverAuthStorage,
-  discoverModels,
-  discoverSkills,
-  discoverExtensions,
-  discoverContextFiles,
-  discoverPromptTemplates,
-  loadSettings,
-  buildSystemPrompt,
+  DefaultResourceLoader,
   ModelRegistry,
   SessionManager,
+  SettingsManager,
   codingTools,
   readOnlyTools,
   readTool, bashTool, editTool, writeTool,
 } from "@mariozechner/pi-coding-agent";
 
 // Auth and models setup
-const authStorage = discoverAuthStorage();
-const modelRegistry = discoverModels(authStorage);
+const authStorage = new AuthStorage();
+const modelRegistry = new ModelRegistry(authStorage);
 
 // Minimal
 const { session } = await createAgentSession({ authStorage, modelRegistry });
@@ -60,11 +54,11 @@ const model = getModel("anthropic", "claude-opus-4-5");
 const { session } = await createAgentSession({ model, thinkingLevel: "high", authStorage, modelRegistry });
 
 // Modify prompt
-const { session } = await createAgentSession({
-  systemPrompt: (defaultPrompt) => defaultPrompt + "\n\nBe concise.",
-  authStorage,
-  modelRegistry,
+const loader = new DefaultResourceLoader({
+  systemPromptOverride: (base) => `${base}\n\nBe concise.`,
 });
+await loader.reload();
+const { session } = await createAgentSession({ resourceLoader: loader, authStorage, modelRegistry });
 
 // Read-only
 const { session } = await createAgentSession({ tools: readOnlyTools, authStorage, modelRegistry });
@@ -81,18 +75,24 @@ const customAuth = new AuthStorage("/my/app/auth.json");
 customAuth.setRuntimeApiKey("anthropic", process.env.MY_KEY!);
 const customRegistry = new ModelRegistry(customAuth);
 
+const resourceLoader = new DefaultResourceLoader({
+  systemPromptOverride: () => "You are helpful.",
+  extensionFactories: [myExtension],
+  skillsOverride: () => ({ skills: [], diagnostics: [] }),
+  agentsFilesOverride: () => ({ agentsFiles: [] }),
+  promptsOverride: () => ({ prompts: [], diagnostics: [] }),
+});
+await resourceLoader.reload();
+
 const { session } = await createAgentSession({
   model,
   authStorage: customAuth,
   modelRegistry: customRegistry,
-  systemPrompt: "You are helpful.",
+  resourceLoader,
   tools: [readTool, bashTool],
   customTools: [{ tool: myTool }],
-  extensions: [{ factory: myExtension }],
-  skills: [],
-  contextFiles: [],
-  promptTemplates: [],
   sessionManager: SessionManager.inMemory(),
+  settingsManager: SettingsManager.inMemory(),
 });
 
 // Run prompts
@@ -108,23 +108,17 @@ await session.prompt("Hello");
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `authStorage` | `discoverAuthStorage()` | Credential storage |
-| `modelRegistry` | `discoverModels(authStorage)` | Model registry |
+| `authStorage` | `new AuthStorage()` | Credential storage |
+| `modelRegistry` | `new ModelRegistry(authStorage)` | Model registry |
 | `cwd` | `process.cwd()` | Working directory |
 | `agentDir` | `~/.pi/agent` | Config directory |
 | `model` | From settings/first available | Model to use |
 | `thinkingLevel` | From settings/"off" | off, low, medium, high |
-| `systemPrompt` | Discovered | String or `(default) => modified` |
 | `tools` | `codingTools` | Built-in tools |
-| `customTools` | Discovered | Replaces discovery |
-| `additionalCustomToolPaths` | `[]` | Merge with discovery |
-| `extensions` | Discovered | Replaces discovery |
-| `additionalExtensionPaths` | `[]` | Merge with discovery |
-| `skills` | Discovered | Skills for prompt |
-| `contextFiles` | Discovered | AGENTS.md files |
-| `promptTemplates` | Discovered | Prompt templates (slash commands) |
+| `customTools` | `[]` | Additional tool definitions |
+| `resourceLoader` | DefaultResourceLoader | Resource loader for extensions, skills, prompts, themes |
 | `sessionManager` | `SessionManager.create(cwd)` | Persistence |
-| `settingsManager` | From agentDir | Settings overrides |
+| `settingsManager` | `SettingsManager.create(cwd, agentDir)` | Settings overrides |
 
 ## Events
 

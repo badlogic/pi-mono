@@ -4,11 +4,11 @@
  * Override settings using SettingsManager.
  */
 
-import { createAgentSession, loadSettings, SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, SessionManager, SettingsManager } from "@mariozechner/pi-coding-agent";
 
 // Load current settings (merged global + project)
-const settings = loadSettings();
-console.log("Current settings:", JSON.stringify(settings, null, 2));
+const settingsManagerFromDisk = SettingsManager.create();
+console.log("Current settings:", JSON.stringify(settingsManagerFromDisk.getGlobalSettings(), null, 2));
 
 // Override specific settings
 const settingsManager = SettingsManager.create();

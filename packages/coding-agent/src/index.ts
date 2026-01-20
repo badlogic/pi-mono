@@ -98,6 +98,7 @@ export type {
 	WidgetPlacement,
 } from "./core/extensions/index.js";
 export {
+	createExtensionRuntime,
 	ExtensionRunner,
 	isBashToolResult,
 	isEditToolResult,
@@ -115,10 +116,10 @@ export {
 export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.js";
 export { convertToLlm } from "./core/messages.js";
 export { ModelRegistry } from "./core/model-registry.js";
+export type { ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.js";
+export { DefaultResourceLoader } from "./core/resource-loader.js";
 // SDK for programmatic usage
 export {
-	type BuildSystemPromptOptions,
-	buildSystemPrompt,
 	type CreateAgentSessionOptions,
 	type CreateAgentSessionResult,
 	// Factory
@@ -133,14 +134,6 @@ export {
 	createReadOnlyTools,
 	createReadTool,
 	createWriteTool,
-	// Discovery
-	discoverAuthStorage,
-	discoverContextFiles,
-	discoverExtensions,
-	discoverModels,
-	discoverPromptTemplates,
-	discoverSkills,
-	loadSettings,
 	type PromptTemplate,
 	// Pre-built tools (use process.cwd())
 	readOnlyTools,
@@ -172,9 +165,7 @@ export {
 	type CompactionSettings,
 	type ImageSettings,
 	type RetrySettings,
-	type Settings,
 	SettingsManager,
-	type SkillsSettings,
 } from "./core/settings-manager.js";
 // Skills
 export {

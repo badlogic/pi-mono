@@ -18,19 +18,6 @@ export interface RetrySettings {
 	baseDelayMs?: number; // default: 2000 (exponential backoff: 2s, 4s, 8s)
 }
 
-export interface SkillsSettings {
-	enabled?: boolean; // default: true
-	enableCodexUser?: boolean; // default: true
-	enableClaudeUser?: boolean; // default: true
-	enableClaudeProject?: boolean; // default: true
-	enablePiUser?: boolean; // default: true
-	enablePiProject?: boolean; // default: true
-	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
-	customDirectories?: string[]; // default: []
-	ignoredSkills?: string[]; // default: [] (glob patterns to exclude; takes precedence over includeSkills)
-	includeSkills?: string[]; // default: [] (empty = include all; glob patterns to filter)
-}
-
 export interface TerminalSettings {
 	showImages?: boolean; // default: true (only relevant if terminal supports images)
 }
@@ -67,8 +54,11 @@ export interface Settings {
 	quietStartup?: boolean;
 	shellCommandPrefix?: string; // Prefix prepended to every bash command (e.g., "shopt -s expand_aliases" for alias support)
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
-	extensions?: string[]; // Array of extension file paths
-	skills?: SkillsSettings;
+	extensions?: string[]; // Array of extension file paths or directories
+	skills?: string[]; // Array of skill file paths or directories
+	prompts?: string[]; // Array of prompt template paths or directories
+	themes?: string[]; // Array of theme file paths or directories
+	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
@@ -165,6 +155,27 @@ export class SettingsManager {
 			settings.steeringMode = settings.queueMode;
 			delete settings.queueMode;
 		}
+
+		if (
+			"skills" in settings &&
+			typeof settings.skills === "object" &&
+			settings.skills !== null &&
+			!Array.isArray(settings.skills)
+		) {
+			const skillsSettings = settings.skills as {
+				enableSkillCommands?: boolean;
+				customDirectories?: unknown;
+			};
+			if (skillsSettings.enableSkillCommands !== undefined && settings.enableSkillCommands === undefined) {
+				settings.enableSkillCommands = skillsSettings.enableSkillCommands;
+			}
+			if (Array.isArray(skillsSettings.customDirectories) && skillsSettings.customDirectories.length > 0) {
+				settings.skills = skillsSettings.customDirectories;
+			} else {
+				delete settings.skills;
+			}
+		}
+
 		return settings as Settings;
 	}
 
@@ -181,6 +192,14 @@ export class SettingsManager {
 			console.error(`Warning: Could not read project settings file: ${error}`);
 			return {};
 		}
+	}
+
+	getGlobalSettings(): Settings {
+		return structuredClone(this.globalSettings);
+	}
+
+	getProjectSettings(): Settings {
+		return this.loadProjectSettings();
 	}
 
 	/** Apply additional overrides on top of current settings */
@@ -212,6 +231,21 @@ export class SettingsManager {
 		// Always re-merge to update active settings (needed for both file and inMemory modes)
 		const projectSettings = this.loadProjectSettings();
 		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
+	}
+
+	private saveProjectSettings(settings: Settings): void {
+		if (!this.persist || !this.projectSettingsPath) {
+			return;
+		}
+		try {
+			const dir = dirname(this.projectSettingsPath);
+			if (!existsSync(dir)) {
+				mkdirSync(dir, { recursive: true });
+			}
+			writeFileSync(this.projectSettingsPath, JSON.stringify(settings, null, 2), "utf-8");
+		} catch (error) {
+			console.error(`Warning: Could not save project settings file: ${error}`);
+		}
 	}
 
 	getLastChangelogVersion(): string | undefined {
@@ -391,42 +425,46 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getSkillsEnabled(): boolean {
-		return this.settings.skills?.enabled ?? true;
+	setProjectExtensionPaths(paths: string[]): void {
+		const projectSettings = this.loadProjectSettings();
+		projectSettings.extensions = paths;
+		this.saveProjectSettings(projectSettings);
+		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
 	}
 
-	setSkillsEnabled(enabled: boolean): void {
-		if (!this.globalSettings.skills) {
-			this.globalSettings.skills = {};
-		}
-		this.globalSettings.skills.enabled = enabled;
+	getSkillPaths(): string[] {
+		return [...(this.settings.skills ?? [])];
+	}
+
+	setSkillPaths(paths: string[]): void {
+		this.globalSettings.skills = paths;
 		this.save();
 	}
 
-	getSkillsSettings(): Required<SkillsSettings> {
-		return {
-			enabled: this.settings.skills?.enabled ?? true,
-			enableCodexUser: this.settings.skills?.enableCodexUser ?? true,
-			enableClaudeUser: this.settings.skills?.enableClaudeUser ?? true,
-			enableClaudeProject: this.settings.skills?.enableClaudeProject ?? true,
-			enablePiUser: this.settings.skills?.enablePiUser ?? true,
-			enablePiProject: this.settings.skills?.enablePiProject ?? true,
-			enableSkillCommands: this.settings.skills?.enableSkillCommands ?? true,
-			customDirectories: [...(this.settings.skills?.customDirectories ?? [])],
-			ignoredSkills: [...(this.settings.skills?.ignoredSkills ?? [])],
-			includeSkills: [...(this.settings.skills?.includeSkills ?? [])],
-		};
+	getPromptTemplatePaths(): string[] {
+		return [...(this.settings.prompts ?? [])];
+	}
+
+	setPromptTemplatePaths(paths: string[]): void {
+		this.globalSettings.prompts = paths;
+		this.save();
+	}
+
+	getThemePaths(): string[] {
+		return [...(this.settings.themes ?? [])];
+	}
+
+	setThemePaths(paths: string[]): void {
+		this.globalSettings.themes = paths;
+		this.save();
 	}
 
 	getEnableSkillCommands(): boolean {
-		return this.settings.skills?.enableSkillCommands ?? true;
+		return this.settings.enableSkillCommands ?? true;
 	}
 
 	setEnableSkillCommands(enabled: boolean): void {
-		if (!this.globalSettings.skills) {
-			this.globalSettings.skills = {};
-		}
-		this.globalSettings.skills.enableSkillCommands = enabled;
+		this.globalSettings.enableSkillCommands = enabled;
 		this.save();
 	}
 

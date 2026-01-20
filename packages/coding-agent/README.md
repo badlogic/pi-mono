@@ -315,6 +315,7 @@ The agent reads, writes, and edits files, and executes commands via bash.
 | `/new` | Start a new session |
 | `/copy` | Copy last agent message to clipboard |
 | `/compact [instructions]` | Manually compact conversation context |
+| `/reload` | Reload extensions, skills, prompts, and themes |
 
 ### Editor Features
 
@@ -791,9 +792,10 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
     "reserveTokens": 16384,
     "keepRecentTokens": 20000
   },
-  "skills": {
-    "enabled": true
-  },
+  "skills": ["/path/to/skills"],
+  "prompts": ["/path/to/prompts"],
+  "themes": ["/path/to/themes"],
+  "enableSkillCommands": true,
   "retry": {
     "enabled": true,
     "maxRetries": 3,
@@ -827,7 +829,10 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `compaction.enabled` | Enable auto-compaction | `true` |
 | `compaction.reserveTokens` | Tokens to reserve before compaction triggers | `16384` |
 | `compaction.keepRecentTokens` | Recent tokens to keep after compaction | `20000` |
-| `skills.enabled` | Enable skills discovery | `true` |
+| `skills` | Additional skill file or directory paths | `[]` |
+| `prompts` | Additional prompt template paths | `[]` |
+| `themes` | Additional theme file or directory paths | `[]` |
+| `enableSkillCommands` | Register skills as `/skill:name` commands | `true` |
 | `retry.enabled` | Auto-retry on transient errors | `true` |
 | `retry.maxRetries` | Maximum retry attempts | `3` |
 | `retry.baseDelayMs` | Base delay for exponential backoff | `2000` |
@@ -835,10 +840,10 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `images.autoResize` | Auto-resize images to 2000x2000 max for better model compatibility | `true` |
 | `images.blockImages` | Prevent images from being sent to LLM providers | `false` |
 | `showHardwareCursor` | Show terminal cursor while still positioning it for IME support | `false` |
-| `doubleEscapeAction` | Action for double-escape with empty editor: `tree` or `branch` | `tree` |
+| `doubleEscapeAction` | Action for double-escape with empty editor: `tree` or `fork` | `tree` |
 | `editorPaddingX` | Horizontal padding for input editor (0-3) | `0` |
 | `markdown.codeBlockIndent` | Prefix for each rendered code block line | `"  "` |
-| `extensions` | Additional extension file paths | `[]` |
+| `extensions` | Extension sources or file paths (npm:, git:, local) | `[]` |
 
 ---
 
@@ -851,6 +856,8 @@ Built-in themes: `dark` (default), `light`. Auto-detected on first run.
 Select theme via `/settings` or set in `~/.pi/agent/settings.json`.
 
 **Custom themes:** Create `~/.pi/agent/themes/*.json`. Custom themes support live reload.
+
+Add additional theme paths via `settings.json` `themes` array or `--theme <path>`. Disable automatic theme discovery with `--no-themes`.
 
 ```bash
 mkdir -p ~/.pi/agent/themes
@@ -870,6 +877,8 @@ Define reusable prompts as Markdown files:
 **Locations:**
 - Global: `~/.pi/agent/prompts/*.md`
 - Project: `.pi/prompts/*.md`
+- Additional paths from settings.json `prompts` array
+- CLI `--prompt-template` paths
 
 **Format:**
 
@@ -900,6 +909,8 @@ Usage: `/component Button "onClick handler" "disabled support"`
 - `${@:N}` = arguments from the Nth position onwards (1-indexed)
 - `${@:N:L}` = `L` arguments starting from the Nth position
 
+Disable prompt template discovery with `--no-prompt-templates`.
+
 **Namespacing:** Subdirectories create prefixes. `.pi/prompts/frontend/component.md` → `/component (project:frontend)`
 
 
@@ -918,10 +929,12 @@ A skill provides specialized workflows, setup instructions, helper scripts, and 
 - YouTube transcript extraction
 
 **Skill locations:**
-- Pi user: `~/.pi/agent/skills/**/SKILL.md` (recursive)
-- Pi project: `.pi/skills/**/SKILL.md` (recursive)
-- Claude Code: `~/.claude/skills/*/SKILL.md` and `.claude/skills/*/SKILL.md`
-- Codex CLI: `~/.codex/skills/**/SKILL.md` (recursive)
+- Global: `~/.pi/agent/skills/`
+- Project: `.pi/skills/`
+- Additional paths from settings.json `skills` array
+- CLI `--skill` paths (additive even with `--no-skills`)
+
+Use `enableSkillCommands` in settings to toggle `/skill:name` commands.
 
 **Format:**
 
@@ -948,7 +961,7 @@ cd /path/to/brave-search && npm install
 - `name`: Required. Must match parent directory name. Lowercase, hyphens, max 64 chars.
 - `description`: Required. Max 1024 chars. Determines when the skill is loaded.
 
-**Disable skills:** `pi --no-skills` or set `skills.enabled: false` in settings.
+**Disable skills:** `pi --no-skills` (automatic discovery off, explicit `--skill` paths still load).
 
 > See [docs/skills.md](docs/skills.md) for details, examples, and links to skill repositories. pi can help you create new skills.
 
@@ -967,7 +980,18 @@ Extensions are TypeScript modules that extend pi's behavior.
 **Locations:**
 - Global: `~/.pi/agent/extensions/*.ts` or `~/.pi/agent/extensions/*/index.ts`
 - Project: `.pi/extensions/*.ts` or `.pi/extensions/*/index.ts`
-- CLI: `--extension <path>` or `-e <path>`
+- Settings: `extensions` array supports file paths and `npm:` or `git:` sources
+- CLI: `--extension <path>` or `-e <path>` (temporary for this run)
+
+Install and remove extension sources with the CLI:
+
+```bash
+pi install npm:@foo/bar@1.0.0
+pi install git:github.com/user/repo@v1
+pi remove npm:@foo/bar
+```
+
+Use `-l` to install into project settings (`.pi/settings.json`).
 
 **Dependencies:** Extensions can have their own dependencies. Place a `package.json` next to the extension (or in a parent directory), run `npm install`, and imports are resolved via [jiti](https://github.com/unjs/jiti). See [examples/extensions/with-deps/](examples/extensions/with-deps/).
 
@@ -1214,6 +1238,14 @@ await ctx.ui.custom((tui, theme, done) => ({
 pi [options] [@files...] [messages...]
 ```
 
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `install <source> [-l]` | Install extension source and add to settings (`-l` for project) |
+| `remove <source> [-l]` | Remove extension source from settings |
+| `update [source]` | Update installed extensions (skips pinned sources) |
+
 ### Options
 
 | Option | Description |
@@ -1236,8 +1268,12 @@ pi [options] [@files...] [messages...]
 | `--thinking <level>` | Thinking level: `off`, `minimal`, `low`, `medium`, `high` |
 | `--extension <path>`, `-e` | Load an extension file (can be used multiple times) |
 | `--no-extensions` | Disable extension discovery (explicit `-e` paths still work) |
+| `--skill <path>` | Load a skill file or directory (can be used multiple times) |
+| `--prompt-template <path>` | Load a prompt template file or directory (can be used multiple times) |
+| `--theme <path>` | Load a theme file or directory (can be used multiple times) |
 | `--no-skills` | Disable skills discovery and loading |
-| `--skills <patterns>` | Comma-separated glob patterns to filter skills (e.g., `git-*,docker`) |
+| `--no-prompt-templates` | Disable prompt template discovery and loading |
+| `--no-themes` | Disable theme discovery and loading |
 | `--export <file> [output]` | Export session to HTML |
 | `--help`, `-h` | Show help |
 | `--version`, `-v` | Show version |
@@ -1339,10 +1375,10 @@ For adding new tools, see [Extensions](#extensions) in the Customization section
 For embedding pi in Node.js/TypeScript applications, use the SDK:
 
 ```typescript
-import { createAgentSession, discoverAuthStorage, discoverModels, SessionManager } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@mariozechner/pi-coding-agent";
 
-const authStorage = discoverAuthStorage();
-const modelRegistry = discoverModels(authStorage);
+const authStorage = new AuthStorage();
+const modelRegistry = new ModelRegistry(authStorage);
 
 const { session } = await createAgentSession({
   sessionManager: SessionManager.inMemory(),
@@ -1361,15 +1397,13 @@ await session.prompt("What files are in the current directory?");
 
 The SDK provides full control over:
 - Model selection and thinking level
-- System prompt (replace or modify)
 - Tools (built-in subsets, custom tools)
-- Extensions (discovered or via paths)
-- Skills, context files, prompt templates
+- Resources via `ResourceLoader` (extensions, skills, prompts, themes, context files, system prompt)
 - Session persistence (`SessionManager`)
 - Settings (`SettingsManager`)
 - API key resolution and OAuth
 
-**Philosophy:** "Omit to discover, provide to override." Omit an option and pi discovers from standard locations. Provide an option and your value is used.
+**Philosophy:** "Omit to discover, provide to override." Resource discovery is handled by `ResourceLoader`, while model and tool options still follow the omit or override pattern.
 
 > See [SDK Documentation](docs/sdk.md) for the full API reference. See [examples/sdk/](examples/sdk/) for working examples from minimal to full control.
 

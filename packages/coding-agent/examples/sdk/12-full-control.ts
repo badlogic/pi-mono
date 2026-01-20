@@ -13,8 +13,10 @@ import {
 	AuthStorage,
 	createAgentSession,
 	createBashTool,
+	createExtensionRuntime,
 	createReadTool,
 	ModelRegistry,
+	type ResourceLoader,
 	SessionManager,
 	SettingsManager,
 } from "@mariozechner/pi-coding-agent";
@@ -42,6 +44,18 @@ const settingsManager = SettingsManager.inMemory({
 // When using a custom cwd with explicit tools, use the factory functions
 const cwd = process.cwd();
 
+const resourceLoader: ResourceLoader = {
+	getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
+	getSkills: () => ({ skills: [], diagnostics: [] }),
+	getPrompts: () => ({ prompts: [], diagnostics: [] }),
+	getThemes: () => ({ themes: [], diagnostics: [] }),
+	getAgentsFiles: () => ({ agentsFiles: [] }),
+	getSystemPrompt: () => `You are a minimal assistant.
+Available: read, bash. Be concise.`,
+	getAppendSystemPrompt: () => [],
+	reload: async () => {},
+};
+
 const { session } = await createAgentSession({
 	cwd,
 	agentDir: "/tmp/my-agent",
@@ -49,15 +63,9 @@ const { session } = await createAgentSession({
 	thinkingLevel: "off",
 	authStorage,
 	modelRegistry,
-	systemPrompt: `You are a minimal assistant.
-Available: read, bash. Be concise.`,
+	resourceLoader,
 	// Use factory functions with the same cwd to ensure path resolution works correctly
 	tools: [createReadTool(cwd), createBashTool(cwd)],
-	// Pass empty array to disable extension discovery, or provide inline factories
-	extensions: [],
-	skills: [],
-	contextFiles: [],
-	promptTemplates: [],
 	sessionManager: SessionManager.inMemory(),
 	settingsManager,
 });

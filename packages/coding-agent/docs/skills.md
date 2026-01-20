@@ -141,64 +141,43 @@ Run the extraction script:
 
 Skills are discovered from these locations (later wins on name collision):
 
-1. `~/.codex/skills/**/SKILL.md` (Codex CLI, recursive)
-2. `~/.claude/skills/*/SKILL.md` (Claude Code user, one level)
-3. `<cwd>/.claude/skills/*/SKILL.md` (Claude Code project, one level)
-4. `~/.pi/agent/skills/**/SKILL.md` (Pi user, recursive)
-5. `<cwd>/.pi/skills/**/SKILL.md` (Pi project, recursive)
+1. `~/.pi/agent/skills/` (global)
+2. `<cwd>/.pi/skills/` (project)
+3. Paths listed in `settings.json` under `skills`
+4. CLI `--skill` paths (additive even with `--no-skills`)
+
+Discovery rules for each directory:
+- Direct `.md` files in the root
+- Recursive `SKILL.md` files under subdirectories
 
 ## Configuration
 
-Configure skill loading in `~/.pi/agent/settings.json`:
+Configure skill paths in `~/.pi/agent/settings.json`:
 
 ```json
 {
-  "skills": {
-    "enabled": true,
-    "enableCodexUser": true,
-    "enableClaudeUser": true,
-    "enableClaudeProject": true,
-    "enablePiUser": true,
-    "enablePiProject": true,
-    "enableSkillCommands": true,
-    "customDirectories": ["~/my-skills-repo"],
-    "ignoredSkills": ["deprecated-skill"],
-    "includeSkills": ["git-*", "docker"]
-  }
+  "skills": ["~/my-skills-repo", "/path/to/skill/SKILL.md"],
+  "enableSkillCommands": true
 }
 ```
 
+Use project-local settings in `<cwd>/.pi/settings.json` to scope skills to a single project.
+
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `enabled` | `true` | Master toggle for all skills |
-| `enableCodexUser` | `true` | Load from `~/.codex/skills/` |
-| `enableClaudeUser` | `true` | Load from `~/.claude/skills/` |
-| `enableClaudeProject` | `true` | Load from `<cwd>/.claude/skills/` |
-| `enablePiUser` | `true` | Load from `~/.pi/agent/skills/` |
-| `enablePiProject` | `true` | Load from `<cwd>/.pi/skills/` |
+| `skills` | `[]` | Additional skill file or directory paths |
 | `enableSkillCommands` | `true` | Register skills as `/skill:name` commands |
-| `customDirectories` | `[]` | Additional directories to scan (supports `~` expansion) |
-| `ignoredSkills` | `[]` | Glob patterns to exclude (e.g., `["deprecated-*", "test-skill"]`) |
-| `includeSkills` | `[]` | Glob patterns to include (empty = all; e.g., `["git-*", "docker"]`) |
 
-**Note:** `ignoredSkills` takes precedence over both `includeSkills` in settings and the `--skills` CLI flag. A skill matching any ignore pattern will be excluded regardless of include patterns.
+### CLI Additions
 
-### CLI Filtering
-
-Use `--skills` to filter skills for a specific invocation:
+Use `--skill` to add skills for a specific invocation:
 
 ```bash
-# Only load specific skills
-pi --skills git,docker
-
-# Glob patterns
-pi --skills "git-*,docker-*"
-
-# All skills matching a prefix
-pi --skills "aws-*"
+pi --skill ~/my-skills/terraform
+pi --skill ./skills/custom-skill/SKILL.md
 ```
 
-This overrides the `includeSkills` setting for the current session.
+Use `--no-skills` to disable automatic discovery (CLI `--skill` paths still load).
 
 ## How Skills Work
 
@@ -224,9 +203,7 @@ Toggle skill commands via `/settings` or in `settings.json`:
 
 ```json
 {
-  "skills": {
-    "enableSkillCommands": true
-  }
+  "enableSkillCommands": true
 }
 ```
 
@@ -285,12 +262,6 @@ cd /path/to/brave-search && npm install
 \`\`\`
 ```
 
-## Compatibility
-
-**Claude Code**: Pi reads skills from `~/.claude/skills/*/SKILL.md`. The `allowed-tools` and `model` frontmatter fields are ignored.
-
-**Codex CLI**: Pi reads skills from `~/.codex/skills/` recursively. Hidden files/directories and symlinks are skipped.
-
 ## Skill Repositories
 
 For inspiration and ready-to-use skills:
@@ -305,13 +276,4 @@ CLI:
 pi --no-skills
 ```
 
-Settings (`~/.pi/agent/settings.json`):
-```json
-{
-  "skills": {
-    "enabled": false
-  }
-}
-```
-
-Use the granular `enable*` flags to disable individual sources (e.g., `enableClaudeUser: false` to skip `~/.claude/skills`).
+Use `--no-skills` to disable automatic discovery while keeping explicit `--skill` paths.

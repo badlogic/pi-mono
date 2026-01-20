@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
+import { delimiter } from "node:path";
 import { spawn, spawnSync } from "child_process";
 import { getSettingsPath } from "../config.js";
+import { getBinDir } from "../config.js";
 import { SettingsManager } from "../core/settings-manager.js";
 
 let cachedShellConfig: { shell: string; args: string[] } | null = null;
@@ -93,6 +95,20 @@ export function getShellConfig(): { shell: string; args: string[] } {
 
 	cachedShellConfig = { shell: "sh", args: ["-c"] };
 	return cachedShellConfig;
+}
+
+export function getShellEnv(): NodeJS.ProcessEnv {
+	const binDir = getBinDir();
+	const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+	const currentPath = process.env[pathKey] ?? "";
+	const pathEntries = currentPath.split(delimiter).filter(Boolean);
+	const hasBinDir = pathEntries.includes(binDir);
+	const updatedPath = hasBinDir ? currentPath : [binDir, currentPath].filter(Boolean).join(delimiter);
+
+	return {
+		...process.env,
+		[pathKey]: updatedPath,
+	};
 }
 
 /**

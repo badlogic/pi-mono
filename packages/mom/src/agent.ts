@@ -4,9 +4,11 @@ import {
 	AgentSession,
 	AuthStorage,
 	convertToLlm,
+	createExtensionRuntime,
 	formatSkillsForPrompt,
 	loadSkillsFromDir,
 	ModelRegistry,
+	type ResourceLoader,
 	SessionManager,
 	type Skill,
 } from "@mariozechner/pi-coding-agent";
@@ -448,12 +450,28 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 		log.logInfo(`[${channelId}] Loaded ${loadedSession.messages.length} messages from context.jsonl`);
 	}
 
+	const resourceLoader: ResourceLoader = {
+		getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
+		getSkills: () => ({ skills: [], diagnostics: [] }),
+		getPrompts: () => ({ prompts: [], diagnostics: [] }),
+		getThemes: () => ({ themes: [], diagnostics: [] }),
+		getAgentsFiles: () => ({ agentsFiles: [] }),
+		getSystemPrompt: () => systemPrompt,
+		getAppendSystemPrompt: () => [],
+		reload: async () => {},
+	};
+
+	const baseToolsOverride = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
+
 	// Create AgentSession wrapper
 	const session = new AgentSession({
 		agent,
 		sessionManager,
 		settingsManager: settingsManager as any,
+		cwd: process.cwd(),
 		modelRegistry,
+		resourceLoader,
+		baseToolsOverride,
 	});
 
 	// Mutable per-run state - event handler references this

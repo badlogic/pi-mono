@@ -85,6 +85,11 @@ export class FooterDataProvider {
 		}
 	}
 
+	/** Internal: clear extension statuses */
+	clearExtensionStatuses(): void {
+		this.extensionStatuses.clear();
+	}
+
 	/** Internal: cleanup */
 	dispose(): void {
 		if (this.gitWatcher) {
