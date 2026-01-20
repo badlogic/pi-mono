@@ -166,7 +166,9 @@ async function refreshAccessToken(refreshToken: string): Promise<TokenResult> {
 	}
 }
 
-async function createAuthorizationFlow(): Promise<{ verifier: string; state: string; url: string }> {
+async function createAuthorizationFlow(
+	originator: string = "pi",
+): Promise<{ verifier: string; state: string; url: string }> {
 	const { verifier, challenge } = await generatePKCE();
 	const state = createState();
 
@@ -180,7 +182,7 @@ async function createAuthorizationFlow(): Promise<{ verifier: string; state: str
 	url.searchParams.set("state", state);
 	url.searchParams.set("id_token_add_organizations", "true");
 	url.searchParams.set("codex_cli_simplified_flow", "true");
-	url.searchParams.set("originator", "pi");
+	url.searchParams.set("originator", originator);
 
 	return { verifier, state, url: url.toString() };
 }
@@ -279,14 +281,16 @@ function getAccountId(accessToken: string): string | null {
  * @param options.onManualCodeInput - Optional promise that resolves with user-pasted code.
  *                                    Races with browser callback - whichever completes first wins.
  *                                    Useful for showing paste input immediately alongside browser flow.
+ * @param options.originator - OAuth originator parameter (defaults to "pi")
  */
 export async function loginOpenAICodex(options: {
 	onAuth: (info: { url: string; instructions?: string }) => void;
 	onPrompt: (prompt: OAuthPrompt) => Promise<string>;
 	onProgress?: (message: string) => void;
 	onManualCodeInput?: () => Promise<string>;
+	originator?: string;
 }): Promise<OAuthCredentials> {
-	const { verifier, state, url } = await createAuthorizationFlow();
+	const { verifier, state, url } = await createAuthorizationFlow(options.originator);
 	const server = await startLocalOAuthServer(state);
 
 	options.onAuth({ url, instructions: "A browser window should open. Complete login to finish." });
