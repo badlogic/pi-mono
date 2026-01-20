@@ -283,8 +283,12 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 		// Detect extension conflicts (tools, commands, flags with same names from different extensions)
 		const conflicts = this.detectExtensionConflicts(extensionsResult.extensions);
-		for (const conflict of conflicts) {
-			extensionsResult.errors.push({ path: conflict.path, error: conflict.message });
+		if (conflicts.length > 0) {
+			const conflictingPaths = new Set(conflicts.map((c) => c.path));
+			extensionsResult.extensions = extensionsResult.extensions.filter((ext) => !conflictingPaths.has(ext.path));
+			for (const conflict of conflicts) {
+				extensionsResult.errors.push({ path: conflict.path, error: conflict.message });
+			}
 		}
 
 		this.extensionsResult = this.extensionsOverride ? this.extensionsOverride(extensionsResult) : extensionsResult;
