@@ -447,8 +447,7 @@ export class InteractiveMode {
 		this.isInitialized = true;
 
 		// Set terminal title
-		const cwdBasename = path.basename(process.cwd());
-		this.ui.terminal.setTitle(`pi - ${cwdBasename}`);
+		this.updateTerminalTitle();
 
 		// Initialize extensions with TUI-based UI context
 		await this.initExtensions();
@@ -467,6 +466,19 @@ export class InteractiveMode {
 		this.footerDataProvider.onBranchChange(() => {
 			this.ui.requestRender();
 		});
+	}
+
+	/**
+	 * Update terminal title with session name and cwd.
+	 */
+	private updateTerminalTitle(): void {
+		const cwdBasename = path.basename(process.cwd());
+		const sessionName = this.sessionManager.getSessionName();
+		if (sessionName) {
+			this.ui.terminal.setTitle(`π - ${sessionName} - ${cwdBasename}`);
+		} else {
+			this.ui.terminal.setTitle(`π - ${cwdBasename}`);
+		}
 	}
 
 	/**
@@ -678,6 +690,7 @@ export class InteractiveMode {
 				},
 				setSessionName: (name) => {
 					this.sessionManager.appendSessionInfo(name);
+					this.updateTerminalTitle();
 				},
 				getSessionName: () => {
 					return this.sessionManager.getSessionName();
@@ -3391,6 +3404,7 @@ export class InteractiveMode {
 		}
 
 		this.sessionManager.appendSessionInfo(name);
+		this.updateTerminalTitle();
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("dim", `Session name set: ${name}`), 1, 0));
 		this.ui.requestRender();

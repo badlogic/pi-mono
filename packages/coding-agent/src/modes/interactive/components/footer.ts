@@ -109,6 +109,12 @@ export class FooterComponent implements Component {
 			pwd = `${pwd} (${branch})`;
 		}
 
+		// Add session name if set
+		const sessionName = this.session.sessionManager.getSessionName();
+		if (sessionName) {
+			pwd = `${pwd} • ${sessionName}`;
+		}
+
 		// Truncate path if too long to fit width
 		if (pwd.length > width) {
 			const half = Math.floor(width / 2) - 2;

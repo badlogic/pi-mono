@@ -10,6 +10,7 @@
 
 - Fixed `write` tool not displaying errors in the UI when execution fails ([#856](https://github.com/badlogic/pi-mono/issues/856))
 - Fixed HTML export using default theme instead of user's active theme
+- Show session name in the footer and terminal / tab title
 
 ## [0.49.2] - 2026-01-19
 
