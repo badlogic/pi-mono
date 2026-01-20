@@ -1,4 +1,4 @@
-import { Box, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { Box, Markdown, type MarkdownTheme, Spacer, Text } from "@mariozechner/pi-tui";
 import type { BranchSummaryMessage } from "../../../core/messages.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 import { editorKey } from "./keybinding-hints.js";
@@ -10,10 +10,12 @@ import { editorKey } from "./keybinding-hints.js";
 export class BranchSummaryMessageComponent extends Box {
 	private expanded = false;
 	private message: BranchSummaryMessage;
+	private markdownTheme: MarkdownTheme;
 
-	constructor(message: BranchSummaryMessage) {
+	constructor(message: BranchSummaryMessage, markdownTheme: MarkdownTheme = getMarkdownTheme()) {
 		super(1, 1, (t) => theme.bg("customMessageBg", t));
 		this.message = message;
+		this.markdownTheme = markdownTheme;
 		this.updateDisplay();
 	}
 
@@ -37,7 +39,7 @@ export class BranchSummaryMessageComponent extends Box {
 		if (this.expanded) {
 			const header = "**Branch Summary**\n\n";
 			this.addChild(
-				new Markdown(header + this.message.summary, 0, 0, getMarkdownTheme(), {
+				new Markdown(header + this.message.summary, 0, 0, this.markdownTheme, {
 					color: (text: string) => theme.fg("customMessageText", text),
 				}),
 			);
