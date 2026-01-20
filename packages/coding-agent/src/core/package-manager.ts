@@ -405,6 +405,11 @@ export class DefaultPackageManager implements PackageManager {
 		if (source.ref) {
 			await this.runCommand("git", ["checkout", source.ref], { cwd: targetDir });
 		}
+		// Install npm dependencies if package.json exists
+		const packageJsonPath = join(targetDir, "package.json");
+		if (existsSync(packageJsonPath)) {
+			await this.runCommand("npm", ["install"], { cwd: targetDir });
+		}
 	}
 
 	private async updateGit(source: GitSource, scope: SourceScope): Promise<void> {
@@ -414,6 +419,11 @@ export class DefaultPackageManager implements PackageManager {
 			return;
 		}
 		await this.runCommand("git", ["pull"], { cwd: targetDir });
+		// Reinstall npm dependencies if package.json exists (in case deps changed)
+		const packageJsonPath = join(targetDir, "package.json");
+		if (existsSync(packageJsonPath)) {
+			await this.runCommand("npm", ["install"], { cwd: targetDir });
+		}
 	}
 
 	private async removeGit(source: GitSource, scope: SourceScope): Promise<void> {
