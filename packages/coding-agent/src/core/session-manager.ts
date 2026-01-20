@@ -498,6 +498,44 @@ function extractTextContent(message: Message): string {
 		.join(" ");
 }
 
+function getLastActivityTime(entries: FileEntry[]): number | undefined {
+	let lastActivityTime: number | undefined;
+
+	for (const entry of entries) {
+		if (entry.type !== "message") continue;
+
+		const message = (entry as SessionMessageEntry).message;
+		if (!isMessageWithContent(message)) continue;
+		if (message.role !== "user" && message.role !== "assistant") continue;
+
+		const msgTimestamp = (message as { timestamp?: number }).timestamp;
+		if (typeof msgTimestamp === "number") {
+			lastActivityTime = Math.max(lastActivityTime ?? 0, msgTimestamp);
+			continue;
+		}
+
+		const entryTimestamp = (entry as SessionEntryBase).timestamp;
+		if (typeof entryTimestamp === "string") {
+			const t = new Date(entryTimestamp).getTime();
+			if (!Number.isNaN(t)) {
+				lastActivityTime = Math.max(lastActivityTime ?? 0, t);
+			}
+		}
+	}
+
+	return lastActivityTime;
+}
+
+function getSessionModifiedDate(entries: FileEntry[], header: SessionHeader, statsMtime: Date): Date {
+	const lastActivityTime = getLastActivityTime(entries);
+	if (typeof lastActivityTime === "number" && lastActivityTime > 0) {
+		return new Date(lastActivityTime);
+	}
+
+	const headerTime = typeof header.timestamp === "string" ? new Date(header.timestamp).getTime() : NaN;
+	return !Number.isNaN(headerTime) ? new Date(headerTime) : statsMtime;
+}
+
 async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 	try {
 		const content = await readFile(filePath, "utf8");
@@ -550,13 +588,15 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 
 		const cwd = typeof (header as SessionHeader).cwd === "string" ? (header as SessionHeader).cwd : "";
 
+		const modified = getSessionModifiedDate(entries, header as SessionHeader, stats.mtime);
+
 		return {
 			path: filePath,
 			id: (header as SessionHeader).id,
 			cwd,
 			name,
 			created: new Date((header as SessionHeader).timestamp),
-			modified: stats.mtime,
+			modified,
 			messageCount,
 			firstMessage: firstMessage || "(no messages)",
 			allMessagesText: allMessages.join(" "),

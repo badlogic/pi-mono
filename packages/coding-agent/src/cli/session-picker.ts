@@ -39,6 +39,7 @@ export async function selectSession(
 				process.exit(0);
 			},
 			() => ui.requestRender(),
+			{ showRenameHint: false },
 		);
 
 		ui.addChild(selector);
