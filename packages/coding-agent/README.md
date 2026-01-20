@@ -350,7 +350,7 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 | Enter | Send message |
 | Shift+Enter | New line (Ctrl+Enter on Windows Terminal) |
 | Ctrl+W / Option+Backspace | Delete word backwards |
-| Alt+D | Delete word forwards |
+| Alt+D / Option+Delete | Delete word forwards |
 | Ctrl+U | Delete to start of line |
 | Ctrl+K | Delete to end of line |
 | Ctrl+Y | Paste most recently deleted text |
@@ -401,7 +401,7 @@ All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Eac
 | `deleteCharBackward` | `backspace` | Delete char backward |
 | `deleteCharForward` | `delete` | Delete char forward |
 | `deleteWordBackward` | `ctrl+w`, `alt+backspace` | Delete word backward |
-| `deleteWordForward` | `alt+d` | Delete word forward |
+| `deleteWordForward` | `alt+d`, `alt+delete` | Delete word forward |
 | `deleteToLineStart` | `ctrl+u` | Delete to line start |
 | `deleteToLineEnd` | `ctrl+k` | Delete to line end |
 | `yank` | `ctrl+y` | Paste most recently deleted text |
