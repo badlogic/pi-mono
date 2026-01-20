@@ -53,7 +53,7 @@ async function readPipedStdin(): Promise<string | undefined> {
 	});
 }
 
-type PackageCommand = "install" | "remove" | "update";
+type PackageCommand = "install" | "remove" | "update" | "list";
 
 interface PackageCommandOptions {
 	command: PackageCommand;
@@ -63,7 +63,7 @@ interface PackageCommandOptions {
 
 function parsePackageCommand(args: string[]): PackageCommandOptions | undefined {
 	const [command, ...rest] = args;
-	if (command !== "install" && command !== "remove" && command !== "update") {
+	if (command !== "install" && command !== "remove" && command !== "update" && command !== "list") {
 		return undefined;
 	}
 
@@ -162,6 +162,35 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 		await packageManager.remove(options.source, { local: options.local });
 		updateExtensionSources(settingsManager, options.source, options.local, "remove");
 		console.log(chalk.green(`Removed ${options.source}`));
+		return true;
+	}
+
+	if (options.command === "list") {
+		const globalSettings = settingsManager.getGlobalSettings();
+		const projectSettings = settingsManager.getProjectSettings();
+		const globalExtensions = globalSettings.extensions ?? [];
+		const projectExtensions = projectSettings.extensions ?? [];
+
+		if (globalExtensions.length === 0 && projectExtensions.length === 0) {
+			console.log(chalk.dim("No extensions installed."));
+			return true;
+		}
+
+		if (globalExtensions.length > 0) {
+			console.log(chalk.bold("Global extensions:"));
+			for (const ext of globalExtensions) {
+				console.log(`  ${ext}`);
+			}
+		}
+
+		if (projectExtensions.length > 0) {
+			if (globalExtensions.length > 0) console.log();
+			console.log(chalk.bold("Project extensions:"));
+			for (const ext of projectExtensions) {
+				console.log(`  ${ext}`);
+			}
+		}
+
 		return true;
 	}
 

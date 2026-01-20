@@ -161,7 +161,7 @@ export class DefaultPackageManager implements PackageManager {
 				return;
 			}
 			if (parsed.type === "git") {
-				await this.installGit(parsed, scope, false);
+				await this.installGit(parsed, scope);
 				this.emitProgress({ type: "complete", action: "install", source });
 				return;
 			}
@@ -184,7 +184,7 @@ export class DefaultPackageManager implements PackageManager {
 				return;
 			}
 			if (parsed.type === "git") {
-				await this.removeGit(parsed, scope, false);
+				await this.removeGit(parsed, scope);
 				this.emitProgress({ type: "complete", action: "remove", source });
 				return;
 			}
@@ -232,7 +232,7 @@ export class DefaultPackageManager implements PackageManager {
 			if (parsed.pinned) return;
 			this.emitProgress({ type: "start", action: "update", source, message: `Updating ${source}...` });
 			try {
-				await this.updateGit(parsed, scope, false);
+				await this.updateGit(parsed, scope);
 				this.emitProgress({ type: "complete", action: "update", source });
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -317,7 +317,7 @@ export class DefaultPackageManager implements PackageManager {
 			return;
 		}
 		if (parsed.type === "git") {
-			await this.installGit(parsed, scope, scope === "temporary");
+			await this.installGit(parsed, scope);
 			return;
 		}
 	}
@@ -394,8 +394,8 @@ export class DefaultPackageManager implements PackageManager {
 		await this.runCommand("npm", ["uninstall", source.name, "--prefix", installRoot]);
 	}
 
-	private async installGit(source: GitSource, scope: SourceScope, temporary: boolean): Promise<void> {
-		const targetDir = this.getGitInstallPath(source, scope, temporary);
+	private async installGit(source: GitSource, scope: SourceScope): Promise<void> {
+		const targetDir = this.getGitInstallPath(source, scope);
 		if (existsSync(targetDir)) {
 			return;
 		}
@@ -407,17 +407,17 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	private async updateGit(source: GitSource, scope: SourceScope, temporary: boolean): Promise<void> {
-		const targetDir = this.getGitInstallPath(source, scope, temporary);
+	private async updateGit(source: GitSource, scope: SourceScope): Promise<void> {
+		const targetDir = this.getGitInstallPath(source, scope);
 		if (!existsSync(targetDir)) {
-			await this.installGit(source, scope, temporary);
+			await this.installGit(source, scope);
 			return;
 		}
 		await this.runCommand("git", ["pull"], { cwd: targetDir });
 	}
 
-	private async removeGit(source: GitSource, scope: SourceScope, temporary: boolean): Promise<void> {
-		const targetDir = this.getGitInstallPath(source, scope, temporary);
+	private async removeGit(source: GitSource, scope: SourceScope): Promise<void> {
+		const targetDir = this.getGitInstallPath(source, scope);
 		if (!existsSync(targetDir)) return;
 		rmSync(targetDir, { recursive: true, force: true });
 	}
@@ -462,8 +462,8 @@ export class DefaultPackageManager implements PackageManager {
 		return join(this.getGlobalNpmRoot(), source.name);
 	}
 
-	private getGitInstallPath(source: GitSource, scope: SourceScope, temporary?: boolean): string {
-		if (temporary) {
+	private getGitInstallPath(source: GitSource, scope: SourceScope): string {
+		if (scope === "temporary") {
 			return this.getTemporaryDir(`git-${source.host}`, source.path);
 		}
 		if (scope === "project") {

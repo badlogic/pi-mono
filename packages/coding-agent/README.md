@@ -1245,6 +1245,7 @@ pi [options] [@files...] [messages...]
 | `install <source> [-l]` | Install extension source and add to settings (`-l` for project) |
 | `remove <source> [-l]` | Remove extension source from settings |
 | `update [source]` | Update installed extensions (skips pinned sources) |
+| `list` | List installed extensions from settings |
 
 ### Options
 
