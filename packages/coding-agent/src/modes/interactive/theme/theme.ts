@@ -790,7 +790,7 @@ function ansi256ToHex(index: number): string {
  * Used by HTML export to generate CSS custom properties.
  */
 export function getResolvedThemeColors(themeName?: string): Record<string, string> {
-	const name = themeName ?? getDefaultTheme();
+	const name = themeName ?? currentThemeName ?? getDefaultTheme();
 	const isLight = name === "light";
 	const themeJson = loadThemeJson(name);
 	const resolved = resolveThemeColors(themeJson.colors, themeJson.vars);
@@ -829,7 +829,7 @@ export function getThemeExportColors(themeName?: string): {
 	cardBg?: string;
 	infoBg?: string;
 } {
-	const name = themeName ?? getDefaultTheme();
+	const name = themeName ?? currentThemeName ?? getDefaultTheme();
 	try {
 		const themeJson = loadThemeJson(name);
 		const exportSection = themeJson.export;
