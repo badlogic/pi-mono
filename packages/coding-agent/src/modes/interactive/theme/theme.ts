@@ -166,8 +166,12 @@ function detectColorMode(): ColorMode {
 		return "truecolor";
 	}
 	const term = process.env.TERM || "";
-	// Only fall back to 256color for truly limited terminals
+	// Fall back to 256color for truly limited terminals
 	if (term === "dumb" || term === "" || term === "linux") {
+		return "256color";
+	}
+	// Terminal.app also doesn't support truecolor
+	if (process.env.TERM_PROGRAM === "Apple_Terminal") {
 		return "256color";
 	}
 	// Assume truecolor for everything else - virtually all modern terminals support it
