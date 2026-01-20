@@ -126,6 +126,13 @@ export interface AnthropicOptions extends StreamOptions {
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
 }
 
+type CacheControlTtl = NonNullable<StreamOptions["cacheControlTtl"]>;
+type CacheControl = { type: "ephemeral"; ttl?: CacheControlTtl };
+
+function buildCacheControl(ttl?: StreamOptions["cacheControlTtl"]): CacheControl {
+	return ttl ? { type: "ephemeral", ttl } : { type: "ephemeral" };
+}
+
 function mergeHeaders(...headerSources: (Record<string, string> | undefined)[]): Record<string, string> {
 	const merged: Record<string, string> = {};
 	for (const headers of headerSources) {
@@ -402,9 +409,10 @@ function buildParams(
 	isOAuthToken: boolean,
 	options?: AnthropicOptions,
 ): MessageCreateParamsStreaming {
+	const cacheControl = buildCacheControl(options?.cacheControlTtl);
 	const params: MessageCreateParamsStreaming = {
 		model: model.id,
-		messages: convertMessages(context.messages, model, isOAuthToken),
+		messages: convertMessages(context.messages, model, isOAuthToken, cacheControl),
 		max_tokens: options?.maxTokens || (model.maxTokens / 3) | 0,
 		stream: true,
 	};
@@ -415,18 +423,14 @@ function buildParams(
 			{
 				type: "text",
 				text: "You are Claude Code, Anthropic's official CLI for Claude.",
-				cache_control: {
-					type: "ephemeral",
-				},
+				cache_control: cacheControl,
 			},
 		];
 		if (context.systemPrompt) {
 			params.system.push({
 				type: "text",
 				text: sanitizeSurrogates(context.systemPrompt),
-				cache_control: {
-					type: "ephemeral",
-				},
+				cache_control: cacheControl,
 			});
 		}
 	} else if (context.systemPrompt) {
@@ -435,9 +439,7 @@ function buildParams(
 			{
 				type: "text",
 				text: sanitizeSurrogates(context.systemPrompt),
-				cache_control: {
-					type: "ephemeral",
-				},
+				cache_control: cacheControl,
 			},
 		];
 	}
@@ -477,6 +479,7 @@ function convertMessages(
 	messages: Message[],
 	model: Model<"anthropic-messages">,
 	isOAuthToken: boolean,
+	cacheControl: CacheControl,
 ): MessageParam[] {
 	const params: MessageParam[] = [];
 
@@ -613,7 +616,7 @@ function convertMessages(
 					lastBlock &&
 					(lastBlock.type === "text" || lastBlock.type === "image" || lastBlock.type === "tool_result")
 				) {
-					(lastBlock as any).cache_control = { type: "ephemeral" };
+					(lastBlock as any).cache_control = cacheControl;
 				}
 			}
 		}

@@ -66,6 +66,13 @@ function hasToolHistory(messages: Message[]): boolean {
 	return false;
 }
 
+type CacheControlTtl = NonNullable<StreamOptions["cacheControlTtl"]>;
+type CacheControl = { type: "ephemeral"; ttl?: CacheControlTtl };
+
+function buildAnthropicCacheControl(ttl?: StreamOptions["cacheControlTtl"]): CacheControl {
+	return ttl ? { type: "ephemeral", ttl } : { type: "ephemeral" };
+}
+
 export interface OpenAICompletionsOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "required" | { type: "function"; function: { name: string } };
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -375,7 +382,7 @@ function createClient(
 function buildParams(model: Model<"openai-completions">, context: Context, options?: OpenAICompletionsOptions) {
 	const compat = getCompat(model);
 	const messages = convertMessages(model, context, compat);
-	maybeAddOpenRouterAnthropicCacheControl(model, messages);
+	maybeAddOpenRouterAnthropicCacheControl(model, messages, options?.cacheControlTtl);
 
 	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
 		model: model.id,
@@ -429,8 +436,11 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 function maybeAddOpenRouterAnthropicCacheControl(
 	model: Model<"openai-completions">,
 	messages: ChatCompletionMessageParam[],
+	cacheControlTtl?: StreamOptions["cacheControlTtl"],
 ): void {
 	if (model.provider !== "openrouter" || !model.id.startsWith("anthropic/")) return;
+
+	const cacheControl = buildAnthropicCacheControl(cacheControlTtl);
 
 	// Anthropic-style caching requires cache_control on a text part. Add a breakpoint
 	// on the last user/assistant message (walking backwards until we find text content).
@@ -441,7 +451,7 @@ function maybeAddOpenRouterAnthropicCacheControl(
 		const content = msg.content;
 		if (typeof content === "string") {
 			msg.content = [
-				Object.assign({ type: "text" as const, text: content }, { cache_control: { type: "ephemeral" } }),
+				Object.assign({ type: "text" as const, text: content }, { cache_control: cacheControl }),
 			];
 			return;
 		}
@@ -452,7 +462,7 @@ function maybeAddOpenRouterAnthropicCacheControl(
 		for (let j = content.length - 1; j >= 0; j--) {
 			const part = content[j];
 			if (part?.type === "text") {
-				Object.assign(part, { cache_control: { type: "ephemeral" } });
+				Object.assign(part, { cache_control: cacheControl });
 				return;
 			}
 		}

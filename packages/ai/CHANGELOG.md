@@ -5,6 +5,7 @@
 ### Added
 
 - Added `headers` option to `StreamOptions` for custom HTTP headers in API requests. Supported by all providers except Amazon Bedrock (which uses AWS SDK auth). Headers are merged with provider defaults and `model.headers`, with `options.headers` taking precedence.
+- Added `cacheControlTtl` option to customize Anthropic-style prompt cache TTL (`"5m"` or `"1h"`).
 
 ## [0.49.2] - 2026-01-19
 

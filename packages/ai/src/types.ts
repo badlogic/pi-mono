@@ -87,6 +87,11 @@ export interface StreamOptions {
 	 */
 	sessionId?: string;
 	/**
+	 * Optional TTL for Anthropic-style prompt caching when cache_control is used.
+	 * Allowed values: "5m" (default) or "1h".
+	 */
+	cacheControlTtl?: "5m" | "1h";
+	/**
 	 * Optional callback for inspecting provider payloads before sending.
 	 */
 	onPayload?: (payload: unknown) => void;

@@ -218,6 +218,7 @@ function mapOptionsForApi<TApi extends Api>(
 		signal: options?.signal,
 		apiKey: apiKey || options?.apiKey,
 		sessionId: options?.sessionId,
+		cacheControlTtl: options?.cacheControlTtl,
 		headers: options?.headers,
 		onPayload: options?.onPayload,
 	};
