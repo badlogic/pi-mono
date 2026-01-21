@@ -7,6 +7,10 @@
 - Added `headers` option to `StreamOptions` for custom HTTP headers in API requests. Supported by all providers except Amazon Bedrock (which uses AWS SDK auth). Headers are merged with provider defaults and `model.headers`, with `options.headers` taking precedence.
 - Added `originator` option to `loginOpenAICodex()` for custom OAuth client identification
 
+### Fixed
+
+- Fixed OpenAI Responses API 400 error "function_call without required reasoning item" when switching between models (same provider, different model). The fix omits the `id` field for function_calls from different models to avoid triggering OpenAI's reasoning/function_call pairing validation ([#886](https://github.com/badlogic/pi-mono/issues/886))
+
 ## [0.49.2] - 2026-01-19
 
 ### Added

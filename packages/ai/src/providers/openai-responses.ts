@@ -488,6 +488,15 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 			}
 		} else if (msg.role === "assistant") {
 			const output: ResponseInput = [];
+			const assistantMsg = msg as AssistantMessage;
+
+			// Check if this message is from a different model (same provider, different model ID).
+			// For such messages, tool call IDs with fc_ prefix need to be stripped to avoid
+			// OpenAI's reasoning/function_call pairing validation errors.
+			const isDifferentModel =
+				assistantMsg.model !== model.id &&
+				assistantMsg.provider === model.provider &&
+				assistantMsg.api === model.api;
 
 			for (const block of msg.content) {
 				if (block.type === "thinking") {
@@ -513,10 +522,20 @@ function convertMessages(model: Model<"openai-responses">, context: Context): Re
 					} satisfies ResponseOutputMessage);
 				} else if (block.type === "toolCall") {
 					const toolCall = block as ToolCall;
+					const callId = toolCall.id.split("|")[0];
+					let itemId: string | undefined = toolCall.id.split("|")[1];
+
+					// For different-model messages, set id to undefined to avoid pairing validation.
+					// OpenAI tracks which fc_xxx IDs were paired with rs_xxx reasoning items.
+					// By omitting the id, we avoid triggering that validation (like cross-provider does).
+					if (isDifferentModel && itemId?.startsWith("fc_")) {
+						itemId = undefined;
+					}
+
 					output.push({
 						type: "function_call",
-						id: toolCall.id.split("|")[1],
-						call_id: toolCall.id.split("|")[0],
+						id: itemId,
+						call_id: callId,
 						name: toolCall.name,
 						arguments: JSON.stringify(toolCall.arguments),
 					});
