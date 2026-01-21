@@ -116,6 +116,14 @@ export const VERSION: string = pkg.version;
 // e.g., PI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
 
+const DEFAULT_SHARE_VIEWER_URL = "https://buildwithpi.ai/session/";
+
+/** Get the share viewer URL for a gist ID */
+export function getShareViewerUrl(gistId: string): string {
+	const baseUrl = process.env.PI_SHARE_VIEWER_URL || DEFAULT_SHARE_VIEWER_URL;
+	return `${baseUrl}#${gistId}`;
+}
+
 // =============================================================================
 // User Config Paths (~/.pi/agent/*)
 // =============================================================================

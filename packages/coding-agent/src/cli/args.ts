@@ -252,6 +252,7 @@ ${chalk.bold("Environment Variables:")}
   AWS_BEARER_TOKEN_BEDROCK - Bedrock API key (bearer token)
   AWS_REGION              - AWS region for Amazon Bedrock (e.g., us-east-1)
   ${ENV_AGENT_DIR.padEnd(23)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
+  PI_SHARE_VIEWER_URL     - Base URL for /share command (default: https://buildwithpi.ai/session/)
 
 ${chalk.bold("Available Tools (default: read, bash, edit, write):")}
   read   - Read file contents
