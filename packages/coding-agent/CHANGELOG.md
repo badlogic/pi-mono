@@ -5,6 +5,7 @@
 ### Added
 
 - `markdown.codeBlockIndent` setting to customize code block indentation in rendered output
+- Added `inline-bash.ts` example extension for expanding `!{command}` patterns in prompts
 
 ### Fixed
 
