@@ -1,6 +1,50 @@
 import assert from "node:assert";
-import { describe, it } from "node:test";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { afterEach, beforeEach, describe, it, test } from "node:test";
 import { CombinedAutocompleteProvider } from "../src/autocomplete.js";
+
+const resolveFdPath = (): string | null => {
+	const command = process.platform === "win32" ? "where" : "which";
+	const result = spawnSync(command, ["fd"], { encoding: "utf-8" });
+	if (result.status !== 0 || !result.stdout) {
+		return null;
+	}
+
+	const firstLine = result.stdout.split(/\r?\n/).find(Boolean);
+	return firstLine ? firstLine.trim() : null;
+};
+
+type FolderStructure = {
+	dirs?: string[];
+	files?: Record<string, string>;
+};
+
+const setupFolder = (baseDir: string, structure: FolderStructure = {}): void => {
+	const dirs = structure.dirs ?? [];
+	const files = structure.files ?? {};
+
+	dirs.forEach((dir) => {
+		mkdirSync(join(baseDir, dir), { recursive: true });
+	});
+	Object.entries(files).forEach(([filePath, contents]) => {
+		const fullPath = join(baseDir, filePath);
+		mkdirSync(dirname(fullPath), { recursive: true });
+		writeFileSync(fullPath, contents);
+	});
+};
+
+const fdPath = resolveFdPath();
+const isFdInstalled = Boolean(fdPath);
+
+const requireFdPath = (): string => {
+	if (!fdPath) {
+		throw new Error("fd is not available");
+	}
+	return fdPath;
+};
 
 describe("CombinedAutocompleteProvider", () => {
 	describe("extractPathPrefix", () => {
@@ -59,6 +103,132 @@ describe("CombinedAutocompleteProvider", () => {
 			if (result) {
 				assert.strictEqual(result.prefix, "/", "Prefix should be '/'");
 			}
+		});
+	});
+
+	describe("fd @ file suggestions", { skip: !isFdInstalled }, () => {
+		let baseDir = "";
+
+		beforeEach(() => {
+			baseDir = mkdtempSync(join(tmpdir(), "pi-autocomplete-"));
+		});
+
+		afterEach(() => {
+			rmSync(baseDir, { recursive: true, force: true });
+		});
+
+		test("returns all files and folders for empty @ query", () => {
+			setupFolder(baseDir, {
+				dirs: ["src"],
+				files: {
+					"README.md": "readme",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			const values = result?.items.map((item) => item.value).sort();
+			assert.deepStrictEqual(values, ["@README.md", "@src/"].sort());
+		});
+
+		test("matches file with extension in query", () => {
+			setupFolder(baseDir, {
+				files: {
+					"file.txt": "content",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@file.txt";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			const values = result?.items.map((item) => item.value);
+			assert.ok(values?.includes("@file.txt"));
+		});
+
+		test("filters are case insensitive", () => {
+			setupFolder(baseDir, {
+				dirs: ["src"],
+				files: {
+					"README.md": "readme",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@re";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			const values = result?.items.map((item) => item.value).sort();
+			assert.deepStrictEqual(values, ["@README.md"]);
+		});
+
+		test("ranks directories before files", () => {
+			setupFolder(baseDir, {
+				dirs: ["src"],
+				files: {
+					"src.txt": "text",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@src";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			const firstValue = result?.items[0]?.value;
+			const hasSrcFile = result?.items?.some((item) => item.value === "@src.txt");
+			assert.strictEqual(firstValue, "@src/");
+			assert.ok(hasSrcFile);
+		});
+
+		test("returns nested file paths", () => {
+			setupFolder(baseDir, {
+				files: {
+					"src/index.ts": "export {};\n",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@index";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			const values = result?.items.map((item) => item.value);
+			assert.ok(values?.includes("@src/index.ts"));
+		});
+
+		test("matches deeply nested paths", () => {
+			setupFolder(baseDir, {
+				files: {
+					"packages/tui/src/autocomplete.ts": "export {};",
+					"packages/ai/src/autocomplete.ts": "export {};",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@tui/src/auto";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			const values = result?.items.map((item) => item.value);
+			assert.ok(values?.includes("@packages/tui/src/autocomplete.ts"));
+			assert.ok(!values?.includes("@packages/ai/src/autocomplete.ts"));
+		});
+
+		test("matches directory in middle of path with --full-path", () => {
+			setupFolder(baseDir, {
+				files: {
+					"src/components/Button.tsx": "export {};",
+					"src/utils/helpers.ts": "export {};",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@components/";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			const values = result?.items.map((item) => item.value);
+			assert.ok(values?.includes("@src/components/Button.tsx"));
+			assert.ok(!values?.includes("@src/utils/helpers.ts"));
 		});
 	});
 });

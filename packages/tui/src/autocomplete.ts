@@ -11,7 +11,17 @@ function walkDirectoryWithFd(
 	query: string,
 	maxResults: number,
 ): Array<{ path: string; isDirectory: boolean }> {
-	const args = ["--base-directory", baseDir, "--max-results", String(maxResults), "--type", "f", "--type", "d"];
+	const args = [
+		"--base-directory",
+		baseDir,
+		"--max-results",
+		String(maxResults),
+		"--type",
+		"f",
+		"--type",
+		"d",
+		"--full-path",
+	];
 
 	// Add query as pattern if provided
 	if (query) {
