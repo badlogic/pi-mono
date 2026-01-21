@@ -194,6 +194,9 @@ export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"
 					}
 				} else if (event.type === "response.output_text.delta") {
 					if (currentItem && currentItem.type === "message" && currentBlock && currentBlock.type === "text") {
+						if (!currentItem.content || currentItem.content.length === 0) {
+							continue;
+						}
 						const lastPart = currentItem.content[currentItem.content.length - 1];
 						if (lastPart && lastPart.type === "output_text") {
 							currentBlock.text += event.delta;
@@ -208,6 +211,9 @@ export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"
 					}
 				} else if (event.type === "response.refusal.delta") {
 					if (currentItem && currentItem.type === "message" && currentBlock && currentBlock.type === "text") {
+						if (!currentItem.content || currentItem.content.length === 0) {
+							continue;
+						}
 						const lastPart = currentItem.content[currentItem.content.length - 1];
 						if (lastPart && lastPart.type === "refusal") {
 							currentBlock.text += event.delta;
