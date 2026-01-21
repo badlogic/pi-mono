@@ -63,6 +63,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `doom-overlay/` | DOOM game running as an overlay at 35 FPS (demonstrates real-time game rendering) |
 | `shutdown-command.ts` | Adds `/quit` command demonstrating `ctx.shutdown()` |
 | `interactive-shell.ts` | Run interactive commands (vim, htop) with full terminal via `user_bash` hook |
+| `inline-bash.ts` | Expands `!{command}` patterns in prompts via `input` event transformation |
 
 ### Git Integration
 
