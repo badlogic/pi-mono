@@ -5,6 +5,7 @@
 ### Added
 
 - Added `headers` option to `StreamOptions` for custom HTTP headers in API requests. Supported by all providers except Amazon Bedrock (which uses AWS SDK auth). Headers are merged with provider defaults and `model.headers`, with `options.headers` taking precedence.
+- Added `originator` option to `loginOpenAICodex()` for custom OAuth client identification
 
 ## [0.49.2] - 2026-01-19
 
