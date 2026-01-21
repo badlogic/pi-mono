@@ -43,7 +43,15 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { spawn, spawnSync } from "child_process";
-import { APP_NAME, getAuthPath, getDebugLogPath, isBunBinary, isBunRuntime, VERSION } from "../../config.js";
+import {
+	APP_NAME,
+	getAuthPath,
+	getDebugLogPath,
+	getShareViewerUrl,
+	isBunBinary,
+	isBunRuntime,
+	VERSION,
+} from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
 import type {
@@ -3364,7 +3372,7 @@ export class InteractiveMode {
 			}
 
 			// Create the preview URL
-			const previewUrl = `https://buildwithpi.ai/session/#${gistId}`;
+			const previewUrl = getShareViewerUrl(gistId);
 			this.showStatus(`Share URL: ${previewUrl}\nGist: ${gistUrl}`);
 		} catch (error: unknown) {
 			if (!loader.signal.aborted) {
