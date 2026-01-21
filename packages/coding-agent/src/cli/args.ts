@@ -262,25 +262,30 @@ ${chalk.bold("Examples:")}
   ${APP_NAME} --export session.jsonl output.html
 
 ${chalk.bold("Environment Variables:")}
-  ANTHROPIC_API_KEY       - Anthropic Claude API key
-  ANTHROPIC_OAUTH_TOKEN   - Anthropic OAuth token (alternative to API key)
-  OPENAI_API_KEY          - OpenAI GPT API key
-  GEMINI_API_KEY          - Google Gemini API key
-  GROQ_API_KEY            - Groq API key
-  CEREBRAS_API_KEY        - Cerebras API key
-  XAI_API_KEY             - xAI Grok API key
-  OPENROUTER_API_KEY      - OpenRouter API key
-  AI_GATEWAY_API_KEY      - Vercel AI Gateway API key
-  ZAI_API_KEY             - ZAI API key
-  MISTRAL_API_KEY         - Mistral API key
-  MINIMAX_API_KEY         - MiniMax API key
-  AWS_PROFILE             - AWS profile for Amazon Bedrock
-  AWS_ACCESS_KEY_ID       - AWS access key for Amazon Bedrock
-  AWS_SECRET_ACCESS_KEY   - AWS secret key for Amazon Bedrock
-  AWS_BEARER_TOKEN_BEDROCK - Bedrock API key (bearer token)
-  AWS_REGION              - AWS region for Amazon Bedrock (e.g., us-east-1)
-  ${ENV_AGENT_DIR.padEnd(23)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
-  PI_SHARE_VIEWER_URL     - Base URL for /share command (default: https://buildwithpi.ai/session/)
+  ANTHROPIC_API_KEY            - Anthropic Claude API key
+  ANTHROPIC_OAUTH_TOKEN        - Anthropic OAuth token (alternative to API key)
+  OPENAI_API_KEY               - OpenAI GPT API key
+  AZURE_OPENAI_API_KEY         - Azure OpenAI API key
+  AZURE_OPENAI_ENDPOINT        - Azure OpenAI endpoint (https://{resource}.openai.azure.com)
+  AZURE_OPENAI_RESOURCE_NAME   - Azure OpenAI resource name (alternative to endpoint)
+  AZURE_OPENAI_API_VERSION     - Azure OpenAI API version (default: 2025-04-01-preview)
+  AZURE_OPENAI_DEPLOYMENT_NAME - Azure OpenAI deployment name override
+  GEMINI_API_KEY               - Google Gemini API key
+  GROQ_API_KEY                 - Groq API key
+  CEREBRAS_API_KEY             - Cerebras API key
+  XAI_API_KEY                  - xAI Grok API key
+  OPENROUTER_API_KEY           - OpenRouter API key
+  AI_GATEWAY_API_KEY           - Vercel AI Gateway API key
+  ZAI_API_KEY                  - ZAI API key
+  MISTRAL_API_KEY              - Mistral API key
+  MINIMAX_API_KEY              - MiniMax API key
+  AWS_PROFILE                  - AWS profile for Amazon Bedrock
+  AWS_ACCESS_KEY_ID            - AWS access key for Amazon Bedrock
+  AWS_SECRET_ACCESS_KEY        - AWS secret key for Amazon Bedrock
+  AWS_BEARER_TOKEN_BEDROCK     - Bedrock API key (bearer token)
+  AWS_REGION                   - AWS region for Amazon Bedrock (e.g., us-east-1)
+  ${ENV_AGENT_DIR.padEnd(27)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
+  PI_SHARE_VIEWER_URL          - Base URL for /share command (default: https://buildwithpi.ai/session/)
 
 ${chalk.bold("Available Tools (default: read, bash, edit, write):")}
   read   - Read file contents

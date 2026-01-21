@@ -19,6 +19,7 @@ if (typeof process !== "undefined" && (process.versions?.node || process.version
 import { supportsXhigh } from "./models.js";
 import { type BedrockOptions, streamBedrock } from "./providers/amazon-bedrock.js";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
+import { type AzureOpenAIResponsesOptions, streamAzureOpenAIResponses } from "./providers/azure-openai-responses.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
 import {
 	type GoogleGeminiCliOptions,
@@ -118,6 +119,7 @@ export function getEnvApiKey(provider: any): string | undefined {
 
 	const envMap: Record<string, string> = {
 		openai: "OPENAI_API_KEY",
+		"azure-openai-responses": "AZURE_OPENAI_API_KEY",
 		google: "GEMINI_API_KEY",
 		groq: "GROQ_API_KEY",
 		cerebras: "CEREBRAS_API_KEY",
@@ -164,6 +166,9 @@ export function stream<TApi extends Api>(
 
 		case "openai-responses":
 			return streamOpenAIResponses(model as Model<"openai-responses">, context, providerOptions as any);
+
+		case "azure-openai-responses":
+			return streamAzureOpenAIResponses(model as Model<"azure-openai-responses">, context, providerOptions as any);
 
 		case "openai-codex-responses":
 			return streamOpenAICodexResponses(model as Model<"openai-codex-responses">, context, providerOptions as any);
@@ -349,6 +354,12 @@ function mapOptionsForApi<TApi extends Api>(
 				...base,
 				reasoningEffort: supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning),
 			} satisfies OpenAIResponsesOptions;
+
+		case "azure-openai-responses":
+			return {
+				...base,
+				reasoningEffort: supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning),
+			} satisfies AzureOpenAIResponsesOptions;
 
 		case "openai-codex-responses":
 			return {

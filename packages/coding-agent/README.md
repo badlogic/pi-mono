@@ -197,6 +197,7 @@ Add API keys to `~/.pi/agent/auth.json`:
 |----------|--------------|---------------------|
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |
+| Azure OpenAI | `azure-openai-responses` | `AZURE_OPENAI_API_KEY` |
 | Google | `google` | `GEMINI_API_KEY` |
 | Mistral | `mistral` | `MISTRAL_API_KEY` |
 | Groq | `groq` | `GROQ_API_KEY` |
@@ -208,6 +209,8 @@ Add API keys to `~/.pi/agent/auth.json`:
 | OpenCode Zen | `opencode` | `OPENCODE_API_KEY` |
 | MiniMax | `minimax` | `MINIMAX_API_KEY` |
 | MiniMax (China) | `minimax-cn` | `MINIMAX_CN_API_KEY` |
+
+Azure OpenAI also requires `AZURE_OPENAI_ENDPOINT` or `AZURE_OPENAI_RESOURCE_NAME`. Optional: `AZURE_OPENAI_API_VERSION` (defaults to `2025-04-01-preview`) and `AZURE_OPENAI_DEPLOYMENT_NAME` to override the deployment name.
 
 Auth file keys take priority over environment variables.
 
