@@ -266,9 +266,9 @@ ${chalk.bold("Environment Variables:")}
   ANTHROPIC_OAUTH_TOKEN        - Anthropic OAuth token (alternative to API key)
   OPENAI_API_KEY               - OpenAI GPT API key
   AZURE_OPENAI_API_KEY         - Azure OpenAI API key
-  AZURE_OPENAI_ENDPOINT        - Azure OpenAI endpoint (https://{resource}.openai.azure.com)
-  AZURE_OPENAI_RESOURCE_NAME   - Azure OpenAI resource name (alternative to endpoint)
-  AZURE_OPENAI_API_VERSION     - Azure OpenAI API version (default: 2025-04-01-preview)
+  AZURE_OPENAI_BASE_URL        - Azure OpenAI base URL (https://{resource}.openai.azure.com/openai/v1)
+  AZURE_OPENAI_RESOURCE_NAME   - Azure OpenAI resource name (alternative to base URL)
+  AZURE_OPENAI_API_VERSION     - Azure OpenAI API version (default: v1)
   AZURE_OPENAI_DEPLOYMENT_NAME - Azure OpenAI deployment name override
   GEMINI_API_KEY               - Google Gemini API key
   GROQ_API_KEY                 - Groq API key

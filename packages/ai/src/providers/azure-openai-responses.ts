@@ -45,14 +45,13 @@ function shortHash(str: string): string {
 	return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36);
 }
 
-const DEFAULT_AZURE_API_VERSION = "2025-04-01-preview";
+const DEFAULT_AZURE_API_VERSION = "v1";
 
 // Azure OpenAI Responses-specific options
 export interface AzureOpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
 	azureApiVersion?: string;
-	azureEndpoint?: string;
 	azureResourceName?: string;
 	azureBaseUrl?: string;
 	azureDeploymentName?: string;
@@ -332,47 +331,41 @@ export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"
 	return stream;
 };
 
-function normalizeAzureEndpoint(endpoint: string): string {
-	return endpoint.replace(/\/+$/, "");
+function normalizeAzureBaseUrl(baseUrl: string): string {
+	return baseUrl.replace(/\/+$/, "");
 }
 
-function getAzureEndpoint(options?: AzureOpenAIResponsesOptions): string | undefined {
-	const endpoint =
-		options?.azureEndpoint ||
-		(options?.azureResourceName ? `https://${options.azureResourceName}.openai.azure.com` : undefined) ||
-		process.env.AZURE_OPENAI_ENDPOINT ||
-		(process.env.AZURE_OPENAI_RESOURCE_NAME
-			? `https://${process.env.AZURE_OPENAI_RESOURCE_NAME}.openai.azure.com`
-			: undefined);
-
-	return endpoint ? normalizeAzureEndpoint(endpoint) : undefined;
+function buildDefaultBaseUrl(resourceName: string): string {
+	return `https://${resourceName}.openai.azure.com/openai/v1`;
 }
 
 function resolveAzureConfig(
 	model: Model<"azure-openai-responses">,
 	options?: AzureOpenAIResponsesOptions,
-): { baseUrl?: string; endpoint?: string; apiVersion: string } {
+): { baseUrl: string; apiVersion: string } {
 	const apiVersion = options?.azureApiVersion || process.env.AZURE_OPENAI_API_VERSION || DEFAULT_AZURE_API_VERSION;
 
-	const baseUrl = options?.azureBaseUrl?.trim() || undefined;
-	const endpoint = getAzureEndpoint(options);
+	const baseUrl = options?.azureBaseUrl?.trim() || process.env.AZURE_OPENAI_BASE_URL?.trim() || undefined;
+	const resourceName = options?.azureResourceName || process.env.AZURE_OPENAI_RESOURCE_NAME;
 
 	let resolvedBaseUrl = baseUrl;
-	const resolvedEndpoint = endpoint;
 
-	if (!resolvedBaseUrl && !resolvedEndpoint && model.baseUrl) {
+	if (!resolvedBaseUrl && resourceName) {
+		resolvedBaseUrl = buildDefaultBaseUrl(resourceName);
+	}
+
+	if (!resolvedBaseUrl && model.baseUrl) {
 		resolvedBaseUrl = model.baseUrl;
 	}
 
-	if (!resolvedBaseUrl && !resolvedEndpoint) {
+	if (!resolvedBaseUrl) {
 		throw new Error(
-			"Azure OpenAI endpoint is required. Set AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_RESOURCE_NAME, or pass azureEndpoint, azureResourceName, azureBaseUrl, or model.baseUrl.",
+			"Azure OpenAI base URL is required. Set AZURE_OPENAI_BASE_URL or AZURE_OPENAI_RESOURCE_NAME, or pass azureBaseUrl, azureResourceName, or model.baseUrl.",
 		);
 	}
 
 	return {
-		baseUrl: resolvedBaseUrl,
-		endpoint: resolvedEndpoint,
+		baseUrl: normalizeAzureBaseUrl(resolvedBaseUrl),
 		apiVersion,
 	};
 }
@@ -393,14 +386,14 @@ function createClient(model: Model<"azure-openai-responses">, apiKey: string, op
 		Object.assign(headers, options.headers);
 	}
 
-	const { baseUrl, endpoint, apiVersion } = resolveAzureConfig(model, options);
+	const { baseUrl, apiVersion } = resolveAzureConfig(model, options);
 
 	return new AzureOpenAI({
 		apiKey,
 		apiVersion,
 		dangerouslyAllowBrowser: true,
 		defaultHeaders: headers,
-		...(baseUrl ? { baseURL: baseUrl } : { endpoint }),
+		baseURL: baseUrl,
 	});
 }
 
