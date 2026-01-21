@@ -17,12 +17,12 @@ const resolveFdPath = (): string | null => {
 	return firstLine ? firstLine.trim() : null;
 };
 
-type FixtureStructure = {
+type FolderStructure = {
 	dirs?: string[];
 	files?: Record<string, string>;
 };
 
-const setupFolder = (baseDir: string, structure: FixtureStructure = {}): void => {
+const setupFolder = (baseDir: string, structure: FolderStructure = {}): void => {
 	const dirs = structure.dirs ?? [];
 	const files = structure.files ?? {};
 
