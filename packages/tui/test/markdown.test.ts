@@ -644,6 +644,56 @@ again, hello world`,
 		});
 	});
 
+	describe("Links", () => {
+		it("should not duplicate URL for autolinked emails", () => {
+			const markdown = new Markdown("Contact user@example.com for help", 0, 0, defaultMarkdownTheme);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+			const joinedPlain = plainLines.join(" ");
+
+			// Should contain the email once, not duplicated with mailto:
+			assert.ok(joinedPlain.includes("user@example.com"), "Should contain email");
+			assert.ok(!joinedPlain.includes("mailto:"), "Should not show mailto: prefix for autolinked emails");
+		});
+
+		it("should not duplicate URL for bare URLs", () => {
+			const markdown = new Markdown("Visit https://example.com for more", 0, 0, defaultMarkdownTheme);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+			const joinedPlain = plainLines.join(" ");
+
+			// URL should appear only once
+			const urlCount = (joinedPlain.match(/https:\/\/example\.com/g) || []).length;
+			assert.strictEqual(urlCount, 1, "URL should appear exactly once");
+		});
+
+		it("should show URL for explicit markdown links with different text", () => {
+			const markdown = new Markdown("[click here](https://example.com)", 0, 0, defaultMarkdownTheme);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+			const joinedPlain = plainLines.join(" ");
+
+			// Should show both link text and URL
+			assert.ok(joinedPlain.includes("click here"), "Should contain link text");
+			assert.ok(joinedPlain.includes("(https://example.com)"), "Should show URL in parentheses");
+		});
+
+		it("should show URL for explicit mailto links with different text", () => {
+			const markdown = new Markdown("[Email me](mailto:test@example.com)", 0, 0, defaultMarkdownTheme);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+			const joinedPlain = plainLines.join(" ");
+
+			// Should show both link text and mailto URL
+			assert.ok(joinedPlain.includes("Email me"), "Should contain link text");
+			assert.ok(joinedPlain.includes("(mailto:test@example.com)"), "Should show mailto URL in parentheses");
+		});
+	});
+
 	describe("HTML-like tags in text", () => {
 		it("should render content with HTML-like tags as text", () => {
 			// When the model emits something like <thinking>content</thinking> in regular text,
