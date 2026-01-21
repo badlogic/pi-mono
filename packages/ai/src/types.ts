@@ -1,5 +1,6 @@
 import type { BedrockOptions } from "./providers/amazon-bedrock.js";
 import type { AnthropicOptions } from "./providers/anthropic.js";
+import type { AzureOpenAIResponsesOptions } from "./providers/azure-openai-responses.js";
 import type { GoogleOptions } from "./providers/google.js";
 import type { GoogleGeminiCliOptions } from "./providers/google-gemini-cli.js";
 import type { GoogleVertexOptions } from "./providers/google-vertex.js";
@@ -13,6 +14,7 @@ export type { AssistantMessageEventStream } from "./utils/event-stream.js";
 export type Api =
 	| "openai-completions"
 	| "openai-responses"
+	| "azure-openai-responses"
 	| "openai-codex-responses"
 	| "anthropic-messages"
 	| "bedrock-converse-stream"
@@ -25,6 +27,7 @@ export interface ApiOptionsMap {
 	"bedrock-converse-stream": BedrockOptions;
 	"openai-completions": OpenAICompletionsOptions;
 	"openai-responses": OpenAIResponsesOptions;
+	"azure-openai-responses": AzureOpenAIResponsesOptions;
 	"openai-codex-responses": OpenAICodexResponsesOptions;
 	"google-generative-ai": GoogleOptions;
 	"google-gemini-cli": GoogleGeminiCliOptions;
@@ -50,6 +53,7 @@ export type KnownProvider =
 	| "google-antigravity"
 	| "google-vertex"
 	| "openai"
+	| "azure-openai-responses"
 	| "openai-codex"
 	| "github-copilot"
 	| "xai"

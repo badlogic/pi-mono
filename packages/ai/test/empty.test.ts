@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete } from "../src/stream.js";
 import type { Api, AssistantMessage, Context, Model, OptionsForApi, UserMessage } from "../src/types.js";
+import { hasAzureOpenAICredentials } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
@@ -199,6 +200,28 @@ describe("AI Providers Empty Message Tests", () => {
 
 		it("should handle empty assistant message in conversation", { retry: 3, timeout: 30000 }, async () => {
 			await testEmptyAssistantMessage(llm);
+		});
+	});
+
+	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Responses Provider Empty Messages", () => {
+		const llm = getModel("azure-openai-responses", "gpt-4o-mini");
+		const azureDeploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME;
+		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
+
+		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyMessage(llm, azureOptions);
+		});
+
+		it("should handle empty string content", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyStringMessage(llm, azureOptions);
+		});
+
+		it("should handle whitespace-only content", { retry: 3, timeout: 30000 }, async () => {
+			await testWhitespaceOnlyMessage(llm, azureOptions);
+		});
+
+		it("should handle empty assistant message in conversation", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyAssistantMessage(llm, azureOptions);
 		});
 	});
 
