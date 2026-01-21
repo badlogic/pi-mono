@@ -42,7 +42,7 @@ export default function (pi: ExtensionAPI) {
 
 		// Find all matches first (to avoid issues with replacing while iterating)
 		const matches: Array<{ full: string; command: string }> = [];
-		let match: RegExpExecArray | null = null;
+		let match = PATTERN.exec(text);
 		while (match) {
 			matches.push({ full: match[0], command: match[1] });
 			match = PATTERN.exec(text);
