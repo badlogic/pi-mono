@@ -6,6 +6,10 @@
 
 - `codeBlockIndent` property on `MarkdownTheme` to customize code block content indentation (default: 2 spaces)
 
+### Fixed
+
+- Autolinked emails no longer display redundant `(mailto:...)` suffix in markdown output
+
 ## [0.49.2] - 2026-01-19
 
 ## [0.49.1] - 2026-01-18
