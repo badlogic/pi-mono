@@ -240,14 +240,17 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		// Check if we're completing a file attachment (prefix starts with "@")
 		if (prefix.startsWith("@")) {
 			// This is a file attachment completion
-			const newLine = `${beforePrefix + item.value} ${afterCursor}`;
+			// Don't add space after directories so user can continue autocompleting
+			const isDirectory = item.value.endsWith("/");
+			const suffix = isDirectory ? "" : " ";
+			const newLine = `${beforePrefix + item.value}${suffix}${afterCursor}`;
 			const newLines = [...lines];
 			newLines[cursorLine] = newLine;
 
 			return {
 				lines: newLines,
 				cursorLine,
-				cursorCol: beforePrefix.length + item.value.length + 1, // +1 for space
+				cursorCol: beforePrefix.length + item.value.length + suffix.length,
 			};
 		}
 
