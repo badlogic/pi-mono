@@ -92,6 +92,7 @@ export class DefaultPackageManager implements PackageManager {
 		this.cwd = options.cwd;
 		this.agentDir = options.agentDir;
 		this.settingsManager = options.settingsManager;
+		this.ensureGitIgnoreDirs();
 	}
 
 	setProgressCallback(callback: ProgressCallback | undefined): void {
@@ -436,10 +437,28 @@ export class DefaultPackageManager implements PackageManager {
 		if (!existsSync(installRoot)) {
 			mkdirSync(installRoot, { recursive: true });
 		}
+		this.ensureGitIgnore(installRoot);
 		const packageJsonPath = join(installRoot, "package.json");
 		if (!existsSync(packageJsonPath)) {
 			const pkgJson = { name: "pi-extensions", private: true };
 			writeFileSync(packageJsonPath, JSON.stringify(pkgJson, null, 2), "utf-8");
+		}
+	}
+
+	private ensureGitIgnoreDirs(): void {
+		this.ensureGitIgnore(join(this.agentDir, "git"));
+		this.ensureGitIgnore(join(this.agentDir, "npm"));
+		this.ensureGitIgnore(join(this.cwd, CONFIG_DIR_NAME, "git"));
+		this.ensureGitIgnore(join(this.cwd, CONFIG_DIR_NAME, "npm"));
+	}
+
+	private ensureGitIgnore(dir: string): void {
+		if (!existsSync(dir)) {
+			mkdirSync(dir, { recursive: true });
+		}
+		const ignorePath = join(dir, ".gitignore");
+		if (!existsSync(ignorePath)) {
+			writeFileSync(ignorePath, "*\n!.gitignore\n", "utf-8");
 		}
 	}
 
