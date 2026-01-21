@@ -25,7 +25,6 @@ import type {
 	ThinkingContent,
 	Tool,
 	ToolCall,
-	Usage,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
@@ -52,7 +51,6 @@ const DEFAULT_AZURE_API_VERSION = "2025-04-01-preview";
 export interface AzureOpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
-	serviceTier?: ResponseCreateParamsStreaming["service_tier"];
 	azureApiVersion?: string;
 	azureEndpoint?: string;
 	azureResourceName?: string;
@@ -292,7 +290,6 @@ export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"
 						};
 					}
 					calculateCost(model, output.usage);
-					applyServiceTierPricing(output.usage, response?.service_tier ?? options?.serviceTier);
 					// Map status to stop reason
 					output.stopReason = mapStopReason(response?.status);
 					if (output.content.some((b) => b.type === "toolCall") && output.stopReason === "stop") {
@@ -422,10 +419,6 @@ function buildParams(
 
 	if (options?.temperature !== undefined) {
 		params.temperature = options?.temperature;
-	}
-
-	if (options?.serviceTier !== undefined) {
-		params.service_tier = options.serviceTier;
 	}
 
 	if (context.tools) {
@@ -614,28 +607,6 @@ function convertTools(tools: Tool[]): OpenAITool[] {
 		parameters: tool.parameters as any, // TypeBox already generates JSON Schema
 		strict: false,
 	}));
-}
-
-function getServiceTierCostMultiplier(serviceTier: ResponseCreateParamsStreaming["service_tier"] | undefined): number {
-	switch (serviceTier) {
-		case "flex":
-			return 0.5;
-		case "priority":
-			return 2;
-		default:
-			return 1;
-	}
-}
-
-function applyServiceTierPricing(usage: Usage, serviceTier: ResponseCreateParamsStreaming["service_tier"] | undefined) {
-	const multiplier = getServiceTierCostMultiplier(serviceTier);
-	if (multiplier === 1) return;
-
-	usage.cost.input *= multiplier;
-	usage.cost.output *= multiplier;
-	usage.cost.cacheRead *= multiplier;
-	usage.cost.cacheWrite *= multiplier;
-	usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
 }
 
 function mapStopReason(status: OpenAI.Responses.ResponseStatus | undefined): StopReason {
