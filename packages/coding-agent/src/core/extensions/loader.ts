@@ -25,6 +25,7 @@ import * as _bundledPiCodingAgent from "../../index.js";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
+import type { ModelRegistry, ProviderConfigInput } from "../model-registry.js";
 import type {
 	Extension,
 	ExtensionAPI,
@@ -32,6 +33,7 @@ import type {
 	ExtensionRuntime,
 	LoadExtensionsResult,
 	MessageRenderer,
+	ProviderConfig,
 	RegisteredCommand,
 	ToolDefinition,
 } from "./types.js";
@@ -135,6 +137,7 @@ function createExtensionAPI(
 	runtime: ExtensionRuntime,
 	cwd: string,
 	eventBus: EventBus,
+	modelRegistry?: ModelRegistry,
 ): ExtensionAPI {
 	const api = {
 		// Registration methods - write to extension
@@ -238,6 +241,13 @@ function createExtensionAPI(
 			runtime.setThinkingLevel(level);
 		},
 
+		registerProvider(name: string, config: ProviderConfig) {
+			if (!modelRegistry) {
+				throw new Error("registerProvider is not available in this context");
+			}
+			modelRegistry.registerProvider(name, config as ProviderConfigInput);
+		},
+
 		events: eventBus,
 	} as ExtensionAPI;
 
@@ -278,6 +288,7 @@ async function loadExtension(
 	cwd: string,
 	eventBus: EventBus,
 	runtime: ExtensionRuntime,
+	modelRegistry?: ModelRegistry,
 ): Promise<{ extension: Extension | null; error: string | null }> {
 	const resolvedPath = resolvePath(extensionPath, cwd);
 
@@ -288,7 +299,7 @@ async function loadExtension(
 		}
 
 		const extension = createExtension(extensionPath, resolvedPath);
-		const api = createExtensionAPI(extension, runtime, cwd, eventBus);
+		const api = createExtensionAPI(extension, runtime, cwd, eventBus, modelRegistry);
 		await factory(api);
 
 		return { extension, error: null };
@@ -307,9 +318,10 @@ export async function loadExtensionFromFactory(
 	eventBus: EventBus,
 	runtime: ExtensionRuntime,
 	extensionPath = "<inline>",
+	modelRegistry?: ModelRegistry,
 ): Promise<Extension> {
 	const extension = createExtension(extensionPath, extensionPath);
-	const api = createExtensionAPI(extension, runtime, cwd, eventBus);
+	const api = createExtensionAPI(extension, runtime, cwd, eventBus, modelRegistry);
 	await factory(api);
 	return extension;
 }
@@ -317,14 +329,19 @@ export async function loadExtensionFromFactory(
 /**
  * Load extensions from paths.
  */
-export async function loadExtensions(paths: string[], cwd: string, eventBus?: EventBus): Promise<LoadExtensionsResult> {
+export async function loadExtensions(
+	paths: string[],
+	cwd: string,
+	eventBus?: EventBus,
+	modelRegistry?: ModelRegistry,
+): Promise<LoadExtensionsResult> {
 	const extensions: Extension[] = [];
 	const errors: Array<{ path: string; error: string }> = [];
 	const resolvedEventBus = eventBus ?? createEventBus();
 	const runtime = createExtensionRuntime();
 
 	for (const extPath of paths) {
-		const { extension, error } = await loadExtension(extPath, cwd, resolvedEventBus, runtime);
+		const { extension, error } = await loadExtension(extPath, cwd, resolvedEventBus, runtime, modelRegistry);
 
 		if (error) {
 			errors.push({ path: extPath, error });
@@ -459,6 +476,7 @@ export async function discoverAndLoadExtensions(
 	cwd: string,
 	agentDir: string = getAgentDir(),
 	eventBus?: EventBus,
+	modelRegistry?: ModelRegistry,
 ): Promise<LoadExtensionsResult> {
 	const allPaths: string[] = [];
 	const seen = new Set<string>();
@@ -495,5 +513,5 @@ export async function discoverAndLoadExtensions(
 		addPaths([resolved]);
 	}
 
-	return loadExtensions(allPaths, cwd, eventBus);
+	return loadExtensions(allPaths, cwd, eventBus, modelRegistry);
 }

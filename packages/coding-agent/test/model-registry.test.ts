@@ -516,4 +516,137 @@ describe("ModelRegistry", () => {
 			});
 		});
 	});
+
+	describe("registerProvider", () => {
+		test("registers a new provider with models", async () => {
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const initialCount = registry.getAll().length;
+
+			registry.registerProvider("my-proxy", {
+				baseUrl: "https://proxy.example.com",
+				apiKey: "PROXY_KEY",
+				api: "anthropic-messages",
+				models: [
+					{
+						id: "claude-test",
+						name: "Claude Test",
+						reasoning: false,
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 100000,
+						maxTokens: 8000,
+					},
+				],
+			});
+
+			const models = registry.getAll();
+			expect(models.length).toBe(initialCount + 1);
+
+			const newModel = registry.find("my-proxy", "claude-test");
+			expect(newModel).toBeDefined();
+			expect(newModel?.name).toBe("Claude Test");
+			expect(newModel?.baseUrl).toBe("https://proxy.example.com");
+		});
+
+		test("replaces existing models when registering with models", async () => {
+			writeModelsJson({
+				"test-provider": providerConfig("https://old.example.com", [{ id: "old-model" }]),
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+			// Verify old model exists
+			expect(registry.find("test-provider", "old-model")).toBeDefined();
+
+			// Register with new models
+			registry.registerProvider("test-provider", {
+				baseUrl: "https://new.example.com",
+				apiKey: "NEW_KEY",
+				api: "anthropic-messages",
+				models: [
+					{
+						id: "new-model",
+						name: "New Model",
+						reasoning: false,
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 100000,
+						maxTokens: 8000,
+					},
+				],
+			});
+
+			// Old model should be gone
+			expect(registry.find("test-provider", "old-model")).toBeUndefined();
+
+			// New model should exist
+			const newModel = registry.find("test-provider", "new-model");
+			expect(newModel).toBeDefined();
+			expect(newModel?.baseUrl).toBe("https://new.example.com");
+		});
+
+		test("overrides baseUrl for built-in provider without replacing models", async () => {
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+			// Get a built-in anthropic model
+			const originalModel = registry.find("anthropic", "claude-sonnet-4-20250514");
+			expect(originalModel).toBeDefined();
+			const originalBaseUrl = originalModel?.baseUrl;
+
+			// Override just the baseUrl
+			registry.registerProvider("anthropic", {
+				baseUrl: "https://proxy.example.com",
+			});
+
+			// Model should still exist with new baseUrl
+			const updatedModel = registry.find("anthropic", "claude-sonnet-4-20250514");
+			expect(updatedModel).toBeDefined();
+			expect(updatedModel?.baseUrl).toBe("https://proxy.example.com");
+			expect(updatedModel?.baseUrl).not.toBe(originalBaseUrl);
+		});
+
+		test("throws error when models provided without baseUrl", () => {
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+			expect(() =>
+				registry.registerProvider("bad-provider", {
+					apiKey: "KEY",
+					api: "anthropic-messages",
+					models: [
+						{
+							id: "test",
+							name: "Test",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 100000,
+							maxTokens: 8000,
+						},
+					],
+				}),
+			).toThrow('"baseUrl" is required');
+		});
+
+		test("throws error when models provided without apiKey", () => {
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+			expect(() =>
+				registry.registerProvider("bad-provider", {
+					baseUrl: "https://example.com",
+					api: "anthropic-messages",
+					models: [
+						{
+							id: "test",
+							name: "Test",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 100000,
+							maxTokens: 8000,
+						},
+					],
+				}),
+			).toThrow('"apiKey" is required');
+		});
+	});
 });

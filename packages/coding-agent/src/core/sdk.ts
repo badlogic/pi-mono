@@ -469,7 +469,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	} else {
 		// Discover extensions, merging with additional paths
 		const configuredPaths = [...settingsManager.getExtensionPaths(), ...(options.additionalExtensionPaths ?? [])];
-		extensionsResult = await discoverAndLoadExtensions(configuredPaths, cwd, agentDir, eventBus);
+		extensionsResult = await discoverAndLoadExtensions(configuredPaths, cwd, agentDir, eventBus, modelRegistry);
 		time("discoverAndLoadExtensions");
 		for (const { path, error } of extensionsResult.errors) {
 			console.error(`Failed to load extension "${path}": ${error}`);
@@ -486,6 +486,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				eventBus,
 				extensionsResult.runtime,
 				`<inline-${i}>`,
+				modelRegistry,
 			);
 			extensionsResult.extensions.push(loaded);
 		}

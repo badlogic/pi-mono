@@ -856,6 +856,100 @@ export interface ExtensionAPI {
 
 	/** Shared event bus for extension communication. */
 	events: EventBus;
+
+	// =========================================================================
+	// Provider Registration
+	// =========================================================================
+
+	/**
+	 * Register or override a model provider.
+	 *
+	 * If `models` is provided: replaces all existing models for this provider.
+	 * If only `baseUrl` is provided: overrides the URL for existing models.
+	 *
+	 * @example
+	 * // Register a new provider with custom models
+	 * pi.registerProvider("my-proxy", {
+	 *   baseUrl: "https://proxy.example.com",
+	 *   apiKey: "PROXY_API_KEY",
+	 *   api: "anthropic-messages",
+	 *   models: [
+	 *     {
+	 *       id: "claude-sonnet-4-20250514",
+	 *       name: "Claude 4 Sonnet (proxy)",
+	 *       reasoning: false,
+	 *       input: ["text", "image"],
+	 *       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	 *       contextWindow: 200000,
+	 *       maxTokens: 16384
+	 *     }
+	 *   ]
+	 * });
+	 *
+	 * @example
+	 * // Override baseUrl for an existing provider
+	 * pi.registerProvider("anthropic", {
+	 *   baseUrl: "https://proxy.example.com"
+	 * });
+	 */
+	registerProvider(name: string, config: ProviderConfig): void;
+}
+
+/** Configuration for registering a provider. */
+export interface ProviderConfig {
+	/** Base URL for the API endpoint. Required when defining models. */
+	baseUrl?: string;
+	/** API key or environment variable name. Required when defining models. */
+	apiKey?: string;
+	/** API type. Required at provider or model level when defining models. */
+	api?:
+		| "openai-completions"
+		| "openai-responses"
+		| "openai-codex-responses"
+		| "anthropic-messages"
+		| "google-generative-ai"
+		| "bedrock-converse-stream";
+	/** Custom headers to include in requests. */
+	headers?: Record<string, string>;
+	/** If true, adds Authorization: Bearer header with the resolved API key. */
+	authHeader?: boolean;
+	/** Models to register. If provided, replaces all existing models for this provider. */
+	models?: ProviderModelConfig[];
+}
+
+/** Configuration for a model within a provider. */
+export interface ProviderModelConfig {
+	/** Model ID (e.g., "claude-sonnet-4-20250514"). */
+	id: string;
+	/** Display name (e.g., "Claude 4 Sonnet"). */
+	name: string;
+	/** API type override for this model. */
+	api?:
+		| "openai-completions"
+		| "openai-responses"
+		| "openai-codex-responses"
+		| "anthropic-messages"
+		| "google-generative-ai"
+		| "bedrock-converse-stream";
+	/** Whether the model supports extended thinking. */
+	reasoning: boolean;
+	/** Supported input types. */
+	input: ("text" | "image")[];
+	/** Cost per token (for tracking, can be 0). */
+	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	/** Maximum context window size in tokens. */
+	contextWindow: number;
+	/** Maximum output tokens. */
+	maxTokens: number;
+	/** Custom headers for this model. */
+	headers?: Record<string, string>;
+	/** OpenAI compatibility settings. */
+	compat?: {
+		supportsStore?: boolean;
+		supportsDeveloperRole?: boolean;
+		supportsReasoningEffort?: boolean;
+		maxTokensField?: "max_completion_tokens" | "max_tokens";
+	};
 }
 
 /** Extension factory function type. Supports both sync and async initialization. */

@@ -429,4 +429,97 @@ export class ModelRegistry {
 		const cred = this.authStorage.get(model.provider);
 		return cred?.type === "oauth";
 	}
+
+	/**
+	 * Register a provider dynamically (from extensions).
+	 *
+	 * If provider has models: replaces all existing models for this provider.
+	 * If provider has only baseUrl/headers: overrides existing models' URLs.
+	 */
+	registerProvider(providerName: string, config: ProviderConfigInput): void {
+		// Store API key for auth resolution
+		if (config.apiKey) {
+			this.customProviderApiKeys.set(providerName, config.apiKey);
+		}
+
+		if (config.models && config.models.length > 0) {
+			// Full replacement: remove existing models for this provider
+			this.models = this.models.filter((m) => m.provider !== providerName);
+
+			// Parse and add new models
+			const providerConfig: Static<typeof ProviderConfigSchema> = {
+				baseUrl: config.baseUrl,
+				apiKey: config.apiKey,
+				api: config.api,
+				headers: config.headers,
+				authHeader: config.authHeader,
+				models: config.models.map((m) => ({
+					...m,
+					input: m.input as ("text" | "image")[],
+				})),
+			};
+
+			// Validate that required fields are present
+			if (!config.baseUrl) {
+				throw new Error(`Provider ${providerName}: "baseUrl" is required when defining models.`);
+			}
+			if (!config.apiKey) {
+				throw new Error(`Provider ${providerName}: "apiKey" is required when defining models.`);
+			}
+
+			const fakeConfig: ModelsConfig = { providers: { [providerName]: providerConfig } };
+			const newModels = this.parseModels(fakeConfig);
+			this.models.push(...newModels);
+		} else if (config.baseUrl) {
+			// Override-only: update baseUrl/headers for existing models
+			this.models = this.models.map((m) => {
+				if (m.provider !== providerName) return m;
+				return {
+					...m,
+					baseUrl: config.baseUrl ?? m.baseUrl,
+					headers: config.headers ? { ...m.headers, ...config.headers } : m.headers,
+				};
+			});
+		}
+	}
+}
+
+/**
+ * Input type for registerProvider API.
+ */
+export interface ProviderConfigInput {
+	baseUrl?: string;
+	apiKey?: string;
+	api?:
+		| "openai-completions"
+		| "openai-responses"
+		| "openai-codex-responses"
+		| "anthropic-messages"
+		| "google-generative-ai"
+		| "bedrock-converse-stream";
+	headers?: Record<string, string>;
+	authHeader?: boolean;
+	models?: Array<{
+		id: string;
+		name: string;
+		api?:
+			| "openai-completions"
+			| "openai-responses"
+			| "openai-codex-responses"
+			| "anthropic-messages"
+			| "google-generative-ai"
+			| "bedrock-converse-stream";
+		reasoning: boolean;
+		input: ("text" | "image")[];
+		cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+		contextWindow: number;
+		maxTokens: number;
+		headers?: Record<string, string>;
+		compat?: {
+			supportsStore?: boolean;
+			supportsDeveloperRole?: boolean;
+			supportsReasoningEffort?: boolean;
+			maxTokensField?: "max_completion_tokens" | "max_tokens";
+		};
+	}>;
 }
