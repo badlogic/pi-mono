@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete } from "../src/stream.js";
 import type { Api, Context, Model, OptionsForApi, ToolResultMessage } from "../src/types.js";
-import { hasAzureOpenAICredentials } from "./azure-utils.js";
+import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
@@ -332,7 +332,7 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 
 	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Responses Provider Unicode Handling", () => {
 		const llm = getModel("azure-openai-responses", "gpt-4o-mini");
-		const azureDeploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME;
+		const azureDeploymentName = resolveAzureDeploymentName(llm.id);
 		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
 
 		it("should handle emoji in tool results", { retry: 3, timeout: 30000 }, async () => {

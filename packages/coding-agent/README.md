@@ -210,7 +210,7 @@ Add API keys to `~/.pi/agent/auth.json`:
 | MiniMax | `minimax` | `MINIMAX_API_KEY` |
 | MiniMax (China) | `minimax-cn` | `MINIMAX_CN_API_KEY` |
 
-Azure OpenAI also requires `AZURE_OPENAI_BASE_URL` or `AZURE_OPENAI_RESOURCE_NAME`. Optional: `AZURE_OPENAI_API_VERSION` (defaults to `v1`) and `AZURE_OPENAI_DEPLOYMENT_NAME` to override the deployment name.
+Azure OpenAI also requires `AZURE_OPENAI_BASE_URL` or `AZURE_OPENAI_RESOURCE_NAME`. Optional: `AZURE_OPENAI_API_VERSION` (defaults to `v1`) and `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` using comma-separated `model=deployment` pairs for overrides.
 
 Auth file keys take priority over environment variables.
 

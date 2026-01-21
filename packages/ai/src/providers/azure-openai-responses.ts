@@ -47,6 +47,27 @@ function shortHash(str: string): string {
 
 const DEFAULT_AZURE_API_VERSION = "v1";
 
+function parseDeploymentNameMap(value: string | undefined): Map<string, string> {
+	const map = new Map<string, string>();
+	if (!value) return map;
+	for (const entry of value.split(",")) {
+		const trimmed = entry.trim();
+		if (!trimmed) continue;
+		const [modelId, deploymentName] = trimmed.split("=", 2);
+		if (!modelId || !deploymentName) continue;
+		map.set(modelId.trim(), deploymentName.trim());
+	}
+	return map;
+}
+
+function resolveDeploymentName(model: Model<"azure-openai-responses">, options?: AzureOpenAIResponsesOptions): string {
+	if (options?.azureDeploymentName) {
+		return options.azureDeploymentName;
+	}
+	const mappedDeployment = parseDeploymentNameMap(process.env.AZURE_OPENAI_DEPLOYMENT_NAME_MAP).get(model.id);
+	return mappedDeployment || model.id;
+}
+
 // Azure OpenAI Responses-specific options
 export interface AzureOpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -69,7 +90,7 @@ export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"
 
 	// Start async processing
 	(async () => {
-		const deploymentName = options?.azureDeploymentName || process.env.AZURE_OPENAI_DEPLOYMENT_NAME || model.id;
+		const deploymentName = resolveDeploymentName(model, options);
 
 		const output: AssistantMessage = {
 			role: "assistant",
