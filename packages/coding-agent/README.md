@@ -197,7 +197,7 @@ Add API keys to `~/.pi/agent/auth.json`:
 |----------|--------------|---------------------|
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |
-| Azure OpenAI | `azure-openai-responses` | `AZURE_OPENAI_API_KEY` |
+| Azure OpenAI | `azure-openai-responses` | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_BASE_URL` or `AZURE_OPENAI_RESOURCE_NAME` |
 | Google | `google` | `GEMINI_API_KEY` |
 | Mistral | `mistral` | `MISTRAL_API_KEY` |
 | Groq | `groq` | `GROQ_API_KEY` |
