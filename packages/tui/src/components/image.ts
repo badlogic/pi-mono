@@ -1,4 +1,5 @@
 import {
+	deleteKittyImage,
 	getCapabilities,
 	getImageDimensions,
 	type ImageDimensions,
@@ -15,6 +16,8 @@ export interface ImageOptions {
 	maxWidthCells?: number;
 	maxHeightCells?: number;
 	filename?: string;
+	/** Kitty image ID. If provided, reuses this ID (for animations/updates). */
+	imageId?: number;
 }
 
 export class Image implements Component {
@@ -23,6 +26,7 @@ export class Image implements Component {
 	private dimensions: ImageDimensions;
 	private theme: ImageTheme;
 	private options: ImageOptions;
+	private imageId?: number;
 
 	private cachedLines?: string[];
 	private cachedWidth?: number;
@@ -39,6 +43,12 @@ export class Image implements Component {
 		this.theme = theme;
 		this.options = options;
 		this.dimensions = dimensions || getImageDimensions(base64Data, mimeType) || { widthPx: 800, heightPx: 600 };
+		this.imageId = options.imageId;
+	}
+
+	/** Get the Kitty image ID used by this image (if any). */
+	getImageId(): number | undefined {
+		return this.imageId;
 	}
 
 	invalidate(): void {
@@ -57,9 +67,17 @@ export class Image implements Component {
 		let lines: string[];
 
 		if (caps.images) {
-			const result = renderImage(this.base64Data, this.dimensions, { maxWidthCells: maxWidth });
+			const result = renderImage(this.base64Data, this.dimensions, {
+				maxWidthCells: maxWidth,
+				imageId: this.imageId,
+			});
 
 			if (result) {
+				// Store the image ID for later cleanup
+				if (result.imageId) {
+					this.imageId = result.imageId;
+				}
+
 				// Return `rows` lines so TUI accounts for image height
 				// First (rows-1) lines are empty (TUI clears them)
 				// Last line: move cursor back up, then output image sequence
@@ -83,5 +101,16 @@ export class Image implements Component {
 		this.cachedWidth = width;
 
 		return lines;
+	}
+
+	/**
+	 * Delete the terminal image. Call this when done with the image
+	 * to free terminal resources.
+	 */
+	dispose(): void {
+		if (this.imageId !== undefined) {
+			process.stdout.write(deleteKittyImage(this.imageId));
+			this.imageId = undefined;
+		}
 	}
 }

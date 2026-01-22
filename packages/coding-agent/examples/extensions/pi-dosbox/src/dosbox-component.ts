@@ -8,7 +8,16 @@ import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import { deflateSync } from "node:zlib";
 import type { Component } from "@mariozechner/pi-tui";
-import { Image, type ImageTheme, isKeyRelease, Key, matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
+import {
+	allocateImageId,
+	deleteKittyImage,
+	Image,
+	type ImageTheme,
+	isKeyRelease,
+	Key,
+	matchesKey,
+	truncateToWidth,
+} from "@mariozechner/pi-tui";
 import type { CommandInterface, Emulators } from "emulators";
 
 const MAX_WIDTH_CELLS = 120;
@@ -47,6 +56,7 @@ export class DosboxComponent implements Component {
 	private disposed = false;
 	private bundleData?: Uint8Array;
 	private kittyPushed = false;
+	private imageId: number;
 
 	wantsKeyRelease = true;
 
@@ -60,6 +70,7 @@ export class DosboxComponent implements Component {
 		this.onClose = onClose;
 		this.bundleData = bundleData;
 		this.imageTheme = { fallbackColor };
+		this.imageId = allocateImageId();
 		void this.init();
 	}
 
@@ -124,7 +135,7 @@ export class DosboxComponent implements Component {
 			base64,
 			"image/png",
 			this.imageTheme,
-			{ maxWidthCells: MAX_WIDTH_CELLS },
+			{ maxWidthCells: MAX_WIDTH_CELLS, imageId: this.imageId },
 			{ widthPx: this.frameWidth, heightPx: this.frameHeight },
 		);
 		this.version++;
@@ -186,6 +197,10 @@ export class DosboxComponent implements Component {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+
+		// Delete the terminal image
+		process.stdout.write(deleteKittyImage(this.imageId));
+
 		if (this.kittyPushed) {
 			process.stdout.write("\x1b[<u");
 			this.kittyPushed = false;

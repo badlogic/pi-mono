@@ -20,6 +20,8 @@ export interface ImageRenderOptions {
 	maxWidthCells?: number;
 	maxHeightCells?: number;
 	preserveAspectRatio?: boolean;
+	/** Kitty image ID. If provided, reuses/replaces existing image with this ID. */
+	imageId?: number;
 }
 
 let cachedCapabilities: TerminalCapabilities | null = null;
@@ -79,6 +81,15 @@ export function resetCapabilitiesCache(): void {
 	cachedCapabilities = null;
 }
 
+// Counter for generating unique image IDs
+let nextImageId = 1;
+
+export function allocateImageId(): number {
+	const id = nextImageId;
+	nextImageId = (nextImageId % 0xffffffff) + 1; // Wrap around at max uint32
+	return id;
+}
+
 export function encodeKitty(
 	base64Data: string,
 	options: {
@@ -120,6 +131,22 @@ export function encodeKitty(
 	}
 
 	return chunks.join("");
+}
+
+/**
+ * Delete a Kitty graphics image by ID.
+ * Uses uppercase 'I' to also free the image data.
+ */
+export function deleteKittyImage(imageId: number): string {
+	return `\x1b_Ga=d,d=I,i=${imageId}\x1b\\`;
+}
+
+/**
+ * Delete all visible Kitty graphics images.
+ * Uses uppercase 'A' to also free the image data.
+ */
+export function deleteAllKittyImages(): string {
+	return `\x1b_Ga=d,d=A\x1b\\`;
 }
 
 export function encodeITerm2(
@@ -304,7 +331,7 @@ export function renderImage(
 	base64Data: string,
 	imageDimensions: ImageDimensions,
 	options: ImageRenderOptions = {},
-): { sequence: string; rows: number } | null {
+): { sequence: string; rows: number; imageId?: number } | null {
 	const caps = getCapabilities();
 
 	if (!caps.images) {
@@ -315,8 +342,9 @@ export function renderImage(
 	const rows = calculateImageRows(imageDimensions, maxWidth, getCellDimensions());
 
 	if (caps.images === "kitty") {
-		const sequence = encodeKitty(base64Data, { columns: maxWidth, rows });
-		return { sequence, rows };
+		const imageId = options.imageId ?? allocateImageId();
+		const sequence = encodeKitty(base64Data, { columns: maxWidth, rows, imageId });
+		return { sequence, rows, imageId };
 	}
 
 	if (caps.images === "iterm2") {

@@ -51,8 +51,11 @@ export { StdinBuffer, type StdinBufferEventMap, type StdinBufferOptions } from "
 export { ProcessTerminal, type Terminal } from "./terminal.js";
 // Terminal image support
 export {
+	allocateImageId,
 	type CellDimensions,
 	calculateImageRows,
+	deleteAllKittyImages,
+	deleteKittyImage,
 	detectCapabilities,
 	encodeITerm2,
 	encodeKitty,
