@@ -88,7 +88,12 @@ function normalizeExtensionSource(source: string): { type: "npm" | "git" | "loca
 	}
 	if (source.startsWith("git:")) {
 		const repo = source.slice("git:".length).trim().split("@")[0] ?? "";
-		return { type: "git", key: repo.replace(/^https?:\/\//, "") };
+		return { type: "git", key: repo.replace(/^https?:\/\//, "").replace(/\.git$/, "") };
+	}
+	// Raw git URLs
+	if (source.startsWith("https://") || source.startsWith("http://")) {
+		const repo = source.split("@")[0] ?? "";
+		return { type: "git", key: repo.replace(/^https?:\/\//, "").replace(/\.git$/, "") };
 	}
 	return { type: "local", key: source };
 }
