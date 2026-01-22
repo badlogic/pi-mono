@@ -36,6 +36,20 @@ export interface DosboxState {
 	isGraphicsMode: boolean;
 }
 
+// Emscripten FS type
+interface EmscriptenFS {
+	mkdir(path: string): void;
+	writeFile(path: string, data: Uint8Array | Buffer): void;
+	readFile(path: string): Uint8Array;
+	readdir(path: string): string[];
+	unlink(path: string): void;
+}
+
+interface EmscriptenModule {
+	FS: EmscriptenFS;
+	_rescanFilesystem?: () => void;
+}
+
 export class DosboxInstance {
 	private static instance: DosboxInstance | null = null;
 
@@ -79,7 +93,8 @@ export class DosboxInstance {
 			const bundle = await this.createBundle(emu);
 			this.ci = await emu.dosboxDirect(bundle);
 
-			// QBasic files are included in the bundle, no post-init mount needed
+			// Mount QBasic files after DOSBox starts
+			await this.mountQBasic();
 
 			const events = this.ci.events();
 
@@ -120,120 +135,59 @@ export class DosboxInstance {
 
 	private async createBundle(emu: Emulators): Promise<Uint8Array> {
 		const bundle = await emu.bundle();
-
-		// Add QBasic files to the bundle
-		// We'll create a zip and include it
-		await this.addQBasicToBundle(bundle);
-
-		// Set up autoexec to show what's available
+		// Simple autoexec - we mount files to /home/web_user which maps to C:
 		bundle.autoexec(
 			"@echo off",
 			"c:",
 			"cls",
 			"echo QuickBASIC 4.5 is at C:\\QB",
-			"echo.",
 			"echo Type: CD QB",
 			"echo Then: QB.EXE",
 			"echo.",
+			"dir",
 		);
-
 		return bundle.toUint8Array(true);
 	}
 
-	private async addQBasicToBundle(bundle: Awaited<ReturnType<Emulators["bundle"]>>): Promise<void> {
-		// Read QBasic files and create a zip data URL
+	private async mountQBasic(): Promise<void> {
+		if (!this.ci) return;
+
+		// Access Emscripten module
+		const transport = (this.ci as unknown as { transport: { module: EmscriptenModule } }).transport;
+		const Module = transport.module;
+		const FS = Module.FS;
+
+		// jsdos mounts C: to /home/web_user by default
+		// Let's verify and find the correct path
+		const mountPath = "/home/web_user";
+
+		// Create QB directory
+		const qbPath = `${mountPath}/QB`;
+		try {
+			FS.mkdir(qbPath);
+		} catch {
+			/* exists */
+		}
+
+		// Read QBasic files from the extension directory
 		const qbasicDir = join(__dirname, "..", "qbasic");
 		const { readdirSync, readFileSync } = await import("node:fs");
 
-		const files = readdirSync(qbasicDir).filter((f) => !f.startsWith("."));
-
-		// Create a simple zip structure
-		const zipParts: Buffer[] = [];
-		const centralDir: Buffer[] = [];
-		let offset = 0;
-
+		const files = readdirSync(qbasicDir);
 		for (const file of files) {
-			const data = readFileSync(join(qbasicDir, file));
-			const fileName = `QB/${file.toUpperCase()}`;
-			const fileNameBuf = Buffer.from(fileName, "utf-8");
-
-			// Local file header
-			const localHeader = Buffer.alloc(30 + fileNameBuf.length);
-			localHeader.writeUInt32LE(0x04034b50, 0); // signature
-			localHeader.writeUInt16LE(20, 4); // version needed
-			localHeader.writeUInt16LE(0, 6); // flags
-			localHeader.writeUInt16LE(0, 8); // compression (none)
-			localHeader.writeUInt16LE(0, 10); // mod time
-			localHeader.writeUInt16LE(0, 12); // mod date
-			localHeader.writeUInt32LE(this.crc32Buf(data), 14); // crc32
-			localHeader.writeUInt32LE(data.length, 18); // compressed size
-			localHeader.writeUInt32LE(data.length, 22); // uncompressed size
-			localHeader.writeUInt16LE(fileNameBuf.length, 26); // filename length
-			localHeader.writeUInt16LE(0, 28); // extra field length
-			fileNameBuf.copy(localHeader, 30);
-
-			zipParts.push(localHeader);
-			zipParts.push(data);
-
-			// Central directory entry
-			const cdEntry = Buffer.alloc(46 + fileNameBuf.length);
-			cdEntry.writeUInt32LE(0x02014b50, 0); // signature
-			cdEntry.writeUInt16LE(20, 4); // version made by
-			cdEntry.writeUInt16LE(20, 6); // version needed
-			cdEntry.writeUInt16LE(0, 8); // flags
-			cdEntry.writeUInt16LE(0, 10); // compression
-			cdEntry.writeUInt16LE(0, 12); // mod time
-			cdEntry.writeUInt16LE(0, 14); // mod date
-			cdEntry.writeUInt32LE(this.crc32Buf(data), 16); // crc32
-			cdEntry.writeUInt32LE(data.length, 20); // compressed size
-			cdEntry.writeUInt32LE(data.length, 24); // uncompressed size
-			cdEntry.writeUInt16LE(fileNameBuf.length, 28); // filename length
-			cdEntry.writeUInt16LE(0, 30); // extra field length
-			cdEntry.writeUInt16LE(0, 32); // comment length
-			cdEntry.writeUInt16LE(0, 34); // disk number start
-			cdEntry.writeUInt16LE(0, 36); // internal attrs
-			cdEntry.writeUInt32LE(0, 38); // external attrs
-			cdEntry.writeUInt32LE(offset, 42); // relative offset
-			fileNameBuf.copy(cdEntry, 46);
-
-			centralDir.push(cdEntry);
-			offset += localHeader.length + data.length;
+			if (file.startsWith(".")) continue;
+			try {
+				const data = readFileSync(join(qbasicDir, file));
+				FS.writeFile(`${qbPath}/${file.toUpperCase()}`, data);
+			} catch (e) {
+				console.error(`Failed to mount ${file}:`, e);
+			}
 		}
 
-		const cdOffset = offset;
-		const cdSize = centralDir.reduce((sum, buf) => sum + buf.length, 0);
-
-		// End of central directory
-		const eocd = Buffer.alloc(22);
-		eocd.writeUInt32LE(0x06054b50, 0); // signature
-		eocd.writeUInt16LE(0, 4); // disk number
-		eocd.writeUInt16LE(0, 6); // disk with CD
-		eocd.writeUInt16LE(files.length, 8); // entries on disk
-		eocd.writeUInt16LE(files.length, 10); // total entries
-		eocd.writeUInt32LE(cdSize, 12); // CD size
-		eocd.writeUInt32LE(cdOffset, 16); // CD offset
-		eocd.writeUInt16LE(0, 20); // comment length
-
-		const zipBuffer = Buffer.concat([...zipParts, ...centralDir, eocd]);
-		const base64 = zipBuffer.toString("base64");
-		const dataUrl = `data:application/zip;base64,${base64}`;
-
-		// Extract to root of C: drive
-		bundle.extract(dataUrl, "/", "zip");
-	}
-
-	private crc32Buf(buffer: Buffer): number {
-		let crc = 0xffffffff;
-		for (const byte of buffer) {
-			crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+		// Rescan so DOS sees the new files
+		if (Module._rescanFilesystem) {
+			Module._rescanFilesystem();
 		}
-		return (crc ^ 0xffffffff) >>> 0;
-	}
-
-	// No longer needed - files are in bundle
-	// biome-ignore lint/correctness/noUnusedPrivateClassMembers: Keeping for reference
-	private async mountQBasicPostInit(): Promise<void> {
-		// This approach didn't work - keeping for reference
 	}
 
 	private expandRgbToRgba(rgb: Uint8Array): Uint8Array {
