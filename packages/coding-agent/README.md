@@ -250,13 +250,10 @@ pi
 - Intended for personal use with your own subscription; not for resale or multi-user services. For production, use the OpenAI Platform API.
 
 **Z.AI GLM Coding Plan notes:**
-- Requires Z.AI API key from [Z.AI Open Platform](https://z.ai)
-- Subscribe to GLM Coding Plan for access to coding-optimized models
-- Uses dedicated coding endpoint: `https://api.z.ai/api/coding/paas/v4`
-- GLM-4.7 (204K context) is the latest model with extended thinking and tool calling
-- GLM-4.6 (204K context) and GLM-4.5 (131K context) also available
-- Vision models (GLM-4.5v, GLM-4.6v) support image analysis alongside coding
-- Models appear in `/models` selector only when API key is configured
+- Pi uses the dedicated coding plan endpoint: `https://api.z.ai/api/coding/paas/v4`
+- Requires Z.AI API key from [Z.AI Open Platform](https://z.ai) with an active [Coding Plan](https://z.ai/subscribe) subscription
+- Z.AI API keys are the same for both the subscription and regular API. In order to use the regular API, you need to configure a custom provider pointing at the [regular endpoint](https://docs.z.ai/api-reference/llm/chat-completion)
+- Consult the [docs](https://docs.z.ai/guides/llm/glm-4.7) to learn more about the models
 
 Credentials stored in `~/.pi/agent/auth.json`. Use `/logout` to clear.
 
