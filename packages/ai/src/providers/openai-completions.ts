@@ -23,6 +23,7 @@ import type {
 	ThinkingContent,
 	Tool,
 	ToolCall,
+	ToolResultMessage,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
@@ -459,7 +460,7 @@ function maybeAddOpenRouterAnthropicCacheControl(
 	}
 }
 
-function convertMessages(
+export function convertMessages(
 	model: Model<"openai-completions">,
 	context: Context,
 	compat: Required<OpenAICompletionsCompat>,
@@ -486,7 +487,8 @@ function convertMessages(
 
 	let lastRole: string | null = null;
 
-	for (const msg of transformedMessages) {
+	for (let i = 0; i < transformedMessages.length; i++) {
+		const msg = transformedMessages[i];
 		// Some providers (e.g. Mistral/Devstral) don't allow user messages directly after tool results
 		// Insert a synthetic assistant message to bridge the gap
 		if (compat.requiresAssistantAfterToolResult && lastRole === "toolResult" && msg.role === "user") {
@@ -610,55 +612,71 @@ function convertMessages(
 			}
 			params.push(assistantMsg);
 		} else if (msg.role === "toolResult") {
-			// Extract text and image content
-			const textResult = msg.content
-				.filter((c) => c.type === "text")
-				.map((c) => (c as any).text)
-				.join("\n");
-			const hasImages = msg.content.some((c) => c.type === "image");
+			const imageBlocks: Array<{ type: "image_url"; image_url: { url: string } }> = [];
+			let j = i;
 
-			// Always send tool result with text (or placeholder if only images)
-			const hasText = textResult.length > 0;
-			// Some providers (e.g. Mistral) require the 'name' field in tool results
-			const toolResultMsg: ChatCompletionToolMessageParam = {
-				role: "tool",
-				content: sanitizeSurrogates(hasText ? textResult : "(see attached image)"),
-				tool_call_id: msg.toolCallId,
-			};
-			if (compat.requiresToolResultName && msg.toolName) {
-				(toolResultMsg as any).name = msg.toolName;
-			}
-			params.push(toolResultMsg);
+			for (; j < transformedMessages.length && transformedMessages[j].role === "toolResult"; j++) {
+				const toolMsg = transformedMessages[j] as ToolResultMessage;
 
-			// If there are images and model supports them, send a follow-up user message with images
-			if (hasImages && model.input.includes("image")) {
-				const contentBlocks: Array<
-					{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
-				> = [];
+				// Extract text and image content
+				const textResult = toolMsg.content
+					.filter((c) => c.type === "text")
+					.map((c) => (c as any).text)
+					.join("\n");
+				const hasImages = toolMsg.content.some((c) => c.type === "image");
 
-				// Add text prefix
-				contentBlocks.push({
-					type: "text",
-					text: "Attached image(s) from tool result:",
-				});
+				// Always send tool result with text (or placeholder if only images)
+				const hasText = textResult.length > 0;
+				// Some providers (e.g. Mistral) require the 'name' field in tool results
+				const toolResultMsg: ChatCompletionToolMessageParam = {
+					role: "tool",
+					content: sanitizeSurrogates(hasText ? textResult : "(see attached image)"),
+					tool_call_id: toolMsg.toolCallId,
+				};
+				if (compat.requiresToolResultName && toolMsg.toolName) {
+					(toolResultMsg as any).name = toolMsg.toolName;
+				}
+				params.push(toolResultMsg);
 
-				// Add images
-				for (const block of msg.content) {
-					if (block.type === "image") {
-						contentBlocks.push({
-							type: "image_url",
-							image_url: {
-								url: `data:${(block as any).mimeType};base64,${(block as any).data}`,
-							},
-						});
+				if (hasImages && model.input.includes("image")) {
+					for (const block of toolMsg.content) {
+						if (block.type === "image") {
+							imageBlocks.push({
+								type: "image_url",
+								image_url: {
+									url: `data:${(block as any).mimeType};base64,${(block as any).data}`,
+								},
+							});
+						}
 					}
+				}
+			}
+
+			i = j - 1;
+
+			if (imageBlocks.length > 0) {
+				if (compat.requiresAssistantAfterToolResult) {
+					params.push({
+						role: "assistant",
+						content: "I have processed the tool results.",
+					});
 				}
 
 				params.push({
 					role: "user",
-					content: contentBlocks,
+					content: [
+						{
+							type: "text",
+							text: "Attached image(s) from tool result:",
+						},
+						...imageBlocks,
+					],
 				});
+				lastRole = "user";
+			} else {
+				lastRole = "toolResult";
 			}
+			continue;
 		}
 
 		lastRole = msg.role;
