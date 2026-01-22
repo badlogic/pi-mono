@@ -27,6 +27,7 @@ import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/
 import { getAuthPath } from "../config.js";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { stripFrontmatter } from "../utils/frontmatter.js";
+import { getShellConfig, getShellEnv } from "../utils/shell.js";
 import { type BashResult, executeBash as executeBashCommand, executeBashWithOperations } from "./bash-executor.js";
 import {
 	type CompactionResult,
@@ -41,6 +42,7 @@ import {
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.js";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import {
+	type BeforeBashExecEvent,
 	type ContextUsage,
 	type ExtensionCommandContextActions,
 	type ExtensionErrorListener,
@@ -2018,19 +2020,48 @@ export class AgentSession {
 	): Promise<BashResult> {
 		this._bashAbortController = new AbortController();
 
-		// Apply command prefix if configured (e.g., "shopt -s expand_aliases" for alias support)
-		const prefix = this.settingsManager.getShellCommandPrefix();
-		const resolvedCommand = prefix ? `${prefix}\n${command}` : command;
-
 		try {
+			// Apply command prefix if configured (e.g., "shopt -s expand_aliases" for alias support)
+			const prefix = this.settingsManager.getShellCommandPrefix();
+			const resolvedCommand = prefix ? `${prefix}\n${command}` : command;
+			const shellConfig = getShellConfig();
+			const baseEvent: BeforeBashExecEvent = {
+				type: "before_bash_exec",
+				source: "user_bash",
+				command: resolvedCommand,
+				originalCommand: command,
+				cwd: process.cwd(),
+				env: { ...getShellEnv() },
+				shell: shellConfig.shell,
+				args: [...shellConfig.args],
+			};
+			const execEvent = this._extensionRunner?.hasHandlers("before_bash_exec")
+				? await this._extensionRunner.emitBeforeBashExec(baseEvent)
+				: baseEvent;
+			const execCommand = execEvent.command;
+			const execCwd = execEvent.cwd;
+			const execEnv = execEvent.env;
+			const execShell = execEvent.shell;
+			const execArgs = execEvent.args;
+			const execTimeout = execEvent.timeout;
+
 			const result = options?.operations
-				? await executeBashWithOperations(resolvedCommand, process.cwd(), options.operations, {
+				? await executeBashWithOperations(execCommand, execCwd, options.operations, {
 						onChunk,
 						signal: this._bashAbortController.signal,
+						env: execEnv,
+						shell: execShell,
+						args: execArgs,
+						timeout: execTimeout,
 					})
-				: await executeBashCommand(resolvedCommand, {
+				: await executeBashCommand(execCommand, {
 						onChunk,
 						signal: this._bashAbortController.signal,
+						cwd: execCwd,
+						env: execEnv,
+						shell: execShell,
+						args: execArgs,
+						timeout: execTimeout,
 					});
 
 			this.recordBashResult(command, result, options);

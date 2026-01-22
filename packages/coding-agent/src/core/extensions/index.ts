@@ -25,9 +25,14 @@ export type {
 	// App keybindings (for custom editors)
 	AppAction,
 	AppendEntryHandler,
+	BashExecEvent,
+	BashExecOverrides,
+	BashExecSource,
 	BashToolResultEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	BeforeBashExecEvent,
+	BeforeBashExecEventResult,
 	// Context
 	CompactOptions,
 	// Events - Agent

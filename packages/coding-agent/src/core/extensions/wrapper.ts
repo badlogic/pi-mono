@@ -3,8 +3,9 @@
  */
 
 import type { AgentTool, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
+import { getShellConfig, getShellEnv } from "../../utils/shell.js";
 import type { ExtensionRunner } from "./runner.js";
-import type { RegisteredTool, ToolCallEventResult, ToolResultEventResult } from "./types.js";
+import type { BeforeBashExecEvent, RegisteredTool, ToolCallEventResult, ToolResultEventResult } from "./types.js";
 
 /**
  * Wrap a RegisteredTool into an AgentTool.
@@ -36,6 +37,47 @@ export function wrapRegisteredTools(registeredTools: RegisteredTool[], runner: E
  * - Emits tool_result event after execution (can modify result)
  */
 export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: ExtensionRunner): AgentTool<any, T> {
+	type BashToolParams = {
+		command: string;
+		timeout?: number;
+	};
+	type BashExecParams = BashToolParams & {
+		cwd?: string;
+		env?: NodeJS.ProcessEnv;
+		shell?: string;
+		args?: string[];
+	};
+	const applyBeforeBashExecOverrides = async (
+		toolCallId: string,
+		params: BashToolParams,
+		runner: ExtensionRunner,
+	): Promise<BashExecParams> => {
+		const shellConfig = getShellConfig();
+		const context = runner.createContext();
+		const baseEvent: BeforeBashExecEvent = {
+			type: "before_bash_exec",
+			source: "tool",
+			command: params.command,
+			originalCommand: params.command,
+			cwd: context.cwd,
+			env: { ...getShellEnv() },
+			shell: shellConfig.shell,
+			args: [...shellConfig.args],
+			toolCallId,
+			timeout: params.timeout,
+		};
+		const execEvent = await runner.emitBeforeBashExec(baseEvent);
+		return {
+			...params,
+			command: execEvent.command,
+			cwd: execEvent.cwd,
+			env: execEvent.env,
+			shell: execEvent.shell,
+			args: execEvent.args,
+			timeout: execEvent.timeout,
+		};
+	};
+
 	return {
 		...tool,
 		execute: async (
@@ -44,6 +86,8 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 			signal?: AbortSignal,
 			onUpdate?: AgentToolUpdateCallback<T>,
 		) => {
+			let effectiveParams = params;
+
 			// Emit tool_call event - extensions can block execution
 			if (runner.hasHandlers("tool_call")) {
 				try {
@@ -66,9 +110,13 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 				}
 			}
 
+			if (tool.name === "bash" && runner.hasHandlers("before_bash_exec")) {
+				effectiveParams = await applyBeforeBashExecOverrides(toolCallId, params as BashToolParams, runner);
+			}
+
 			// Execute the actual tool
 			try {
-				const result = await tool.execute(toolCallId, params, signal, onUpdate);
+				const result = await tool.execute(toolCallId, effectiveParams, signal, onUpdate);
 
 				// Emit tool_result event - extensions can modify the result
 				if (runner.hasHandlers("tool_result")) {
@@ -76,13 +124,17 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 						type: "tool_result",
 						toolName: tool.name,
 						toolCallId,
-						input: params,
+						input: effectiveParams,
 						content: result.content,
 						details: result.details,
 						isError: false,
 					})) as ToolResultEventResult | undefined;
 
 					if (resultResult) {
+						if (resultResult.errorMessage !== undefined) {
+							throw new Error(resultResult.errorMessage);
+						}
+
 						return {
 							content: resultResult.content ?? result.content,
 							details: (resultResult.details ?? result.details) as T,
@@ -94,15 +146,20 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 			} catch (err) {
 				// Emit tool_result event for errors
 				if (runner.hasHandlers("tool_result")) {
-					await runner.emit({
+					const content = [{ type: "text" as const, text: err instanceof Error ? err.message : String(err) }];
+					const resultResult = (await runner.emit({
 						type: "tool_result",
 						toolName: tool.name,
 						toolCallId,
-						input: params,
-						content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
+						input: effectiveParams,
+						content,
 						details: undefined,
 						isError: true,
-					});
+					})) as ToolResultEventResult | undefined;
+
+					if (resultResult?.errorMessage !== undefined) {
+						throw new Error(resultResult.errorMessage);
+					}
 				}
 				throw err;
 			}

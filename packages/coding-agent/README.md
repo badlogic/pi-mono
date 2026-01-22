@@ -1101,7 +1101,23 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_result", async (event, ctx) => {
     if (event.toolName === "read") {
       // Redact secrets from file contents
-      return { modifiedResult: event.result.replace(/API_KEY=\w+/g, "API_KEY=***") };
+      return {
+        content: event.content.map((item) =>
+          item.type === "text"
+            ? { ...item, text: item.text.replace(/API_KEY=\w+/g, "API_KEY=***") }
+            : item
+        ),
+      };
+    }
+
+    if (event.isError) {
+      // Override the thrown error message (optional)
+      return { errorMessage: "Custom error message" };
+    }
+
+    if (event.toolName === "bash" && event.content.length > 0) {
+      // Force a successful tool to be treated as an error
+      return { errorMessage: "Tool output rejected by policy" };
     }
   });
 

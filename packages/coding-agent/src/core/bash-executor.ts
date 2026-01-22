@@ -25,6 +25,16 @@ export interface BashExecutorOptions {
 	onChunk?: (chunk: string) => void;
 	/** AbortSignal for cancellation */
 	signal?: AbortSignal;
+	/** Working directory override */
+	cwd?: string;
+	/** Environment override */
+	env?: NodeJS.ProcessEnv;
+	/** Shell executable override */
+	shell?: string;
+	/** Shell argument override */
+	args?: string[];
+	/** Timeout in seconds */
+	timeout?: number;
 }
 
 export interface BashResult {
@@ -60,12 +70,28 @@ export interface BashResult {
  */
 export function executeBash(command: string, options?: BashExecutorOptions): Promise<BashResult> {
 	return new Promise((resolve, reject) => {
-		const { shell, args } = getShellConfig();
-		const child: ChildProcess = spawn(shell, [...args, command], {
+		const shellConfig = getShellConfig();
+		const resolvedShell = options?.shell ?? shellConfig.shell;
+		const resolvedArgs = options?.args ?? shellConfig.args;
+		const resolvedCwd = options?.cwd ?? process.cwd();
+		const resolvedEnv = { ...getShellEnv(), ...(options?.env ?? {}) };
+		const child: ChildProcess = spawn(resolvedShell, [...resolvedArgs, command], {
+			cwd: resolvedCwd,
+			env: resolvedEnv,
 			detached: true,
-			env: getShellEnv(),
 			stdio: ["ignore", "pipe", "pipe"],
 		});
+
+		let timedOut = false;
+		let timeoutHandle: NodeJS.Timeout | undefined;
+		if (options?.timeout !== undefined && options.timeout > 0) {
+			timeoutHandle = setTimeout(() => {
+				timedOut = true;
+				if (child.pid) {
+					killProcessTree(child.pid);
+				}
+			}, options.timeout * 1000);
+		}
 
 		// Track sanitized output for truncation
 		const outputChunks: string[] = [];
@@ -88,6 +114,9 @@ export function executeBash(command: string, options?: BashExecutorOptions): Pro
 			if (options.signal.aborted) {
 				// Already aborted, don't even start
 				child.kill();
+				if (timeoutHandle) {
+					clearTimeout(timeoutHandle);
+				}
 				resolve({
 					output: "",
 					exitCode: undefined,
@@ -144,6 +173,9 @@ export function executeBash(command: string, options?: BashExecutorOptions): Pro
 			if (options?.signal) {
 				options.signal.removeEventListener("abort", abortHandler);
 			}
+			if (timeoutHandle) {
+				clearTimeout(timeoutHandle);
+			}
 
 			if (tempFileStream) {
 				tempFileStream.end();
@@ -153,8 +185,7 @@ export function executeBash(command: string, options?: BashExecutorOptions): Pro
 			const fullOutput = outputChunks.join("");
 			const truncationResult = truncateTail(fullOutput);
 
-			// code === null means killed (cancelled)
-			const cancelled = code === null;
+			const cancelled = code === null || timedOut;
 
 			resolve({
 				output: truncationResult.truncated ? truncationResult.content : fullOutput,
@@ -169,6 +200,9 @@ export function executeBash(command: string, options?: BashExecutorOptions): Pro
 			// Clean up abort listener
 			if (options?.signal) {
 				options.signal.removeEventListener("abort", abortHandler);
+			}
+			if (timeoutHandle) {
+				clearTimeout(timeoutHandle);
 			}
 
 			if (tempFileStream) {
@@ -238,6 +272,10 @@ export async function executeBashWithOperations(
 		const result = await operations.exec(command, cwd, {
 			onData,
 			signal: options?.signal,
+			timeout: options?.timeout,
+			env: options?.env,
+			shell: options?.shell,
+			args: options?.args,
 		});
 
 		if (tempFileStream) {

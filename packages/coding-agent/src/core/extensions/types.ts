@@ -489,6 +489,43 @@ export interface UserBashEvent {
 }
 
 // ============================================================================
+// Bash Execution Events
+// ============================================================================
+
+export type BashExecSource = "tool" | "user_bash";
+
+export interface BashExecOverrides {
+	command?: string;
+	cwd?: string;
+	env?: Record<string, string | undefined>;
+	shell?: string;
+	args?: string[];
+	timeout?: number;
+}
+
+export interface BashExecBlockResult {
+	block: true;
+	reason?: string;
+}
+
+export interface BashExecEvent {
+	source: BashExecSource;
+	command: string;
+	originalCommand: string;
+	cwd: string;
+	env: NodeJS.ProcessEnv;
+	shell: string;
+	args: string[];
+	toolCallId?: string;
+	timeout?: number;
+}
+
+/** Fired before spawning a bash command (tool + user bash). */
+export interface BeforeBashExecEvent extends BashExecEvent {
+	type: "before_bash_exec";
+}
+
+// ============================================================================
 // Input Events
 // ============================================================================
 
@@ -617,6 +654,7 @@ export type ExtensionEvent =
 	| TurnEndEvent
 	| ModelSelectEvent
 	| UserBashEvent
+	| BeforeBashExecEvent
 	| InputEvent
 	| ToolCallEvent
 	| ToolResultEvent;
@@ -642,10 +680,14 @@ export interface UserBashEventResult {
 	result?: BashResult;
 }
 
+/** Result from before_bash_exec event handler */
+export type BeforeBashExecEventResult = BashExecOverrides | BashExecBlockResult;
+
 export interface ToolResultEventResult {
 	content?: (TextContent | ImageContent)[];
 	details?: unknown;
 	isError?: boolean;
+	errorMessage?: string;
 }
 
 export interface BeforeAgentStartEventResult {
@@ -749,6 +791,7 @@ export interface ExtensionAPI {
 	on(event: "tool_call", handler: ExtensionHandler<ToolCallEvent, ToolCallEventResult>): void;
 	on(event: "tool_result", handler: ExtensionHandler<ToolResultEvent, ToolResultEventResult>): void;
 	on(event: "user_bash", handler: ExtensionHandler<UserBashEvent, UserBashEventResult>): void;
+	on(event: "before_bash_exec", handler: ExtensionHandler<BeforeBashExecEvent, BeforeBashExecEventResult>): void;
 	on(event: "input", handler: ExtensionHandler<InputEvent, InputEventResult>): void;
 
 	// =========================================================================
