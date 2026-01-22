@@ -28,7 +28,7 @@ import { resolvePromptInput } from "./core/system-prompt.js";
 import { printTimings, time } from "./core/timings.js";
 import { allTools } from "./core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
-import { InteractiveMode, runAcpMode, runPrintMode, runRpcMode } from "./modes/index.js";
+import { InteractiveMode, runAcpMode, runHttpMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 
 /**
@@ -505,6 +505,11 @@ export async function main(args: string[]) {
 		await runRpcMode(session);
 	} else if (mode === "acp") {
 		await runAcpMode(session);
+	} else if (mode === "http") {
+		const envPort = process.env.PI_HTTP_PORT ? parseInt(process.env.PI_HTTP_PORT, 10) : undefined;
+		const port = parsed.port ?? (envPort && !Number.isNaN(envPort) ? envPort : undefined);
+		const bind = parsed.bind ?? process.env.PI_HTTP_BIND;
+		await runHttpMode(session, { port, bind });
 	} else if (isInteractive) {
 		if (scopedModels.length > 0 && !settingsManager.getQuietStartup()) {
 			const modelList = scopedModels

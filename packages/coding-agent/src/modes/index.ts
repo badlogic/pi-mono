@@ -3,6 +3,7 @@
  */
 
 export { runAcpMode } from "./acp/acp-mode.js";
+export { type HttpModeOptions, runHttpMode } from "./http/http-mode.js";
 export { InteractiveMode, type InteractiveModeOptions } from "./interactive/interactive-mode.js";
 export { type PrintModeOptions, runPrintMode } from "./print-mode.js";
 export { type ModelInfo, RpcClient, type RpcClientOptions, type RpcEventListener } from "./rpc/rpc-client.js";

@@ -7,7 +7,7 @@ import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR } from "../config.js";
 import { allTools, type ToolName } from "../core/tools/index.js";
 
-export type Mode = "text" | "json" | "rpc" | "acp";
+export type Mode = "text" | "json" | "rpc" | "acp" | "http";
 
 export interface Args {
 	provider?: string;
@@ -34,6 +34,10 @@ export interface Args {
 	noSkills?: boolean;
 	skills?: string[];
 	listModels?: string | true;
+	/** HTTP mode port (default: 19000, env: PI_HTTP_PORT) */
+	port?: number;
+	/** HTTP mode bind address (default: 127.0.0.1, env: PI_HTTP_BIND) */
+	bind?: string;
 	messages: string[];
 	fileArgs: string[];
 	/** Unknown flags (potentially extension flags) - map of flag name to value */
@@ -62,9 +66,16 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 			result.version = true;
 		} else if (arg === "--mode" && i + 1 < args.length) {
 			const mode = args[++i];
-			if (mode === "text" || mode === "json" || mode === "rpc" || mode === "acp") {
+			if (mode === "text" || mode === "json" || mode === "rpc" || mode === "acp" || mode === "http") {
 				result.mode = mode;
 			}
+		} else if (arg === "--port" && i + 1 < args.length) {
+			const port = parseInt(args[++i], 10);
+			if (!Number.isNaN(port) && port > 0 && port < 65536) {
+				result.port = port;
+			}
+		} else if (arg === "--bind" && i + 1 < args.length) {
+			result.bind = args[++i];
 		} else if (arg === "--continue" || arg === "-c") {
 			result.continue = true;
 		} else if (arg === "--resume" || arg === "-r") {
@@ -168,7 +179,7 @@ ${chalk.bold("Options:")}
   --api-key <key>                API key (defaults to env vars)
   --system-prompt <text>         System prompt (default: coding assistant prompt)
   --append-system-prompt <text>  Append text or file contents to the system prompt
-  --mode <mode>                  Output mode: text (default), json, rpc, or acp
+  --mode <mode>                  Output mode: text (default), json, rpc, acp, or http
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume
@@ -187,6 +198,8 @@ ${chalk.bold("Options:")}
   --skills <patterns>            Comma-separated glob patterns to filter skills (e.g., git-*,docker)
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
+  --port <number>                HTTP server port (default: 19000, env: PI_HTTP_PORT)
+  --bind <address>               HTTP bind address (default: 127.0.0.1, env: PI_HTTP_BIND)
   --help, -h                     Show this help
   --version, -v                  Show version number
 
@@ -253,6 +266,8 @@ ${chalk.bold("Environment Variables:")}
   AWS_REGION              - AWS region for Amazon Bedrock (e.g., us-east-1)
   ${ENV_AGENT_DIR.padEnd(23)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
   PI_SHARE_VIEWER_URL     - Base URL for /share command (default: https://buildwithpi.ai/session/)
+  PI_HTTP_PORT            - HTTP server port for --mode http (default: 19000)
+  PI_HTTP_BIND            - HTTP bind address for --mode http (default: 127.0.0.1)
 
 ${chalk.bold("Available Tools (default: read, bash, edit, write):")}
   read   - Read file contents
