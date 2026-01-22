@@ -984,7 +984,7 @@ export class Editor implements Component, Focusable {
 				const currentLine = this.state.lines[this.state.cursorLine] || "";
 				const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
 				// Check if we're in a slash command (with or without space for arguments)
-				if (textBeforeCursor.trimStart().startsWith("/")) {
+				if (this.isInSlashCommandContext(textBeforeCursor)) {
 					this.tryTriggerAutocomplete();
 				}
 				// Check if we're in an @ file reference context
@@ -1169,7 +1169,7 @@ export class Editor implements Component, Focusable {
 			const currentLine = this.state.lines[this.state.cursorLine] || "";
 			const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
 			// Slash command context
-			if (textBeforeCursor.trimStart().startsWith("/")) {
+			if (this.isInSlashCommandContext(textBeforeCursor)) {
 				this.tryTriggerAutocomplete();
 			}
 			// @ file reference context
@@ -1388,7 +1388,7 @@ export class Editor implements Component, Focusable {
 			const currentLine = this.state.lines[this.state.cursorLine] || "";
 			const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
 			// Slash command context
-			if (textBeforeCursor.trimStart().startsWith("/")) {
+			if (this.isInSlashCommandContext(textBeforeCursor)) {
 				this.tryTriggerAutocomplete();
 			}
 			// @ file reference context
@@ -1802,13 +1802,43 @@ export class Editor implements Component, Focusable {
 		}
 	}
 
+	private isSlashMenuAllowed(): boolean {
+		const currentLine = this.state.lines[this.state.cursorLine] ?? "";
+		const afterCursor = currentLine.slice(this.state.cursorCol);
+
+		if (afterCursor.trim() !== "") {
+			return false;
+		}
+
+		for (let i = 0; i < this.state.lines.length; i++) {
+			if (i === this.state.cursorLine) continue;
+			if ((this.state.lines[i] ?? "").trim() !== "") {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	// Helper method to check if cursor is at start of message (for slash command detection)
 	private isAtStartOfMessage(): boolean {
+		if (!this.isSlashMenuAllowed()) {
+			return false;
+		}
+
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 		const beforeCursor = currentLine.slice(0, this.state.cursorCol);
+		const trimmedBeforeCursor = beforeCursor.trim();
 
 		// At start if line is empty, only contains whitespace, or is just "/"
-		return beforeCursor.trim() === "" || beforeCursor.trim() === "/";
+		return trimmedBeforeCursor === "" || trimmedBeforeCursor === "/";
+	}
+
+	private isInSlashCommandContext(textBeforeCursor: string): boolean {
+		if (!this.isSlashMenuAllowed()) {
+			return false;
+		}
+
+		return textBeforeCursor.trimStart().startsWith("/");
 	}
 
 	// Autocomplete methods
@@ -1848,7 +1878,7 @@ export class Editor implements Component, Focusable {
 		const beforeCursor = currentLine.slice(0, this.state.cursorCol);
 
 		// Check if we're in a slash command context
-		if (beforeCursor.trimStart().startsWith("/") && !beforeCursor.trimStart().includes(" ")) {
+		if (this.isInSlashCommandContext(beforeCursor) && !beforeCursor.trimStart().includes(" ")) {
 			this.handleSlashCommandCompletion();
 		} else {
 			this.forceFileAutocomplete();
