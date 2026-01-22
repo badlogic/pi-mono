@@ -290,9 +290,10 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("should handle process spawn errors", async () => {
-			vi.spyOn(shellModule, "getShellConfig").mockReturnValueOnce({
-				shell: "/nonexistent-shell-path-xyz123",
-				args: ["-c"],
+			vi.spyOn(shellModule, "resolveShellExecutionOptions").mockReturnValueOnce({
+				resolvedShell: "/nonexistent-shell-path-xyz123",
+				resolvedArgs: ["-c"],
+				resolvedEnv: shellModule.getShellEnv(),
 			});
 
 			const bashWithBadShell = createBashTool(testDir);
