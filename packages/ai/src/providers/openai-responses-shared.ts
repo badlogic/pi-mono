@@ -135,6 +135,11 @@ export function convertResponsesMessages<TApi extends Api>(
 			}
 		} else if (msg.role === "assistant") {
 			const output: ResponseInput = [];
+			const assistantMsg = msg as AssistantMessage;
+			const isDifferentModel =
+				assistantMsg.model !== model.id &&
+				assistantMsg.provider === model.provider &&
+				assistantMsg.api === model.api;
 
 			for (const block of msg.content) {
 				if (block.type === "thinking") {
@@ -160,7 +165,16 @@ export function convertResponsesMessages<TApi extends Api>(
 					} satisfies ResponseOutputMessage);
 				} else if (block.type === "toolCall") {
 					const toolCall = block as ToolCall;
-					const [callId, itemId] = toolCall.id.split("|");
+					const [callId, itemIdRaw] = toolCall.id.split("|");
+					let itemId: string | undefined = itemIdRaw;
+
+					// For different-model messages, set id to undefined to avoid pairing validation.
+					// OpenAI tracks which fc_xxx IDs were paired with rs_xxx reasoning items.
+					// By omitting the id, we avoid triggering that validation (like cross-provider does).
+					if (isDifferentModel && itemId?.startsWith("fc_")) {
+						itemId = undefined;
+					}
+
 					output.push({
 						type: "function_call",
 						id: itemId,
