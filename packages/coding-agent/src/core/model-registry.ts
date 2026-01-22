@@ -112,19 +112,19 @@ function emptyCustomModelsResult(error?: string): CustomModelsResult {
 const commandResultCache = new Map<string, string | undefined>();
 
 /**
- * Resolve an API key config value to an actual key.
+ * Resolve a config value (API key, header value, etc.) to an actual value.
  * - If starts with "!", executes the rest as a shell command and uses stdout (cached)
  * - Otherwise checks environment variable first, then treats as literal (not cached)
  */
-function resolveApiKeyConfig(keyConfig: string): string | undefined {
-	if (keyConfig.startsWith("!")) {
-		return executeApiKeyCommand(keyConfig);
+function resolveConfigValue(config: string): string | undefined {
+	if (config.startsWith("!")) {
+		return executeCommand(config);
 	}
-	const envValue = process.env[keyConfig];
-	return envValue || keyConfig;
+	const envValue = process.env[config];
+	return envValue || config;
 }
 
-function executeApiKeyCommand(commandConfig: string): string | undefined {
+function executeCommand(commandConfig: string): string | undefined {
 	if (commandResultCache.has(commandConfig)) {
 		return commandResultCache.get(commandConfig);
 	}
@@ -146,7 +146,22 @@ function executeApiKeyCommand(commandConfig: string): string | undefined {
 	return result;
 }
 
-/** Clear the API key command cache. Exported for testing. */
+/**
+ * Resolve all header values using the same resolution logic as API keys.
+ */
+function resolveHeaders(headers: Record<string, string> | undefined): Record<string, string> | undefined {
+	if (!headers) return undefined;
+	const resolved: Record<string, string> = {};
+	for (const [key, value] of Object.entries(headers)) {
+		const resolvedValue = resolveConfigValue(value);
+		if (resolvedValue) {
+			resolved[key] = resolvedValue;
+		}
+	}
+	return Object.keys(resolved).length > 0 ? resolved : undefined;
+}
+
+/** Clear the config value command cache. Exported for testing. */
 export function clearApiKeyCache(): void {
 	commandResultCache.clear();
 }
@@ -167,7 +182,7 @@ export class ModelRegistry {
 		this.authStorage.setFallbackResolver((provider) => {
 			const keyConfig = this.customProviderApiKeys.get(provider);
 			if (keyConfig) {
-				return resolveApiKeyConfig(keyConfig);
+				return resolveConfigValue(keyConfig);
 			}
 			return undefined;
 		});
@@ -232,10 +247,11 @@ export class ModelRegistry {
 				if (!override) return models;
 
 				// Apply baseUrl/headers override to all models of this provider
+				const resolvedHeaders = resolveHeaders(override.headers);
 				return models.map((m) => ({
 					...m,
 					baseUrl: override.baseUrl ?? m.baseUrl,
-					headers: override.headers ? { ...m.headers, ...override.headers } : m.headers,
+					headers: resolvedHeaders ? { ...m.headers, ...resolvedHeaders } : m.headers,
 				}));
 			});
 	}
@@ -353,14 +369,14 @@ export class ModelRegistry {
 				if (!api) continue;
 
 				// Merge headers: provider headers are base, model headers override
-				let headers =
-					providerConfig.headers || modelDef.headers
-						? { ...providerConfig.headers, ...modelDef.headers }
-						: undefined;
+				// Resolve env vars and shell commands in header values
+				const providerHeaders = resolveHeaders(providerConfig.headers);
+				const modelHeaders = resolveHeaders(modelDef.headers);
+				let headers = providerHeaders || modelHeaders ? { ...providerHeaders, ...modelHeaders } : undefined;
 
 				// If authHeader is true, add Authorization header with resolved API key
 				if (providerConfig.authHeader && providerConfig.apiKey) {
-					const resolvedKey = resolveApiKeyConfig(providerConfig.apiKey);
+					const resolvedKey = resolveConfigValue(providerConfig.apiKey);
 					if (resolvedKey) {
 						headers = { ...headers, Authorization: `Bearer ${resolvedKey}` };
 					}

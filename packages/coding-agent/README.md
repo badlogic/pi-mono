@@ -681,10 +681,10 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 
 **Supported APIs:** `openai-completions`, `openai-responses`, `openai-codex-responses`, `anthropic-messages`, `google-generative-ai`
 
-**API key resolution:** The `apiKey` field supports three formats:
+**Value resolution:** The `apiKey` and `headers` fields support three formats for their values:
 - `"!command"` - Executes the command and uses stdout (e.g., `"!security find-generic-password -ws 'anthropic'"` for macOS Keychain, `"!op read 'op://vault/item/credential'"` for 1Password)
 - Environment variable name (e.g., `"MY_API_KEY"`) - Uses the value of the environment variable
-- Literal value - Used directly as the API key
+- Literal value - Used directly
 
 **API override:** Set `api` at provider level (default for all models) or model level (override per model).
 
@@ -695,17 +695,19 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
   "providers": {
     "custom-proxy": {
       "baseUrl": "https://proxy.example.com/v1",
-      "apiKey": "YOUR_API_KEY",
+      "apiKey": "MY_API_KEY",
       "api": "anthropic-messages",
       "headers": {
-        "User-Agent": "Mozilla/5.0 ...",
-        "X-Custom-Auth": "token"
+        "x-portkey-api-key": "PORTKEY_API_KEY",
+        "x-secret": "!op read 'op://vault/item/secret'"
       },
       "models": [...]
     }
   }
 }
 ```
+
+Header values use the same resolution as `apiKey`: environment variables, shell commands (`!`), or literal values.
 
 **Overriding built-in providers:**
 
