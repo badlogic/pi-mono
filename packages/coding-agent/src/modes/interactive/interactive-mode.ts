@@ -52,7 +52,7 @@ import {
 	isBunRuntime,
 	VERSION,
 } from "../../config.js";
-import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
+import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
 import type {
 	ExtensionContext,
@@ -91,6 +91,7 @@ import { OAuthSelectorComponent } from "./components/oauth-selector.js";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
+import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
@@ -2030,8 +2031,28 @@ export class InteractiveMode {
 			case "user": {
 				const textContent = this.getUserMessageText(message);
 				if (textContent) {
-					const userComponent = new UserMessageComponent(textContent, this.getMarkdownThemeWithSettings());
-					this.chatContainer.addChild(userComponent);
+					const skillBlock = parseSkillBlock(textContent);
+					if (skillBlock) {
+						// Render skill block (collapsible)
+						this.chatContainer.addChild(new Spacer(1));
+						const component = new SkillInvocationMessageComponent(
+							skillBlock,
+							this.getMarkdownThemeWithSettings(),
+						);
+						component.setExpanded(this.toolOutputExpanded);
+						this.chatContainer.addChild(component);
+						// Render user message separately if present
+						if (skillBlock.userMessage) {
+							const userComponent = new UserMessageComponent(
+								skillBlock.userMessage,
+								this.getMarkdownThemeWithSettings(),
+							);
+							this.chatContainer.addChild(userComponent);
+						}
+					} else {
+						const userComponent = new UserMessageComponent(textContent, this.getMarkdownThemeWithSettings());
+						this.chatContainer.addChild(userComponent);
+					}
 					if (options?.populateHistory) {
 						this.editor.addToHistory?.(textContent);
 					}

@@ -8,7 +8,9 @@ export {
 	type AgentSessionEvent,
 	type AgentSessionEventListener,
 	type ModelCycleResult,
+	type ParsedSkillBlock,
 	type PromptOptions,
+	parseSkillBlock,
 	type SessionStats,
 } from "./core/agent-session.js";
 // Auth and model registry
@@ -260,6 +262,7 @@ export {
 	type SettingsConfig,
 	SettingsSelectorComponent,
 	ShowImagesSelectorComponent,
+	SkillInvocationMessageComponent,
 	ThemeSelectorComponent,
 	ThinkingSelectorComponent,
 	ToolExecutionComponent,
