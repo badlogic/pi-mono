@@ -48,6 +48,7 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
   - [SDK](#sdk)
   - [RPC Mode](#rpc-mode)
   - [ACP Mode](#acp-mode)
+  - [HTTP Mode](#http-mode)
   - [HTML Export](#html-export)
 - [Philosophy](#philosophy)
 - [Development](#development)
@@ -1224,7 +1225,9 @@ pi [options] [@files...] [messages...]
 | `--api-key <key>` | API key (overrides environment) |
 | `--system-prompt <text\|file>` | Custom system prompt (text or file path) |
 | `--append-system-prompt <text\|file>` | Append to system prompt |
-| `--mode <mode>` | Output mode: `text`, `json`, `rpc` (implies `--print`) |
+| `--mode <mode>` | Output mode: `text`, `json`, `rpc`, `http` (implies `--print` except for `http`) |
+| `--port <number>` | HTTP server port (default: 19000, env: `PI_HTTP_PORT`) |
+| `--bind <address>` | HTTP bind address (default: 127.0.0.1, env: `PI_HTTP_BIND`) |
 | `--print`, `-p` | Non-interactive: process prompt and exit |
 | `--no-session` | Don't save session |
 | `--session <path>` | Use specific session file |
@@ -1293,6 +1296,9 @@ pi --tools read,grep,find,ls -p "Review the architecture"
 
 # Export session
 pi --export session.jsonl output.html
+
+# HTTP mode (containerized deployments)
+pi --mode http --port 19000 --bind 0.0.0.0
 ```
 
 ### Environment Variables
@@ -1302,6 +1308,8 @@ pi --export session.jsonl output.html
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc. | API keys for providers (see [API Keys & OAuth](#api-keys--oauth)) |
 | `PI_CODING_AGENT_DIR` | Override the agent config directory (default: `~/.pi/agent`) |
 | `PI_SKIP_VERSION_CHECK` | Skip new version check at startup (useful for Nix or other package manager installs) |
+| `PI_HTTP_PORT` | HTTP server port for `--mode http` (default: 19000) |
+| `PI_HTTP_BIND` | HTTP bind address for `--mode http` (default: 127.0.0.1) |
 | `VISUAL`, `EDITOR` | External editor for Ctrl+G (e.g., `vim`, `code --wait`) |
 
 ---
@@ -1408,6 +1416,64 @@ ACP (Agent Client Protocol) is a standardized JSON-RPC protocol for communicatio
 - Cancellation via `session/cancel`
 
 > See [ACP Protocol Documentation](https://agentclientprotocol.com/) for the full specification.
+
+### HTTP Mode
+
+For containerized deployments and HTTP-based integrations:
+
+```bash
+pi --mode http --port 19000 --bind 0.0.0.0
+```
+
+HTTP mode exposes the RPC protocol over HTTP REST endpoints with Server-Sent Events (SSE) for streaming. This eliminates the need for stdin/stdout shim processes in container environments.
+
+**Endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check for container orchestration |
+| `GET` | `/events` | SSE stream of all agent events |
+| `POST` | `/rpc` | Execute RPC command |
+| `POST` | `/shutdown` | Graceful shutdown |
+| `POST` | `/extension_ui_response` | Respond to extension UI requests |
+
+**Example usage:**
+
+```bash
+# Start HTTP server
+pi --mode http --port 19000
+
+# Health check
+curl http://localhost:19000/health
+
+# Subscribe to events (in another terminal)
+curl -N http://localhost:19000/events
+
+# Send prompt
+curl -X POST http://localhost:19000/rpc \
+  -H "Content-Type: application/json" \
+  -d '{"type":"prompt","message":"Hello"}'
+
+# Get state
+curl -X POST http://localhost:19000/rpc \
+  -H "Content-Type: application/json" \
+  -d '{"type":"get_state"}'
+```
+
+**Client flow:**
+
+1. Connect to `/events` SSE endpoint (keep connection alive)
+2. Send commands via `POST /rpc` (returns immediately with acknowledgment)
+3. Receive results asynchronously via SSE stream
+
+**Configuration:**
+
+| Option | Environment Variable | Default | Description |
+|--------|---------------------|---------|-------------|
+| `--port` | `PI_HTTP_PORT` | 19000 | HTTP server port |
+| `--bind` | `PI_HTTP_BIND` | 127.0.0.1 | Bind address (use `0.0.0.0` for containers) |
+
+**Note:** Default bind is `127.0.0.1` for safety. Use `--bind 0.0.0.0` explicitly for container deployments.
 
 ### HTML Export
 

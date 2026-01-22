@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- HTTP mode (`--mode http`) for containerized deployments exposing RPC protocol over HTTP
+- HTTP endpoints: `/health`, `/events` (SSE), `/rpc`, `/shutdown`, `/extension_ui_response`
+- `--port` and `--bind` CLI flags for HTTP server configuration
+- `PI_HTTP_PORT` and `PI_HTTP_BIND` environment variables
+
 ## [0.49.3] - 2026-01-22
 
 ### Added
