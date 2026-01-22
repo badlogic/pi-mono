@@ -65,10 +65,6 @@ export class DosboxComponent implements Component {
 	private imageTheme: ImageTheme;
 	private loadingMessage = "Connecting to DOSBox...";
 	private errorMessage: string | null = null;
-	private cachedLines: string[] = [];
-	private cachedWidth = 0;
-	private cachedVersion = -1;
-	private version = 0;
 	private disposed = false;
 	private imageId: number;
 	private kittyPushed = false;
@@ -121,7 +117,6 @@ export class DosboxComponent implements Component {
 			{ maxWidthCells: MAX_WIDTH_CELLS, imageId: this.imageId },
 			{ widthPx: width, heightPx: height },
 		);
-		this.version++;
 		this.tui.requestRender();
 	}
 
@@ -195,7 +190,8 @@ export class DosboxComponent implements Component {
 	}
 
 	invalidate(): void {
-		this.cachedWidth = 0;
+		// No caching, so nothing to invalidate
+		// Image component handles its own caching
 	}
 
 	render(width: number): string[] {
@@ -208,17 +204,18 @@ export class DosboxComponent implements Component {
 		if (!this.image) {
 			return [truncateToWidth("Waiting for DOSBox frame...", width)];
 		}
-		if (width === this.cachedWidth && this.cachedVersion === this.version) {
-			return this.cachedLines;
-		}
 
+		// Always render fresh - never cache. This ensures the image is re-rendered
+		// at the correct position even during streaming when lines above change.
+		// The cache in Image component handles avoiding redundant Kitty transmissions.
 		const imageLines = this.image.render(width);
 		const footer = truncateToWidth("\x1b[2mCtrl+Q to detach (DOSBox keeps running)\x1b[22m", width);
-		const lines = [...imageLines, footer];
 
-		this.cachedLines = lines;
-		this.cachedWidth = width;
-		this.cachedVersion = this.version;
+		// Add a unique suffix to force TUI to see these lines as "changed"
+		// This ensures the image is always re-rendered at correct position
+		const timestamp = `\x1b[0m\x1b[8m${Date.now()}\x1b[28m`;
+		const lines = imageLines.map((line, i) => (i === imageLines.length - 1 ? line + timestamp : line));
+		lines.push(footer);
 
 		return lines;
 	}
