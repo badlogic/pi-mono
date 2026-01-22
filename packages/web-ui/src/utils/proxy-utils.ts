@@ -12,13 +12,13 @@ import { streamSimple } from "@mariozechner/pi-ai";
 /**
  * Check if a provider/API key combination requires a CORS proxy.
  *
- * @param provider - Provider name (e.g., "anthropic", "openai", "zai")
+ * @param provider - Provider name (e.g., "anthropic", "openai", "zai-coding-plan")
  * @param apiKey - API key for the provider
  * @returns true if proxy is required, false otherwise
  */
 export function shouldUseProxyForProvider(provider: string, apiKey: string): boolean {
 	switch (provider.toLowerCase()) {
-		case "zai":
+		case "zai-coding-plan":
 			// Z-AI always requires proxy
 			return true;
 

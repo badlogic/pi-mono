@@ -75,9 +75,9 @@
 
 ## [0.49.2] - 2026-01-19
 
-### Added
+### Changed
 
-- Added `zai-coding-plan` provider support with automatic model discovery and `ZAI_API_KEY` authentication.
+- Changed `zai` provider to use the Coding Plan API for better coding performance.
 
 ### Added
 

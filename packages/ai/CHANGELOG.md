@@ -20,9 +20,9 @@
 
 ## [0.49.3] - 2026-01-22
 
-### Added
+### Changed
 
-- Added `zai-coding-plan` provider, supporting `ZAI_API_KEY` auth and model discovery via models.dev.
+- Changed `zai` provider to use the Coding Plan API (`https://api.z.ai/api/coding/paas/v4`).
 
 ### Added
 

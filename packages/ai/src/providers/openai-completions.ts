@@ -105,7 +105,9 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 			const client = createClient(model, context, apiKey, options?.headers);
 			const params = buildParams(model, context, options);
 			options?.onPayload?.(params);
-			const openaiStream = await client.chat.completions.create(params, { signal: options?.signal });
+			const openaiStream = await client.chat.completions.create(params, {
+				signal: options?.signal,
+			});
 			stream.push({ type: "start", partial: output });
 
 			let currentBlock: TextContent | ThinkingContent | (ToolCall & { partialArgs?: string }) | null = null;
@@ -183,7 +185,11 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 							finishCurrentBlock(currentBlock);
 							currentBlock = { type: "text", text: "" };
 							output.content.push(currentBlock);
-							stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
+							stream.push({
+								type: "text_start",
+								contentIndex: blockIndex(),
+								partial: output,
+							});
 						}
 
 						if (currentBlock.type === "text") {
@@ -225,7 +231,11 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 								thinkingSignature: foundReasoningField,
 							};
 							output.content.push(currentBlock);
-							stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
+							stream.push({
+								type: "thinking_start",
+								contentIndex: blockIndex(),
+								partial: output,
+							});
 						}
 
 						if (currentBlock.type === "thinking") {
@@ -256,7 +266,11 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 									partialArgs: "",
 								};
 								output.content.push(currentBlock);
-								stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
+								stream.push({
+									type: "toolcall_start",
+									contentIndex: blockIndex(),
+									partial: output,
+								});
 							}
 
 							if (currentBlock.type === "toolCall") {
@@ -439,7 +453,9 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 	if (compat.thinkingFormat === "zai" && model.reasoning) {
 		// Z.ai uses binary thinking: { type: "enabled" | "disabled" }
 		// Must explicitly disable since z.ai defaults to thinking enabled
-		(params as any).thinking = { type: options?.reasoningEffort ? "enabled" : "disabled" };
+		(params as any).thinking = {
+			type: options?.reasoningEffort ? "enabled" : "disabled",
+		};
 	} else if (options?.reasoningEffort && model.reasoning && compat.supportsReasoningEffort) {
 		// OpenAI-style reasoning_effort
 		params.reasoning_effort = options.reasoningEffort;
@@ -508,7 +524,10 @@ export function convertMessages(
 	if (context.systemPrompt) {
 		const useDeveloperRole = model.reasoning && compat.supportsDeveloperRole;
 		const role = useDeveloperRole ? "developer" : "system";
-		params.push({ role: role, content: sanitizeSurrogates(context.systemPrompt) });
+		params.push({
+			role: role,
+			content: sanitizeSurrogates(context.systemPrompt),
+		});
 	}
 
 	let lastRole: string | null = null;
@@ -585,7 +604,10 @@ export function convertMessages(
 				if (compat.requiresThinkingAsText) {
 					// Convert thinking blocks to plain text (no tags to avoid model mimicking them)
 					const thinkingText = nonEmptyThinkingBlocks.map((b) => b.thinking).join("\n\n");
-					const textContent = assistantMsg.content as Array<{ type: "text"; text: string }> | null;
+					const textContent = assistantMsg.content as Array<{
+						type: "text";
+						text: string;
+					}> | null;
 					if (textContent) {
 						textContent.unshift({ type: "text", text: thinkingText });
 					} else {

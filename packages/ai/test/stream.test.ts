@@ -714,7 +714,7 @@ describe("Generate E2E Tests", () => {
 	);
 
 	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5-air via OpenAI Completions)", () => {
-		const llm = getModel("zai", "glm-4.5-air");
+		const llm = getModel("zai-coding-plan", "glm-4.5-air");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
 			await basicTextGeneration(llm);
@@ -738,7 +738,7 @@ describe("Generate E2E Tests", () => {
 	});
 
 	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5v via OpenAI Completions)", () => {
-		const llm = getModel("zai", "glm-4.5v");
+		const llm = getModel("zai-coding-plan", "glm-4.5v");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
 			await basicTextGeneration(llm);

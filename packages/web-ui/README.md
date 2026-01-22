@@ -508,7 +508,7 @@ agent.streamFn = createStreamFn(async () => {
 });
 
 // Providers requiring proxy:
-// - zai: always
+// - zai-coding-plan: always
 // - anthropic: only OAuth tokens (sk-ant-oat-*)
 ```
 

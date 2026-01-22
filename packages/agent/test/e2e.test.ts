@@ -302,8 +302,8 @@ describe("Agent E2E Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider (glm-4.5-air)", () => {
-		const model = getModel("zai", "glm-4.5-air");
+	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Coding Plan Provider (glm-4.5-air)", () => {
+		const model = getModel("zai-coding-plan", "glm-4.5-air");
 
 		it("should handle basic text prompt", async () => {
 			await basicPrompt(model);
