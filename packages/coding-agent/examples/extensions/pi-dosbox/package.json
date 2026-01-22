@@ -1,0 +1,23 @@
+{
+  "name": "pi-dosbox",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "start": "npx tsx src/main.ts",
+    "clean": "echo 'nothing to clean'",
+    "build": "echo 'nothing to build'",
+    "check": "echo 'nothing to check'"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "emulators": "^8.3.9"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30"
+  }
+}
