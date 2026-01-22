@@ -866,26 +866,40 @@ export class InteractiveMode {
 		}
 
 		const metadata = this.session.resourceLoader.getPathMetadata();
+		// Check if custom SYSTEM.md uses template variables
+		// undefined = no custom prompt (default behavior, show all)
+		// defined = custom prompt, only show if template is used
+		const promptTemplates = this.session.resourceLoader.getSystemPromptTemplates();
 
 		const sectionHeader = (name: string, color: ThemeColor = "mdHeading") => theme.fg(color, `[${name}]`);
 
-		const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
-		if (contextFiles.length > 0) {
-			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`)).join("\n");
-			this.chatContainer.addChild(new Text(`${sectionHeader("Context")}\n${contextList}`, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
+		// Show context only if: no custom prompt OR custom prompt uses {{context}}
+		const showContext = !promptTemplates || promptTemplates.context;
+		if (showContext) {
+			const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
+			if (contextFiles.length > 0) {
+				const contextList = contextFiles
+					.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`))
+					.join("\n");
+				this.chatContainer.addChild(new Text(`${sectionHeader("Context")}\n${contextList}`, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 		}
 
-		const skills = this.session.resourceLoader.getSkills().skills;
-		if (skills.length > 0) {
-			const skillPaths = skills.map((s) => s.filePath);
-			const groups = this.buildScopeGroups(skillPaths, metadata);
-			const skillList = this.formatScopeGroups(groups, {
-				formatPath: (p) => this.formatDisplayPath(p),
-				formatPackagePath: (p, source) => this.getShortPath(p, source),
-			});
-			this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
+		// Show skills only if: no custom prompt OR custom prompt uses {{skills}}
+		const showSkills = !promptTemplates || promptTemplates.skills;
+		if (showSkills) {
+			const skills = this.session.resourceLoader.getSkills().skills;
+			if (skills.length > 0) {
+				const skillPaths = skills.map((s) => s.filePath);
+				const groups = this.buildScopeGroups(skillPaths, metadata);
+				const skillList = this.formatScopeGroups(groups, {
+					formatPath: (p) => this.formatDisplayPath(p),
+					formatPackagePath: (p, source) => this.getShortPath(p, source),
+				});
+				this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 		}
 
 		const skillDiagnostics = this.session.resourceLoader.getSkills().diagnostics;

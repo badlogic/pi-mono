@@ -457,6 +457,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 		getThemes: () => ({ themes: [], diagnostics: [] }),
 		getAgentsFiles: () => ({ agentsFiles: [] }),
 		getSystemPrompt: () => systemPrompt,
+		getSystemPromptTemplates: () => undefined,
 		getAppendSystemPrompt: () => [],
 		getPathMetadata: () => new Map(),
 		reload: async () => {},

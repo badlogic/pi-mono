@@ -182,6 +182,7 @@ export function createTestResourceLoader(): ResourceLoader {
 		getThemes: () => ({ themes: [], diagnostics: [] }),
 		getAgentsFiles: () => ({ agentsFiles: [] }),
 		getSystemPrompt: () => undefined,
+		getSystemPromptTemplates: () => undefined,
 		getAppendSystemPrompt: () => [],
 		getPathMetadata: () => new Map(),
 		reload: async () => {},

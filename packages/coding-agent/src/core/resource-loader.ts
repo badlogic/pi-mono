@@ -23,6 +23,13 @@ import { SettingsManager } from "./settings-manager.js";
 import type { Skill } from "./skills.js";
 import { loadSkills } from "./skills.js";
 
+/** Template variable usage in custom SYSTEM.md */
+export interface SystemPromptTemplates {
+	tools: boolean;
+	context: boolean;
+	skills: boolean;
+}
+
 export interface ResourceLoader {
 	getExtensions(): LoadExtensionsResult;
 	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
@@ -30,6 +37,8 @@ export interface ResourceLoader {
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
 	getSystemPrompt(): string | undefined;
+	/** Returns template variable usage if custom SYSTEM.md exists, undefined otherwise */
+	getSystemPromptTemplates(): SystemPromptTemplates | undefined;
 	getAppendSystemPrompt(): string[];
 	getPathMetadata(): Map<string, PathMetadata>;
 	reload(): Promise<void>;
@@ -256,6 +265,15 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	getSystemPrompt(): string | undefined {
 		return this.systemPrompt;
+	}
+
+	getSystemPromptTemplates(): SystemPromptTemplates | undefined {
+		if (!this.systemPrompt) return undefined;
+		return {
+			tools: this.systemPrompt.includes("{{tools}}"),
+			context: this.systemPrompt.includes("{{context}}"),
+			skills: this.systemPrompt.includes("{{skills}}"),
+		};
 	}
 
 	getAppendSystemPrompt(): string[] {

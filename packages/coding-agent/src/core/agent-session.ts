@@ -610,7 +610,7 @@ export class AgentSession {
 		const loadedSkills = this._resourceLoader.getSkills().skills;
 		const loadedContextFiles = this._resourceLoader.getAgentsFiles().agentsFiles;
 
-		return buildSystemPrompt({
+		const result = buildSystemPrompt({
 			cwd: this._cwd,
 			skills: loadedSkills,
 			contextFiles: loadedContextFiles,
@@ -618,6 +618,8 @@ export class AgentSession {
 			appendSystemPrompt,
 			selectedTools: validToolNames,
 		});
+
+		return result.prompt;
 	}
 
 	// =========================================================================
