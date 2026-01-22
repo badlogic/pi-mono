@@ -220,6 +220,13 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--verbose flag", () => {
+		test("parses --verbose flag", () => {
+			const result = parseArgs(["--verbose"]);
+			expect(result.verbose).toBe(true);
+		});
+	});
+
 	describe("--no-tools flag", () => {
 		test("parses --no-tools flag", () => {
 			const result = parseArgs(["--no-tools"]);

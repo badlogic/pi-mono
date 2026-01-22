@@ -827,6 +827,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `shellPath` | Custom bash path (Windows) | auto-detected |
 | `shellCommandPrefix` | Command prefix for bash (e.g., `shopt -s expand_aliases` for alias support) | - |
 | `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
+| `quietStartup` | Hide startup info (keybindings, loaded skills/extensions) | `false` |
 | `collapseChangelog` | Show condensed changelog after update | `false` |
 | `compaction.enabled` | Enable auto-compaction | `true` |
 | `compaction.reserveTokens` | Tokens to reserve before compaction triggers | `16384` |
@@ -1278,6 +1279,7 @@ pi [options] [@files...] [messages...]
 | `--no-prompt-templates` | Disable prompt template discovery and loading |
 | `--no-themes` | Disable theme discovery and loading |
 | `--export <file> [output]` | Export session to HTML |
+| `--verbose` | Force verbose startup (overrides `quietStartup` setting) |
 | `--help`, `-h` | Show help |
 | `--version`, `-v` | Show version |
 
