@@ -687,7 +687,6 @@ export interface ToolResultEventResult {
 	content?: (TextContent | ImageContent)[];
 	details?: unknown;
 	isError?: boolean;
-	errorMessage?: string;
 }
 
 export interface BeforeAgentStartEventResult {

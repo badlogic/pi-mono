@@ -63,14 +63,12 @@ export default function (pi: ExtensionAPI) {
 		const moduleName = moduleMatch?.[1];
 		const hintTarget = moduleName ? ` --with ${moduleName}` : "";
 		const hint =
-			"\n\nHint: Python import failed. Consider running with uv to fetch dependencies, " +
+			"\n\nHint: Python import failed. Use uv to fetch dependencies automatically without changing the system, " +
 			`e.g. \`uv run${hintTarget} python -c '...'\` or \`uv run --script\` for throwaway scripts.`;
-
-		const message = text + hint;
 
 		return {
 			content: [...event.content, { type: "text", text: hint }],
-			errorMessage: message,
+			isError: true,
 		};
 	});
 }

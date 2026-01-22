@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
-import { getShellConfig, getShellEnv, killProcessTree } from "../../utils/shell.js";
+import { killProcessTree, resolveShellExecutionOptions } from "../../utils/shell.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateTail } from "./truncate.js";
 
 /**
@@ -58,10 +58,11 @@ export interface BashOperations {
 const defaultBashOperations: BashOperations = {
 	exec: (command, cwd, { onData, signal, timeout, env, shell, args }) => {
 		return new Promise((resolve, reject) => {
-			const shellConfig = getShellConfig();
-			const resolvedShell = shell ?? shellConfig.shell;
-			const resolvedArgs = args ?? shellConfig.args;
-			const resolvedEnv = { ...getShellEnv(), ...(env ?? {}) };
+			const { resolvedShell, resolvedArgs, resolvedEnv } = resolveShellExecutionOptions({
+				shell,
+				args,
+				env,
+			});
 
 			if (!existsSync(cwd)) {
 				reject(new Error(`Working directory does not exist: ${cwd}\nCannot execute bash commands.`));

@@ -3,6 +3,7 @@
  */
 
 import type { AgentTool, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
+import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
 import { getShellConfig, getShellEnv } from "../../utils/shell.js";
 import type { ExtensionRunner } from "./runner.js";
 import type { BeforeBashExecEvent, RegisteredTool, ToolCallEventResult, ToolResultEventResult } from "./types.js";
@@ -77,6 +78,19 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 			timeout: execEvent.timeout,
 		};
 	};
+	const toolResultContentToErrorMessage = (
+		content: (TextContent | ImageContent)[] | undefined,
+		fallback: string,
+	): string => {
+		if (!content || content.length === 0) return fallback;
+		const text = content
+			.filter((item): item is TextContent => item.type === "text" && !!item.text)
+			.map((item) => item.text)
+			.join("")
+			.trim();
+		if (text) return text;
+		return `${fallback} [non-text content]`;
+	};
 
 	return {
 		...tool,
@@ -87,6 +101,7 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 			onUpdate?: AgentToolUpdateCallback<T>,
 		) => {
 			let effectiveParams = params;
+			let forcedError = false;
 
 			// Emit tool_call event - extensions can block execution
 			if (runner.hasHandlers("tool_call")) {
@@ -131,22 +146,29 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 					})) as ToolResultEventResult | undefined;
 
 					if (resultResult) {
-						if (resultResult.errorMessage !== undefined) {
-							throw new Error(resultResult.errorMessage);
+						const nextContent = resultResult.content ?? result.content;
+						const nextDetails = (resultResult.details ?? result.details) as T;
+						if (resultResult.isError) {
+							forcedError = true;
+							throw new Error(toolResultContentToErrorMessage(nextContent, "Tool execution failed."));
 						}
 
 						return {
-							content: resultResult.content ?? result.content,
-							details: (resultResult.details ?? result.details) as T,
+							content: nextContent,
+							details: nextDetails,
 						};
 					}
 				}
 
 				return result;
 			} catch (err) {
+				if (forcedError) {
+					throw err;
+				}
 				// Emit tool_result event for errors
 				if (runner.hasHandlers("tool_result")) {
-					const content = [{ type: "text" as const, text: err instanceof Error ? err.message : String(err) }];
+					const fallbackMessage = err instanceof Error ? err.message : String(err);
+					const content = [{ type: "text" as const, text: fallbackMessage }];
 					const resultResult = (await runner.emit({
 						type: "tool_result",
 						toolName: tool.name,
@@ -157,8 +179,12 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 						isError: true,
 					})) as ToolResultEventResult | undefined;
 
-					if (resultResult?.errorMessage !== undefined) {
-						throw new Error(resultResult.errorMessage);
+					if (resultResult) {
+						if (!resultResult.isError) {
+							throw err;
+						}
+						const nextContent = resultResult.content ?? content;
+						throw new Error(toolResultContentToErrorMessage(nextContent, fallbackMessage));
 					}
 				}
 				throw err;

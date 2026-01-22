@@ -2064,7 +2064,10 @@ export class AgentSession {
 						timeout: execTimeout,
 					});
 
-			this.recordBashResult(command, result, options);
+			this.recordBashResult(command, result, {
+				excludeFromContext: options?.excludeFromContext,
+				executedCommand: execCommand === command ? undefined : execCommand,
+			});
 			return result;
 		} finally {
 			this._bashAbortController = undefined;
@@ -2075,10 +2078,15 @@ export class AgentSession {
 	 * Record a bash execution result in session history.
 	 * Used by executeBash and by extensions that handle bash execution themselves.
 	 */
-	recordBashResult(command: string, result: BashResult, options?: { excludeFromContext?: boolean }): void {
+	recordBashResult(
+		command: string,
+		result: BashResult,
+		options?: { excludeFromContext?: boolean; executedCommand?: string },
+	): void {
 		const bashMessage: BashExecutionMessage = {
 			role: "bashExecution",
 			command,
+			executedCommand: options?.executedCommand,
 			output: result.output,
 			exitCode: result.exitCode,
 			cancelled: result.cancelled,

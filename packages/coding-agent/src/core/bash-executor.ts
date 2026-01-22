@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ChildProcess, spawn } from "child_process";
 import stripAnsi from "strip-ansi";
-import { getShellConfig, getShellEnv, killProcessTree, sanitizeBinaryOutput } from "../utils/shell.js";
+import { killProcessTree, resolveShellExecutionOptions, sanitizeBinaryOutput } from "../utils/shell.js";
 import type { BashOperations } from "./tools/bash.js";
 import { DEFAULT_MAX_BYTES, truncateTail } from "./tools/truncate.js";
 
@@ -70,11 +70,12 @@ export interface BashResult {
  */
 export function executeBash(command: string, options?: BashExecutorOptions): Promise<BashResult> {
 	return new Promise((resolve, reject) => {
-		const shellConfig = getShellConfig();
-		const resolvedShell = options?.shell ?? shellConfig.shell;
-		const resolvedArgs = options?.args ?? shellConfig.args;
 		const resolvedCwd = options?.cwd ?? process.cwd();
-		const resolvedEnv = { ...getShellEnv(), ...(options?.env ?? {}) };
+		const { resolvedShell, resolvedArgs, resolvedEnv } = resolveShellExecutionOptions({
+			shell: options?.shell,
+			args: options?.args,
+			env: options?.env,
+		});
 		const child: ChildProcess = spawn(resolvedShell, [...resolvedArgs, command], {
 			cwd: resolvedCwd,
 			env: resolvedEnv,

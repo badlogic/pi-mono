@@ -13,7 +13,6 @@
 - Extension package management with `pi install`, `pi remove`, `pi update`, and `pi list` commands ([#645](https://github.com/badlogic/pi-mono/issues/645))
 - `/reload` command to reload extensions, skills, prompts, and themes ([#645](https://github.com/badlogic/pi-mono/issues/645))
 - CLI flags for `--skill`, `--prompt-template`, `--theme`, `--no-prompt-templates`, and `--no-themes` ([#645](https://github.com/badlogic/pi-mono/issues/645))
-- `tool_result` handlers can return `errorMessage` to override tool errors or force a failure
 
 ### Changed
 

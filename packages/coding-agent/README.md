@@ -1112,12 +1112,12 @@ export default function (pi: ExtensionAPI) {
 
     if (event.isError) {
       // Override the thrown error message (optional)
-      return { errorMessage: "Custom error message" };
+      return { content: [{ type: "text", text: "Custom error message" }], isError: true };
     }
 
     if (event.toolName === "bash" && event.content.length > 0) {
       // Force a successful tool to be treated as an error
-      return { errorMessage: "Tool output rejected by policy" };
+      return { content: [{ type: "text", text: "Tool output rejected by policy" }], isError: true };
     }
   });
 

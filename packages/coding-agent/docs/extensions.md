@@ -594,7 +594,7 @@ pi.on("tool_result", async (event, ctx) => {
 });
 ```
 
-If `event.isError` is true, return `{ errorMessage: "..." }` to override the thrown error message (optionally alongside `content`). Returning `errorMessage` on a successful tool result forces the tool to be treated as an error.
+If `event.isError` is true, return `{ content: [...], isError: true }` to override the thrown error message (the text content becomes the error string). Returning `isError: true` on a successful tool result forces the tool to be treated as an error.
 
 **Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 
