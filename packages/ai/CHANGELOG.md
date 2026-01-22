@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Renamed `zai` provider to `zai-coding-plan` to align with naming in models.dev and be explicit about which endpoint we use
+
 ### Added
 
 - Added OpenRouter provider routing support for custom models via `openRouterRouting` compat field ([#859](https://github.com/badlogic/pi-mono/pull/859) by [@v01dpr1mr0s3](https://github.com/v01dpr1mr0s3))
@@ -19,10 +23,6 @@
 - Fixed Bun runtime detection for dynamic imports in browser-compatible modules (stream.ts, openai-codex-responses.ts, openai-codex.ts) ([#922](https://github.com/badlogic/pi-mono/pull/922) by [@dannote](https://github.com/dannote))
 
 ## [0.49.3] - 2026-01-22
-
-### Changed
-
-- Changed `zai` provider to use the Coding Plan API (`https://api.z.ai/api/coding/paas/v4`).
 
 ### Added
 
