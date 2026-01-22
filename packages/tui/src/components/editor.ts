@@ -723,21 +723,7 @@ export class Editor implements Component, Focusable {
 		if (kb.matches(data, "submit")) {
 			if (this.disableSubmit) return;
 
-			let result = this.state.lines.join("\n").trim();
-			for (const [pasteId, pasteContent] of this.pastes) {
-				const markerRegex = new RegExp(`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`, "g");
-				result = result.replace(markerRegex, pasteContent);
-			}
-
-			this.state = { lines: [""], cursorLine: 0, cursorCol: 0 };
-			this.pastes.clear();
-			this.pasteCounter = 0;
-			this.historyIndex = -1;
-			this.scrollOffset = 0;
-			this.undoStack.length = 0;
-			this.lastAction = null;
-
-			if (this.onChange) this.onChange("");
+			const result = this.consumeText();
 			if (this.onSubmit) this.onSubmit(result);
 			return;
 		}
@@ -894,12 +880,35 @@ export class Editor implements Component, Focusable {
 	 * Get text with paste markers expanded to their actual content.
 	 * Use this when you need the full content (e.g., for external editor).
 	 */
-	getExpandedText(): string {
-		let result = this.state.lines.join("\n");
+	private expandPasteMarkers(text: string): string {
+		let result = text;
 		for (const [pasteId, pasteContent] of this.pastes) {
 			const markerRegex = new RegExp(`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`, "g");
 			result = result.replace(markerRegex, pasteContent);
 		}
+		return result;
+	}
+
+	getExpandedText(): string {
+		return this.expandPasteMarkers(this.state.lines.join("\n"));
+	}
+
+	/**
+	 * Consume the current text as if it was submitted.
+	 * Trims the text, expands paste markers, and clears editor state.
+	 */
+	consumeText(): string {
+		const result = this.expandPasteMarkers(this.state.lines.join("\n")).trim();
+
+		this.state = { lines: [""], cursorLine: 0, cursorCol: 0 };
+		this.pastes.clear();
+		this.pasteCounter = 0;
+		this.historyIndex = -1;
+		this.scrollOffset = 0;
+		this.undoStack.length = 0;
+		this.lastAction = null;
+
+		if (this.onChange) this.onChange("");
 		return result;
 	}
 

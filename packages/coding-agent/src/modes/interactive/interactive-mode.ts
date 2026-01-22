@@ -2225,14 +2225,26 @@ export class InteractiveMode {
 	}
 
 	private async handleFollowUp(): Promise<void> {
-		const text = this.editor.getText().trim();
+		let text = "";
+		let consumed = false;
+
+		if (this.editor.consumeText) {
+			text = this.editor.consumeText();
+			consumed = true;
+		} else {
+			const expandedText = this.editor.getExpandedText?.() ?? this.editor.getText();
+			text = expandedText.trim();
+		}
+
 		if (!text) return;
 
 		// Queue input during compaction (extension commands execute immediately)
 		if (this.session.isCompacting) {
 			if (this.isExtensionCommand(text)) {
 				this.editor.addToHistory?.(text);
-				this.editor.setText("");
+				if (!consumed) {
+					this.editor.setText("");
+				}
 				await this.session.prompt(text);
 			} else {
 				this.queueCompactionMessage(text, "followUp");
@@ -2244,7 +2256,9 @@ export class InteractiveMode {
 		// This handles extension commands (execute immediately), prompt template expansion, and queueing
 		if (this.session.isStreaming) {
 			this.editor.addToHistory?.(text);
-			this.editor.setText("");
+			if (!consumed) {
+				this.editor.setText("");
+			}
 			await this.session.prompt(text, { streamingBehavior: "followUp" });
 			this.updatePendingMessagesDisplay();
 			this.ui.requestRender();

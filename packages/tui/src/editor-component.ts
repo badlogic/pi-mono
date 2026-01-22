@@ -49,6 +49,12 @@ export interface EditorComponent extends Component {
 	 */
 	getExpandedText?(): string;
 
+	/**
+	 * Consume the current text as if it was submitted.
+	 * Returns the trimmed text with markers expanded and clears editor state.
+	 */
+	consumeText?(): string;
+
 	// =========================================================================
 	// Autocomplete support (optional)
 	// =========================================================================
