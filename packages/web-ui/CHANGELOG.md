@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Updated tsgo to 7.0.0-dev.20260120.1 for decorator support ([#873](https://github.com/badlogic/pi-mono/issues/873))
+
 ## [0.49.2] - 2026-01-19
 
 ## [0.49.1] - 2026-01-18
