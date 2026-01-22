@@ -110,12 +110,15 @@ function deepMergeSettings(base: Settings, overrides: Settings): Settings {
 	return result;
 }
 
+type QuietStartupState = "quiet" | "verbose" | "verbose-from-cli";
+
 export class SettingsManager {
 	private settingsPath: string | null;
 	private projectSettingsPath: string | null;
 	private globalSettings: Settings;
 	private settings: Settings;
 	private persist: boolean;
+	private quietStartupState: QuietStartupState;
 
 	private constructor(
 		settingsPath: string | null,
@@ -129,6 +132,7 @@ export class SettingsManager {
 		this.globalSettings = initialSettings;
 		const projectSettings = this.loadProjectSettings();
 		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
+		this.quietStartupState = this.settings.quietStartup ? "quiet" : "verbose";
 	}
 
 	/** Create a SettingsManager that loads from files */
@@ -356,12 +360,26 @@ export class SettingsManager {
 	}
 
 	getQuietStartup(): boolean {
+		return this.quietStartupState === "quiet";
+	}
+
+	/** Get the stored quietStartup value from settings.json (ignores CLI override) */
+	getStoredQuietStartup(): boolean {
 		return this.settings.quietStartup ?? false;
 	}
 
 	setQuietStartup(quiet: boolean): void {
 		this.globalSettings.quietStartup = quiet;
 		this.save();
+		// Only update runtime state if not CLI-overridden
+		if (this.quietStartupState !== "verbose-from-cli") {
+			this.quietStartupState = quiet ? "quiet" : "verbose";
+		}
+	}
+
+	/** Set verbose startup from CLI flag (overrides quietStartup setting for this session) */
+	setVerboseFromCli(): void {
+		this.quietStartupState = "verbose-from-cli";
 	}
 
 	getShellCommandPrefix(): string | undefined {

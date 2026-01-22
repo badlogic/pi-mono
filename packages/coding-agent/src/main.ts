@@ -363,6 +363,11 @@ export async function main(args: string[]) {
 	const parsed = parseArgs(args, extensionFlags);
 	time("parseArgs");
 
+	// Apply CLI verbose flag to settings manager
+	if (parsed.verbose) {
+		settingsManager.setVerboseFromCli();
+	}
+
 	// Pass flag values to extensions via runtime
 	for (const [name, value] of parsed.unknownFlags) {
 		extensionsResult.runtime.flagValues.set(name, value);
@@ -465,6 +470,7 @@ export async function main(args: string[]) {
 	);
 	sessionOptions.authStorage = authStorage;
 	sessionOptions.modelRegistry = modelRegistry;
+	sessionOptions.settingsManager = settingsManager;
 	sessionOptions.eventBus = eventBus;
 
 	// Handle CLI --api-key as runtime override (not persisted)

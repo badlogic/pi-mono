@@ -106,6 +106,61 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("quietStartup and --verbose CLI override", () => {
+		it("should return false (verbose) by default", () => {
+			const manager = SettingsManager.inMemory({});
+			expect(manager.getQuietStartup()).toBe(false);
+		});
+
+		it("should return true when quietStartup is set in settings", () => {
+			const manager = SettingsManager.inMemory({ quietStartup: true });
+			expect(manager.getQuietStartup()).toBe(true);
+		});
+
+		it("should return false when setVerboseFromCli is called", () => {
+			const manager = SettingsManager.inMemory({ quietStartup: true });
+			expect(manager.getQuietStartup()).toBe(true);
+
+			manager.setVerboseFromCli();
+			expect(manager.getQuietStartup()).toBe(false);
+		});
+
+		it("should preserve CLI override when setQuietStartup is called", () => {
+			const manager = SettingsManager.inMemory({ quietStartup: false });
+			manager.setVerboseFromCli();
+
+			// Try to set quiet via the normal setter
+			manager.setQuietStartup(true);
+
+			// Should still be verbose because CLI override is active
+			expect(manager.getQuietStartup()).toBe(false);
+		});
+
+		it("should allow setQuietStartup to change state when not CLI-overridden", () => {
+			const manager = SettingsManager.inMemory({ quietStartup: false });
+			expect(manager.getQuietStartup()).toBe(false);
+
+			manager.setQuietStartup(true);
+			expect(manager.getQuietStartup()).toBe(true);
+
+			manager.setQuietStartup(false);
+			expect(manager.getQuietStartup()).toBe(false);
+		});
+
+		it("getStoredQuietStartup should return stored value even when CLI-overridden", () => {
+			const manager = SettingsManager.inMemory({ quietStartup: true });
+			expect(manager.getStoredQuietStartup()).toBe(true);
+			expect(manager.getQuietStartup()).toBe(true);
+
+			manager.setVerboseFromCli();
+
+			// getQuietStartup returns effective value (verbose due to CLI)
+			expect(manager.getQuietStartup()).toBe(false);
+			// getStoredQuietStartup returns stored value (still quiet in settings)
+			expect(manager.getStoredQuietStartup()).toBe(true);
+		});
+	});
+
 	describe("shellCommandPrefix", () => {
 		it("should load shellCommandPrefix from settings", () => {
 			const settingsPath = join(agentDir, "settings.json");
