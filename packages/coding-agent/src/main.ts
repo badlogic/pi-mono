@@ -28,7 +28,7 @@ import { resolvePromptInput } from "./core/system-prompt.js";
 import { printTimings, time } from "./core/timings.js";
 import { allTools } from "./core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
-import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
+import { InteractiveMode, runAcpMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 
 /**
@@ -384,8 +384,8 @@ export async function main(args: string[]) {
 		return;
 	}
 
-	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
-	if (parsed.mode !== "rpc") {
+	// Read piped stdin content (if any) - skip for RPC/ACP modes which use stdin for JSON-RPC
+	if (parsed.mode !== "rpc" && parsed.mode !== "acp") {
 		const stdinContent = await readPipedStdin();
 		if (stdinContent !== undefined) {
 			// Force print mode since interactive mode requires a TTY for keyboard input
@@ -503,6 +503,8 @@ export async function main(args: string[]) {
 
 	if (mode === "rpc") {
 		await runRpcMode(session);
+	} else if (mode === "acp") {
+		await runAcpMode(session);
 	} else if (isInteractive) {
 		if (scopedModels.length > 0 && !settingsManager.getQuietStartup()) {
 			const modelList = scopedModels
