@@ -30,6 +30,10 @@ import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { transformMessages } from "./transform-messages.js";
 
+// =============================================================================
+// Utilities
+// =============================================================================
+
 /** Fast deterministic hash to shorten long strings */
 function shortHash(str: string): string {
 	let h1 = 0xdeadbeef;
@@ -52,10 +56,23 @@ export interface OpenAIResponsesStreamOptions {
 	) => void;
 }
 
+export interface ConvertResponsesMessagesOptions {
+	includeSystemPrompt?: boolean;
+}
+
+export interface ConvertResponsesToolsOptions {
+	strict?: boolean | null;
+}
+
+// =============================================================================
+// Message conversion
+// =============================================================================
+
 export function convertResponsesMessages<TApi extends Api>(
 	model: Model<TApi>,
 	context: Context,
 	allowedToolCallProviders: ReadonlySet<string>,
+	options?: ConvertResponsesMessagesOptions,
 ): ResponseInput {
 	const messages: ResponseInput = [];
 
@@ -76,7 +93,8 @@ export function convertResponsesMessages<TApi extends Api>(
 
 	const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId);
 
-	if (context.systemPrompt) {
+	const includeSystemPrompt = options?.includeSystemPrompt ?? true;
+	if (includeSystemPrompt && context.systemPrompt) {
 		const role = model.reasoning ? "developer" : "system";
 		messages.push({
 			role,
@@ -204,15 +222,24 @@ export function convertResponsesMessages<TApi extends Api>(
 	return messages;
 }
 
-export function convertResponsesTools(tools: Tool[]): OpenAITool[] {
+// =============================================================================
+// Tool conversion
+// =============================================================================
+
+export function convertResponsesTools(tools: Tool[], options?: ConvertResponsesToolsOptions): OpenAITool[] {
+	const strict = options?.strict === undefined ? false : options.strict;
 	return tools.map((tool) => ({
 		type: "function",
 		name: tool.name,
 		description: tool.description,
 		parameters: tool.parameters as any, // TypeBox already generates JSON Schema
-		strict: false,
+		strict,
 	}));
 }
+
+// =============================================================================
+// Stream processing
+// =============================================================================
 
 export async function processResponsesStream<TApi extends Api>(
 	openaiStream: AsyncIterable<ResponseStreamEvent>,
