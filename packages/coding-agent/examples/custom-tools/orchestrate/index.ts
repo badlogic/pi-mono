@@ -61,8 +61,14 @@ const MAX_OUTPUT_BYTES = 100 * 1024; // 100KB tail buffer
 const SIGKILL_GRACE_MS = 5000; // Grace period before SIGKILL
 
 // Hook script paths
-const MEMORY_RECALL_SCRIPT = path.join(os.homedir(), ".pi", "agent", "skills", "memory", "run.sh");
-const QUALITY_GATE_SCRIPT = "/home/graham/workspace/experiments/memory/.claude/hooks/quality-gate.sh";
+const ORCHESTRATE_HOME = process.env.ORCHESTRATE_HOME || path.join(os.homedir(), ".pi", "skills", "orchestrate");
+const AGENT_HOME = process.env.PI_HOME
+	? path.join(process.env.PI_HOME, "agent")
+	: path.join(os.homedir(), ".pi", "agent");
+
+const MEMORY_RECALL_SCRIPT = path.join(AGENT_HOME, "skills", "memory", "run.sh");
+const QUALITY_GATE_SCRIPT = path.join(ORCHESTRATE_HOME, "quality-gate.sh");
+const PREFLIGHT_SCRIPT = path.join(ORCHESTRATE_HOME, "preflight.sh");
 
 interface ParsedTask {
 	id: number;
@@ -432,6 +438,12 @@ function parseTaskFile(filePath: string): TaskFileContent {
 				const selfReviewMatch = trimmed.match(/^-\s*SelfReview:\s*(true|false|yes|no)/i);
 				const parallelMatch = trimmed.match(/^-\s*Parallel:\s*(\d+)/i);
 
+				// Definition of Done parsing (Test detection)
+				// Format: - Test: tests/foo.py
+				// Or inside a DoD block (handled via looking for "Test:" prefix in lines belonging to task)
+				// Simple approach: look for "Test:" or "Test File:" line pattern
+				const testMatch = trimmed.match(/^\s*-\s*Test(?:\s*File)?:\s*(.+)/i);
+
 				if (agentMatch) {
 					currentTask.agent = agentMatch[1].trim();
 				} else if (depsMatch) {
@@ -451,6 +463,15 @@ function parseTaskFile(filePath: string): TaskFileContent {
 					}
 				} else if (gateMatch) {
 					currentTask.gate = gateMatch[1].trim();
+					// Explicit gate implies retry-until-pass unless stated otherwise
+					if (!currentTask.mode) currentTask.mode = "retry-until-pass";
+				} else if (testMatch) {
+					// "Definition of Done" Test field detected -> Auto-promote to Gate
+					const testPath = testMatch[1].trim();
+					if (testPath.toLowerCase() !== "missing" && !testPath.toLowerCase().startsWith("n/a")) {
+						currentTask.gate = testPath;
+						currentTask.mode = "retry-until-pass";
+					}
 				} else if (maxRetriesMatch) {
 					currentTask.maxRetries = parseInt(maxRetriesMatch[1], 10);
 				} else if (selfReviewMatch) {
@@ -701,41 +722,6 @@ function killWithEscalation(proc: ChildProcess): void {
 }
 
 /**
- * PRE-HOOK: Memory Recall
- * Query memory for prior solutions before each task.
- * Returns recalled items to inject as context into the task prompt.
- */
-function runMemoryRecall(task: ParsedTask, cwd: string): MemoryRecallResult | null {
-	if (!fs.existsSync(MEMORY_RECALL_SCRIPT)) {
-		return null;
-	}
-
-	// Build query from task context
-	const query = `${task.title}. ${task.description}`.trim();
-	if (!query) {
-		return null;
-	}
-
-	try {
-		const result = spawnSync(MEMORY_RECALL_SCRIPT, ["recall", "--q", query, "--json"], {
-			cwd,
-			encoding: "utf-8",
-			timeout: 30000,
-		});
-
-		if (result.status !== 0 || !result.stdout) {
-			return null;
-		}
-
-		const data = JSON.parse(result.stdout) as MemoryRecallResult;
-		return data;
-	} catch {
-		// Memory recall failure shouldn't block task execution
-		return null;
-	}
-}
-
-/**
  * POST-HOOK: Quality Gate
  * Validate code quality after task completion.
  * Returns true if quality gate passes, false otherwise with error details.
@@ -829,6 +815,264 @@ function runGate(gatePath: string, cwd: string): GateResult {
 }
 
 /**
+ * PRE-HOOK: Memory Recall
+ * Query memory for prior solutions before each task.
+ * Returns recalled items to inject as context into the task prompt.
+ */
+function runMemoryRecall(task: ParsedTask, cwd: string): MemoryRecallResult | null {
+	if (!fs.existsSync(MEMORY_RECALL_SCRIPT)) {
+		return null;
+	}
+
+	// Build query from task context
+	const query = `${task.title}. ${task.description}`.trim();
+	if (!query) {
+		return null;
+	}
+
+	try {
+		const result = spawnSync(MEMORY_RECALL_SCRIPT, ["recall", "--q", query, "--json"], {
+			cwd,
+			encoding: "utf-8",
+			timeout: 30000,
+		});
+
+		if (result.status !== 0 || !result.stdout) {
+			return null;
+		}
+
+		const data = JSON.parse(result.stdout) as MemoryRecallResult;
+		return data;
+	} catch {
+		// Memory recall failure shouldn't block task execution
+		return null;
+	}
+}
+
+/// ============================================================================
+// AGENT EXECUTION ABSTRACTION
+// ============================================================================
+
+interface AgentExecutionResult {
+	output: string;
+	toolCallCount: number;
+}
+
+/**
+ * Executes a single agent task using the configured provider (pi or codex)
+ */
+async function executeAgent(
+	agentConfig: AgentConfig,
+	prompt: string,
+	cwd: string,
+	writeToFile: (line: string) => void,
+	timeoutMs: number,
+	signal?: AbortSignal,
+): Promise<AgentExecutionResult> {
+	return new Promise<AgentExecutionResult>((resolve, reject) => {
+		let settled = false;
+		let toolCallCount = 0; // Tracking tool calls if possible
+		const output = new OutputAccumulator(MAX_OUTPUT_BYTES); // Use OutputAccumulator here
+
+		// Determine backend
+		const isCodex = agentConfig.name.toLowerCase() === "codex" || agentConfig.name.toLowerCase().includes("codex");
+		const command = isCodex ? "codex" : "pi";
+
+		// Build arguments
+		let args: string[] = [];
+		let tmpDir: string | null = null; // For system prompt file
+
+		if (isCodex) {
+			// Codex: exec --json -p <prompt>
+			// Note: Codex experimental tool uses "exec --json"
+			args = ["exec", "--json", "-p", prompt];
+		} else {
+			// Pi: as before
+			args = ["--mode", "json", "-p", "--no-session"];
+
+			if (agentConfig.provider) {
+				args.push("--provider", agentConfig.provider);
+			}
+
+			if (agentConfig.model) {
+				args.push("--model", agentConfig.model);
+			}
+
+			if (agentConfig.tools?.length) {
+				const builtinTools: string[] = [];
+				for (const tool of agentConfig.tools) {
+					if (!tool.includes("/") && !tool.endsWith(".ts") && !tool.endsWith(".js")) {
+						builtinTools.push(tool);
+					}
+				}
+				if (builtinTools.length > 0) {
+					args.push("--tools", builtinTools.join(","));
+				}
+			}
+
+			// Add system prompt
+			if (agentConfig.systemPrompt?.trim()) {
+				const tmp = writePromptFile(agentConfig.name, agentConfig.systemPrompt);
+				tmpDir = tmp.dir;
+				args.push("--append-system-prompt", tmp.path);
+			}
+			args.push(prompt); // Add the main prompt last for pi
+		}
+
+		writeToFile(`[system] Spawning agent: ${command} ${args.join(" ")}\n`);
+
+		const proc = spawn(command, args, {
+			cwd,
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+
+		let timeoutId: NodeJS.Timeout | null = null;
+
+		// Cleanup helper - call before settling
+		const cleanup = () => {
+			if (timeoutId) clearTimeout(timeoutId);
+			signal?.removeEventListener("abort", abortHandler);
+			if (tmpDir) {
+				try {
+					fs.rmSync(tmpDir, { recursive: true });
+				} catch {}
+			}
+		};
+
+		// Abort handler with guard against multiple settlements
+		const abortHandler = () => {
+			if (!settled) {
+				settled = true;
+				cleanup();
+				killWithEscalation(proc); // Best-effort cleanup, don't wait
+				reject(new Error("Task aborted")); // Settle immediately
+			}
+		};
+		signal?.addEventListener("abort", abortHandler, { once: true });
+
+		// Timeout handler with SIGKILL escalation
+		timeoutId = setTimeout(() => {
+			if (!settled) {
+				settled = true;
+				cleanup();
+				killWithEscalation(proc); // Best-effort cleanup, don't wait
+				reject(new Error(`Task timed out after ${Math.round(timeoutMs / 1000)}s`)); // Settle immediately
+			}
+		}, timeoutMs);
+
+		// JSONL line buffer for proper chunk handling
+		let stdoutBuf = "";
+
+		const processJsonlLine = (line: string) => {
+			if (!line.trim()) return;
+			// Write raw JSONL to file (complete, no truncation)
+			writeToFile(`${line}\n`);
+			try {
+				const evt = JSON.parse(line);
+
+				// Handle Pi-style events
+				if (evt.type === "message_end" && evt.message?.content) {
+					for (const part of evt.message.content) {
+						if (part.type === "text" && part.text) {
+							output.append(`${part.text}\n`);
+						}
+					}
+				}
+				// Also capture tool results for visibility
+				if (evt.type === "tool_result" && evt.result?.content) {
+					toolCallCount++;
+					for (const part of evt.result.content) {
+						if (part.type === "text" && part.text) {
+							const text = part.text.slice(0, 500);
+							output.append(`[tool: ${evt.toolName || "unknown"}] ${text}\n`);
+						}
+					}
+				}
+
+				// Handle Codex-style events (if they differ, adapt here)
+				// Codex tool output is evolving. Assuming similar structure or just text.
+				// If codex outputs non-standard JSON, we might need adjustments.
+				// For now, relying on JSON compatibility or fallback.
+				if (isCodex && evt.response) {
+					output.append(evt.response + "\n");
+				}
+			} catch {
+				// Not valid JSON, might be raw text
+				if (isCodex) {
+					output.append(line + "\n");
+				}
+			}
+		};
+
+		proc.stdout.on("data", (chunk) => {
+			stdoutBuf += chunk.toString("utf-8");
+			for (let idx = stdoutBuf.indexOf("\n"); idx !== -1; idx = stdoutBuf.indexOf("\n")) {
+				const line = stdoutBuf.slice(0, idx);
+				stdoutBuf = stdoutBuf.slice(idx + 1);
+				processJsonlLine(line);
+			}
+		});
+
+		proc.stderr.on("data", (chunk) => {
+			const text = chunk.toString();
+			writeToFile(`[stderr] ${text}`);
+			// output.append(text); // Don't pollute main output with stderr unless essential
+		});
+
+		proc.on("close", (code) => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+
+			// Process any remaining buffer content
+			if (stdoutBuf.trim()) {
+				processJsonlLine(stdoutBuf);
+			}
+
+			if (code === 0) {
+				resolve({ output: output.finalize(), toolCallCount });
+			} else {
+				reject(new Error(`Agent exited with code ${code}`));
+			}
+		});
+
+		proc.on("error", (err) => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			reject(err);
+		});
+	});
+}
+
+/**
+ * Run pre-flight checks (sanity scripts, definition of done).
+ * Throws error if checks fail.
+ */
+function runPreflight(taskFile: string, cwd: string): void {
+	if (!fs.existsSync(PREFLIGHT_SCRIPT)) {
+		// If preflight script is missing, we cannot enforce checks.
+		// Warn or ignore based on strictness. For now, ignore to allow operation without it.
+		return;
+	}
+
+	try {
+		const result = spawnSync(PREFLIGHT_SCRIPT, [taskFile], {
+			cwd,
+			encoding: "utf-8",
+			timeout: 60000, // 1 minute
+		});
+
+		if (result.status !== 0) {
+			const output = (result.stdout || "") + (result.stderr || "");
+			throw new Error(`Pre-flight check failed. Fix issues before running:\n\n${output}`);
+		}
+	} catch (err) {
+		throw new Error(`Pre-flight script error: ${err instanceof Error ? err.message : String(err)}`);
+	}
+}
+
+/**
  * Run agent to fix issues based on gate failure.
  * This is the core of retry-until-pass mode from tasks_loop.
  */
@@ -881,102 +1125,26 @@ Analyze the failure and make the minimal fix needed. Do NOT introduce unrelated 
 		// Ignore file errors
 	}
 
-	const output = new OutputAccumulator(MAX_OUTPUT_BYTES);
-
-	// Build pi arguments
-	const args = ["--mode", "json", "-p", "--no-session"];
-
-	if (agent.provider) {
-		args.push("--provider", agent.provider);
-	}
-
-	if (agent.model) {
-		args.push("--model", agent.model);
-	}
-
-	if (agent.tools?.length) {
-		const builtinTools: string[] = [];
-		for (const tool of agent.tools) {
-			if (!tool.includes("/") && !tool.endsWith(".ts") && !tool.endsWith(".js")) {
-				builtinTools.push(tool);
+	// Helper to write to file (full output, no truncation)
+	const writeToFile = (text: string) => {
+		if (fixFd !== null) {
+			try {
+				fs.writeSync(fixFd, text);
+			} catch {
+				// Ignore write errors
 			}
 		}
-		if (builtinTools.length > 0) {
-			args.push("--tools", builtinTools.join(","));
-		}
-	}
-
-	// Add system prompt
-	let tmpDir: string | null = null;
-	if (agent.systemPrompt?.trim()) {
-		const tmp = writePromptFile(agent.name, agent.systemPrompt);
-		tmpDir = tmp.dir;
-		args.push("--append-system-prompt", tmp.path);
-	}
-
-	args.push(fixPrompt);
+	};
 
 	try {
-		await new Promise<number>((resolve, reject) => {
-			const proc = spawn("pi", args, {
-				cwd,
-				stdio: ["ignore", "pipe", "pipe"],
-			});
-
-			let stdoutBuf = "";
-
-			proc.stdout.on("data", (chunk) => {
-				const text = chunk.toString("utf-8");
-				if (fixFd !== null) {
-					try {
-						fs.writeSync(fixFd, text);
-					} catch {}
-				}
-				stdoutBuf += text;
-				for (let idx = stdoutBuf.indexOf("\n"); idx !== -1; idx = stdoutBuf.indexOf("\n")) {
-					const line = stdoutBuf.slice(0, idx);
-					stdoutBuf = stdoutBuf.slice(idx + 1);
-					if (line.trim()) {
-						try {
-							const evt = JSON.parse(line);
-							if (evt.type === "message_end" && evt.message?.content) {
-								for (const part of evt.message.content) {
-									if (part.type === "text" && part.text) {
-										output.append(`${part.text}\n`);
-									}
-								}
-							}
-						} catch {}
-					}
-				}
-			});
-
-			proc.stderr.on("data", (chunk) => {
-				const text = chunk.toString();
-				if (fixFd !== null) {
-					try {
-						fs.writeSync(fixFd, `[stderr] ${text}`);
-					} catch {}
-				}
-				output.append(text);
-			});
-
-			proc.on("close", (code) => resolve(code ?? 0));
-			proc.on("error", reject);
-		});
-
-		return { fixed: true, output: output.finalize() };
+		const agentExecutionResult = await executeAgent(agent, fixPrompt, cwd, writeToFile, 300000); // 5 minute timeout
+		return { fixed: true, output: agentExecutionResult.output };
 	} catch (err) {
 		return { fixed: false, output: `Agent fix error: ${err instanceof Error ? err.message : String(err)}` };
 	} finally {
 		if (fixFd !== null) {
 			try {
 				fs.closeSync(fixFd);
-			} catch {}
-		}
-		if (tmpDir) {
-			try {
-				fs.rmSync(tmpDir, { recursive: true });
 			} catch {}
 		}
 	}
@@ -1036,98 +1204,31 @@ If issues found, fix them now.
 			// Ignore file errors
 		}
 
-		// Build pi arguments
-		const args = ["--mode", "json", "-p", "--no-session"];
-
-		if (agent.provider) {
-			args.push("--provider", agent.provider);
-		}
-
-		if (agent.model) {
-			args.push("--model", agent.model);
-		}
-
-		if (agent.tools?.length) {
-			const builtinTools: string[] = [];
-			for (const tool of agent.tools) {
-				if (!tool.includes("/") && !tool.endsWith(".ts") && !tool.endsWith(".js")) {
-					builtinTools.push(tool);
+		// Helper to write to file (full output, no truncation)
+		const writeToFile = (text: string) => {
+			if (reviewFd !== null) {
+				try {
+					fs.writeSync(reviewFd, text);
+				} catch {
+					// Ignore write errors
 				}
 			}
-			if (builtinTools.length > 0) {
-				args.push("--tools", builtinTools.join(","));
-			}
-		}
-
-		let tmpDir: string | null = null;
-		if (agent.systemPrompt?.trim()) {
-			const tmp = writePromptFile(agent.name, agent.systemPrompt);
-			tmpDir = tmp.dir;
-			args.push("--append-system-prompt", tmp.path);
-		}
-
-		args.push(reviewPrompt);
+		};
 
 		let reviewOutput = "";
 
 		try {
-			await new Promise<number>((resolve, reject) => {
-				const proc = spawn("pi", args, {
-					cwd,
-					stdio: ["ignore", "pipe", "pipe"],
-				});
-
-				let stdoutBuf = "";
-
-				proc.stdout.on("data", (chunk) => {
-					const text = chunk.toString("utf-8");
-					if (reviewFd !== null) {
-						try {
-							fs.writeSync(reviewFd, text);
-						} catch {}
-					}
-					stdoutBuf += text;
-					for (let idx = stdoutBuf.indexOf("\n"); idx !== -1; idx = stdoutBuf.indexOf("\n")) {
-						const line = stdoutBuf.slice(0, idx);
-						stdoutBuf = stdoutBuf.slice(idx + 1);
-						if (line.trim()) {
-							try {
-								const evt = JSON.parse(line);
-								if (evt.type === "message_end" && evt.message?.content) {
-									for (const part of evt.message.content) {
-										if (part.type === "text" && part.text) {
-											reviewOutput += `${part.text}\n`;
-											output.append(`${part.text}\n`);
-										}
-									}
-								}
-							} catch {}
-						}
-					}
-				});
-
-				proc.stderr.on("data", (chunk) => {
-					const text = chunk.toString();
-					if (reviewFd !== null) {
-						try {
-							fs.writeSync(reviewFd, `[stderr] ${text}`);
-						} catch {}
-					}
-					output.append(text);
-				});
-
-				proc.on("close", (code) => resolve(code ?? 0));
-				proc.on("error", reject);
-			});
+			const agentExecutionResult = await executeAgent(agent, reviewPrompt, cwd, writeToFile, 300000); // 5 minute timeout
+			reviewOutput = agentExecutionResult.output;
+			output.append(reviewOutput);
+		} catch (err) {
+			output.append(`\nAgent self-review error: ${err instanceof Error ? err.message : String(err)}\n`);
+			// If agent crashes during self-review, it's a failure for this cycle, but we might continue.
+			// For now, let's just append the error and proceed to check for "No issues found."
 		} finally {
 			if (reviewFd !== null) {
 				try {
 					fs.closeSync(reviewFd);
-				} catch {}
-			}
-			if (tmpDir) {
-				try {
-					fs.rmSync(tmpDir, { recursive: true });
 				} catch {}
 			}
 		}
@@ -1234,151 +1335,17 @@ ${taskFile.context}
 ${task.description}
 
 ${task.notes ? `Notes: ${task.notes}` : ""}
-
 ## Instructions
-Complete this task following the quality gate checklist in your system prompt.
-When done, summarize what was accomplished.
+1. Implement the task.
+2. **CRITICAL**: Run the verification script to self-check your work:
+   \`${QUALITY_GATE_SCRIPT}\`
+3. If it fails, fix the code and run it again.
+4. Only when it passes, summarize what was accomplished.
 `.trim();
 
-	// Build pi arguments
-	const args = ["--mode", "json", "-p", "--no-session"];
-
-	if (agent.provider) {
-		args.push("--provider", agent.provider);
-	}
-
-	if (agent.model) {
-		args.push("--model", agent.model);
-	}
-
-	if (agent.tools?.length) {
-		const builtinTools: string[] = [];
-		for (const tool of agent.tools) {
-			if (!tool.includes("/") && !tool.endsWith(".ts") && !tool.endsWith(".js")) {
-				builtinTools.push(tool);
-			}
-		}
-		if (builtinTools.length > 0) {
-			args.push("--tools", builtinTools.join(","));
-		}
-	}
-
-	// Add system prompt with memory recall and quality gate
-	let tmpDir: string | null = null;
-	if (agent.systemPrompt?.trim()) {
-		const tmp = writePromptFile(agent.name, agent.systemPrompt);
-		tmpDir = tmp.dir;
-		args.push("--append-system-prompt", tmp.path);
-	}
-
-	args.push(taskPrompt);
-
-	const output = new OutputAccumulator(MAX_OUTPUT_BYTES);
-	let exitCode = 0;
-	let settled = false;
-
+	let agentExecutionResult: AgentExecutionResult;
 	try {
-		exitCode = await new Promise<number>((resolve, reject) => {
-			const proc = spawn("pi", args, {
-				cwd,
-				stdio: ["ignore", "pipe", "pipe"],
-			});
-
-			let timeoutId: NodeJS.Timeout | null = null;
-
-			// Cleanup helper - call before settling
-			const cleanup = () => {
-				if (timeoutId) clearTimeout(timeoutId);
-				signal?.removeEventListener("abort", abortHandler);
-			};
-
-			// Abort handler with guard against multiple settlements
-			const abortHandler = () => {
-				if (!settled) {
-					settled = true;
-					cleanup();
-					killWithEscalation(proc); // Best-effort cleanup, don't wait
-					reject(new Error("Task aborted")); // Settle immediately
-				}
-			};
-			signal?.addEventListener("abort", abortHandler, { once: true });
-
-			// Timeout handler with SIGKILL escalation
-			timeoutId = setTimeout(() => {
-				if (!settled) {
-					settled = true;
-					cleanup();
-					killWithEscalation(proc); // Best-effort cleanup, don't wait
-					reject(new Error(`Task timed out after ${Math.round(timeoutMs / 1000)}s`)); // Settle immediately
-				}
-			}, timeoutMs);
-
-			// JSONL line buffer for proper chunk handling
-			let stdoutBuf = "";
-
-			const processJsonlLine = (line: string) => {
-				if (!line.trim()) return;
-				// Write raw JSONL to file (complete, no truncation)
-				writeToFile(`${line}\n`);
-				try {
-					const evt = JSON.parse(line);
-					// Capture final message content from message_end events
-					if (evt.type === "message_end" && evt.message?.content) {
-						for (const part of evt.message.content) {
-							if (part.type === "text" && part.text) {
-								output.append(`${part.text}\n`);
-							}
-						}
-					}
-					// Also capture tool results for visibility
-					if (evt.type === "tool_result" && evt.result?.content) {
-						for (const part of evt.result.content) {
-							if (part.type === "text" && part.text) {
-								const text = part.text.slice(0, 500);
-								output.append(`[tool: ${evt.toolName || "unknown"}] ${text}\n`);
-							}
-						}
-					}
-				} catch {
-					// Not valid JSON, skip
-				}
-			};
-
-			proc.stdout.on("data", (chunk) => {
-				stdoutBuf += chunk.toString("utf-8");
-				for (let idx = stdoutBuf.indexOf("\n"); idx !== -1; idx = stdoutBuf.indexOf("\n")) {
-					const line = stdoutBuf.slice(0, idx);
-					stdoutBuf = stdoutBuf.slice(idx + 1);
-					processJsonlLine(line);
-				}
-			});
-
-			proc.stderr.on("data", (chunk) => {
-				const text = chunk.toString();
-				writeToFile(`[stderr] ${text}`);
-				output.append(text);
-			});
-
-			proc.on("close", (code) => {
-				if (!settled) {
-					settled = true;
-					cleanup();
-					// Process any remaining buffer content
-					if (stdoutBuf.trim()) {
-						processJsonlLine(stdoutBuf);
-					}
-					resolve(code ?? 0);
-				}
-			});
-
-			proc.on("error", (err) => {
-				if (!settled) {
-					settled = true;
-					cleanup();
-					reject(err);
-				}
-			});
-		});
+		agentExecutionResult = await executeAgent(agent, taskPrompt, cwd, writeToFile, timeoutMs, signal);
 	} catch (err) {
 		writeToFile(`\nERROR: ${err instanceof Error ? err.message : String(err)}\n`);
 		closeOutputFile();
@@ -1387,35 +1354,15 @@ When done, summarize what was accomplished.
 			title: task.title,
 			agent: task.agent,
 			status: "failed",
-			output: output.finalize(),
+			output: "",
 			outputFile,
 			durationMs: Date.now() - startTime,
 			error: err instanceof Error ? err.message : String(err),
 		};
-	} finally {
-		// Cleanup temp prompt file
-		if (tmpDir) {
-			try {
-				fs.rmSync(tmpDir, { recursive: true });
-			} catch {}
-		}
 	}
 
-	// If pi subprocess failed, return failure immediately
-	if (exitCode !== 0) {
-		writeToFile(`\nExit code: ${exitCode}\n`);
-		closeOutputFile();
-		return {
-			taskId: task.id,
-			title: task.title,
-			agent: task.agent,
-			status: "failed",
-			output: output.finalize(),
-			outputFile,
-			durationMs: Date.now() - startTime,
-			error: `Exit code: ${exitCode}`,
-		};
-	}
+	// If agent subprocess failed (executeAgent throws on non-zero exit), it's caught above.
+	// If it resolved, it means the agent process itself exited with 0.
 
 	// POST-HOOK: Quality Gate - validate code quality
 	const qualityResult = runQualityGate(cwd);
@@ -1427,21 +1374,21 @@ When done, summarize what was accomplished.
 			title: task.title,
 			agent: task.agent,
 			status: "failed",
-			output: `${output.finalize()}\n\n--- QUALITY GATE FAILED ---\n${qualityResult.error || ""}`,
+			output: `${agentExecutionResult.output}\n\n--- QUALITY GATE FAILED ---\n${qualityResult.error || ""}`,
 			outputFile,
 			durationMs: Date.now() - startTime,
 			error: "Quality gate failed - tests or checks did not pass",
 		};
 	}
 
-	// Both pi subprocess and quality gate passed
+	// Both agent execution and quality gate passed
 	closeOutputFile();
 	return {
 		taskId: task.id,
 		title: task.title,
 		agent: task.agent,
 		status: "success",
-		output: output.finalize(),
+		output: agentExecutionResult.output,
 		outputFile,
 		durationMs: Date.now() - startTime,
 	};
@@ -2208,6 +2155,9 @@ const factory: CustomToolFactory = (pi) => ({
 		// Parse and validate task file
 		const parsed = parseTaskFile(absolutePath);
 		validateTaskFile(parsed);
+
+		// Run pre-flight check (enforces Definition of Done & Sanity Scripts)
+		runPreflight(absolutePath, pi.cwd);
 
 		const pendingTasks = parsed.tasks.filter((t) => !t.completed);
 
