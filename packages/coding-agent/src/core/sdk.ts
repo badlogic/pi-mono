@@ -97,6 +97,9 @@ export interface CreateAgentSessionOptions {
 	/** System prompt. String replaces default, function receives default and returns final. */
 	systemPrompt?: string | ((defaultPrompt: string) => string);
 
+	/** Text to append to system prompt (after customPrompt or default). */
+	appendPrompt?: string;
+
 	/** Built-in tools to use. Default: codingTools [read, bash, edit, write] */
 	tools?: Tool[];
 	/** Custom tools to register (in addition to built-in tools). */
@@ -551,7 +554,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// Function to rebuild system prompt when tools change
 	// Captures static options (cwd, agentDir, skills, contextFiles, customPrompt)
-	const rebuildSystemPrompt = (toolNames: string[]): string => {
+	const rebuildSystemPrompt = (
+		toolNames: string[],
+		overrides?: { systemPrompt: string | null; appendSystemPrompt: string | null },
+	): string => {
 		// Filter to valid tool names
 		const validToolNames = toolNames.filter((n): n is ToolName => n in allBuiltInToolsMap);
 		const defaultPrompt = buildSystemPromptInternal({
@@ -560,6 +566,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			skills,
 			contextFiles,
 			selectedTools: validToolNames,
+			customPrompt: overrides?.systemPrompt ?? undefined,
+			appendSystemPrompt: overrides?.appendSystemPrompt ?? undefined,
 		});
 
 		if (options.systemPrompt === undefined) {
@@ -572,7 +580,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}
 	};
 
-	const systemPrompt = rebuildSystemPrompt(initialActiveToolNames);
+	const systemPrompt = rebuildSystemPrompt(initialActiveToolNames, {
+		systemPrompt: existingSession.systemPrompt,
+		appendSystemPrompt: existingSession.appendSystemPrompt,
+	});
 	time("buildSystemPrompt");
 
 	const promptTemplates = options.promptTemplates ?? discoverPromptTemplates(cwd, agentDir);
@@ -669,6 +680,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			sessionManager.appendModelChange(model.provider, model.id);
 		}
 		sessionManager.appendThinkingLevelChange(thinkingLevel);
+	}
+
+	// Save prompt entries if CLI options provided (creates new entries that supersede old ones)
+	if (typeof options.systemPrompt === "string") {
+		sessionManager.saveSystemPrompt(options.systemPrompt);
+	}
+	if (options.appendPrompt) {
+		sessionManager.saveAppendSystemPrompt(options.appendPrompt);
 	}
 
 	const session = new AgentSession({

@@ -132,6 +132,18 @@ export interface CustomMessageEntry<T = unknown> extends SessionEntryBase {
 	display: boolean;
 }
 
+/** System prompt entry for user-defined system prompt. */
+export interface SystemPromptEntry extends SessionEntryBase {
+	type: "system_prompt";
+	systemPrompt: string;
+}
+
+/** Append system prompt entry for user-defined appends to the system prompt. */
+export interface AppendSystemPromptEntry extends SessionEntryBase {
+	type: "append_system_prompt";
+	appendSystemPrompt: string;
+}
+
 /** Session entry - has id/parentId for tree structure (returned by "read" methods in SessionManager) */
 export type SessionEntry =
 	| SessionMessageEntry
@@ -142,7 +154,9 @@ export type SessionEntry =
 	| CustomEntry
 	| CustomMessageEntry
 	| LabelEntry
-	| SessionInfoEntry;
+	| SessionInfoEntry
+	| SystemPromptEntry
+	| AppendSystemPromptEntry;
 
 /** Raw file entry (includes header) */
 export type FileEntry = SessionHeader | SessionEntry;
@@ -159,6 +173,8 @@ export interface SessionContext {
 	messages: AgentMessage[];
 	thinkingLevel: string;
 	model: { provider: string; modelId: string } | null;
+	systemPrompt: string | null;
+	appendSystemPrompt: string | null;
 }
 
 export interface SessionInfo {
@@ -319,7 +335,7 @@ export function buildSessionContext(
 	let leaf: SessionEntry | undefined;
 	if (leafId === null) {
 		// Explicitly null - return no messages (navigated to before first entry)
-		return { messages: [], thinkingLevel: "off", model: null };
+		return { messages: [], thinkingLevel: "off", model: null, systemPrompt: null, appendSystemPrompt: null };
 	}
 	if (leafId) {
 		leaf = byId.get(leafId);
@@ -330,7 +346,7 @@ export function buildSessionContext(
 	}
 
 	if (!leaf) {
-		return { messages: [], thinkingLevel: "off", model: null };
+		return { messages: [], thinkingLevel: "off", model: null, systemPrompt: null, appendSystemPrompt: null };
 	}
 
 	// Walk from leaf to root, collecting path
@@ -345,6 +361,8 @@ export function buildSessionContext(
 	let thinkingLevel = "off";
 	let model: { provider: string; modelId: string } | null = null;
 	let compaction: CompactionEntry | null = null;
+	let systemPrompt: string | null = null;
+	let appendSystemPrompt: string | null = null;
 
 	for (const entry of path) {
 		if (entry.type === "thinking_level_change") {
@@ -355,6 +373,10 @@ export function buildSessionContext(
 			model = { provider: entry.message.provider, modelId: entry.message.model };
 		} else if (entry.type === "compaction") {
 			compaction = entry;
+		} else if (entry.type === "system_prompt") {
+			systemPrompt = entry.systemPrompt;
+		} else if (entry.type === "append_system_prompt") {
+			appendSystemPrompt = entry.appendSystemPrompt;
 		}
 	}
 
@@ -408,7 +430,7 @@ export function buildSessionContext(
 		}
 	}
 
-	return { messages, thinkingLevel, model };
+	return { messages, thinkingLevel, model, systemPrompt, appendSystemPrompt };
 }
 
 /**
@@ -753,6 +775,30 @@ export class SessionManager {
 		this.byId.set(entry.id, entry);
 		this.leafId = entry.id;
 		this._persist(entry);
+	}
+
+	/** Save a custom system prompt as child of current leaf, then advance leaf. */
+	saveSystemPrompt(systemPrompt: string): void {
+		const entry: SystemPromptEntry = {
+			type: "system_prompt",
+			timestamp: new Date().toISOString(),
+			systemPrompt,
+			id: generateId(this.byId),
+			parentId: this.leafId,
+		};
+		this._appendEntry(entry);
+	}
+
+	/** Save an append system prompt as child of current leaf, then advance leaf. */
+	saveAppendSystemPrompt(appendSystemPrompt: string): void {
+		const entry: AppendSystemPromptEntry = {
+			type: "append_system_prompt",
+			timestamp: new Date().toISOString(),
+			appendSystemPrompt,
+			id: generateId(this.byId),
+			parentId: this.leafId,
+		};
+		this._appendEntry(entry);
 	}
 
 	/** Append a message as child of current leaf, then advance leaf. Returns entry id.

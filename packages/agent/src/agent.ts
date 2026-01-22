@@ -190,6 +190,10 @@ export class Agent {
 		this._state.tools = t;
 	}
 
+	getTools(): AgentTool<any>[] {
+		return this._state.tools;
+	}
+
 	replaceMessages(ms: AgentMessage[]) {
 		this._state.messages = ms.slice();
 	}

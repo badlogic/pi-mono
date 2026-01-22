@@ -208,7 +208,10 @@ export class AgentSession {
 	private _toolRegistry: Map<string, AgentTool>;
 
 	// Function to rebuild system prompt when tools change
-	private _rebuildSystemPrompt?: (toolNames: string[]) => string;
+	private _rebuildSystemPrompt?: (
+		toolNames: string[],
+		overrides?: { systemPrompt: string | null; appendSystemPrompt: string | null },
+	) => string;
 
 	// Base system prompt (without extension appends) - used to apply fresh appends each turn
 	private _baseSystemPrompt: string;
@@ -1917,6 +1920,16 @@ export class AgentSession {
 			this.setThinkingLevel(sessionContext.thinkingLevel as ThinkingLevel);
 		}
 
+		// Restore system prompt if saved
+		if ((sessionContext.systemPrompt || sessionContext.appendSystemPrompt) && this._rebuildSystemPrompt) {
+			const activeToolNames = this.agent.getTools().map((t) => t.name);
+			this._baseSystemPrompt = this._rebuildSystemPrompt(activeToolNames, {
+				systemPrompt: sessionContext.systemPrompt,
+				appendSystemPrompt: sessionContext.appendSystemPrompt,
+			});
+			this.agent.setSystemPrompt(this._baseSystemPrompt);
+		}
+
 		this._reconnectToAgent();
 		return true;
 	}
@@ -1980,6 +1993,16 @@ export class AgentSession {
 
 		if (!skipConversationRestore) {
 			this.agent.replaceMessages(sessionContext.messages);
+		}
+
+		// Restore system prompt if saved
+		if ((sessionContext.systemPrompt || sessionContext.appendSystemPrompt) && this._rebuildSystemPrompt) {
+			const activeToolNames = this.agent.getTools().map((t) => t.name);
+			this._baseSystemPrompt = this._rebuildSystemPrompt(activeToolNames, {
+				systemPrompt: sessionContext.systemPrompt,
+				appendSystemPrompt: sessionContext.appendSystemPrompt,
+			});
+			this.agent.setSystemPrompt(this._baseSystemPrompt);
 		}
 
 		return { selectedText, cancelled: false };
