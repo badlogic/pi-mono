@@ -67,6 +67,10 @@
 - Fixed model catalog generation to exclude deprecated OpenCode Zen models ([#970](https://github.com/badlogic/pi-mono/pull/970) by [@DanielTatarkin](https://github.com/DanielTatarkin))
 - Fixed git extension removal to prune empty directories
 
+### Added
+
+- Session selector (`/resume`) now supports named-only filter toggle (default `Ctrl+N`, configurable via `toggleSessionNamedFilter`) to show only named sessions ([#862](https://github.com/badlogic/pi-mono/issues/862))
+
 ## [0.50.0] - 2026-01-26
 
 ### New Features
@@ -108,7 +112,6 @@ There are multiple SDK breaking changes since v0.49.3. For the quickest migratio
 - Added changelog link to update notifications ([#925](https://github.com/badlogic/pi-mono/pull/925) by [@dannote](https://github.com/dannote))
 - Added `--verbose` CLI flag to override quietStartup setting ([#906](https://github.com/badlogic/pi-mono/pull/906) by [@Perlence](https://github.com/Perlence))
 - `markdown.codeBlockIndent` setting to customize code block indentation in rendered output
-- Session selector (`/resume`) now supports named-only filter toggle (default `Ctrl+N`) to show only named sessions ([#862](https://github.com/badlogic/pi-mono/issues/862))
 - Extension package management with `pi install`, `pi remove`, `pi update`, and `pi list` commands ([#645](https://github.com/badlogic/pi-mono/issues/645))
 - Package filtering: selectively load resources from packages using object form in `packages` array ([#645](https://github.com/badlogic/pi-mono/issues/645))
 - Glob pattern support with minimatch in package filters, top-level settings arrays, and pi manifest (e.g., `"!funky.json"`, `"*.ts"`) ([#645](https://github.com/badlogic/pi-mono/issues/645))
