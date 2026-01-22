@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Persist and restore system and append prompts overrides from `--system-prompt` or `--append-system-prompt` ([#896](https://github.com/badlogic/pi-mono/pull/896) by [@scutifer](https://github.com/scutifer))
+
 ## [0.49.3] - 2026-01-22
 
 ### Added
