@@ -24,6 +24,7 @@
 ### Fixed
 
 - Auto-retry now handles "terminated" errors from Codex API mid-stream failures
+- Follow-up queue (Alt+Enter) now sends full paste content instead of `[paste #N ...]` markers ([#912](https://github.com/badlogic/pi-mono/issues/912))
 
 ## [0.49.3] - 2026-01-22
 

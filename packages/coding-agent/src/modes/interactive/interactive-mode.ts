@@ -2246,7 +2246,7 @@ export class InteractiveMode {
 	}
 
 	private async handleFollowUp(): Promise<void> {
-		const text = this.editor.getText().trim();
+		const text = (this.editor.getExpandedText?.() ?? this.editor.getText()).trim();
 		if (!text) return;
 
 		// Queue input during compaction (extension commands execute immediately)
