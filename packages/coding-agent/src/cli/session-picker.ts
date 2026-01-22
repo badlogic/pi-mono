@@ -3,6 +3,7 @@
  */
 
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
+import { KeybindingsManager } from "../core/keybindings.js";
 import type { SessionInfo, SessionListProgress } from "../core/session-manager.js";
 import { SessionSelectorComponent } from "../modes/interactive/components/session-selector.js";
 
@@ -15,6 +16,7 @@ export async function selectSession(
 ): Promise<string | null> {
 	return new Promise((resolve) => {
 		const ui = new TUI(new ProcessTerminal());
+		const keybindings = KeybindingsManager.create();
 		let resolved = false;
 
 		const selector = new SessionSelectorComponent(
@@ -39,7 +41,7 @@ export async function selectSession(
 				process.exit(0);
 			},
 			() => ui.requestRender(),
-			{ showRenameHint: false },
+			{ showRenameHint: false, keybindings },
 		);
 
 		ui.addChild(selector);

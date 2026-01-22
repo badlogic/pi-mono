@@ -14,10 +14,11 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
+import { KeybindingsManager } from "../../../core/keybindings.js";
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
-import { keyHint, rawKeyHint } from "./keybinding-hints.js";
+import { appKey, appKeyHint, keyHint } from "./keybinding-hints.js";
 import { filterAndSortSessions, type NameFilter, type SortMode } from "./session-selector-search.js";
 
 type SessionScope = "current" | "all";
@@ -51,6 +52,7 @@ class SessionSelectorHeader implements Component {
 	private scope: SessionScope;
 	private sortMode: SortMode;
 	private nameFilter: NameFilter;
+	private keybindings: KeybindingsManager;
 	private requestRender: () => void;
 	private loading = false;
 	private loadProgress: { loaded: number; total: number } | null = null;
@@ -60,10 +62,17 @@ class SessionSelectorHeader implements Component {
 	private statusTimeout: ReturnType<typeof setTimeout> | null = null;
 	private showRenameHint = false;
 
-	constructor(scope: SessionScope, sortMode: SortMode, nameFilter: NameFilter, requestRender: () => void) {
+	constructor(
+		scope: SessionScope,
+		sortMode: SortMode,
+		nameFilter: NameFilter,
+		keybindings: KeybindingsManager,
+		requestRender: () => void,
+	) {
 		this.scope = scope;
 		this.sortMode = sortMode;
 		this.nameFilter = nameFilter;
+		this.keybindings = keybindings;
 		this.requestRender = requestRender;
 	}
 
@@ -163,7 +172,7 @@ class SessionSelectorHeader implements Component {
 			const hint1 = keyHint("tab", "scope") + sep + theme.fg("muted", 're:<pattern> regex · "phrase" exact');
 			const hint2Parts = [
 				keyHint("toggleSessionSort", "sort"),
-				rawKeyHint("ctrl+n", "named"),
+				appKeyHint(this.keybindings, "toggleSessionNamedFilter", "named"),
 				keyHint("deleteSession", "delete"),
 				keyHint("toggleSessionPath", `path ${pathState}`),
 			];
@@ -194,6 +203,7 @@ class SessionList implements Component, Focusable {
 	private showCwd = false;
 	private sortMode: SortMode = "relevance";
 	private nameFilter: NameFilter = "all";
+	private keybindings: KeybindingsManager;
 	private showPath = false;
 	private confirmingDeletePath: string | null = null;
 	private currentSessionFilePath?: string;
@@ -225,6 +235,7 @@ class SessionList implements Component, Focusable {
 		showCwd: boolean,
 		sortMode: SortMode,
 		nameFilter: NameFilter,
+		keybindings: KeybindingsManager,
 		currentSessionFilePath?: string,
 	) {
 		this.allSessions = sessions;
@@ -233,6 +244,7 @@ class SessionList implements Component, Focusable {
 		this.showCwd = showCwd;
 		this.sortMode = sortMode;
 		this.nameFilter = nameFilter;
+		this.keybindings = keybindings;
 		this.currentSessionFilePath = currentSessionFilePath;
 
 		// Handle Enter in search input - select current item
@@ -297,11 +309,12 @@ class SessionList implements Component, Focusable {
 		if (this.filteredSessions.length === 0) {
 			let emptyMsg: string;
 			if (this.nameFilter === "named") {
+				const toggleKey = appKey(this.keybindings, "toggleSessionNamedFilter");
 				// Name filter is active - hint to clear it
 				if (this.showCwd) {
-					emptyMsg = "  No named sessions found. Press Ctrl+N to show all.";
+					emptyMsg = `  No named sessions found. Press ${toggleKey} to show all.`;
 				} else {
-					emptyMsg = "  No named sessions in current folder. Press Ctrl+N to show all, or Tab to view all.";
+					emptyMsg = `  No named sessions in current folder. Press ${toggleKey} to show all, or Tab to view all.`;
 				}
 			} else if (this.showCwd) {
 				// "All" scope - no sessions anywhere that match filter
@@ -416,8 +429,8 @@ class SessionList implements Component, Focusable {
 			return;
 		}
 
-		// Ctrl+N: toggle name filter
-		if (matchesKey(keyData, "ctrl+n")) {
+		// Toggle named-only filter (configurable)
+		if (this.keybindings.matches(keyData, "toggleSessionNamedFilter")) {
 			this.onToggleNameFilter?.();
 			return;
 		}
@@ -557,6 +570,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 	private canRename = true;
 	private sessionList: SessionList;
 	private header: SessionSelectorHeader;
+	private keybindings: KeybindingsManager;
 	private scope: SessionScope = "current";
 	private sortMode: SortMode = "relevance";
 	private nameFilter: NameFilter = "all";
@@ -610,25 +624,70 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		onCancel: () => void,
 		onExit: () => void,
 		requestRender: () => void,
+		currentSessionFilePath?: string,
+	);
+	constructor(
+		currentSessionsLoader: SessionsLoader,
+		allSessionsLoader: SessionsLoader,
+		onSelect: (sessionPath: string) => void,
+		onCancel: () => void,
+		onExit: () => void,
+		requestRender: () => void,
 		options?: {
 			renameSession?: (sessionPath: string, currentName: string | undefined) => Promise<void>;
 			showRenameHint?: boolean;
+			keybindings?: KeybindingsManager;
 		},
 		currentSessionFilePath?: string,
+	);
+	constructor(
+		currentSessionsLoader: SessionsLoader,
+		allSessionsLoader: SessionsLoader,
+		onSelect: (sessionPath: string) => void,
+		onCancel: () => void,
+		onExit: () => void,
+		requestRender: () => void,
+		arg7?:
+			| {
+					renameSession?: (sessionPath: string, currentName: string | undefined) => Promise<void>;
+					showRenameHint?: boolean;
+					keybindings?: KeybindingsManager;
+			  }
+			| string,
+		arg8?: string,
 	) {
 		super();
+
+		const options = typeof arg7 === "string" ? undefined : arg7;
+		const currentSessionFilePath = typeof arg7 === "string" ? arg7 : arg8;
+
+		this.keybindings = options?.keybindings ?? KeybindingsManager.create();
+
 		this.currentSessionsLoader = currentSessionsLoader;
 		this.allSessionsLoader = allSessionsLoader;
 		this.onCancel = onCancel;
 		this.requestRender = requestRender;
-		this.header = new SessionSelectorHeader(this.scope, this.sortMode, this.nameFilter, this.requestRender);
+		this.header = new SessionSelectorHeader(
+			this.scope,
+			this.sortMode,
+			this.nameFilter,
+			this.keybindings,
+			this.requestRender,
+		);
 		const renameSession = options?.renameSession;
 		this.renameSession = renameSession;
 		this.canRename = !!renameSession;
 		this.header.setShowRenameHint(options?.showRenameHint ?? this.canRename);
 
 		// Create session list (starts empty, will be populated after load)
-		this.sessionList = new SessionList([], false, this.sortMode, this.nameFilter, currentSessionFilePath);
+		this.sessionList = new SessionList(
+			[],
+			false,
+			this.sortMode,
+			this.nameFilter,
+			this.keybindings,
+			currentSessionFilePath,
+		);
 
 		this.buildBaseLayout(this.sessionList);
 

@@ -25,6 +25,9 @@ export type AppAction =
 	| "selectModel"
 	| "expandTools"
 	| "toggleThinking"
+	// Session selector-only action. Intentionally not treated as a globally reserved shortcut for
+	// extension shortcut conflict checks, since it only applies inside the /resume picker
+	| "toggleSessionNamedFilter"
 	| "externalEditor"
 	| "followUp"
 	| "dequeue"
@@ -56,6 +59,7 @@ export const DEFAULT_APP_KEYBINDINGS: Record<AppAction, KeyId | KeyId[]> = {
 	selectModel: "ctrl+l",
 	expandTools: "ctrl+o",
 	toggleThinking: "ctrl+t",
+	toggleSessionNamedFilter: "ctrl+n",
 	externalEditor: "ctrl+g",
 	followUp: "alt+enter",
 	dequeue: "alt+up",
@@ -82,6 +86,7 @@ const APP_ACTIONS: AppAction[] = [
 	"selectModel",
 	"expandTools",
 	"toggleThinking",
+	"toggleSessionNamedFilter",
 	"externalEditor",
 	"followUp",
 	"dequeue",
