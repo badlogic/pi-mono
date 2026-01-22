@@ -920,6 +920,12 @@ export class InteractiveMode {
 		this.footer.invalidate();
 		this.setCustomEditorComponent(undefined);
 		this.defaultEditor.onExtensionShortcut = undefined;
+		this.updateTerminalTitle();
+		if (this.loadingAnimation) {
+			this.loadingAnimation.setMessage(
+				`${this.defaultWorkingMessage} (${appKey(this.keybindings, "interrupt")} to interrupt)`,
+			);
+		}
 	}
 
 	// Maximum total widget lines to prevent viewport overflow
