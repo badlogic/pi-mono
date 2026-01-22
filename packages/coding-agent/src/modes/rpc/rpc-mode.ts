@@ -262,7 +262,6 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				waitForIdle: () => session.agent.waitForIdle(),
 				newSession: async (options) => {
 					const success = await session.newSession({ parentSession: options?.parentSession });
-					// Note: setup callback runs but no UI feedback in RPC mode
 					if (success && options?.setup) {
 						await options.setup(session.sessionManager);
 					}
