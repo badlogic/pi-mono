@@ -94,10 +94,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 	const docsPath = getDocsPath();
 	const examplesPath = getExamplesPath();
 
-	// Build tools list based on selected tools
-	const tools = selectedTools || ["read", "bash", "edit", "write"];
-	const toolsList =
-		tools.length > 0 ? tools.map((t) => `- ${t}: ${toolDescriptions[t] ?? "Custom tool"}`).join("\n") : "(none)";
+	// Build tools list based on selected tools (only built-in tools with known descriptions)
+	const tools = (selectedTools || ["read", "bash", "edit", "write"]).filter((t) => t in toolDescriptions);
+	const toolsList = tools.length > 0 ? tools.map((t) => `- ${t}: ${toolDescriptions[t]}`).join("\n") : "(none)";
 
 	// Build guidelines based on which tools are actually available
 	const guidelinesList: string[] = [];
