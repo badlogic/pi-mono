@@ -2,7 +2,7 @@ import assert from "node:assert";
 import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import type { AutocompleteProvider } from "../src/autocomplete.js";
-import { Editor } from "../src/components/editor.js";
+import { Editor, wordWrapLine } from "../src/components/editor.js";
 import { TUI } from "../src/tui.js";
 import { visibleWidth } from "../src/utils.js";
 import { defaultEditorTheme } from "./test-themes.js";
@@ -697,6 +697,94 @@ describe("Editor component", () => {
 			assert.strictEqual(lines.length, 3);
 			const contentLine = stripVTControlCharacters(lines[1]!);
 			assert.ok(contentLine.includes("1234567890"), "Content should contain the word");
+		});
+
+		it("wraps word to next line when it ends exactly at terminal width", () => {
+			// "hello " (6) + "world" (5) = 11, but "world" is non-whitespace ending at width.
+			// Thus, wrap it to next line. The trailing space stays with "hello" on line 1
+			const chunks = wordWrapLine("hello world test", 11);
+
+			assert.strictEqual(chunks.length, 2);
+			assert.strictEqual(chunks[0]!.text, "hello ");
+			assert.strictEqual(chunks[1]!.text, "world test");
+		});
+
+		it("keeps whitespace at terminal width boundary on same line", () => {
+			// "hello world " is exactly 12 chars (including trailing space)
+			// The space at position 12 should stay on the first line
+			const chunks = wordWrapLine("hello world test", 12);
+
+			assert.strictEqual(chunks.length, 2);
+			assert.strictEqual(chunks[0]!.text, "hello world ");
+			assert.strictEqual(chunks[1]!.text, "test");
+		});
+
+		it("handles unbreakable word filling width exactly followed by space", () => {
+			const chunks = wordWrapLine("aaaaaaaaaaaa aaaa", 12);
+
+			assert.strictEqual(chunks.length, 2);
+			assert.strictEqual(chunks[0]!.text, "aaaaaaaaaaaa");
+			assert.strictEqual(chunks[1]!.text, " aaaa");
+		});
+
+		it("wraps word to next line when it fits width but not remaining space", () => {
+			const chunks = wordWrapLine("      aaaaaaaaaaaa", 12);
+
+			assert.strictEqual(chunks.length, 2);
+			assert.strictEqual(chunks[0]!.text, "      ");
+			assert.strictEqual(chunks[1]!.text, "aaaaaaaaaaaa");
+		});
+
+		it("keeps word with multi-space and following word together when they fit", () => {
+			const chunks = wordWrapLine("Lorem ipsum dolor sit amet,    consectetur", 30);
+
+			assert.strictEqual(chunks.length, 2);
+			assert.strictEqual(chunks[0]!.text, "Lorem ipsum dolor sit ");
+			assert.strictEqual(chunks[1]!.text, "amet,    consectetur");
+		});
+
+		it("keeps word with multi-space and following word when they fill width exactly", () => {
+			const chunks = wordWrapLine("Lorem ipsum dolor sit amet,              consectetur", 30);
+
+			assert.strictEqual(chunks.length, 2);
+			assert.strictEqual(chunks[0]!.text, "Lorem ipsum dolor sit ");
+			assert.strictEqual(chunks[1]!.text, "amet,              consectetur");
+		});
+
+		it("splits when word plus multi-space plus word exceeds width", () => {
+			const chunks = wordWrapLine("Lorem ipsum dolor sit amet,               consectetur", 30);
+
+			assert.strictEqual(chunks.length, 3);
+			assert.strictEqual(chunks[0]!.text, "Lorem ipsum dolor sit ");
+			assert.strictEqual(chunks[1]!.text, "amet,               ");
+			assert.strictEqual(chunks[2]!.text, "consectetur");
+		});
+
+		it("breaks long whitespace at line boundary", () => {
+			const chunks = wordWrapLine("Lorem ipsum dolor sit amet,                         consectetur", 30);
+
+			assert.strictEqual(chunks.length, 3);
+			assert.strictEqual(chunks[0]!.text, "Lorem ipsum dolor sit ");
+			assert.strictEqual(chunks[1]!.text, "amet,                         ");
+			assert.strictEqual(chunks[2]!.text, "consectetur");
+		});
+
+		it("breaks long whitespace at line boundary 2", () => {
+			const chunks = wordWrapLine("Lorem ipsum dolor sit amet,                          consectetur", 30);
+
+			assert.strictEqual(chunks.length, 3);
+			assert.strictEqual(chunks[0]!.text, "Lorem ipsum dolor sit ");
+			assert.strictEqual(chunks[1]!.text, "amet,                         ");
+			assert.strictEqual(chunks[2]!.text, " consectetur");
+		});
+
+		it("breaks whitespace spanning full lines", () => {
+			const chunks = wordWrapLine("Lorem ipsum dolor sit amet,                                     consectetur", 30);
+
+			assert.strictEqual(chunks.length, 3);
+			assert.strictEqual(chunks[0]!.text, "Lorem ipsum dolor sit ");
+			assert.strictEqual(chunks[1]!.text, "amet,                         ");
+			assert.strictEqual(chunks[2]!.text, "            consectetur");
 		});
 	});
 

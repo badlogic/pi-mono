@@ -11,7 +11,7 @@ const segmenter = getSegmenter();
  * Represents a chunk of text for word-wrap layout.
  * Tracks both the text content and its position in the original line.
  */
-interface TextChunk {
+export interface TextChunk {
 	text: string;
 	startIndex: number;
 	endIndex: number;
@@ -26,7 +26,7 @@ interface TextChunk {
  * @param maxWidth - Maximum visible width per chunk
  * @returns Array of chunks with text and position information
  */
-function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
+export function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
 	if (!line || maxWidth <= 0) {
 		return [{ text: "", startIndex: 0, endIndex: 0 }];
 	}
@@ -37,154 +37,56 @@ function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
 	}
 
 	const chunks: TextChunk[] = [];
+	const segments = [...segmenter.segment(line)];
 
-	// Split into tokens (words and whitespace runs)
-	const tokens: { text: string; startIndex: number; endIndex: number; isWhitespace: boolean }[] = [];
-	let currentToken = "";
-	let tokenStart = 0;
-	let inWhitespace = false;
-	let charIndex = 0;
-
-	for (const seg of segmenter.segment(line)) {
-		const grapheme = seg.segment;
-		const graphemeIsWhitespace = isWhitespaceChar(grapheme);
-
-		if (currentToken === "") {
-			inWhitespace = graphemeIsWhitespace;
-			tokenStart = charIndex;
-		} else if (graphemeIsWhitespace !== inWhitespace) {
-			// Token type changed - save current token
-			tokens.push({
-				text: currentToken,
-				startIndex: tokenStart,
-				endIndex: charIndex,
-				isWhitespace: inWhitespace,
-			});
-			currentToken = "";
-			tokenStart = charIndex;
-			inWhitespace = graphemeIsWhitespace;
-		}
-
-		currentToken += grapheme;
-		charIndex += grapheme.length;
-	}
-
-	// Push final token
-	if (currentToken) {
-		tokens.push({
-			text: currentToken,
-			startIndex: tokenStart,
-			endIndex: charIndex,
-			isWhitespace: inWhitespace,
-		});
-	}
-
-	// Build chunks using word wrapping
-	let currentChunk = "";
 	let currentWidth = 0;
-	let chunkStartIndex = 0;
-	let atLineStart = true; // Track if we're at the start of a line (for skipping whitespace)
+	let chunkStart = 0;
 
-	for (const token of tokens) {
-		const tokenWidth = visibleWidth(token.text);
+	// Wrap opportunity: the position after the last whitespace before a non-whitespace
+	// grapheme, i.e. where a line break is allowed.
+	let wrapOppIndex = -1;
+	let wrapOppWidth = 0;
 
-		// Skip leading whitespace at line start
-		if (atLineStart && token.isWhitespace) {
-			chunkStartIndex = token.endIndex;
-			continue;
-		}
-		atLineStart = false;
+	for (let i = 0; i < segments.length; i++) {
+		const seg = segments[i]!;
+		const grapheme = seg.segment;
+		const gWidth = visibleWidth(grapheme);
+		const charIndex = seg.index;
+		const isWs = isWhitespaceChar(grapheme);
 
-		// If this single token is wider than maxWidth, we need to break it
-		if (tokenWidth > maxWidth) {
-			// First, push any accumulated chunk
-			if (currentChunk) {
-				chunks.push({
-					text: currentChunk,
-					startIndex: chunkStartIndex,
-					endIndex: token.startIndex,
-				});
-				currentChunk = "";
+		// Overflow check before advancing.
+		if (currentWidth + gWidth > maxWidth) {
+			if (wrapOppIndex >= 0) {
+				// Backtrack to last wrap opportunity.
+				chunks.push({ text: line.slice(chunkStart, wrapOppIndex), startIndex: chunkStart, endIndex: wrapOppIndex });
+				chunkStart = wrapOppIndex;
+				currentWidth -= wrapOppWidth;
+			} else if (chunkStart < charIndex) {
+				// No wrap opportunity: force-break at current position.
+				chunks.push({ text: line.slice(chunkStart, charIndex), startIndex: chunkStart, endIndex: charIndex });
+				chunkStart = charIndex;
 				currentWidth = 0;
-				chunkStartIndex = token.startIndex;
 			}
-
-			// Break the long token by grapheme
-			let tokenChunk = "";
-			let tokenChunkWidth = 0;
-			let tokenChunkStart = token.startIndex;
-			let tokenCharIndex = token.startIndex;
-
-			for (const seg of segmenter.segment(token.text)) {
-				const grapheme = seg.segment;
-				const graphemeWidth = visibleWidth(grapheme);
-
-				if (tokenChunkWidth + graphemeWidth > maxWidth && tokenChunk) {
-					chunks.push({
-						text: tokenChunk,
-						startIndex: tokenChunkStart,
-						endIndex: tokenCharIndex,
-					});
-					tokenChunk = grapheme;
-					tokenChunkWidth = graphemeWidth;
-					tokenChunkStart = tokenCharIndex;
-				} else {
-					tokenChunk += grapheme;
-					tokenChunkWidth += graphemeWidth;
-				}
-				tokenCharIndex += grapheme.length;
-			}
-
-			// Keep remainder as start of next chunk
-			if (tokenChunk) {
-				currentChunk = tokenChunk;
-				currentWidth = tokenChunkWidth;
-				chunkStartIndex = tokenChunkStart;
-			}
-			continue;
+			wrapOppIndex = -1;
 		}
 
-		// Check if adding this token would exceed width
-		if (currentWidth + tokenWidth > maxWidth) {
-			// Push current chunk (trimming trailing whitespace for display)
-			const trimmedChunk = currentChunk.trimEnd();
-			if (trimmedChunk || chunks.length === 0) {
-				chunks.push({
-					text: trimmedChunk,
-					startIndex: chunkStartIndex,
-					endIndex: chunkStartIndex + currentChunk.length,
-				});
-			}
+		// Advance.
+		currentWidth += gWidth;
 
-			// Start new line - skip leading whitespace
-			atLineStart = true;
-			if (token.isWhitespace) {
-				currentChunk = "";
-				currentWidth = 0;
-				chunkStartIndex = token.endIndex;
-			} else {
-				currentChunk = token.text;
-				currentWidth = tokenWidth;
-				chunkStartIndex = token.startIndex;
-				atLineStart = false;
-			}
-		} else {
-			// Add token to current chunk
-			currentChunk += token.text;
-			currentWidth += tokenWidth;
+		// Record wrap opportunity: whitespace followed by non-whitespace.
+		// Multiple spaces join (no break between them); the break point is
+		// after the last space before the next word.
+		const next = segments[i + 1];
+		if (isWs && next && !isWhitespaceChar(next.segment)) {
+			wrapOppIndex = next.index;
+			wrapOppWidth = currentWidth;
 		}
 	}
 
-	// Push final chunk
-	if (currentChunk) {
-		chunks.push({
-			text: currentChunk,
-			startIndex: chunkStartIndex,
-			endIndex: line.length,
-		});
-	}
+	// Push final chunk.
+	chunks.push({ text: line.slice(chunkStart), startIndex: chunkStart, endIndex: line.length });
 
-	return chunks.length > 0 ? chunks : [{ text: "", startIndex: 0, endIndex: 0 }];
+	return chunks;
 }
 
 // Kitty CSI-u sequences for printable keys, including optional shifted/base codepoints.
