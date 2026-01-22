@@ -18,8 +18,9 @@ import {
 	type OAuthProvider,
 } from "@mariozechner/pi-ai";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname } from "path";
+import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
+import { getAgentDir } from "../config.js";
 
 export type ApiKeyCredential = {
 	type: "api_key";
@@ -42,7 +43,7 @@ export class AuthStorage {
 	private runtimeOverrides: Map<string, string> = new Map();
 	private fallbackResolver?: (provider: string) => string | undefined;
 
-	constructor(private authPath: string) {
+	constructor(private authPath: string = join(getAgentDir(), "auth.json")) {
 		this.reload();
 	}
 

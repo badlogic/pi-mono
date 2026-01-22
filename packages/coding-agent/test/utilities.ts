@@ -9,7 +9,9 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel, getOAuthApiKey, type OAuthCredentials, type OAuthProvider } from "@mariozechner/pi-ai";
 import { AgentSession } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
+import { createExtensionRuntime } from "../src/core/extensions/loader.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
+import type { ResourceLoader } from "../src/core/resource-loader.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
@@ -172,6 +174,19 @@ export interface TestSessionContext {
 	cleanup: () => void;
 }
 
+export function createTestResourceLoader(): ResourceLoader {
+	return {
+		getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
+		getSkills: () => ({ skills: [], diagnostics: [] }),
+		getPrompts: () => ({ prompts: [], diagnostics: [] }),
+		getThemes: () => ({ themes: [], diagnostics: [] }),
+		getAgentsFiles: () => ({ agentsFiles: [] }),
+		getSystemPrompt: () => undefined,
+		getAppendSystemPrompt: () => [],
+		reload: async () => {},
+	};
+}
+
 /**
  * Create an AgentSession for testing with proper setup and cleanup.
  * Use this for e2e tests that need real LLM calls.
@@ -204,7 +219,9 @@ export function createTestSession(options: TestSessionOptions = {}): TestSession
 		agent,
 		sessionManager,
 		settingsManager,
+		cwd: tempDir,
 		modelRegistry,
+		resourceLoader: createTestResourceLoader(),
 	});
 
 	// Must subscribe to enable session persistence

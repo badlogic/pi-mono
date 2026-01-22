@@ -16,11 +16,11 @@ See [examples/sdk/](../examples/sdk/) for working examples from minimal to full 
 ## Quick Start
 
 ```typescript
-import { createAgentSession, discoverAuthStorage, discoverModels, SessionManager } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@mariozechner/pi-coding-agent";
 
 // Set up credential storage and model registry
-const authStorage = discoverAuthStorage();
-const modelRegistry = discoverModels(authStorage);
+const authStorage = new AuthStorage();
+const modelRegistry = new ModelRegistry(authStorage);
 
 const { session } = await createAgentSession({
   sessionManager: SessionManager.inMemory(),
@@ -51,20 +51,17 @@ The SDK is included in the main package. No separate installation needed.
 
 The main factory function. Creates an `AgentSession` with configurable options.
 
-**Philosophy:** "Omit to discover, provide to override."
-- Omit an option → pi discovers/loads from standard locations
-- Provide an option → your value is used, discovery skipped for that option
+`createAgentSession()` uses a `ResourceLoader` to supply extensions, skills, prompt templates, themes, and context files. If you do not provide one, it uses `DefaultResourceLoader` with standard discovery.
 
 ```typescript
 import { createAgentSession } from "@mariozechner/pi-coding-agent";
 
-// Minimal: all defaults (discovers everything from cwd and ~/.pi/agent)
+// Minimal: defaults with DefaultResourceLoader
 const { session } = await createAgentSession();
 
 // Custom: override specific options
 const { session } = await createAgentSession({
   model: myModel,
-  systemPrompt: "You are helpful.",
   tools: [readTool, bashTool],
   sessionManager: SessionManager.inMemory(),
 });
@@ -251,7 +248,7 @@ session.subscribe((event) => {
 
 ```typescript
 const { session } = await createAgentSession({
-  // Working directory for project-local discovery
+  // Working directory for DefaultResourceLoader discovery
   cwd: process.cwd(), // default
   
   // Global config directory
@@ -259,14 +256,14 @@ const { session } = await createAgentSession({
 });
 ```
 
-`cwd` is used for:
+`cwd` is used by `DefaultResourceLoader` for:
 - Project extensions (`.pi/extensions/`)
 - Project skills (`.pi/skills/`)
 - Project prompts (`.pi/prompts/`)
 - Context files (`AGENTS.md` walking up from cwd)
 - Session directory naming
 
-`agentDir` is used for:
+`agentDir` is used by `DefaultResourceLoader` for:
 - Global extensions (`extensions/`)
 - Global skills (`skills/`)
 - Global prompts (`prompts/`)
@@ -276,14 +273,16 @@ const { session } = await createAgentSession({
 - Credentials (`auth.json`)
 - Sessions (`sessions/`)
 
+When you pass a custom `ResourceLoader`, `cwd` and `agentDir` no longer control resource discovery. They still influence session naming and tool path resolution.
+
 ### Model
 
 ```typescript
 import { getModel } from "@mariozechner/pi-ai";
-import { discoverAuthStorage, discoverModels } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 
-const authStorage = discoverAuthStorage();
-const modelRegistry = discoverModels(authStorage);
+const authStorage = new AuthStorage();
+const modelRegistry = new ModelRegistry(authStorage);
 
 // Find specific built-in model (doesn't check if API key exists)
 const opus = getModel("anthropic", "claude-opus-4-5");
@@ -327,11 +326,11 @@ API key resolution priority (handled by AuthStorage):
 4. Fallback resolver (for custom provider keys from `models.json`)
 
 ```typescript
-import { AuthStorage, ModelRegistry, discoverAuthStorage, discoverModels } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 
 // Default: uses ~/.pi/agent/auth.json and ~/.pi/agent/models.json
-const authStorage = discoverAuthStorage();
-const modelRegistry = discoverModels(authStorage);
+const authStorage = new AuthStorage();
+const modelRegistry = new ModelRegistry(authStorage);
 
 const { session } = await createAgentSession({
   sessionManager: SessionManager.inMemory(),
@@ -360,16 +359,17 @@ const simpleRegistry = new ModelRegistry(authStorage);
 
 ### System Prompt
 
+Use a `ResourceLoader` to override the system prompt:
+
 ```typescript
-const { session } = await createAgentSession({
-  // Replace entirely
-  systemPrompt: "You are a helpful assistant.",
-  
-  // Or modify default (receives default, returns modified)
-  systemPrompt: (defaultPrompt) => {
-    return `${defaultPrompt}\n\n## Additional Rules\n- Be concise`;
-  },
+import { createAgentSession, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
+
+const loader = new DefaultResourceLoader({
+  systemPromptOverride: () => "You are a helpful assistant.",
 });
+await loader.reload();
+
+const { session } = await createAgentSession({ resourceLoader: loader });
 ```
 
 > See [examples/sdk/03-custom-prompt.ts](../examples/sdk/03-custom-prompt.ts)
@@ -462,61 +462,45 @@ const { session } = await createAgentSession({
 });
 ```
 
-Custom tools passed via `customTools` are combined with extension-registered tools. Extensions discovered from `~/.pi/agent/extensions/` and `.pi/extensions/` can also register tools via `pi.registerTool()`.
+Custom tools passed via `customTools` are combined with extension-registered tools. Extensions loaded by the ResourceLoader can also register tools via `pi.registerTool()`.
 
 > See [examples/sdk/05-tools.ts](../examples/sdk/05-tools.ts)
 
 ### Extensions
 
-By default, extensions are discovered from multiple locations:
-- `~/.pi/agent/extensions/` (global)
-- `.pi/extensions/` (project-local)
-- Paths listed in `settings.json` `"extensions"` array
+Extensions are loaded by the `ResourceLoader`. `DefaultResourceLoader` discovers extensions from `~/.pi/agent/extensions/`, `.pi/extensions/`, and settings.json extension sources.
 
 ```typescript
-import { createAgentSession, type ExtensionFactory } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
 
-// Inline extension factory
-const myExtension: ExtensionFactory = (pi) => {
-  pi.on("tool_call", async (event, ctx) => {
-    console.log(`Tool: ${event.toolName}`);
-  });
-
-  pi.registerCommand("hello", {
-    description: "Say hello",
-    handler: async (args, ctx) => {
-      ctx.ui.notify("Hello!", "info");
-    },
-  });
-};
-
-// Pass inline extensions (skips file discovery)
-const { session } = await createAgentSession({
-  extensions: [myExtension],
-});
-
-// Add paths to load (merged with discovery)
-const { session } = await createAgentSession({
+const loader = new DefaultResourceLoader({
   additionalExtensionPaths: ["/path/to/my-extension.ts"],
+  extensionFactories: [
+    (pi) => {
+      pi.on("agent_start", () => {
+        console.log("[Inline Extension] Agent starting");
+      });
+    },
+  ],
 });
+await loader.reload();
 
-// Disable extension discovery entirely
-const { session } = await createAgentSession({
-  extensions: [],
-});
+const { session } = await createAgentSession({ resourceLoader: loader });
 ```
 
 Extensions can register tools, subscribe to events, add commands, and more. See [extensions.md](extensions.md) for the full API.
 
-**Event Bus:** Extensions can communicate via `pi.events`. Pass a shared `eventBus` to `createAgentSession()` if you need to emit/listen from outside:
+**Event Bus:** Extensions can communicate via `pi.events`. Pass a shared `eventBus` to `DefaultResourceLoader` if you need to emit or listen from outside:
 
 ```typescript
-import { createAgentSession, createEventBus } from "@mariozechner/pi-coding-agent";
+import { createEventBus, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
 
 const eventBus = createEventBus();
-const { session } = await createAgentSession({ eventBus });
+const loader = new DefaultResourceLoader({
+  eventBus,
+});
+await loader.reload();
 
-// Listen for events from extensions
 eventBus.on("my-extension:status", (data) => console.log(data));
 ```
 
@@ -525,14 +509,13 @@ eventBus.on("my-extension:status", (data) => console.log(data));
 ### Skills
 
 ```typescript
-import { createAgentSession, discoverSkills, type Skill } from "@mariozechner/pi-coding-agent";
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+  type Skill,
+} from "@mariozechner/pi-coding-agent";
 
-// Discover and filter
-const { skills: allSkills, warnings } = discoverSkills();
-const filtered = allSkills.filter(s => s.name.includes("search"));
-
-// Custom skill
-const mySkill: Skill = {
+const customSkill: Skill = {
   name: "my-skill",
   description: "Custom instructions",
   filePath: "/path/to/SKILL.md",
@@ -540,20 +523,15 @@ const mySkill: Skill = {
   source: "custom",
 };
 
-const { session } = await createAgentSession({
-  skills: [...filtered, mySkill],
+const loader = new DefaultResourceLoader({
+  skillsOverride: (current) => ({
+    skills: [...current.skills, customSkill],
+    diagnostics: current.diagnostics,
+  }),
 });
+await loader.reload();
 
-// Disable skills
-const { session } = await createAgentSession({
-  skills: [],
-});
-
-// Discovery with settings filter
-const { skills } = discoverSkills(process.cwd(), undefined, {
-  ignoredSkills: ["browser-*"],  // glob patterns to exclude
-  includeSkills: ["search-*"],   // glob patterns to include (empty = all)
-});
+const { session } = await createAgentSession({ resourceLoader: loader });
 ```
 
 > See [examples/sdk/04-skills.ts](../examples/sdk/04-skills.ts)
@@ -561,26 +539,19 @@ const { skills } = discoverSkills(process.cwd(), undefined, {
 ### Context Files
 
 ```typescript
-import { createAgentSession, discoverContextFiles } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
 
-// Discover AGENTS.md files
-const discovered = discoverContextFiles();
-
-// Add custom context
-const { session } = await createAgentSession({
-  contextFiles: [
-    ...discovered,
-    {
-      path: "/virtual/AGENTS.md",
-      content: "# Guidelines\n\n- Be concise\n- Use TypeScript",
-    },
-  ],
+const loader = new DefaultResourceLoader({
+  agentsFilesOverride: (current) => ({
+    agentsFiles: [
+      ...current.agentsFiles,
+      { path: "/virtual/AGENTS.md", content: "# Guidelines\n\n- Be concise" },
+    ],
+  }),
 });
+await loader.reload();
 
-// Disable context files
-const { session } = await createAgentSession({
-  contextFiles: [],
-});
+const { session } = await createAgentSession({ resourceLoader: loader });
 ```
 
 > See [examples/sdk/07-context-files.ts](../examples/sdk/07-context-files.ts)
@@ -588,9 +559,11 @@ const { session } = await createAgentSession({
 ### Slash Commands
 
 ```typescript
-import { createAgentSession, discoverPromptTemplates, type PromptTemplate } from "@mariozechner/pi-coding-agent";
-
-const discovered = discoverPromptTemplates();
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+  type PromptTemplate,
+} from "@mariozechner/pi-coding-agent";
 
 const customCommand: PromptTemplate = {
   name: "deploy",
@@ -599,9 +572,15 @@ const customCommand: PromptTemplate = {
   content: "# Deploy\n\n1. Build\n2. Test\n3. Deploy",
 };
 
-const { session } = await createAgentSession({
-  promptTemplates: [...discovered, customCommand],
+const loader = new DefaultResourceLoader({
+  promptsOverride: (current) => ({
+    prompts: [...current.prompts, customCommand],
+    diagnostics: current.diagnostics,
+  }),
 });
+await loader.reload();
+
+const { session } = await createAgentSession({ resourceLoader: loader });
 ```
 
 > See [examples/sdk/08-prompt-templates.ts](../examples/sdk/08-prompt-templates.ts)
@@ -719,62 +698,31 @@ Settings load from two locations and merge:
 1. Global: `~/.pi/agent/settings.json`
 2. Project: `<cwd>/.pi/settings.json`
 
-Project overrides global. Nested objects merge keys. Setters only modify global (project is read-only for version control).
+Project overrides global. Nested objects merge keys. Setters modify global settings by default.
 
 > See [examples/sdk/10-settings.ts](../examples/sdk/10-settings.ts)
 
-## Discovery Functions
+## ResourceLoader
 
-All discovery functions accept optional `cwd` and `agentDir` parameters.
+Use `DefaultResourceLoader` to discover extensions, skills, prompts, themes, and context files.
 
 ```typescript
-import { getModel } from "@mariozechner/pi-ai";
 import {
-  AuthStorage,
-  ModelRegistry,
-  discoverAuthStorage,
-  discoverModels,
-  discoverSkills,
-  discoverExtensions,
-  discoverContextFiles,
-  discoverPromptTemplates,
-  loadSettings,
-  buildSystemPrompt,
-  createEventBus,
+  DefaultResourceLoader,
+  getAgentDir,
 } from "@mariozechner/pi-coding-agent";
 
-// Auth and Models
-const authStorage = discoverAuthStorage();           // ~/.pi/agent/auth.json
-const modelRegistry = discoverModels(authStorage);   // + ~/.pi/agent/models.json
-const allModels = modelRegistry.getAll();            // All models (built-in + custom)
-const available = await modelRegistry.getAvailable(); // Only models with API keys
-const model = modelRegistry.find("provider", "id");   // Find specific model
-const builtIn = getModel("anthropic", "claude-opus-4-5"); // Built-in only
-
-// Skills
-const { skills, warnings } = discoverSkills(cwd, agentDir, skillsSettings);
-
-// Extensions (async - loads TypeScript)
-// Pass eventBus to share pi.events across extensions
-const eventBus = createEventBus();
-const { extensions, errors } = await discoverExtensions(eventBus, cwd, agentDir);
-
-// Context files
-const contextFiles = discoverContextFiles(cwd, agentDir);
-
-// Prompt templates
-const templates = discoverPromptTemplates(cwd, agentDir);
-
-// Settings (global + project merged)
-const settings = loadSettings(cwd, agentDir);
-
-// Build system prompt manually
-const prompt = buildSystemPrompt({
-  skills,
-  contextFiles,
-  appendPrompt: "Additional instructions",
+const loader = new DefaultResourceLoader({
   cwd,
+  agentDir: getAgentDir(),
 });
+await loader.reload();
+
+const extensions = loader.getExtensions();
+const skills = loader.getSkills();
+const prompts = loader.getPrompts();
+const themes = loader.getThemes();
+const contextFiles = loader.getAgentsFiles().agentsFiles;
 ```
 
 ## Return Value
@@ -808,12 +756,12 @@ import { Type } from "@sinclair/typebox";
 import {
   AuthStorage,
   createAgentSession,
+  DefaultResourceLoader,
   ModelRegistry,
   SessionManager,
   SettingsManager,
   readTool,
   bashTool,
-  type ExtensionFactory,
   type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 
@@ -827,14 +775,6 @@ if (process.env.MY_KEY) {
 
 // Model registry (no custom models.json)
 const modelRegistry = new ModelRegistry(authStorage);
-
-// Inline extension
-const auditExtension: ExtensionFactory = (pi) => {
-  pi.on("tool_call", async (event) => {
-    console.log(`[Audit] ${event.toolName}`);
-    return undefined;
-  });
-};
 
 // Inline tool
 const statusTool: ToolDefinition = {
@@ -857,24 +797,27 @@ const settingsManager = SettingsManager.inMemory({
   retry: { enabled: true, maxRetries: 2 },
 });
 
+const loader = new DefaultResourceLoader({
+  cwd: process.cwd(),
+  agentDir: "/custom/agent",
+  settingsManager,
+  systemPromptOverride: () => "You are a minimal assistant. Be concise.",
+});
+await loader.reload();
+
 const { session } = await createAgentSession({
   cwd: process.cwd(),
   agentDir: "/custom/agent",
-  
+
   model,
   thinkingLevel: "off",
   authStorage,
   modelRegistry,
-  
-  systemPrompt: "You are a minimal assistant. Be concise.",
-  
+
   tools: [readTool, bashTool],
   customTools: [statusTool],
-  extensions: [auditExtension],
-  skills: [],
-  contextFiles: [],
-  promptTemplates: [],
-  
+  resourceLoader: loader,
+
   sessionManager: SessionManager.inMemory(),
   settingsManager,
 });
@@ -976,21 +919,13 @@ createAgentSession
 // Auth and Models
 AuthStorage
 ModelRegistry
-discoverAuthStorage
-discoverModels
 
-// Discovery
-discoverSkills
-discoverExtensions
-discoverContextFiles
-discoverPromptTemplates
-
-// Event Bus (for shared extension communication)
+// Resource loading
+DefaultResourceLoader
+type ResourceLoader
 createEventBus
 
 // Helpers
-loadSettings
-buildSystemPrompt
 
 // Session management
 SessionManager
@@ -1016,8 +951,6 @@ type ExtensionAPI
 type ToolDefinition
 type Skill
 type PromptTemplate
-type Settings
-type SkillsSettings
 type Tool
 ```
 

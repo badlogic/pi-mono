@@ -19,7 +19,7 @@ import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
-import { API_KEY } from "./utilities.js";
+import { API_KEY, createTestResourceLoader } from "./utilities.js";
 
 describe.skipIf(!API_KEY)("AgentSession forking", () => {
 	let session: AgentSession;
@@ -61,7 +61,9 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 			agent,
 			sessionManager,
 			settingsManager,
+			cwd: tempDir,
 			modelRegistry,
+			resourceLoader: createTestResourceLoader(),
 		});
 
 		// Must subscribe to enable session persistence

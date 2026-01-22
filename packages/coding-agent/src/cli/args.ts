@@ -33,6 +33,10 @@ export interface Args {
 	export?: string;
 	noSkills?: boolean;
 	skills?: string[];
+	promptTemplates?: string[];
+	noPromptTemplates?: boolean;
+	themes?: string[];
+	noThemes?: boolean;
 	listModels?: string | true;
 	messages: string[];
 	fileArgs: string[];
@@ -122,11 +126,21 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 			result.extensions.push(args[++i]);
 		} else if (arg === "--no-extensions") {
 			result.noExtensions = true;
+		} else if (arg === "--skill" && i + 1 < args.length) {
+			result.skills = result.skills ?? [];
+			result.skills.push(args[++i]);
+		} else if (arg === "--prompt-template" && i + 1 < args.length) {
+			result.promptTemplates = result.promptTemplates ?? [];
+			result.promptTemplates.push(args[++i]);
+		} else if (arg === "--theme" && i + 1 < args.length) {
+			result.themes = result.themes ?? [];
+			result.themes.push(args[++i]);
 		} else if (arg === "--no-skills") {
 			result.noSkills = true;
-		} else if (arg === "--skills" && i + 1 < args.length) {
-			// Comma-separated glob patterns for skill filtering
-			result.skills = args[++i].split(",").map((s) => s.trim());
+		} else if (arg === "--no-prompt-templates") {
+			result.noPromptTemplates = true;
+		} else if (arg === "--no-themes") {
+			result.noThemes = true;
 		} else if (arg === "--list-models") {
 			// Check if next arg is a search pattern (not a flag or file arg)
 			if (i + 1 < args.length && !args[i + 1].startsWith("-") && !args[i + 1].startsWith("@")) {
@@ -162,6 +176,12 @@ export function printHelp(): void {
 ${chalk.bold("Usage:")}
   ${APP_NAME} [options] [@files...] [messages...]
 
+${chalk.bold("Commands:")}
+  ${APP_NAME} install <source> [-l]    Install extension source and add to settings
+  ${APP_NAME} remove <source> [-l]     Remove extension source from settings
+  ${APP_NAME} update [source]          Update installed extensions (skips pinned sources)
+  ${APP_NAME} list                     List installed extensions from settings
+
 ${chalk.bold("Options:")}
   --provider <name>              Provider name (default: google)
   --model <id>                   Model ID (default: gemini-2.5-flash)
@@ -183,8 +203,12 @@ ${chalk.bold("Options:")}
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions                Disable extension discovery (explicit -e paths still work)
+  --skill <path>                 Load a skill file or directory (can be used multiple times)
   --no-skills                    Disable skills discovery and loading
-  --skills <patterns>            Comma-separated glob patterns to filter skills (e.g., git-*,docker)
+  --prompt-template <path>       Load a prompt template file or directory (can be used multiple times)
+  --no-prompt-templates          Disable prompt template discovery and loading
+  --theme <path>                 Load a theme file or directory (can be used multiple times)
+  --no-themes                    Disable theme discovery and loading
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
   --help, -h                     Show this help

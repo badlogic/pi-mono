@@ -19,7 +19,7 @@ import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
-import { API_KEY } from "./utilities.js";
+import { API_KEY, createTestResourceLoader } from "./utilities.js";
 
 describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 	let session: AgentSession;
@@ -67,7 +67,9 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 			agent,
 			sessionManager,
 			settingsManager,
+			cwd: tempDir,
 			modelRegistry,
+			resourceLoader: createTestResourceLoader(),
 		});
 
 		// Subscribe to track events

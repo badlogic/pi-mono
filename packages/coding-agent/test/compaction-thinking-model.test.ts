@@ -19,7 +19,13 @@ import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
-import { API_KEY, getRealAuthStorage, hasAuthForProvider, resolveApiKey } from "./utilities.js";
+import {
+	API_KEY,
+	createTestResourceLoader,
+	getRealAuthStorage,
+	hasAuthForProvider,
+	resolveApiKey,
+} from "./utilities.js";
 
 // Check for auth
 const HAS_ANTIGRAVITY_AUTH = hasAuthForProvider("google-antigravity");
@@ -81,7 +87,9 @@ describe.skipIf(!HAS_ANTIGRAVITY_AUTH)("Compaction with thinking models (Antigra
 			agent,
 			sessionManager,
 			settingsManager,
+			cwd: tempDir,
 			modelRegistry,
+			resourceLoader: createTestResourceLoader(),
 		});
 
 		session.subscribe(() => {});
@@ -175,7 +183,9 @@ describe.skipIf(!HAS_ANTHROPIC_AUTH)("Compaction with thinking models (Anthropic
 			agent,
 			sessionManager,
 			settingsManager,
+			cwd: tempDir,
 			modelRegistry,
+			resourceLoader: createTestResourceLoader(),
 		});
 
 		session.subscribe(() => {});

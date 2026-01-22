@@ -13,16 +13,25 @@
  *   export default function (pi: ExtensionAPI) { ... }
  */
 
-import { createAgentSession, SessionManager } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader, SessionManager } from "@mariozechner/pi-coding-agent";
 
 // Extensions are discovered automatically from standard locations.
-// You can also add paths via:
-//   1. settings.json: { "extensions": ["./my-extension.ts"] }
-//   2. additionalExtensionPaths option (see below)
+// You can also add paths via settings.json or DefaultResourceLoader options.
 
-// To add additional extension paths beyond discovery:
-const { session } = await createAgentSession({
+const resourceLoader = new DefaultResourceLoader({
 	additionalExtensionPaths: ["./my-logging-extension.ts", "./my-safety-extension.ts"],
+	extensionFactories: [
+		(pi) => {
+			pi.on("agent_start", () => {
+				console.log("[Inline Extension] Agent starting");
+			});
+		},
+	],
+});
+await resourceLoader.reload();
+
+const { session } = await createAgentSession({
+	resourceLoader,
 	sessionManager: SessionManager.inMemory(),
 });
 

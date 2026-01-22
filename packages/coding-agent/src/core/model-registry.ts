@@ -15,6 +15,8 @@ import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import { execSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
+import { join } from "path";
+import { getAgentDir } from "../config.js";
 import type { AuthStorage } from "./auth-storage.js";
 
 const Ajv = (AjvModule as any).default || AjvModule;
@@ -159,7 +161,7 @@ export class ModelRegistry {
 
 	constructor(
 		readonly authStorage: AuthStorage,
-		private modelsJsonPath: string | undefined = undefined,
+		private modelsJsonPath: string | undefined = join(getAgentDir(), "models.json"),
 	) {
 		// Set up fallback resolver for custom provider API keys
 		this.authStorage.setFallbackResolver((provider) => {

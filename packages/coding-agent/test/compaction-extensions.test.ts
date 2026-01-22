@@ -13,7 +13,6 @@ import { AuthStorage } from "../src/core/auth-storage.js";
 import {
 	createExtensionRuntime,
 	type Extension,
-	ExtensionRunner,
 	type SessionBeforeCompactEvent,
 	type SessionCompactEvent,
 	type SessionEvent,
@@ -22,13 +21,13 @@ import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
+import { createTestResourceLoader } from "./utilities.js";
 
 const API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
 
 describe.skipIf(!API_KEY)("Compaction extensions", () => {
 	let session: AgentSession;
 	let tempDir: string;
-	let extensionRunner: ExtensionRunner;
 	let capturedEvents: SessionEvent[];
 
 	beforeEach(() => {
@@ -101,51 +100,18 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 		const modelRegistry = new ModelRegistry(authStorage);
 
 		const runtime = createExtensionRuntime();
-		extensionRunner = new ExtensionRunner(extensions, runtime, tempDir, sessionManager, modelRegistry);
-		extensionRunner.initialize(
-			// ExtensionActions
-			{
-				sendMessage: async () => {},
-				sendUserMessage: async () => {},
-				appendEntry: async () => {},
-				setSessionName: () => {},
-				getSessionName: () => undefined,
-				setLabel: () => {},
-				getActiveTools: () => [],
-				getAllTools: () => [],
-				setActiveTools: () => {},
-				setModel: async () => false,
-				getThinkingLevel: () => "off",
-				setThinkingLevel: () => {},
-			},
-			// ExtensionContextActions
-			{
-				getModel: () => session.model,
-				isIdle: () => !session.isStreaming,
-				abort: () => session.abort(),
-				hasPendingMessages: () => session.pendingMessageCount > 0,
-				shutdown: () => {},
-				getContextUsage: () => session.getContextUsage(),
-				compact: (options) => {
-					void (async () => {
-						try {
-							const result = await session.compact(options?.customInstructions);
-							options?.onComplete?.(result);
-						} catch (error) {
-							const err = error instanceof Error ? error : new Error(String(error));
-							options?.onError?.(err);
-						}
-					})();
-				},
-			},
-		);
+		const resourceLoader = {
+			...createTestResourceLoader(),
+			getExtensions: () => ({ extensions, errors: [], runtime }),
+		};
 
 		session = new AgentSession({
 			agent,
 			sessionManager,
 			settingsManager,
-			extensionRunner,
+			cwd: tempDir,
 			modelRegistry,
+			resourceLoader,
 		});
 
 		return session;

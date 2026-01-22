@@ -66,7 +66,6 @@ import { type AppAction, KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { resolveModelScope } from "../../core/model-resolver.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
-import { loadProjectContextFiles } from "../../core/system-prompt.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
@@ -156,7 +155,6 @@ export class InteractiveMode {
 	private keybindings: KeybindingsManager;
 	private version: string;
 	private isInitialized = false;
-	private hasRenderedInitialMessages = false;
 	private onInputCallback?: (text: string) => void;
 	private loadingAnimation: Loader | undefined = undefined;
 	private readonly defaultWorkingMessage = "Working...";
@@ -321,6 +319,7 @@ export class InteractiveMode {
 			{ name: "new", description: "Start a new session" },
 			{ name: "compact", description: "Manually compact the session context" },
 			{ name: "resume", description: "Resume a different session" },
+			{ name: "reload", description: "Reload extensions, skills, prompts, and themes" },
 		];
 
 		// Convert prompt templates to SlashCommand format for autocomplete
@@ -617,133 +616,89 @@ export class InteractiveMode {
 	// Extension System
 	// =========================================================================
 
+	private formatDisplayPath(p: string): string {
+		const home = os.homedir();
+		let result = p;
+
+		// Shorten temp npm paths: /tmp/.../npm/.../node_modules/pkg/... -> npm:pkg/... (temp)
+		const npmTempMatch = result.match(/pi-extensions\/npm\/[^/]+\/node_modules\/([^/]+)(.*)/);
+		if (npmTempMatch) {
+			return `npm:${npmTempMatch[1]}${npmTempMatch[2]} (temp)`;
+		}
+
+		// Shorten temp git paths: /tmp/.../git-host/hash/path/... -> git:host/path/... (temp)
+		const gitTempMatch = result.match(/pi-extensions\/git-([^/]+)\/[^/]+\/(.*)/);
+		if (gitTempMatch) {
+			return `git:${gitTempMatch[1]}/${gitTempMatch[2]} (temp)`;
+		}
+
+		// Replace home directory with ~
+		if (result.startsWith(home)) {
+			result = `~${result.slice(home.length)}`;
+		}
+
+		return result;
+	}
+
+	private showLoadedResources(options?: { extensionPaths?: string[]; force?: boolean }): void {
+		const shouldShow = options?.force || !this.settingsManager.getQuietStartup();
+		if (!shouldShow) {
+			return;
+		}
+
+		const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
+		if (contextFiles.length > 0) {
+			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`)).join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded context:\n") + contextList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		const skills = this.session.skills;
+		if (skills.length > 0) {
+			const skillList = skills.map((s) => theme.fg("dim", `  ${this.formatDisplayPath(s.filePath)}`)).join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		const skillWarnings = this.session.skillWarnings;
+		if (skillWarnings.length > 0) {
+			const warningList = skillWarnings
+				.map((w) => theme.fg("warning", `  ${this.formatDisplayPath(w.skillPath)}: ${w.message}`))
+				.join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		const templates = this.session.promptTemplates;
+		if (templates.length > 0) {
+			const templateList = templates.map((t) => theme.fg("dim", `  /${t.name} ${t.source}`)).join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded prompt templates:\n") + templateList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		const extensionPaths = options?.extensionPaths ?? [];
+		if (extensionPaths.length > 0) {
+			const extList = extensionPaths.map((p) => theme.fg("dim", `  ${this.formatDisplayPath(p)}`)).join("\n");
+			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded extensions:\n") + extList, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+	}
+
 	/**
 	 * Initialize the extension system with TUI-based UI context.
 	 */
 	private async initExtensions(): Promise<void> {
-		// Show discovery info unless silenced
-		if (!this.settingsManager.getQuietStartup()) {
-			// Show loaded project context files
-			const contextFiles = loadProjectContextFiles();
-			if (contextFiles.length > 0) {
-				const contextList = contextFiles.map((f) => theme.fg("dim", `  ${f.path}`)).join("\n");
-				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded context:\n") + contextList, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
-			}
-
-			// Show loaded skills (already discovered by SDK)
-			const skills = this.session.skills;
-			if (skills.length > 0) {
-				const skillList = skills.map((s) => theme.fg("dim", `  ${s.filePath}`)).join("\n");
-				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
-			}
-
-			// Show skill warnings if any
-			const skillWarnings = this.session.skillWarnings;
-			if (skillWarnings.length > 0) {
-				const warningList = skillWarnings
-					.map((w) => theme.fg("warning", `  ${w.skillPath}: ${w.message}`))
-					.join("\n");
-				this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
-			}
-
-			// Show loaded prompt templates
-			const templates = this.session.promptTemplates;
-			if (templates.length > 0) {
-				const templateList = templates.map((t) => theme.fg("dim", `  /${t.name} ${t.source}`)).join("\n");
-				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded prompt templates:\n") + templateList, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
-			}
-		}
-
 		const extensionRunner = this.session.extensionRunner;
 		if (!extensionRunner) {
-			return; // No extensions loaded
+			this.showLoadedResources({ extensionPaths: [], force: false });
+			return;
 		}
 
 		// Create extension UI context
 		const uiContext = this.createExtensionUIContext();
-
-		extensionRunner.initialize(
-			// ExtensionActions - for pi.* API
-			{
-				sendMessage: (message, options) => {
-					const wasStreaming = this.session.isStreaming;
-					this.session
-						.sendCustomMessage(message, options)
-						.then(() => {
-							// Don't rebuild if initial render hasn't happened yet
-							// (renderInitialMessages will handle it)
-							if (!wasStreaming && message.display && this.hasRenderedInitialMessages) {
-								this.rebuildChatFromMessages();
-							}
-						})
-						.catch((err) => {
-							this.showError(
-								`Extension sendMessage failed: ${err instanceof Error ? err.message : String(err)}`,
-							);
-						});
-				},
-				sendUserMessage: (content, options) => {
-					this.session.sendUserMessage(content, options).catch((err) => {
-						this.showError(
-							`Extension sendUserMessage failed: ${err instanceof Error ? err.message : String(err)}`,
-						);
-					});
-				},
-				appendEntry: (customType, data) => {
-					this.sessionManager.appendCustomEntry(customType, data);
-				},
-				setSessionName: (name) => {
-					this.sessionManager.appendSessionInfo(name);
-					this.updateTerminalTitle();
-				},
-				getSessionName: () => {
-					return this.sessionManager.getSessionName();
-				},
-				setLabel: (entryId, label) => {
-					this.sessionManager.appendLabelChange(entryId, label);
-				},
-				getActiveTools: () => this.session.getActiveToolNames(),
-				getAllTools: () => this.session.getAllTools(),
-				setActiveTools: (toolNames) => this.session.setActiveToolsByName(toolNames),
-				setModel: async (model) => {
-					const key = await this.session.modelRegistry.getApiKey(model);
-					if (!key) return false;
-					await this.session.setModel(model);
-					return true;
-				},
-				getThinkingLevel: () => this.session.thinkingLevel,
-				setThinkingLevel: (level) => this.session.setThinkingLevel(level),
-			},
-			// ExtensionContextActions - for ctx.* in event handlers
-			{
-				getModel: () => this.session.model,
-				isIdle: () => !this.session.isStreaming,
-				abort: () => this.session.abort(),
-				hasPendingMessages: () => this.session.pendingMessageCount > 0,
-				shutdown: () => {
-					this.shutdownRequested = true;
-				},
-				getContextUsage: () => this.session.getContextUsage(),
-				compact: (options) => {
-					void (async () => {
-						try {
-							const result = await this.executeCompaction(options?.customInstructions, false);
-							if (result) {
-								options?.onComplete?.(result);
-							}
-						} catch (error) {
-							const err = error instanceof Error ? error : new Error(String(error));
-							options?.onError?.(err);
-						}
-					})();
-				},
-			},
-			// ExtensionCommandContextActions - for ctx.* in command handlers
-			{
+		await this.session.bindExtensions({
+			uiContext,
+			commandContextActions: {
 				waitForIdle: () => this.session.agent.waitForIdle(),
 				newSession: async (options) => {
 					if (this.loadingAnimation) {
@@ -808,31 +763,16 @@ export class InteractiveMode {
 					return { cancelled: false };
 				},
 			},
-			uiContext,
-		);
-
-		// Subscribe to extension errors
-		extensionRunner.onError((error) => {
-			this.showExtensionError(error.extensionPath, error.error, error.stack);
+			shutdownHandler: () => {
+				this.shutdownRequested = true;
+			},
+			onError: (error) => {
+				this.showExtensionError(error.extensionPath, error.error, error.stack);
+			},
 		});
 
-		// Set up extension-registered shortcuts
 		this.setupExtensionShortcuts(extensionRunner);
-
-		// Show loaded extensions (unless silenced)
-		if (!this.settingsManager.getQuietStartup()) {
-			const extensionPaths = extensionRunner.getExtensionPaths();
-			if (extensionPaths.length > 0) {
-				const extList = extensionPaths.map((p) => theme.fg("dim", `  ${p}`)).join("\n");
-				this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded extensions:\n") + extList, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
-			}
-		}
-
-		// Emit session_start event
-		await extensionRunner.emit({
-			type: "session_start",
-		});
+		this.showLoadedResources({ extensionPaths: extensionRunner.getExtensionPaths(), force: false });
 	}
 
 	/**
@@ -948,6 +888,38 @@ export class InteractiveMode {
 		const targetMap = placement === "belowEditor" ? this.extensionWidgetsBelow : this.extensionWidgetsAbove;
 		targetMap.set(key, component);
 		this.renderWidgets();
+	}
+
+	private clearExtensionWidgets(): void {
+		for (const widget of this.extensionWidgetsAbove.values()) {
+			widget.dispose?.();
+		}
+		for (const widget of this.extensionWidgetsBelow.values()) {
+			widget.dispose?.();
+		}
+		this.extensionWidgetsAbove.clear();
+		this.extensionWidgetsBelow.clear();
+		this.renderWidgets();
+	}
+
+	private resetExtensionUI(): void {
+		if (this.extensionSelector) {
+			this.hideExtensionSelector();
+		}
+		if (this.extensionInput) {
+			this.hideExtensionInput();
+		}
+		if (this.extensionEditor) {
+			this.hideExtensionEditor();
+		}
+		this.ui.hideOverlay();
+		this.setExtensionFooter(undefined);
+		this.setExtensionHeader(undefined);
+		this.clearExtensionWidgets();
+		this.footerDataProvider.clearExtensionStatuses();
+		this.footer.invalidate();
+		this.setCustomEditorComponent(undefined);
+		this.defaultEditor.onExtensionShortcut = undefined;
 	}
 
 	// Maximum total widget lines to prevent viewport overflow
@@ -1608,6 +1580,11 @@ export class InteractiveMode {
 				await this.handleCompactCommand(customInstructions);
 				return;
 			}
+			if (text === "/reload") {
+				this.editor.setText("");
+				await this.handleReloadCommand();
+				return;
+			}
 			if (text === "/debug") {
 				this.handleDebugCommand();
 				this.editor.setText("");
@@ -2143,7 +2120,6 @@ export class InteractiveMode {
 	}
 
 	renderInitialMessages(): void {
-		this.hasRenderedInitialMessages = true;
 		// Get aligned messages and entries from session context
 		const context = this.sessionManager.buildSessionContext();
 		this.renderSessionContext(context, {
@@ -3276,6 +3252,53 @@ export class InteractiveMode {
 	// Command handlers
 	// =========================================================================
 
+	private async handleReloadCommand(): Promise<void> {
+		if (this.session.isStreaming) {
+			this.showWarning("Wait for the current response to finish before reloading.");
+			return;
+		}
+		if (this.session.isCompacting) {
+			this.showWarning("Wait for compaction to finish before reloading.");
+			return;
+		}
+
+		this.resetExtensionUI();
+
+		const loader = new BorderedLoader(this.ui, theme, "Reloading resources...", { cancellable: false });
+		const previousEditor = this.editor;
+		this.editorContainer.clear();
+		this.editorContainer.addChild(loader);
+		this.ui.setFocus(loader);
+		this.ui.requestRender();
+
+		const restoreEditor = () => {
+			loader.dispose();
+			this.editorContainer.clear();
+			this.editorContainer.addChild(previousEditor);
+			this.ui.setFocus(previousEditor as Component);
+			this.ui.requestRender();
+		};
+
+		try {
+			await this.session.reload();
+			this.rebuildAutocomplete();
+			const runner = this.session.extensionRunner;
+			if (runner) {
+				this.setupExtensionShortcuts(runner);
+			}
+			restoreEditor();
+			this.showLoadedResources({ extensionPaths: runner?.getExtensionPaths() ?? [], force: true });
+			const modelsJsonError = this.session.modelRegistry.getError();
+			if (modelsJsonError) {
+				this.showError(`models.json error: ${modelsJsonError}`);
+			}
+			this.showStatus("Reloaded resources");
+		} catch (error) {
+			restoreEditor();
+			this.showError(`Reload failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
 	private async handleExportCommand(text: string): Promise<void> {
 		const parts = text.split(/\s+/);
 		const outputPath = parts.length > 1 ? parts[1] : undefined;
@@ -3632,12 +3655,13 @@ export class InteractiveMode {
 
 	private handleDebugCommand(): void {
 		const width = this.ui.terminal.columns;
+		const height = this.ui.terminal.rows;
 		const allLines = this.ui.render(width);
 
 		const debugLogPath = getDebugLogPath();
 		const debugData = [
 			`Debug output at ${new Date().toISOString()}`,
-			`Terminal width: ${width}`,
+			`Terminal: ${width}x${height}`,
 			`Total lines: ${allLines.length}`,
 			"",
 			"=== All rendered lines with visible widths ===",

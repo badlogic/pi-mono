@@ -7,24 +7,23 @@
 
 import { type ImageContent, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
-import { existsSync } from "fs";
-import { join } from "path";
 import { createInterface } from "readline";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
-import { CONFIG_DIR_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
-import { createEventBus } from "./core/event-bus.js";
+import { getAgentDir, getModelsPath, VERSION } from "./config.js";
+import { AuthStorage } from "./core/auth-storage.js";
 import { exportFromFile } from "./core/export-html/index.js";
-import { discoverAndLoadExtensions, type LoadExtensionsResult, loadExtensions } from "./core/extensions/index.js";
+import type { LoadExtensionsResult } from "./core/extensions/index.js";
 import { KeybindingsManager } from "./core/keybindings.js";
-import type { ModelRegistry } from "./core/model-registry.js";
+import { ModelRegistry } from "./core/model-registry.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
-import { type CreateAgentSessionOptions, createAgentSession, discoverAuthStorage, discoverModels } from "./core/sdk.js";
+import { DefaultPackageManager } from "./core/package-manager.js";
+import { DefaultResourceLoader } from "./core/resource-loader.js";
+import { type CreateAgentSessionOptions, createAgentSession } from "./core/sdk.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
-import { resolvePromptInput } from "./core/system-prompt.js";
 import { printTimings, time } from "./core/timings.js";
 import { allTools } from "./core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
@@ -52,6 +51,156 @@ async function readPipedStdin(): Promise<string | undefined> {
 		});
 		process.stdin.resume();
 	});
+}
+
+type PackageCommand = "install" | "remove" | "update" | "list";
+
+interface PackageCommandOptions {
+	command: PackageCommand;
+	source?: string;
+	local: boolean;
+}
+
+function parsePackageCommand(args: string[]): PackageCommandOptions | undefined {
+	const [command, ...rest] = args;
+	if (command !== "install" && command !== "remove" && command !== "update" && command !== "list") {
+		return undefined;
+	}
+
+	let local = false;
+	const sources: string[] = [];
+	for (const arg of rest) {
+		if (arg === "-l" || arg === "--local") {
+			local = true;
+			continue;
+		}
+		sources.push(arg);
+	}
+
+	return { command, source: sources[0], local };
+}
+
+function normalizeExtensionSource(source: string): { type: "npm" | "git" | "local"; key: string } {
+	if (source.startsWith("npm:")) {
+		const spec = source.slice("npm:".length).trim();
+		const match = spec.match(/^(@?[^@]+(?:\/[^@]+)?)(?:@.+)?$/);
+		return { type: "npm", key: match?.[1] ?? spec };
+	}
+	if (source.startsWith("git:")) {
+		const repo = source.slice("git:".length).trim().split("@")[0] ?? "";
+		return { type: "git", key: repo.replace(/^https?:\/\//, "") };
+	}
+	return { type: "local", key: source };
+}
+
+function sourcesMatch(a: string, b: string): boolean {
+	const left = normalizeExtensionSource(a);
+	const right = normalizeExtensionSource(b);
+	return left.type === right.type && left.key === right.key;
+}
+
+function updateExtensionSources(
+	settingsManager: SettingsManager,
+	source: string,
+	local: boolean,
+	action: "add" | "remove",
+): void {
+	const currentSettings = local ? settingsManager.getProjectSettings() : settingsManager.getGlobalSettings();
+	const currentSources = currentSettings.extensions ?? [];
+
+	let nextSources: string[];
+	if (action === "add") {
+		const exists = currentSources.some((existing) => sourcesMatch(existing, source));
+		nextSources = exists ? currentSources : [...currentSources, source];
+	} else {
+		nextSources = currentSources.filter((existing) => !sourcesMatch(existing, source));
+	}
+
+	if (local) {
+		settingsManager.setProjectExtensionPaths(nextSources);
+	} else {
+		settingsManager.setExtensionPaths(nextSources);
+	}
+}
+
+async function handlePackageCommand(args: string[]): Promise<boolean> {
+	const options = parsePackageCommand(args);
+	if (!options) {
+		return false;
+	}
+
+	const cwd = process.cwd();
+	const agentDir = getAgentDir();
+	const settingsManager = SettingsManager.create(cwd, agentDir);
+	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+
+	// Set up progress callback for CLI feedback
+	packageManager.setProgressCallback((event) => {
+		if (event.type === "start") {
+			process.stdout.write(chalk.dim(`${event.message}\n`));
+		} else if (event.type === "error") {
+			console.error(chalk.red(`Error: ${event.message}`));
+		}
+	});
+
+	if (options.command === "install") {
+		if (!options.source) {
+			console.error(chalk.red("Missing install source."));
+			process.exit(1);
+		}
+		await packageManager.install(options.source, { local: options.local });
+		updateExtensionSources(settingsManager, options.source, options.local, "add");
+		console.log(chalk.green(`Installed ${options.source}`));
+		return true;
+	}
+
+	if (options.command === "remove") {
+		if (!options.source) {
+			console.error(chalk.red("Missing remove source."));
+			process.exit(1);
+		}
+		await packageManager.remove(options.source, { local: options.local });
+		updateExtensionSources(settingsManager, options.source, options.local, "remove");
+		console.log(chalk.green(`Removed ${options.source}`));
+		return true;
+	}
+
+	if (options.command === "list") {
+		const globalSettings = settingsManager.getGlobalSettings();
+		const projectSettings = settingsManager.getProjectSettings();
+		const globalExtensions = globalSettings.extensions ?? [];
+		const projectExtensions = projectSettings.extensions ?? [];
+
+		if (globalExtensions.length === 0 && projectExtensions.length === 0) {
+			console.log(chalk.dim("No extensions installed."));
+			return true;
+		}
+
+		if (globalExtensions.length > 0) {
+			console.log(chalk.bold("Global extensions:"));
+			for (const ext of globalExtensions) {
+				console.log(`  ${ext}`);
+			}
+		}
+
+		if (projectExtensions.length > 0) {
+			if (globalExtensions.length > 0) console.log();
+			console.log(chalk.bold("Project extensions:"));
+			for (const ext of projectExtensions) {
+				console.log(`  ${ext}`);
+			}
+		}
+
+		return true;
+	}
+
+	await packageManager.update(options.source);
+	if (options.source) {
+		console.log(chalk.green(`Updated ${options.source}`));
+	} else {
+		console.log(chalk.green("Updated extensions"));
+	}
+	return true;
 }
 
 async function prepareInitialMessage(
@@ -173,57 +322,14 @@ async function createSessionManager(parsed: Args, cwd: string): Promise<SessionM
 	return undefined;
 }
 
-/** Discover SYSTEM.md file if no CLI system prompt was provided */
-function discoverSystemPromptFile(): string | undefined {
-	// Check project-local first: .pi/SYSTEM.md
-	const projectPath = join(process.cwd(), CONFIG_DIR_NAME, "SYSTEM.md");
-	if (existsSync(projectPath)) {
-		return projectPath;
-	}
-
-	// Fall back to global: ~/.pi/agent/SYSTEM.md
-	const globalPath = join(getAgentDir(), "SYSTEM.md");
-	if (existsSync(globalPath)) {
-		return globalPath;
-	}
-
-	return undefined;
-}
-
-/** Discover APPEND_SYSTEM.md file if no CLI append system prompt was provided */
-function discoverAppendSystemPromptFile(): string | undefined {
-	// Check project-local first: .pi/APPEND_SYSTEM.md
-	const projectPath = join(process.cwd(), CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
-	if (existsSync(projectPath)) {
-		return projectPath;
-	}
-
-	// Fall back to global: ~/.pi/agent/APPEND_SYSTEM.md
-	const globalPath = join(getAgentDir(), "APPEND_SYSTEM.md");
-	if (existsSync(globalPath)) {
-		return globalPath;
-	}
-
-	return undefined;
-}
-
 function buildSessionOptions(
 	parsed: Args,
 	scopedModels: ScopedModel[],
 	sessionManager: SessionManager | undefined,
 	modelRegistry: ModelRegistry,
 	settingsManager: SettingsManager,
-	extensionsResult?: LoadExtensionsResult,
 ): CreateAgentSessionOptions {
 	const options: CreateAgentSessionOptions = {};
-
-	// Auto-discover SYSTEM.md if no CLI system prompt provided
-	const systemPromptSource = parsed.systemPrompt ?? discoverSystemPromptFile();
-	// Auto-discover APPEND_SYSTEM.md if no CLI append system prompt provided
-	const appendSystemPromptSource = parsed.appendSystemPrompt ?? discoverAppendSystemPromptFile();
-
-	const resolvedSystemPrompt = resolvePromptInput(systemPromptSource, "system prompt");
-	const resolvedAppendPrompt = resolvePromptInput(appendSystemPromptSource, "append system prompt");
 
 	if (sessionManager) {
 		options.sessionManager = sessionManager;
@@ -276,15 +382,6 @@ function buildSessionOptions(
 	// API key from CLI - set in authStorage
 	// (handled by caller before createAgentSession)
 
-	// System prompt
-	if (resolvedSystemPrompt && resolvedAppendPrompt) {
-		options.systemPrompt = `${resolvedSystemPrompt}\n\n${resolvedAppendPrompt}`;
-	} else if (resolvedSystemPrompt) {
-		options.systemPrompt = resolvedSystemPrompt;
-	} else if (resolvedAppendPrompt) {
-		options.systemPrompt = (defaultPrompt) => `${defaultPrompt}\n\n${resolvedAppendPrompt}`;
-	}
-
 	// Tools
 	if (parsed.noTools) {
 		// --no-tools: start with no built-in tools
@@ -298,60 +395,52 @@ function buildSessionOptions(
 		options.tools = parsed.tools.map((name) => allTools[name]);
 	}
 
-	// Skills
-	if (parsed.noSkills) {
-		options.skills = [];
-	}
-
-	// Pre-loaded extensions (from early CLI flag discovery)
-	if (extensionsResult) {
-		options.preloadedExtensions = extensionsResult;
-	}
-
 	return options;
 }
 
 export async function main(args: string[]) {
-	time("start");
+	if (await handlePackageCommand(args)) {
+		return;
+	}
 
 	// Run migrations (pass cwd for project-local migrations)
 	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd());
 
 	// Create AuthStorage and ModelRegistry upfront
-	const authStorage = discoverAuthStorage();
-	const modelRegistry = discoverModels(authStorage);
-	time("discoverModels");
+	const authStorage = new AuthStorage();
+	const modelRegistry = new ModelRegistry(authStorage);
 
 	// First pass: parse args to get --extension paths
 	const firstPass = parseArgs(args);
-	time("parseArgs-firstPass");
 
-	// Early load extensions to discover their CLI flags (unless --no-extensions)
+	// Early load extensions to discover their CLI flags
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
-	const eventBus = createEventBus();
-	const settingsManager = SettingsManager.create(cwd);
-	time("SettingsManager.create");
+	const settingsManager = SettingsManager.create(cwd, agentDir);
 
-	let extensionsResult: LoadExtensionsResult;
-	if (firstPass.noExtensions) {
-		// --no-extensions disables discovery, but explicit -e flags still work
-		const explicitPaths = firstPass.extensions ?? [];
-		extensionsResult = await loadExtensions(explicitPaths, cwd, eventBus);
-		time("loadExtensions");
-	} else {
-		// Merge CLI --extension args with settings.json extensions
-		const extensionPaths = [...settingsManager.getExtensionPaths(), ...(firstPass.extensions ?? [])];
-		extensionsResult = await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus);
-		time("discoverExtensionFlags");
-	}
+	const resourceLoader = new DefaultResourceLoader({
+		cwd,
+		agentDir,
+		settingsManager,
+		additionalExtensionPaths: firstPass.extensions,
+		additionalSkillPaths: firstPass.skills,
+		additionalPromptTemplatePaths: firstPass.promptTemplates,
+		additionalThemePaths: firstPass.themes,
+		noExtensions: firstPass.noExtensions,
+		noSkills: firstPass.noSkills,
+		noPromptTemplates: firstPass.noPromptTemplates,
+		noThemes: firstPass.noThemes,
+		systemPrompt: firstPass.systemPrompt,
+		appendSystemPrompt: firstPass.appendSystemPrompt,
+	});
+	await resourceLoader.reload();
+	time("resourceLoader.reload");
 
-	// Log extension loading errors
+	const extensionsResult: LoadExtensionsResult = resourceLoader.getExtensions();
 	for (const { path, error } of extensionsResult.errors) {
 		console.error(chalk.red(`Failed to load extension "${path}": ${error}`));
 	}
 
-	// Collect all extension flags
 	const extensionFlags = new Map<string, { type: "boolean" | "string" }>();
 	for (const ext of extensionsResult.extensions) {
 		for (const [name, flag] of ext.flags) {
@@ -361,7 +450,6 @@ export async function main(args: string[]) {
 
 	// Second pass: parse args with extension flags
 	const parsed = parseArgs(args, extensionFlags);
-	time("parseArgs");
 
 	// Pass flag values to extensions via runtime
 	for (const [name, value] of parsed.unknownFlags) {
@@ -393,7 +481,6 @@ export async function main(args: string[]) {
 			// Prepend stdin content to messages
 			parsed.messages.unshift(stdinContent);
 		}
-		time("readPipedStdin");
 	}
 
 	if (parsed.export) {
@@ -415,11 +502,9 @@ export async function main(args: string[]) {
 	}
 
 	const { initialMessage, initialImages } = await prepareInitialMessage(parsed, settingsManager.getImageAutoResize());
-	time("prepareInitialMessage");
 	const isInteractive = !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
 	initTheme(settingsManager.getTheme(), isInteractive);
-	time("initTheme");
 
 	// Show deprecation warnings in interactive mode
 	if (isInteractive && deprecationWarnings.length > 0) {
@@ -430,12 +515,10 @@ export async function main(args: string[]) {
 	const modelPatterns = parsed.models ?? settingsManager.getEnabledModels();
 	if (modelPatterns && modelPatterns.length > 0) {
 		scopedModels = await resolveModelScope(modelPatterns, modelRegistry);
-		time("resolveModelScope");
 	}
 
 	// Create session manager based on CLI flags
 	let sessionManager = await createSessionManager(parsed, cwd);
-	time("createSessionManager");
 
 	// Handle --resume: show session picker
 	if (parsed.resume) {
@@ -446,7 +529,6 @@ export async function main(args: string[]) {
 			(onProgress) => SessionManager.list(cwd, parsed.sessionDir, onProgress),
 			SessionManager.listAll,
 		);
-		time("selectSession");
 		if (!selectedPath) {
 			console.log(chalk.dim("No session selected"));
 			stopThemeWatcher();
@@ -455,17 +537,10 @@ export async function main(args: string[]) {
 		sessionManager = SessionManager.open(selectedPath);
 	}
 
-	const sessionOptions = buildSessionOptions(
-		parsed,
-		scopedModels,
-		sessionManager,
-		modelRegistry,
-		settingsManager,
-		extensionsResult,
-	);
+	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager, modelRegistry, settingsManager);
 	sessionOptions.authStorage = authStorage;
 	sessionOptions.modelRegistry = modelRegistry;
-	sessionOptions.eventBus = eventBus;
+	sessionOptions.resourceLoader = resourceLoader;
 
 	// Handle CLI --api-key as runtime override (not persisted)
 	if (parsed.apiKey) {
@@ -476,9 +551,7 @@ export async function main(args: string[]) {
 		authStorage.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey);
 	}
 
-	time("buildSessionOptions");
 	const { session, modelFallbackMessage } = await createAgentSession(sessionOptions);
-	time("createAgentSession");
 
 	if (!isInteractive && !session.model) {
 		console.error(chalk.red("No models available."));
