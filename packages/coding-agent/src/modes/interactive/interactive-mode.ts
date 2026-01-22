@@ -43,15 +43,7 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { spawn, spawnSync } from "child_process";
-import {
-	APP_NAME,
-	getAuthPath,
-	getDebugLogPath,
-	getShareViewerUrl,
-	isBunBinary,
-	isBunRuntime,
-	VERSION,
-} from "../../config.js";
+import { APP_NAME, getAuthPath, getDebugLogPath, getShareViewerUrl, VERSION } from "../../config.js";
 import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
 import type {
@@ -94,6 +86,7 @@ import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
+import { UpdateNotificationComponent } from "./components/update-notification.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
 import {
@@ -497,9 +490,9 @@ export class InteractiveMode {
 		await this.init();
 
 		// Start version check asynchronously
-		this.checkForNewVersion().then((newVersion) => {
-			if (newVersion) {
-				this.showNewVersionNotification(newVersion);
+		this.checkForNewVersion().then((result) => {
+			if (result) {
+				this.showNewVersionNotification(result.version, result.releaseNotes);
 			}
 		});
 
@@ -555,9 +548,9 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Check npm registry for a newer version.
+	 * Check npm registry for a newer version and fetch release notes from GitHub.
 	 */
-	private async checkForNewVersion(): Promise<string | undefined> {
+	private async checkForNewVersion(): Promise<{ version: string; releaseNotes?: string } | undefined> {
 		if (process.env.PI_SKIP_VERSION_CHECK) return undefined;
 
 		try {
@@ -568,10 +561,26 @@ export class InteractiveMode {
 			const latestVersion = data.version;
 
 			if (latestVersion && latestVersion !== this.version) {
-				return latestVersion;
+				const releaseNotes = await this.fetchReleaseNotes(latestVersion);
+				return { version: latestVersion, releaseNotes };
 			}
 
 			return undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
+	/**
+	 * Fetch release notes from GitHub for a specific version.
+	 */
+	private async fetchReleaseNotes(version: string): Promise<string | undefined> {
+		try {
+			const response = await fetch(`https://api.github.com/repos/badlogic/pi-mono/releases/tags/v${version}`);
+			if (!response.ok) return undefined;
+
+			const data = (await response.json()) as { body?: string };
+			return data.body || undefined;
 		} catch {
 			return undefined;
 		}
@@ -2417,18 +2426,11 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	showNewVersionNotification(newVersion: string): void {
-		const action = isBunBinary
-			? `Download from: ${theme.fg("accent", "https://github.com/badlogic/pi-mono/releases/latest")}`
-			: `Run: ${theme.fg("accent", `${isBunRuntime ? "bun" : "npm"} install -g @mariozechner/pi-coding-agent`)}`;
-		const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. `) + action;
-
+	showNewVersionNotification(newVersion: string, releaseNotes?: string): void {
+		const component = new UpdateNotificationComponent(newVersion, releaseNotes, this.getMarkdownThemeWithSettings());
+		component.setExpanded(this.toolOutputExpanded);
 		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
-		this.chatContainer.addChild(
-			new Text(`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}`, 1, 0),
-		);
-		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
+		this.chatContainer.addChild(component);
 		this.ui.requestRender();
 	}
 
