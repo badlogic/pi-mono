@@ -15,8 +15,6 @@ export interface ImageOptions {
 	maxWidthCells?: number;
 	maxHeightCells?: number;
 	filename?: string;
-	/** Kitty image ID. If provided, reuses this ID (for animations/updates). */
-	imageId?: number;
 }
 
 export class Image implements Component {
@@ -25,7 +23,6 @@ export class Image implements Component {
 	private dimensions: ImageDimensions;
 	private theme: ImageTheme;
 	private options: ImageOptions;
-	private imageId?: number;
 
 	private cachedLines?: string[];
 	private cachedWidth?: number;
@@ -42,12 +39,6 @@ export class Image implements Component {
 		this.theme = theme;
 		this.options = options;
 		this.dimensions = dimensions || getImageDimensions(base64Data, mimeType) || { widthPx: 800, heightPx: 600 };
-		this.imageId = options.imageId;
-	}
-
-	/** Get the Kitty image ID used by this image (if any). */
-	getImageId(): number | undefined {
-		return this.imageId;
 	}
 
 	invalidate(): void {
@@ -66,27 +57,32 @@ export class Image implements Component {
 		let lines: string[];
 
 		if (caps.images) {
-			const result = renderImage(this.base64Data, this.dimensions, {
-				maxWidthCells: maxWidth,
-				imageId: this.imageId,
-			});
+			const result = renderImage(this.base64Data, this.dimensions, { maxWidthCells: maxWidth });
 
 			if (result) {
-				// Store the image ID for later cleanup
-				if (result.imageId) {
-					this.imageId = result.imageId;
+				if (result.placeholderLines) {
+					// tmux mode: output image sequence first (hidden), then placeholder lines
+					// The sequence transmits the image, placeholders display it
+					lines = [];
+					// First line includes the image transmission sequence (invisible) + first placeholder row
+					lines.push(result.sequence + result.placeholderLines[0]);
+					// Rest of the placeholder rows
+					for (let i = 1; i < result.placeholderLines.length; i++) {
+						lines.push(result.placeholderLines[i]);
+					}
+				} else {
+					// Direct placement mode (non-tmux)
+					// Return `rows` lines so TUI accounts for image height
+					// First (rows-1) lines are empty (TUI clears them)
+					// Last line: move cursor back up, then output image sequence
+					lines = [];
+					for (let i = 0; i < result.rows - 1; i++) {
+						lines.push("");
+					}
+					// Move cursor up to first row, then output image
+					const moveUp = result.rows > 1 ? `\x1b[${result.rows - 1}A` : "";
+					lines.push(moveUp + result.sequence);
 				}
-
-				// Return `rows` lines so TUI accounts for image height
-				// First (rows-1) lines are empty (TUI clears them)
-				// Last line: move cursor back up, then output image sequence
-				lines = [];
-				for (let i = 0; i < result.rows - 1; i++) {
-					lines.push("");
-				}
-				// Move cursor up to first row, then output image
-				const moveUp = result.rows > 1 ? `\x1b[${result.rows - 1}A` : "";
-				lines.push(moveUp + result.sequence);
 			} else {
 				const fallback = imageFallback(this.mimeType, this.dimensions, this.options.filename);
 				lines = [this.theme.fallbackColor(fallback)];

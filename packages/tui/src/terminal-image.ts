@@ -1,3 +1,6 @@
+import { execSync } from "node:child_process";
+import { KITTY_DIACRITICS } from "./diacritics.js";
+
 export type ImageProtocol = "kitty" | "iterm2" | null;
 
 export interface TerminalCapabilities {
@@ -20,8 +23,6 @@ export interface ImageRenderOptions {
 	maxWidthCells?: number;
 	maxHeightCells?: number;
 	preserveAspectRatio?: boolean;
-	/** Kitty image ID. If provided, reuses/replaces existing image with this ID. */
-	imageId?: number;
 }
 
 let cachedCapabilities: TerminalCapabilities | null = null;
@@ -82,13 +83,144 @@ export function resetCapabilitiesCache(): void {
 }
 
 /**
- * Generate a random image ID for Kitty graphics protocol.
- * Uses random IDs to avoid collisions between different module instances
- * (e.g., main app vs extensions).
+ * Check if we're running inside tmux.
  */
-export function allocateImageId(): number {
-	// Use random ID in range [1, 0xffffffff] to avoid collisions
-	return Math.floor(Math.random() * 0xfffffffe) + 1;
+export function isInsideTmux(): boolean {
+	return !!process.env.TMUX;
+}
+
+/**
+ * Cache for tmux passthrough check.
+ * null = not checked yet, true/false = cached result
+ */
+let tmuxPassthroughEnabled: boolean | null = null;
+
+/**
+ * Check if tmux has allow-passthrough enabled.
+ * This is required for images to work in tmux.
+ * Result is cached after first check.
+ */
+export function isTmuxPassthroughEnabled(): boolean {
+	if (!isInsideTmux()) {
+		return false;
+	}
+
+	if (tmuxPassthroughEnabled !== null) {
+		return tmuxPassthroughEnabled;
+	}
+
+	try {
+		const result = execSync("tmux show-options -gv allow-passthrough 2>/dev/null", {
+			encoding: "utf-8",
+			timeout: 1000,
+		}).trim();
+		// allow-passthrough can be "on", "all", or "off"
+		// "on" allows passthrough only for visible panes
+		// "all" allows passthrough for all panes including invisible ones
+		// Both "on" and "all" work for our purposes
+		tmuxPassthroughEnabled = result === "on" || result === "all";
+	} catch {
+		// If tmux command fails, assume passthrough is not enabled
+		tmuxPassthroughEnabled = false;
+	}
+
+	return tmuxPassthroughEnabled;
+}
+
+/**
+ * Reset the tmux passthrough cache.
+ * Useful for testing or when tmux config might have changed.
+ */
+export function resetTmuxPassthroughCache(): void {
+	tmuxPassthroughEnabled = null;
+}
+
+/**
+ * Wrap a sequence in tmux passthrough escapes.
+ * Inside tmux, escape sequences need to be wrapped so they pass through to the outer terminal.
+ * Format: \x1bPtmux;<escaped_sequence>\x1b\\
+ * Every \x1b inside the sequence must be doubled.
+ */
+function wrapTmuxPassthrough(sequence: string): string {
+	// Double every ESC (\x1b) in the sequence
+	const escaped = sequence.replace(/\x1b/g, "\x1b\x1b");
+	return `\x1bPtmux;${escaped}\x1b\\`;
+}
+
+/**
+ * Unicode placeholder character for Kitty graphics protocol.
+ * This character is in the Unicode Private Use Area and is used by terminals
+ * that support the Kitty graphics protocol to mark where images should appear.
+ */
+const KITTY_PLACEHOLDER = "\u{10EEEE}";
+
+/**
+ * Auto-incrementing image ID counter for Kitty graphics protocol.
+ * IDs must be non-zero, so we start at 1.
+ */
+let nextImageId = 1;
+
+/**
+ * Get the next available image ID.
+ */
+export function getNextImageId(): number {
+	const id = nextImageId;
+	nextImageId = (nextImageId % 0xffffff) + 1; // Wrap at 24 bits, skip 0
+	return id;
+}
+
+/**
+ * Encode image_id into RGB foreground color escape sequence.
+ * The image_id is encoded in the 24-bit RGB value.
+ */
+function encodeImageIdAsFgColor(imageId: number): string {
+	const r = (imageId >> 16) & 0xff;
+	const g = (imageId >> 8) & 0xff;
+	const b = imageId & 0xff;
+	return `\x1b[38;2;${r};${g};${b}m`;
+}
+
+/**
+ * Maximum row/column value that can be encoded with diacritics.
+ * The KITTY_DIACRITICS array has 297 entries (indices 0-296).
+ */
+const MAX_DIACRITIC_VALUE = KITTY_DIACRITICS.length - 1;
+
+/**
+ * Get the diacritic codepoint for a given row/column value.
+ * Returns the character for the diacritic at the given index.
+ */
+function getDiacritic(value: number): string {
+	if (value < 0 || value > MAX_DIACRITIC_VALUE) {
+		// Clamp to valid range
+		value = Math.max(0, Math.min(value, MAX_DIACRITIC_VALUE));
+	}
+	return String.fromCodePoint(KITTY_DIACRITICS[value]);
+}
+
+/**
+ * Generate unicode placeholder rows for an image.
+ * Uses inference optimization: only the first cell of each row includes the row diacritic,
+ * subsequent cells are just the placeholder character (row and column inferred from left cell).
+ * The foreground color encodes the image_id.
+ */
+export function generatePlaceholderRows(imageId: number, columns: number, rows: number): string[] {
+	// Clamp to valid range: at least 1, at most diacritic limit
+	const clampedRows = Math.max(1, Math.min(rows, MAX_DIACRITIC_VALUE + 1));
+	const clampedCols = Math.max(1, Math.min(columns, MAX_DIACRITIC_VALUE + 1));
+
+	const colorStart = encodeImageIdAsFgColor(imageId);
+	const colorEnd = "\x1b[39m"; // Reset foreground color
+
+	const result: string[] = [];
+	for (let row = 0; row < clampedRows; row++) {
+		// First cell: placeholder + row diacritic (column 0 inferred)
+		// Subsequent cells: just placeholder (row and column inferred from left)
+		const firstCell = KITTY_PLACEHOLDER + getDiacritic(row);
+		const otherCells = clampedCols > 1 ? KITTY_PLACEHOLDER.repeat(clampedCols - 1) : "";
+		result.push(`${colorStart}${firstCell}${otherCells}${colorEnd}`);
+	}
+	return result;
 }
 
 export function encodeKitty(
@@ -97,18 +229,29 @@ export function encodeKitty(
 		columns?: number;
 		rows?: number;
 		imageId?: number;
+		virtual?: boolean; // Use virtual placement (for tmux unicode placeholders)
 	} = {},
 ): string {
 	const CHUNK_SIZE = 4096;
 
-	const params: string[] = ["a=T", "f=100", "q=2"];
+	const params: string[] = ["f=100", "q=2"];
+
+	// a=T means transmit and display
+	// U=1 enables unicode placeholder mode (virtual placement)
+	params.unshift("a=T");
+	if (options.virtual) {
+		params.push("U=1"); // Enable unicode placeholder mode
+	}
 
 	if (options.columns) params.push(`c=${options.columns}`);
 	if (options.rows) params.push(`r=${options.rows}`);
 	if (options.imageId) params.push(`i=${options.imageId}`);
 
+	const inTmux = isInsideTmux();
+
 	if (base64Data.length <= CHUNK_SIZE) {
-		return `\x1b_G${params.join(",")};${base64Data}\x1b\\`;
+		const seq = `\x1b_G${params.join(",")};${base64Data}\x1b\\`;
+		return inTmux ? wrapTmuxPassthrough(seq) : seq;
 	}
 
 	const chunks: string[] = [];
@@ -119,35 +262,21 @@ export function encodeKitty(
 		const chunk = base64Data.slice(offset, offset + CHUNK_SIZE);
 		const isLast = offset + CHUNK_SIZE >= base64Data.length;
 
+		let seq: string;
 		if (isFirst) {
-			chunks.push(`\x1b_G${params.join(",")},m=1;${chunk}\x1b\\`);
+			seq = `\x1b_G${params.join(",")},m=1;${chunk}\x1b\\`;
 			isFirst = false;
 		} else if (isLast) {
-			chunks.push(`\x1b_Gm=0;${chunk}\x1b\\`);
+			seq = `\x1b_Gm=0;${chunk}\x1b\\`;
 		} else {
-			chunks.push(`\x1b_Gm=1;${chunk}\x1b\\`);
+			seq = `\x1b_Gm=1;${chunk}\x1b\\`;
 		}
 
+		chunks.push(inTmux ? wrapTmuxPassthrough(seq) : seq);
 		offset += CHUNK_SIZE;
 	}
 
 	return chunks.join("");
-}
-
-/**
- * Delete a Kitty graphics image by ID.
- * Uses uppercase 'I' to also free the image data.
- */
-export function deleteKittyImage(imageId: number): string {
-	return `\x1b_Ga=d,d=I,i=${imageId}\x1b\\`;
-}
-
-/**
- * Delete all visible Kitty graphics images.
- * Uses uppercase 'A' to also free the image data.
- */
-export function deleteAllKittyImages(): string {
-	return `\x1b_Ga=d,d=A\x1b\\`;
 }
 
 export function encodeITerm2(
@@ -328,11 +457,18 @@ export function getImageDimensions(base64Data: string, mimeType: string): ImageD
 	return null;
 }
 
+export interface ImageRenderResult {
+	sequence: string;
+	rows: number;
+	/** For tmux unicode placeholder mode: lines containing placeholder characters */
+	placeholderLines?: string[];
+}
+
 export function renderImage(
 	base64Data: string,
 	imageDimensions: ImageDimensions,
 	options: ImageRenderOptions = {},
-): { sequence: string; rows: number; imageId?: number } | null {
+): ImageRenderResult | null {
 	const caps = getCapabilities();
 
 	if (!caps.images) {
@@ -343,9 +479,33 @@ export function renderImage(
 	const rows = calculateImageRows(imageDimensions, maxWidth, getCellDimensions());
 
 	if (caps.images === "kitty") {
-		// Only use imageId if explicitly provided - static images don't need IDs
-		const sequence = encodeKitty(base64Data, { columns: maxWidth, rows, imageId: options.imageId });
-		return { sequence, rows, imageId: options.imageId };
+		const inTmux = isInsideTmux();
+
+		if (inTmux) {
+			// Check if passthrough is enabled - if not, fall back to text
+			if (!isTmuxPassthroughEnabled()) {
+				return null; // Will trigger fallback in Image component
+			}
+
+			// Clamp dimensions to diacritic limits for tmux unicode placeholder mode
+			const tmuxMaxWidth = Math.max(1, Math.min(maxWidth, MAX_DIACRITIC_VALUE + 1));
+			const tmuxRows = Math.max(1, Math.min(rows, MAX_DIACRITIC_VALUE + 1));
+
+			// Use virtual placement with unicode placeholders for tmux
+			const imageId = getNextImageId();
+			const sequence = encodeKitty(base64Data, {
+				columns: tmuxMaxWidth,
+				rows: tmuxRows,
+				imageId,
+				virtual: true,
+			});
+			const placeholderLines = generatePlaceholderRows(imageId, tmuxMaxWidth, tmuxRows);
+			return { sequence, rows: tmuxRows, placeholderLines };
+		} else {
+			// Direct placement for non-tmux (no diacritic limits)
+			const sequence = encodeKitty(base64Data, { columns: maxWidth, rows });
+			return { sequence, rows };
+		}
 	}
 
 	if (caps.images === "iterm2") {

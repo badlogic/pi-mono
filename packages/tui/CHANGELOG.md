@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added tmux support for Kitty graphics protocol using unicode placeholders, enabling inline images to render correctly inside tmux without getting stuck during screen redraws ([#908](https://github.com/badlogic/pi-mono/pull/908) by [@ogulcancelik](https://github.com/ogulcancelik))
+
 ## [0.50.1] - 2026-01-26
 
 ## [0.50.0] - 2026-01-26
