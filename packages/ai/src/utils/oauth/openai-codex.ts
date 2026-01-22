@@ -1,9 +1,22 @@
 /**
  * OpenAI Codex (ChatGPT OAuth) flow
+ *
+ * NOTE: This module uses Node.js crypto and http for the OAuth callback.
+ * It is only intended for CLI use, not browser environments.
  */
 
-import { randomBytes } from "node:crypto";
-import http from "node:http";
+// NEVER convert to top-level imports - breaks browser/Vite builds (web-ui)
+let _randomBytes: typeof import("node:crypto").randomBytes | null = null;
+let _http: typeof import("node:http") | null = null;
+if (typeof process !== "undefined" && process.versions?.node) {
+	import("node:crypto").then((m) => {
+		_randomBytes = m.randomBytes;
+	});
+	import("node:http").then((m) => {
+		_http = m;
+	});
+}
+
 import { generatePKCE } from "./pkce.js";
 import type { OAuthCredentials, OAuthPrompt } from "./types.js";
 
@@ -38,7 +51,10 @@ type JwtPayload = {
 };
 
 function createState(): string {
-	return randomBytes(16).toString("hex");
+	if (!_randomBytes) {
+		throw new Error("OpenAI Codex OAuth is only available in Node.js environments");
+	}
+	return _randomBytes(16).toString("hex");
 }
 
 function parseAuthorizationInput(input: string): { code?: string; state?: string } {
@@ -76,7 +92,7 @@ function decodeJwt(token: string): JwtPayload | null {
 		const parts = token.split(".");
 		if (parts.length !== 3) return null;
 		const payload = parts[1] ?? "";
-		const decoded = Buffer.from(payload, "base64").toString("utf-8");
+		const decoded = atob(payload);
 		return JSON.parse(decoded) as JwtPayload;
 	} catch {
 		return null;
@@ -194,9 +210,12 @@ type OAuthServerInfo = {
 };
 
 function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
+	if (!_http) {
+		throw new Error("OpenAI Codex OAuth is only available in Node.js environments");
+	}
 	let lastCode: string | null = null;
 	let cancelled = false;
-	const server = http.createServer((req, res) => {
+	const server = _http.createServer((req, res) => {
 		try {
 			const url = new URL(req.url || "", "http://localhost");
 			if (url.pathname !== "/auth/callback") {

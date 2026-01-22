@@ -1,6 +1,21 @@
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+// NEVER convert to top-level imports - breaks browser/Vite builds (web-ui)
+let _existsSync: typeof import("node:fs").existsSync | null = null;
+let _homedir: typeof import("node:os").homedir | null = null;
+let _join: typeof import("node:path").join | null = null;
+
+// Eagerly load in Node.js environment only
+if (typeof process !== "undefined" && process.versions?.node) {
+	import("node:fs").then((m) => {
+		_existsSync = m.existsSync;
+	});
+	import("node:os").then((m) => {
+		_homedir = m.homedir;
+	});
+	import("node:path").then((m) => {
+		_join = m.join;
+	});
+}
+
 import { supportsXhigh } from "./models.js";
 import { type BedrockOptions, streamBedrock } from "./providers/amazon-bedrock.js";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
@@ -31,14 +46,20 @@ let cachedVertexAdcCredentialsExists: boolean | null = null;
 
 function hasVertexAdcCredentials(): boolean {
 	if (cachedVertexAdcCredentialsExists === null) {
+		// In browser or if node modules not loaded yet, return false
+		if (!_existsSync || !_homedir || !_join) {
+			cachedVertexAdcCredentialsExists = false;
+			return false;
+		}
+
 		// Check GOOGLE_APPLICATION_CREDENTIALS env var first (standard way)
 		const gacPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 		if (gacPath) {
-			cachedVertexAdcCredentialsExists = existsSync(gacPath);
+			cachedVertexAdcCredentialsExists = _existsSync(gacPath);
 		} else {
 			// Fall back to default ADC path (lazy evaluation)
-			cachedVertexAdcCredentialsExists = existsSync(
-				join(homedir(), ".config", "gcloud", "application_default_credentials.json"),
+			cachedVertexAdcCredentialsExists = _existsSync(
+				_join(_homedir(), ".config", "gcloud", "application_default_credentials.json"),
 			);
 		}
 	}

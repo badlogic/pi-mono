@@ -1,4 +1,11 @@
-import os from "node:os";
+// NEVER convert to top-level import - breaks browser/Vite builds (web-ui)
+let _os: typeof import("node:os") | null = null;
+if (typeof process !== "undefined" && process.versions?.node) {
+	import("node:os").then((m) => {
+		_os = m;
+	});
+}
+
 import type {
 	ResponseFunctionToolCall,
 	ResponseOutputMessage,
@@ -686,7 +693,7 @@ function extractAccountId(token: string): string {
 	try {
 		const parts = token.split(".");
 		if (parts.length !== 3) throw new Error("Invalid token");
-		const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf-8"));
+		const payload = JSON.parse(atob(parts[1]));
 		const accountId = payload?.[JWT_CLAIM_PATH]?.chatgpt_account_id;
 		if (!accountId) throw new Error("No account ID in token");
 		return accountId;
@@ -707,7 +714,8 @@ function buildHeaders(
 	headers.set("chatgpt-account-id", accountId);
 	headers.set("OpenAI-Beta", "responses=experimental");
 	headers.set("originator", "pi");
-	headers.set("User-Agent", `pi (${os.platform()} ${os.release()}; ${os.arch()})`);
+	const userAgent = _os ? `pi (${_os.platform()} ${_os.release()}; ${_os.arch()})` : "pi (browser)";
+	headers.set("User-Agent", userAgent);
 	headers.set("accept", "text/event-stream");
 	headers.set("content-type", "application/json");
 	for (const [key, value] of Object.entries(additionalHeaders || {})) {
