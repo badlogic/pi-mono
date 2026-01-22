@@ -58,7 +58,7 @@ export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"
 			content: [],
 			api: "azure-openai-responses" as Api,
 			provider: model.provider,
-			model: deploymentName,
+			model: model.id,
 			usage: {
 				input: 0,
 				output: 0,
@@ -208,7 +208,7 @@ function buildParams(
 			};
 			params.include = ["reasoning.encrypted_content"];
 		} else {
-			if (model.name.startsWith("gpt-5")) {
+			if (model.name.toLowerCase().startsWith("gpt-5")) {
 				// Jesus Christ, see https://community.openai.com/t/need-reasoning-false-option-for-gpt-5/1351588/7
 				messages.push({
 					role: "developer",

@@ -28,6 +28,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { completeSimple, getEnvApiKey } from "../src/stream.js";
 import type { Api, AssistantMessage, Message, Model, Tool, ToolResultMessage } from "../src/types.js";
+import { hasAzureOpenAICredentials } from "./azure-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Simple tool for testing
@@ -121,6 +122,9 @@ async function getApiKey(provider: string): Promise<string | undefined> {
  * Synchronous check for API key availability (env vars only, for skipIf)
  */
 function hasApiKey(provider: string): boolean {
+	if (provider === "azure-openai-responses") {
+		return hasAzureOpenAICredentials();
+	}
 	return !!getEnvApiKey(provider);
 }
 
