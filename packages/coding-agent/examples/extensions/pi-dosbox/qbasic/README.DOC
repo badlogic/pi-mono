@@ -1,0 +1,545 @@
+                README.DOC File
+
+        Release Notes for Microsoft (R) QuickBASIC
+
+                Version 4.50
+
+        (C) Copyright Microsoft Corporation, 1990
+
+        Product Serial Number: 00-007-1450-26147102
+
+
+This document contains release notes for version 4.50 of the Microsoft (R)
+QuickBASIC for MS-DOS (R). The information in this document is more
+up-to-date than that in the manuals.
+
+
+================================================================================
+Contents
+================================================================================
+
+
+Part	Description
+----	-----------
+
+1	Using QuickBASIC on a Two-Floppy System
+
+2	Using Your Mouse with QuickBASIC
+
+3	Supplementary Information on Mixed-Language Programming
+
+4	Using Btrieve with QuickBASIC
+
+5	Using the DOS 3.2 Patch for Math Accuracy
+
+6	Miscellaneous Information About Using QuickBASIC
+
+
+================================================================================
+Part 1: Using QuickBASIC on a Two-Floppy System
+================================================================================
+
+
+Installing QuickBASIC on Floppy Disks
+-------------------------------------
+
+The SETUP program can install QuickBASIC on floppy disks for use
+with a two-floppy system. You must run SETUP to install QuickBASIC
+on floppy disks. You cannot run QuickBASIC from the disks provided,
+because the files are stored in a compressed format.
+
+Before you install QuickBASIC on your two-floppy system, be sure
+you have enough blank, formatted disks. If you have 360K disk
+drives, you will need five blank disks. For 720K disk drives, you
+will need three blank disks.
+
+To install QuickBASIC, put Disk #1 in drive A. Type A:\SETUP and
+press Enter.
+
+When your installation is complete, you should label each disk with
+the names of the files that are on that disk. QuickBASIC will ask
+you to swap disks when it cannot find a file that it needs, and
+you will need to know which disk the file is on.
+
+If you use 360K disks, label them as follows:
+
+PROGRAM:
+QB.EXE		 QB45QCK.HLP
+
+UTILITIES:
+BC.EXE		 LINK.EXE
+BQLB45.LIB		 LIB.EXE
+BRUN45.EXE		 QB.QLB
+BRUN45.LIB		 QB.LIB
+
+UTILITIES 2:
+BCOM45.LIB		 QB45ENER.HLP
+
+ADVISOR:
+QB45ADVR.HLP
+
+EXAMPLES
+QB.BI			 BASIC examples
+
+If you use 720K disks, label them as follows:
+
+PROGRAM/EXAMPLES:
+QB.EXE		 QB45QCK.HLP
+QB.BI			 BASIC examples
+
+UTILITIES:
+BC.EXE		 LINK.EXE
+BQLB45.LIB		 LIB.EXE
+BRUN45.EXE		 QB.QLB
+BRUN45.LIB		 QB.LIB
+BCOM45.LIB
+
+ADVISOR:
+QB45ADVR.HLP		 QB45ENER.HLP
+
+
+Running QuickBASIC from Floppy Disks
+------------------------------------
+
+During some operations, QuickBASIC asks you to swap disks one
+or more times. You can minimize disk swapping by following the
+procedures in this section.
+
+Since the disks that you installed QuickBASIC on are nearly full, you
+should keep your BASIC source-code (.BAS) files on a separate disk.
+Label this disk SOURCE.
+
+Copy the run-time module BRUN45.EXE from the UTILITIES disk to your
+SOURCE disk. QuickBASIC needs this file to run executable programs
+compiled with the run-time support option.
+
+When you use QuickBASIC, a disk containing source-code (.BAS) files
+should always be in drive B. If you want to run existing BASIC
+programs (such as the example programs provided with QuickBASIC),
+remove the SOURCE disk from drive B and insert the disk containing
+these files.
+
+To run QuickBASIC:
+
+1. Insert the SOURCE disk in drive B.
+
+2. To make drive B the current drive, type B: and press Enter.
+
+3. Insert the PROGRAM disk (the disk containing QB.EXE) in drive A.
+
+4. Type the following command:
+
+A:QB.EXE
+
+To insure that QuickBASIC always looks on both disk drives for the
+files it needs, follow these steps:
+
+1. From the Options menu, choose Set Paths.
+
+2. Make sure each of the path settings includes both disk drives. The
+following line should be in all four text boxes:
+
+A:\;B:\
+
+3. Choose OK.
+
+QuickBASIC saves these path settings in the QB.INI file, so you will
+not have to enter them again.
+
+When you exit QuickBASIC or shell to DOS, you will be prompted to
+insert a disk containing the file COMMAND.COM. Remove the PROGRAM
+disk from drive A, insert a system disk, and press Enter.
+
+
+Using Help from Floppy Disks
+----------------------------
+
+When you use the QuickBASIC Advisor online help system, you may need
+to swap disks. For example, if you choose "Details" or "Example" on a
+help screen, QuickBASIC will inform you that it cannot find the help
+file QB45ADVR.HLP. Put the disk that contains this file in drive A and
+choose Retry.
+
+
+Compiling Your Programs from Floppy Disks
+-----------------------------------------
+
+To compile your program from within QuickBASIC:
+
+1. From the Run menu, choose Make EXE File.
+
+2. Choose Make EXE. QuickBASIC displays the message "Cannot find file
+(BC.EXE)."
+
+3. Insert the UTILITIES disk (the disk containing BC.EXE) in drive A.
+Type A: and press Enter.
+
+If the program compiles successfully, QuickBASIC invokes the LINK
+utility. If LINK cannot find the library, it displays the following
+message:
+
+LINK : warning L4051 : BCOM45.LIB : cannot find library
+Enter new file spec:
+
+4. Insert the disk containing the requested library (BCOM45.LIB or
+BRUN45.LIB) in drive A.
+
+Note: The requested library may be located on the UTILITIES disk
+already in drive A. If this is the case, leave this disk in drive A.
+
+5. Type A: and press Enter. After the LINK utility finishes creating
+your executable program, QuickBASIC displays the message "Cannot
+find file (QB.EXE)."
+
+6. Insert the PROGRAM disk in drive A.
+
+7. Type A: and press Enter.
+
+If no errors occur during compiling or linking, your compiled program
+(.EXE) is created on drive B. QuickBASIC also creates an object-module
+(.OBJ) file. To save space, you can delete object-module files.
+
+
+================================================================================
+Part 2:  Using Your Mouse with QuickBASIC
+================================================================================
+
+
+New Mouse Driver for Use with QuickBASIC
+----------------------------------------
+
+QuickBASIC Version 4.5 can be used with any mouse that is 100%
+compatible with the Microsoft Mouse. However, you must use a
+Microsoft Mouse driver Version 6.00 or later. Earlier versions may
+cause unpredictable behavior when used with QuickBASIC. MOUSE.COM,
+Version 6.24 is supplied with QuickBASIC Version 4.5.
+
+Especially if you are writing programs that use the mouse, you
+should use the supplied version of the mouse driver when working in
+QuickBASIC. Previous versions have included MOUSE.SYS, which is
+installed by including the line DEVICE=MOUSE.SYS in your CONFIG.SYS
+file. This version of QuickBASIC includes MOUSE.COM, which is not
+installed via CONFIG.SYS. To install MOUSE.COM, just type MOUSE at
+the DOS prompt. To include MOUSE.COM automatically when your machine
+boots, make sure MOUSE.COM is in your search path, then put the line
+
+MOUSE
+
+in your AUTOEXEC.BAT file. To free up memory, you can remove the
+mouse driver at any time by typing MOUSE OFF at the DOS prompt.
+This will restore between 9K and 10.5K of memory with Version 6.11.
+
+
+Using Mouse Function Calls from QuickBASIC Programs
+---------------------------------------------------
+
+If you are programming for the Microsoft Mouse, you should obtain
+the Microsoft Mouse Programmer's Reference Guide and the library
+MOUSE.LIB that comes with it. (These are not included in QuickBASIC
+or Mouse package and must be ordered separately). Most of the
+information in the Mouse Programmer's Reference Guide applies
+directly to QuickBASIC Version 4.5. However, the following additional
+restrictions must be observed:
+
+Certain Mouse function calls (Functions 9 & 16) require you to set
+up an integer array and pass the address of the array to the mouse
+driver. For previous versions, the only restriction on this array
+was that it had to be $STATIC (the default array type). In QuickBASIC
+Version 4.5, however, the array also must be in a COMMON block if you
+will be making the Mouse function call from within the QuickBASIC
+environment.  In addition, it is recommended that the support code
+for the Mouse call be in a Quick library or linked into the
+executable file when making Mouse function calls from QuickBASIC.
+
+To produce a Quick library for using Mouse function calls from
+within the QuickBASIC environment, use the following command line
+(produces MOUSE.QLB):
+
+LINK MOUSE.LIB/QU,MOUSE.QLB,,BQLB40.LIB/NOE;
+
+An example from PIANO.BAS (included with the Microsoft Mouse
+Programmer's Reference) for using Mouse function call 9:
+
+DEFINT A-Z
+DECLARE SUB MOUSE (M1, M2, M3, M4)
+DIM Cursor(15, 1)
+COMMON Cursor() 'Ensures array data is in DGROUP
+.
+.  (set up Cursor() for mouse cursor shape desired)
+.
+M1 = 9: M2 = 6: M3 = 0
+CALL MOUSE(M1, M2, M3, VARPTR(Cursor(0, 0)))
+
+In addition to the above, note that Mouse function calls 21-23
+require dynamically allocated storage out of the home data segment.
+The recommended way to do this is to allocate space in a dynamic
+string variable based on the return value from function call 21,
+using the STRING$ or SPACE$ function. Then use VARPTR on this string
+variable just prior to calling Mouse function call 22 or 23.
+
+
+================================================================================
+Part 3: Supplementary Information on Mixed-Language Programming
+================================================================================
+
+
+Linking from Within QuickC or with QCL
+--------------------------------------
+
+Microsoft QuickC and the QCL command both set the /NOI linker
+by default. Therefore, you should not link from within QuickC, or
+with QCL, when your program contains modules written in a case-
+insensitive language such as BASIC. Use LINK to link your program
+from the command line.
+
+
+Pascal and FORTRAN Modules in QuickBASIC Programs
+-------------------------------------------------
+
+Modules compiled with Microsoft Pascal or FORTRAN can be linked with
+BASIC programs, as described in the Microsoft Mixed-Language
+Programming Guide. They can also be incorporated in Quick libraries.
+However, QuickBASIC programs containing code compiled with Microsoft
+Pascal must allocate at least 2K near-heap space for Pascal. This can
+be done by using the DIM statement to allocate a static array of 2K or
+greater in the NMALLOC named common block, for example, as follows:
+
+DIM name%(2048)
+COMMON SHARED /NMALLOC/name%()
+
+The Pascal run-time assumes it always has at least 2K of near-heap
+space available. If the Pascal code cannot allocate the required
+space, QuickBASIC may crash. This applies to Pascal code in Quick
+libraries as well as Pascal code linked into executable files. The
+situation is similar for FORTRAN I/O, which also requires near
+buffer space, and which can be provided by the same means as the
+Pascal near malloc space.
+
+
+STATIC Array Allocation
+-----------------------
+
+If you are writing assembly-language modules for use in QuickBASIC
+programs, see Section 2.3.3, "Variable Storage Allocation," in the
+BASIC Language Reference. Assembly-language code should not assume
+data is in a particular segment. To avoid problems, pass data using
+the SEG or CALLS keywords, or use FAR pointers. Alternatively, you
+can declare all arrays dynamic (still using far pointers) since
+dynamic arrays are handled identically by BC and within QuickBASIC.
+
+
+Quick Libraries with Leading Zeros in the First Code Segment
+------------------------------------------------------------
+
+A Quick library containing leading zeros in the first CODE segment
+is invalid, causing the message "Error in loading file <name> -
+Invalid format" when you try to load it in QuickBASIC. For example,
+this can occur if an assembly-language routine puts data that is
+initialized to zero in the first CODE segment, and it is subsequently
+listed first on the LINK command line when you make a Quick library.
+If you have this problem, do either of the following:
+(1) link with a BASIC module first on the LINK command line, or
+(2) make sure that, in whatever module comes first on the LINK
+command line, the first code segment starts with a non-zero byte.
+
+
+References to DGROUP in Extended Run-Time Modules
+-------------------------------------------------
+
+For mixed-language programs that use the CHAIN command, you should
+make sure that any code built into an extended run-time module does not
+contain any references to DGROUP. (The CHAIN command causes DGROUP to
+move, but does not update references to DGROUP.) This rule applies
+only to mixed-language programs; because BASIC routines never refer
+to DGROUP, you can ignore this caution for programs written entirely
+in BASIC.
+
+To avoid this problem, you can use the value of SS, since BASIC always
+assumes that SS coincides with DGROUP.
+
+
+================================================================================
+Part 4: Using Btrieve
+================================================================================
+
+
+Using Btrieve in OS/2 Protected Mode
+------------------------------------
+
+In OS/2 protected mode, a BASIC program that uses Btrieve must do a
+Btrieve reset call (function 28) before executing the CHAIN statement.
+The program must also reopen all Btrieve files when the destination of
+the CHAIN starts to run.
+
+
+Using Btrieve with QuickBASIC
+-----------------------------
+
+If you use Btrieve with QuickBASIC, you must make a small change to
+your programs for QuickBASIC Version 4.5. Currently your programs
+contain a statement that obtains the address of the field buffer for
+an open file. For example:
+
+OPEN "NUL" AS #1
+FIELD #1, 20 AS CITY$, 10 AS STATE$
+FCB.ADDR% = VARPTR(#1)	'This statement obtains the address
+
+In QuickBASIC Version 4.5, you should change the indicated statement
+to return the address of the first variable in your field buffer minus
+a constant, as follows:
+
+OPEN "NUL" AS #1
+FIELD #1, 20 AS CITY$, 10 AS STATE$
+FCB.ADDR% = SADD(CITY$) - 188	' CITY$ is the first field
+                ' buffer variable
+
+The following example shows how to obtain the same address for a
+user-defined type:
+
+TYPE ADDRESS
+CITY AS STRING * 20
+STATE AS STRING * 10
+END TYPE
+
+DIM ADD1 AS ADDRESS
+
+FCB.ADDR% = VARPTR(ADD1) - 188
+' or, you can use FCB.ADDR% = VARPTR(ADD1.CITY) - 188
+
+Your programs should function correctly with Btrieve with this change.
+
+
+================================================================================
+Part 5: DOS 3.20 Patch
+================================================================================
+
+This information is important only if your system has all of the
+following characteristics:
+
+1. Uses MS-DOS version 3.20
+2. Boots from a hard disk drive
+3. Has a math coprocessor (for instance, an 8087 chip)
+4. Runs programs that use floating-point math
+
+For systems that satisfy all of the preceding conditions, you may be
+able to eliminate floating-point math problems by installing a small
+patch in DOS. If you are not sure whether you need the patch, perform
+the following steps:
+
+1. Copy the program PATCH87.EXE (included in this release) to the root
+directory of your hard-disk drive.
+
+2. Reboot your system from the hard disk, and do not perform any floppy-
+disk operations after rebooting. It is very important that you avoid
+floppy-disk I/O after rebooting, since that will affect the
+reliability of the diagnostic test that you are about to perform.
+
+3. If necessary, use the CD command to move to the root directory of
+your hard-disk drive.
+
+4. Run the PATCH87.EXE program by entering this command at the DOS
+prompt:
+
+PATCH87
+
+5. The program performs a diagnostic test on your system to determine
+whether it needs the DOS patch, and if the patch is needed,
+whether the patch can be installed successfully. If the program
+tells you that you need to install the DOS patch, and that it can be
+done, follow the procedure described in the next section.
+
+Note: The floating-point problem has been eliminated in versions of
+MS-DOS higher than 3.20. This includes MS-DOS versions 3.21 and 3.30.
+
+If you performed the preceding test and determined that you should
+install the DOS patch on your system, perform the following steps:
+
+1. Format a blank floppy disk. (Do NOT use the /s formatting option to
+transfer system files to the disk.)
+
+2. Use the SYS command to copy IO.SYS and MSDOS.SYS from the root
+directory of your hard disk to the new floppy disk. For instance, if
+you boot from drive C:, you would enter the following commands:
+
+C:
+SYS A:
+
+3. Use the COPY command to copy COMMAND.COM and SYS.COM to the same
+floppy disk.
+
+4. Use the COPY command to copy the program PATCH87.EXE (included in
+this release) to the same floppy disk.
+
+5. Change the current drive and directory to the floppy disk, by
+entering the following command:
+
+A:
+
+7. Install the DOS patch by entering the following command:
+
+PATCH87 /F
+
+WARNING: If you experience any disk errors during steps 2 through 7,
+do not proceed with step 8. Reboot from your hard disk and repeat the
+entire process.
+
+8. If you have not experienced any errors, use the SYS command to
+transfer the files IO.SYS and MSDOS.SYS from the floppy disk back to
+your hard disk. For instance, if the boot directory of your system
+is the root directory of drive C:, you would enter the following
+command at the DOS prompt:
+
+A:
+SYS C:
+
+9. The DOS patch has been installed. Reboot the system.
+
+
+================================================================================
+Part 6: Miscellaneous Information About Using QuickBASIC
+================================================================================
+
+
+Using FIXSHIFT.COM Utility
+--------------------------
+
+Some keyboards have an extra set of DIRECTION (i.e. arrow) keys, in
+addition to those on the numeric keypad. A bug in the ROM BIOS of
+some machines with these keyboards can interfere with the QuickBASIC
+editor. The Utilities 2 disk includes a program, FIXSHIFT.COM, that
+fixes this bug. If you have such a keyboard, run this program by typing
+FIXSHIFT. If your machine does not have the bug, FIXSHIFT displays a
+message telling you so. Otherwise FIXSHIFT prompts you for the proper
+actions. FIXSHIFT takes about 450 bytes of memory. Except for the BIOS
+bug, it has no effect on other programs you run.
+
+
+Note on VGA Display Adapters
+----------------------------
+
+If you install an IBM (R) Personal System/2 (TM) Video Graphics
+Array display adapter (VGA) in a non-PS/2 machine, the VGA adapter
+should be the only adapter in the system, and you should not use
+monochrome modes (SCREEN 10) if you have a color monitor. Similarly,
+you should not use color modes (SCREEN 1, 2, 7, 8, 9, 11, 12, 13) if
+you have a monochrome monitor.
+
+
+Note on Using QuickBASIC with DOS 2.1
+-------------------------------------
+
+To use QuickBASIC with a two-floppy system under DOS 2.1, you must
+put a copy of COMMAND.COM on each disk containing an executable
+file ( a file with the .EXE extension).
+
+
+PTR86, LOF, Naming SUB Procedures and Variables
+-----------------------------------------------
+
+PTR86 is no longer supported. Use VARSEG and VARPTR instead.
+Also, when used with a communications device, LOF now returns the
+amount of space remaining (in bytes) in the output buffer. In
+previous versions this was returned in the input buffer. Also, note
+that a variable and SUB procedure could have the same name in
+previous versions. In Version 4.5, this causes a "Duplicate
+definition" error message.
