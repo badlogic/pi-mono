@@ -221,8 +221,8 @@ export class AgentSession {
 	private _extensionUIContext?: ExtensionUIContext;
 	private _extensionCommandContextActions?: ExtensionCommandContextActions;
 	private _extensionShutdownHandler?: ShutdownHandler;
-	private _extensionErrorListeners = new Set<ExtensionErrorListener>();
-	private _extensionErrorUnsubscribers: Array<() => void> = [];
+	private _extensionErrorListener?: ExtensionErrorListener;
+	private _extensionErrorUnsubscriber?: () => void;
 
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
@@ -1643,8 +1643,8 @@ export class AgentSession {
 		if (bindings.shutdownHandler !== undefined) {
 			this._extensionShutdownHandler = bindings.shutdownHandler;
 		}
-		if (bindings.onError) {
-			this._extensionErrorListeners.add(bindings.onError);
+		if (bindings.onError !== undefined) {
+			this._extensionErrorListener = bindings.onError;
 		}
 
 		if (this._extensionRunner) {
@@ -1657,13 +1657,10 @@ export class AgentSession {
 		runner.setUIContext(this._extensionUIContext);
 		runner.bindCommandContext(this._extensionCommandContextActions);
 
-		for (const unsubscribe of this._extensionErrorUnsubscribers) {
-			unsubscribe();
-		}
-		this._extensionErrorUnsubscribers = [];
-		for (const listener of this._extensionErrorListeners) {
-			this._extensionErrorUnsubscribers.push(runner.onError(listener));
-		}
+		this._extensionErrorUnsubscriber?.();
+		this._extensionErrorUnsubscriber = this._extensionErrorListener
+			? runner.onError(this._extensionErrorListener)
+			: undefined;
 	}
 
 	private _bindExtensionCore(runner: ExtensionRunner): void {
@@ -1840,7 +1837,7 @@ export class AgentSession {
 			this._extensionUIContext ||
 			this._extensionCommandContextActions ||
 			this._extensionShutdownHandler ||
-			this._extensionErrorListeners.size > 0;
+			this._extensionErrorListener;
 		if (this._extensionRunner && hasBindings) {
 			await this._extensionRunner.emit({ type: "session_start" });
 		}
