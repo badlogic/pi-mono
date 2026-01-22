@@ -5,8 +5,7 @@
 	"workspaces": [
 		"packages/*",
 		"packages/web-ui/example",
-		"packages/coding-agent/examples/extensions/with-deps",
-		"packages/coding-agent/examples/extensions/pi-dosbox"
+		"packages/coding-agent/examples/extensions/with-deps"
 	],
 	"scripts": {
 		"clean": "npm run clean --workspaces",
