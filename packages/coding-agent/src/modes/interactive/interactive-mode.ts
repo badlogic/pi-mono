@@ -3270,7 +3270,9 @@ export class InteractiveMode {
 
 		this.resetExtensionUI();
 
-		const loader = new BorderedLoader(this.ui, theme, "Reloading resources...", { cancellable: false });
+		const loader = new BorderedLoader(this.ui, theme, "Reloading extensions, skills, prompts, themes...", {
+			cancellable: false,
+		});
 		const previousEditor = this.editor;
 		this.editorContainer.clear();
 		this.editorContainer.addChild(loader);
@@ -3298,7 +3300,7 @@ export class InteractiveMode {
 			if (modelsJsonError) {
 				this.showError(`models.json error: ${modelsJsonError}`);
 			}
-			this.showStatus("Reloaded resources");
+			this.showStatus("Reloaded extensions, skills, prompts, themes");
 		} catch (error) {
 			restoreEditor();
 			this.showError(`Reload failed: ${error instanceof Error ? error.message : String(error)}`);
