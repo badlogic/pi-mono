@@ -9,7 +9,8 @@ import * as http from "node:http";
 import { VERSION } from "../../config.js";
 import type { AgentSession } from "../../core/agent-session.js";
 import { createCommandHandler } from "../rpc/rpc-commands.js";
-import type { RpcCommand, RpcResponse } from "../rpc/rpc-types.js";
+import type { RpcCommand, RpcExtensionUIResponse, RpcResponse } from "../rpc/rpc-types.js";
+import type { PendingExtensionRequests } from "./http-mode.js";
 
 // ============================================================================
 // Types
@@ -22,6 +23,8 @@ export type HttpServerOptions = {
 	onShutdown: () => void;
 	/** Set of active SSE connections. Managed externally for event broadcasting. */
 	sseConnections: Set<http.ServerResponse>;
+	/** Map of pending extension UI requests. Managed externally, resolved by /extension_ui_response handler. */
+	pendingExtensionRequests: PendingExtensionRequests;
 };
 
 export type RouteHandler = (
@@ -271,21 +274,42 @@ function createShutdownHandler(options: HttpServerOptions): RouteHandler {
 	};
 }
 
-function createExtensionUIResponseHandler(_options: HttpServerOptions): RouteHandler {
+function createExtensionUIResponseHandler(options: HttpServerOptions): RouteHandler {
+	const { pendingExtensionRequests } = options;
+
 	return (_req, res, body) => {
-		// TODO: Implement in Task 3.2
 		if (!body) {
 			sendError(res, 400, "Request body required");
 			return;
 		}
 
+		let response: RpcExtensionUIResponse;
 		try {
-			const _response = JSON.parse(body);
-			// Placeholder
-			sendJson(res, 200, { success: true });
+			response = JSON.parse(body) as RpcExtensionUIResponse;
 		} catch {
 			sendError(res, 400, "Invalid JSON");
+			return;
 		}
+
+		// Validate response has required fields
+		if (!response || response.type !== "extension_ui_response" || typeof response.id !== "string") {
+			sendError(res, 400, "Invalid extension UI response: missing type or id field");
+			return;
+		}
+
+		// Find and resolve the pending request
+		const pending = pendingExtensionRequests.get(response.id);
+		if (!pending) {
+			// Request may have timed out or been cancelled - not an error
+			sendJson(res, 200, { success: true, message: "Request not found (may have timed out)" });
+			return;
+		}
+
+		// Resolve the pending request
+		pendingExtensionRequests.delete(response.id);
+		pending.resolve(response);
+
+		sendJson(res, 200, { success: true });
 	};
 }
 
