@@ -1,5 +1,4 @@
 import {
-	deleteKittyImage,
 	getCapabilities,
 	getImageDimensions,
 	type ImageDimensions,
@@ -101,16 +100,5 @@ export class Image implements Component {
 		this.cachedWidth = width;
 
 		return lines;
-	}
-
-	/**
-	 * Delete the terminal image. Call this when done with the image
-	 * to free terminal resources.
-	 */
-	dispose(): void {
-		if (this.imageId !== undefined) {
-			process.stdout.write(deleteKittyImage(this.imageId));
-			this.imageId = undefined;
-		}
 	}
 }

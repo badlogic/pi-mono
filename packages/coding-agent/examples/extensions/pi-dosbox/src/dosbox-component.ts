@@ -206,8 +206,23 @@ export class DosboxComponent implements Component {
 			this.kittyPushed = false;
 		}
 		if (this.ci) {
-			void this.ci.exit().catch(() => undefined);
+			// Suppress emulators exit logging
+			const origLog = console.log;
+			const origError = console.error;
+			console.log = () => {};
+			console.error = () => {};
+			const ci = this.ci;
 			this.ci = null;
+			void ci
+				.exit()
+				.catch(() => undefined)
+				.finally(() => {
+					// Restore after a delay to catch async logging
+					setTimeout(() => {
+						console.log = origLog;
+						console.error = origError;
+					}, 100);
+				});
 		}
 	}
 }

@@ -81,13 +81,14 @@ export function resetCapabilitiesCache(): void {
 	cachedCapabilities = null;
 }
 
-// Counter for generating unique image IDs
-let nextImageId = 1;
-
+/**
+ * Generate a random image ID for Kitty graphics protocol.
+ * Uses random IDs to avoid collisions between different module instances
+ * (e.g., main app vs extensions).
+ */
 export function allocateImageId(): number {
-	const id = nextImageId;
-	nextImageId = (nextImageId % 0xffffffff) + 1; // Wrap around at max uint32
-	return id;
+	// Use random ID in range [1, 0xffffffff] to avoid collisions
+	return Math.floor(Math.random() * 0xfffffffe) + 1;
 }
 
 export function encodeKitty(
@@ -342,9 +343,9 @@ export function renderImage(
 	const rows = calculateImageRows(imageDimensions, maxWidth, getCellDimensions());
 
 	if (caps.images === "kitty") {
-		const imageId = options.imageId ?? allocateImageId();
-		const sequence = encodeKitty(base64Data, { columns: maxWidth, rows, imageId });
-		return { sequence, rows, imageId };
+		// Only use imageId if explicitly provided - static images don't need IDs
+		const sequence = encodeKitty(base64Data, { columns: maxWidth, rows, imageId: options.imageId });
+		return { sequence, rows, imageId: options.imageId };
 	}
 
 	if (caps.images === "iterm2") {
