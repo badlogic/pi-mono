@@ -60,6 +60,7 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: St
 		llm.api === "openai-codex-responses" ||
 		llm.provider === "google-gemini-cli" ||
 		llm.provider === "zai" ||
+		llm.provider === "zai-coding-plan" ||
 		llm.provider === "amazon-bedrock" ||
 		llm.provider === "vercel-ai-gateway" ||
 		(llm.provider === "google-antigravity" && llm.id.includes("gpt-oss"))
@@ -156,6 +157,14 @@ describe("Token Statistics on Abort", () => {
 
 	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider", () => {
 		const llm = getModel("zai", "glm-4.5-flash");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Coding Plan Provider", () => {
+		const llm = getModel("zai-coding-plan", "glm-4.5-flash");
 
 		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
 			await testTokensOnAbort(llm);
