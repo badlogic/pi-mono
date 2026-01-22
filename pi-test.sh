@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-npx tsx packages/coding-agent/src/cli.ts "$@"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+npx tsx "$SCRIPT_DIR/packages/coding-agent/src/cli.ts" "$@"
