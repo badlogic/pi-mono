@@ -137,6 +137,8 @@ export interface InteractiveModeOptions {
 	initialImages?: ImageContent[];
 	/** Additional messages to send after the initial message */
 	initialMessages?: string[];
+	/** Force verbose startup (overrides quietStartup setting) */
+	verbose?: boolean;
 }
 
 export class InteractiveMode {
@@ -372,7 +374,7 @@ export class InteractiveMode {
 		this.setupAutocomplete(this.fdPath);
 
 		// Add header with keybindings from config (unless silenced)
-		if (!this.settingsManager.getQuietStartup()) {
+		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
 			const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
 
 			// Build startup instructions using keybinding hint helpers
@@ -641,7 +643,7 @@ export class InteractiveMode {
 	}
 
 	private showLoadedResources(options?: { extensionPaths?: string[]; force?: boolean }): void {
-		const shouldShow = options?.force || !this.settingsManager.getQuietStartup();
+		const shouldShow = options?.force || this.options.verbose || !this.settingsManager.getQuietStartup();
 		if (!shouldShow) {
 			return;
 		}

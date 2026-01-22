@@ -38,6 +38,7 @@ export interface Args {
 	themes?: string[];
 	noThemes?: boolean;
 	listModels?: string | true;
+	verbose?: boolean;
 	messages: string[];
 	fileArgs: string[];
 	/** Unknown flags (potentially extension flags) - map of flag name to value */
@@ -148,6 +149,8 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 			} else {
 				result.listModels = true;
 			}
+		} else if (arg === "--verbose") {
+			result.verbose = true;
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (arg.startsWith("--") && extensionFlags) {
@@ -211,6 +214,7 @@ ${chalk.bold("Options:")}
   --no-themes                    Disable theme discovery and loading
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
+  --verbose                      Force verbose startup (overrides quietStartup setting)
   --help, -h                     Show this help
   --version, -v                  Show version number
 
