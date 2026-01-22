@@ -18,6 +18,10 @@
 
 - Skill, prompt template, and theme discovery now use settings and CLI path arrays instead of legacy filters ([#645](https://github.com/badlogic/pi-mono/issues/645))
 
+### Fixed
+
+- Auto-retry now handles "terminated" errors from Codex API mid-stream failures
+
 ## [0.49.3] - 2026-01-22
 
 ### Added
