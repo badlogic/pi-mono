@@ -2437,16 +2437,45 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	/**
+	 * Get all queued messages (read-only).
+	 * Combines session queue and compaction queue.
+	 */
+	private getAllQueuedMessages(): { steering: string[]; followUp: string[] } {
+		return {
+			steering: [
+				...this.session.getSteeringMessages(),
+				...this.compactionQueuedMessages.filter((msg) => msg.mode === "steer").map((msg) => msg.text),
+			],
+			followUp: [
+				...this.session.getFollowUpMessages(),
+				...this.compactionQueuedMessages.filter((msg) => msg.mode === "followUp").map((msg) => msg.text),
+			],
+		};
+	}
+
+	/**
+	 * Clear all queued messages and return their contents.
+	 * Clears both session queue and compaction queue.
+	 */
+	private clearAllQueues(): { steering: string[]; followUp: string[] } {
+		const { steering, followUp } = this.session.clearQueue();
+		const compactionSteering = this.compactionQueuedMessages
+			.filter((msg) => msg.mode === "steer")
+			.map((msg) => msg.text);
+		const compactionFollowUp = this.compactionQueuedMessages
+			.filter((msg) => msg.mode === "followUp")
+			.map((msg) => msg.text);
+		this.compactionQueuedMessages = [];
+		return {
+			steering: [...steering, ...compactionSteering],
+			followUp: [...followUp, ...compactionFollowUp],
+		};
+	}
+
 	private updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
-		const steeringMessages = [
-			...this.session.getSteeringMessages(),
-			...this.compactionQueuedMessages.filter((msg) => msg.mode === "steer").map((msg) => msg.text),
-		];
-		const followUpMessages = [
-			...this.session.getFollowUpMessages(),
-			...this.compactionQueuedMessages.filter((msg) => msg.mode === "followUp").map((msg) => msg.text),
-		];
+		const { steering: steeringMessages, followUp: followUpMessages } = this.getAllQueuedMessages();
 		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
 			for (const message of steeringMessages) {
@@ -2464,7 +2493,7 @@ export class InteractiveMode {
 	}
 
 	private restoreQueuedMessagesToEditor(options?: { abort?: boolean; currentText?: string }): number {
-		const { steering, followUp } = this.session.clearQueue();
+		const { steering, followUp } = this.clearAllQueues();
 		const allQueued = [...steering, ...followUp];
 		if (allQueued.length === 0) {
 			this.updatePendingMessagesDisplay();
