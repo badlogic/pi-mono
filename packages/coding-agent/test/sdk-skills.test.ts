@@ -58,6 +58,7 @@ This is a test skill.
 			getAgentsFiles: () => ({ agentsFiles: [] }),
 			getSystemPrompt: () => undefined,
 			getAppendSystemPrompt: () => [],
+			getPathMetadata: () => new Map(),
 			reload: async () => {},
 		};
 
@@ -89,6 +90,7 @@ This is a test skill.
 			getAgentsFiles: () => ({ agentsFiles: [] }),
 			getSystemPrompt: () => undefined,
 			getAppendSystemPrompt: () => [],
+			getPathMetadata: () => new Map(),
 			reload: async () => {},
 		};
 

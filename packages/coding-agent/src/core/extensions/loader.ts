@@ -487,11 +487,15 @@ export async function discoverAndLoadExtensions(
 	for (const p of configuredPaths) {
 		const resolved = resolvePath(p, cwd);
 		if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+			// Check for package.json with pi manifest or index.ts
 			const entries = resolveExtensionEntries(resolved);
 			if (entries) {
 				addPaths(entries);
 				continue;
 			}
+			// No explicit entries - discover individual files in directory
+			addPaths(discoverExtensionsInDir(resolved));
+			continue;
 		}
 
 		addPaths([resolved]);

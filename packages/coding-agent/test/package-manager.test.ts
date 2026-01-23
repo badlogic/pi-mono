@@ -411,4 +411,47 @@ Content`,
 			expect(result.extensions.some((p) => p.endsWith("two.ts"))).toBe(false);
 		});
 	});
+
+	describe("package deduplication", () => {
+		it("should dedupe same local package in global and project (project wins)", async () => {
+			const pkgDir = join(tempDir, "shared-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "shared.ts"), "export default function() {}");
+
+			// Same package in both global and project
+			settingsManager.setPackages([pkgDir]); // global
+			settingsManager.setProjectPackages([pkgDir]); // project
+
+			// Debug: verify settings are stored correctly
+			const globalSettings = settingsManager.getGlobalSettings();
+			const projectSettings = settingsManager.getProjectSettings();
+			expect(globalSettings.packages).toEqual([pkgDir]);
+			expect(projectSettings.packages).toEqual([pkgDir]);
+
+			const result = await packageManager.resolve();
+			// Auto-discovery returns directories, not individual files
+			// Should only appear once (deduped), with project scope
+			const sharedPaths = result.extensions.filter((p) => p.includes("shared-pkg"));
+			expect(sharedPaths.length).toBe(1);
+			const meta = result.metadata.get(sharedPaths[0]);
+			expect(meta?.scope).toBe("project");
+		});
+
+		it("should keep both if different packages", async () => {
+			const pkg1Dir = join(tempDir, "pkg1");
+			const pkg2Dir = join(tempDir, "pkg2");
+			mkdirSync(join(pkg1Dir, "extensions"), { recursive: true });
+			mkdirSync(join(pkg2Dir, "extensions"), { recursive: true });
+			writeFileSync(join(pkg1Dir, "extensions", "from-pkg1.ts"), "export default function() {}");
+			writeFileSync(join(pkg2Dir, "extensions", "from-pkg2.ts"), "export default function() {}");
+
+			settingsManager.setPackages([pkg1Dir]); // global
+			settingsManager.setProjectPackages([pkg2Dir]); // project
+
+			const result = await packageManager.resolve();
+			// Auto-discovery returns directories, not individual files
+			expect(result.extensions.some((p) => p.includes("pkg1"))).toBe(true);
+			expect(result.extensions.some((p) => p.includes("pkg2"))).toBe(true);
+		});
+	});
 });

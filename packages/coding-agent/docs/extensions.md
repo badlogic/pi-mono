@@ -161,6 +161,11 @@ pi update  # update all non-pinned packages
 - Glob patterns supported via minimatch (e.g., `"extensions": ["**/*.ts", "!**/deprecated/*"]`)
 - **Layered filtering:** User filters apply on top of manifest filters. If a manifest excludes 10 extensions and user adds one more exclusion, all 11 are excluded.
 
+**Package deduplication:** If the same package appears in both global (`~/.pi/agent/settings.json`) and project (`.pi/settings.json`) settings, the project version wins and the global one is ignored. This prevents duplicate resource collisions when you have the same package installed at both scopes. Package identity is determined by:
+- **npm packages:** Package name (e.g., `npm:foo` and `npm:foo@1.0.0` are the same identity)
+- **git packages:** Repository URL without ref (e.g., `git:github.com/user/repo` and `git:github.com/user/repo@v1` are the same identity)
+- **local paths:** Resolved absolute path
+
 **Discovery rules:**
 
 1. **Direct files:** `extensions/*.ts` or `*.js` → loaded directly

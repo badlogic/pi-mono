@@ -40,6 +40,10 @@ export interface Skill {
 export interface SkillWarning {
 	skillPath: string;
 	message: string;
+	/** For name collisions, the name that collided */
+	collisionName?: string;
+	/** For name collisions, the path of the skill that was loaded (winner) */
+	collisionWinner?: string;
 }
 
 export interface LoadSkillsResult {
@@ -338,7 +342,9 @@ export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
 			if (existing) {
 				collisionWarnings.push({
 					skillPath: skill.filePath,
-					message: `name collision: "${skill.name}" already loaded from ${existing.filePath}, skipping this one`,
+					message: `name "${skill.name}" collision`,
+					collisionName: skill.name,
+					collisionWinner: existing.filePath,
 				});
 			} else {
 				skillMap.set(skill.name, skill);

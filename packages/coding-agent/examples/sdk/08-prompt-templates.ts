@@ -16,6 +16,7 @@ const deployTemplate: PromptTemplate = {
 	name: "deploy",
 	description: "Deploy the application",
 	source: "(custom)",
+	filePath: "<inline>",
 	content: `# Deploy Instructions
 
 1. Build: npm run build

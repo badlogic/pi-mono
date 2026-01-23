@@ -62,10 +62,10 @@ import {
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
-import type { ResourceLoader } from "./resource-loader.js";
+import type { ResourceDiagnostic, ResourceLoader } from "./resource-loader.js";
 import type { BranchSummaryEntry, CompactionEntry, NewSessionOptions, SessionManager } from "./session-manager.js";
 import type { SettingsManager } from "./settings-manager.js";
-import type { Skill, SkillWarning } from "./skills.js";
+import type { Skill } from "./skills.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import type { BashOperations } from "./tools/bash.js";
 import { createAllTools } from "./tools/index.js";
@@ -1036,12 +1036,9 @@ export class AgentSession {
 		return this._resourceLoader.getSkills().skills;
 	}
 
-	/** Skill loading warnings captured by resource loader */
-	get skillWarnings(): readonly SkillWarning[] {
-		return this._resourceLoader.getSkills().diagnostics.map((diagnostic) => ({
-			skillPath: diagnostic.path ?? "<unknown>",
-			message: diagnostic.message,
-		}));
+	/** Skill loading diagnostics (warnings, errors, collisions) */
+	get skillWarnings(): readonly ResourceDiagnostic[] {
+		return this._resourceLoader.getSkills().diagnostics;
 	}
 
 	get resourceLoader(): ResourceLoader {

@@ -12,6 +12,7 @@ export interface PromptTemplate {
 	description: string;
 	content: string;
 	source: string; // e.g., "(user)", "(project)", "(custom:my-dir)"
+	filePath: string; // Absolute path to the template file
 }
 
 /**
@@ -124,6 +125,7 @@ function loadTemplateFromFile(filePath: string, sourceLabel: string): PromptTemp
 			description,
 			content: body,
 			source: sourceLabel,
+			filePath,
 		};
 	} catch {
 		return null;

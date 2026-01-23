@@ -65,6 +65,7 @@ import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/
 import { type AppAction, KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { resolveModelScope } from "../../core/model-resolver.js";
+import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
@@ -628,18 +629,6 @@ export class InteractiveMode {
 		const home = os.homedir();
 		let result = p;
 
-		// Shorten temp npm paths: /tmp/.../npm/.../node_modules/pkg/... -> npm:pkg/... (temp)
-		const npmTempMatch = result.match(/pi-extensions\/npm\/[^/]+\/node_modules\/([^/]+)(.*)/);
-		if (npmTempMatch) {
-			return `npm:${npmTempMatch[1]}${npmTempMatch[2]} (temp)`;
-		}
-
-		// Shorten temp git paths: /tmp/.../git-host/hash/path/... -> git:host/path/... (temp)
-		const gitTempMatch = result.match(/pi-extensions\/git-([^/]+)\/[^/]+\/(.*)/);
-		if (gitTempMatch) {
-			return `git:${gitTempMatch[1]}/${gitTempMatch[2]} (temp)`;
-		}
-
 		// Replace home directory with ~
 		if (result.startsWith(home)) {
 			result = `~${result.slice(home.length)}`;
@@ -648,46 +637,278 @@ export class InteractiveMode {
 		return result;
 	}
 
+	/**
+	 * Get a short path relative to the package root for display.
+	 */
+	private getShortPath(fullPath: string, source: string): string {
+		// For npm packages, show path relative to node_modules/pkg/
+		const npmMatch = fullPath.match(/node_modules\/(@?[^/]+(?:\/[^/]+)?)\/(.*)/);
+		if (npmMatch && source.startsWith("npm:")) {
+			return npmMatch[2];
+		}
+
+		// For git packages, show path relative to repo root
+		const gitMatch = fullPath.match(/git\/[^/]+\/[^/]+\/(.*)/);
+		if (gitMatch && source.startsWith("git:")) {
+			return gitMatch[1];
+		}
+
+		// For local/auto, just use formatDisplayPath
+		return this.formatDisplayPath(fullPath);
+	}
+
+	/**
+	 * Group paths by source and scope using metadata.
+	 * Returns sorted: local first, then global packages, then project packages.
+	 */
+	private groupPathsBySource(
+		paths: string[],
+		metadata: Map<string, { source: string; scope: string; origin: string }>,
+	): Map<string, { scope: string; paths: string[] }> {
+		const groups = new Map<string, { scope: string; paths: string[] }>();
+
+		for (const p of paths) {
+			const meta = this.findMetadata(p, metadata);
+			const source = meta?.source ?? "local";
+			const scope = meta?.scope ?? "project";
+
+			if (!groups.has(source)) {
+				groups.set(source, { scope, paths: [] });
+			}
+			groups.get(source)!.paths.push(p);
+		}
+
+		// Sort: local first, then global packages, then project packages
+		const sorted = new Map<string, { scope: string; paths: string[] }>();
+		const entries = Array.from(groups.entries());
+
+		// Local entries first
+		for (const [source, data] of entries) {
+			if (source === "local") sorted.set(source, data);
+		}
+		// Global packages
+		for (const [source, data] of entries) {
+			if (source !== "local" && data.scope === "global") sorted.set(source, data);
+		}
+		// Project packages
+		for (const [source, data] of entries) {
+			if (source !== "local" && data.scope === "project") sorted.set(source, data);
+		}
+
+		return sorted;
+	}
+
+	/**
+	 * Format grouped paths for display with colors.
+	 */
+	private formatGroupedPaths(
+		groups: Map<string, { scope: string; paths: string[] }>,
+		formatPath: (p: string, source: string) => string,
+	): string {
+		const lines: string[] = [];
+
+		for (const [source, { scope, paths }] of groups) {
+			const scopeLabel = scope === "global" ? "global" : scope === "project" ? "project" : "";
+			// Source name in accent, scope in muted
+			const sourceColor = source === "local" ? "muted" : "accent";
+			const header = scopeLabel
+				? `${theme.fg(sourceColor, source)} ${theme.fg("dim", `(${scopeLabel})`)}`
+				: theme.fg(sourceColor, source);
+			lines.push(`  ${header}`);
+			for (const p of paths) {
+				lines.push(theme.fg("dim", `    ${formatPath(p, source)}`));
+			}
+		}
+
+		return lines.join("\n");
+	}
+
+	/**
+	 * Find metadata for a path, checking parent directories if exact match fails.
+	 * Package manager stores metadata for directories, but we display file paths.
+	 */
+	private findMetadata(
+		p: string,
+		metadata: Map<string, { source: string; scope: string; origin: string }>,
+	): { source: string; scope: string; origin: string } | undefined {
+		// Try exact match first
+		const exact = metadata.get(p);
+		if (exact) return exact;
+
+		// Try parent directories (package manager stores directory paths)
+		let current = p;
+		while (current.includes("/")) {
+			current = current.substring(0, current.lastIndexOf("/"));
+			const parent = metadata.get(current);
+			if (parent) return parent;
+		}
+
+		return undefined;
+	}
+
+	/**
+	 * Format a path with its source/scope info from metadata.
+	 */
+	private formatPathWithSource(
+		p: string,
+		metadata: Map<string, { source: string; scope: string; origin: string }>,
+	): string {
+		const meta = this.findMetadata(p, metadata);
+		if (meta) {
+			const shortPath = this.getShortPath(p, meta.source);
+			const scopeLabel = meta.scope === "global" ? "global" : meta.scope === "project" ? "project" : "temp";
+			return `${meta.source} (${scopeLabel}) ${shortPath}`;
+		}
+		return this.formatDisplayPath(p);
+	}
+
+	/**
+	 * Format resource diagnostics with nice collision display using metadata.
+	 */
+	private formatDiagnostics(
+		diagnostics: readonly ResourceDiagnostic[],
+		metadata: Map<string, { source: string; scope: string; origin: string }>,
+	): string {
+		const lines: string[] = [];
+
+		// Group collision diagnostics by name
+		const collisions = new Map<string, ResourceDiagnostic[]>();
+		const otherDiagnostics: ResourceDiagnostic[] = [];
+
+		for (const d of diagnostics) {
+			if (d.type === "collision" && d.collision) {
+				const list = collisions.get(d.collision.name) ?? [];
+				list.push(d);
+				collisions.set(d.collision.name, list);
+			} else {
+				otherDiagnostics.push(d);
+			}
+		}
+
+		// Format collision diagnostics grouped by name
+		for (const [name, collisionList] of collisions) {
+			const first = collisionList[0]?.collision;
+			if (!first) continue;
+			lines.push(theme.fg("warning", `  "${name}" collision:`));
+			// Show winner
+			lines.push(
+				theme.fg("dim", `    ${theme.fg("success", "✓")} ${this.formatPathWithSource(first.winnerPath, metadata)}`),
+			);
+			// Show all losers
+			for (const d of collisionList) {
+				if (d.collision) {
+					lines.push(
+						theme.fg(
+							"dim",
+							`    ${theme.fg("warning", "✗")} ${this.formatPathWithSource(d.collision.loserPath, metadata)} (skipped)`,
+						),
+					);
+				}
+			}
+		}
+
+		// Format other diagnostics (skill name collisions, parse errors, etc.)
+		for (const d of otherDiagnostics) {
+			if (d.path) {
+				// Use metadata-aware formatting for paths
+				const sourceInfo = this.formatPathWithSource(d.path, metadata);
+				lines.push(theme.fg(d.type === "error" ? "error" : "warning", `  ${sourceInfo}`));
+				lines.push(theme.fg(d.type === "error" ? "error" : "warning", `    ${d.message}`));
+			} else {
+				lines.push(theme.fg(d.type === "error" ? "error" : "warning", `  ${d.message}`));
+			}
+		}
+
+		return lines.join("\n");
+	}
+
 	private showLoadedResources(options?: { extensionPaths?: string[]; force?: boolean }): void {
 		const shouldShow = options?.force || this.options.verbose || !this.settingsManager.getQuietStartup();
 		if (!shouldShow) {
 			return;
 		}
 
+		const metadata = this.session.resourceLoader.getPathMetadata();
+
+		const sectionHeader = (name: string) => theme.fg("muted", `[${name}]`);
+
 		const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
 		if (contextFiles.length > 0) {
 			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded context:\n") + contextList, 0, 0));
+			this.chatContainer.addChild(new Text(`${sectionHeader("Context")}\n${contextList}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
 		const skills = this.session.skills;
 		if (skills.length > 0) {
-			const skillList = skills.map((s) => theme.fg("dim", `  ${this.formatDisplayPath(s.filePath)}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
+			const skillPaths = skills.map((s) => s.filePath);
+			const groups = this.groupPathsBySource(skillPaths, metadata);
+			const skillList = this.formatGroupedPaths(groups, (p, source) => this.getShortPath(p, source));
+			this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
-		const skillWarnings = this.session.skillWarnings;
-		if (skillWarnings.length > 0) {
-			const warningList = skillWarnings
-				.map((w) => theme.fg("warning", `  ${this.formatDisplayPath(w.skillPath)}: ${w.message}`))
-				.join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
+		const skillDiagnostics = this.session.skillWarnings;
+		if (skillDiagnostics.length > 0) {
+			const warningLines = this.formatDiagnostics(skillDiagnostics, metadata);
+			this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Skill conflicts]")}\n${warningLines}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
 		const templates = this.session.promptTemplates;
 		if (templates.length > 0) {
-			const templateList = templates.map((t) => theme.fg("dim", `  /${t.name} ${t.source}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded prompt templates:\n") + templateList, 0, 0));
+			// Group templates by source using metadata
+			const templatePaths = templates.map((t) => t.filePath);
+			const groups = this.groupPathsBySource(templatePaths, metadata);
+			const templateLines: string[] = [];
+			for (const [source, { scope, paths }] of groups) {
+				const scopeLabel = scope === "global" ? "global" : scope === "project" ? "project" : "";
+				const sourceColor = source === "local" ? "muted" : "accent";
+				const header = scopeLabel
+					? `${theme.fg(sourceColor, source)} ${theme.fg("dim", `(${scopeLabel})`)}`
+					: theme.fg(sourceColor, source);
+				templateLines.push(`  ${header}`);
+				for (const p of paths) {
+					const template = templates.find((t) => t.filePath === p);
+					if (template) {
+						templateLines.push(theme.fg("dim", `    /${template.name}`));
+					}
+				}
+			}
+			this.chatContainer.addChild(new Text(`${sectionHeader("Prompts")}\n${templateLines.join("\n")}`, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		const promptDiagnostics = this.session.resourceLoader.getPrompts().diagnostics;
+		if (promptDiagnostics.length > 0) {
+			const warningLines = this.formatDiagnostics(promptDiagnostics, metadata);
+			this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Prompt conflicts]")}\n${warningLines}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
 		const extensionPaths = options?.extensionPaths ?? [];
 		if (extensionPaths.length > 0) {
-			const extList = extensionPaths.map((p) => theme.fg("dim", `  ${this.formatDisplayPath(p)}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded extensions:\n") + extList, 0, 0));
+			const groups = this.groupPathsBySource(extensionPaths, metadata);
+			const extList = this.formatGroupedPaths(groups, (p, source) => this.getShortPath(p, source));
+			this.chatContainer.addChild(new Text(`${sectionHeader("Extensions")}\n${extList}`, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		// Show loaded themes (excluding built-in)
+		const loadedThemes = this.session.resourceLoader.getThemes().themes;
+		const customThemes = loadedThemes.filter((t) => t.sourcePath);
+		if (customThemes.length > 0) {
+			const themePaths = customThemes.map((t) => t.sourcePath!);
+			const groups = this.groupPathsBySource(themePaths, metadata);
+			const themeList = this.formatGroupedPaths(groups, (p, source) => this.getShortPath(p, source));
+			this.chatContainer.addChild(new Text(`${sectionHeader("Themes")}\n${themeList}`, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		const themeDiagnostics = this.session.resourceLoader.getThemes().diagnostics;
+		if (themeDiagnostics.length > 0) {
+			const warningLines = this.formatDiagnostics(themeDiagnostics, metadata);
+			this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Theme conflicts]")}\n${warningLines}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 	}

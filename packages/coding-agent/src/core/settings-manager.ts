@@ -120,6 +120,7 @@ export class SettingsManager {
 	private settingsPath: string | null;
 	private projectSettingsPath: string | null;
 	private globalSettings: Settings;
+	private inMemoryProjectSettings: Settings; // For in-memory mode
 	private settings: Settings;
 	private persist: boolean;
 
@@ -133,6 +134,7 @@ export class SettingsManager {
 		this.projectSettingsPath = projectSettingsPath;
 		this.persist = persist;
 		this.globalSettings = initialSettings;
+		this.inMemoryProjectSettings = {};
 		const projectSettings = this.loadProjectSettings();
 		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
 	}
@@ -227,6 +229,11 @@ export class SettingsManager {
 	}
 
 	private loadProjectSettings(): Settings {
+		// In-memory mode: return stored in-memory project settings
+		if (!this.persist) {
+			return structuredClone(this.inMemoryProjectSettings);
+		}
+
 		if (!this.projectSettingsPath || !existsSync(this.projectSettingsPath)) {
 			return {};
 		}
@@ -281,7 +288,13 @@ export class SettingsManager {
 	}
 
 	private saveProjectSettings(settings: Settings): void {
-		if (!this.persist || !this.projectSettingsPath) {
+		// In-memory mode: store in memory
+		if (!this.persist) {
+			this.inMemoryProjectSettings = structuredClone(settings);
+			return;
+		}
+
+		if (!this.projectSettingsPath) {
 			return;
 		}
 		try {

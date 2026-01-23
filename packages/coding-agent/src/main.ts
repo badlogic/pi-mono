@@ -190,11 +190,22 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 			return true;
 		}
 
+		const formatPackage = (pkg: (typeof globalPackages)[number], scope: "global" | "project") => {
+			const source = typeof pkg === "string" ? pkg : pkg.source;
+			const filtered = typeof pkg === "object";
+			const display = filtered ? `${source} (filtered)` : source;
+			console.log(`  ${display}`);
+			// Show resolved path
+			const path = packageManager.getInstalledPath(source, scope);
+			if (path) {
+				console.log(chalk.dim(`    ${path}`));
+			}
+		};
+
 		if (globalPackages.length > 0) {
 			console.log(chalk.bold("Global packages:"));
 			for (const pkg of globalPackages) {
-				const display = typeof pkg === "string" ? pkg : `${pkg.source} (filtered)`;
-				console.log(`  ${display}`);
+				formatPackage(pkg, "global");
 			}
 		}
 
@@ -202,8 +213,7 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 			if (globalPackages.length > 0) console.log();
 			console.log(chalk.bold("Project packages:"));
 			for (const pkg of projectPackages) {
-				const display = typeof pkg === "string" ? pkg : `${pkg.source} (filtered)`;
-				console.log(`  ${display}`);
+				formatPackage(pkg, "project");
 			}
 		}
 
