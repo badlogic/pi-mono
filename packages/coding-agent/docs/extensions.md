@@ -202,11 +202,40 @@ The pi manifest supports glob patterns and exclusions:
 {
   "pi": {
     "extensions": ["./extensions", "!**/deprecated/*"],
-    "skills": ["./skills", "./node_modules/other-pkg/skills", "!**/experimental/*"],
+    "skills": ["./skills", "!**/experimental/*"],
     "themes": ["./themes/*.json"]
   }
 }
 ```
+
+**Bundling other pi packages:**
+
+To include resources from another pi package, add it as a dependency with `bundledDependencies` to ensure it's embedded in your published tarball:
+
+```json
+{
+  "name": "my-extension-pack",
+  "dependencies": {
+    "other-pi-package": "^1.0.0"
+  },
+  "bundledDependencies": [
+    "other-pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions",
+      "./node_modules/other-pi-package/extensions",
+      "!**/unwanted-extension.ts"
+    ],
+    "skills": [
+      "./skills",
+      "./node_modules/other-pi-package/skills"
+    ]
+  }
+}
+```
+
+`bundledDependencies` embeds the package inside your tarball, preserving the `node_modules/` structure. Without it, npm's hoisting could move the dependency elsewhere, breaking the paths.
 
 The `package.json` approach enables:
 - Multiple extensions from one package
