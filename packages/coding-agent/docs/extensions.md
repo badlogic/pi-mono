@@ -115,21 +115,48 @@ Additional paths via `settings.json`:
 
 ```json
 {
-  "extensions": [
+  "packages": [
     "npm:@foo/bar@1.0.0",
-    "git:github.com/user/repo@v1",
-    "/path/to/extension.ts",
-    "/path/to/extension/dir"
+    "git:github.com/user/repo@v1"
+  ],
+  "extensions": [
+    "/path/to/local/extension.ts",
+    "/path/to/local/extension/dir"
   ]
 }
 ```
 
-Use `pi install` and `pi remove` to manage extension sources in settings:
+Use `pi install`, `pi remove`, `pi list`, and `pi update` to manage packages:
 
 ```bash
 pi install npm:@foo/bar@1.0.0
+pi install git:github.com/user/repo@v1
+pi install https://github.com/user/repo  # raw URLs work too
 pi remove npm:@foo/bar
+pi list    # show installed packages
+pi update  # update all non-pinned packages
 ```
+
+**Package filtering:** By default, packages load all resources (extensions, skills, prompts, themes). To selectively load only certain resources:
+
+```json
+{
+  "packages": [
+    "npm:simple-pkg",
+    {
+      "source": "npm:shitty-extensions",
+      "extensions": ["extensions/oracle.ts", "extensions/memory-mode.ts"],
+      "skills": ["skills/a-nach-b"],
+      "themes": [],
+      "prompts": []
+    }
+  ]
+}
+```
+
+- Omit a key to load all of that type from the package
+- Use empty array `[]` to load none of that type
+- Paths are relative to package root
 
 **Discovery rules:**
 

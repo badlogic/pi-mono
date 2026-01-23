@@ -168,6 +168,7 @@ export {
 export {
 	type CompactionSettings,
 	type ImageSettings,
+	type PackageSource,
 	type RetrySettings,
 	SettingsManager,
 } from "./core/settings-manager.js";

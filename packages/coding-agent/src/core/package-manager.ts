@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { CONFIG_DIR_NAME } from "../config.js";
-import type { SettingsManager } from "./settings-manager.js";
+import type { PackageSource, SettingsManager } from "./settings-manager.js";
 
 export interface ResolvedPaths {
 	extensions: string[];
@@ -81,6 +81,13 @@ interface ResourceAccumulator {
 	themes: Set<string>;
 }
 
+interface PackageFilter {
+	extensions?: string[];
+	skills?: string[];
+	prompts?: string[];
+	themes?: string[];
+}
+
 export class DefaultPackageManager implements PackageManager {
 	private cwd: string;
 	private agentDir: string;
@@ -108,36 +115,56 @@ export class DefaultPackageManager implements PackageManager {
 		const globalSettings = this.settingsManager.getGlobalSettings();
 		const projectSettings = this.settingsManager.getProjectSettings();
 
-		const extensionSources: Array<{ source: string; scope: SourceScope }> = [];
-		for (const source of globalSettings.extensions ?? []) {
-			extensionSources.push({ source, scope: "global" });
+		// Resolve packages (npm/git sources)
+		const packageSources: Array<{ pkg: PackageSource; scope: SourceScope }> = [];
+		for (const pkg of globalSettings.packages ?? []) {
+			packageSources.push({ pkg, scope: "global" });
 		}
-		for (const source of projectSettings.extensions ?? []) {
-			extensionSources.push({ source, scope: "project" });
+		for (const pkg of projectSettings.packages ?? []) {
+			packageSources.push({ pkg, scope: "project" });
+		}
+		await this.resolvePackageSources(packageSources, accumulator, onMissing);
+
+		// Resolve local extensions
+		for (const ext of globalSettings.extensions ?? []) {
+			this.resolveLocalPath(ext, accumulator.extensions);
+		}
+		for (const ext of projectSettings.extensions ?? []) {
+			this.resolveLocalPath(ext, accumulator.extensions);
 		}
 
-		await this.resolveExtensionSourcesInternal(extensionSources, accumulator, onMissing);
-
+		// Resolve local skills
+		for (const skill of globalSettings.skills ?? []) {
+			this.addPath(accumulator.skills, this.resolvePath(skill));
+		}
 		for (const skill of projectSettings.skills ?? []) {
 			this.addPath(accumulator.skills, this.resolvePath(skill));
 		}
-		for (const skill of globalSettings.skills ?? []) {
-			this.addPath(accumulator.skills, this.resolvePath(skill));
+
+		// Resolve local prompts
+		for (const prompt of globalSettings.prompts ?? []) {
+			this.addPath(accumulator.prompts, this.resolvePath(prompt));
 		}
 		for (const prompt of projectSettings.prompts ?? []) {
 			this.addPath(accumulator.prompts, this.resolvePath(prompt));
 		}
-		for (const prompt of globalSettings.prompts ?? []) {
-			this.addPath(accumulator.prompts, this.resolvePath(prompt));
+
+		// Resolve local themes
+		for (const theme of globalSettings.themes ?? []) {
+			this.addPath(accumulator.themes, this.resolvePath(theme));
 		}
 		for (const theme of projectSettings.themes ?? []) {
 			this.addPath(accumulator.themes, this.resolvePath(theme));
 		}
-		for (const theme of globalSettings.themes ?? []) {
-			this.addPath(accumulator.themes, this.resolvePath(theme));
-		}
 
 		return this.toResolvedPaths(accumulator);
+	}
+
+	private resolveLocalPath(path: string, target: Set<string>): void {
+		const resolved = this.resolvePath(path);
+		if (existsSync(resolved)) {
+			this.addPath(target, resolved);
+		}
 	}
 
 	async resolveExtensionSources(
@@ -146,8 +173,8 @@ export class DefaultPackageManager implements PackageManager {
 	): Promise<ResolvedPaths> {
 		const accumulator = this.createAccumulator();
 		const scope: SourceScope = options?.temporary ? "temporary" : options?.local ? "project" : "global";
-		const extensionSources = sources.map((source) => ({ source, scope }));
-		await this.resolveExtensionSourcesInternal(extensionSources, accumulator);
+		const packageSources = sources.map((source) => ({ pkg: source as PackageSource, scope }));
+		await this.resolvePackageSources(packageSources, accumulator);
 		return this.toResolvedPaths(accumulator);
 	}
 
@@ -244,13 +271,16 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	private async resolveExtensionSourcesInternal(
-		sources: Array<{ source: string; scope: SourceScope }>,
+	private async resolvePackageSources(
+		sources: Array<{ pkg: PackageSource; scope: SourceScope }>,
 		accumulator: ResourceAccumulator,
 		onMissing?: (source: string) => Promise<MissingSourceAction>,
 	): Promise<void> {
-		for (const { source, scope } of sources) {
-			const parsed = this.parseSource(source);
+		for (const { pkg, scope } of sources) {
+			const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
+			const filter = typeof pkg === "object" ? pkg : undefined;
+			const parsed = this.parseSource(sourceStr);
+
 			if (parsed.type === "local") {
 				this.resolveLocalExtensionSource(parsed, accumulator);
 				continue;
@@ -261,9 +291,9 @@ export class DefaultPackageManager implements PackageManager {
 					await this.installParsedSource(parsed, scope);
 					return true;
 				}
-				const action = await onMissing(source);
+				const action = await onMissing(sourceStr);
 				if (action === "skip") return false;
-				if (action === "error") throw new Error(`Missing source: ${source}`);
+				if (action === "error") throw new Error(`Missing source: ${sourceStr}`);
 				await this.installParsedSource(parsed, scope);
 				return true;
 			};
@@ -274,7 +304,7 @@ export class DefaultPackageManager implements PackageManager {
 					const installed = await installMissing();
 					if (!installed) continue;
 				}
-				this.collectPackageResources(installedPath, accumulator);
+				this.collectPackageResources(installedPath, accumulator, filter);
 				continue;
 			}
 
@@ -284,7 +314,7 @@ export class DefaultPackageManager implements PackageManager {
 					const installed = await installMissing();
 					if (!installed) continue;
 				}
-				this.collectPackageResources(installedPath, accumulator);
+				this.collectPackageResources(installedPath, accumulator, filter);
 			}
 		}
 	}
@@ -517,7 +547,62 @@ export class DefaultPackageManager implements PackageManager {
 		return resolve(this.cwd, trimmed);
 	}
 
-	private collectPackageResources(packageRoot: string, accumulator: ResourceAccumulator): boolean {
+	private collectPackageResources(
+		packageRoot: string,
+		accumulator: ResourceAccumulator,
+		filter?: PackageFilter,
+	): boolean {
+		// If filter is provided, use it to selectively load resources
+		if (filter) {
+			// Empty array means "load none", undefined means "load all"
+			if (filter.extensions !== undefined) {
+				for (const entry of filter.extensions) {
+					const resolved = resolve(packageRoot, entry);
+					if (existsSync(resolved)) {
+						this.addPath(accumulator.extensions, resolved);
+					}
+				}
+			} else {
+				this.collectDefaultExtensions(packageRoot, accumulator);
+			}
+
+			if (filter.skills !== undefined) {
+				for (const entry of filter.skills) {
+					const resolved = resolve(packageRoot, entry);
+					if (existsSync(resolved)) {
+						this.addPath(accumulator.skills, resolved);
+					}
+				}
+			} else {
+				this.collectDefaultSkills(packageRoot, accumulator);
+			}
+
+			if (filter.prompts !== undefined) {
+				for (const entry of filter.prompts) {
+					const resolved = resolve(packageRoot, entry);
+					if (existsSync(resolved)) {
+						this.addPath(accumulator.prompts, resolved);
+					}
+				}
+			} else {
+				this.collectDefaultPrompts(packageRoot, accumulator);
+			}
+
+			if (filter.themes !== undefined) {
+				for (const entry of filter.themes) {
+					const resolved = resolve(packageRoot, entry);
+					if (existsSync(resolved)) {
+						this.addPath(accumulator.themes, resolved);
+					}
+				}
+			} else {
+				this.collectDefaultThemes(packageRoot, accumulator);
+			}
+
+			return true;
+		}
+
+		// No filter: load everything based on manifest or directory structure
 		const manifest = this.readPiManifest(packageRoot);
 		if (manifest) {
 			this.addManifestEntries(manifest.extensions, packageRoot, accumulator.extensions);
@@ -551,6 +636,54 @@ export class DefaultPackageManager implements PackageManager {
 			this.addPath(accumulator.themes, themesDir);
 		}
 		return true;
+	}
+
+	private collectDefaultExtensions(packageRoot: string, accumulator: ResourceAccumulator): void {
+		const manifest = this.readPiManifest(packageRoot);
+		if (manifest?.extensions) {
+			this.addManifestEntries(manifest.extensions, packageRoot, accumulator.extensions);
+			return;
+		}
+		const extensionsDir = join(packageRoot, "extensions");
+		if (existsSync(extensionsDir)) {
+			this.addPath(accumulator.extensions, extensionsDir);
+		}
+	}
+
+	private collectDefaultSkills(packageRoot: string, accumulator: ResourceAccumulator): void {
+		const manifest = this.readPiManifest(packageRoot);
+		if (manifest?.skills) {
+			this.addManifestEntries(manifest.skills, packageRoot, accumulator.skills);
+			return;
+		}
+		const skillsDir = join(packageRoot, "skills");
+		if (existsSync(skillsDir)) {
+			this.addPath(accumulator.skills, skillsDir);
+		}
+	}
+
+	private collectDefaultPrompts(packageRoot: string, accumulator: ResourceAccumulator): void {
+		const manifest = this.readPiManifest(packageRoot);
+		if (manifest?.prompts) {
+			this.addManifestEntries(manifest.prompts, packageRoot, accumulator.prompts);
+			return;
+		}
+		const promptsDir = join(packageRoot, "prompts");
+		if (existsSync(promptsDir)) {
+			this.addPath(accumulator.prompts, promptsDir);
+		}
+	}
+
+	private collectDefaultThemes(packageRoot: string, accumulator: ResourceAccumulator): void {
+		const manifest = this.readPiManifest(packageRoot);
+		if (manifest?.themes) {
+			this.addManifestEntries(manifest.themes, packageRoot, accumulator.themes);
+			return;
+		}
+		const themesDir = join(packageRoot, "themes");
+		if (existsSync(themesDir)) {
+			this.addPath(accumulator.themes, themesDir);
+		}
 	}
 
 	private readPiManifest(packageRoot: string): PiManifest | null {

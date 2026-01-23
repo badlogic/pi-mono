@@ -38,6 +38,21 @@ export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
+/**
+ * Package source for npm/git packages.
+ * - String form: load all resources from the package
+ * - Object form: filter which resources to load
+ */
+export type PackageSource =
+	| string
+	| {
+			source: string;
+			extensions?: string[];
+			skills?: string[];
+			prompts?: string[];
+			themes?: string[];
+	  };
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
@@ -54,10 +69,11 @@ export interface Settings {
 	quietStartup?: boolean;
 	shellCommandPrefix?: string; // Prefix prepended to every bash command (e.g., "shopt -s expand_aliases" for alias support)
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
-	extensions?: string[]; // Array of extension file paths or directories
-	skills?: string[]; // Array of skill file paths or directories
-	prompts?: string[]; // Array of prompt template paths or directories
-	themes?: string[]; // Array of theme file paths or directories
+	packages?: PackageSource[]; // Array of npm/git package sources (string or object with filtering)
+	extensions?: string[]; // Array of local extension file paths or directories
+	skills?: string[]; // Array of local skill file paths or directories
+	prompts?: string[]; // Array of local prompt template paths or directories
+	themes?: string[]; // Array of local theme file paths or directories
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
@@ -156,6 +172,7 @@ export class SettingsManager {
 			delete settings.queueMode;
 		}
 
+		// Migrate old skills object format to new array format
 		if (
 			"skills" in settings &&
 			typeof settings.skills === "object" &&
@@ -176,7 +193,37 @@ export class SettingsManager {
 			}
 		}
 
+		// Migrate npm:/git: sources from extensions array to packages array
+		if (Array.isArray(settings.extensions)) {
+			const localExtensions: string[] = [];
+			const packageSources: string[] = [];
+
+			for (const ext of settings.extensions) {
+				if (typeof ext !== "string") continue;
+				if (ext.startsWith("npm:") || ext.startsWith("git:") || SettingsManager.looksLikeGitUrl(ext)) {
+					packageSources.push(ext);
+				} else {
+					localExtensions.push(ext);
+				}
+			}
+
+			if (packageSources.length > 0) {
+				const existingPackages = Array.isArray(settings.packages) ? settings.packages : [];
+				settings.packages = [...existingPackages, ...packageSources];
+				settings.extensions = localExtensions.length > 0 ? localExtensions : undefined;
+				if (settings.extensions === undefined) {
+					delete settings.extensions;
+				}
+			}
+		}
+
 		return settings as Settings;
+	}
+
+	private static looksLikeGitUrl(source: string): boolean {
+		const gitHosts = ["github.com", "gitlab.com", "bitbucket.org", "codeberg.org"];
+		const normalized = source.replace(/^https?:\/\//, "");
+		return gitHosts.some((host) => normalized.startsWith(`${host}/`));
 	}
 
 	private loadProjectSettings(): Settings {
@@ -414,6 +461,22 @@ export class SettingsManager {
 	setCollapseChangelog(collapse: boolean): void {
 		this.globalSettings.collapseChangelog = collapse;
 		this.save();
+	}
+
+	getPackages(): PackageSource[] {
+		return [...(this.settings.packages ?? [])];
+	}
+
+	setPackages(packages: PackageSource[]): void {
+		this.globalSettings.packages = packages;
+		this.save();
+	}
+
+	setProjectPackages(packages: PackageSource[]): void {
+		const projectSettings = this.loadProjectSettings();
+		projectSettings.packages = packages;
+		this.saveProjectSettings(projectSettings);
+		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
 	}
 
 	getExtensionPaths(): string[] {
