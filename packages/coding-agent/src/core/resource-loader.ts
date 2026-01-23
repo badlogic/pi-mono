@@ -4,6 +4,10 @@ import { join, resolve } from "node:path";
 import chalk from "chalk";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.js";
+import type { ResourceDiagnostic } from "./diagnostics.js";
+
+export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.js";
+
 import { createEventBus, type EventBus } from "./event-bus.js";
 import {
 	createExtensionRuntime,
@@ -16,24 +20,8 @@ import { DefaultPackageManager, type PathMetadata } from "./package-manager.js";
 import type { PromptTemplate } from "./prompt-templates.js";
 import { loadPromptTemplates } from "./prompt-templates.js";
 import { SettingsManager } from "./settings-manager.js";
-import type { Skill, SkillWarning } from "./skills.js";
+import type { Skill } from "./skills.js";
 import { loadSkills } from "./skills.js";
-
-export interface ResourceCollision {
-	resourceType: "extension" | "skill" | "prompt" | "theme";
-	name: string; // skill name, command/tool/flag name, prompt name, theme name
-	winnerPath: string;
-	loserPath: string;
-	winnerSource?: string; // e.g., "npm:foo", "git:...", "local"
-	loserSource?: string;
-}
-
-export interface ResourceDiagnostic {
-	type: "warning" | "error" | "collision";
-	message: string;
-	path?: string;
-	collision?: ResourceCollision;
-}
 
 export interface ResourceLoader {
 	getExtensions(): LoadExtensionsResult;
@@ -332,12 +320,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 		if (this.noSkills && skillPaths.length === 0) {
 			skillsResult = { skills: [], diagnostics: [] };
 		} else {
-			const result = loadSkills({
+			skillsResult = loadSkills({
 				cwd: this.cwd,
 				agentDir: this.agentDir,
 				skillPaths,
 			});
-			skillsResult = { skills: result.skills, diagnostics: this.skillWarningsToDiagnostics(result.warnings) };
 		}
 		const resolvedSkills = this.skillsOverride ? this.skillsOverride(skillsResult) : skillsResult;
 		this.skills = resolvedSkills.skills;
@@ -518,30 +505,6 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}
 
 		return { extensions, errors };
-	}
-
-	private skillWarningsToDiagnostics(warnings: SkillWarning[]): ResourceDiagnostic[] {
-		return warnings.map((w) => {
-			// If it's a name collision, create proper collision structure
-			if (w.collisionName && w.collisionWinner) {
-				return {
-					type: "collision" as const,
-					message: w.message,
-					path: w.skillPath,
-					collision: {
-						resourceType: "skill" as const,
-						name: w.collisionName,
-						winnerPath: w.collisionWinner,
-						loserPath: w.skillPath,
-					},
-				};
-			}
-			return {
-				type: "warning" as const,
-				message: w.message,
-				path: w.skillPath,
-			};
-		});
 	}
 
 	private dedupePrompts(prompts: PromptTemplate[]): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] } {

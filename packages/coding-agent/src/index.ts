@@ -187,7 +187,6 @@ export {
 	loadSkillsFromDir,
 	type Skill,
 	type SkillFrontmatter,
-	type SkillWarning,
 } from "./core/skills.js";
 // Tools
 export {
