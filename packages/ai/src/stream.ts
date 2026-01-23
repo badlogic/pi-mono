@@ -19,6 +19,7 @@ if (typeof process !== "undefined" && (process.versions?.node || process.version
 import { supportsXhigh } from "./models.js";
 import { type BedrockOptions, streamBedrock } from "./providers/amazon-bedrock.js";
 import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
+import { type AnthropicVertexOptions, streamAnthropicVertex } from "./providers/anthropic-vertex.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
 import {
 	type GoogleGeminiCliOptions,
@@ -96,6 +97,17 @@ export function getEnvApiKey(provider: any): string | undefined {
 		}
 	}
 
+	// Anthropic Vertex AI uses Google Application Default Credentials.
+	// Auth is configured via `gcloud auth application-default login`.
+	if (provider === "anthropic-vertex") {
+		const hasCredentials = hasVertexAdcCredentials();
+		const hasProject = !!(process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT);
+		// Region is optional (defaults to us-east5), but project is required
+		if (hasCredentials && hasProject) {
+			return "<authenticated>";
+		}
+	}
+
 	if (provider === "amazon-bedrock") {
 		// Amazon Bedrock supports multiple credential sources:
 		// 1. AWS_PROFILE - named profile from ~/.aws/credentials
@@ -143,6 +155,9 @@ export function stream<TApi extends Api>(
 	// Vertex AI uses Application Default Credentials, not API keys
 	if (model.api === "google-vertex") {
 		return streamGoogleVertex(model as Model<"google-vertex">, context, options as GoogleVertexOptions);
+	} else if (model.api === "anthropic-vertex") {
+		// Anthropic Vertex also uses Google ADC, no API key needed
+		return streamAnthropicVertex(model as Model<"anthropic-vertex">, context, (options || {}) as AnthropicVertexOptions);
 	} else if (model.api === "bedrock-converse-stream") {
 		// Bedrock doesn't have any API keys instead it sources credentials from standard AWS env variables or from given AWS profile.
 		return streamBedrock(model as Model<"bedrock-converse-stream">, context, (options || {}) as BedrockOptions);
@@ -202,6 +217,10 @@ export function streamSimple<TApi extends Api>(
 ): AssistantMessageEventStream {
 	// Vertex AI uses Application Default Credentials, not API keys
 	if (model.api === "google-vertex") {
+		const providerOptions = mapOptionsForApi(model, options, undefined);
+		return stream(model, context, providerOptions);
+	} else if (model.api === "anthropic-vertex") {
+		// Anthropic Vertex also uses Google ADC, no API key needed
 		const providerOptions = mapOptionsForApi(model, options, undefined);
 		return stream(model, context, providerOptions);
 	} else if (model.api === "bedrock-converse-stream") {
@@ -301,6 +320,29 @@ function mapOptionsForApi<TApi extends Api>(
 				thinkingEnabled: true,
 				thinkingBudgetTokens: adjusted.thinkingBudget,
 			} satisfies AnthropicOptions;
+		}
+
+		case "anthropic-vertex": {
+			// Explicitly disable thinking when reasoning is not specified
+			if (!options?.reasoning) {
+				return { ...base, thinkingEnabled: false } satisfies AnthropicVertexOptions;
+			}
+
+			// Claude requires max_tokens > thinking.budget_tokens
+			// So we need to ensure maxTokens accounts for both thinking and output
+			const adjusted = adjustMaxTokensForThinking(
+				base.maxTokens || 0,
+				model.maxTokens,
+				options.reasoning,
+				options?.thinkingBudgets,
+			);
+
+			return {
+				...base,
+				maxTokens: adjusted.maxTokens,
+				thinkingEnabled: true,
+				thinkingBudgetTokens: adjusted.thinkingBudget,
+			} satisfies AnthropicVertexOptions;
 		}
 
 		case "bedrock-converse-stream": {

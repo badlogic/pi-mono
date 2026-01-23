@@ -413,6 +413,46 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe("Anthropic Vertex Provider (claude-sonnet-4-5@20250929)", () => {
+		const vertexProject = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+		const vertexRegion = process.env.GOOGLE_CLOUD_LOCATION || "us-east5";
+		const isAnthropicVertexConfigured = Boolean(vertexProject);
+		const anthropicVertexOptions = { project: vertexProject, region: vertexRegion } as const;
+		const llm = getModel("anthropic-vertex", "claude-sonnet-4-5@20250929");
+
+		it.skipIf(!isAnthropicVertexConfigured)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm, anthropicVertexOptions);
+		});
+
+		it.skipIf(!isAnthropicVertexConfigured)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm, anthropicVertexOptions);
+		});
+
+		it.skipIf(!isAnthropicVertexConfigured)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm, anthropicVertexOptions);
+		});
+
+		it.skipIf(!isAnthropicVertexConfigured)("should handle thinking", { retry: 3 }, async () => {
+			await handleThinking(llm, {
+				...anthropicVertexOptions,
+				thinkingEnabled: true,
+				thinkingBudgetTokens: 2048,
+			});
+		});
+
+		it.skipIf(!isAnthropicVertexConfigured)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, {
+				...anthropicVertexOptions,
+				thinkingEnabled: true,
+				thinkingBudgetTokens: 2048,
+			});
+		});
+
+		it.skipIf(!isAnthropicVertexConfigured)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm, anthropicVertexOptions);
+		});
+	});
+
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider (gpt-4o-mini)", () => {
 		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini");
 		void _compat;

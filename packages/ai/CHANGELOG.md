@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `anthropic-vertex` provider for Claude models on Google Vertex AI. Uses Google Application Default Credentials (ADC) for authentication, same as `google-vertex`. Supports all Claude models including claude-sonnet-4-5, claude-opus-4-5, and claude-haiku-4-5 with full thinking/reasoning support.
+
 ### Fixed
 
 - Fixed Bun runtime detection for dynamic imports in browser-compatible modules (stream.ts, openai-codex-responses.ts, openai-codex.ts) ([#922](https://github.com/badlogic/pi-mono/pull/922) by [@dannote](https://github.com/dannote))

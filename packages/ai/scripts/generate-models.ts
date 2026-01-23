@@ -1100,6 +1100,109 @@ async function generateModels() {
 	];
 	allModels.push(...vertexModels);
 
+	// Anthropic Vertex AI models (Claude on Google Cloud Vertex AI)
+	// Uses Google ADC for authentication, same as google-vertex
+	const ANTHROPIC_VERTEX_BASE_URL = "https://{region}-aiplatform.googleapis.com";
+	const anthropicVertexModels: Model<"anthropic-vertex">[] = [
+		{
+			id: "claude-sonnet-4-5@20250929",
+			name: "Claude Sonnet 4.5 (Vertex AI)",
+			api: "anthropic-vertex",
+			provider: "anthropic-vertex",
+			baseUrl: ANTHROPIC_VERTEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+			contextWindow: 200000,
+			maxTokens: 64000,
+		},
+		{
+			id: "claude-opus-4-5@20251101",
+			name: "Claude Opus 4.5 (Vertex AI)",
+			api: "anthropic-vertex",
+			provider: "anthropic-vertex",
+			baseUrl: ANTHROPIC_VERTEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 15, output: 75, cacheRead: 0.5, cacheWrite: 6.25 },
+			contextWindow: 200000,
+			maxTokens: 32000,
+		},
+		{
+			id: "claude-haiku-4-5@20251001",
+			name: "Claude Haiku 4.5 (Vertex AI)",
+			api: "anthropic-vertex",
+			provider: "anthropic-vertex",
+			baseUrl: ANTHROPIC_VERTEX_BASE_URL,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+			contextWindow: 200000,
+			maxTokens: 8192,
+		},
+		{
+			id: "claude-sonnet-4-20250514",
+			name: "Claude Sonnet 4 (Vertex AI)",
+			api: "anthropic-vertex",
+			provider: "anthropic-vertex",
+			baseUrl: ANTHROPIC_VERTEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+			contextWindow: 200000,
+			maxTokens: 64000,
+		},
+		{
+			id: "claude-3-5-sonnet-v2@20241022",
+			name: "Claude 3.5 Sonnet v2 (Vertex AI)",
+			api: "anthropic-vertex",
+			provider: "anthropic-vertex",
+			baseUrl: ANTHROPIC_VERTEX_BASE_URL,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+			contextWindow: 200000,
+			maxTokens: 8192,
+		},
+		{
+			id: "claude-3-5-haiku@20241022",
+			name: "Claude 3.5 Haiku (Vertex AI)",
+			api: "anthropic-vertex",
+			provider: "anthropic-vertex",
+			baseUrl: ANTHROPIC_VERTEX_BASE_URL,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+			contextWindow: 200000,
+			maxTokens: 8192,
+		},
+		{
+			id: "claude-3-opus@20240229",
+			name: "Claude 3 Opus (Vertex AI)",
+			api: "anthropic-vertex",
+			provider: "anthropic-vertex",
+			baseUrl: ANTHROPIC_VERTEX_BASE_URL,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+			contextWindow: 200000,
+			maxTokens: 4096,
+		},
+		{
+			id: "claude-3-haiku@20240307",
+			name: "Claude 3 Haiku (Vertex AI)",
+			api: "anthropic-vertex",
+			provider: "anthropic-vertex",
+			baseUrl: ANTHROPIC_VERTEX_BASE_URL,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 0.25, output: 1.25, cacheRead: 0.025, cacheWrite: 0.3125 },
+			contextWindow: 200000,
+			maxTokens: 4096,
+		},
+	];
+	allModels.push(...anthropicVertexModels);
+
 	// Group by provider and deduplicate by model ID
 	const providers: Record<string, Record<string, Model<any>>> = {};
 	for (const model of allModels) {

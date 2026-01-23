@@ -49,6 +49,7 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - **OpenAI**
 - **OpenAI Codex** (ChatGPT Plus/Pro subscription, requires OAuth, see below)
 - **Anthropic**
+- **Anthropic Vertex** (Claude via Vertex AI, requires ADC, see below)
 - **Google**
 - **Vertex AI** (Gemini via Vertex AI)
 - **Mistral**
@@ -958,6 +959,52 @@ import { getModel, complete } from '@mariozechner/pi-ai';
 ```
 
 Official docs: [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials)
+
+### Anthropic Vertex AI (Claude on Vertex)
+
+Anthropic Vertex provides access to Claude models through Google Cloud's Vertex AI platform. It uses the same Application Default Credentials (ADC) as Google Vertex AI.
+
+**Required environment variables:**
+- `GOOGLE_CLOUD_PROJECT` (or `GCLOUD_PROJECT`) - Your GCP project ID
+- `GOOGLE_CLOUD_LOCATION` (optional, defaults to `us-east5`) - The region where Claude models are available
+
+**Authentication:**
+- **Local development**: Run `gcloud auth application-default login`
+- **CI/Production**: Set `GOOGLE_APPLICATION_CREDENTIALS` to point to a service account JSON key file
+
+Example:
+
+```bash
+# Local (uses your user credentials)
+gcloud auth application-default login
+export GOOGLE_CLOUD_PROJECT="my-project"
+export GOOGLE_CLOUD_LOCATION="us-east5"  # Optional, defaults to us-east5
+```
+
+```typescript
+import { getModel, complete } from '@mariozechner/pi-ai';
+
+(async () => {
+  const model = getModel('anthropic-vertex', 'claude-sonnet-4-5@20250929');
+  const response = await complete(model, {
+    messages: [{ role: 'user', content: 'Hello from Anthropic Vertex AI' }]
+  });
+
+  for (const block of response.content) {
+    if (block.type === 'text') console.log(block.text);
+  }
+})().catch(console.error);
+```
+
+**Available models:**
+- `claude-sonnet-4-5@20250929` - Claude Sonnet 4.5 with thinking support
+- `claude-opus-4-5@20251101` - Claude Opus 4.5 with thinking support
+- `claude-haiku-4-5@20251001` - Claude Haiku 4.5
+- `claude-sonnet-4-20250514` - Claude Sonnet 4 with thinking support
+- `claude-3-5-sonnet-v2@20241022` - Claude 3.5 Sonnet v2
+- `claude-3-5-haiku@20241022` - Claude 3.5 Haiku
+- `claude-3-opus@20240229` - Claude 3 Opus
+- `claude-3-haiku@20240307` - Claude 3 Haiku
 
 ### CLI Login
 
