@@ -1,8 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import { minimatch } from "minimatch";
 import { CONFIG_DIR_NAME } from "../config.js";
 import type { PackageSource, SettingsManager } from "./settings-manager.js";
 
@@ -88,6 +89,164 @@ interface PackageFilter {
 	themes?: string[];
 }
 
+// File type patterns for each resource type
+type ResourceType = "extensions" | "skills" | "prompts" | "themes";
+
+const FILE_PATTERNS: Record<ResourceType, RegExp> = {
+	extensions: /\.(ts|js)$/,
+	skills: /\.md$/,
+	prompts: /\.md$/,
+	themes: /\.json$/,
+};
+
+/**
+ * Check if a string contains glob pattern characters or is an exclusion.
+ */
+function isPattern(s: string): boolean {
+	return s.startsWith("!") || s.includes("*") || s.includes("?");
+}
+
+/**
+ * Check if any entry in the array is a pattern.
+ */
+function hasPatterns(entries: string[]): boolean {
+	return entries.some(isPattern);
+}
+
+/**
+ * Recursively collect files from a directory matching a file pattern.
+ */
+function collectFiles(dir: string, filePattern: RegExp, skipNodeModules = true): string[] {
+	const files: string[] = [];
+	if (!existsSync(dir)) return files;
+
+	try {
+		const entries = readdirSync(dir, { withFileTypes: true });
+		for (const entry of entries) {
+			if (entry.name.startsWith(".")) continue;
+			if (skipNodeModules && entry.name === "node_modules") continue;
+
+			const fullPath = join(dir, entry.name);
+			let isDir = entry.isDirectory();
+			let isFile = entry.isFile();
+
+			if (entry.isSymbolicLink()) {
+				try {
+					const stats = statSync(fullPath);
+					isDir = stats.isDirectory();
+					isFile = stats.isFile();
+				} catch {
+					continue;
+				}
+			}
+
+			if (isDir) {
+				files.push(...collectFiles(fullPath, filePattern, skipNodeModules));
+			} else if (isFile && filePattern.test(entry.name)) {
+				files.push(fullPath);
+			}
+		}
+	} catch {
+		// Ignore errors
+	}
+
+	return files;
+}
+
+/**
+ * Collect skill entries from a directory.
+ * Skills can be directories (with SKILL.md) or direct .md files.
+ */
+function collectSkillEntries(dir: string): string[] {
+	const entries: string[] = [];
+	if (!existsSync(dir)) return entries;
+
+	try {
+		const dirEntries = readdirSync(dir, { withFileTypes: true });
+		for (const entry of dirEntries) {
+			if (entry.name.startsWith(".")) continue;
+			if (entry.name === "node_modules") continue;
+
+			const fullPath = join(dir, entry.name);
+			let isDir = entry.isDirectory();
+			let isFile = entry.isFile();
+
+			if (entry.isSymbolicLink()) {
+				try {
+					const stats = statSync(fullPath);
+					isDir = stats.isDirectory();
+					isFile = stats.isFile();
+				} catch {
+					continue;
+				}
+			}
+
+			if (isDir) {
+				// Skill directory - add if it has SKILL.md or recurse
+				const skillMd = join(fullPath, "SKILL.md");
+				if (existsSync(skillMd)) {
+					entries.push(fullPath);
+				} else {
+					entries.push(...collectSkillEntries(fullPath));
+				}
+			} else if (isFile && entry.name.endsWith(".md")) {
+				entries.push(fullPath);
+			}
+		}
+	} catch {
+		// Ignore errors
+	}
+
+	return entries;
+}
+
+/**
+ * Apply inclusion/exclusion patterns to filter paths.
+ * @param allPaths - All available paths to filter
+ * @param patterns - Array of patterns (prefix with ! for exclusion)
+ * @param baseDir - Base directory for relative pattern matching
+ */
+function applyPatterns(allPaths: string[], patterns: string[], baseDir: string): string[] {
+	const includes: string[] = [];
+	const excludes: string[] = [];
+
+	for (const p of patterns) {
+		if (p.startsWith("!")) {
+			excludes.push(p.slice(1));
+		} else {
+			includes.push(p);
+		}
+	}
+
+	// If only exclusions, start with all paths; otherwise filter to inclusions first
+	let result: string[];
+	if (includes.length === 0) {
+		result = [...allPaths];
+	} else {
+		result = allPaths.filter((filePath) => {
+			const rel = relative(baseDir, filePath);
+			const name = basename(filePath);
+			return includes.some((pattern) => {
+				// Match against relative path, basename, or full path
+				return minimatch(rel, pattern) || minimatch(name, pattern) || minimatch(filePath, pattern);
+			});
+		});
+	}
+
+	// Apply exclusions
+	if (excludes.length > 0) {
+		result = result.filter((filePath) => {
+			const rel = relative(baseDir, filePath);
+			const name = basename(filePath);
+			return !excludes.some((pattern) => {
+				return minimatch(rel, pattern) || minimatch(name, pattern) || minimatch(filePath, pattern);
+			});
+		});
+	}
+
+	return result;
+}
+
 export class DefaultPackageManager implements PackageManager {
 	private cwd: string;
 	private agentDir: string;
@@ -126,44 +285,93 @@ export class DefaultPackageManager implements PackageManager {
 		await this.resolvePackageSources(packageSources, accumulator, onMissing);
 
 		// Resolve local extensions
-		for (const ext of globalSettings.extensions ?? []) {
-			this.resolveLocalPath(ext, accumulator.extensions);
-		}
-		for (const ext of projectSettings.extensions ?? []) {
-			this.resolveLocalPath(ext, accumulator.extensions);
-		}
+		this.resolveLocalEntries(
+			[...(globalSettings.extensions ?? []), ...(projectSettings.extensions ?? [])],
+			"extensions",
+			accumulator.extensions,
+		);
 
 		// Resolve local skills
-		for (const skill of globalSettings.skills ?? []) {
-			this.addPath(accumulator.skills, this.resolvePath(skill));
-		}
-		for (const skill of projectSettings.skills ?? []) {
-			this.addPath(accumulator.skills, this.resolvePath(skill));
-		}
+		this.resolveLocalEntries(
+			[...(globalSettings.skills ?? []), ...(projectSettings.skills ?? [])],
+			"skills",
+			accumulator.skills,
+		);
 
 		// Resolve local prompts
-		for (const prompt of globalSettings.prompts ?? []) {
-			this.addPath(accumulator.prompts, this.resolvePath(prompt));
-		}
-		for (const prompt of projectSettings.prompts ?? []) {
-			this.addPath(accumulator.prompts, this.resolvePath(prompt));
-		}
+		this.resolveLocalEntries(
+			[...(globalSettings.prompts ?? []), ...(projectSettings.prompts ?? [])],
+			"prompts",
+			accumulator.prompts,
+		);
 
 		// Resolve local themes
-		for (const theme of globalSettings.themes ?? []) {
-			this.addPath(accumulator.themes, this.resolvePath(theme));
-		}
-		for (const theme of projectSettings.themes ?? []) {
-			this.addPath(accumulator.themes, this.resolvePath(theme));
-		}
+		this.resolveLocalEntries(
+			[...(globalSettings.themes ?? []), ...(projectSettings.themes ?? [])],
+			"themes",
+			accumulator.themes,
+		);
 
 		return this.toResolvedPaths(accumulator);
 	}
 
-	private resolveLocalPath(path: string, target: Set<string>): void {
-		const resolved = this.resolvePath(path);
-		if (existsSync(resolved)) {
-			this.addPath(target, resolved);
+	/**
+	 * Resolve local entries with pattern support.
+	 * If any entry contains patterns, enumerate files and apply filters.
+	 * Otherwise, just resolve paths directly.
+	 */
+	private resolveLocalEntries(entries: string[], resourceType: ResourceType, target: Set<string>): void {
+		if (entries.length === 0) return;
+
+		if (!hasPatterns(entries)) {
+			// No patterns - resolve directly
+			for (const entry of entries) {
+				const resolved = this.resolvePath(entry);
+				if (existsSync(resolved)) {
+					this.addPath(target, resolved);
+				}
+			}
+			return;
+		}
+
+		// Has patterns - need to enumerate and filter
+		const plainPaths: string[] = [];
+		const patterns: string[] = [];
+
+		for (const entry of entries) {
+			if (isPattern(entry)) {
+				patterns.push(entry);
+			} else {
+				plainPaths.push(entry);
+			}
+		}
+
+		// Collect all files from plain paths
+		const allFiles: string[] = [];
+		for (const p of plainPaths) {
+			const resolved = this.resolvePath(p);
+			if (!existsSync(resolved)) continue;
+
+			try {
+				const stats = statSync(resolved);
+				if (stats.isFile()) {
+					allFiles.push(resolved);
+				} else if (stats.isDirectory()) {
+					if (resourceType === "skills") {
+						allFiles.push(...collectSkillEntries(resolved));
+					} else {
+						allFiles.push(...collectFiles(resolved, FILE_PATTERNS[resourceType]));
+					}
+				}
+			} catch {
+				// Ignore errors
+			}
+		}
+
+		// Apply patterns
+		const filtered = applyPatterns(allFiles, patterns, this.cwd);
+		for (const f of filtered) {
+			this.addPath(target, f);
 		}
 	}
 
@@ -282,7 +490,7 @@ export class DefaultPackageManager implements PackageManager {
 			const parsed = this.parseSource(sourceStr);
 
 			if (parsed.type === "local") {
-				this.resolveLocalExtensionSource(parsed, accumulator);
+				this.resolveLocalExtensionSource(parsed, accumulator, filter);
 				continue;
 			}
 
@@ -319,7 +527,11 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	private resolveLocalExtensionSource(source: LocalSource, accumulator: ResourceAccumulator): void {
+	private resolveLocalExtensionSource(
+		source: LocalSource,
+		accumulator: ResourceAccumulator,
+		filter?: PackageFilter,
+	): void {
 		const resolved = this.resolvePath(source.path);
 		if (!existsSync(resolved)) {
 			return;
@@ -332,7 +544,7 @@ export class DefaultPackageManager implements PackageManager {
 				return;
 			}
 			if (stats.isDirectory()) {
-				const resources = this.collectPackageResources(resolved, accumulator);
+				const resources = this.collectPackageResources(resolved, accumulator, filter);
 				if (!resources) {
 					this.addPath(accumulator.extensions, resolved);
 				}
@@ -556,45 +768,25 @@ export class DefaultPackageManager implements PackageManager {
 		if (filter) {
 			// Empty array means "load none", undefined means "load all"
 			if (filter.extensions !== undefined) {
-				for (const entry of filter.extensions) {
-					const resolved = resolve(packageRoot, entry);
-					if (existsSync(resolved)) {
-						this.addPath(accumulator.extensions, resolved);
-					}
-				}
+				this.applyPackageFilter(packageRoot, filter.extensions, "extensions", accumulator.extensions);
 			} else {
 				this.collectDefaultExtensions(packageRoot, accumulator);
 			}
 
 			if (filter.skills !== undefined) {
-				for (const entry of filter.skills) {
-					const resolved = resolve(packageRoot, entry);
-					if (existsSync(resolved)) {
-						this.addPath(accumulator.skills, resolved);
-					}
-				}
+				this.applyPackageFilter(packageRoot, filter.skills, "skills", accumulator.skills);
 			} else {
 				this.collectDefaultSkills(packageRoot, accumulator);
 			}
 
 			if (filter.prompts !== undefined) {
-				for (const entry of filter.prompts) {
-					const resolved = resolve(packageRoot, entry);
-					if (existsSync(resolved)) {
-						this.addPath(accumulator.prompts, resolved);
-					}
-				}
+				this.applyPackageFilter(packageRoot, filter.prompts, "prompts", accumulator.prompts);
 			} else {
 				this.collectDefaultPrompts(packageRoot, accumulator);
 			}
 
 			if (filter.themes !== undefined) {
-				for (const entry of filter.themes) {
-					const resolved = resolve(packageRoot, entry);
-					if (existsSync(resolved)) {
-						this.addPath(accumulator.themes, resolved);
-					}
-				}
+				this.applyPackageFilter(packageRoot, filter.themes, "themes", accumulator.themes);
 			} else {
 				this.collectDefaultThemes(packageRoot, accumulator);
 			}
@@ -684,6 +876,85 @@ export class DefaultPackageManager implements PackageManager {
 		if (existsSync(themesDir)) {
 			this.addPath(accumulator.themes, themesDir);
 		}
+	}
+
+	/**
+	 * Apply filter patterns to a package's resources.
+	 * Supports glob patterns and exclusions (! prefix).
+	 */
+	private applyPackageFilter(
+		packageRoot: string,
+		patterns: string[],
+		resourceType: ResourceType,
+		target: Set<string>,
+	): void {
+		if (patterns.length === 0) {
+			return;
+		}
+
+		if (!hasPatterns(patterns)) {
+			// No patterns - just resolve paths directly
+			for (const entry of patterns) {
+				const resolved = resolve(packageRoot, entry);
+				if (existsSync(resolved)) {
+					this.addPath(target, resolved);
+				}
+			}
+			return;
+		}
+
+		// Has patterns - enumerate all files and filter
+		const allFiles = this.collectAllPackageFiles(packageRoot, resourceType);
+		const filtered = applyPatterns(allFiles, patterns, packageRoot);
+		for (const f of filtered) {
+			this.addPath(target, f);
+		}
+	}
+
+	/**
+	 * Collect all files of a given resource type from a package.
+	 */
+	private collectAllPackageFiles(packageRoot: string, resourceType: ResourceType): string[] {
+		const manifest = this.readPiManifest(packageRoot);
+
+		// If manifest specifies paths, use those
+		if (manifest) {
+			const manifestPaths = manifest[resourceType];
+			if (manifestPaths && manifestPaths.length > 0) {
+				const files: string[] = [];
+				for (const p of manifestPaths) {
+					const resolved = resolve(packageRoot, p);
+					if (!existsSync(resolved)) continue;
+
+					try {
+						const stats = statSync(resolved);
+						if (stats.isFile()) {
+							files.push(resolved);
+						} else if (stats.isDirectory()) {
+							if (resourceType === "skills") {
+								files.push(...collectSkillEntries(resolved));
+							} else {
+								files.push(...collectFiles(resolved, FILE_PATTERNS[resourceType]));
+							}
+						}
+					} catch {
+						// Ignore errors
+					}
+				}
+				return files;
+			}
+		}
+
+		// Fall back to convention-based directories
+		const conventionDir = join(packageRoot, resourceType);
+		if (!existsSync(conventionDir)) {
+			return [];
+		}
+
+		if (resourceType === "skills") {
+			return collectSkillEntries(conventionDir);
+		}
+		return collectFiles(conventionDir, FILE_PATTERNS[resourceType]);
 	}
 
 	private readPiManifest(packageRoot: string): PiManifest | null {
