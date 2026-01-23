@@ -232,6 +232,58 @@ Content`,
 		});
 	});
 
+	describe("pattern filtering in pi manifest", () => {
+		it("should support glob patterns in manifest extensions", async () => {
+			const pkgDir = join(tempDir, "manifest-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			mkdirSync(join(pkgDir, "node_modules/dep/extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "local.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "node_modules/dep/extensions", "remote.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "node_modules/dep/extensions", "skip.ts"), "export default function() {}");
+			writeFileSync(
+				join(pkgDir, "package.json"),
+				JSON.stringify({
+					name: "manifest-pkg",
+					pi: {
+						extensions: ["extensions", "node_modules/dep/extensions", "!**/skip.ts"],
+					},
+				}),
+			);
+
+			const result = await packageManager.resolveExtensionSources([pkgDir]);
+			expect(result.extensions.some((p) => p.endsWith("local.ts"))).toBe(true);
+			expect(result.extensions.some((p) => p.endsWith("remote.ts"))).toBe(true);
+			expect(result.extensions.some((p) => p.endsWith("skip.ts"))).toBe(false);
+		});
+
+		it("should support glob patterns in manifest skills", async () => {
+			const pkgDir = join(tempDir, "skill-manifest-pkg");
+			mkdirSync(join(pkgDir, "skills/good-skill"), { recursive: true });
+			mkdirSync(join(pkgDir, "skills/bad-skill"), { recursive: true });
+			writeFileSync(
+				join(pkgDir, "skills/good-skill", "SKILL.md"),
+				"---\nname: good-skill\ndescription: Good\n---\nContent",
+			);
+			writeFileSync(
+				join(pkgDir, "skills/bad-skill", "SKILL.md"),
+				"---\nname: bad-skill\ndescription: Bad\n---\nContent",
+			);
+			writeFileSync(
+				join(pkgDir, "package.json"),
+				JSON.stringify({
+					name: "skill-manifest-pkg",
+					pi: {
+						skills: ["skills", "!**/bad-skill"],
+					},
+				}),
+			);
+
+			const result = await packageManager.resolveExtensionSources([pkgDir]);
+			expect(result.skills.some((p) => p.includes("good-skill"))).toBe(true);
+			expect(result.skills.some((p) => p.includes("bad-skill"))).toBe(false);
+		});
+	});
+
 	describe("pattern filtering in package filters", () => {
 		it("should exclude extensions from package with ! pattern", async () => {
 			const pkgDir = join(tempDir, "pattern-pkg");

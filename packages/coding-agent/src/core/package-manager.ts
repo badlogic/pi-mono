@@ -797,10 +797,10 @@ export class DefaultPackageManager implements PackageManager {
 		// No filter: load everything based on manifest or directory structure
 		const manifest = this.readPiManifest(packageRoot);
 		if (manifest) {
-			this.addManifestEntries(manifest.extensions, packageRoot, accumulator.extensions);
-			this.addManifestEntries(manifest.skills, packageRoot, accumulator.skills);
-			this.addManifestEntries(manifest.prompts, packageRoot, accumulator.prompts);
-			this.addManifestEntries(manifest.themes, packageRoot, accumulator.themes);
+			this.addManifestEntries(manifest.extensions, packageRoot, "extensions", accumulator.extensions);
+			this.addManifestEntries(manifest.skills, packageRoot, "skills", accumulator.skills);
+			this.addManifestEntries(manifest.prompts, packageRoot, "prompts", accumulator.prompts);
+			this.addManifestEntries(manifest.themes, packageRoot, "themes", accumulator.themes);
 			return true;
 		}
 
@@ -833,7 +833,7 @@ export class DefaultPackageManager implements PackageManager {
 	private collectDefaultExtensions(packageRoot: string, accumulator: ResourceAccumulator): void {
 		const manifest = this.readPiManifest(packageRoot);
 		if (manifest?.extensions) {
-			this.addManifestEntries(manifest.extensions, packageRoot, accumulator.extensions);
+			this.addManifestEntries(manifest.extensions, packageRoot, "extensions", accumulator.extensions);
 			return;
 		}
 		const extensionsDir = join(packageRoot, "extensions");
@@ -845,7 +845,7 @@ export class DefaultPackageManager implements PackageManager {
 	private collectDefaultSkills(packageRoot: string, accumulator: ResourceAccumulator): void {
 		const manifest = this.readPiManifest(packageRoot);
 		if (manifest?.skills) {
-			this.addManifestEntries(manifest.skills, packageRoot, accumulator.skills);
+			this.addManifestEntries(manifest.skills, packageRoot, "skills", accumulator.skills);
 			return;
 		}
 		const skillsDir = join(packageRoot, "skills");
@@ -857,7 +857,7 @@ export class DefaultPackageManager implements PackageManager {
 	private collectDefaultPrompts(packageRoot: string, accumulator: ResourceAccumulator): void {
 		const manifest = this.readPiManifest(packageRoot);
 		if (manifest?.prompts) {
-			this.addManifestEntries(manifest.prompts, packageRoot, accumulator.prompts);
+			this.addManifestEntries(manifest.prompts, packageRoot, "prompts", accumulator.prompts);
 			return;
 		}
 		const promptsDir = join(packageRoot, "prompts");
@@ -869,7 +869,7 @@ export class DefaultPackageManager implements PackageManager {
 	private collectDefaultThemes(packageRoot: string, accumulator: ResourceAccumulator): void {
 		const manifest = this.readPiManifest(packageRoot);
 		if (manifest?.themes) {
-			this.addManifestEntries(manifest.themes, packageRoot, accumulator.themes);
+			this.addManifestEntries(manifest.themes, packageRoot, "themes", accumulator.themes);
 			return;
 		}
 		const themesDir = join(packageRoot, "themes");
@@ -972,12 +972,60 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	private addManifestEntries(entries: string[] | undefined, root: string, target: Set<string>): void {
+	private addManifestEntries(
+		entries: string[] | undefined,
+		root: string,
+		resourceType: ResourceType,
+		target: Set<string>,
+	): void {
 		if (!entries) return;
-		for (const entry of entries) {
-			const resolved = resolve(root, entry);
-			this.addPath(target, resolved);
+
+		if (!hasPatterns(entries)) {
+			// No patterns - resolve directly
+			for (const entry of entries) {
+				const resolved = resolve(root, entry);
+				this.addPath(target, resolved);
+			}
+			return;
 		}
+
+		// Has patterns - enumerate and filter
+		const allFiles = this.collectAllManifestFiles(entries, root, resourceType);
+		const patterns = entries.filter(isPattern);
+		const filtered = applyPatterns(allFiles, patterns, root);
+		for (const f of filtered) {
+			this.addPath(target, f);
+		}
+	}
+
+	/**
+	 * Collect files from manifest entries for pattern matching.
+	 * Plain paths are resolved and enumerated; pattern strings are skipped (used for filtering).
+	 */
+	private collectAllManifestFiles(entries: string[], root: string, resourceType: ResourceType): string[] {
+		const files: string[] = [];
+		for (const entry of entries) {
+			if (isPattern(entry)) continue;
+
+			const resolved = resolve(root, entry);
+			if (!existsSync(resolved)) continue;
+
+			try {
+				const stats = statSync(resolved);
+				if (stats.isFile()) {
+					files.push(resolved);
+				} else if (stats.isDirectory()) {
+					if (resourceType === "skills") {
+						files.push(...collectSkillEntries(resolved));
+					} else {
+						files.push(...collectFiles(resolved, FILE_PATTERNS[resourceType]));
+					}
+				}
+			} catch {
+				// Ignore errors
+			}
+		}
+		return files;
 	}
 
 	private addPath(set: Set<string>, value: string): void {
