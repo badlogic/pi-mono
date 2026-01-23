@@ -157,6 +157,8 @@ pi update  # update all non-pinned packages
 - Omit a key to load all of that type from the package
 - Use empty array `[]` to load none of that type
 - Paths are relative to package root
+- Use `!pattern` to exclude (e.g., `"themes": ["!funky.json"]`)
+- Glob patterns supported via minimatch (e.g., `"extensions": ["**/*.ts", "!**/deprecated/*"]`)
 
 **Discovery rules:**
 

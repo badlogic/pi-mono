@@ -847,10 +847,10 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `editorPaddingX` | Horizontal padding for input editor (0-3) | `0` |
 | `markdown.codeBlockIndent` | Prefix for each rendered code block line | `"  "` |
 | `packages` | External package sources (npm:, git:) with optional filtering | `[]` |
-| `extensions` | Local extension file paths or directories | `[]` |
-| `skills` | Local skill file paths or directories | `[]` |
-| `prompts` | Local prompt template file paths or directories | `[]` |
-| `themes` | Local theme file paths or directories | `[]` |
+| `extensions` | Local extension paths (supports globs and `!` exclusions) | `[]` |
+| `skills` | Local skill paths (supports globs and `!` exclusions) | `[]` |
+| `prompts` | Local prompt template paths (supports globs and `!` exclusions) | `[]` |
+| `themes` | Local theme paths (supports globs and `!` exclusions) | `[]` |
 
 ---
 
@@ -1023,6 +1023,8 @@ Use `-l` to install into project settings (`.pi/settings.json`).
 - Omit a key to load all of that type
 - Use empty array `[]` to load none of that type
 - Paths are relative to package root
+- Use `!pattern` to exclude (e.g., `"!deprecated/*"`)
+- Glob patterns supported via minimatch (e.g., `"*.ts"`, `"**/*.json"`)
 
 **Dependencies:** Extensions can have their own dependencies. Place a `package.json` next to the extension (or in a parent directory), run `npm install`, and imports are resolved via [jiti](https://github.com/unjs/jiti). See [examples/extensions/with-deps/](examples/extensions/with-deps/).
 
