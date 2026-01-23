@@ -104,6 +104,7 @@ import {
 	getThemeByName,
 	initTheme,
 	onThemeChange,
+	setRegisteredThemes,
 	setTheme,
 	setThemeInstance,
 	Theme,
@@ -268,7 +269,8 @@ export class InteractiveMode {
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 
-		// Initialize theme with watcher for interactive mode
+		// Register themes from resource loader and initialize
+		setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
 		initTheme(this.settingsManager.getTheme(), true);
 	}
 
@@ -3353,6 +3355,7 @@ export class InteractiveMode {
 
 		try {
 			await this.session.reload();
+			setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
 			this.rebuildAutocomplete();
 			const runner = this.session.extensionRunner;
 			if (runner) {
