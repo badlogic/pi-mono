@@ -1,6 +1,6 @@
 // NEVER convert to top-level import - breaks browser/Vite builds (web-ui)
 let _os: typeof import("node:os") | null = null;
-if (typeof process !== "undefined" && process.versions?.node) {
+if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
 	import("node:os").then((m) => {
 		_os = m;
 	});
