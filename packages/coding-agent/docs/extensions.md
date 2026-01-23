@@ -196,6 +196,18 @@ pi update  # update all non-pinned packages
 }
 ```
 
+The pi manifest supports glob patterns and exclusions:
+
+```json
+{
+  "pi": {
+    "extensions": ["./extensions", "!**/deprecated/*"],
+    "skills": ["./skills", "./node_modules/other-pkg/skills", "!**/experimental/*"],
+    "themes": ["./themes/*.json"]
+  }
+}
+```
+
 The `package.json` approach enables:
 - Multiple extensions from one package
 - Skills, prompts, and themes declared alongside extensions
