@@ -3,8 +3,8 @@ let _existsSync: typeof import("node:fs").existsSync | null = null;
 let _homedir: typeof import("node:os").homedir | null = null;
 let _join: typeof import("node:path").join | null = null;
 
-// Eagerly load in Node.js environment only
-if (typeof process !== "undefined" && process.versions?.node) {
+// Eagerly load in Node.js/Bun environment only
+if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
 	import("node:fs").then((m) => {
 		_existsSync = m.existsSync;
 	});
