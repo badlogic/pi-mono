@@ -3,8 +3,10 @@
  */
 
 import type { AgentTool, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
+import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
+import { getShellConfig, getShellEnv } from "../../utils/shell.js";
 import type { ExtensionRunner } from "./runner.js";
-import type { RegisteredTool, ToolCallEventResult, ToolResultEventResult } from "./types.js";
+import type { BeforeBashExecEvent, RegisteredTool, ToolCallEventResult, ToolResultEventResult } from "./types.js";
 
 /**
  * Wrap a RegisteredTool into an AgentTool.
@@ -36,6 +38,60 @@ export function wrapRegisteredTools(registeredTools: RegisteredTool[], runner: E
  * - Emits tool_result event after execution (can modify result)
  */
 export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: ExtensionRunner): AgentTool<any, T> {
+	type BashToolParams = {
+		command: string;
+		timeout?: number;
+	};
+	type BashExecParams = BashToolParams & {
+		cwd?: string;
+		env?: NodeJS.ProcessEnv;
+		shell?: string;
+		args?: string[];
+	};
+	const applyBeforeBashExecOverrides = async (
+		toolCallId: string,
+		params: BashToolParams,
+		runner: ExtensionRunner,
+	): Promise<BashExecParams> => {
+		const shellConfig = getShellConfig();
+		const context = runner.createContext();
+		const baseEvent: BeforeBashExecEvent = {
+			type: "before_bash_exec",
+			source: "tool",
+			command: params.command,
+			originalCommand: params.command,
+			cwd: context.cwd,
+			env: { ...getShellEnv() },
+			shell: shellConfig.shell,
+			args: [...shellConfig.args],
+			toolCallId,
+			timeout: params.timeout,
+		};
+		const execEvent = await runner.emitBeforeBashExec(baseEvent);
+		return {
+			...params,
+			command: execEvent.command,
+			cwd: execEvent.cwd,
+			env: execEvent.env,
+			shell: execEvent.shell,
+			args: execEvent.args,
+			timeout: execEvent.timeout,
+		};
+	};
+	const toolResultContentToErrorMessage = (
+		content: (TextContent | ImageContent)[] | undefined,
+		fallback: string,
+	): string => {
+		if (!content || content.length === 0) return fallback;
+		const text = content
+			.filter((item): item is TextContent => item.type === "text" && !!item.text)
+			.map((item) => item.text)
+			.join("")
+			.trim();
+		if (text) return text;
+		return `${fallback} [non-text content]`;
+	};
+
 	return {
 		...tool,
 		execute: async (
@@ -44,6 +100,9 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 			signal?: AbortSignal,
 			onUpdate?: AgentToolUpdateCallback<T>,
 		) => {
+			let effectiveParams = params;
+			let forcedError = false;
+
 			// Emit tool_call event - extensions can block execution
 			if (runner.hasHandlers("tool_call")) {
 				try {
@@ -66,9 +125,13 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 				}
 			}
 
+			if (tool.name === "bash" && runner.hasHandlers("before_bash_exec")) {
+				effectiveParams = await applyBeforeBashExecOverrides(toolCallId, params as BashToolParams, runner);
+			}
+
 			// Execute the actual tool
 			try {
-				const result = await tool.execute(toolCallId, params, signal, onUpdate);
+				const result = await tool.execute(toolCallId, effectiveParams, signal, onUpdate);
 
 				// Emit tool_result event - extensions can modify the result
 				if (runner.hasHandlers("tool_result")) {
@@ -76,33 +139,53 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 						type: "tool_result",
 						toolName: tool.name,
 						toolCallId,
-						input: params,
+						input: effectiveParams,
 						content: result.content,
 						details: result.details,
 						isError: false,
 					})) as ToolResultEventResult | undefined;
 
 					if (resultResult) {
+						const nextContent = resultResult.content ?? result.content;
+						const nextDetails = (resultResult.details ?? result.details) as T;
+						if (resultResult.isError) {
+							forcedError = true;
+							throw new Error(toolResultContentToErrorMessage(nextContent, "Tool execution failed."));
+						}
+
 						return {
-							content: resultResult.content ?? result.content,
-							details: (resultResult.details ?? result.details) as T,
+							content: nextContent,
+							details: nextDetails,
 						};
 					}
 				}
 
 				return result;
 			} catch (err) {
+				if (forcedError) {
+					throw err;
+				}
 				// Emit tool_result event for errors
 				if (runner.hasHandlers("tool_result")) {
-					await runner.emit({
+					const fallbackMessage = err instanceof Error ? err.message : String(err);
+					const content = [{ type: "text" as const, text: fallbackMessage }];
+					const resultResult = (await runner.emit({
 						type: "tool_result",
 						toolName: tool.name,
 						toolCallId,
-						input: params,
-						content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
+						input: effectiveParams,
+						content,
 						details: undefined,
 						isError: true,
-					});
+					})) as ToolResultEventResult | undefined;
+
+					if (resultResult) {
+						if (!resultResult.isError) {
+							throw err;
+						}
+						const nextContent = resultResult.content ?? content;
+						throw new Error(toolResultContentToErrorMessage(nextContent, fallbackMessage));
+					}
 				}
 				throw err;
 			}

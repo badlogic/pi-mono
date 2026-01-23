@@ -29,6 +29,7 @@ export const BRANCH_SUMMARY_SUFFIX = `</summary>`;
 export interface BashExecutionMessage {
 	role: "bashExecution";
 	command: string;
+	executedCommand?: string;
 	output: string;
 	exitCode: number | undefined;
 	cancelled: boolean;

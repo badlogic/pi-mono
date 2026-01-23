@@ -110,6 +110,34 @@ export function getShellEnv(): NodeJS.ProcessEnv {
 	};
 }
 
+export interface ShellExecutionOptions {
+	shell?: string;
+	args?: string[];
+	env?: NodeJS.ProcessEnv;
+}
+
+export interface ResolvedShellExecutionOptions {
+	resolvedShell: string;
+	resolvedArgs: string[];
+	resolvedEnv: NodeJS.ProcessEnv;
+}
+
+export function resolveShellExecutionOptions(options?: ShellExecutionOptions): ResolvedShellExecutionOptions {
+	const shellConfig = getShellConfig();
+	const resolvedEnv = options?.env ? { ...options.env } : { ...getShellEnv() };
+	for (const [key, value] of Object.entries(resolvedEnv)) {
+		if (value === undefined) {
+			delete resolvedEnv[key];
+		}
+	}
+
+	return {
+		resolvedShell: options?.shell ?? shellConfig.shell,
+		resolvedArgs: options?.args ?? shellConfig.args,
+		resolvedEnv,
+	};
+}
+
 /**
  * Sanitize binary output for display/storage.
  * Removes characters that crash string-width or cause display issues:

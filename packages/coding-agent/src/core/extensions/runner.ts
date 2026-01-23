@@ -10,8 +10,12 @@ import type { KeyAction, KeybindingsConfig } from "../keybindings.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
 import type {
+	BashExecBlockResult,
+	BashExecOverrides,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	BeforeBashExecEvent,
+	BeforeBashExecEventResult,
 	CompactOptions,
 	ContextEvent,
 	ContextEventResult,
@@ -81,6 +85,34 @@ const buildBuiltinKeybindings = (effectiveKeybindings: Required<KeybindingsConfi
 		}
 	}
 	return builtinKeybindings;
+};
+
+const applyBashExecOverrides = (event: BeforeBashExecEvent, overrides: BashExecOverrides): BeforeBashExecEvent => {
+	let nextEnv = event.env;
+	if (overrides.env) {
+		nextEnv = { ...event.env };
+		for (const [key, value] of Object.entries(overrides.env)) {
+			if (value === undefined) {
+				delete nextEnv[key];
+			} else {
+				nextEnv[key] = value;
+			}
+		}
+	}
+
+	return {
+		...event,
+		command: overrides.command ?? event.command,
+		cwd: overrides.cwd ?? event.cwd,
+		env: nextEnv,
+		shell: overrides.shell ?? event.shell,
+		args: overrides.args ?? event.args,
+		timeout: overrides.timeout ?? event.timeout,
+	};
+};
+
+const isBashExecBlockResult = (result: BeforeBashExecEventResult): result is BashExecBlockResult => {
+	return "block" in result && result.block;
 };
 
 /** Combined result from all before_agent_start handlers */
@@ -472,6 +504,50 @@ export class ExtensionRunner {
 		}
 
 		return result;
+	}
+
+	async emitBeforeBashExec(event: BeforeBashExecEvent): Promise<BeforeBashExecEvent> {
+		const ctx = this.createContext();
+		let currentEvent: BeforeBashExecEvent = {
+			...event,
+			env: { ...event.env },
+			args: [...event.args],
+		};
+
+		for (const ext of this.extensions) {
+			const handlers = ext.handlers.get("before_bash_exec");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				let handlerResult: unknown;
+				try {
+					handlerResult = await handler(currentEvent, ctx);
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
+					this.emitError({
+						extensionPath: ext.path,
+						event: "before_bash_exec",
+						error: message,
+						stack,
+					});
+					continue;
+				}
+
+				if (!handlerResult) {
+					continue;
+				}
+
+				const overrideResult = handlerResult as BeforeBashExecEventResult;
+				if (isBashExecBlockResult(overrideResult)) {
+					const reason = overrideResult.reason ?? "Bash execution was blocked by an extension";
+					throw new Error(reason);
+				}
+				currentEvent = applyBashExecOverrides(currentEvent, overrideResult);
+			}
+		}
+
+		return currentEvent;
 	}
 
 	async emitUserBash(event: UserBashEvent): Promise<UserBashEventResult | undefined> {

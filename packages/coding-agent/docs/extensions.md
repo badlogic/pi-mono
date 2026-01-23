@@ -620,9 +620,34 @@ pi.on("tool_call", async (event, ctx) => {
 
 **Examples:** [permission-gate.ts](../examples/extensions/permission-gate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [protected-paths.ts](../examples/extensions/protected-paths.ts)
 
+#### before_bash_exec
+
+Fired before a bash command executes (tool calls and user `!`/`!!`). Use it to rewrite commands or override execution settings. You can also block execution by returning `{ block: true, reason?: string }`. For follow-up hints based on output, pair this with `tool_result`.
+
+```typescript
+pi.on("before_bash_exec", async (event) => {
+  if (event.command.includes("rm -rf")) {
+    return { block: true, reason: "Blocked by policy" };
+  }
+
+  if (event.source === "tool") {
+    return {
+      cwd: "/tmp",
+      env: {
+        ...event.env,
+        MY_VAR: "1",
+        PATH: undefined, // remove PATH
+      },
+    };
+  }
+});
+```
+
+Return a `BashExecOverrides` object to override fields, or return `{ block: true, reason?: string }` to reject the command. Any field set to a non-undefined value replaces the original (`command`, `cwd`, `env`, `shell`, `args`, `timeout`). For `env`, set a key to `undefined` to remove it.
+
 #### tool_result
 
-Fired after tool executes. **Can modify result.**
+Fired after tool executes. **Can modify result.** Use this to post-process outputs (for example, append hints or redact secrets) before the result is sent to the model.
 
 ```typescript
 import { isBashToolResult } from "@mariozechner/pi-coding-agent";
@@ -636,9 +661,11 @@ pi.on("tool_result", async (event, ctx) => {
   }
 
   // Modify result:
-  return { content: [...], details: {...}, isError: false };
+  return { content: [...], details: {...} };
 });
 ```
+
+If `event.isError` is true, return `{ content: [...], isError: true }` to override the thrown error message (the text content becomes the error string). Returning `isError: true` on a successful tool result forces the tool to be treated as an error.
 
 **Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 

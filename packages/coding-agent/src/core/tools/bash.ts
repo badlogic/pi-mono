@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
-import { getShellConfig, getShellEnv, killProcessTree } from "../../utils/shell.js";
+import { killProcessTree, resolveShellExecutionOptions } from "../../utils/shell.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateTail } from "./truncate.js";
 
 /**
@@ -45,6 +45,9 @@ export interface BashOperations {
 			onData: (data: Buffer) => void;
 			signal?: AbortSignal;
 			timeout?: number;
+			env?: NodeJS.ProcessEnv;
+			shell?: string;
+			args?: string[];
 		},
 	) => Promise<{ exitCode: number | null }>;
 }
@@ -53,19 +56,23 @@ export interface BashOperations {
  * Default bash operations using local shell
  */
 const defaultBashOperations: BashOperations = {
-	exec: (command, cwd, { onData, signal, timeout }) => {
+	exec: (command, cwd, { onData, signal, timeout, env, shell, args }) => {
 		return new Promise((resolve, reject) => {
-			const { shell, args } = getShellConfig();
+			const { resolvedShell, resolvedArgs, resolvedEnv } = resolveShellExecutionOptions({
+				shell,
+				args,
+				env,
+			});
 
 			if (!existsSync(cwd)) {
 				reject(new Error(`Working directory does not exist: ${cwd}\nCannot execute bash commands.`));
 				return;
 			}
 
-			const child = spawn(shell, [...args, command], {
+			const child = spawn(resolvedShell, [...resolvedArgs, command], {
 				cwd,
+				env: resolvedEnv,
 				detached: true,
-				env: getShellEnv(),
 				stdio: ["ignore", "pipe", "pipe"],
 			});
 
@@ -151,12 +158,27 @@ export function createBashTool(cwd: string, options?: BashToolOptions): AgentToo
 		parameters: bashSchema,
 		execute: async (
 			_toolCallId: string,
-			{ command, timeout }: { command: string; timeout?: number },
+			{
+				command,
+				timeout,
+				cwd: overrideCwd,
+				env,
+				shell,
+				args,
+			}: {
+				command: string;
+				timeout?: number;
+				cwd?: string;
+				env?: NodeJS.ProcessEnv;
+				shell?: string;
+				args?: string[];
+			},
 			signal?: AbortSignal,
 			onUpdate?,
 		) => {
 			// Apply command prefix if configured (e.g., "shopt -s expand_aliases" for alias support)
 			const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
+			const resolvedCwd = overrideCwd ?? cwd;
 
 			return new Promise((resolve, reject) => {
 				// We'll stream to a temp file if output gets large
@@ -213,7 +235,7 @@ export function createBashTool(cwd: string, options?: BashToolOptions): AgentToo
 					}
 				};
 
-				ops.exec(resolvedCommand, cwd, { onData: handleData, signal, timeout })
+				ops.exec(resolvedCommand, resolvedCwd, { onData: handleData, signal, timeout, env, shell, args })
 					.then(({ exitCode }) => {
 						// Close temp file stream
 						if (tempFileStream) {
