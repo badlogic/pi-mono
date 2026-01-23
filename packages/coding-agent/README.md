@@ -1025,7 +1025,7 @@ Use `-l` to install into project settings (`.pi/settings.json`).
 - Paths are relative to package root
 - Use `!pattern` to exclude (e.g., `"!deprecated/*"`)
 - Glob patterns supported via minimatch (e.g., `"*.ts"`, `"**/*.json"`)
-- **Pattern precedence:** Exclusions always win. If a path matches both an include and exclude pattern, it is excluded. Order in the array does not matter.
+- **Layered filtering:** User filters apply on top of manifest filters (they narrow down, not replace). If a manifest excludes 10 extensions and user adds one more exclusion, all 11 are excluded.
 
 **Dependencies:** Extensions can have their own dependencies. Place a `package.json` next to the extension (or in a parent directory), run `npm install`, and imports are resolved via [jiti](https://github.com/unjs/jiti). See [examples/extensions/with-deps/](examples/extensions/with-deps/).
 

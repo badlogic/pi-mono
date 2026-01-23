@@ -27,6 +27,7 @@
 
 ### Fixed
 
+- User package filters now layer on top of manifest filters instead of replacing them ([#645](https://github.com/badlogic/pi-mono/issues/645))
 - Auto-retry now handles "terminated" errors from Codex API mid-stream failures
 - Follow-up queue (Alt+Enter) now sends full paste content instead of `[paste #N ...]` markers ([#912](https://github.com/badlogic/pi-mono/issues/912))
 - Fixed Alt-Up not restoring messages queued during compaction ([#923](https://github.com/badlogic/pi-mono/pull/923) by [@aliou](https://github.com/aliou))

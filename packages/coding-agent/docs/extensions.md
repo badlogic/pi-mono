@@ -159,7 +159,7 @@ pi update  # update all non-pinned packages
 - Paths are relative to package root
 - Use `!pattern` to exclude (e.g., `"themes": ["!funky.json"]`)
 - Glob patterns supported via minimatch (e.g., `"extensions": ["**/*.ts", "!**/deprecated/*"]`)
-- **Pattern precedence:** Exclusions always win. If a path matches both an include and exclude pattern, it is excluded. Order in the array does not matter.
+- **Layered filtering:** User filters apply on top of manifest filters. If a manifest excludes 10 extensions and user adds one more exclusion, all 11 are excluded.
 
 **Discovery rules:**
 
