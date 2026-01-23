@@ -476,6 +476,9 @@ export class InteractiveMode {
 		this.footerDataProvider.onBranchChange(() => {
 			this.ui.requestRender();
 		});
+
+		// Initialize available provider count for footer display
+		await this.updateAvailableProviderCount();
 	}
 
 	/**
@@ -2781,6 +2784,13 @@ export class InteractiveMode {
 		}
 	}
 
+	/** Update the footer's available provider count from current model candidates */
+	private async updateAvailableProviderCount(): Promise<void> {
+		const models = await this.getModelCandidates();
+		const uniqueProviders = new Set(models.map((m) => m.provider));
+		this.footerDataProvider.setAvailableProviderCount(uniqueProviders.size);
+	}
+
 	private showModelSelector(initialSearchInput?: string): void {
 		this.showSelector((done) => {
 			const selector = new ModelSelectorComponent(
@@ -3173,6 +3183,7 @@ export class InteractiveMode {
 						try {
 							this.session.modelRegistry.authStorage.logout(providerId);
 							this.session.modelRegistry.refresh();
+							await this.updateAvailableProviderCount();
 							this.showStatus(`Logged out of ${providerName}`);
 						} catch (error: unknown) {
 							this.showError(`Logout failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -3267,6 +3278,7 @@ export class InteractiveMode {
 			// Success
 			restoreEditor();
 			this.session.modelRegistry.refresh();
+			await this.updateAvailableProviderCount();
 			this.showStatus(`Logged in to ${providerName}. Credentials saved to ${getAuthPath()}`);
 		} catch (error: unknown) {
 			restoreEditor();
