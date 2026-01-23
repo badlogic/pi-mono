@@ -285,6 +285,44 @@ Content`,
 	});
 
 	describe("pattern filtering in package filters", () => {
+		it("should apply user filters on top of manifest filters (not replace)", async () => {
+			// Manifest excludes baz.ts, user excludes bar.ts
+			// Result should exclude BOTH
+			const pkgDir = join(tempDir, "layered-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "foo.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "bar.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "baz.ts"), "export default function() {}");
+			writeFileSync(
+				join(pkgDir, "package.json"),
+				JSON.stringify({
+					name: "layered-pkg",
+					pi: {
+						extensions: ["extensions", "!**/baz.ts"],
+					},
+				}),
+			);
+
+			// User filter adds exclusion for bar.ts
+			settingsManager.setPackages([
+				{
+					source: pkgDir,
+					extensions: ["!**/bar.ts"],
+					skills: [],
+					prompts: [],
+					themes: [],
+				},
+			]);
+
+			const result = await packageManager.resolve();
+			// foo.ts should be included (not excluded by anyone)
+			expect(result.extensions.some((p) => p.endsWith("foo.ts"))).toBe(true);
+			// bar.ts should be excluded (by user)
+			expect(result.extensions.some((p) => p.endsWith("bar.ts"))).toBe(false);
+			// baz.ts should be excluded (by manifest)
+			expect(result.extensions.some((p) => p.endsWith("baz.ts"))).toBe(false);
+		});
+
 		it("should exclude extensions from package with ! pattern", async () => {
 			const pkgDir = join(tempDir, "pattern-pkg");
 			mkdirSync(join(pkgDir, "extensions"), { recursive: true });

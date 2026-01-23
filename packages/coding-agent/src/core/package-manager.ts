@@ -879,69 +879,70 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	/**
-	 * Apply filter patterns to a package's resources.
-	 * Supports glob patterns and exclusions (! prefix).
+	 * Apply user filter patterns on top of what the manifest provides.
+	 * Manifest patterns are applied first, then user patterns narrow down further.
 	 */
 	private applyPackageFilter(
 		packageRoot: string,
-		patterns: string[],
+		userPatterns: string[],
 		resourceType: ResourceType,
 		target: Set<string>,
 	): void {
-		if (patterns.length === 0) {
+		if (userPatterns.length === 0) {
+			// Empty array = load none
 			return;
 		}
 
-		if (!hasPatterns(patterns)) {
-			// No patterns - just resolve paths directly
-			for (const entry of patterns) {
-				const resolved = resolve(packageRoot, entry);
-				if (existsSync(resolved)) {
-					this.addPath(target, resolved);
-				}
-			}
-			return;
-		}
+		// First get what manifest provides (with manifest patterns already applied)
+		const manifestFiles = this.collectManifestFilteredFiles(packageRoot, resourceType);
 
-		// Has patterns - enumerate all files and filter
-		const allFiles = this.collectAllPackageFiles(packageRoot, resourceType);
-		const filtered = applyPatterns(allFiles, patterns, packageRoot);
+		// Then apply user patterns on top
+		const filtered = applyPatterns(manifestFiles, userPatterns, packageRoot);
 		for (const f of filtered) {
 			this.addPath(target, f);
 		}
 	}
 
 	/**
-	 * Collect all files of a given resource type from a package.
+	 * Collect files that the manifest provides, with manifest patterns applied.
+	 * This is what the package makes available before user filtering.
 	 */
-	private collectAllPackageFiles(packageRoot: string, resourceType: ResourceType): string[] {
+	private collectManifestFilteredFiles(packageRoot: string, resourceType: ResourceType): string[] {
 		const manifest = this.readPiManifest(packageRoot);
 
-		// If manifest specifies paths, use those
 		if (manifest) {
-			const manifestPaths = manifest[resourceType];
-			if (manifestPaths && manifestPaths.length > 0) {
-				const files: string[] = [];
-				for (const p of manifestPaths) {
-					const resolved = resolve(packageRoot, p);
+			const manifestEntries = manifest[resourceType];
+			if (manifestEntries && manifestEntries.length > 0) {
+				// Enumerate all files from non-pattern entries
+				const allFiles: string[] = [];
+				for (const entry of manifestEntries) {
+					if (isPattern(entry)) continue;
+
+					const resolved = resolve(packageRoot, entry);
 					if (!existsSync(resolved)) continue;
 
 					try {
 						const stats = statSync(resolved);
 						if (stats.isFile()) {
-							files.push(resolved);
+							allFiles.push(resolved);
 						} else if (stats.isDirectory()) {
 							if (resourceType === "skills") {
-								files.push(...collectSkillEntries(resolved));
+								allFiles.push(...collectSkillEntries(resolved));
 							} else {
-								files.push(...collectFiles(resolved, FILE_PATTERNS[resourceType]));
+								allFiles.push(...collectFiles(resolved, FILE_PATTERNS[resourceType]));
 							}
 						}
 					} catch {
 						// Ignore errors
 					}
 				}
-				return files;
+
+				// Apply manifest patterns (if any)
+				const manifestPatterns = manifestEntries.filter(isPattern);
+				if (manifestPatterns.length > 0) {
+					return applyPatterns(allFiles, manifestPatterns, packageRoot);
+				}
+				return allFiles;
 			}
 		}
 
