@@ -340,7 +340,7 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 | Key | Action |
 |-----|--------|
 | Arrow keys | Move cursor / browse history (Up when empty) |
-| Option+Left/Right | Move by word |
+| Alt+Left/Right | Move by word |
 | Ctrl+A / Home / Cmd+Left | Start of line |
 | Ctrl+E / End / Cmd+Right | End of line |
 | PageUp / PageDown | Scroll by page |
@@ -351,8 +351,8 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 |-----|--------|
 | Enter | Send message |
 | Shift+Enter | New line (Ctrl+Enter on Windows Terminal) |
-| Ctrl+W / Option+Backspace | Delete word backwards |
-| Alt+D / Option+Delete | Delete word forwards |
+| Ctrl+W / Alt+Backspace | Delete word backwards |
+| Alt+D / Alt+Delete | Delete word forwards |
 | Ctrl+U | Delete to start of line |
 | Ctrl+K | Delete to end of line |
 | Ctrl+Y | Paste most recently deleted text |
