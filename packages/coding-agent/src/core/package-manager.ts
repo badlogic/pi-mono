@@ -259,7 +259,6 @@ export class DefaultPackageManager implements PackageManager {
 		this.cwd = options.cwd;
 		this.agentDir = options.agentDir;
 		this.settingsManager = options.settingsManager;
-		this.ensureGitIgnoreDirs();
 	}
 
 	setProgressCallback(callback: ProgressCallback | undefined): void {
@@ -623,6 +622,10 @@ export class DefaultPackageManager implements PackageManager {
 		if (existsSync(targetDir)) {
 			return;
 		}
+		const gitRoot = this.getGitInstallRoot(scope);
+		if (gitRoot) {
+			this.ensureGitIgnore(gitRoot);
+		}
 		mkdirSync(dirname(targetDir), { recursive: true });
 		const cloneUrl = source.repo.startsWith("http") ? source.repo : `https://${source.repo}`;
 		await this.runCommand("git", ["clone", cloneUrl, targetDir]);
@@ -664,13 +667,6 @@ export class DefaultPackageManager implements PackageManager {
 			const pkgJson = { name: "pi-extensions", private: true };
 			writeFileSync(packageJsonPath, JSON.stringify(pkgJson, null, 2), "utf-8");
 		}
-	}
-
-	private ensureGitIgnoreDirs(): void {
-		this.ensureGitIgnore(join(this.agentDir, "git"));
-		this.ensureGitIgnore(join(this.agentDir, "npm"));
-		this.ensureGitIgnore(join(this.cwd, CONFIG_DIR_NAME, "git"));
-		this.ensureGitIgnore(join(this.cwd, CONFIG_DIR_NAME, "npm"));
 	}
 
 	private ensureGitIgnore(dir: string): void {
@@ -720,6 +716,16 @@ export class DefaultPackageManager implements PackageManager {
 			return join(this.cwd, CONFIG_DIR_NAME, "git", source.host, source.path);
 		}
 		return join(this.agentDir, "git", source.host, source.path);
+	}
+
+	private getGitInstallRoot(scope: SourceScope): string | undefined {
+		if (scope === "temporary") {
+			return undefined;
+		}
+		if (scope === "project") {
+			return join(this.cwd, CONFIG_DIR_NAME, "git");
+		}
+		return join(this.agentDir, "git");
 	}
 
 	private getTemporaryDir(prefix: string, suffix?: string): string {
