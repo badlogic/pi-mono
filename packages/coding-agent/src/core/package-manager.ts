@@ -452,7 +452,8 @@ export class DefaultPackageManager implements PackageManager {
 
 			if (parsed.type === "npm") {
 				const installedPath = this.getNpmInstallPath(parsed, scope);
-				if (!existsSync(installedPath)) {
+				const needsInstall = !existsSync(installedPath) || (await this.npmNeedsUpdate(parsed, installedPath));
+				if (needsInstall) {
 					const installed = await installMissing();
 					if (!installed) continue;
 				}
@@ -540,6 +541,50 @@ export class DefaultPackageManager implements PackageManager {
 		}
 
 		return { type: "local", path: source };
+	}
+
+	/**
+	 * Check if an npm package needs to be updated.
+	 * - For unpinned packages: check if registry has a newer version
+	 * - For pinned packages: check if installed version matches the pinned version
+	 */
+	private async npmNeedsUpdate(source: NpmSource, installedPath: string): Promise<boolean> {
+		const installedVersion = this.getInstalledNpmVersion(installedPath);
+		if (!installedVersion) return true;
+
+		const { version: pinnedVersion } = this.parseNpmSpec(source.spec);
+		if (pinnedVersion) {
+			// Pinned: check if installed matches pinned (exact match for now)
+			return installedVersion !== pinnedVersion;
+		}
+
+		// Unpinned: check registry for latest version
+		try {
+			const latestVersion = await this.getLatestNpmVersion(source.name);
+			return latestVersion !== installedVersion;
+		} catch {
+			// If we can't check registry, assume it's fine
+			return false;
+		}
+	}
+
+	private getInstalledNpmVersion(installedPath: string): string | undefined {
+		const packageJsonPath = join(installedPath, "package.json");
+		if (!existsSync(packageJsonPath)) return undefined;
+		try {
+			const content = readFileSync(packageJsonPath, "utf-8");
+			const pkg = JSON.parse(content) as { version?: string };
+			return pkg.version;
+		} catch {
+			return undefined;
+		}
+	}
+
+	private async getLatestNpmVersion(packageName: string): Promise<string> {
+		const response = await fetch(`https://registry.npmjs.org/${packageName}/latest`);
+		if (!response.ok) throw new Error(`Failed to fetch npm registry: ${response.status}`);
+		const data = (await response.json()) as { version: string };
+		return data.version;
 	}
 
 	/**
