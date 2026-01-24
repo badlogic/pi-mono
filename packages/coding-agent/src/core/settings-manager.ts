@@ -38,6 +38,21 @@ export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
+/**
+ * Package source for npm/git packages.
+ * - String form: load all resources from the package
+ * - Object form: filter which resources to load
+ */
+export type PackageSource =
+	| string
+	| {
+			source: string;
+			extensions?: string[];
+			skills?: string[];
+			prompts?: string[];
+			themes?: string[];
+	  };
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
@@ -54,10 +69,11 @@ export interface Settings {
 	quietStartup?: boolean;
 	shellCommandPrefix?: string; // Prefix prepended to every bash command (e.g., "shopt -s expand_aliases" for alias support)
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
-	extensions?: string[]; // Array of extension file paths or directories
-	skills?: string[]; // Array of skill file paths or directories
-	prompts?: string[]; // Array of prompt template paths or directories
-	themes?: string[]; // Array of theme file paths or directories
+	packages?: PackageSource[]; // Array of npm/git package sources (string or object with filtering)
+	extensions?: string[]; // Array of local extension file paths or directories
+	skills?: string[]; // Array of local skill file paths or directories
+	prompts?: string[]; // Array of local prompt template paths or directories
+	themes?: string[]; // Array of local theme file paths or directories
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
@@ -104,6 +120,7 @@ export class SettingsManager {
 	private settingsPath: string | null;
 	private projectSettingsPath: string | null;
 	private globalSettings: Settings;
+	private inMemoryProjectSettings: Settings; // For in-memory mode
 	private settings: Settings;
 	private persist: boolean;
 
@@ -117,6 +134,7 @@ export class SettingsManager {
 		this.projectSettingsPath = projectSettingsPath;
 		this.persist = persist;
 		this.globalSettings = initialSettings;
+		this.inMemoryProjectSettings = {};
 		const projectSettings = this.loadProjectSettings();
 		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
 	}
@@ -156,6 +174,7 @@ export class SettingsManager {
 			delete settings.queueMode;
 		}
 
+		// Migrate old skills object format to new array format
 		if (
 			"skills" in settings &&
 			typeof settings.skills === "object" &&
@@ -180,6 +199,11 @@ export class SettingsManager {
 	}
 
 	private loadProjectSettings(): Settings {
+		// In-memory mode: return stored in-memory project settings
+		if (!this.persist) {
+			return structuredClone(this.inMemoryProjectSettings);
+		}
+
 		if (!this.projectSettingsPath || !existsSync(this.projectSettingsPath)) {
 			return {};
 		}
@@ -234,7 +258,13 @@ export class SettingsManager {
 	}
 
 	private saveProjectSettings(settings: Settings): void {
-		if (!this.persist || !this.projectSettingsPath) {
+		// In-memory mode: store in memory
+		if (!this.persist) {
+			this.inMemoryProjectSettings = structuredClone(settings);
+			return;
+		}
+
+		if (!this.projectSettingsPath) {
 			return;
 		}
 		try {
@@ -414,6 +444,22 @@ export class SettingsManager {
 	setCollapseChangelog(collapse: boolean): void {
 		this.globalSettings.collapseChangelog = collapse;
 		this.save();
+	}
+
+	getPackages(): PackageSource[] {
+		return [...(this.settings.packages ?? [])];
+	}
+
+	setPackages(packages: PackageSource[]): void {
+		this.globalSettings.packages = packages;
+		this.save();
+	}
+
+	setProjectPackages(packages: PackageSource[]): void {
+		const projectSettings = this.loadProjectSettings();
+		projectSettings.packages = packages;
+		this.saveProjectSettings(projectSettings);
+		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
 	}
 
 	getExtensionPaths(): string[] {

@@ -27,6 +27,7 @@ import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/
 import { getAuthPath } from "../config.js";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { stripFrontmatter } from "../utils/frontmatter.js";
+import { sleep } from "../utils/sleep.js";
 import { type BashResult, executeBash as executeBashCommand, executeBashWithOperations } from "./bash-executor.js";
 import {
 	type CompactionResult,
@@ -65,10 +66,36 @@ import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js
 import type { ResourceLoader } from "./resource-loader.js";
 import type { BranchSummaryEntry, CompactionEntry, NewSessionOptions, SessionManager } from "./session-manager.js";
 import type { SettingsManager } from "./settings-manager.js";
-import type { Skill, SkillWarning } from "./skills.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import type { BashOperations } from "./tools/bash.js";
 import { createAllTools } from "./tools/index.js";
+
+// ============================================================================
+// Skill Block Parsing
+// ============================================================================
+
+/** Parsed skill block from a user message */
+export interface ParsedSkillBlock {
+	name: string;
+	location: string;
+	content: string;
+	userMessage: string | undefined;
+}
+
+/**
+ * Parse a skill block from message text.
+ * Returns null if the text doesn't contain a skill block.
+ */
+export function parseSkillBlock(text: string): ParsedSkillBlock | null {
+	const match = text.match(/^<skill name="([^"]+)" location="([^"]+)">\n([\s\S]*?)\n<\/skill>(?:\n\n([\s\S]+))?$/);
+	if (!match) return null;
+	return {
+		name: match[1],
+		location: match[2],
+		content: match[3],
+		userMessage: match[4]?.trim() || undefined,
+	};
+}
 
 /** Session-specific events that extend the core AgentEvent */
 export type AgentSessionEvent =
@@ -221,8 +248,8 @@ export class AgentSession {
 	private _extensionUIContext?: ExtensionUIContext;
 	private _extensionCommandContextActions?: ExtensionCommandContextActions;
 	private _extensionShutdownHandler?: ShutdownHandler;
-	private _extensionErrorListeners = new Set<ExtensionErrorListener>();
-	private _extensionErrorUnsubscribers: Array<() => void> = [];
+	private _extensionErrorListener?: ExtensionErrorListener;
+	private _extensionErrorUnsubscriber?: () => void;
 
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
@@ -790,15 +817,14 @@ export class AgentSession {
 		const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
 		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
 
-		const skill = this.skills.find((s) => s.name === skillName);
+		const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
 		if (!skill) return text; // Unknown skill, pass through
 
 		try {
 			const content = readFileSync(skill.filePath, "utf-8");
 			const body = stripFrontmatter(content).trim();
-			const header = `Skill location: ${skill.filePath}\nReferences are relative to ${skill.baseDir}.`;
-			const skillMessage = `${header}\n\n${body}`;
-			return args ? `${skillMessage}\n\n---\n\nUser: ${args}` : skillMessage;
+			const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
+			return args ? `${skillBlock}\n\n${args}` : skillBlock;
 		} catch (err) {
 			// Emit error like extension commands do
 			this._extensionRunner?.emitError({
@@ -1005,19 +1031,6 @@ export class AgentSession {
 		return this._followUpMessages;
 	}
 
-	/** Skills loaded by resource loader */
-	get skills(): readonly Skill[] {
-		return this._resourceLoader.getSkills().skills;
-	}
-
-	/** Skill loading warnings captured by resource loader */
-	get skillWarnings(): readonly SkillWarning[] {
-		return this._resourceLoader.getSkills().diagnostics.map((diagnostic) => ({
-			skillPath: diagnostic.path ?? "<unknown>",
-			message: diagnostic.message,
-		}));
-	}
-
 	get resourceLoader(): ResourceLoader {
 		return this._resourceLoader;
 	}
@@ -1187,13 +1200,6 @@ export class AgentSession {
 		await this._emitModelSelect(nextModel, currentModel, "cycle");
 
 		return { model: nextModel, thinkingLevel: this.thinkingLevel, isScoped: false };
-	}
-
-	/**
-	 * Get all available models with valid API keys.
-	 */
-	async getAvailableModels(): Promise<Model<any>[]> {
-		return this._modelRegistry.getAvailable();
 	}
 
 	// =========================================================================
@@ -1643,8 +1649,8 @@ export class AgentSession {
 		if (bindings.shutdownHandler !== undefined) {
 			this._extensionShutdownHandler = bindings.shutdownHandler;
 		}
-		if (bindings.onError) {
-			this._extensionErrorListeners.add(bindings.onError);
+		if (bindings.onError !== undefined) {
+			this._extensionErrorListener = bindings.onError;
 		}
 
 		if (this._extensionRunner) {
@@ -1657,13 +1663,10 @@ export class AgentSession {
 		runner.setUIContext(this._extensionUIContext);
 		runner.bindCommandContext(this._extensionCommandContextActions);
 
-		for (const unsubscribe of this._extensionErrorUnsubscribers) {
-			unsubscribe();
-		}
-		this._extensionErrorUnsubscribers = [];
-		for (const listener of this._extensionErrorListeners) {
-			this._extensionErrorUnsubscribers.push(runner.onError(listener));
-		}
+		this._extensionErrorUnsubscriber?.();
+		this._extensionErrorUnsubscriber = this._extensionErrorListener
+			? runner.onError(this._extensionErrorListener)
+			: undefined;
 	}
 
 	private _bindExtensionCore(runner: ExtensionRunner): void {
@@ -1840,7 +1843,7 @@ export class AgentSession {
 			this._extensionUIContext ||
 			this._extensionCommandContextActions ||
 			this._extensionShutdownHandler ||
-			this._extensionErrorListeners.size > 0;
+			this._extensionErrorListener;
 		if (this._extensionRunner && hasBindings) {
 			await this._extensionRunner.emit({ type: "session_start" });
 		}
@@ -1862,8 +1865,8 @@ export class AgentSession {
 		if (isContextOverflow(message, contextWindow)) return false;
 
 		const err = message.errorMessage;
-		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection errors, fetch failed
-		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server error|internal error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers/i.test(
+		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection errors, fetch failed, terminated
+		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server error|internal error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|terminated/i.test(
 			err,
 		);
 	}
@@ -1917,7 +1920,7 @@ export class AgentSession {
 		// Wait with exponential backoff (abortable)
 		this._retryAbortController = new AbortController();
 		try {
-			await this._sleep(delayMs, this._retryAbortController.signal);
+			await sleep(delayMs, this._retryAbortController.signal);
 		} catch {
 			// Aborted during sleep - emit end event so UI can clean up
 			const attempt = this._retryAttempt;
@@ -1942,25 +1945,6 @@ export class AgentSession {
 		}, 0);
 
 		return true;
-	}
-
-	/**
-	 * Sleep helper that respects abort signal.
-	 */
-	private _sleep(ms: number, signal?: AbortSignal): Promise<void> {
-		return new Promise((resolve, reject) => {
-			if (signal?.aborted) {
-				reject(new Error("Aborted"));
-				return;
-			}
-
-			const timeout = setTimeout(resolve, ms);
-
-			signal?.addEventListener("abort", () => {
-				clearTimeout(timeout);
-				reject(new Error("Aborted"));
-			});
-		});
 	}
 
 	/**

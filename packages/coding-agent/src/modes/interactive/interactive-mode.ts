@@ -52,7 +52,7 @@ import {
 	isBunRuntime,
 	VERSION,
 } from "../../config.js";
-import type { AgentSession, AgentSessionEvent } from "../../core/agent-session.js";
+import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
 import type {
 	ExtensionContext,
@@ -65,6 +65,7 @@ import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/
 import { type AppAction, KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { resolveModelScope } from "../../core/model-resolver.js";
+import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
@@ -91,6 +92,7 @@ import { OAuthSelectorComponent } from "./components/oauth-selector.js";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
+import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
@@ -103,9 +105,11 @@ import {
 	getThemeByName,
 	initTheme,
 	onThemeChange,
+	setRegisteredThemes,
 	setTheme,
 	setThemeInstance,
 	Theme,
+	type ThemeColor,
 	theme,
 } from "./theme/theme.js";
 
@@ -137,6 +141,8 @@ export interface InteractiveModeOptions {
 	initialImages?: ImageContent[];
 	/** Additional messages to send after the initial message */
 	initialMessages?: string[];
+	/** Force verbose startup (overrides quietStartup setting) */
+	verbose?: boolean;
 }
 
 export class InteractiveMode {
@@ -265,7 +271,8 @@ export class InteractiveMode {
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 
-		// Initialize theme with watcher for interactive mode
+		// Register themes from resource loader and initialize
+		setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
 		initTheme(this.settingsManager.getTheme(), true);
 	}
 
@@ -341,7 +348,7 @@ export class InteractiveMode {
 		this.skillCommands.clear();
 		const skillCommandList: SlashCommand[] = [];
 		if (this.settingsManager.getEnableSkillCommands()) {
-			for (const skill of this.session.skills) {
+			for (const skill of this.session.resourceLoader.getSkills().skills) {
 				const commandName = `skill:${skill.name}`;
 				this.skillCommands.set(commandName, skill.filePath);
 				skillCommandList.push({ name: commandName, description: skill.description });
@@ -372,7 +379,7 @@ export class InteractiveMode {
 		this.setupAutocomplete(this.fdPath);
 
 		// Add header with keybindings from config (unless silenced)
-		if (!this.settingsManager.getQuietStartup()) {
+		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
 			const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
 
 			// Build startup instructions using keybinding hint helpers
@@ -473,6 +480,9 @@ export class InteractiveMode {
 		this.footerDataProvider.onBranchChange(() => {
 			this.ui.requestRender();
 		});
+
+		// Initialize available provider count for footer display
+		await this.updateAvailableProviderCount();
 	}
 
 	/**
@@ -620,18 +630,6 @@ export class InteractiveMode {
 		const home = os.homedir();
 		let result = p;
 
-		// Shorten temp npm paths: /tmp/.../npm/.../node_modules/pkg/... -> npm:pkg/... (temp)
-		const npmTempMatch = result.match(/pi-extensions\/npm\/[^/]+\/node_modules\/([^/]+)(.*)/);
-		if (npmTempMatch) {
-			return `npm:${npmTempMatch[1]}${npmTempMatch[2]} (temp)`;
-		}
-
-		// Shorten temp git paths: /tmp/.../git-host/hash/path/... -> git:host/path/... (temp)
-		const gitTempMatch = result.match(/pi-extensions\/git-([^/]+)\/[^/]+\/(.*)/);
-		if (gitTempMatch) {
-			return `git:${gitTempMatch[1]}/${gitTempMatch[2]} (temp)`;
-		}
-
 		// Replace home directory with ~
 		if (result.startsWith(home)) {
 			result = `~${result.slice(home.length)}`;
@@ -640,46 +638,335 @@ export class InteractiveMode {
 		return result;
 	}
 
+	/**
+	 * Get a short path relative to the package root for display.
+	 */
+	private getShortPath(fullPath: string, source: string): string {
+		// For npm packages, show path relative to node_modules/pkg/
+		const npmMatch = fullPath.match(/node_modules\/(@?[^/]+(?:\/[^/]+)?)\/(.*)/);
+		if (npmMatch && source.startsWith("npm:")) {
+			return npmMatch[2];
+		}
+
+		// For git packages, show path relative to repo root
+		const gitMatch = fullPath.match(/git\/[^/]+\/[^/]+\/(.*)/);
+		if (gitMatch && source.startsWith("git:")) {
+			return gitMatch[1];
+		}
+
+		// For local/auto, just use formatDisplayPath
+		return this.formatDisplayPath(fullPath);
+	}
+
+	private getDisplaySourceInfo(
+		source: string,
+		scope: string,
+	): { label: string; scopeLabel?: string; color: "accent" | "muted" } {
+		if (source === "local") {
+			if (scope === "user") {
+				return { label: "user", color: "muted" };
+			}
+			if (scope === "project") {
+				return { label: "project", color: "muted" };
+			}
+			if (scope === "temporary") {
+				return { label: "path", scopeLabel: "temp", color: "muted" };
+			}
+			return { label: "path", color: "muted" };
+		}
+
+		if (source === "cli") {
+			return { label: "path", scopeLabel: scope === "temporary" ? "temp" : undefined, color: "muted" };
+		}
+
+		const scopeLabel =
+			scope === "user" ? "user" : scope === "project" ? "project" : scope === "temporary" ? "temp" : undefined;
+		return { label: source, scopeLabel, color: "accent" };
+	}
+
+	private getScopeGroup(source: string, scope: string): "user" | "project" | "path" {
+		if (source === "cli" || scope === "temporary") return "path";
+		if (scope === "user") return "user";
+		if (scope === "project") return "project";
+		return "path";
+	}
+
+	private isPackageSource(source: string): boolean {
+		return source.startsWith("npm:") || source.startsWith("git:");
+	}
+
+	private buildScopeGroups(
+		paths: string[],
+		metadata: Map<string, { source: string; scope: string; origin: string }>,
+	): Array<{ scope: "user" | "project" | "path"; paths: string[]; packages: Map<string, string[]> }> {
+		const groups: Record<
+			"user" | "project" | "path",
+			{ scope: "user" | "project" | "path"; paths: string[]; packages: Map<string, string[]> }
+		> = {
+			user: { scope: "user", paths: [], packages: new Map() },
+			project: { scope: "project", paths: [], packages: new Map() },
+			path: { scope: "path", paths: [], packages: new Map() },
+		};
+
+		for (const p of paths) {
+			const meta = this.findMetadata(p, metadata);
+			const source = meta?.source ?? "local";
+			const scope = meta?.scope ?? "project";
+			const groupKey = this.getScopeGroup(source, scope);
+			const group = groups[groupKey];
+
+			if (this.isPackageSource(source)) {
+				const list = group.packages.get(source) ?? [];
+				list.push(p);
+				group.packages.set(source, list);
+			} else {
+				group.paths.push(p);
+			}
+		}
+
+		return [groups.user, groups.project, groups.path].filter(
+			(group) => group.paths.length > 0 || group.packages.size > 0,
+		);
+	}
+
+	private formatScopeGroups(
+		groups: Array<{ scope: "user" | "project" | "path"; paths: string[]; packages: Map<string, string[]> }>,
+		options: {
+			formatPath: (p: string) => string;
+			formatPackagePath: (p: string, source: string) => string;
+		},
+	): string {
+		const lines: string[] = [];
+
+		for (const group of groups) {
+			lines.push(`  ${theme.fg("accent", group.scope)}`);
+
+			const sortedPaths = [...group.paths].sort((a, b) => a.localeCompare(b));
+			for (const p of sortedPaths) {
+				lines.push(theme.fg("dim", `    ${options.formatPath(p)}`));
+			}
+
+			const sortedPackages = Array.from(group.packages.entries()).sort(([a], [b]) => a.localeCompare(b));
+			for (const [source, paths] of sortedPackages) {
+				lines.push(`    ${theme.fg("mdLink", source)}`);
+				const sortedPackagePaths = [...paths].sort((a, b) => a.localeCompare(b));
+				for (const p of sortedPackagePaths) {
+					lines.push(theme.fg("dim", `      ${options.formatPackagePath(p, source)}`));
+				}
+			}
+		}
+
+		return lines.join("\n");
+	}
+
+	/**
+	 * Find metadata for a path, checking parent directories if exact match fails.
+	 * Package manager stores metadata for directories, but we display file paths.
+	 */
+	private findMetadata(
+		p: string,
+		metadata: Map<string, { source: string; scope: string; origin: string }>,
+	): { source: string; scope: string; origin: string } | undefined {
+		// Try exact match first
+		const exact = metadata.get(p);
+		if (exact) return exact;
+
+		// Try parent directories (package manager stores directory paths)
+		let current = p;
+		while (current.includes("/")) {
+			current = current.substring(0, current.lastIndexOf("/"));
+			const parent = metadata.get(current);
+			if (parent) return parent;
+		}
+
+		return undefined;
+	}
+
+	/**
+	 * Format a path with its source/scope info from metadata.
+	 */
+	private formatPathWithSource(
+		p: string,
+		metadata: Map<string, { source: string; scope: string; origin: string }>,
+	): string {
+		const meta = this.findMetadata(p, metadata);
+		if (meta) {
+			const shortPath = this.getShortPath(p, meta.source);
+			const { label, scopeLabel } = this.getDisplaySourceInfo(meta.source, meta.scope);
+			const labelText = scopeLabel ? `${label} (${scopeLabel})` : label;
+			return `${labelText} ${shortPath}`;
+		}
+		return this.formatDisplayPath(p);
+	}
+
+	/**
+	 * Format resource diagnostics with nice collision display using metadata.
+	 */
+	private formatDiagnostics(
+		diagnostics: readonly ResourceDiagnostic[],
+		metadata: Map<string, { source: string; scope: string; origin: string }>,
+	): string {
+		const lines: string[] = [];
+
+		// Group collision diagnostics by name
+		const collisions = new Map<string, ResourceDiagnostic[]>();
+		const otherDiagnostics: ResourceDiagnostic[] = [];
+
+		for (const d of diagnostics) {
+			if (d.type === "collision" && d.collision) {
+				const list = collisions.get(d.collision.name) ?? [];
+				list.push(d);
+				collisions.set(d.collision.name, list);
+			} else {
+				otherDiagnostics.push(d);
+			}
+		}
+
+		// Format collision diagnostics grouped by name
+		for (const [name, collisionList] of collisions) {
+			const first = collisionList[0]?.collision;
+			if (!first) continue;
+			lines.push(theme.fg("warning", `  "${name}" collision:`));
+			// Show winner
+			lines.push(
+				theme.fg("dim", `    ${theme.fg("success", "✓")} ${this.formatPathWithSource(first.winnerPath, metadata)}`),
+			);
+			// Show all losers
+			for (const d of collisionList) {
+				if (d.collision) {
+					lines.push(
+						theme.fg(
+							"dim",
+							`    ${theme.fg("warning", "✗")} ${this.formatPathWithSource(d.collision.loserPath, metadata)} (skipped)`,
+						),
+					);
+				}
+			}
+		}
+
+		// Format other diagnostics (skill name collisions, parse errors, etc.)
+		for (const d of otherDiagnostics) {
+			if (d.path) {
+				// Use metadata-aware formatting for paths
+				const sourceInfo = this.formatPathWithSource(d.path, metadata);
+				lines.push(theme.fg(d.type === "error" ? "error" : "warning", `  ${sourceInfo}`));
+				lines.push(theme.fg(d.type === "error" ? "error" : "warning", `    ${d.message}`));
+			} else {
+				lines.push(theme.fg(d.type === "error" ? "error" : "warning", `  ${d.message}`));
+			}
+		}
+
+		return lines.join("\n");
+	}
+
 	private showLoadedResources(options?: { extensionPaths?: string[]; force?: boolean }): void {
-		const shouldShow = options?.force || !this.settingsManager.getQuietStartup();
+		const shouldShow = options?.force || this.options.verbose || !this.settingsManager.getQuietStartup();
 		if (!shouldShow) {
 			return;
 		}
 
+		const metadata = this.session.resourceLoader.getPathMetadata();
+
+		const sectionHeader = (name: string, color: ThemeColor = "mdHeading") => theme.fg(color, `[${name}]`);
+
 		const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
 		if (contextFiles.length > 0) {
 			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded context:\n") + contextList, 0, 0));
+			this.chatContainer.addChild(new Text(`${sectionHeader("Context")}\n${contextList}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
-		const skills = this.session.skills;
+		const skills = this.session.resourceLoader.getSkills().skills;
 		if (skills.length > 0) {
-			const skillList = skills.map((s) => theme.fg("dim", `  ${this.formatDisplayPath(s.filePath)}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded skills:\n") + skillList, 0, 0));
+			const skillPaths = skills.map((s) => s.filePath);
+			const groups = this.buildScopeGroups(skillPaths, metadata);
+			const skillList = this.formatScopeGroups(groups, {
+				formatPath: (p) => this.formatDisplayPath(p),
+				formatPackagePath: (p, source) => this.getShortPath(p, source),
+			});
+			this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
-		const skillWarnings = this.session.skillWarnings;
-		if (skillWarnings.length > 0) {
-			const warningList = skillWarnings
-				.map((w) => theme.fg("warning", `  ${this.formatDisplayPath(w.skillPath)}: ${w.message}`))
-				.join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("warning", "Skill warnings:\n") + warningList, 0, 0));
+		const skillDiagnostics = this.session.resourceLoader.getSkills().diagnostics;
+		if (skillDiagnostics.length > 0) {
+			const warningLines = this.formatDiagnostics(skillDiagnostics, metadata);
+			this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Skill conflicts]")}\n${warningLines}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
 		const templates = this.session.promptTemplates;
 		if (templates.length > 0) {
-			const templateList = templates.map((t) => theme.fg("dim", `  /${t.name} ${t.source}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded prompt templates:\n") + templateList, 0, 0));
+			const templatePaths = templates.map((t) => t.filePath);
+			const groups = this.buildScopeGroups(templatePaths, metadata);
+			const templateByPath = new Map(templates.map((t) => [t.filePath, t]));
+			const templateList = this.formatScopeGroups(groups, {
+				formatPath: (p) => {
+					const template = templateByPath.get(p);
+					return template ? `/${template.name}` : this.formatDisplayPath(p);
+				},
+				formatPackagePath: (p) => {
+					const template = templateByPath.get(p);
+					return template ? `/${template.name}` : this.formatDisplayPath(p);
+				},
+			});
+			this.chatContainer.addChild(new Text(`${sectionHeader("Prompts")}\n${templateList}`, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		const promptDiagnostics = this.session.resourceLoader.getPrompts().diagnostics;
+		if (promptDiagnostics.length > 0) {
+			const warningLines = this.formatDiagnostics(promptDiagnostics, metadata);
+			this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Prompt conflicts]")}\n${warningLines}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
 		const extensionPaths = options?.extensionPaths ?? [];
 		if (extensionPaths.length > 0) {
-			const extList = extensionPaths.map((p) => theme.fg("dim", `  ${this.formatDisplayPath(p)}`)).join("\n");
-			this.chatContainer.addChild(new Text(theme.fg("muted", "Loaded extensions:\n") + extList, 0, 0));
+			const groups = this.buildScopeGroups(extensionPaths, metadata);
+			const extList = this.formatScopeGroups(groups, {
+				formatPath: (p) => this.formatDisplayPath(p),
+				formatPackagePath: (p, source) => this.getShortPath(p, source),
+			});
+			this.chatContainer.addChild(new Text(`${sectionHeader("Extensions", "mdHeading")}\n${extList}`, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		const extensionDiagnostics: ResourceDiagnostic[] = [];
+		const extensionErrors = this.session.resourceLoader.getExtensions().errors;
+		if (extensionErrors.length > 0) {
+			for (const error of extensionErrors) {
+				extensionDiagnostics.push({ type: "error", message: error.error, path: error.path });
+			}
+		}
+
+		const shortcutDiagnostics = this.session.extensionRunner?.getShortcutDiagnostics() ?? [];
+		extensionDiagnostics.push(...shortcutDiagnostics);
+
+		if (extensionDiagnostics.length > 0) {
+			const warningLines = this.formatDiagnostics(extensionDiagnostics, metadata);
+			this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Extension issues]")}\n${warningLines}`, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		// Show loaded themes (excluding built-in)
+		const loadedThemes = this.session.resourceLoader.getThemes().themes;
+		const customThemes = loadedThemes.filter((t) => t.sourcePath);
+		if (customThemes.length > 0) {
+			const themePaths = customThemes.map((t) => t.sourcePath!);
+			const groups = this.buildScopeGroups(themePaths, metadata);
+			const themeList = this.formatScopeGroups(groups, {
+				formatPath: (p) => this.formatDisplayPath(p),
+				formatPackagePath: (p, source) => this.getShortPath(p, source),
+			});
+			this.chatContainer.addChild(new Text(`${sectionHeader("Themes")}\n${themeList}`, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		const themeDiagnostics = this.session.resourceLoader.getThemes().diagnostics;
+		if (themeDiagnostics.length > 0) {
+			const warningLines = this.formatDiagnostics(themeDiagnostics, metadata);
+			this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Theme conflicts]")}\n${warningLines}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 	}
@@ -920,6 +1207,12 @@ export class InteractiveMode {
 		this.footer.invalidate();
 		this.setCustomEditorComponent(undefined);
 		this.defaultEditor.onExtensionShortcut = undefined;
+		this.updateTerminalTitle();
+		if (this.loadingAnimation) {
+			this.loadingAnimation.setMessage(
+				`${this.defaultWorkingMessage} (${appKey(this.keybindings, "interrupt")} to interrupt)`,
+			);
+		}
 	}
 
 	// Maximum total widget lines to prevent viewport overflow
@@ -2024,8 +2317,28 @@ export class InteractiveMode {
 			case "user": {
 				const textContent = this.getUserMessageText(message);
 				if (textContent) {
-					const userComponent = new UserMessageComponent(textContent, this.getMarkdownThemeWithSettings());
-					this.chatContainer.addChild(userComponent);
+					const skillBlock = parseSkillBlock(textContent);
+					if (skillBlock) {
+						// Render skill block (collapsible)
+						this.chatContainer.addChild(new Spacer(1));
+						const component = new SkillInvocationMessageComponent(
+							skillBlock,
+							this.getMarkdownThemeWithSettings(),
+						);
+						component.setExpanded(this.toolOutputExpanded);
+						this.chatContainer.addChild(component);
+						// Render user message separately if present
+						if (skillBlock.userMessage) {
+							const userComponent = new UserMessageComponent(
+								skillBlock.userMessage,
+								this.getMarkdownThemeWithSettings(),
+							);
+							this.chatContainer.addChild(userComponent);
+						}
+					} else {
+						const userComponent = new UserMessageComponent(textContent, this.getMarkdownThemeWithSettings());
+						this.chatContainer.addChild(userComponent);
+					}
 					if (options?.populateHistory) {
 						this.editor.addToHistory?.(textContent);
 					}
@@ -2219,7 +2532,7 @@ export class InteractiveMode {
 	}
 
 	private async handleFollowUp(): Promise<void> {
-		const text = this.editor.getText().trim();
+		const text = (this.editor.getExpandedText?.() ?? this.editor.getText()).trim();
 		if (!text) return;
 
 		// Queue input during compaction (extension commands execute immediately)
@@ -2398,26 +2711,64 @@ export class InteractiveMode {
 			? `Download from: ${theme.fg("accent", "https://github.com/badlogic/pi-mono/releases/latest")}`
 			: `Run: ${theme.fg("accent", `${isBunRuntime ? "bun" : "npm"} install -g @mariozechner/pi-coding-agent`)}`;
 		const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. `) + action;
+		const changelogUrl = theme.fg(
+			"accent",
+			"https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/CHANGELOG.md",
+		);
+		const changelogLine = theme.fg("muted", "Changelog: ") + changelogUrl;
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
 		this.chatContainer.addChild(
-			new Text(`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}`, 1, 0),
+			new Text(
+				`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}\n${changelogLine}`,
+				1,
+				0,
+			),
 		);
 		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
 		this.ui.requestRender();
 	}
 
+	/**
+	 * Get all queued messages (read-only).
+	 * Combines session queue and compaction queue.
+	 */
+	private getAllQueuedMessages(): { steering: string[]; followUp: string[] } {
+		return {
+			steering: [
+				...this.session.getSteeringMessages(),
+				...this.compactionQueuedMessages.filter((msg) => msg.mode === "steer").map((msg) => msg.text),
+			],
+			followUp: [
+				...this.session.getFollowUpMessages(),
+				...this.compactionQueuedMessages.filter((msg) => msg.mode === "followUp").map((msg) => msg.text),
+			],
+		};
+	}
+
+	/**
+	 * Clear all queued messages and return their contents.
+	 * Clears both session queue and compaction queue.
+	 */
+	private clearAllQueues(): { steering: string[]; followUp: string[] } {
+		const { steering, followUp } = this.session.clearQueue();
+		const compactionSteering = this.compactionQueuedMessages
+			.filter((msg) => msg.mode === "steer")
+			.map((msg) => msg.text);
+		const compactionFollowUp = this.compactionQueuedMessages
+			.filter((msg) => msg.mode === "followUp")
+			.map((msg) => msg.text);
+		this.compactionQueuedMessages = [];
+		return {
+			steering: [...steering, ...compactionSteering],
+			followUp: [...followUp, ...compactionFollowUp],
+		};
+	}
+
 	private updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
-		const steeringMessages = [
-			...this.session.getSteeringMessages(),
-			...this.compactionQueuedMessages.filter((msg) => msg.mode === "steer").map((msg) => msg.text),
-		];
-		const followUpMessages = [
-			...this.session.getFollowUpMessages(),
-			...this.compactionQueuedMessages.filter((msg) => msg.mode === "followUp").map((msg) => msg.text),
-		];
+		const { steering: steeringMessages, followUp: followUpMessages } = this.getAllQueuedMessages();
 		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
 			for (const message of steeringMessages) {
@@ -2435,7 +2786,7 @@ export class InteractiveMode {
 	}
 
 	private restoreQueuedMessagesToEditor(options?: { abort?: boolean; currentText?: string }): number {
-		const { steering, followUp } = this.session.clearQueue();
+		const { steering, followUp } = this.clearAllQueues();
 		const allQueued = [...steering, ...followUp];
 		if (allQueued.length === 0) {
 			this.updatePendingMessagesDisplay();
@@ -2750,6 +3101,13 @@ export class InteractiveMode {
 		} catch {
 			return [];
 		}
+	}
+
+	/** Update the footer's available provider count from current model candidates */
+	private async updateAvailableProviderCount(): Promise<void> {
+		const models = await this.getModelCandidates();
+		const uniqueProviders = new Set(models.map((m) => m.provider));
+		this.footerDataProvider.setAvailableProviderCount(uniqueProviders.size);
 	}
 
 	private showModelSelector(initialSearchInput?: string): void {
@@ -3144,6 +3502,7 @@ export class InteractiveMode {
 						try {
 							this.session.modelRegistry.authStorage.logout(providerId);
 							this.session.modelRegistry.refresh();
+							await this.updateAvailableProviderCount();
 							this.showStatus(`Logged out of ${providerName}`);
 						} catch (error: unknown) {
 							this.showError(`Logout failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -3238,6 +3597,7 @@ export class InteractiveMode {
 			// Success
 			restoreEditor();
 			this.session.modelRegistry.refresh();
+			await this.updateAvailableProviderCount();
 			this.showStatus(`Logged in to ${providerName}. Credentials saved to ${getAuthPath()}`);
 		} catch (error: unknown) {
 			restoreEditor();
@@ -3264,7 +3624,9 @@ export class InteractiveMode {
 
 		this.resetExtensionUI();
 
-		const loader = new BorderedLoader(this.ui, theme, "Reloading resources...", { cancellable: false });
+		const loader = new BorderedLoader(this.ui, theme, "Reloading extensions, skills, prompts, themes...", {
+			cancellable: false,
+		});
 		const previousEditor = this.editor;
 		this.editorContainer.clear();
 		this.editorContainer.addChild(loader);
@@ -3281,18 +3643,20 @@ export class InteractiveMode {
 
 		try {
 			await this.session.reload();
+			setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
 			this.rebuildAutocomplete();
 			const runner = this.session.extensionRunner;
 			if (runner) {
 				this.setupExtensionShortcuts(runner);
 			}
+			this.rebuildChatFromMessages();
 			restoreEditor();
 			this.showLoadedResources({ extensionPaths: runner?.getExtensionPaths() ?? [], force: true });
 			const modelsJsonError = this.session.modelRegistry.getError();
 			if (modelsJsonError) {
 				this.showError(`models.json error: ${modelsJsonError}`);
 			}
-			this.showStatus("Reloaded resources");
+			this.showStatus("Reloaded extensions, skills, prompts, themes");
 		} catch (error) {
 			restoreEditor();
 			this.showError(`Reload failed: ${error instanceof Error ? error.message : String(error)}`);

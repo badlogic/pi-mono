@@ -168,6 +168,11 @@ export class FooterComponent implements Component {
 			}
 		}
 
+		// Prepend the provider in parenthesis to the right side if there's multiple providers
+		if (this.footerData.getAvailableProviderCount() > 1 && state.model) {
+			rightSide = `(${state.model.provider}) ${rightSide}`;
+		}
+
 		let statsLeftWidth = visibleWidth(statsLeft);
 		const rightSideWidth = visibleWidth(rightSide);
 

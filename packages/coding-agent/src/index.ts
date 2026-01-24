@@ -8,7 +8,9 @@ export {
 	type AgentSessionEvent,
 	type AgentSessionEventListener,
 	type ModelCycleResult,
+	type ParsedSkillBlock,
 	type PromptOptions,
+	parseSkillBlock,
 	type SessionStats,
 } from "./core/agent-session.js";
 // Auth and model registry
@@ -116,9 +118,15 @@ export {
 export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.js";
 export { convertToLlm } from "./core/messages.js";
 export { ModelRegistry } from "./core/model-registry.js";
-export type { PackageManager, ProgressCallback, ProgressEvent } from "./core/package-manager.js";
+export type {
+	PackageManager,
+	PathMetadata,
+	ProgressCallback,
+	ProgressEvent,
+	ResolvedPaths,
+} from "./core/package-manager.js";
 export { DefaultPackageManager } from "./core/package-manager.js";
-export type { ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.js";
+export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.js";
 export { DefaultResourceLoader } from "./core/resource-loader.js";
 // SDK for programmatic usage
 export {
@@ -166,6 +174,7 @@ export {
 export {
 	type CompactionSettings,
 	type ImageSettings,
+	type PackageSource,
 	type RetrySettings,
 	SettingsManager,
 } from "./core/settings-manager.js";
@@ -178,7 +187,6 @@ export {
 	loadSkillsFromDir,
 	type Skill,
 	type SkillFrontmatter,
-	type SkillWarning,
 } from "./core/skills.js";
 // Tools
 export {
@@ -260,6 +268,7 @@ export {
 	type SettingsConfig,
 	SettingsSelectorComponent,
 	ShowImagesSelectorComponent,
+	SkillInvocationMessageComponent,
 	ThemeSelectorComponent,
 	ThinkingSelectorComponent,
 	ToolExecutionComponent,
@@ -281,6 +290,8 @@ export {
 	Theme,
 	type ThemeColor,
 } from "./modes/interactive/theme/theme.js";
+// Clipboard utilities
+export { copyToClipboard } from "./utils/clipboard.js";
 export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.js";
 // Shell utilities
 export { getShellConfig } from "./utils/shell.js";

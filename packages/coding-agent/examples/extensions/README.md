@@ -92,8 +92,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 
 | Extension | Description |
 |-----------|-------------|
-| `chalk-logger.ts` | Uses chalk from parent node_modules (demonstrates jiti module resolution) |
-| `with-deps/` | Extension with its own package.json and dependencies |
+| `with-deps/` | Extension with its own package.json and dependencies (demonstrates jiti module resolution) |
 | `file-trigger.ts` | Watches a trigger file and injects contents into conversation |
 
 ## Writing Extensions

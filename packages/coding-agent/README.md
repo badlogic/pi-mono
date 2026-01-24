@@ -684,10 +684,10 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
 
 **Supported APIs:** `openai-completions`, `openai-responses`, `openai-codex-responses`, `anthropic-messages`, `google-generative-ai`
 
-**API key resolution:** The `apiKey` field supports three formats:
+**Value resolution:** The `apiKey` and `headers` fields support three formats for their values:
 - `"!command"` - Executes the command and uses stdout (e.g., `"!security find-generic-password -ws 'anthropic'"` for macOS Keychain, `"!op read 'op://vault/item/credential'"` for 1Password)
 - Environment variable name (e.g., `"MY_API_KEY"`) - Uses the value of the environment variable
-- Literal value - Used directly as the API key
+- Literal value - Used directly
 
 **API override:** Set `api` at provider level (default for all models) or model level (override per model).
 
@@ -698,17 +698,19 @@ Add custom models (Ollama, vLLM, LM Studio, etc.) via `~/.pi/agent/models.json`:
   "providers": {
     "custom-proxy": {
       "baseUrl": "https://proxy.example.com/v1",
-      "apiKey": "YOUR_API_KEY",
+      "apiKey": "MY_API_KEY",
       "api": "anthropic-messages",
       "headers": {
-        "User-Agent": "Mozilla/5.0 ...",
-        "X-Custom-Auth": "token"
+        "x-portkey-api-key": "PORTKEY_API_KEY",
+        "x-secret": "!op read 'op://vault/item/secret'"
       },
       "models": [...]
     }
   }
 }
 ```
+
+Header values use the same resolution as `apiKey`: environment variables, shell commands (`!`), or literal values.
 
 **Overriding built-in providers:**
 
@@ -828,6 +830,7 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `shellPath` | Custom bash path (Windows) | auto-detected |
 | `shellCommandPrefix` | Command prefix for bash (e.g., `shopt -s expand_aliases` for alias support) | - |
 | `hideThinkingBlock` | Hide thinking blocks in output (Ctrl+T to toggle) | `false` |
+| `quietStartup` | Hide startup info (keybindings, loaded skills/extensions) | `false` |
 | `collapseChangelog` | Show condensed changelog after update | `false` |
 | `compaction.enabled` | Enable auto-compaction | `true` |
 | `compaction.reserveTokens` | Tokens to reserve before compaction triggers | `16384` |
@@ -846,7 +849,11 @@ Global `~/.pi/agent/settings.json` stores persistent preferences:
 | `doubleEscapeAction` | Action for double-escape with empty editor: `tree` or `fork` | `tree` |
 | `editorPaddingX` | Horizontal padding for input editor (0-3) | `0` |
 | `markdown.codeBlockIndent` | Prefix for each rendered code block line | `"  "` |
-| `extensions` | Extension sources or file paths (npm:, git:, local) | `[]` |
+| `packages` | External package sources (npm:, git:) with optional filtering | `[]` |
+| `extensions` | Local extension paths (supports globs and `!` exclusions) | `[]` |
+| `skills` | Local skill paths (supports globs and `!` exclusions) | `[]` |
+| `prompts` | Local prompt template paths (supports globs and `!` exclusions) | `[]` |
+| `themes` | Local theme paths (supports globs and `!` exclusions) | `[]` |
 
 ---
 
@@ -983,18 +990,45 @@ Extensions are TypeScript modules that extend pi's behavior.
 **Locations:**
 - Global: `~/.pi/agent/extensions/*.ts` or `~/.pi/agent/extensions/*/index.ts`
 - Project: `.pi/extensions/*.ts` or `.pi/extensions/*/index.ts`
-- Settings: `extensions` array supports file paths and `npm:` or `git:` sources
+- Settings: `extensions` array for local paths, `packages` array for npm/git sources
 - CLI: `--extension <path>` or `-e <path>` (temporary for this run)
 
-Install and remove extension sources with the CLI:
+**Install packages:**
 
 ```bash
 pi install npm:@foo/bar@1.0.0
 pi install git:github.com/user/repo@v1
+pi install https://github.com/user/repo  # raw URLs work too
 pi remove npm:@foo/bar
+pi list    # show installed packages
+pi update  # update all non-pinned packages
 ```
 
 Use `-l` to install into project settings (`.pi/settings.json`).
+
+**Package filtering:** By default, packages load all resources (extensions, skills, prompts, themes). To selectively load only certain resources, use the object form in settings.json:
+
+```json
+{
+  "packages": [
+    "npm:simple-pkg",
+    {
+      "source": "npm:shitty-extensions",
+      "extensions": ["extensions/oracle.ts", "extensions/memory-mode.ts"],
+      "skills": ["skills/a-nach-b"],
+      "themes": [],
+      "prompts": []
+    }
+  ]
+}
+```
+
+- Omit a key to load all of that type
+- Use empty array `[]` to load none of that type
+- Paths are relative to package root
+- Use `!pattern` to exclude (e.g., `"!deprecated/*"`)
+- Glob patterns supported via minimatch (e.g., `"*.ts"`, `"**/*.json"`)
+- **Layered filtering:** User filters apply on top of manifest filters (they narrow down, not replace). If a manifest excludes 10 extensions and user adds one more exclusion, all 11 are excluded.
 
 **Dependencies:** Extensions can have their own dependencies. Place a `package.json` next to the extension (or in a parent directory), run `npm install`, and imports are resolved via [jiti](https://github.com/unjs/jiti). See [examples/extensions/with-deps/](examples/extensions/with-deps/).
 
@@ -1279,6 +1313,7 @@ pi [options] [@files...] [messages...]
 | `--no-prompt-templates` | Disable prompt template discovery and loading |
 | `--no-themes` | Disable theme discovery and loading |
 | `--export <file> [output]` | Export session to HTML |
+| `--verbose` | Force verbose startup (overrides `quietStartup` setting) |
 | `--help`, `-h` | Show help |
 | `--version`, `-v` | Show version |
 

@@ -1,9 +1,13 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import chalk from "chalk";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.js";
+import type { ResourceDiagnostic } from "./diagnostics.js";
+
+export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.js";
+
 import { createEventBus, type EventBus } from "./event-bus.js";
 import {
 	createExtensionRuntime,
@@ -12,18 +16,12 @@ import {
 	loadExtensions,
 } from "./extensions/loader.js";
 import type { Extension, ExtensionFactory, ExtensionRuntime, LoadExtensionsResult } from "./extensions/types.js";
-import { DefaultPackageManager } from "./package-manager.js";
+import { DefaultPackageManager, type PathMetadata } from "./package-manager.js";
 import type { PromptTemplate } from "./prompt-templates.js";
 import { loadPromptTemplates } from "./prompt-templates.js";
 import { SettingsManager } from "./settings-manager.js";
-import type { Skill, SkillWarning } from "./skills.js";
+import type { Skill } from "./skills.js";
 import { loadSkills } from "./skills.js";
-
-export interface ResourceDiagnostic {
-	type: "warning" | "error";
-	message: string;
-	path?: string;
-}
 
 export interface ResourceLoader {
 	getExtensions(): LoadExtensionsResult;
@@ -33,6 +31,7 @@ export interface ResourceLoader {
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
 	getSystemPrompt(): string | undefined;
 	getAppendSystemPrompt(): string[];
+	getPathMetadata(): Map<string, PathMetadata>;
 	reload(): Promise<void>;
 }
 
@@ -192,6 +191,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private agentsFiles: Array<{ path: string; content: string }>;
 	private systemPrompt?: string;
 	private appendSystemPrompt: string[];
+	private pathMetadata: Map<string, PathMetadata>;
 
 	constructor(options: DefaultResourceLoaderOptions) {
 		this.cwd = options.cwd ?? process.cwd();
@@ -231,6 +231,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.themeDiagnostics = [];
 		this.agentsFiles = [];
 		this.appendSystemPrompt = [];
+		this.pathMetadata = new Map();
 	}
 
 	getExtensions(): LoadExtensionsResult {
@@ -261,11 +262,29 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return this.appendSystemPrompt;
 	}
 
+	getPathMetadata(): Map<string, PathMetadata> {
+		return this.pathMetadata;
+	}
+
 	async reload(): Promise<void> {
 		const resolvedPaths = await this.packageManager.resolve();
 		const cliExtensionPaths = await this.packageManager.resolveExtensionSources(this.additionalExtensionPaths, {
 			temporary: true,
 		});
+
+		// Store metadata from resolved paths
+		this.pathMetadata = new Map(resolvedPaths.metadata);
+		// Add CLI paths metadata
+		for (const p of cliExtensionPaths.extensions) {
+			if (!this.pathMetadata.has(p)) {
+				this.pathMetadata.set(p, { source: "cli", scope: "temporary", origin: "top-level" });
+			}
+		}
+		for (const p of cliExtensionPaths.skills) {
+			if (!this.pathMetadata.has(p)) {
+				this.pathMetadata.set(p, { source: "cli", scope: "temporary", origin: "top-level" });
+			}
+		}
 
 		const extensionPaths = this.noExtensions
 			? cliExtensionPaths.extensions
@@ -301,16 +320,18 @@ export class DefaultResourceLoader implements ResourceLoader {
 		if (this.noSkills && skillPaths.length === 0) {
 			skillsResult = { skills: [], diagnostics: [] };
 		} else {
-			const result = loadSkills({
+			skillsResult = loadSkills({
 				cwd: this.cwd,
 				agentDir: this.agentDir,
 				skillPaths,
 			});
-			skillsResult = { skills: result.skills, diagnostics: this.toDiagnostics(result.warnings) };
 		}
 		const resolvedSkills = this.skillsOverride ? this.skillsOverride(skillsResult) : skillsResult;
 		this.skills = resolvedSkills.skills;
 		this.skillDiagnostics = resolvedSkills.diagnostics;
+		for (const skill of this.skills) {
+			this.addDefaultMetadataForPath(skill.filePath);
+		}
 
 		const promptPaths = this.noPromptTemplates
 			? this.mergePaths(cliExtensionPaths.prompts, this.additionalPromptTemplatePaths)
@@ -323,18 +344,19 @@ export class DefaultResourceLoader implements ResourceLoader {
 		if (this.noPromptTemplates && promptPaths.length === 0) {
 			promptsResult = { prompts: [], diagnostics: [] };
 		} else {
-			promptsResult = {
-				prompts: loadPromptTemplates({
-					cwd: this.cwd,
-					agentDir: this.agentDir,
-					promptPaths,
-				}),
-				diagnostics: [],
-			};
+			const allPrompts = loadPromptTemplates({
+				cwd: this.cwd,
+				agentDir: this.agentDir,
+				promptPaths,
+			});
+			promptsResult = this.dedupePrompts(allPrompts);
 		}
 		const resolvedPrompts = this.promptsOverride ? this.promptsOverride(promptsResult) : promptsResult;
 		this.prompts = resolvedPrompts.prompts;
 		this.promptDiagnostics = resolvedPrompts.diagnostics;
+		for (const prompt of this.prompts) {
+			this.addDefaultMetadataForPath(prompt.filePath);
+		}
 
 		const themePaths = this.noThemes
 			? this.mergePaths(cliExtensionPaths.themes, this.additionalThemePaths)
@@ -344,11 +366,22 @@ export class DefaultResourceLoader implements ResourceLoader {
 		if (this.noThemes && themePaths.length === 0) {
 			themesResult = { themes: [], diagnostics: [] };
 		} else {
-			themesResult = this.loadThemes(themePaths);
+			const loaded = this.loadThemes(themePaths);
+			const deduped = this.dedupeThemes(loaded.themes);
+			themesResult = { themes: deduped.themes, diagnostics: [...loaded.diagnostics, ...deduped.diagnostics] };
 		}
 		const resolvedThemes = this.themesOverride ? this.themesOverride(themesResult) : themesResult;
 		this.themes = resolvedThemes.themes;
 		this.themeDiagnostics = resolvedThemes.diagnostics;
+		for (const theme of this.themes) {
+			if (theme.sourcePath) {
+				this.addDefaultMetadataForPath(theme.sourcePath);
+			}
+		}
+
+		for (const extension of this.extensionsResult.extensions) {
+			this.addDefaultMetadataForPath(extension.path);
+		}
 
 		const agentsFiles = { agentsFiles: loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir }) };
 		const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(agentsFiles) : agentsFiles;
@@ -489,12 +522,57 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return { extensions, errors };
 	}
 
-	private toDiagnostics(warnings: SkillWarning[]): ResourceDiagnostic[] {
-		return warnings.map((warning) => ({
-			type: "warning",
-			message: warning.message,
-			path: warning.skillPath,
-		}));
+	private dedupePrompts(prompts: PromptTemplate[]): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] } {
+		const seen = new Map<string, PromptTemplate>();
+		const diagnostics: ResourceDiagnostic[] = [];
+
+		for (const prompt of prompts) {
+			const existing = seen.get(prompt.name);
+			if (existing) {
+				diagnostics.push({
+					type: "collision",
+					message: `name "/${prompt.name}" collision`,
+					path: prompt.filePath,
+					collision: {
+						resourceType: "prompt",
+						name: prompt.name,
+						winnerPath: existing.filePath,
+						loserPath: prompt.filePath,
+					},
+				});
+			} else {
+				seen.set(prompt.name, prompt);
+			}
+		}
+
+		return { prompts: Array.from(seen.values()), diagnostics };
+	}
+
+	private dedupeThemes(themes: Theme[]): { themes: Theme[]; diagnostics: ResourceDiagnostic[] } {
+		const seen = new Map<string, Theme>();
+		const diagnostics: ResourceDiagnostic[] = [];
+
+		for (const t of themes) {
+			const name = t.name ?? "unnamed";
+			const existing = seen.get(name);
+			if (existing) {
+				diagnostics.push({
+					type: "collision",
+					message: `name "${name}" collision`,
+					path: t.sourcePath,
+					collision: {
+						resourceType: "theme",
+						name,
+						winnerPath: existing.sourcePath ?? "<builtin>",
+						loserPath: t.sourcePath ?? "<builtin>",
+					},
+				});
+			} else {
+				seen.set(name, t);
+			}
+		}
+
+		return { themes: Array.from(seen.values()), diagnostics };
 	}
 
 	private discoverSystemPromptFile(): string | undefined {
@@ -523,6 +601,53 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}
 
 		return undefined;
+	}
+
+	private addDefaultMetadataForPath(filePath: string): void {
+		if (!filePath || filePath.startsWith("<")) {
+			return;
+		}
+
+		const normalizedPath = resolve(filePath);
+		if (this.pathMetadata.has(normalizedPath) || this.pathMetadata.has(filePath)) {
+			return;
+		}
+
+		const agentRoots = [
+			join(this.agentDir, "skills"),
+			join(this.agentDir, "prompts"),
+			join(this.agentDir, "themes"),
+			join(this.agentDir, "extensions"),
+		];
+		const projectRoots = [
+			join(this.cwd, CONFIG_DIR_NAME, "skills"),
+			join(this.cwd, CONFIG_DIR_NAME, "prompts"),
+			join(this.cwd, CONFIG_DIR_NAME, "themes"),
+			join(this.cwd, CONFIG_DIR_NAME, "extensions"),
+		];
+
+		for (const root of agentRoots) {
+			if (this.isUnderPath(normalizedPath, root)) {
+				this.pathMetadata.set(normalizedPath, { source: "local", scope: "user", origin: "top-level" });
+				return;
+			}
+		}
+
+		for (const root of projectRoots) {
+			if (this.isUnderPath(normalizedPath, root)) {
+				this.pathMetadata.set(normalizedPath, { source: "local", scope: "project", origin: "top-level" });
+				return;
+			}
+		}
+	}
+
+	private isUnderPath(target: string, root: string): boolean {
+		const normalizedRoot = resolve(root);
+		if (target === normalizedRoot) {
+			return true;
+		}
+		const prefix = normalizedRoot.endsWith(sep) ? normalizedRoot : `${normalizedRoot}${sep}`;
+		return target.startsWith(prefix);
 	}
 
 	private detectExtensionConflicts(extensions: Extension[]): Array<{ path: string; message: string }> {

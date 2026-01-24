@@ -8,7 +8,7 @@
 // NEVER convert to top-level imports - breaks browser/Vite builds (web-ui)
 let _randomBytes: typeof import("node:crypto").randomBytes | null = null;
 let _http: typeof import("node:http") | null = null;
-if (typeof process !== "undefined" && process.versions?.node) {
+if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
 	import("node:crypto").then((m) => {
 		_randomBytes = m.randomBytes;
 	});

@@ -1,6 +1,7 @@
 import { homedir } from "os";
 import { join, resolve } from "path";
 import { describe, expect, it } from "vitest";
+import type { ResourceDiagnostic } from "../src/core/diagnostics.js";
 import { formatSkillsForPrompt, loadSkills, loadSkillsFromDir, type Skill } from "../src/core/skills.js";
 
 const fixturesDir = resolve(__dirname, "fixtures/skills");
@@ -9,7 +10,7 @@ const collisionFixturesDir = resolve(__dirname, "fixtures/skills-collision");
 describe("skills", () => {
 	describe("loadSkillsFromDir", () => {
 		it("should load a valid skill", () => {
-			const { skills, warnings } = loadSkillsFromDir({
+			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "valid-skill"),
 				source: "test",
 			});
@@ -18,95 +19,101 @@ describe("skills", () => {
 			expect(skills[0].name).toBe("valid-skill");
 			expect(skills[0].description).toBe("A valid skill for testing purposes.");
 			expect(skills[0].source).toBe("test");
-			expect(warnings).toHaveLength(0);
+			expect(diagnostics).toHaveLength(0);
 		});
 
 		it("should warn when name doesn't match parent directory", () => {
-			const { skills, warnings } = loadSkillsFromDir({
+			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "name-mismatch"),
 				source: "test",
 			});
 
 			expect(skills).toHaveLength(1);
 			expect(skills[0].name).toBe("different-name");
-			expect(warnings.some((w) => w.message.includes("does not match parent directory"))).toBe(true);
+			expect(
+				diagnostics.some((d: ResourceDiagnostic) => d.message.includes("does not match parent directory")),
+			).toBe(true);
 		});
 
 		it("should warn when name contains invalid characters", () => {
-			const { skills, warnings } = loadSkillsFromDir({
+			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "invalid-name-chars"),
 				source: "test",
 			});
 
 			expect(skills).toHaveLength(1);
-			expect(warnings.some((w) => w.message.includes("invalid characters"))).toBe(true);
+			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("invalid characters"))).toBe(true);
 		});
 
 		it("should warn when name exceeds 64 characters", () => {
-			const { skills, warnings } = loadSkillsFromDir({
+			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "long-name"),
 				source: "test",
 			});
 
 			expect(skills).toHaveLength(1);
-			expect(warnings.some((w) => w.message.includes("exceeds 64 characters"))).toBe(true);
+			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("exceeds 64 characters"))).toBe(true);
 		});
 
 		it("should warn and skip skill when description is missing", () => {
-			const { skills, warnings } = loadSkillsFromDir({
+			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "missing-description"),
 				source: "test",
 			});
 
 			expect(skills).toHaveLength(0);
-			expect(warnings.some((w) => w.message.includes("description is required"))).toBe(true);
+			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("description is required"))).toBe(true);
 		});
 
 		it("should warn when unknown frontmatter fields are present", () => {
-			const { skills, warnings } = loadSkillsFromDir({
+			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "unknown-field"),
 				source: "test",
 			});
 
 			expect(skills).toHaveLength(1);
-			expect(warnings.some((w) => w.message.includes('unknown frontmatter field "author"'))).toBe(true);
-			expect(warnings.some((w) => w.message.includes('unknown frontmatter field "version"'))).toBe(true);
+			expect(
+				diagnostics.some((d: ResourceDiagnostic) => d.message.includes('unknown frontmatter field "author"')),
+			).toBe(true);
+			expect(
+				diagnostics.some((d: ResourceDiagnostic) => d.message.includes('unknown frontmatter field "version"')),
+			).toBe(true);
 		});
 
 		it("should load nested skills recursively", () => {
-			const { skills, warnings } = loadSkillsFromDir({
+			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "nested"),
 				source: "test",
 			});
 
 			expect(skills).toHaveLength(1);
 			expect(skills[0].name).toBe("child-skill");
-			expect(warnings).toHaveLength(0);
+			expect(diagnostics).toHaveLength(0);
 		});
 
 		it("should skip files without frontmatter", () => {
-			const { skills, warnings } = loadSkillsFromDir({
+			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "no-frontmatter"),
 				source: "test",
 			});
 
 			// no-frontmatter has no description, so it should be skipped
 			expect(skills).toHaveLength(0);
-			expect(warnings.some((w) => w.message.includes("description is required"))).toBe(true);
+			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("description is required"))).toBe(true);
 		});
 
 		it("should warn and skip skill when YAML frontmatter is invalid", () => {
-			const { skills, warnings } = loadSkillsFromDir({
+			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "invalid-yaml"),
 				source: "test",
 			});
 
 			expect(skills).toHaveLength(0);
-			expect(warnings.some((w) => w.message.includes("at line"))).toBe(true);
+			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("at line"))).toBe(true);
 		});
 
 		it("should preserve multiline descriptions from YAML", () => {
-			const { skills, warnings } = loadSkillsFromDir({
+			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "multiline-description"),
 				source: "test",
 			});
@@ -114,17 +121,17 @@ describe("skills", () => {
 			expect(skills).toHaveLength(1);
 			expect(skills[0].description).toContain("\n");
 			expect(skills[0].description).toContain("This is a multiline description.");
-			expect(warnings).toHaveLength(0);
+			expect(diagnostics).toHaveLength(0);
 		});
 
 		it("should warn when name contains consecutive hyphens", () => {
-			const { skills, warnings } = loadSkillsFromDir({
+			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "consecutive-hyphens"),
 				source: "test",
 			});
 
 			expect(skills).toHaveLength(1);
-			expect(warnings.some((w) => w.message.includes("consecutive hyphens"))).toBe(true);
+			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("consecutive hyphens"))).toBe(true);
 		});
 
 		it("should load all skills from fixture directory", () => {
@@ -140,13 +147,13 @@ describe("skills", () => {
 		});
 
 		it("should return empty for non-existent directory", () => {
-			const { skills, warnings } = loadSkillsFromDir({
+			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: "/non/existent/path",
 				source: "test",
 			});
 
 			expect(skills).toHaveLength(0);
-			expect(warnings).toHaveLength(0);
+			expect(diagnostics).toHaveLength(0);
 		});
 
 		it("should use parent directory name when name not in frontmatter", () => {
@@ -160,6 +167,31 @@ describe("skills", () => {
 
 			expect(skills).toHaveLength(1);
 			expect(skills[0].name).toBe("valid-skill");
+		});
+
+		it("should parse disable-model-invocation frontmatter field", () => {
+			const { skills, diagnostics } = loadSkillsFromDir({
+				dir: join(fixturesDir, "disable-model-invocation"),
+				source: "test",
+			});
+
+			expect(skills).toHaveLength(1);
+			expect(skills[0].name).toBe("disable-model-invocation");
+			expect(skills[0].disableModelInvocation).toBe(true);
+			// Should not warn about unknown field
+			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("unknown frontmatter field"))).toBe(
+				false,
+			);
+		});
+
+		it("should default disableModelInvocation to false when not specified", () => {
+			const { skills } = loadSkillsFromDir({
+				dir: join(fixturesDir, "valid-skill"),
+				source: "test",
+			});
+
+			expect(skills).toHaveLength(1);
+			expect(skills[0].disableModelInvocation).toBe(false);
 		});
 	});
 
@@ -177,6 +209,7 @@ describe("skills", () => {
 					filePath: "/path/to/skill/SKILL.md",
 					baseDir: "/path/to/skill",
 					source: "test",
+					disableModelInvocation: false,
 				},
 			];
 
@@ -198,6 +231,7 @@ describe("skills", () => {
 					filePath: "/path/to/skill/SKILL.md",
 					baseDir: "/path/to/skill",
 					source: "test",
+					disableModelInvocation: false,
 				},
 			];
 
@@ -217,6 +251,7 @@ describe("skills", () => {
 					filePath: "/path/to/skill/SKILL.md",
 					baseDir: "/path/to/skill",
 					source: "test",
+					disableModelInvocation: false,
 				},
 			];
 
@@ -235,6 +270,7 @@ describe("skills", () => {
 					filePath: "/path/one/SKILL.md",
 					baseDir: "/path/one",
 					source: "test",
+					disableModelInvocation: false,
 				},
 				{
 					name: "skill-two",
@@ -242,6 +278,7 @@ describe("skills", () => {
 					filePath: "/path/two/SKILL.md",
 					baseDir: "/path/two",
 					source: "test",
+					disableModelInvocation: false,
 				},
 			];
 
@@ -251,6 +288,49 @@ describe("skills", () => {
 			expect(result).toContain("<name>skill-two</name>");
 			expect((result.match(/<skill>/g) || []).length).toBe(2);
 		});
+
+		it("should exclude skills with disableModelInvocation from prompt", () => {
+			const skills: Skill[] = [
+				{
+					name: "visible-skill",
+					description: "A visible skill.",
+					filePath: "/path/visible/SKILL.md",
+					baseDir: "/path/visible",
+					source: "test",
+					disableModelInvocation: false,
+				},
+				{
+					name: "hidden-skill",
+					description: "A hidden skill.",
+					filePath: "/path/hidden/SKILL.md",
+					baseDir: "/path/hidden",
+					source: "test",
+					disableModelInvocation: true,
+				},
+			];
+
+			const result = formatSkillsForPrompt(skills);
+
+			expect(result).toContain("<name>visible-skill</name>");
+			expect(result).not.toContain("<name>hidden-skill</name>");
+			expect((result.match(/<skill>/g) || []).length).toBe(1);
+		});
+
+		it("should return empty string when all skills have disableModelInvocation", () => {
+			const skills: Skill[] = [
+				{
+					name: "hidden-skill",
+					description: "A hidden skill.",
+					filePath: "/path/hidden/SKILL.md",
+					baseDir: "/path/hidden",
+					source: "test",
+					disableModelInvocation: true,
+				},
+			];
+
+			const result = formatSkillsForPrompt(skills);
+			expect(result).toBe("");
+		});
 	});
 
 	describe("loadSkills with options", () => {
@@ -258,24 +338,24 @@ describe("skills", () => {
 		const emptyCwd = resolve(__dirname, "fixtures/empty-cwd");
 
 		it("should load from explicit skillPaths", () => {
-			const { skills, warnings } = loadSkills({
+			const { skills, diagnostics } = loadSkills({
 				agentDir: emptyAgentDir,
 				cwd: emptyCwd,
 				skillPaths: [join(fixturesDir, "valid-skill")],
 			});
 			expect(skills).toHaveLength(1);
-			expect(skills[0].source).toBe("custom");
-			expect(warnings).toHaveLength(0);
+			expect(skills[0].source).toBe("path");
+			expect(diagnostics).toHaveLength(0);
 		});
 
 		it("should warn when skill path does not exist", () => {
-			const { skills, warnings } = loadSkills({
+			const { skills, diagnostics } = loadSkills({
 				agentDir: emptyAgentDir,
 				cwd: emptyCwd,
 				skillPaths: ["/non/existent/path"],
 			});
 			expect(skills).toHaveLength(0);
-			expect(warnings.some((w) => w.message.includes("does not exist"))).toBe(true);
+			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("does not exist"))).toBe(true);
 		});
 
 		it("should expand ~ in skillPaths", () => {

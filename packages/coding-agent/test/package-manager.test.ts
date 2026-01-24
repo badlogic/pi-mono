@@ -158,4 +158,300 @@ Content`,
 			expect(events.some((e) => e.type === "start" && e.action === "install")).toBe(true);
 		});
 	});
+
+	describe("pattern filtering in top-level arrays", () => {
+		it("should exclude extensions with ! pattern", async () => {
+			const extDir = join(tempDir, "extensions");
+			mkdirSync(extDir, { recursive: true });
+			writeFileSync(join(extDir, "keep.ts"), "export default function() {}");
+			writeFileSync(join(extDir, "remove.ts"), "export default function() {}");
+
+			settingsManager.setExtensionPaths([extDir, "!**/remove.ts"]);
+
+			const result = await packageManager.resolve();
+			expect(result.extensions.some((p) => p.endsWith("keep.ts"))).toBe(true);
+			expect(result.extensions.some((p) => p.endsWith("remove.ts"))).toBe(false);
+		});
+
+		it("should filter themes with glob patterns", async () => {
+			const themesDir = join(tempDir, "themes");
+			mkdirSync(themesDir, { recursive: true });
+			writeFileSync(join(themesDir, "dark.json"), "{}");
+			writeFileSync(join(themesDir, "light.json"), "{}");
+			writeFileSync(join(themesDir, "funky.json"), "{}");
+
+			settingsManager.setThemePaths([themesDir, "!funky.json"]);
+
+			const result = await packageManager.resolve();
+			expect(result.themes.some((p) => p.endsWith("dark.json"))).toBe(true);
+			expect(result.themes.some((p) => p.endsWith("light.json"))).toBe(true);
+			expect(result.themes.some((p) => p.endsWith("funky.json"))).toBe(false);
+		});
+
+		it("should filter prompts with exclusion pattern", async () => {
+			const promptsDir = join(tempDir, "prompts");
+			mkdirSync(promptsDir, { recursive: true });
+			writeFileSync(join(promptsDir, "review.md"), "Review code");
+			writeFileSync(join(promptsDir, "explain.md"), "Explain code");
+
+			settingsManager.setPromptTemplatePaths([promptsDir, "!explain.md"]);
+
+			const result = await packageManager.resolve();
+			expect(result.prompts.some((p) => p.endsWith("review.md"))).toBe(true);
+			expect(result.prompts.some((p) => p.endsWith("explain.md"))).toBe(false);
+		});
+
+		it("should filter skills with exclusion pattern", async () => {
+			const skillsDir = join(tempDir, "skills");
+			mkdirSync(join(skillsDir, "good-skill"), { recursive: true });
+			mkdirSync(join(skillsDir, "bad-skill"), { recursive: true });
+			writeFileSync(
+				join(skillsDir, "good-skill", "SKILL.md"),
+				"---\nname: good-skill\ndescription: Good\n---\nContent",
+			);
+			writeFileSync(
+				join(skillsDir, "bad-skill", "SKILL.md"),
+				"---\nname: bad-skill\ndescription: Bad\n---\nContent",
+			);
+
+			settingsManager.setSkillPaths([skillsDir, "!**/bad-skill"]);
+
+			const result = await packageManager.resolve();
+			expect(result.skills.some((p) => p.includes("good-skill"))).toBe(true);
+			expect(result.skills.some((p) => p.includes("bad-skill"))).toBe(false);
+		});
+
+		it("should work without patterns (backward compatible)", async () => {
+			const extPath = join(tempDir, "my-ext.ts");
+			writeFileSync(extPath, "export default function() {}");
+
+			settingsManager.setExtensionPaths([extPath]);
+
+			const result = await packageManager.resolve();
+			expect(result.extensions).toContain(extPath);
+		});
+	});
+
+	describe("pattern filtering in pi manifest", () => {
+		it("should support glob patterns in manifest extensions", async () => {
+			const pkgDir = join(tempDir, "manifest-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			mkdirSync(join(pkgDir, "node_modules/dep/extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "local.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "node_modules/dep/extensions", "remote.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "node_modules/dep/extensions", "skip.ts"), "export default function() {}");
+			writeFileSync(
+				join(pkgDir, "package.json"),
+				JSON.stringify({
+					name: "manifest-pkg",
+					pi: {
+						extensions: ["extensions", "node_modules/dep/extensions", "!**/skip.ts"],
+					},
+				}),
+			);
+
+			const result = await packageManager.resolveExtensionSources([pkgDir]);
+			expect(result.extensions.some((p) => p.endsWith("local.ts"))).toBe(true);
+			expect(result.extensions.some((p) => p.endsWith("remote.ts"))).toBe(true);
+			expect(result.extensions.some((p) => p.endsWith("skip.ts"))).toBe(false);
+		});
+
+		it("should support glob patterns in manifest skills", async () => {
+			const pkgDir = join(tempDir, "skill-manifest-pkg");
+			mkdirSync(join(pkgDir, "skills/good-skill"), { recursive: true });
+			mkdirSync(join(pkgDir, "skills/bad-skill"), { recursive: true });
+			writeFileSync(
+				join(pkgDir, "skills/good-skill", "SKILL.md"),
+				"---\nname: good-skill\ndescription: Good\n---\nContent",
+			);
+			writeFileSync(
+				join(pkgDir, "skills/bad-skill", "SKILL.md"),
+				"---\nname: bad-skill\ndescription: Bad\n---\nContent",
+			);
+			writeFileSync(
+				join(pkgDir, "package.json"),
+				JSON.stringify({
+					name: "skill-manifest-pkg",
+					pi: {
+						skills: ["skills", "!**/bad-skill"],
+					},
+				}),
+			);
+
+			const result = await packageManager.resolveExtensionSources([pkgDir]);
+			expect(result.skills.some((p) => p.includes("good-skill"))).toBe(true);
+			expect(result.skills.some((p) => p.includes("bad-skill"))).toBe(false);
+		});
+	});
+
+	describe("pattern filtering in package filters", () => {
+		it("should apply user filters on top of manifest filters (not replace)", async () => {
+			// Manifest excludes baz.ts, user excludes bar.ts
+			// Result should exclude BOTH
+			const pkgDir = join(tempDir, "layered-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "foo.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "bar.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "baz.ts"), "export default function() {}");
+			writeFileSync(
+				join(pkgDir, "package.json"),
+				JSON.stringify({
+					name: "layered-pkg",
+					pi: {
+						extensions: ["extensions", "!**/baz.ts"],
+					},
+				}),
+			);
+
+			// User filter adds exclusion for bar.ts
+			settingsManager.setPackages([
+				{
+					source: pkgDir,
+					extensions: ["!**/bar.ts"],
+					skills: [],
+					prompts: [],
+					themes: [],
+				},
+			]);
+
+			const result = await packageManager.resolve();
+			// foo.ts should be included (not excluded by anyone)
+			expect(result.extensions.some((p) => p.endsWith("foo.ts"))).toBe(true);
+			// bar.ts should be excluded (by user)
+			expect(result.extensions.some((p) => p.endsWith("bar.ts"))).toBe(false);
+			// baz.ts should be excluded (by manifest)
+			expect(result.extensions.some((p) => p.endsWith("baz.ts"))).toBe(false);
+		});
+
+		it("should exclude extensions from package with ! pattern", async () => {
+			const pkgDir = join(tempDir, "pattern-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "foo.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "bar.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "baz.ts"), "export default function() {}");
+
+			settingsManager.setPackages([
+				{
+					source: pkgDir,
+					extensions: ["!**/baz.ts"],
+					skills: [],
+					prompts: [],
+					themes: [],
+				},
+			]);
+
+			const result = await packageManager.resolve();
+			expect(result.extensions.some((p) => p.endsWith("foo.ts"))).toBe(true);
+			expect(result.extensions.some((p) => p.endsWith("bar.ts"))).toBe(true);
+			expect(result.extensions.some((p) => p.endsWith("baz.ts"))).toBe(false);
+		});
+
+		it("should filter themes from package", async () => {
+			const pkgDir = join(tempDir, "theme-pkg");
+			mkdirSync(join(pkgDir, "themes"), { recursive: true });
+			writeFileSync(join(pkgDir, "themes", "nice.json"), "{}");
+			writeFileSync(join(pkgDir, "themes", "ugly.json"), "{}");
+
+			settingsManager.setPackages([
+				{
+					source: pkgDir,
+					extensions: [],
+					skills: [],
+					prompts: [],
+					themes: ["!ugly.json"],
+				},
+			]);
+
+			const result = await packageManager.resolve();
+			expect(result.themes.some((p) => p.endsWith("nice.json"))).toBe(true);
+			expect(result.themes.some((p) => p.endsWith("ugly.json"))).toBe(false);
+		});
+
+		it("should combine include and exclude patterns", async () => {
+			const pkgDir = join(tempDir, "combo-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "alpha.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "beta.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "gamma.ts"), "export default function() {}");
+
+			settingsManager.setPackages([
+				{
+					source: pkgDir,
+					extensions: ["**/alpha.ts", "**/beta.ts", "!**/beta.ts"],
+					skills: [],
+					prompts: [],
+					themes: [],
+				},
+			]);
+
+			const result = await packageManager.resolve();
+			expect(result.extensions.some((p) => p.endsWith("alpha.ts"))).toBe(true);
+			expect(result.extensions.some((p) => p.endsWith("beta.ts"))).toBe(false);
+			expect(result.extensions.some((p) => p.endsWith("gamma.ts"))).toBe(false);
+		});
+
+		it("should work with direct paths (no patterns)", async () => {
+			const pkgDir = join(tempDir, "direct-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "one.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "two.ts"), "export default function() {}");
+
+			settingsManager.setPackages([
+				{
+					source: pkgDir,
+					extensions: ["extensions/one.ts"],
+					skills: [],
+					prompts: [],
+					themes: [],
+				},
+			]);
+
+			const result = await packageManager.resolve();
+			expect(result.extensions.some((p) => p.endsWith("one.ts"))).toBe(true);
+			expect(result.extensions.some((p) => p.endsWith("two.ts"))).toBe(false);
+		});
+	});
+
+	describe("package deduplication", () => {
+		it("should dedupe same local package in global and project (project wins)", async () => {
+			const pkgDir = join(tempDir, "shared-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "shared.ts"), "export default function() {}");
+
+			// Same package in both global and project
+			settingsManager.setPackages([pkgDir]); // global
+			settingsManager.setProjectPackages([pkgDir]); // project
+
+			// Debug: verify settings are stored correctly
+			const globalSettings = settingsManager.getGlobalSettings();
+			const projectSettings = settingsManager.getProjectSettings();
+			expect(globalSettings.packages).toEqual([pkgDir]);
+			expect(projectSettings.packages).toEqual([pkgDir]);
+
+			const result = await packageManager.resolve();
+			// Auto-discovery returns directories, not individual files
+			// Should only appear once (deduped), with project scope
+			const sharedPaths = result.extensions.filter((p) => p.includes("shared-pkg"));
+			expect(sharedPaths.length).toBe(1);
+			const meta = result.metadata.get(sharedPaths[0]);
+			expect(meta?.scope).toBe("project");
+		});
+
+		it("should keep both if different packages", async () => {
+			const pkg1Dir = join(tempDir, "pkg1");
+			const pkg2Dir = join(tempDir, "pkg2");
+			mkdirSync(join(pkg1Dir, "extensions"), { recursive: true });
+			mkdirSync(join(pkg2Dir, "extensions"), { recursive: true });
+			writeFileSync(join(pkg1Dir, "extensions", "from-pkg1.ts"), "export default function() {}");
+			writeFileSync(join(pkg2Dir, "extensions", "from-pkg2.ts"), "export default function() {}");
+
+			settingsManager.setPackages([pkg1Dir]); // global
+			settingsManager.setProjectPackages([pkg2Dir]); // project
+
+			const result = await packageManager.resolve();
+			// Auto-discovery returns directories, not individual files
+			expect(result.extensions.some((p) => p.includes("pkg1"))).toBe(true);
+			expect(result.extensions.some((p) => p.includes("pkg2"))).toBe(true);
+		});
+	});
 });

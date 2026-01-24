@@ -23,7 +23,7 @@ import { DefaultPackageManager } from "./core/package-manager.js";
 import { DefaultResourceLoader } from "./core/resource-loader.js";
 import { type CreateAgentSessionOptions, createAgentSession } from "./core/sdk.js";
 import { SessionManager } from "./core/session-manager.js";
-import { SettingsManager } from "./core/settings-manager.js";
+import { type PackageSource, SettingsManager } from "./core/settings-manager.js";
 import { printTimings, time } from "./core/timings.js";
 import { allTools } from "./core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
@@ -104,27 +104,36 @@ function sourcesMatch(a: string, b: string): boolean {
 	return left.type === right.type && left.key === right.key;
 }
 
-function updateExtensionSources(
+function getPackageSourceString(pkg: PackageSource): string {
+	return typeof pkg === "string" ? pkg : pkg.source;
+}
+
+function packageSourcesMatch(a: PackageSource, b: string): boolean {
+	const aSource = getPackageSourceString(a);
+	return sourcesMatch(aSource, b);
+}
+
+function updatePackageSources(
 	settingsManager: SettingsManager,
 	source: string,
 	local: boolean,
 	action: "add" | "remove",
 ): void {
 	const currentSettings = local ? settingsManager.getProjectSettings() : settingsManager.getGlobalSettings();
-	const currentSources = currentSettings.extensions ?? [];
+	const currentPackages = currentSettings.packages ?? [];
 
-	let nextSources: string[];
+	let nextPackages: PackageSource[];
 	if (action === "add") {
-		const exists = currentSources.some((existing) => sourcesMatch(existing, source));
-		nextSources = exists ? currentSources : [...currentSources, source];
+		const exists = currentPackages.some((existing) => packageSourcesMatch(existing, source));
+		nextPackages = exists ? currentPackages : [...currentPackages, source];
 	} else {
-		nextSources = currentSources.filter((existing) => !sourcesMatch(existing, source));
+		nextPackages = currentPackages.filter((existing) => !packageSourcesMatch(existing, source));
 	}
 
 	if (local) {
-		settingsManager.setProjectExtensionPaths(nextSources);
+		settingsManager.setProjectPackages(nextPackages);
 	} else {
-		settingsManager.setExtensionPaths(nextSources);
+		settingsManager.setPackages(nextPackages);
 	}
 }
 
@@ -154,7 +163,7 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 			process.exit(1);
 		}
 		await packageManager.install(options.source, { local: options.local });
-		updateExtensionSources(settingsManager, options.source, options.local, "add");
+		updatePackageSources(settingsManager, options.source, options.local, "add");
 		console.log(chalk.green(`Installed ${options.source}`));
 		return true;
 	}
@@ -165,7 +174,7 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 			process.exit(1);
 		}
 		await packageManager.remove(options.source, { local: options.local });
-		updateExtensionSources(settingsManager, options.source, options.local, "remove");
+		updatePackageSources(settingsManager, options.source, options.local, "remove");
 		console.log(chalk.green(`Removed ${options.source}`));
 		return true;
 	}
@@ -173,26 +182,38 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 	if (options.command === "list") {
 		const globalSettings = settingsManager.getGlobalSettings();
 		const projectSettings = settingsManager.getProjectSettings();
-		const globalExtensions = globalSettings.extensions ?? [];
-		const projectExtensions = projectSettings.extensions ?? [];
+		const globalPackages = globalSettings.packages ?? [];
+		const projectPackages = projectSettings.packages ?? [];
 
-		if (globalExtensions.length === 0 && projectExtensions.length === 0) {
-			console.log(chalk.dim("No extensions installed."));
+		if (globalPackages.length === 0 && projectPackages.length === 0) {
+			console.log(chalk.dim("No packages installed."));
 			return true;
 		}
 
-		if (globalExtensions.length > 0) {
-			console.log(chalk.bold("Global extensions:"));
-			for (const ext of globalExtensions) {
-				console.log(`  ${ext}`);
+		const formatPackage = (pkg: (typeof globalPackages)[number], scope: "user" | "project") => {
+			const source = typeof pkg === "string" ? pkg : pkg.source;
+			const filtered = typeof pkg === "object";
+			const display = filtered ? `${source} (filtered)` : source;
+			console.log(`  ${display}`);
+			// Show resolved path
+			const path = packageManager.getInstalledPath(source, scope);
+			if (path) {
+				console.log(chalk.dim(`    ${path}`));
+			}
+		};
+
+		if (globalPackages.length > 0) {
+			console.log(chalk.bold("User packages:"));
+			for (const pkg of globalPackages) {
+				formatPackage(pkg, "user");
 			}
 		}
 
-		if (projectExtensions.length > 0) {
-			if (globalExtensions.length > 0) console.log();
-			console.log(chalk.bold("Project extensions:"));
-			for (const ext of projectExtensions) {
-				console.log(`  ${ext}`);
+		if (projectPackages.length > 0) {
+			if (globalPackages.length > 0) console.log();
+			console.log(chalk.bold("Project packages:"));
+			for (const pkg of projectPackages) {
+				formatPackage(pkg, "project");
 			}
 		}
 
@@ -203,7 +224,7 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 	if (options.source) {
 		console.log(chalk.green(`Updated ${options.source}`));
 	} else {
-		console.log(chalk.green("Updated extensions"));
+		console.log(chalk.green("Updated packages"));
 	}
 	return true;
 }
@@ -582,7 +603,7 @@ export async function main(args: string[]) {
 	if (mode === "rpc") {
 		await runRpcMode(session);
 	} else if (isInteractive) {
-		if (scopedModels.length > 0 && !settingsManager.getQuietStartup()) {
+		if (scopedModels.length > 0 && (parsed.verbose || !settingsManager.getQuietStartup())) {
 			const modelList = scopedModels
 				.map((sm) => {
 					const thinkingStr = sm.thinkingLevel ? `:${sm.thinkingLevel}` : "";
@@ -599,6 +620,7 @@ export async function main(args: string[]) {
 			initialMessage,
 			initialImages,
 			initialMessages: parsed.messages,
+			verbose: parsed.verbose,
 		});
 		await mode.run();
 	} else {

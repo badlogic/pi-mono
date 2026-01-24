@@ -115,21 +115,56 @@ Additional paths via `settings.json`:
 
 ```json
 {
-  "extensions": [
+  "packages": [
     "npm:@foo/bar@1.0.0",
-    "git:github.com/user/repo@v1",
-    "/path/to/extension.ts",
-    "/path/to/extension/dir"
+    "git:github.com/user/repo@v1"
+  ],
+  "extensions": [
+    "/path/to/local/extension.ts",
+    "/path/to/local/extension/dir"
   ]
 }
 ```
 
-Use `pi install` and `pi remove` to manage extension sources in settings:
+Use `pi install`, `pi remove`, `pi list`, and `pi update` to manage packages:
 
 ```bash
 pi install npm:@foo/bar@1.0.0
+pi install git:github.com/user/repo@v1
+pi install https://github.com/user/repo  # raw URLs work too
 pi remove npm:@foo/bar
+pi list    # show installed packages
+pi update  # update all non-pinned packages
 ```
+
+**Package filtering:** By default, packages load all resources (extensions, skills, prompts, themes). To selectively load only certain resources:
+
+```json
+{
+  "packages": [
+    "npm:simple-pkg",
+    {
+      "source": "npm:shitty-extensions",
+      "extensions": ["extensions/oracle.ts", "extensions/memory-mode.ts"],
+      "skills": ["skills/a-nach-b"],
+      "themes": [],
+      "prompts": []
+    }
+  ]
+}
+```
+
+- Omit a key to load all of that type from the package
+- Use empty array `[]` to load none of that type
+- Paths are relative to package root
+- Use `!pattern` to exclude (e.g., `"themes": ["!funky.json"]`)
+- Glob patterns supported via minimatch (e.g., `"extensions": ["**/*.ts", "!**/deprecated/*"]`)
+- **Layered filtering:** User filters apply on top of manifest filters. If a manifest excludes 10 extensions and user adds one more exclusion, all 11 are excluded.
+
+**Package deduplication:** If the same package appears in both global (`~/.pi/agent/settings.json`) and project (`.pi/settings.json`) settings, the project version wins and the global one is ignored. This prevents duplicate resource collisions when you have the same package installed at both scopes. Package identity is determined by:
+- **npm packages:** Package name (e.g., `npm:foo` and `npm:foo@1.0.0` are the same identity)
+- **git packages:** Repository URL without ref (e.g., `git:github.com/user/repo` and `git:github.com/user/repo@v1` are the same identity)
+- **local paths:** Resolved absolute path
 
 **Discovery rules:**
 
@@ -165,6 +200,47 @@ pi remove npm:@foo/bar
   }
 }
 ```
+
+The pi manifest supports glob patterns and exclusions:
+
+```json
+{
+  "pi": {
+    "extensions": ["./extensions", "!**/deprecated/*"],
+    "skills": ["./skills", "!**/experimental/*"],
+    "themes": ["./themes/*.json"]
+  }
+}
+```
+
+**Bundling other pi packages:**
+
+To include resources from another pi package, add it as a dependency with `bundledDependencies` to ensure it's embedded in your published tarball:
+
+```json
+{
+  "name": "my-extension-pack",
+  "dependencies": {
+    "other-pi-package": "^1.0.0"
+  },
+  "bundledDependencies": [
+    "other-pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions",
+      "./node_modules/other-pi-package/extensions",
+      "!**/unwanted-extension.ts"
+    ],
+    "skills": [
+      "./skills",
+      "./node_modules/other-pi-package/skills"
+    ]
+  }
+}
+```
+
+`bundledDependencies` embeds the package inside your tarball, preserving the `node_modules/` structure. Without it, npm's hoisting could move the dependency elsewhere, breaking the paths.
 
 The `package.json` approach enables:
 - Multiple extensions from one package
@@ -472,7 +548,7 @@ pi.on("agent_end", async (event, ctx) => {
 });
 ```
 
-**Examples:** [chalk-logger.ts](../examples/extensions/chalk-logger.ts), [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
+**Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 
 #### turn_start / turn_end
 
@@ -547,7 +623,7 @@ pi.on("tool_call", async (event, ctx) => {
 });
 ```
 
-**Examples:** [chalk-logger.ts](../examples/extensions/chalk-logger.ts), [permission-gate.ts](../examples/extensions/permission-gate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [protected-paths.ts](../examples/extensions/protected-paths.ts)
+**Examples:** [permission-gate.ts](../examples/extensions/permission-gate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [protected-paths.ts](../examples/extensions/protected-paths.ts)
 
 #### tool_result
 

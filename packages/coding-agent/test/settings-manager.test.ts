@@ -106,6 +106,51 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("packages migration", () => {
+		it("should keep local-only extensions in extensions array", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					extensions: ["/local/ext.ts", "./relative/ext.ts"],
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getPackages()).toEqual([]);
+			expect(manager.getExtensionPaths()).toEqual(["/local/ext.ts", "./relative/ext.ts"]);
+		});
+
+		it("should handle packages with filtering objects", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					packages: [
+						"npm:simple-pkg",
+						{
+							source: "npm:shitty-extensions",
+							extensions: ["extensions/oracle.ts"],
+							skills: [],
+						},
+					],
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			const packages = manager.getPackages();
+			expect(packages).toHaveLength(2);
+			expect(packages[0]).toBe("npm:simple-pkg");
+			expect(packages[1]).toEqual({
+				source: "npm:shitty-extensions",
+				extensions: ["extensions/oracle.ts"],
+				skills: [],
+			});
+		});
+	});
+
 	describe("shellCommandPrefix", () => {
 		it("should load shellCommandPrefix from settings", () => {
 			const settingsPath = join(agentDir, "settings.json");
