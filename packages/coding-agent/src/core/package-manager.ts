@@ -5,6 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { minimatch } from "minimatch";
 import { CONFIG_DIR_NAME } from "../config.js";
+import { looksLikeGitUrl } from "../utils/git.js";
 import type { PackageSource, SettingsManager } from "./settings-manager.js";
 
 export interface PathMetadata {
@@ -522,7 +523,7 @@ export class DefaultPackageManager implements PackageManager {
 			};
 		}
 
-		if (source.startsWith("git:") || this.looksLikeGitUrl(source)) {
+		if (source.startsWith("git:") || looksLikeGitUrl(source)) {
 			const repoSpec = source.startsWith("git:") ? source.slice("git:".length).trim() : source;
 			const [repo, ref] = repoSpec.split("@");
 			const normalized = repo.replace(/^https?:\/\//, "").replace(/\.git$/, "");
@@ -540,12 +541,6 @@ export class DefaultPackageManager implements PackageManager {
 		}
 
 		return { type: "local", path: source };
-	}
-
-	private looksLikeGitUrl(source: string): boolean {
-		const gitHosts = ["github.com", "gitlab.com", "bitbucket.org", "codeberg.org"];
-		const normalized = source.replace(/^https?:\/\//, "");
-		return gitHosts.some((host) => normalized.startsWith(`${host}/`));
 	}
 
 	/**

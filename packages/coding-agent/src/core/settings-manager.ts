@@ -195,37 +195,7 @@ export class SettingsManager {
 			}
 		}
 
-		// Migrate npm:/git: sources from extensions array to packages array
-		if (Array.isArray(settings.extensions)) {
-			const localExtensions: string[] = [];
-			const packageSources: string[] = [];
-
-			for (const ext of settings.extensions) {
-				if (typeof ext !== "string") continue;
-				if (ext.startsWith("npm:") || ext.startsWith("git:") || SettingsManager.looksLikeGitUrl(ext)) {
-					packageSources.push(ext);
-				} else {
-					localExtensions.push(ext);
-				}
-			}
-
-			if (packageSources.length > 0) {
-				const existingPackages = Array.isArray(settings.packages) ? settings.packages : [];
-				settings.packages = [...existingPackages, ...packageSources];
-				settings.extensions = localExtensions.length > 0 ? localExtensions : undefined;
-				if (settings.extensions === undefined) {
-					delete settings.extensions;
-				}
-			}
-		}
-
 		return settings as Settings;
-	}
-
-	private static looksLikeGitUrl(source: string): boolean {
-		const gitHosts = ["github.com", "gitlab.com", "bitbucket.org", "codeberg.org"];
-		const normalized = source.replace(/^https?:\/\//, "");
-		return gitHosts.some((host) => normalized.startsWith(`${host}/`));
 	}
 
 	private loadProjectSettings(): Settings {
