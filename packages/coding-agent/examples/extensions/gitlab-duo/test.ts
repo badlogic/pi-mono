@@ -119,7 +119,7 @@ function streamGitLabDuo(
 			console.log("streamGitLabDuo called");
 			console.log("  model.id:", model.id);
 			console.log("  options.apiKey present:", !!gitlabAccessToken);
-			console.log("  options.apiKey (first 20):", gitlabAccessToken?.substring(0, 20) + "...");
+			console.log("  options.apiKey (first 20):", `${gitlabAccessToken?.substring(0, 20)}...`);
 
 			if (!gitlabAccessToken) {
 				throw new Error("No GitLab access token provided in options.apiKey");
