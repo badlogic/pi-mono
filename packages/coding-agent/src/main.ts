@@ -465,6 +465,13 @@ export async function main(args: string[]) {
 		console.error(chalk.red(`Failed to load extension "${path}": ${error}`));
 	}
 
+	// Apply pending provider registrations from extensions immediately
+	// so they're available for model resolution before AgentSession is created
+	for (const { name, config } of extensionsResult.runtime.pendingProviderRegistrations) {
+		modelRegistry.registerProvider(name, config);
+	}
+	extensionsResult.runtime.pendingProviderRegistrations = [];
+
 	const extensionFlags = new Map<string, { type: "boolean" | "string" }>();
 	for (const ext of extensionsResult.extensions) {
 		for (const [name, flag] of ext.flags) {

@@ -257,13 +257,19 @@ function streamGitLabDuo(
 				id: mapping.backendModel,
 				api: mapping.api,
 				baseUrl: mapping.baseUrl,
-				headers: directAccess.headers,
+			};
+
+			// Merge GitLab headers with Authorization bearer token
+			const headers = {
+				...directAccess.headers,
+				Authorization: `Bearer ${directAccess.token}`,
 			};
 
 			// Delegate to pi-ai's built-in streaming
 			const innerStream = streamSimple(proxyModel, context, {
 				...options,
-				apiKey: directAccess.token,
+				apiKey: "gitlab-duo", // Dummy value to pass validation
+				headers,
 			});
 
 			// Forward all events
