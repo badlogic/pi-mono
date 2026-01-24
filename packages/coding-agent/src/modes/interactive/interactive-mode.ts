@@ -3898,6 +3898,8 @@ export class InteractiveMode {
 		const cursorWordRight = this.getEditorKeyDisplay("cursorWordRight");
 		const cursorLineStart = this.getEditorKeyDisplay("cursorLineStart");
 		const cursorLineEnd = this.getEditorKeyDisplay("cursorLineEnd");
+		const pageUp = this.getEditorKeyDisplay("pageUp");
+		const pageDown = this.getEditorKeyDisplay("pageDown");
 
 		// Editing keybindings
 		const submit = this.getEditorKeyDisplay("submit");
@@ -3918,6 +3920,7 @@ export class InteractiveMode {
 		const suspend = this.getAppKeyDisplay("suspend");
 		const cycleThinkingLevel = this.getAppKeyDisplay("cycleThinkingLevel");
 		const cycleModelForward = this.getAppKeyDisplay("cycleModelForward");
+		const selectModel = this.getAppKeyDisplay("selectModel");
 		const expandTools = this.getAppKeyDisplay("expandTools");
 		const toggleThinking = this.getAppKeyDisplay("toggleThinking");
 		const externalEditor = this.getAppKeyDisplay("externalEditor");
@@ -3932,6 +3935,7 @@ export class InteractiveMode {
 | \`${cursorWordLeft}\` / \`${cursorWordRight}\` | Move by word |
 | \`${cursorLineStart}\` | Start of line |
 | \`${cursorLineEnd}\` | End of line |
+| \`${pageUp}\` / \`${pageDown}\` | Scroll by page |
 
 **Editing**
 | Key | Action |
@@ -3956,6 +3960,7 @@ export class InteractiveMode {
 | \`${suspend}\` | Suspend to background |
 | \`${cycleThinkingLevel}\` | Cycle thinking level |
 | \`${cycleModelForward}\` | Cycle models |
+| \`${selectModel}\` | Open model selector |
 | \`${expandTools}\` | Toggle tool output expansion |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${externalEditor}\` | Edit message in external editor |

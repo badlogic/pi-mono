@@ -343,9 +343,10 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 | Key | Action |
 |-----|--------|
 | Arrow keys | Move cursor / browse history (Up when empty) |
-| Option+Left/Right | Move by word |
+| Alt+Left/Right | Move by word |
 | Ctrl+A / Home / Cmd+Left | Start of line |
 | Ctrl+E / End / Cmd+Right | End of line |
+| PageUp / PageDown | Scroll by page |
 
 **Editing:**
 
@@ -353,8 +354,8 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 |-----|--------|
 | Enter | Send message |
 | Shift+Enter | New line (Ctrl+Enter on Windows Terminal) |
-| Ctrl+W / Option+Backspace | Delete word backwards |
-| Alt+D / Option+Delete | Delete word forwards |
+| Ctrl+W / Alt+Backspace | Delete word backwards |
+| Alt+D / Alt+Delete | Delete word forwards |
 | Ctrl+U | Delete to start of line |
 | Ctrl+K | Delete to end of line |
 | Ctrl+Y | Paste most recently deleted text |
@@ -377,6 +378,7 @@ Both modes are configurable via `/settings`: "one-at-a-time" delivers messages o
 | Ctrl+T | Toggle thinking block visibility |
 | Ctrl+G | Edit message in external editor (`$VISUAL` or `$EDITOR`) |
 | Ctrl+V | Paste image from clipboard |
+| Alt+Enter | Queue follow-up message |
 | Alt+Up | Restore queued messages to editor |
 
 ### Custom Keybindings
@@ -402,6 +404,8 @@ All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Eac
 | `cursorWordRight` | `alt+right`, `ctrl+right` | Move cursor word right |
 | `cursorLineStart` | `home`, `ctrl+a` | Move to line start |
 | `cursorLineEnd` | `end`, `ctrl+e` | Move to line end |
+| `pageUp` | `pageUp` | Scroll up by page |
+| `pageDown` | `pageDown` | Scroll down by page |
 | `deleteCharBackward` | `backspace` | Delete char backward |
 | `deleteCharForward` | `delete` | Delete char forward |
 | `deleteWordBackward` | `ctrl+w`, `alt+backspace` | Delete word backward |
