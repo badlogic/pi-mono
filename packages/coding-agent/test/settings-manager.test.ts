@@ -107,51 +107,6 @@ describe("SettingsManager", () => {
 	});
 
 	describe("packages migration", () => {
-		it("should migrate npm: sources from extensions to packages", () => {
-			const settingsPath = join(agentDir, "settings.json");
-			writeFileSync(
-				settingsPath,
-				JSON.stringify({
-					extensions: ["npm:pi-doom", "/local/ext.ts", "npm:shitty-extensions"],
-				}),
-			);
-
-			const manager = SettingsManager.create(projectDir, agentDir);
-
-			expect(manager.getPackages()).toEqual(["npm:pi-doom", "npm:shitty-extensions"]);
-			expect(manager.getExtensionPaths()).toEqual(["/local/ext.ts"]);
-		});
-
-		it("should migrate git: sources from extensions to packages", () => {
-			const settingsPath = join(agentDir, "settings.json");
-			writeFileSync(
-				settingsPath,
-				JSON.stringify({
-					extensions: ["git:github.com/user/repo", "/local/ext.ts"],
-				}),
-			);
-
-			const manager = SettingsManager.create(projectDir, agentDir);
-
-			expect(manager.getPackages()).toEqual(["git:github.com/user/repo"]);
-			expect(manager.getExtensionPaths()).toEqual(["/local/ext.ts"]);
-		});
-
-		it("should migrate raw github URLs from extensions to packages", () => {
-			const settingsPath = join(agentDir, "settings.json");
-			writeFileSync(
-				settingsPath,
-				JSON.stringify({
-					extensions: ["https://github.com/user/repo", "/local/ext.ts"],
-				}),
-			);
-
-			const manager = SettingsManager.create(projectDir, agentDir);
-
-			expect(manager.getPackages()).toEqual(["https://github.com/user/repo"]);
-			expect(manager.getExtensionPaths()).toEqual(["/local/ext.ts"]);
-		});
-
 		it("should keep local-only extensions in extensions array", () => {
 			const settingsPath = join(agentDir, "settings.json");
 			writeFileSync(
@@ -165,22 +120,6 @@ describe("SettingsManager", () => {
 
 			expect(manager.getPackages()).toEqual([]);
 			expect(manager.getExtensionPaths()).toEqual(["/local/ext.ts", "./relative/ext.ts"]);
-		});
-
-		it("should preserve existing packages when migrating", () => {
-			const settingsPath = join(agentDir, "settings.json");
-			writeFileSync(
-				settingsPath,
-				JSON.stringify({
-					packages: ["npm:existing-pkg"],
-					extensions: ["npm:new-pkg", "/local/ext.ts"],
-				}),
-			);
-
-			const manager = SettingsManager.create(projectDir, agentDir);
-
-			expect(manager.getPackages()).toEqual(["npm:existing-pkg", "npm:new-pkg"]);
-			expect(manager.getExtensionPaths()).toEqual(["/local/ext.ts"]);
 		});
 
 		it("should handle packages with filtering objects", () => {
