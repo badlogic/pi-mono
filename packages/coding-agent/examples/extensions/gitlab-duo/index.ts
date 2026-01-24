@@ -42,7 +42,7 @@ const OPENAI_PROXY_URL = `${AI_GATEWAY_URL}/ai/v1/proxy/openai/v1`;
 // Bundled OAuth client ID for gitlab.com (same as gitlab-vscode-extension)
 const BUNDLED_CLIENT_ID = "36f2a70cddeb5a0889d4fd8295c241b7e9848e89cf9e599d0eed2d8e5350fbf5";
 const OAUTH_SCOPES = ["api"];
-const REDIRECT_URI = "http://127.0.0.1/callback";
+const REDIRECT_URI = "http://127.0.0.1:8080/callback";
 
 // Direct access token cache (25 min, tokens expire after 30 min)
 const DIRECT_ACCESS_TTL = 25 * 60 * 1000;
