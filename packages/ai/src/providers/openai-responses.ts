@@ -231,6 +231,13 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 						});
 					}
 				}
+				// Handle function call arguments done (some providers send this instead of deltas)
+				else if (event.type === "response.function_call_arguments.done") {
+					if (currentItem?.type === "function_call" && currentBlock?.type === "toolCall") {
+						currentBlock.partialJson = event.arguments;
+						currentBlock.arguments = parseStreamingJson(currentBlock.partialJson);
+					}
+				}
 				// Handle output item completion
 				else if (event.type === "response.output_item.done") {
 					const item = event.item;
@@ -256,13 +263,17 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 						});
 						currentBlock = null;
 					} else if (item.type === "function_call") {
+						const args =
+							currentBlock?.type === "toolCall" && currentBlock.partialJson
+								? JSON.parse(currentBlock.partialJson)
+								: JSON.parse(item.arguments);
 						const toolCall: ToolCall = {
 							type: "toolCall",
 							id: `${item.call_id}|${item.id}`,
 							name: item.name,
-							arguments: JSON.parse(item.arguments),
+							arguments: args,
 						};
-
+						currentBlock = null;
 						stream.push({ type: "toolcall_end", contentIndex: blockIndex(), toolCall, partial: output });
 					}
 				}
