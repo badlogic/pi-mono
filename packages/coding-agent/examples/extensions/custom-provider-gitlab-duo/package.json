@@ -1,5 +1,5 @@
 {
-  "name": "pi-extension-gitlab-duo",
+  "name": "pi-extension-custom-provider-gitlab-duo",
   "private": true,
   "version": "1.0.0",
   "type": "module",

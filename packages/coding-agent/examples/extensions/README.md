@@ -88,6 +88,13 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 |-----------|-------------|
 | `mac-system-theme.ts` | Syncs pi theme with macOS dark/light mode |
 
+### Custom Providers
+
+| Extension | Description |
+|-----------|-------------|
+| `custom-provider-anthropic/` | Custom Anthropic provider with OAuth support and custom streaming implementation |
+| `custom-provider-gitlab-duo/` | GitLab Duo provider using pi-ai's built-in Anthropic/OpenAI streaming via proxy |
+
 ### External Dependencies
 
 | Extension | Description |
