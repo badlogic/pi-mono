@@ -25,6 +25,7 @@
 
 ### Changed
 
+- `/reload` now re-renders the entire scrollback so updated extension components are visible immediately
 - Skill, prompt template, and theme discovery now use settings and CLI path arrays instead of legacy filters ([#645](https://github.com/badlogic/pi-mono/issues/645))
 
 ### Fixed

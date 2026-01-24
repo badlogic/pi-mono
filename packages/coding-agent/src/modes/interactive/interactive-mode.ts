@@ -3623,6 +3623,7 @@ export class InteractiveMode {
 			if (runner) {
 				this.setupExtensionShortcuts(runner);
 			}
+			this.rebuildChatFromMessages();
 			restoreEditor();
 			this.showLoadedResources({ extensionPaths: runner?.getExtensionPaths() ?? [], force: true });
 			const modelsJsonError = this.session.modelRegistry.getError();
