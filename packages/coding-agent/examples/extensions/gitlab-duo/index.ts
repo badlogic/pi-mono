@@ -39,8 +39,8 @@ const AI_GATEWAY_URL = "https://cloud.gitlab.com";
 const ANTHROPIC_PROXY_URL = `${AI_GATEWAY_URL}/ai/v1/proxy/anthropic/`;
 const OPENAI_PROXY_URL = `${AI_GATEWAY_URL}/ai/v1/proxy/openai/v1`;
 
-// Bundled OAuth client ID for gitlab.com (same as gitlab-vscode-extension)
-const BUNDLED_CLIENT_ID = "36f2a70cddeb5a0889d4fd8295c241b7e9848e89cf9e599d0eed2d8e5350fbf5";
+// Bundled OAuth client ID for gitlab.com (from opencode-gitlab-auth, registered with localhost redirect)
+const BUNDLED_CLIENT_ID = "1d89f9fdb23ee96d4e603201f6861dab6e143c5c3c00469a018a2d94bdc03d4e";
 const OAUTH_SCOPES = ["api"];
 const REDIRECT_URI = "http://127.0.0.1:8080/callback";
 
