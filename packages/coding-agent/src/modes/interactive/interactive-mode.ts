@@ -1555,6 +1555,9 @@ export class InteractiveMode {
 			if (newEditor.borderColor !== undefined) {
 				newEditor.borderColor = this.defaultEditor.borderColor;
 			}
+			if (newEditor.setPaddingX !== undefined) {
+				newEditor.setPaddingX(this.defaultEditor.getPaddingX());
+			}
 
 			// Set autocomplete if supported
 			if (newEditor.setAutocompleteProvider && this.autocompleteProvider) {
@@ -3030,6 +3033,9 @@ export class InteractiveMode {
 					onEditorPaddingXChange: (padding) => {
 						this.settingsManager.setEditorPaddingX(padding);
 						this.defaultEditor.setPaddingX(padding);
+						if (this.editor !== this.defaultEditor && this.editor.setPaddingX !== undefined) {
+							this.editor.setPaddingX(padding);
+						}
 					},
 					onCancel: () => {
 						done();
