@@ -48,33 +48,33 @@ const REDIRECT_URI = "http://127.0.0.1:8080/callback";
 const DIRECT_ACCESS_TTL = 25 * 60 * 1000;
 
 // Model mappings: duo model ID -> backend config
-const MODEL_MAPPINGS: Record<
-	string,
-	{ api: "anthropic-messages" | "openai-completions"; backendModel: string; baseUrl: string }
-> = {
-	"duo-chat-opus-4-5": {
-		api: "anthropic-messages",
-		backendModel: "claude-opus-4-5-20251101",
-		baseUrl: ANTHROPIC_PROXY_URL,
-	},
-	"duo-chat-sonnet-4-5": {
-		api: "anthropic-messages",
-		backendModel: "claude-sonnet-4-5-20250929",
-		baseUrl: ANTHROPIC_PROXY_URL,
-	},
-	"duo-chat-haiku-4-5": {
-		api: "anthropic-messages",
-		backendModel: "claude-haiku-4-5-20251001",
-		baseUrl: ANTHROPIC_PROXY_URL,
-	},
-	"duo-chat-gpt-5-1": { api: "openai-completions", backendModel: "gpt-5.1-2025-11-13", baseUrl: OPENAI_PROXY_URL },
-	"duo-chat-gpt-5-mini": {
-		api: "openai-completions",
-		backendModel: "gpt-5-mini-2025-08-07",
-		baseUrl: OPENAI_PROXY_URL,
-	},
-	"duo-chat-gpt-5-codex": { api: "openai-completions", backendModel: "gpt-5-codex", baseUrl: OPENAI_PROXY_URL },
-};
+type OpenAIApi = "openai-completions" | "openai-responses";
+const MODEL_MAPPINGS: Record<string, { api: "anthropic-messages" | OpenAIApi; backendModel: string; baseUrl: string }> =
+	{
+		"duo-chat-opus-4-5": {
+			api: "anthropic-messages",
+			backendModel: "claude-opus-4-5-20251101",
+			baseUrl: ANTHROPIC_PROXY_URL,
+		},
+		"duo-chat-sonnet-4-5": {
+			api: "anthropic-messages",
+			backendModel: "claude-sonnet-4-5-20250929",
+			baseUrl: ANTHROPIC_PROXY_URL,
+		},
+		"duo-chat-haiku-4-5": {
+			api: "anthropic-messages",
+			backendModel: "claude-haiku-4-5-20251001",
+			baseUrl: ANTHROPIC_PROXY_URL,
+		},
+		// All GPT models use Responses API for consistent tool call ID format across model switches
+		"duo-chat-gpt-5-1": { api: "openai-responses", backendModel: "gpt-5.1-2025-11-13", baseUrl: OPENAI_PROXY_URL },
+		"duo-chat-gpt-5-mini": {
+			api: "openai-responses",
+			backendModel: "gpt-5-mini-2025-08-07",
+			baseUrl: OPENAI_PROXY_URL,
+		},
+		"duo-chat-gpt-5-codex": { api: "openai-responses", backendModel: "gpt-5-codex", baseUrl: OPENAI_PROXY_URL },
+	};
 
 // =============================================================================
 // Direct Access Token Cache

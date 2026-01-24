@@ -1,6 +1,11 @@
 /**
  * Test script for GitLab Duo - full streaming flow
- * Run: npx tsx test.ts
+ * Run: npx tsx test.ts [model-id]
+ *
+ * Examples:
+ *   npx tsx test.ts                      # Test default (duo-chat-sonnet-4-5)
+ *   npx tsx test.ts duo-chat-gpt-5-codex # Test GPT-5 Codex (Responses API)
+ *   npx tsx test.ts duo-chat-gpt-5-1     # Test GPT-5.1 (Chat Completions API)
  */
 
 import {
@@ -27,32 +32,80 @@ const ANTHROPIC_PROXY_URL = `${AI_GATEWAY_URL}/ai/v1/proxy/anthropic/`;
 const OPENAI_PROXY_URL = `${AI_GATEWAY_URL}/ai/v1/proxy/openai/v1`;
 const DIRECT_ACCESS_TTL = 25 * 60 * 1000;
 
-const MODEL_MAPPINGS: Record<
+type OpenAIApi = "openai-completions" | "openai-responses";
+const MODEL_MAPPINGS: Record<string, { api: "anthropic-messages" | OpenAIApi; backendModel: string; baseUrl: string }> =
+	{
+		"duo-chat-opus-4-5": {
+			api: "anthropic-messages",
+			backendModel: "claude-opus-4-5-20251101",
+			baseUrl: ANTHROPIC_PROXY_URL,
+		},
+		"duo-chat-sonnet-4-5": {
+			api: "anthropic-messages",
+			backendModel: "claude-sonnet-4-5-20250929",
+			baseUrl: ANTHROPIC_PROXY_URL,
+		},
+		"duo-chat-haiku-4-5": {
+			api: "anthropic-messages",
+			backendModel: "claude-haiku-4-5-20251001",
+			baseUrl: ANTHROPIC_PROXY_URL,
+		},
+		// All GPT models use Responses API for consistent tool call ID format across model switches
+		"duo-chat-gpt-5-1": { api: "openai-responses", backendModel: "gpt-5.1-2025-11-13", baseUrl: OPENAI_PROXY_URL },
+		"duo-chat-gpt-5-mini": {
+			api: "openai-responses",
+			backendModel: "gpt-5-mini-2025-08-07",
+			baseUrl: OPENAI_PROXY_URL,
+		},
+		"duo-chat-gpt-5-codex": { api: "openai-responses", backendModel: "gpt-5-codex", baseUrl: OPENAI_PROXY_URL },
+	};
+
+// Model definitions for cost tracking
+const MODEL_DEFS: Record<
 	string,
-	{ api: "anthropic-messages" | "openai-completions"; backendModel: string; baseUrl: string }
+	{
+		name: string;
+		cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+		contextWindow: number;
+		maxTokens: number;
+	}
 > = {
 	"duo-chat-opus-4-5": {
-		api: "anthropic-messages",
-		backendModel: "claude-opus-4-5-20251101",
-		baseUrl: ANTHROPIC_PROXY_URL,
+		name: "GitLab Duo Claude Opus 4.5",
+		cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+		contextWindow: 200000,
+		maxTokens: 32000,
 	},
 	"duo-chat-sonnet-4-5": {
-		api: "anthropic-messages",
-		backendModel: "claude-sonnet-4-5-20250929",
-		baseUrl: ANTHROPIC_PROXY_URL,
+		name: "GitLab Duo Claude Sonnet 4.5",
+		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+		contextWindow: 200000,
+		maxTokens: 16384,
 	},
 	"duo-chat-haiku-4-5": {
-		api: "anthropic-messages",
-		backendModel: "claude-haiku-4-5-20251001",
-		baseUrl: ANTHROPIC_PROXY_URL,
+		name: "GitLab Duo Claude Haiku 4.5",
+		cost: { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+		contextWindow: 200000,
+		maxTokens: 8192,
 	},
-	"duo-chat-gpt-5-1": { api: "openai-completions", backendModel: "gpt-5.1-2025-11-13", baseUrl: OPENAI_PROXY_URL },
+	"duo-chat-gpt-5-1": {
+		name: "GitLab Duo GPT-5.1",
+		cost: { input: 2.5, output: 10, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 16384,
+	},
 	"duo-chat-gpt-5-mini": {
-		api: "openai-completions",
-		backendModel: "gpt-5-mini-2025-08-07",
-		baseUrl: OPENAI_PROXY_URL,
+		name: "GitLab Duo GPT-5 Mini",
+		cost: { input: 0.15, output: 0.6, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 16384,
 	},
-	"duo-chat-gpt-5-codex": { api: "openai-completions", backendModel: "gpt-5-codex", baseUrl: OPENAI_PROXY_URL },
+	"duo-chat-gpt-5-codex": {
+		name: "GitLab Duo GPT-5 Codex",
+		cost: { input: 2.5, output: 10, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 16384,
+	},
 };
 
 // =============================================================================
@@ -92,8 +145,6 @@ async function getDirectAccessToken(gitlabAccessToken: string): Promise<DirectAc
 
 	const data = (await response.json()) as { token: string; headers: Record<string, string> };
 	console.log("Got direct access token");
-	console.log("Token type:", data.token?.substring(0, 10));
-	console.log("Headers received:", JSON.stringify(data.headers, null, 2));
 	cachedDirectAccess = {
 		token: data.token,
 		headers: data.headers,
@@ -119,7 +170,6 @@ function streamGitLabDuo(
 			console.log("streamGitLabDuo called");
 			console.log("  model.id:", model.id);
 			console.log("  options.apiKey present:", !!gitlabAccessToken);
-			console.log("  options.apiKey (first 20):", `${gitlabAccessToken?.substring(0, 20)}...`);
 
 			if (!gitlabAccessToken) {
 				throw new Error("No GitLab access token provided in options.apiKey");
@@ -137,10 +187,9 @@ function streamGitLabDuo(
 				id: mapping.backendModel,
 				api: mapping.api,
 				baseUrl: mapping.baseUrl,
-				headers: directAccess.headers,
 			};
 
-			// Merge GitLab headers with Authorization
+			// Merge GitLab headers with Authorization bearer token
 			const headers = {
 				...directAccess.headers,
 				Authorization: `Bearer ${directAccess.token}`,
@@ -150,12 +199,11 @@ function streamGitLabDuo(
 			console.log("  proxyModel.id:", proxyModel.id);
 			console.log("  proxyModel.api:", proxyModel.api);
 			console.log("  proxyModel.baseUrl:", proxyModel.baseUrl);
-			console.log("  headers keys:", Object.keys(headers));
 
-			// Delegate to pi-ai's built-in streaming with headers (not apiKey)
+			// Delegate to pi-ai's built-in streaming
 			const innerStream = streamSimple(proxyModel, context, {
 				...options,
-				apiKey: "dummy", // Need something to pass the "no api key" check
+				apiKey: "gitlab-duo", // Dummy value to pass validation
 				headers,
 			});
 
@@ -226,6 +274,14 @@ interface AuthData {
 }
 
 async function main() {
+	const modelId = process.argv[2] || "duo-chat-sonnet-4-5";
+
+	if (!MODEL_MAPPINGS[modelId]) {
+		console.error(`Unknown model: ${modelId}`);
+		console.error("Available models:", Object.keys(MODEL_MAPPINGS).join(", "));
+		process.exit(1);
+	}
+
 	// Read auth.json
 	const authPath = join(homedir(), ".pi", "agent", "auth.json");
 	console.log("Reading auth from:", authPath);
@@ -256,17 +312,21 @@ async function main() {
 	});
 
 	// Create a test model
+	const modelDef = MODEL_DEFS[modelId];
+	const mapping = MODEL_MAPPINGS[modelId];
+	// Enable reasoning for Anthropic models
+	const supportsReasoning = mapping.api === "anthropic-messages";
 	const testModel: Model<Api> = {
-		id: "duo-chat-sonnet-4-5",
-		name: "GitLab Duo Claude Sonnet 4.5",
+		id: modelId,
+		name: modelDef.name,
 		api: "gitlab-duo-api" as Api,
 		provider: "gitlab-duo",
 		baseUrl: AI_GATEWAY_URL,
-		reasoning: false,
+		reasoning: supportsReasoning,
 		input: ["text"],
-		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-		contextWindow: 200000,
-		maxTokens: 16384,
+		cost: modelDef.cost,
+		contextWindow: modelDef.contextWindow,
+		maxTokens: modelDef.maxTokens,
 	};
 
 	// Create test context
@@ -274,8 +334,17 @@ async function main() {
 		messages: [{ role: "user", content: "Say hello in exactly 3 words.", timestamp: Date.now() }],
 	};
 
+	// Check for --thinking flag
+	const useThinking = process.argv.includes("--thinking");
+
 	console.log("\nStarting stream test...");
 	console.log("Model:", testModel.id);
+	console.log("Backend:", MODEL_MAPPINGS[modelId].backendModel);
+	console.log("API:", MODEL_MAPPINGS[modelId].api);
+	console.log(
+		"Reasoning:",
+		supportsReasoning ? (useThinking ? "enabled" : "supported but not enabled") : "not supported",
+	);
 	console.log("Prompt:", context.messages[0].content);
 	console.log("");
 
@@ -283,11 +352,21 @@ async function main() {
 	const stream = streamSimple(testModel, context, {
 		apiKey: gitlabAccessToken,
 		maxTokens: 100,
+		reasoning: useThinking && supportsReasoning ? "low" : undefined,
 	});
 
 	// Consume the stream
+	let inThinking = false;
 	for await (const event of stream) {
-		if (event.type === "text_delta") {
+		if (event.type === "thinking_start") {
+			inThinking = true;
+			console.log("[Thinking]");
+		} else if (event.type === "thinking_delta") {
+			process.stdout.write(event.delta);
+		} else if (event.type === "thinking_end") {
+			inThinking = false;
+			console.log("\n[/Thinking]\n");
+		} else if (event.type === "text_delta") {
 			process.stdout.write(event.delta);
 		} else if (event.type === "error") {
 			console.error("\nError:", event.error.errorMessage);
