@@ -24,6 +24,10 @@
 - Unified collision reporting with `ResourceDiagnostic` type for all resource types ([#645](https://github.com/badlogic/pi-mono/issues/645))
 - Show provider alongside the model in the footer if multiple providers are available
 
+### Fixed
+
+- Off-by-one error in bash output "earlier lines" count caused by counting spacing newline as hidden content ([#921](https://github.com/badlogic/pi-mono/issues/921))
+
 ### Changed
 
 - `/reload` now re-renders the entire scrollback so updated extension components are visible immediately
