@@ -109,6 +109,7 @@ import {
 	setTheme,
 	setThemeInstance,
 	Theme,
+	type ThemeColor,
 	theme,
 } from "./theme/theme.js";
 
@@ -738,7 +739,7 @@ export class InteractiveMode {
 		const lines: string[] = [];
 
 		for (const group of groups) {
-			lines.push(`  ${theme.fg("muted", group.scope)}`);
+			lines.push(`  ${theme.fg("accent", group.scope)}`);
 
 			const sortedPaths = [...group.paths].sort((a, b) => a.localeCompare(b));
 			for (const p of sortedPaths) {
@@ -747,7 +748,7 @@ export class InteractiveMode {
 
 			const sortedPackages = Array.from(group.packages.entries()).sort(([a], [b]) => a.localeCompare(b));
 			for (const [source, paths] of sortedPackages) {
-				lines.push(`    ${theme.fg("accent", source)}`);
+				lines.push(`    ${theme.fg("mdLink", source)}`);
 				const sortedPackagePaths = [...paths].sort((a, b) => a.localeCompare(b));
 				for (const p of sortedPackagePaths) {
 					lines.push(theme.fg("dim", `      ${options.formatPackagePath(p, source)}`));
@@ -866,7 +867,7 @@ export class InteractiveMode {
 
 		const metadata = this.session.resourceLoader.getPathMetadata();
 
-		const sectionHeader = (name: string) => theme.fg("muted", `[${name}]`);
+		const sectionHeader = (name: string, color: ThemeColor = "mdHeading") => theme.fg(color, `[${name}]`);
 
 		const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
 		if (contextFiles.length > 0) {
@@ -927,7 +928,7 @@ export class InteractiveMode {
 				formatPath: (p) => this.formatDisplayPath(p),
 				formatPackagePath: (p, source) => this.getShortPath(p, source),
 			});
-			this.chatContainer.addChild(new Text(`${sectionHeader("Extensions")}\n${extList}`, 0, 0));
+			this.chatContainer.addChild(new Text(`${sectionHeader("Extensions", "mdHeading")}\n${extList}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
