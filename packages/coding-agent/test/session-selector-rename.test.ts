@@ -23,8 +23,8 @@ function makeSession(overrides: Partial<SessionInfo> & { id: string }): SessionI
 	};
 }
 
-// Kitty keyboard protocol encoding for Ctrl+N
-const CTRL_N = "\x1b[110;5u";
+// Kitty keyboard protocol encoding for Ctrl+R
+const CTRL_R = "\x1b[114;5u";
 
 describe("session selector rename", () => {
 	beforeAll(() => {
@@ -45,7 +45,7 @@ describe("session selector rename", () => {
 		await flushPromises();
 
 		const output = selector.render(120).join("\n");
-		expect(output).toContain("ctrl+n");
+		expect(output).toContain("ctrl+r");
 		expect(output).toContain("rename");
 	});
 
@@ -63,11 +63,11 @@ describe("session selector rename", () => {
 		await flushPromises();
 
 		const output = selector.render(120).join("\n");
-		expect(output).not.toContain("ctrl+n");
+		expect(output).not.toContain("ctrl+r");
 		expect(output).not.toContain("rename");
 	});
 
-	it("enters rename mode on Ctrl+N and submits with Enter", async () => {
+	it("enters rename mode on Ctrl+R and submits with Enter", async () => {
 		const sessions = [makeSession({ id: "a", name: "Old" })];
 		const renameSession = vi.fn(async () => {});
 
@@ -82,7 +82,7 @@ describe("session selector rename", () => {
 		);
 		await flushPromises();
 
-		selector.getSessionList().handleInput(CTRL_N);
+		selector.getSessionList().handleInput(CTRL_R);
 		await flushPromises();
 
 		// Rename mode layout

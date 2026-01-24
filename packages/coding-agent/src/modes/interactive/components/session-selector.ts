@@ -153,12 +153,12 @@ class SessionSelectorHeader implements Component {
 			const sep = theme.fg("muted", " · ");
 			const hint1 = keyHint("tab", "scope") + sep + theme.fg("muted", 're:<pattern> regex · "phrase" exact');
 			const hint2Parts = [
-				rawKeyHint("ctrl+r", "sort"),
+				rawKeyHint("ctrl+n", "sort"),
 				rawKeyHint("ctrl+d", "delete"),
 				rawKeyHint("ctrl+p", `path ${pathState}`),
 			];
 			if (this.showRenameHint) {
-				hint2Parts.push(rawKeyHint("ctrl+n", "rename"));
+				hint2Parts.push(rawKeyHint("ctrl+r", "rename"));
 			}
 			const hint2 = hint2Parts.join(sep);
 			hintLine1 = truncateToWidth(hint1, width, "…");
@@ -383,7 +383,7 @@ class SessionList implements Component, Focusable {
 			return;
 		}
 
-		if (matchesKey(keyData, "ctrl+r")) {
+		if (matchesKey(keyData, "ctrl+n")) {
 			this.onToggleSort?.();
 			return;
 		}
@@ -401,8 +401,8 @@ class SessionList implements Component, Focusable {
 			return;
 		}
 
-		// Ctrl+N: rename selected session
-		if (matchesKey(keyData, "ctrl+n")) {
+		// Ctrl+R: rename selected session
+		if (matchesKey(keyData, "ctrl+r")) {
 			const selected = this.filteredSessions[this.selectedIndex];
 			if (selected) {
 				this.onRenameSession?.(selected.path);
