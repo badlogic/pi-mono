@@ -97,6 +97,7 @@ Per the [Agent Skills specification](https://agentskills.io/specification#frontm
 | `compatibility` | No | Max 500 chars. Environment requirements (system packages, network access, etc.). |
 | `metadata` | No | Arbitrary key-value mapping for additional metadata. |
 | `allowed-tools` | No | Space-delimited list of pre-approved tools (experimental). |
+| `disable-model-invocation` | No | When `true`, the skill is hidden from the system prompt. The model cannot invoke it agentically; users must use `/skill:name`. |
 
 #### Name Validation
 

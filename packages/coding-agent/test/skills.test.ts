@@ -168,6 +168,31 @@ describe("skills", () => {
 			expect(skills).toHaveLength(1);
 			expect(skills[0].name).toBe("valid-skill");
 		});
+
+		it("should parse disable-model-invocation frontmatter field", () => {
+			const { skills, diagnostics } = loadSkillsFromDir({
+				dir: join(fixturesDir, "disable-model-invocation"),
+				source: "test",
+			});
+
+			expect(skills).toHaveLength(1);
+			expect(skills[0].name).toBe("disable-model-invocation");
+			expect(skills[0].disableModelInvocation).toBe(true);
+			// Should not warn about unknown field
+			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("unknown frontmatter field"))).toBe(
+				false,
+			);
+		});
+
+		it("should default disableModelInvocation to false when not specified", () => {
+			const { skills } = loadSkillsFromDir({
+				dir: join(fixturesDir, "valid-skill"),
+				source: "test",
+			});
+
+			expect(skills).toHaveLength(1);
+			expect(skills[0].disableModelInvocation).toBe(false);
+		});
 	});
 
 	describe("formatSkillsForPrompt", () => {
@@ -184,6 +209,7 @@ describe("skills", () => {
 					filePath: "/path/to/skill/SKILL.md",
 					baseDir: "/path/to/skill",
 					source: "test",
+					disableModelInvocation: false,
 				},
 			];
 
@@ -205,6 +231,7 @@ describe("skills", () => {
 					filePath: "/path/to/skill/SKILL.md",
 					baseDir: "/path/to/skill",
 					source: "test",
+					disableModelInvocation: false,
 				},
 			];
 
@@ -224,6 +251,7 @@ describe("skills", () => {
 					filePath: "/path/to/skill/SKILL.md",
 					baseDir: "/path/to/skill",
 					source: "test",
+					disableModelInvocation: false,
 				},
 			];
 
@@ -242,6 +270,7 @@ describe("skills", () => {
 					filePath: "/path/one/SKILL.md",
 					baseDir: "/path/one",
 					source: "test",
+					disableModelInvocation: false,
 				},
 				{
 					name: "skill-two",
@@ -249,6 +278,7 @@ describe("skills", () => {
 					filePath: "/path/two/SKILL.md",
 					baseDir: "/path/two",
 					source: "test",
+					disableModelInvocation: false,
 				},
 			];
 
@@ -257,6 +287,49 @@ describe("skills", () => {
 			expect(result).toContain("<name>skill-one</name>");
 			expect(result).toContain("<name>skill-two</name>");
 			expect((result.match(/<skill>/g) || []).length).toBe(2);
+		});
+
+		it("should exclude skills with disableModelInvocation from prompt", () => {
+			const skills: Skill[] = [
+				{
+					name: "visible-skill",
+					description: "A visible skill.",
+					filePath: "/path/visible/SKILL.md",
+					baseDir: "/path/visible",
+					source: "test",
+					disableModelInvocation: false,
+				},
+				{
+					name: "hidden-skill",
+					description: "A hidden skill.",
+					filePath: "/path/hidden/SKILL.md",
+					baseDir: "/path/hidden",
+					source: "test",
+					disableModelInvocation: true,
+				},
+			];
+
+			const result = formatSkillsForPrompt(skills);
+
+			expect(result).toContain("<name>visible-skill</name>");
+			expect(result).not.toContain("<name>hidden-skill</name>");
+			expect((result.match(/<skill>/g) || []).length).toBe(1);
+		});
+
+		it("should return empty string when all skills have disableModelInvocation", () => {
+			const skills: Skill[] = [
+				{
+					name: "hidden-skill",
+					description: "A hidden skill.",
+					filePath: "/path/hidden/SKILL.md",
+					baseDir: "/path/hidden",
+					source: "test",
+					disableModelInvocation: true,
+				},
+			];
+
+			const result = formatSkillsForPrompt(skills);
+			expect(result).toBe("");
 		});
 	});
 
@@ -271,7 +344,7 @@ describe("skills", () => {
 				skillPaths: [join(fixturesDir, "valid-skill")],
 			});
 			expect(skills).toHaveLength(1);
-			expect(skills[0].source).toBe("custom");
+			expect(skills[0].source).toBe("path");
 			expect(diagnostics).toHaveLength(0);
 		});
 

@@ -80,6 +80,7 @@ This is a test skill.
 			filePath: "/fake/path/SKILL.md",
 			baseDir: "/fake/path",
 			source: "custom" as const,
+			disableModelInvocation: false,
 		};
 
 		const resourceLoader: ResourceLoader = {

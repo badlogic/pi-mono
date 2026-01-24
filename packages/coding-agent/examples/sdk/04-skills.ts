@@ -14,6 +14,7 @@ const customSkill: Skill = {
 	filePath: "/virtual/SKILL.md",
 	baseDir: "/virtual",
 	source: "path",
+	disableModelInvocation: false,
 };
 
 const loader = new DefaultResourceLoader({

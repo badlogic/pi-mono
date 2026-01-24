@@ -16,6 +16,7 @@ const ALLOWED_FRONTMATTER_FIELDS = new Set([
 	"compatibility",
 	"metadata",
 	"allowed-tools",
+	"disable-model-invocation",
 ]);
 
 /** Max name length per spec */
@@ -27,6 +28,7 @@ const MAX_DESCRIPTION_LENGTH = 1024;
 export interface SkillFrontmatter {
 	name?: string;
 	description?: string;
+	"disable-model-invocation"?: boolean;
 	[key: string]: unknown;
 }
 
@@ -36,6 +38,7 @@ export interface Skill {
 	filePath: string;
 	baseDir: string;
 	source: string;
+	disableModelInvocation: boolean;
 }
 
 export interface LoadSkillsResult {
@@ -231,6 +234,7 @@ function loadSkillFromFile(
 				filePath,
 				baseDir: skillDir,
 				source,
+				disableModelInvocation: frontmatter["disable-model-invocation"] === true,
 			},
 			diagnostics,
 		};
@@ -245,9 +249,14 @@ function loadSkillFromFile(
  * Format skills for inclusion in a system prompt.
  * Uses XML format per Agent Skills standard.
  * See: https://agentskills.io/integrate-skills
+ *
+ * Skills with disableModelInvocation=true are excluded from the prompt
+ * (they can only be invoked explicitly via /skill:name commands).
  */
 export function formatSkillsForPrompt(skills: Skill[]): string {
-	if (skills.length === 0) {
+	const visibleSkills = skills.filter((s) => !s.disableModelInvocation);
+
+	if (visibleSkills.length === 0) {
 		return "";
 	}
 
@@ -258,7 +267,7 @@ export function formatSkillsForPrompt(skills: Skill[]): string {
 		"<available_skills>",
 	];
 
-	for (const skill of skills) {
+	for (const skill of visibleSkills) {
 		lines.push("  <skill>");
 		lines.push(`    <name>${escapeXml(skill.name)}</name>`);
 		lines.push(`    <description>${escapeXml(skill.description)}</description>`);

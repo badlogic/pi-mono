@@ -155,6 +155,7 @@ Content`,
 				filePath: "/fake/path",
 				baseDir: "/fake",
 				source: "custom",
+				disableModelInvocation: false,
 			};
 			const loader = new DefaultResourceLoader({
 				cwd,
