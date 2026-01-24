@@ -6,7 +6,8 @@
 		"packages/*",
 		"packages/web-ui/example",
 		"packages/coding-agent/examples/extensions/with-deps",
-		"packages/coding-agent/examples/extensions/custom-provider"
+		"packages/coding-agent/examples/extensions/custom-provider",
+		"packages/coding-agent/examples/extensions/gitlab-duo"
 	],
 	"scripts": {
 		"clean": "npm run clean --workspaces",
