@@ -539,7 +539,7 @@ describe("Editor component", () => {
 
 		it("wraps CJK characters correctly (each is 2 columns wide)", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
-			const width = 10;
+			const width = 10 + 1; // +1 col reserved for cursor
 
 			// Each CJK char is 2 columns. "日本語テスト" = 6 chars = 12 columns
 			editor.setText("日本語テスト");
@@ -559,9 +559,9 @@ describe("Editor component", () => {
 
 		it("handles mixed ASCII and wide characters in wrapping", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
-			const width = 15;
+			const width = 15 + 1; // +1 col reserved for cursor
 
-			// "Test ✅ OK 日本" = 4 + 1 + 2 + 1 + 2 + 1 + 4 = 15 columns (fits exactly)
+			// "Test ✅ OK 日本" = 4 + 1 + 2 + 1 + 2 + 1 + 4 = 15 columns (fits in width-1=15)
 			editor.setText("Test ✅ OK 日本");
 			const lines = editor.render(width);
 
@@ -601,6 +601,26 @@ describe("Editor component", () => {
 			for (let i = 1; i < lines.length - 1; i++) {
 				const lineWidth = visibleWidth(lines[i]!);
 				assert.ok(lineWidth <= width, `Line ${i} has width ${lineWidth}, exceeds max ${width}`);
+			}
+		});
+
+		it("shows cursor at end of line before wrap, wraps on next char", () => {
+			const width = 10;
+			for (const paddingX of [0, 1]) {
+				const editor = new Editor(createTestTUI(width + paddingX), defaultEditorTheme, { paddingX });
+
+				// Type 9 chars → fills layoutWidth exactly, cursor at end on same line
+				for (const ch of "aaaaaaaaa") editor.handleInput(ch);
+				let lines = editor.render(width + paddingX);
+				let contentLines = lines.slice(1, -1);
+				assert.strictEqual(contentLines.length, 1, "Should be 1 content line before wrap");
+				assert.ok(contentLines[0]!.endsWith("\x1b[7m \x1b[0m"), "Cursor should be at end of line");
+
+				// Type 1 more → text wraps to second line
+				editor.handleInput("a");
+				lines = editor.render(width + paddingX);
+				contentLines = lines.slice(1, -1);
+				assert.strictEqual(contentLines.length, 2, "Should wrap to 2 content lines");
 			}
 		});
 	});
@@ -688,7 +708,7 @@ describe("Editor component", () => {
 
 		it("handles single word that fits exactly", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
-			const width = 10;
+			const width = 10 + 1; // +1 col reserved for cursor
 
 			editor.setText("1234567890");
 			const lines = editor.render(width);
