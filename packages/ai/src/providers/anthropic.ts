@@ -149,7 +149,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
-			api: "anthropic-messages" as Api,
+			api: model.api as Api,
 			provider: model.provider,
 			model: model.id,
 			usage: {

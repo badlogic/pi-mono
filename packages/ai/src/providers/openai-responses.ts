@@ -40,7 +40,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses", OpenAIRes
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
-			api: "openai-responses" as Api,
+			api: model.api as Api,
 			provider: model.provider,
 			model: model.id,
 			usage: {
