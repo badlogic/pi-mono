@@ -1,9 +1,19 @@
 import { AzureOpenAI } from "openai";
 import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
-import { getEnvApiKey } from "../stream.js";
-import type { Api, AssistantMessage, Context, Model, StreamFunction, StreamOptions } from "../types.js";
+import { getEnvApiKey } from "../env-api-keys.js";
+import { supportsXhigh } from "../models.js";
+import type {
+	Api,
+	AssistantMessage,
+	Context,
+	Model,
+	SimpleStreamOptions,
+	StreamFunction,
+	StreamOptions,
+} from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
+import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 
 const DEFAULT_AZURE_API_VERSION = "v1";
 const AZURE_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode", "azure-openai-responses"]);
@@ -42,7 +52,7 @@ export interface AzureOpenAIResponsesOptions extends StreamOptions {
 /**
  * Generate function for Azure OpenAI Responses API
  */
-export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"> = (
+export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses", AzureOpenAIResponsesOptions> = (
 	model: Model<"azure-openai-responses">,
 	context: Context,
 	options?: AzureOpenAIResponsesOptions,
@@ -105,6 +115,25 @@ export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"
 	})();
 
 	return stream;
+};
+
+export const streamSimpleAzureOpenAIResponses: StreamFunction<"azure-openai-responses", SimpleStreamOptions> = (
+	model: Model<"azure-openai-responses">,
+	context: Context,
+	options?: SimpleStreamOptions,
+): AssistantMessageEventStream => {
+	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+	if (!apiKey) {
+		throw new Error(`No API key for provider: ${model.provider}`);
+	}
+
+	const base = buildBaseOptions(model, options, apiKey);
+	const reasoningEffort = supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning);
+
+	return streamAzureOpenAIResponses(model, context, {
+		...base,
+		reasoningEffort,
+	} satisfies AzureOpenAIResponsesOptions);
 };
 
 function normalizeAzureBaseUrl(baseUrl: string): string {

@@ -15,7 +15,10 @@
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete } from "../src/stream.js";
-import type { Api, Context, Model, OptionsForApi, Usage } from "../src/types.js";
+import type { Api, Context, Model, StreamOptions, Usage } from "../src/types.js";
+
+type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
+
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
@@ -45,7 +48,7 @@ Remember: Always be helpful and concise.`;
 
 async function testTotalTokensWithCache<TApi extends Api>(
 	llm: Model<TApi>,
-	options: OptionsForApi<TApi> = {} as OptionsForApi<TApi>,
+	options: StreamOptionsWithExtras = {},
 ): Promise<{ first: Usage; second: Usage }> {
 	// First request - no cache
 	const context1: Context = {

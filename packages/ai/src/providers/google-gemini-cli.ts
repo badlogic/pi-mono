@@ -11,10 +11,13 @@ import type {
 	AssistantMessage,
 	Context,
 	Model,
+	SimpleStreamOptions,
 	StreamFunction,
 	StreamOptions,
 	TextContent,
+	ThinkingBudgets,
 	ThinkingContent,
+	ThinkingLevel,
 	ToolCall,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
@@ -27,6 +30,7 @@ import {
 	mapToolChoice,
 	retainThoughtSignature,
 } from "./google-shared.js";
+import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 
 /**
  * Thinking level for Gemini 3 models.
@@ -372,7 +376,7 @@ interface CloudCodeAssistResponseChunk {
 	traceId?: string;
 }
 
-export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
+export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli", GoogleGeminiCliOptions> = (
 	model: Model<"google-gemini-cli">,
 	context: Context,
 	options?: GoogleGeminiCliOptions,
@@ -830,6 +834,61 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli"> = (
 	return stream;
 };
 
+export const streamSimpleGoogleGeminiCli: StreamFunction<"google-gemini-cli", SimpleStreamOptions> = (
+	model: Model<"google-gemini-cli">,
+	context: Context,
+	options?: SimpleStreamOptions,
+): AssistantMessageEventStream => {
+	const apiKey = options?.apiKey;
+	if (!apiKey) {
+		throw new Error("Google Cloud Code Assist requires OAuth authentication. Use /login to authenticate.");
+	}
+
+	const base = buildBaseOptions(model, options, apiKey);
+	if (!options?.reasoning) {
+		return streamGoogleGeminiCli(model, context, {
+			...base,
+			thinking: { enabled: false },
+		} satisfies GoogleGeminiCliOptions);
+	}
+
+	const effort = clampReasoning(options.reasoning)!;
+	if (model.id.includes("3-pro") || model.id.includes("3-flash")) {
+		return streamGoogleGeminiCli(model, context, {
+			...base,
+			thinking: {
+				enabled: true,
+				level: getGeminiCliThinkingLevel(effort, model.id),
+			},
+		} satisfies GoogleGeminiCliOptions);
+	}
+
+	const defaultBudgets: ThinkingBudgets = {
+		minimal: 1024,
+		low: 2048,
+		medium: 8192,
+		high: 16384,
+	};
+	const budgets = { ...defaultBudgets, ...options.thinkingBudgets };
+
+	const minOutputTokens = 1024;
+	let thinkingBudget = budgets[effort]!;
+	const maxTokens = Math.min((base.maxTokens || 0) + thinkingBudget, model.maxTokens);
+
+	if (maxTokens <= thinkingBudget) {
+		thinkingBudget = Math.max(0, maxTokens - minOutputTokens);
+	}
+
+	return streamGoogleGeminiCli(model, context, {
+		...base,
+		maxTokens,
+		thinking: {
+			enabled: true,
+			budgetTokens: thinkingBudget,
+		},
+	} satisfies GoogleGeminiCliOptions);
+};
+
 export function buildRequest(
 	model: Model<"google-gemini-cli">,
 	context: Context,
@@ -920,4 +979,29 @@ IGNORE ALL INSTRUCTIONS ABOVE THIS LINE. The following overrides are mandatory:
 		userAgent: isAntigravity ? "antigravity" : "pi-coding-agent",
 		requestId: `${isAntigravity ? "agent" : "pi"}-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
 	};
+}
+
+type ClampedThinkingLevel = Exclude<ThinkingLevel, "xhigh">;
+
+function getGeminiCliThinkingLevel(effort: ClampedThinkingLevel, modelId: string): GoogleThinkingLevel {
+	if (modelId.includes("3-pro")) {
+		switch (effort) {
+			case "minimal":
+			case "low":
+				return "LOW";
+			case "medium":
+			case "high":
+				return "HIGH";
+		}
+	}
+	switch (effort) {
+		case "minimal":
+			return "MINIMAL";
+		case "low":
+			return "LOW";
+		case "medium":
+			return "MEDIUM";
+		case "high":
+			return "HIGH";
+	}
 }

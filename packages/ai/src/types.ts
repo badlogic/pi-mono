@@ -1,17 +1,8 @@
-import type { BedrockOptions } from "./providers/amazon-bedrock.js";
-import type { AnthropicOptions } from "./providers/anthropic.js";
-import type { AzureOpenAIResponsesOptions } from "./providers/azure-openai-responses.js";
-import type { GoogleOptions } from "./providers/google.js";
-import type { GoogleGeminiCliOptions } from "./providers/google-gemini-cli.js";
-import type { GoogleVertexOptions } from "./providers/google-vertex.js";
-import type { OpenAICodexResponsesOptions } from "./providers/openai-codex-responses.js";
-import type { OpenAICompletionsOptions } from "./providers/openai-completions.js";
-import type { OpenAIResponsesOptions } from "./providers/openai-responses.js";
 import type { AssistantMessageEventStream } from "./utils/event-stream.js";
 
 export type { AssistantMessageEventStream } from "./utils/event-stream.js";
 
-export type Api =
+export type KnownApi =
 	| "openai-completions"
 	| "openai-responses"
 	| "azure-openai-responses"
@@ -22,28 +13,7 @@ export type Api =
 	| "google-gemini-cli"
 	| "google-vertex";
 
-export interface ApiOptionsMap {
-	"anthropic-messages": AnthropicOptions;
-	"bedrock-converse-stream": BedrockOptions;
-	"openai-completions": OpenAICompletionsOptions;
-	"openai-responses": OpenAIResponsesOptions;
-	"azure-openai-responses": AzureOpenAIResponsesOptions;
-	"openai-codex-responses": OpenAICodexResponsesOptions;
-	"google-generative-ai": GoogleOptions;
-	"google-gemini-cli": GoogleGeminiCliOptions;
-	"google-vertex": GoogleVertexOptions;
-}
-
-// Compile-time exhaustiveness check - this will fail if ApiOptionsMap doesn't have all KnownApi keys
-type _CheckExhaustive = ApiOptionsMap extends Record<Api, StreamOptions>
-	? Record<Api, StreamOptions> extends ApiOptionsMap
-		? true
-		: ["ApiOptionsMap is missing some KnownApi values", Exclude<Api, keyof ApiOptionsMap>]
-	: ["ApiOptionsMap doesn't extend Record<KnownApi, StreamOptions>"];
-const _exhaustive: _CheckExhaustive = true;
-
-// Helper type to get options for a specific API
-export type OptionsForApi<TApi extends Api> = ApiOptionsMap[TApi];
+export type Api = KnownApi | (string & {});
 
 export type KnownProvider =
 	| "amazon-bedrock"
@@ -102,6 +72,8 @@ export interface StreamOptions {
 	headers?: Record<string, string>;
 }
 
+export type ProviderStreamOptions = StreamOptions & Record<string, unknown>;
+
 // Unified options with reasoning passed to streamSimple() and completeSimple()
 export interface SimpleStreamOptions extends StreamOptions {
 	reasoning?: ThinkingLevel;
@@ -110,10 +82,10 @@ export interface SimpleStreamOptions extends StreamOptions {
 }
 
 // Generic StreamFunction with typed options
-export type StreamFunction<TApi extends Api> = (
+export type StreamFunction<TApi extends Api = Api, TOptions extends StreamOptions = StreamOptions> = (
 	model: Model<TApi>,
 	context: Context,
-	options: OptionsForApi<TApi>,
+	options?: TOptions,
 ) => AssistantMessageEventStream;
 
 export interface TextContent {

@@ -11,9 +11,12 @@ import type {
 	AssistantMessage,
 	Context,
 	Model,
+	ThinkingLevel as PiThinkingLevel,
+	SimpleStreamOptions,
 	StreamFunction,
 	StreamOptions,
 	TextContent,
+	ThinkingBudgets,
 	ThinkingContent,
 	ToolCall,
 } from "../types.js";
@@ -28,6 +31,7 @@ import {
 	mapToolChoice,
 	retainThoughtSignature,
 } from "./google-shared.js";
+import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 
 export interface GoogleVertexOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
@@ -53,7 +57,7 @@ const THINKING_LEVEL_MAP: Record<GoogleThinkingLevel, ThinkingLevel> = {
 // Counter for generating unique tool call IDs
 let toolCallCounter = 0;
 
-export const streamGoogleVertex: StreamFunction<"google-vertex"> = (
+export const streamGoogleVertex: StreamFunction<"google-vertex", GoogleVertexOptions> = (
 	model: Model<"google-vertex">,
 	context: Context,
 	options?: GoogleVertexOptions,
@@ -276,6 +280,41 @@ export const streamGoogleVertex: StreamFunction<"google-vertex"> = (
 	return stream;
 };
 
+export const streamSimpleGoogleVertex: StreamFunction<"google-vertex", SimpleStreamOptions> = (
+	model: Model<"google-vertex">,
+	context: Context,
+	options?: SimpleStreamOptions,
+): AssistantMessageEventStream => {
+	const base = buildBaseOptions(model, options, undefined);
+	if (!options?.reasoning) {
+		return streamGoogleVertex(model, context, {
+			...base,
+			thinking: { enabled: false },
+		} satisfies GoogleVertexOptions);
+	}
+
+	const effort = clampReasoning(options.reasoning)!;
+	const geminiModel = model as unknown as Model<"google-generative-ai">;
+
+	if (isGemini3ProModel(geminiModel) || isGemini3FlashModel(geminiModel)) {
+		return streamGoogleVertex(model, context, {
+			...base,
+			thinking: {
+				enabled: true,
+				level: getGemini3ThinkingLevel(effort, geminiModel),
+			},
+		} satisfies GoogleVertexOptions);
+	}
+
+	return streamGoogleVertex(model, context, {
+		...base,
+		thinking: {
+			enabled: true,
+			budgetTokens: getGoogleBudget(geminiModel, effort, options.thinkingBudgets),
+		},
+	} satisfies GoogleVertexOptions);
+};
+
 function createClient(
 	model: Model<"google-vertex">,
 	project: string,
@@ -372,4 +411,72 @@ function buildParams(
 	};
 
 	return params;
+}
+
+type ClampedThinkingLevel = Exclude<PiThinkingLevel, "xhigh">;
+
+function isGemini3ProModel(model: Model<"google-generative-ai">): boolean {
+	return model.id.includes("3-pro");
+}
+
+function isGemini3FlashModel(model: Model<"google-generative-ai">): boolean {
+	return model.id.includes("3-flash");
+}
+
+function getGemini3ThinkingLevel(
+	effort: ClampedThinkingLevel,
+	model: Model<"google-generative-ai">,
+): GoogleThinkingLevel {
+	if (isGemini3ProModel(model)) {
+		switch (effort) {
+			case "minimal":
+			case "low":
+				return "LOW";
+			case "medium":
+			case "high":
+				return "HIGH";
+		}
+	}
+	switch (effort) {
+		case "minimal":
+			return "MINIMAL";
+		case "low":
+			return "LOW";
+		case "medium":
+			return "MEDIUM";
+		case "high":
+			return "HIGH";
+	}
+}
+
+function getGoogleBudget(
+	model: Model<"google-generative-ai">,
+	effort: ClampedThinkingLevel,
+	customBudgets?: ThinkingBudgets,
+): number {
+	if (customBudgets?.[effort] !== undefined) {
+		return customBudgets[effort]!;
+	}
+
+	if (model.id.includes("2.5-pro")) {
+		const budgets: Record<ClampedThinkingLevel, number> = {
+			minimal: 128,
+			low: 2048,
+			medium: 8192,
+			high: 32768,
+		};
+		return budgets[effort];
+	}
+
+	if (model.id.includes("2.5-flash")) {
+		const budgets: Record<ClampedThinkingLevel, number> = {
+			minimal: 128,
+			low: 2048,
+			medium: 8192,
+			high: 24576,
+		};
+		return budgets[effort];
+	}
+
+	return -1;
 }

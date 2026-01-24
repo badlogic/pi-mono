@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete } from "../src/stream.js";
-import type { Api, AssistantMessage, Context, Model, OptionsForApi, UserMessage } from "../src/types.js";
+import type { Api, AssistantMessage, Context, Model, StreamOptions, UserMessage } from "../src/types.js";
+
+type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
+
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
@@ -16,7 +19,7 @@ const oauthTokens = await Promise.all([
 ]);
 const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
-async function testEmptyMessage<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
+async function testEmptyMessage<TApi extends Api>(llm: Model<TApi>, options: StreamOptionsWithExtras = {}) {
 	// Test with completely empty content array
 	const emptyMessage: UserMessage = {
 		role: "user",
@@ -41,7 +44,7 @@ async function testEmptyMessage<TApi extends Api>(llm: Model<TApi>, options: Opt
 	}
 }
 
-async function testEmptyStringMessage<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
+async function testEmptyStringMessage<TApi extends Api>(llm: Model<TApi>, options: StreamOptionsWithExtras = {}) {
 	// Test with empty string content
 	const context: Context = {
 		messages: [
@@ -66,7 +69,7 @@ async function testEmptyStringMessage<TApi extends Api>(llm: Model<TApi>, option
 	}
 }
 
-async function testWhitespaceOnlyMessage<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
+async function testWhitespaceOnlyMessage<TApi extends Api>(llm: Model<TApi>, options: StreamOptionsWithExtras = {}) {
 	// Test with whitespace-only content
 	const context: Context = {
 		messages: [
@@ -91,7 +94,7 @@ async function testWhitespaceOnlyMessage<TApi extends Api>(llm: Model<TApi>, opt
 	}
 }
 
-async function testEmptyAssistantMessage<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
+async function testEmptyAssistantMessage<TApi extends Api>(llm: Model<TApi>, options: StreamOptionsWithExtras = {}) {
 	// Test with empty assistant message in conversation flow
 	// User -> Empty Assistant -> User
 	const emptyAssistant: AssistantMessage = {

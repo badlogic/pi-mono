@@ -2,7 +2,10 @@ import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete } from "../src/stream.js";
-import type { Api, Context, Model, OptionsForApi, Tool } from "../src/types.js";
+import type { Api, Context, Model, StreamOptions, Tool } from "../src/types.js";
+
+type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
+
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
@@ -28,10 +31,7 @@ const calculateTool: Tool = {
 	parameters: calculateSchema,
 };
 
-async function testToolCallWithoutResult<TApi extends Api>(
-	model: Model<TApi>,
-	options: OptionsForApi<TApi> = {} as OptionsForApi<TApi>,
-) {
+async function testToolCallWithoutResult<TApi extends Api>(model: Model<TApi>, options: StreamOptionsWithExtras = {}) {
 	// Step 1: Create context with the calculate tool
 	const context: Context = {
 		systemPrompt: "You are a helpful assistant. Use the calculate tool when asked to perform calculations.",

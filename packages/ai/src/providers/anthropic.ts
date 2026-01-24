@@ -4,8 +4,8 @@ import type {
 	MessageCreateParamsStreaming,
 	MessageParam,
 } from "@anthropic-ai/sdk/resources/messages.js";
+import { getEnvApiKey } from "../env-api-keys.js";
 import { calculateCost } from "../models.js";
-import { getEnvApiKey } from "../stream.js";
 import type {
 	Api,
 	AssistantMessage,
@@ -13,6 +13,7 @@ import type {
 	ImageContent,
 	Message,
 	Model,
+	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
 	StreamOptions,
@@ -26,6 +27,7 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 
+import { adjustMaxTokensForThinking, buildBaseOptions } from "./simple-options.js";
 import { transformMessages } from "./transform-messages.js";
 
 // Stealth mode: Mimic Claude Code's tool naming exactly
@@ -136,7 +138,7 @@ function mergeHeaders(...headerSources: (Record<string, string> | undefined)[]):
 	return merged;
 }
 
-export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
+export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 	model: Model<"anthropic-messages">,
 	context: Context,
 	options?: AnthropicOptions,
@@ -333,6 +335,36 @@ export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
 	})();
 
 	return stream;
+};
+
+export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleStreamOptions> = (
+	model: Model<"anthropic-messages">,
+	context: Context,
+	options?: SimpleStreamOptions,
+): AssistantMessageEventStream => {
+	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+	if (!apiKey) {
+		throw new Error(`No API key for provider: ${model.provider}`);
+	}
+
+	const base = buildBaseOptions(model, options, apiKey);
+	if (!options?.reasoning) {
+		return streamAnthropic(model, context, { ...base, thinkingEnabled: false } satisfies AnthropicOptions);
+	}
+
+	const adjusted = adjustMaxTokensForThinking(
+		base.maxTokens || 0,
+		model.maxTokens,
+		options.reasoning,
+		options.thinkingBudgets,
+	);
+
+	return streamAnthropic(model, context, {
+		...base,
+		maxTokens: adjusted.maxTokens,
+		thinkingEnabled: true,
+		thinkingBudgetTokens: adjusted.thinkingBudget,
+	} satisfies AnthropicOptions);
 };
 
 function isOAuthToken(apiKey: string): boolean {

@@ -7,10 +7,20 @@ if (typeof process !== "undefined" && (process.versions?.node || process.version
 }
 
 import type { Tool as OpenAITool, ResponseInput, ResponseStreamEvent } from "openai/resources/responses/responses.js";
-import { getEnvApiKey } from "../stream.js";
-import type { Api, AssistantMessage, Context, Model, StreamFunction, StreamOptions } from "../types.js";
+import { getEnvApiKey } from "../env-api-keys.js";
+import { supportsXhigh } from "../models.js";
+import type {
+	Api,
+	AssistantMessage,
+	Context,
+	Model,
+	SimpleStreamOptions,
+	StreamFunction,
+	StreamOptions,
+} from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
+import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 
 // ============================================================================
 // Configuration
@@ -89,7 +99,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 // Main Stream Function
 // ============================================================================
 
-export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"> = (
+export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses", OpenAICodexResponsesOptions> = (
 	model: Model<"openai-codex-responses">,
 	context: Context,
 	options?: OpenAICodexResponsesOptions,
@@ -205,6 +215,25 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 	})();
 
 	return stream;
+};
+
+export const streamSimpleOpenAICodexResponses: StreamFunction<"openai-codex-responses", SimpleStreamOptions> = (
+	model: Model<"openai-codex-responses">,
+	context: Context,
+	options?: SimpleStreamOptions,
+): AssistantMessageEventStream => {
+	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+	if (!apiKey) {
+		throw new Error(`No API key for provider: ${model.provider}`);
+	}
+
+	const base = buildBaseOptions(model, options, apiKey);
+	const reasoningEffort = supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning);
+
+	return streamOpenAICodexResponses(model, context, {
+		...base,
+		reasoningEffort,
+	} satisfies OpenAICodexResponsesOptions);
 };
 
 // ============================================================================

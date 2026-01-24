@@ -8,14 +8,15 @@ import type {
 	ChatCompletionMessageParam,
 	ChatCompletionToolMessageParam,
 } from "openai/resources/chat/completions.js";
-import { calculateCost } from "../models.js";
-import { getEnvApiKey } from "../stream.js";
+import { getEnvApiKey } from "../env-api-keys.js";
+import { calculateCost, supportsXhigh } from "../models.js";
 import type {
 	AssistantMessage,
 	Context,
 	Message,
 	Model,
 	OpenAICompletionsCompat,
+	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
 	StreamOptions,
@@ -28,6 +29,7 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 import { transformMessages } from "./transform-messages.js";
 
 /**
@@ -72,7 +74,7 @@ export interface OpenAICompletionsOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 }
 
-export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
+export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenAICompletionsOptions> = (
 	model: Model<"openai-completions">,
 	context: Context,
 	options?: OpenAICompletionsOptions,
@@ -317,6 +319,25 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions"> = (
 	})();
 
 	return stream;
+};
+
+export const streamSimpleOpenAICompletions: StreamFunction<"openai-completions", SimpleStreamOptions> = (
+	model: Model<"openai-completions">,
+	context: Context,
+	options?: SimpleStreamOptions,
+): AssistantMessageEventStream => {
+	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+	if (!apiKey) {
+		throw new Error(`No API key for provider: ${model.provider}`);
+	}
+
+	const base = buildBaseOptions(model, options, apiKey);
+	const reasoningEffort = supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning);
+
+	return streamOpenAICompletions(model, context, {
+		...base,
+		reasoningEffort,
+	} satisfies OpenAICompletionsOptions);
 };
 
 function createClient(

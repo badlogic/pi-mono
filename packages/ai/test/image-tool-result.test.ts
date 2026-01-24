@@ -4,7 +4,10 @@ import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import type { Api, Context, Model, Tool, ToolResultMessage } from "../src/index.js";
 import { complete, getModel } from "../src/index.js";
-import type { OptionsForApi } from "../src/types.js";
+import type { StreamOptions } from "../src/types.js";
+
+type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
+
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
@@ -26,7 +29,7 @@ const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken
  * 2. Providers correctly pass images from tool results to the LLM
  * 3. The LLM can see and describe images returned by tools
  */
-async function handleToolWithImageResult<TApi extends Api>(model: Model<TApi>, options?: OptionsForApi<TApi>) {
+async function handleToolWithImageResult<TApi extends Api>(model: Model<TApi>, options?: StreamOptionsWithExtras) {
 	// Check if the model supports images
 	if (!model.input.includes("image")) {
 		console.log(`Skipping tool image result test - model ${model.id} doesn't support images`);
@@ -114,7 +117,10 @@ async function handleToolWithImageResult<TApi extends Api>(model: Model<TApi>, o
  * 2. Providers correctly pass both text and images from tool results to the LLM
  * 3. The LLM can see both the text and images in tool results
  */
-async function handleToolWithTextAndImageResult<TApi extends Api>(model: Model<TApi>, options?: OptionsForApi<TApi>) {
+async function handleToolWithTextAndImageResult<TApi extends Api>(
+	model: Model<TApi>,
+	options?: StreamOptionsWithExtras,
+) {
 	// Check if the model supports images
 	if (!model.input.includes("image")) {
 		console.log(`Skipping tool text+image result test - model ${model.id} doesn't support images`);

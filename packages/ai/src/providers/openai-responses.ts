@@ -1,9 +1,20 @@
 import OpenAI from "openai";
 import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
-import { getEnvApiKey } from "../stream.js";
-import type { Api, AssistantMessage, Context, Model, StreamFunction, StreamOptions, Usage } from "../types.js";
+import { getEnvApiKey } from "../env-api-keys.js";
+import { supportsXhigh } from "../models.js";
+import type {
+	Api,
+	AssistantMessage,
+	Context,
+	Model,
+	SimpleStreamOptions,
+	StreamFunction,
+	StreamOptions,
+	Usage,
+} from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
+import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 
@@ -17,7 +28,7 @@ export interface OpenAIResponsesOptions extends StreamOptions {
 /**
  * Generate function for OpenAI Responses API
  */
-export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
+export const streamOpenAIResponses: StreamFunction<"openai-responses", OpenAIResponsesOptions> = (
 	model: Model<"openai-responses">,
 	context: Context,
 	options?: OpenAIResponsesOptions,
@@ -81,6 +92,25 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses"> = (
 	})();
 
 	return stream;
+};
+
+export const streamSimpleOpenAIResponses: StreamFunction<"openai-responses", SimpleStreamOptions> = (
+	model: Model<"openai-responses">,
+	context: Context,
+	options?: SimpleStreamOptions,
+): AssistantMessageEventStream => {
+	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+	if (!apiKey) {
+		throw new Error(`No API key for provider: ${model.provider}`);
+	}
+
+	const base = buildBaseOptions(model, options, apiKey);
+	const reasoningEffort = supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning);
+
+	return streamOpenAIResponses(model, context, {
+		...base,
+		reasoningEffort,
+	} satisfies OpenAIResponsesOptions);
 };
 
 function createClient(

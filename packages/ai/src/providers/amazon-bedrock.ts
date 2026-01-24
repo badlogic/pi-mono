@@ -24,6 +24,7 @@ import type {
 	AssistantMessage,
 	Context,
 	Model,
+	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
 	StreamOptions,
@@ -38,6 +39,7 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import { adjustMaxTokensForThinking, buildBaseOptions, clampReasoning } from "./simple-options.js";
 import { transformMessages } from "./transform-messages.js";
 
 export interface BedrockOptions extends StreamOptions {
@@ -54,10 +56,10 @@ export interface BedrockOptions extends StreamOptions {
 
 type Block = (TextContent | ThinkingContent | ToolCall) & { index?: number; partialJson?: string };
 
-export const streamBedrock: StreamFunction<"bedrock-converse-stream"> = (
+export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOptions> = (
 	model: Model<"bedrock-converse-stream">,
 	context: Context,
-	options: BedrockOptions,
+	options: BedrockOptions = {},
 ): AssistantMessageEventStream => {
 	const stream = new AssistantMessageEventStream();
 
@@ -153,6 +155,42 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream"> = (
 	})();
 
 	return stream;
+};
+
+export const streamSimpleBedrock: StreamFunction<"bedrock-converse-stream", SimpleStreamOptions> = (
+	model: Model<"bedrock-converse-stream">,
+	context: Context,
+	options?: SimpleStreamOptions,
+): AssistantMessageEventStream => {
+	const base = buildBaseOptions(model, options, undefined);
+	if (!options?.reasoning) {
+		return streamBedrock(model, context, { ...base, reasoning: undefined } satisfies BedrockOptions);
+	}
+
+	if (model.id.includes("anthropic.claude") || model.id.includes("anthropic/claude")) {
+		const adjusted = adjustMaxTokensForThinking(
+			base.maxTokens || 0,
+			model.maxTokens,
+			options.reasoning,
+			options.thinkingBudgets,
+		);
+
+		return streamBedrock(model, context, {
+			...base,
+			maxTokens: adjusted.maxTokens,
+			reasoning: options.reasoning,
+			thinkingBudgets: {
+				...(options.thinkingBudgets || {}),
+				[clampReasoning(options.reasoning)!]: adjusted.thinkingBudget,
+			},
+		} satisfies BedrockOptions);
+	}
+
+	return streamBedrock(model, context, {
+		...base,
+		reasoning: options.reasoning,
+		thinkingBudgets: options.thinkingBudgets,
+	} satisfies BedrockOptions);
 };
 
 function handleContentBlockStart(

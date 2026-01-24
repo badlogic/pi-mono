@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { stream } from "../src/stream.js";
-import type { Api, Context, Model, OptionsForApi } from "../src/types.js";
+import type { Api, Context, Model, StreamOptions } from "../src/types.js";
+
+type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
+
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
@@ -16,7 +19,7 @@ const oauthTokens = await Promise.all([
 ]);
 const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
-async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
+async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: StreamOptionsWithExtras = {}) {
 	const context: Context = {
 		messages: [
 			{
