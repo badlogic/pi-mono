@@ -380,6 +380,11 @@ export async function processResponsesStream<TApi extends Api>(
 					partial: output,
 				});
 			}
+		} else if (event.type === "response.function_call_arguments.done") {
+			if (currentItem?.type === "function_call" && currentBlock?.type === "toolCall") {
+				currentBlock.partialJson = event.arguments;
+				currentBlock.arguments = parseStreamingJson(currentBlock.partialJson);
+			}
 		} else if (event.type === "response.output_item.done") {
 			const item = event.item;
 
@@ -404,13 +409,18 @@ export async function processResponsesStream<TApi extends Api>(
 				});
 				currentBlock = null;
 			} else if (item.type === "function_call") {
+				const args =
+					currentBlock?.type === "toolCall" && currentBlock.partialJson
+						? JSON.parse(currentBlock.partialJson)
+						: JSON.parse(item.arguments);
 				const toolCall: ToolCall = {
 					type: "toolCall",
 					id: `${item.call_id}|${item.id}`,
 					name: item.name,
-					arguments: JSON.parse(item.arguments),
+					arguments: args,
 				};
 
+				currentBlock = null;
 				stream.push({ type: "toolcall_end", contentIndex: blockIndex(), toolCall, partial: output });
 			}
 		} else if (event.type === "response.completed") {
