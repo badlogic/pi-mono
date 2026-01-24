@@ -615,12 +615,17 @@ The callback is supported by `stream`, `complete`, `streamSimple`, and `complete
 
 ## APIs, Models, and Providers
 
-The library implements 4 API interfaces, each with its own streaming function and options:
+The library uses a registry of API implementations. Built-in APIs include:
 
-- **`anthropic-messages`**: Anthropic's Messages API (`streamAnthropic`, `AnthropicOptions`)
-- **`google-generative-ai`**: Google's Generative AI API (`streamGoogle`, `GoogleOptions`)
-- **`openai-completions`**: OpenAI's Chat Completions API (`streamOpenAICompletions`, `OpenAICompletionsOptions`)
-- **`openai-responses`**: OpenAI's Responses API (`streamOpenAIResponses`, `OpenAIResponsesOptions`)
+- **`anthropic-messages`**: Anthropic Messages API (`streamAnthropic`, `AnthropicOptions`)
+- **`google-generative-ai`**: Google Generative AI API (`streamGoogle`, `GoogleOptions`)
+- **`google-gemini-cli`**: Google Cloud Code Assist API (`streamGoogleGeminiCli`, `GoogleGeminiCliOptions`)
+- **`google-vertex`**: Google Vertex AI API (`streamGoogleVertex`, `GoogleVertexOptions`)
+- **`openai-completions`**: OpenAI Chat Completions API (`streamOpenAICompletions`, `OpenAICompletionsOptions`)
+- **`openai-responses`**: OpenAI Responses API (`streamOpenAIResponses`, `OpenAIResponsesOptions`)
+- **`openai-codex-responses`**: OpenAI Codex Responses API (`streamOpenAICodexResponses`, `OpenAICodexResponsesOptions`)
+- **`azure-openai-responses`**: Azure OpenAI Responses API (`streamAzureOpenAIResponses`, `AzureOpenAIResponsesOptions`)
+- **`bedrock-converse-stream`**: Amazon Bedrock Converse API (`streamBedrock`, `BedrockOptions`)
 
 ### Providers and Models
 
@@ -742,18 +747,20 @@ If `compat` is not set, the library falls back to URL-based detection. If `compa
 
 ### Type Safety
 
-Models are typed by their API, ensuring type-safe options:
+Models are typed by their API, which keeps the model metadata accurate. Provider-specific option types are enforced when you call the provider functions directly. The generic `stream` and `complete` functions accept `StreamOptions` with additional provider fields.
 
 ```typescript
+import { streamAnthropic, type AnthropicOptions } from '@mariozechner/pi-ai';
+
 // TypeScript knows this is an Anthropic model
 const claude = getModel('anthropic', 'claude-sonnet-4-20250514');
 
-// So these options are type-checked for AnthropicOptions
-await stream(claude, context, {
-  thinkingEnabled: true,      // ✓ Valid for anthropic-messages
-  thinkingBudgetTokens: 2048, // ✓ Valid for anthropic-messages
-  // reasoningEffort: 'high'  // ✗ TypeScript error: not valid for anthropic-messages
-});
+const options: AnthropicOptions = {
+  thinkingEnabled: true,
+  thinkingBudgetTokens: 2048
+};
+
+await streamAnthropic(claude, context, options);
 ```
 
 ## Cross-Provider Handoffs
@@ -1062,27 +1069,26 @@ Adding a new LLM provider requires changes across multiple files. This checklist
 
 #### 1. Core Types (`src/types.ts`)
 
-- Add the API identifier to the `Api` type union (e.g., `"bedrock-converse-stream"`)
-- Create an options interface extending `StreamOptions` (e.g., `BedrockOptions`)
-- Add the mapping to `ApiOptionsMap`
-- Add the provider name to `KnownProvider` type union (e.g., `"amazon-bedrock"`)
+- Add the API identifier to `KnownApi` (for example `"bedrock-converse-stream"`)
+- Create an options interface extending `StreamOptions` (for example `BedrockOptions`)
+- Add the provider name to `KnownProvider` (for example `"amazon-bedrock"`)
 
 #### 2. Provider Implementation (`src/providers/`)
 
-Create a new provider file (e.g., `amazon-bedrock.ts`) that exports:
+Create a new provider file (for example `amazon-bedrock.ts`) that exports:
 
 - `stream<Provider>()` function returning `AssistantMessageEventStream`
+- `streamSimple<Provider>()` for `SimpleStreamOptions` mapping
 - Provider-specific options interface
 - Message conversion functions to transform `Context` to provider format
 - Tool conversion if the provider supports tools
 - Response parsing to emit standardized events (`text`, `tool_call`, `thinking`, `usage`, `stop`)
 
-#### 3. Stream Integration (`src/stream.ts`)
+#### 3. API Registry Integration (`src/providers/register-builtins.ts`)
 
-- Import the provider's stream function and options type
-- Add credential detection in `getEnvApiKey()` for the new provider
-- Add a case in `mapOptionsForApi()` to map `SimpleStreamOptions` to provider options
-- Add the provider's stream function to the `streamFunctions` map
+- Register the API with `registerApiProvider()`
+- Add credential detection in `env-api-keys.ts` for the new provider
+- Ensure `streamSimple` handles auth lookup via `getEnvApiKey()` or provider-specific auth
 
 #### 4. Model Generation (`scripts/generate-models.ts`)
 
