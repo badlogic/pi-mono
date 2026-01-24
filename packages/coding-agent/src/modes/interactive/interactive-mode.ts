@@ -657,66 +657,101 @@ export class InteractiveMode {
 		return this.formatDisplayPath(fullPath);
 	}
 
-	/**
-	 * Group paths by source and scope using metadata.
-	 * Returns sorted: local first, then global packages, then project packages.
-	 */
-	private groupPathsBySource(
+	private getDisplaySourceInfo(
+		source: string,
+		scope: string,
+	): { label: string; scopeLabel?: string; color: "accent" | "muted" } {
+		if (source === "local") {
+			if (scope === "user") {
+				return { label: "user", color: "muted" };
+			}
+			if (scope === "project") {
+				return { label: "project", color: "muted" };
+			}
+			if (scope === "temporary") {
+				return { label: "path", scopeLabel: "temp", color: "muted" };
+			}
+			return { label: "path", color: "muted" };
+		}
+
+		if (source === "cli") {
+			return { label: "path", scopeLabel: scope === "temporary" ? "temp" : undefined, color: "muted" };
+		}
+
+		const scopeLabel =
+			scope === "user" ? "user" : scope === "project" ? "project" : scope === "temporary" ? "temp" : undefined;
+		return { label: source, scopeLabel, color: "accent" };
+	}
+
+	private getScopeGroup(source: string, scope: string): "user" | "project" | "path" {
+		if (source === "cli" || scope === "temporary") return "path";
+		if (scope === "user") return "user";
+		if (scope === "project") return "project";
+		return "path";
+	}
+
+	private isPackageSource(source: string): boolean {
+		return source.startsWith("npm:") || source.startsWith("git:");
+	}
+
+	private buildScopeGroups(
 		paths: string[],
 		metadata: Map<string, { source: string; scope: string; origin: string }>,
-	): Map<string, { scope: string; paths: string[] }> {
-		const groups = new Map<string, { scope: string; paths: string[] }>();
+	): Array<{ scope: "user" | "project" | "path"; paths: string[]; packages: Map<string, string[]> }> {
+		const groups: Record<
+			"user" | "project" | "path",
+			{ scope: "user" | "project" | "path"; paths: string[]; packages: Map<string, string[]> }
+		> = {
+			user: { scope: "user", paths: [], packages: new Map() },
+			project: { scope: "project", paths: [], packages: new Map() },
+			path: { scope: "path", paths: [], packages: new Map() },
+		};
 
 		for (const p of paths) {
 			const meta = this.findMetadata(p, metadata);
 			const source = meta?.source ?? "local";
 			const scope = meta?.scope ?? "project";
+			const groupKey = this.getScopeGroup(source, scope);
+			const group = groups[groupKey];
 
-			if (!groups.has(source)) {
-				groups.set(source, { scope, paths: [] });
+			if (this.isPackageSource(source)) {
+				const list = group.packages.get(source) ?? [];
+				list.push(p);
+				group.packages.set(source, list);
+			} else {
+				group.paths.push(p);
 			}
-			groups.get(source)!.paths.push(p);
 		}
 
-		// Sort: local first, then global packages, then project packages
-		const sorted = new Map<string, { scope: string; paths: string[] }>();
-		const entries = Array.from(groups.entries());
-
-		// Local entries first
-		for (const [source, data] of entries) {
-			if (source === "local") sorted.set(source, data);
-		}
-		// Global packages
-		for (const [source, data] of entries) {
-			if (source !== "local" && data.scope === "global") sorted.set(source, data);
-		}
-		// Project packages
-		for (const [source, data] of entries) {
-			if (source !== "local" && data.scope === "project") sorted.set(source, data);
-		}
-
-		return sorted;
+		return [groups.user, groups.project, groups.path].filter(
+			(group) => group.paths.length > 0 || group.packages.size > 0,
+		);
 	}
 
-	/**
-	 * Format grouped paths for display with colors.
-	 */
-	private formatGroupedPaths(
-		groups: Map<string, { scope: string; paths: string[] }>,
-		formatPath: (p: string, source: string) => string,
+	private formatScopeGroups(
+		groups: Array<{ scope: "user" | "project" | "path"; paths: string[]; packages: Map<string, string[]> }>,
+		options: {
+			formatPath: (p: string) => string;
+			formatPackagePath: (p: string, source: string) => string;
+		},
 	): string {
 		const lines: string[] = [];
 
-		for (const [source, { scope, paths }] of groups) {
-			const scopeLabel = scope === "global" ? "global" : scope === "project" ? "project" : "";
-			// Source name in accent, scope in muted
-			const sourceColor = source === "local" ? "muted" : "accent";
-			const header = scopeLabel
-				? `${theme.fg(sourceColor, source)} ${theme.fg("dim", `(${scopeLabel})`)}`
-				: theme.fg(sourceColor, source);
-			lines.push(`  ${header}`);
-			for (const p of paths) {
-				lines.push(theme.fg("dim", `    ${formatPath(p, source)}`));
+		for (const group of groups) {
+			lines.push(`  ${theme.fg("muted", group.scope)}`);
+
+			const sortedPaths = [...group.paths].sort((a, b) => a.localeCompare(b));
+			for (const p of sortedPaths) {
+				lines.push(theme.fg("dim", `    ${options.formatPath(p)}`));
+			}
+
+			const sortedPackages = Array.from(group.packages.entries()).sort(([a], [b]) => a.localeCompare(b));
+			for (const [source, paths] of sortedPackages) {
+				lines.push(`    ${theme.fg("accent", source)}`);
+				const sortedPackagePaths = [...paths].sort((a, b) => a.localeCompare(b));
+				for (const p of sortedPackagePaths) {
+					lines.push(theme.fg("dim", `      ${options.formatPackagePath(p, source)}`));
+				}
 			}
 		}
 
@@ -756,8 +791,9 @@ export class InteractiveMode {
 		const meta = this.findMetadata(p, metadata);
 		if (meta) {
 			const shortPath = this.getShortPath(p, meta.source);
-			const scopeLabel = meta.scope === "global" ? "global" : meta.scope === "project" ? "project" : "temp";
-			return `${meta.source} (${scopeLabel}) ${shortPath}`;
+			const { label, scopeLabel } = this.getDisplaySourceInfo(meta.source, meta.scope);
+			const labelText = scopeLabel ? `${label} (${scopeLabel})` : label;
+			return `${labelText} ${shortPath}`;
 		}
 		return this.formatDisplayPath(p);
 	}
@@ -842,8 +878,11 @@ export class InteractiveMode {
 		const skills = this.session.resourceLoader.getSkills().skills;
 		if (skills.length > 0) {
 			const skillPaths = skills.map((s) => s.filePath);
-			const groups = this.groupPathsBySource(skillPaths, metadata);
-			const skillList = this.formatGroupedPaths(groups, (p, source) => this.getShortPath(p, source));
+			const groups = this.buildScopeGroups(skillPaths, metadata);
+			const skillList = this.formatScopeGroups(groups, {
+				formatPath: (p) => this.formatDisplayPath(p),
+				formatPackagePath: (p, source) => this.getShortPath(p, source),
+			});
 			this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
@@ -857,25 +896,20 @@ export class InteractiveMode {
 
 		const templates = this.session.promptTemplates;
 		if (templates.length > 0) {
-			// Group templates by source using metadata
 			const templatePaths = templates.map((t) => t.filePath);
-			const groups = this.groupPathsBySource(templatePaths, metadata);
-			const templateLines: string[] = [];
-			for (const [source, { scope, paths }] of groups) {
-				const scopeLabel = scope === "global" ? "global" : scope === "project" ? "project" : "";
-				const sourceColor = source === "local" ? "muted" : "accent";
-				const header = scopeLabel
-					? `${theme.fg(sourceColor, source)} ${theme.fg("dim", `(${scopeLabel})`)}`
-					: theme.fg(sourceColor, source);
-				templateLines.push(`  ${header}`);
-				for (const p of paths) {
-					const template = templates.find((t) => t.filePath === p);
-					if (template) {
-						templateLines.push(theme.fg("dim", `    /${template.name}`));
-					}
-				}
-			}
-			this.chatContainer.addChild(new Text(`${sectionHeader("Prompts")}\n${templateLines.join("\n")}`, 0, 0));
+			const groups = this.buildScopeGroups(templatePaths, metadata);
+			const templateByPath = new Map(templates.map((t) => [t.filePath, t]));
+			const templateList = this.formatScopeGroups(groups, {
+				formatPath: (p) => {
+					const template = templateByPath.get(p);
+					return template ? `/${template.name}` : this.formatDisplayPath(p);
+				},
+				formatPackagePath: (p) => {
+					const template = templateByPath.get(p);
+					return template ? `/${template.name}` : this.formatDisplayPath(p);
+				},
+			});
+			this.chatContainer.addChild(new Text(`${sectionHeader("Prompts")}\n${templateList}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
@@ -888,8 +922,11 @@ export class InteractiveMode {
 
 		const extensionPaths = options?.extensionPaths ?? [];
 		if (extensionPaths.length > 0) {
-			const groups = this.groupPathsBySource(extensionPaths, metadata);
-			const extList = this.formatGroupedPaths(groups, (p, source) => this.getShortPath(p, source));
+			const groups = this.buildScopeGroups(extensionPaths, metadata);
+			const extList = this.formatScopeGroups(groups, {
+				formatPath: (p) => this.formatDisplayPath(p),
+				formatPackagePath: (p, source) => this.getShortPath(p, source),
+			});
 			this.chatContainer.addChild(new Text(`${sectionHeader("Extensions")}\n${extList}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}
@@ -899,8 +936,11 @@ export class InteractiveMode {
 		const customThemes = loadedThemes.filter((t) => t.sourcePath);
 		if (customThemes.length > 0) {
 			const themePaths = customThemes.map((t) => t.sourcePath!);
-			const groups = this.groupPathsBySource(themePaths, metadata);
-			const themeList = this.formatGroupedPaths(groups, (p, source) => this.getShortPath(p, source));
+			const groups = this.buildScopeGroups(themePaths, metadata);
+			const themeList = this.formatScopeGroups(groups, {
+				formatPath: (p) => this.formatDisplayPath(p),
+				formatPackagePath: (p, source) => this.getShortPath(p, source),
+			});
 			this.chatContainer.addChild(new Text(`${sectionHeader("Themes")}\n${themeList}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
 		}

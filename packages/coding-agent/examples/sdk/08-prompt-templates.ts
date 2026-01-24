@@ -15,8 +15,8 @@ import {
 const deployTemplate: PromptTemplate = {
 	name: "deploy",
 	description: "Deploy the application",
-	source: "(custom)",
-	filePath: "<inline>",
+	source: "path",
+	filePath: "/virtual/prompts/deploy.md",
 	content: `# Deploy Instructions
 
 1. Build: npm run build

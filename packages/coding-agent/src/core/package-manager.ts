@@ -43,7 +43,7 @@ export interface PackageManager {
 		options?: { local?: boolean; temporary?: boolean },
 	): Promise<ResolvedPaths>;
 	setProgressCallback(callback: ProgressCallback | undefined): void;
-	getInstalledPath(source: string, scope: "global" | "project"): string | undefined;
+	getInstalledPath(source: string, scope: "user" | "project"): string | undefined;
 }
 
 interface PackageManagerOptions {
@@ -52,7 +52,7 @@ interface PackageManagerOptions {
 	settingsManager: SettingsManager;
 }
 
-type SourceScope = "global" | "project" | "temporary";
+type SourceScope = "user" | "project" | "temporary";
 
 type NpmSource = {
 	type: "npm";
@@ -266,7 +266,7 @@ export class DefaultPackageManager implements PackageManager {
 		this.progressCallback = callback;
 	}
 
-	getInstalledPath(source: string, scope: "global" | "project"): string | undefined {
+	getInstalledPath(source: string, scope: "user" | "project"): string | undefined {
 		const parsed = this.parseSource(source);
 		if (parsed.type === "npm") {
 			const path = this.getNpmInstallPath(parsed, scope);
@@ -312,7 +312,7 @@ export class DefaultPackageManager implements PackageManager {
 		// Collect all packages with scope
 		const allPackages: Array<{ pkg: PackageSource; scope: SourceScope }> = [];
 		for (const pkg of globalSettings.packages ?? []) {
-			allPackages.push({ pkg, scope: "global" });
+			allPackages.push({ pkg, scope: "user" });
 		}
 		for (const pkg of projectSettings.packages ?? []) {
 			allPackages.push({ pkg, scope: "project" });
@@ -330,7 +330,7 @@ export class DefaultPackageManager implements PackageManager {
 				globalEntries,
 				resourceType,
 				target,
-				{ source: "local", scope: "global", origin: "top-level" },
+				{ source: "local", scope: "user", origin: "top-level" },
 				accumulator,
 			);
 			this.resolveLocalEntries(
@@ -350,7 +350,7 @@ export class DefaultPackageManager implements PackageManager {
 		options?: { local?: boolean; temporary?: boolean },
 	): Promise<ResolvedPaths> {
 		const accumulator = this.createAccumulator();
-		const scope: SourceScope = options?.temporary ? "temporary" : options?.local ? "project" : "global";
+		const scope: SourceScope = options?.temporary ? "temporary" : options?.local ? "project" : "user";
 		const packageSources = sources.map((source) => ({ pkg: source as PackageSource, scope }));
 		await this.resolvePackageSources(packageSources, accumulator);
 		return this.toResolvedPaths(accumulator);
@@ -358,7 +358,7 @@ export class DefaultPackageManager implements PackageManager {
 
 	async install(source: string, options?: { local?: boolean }): Promise<void> {
 		const parsed = this.parseSource(source);
-		const scope: SourceScope = options?.local ? "project" : "global";
+		const scope: SourceScope = options?.local ? "project" : "user";
 		await this.withProgress("install", source, `Installing ${source}...`, async () => {
 			if (parsed.type === "npm") {
 				await this.installNpm(parsed, scope, false);
@@ -374,7 +374,7 @@ export class DefaultPackageManager implements PackageManager {
 
 	async remove(source: string, options?: { local?: boolean }): Promise<void> {
 		const parsed = this.parseSource(source);
-		const scope: SourceScope = options?.local ? "project" : "global";
+		const scope: SourceScope = options?.local ? "project" : "user";
 		await this.withProgress("remove", source, `Removing ${source}...`, async () => {
 			if (parsed.type === "npm") {
 				await this.uninstallNpm(parsed, scope);
@@ -390,7 +390,7 @@ export class DefaultPackageManager implements PackageManager {
 
 	async update(source?: string): Promise<void> {
 		if (source) {
-			await this.updateSourceForScope(source, "global");
+			await this.updateSourceForScope(source, "user");
 			await this.updateSourceForScope(source, "project");
 			return;
 		}
@@ -398,7 +398,7 @@ export class DefaultPackageManager implements PackageManager {
 		const globalSettings = this.settingsManager.getGlobalSettings();
 		const projectSettings = this.settingsManager.getProjectSettings();
 		for (const extension of globalSettings.extensions ?? []) {
-			await this.updateSourceForScope(extension, "global");
+			await this.updateSourceForScope(extension, "user");
 		}
 		for (const extension of projectSettings.extensions ?? []) {
 			await this.updateSourceForScope(extension, "project");
@@ -575,8 +575,8 @@ export class DefaultPackageManager implements PackageManager {
 			const existing = seen.get(identity);
 			if (!existing) {
 				seen.set(identity, entry);
-			} else if (entry.scope === "project" && existing.scope === "global") {
-				// Project wins over global
+			} else if (entry.scope === "project" && existing.scope === "user") {
+				// Project wins over user
 				seen.set(identity, entry);
 			}
 			// If existing is project and new is global, keep existing (project)
@@ -597,7 +597,7 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async installNpm(source: NpmSource, scope: SourceScope, temporary: boolean): Promise<void> {
-		if (scope === "global" && !temporary) {
+		if (scope === "user" && !temporary) {
 			await this.runCommand("npm", ["install", "-g", source.spec]);
 			return;
 		}
@@ -607,7 +607,7 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async uninstallNpm(source: NpmSource, scope: SourceScope): Promise<void> {
-		if (scope === "global") {
+		if (scope === "user") {
 			await this.runCommand("npm", ["uninstall", "-g", source.name]);
 			return;
 		}

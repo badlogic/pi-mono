@@ -190,7 +190,7 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 			return true;
 		}
 
-		const formatPackage = (pkg: (typeof globalPackages)[number], scope: "global" | "project") => {
+		const formatPackage = (pkg: (typeof globalPackages)[number], scope: "user" | "project") => {
 			const source = typeof pkg === "string" ? pkg : pkg.source;
 			const filtered = typeof pkg === "object";
 			const display = filtered ? `${source} (filtered)` : source;
@@ -203,9 +203,9 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 		};
 
 		if (globalPackages.length > 0) {
-			console.log(chalk.bold("Global packages:"));
+			console.log(chalk.bold("User packages:"));
 			for (const pkg of globalPackages) {
-				formatPackage(pkg, "global");
+				formatPackage(pkg, "user");
 			}
 		}
 

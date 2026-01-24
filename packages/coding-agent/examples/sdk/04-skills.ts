@@ -13,7 +13,7 @@ const customSkill: Skill = {
 	description: "Custom project instructions",
 	filePath: "/virtual/SKILL.md",
 	baseDir: "/virtual",
-	source: "custom",
+	source: "path",
 };
 
 const loader = new DefaultResourceLoader({
@@ -28,13 +28,13 @@ const loader = new DefaultResourceLoader({
 await loader.reload();
 
 // Discover all skills from cwd/.pi/skills, ~/.pi/agent/skills, etc.
-const discovered = loader.getSkills();
+const { skills: allSkills, diagnostics } = loader.getSkills();
 console.log(
 	"Discovered skills:",
-	discovered.skills.map((s) => s.name),
+	allSkills.map((s) => s.name),
 );
-if (discovered.diagnostics.length > 0) {
-	console.log("Warnings:", discovered.diagnostics);
+if (diagnostics.length > 0) {
+	console.log("Warnings:", diagnostics);
 }
 
 await createAgentSession({
