@@ -306,13 +306,17 @@ export class Editor implements Component, Focusable {
 		const paddingX = Math.min(this.paddingX, maxPadding);
 		const contentWidth = Math.max(1, width - paddingX * 2);
 
-		// Store width for cursor navigation
-		this.lastWidth = contentWidth;
+		// Layout width: with padding the cursor can overflow into it,
+		// without padding we reserve 1 column for the cursor.
+		const layoutWidth = Math.max(1, contentWidth - (paddingX ? 0 : 1));
+
+		// Store for cursor navigation (must match wrapping width)
+		this.lastWidth = layoutWidth;
 
 		const horizontal = this.borderColor("─");
 
-		// Layout the text - use content width
-		const layoutLines = this.layoutText(contentWidth);
+		// Layout the text
+		const layoutLines = this.layoutText(layoutWidth);
 
 		// Calculate max visible lines: 30% of terminal height, minimum 5 lines
 		const terminalRows = this.tui.terminal.rows;
@@ -356,6 +360,7 @@ export class Editor implements Component, Focusable {
 		for (const layoutLine of visibleLines) {
 			let displayText = layoutLine.text;
 			let lineVisibleWidth = visibleWidth(layoutLine.text);
+			let cursorInPadding = false;
 
 			// Add cursor if this line has it
 			if (layoutLine.hasCursor && layoutLine.cursorPos !== undefined) {
@@ -375,37 +380,23 @@ export class Editor implements Component, Focusable {
 					displayText = before + marker + cursor + restAfter;
 					// lineVisibleWidth stays the same - we're replacing, not adding
 				} else {
-					// Cursor is at the end - check if we have room for the space
-					if (lineVisibleWidth < contentWidth) {
-						// We have room - add highlighted space
-						const cursor = "\x1b[7m \x1b[0m";
-						displayText = before + marker + cursor;
-						// lineVisibleWidth increases by 1 - we're adding a space
-						lineVisibleWidth = lineVisibleWidth + 1;
-					} else {
-						// Line is at full width - use reverse video on last grapheme if possible
-						// or just show cursor at the end without adding space
-						const beforeGraphemes = [...segmenter.segment(before)];
-						if (beforeGraphemes.length > 0) {
-							const lastGrapheme = beforeGraphemes[beforeGraphemes.length - 1]?.segment || "";
-							const cursor = `\x1b[7m${lastGrapheme}\x1b[0m`;
-							// Rebuild 'before' without the last grapheme
-							const beforeWithoutLast = beforeGraphemes
-								.slice(0, -1)
-								.map((g) => g.segment)
-								.join("");
-							displayText = beforeWithoutLast + marker + cursor;
-						}
-						// lineVisibleWidth stays the same
+					// Cursor is at the end - add highlighted space
+					const cursor = "\x1b[7m \x1b[0m";
+					displayText = before + marker + cursor;
+					lineVisibleWidth = lineVisibleWidth + 1;
+					// If cursor overflows content width into the padding, flag it
+					if (lineVisibleWidth > contentWidth && paddingX > 0) {
+						cursorInPadding = true;
 					}
 				}
 			}
 
 			// Calculate padding based on actual visible width
 			const padding = " ".repeat(Math.max(0, contentWidth - lineVisibleWidth));
+			const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
 
 			// Render the line (no side borders, just horizontal lines above and below)
-			result.push(`${leftPadding}${displayText}${padding}${rightPadding}`);
+			result.push(`${leftPadding}${displayText}${padding}${lineRightPadding}`);
 		}
 
 		// Render bottom border (with scroll indicator if more content below)
