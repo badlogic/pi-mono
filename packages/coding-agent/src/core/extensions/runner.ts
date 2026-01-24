@@ -6,6 +6,7 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { ImageContent, Model } from "@mariozechner/pi-ai";
 import type { KeyId } from "@mariozechner/pi-tui";
 import { type Theme, theme } from "../../modes/interactive/theme/theme.js";
+import type { ResourceDiagnostic } from "../diagnostics.js";
 import type { KeyAction, KeybindingsConfig } from "../keybindings.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
@@ -162,6 +163,7 @@ export class ExtensionRunner {
 	private forkHandler: ForkHandler = async () => ({ cancelled: false });
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
 	private shutdownHandler: ShutdownHandler = () => {};
+	private shortcutDiagnostics: ResourceDiagnostic[] = [];
 
 	constructor(
 		extensions: Extension[],
@@ -275,36 +277,52 @@ export class ExtensionRunner {
 	}
 
 	getShortcuts(effectiveKeybindings: Required<KeybindingsConfig>): Map<KeyId, ExtensionShortcut> {
+		this.shortcutDiagnostics = [];
 		const builtinKeybindings = buildBuiltinKeybindings(effectiveKeybindings);
 		const extensionShortcuts = new Map<KeyId, ExtensionShortcut>();
+
+		const addDiagnostic = (message: string, extensionPath: string) => {
+			this.shortcutDiagnostics.push({ type: "warning", message, path: extensionPath });
+			if (!this.hasUI()) {
+				console.warn(message);
+			}
+		};
+
 		for (const ext of this.extensions) {
 			for (const [key, shortcut] of ext.shortcuts) {
 				const normalizedKey = key.toLowerCase() as KeyId;
 
 				const builtInKeybinding = builtinKeybindings[normalizedKey];
 				if (builtInKeybinding?.restrictOverride === true) {
-					console.warn(
+					addDiagnostic(
 						`Extension shortcut '${key}' from ${shortcut.extensionPath} conflicts with built-in shortcut. Skipping.`,
+						shortcut.extensionPath,
 					);
 					continue;
 				}
 
 				if (builtInKeybinding?.restrictOverride === false) {
-					console.warn(
+					addDiagnostic(
 						`Extension shortcut conflict: '${key}' is built-in shortcut for ${builtInKeybinding.action} and ${shortcut.extensionPath}. Using ${shortcut.extensionPath}.`,
+						shortcut.extensionPath,
 					);
 				}
 
 				const existingExtensionShortcut = extensionShortcuts.get(normalizedKey);
 				if (existingExtensionShortcut) {
-					console.warn(
+					addDiagnostic(
 						`Extension shortcut conflict: '${key}' registered by both ${existingExtensionShortcut.extensionPath} and ${shortcut.extensionPath}. Using ${shortcut.extensionPath}.`,
+						shortcut.extensionPath,
 					);
 				}
 				extensionShortcuts.set(normalizedKey, shortcut);
 			}
 		}
 		return extensionShortcuts;
+	}
+
+	getShortcutDiagnostics(): ResourceDiagnostic[] {
+		return this.shortcutDiagnostics;
 	}
 
 	onError(listener: ExtensionErrorListener): () => void {

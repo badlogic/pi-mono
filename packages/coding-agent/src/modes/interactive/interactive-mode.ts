@@ -932,6 +932,23 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
+		const extensionDiagnostics: ResourceDiagnostic[] = [];
+		const extensionErrors = this.session.resourceLoader.getExtensions().errors;
+		if (extensionErrors.length > 0) {
+			for (const error of extensionErrors) {
+				extensionDiagnostics.push({ type: "error", message: error.error, path: error.path });
+			}
+		}
+
+		const shortcutDiagnostics = this.session.extensionRunner?.getShortcutDiagnostics() ?? [];
+		extensionDiagnostics.push(...shortcutDiagnostics);
+
+		if (extensionDiagnostics.length > 0) {
+			const warningLines = this.formatDiagnostics(extensionDiagnostics, metadata);
+			this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Extension issues]")}\n${warningLines}`, 0, 0));
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
 		// Show loaded themes (excluding built-in)
 		const loadedThemes = this.session.resourceLoader.getThemes().themes;
 		const customThemes = loadedThemes.filter((t) => t.sourcePath);
