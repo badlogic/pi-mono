@@ -27,6 +27,7 @@ import { isContextOverflow, modelsAreEqual, supportsXhigh } from "@mariozechner/
 import { getAuthPath } from "../config.js";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { stripFrontmatter } from "../utils/frontmatter.js";
+import { sleep } from "../utils/sleep.js";
 import { type BashResult, executeBash as executeBashCommand, executeBashWithOperations } from "./bash-executor.js";
 import {
 	type CompactionResult,
@@ -62,10 +63,9 @@ import {
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
-import type { ResourceDiagnostic, ResourceLoader } from "./resource-loader.js";
+import type { ResourceLoader } from "./resource-loader.js";
 import type { BranchSummaryEntry, CompactionEntry, NewSessionOptions, SessionManager } from "./session-manager.js";
 import type { SettingsManager } from "./settings-manager.js";
-import type { Skill } from "./skills.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import type { BashOperations } from "./tools/bash.js";
 import { createAllTools } from "./tools/index.js";
@@ -817,7 +817,7 @@ export class AgentSession {
 		const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
 		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
 
-		const skill = this.skills.find((s) => s.name === skillName);
+		const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
 		if (!skill) return text; // Unknown skill, pass through
 
 		try {
@@ -1031,16 +1031,6 @@ export class AgentSession {
 		return this._followUpMessages;
 	}
 
-	/** Skills loaded by resource loader */
-	get skills(): readonly Skill[] {
-		return this._resourceLoader.getSkills().skills;
-	}
-
-	/** Skill loading diagnostics (warnings, errors, collisions) */
-	get skillWarnings(): readonly ResourceDiagnostic[] {
-		return this._resourceLoader.getSkills().diagnostics;
-	}
-
 	get resourceLoader(): ResourceLoader {
 		return this._resourceLoader;
 	}
@@ -1210,13 +1200,6 @@ export class AgentSession {
 		await this._emitModelSelect(nextModel, currentModel, "cycle");
 
 		return { model: nextModel, thinkingLevel: this.thinkingLevel, isScoped: false };
-	}
-
-	/**
-	 * Get all available models with valid API keys.
-	 */
-	async getAvailableModels(): Promise<Model<any>[]> {
-		return this._modelRegistry.getAvailable();
 	}
 
 	// =========================================================================
@@ -1937,7 +1920,7 @@ export class AgentSession {
 		// Wait with exponential backoff (abortable)
 		this._retryAbortController = new AbortController();
 		try {
-			await this._sleep(delayMs, this._retryAbortController.signal);
+			await sleep(delayMs, this._retryAbortController.signal);
 		} catch {
 			// Aborted during sleep - emit end event so UI can clean up
 			const attempt = this._retryAttempt;
@@ -1962,25 +1945,6 @@ export class AgentSession {
 		}, 0);
 
 		return true;
-	}
-
-	/**
-	 * Sleep helper that respects abort signal.
-	 */
-	private _sleep(ms: number, signal?: AbortSignal): Promise<void> {
-		return new Promise((resolve, reject) => {
-			if (signal?.aborted) {
-				reject(new Error("Aborted"));
-				return;
-			}
-
-			const timeout = setTimeout(resolve, ms);
-
-			signal?.addEventListener("abort", () => {
-				clearTimeout(timeout);
-				reject(new Error("Aborted"));
-			});
-		});
 	}
 
 	/**

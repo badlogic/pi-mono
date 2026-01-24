@@ -347,7 +347,7 @@ export class InteractiveMode {
 		this.skillCommands.clear();
 		const skillCommandList: SlashCommand[] = [];
 		if (this.settingsManager.getEnableSkillCommands()) {
-			for (const skill of this.session.skills) {
+			for (const skill of this.session.resourceLoader.getSkills().skills) {
 				const commandName = `skill:${skill.name}`;
 				this.skillCommands.set(commandName, skill.filePath);
 				skillCommandList.push({ name: commandName, description: skill.description });
@@ -839,7 +839,7 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
-		const skills = this.session.skills;
+		const skills = this.session.resourceLoader.getSkills().skills;
 		if (skills.length > 0) {
 			const skillPaths = skills.map((s) => s.filePath);
 			const groups = this.groupPathsBySource(skillPaths, metadata);
@@ -848,7 +848,7 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Spacer(1));
 		}
 
-		const skillDiagnostics = this.session.skillWarnings;
+		const skillDiagnostics = this.session.resourceLoader.getSkills().diagnostics;
 		if (skillDiagnostics.length > 0) {
 			const warningLines = this.formatDiagnostics(skillDiagnostics, metadata);
 			this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Skill conflicts]")}\n${warningLines}`, 0, 0));

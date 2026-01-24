@@ -45,8 +45,8 @@ This is a test skill.
 		});
 
 		// Skills should be discovered and exposed on the session
-		expect(session.skills.length).toBeGreaterThan(0);
-		expect(session.skills.some((s) => s.name === "test-skill")).toBe(true);
+		expect(session.resourceLoader.getSkills().skills.length).toBeGreaterThan(0);
+		expect(session.resourceLoader.getSkills().skills.some((s) => s.name === "test-skill")).toBe(true);
 	});
 
 	it("should have empty skills when resource loader returns none (--no-skills)", async () => {
@@ -69,8 +69,8 @@ This is a test skill.
 			resourceLoader,
 		});
 
-		expect(session.skills).toEqual([]);
-		expect(session.skillWarnings).toEqual([]);
+		expect(session.resourceLoader.getSkills().skills).toEqual([]);
+		expect(session.resourceLoader.getSkills().diagnostics).toEqual([]);
 	});
 
 	it("should use provided skills when resource loader supplies them", async () => {
@@ -101,7 +101,7 @@ This is a test skill.
 			resourceLoader,
 		});
 
-		expect(session.skills).toEqual([customSkill]);
-		expect(session.skillWarnings).toEqual([]);
+		expect(session.resourceLoader.getSkills().skills).toEqual([customSkill]);
+		expect(session.resourceLoader.getSkills().diagnostics).toEqual([]);
 	});
 });
