@@ -4,12 +4,16 @@
 
 import {
 	type Api,
+	type AssistantMessageEventStream,
+	type Context,
 	getModels,
 	getProviders,
 	type KnownProvider,
 	type Model,
 	type OAuthProviderInterface,
+	registerApiProvider,
 	registerOAuthProvider,
+	type SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
@@ -45,17 +49,7 @@ const OpenAICompatSchema = Type.Union([OpenAICompletionsCompatSchema, OpenAIResp
 const ModelDefinitionSchema = Type.Object({
 	id: Type.String({ minLength: 1 }),
 	name: Type.String({ minLength: 1 }),
-	api: Type.Optional(
-		Type.Union([
-			Type.Literal("openai-completions"),
-			Type.Literal("openai-responses"),
-			Type.Literal("azure-openai-responses"),
-			Type.Literal("openai-codex-responses"),
-			Type.Literal("anthropic-messages"),
-			Type.Literal("google-generative-ai"),
-			Type.Literal("bedrock-converse-stream"),
-		]),
-	),
+	api: Type.Optional(Type.String({ minLength: 1 })),
 	reasoning: Type.Boolean(),
 	input: Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")])),
 	cost: Type.Object({
@@ -73,17 +67,7 @@ const ModelDefinitionSchema = Type.Object({
 const ProviderConfigSchema = Type.Object({
 	baseUrl: Type.Optional(Type.String({ minLength: 1 })),
 	apiKey: Type.Optional(Type.String({ minLength: 1 })),
-	api: Type.Optional(
-		Type.Union([
-			Type.Literal("openai-completions"),
-			Type.Literal("openai-responses"),
-			Type.Literal("azure-openai-responses"),
-			Type.Literal("openai-codex-responses"),
-			Type.Literal("anthropic-messages"),
-			Type.Literal("google-generative-ai"),
-			Type.Literal("bedrock-converse-stream"),
-		]),
-	),
+	api: Type.Optional(Type.String({ minLength: 1 })),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
 	authHeader: Type.Optional(Type.Boolean()),
 	models: Type.Optional(Type.Array(ModelDefinitionSchema)),
@@ -482,6 +466,18 @@ export class ModelRegistry {
 			registerOAuthProvider(oauthProvider);
 		}
 
+		if (config.streamSimple) {
+			if (!config.api) {
+				throw new Error(`Provider ${providerName}: "api" is required when registering streamSimple.`);
+			}
+			const streamSimple = config.streamSimple;
+			registerApiProvider({
+				api: config.api,
+				stream: (model, context, options) => streamSimple(model, context, options as SimpleStreamOptions),
+				streamSimple,
+			});
+		}
+
 		// Store API key for auth resolution
 		if (config.apiKey) {
 			this.customProviderApiKeys.set(providerName, config.apiKey);
@@ -556,6 +552,7 @@ export interface ProviderConfigInput {
 	baseUrl?: string;
 	apiKey?: string;
 	api?: Api;
+	streamSimple?: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 	headers?: Record<string, string>;
 	authHeader?: boolean;
 	/** OAuth provider for /login support */

@@ -24,6 +24,8 @@
 - Package deduplication: if same package appears in global and project settings, project wins ([#645](https://github.com/badlogic/pi-mono/issues/645))
 - Unified collision reporting with `ResourceDiagnostic` type for all resource types ([#645](https://github.com/badlogic/pi-mono/issues/645))
 - Show provider alongside the model in the footer if multiple providers are available
+- Custom provider support via `pi.registerProvider()` with `streamSimple` for custom API implementations
+- Added `custom-provider.ts` example extension demonstrating custom Anthropic provider with OAuth
 
 ### Fixed
 

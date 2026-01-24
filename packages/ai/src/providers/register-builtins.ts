@@ -1,4 +1,4 @@
-import { registerApiProvider } from "../api-registry.js";
+import { clearApiProviders, registerApiProvider } from "../api-registry.js";
 import { streamBedrock, streamSimpleBedrock } from "./amazon-bedrock.js";
 import { streamAnthropic, streamSimpleAnthropic } from "./anthropic.js";
 import { streamAzureOpenAIResponses, streamSimpleAzureOpenAIResponses } from "./azure-openai-responses.js";
@@ -9,56 +9,65 @@ import { streamOpenAICodexResponses, streamSimpleOpenAICodexResponses } from "./
 import { streamOpenAICompletions, streamSimpleOpenAICompletions } from "./openai-completions.js";
 import { streamOpenAIResponses, streamSimpleOpenAIResponses } from "./openai-responses.js";
 
-registerApiProvider({
-	api: "anthropic-messages",
-	stream: streamAnthropic,
-	streamSimple: streamSimpleAnthropic,
-});
+export function registerBuiltInApiProviders(): void {
+	registerApiProvider({
+		api: "anthropic-messages",
+		stream: streamAnthropic,
+		streamSimple: streamSimpleAnthropic,
+	});
 
-registerApiProvider({
-	api: "openai-completions",
-	stream: streamOpenAICompletions,
-	streamSimple: streamSimpleOpenAICompletions,
-});
+	registerApiProvider({
+		api: "openai-completions",
+		stream: streamOpenAICompletions,
+		streamSimple: streamSimpleOpenAICompletions,
+	});
 
-registerApiProvider({
-	api: "openai-responses",
-	stream: streamOpenAIResponses,
-	streamSimple: streamSimpleOpenAIResponses,
-});
+	registerApiProvider({
+		api: "openai-responses",
+		stream: streamOpenAIResponses,
+		streamSimple: streamSimpleOpenAIResponses,
+	});
 
-registerApiProvider({
-	api: "azure-openai-responses",
-	stream: streamAzureOpenAIResponses,
-	streamSimple: streamSimpleAzureOpenAIResponses,
-});
+	registerApiProvider({
+		api: "azure-openai-responses",
+		stream: streamAzureOpenAIResponses,
+		streamSimple: streamSimpleAzureOpenAIResponses,
+	});
 
-registerApiProvider({
-	api: "openai-codex-responses",
-	stream: streamOpenAICodexResponses,
-	streamSimple: streamSimpleOpenAICodexResponses,
-});
+	registerApiProvider({
+		api: "openai-codex-responses",
+		stream: streamOpenAICodexResponses,
+		streamSimple: streamSimpleOpenAICodexResponses,
+	});
 
-registerApiProvider({
-	api: "google-generative-ai",
-	stream: streamGoogle,
-	streamSimple: streamSimpleGoogle,
-});
+	registerApiProvider({
+		api: "google-generative-ai",
+		stream: streamGoogle,
+		streamSimple: streamSimpleGoogle,
+	});
 
-registerApiProvider({
-	api: "google-gemini-cli",
-	stream: streamGoogleGeminiCli,
-	streamSimple: streamSimpleGoogleGeminiCli,
-});
+	registerApiProvider({
+		api: "google-gemini-cli",
+		stream: streamGoogleGeminiCli,
+		streamSimple: streamSimpleGoogleGeminiCli,
+	});
 
-registerApiProvider({
-	api: "google-vertex",
-	stream: streamGoogleVertex,
-	streamSimple: streamSimpleGoogleVertex,
-});
+	registerApiProvider({
+		api: "google-vertex",
+		stream: streamGoogleVertex,
+		streamSimple: streamSimpleGoogleVertex,
+	});
 
-registerApiProvider({
-	api: "bedrock-converse-stream",
-	stream: streamBedrock,
-	streamSimple: streamSimpleBedrock,
-});
+	registerApiProvider({
+		api: "bedrock-converse-stream",
+		stream: streamBedrock,
+		streamSimple: streamSimpleBedrock,
+	});
+}
+
+export function resetApiProviders(): void {
+	clearApiProviders();
+	registerBuiltInApiProviders();
+}
+
+registerBuiltInApiProviders();

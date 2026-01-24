@@ -16,10 +16,13 @@ import type {
 } from "@mariozechner/pi-agent-core";
 import type {
 	Api,
+	AssistantMessageEventStream,
+	Context,
 	ImageContent,
 	Model,
 	OAuthCredentials,
 	OAuthLoginCallbacks,
+	SimpleStreamOptions,
 	TextContent,
 	ToolResultMessage,
 } from "@mariozechner/pi-ai";
@@ -872,6 +875,7 @@ export interface ExtensionAPI {
 	 * If `models` is provided: replaces all existing models for this provider.
 	 * If only `baseUrl` is provided: overrides the URL for existing models.
 	 * If `oauth` is provided: registers OAuth provider for /login support.
+	 * If `streamSimple` is provided: registers a custom API stream handler.
 	 *
 	 * @example
 	 * // Register a new provider with custom models
@@ -930,6 +934,8 @@ export interface ProviderConfig {
 	apiKey?: string;
 	/** API type. Required at provider or model level when defining models. */
 	api?: Api;
+	/** Optional streamSimple handler for custom APIs. */
+	streamSimple?: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 	/** Custom headers to include in requests. */
 	headers?: Record<string, string>;
 	/** If true, adds Authorization: Bearer header with the resolved API key. */

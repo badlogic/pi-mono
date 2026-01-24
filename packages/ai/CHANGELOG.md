@@ -5,6 +5,8 @@
 ### Added
 
 - Added `azure-openai-responses` provider support for Azure OpenAI Responses API. ([#890](https://github.com/badlogic/pi-mono/pull/890) by [@markusylisiurunen](https://github.com/markusylisiurunen))
+- Added `createAssistantMessageEventStream()` factory function for use in extensions.
+- Added `resetApiProviders()` to clear and re-register built-in API providers.
 
 ### Changed
 

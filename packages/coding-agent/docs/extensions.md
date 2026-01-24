@@ -1206,6 +1206,9 @@ pi.registerProvider("corporate-ai", {
 - `authHeader` - If true, adds `Authorization: Bearer` header automatically.
 - `models` - Array of model definitions. If provided, replaces all existing models for this provider.
 - `oauth` - OAuth provider config for `/login` support. When provided, the provider appears in the login menu.
+- `streamSimple` - Custom streaming implementation for non-standard APIs.
+
+See [custom-provider.md](custom-provider.md) for advanced topics: custom streaming APIs, OAuth details, model definition reference.
 
 ## State Management
 
