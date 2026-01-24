@@ -1,8 +1,8 @@
-import { mkdirSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findMostRecentSession, loadEntriesFromFile } from "../../src/core/session-manager.js";
+import { findMostRecentSession, loadEntriesFromFile, SessionManager } from "../../src/core/session-manager.js";
 
 describe("loadEntriesFromFile", () => {
 	let tempDir: string;
@@ -123,5 +123,92 @@ describe("findMostRecentSession", () => {
 		writeFileSync(valid, '{"type":"session","id":"abc","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}\n');
 
 		expect(findMostRecentSession(tempDir)).toBe(valid);
+	});
+});
+
+describe("SessionManager.setSessionFile with corrupted files", () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = join(tmpdir(), `session-test-${Date.now()}`);
+		mkdirSync(tempDir, { recursive: true });
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	it("creates new session when loading empty file", () => {
+		const emptyFile = join(tempDir, "empty.jsonl");
+		writeFileSync(emptyFile, "");
+
+		const sm = SessionManager.open(emptyFile, tempDir);
+
+		// Should have created a new session with valid header
+		expect(sm.getSessionId()).toBeTruthy();
+		expect(sm.getHeader()).toBeTruthy();
+		expect(sm.getHeader()?.type).toBe("session");
+	});
+
+	it("creates new session when loading file without valid header", () => {
+		const noHeaderFile = join(tempDir, "no-header.jsonl");
+		// File with messages but no session header (corrupted state)
+		writeFileSync(
+			noHeaderFile,
+			'{"type":"message","id":"abc","parentId":"orphaned","timestamp":"2025-01-01T00:00:00Z","message":{"role":"assistant","content":"test"}}\n',
+		);
+
+		const sm = SessionManager.open(noHeaderFile, tempDir);
+
+		// Should have created a new session with valid header
+		expect(sm.getSessionId()).toBeTruthy();
+		expect(sm.getHeader()).toBeTruthy();
+		expect(sm.getHeader()?.type).toBe("session");
+	});
+
+	it("writes valid session header when saving after loading corrupted file", () => {
+		const corruptedFile = join(tempDir, "corrupted.jsonl");
+		writeFileSync(corruptedFile, "");
+
+		const sm = SessionManager.open(corruptedFile, tempDir);
+
+		// Add user and assistant messages to trigger persistence
+		sm.appendMessage({ role: "user", content: "test", timestamp: Date.now() });
+		sm.appendMessage({
+			role: "assistant",
+			content: [{ type: "text", text: "response" }],
+			timestamp: Date.now(),
+			api: "anthropic-messages",
+			provider: "anthropic",
+			model: "test",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+		});
+
+		// Verify the file now has a valid session header
+		const content = readFileSync(corruptedFile, "utf-8");
+		const lines = content.trim().split("\n").filter(Boolean);
+
+		expect(lines.length).toBeGreaterThanOrEqual(3); // header + user + assistant
+		const header = JSON.parse(lines[0]);
+		expect(header.type).toBe("session");
+		expect(header.id).toBeTruthy();
+	});
+
+	it("preserves explicit session file path when recovering from corrupted file", () => {
+		const explicitPath = join(tempDir, "my-session.jsonl");
+		writeFileSync(explicitPath, "");
+
+		const sm = SessionManager.open(explicitPath, tempDir);
+
+		// The session file path should be preserved
+		expect(sm.getSessionFile()).toBe(explicitPath);
 	});
 });
