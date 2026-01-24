@@ -3529,8 +3529,7 @@ export class InteractiveMode {
 		const providerName = providerInfo?.name || providerId;
 
 		// Providers that use callback servers (can paste redirect URL)
-		const usesCallbackServer =
-			providerId === "openai-codex" || providerId === "google-gemini-cli" || providerId === "google-antigravity";
+		const usesCallbackServer = providerInfo?.usesCallbackServer ?? false;
 
 		// Create login dialog component
 		const dialog = new LoginDialogComponent(this.ui, providerId, (_success, _message) => {

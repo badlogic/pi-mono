@@ -8,7 +8,11 @@
 
 import type { Server } from "http";
 import { generatePKCE } from "./pkce.js";
-import type { OAuthCredentials } from "./types.js";
+import type { OAuthCredentials, OAuthLoginCallbacks, OAuthProviderInterface } from "./types.js";
+
+type GeminiCredentials = OAuthCredentials & {
+	projectId: string;
+};
 
 const decode = (s: string) => atob(s);
 const CLIENT_ID = decode(
@@ -553,3 +557,26 @@ export async function loginGeminiCli(
 		server.server.close();
 	}
 }
+
+export const geminiCliOAuthProvider: OAuthProviderInterface = {
+	id: "google-gemini-cli",
+	name: "Google Cloud Code Assist (Gemini CLI)",
+	usesCallbackServer: true,
+
+	async login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+		return loginGeminiCli(callbacks.onAuth, callbacks.onProgress, callbacks.onManualCodeInput);
+	},
+
+	async refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials> {
+		const creds = credentials as GeminiCredentials;
+		if (!creds.projectId) {
+			throw new Error("Google Cloud credentials missing projectId");
+		}
+		return refreshGoogleCloudToken(creds.refresh, creds.projectId);
+	},
+
+	getApiKey(credentials: OAuthCredentials): string {
+		const creds = credentials as GeminiCredentials;
+		return JSON.stringify({ token: creds.access, projectId: creds.projectId });
+	},
+};

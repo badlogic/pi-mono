@@ -32,6 +32,7 @@ import type {
 	ExtensionRuntime,
 	LoadExtensionsResult,
 	MessageRenderer,
+	ProviderConfig,
 	RegisteredCommand,
 	ToolDefinition,
 } from "./types.js";
@@ -122,6 +123,7 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		getThinkingLevel: notInitialized,
 		setThinkingLevel: notInitialized,
 		flagValues: new Map(),
+		pendingProviderRegistrations: [],
 	};
 }
 
@@ -236,6 +238,10 @@ function createExtensionAPI(
 
 		setThinkingLevel(level) {
 			runtime.setThinkingLevel(level);
+		},
+
+		registerProvider(name: string, config: ProviderConfig) {
+			runtime.pendingProviderRegistrations.push({ name, config });
 		},
 
 		events: eventBus,

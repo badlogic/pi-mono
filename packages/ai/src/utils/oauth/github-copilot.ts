@@ -3,7 +3,12 @@
  */
 
 import { getModels } from "../../models.js";
-import type { OAuthCredentials } from "./types.js";
+import type { Api, Model } from "../../types.js";
+import type { OAuthCredentials, OAuthLoginCallbacks, OAuthProviderInterface } from "./types.js";
+
+type CopilotCredentials = OAuthCredentials & {
+	enterpriseUrl?: string;
+};
 
 const decode = (s: string) => atob(s);
 const CLIENT_ID = decode("SXYxLmI1MDdhMDhjODdlY2ZlOTg=");
@@ -344,3 +349,33 @@ export async function loginGitHubCopilot(options: {
 	await enableAllGitHubCopilotModels(credentials.access, enterpriseDomain ?? undefined);
 	return credentials;
 }
+
+export const githubCopilotOAuthProvider: OAuthProviderInterface = {
+	id: "github-copilot",
+	name: "GitHub Copilot",
+
+	async login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+		return loginGitHubCopilot({
+			onAuth: (url, instructions) => callbacks.onAuth({ url, instructions }),
+			onPrompt: callbacks.onPrompt,
+			onProgress: callbacks.onProgress,
+			signal: callbacks.signal,
+		});
+	},
+
+	async refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials> {
+		const creds = credentials as CopilotCredentials;
+		return refreshGitHubCopilotToken(creds.refresh, creds.enterpriseUrl);
+	},
+
+	getApiKey(credentials: OAuthCredentials): string {
+		return credentials.access;
+	},
+
+	modifyModels(models: Model<Api>[], credentials: OAuthCredentials): Model<Api>[] {
+		const creds = credentials as CopilotCredentials;
+		const domain = creds.enterpriseUrl ? (normalizeDomain(creds.enterpriseUrl) ?? undefined) : undefined;
+		const baseUrl = getGitHubCopilotBaseUrl(creds.access, domain);
+		return models.map((m) => (m.provider === "github-copilot" ? { ...m, baseUrl } : m));
+	},
+};

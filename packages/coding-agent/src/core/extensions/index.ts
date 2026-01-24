@@ -76,6 +76,9 @@ export type {
 	MessageRenderOptions,
 	ModelSelectEvent,
 	ModelSelectSource,
+	// Provider Registration
+	ProviderConfig,
+	ProviderModelConfig,
 	ReadToolResultEvent,
 	// Commands
 	RegisteredCommand,

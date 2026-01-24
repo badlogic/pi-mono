@@ -432,10 +432,6 @@ export async function main(args: string[]) {
 	// Run migrations (pass cwd for project-local migrations)
 	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd());
 
-	// Create AuthStorage and ModelRegistry upfront
-	const authStorage = new AuthStorage();
-	const modelRegistry = new ModelRegistry(authStorage);
-
 	// First pass: parse args to get --extension paths
 	const firstPass = parseArgs(args);
 
@@ -443,6 +439,8 @@ export async function main(args: string[]) {
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
+	const authStorage = new AuthStorage();
+	const modelRegistry = new ModelRegistry(authStorage, getModelsPath());
 
 	const resourceLoader = new DefaultResourceLoader({
 		cwd,

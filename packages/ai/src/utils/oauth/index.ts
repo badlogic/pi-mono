@@ -10,100 +10,111 @@
  */
 
 // Anthropic
-export { loginAnthropic, refreshAnthropicToken } from "./anthropic.js";
+export { anthropicOAuthProvider, loginAnthropic, refreshAnthropicToken } from "./anthropic.js";
 // GitHub Copilot
 export {
 	getGitHubCopilotBaseUrl,
+	githubCopilotOAuthProvider,
 	loginGitHubCopilot,
 	normalizeDomain,
 	refreshGitHubCopilotToken,
 } from "./github-copilot.js";
 // Google Antigravity
-export {
-	loginAntigravity,
-	refreshAntigravityToken,
-} from "./google-antigravity.js";
+export { antigravityOAuthProvider, loginAntigravity, refreshAntigravityToken } from "./google-antigravity.js";
 // Google Gemini CLI
-export {
-	loginGeminiCli,
-	refreshGoogleCloudToken,
-} from "./google-gemini-cli.js";
+export { geminiCliOAuthProvider, loginGeminiCli, refreshGoogleCloudToken } from "./google-gemini-cli.js";
 // OpenAI Codex (ChatGPT OAuth)
-export {
-	loginOpenAICodex,
-	refreshOpenAICodexToken,
-} from "./openai-codex.js";
+export { loginOpenAICodex, openaiCodexOAuthProvider, refreshOpenAICodexToken } from "./openai-codex.js";
 
 export * from "./types.js";
 
 // ============================================================================
-// High-level API
+// Provider Registry
 // ============================================================================
 
-import { refreshAnthropicToken } from "./anthropic.js";
-import { refreshGitHubCopilotToken } from "./github-copilot.js";
-import { refreshAntigravityToken } from "./google-antigravity.js";
-import { refreshGoogleCloudToken } from "./google-gemini-cli.js";
-import { refreshOpenAICodexToken } from "./openai-codex.js";
-import type { OAuthCredentials, OAuthProvider, OAuthProviderInfo } from "./types.js";
+import { anthropicOAuthProvider } from "./anthropic.js";
+import { githubCopilotOAuthProvider } from "./github-copilot.js";
+import { antigravityOAuthProvider } from "./google-antigravity.js";
+import { geminiCliOAuthProvider } from "./google-gemini-cli.js";
+import { openaiCodexOAuthProvider } from "./openai-codex.js";
+import type { OAuthCredentials, OAuthProviderId, OAuthProviderInfo, OAuthProviderInterface } from "./types.js";
+
+const oauthProviderRegistry = new Map<string, OAuthProviderInterface>([
+	[anthropicOAuthProvider.id, anthropicOAuthProvider],
+	[githubCopilotOAuthProvider.id, githubCopilotOAuthProvider],
+	[geminiCliOAuthProvider.id, geminiCliOAuthProvider],
+	[antigravityOAuthProvider.id, antigravityOAuthProvider],
+	[openaiCodexOAuthProvider.id, openaiCodexOAuthProvider],
+]);
+
+/**
+ * Get an OAuth provider by ID
+ */
+export function getOAuthProvider(id: OAuthProviderId): OAuthProviderInterface | undefined {
+	return oauthProviderRegistry.get(id);
+}
+
+/**
+ * Register a custom OAuth provider
+ */
+export function registerOAuthProvider(provider: OAuthProviderInterface): void {
+	oauthProviderRegistry.set(provider.id, provider);
+}
+
+/**
+ * Get all registered OAuth providers
+ */
+export function getOAuthProviders(): OAuthProviderInterface[] {
+	return Array.from(oauthProviderRegistry.values());
+}
+
+/**
+ * @deprecated Use getOAuthProviders() which returns OAuthProviderInterface[]
+ */
+export function getOAuthProviderInfoList(): OAuthProviderInfo[] {
+	return getOAuthProviders().map((p) => ({
+		id: p.id,
+		name: p.name,
+		available: true,
+	}));
+}
+
+// ============================================================================
+// High-level API (uses provider registry)
+// ============================================================================
 
 /**
  * Refresh token for any OAuth provider.
- * Saves the new credentials and returns the new access token.
+ * @deprecated Use getOAuthProvider(id).refreshToken() instead
  */
 export async function refreshOAuthToken(
-	provider: OAuthProvider,
+	providerId: OAuthProviderId,
 	credentials: OAuthCredentials,
 ): Promise<OAuthCredentials> {
-	if (!credentials) {
-		throw new Error(`No OAuth credentials found for ${provider}`);
+	const provider = getOAuthProvider(providerId);
+	if (!provider) {
+		throw new Error(`Unknown OAuth provider: ${providerId}`);
 	}
-
-	let newCredentials: OAuthCredentials;
-
-	switch (provider) {
-		case "anthropic":
-			newCredentials = await refreshAnthropicToken(credentials.refresh);
-			break;
-		case "github-copilot":
-			newCredentials = await refreshGitHubCopilotToken(credentials.refresh, credentials.enterpriseUrl);
-			break;
-		case "google-gemini-cli":
-			if (!credentials.projectId) {
-				throw new Error("Google Cloud credentials missing projectId");
-			}
-			newCredentials = await refreshGoogleCloudToken(credentials.refresh, credentials.projectId);
-			break;
-		case "google-antigravity":
-			if (!credentials.projectId) {
-				throw new Error("Antigravity credentials missing projectId");
-			}
-			newCredentials = await refreshAntigravityToken(credentials.refresh, credentials.projectId);
-			break;
-		case "openai-codex":
-			newCredentials = await refreshOpenAICodexToken(credentials.refresh);
-			break;
-		default:
-			throw new Error(`Unknown OAuth provider: ${provider}`);
-	}
-
-	return newCredentials;
+	return provider.refreshToken(credentials);
 }
 
 /**
  * Get API key for a provider from OAuth credentials.
  * Automatically refreshes expired tokens.
  *
- * For google-gemini-cli and antigravity, returns JSON-encoded { token, projectId }
- *
- * @returns API key string, or null if no credentials
+ * @returns API key string and updated credentials, or null if no credentials
  * @throws Error if refresh fails
  */
 export async function getOAuthApiKey(
-	provider: OAuthProvider,
+	providerId: OAuthProviderId,
 	credentials: Record<string, OAuthCredentials>,
 ): Promise<{ newCredentials: OAuthCredentials; apiKey: string } | null> {
-	let creds = credentials[provider];
+	const provider = getOAuthProvider(providerId);
+	if (!provider) {
+		throw new Error(`Unknown OAuth provider: ${providerId}`);
+	}
+
+	let creds = credentials[providerId];
 	if (!creds) {
 		return null;
 	}
@@ -111,47 +122,12 @@ export async function getOAuthApiKey(
 	// Refresh if expired
 	if (Date.now() >= creds.expires) {
 		try {
-			creds = await refreshOAuthToken(provider, creds);
+			creds = await provider.refreshToken(creds);
 		} catch (_error) {
-			throw new Error(`Failed to refresh OAuth token for ${provider}`);
+			throw new Error(`Failed to refresh OAuth token for ${providerId}`);
 		}
 	}
 
-	// For providers that need projectId, return JSON
-	const needsProjectId = provider === "google-gemini-cli" || provider === "google-antigravity";
-	const apiKey = needsProjectId ? JSON.stringify({ token: creds.access, projectId: creds.projectId }) : creds.access;
+	const apiKey = provider.getApiKey(creds);
 	return { newCredentials: creds, apiKey };
-}
-
-/**
- * Get list of OAuth providers
- */
-export function getOAuthProviders(): OAuthProviderInfo[] {
-	return [
-		{
-			id: "anthropic",
-			name: "Anthropic (Claude Pro/Max)",
-			available: true,
-		},
-		{
-			id: "openai-codex",
-			name: "ChatGPT Plus/Pro (Codex Subscription)",
-			available: true,
-		},
-		{
-			id: "github-copilot",
-			name: "GitHub Copilot",
-			available: true,
-		},
-		{
-			id: "google-gemini-cli",
-			name: "Google Cloud Code Assist (Gemini CLI)",
-			available: true,
-		},
-		{
-			id: "google-antigravity",
-			name: "Antigravity (Gemini 3, Claude, GPT-OSS)",
-			available: true,
-		},
-	];
 }

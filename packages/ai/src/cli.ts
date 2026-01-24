@@ -2,13 +2,8 @@
 
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { createInterface } from "readline";
-import { loginAnthropic } from "./utils/oauth/anthropic.js";
-import { loginGitHubCopilot } from "./utils/oauth/github-copilot.js";
-import { loginAntigravity } from "./utils/oauth/google-antigravity.js";
-import { loginGeminiCli } from "./utils/oauth/google-gemini-cli.js";
-import { getOAuthProviders } from "./utils/oauth/index.js";
-import { loginOpenAICodex } from "./utils/oauth/openai-codex.js";
-import type { OAuthCredentials, OAuthProvider } from "./utils/oauth/types.js";
+import { getOAuthProvider, getOAuthProviders } from "./utils/oauth/index.js";
+import type { OAuthCredentials, OAuthProviderId } from "./utils/oauth/types.js";
 
 const AUTH_FILE = "auth.json";
 const PROVIDERS = getOAuthProviders();
@@ -30,78 +25,31 @@ function saveAuth(auth: Record<string, { type: "oauth" } & OAuthCredentials>): v
 	writeFileSync(AUTH_FILE, JSON.stringify(auth, null, 2), "utf-8");
 }
 
-async function login(provider: OAuthProvider): Promise<void> {
-	const rl = createInterface({ input: process.stdin, output: process.stdout });
+async function login(providerId: OAuthProviderId): Promise<void> {
+	const provider = getOAuthProvider(providerId);
+	if (!provider) {
+		console.error(`Unknown provider: ${providerId}`);
+		process.exit(1);
+	}
 
+	const rl = createInterface({ input: process.stdin, output: process.stdout });
 	const promptFn = (msg: string) => prompt(rl, `${msg} `);
 
 	try {
-		let credentials: OAuthCredentials;
-
-		switch (provider) {
-			case "anthropic":
-				credentials = await loginAnthropic(
-					(url) => {
-						console.log(`\nOpen this URL in your browser:\n${url}\n`);
-					},
-					async () => {
-						return await promptFn("Paste the authorization code:");
-					},
-				);
-				break;
-
-			case "github-copilot":
-				credentials = await loginGitHubCopilot({
-					onAuth: (url, instructions) => {
-						console.log(`\nOpen this URL in your browser:\n${url}`);
-						if (instructions) console.log(instructions);
-						console.log();
-					},
-					onPrompt: async (p) => {
-						return await promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
-					},
-					onProgress: (msg) => console.log(msg),
-				});
-				break;
-
-			case "google-gemini-cli":
-				credentials = await loginGeminiCli(
-					(info) => {
-						console.log(`\nOpen this URL in your browser:\n${info.url}`);
-						if (info.instructions) console.log(info.instructions);
-						console.log();
-					},
-					(msg) => console.log(msg),
-				);
-				break;
-
-			case "google-antigravity":
-				credentials = await loginAntigravity(
-					(info) => {
-						console.log(`\nOpen this URL in your browser:\n${info.url}`);
-						if (info.instructions) console.log(info.instructions);
-						console.log();
-					},
-					(msg) => console.log(msg),
-				);
-				break;
-			case "openai-codex":
-				credentials = await loginOpenAICodex({
-					onAuth: (info) => {
-						console.log(`\nOpen this URL in your browser:\n${info.url}`);
-						if (info.instructions) console.log(info.instructions);
-						console.log();
-					},
-					onPrompt: async (p) => {
-						return await promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
-					},
-					onProgress: (msg) => console.log(msg),
-				});
-				break;
-		}
+		const credentials = await provider.login({
+			onAuth: (info) => {
+				console.log(`\nOpen this URL in your browser:\n${info.url}`);
+				if (info.instructions) console.log(info.instructions);
+				console.log();
+			},
+			onPrompt: async (p) => {
+				return await promptFn(`${p.message}${p.placeholder ? ` (${p.placeholder})` : ""}:`);
+			},
+			onProgress: (msg) => console.log(msg),
+		});
 
 		const auth = loadAuth();
-		auth[provider] = { type: "oauth", ...credentials };
+		auth[providerId] = { type: "oauth", ...credentials };
 		saveAuth(auth);
 
 		console.log(`\nCredentials saved to ${AUTH_FILE}`);
@@ -115,6 +63,7 @@ async function main(): Promise<void> {
 	const command = args[0];
 
 	if (!command || command === "help" || command === "--help" || command === "-h") {
+		const providerList = PROVIDERS.map((p) => `  ${p.id.padEnd(20)} ${p.name}`).join("\n");
 		console.log(`Usage: npx @mariozechner/pi-ai <command> [provider]
 
 Commands:
@@ -122,11 +71,7 @@ Commands:
   list              List available providers
 
 Providers:
-  anthropic         Anthropic (Claude Pro/Max)
-  github-copilot    GitHub Copilot
-  google-gemini-cli Google Gemini CLI
-  google-antigravity Antigravity (Gemini 3, Claude, GPT-OSS)
-  openai-codex      OpenAI Codex (ChatGPT Plus/Pro)
+${providerList}
 
 Examples:
   npx @mariozechner/pi-ai login              # interactive provider selection
@@ -145,7 +90,7 @@ Examples:
 	}
 
 	if (command === "login") {
-		let provider = args[1] as OAuthProvider | undefined;
+		let provider = args[1] as OAuthProviderId | undefined;
 
 		if (!provider) {
 			const rl = createInterface({ input: process.stdin, output: process.stdout });

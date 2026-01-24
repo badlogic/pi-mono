@@ -203,6 +203,12 @@ export class ExtensionRunner {
 		this.shutdownHandler = contextActions.shutdown;
 		this.getContextUsageFn = contextActions.getContextUsage;
 		this.compactFn = contextActions.compact;
+
+		// Process provider registrations queued during extension loading
+		for (const { name, config } of this.runtime.pendingProviderRegistrations) {
+			this.modelRegistry.registerProvider(name, config);
+		}
+		this.runtime.pendingProviderRegistrations = [];
 	}
 
 	bindCommandContext(actions?: ExtensionCommandContextActions): void {
