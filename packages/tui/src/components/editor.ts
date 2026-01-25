@@ -849,30 +849,23 @@ export class Editor implements Component, Focusable {
 			this.state.cursorCol += normalized.length;
 		} else {
 			// Multi-line insertion
-			const newLines: string[] = [];
+			this.state.lines = [
+				// All lines before current line
+				...this.state.lines.slice(0, this.state.cursorLine),
 
-			// Add all lines before current line
-			for (let i = 0; i < this.state.cursorLine; i++) {
-				newLines.push(this.state.lines[i] || "");
-			}
+				// The first inserted line merged with text before cursor
+				beforeCursor + insertedLines[0],
 
-			// Add the first inserted line merged with text before cursor
-			newLines.push(beforeCursor + (insertedLines[0] || ""));
+				// All middle inserted lines
+				...insertedLines.slice(1, -1),
 
-			// Add all middle inserted lines
-			for (let i = 1; i < insertedLines.length - 1; i++) {
-				newLines.push(insertedLines[i] || "");
-			}
+				// The last inserted line with text after cursor
+				insertedLines[insertedLines.length - 1] + afterCursor,
 
-			// Add the last inserted line with text after cursor
-			newLines.push((insertedLines[insertedLines.length - 1] || "") + afterCursor);
+				// All lines after current line
+				...this.state.lines.slice(this.state.cursorLine + 1),
+			];
 
-			// Add all lines after current line
-			for (let i = this.state.cursorLine + 1; i < this.state.lines.length; i++) {
-				newLines.push(this.state.lines[i] || "");
-			}
-
-			this.state.lines = newLines;
 			this.state.cursorLine += insertedLines.length - 1;
 			this.state.cursorCol = (insertedLines[insertedLines.length - 1] || "").length;
 		}
