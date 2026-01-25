@@ -1289,6 +1289,7 @@ pi [options] [@files...] [messages...]
 
 | Command | Description |
 |---------|-------------|
+| `config` | Manage resources: enable/disable extensions, skills, prompts, themes |
 | `install <source> [-l]` | Install extension source and add to settings (`-l` for project) |
 | `remove <source> [-l]` | Remove extension source from settings |
 | `update [source]` | Update installed extensions (skips pinned sources) |
