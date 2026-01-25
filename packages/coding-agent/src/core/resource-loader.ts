@@ -272,23 +272,45 @@ export class DefaultResourceLoader implements ResourceLoader {
 			temporary: true,
 		});
 
-		// Store metadata from resolved paths
-		this.pathMetadata = new Map(resolvedPaths.metadata);
+		// Helper to extract enabled paths and store metadata
+		const getEnabledPaths = (
+			resources: Array<{ path: string; enabled: boolean; metadata: PathMetadata }>,
+		): string[] => {
+			for (const r of resources) {
+				if (!this.pathMetadata.has(r.path)) {
+					this.pathMetadata.set(r.path, r.metadata);
+				}
+			}
+			return resources.filter((r) => r.enabled).map((r) => r.path);
+		};
+
+		// Store metadata and get enabled paths
+		this.pathMetadata = new Map();
+		const enabledExtensions = getEnabledPaths(resolvedPaths.extensions);
+		const enabledSkills = getEnabledPaths(resolvedPaths.skills);
+		const enabledPrompts = getEnabledPaths(resolvedPaths.prompts);
+		const enabledThemes = getEnabledPaths(resolvedPaths.themes);
+
 		// Add CLI paths metadata
-		for (const p of cliExtensionPaths.extensions) {
-			if (!this.pathMetadata.has(p)) {
-				this.pathMetadata.set(p, { source: "cli", scope: "temporary", origin: "top-level" });
+		for (const r of cliExtensionPaths.extensions) {
+			if (!this.pathMetadata.has(r.path)) {
+				this.pathMetadata.set(r.path, { source: "cli", scope: "temporary", origin: "top-level" });
 			}
 		}
-		for (const p of cliExtensionPaths.skills) {
-			if (!this.pathMetadata.has(p)) {
-				this.pathMetadata.set(p, { source: "cli", scope: "temporary", origin: "top-level" });
+		for (const r of cliExtensionPaths.skills) {
+			if (!this.pathMetadata.has(r.path)) {
+				this.pathMetadata.set(r.path, { source: "cli", scope: "temporary", origin: "top-level" });
 			}
 		}
 
+		const cliEnabledExtensions = getEnabledPaths(cliExtensionPaths.extensions);
+		const cliEnabledSkills = getEnabledPaths(cliExtensionPaths.skills);
+		const cliEnabledPrompts = getEnabledPaths(cliExtensionPaths.prompts);
+		const cliEnabledThemes = getEnabledPaths(cliExtensionPaths.themes);
+
 		const extensionPaths = this.noExtensions
-			? cliExtensionPaths.extensions
-			: this.mergePaths(resolvedPaths.extensions, cliExtensionPaths.extensions);
+			? cliEnabledExtensions
+			: this.mergePaths(enabledExtensions, cliEnabledExtensions);
 
 		let extensionsResult: LoadExtensionsResult;
 		if (this.noExtensions) {
@@ -313,8 +335,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.extensionsResult = this.extensionsOverride ? this.extensionsOverride(extensionsResult) : extensionsResult;
 
 		const skillPaths = this.noSkills
-			? this.mergePaths(cliExtensionPaths.skills, this.additionalSkillPaths)
-			: this.mergePaths([...resolvedPaths.skills, ...cliExtensionPaths.skills], this.additionalSkillPaths);
+			? this.mergePaths(cliEnabledSkills, this.additionalSkillPaths)
+			: this.mergePaths([...enabledSkills, ...cliEnabledSkills], this.additionalSkillPaths);
 
 		let skillsResult: { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
 		if (this.noSkills && skillPaths.length === 0) {
@@ -334,11 +356,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}
 
 		const promptPaths = this.noPromptTemplates
-			? this.mergePaths(cliExtensionPaths.prompts, this.additionalPromptTemplatePaths)
-			: this.mergePaths(
-					[...resolvedPaths.prompts, ...cliExtensionPaths.prompts],
-					this.additionalPromptTemplatePaths,
-				);
+			? this.mergePaths(cliEnabledPrompts, this.additionalPromptTemplatePaths)
+			: this.mergePaths([...enabledPrompts, ...cliEnabledPrompts], this.additionalPromptTemplatePaths);
 
 		let promptsResult: { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
 		if (this.noPromptTemplates && promptPaths.length === 0) {
@@ -359,8 +378,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}
 
 		const themePaths = this.noThemes
-			? this.mergePaths(cliExtensionPaths.themes, this.additionalThemePaths)
-			: this.mergePaths([...resolvedPaths.themes, ...cliExtensionPaths.themes], this.additionalThemePaths);
+			? this.mergePaths(cliEnabledThemes, this.additionalThemePaths)
+			: this.mergePaths([...enabledThemes, ...cliEnabledThemes], this.additionalThemePaths);
 
 		let themesResult: { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
 		if (this.noThemes && themePaths.length === 0) {

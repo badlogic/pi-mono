@@ -2,8 +2,15 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DefaultPackageManager, type ProgressEvent } from "../src/core/package-manager.js";
+import { DefaultPackageManager, type ProgressEvent, type ResolvedResource } from "../src/core/package-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
+
+// Helper to check if a resource is enabled
+const isEnabled = (r: ResolvedResource, pathMatch: string, matchFn: "endsWith" | "includes" = "endsWith") =>
+	matchFn === "endsWith" ? r.path.endsWith(pathMatch) && r.enabled : r.path.includes(pathMatch) && r.enabled;
+
+const isDisabled = (r: ResolvedResource, pathMatch: string, matchFn: "endsWith" | "includes" = "endsWith") =>
+	matchFn === "endsWith" ? r.path.endsWith(pathMatch) && !r.enabled : r.path.includes(pathMatch) && !r.enabled;
 
 describe("DefaultPackageManager", () => {
 	let tempDir: string;
@@ -43,11 +50,11 @@ describe("DefaultPackageManager", () => {
 			settingsManager.setExtensionPaths([extPath]);
 
 			const result = await packageManager.resolve();
-			expect(result.extensions).toContain(extPath);
+			expect(result.extensions.some((r) => r.path === extPath && r.enabled)).toBe(true);
 		});
 
 		it("should resolve skill paths from settings", async () => {
-			const skillDir = join(tempDir, "skills");
+			const skillDir = join(tempDir, "skills", "my-skill");
 			mkdirSync(skillDir, { recursive: true });
 			writeFileSync(
 				join(skillDir, "SKILL.md"),
@@ -58,10 +65,11 @@ description: A test skill
 Content`,
 			);
 
-			settingsManager.setSkillPaths([skillDir]);
+			settingsManager.setSkillPaths([join(tempDir, "skills")]);
 
 			const result = await packageManager.resolve();
-			expect(result.skills).toContain(skillDir);
+			// Skills with SKILL.md are returned as directory paths
+			expect(result.skills.some((r) => r.path === skillDir && r.enabled)).toBe(true);
 		});
 	});
 
@@ -71,7 +79,7 @@ Content`,
 			writeFileSync(extPath, "export default function() {}");
 
 			const result = await packageManager.resolveExtensionSources([extPath]);
-			expect(result.extensions).toContain(extPath);
+			expect(result.extensions.some((r) => r.path === extPath && r.enabled)).toBe(true);
 		});
 
 		it("should handle directories with pi manifest", async () => {
@@ -89,11 +97,16 @@ Content`,
 			);
 			mkdirSync(join(pkgDir, "src"), { recursive: true });
 			writeFileSync(join(pkgDir, "src", "index.ts"), "export default function() {}");
-			mkdirSync(join(pkgDir, "skills"), { recursive: true });
+			mkdirSync(join(pkgDir, "skills", "my-skill"), { recursive: true });
+			writeFileSync(
+				join(pkgDir, "skills", "my-skill", "SKILL.md"),
+				"---\nname: my-skill\ndescription: Test\n---\nContent",
+			);
 
 			const result = await packageManager.resolveExtensionSources([pkgDir]);
-			expect(result.extensions).toContain(join(pkgDir, "src", "index.ts"));
-			expect(result.skills).toContain(join(pkgDir, "skills"));
+			expect(result.extensions.some((r) => r.path === join(pkgDir, "src", "index.ts") && r.enabled)).toBe(true);
+			// Skills with SKILL.md are returned as directory paths
+			expect(result.skills.some((r) => r.path === join(pkgDir, "skills", "my-skill") && r.enabled)).toBe(true);
 		});
 
 		it("should handle directories with auto-discovery layout", async () => {
@@ -104,8 +117,8 @@ Content`,
 			writeFileSync(join(pkgDir, "themes", "dark.json"), "{}");
 
 			const result = await packageManager.resolveExtensionSources([pkgDir]);
-			expect(result.extensions).toContain(join(pkgDir, "extensions"));
-			expect(result.themes).toContain(join(pkgDir, "themes"));
+			expect(result.extensions.some((r) => r.path.endsWith("main.ts") && r.enabled)).toBe(true);
+			expect(result.themes.some((r) => r.path.endsWith("dark.json") && r.enabled)).toBe(true);
 		});
 	});
 
@@ -169,8 +182,8 @@ Content`,
 			settingsManager.setExtensionPaths([extDir, "!**/remove.ts"]);
 
 			const result = await packageManager.resolve();
-			expect(result.extensions.some((p) => p.endsWith("keep.ts"))).toBe(true);
-			expect(result.extensions.some((p) => p.endsWith("remove.ts"))).toBe(false);
+			expect(result.extensions.some((r) => isEnabled(r, "keep.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isDisabled(r, "remove.ts"))).toBe(true);
 		});
 
 		it("should filter themes with glob patterns", async () => {
@@ -183,9 +196,9 @@ Content`,
 			settingsManager.setThemePaths([themesDir, "!funky.json"]);
 
 			const result = await packageManager.resolve();
-			expect(result.themes.some((p) => p.endsWith("dark.json"))).toBe(true);
-			expect(result.themes.some((p) => p.endsWith("light.json"))).toBe(true);
-			expect(result.themes.some((p) => p.endsWith("funky.json"))).toBe(false);
+			expect(result.themes.some((r) => isEnabled(r, "dark.json"))).toBe(true);
+			expect(result.themes.some((r) => isEnabled(r, "light.json"))).toBe(true);
+			expect(result.themes.some((r) => isDisabled(r, "funky.json"))).toBe(true);
 		});
 
 		it("should filter prompts with exclusion pattern", async () => {
@@ -197,8 +210,8 @@ Content`,
 			settingsManager.setPromptTemplatePaths([promptsDir, "!explain.md"]);
 
 			const result = await packageManager.resolve();
-			expect(result.prompts.some((p) => p.endsWith("review.md"))).toBe(true);
-			expect(result.prompts.some((p) => p.endsWith("explain.md"))).toBe(false);
+			expect(result.prompts.some((r) => isEnabled(r, "review.md"))).toBe(true);
+			expect(result.prompts.some((r) => isDisabled(r, "explain.md"))).toBe(true);
 		});
 
 		it("should filter skills with exclusion pattern", async () => {
@@ -217,8 +230,8 @@ Content`,
 			settingsManager.setSkillPaths([skillsDir, "!**/bad-skill"]);
 
 			const result = await packageManager.resolve();
-			expect(result.skills.some((p) => p.includes("good-skill"))).toBe(true);
-			expect(result.skills.some((p) => p.includes("bad-skill"))).toBe(false);
+			expect(result.skills.some((r) => isEnabled(r, "good-skill", "includes"))).toBe(true);
+			expect(result.skills.some((r) => isDisabled(r, "bad-skill", "includes"))).toBe(true);
 		});
 
 		it("should work without patterns (backward compatible)", async () => {
@@ -228,7 +241,7 @@ Content`,
 			settingsManager.setExtensionPaths([extPath]);
 
 			const result = await packageManager.resolve();
-			expect(result.extensions).toContain(extPath);
+			expect(result.extensions.some((r) => r.path === extPath && r.enabled)).toBe(true);
 		});
 	});
 
@@ -251,9 +264,9 @@ Content`,
 			);
 
 			const result = await packageManager.resolveExtensionSources([pkgDir]);
-			expect(result.extensions.some((p) => p.endsWith("local.ts"))).toBe(true);
-			expect(result.extensions.some((p) => p.endsWith("remote.ts"))).toBe(true);
-			expect(result.extensions.some((p) => p.endsWith("skip.ts"))).toBe(false);
+			expect(result.extensions.some((r) => isEnabled(r, "local.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isEnabled(r, "remote.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isDisabled(r, "skip.ts"))).toBe(true);
 		});
 
 		it("should support glob patterns in manifest skills", async () => {
@@ -279,8 +292,8 @@ Content`,
 			);
 
 			const result = await packageManager.resolveExtensionSources([pkgDir]);
-			expect(result.skills.some((p) => p.includes("good-skill"))).toBe(true);
-			expect(result.skills.some((p) => p.includes("bad-skill"))).toBe(false);
+			expect(result.skills.some((r) => isEnabled(r, "good-skill", "includes"))).toBe(true);
+			expect(result.skills.some((r) => isDisabled(r, "bad-skill", "includes"))).toBe(true);
 		});
 	});
 
@@ -316,11 +329,11 @@ Content`,
 
 			const result = await packageManager.resolve();
 			// foo.ts should be included (not excluded by anyone)
-			expect(result.extensions.some((p) => p.endsWith("foo.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isEnabled(r, "foo.ts"))).toBe(true);
 			// bar.ts should be excluded (by user)
-			expect(result.extensions.some((p) => p.endsWith("bar.ts"))).toBe(false);
+			expect(result.extensions.some((r) => isDisabled(r, "bar.ts"))).toBe(true);
 			// baz.ts should be excluded (by manifest)
-			expect(result.extensions.some((p) => p.endsWith("baz.ts"))).toBe(false);
+			expect(result.extensions.some((r) => isDisabled(r, "baz.ts"))).toBe(true);
 		});
 
 		it("should exclude extensions from package with ! pattern", async () => {
@@ -341,9 +354,9 @@ Content`,
 			]);
 
 			const result = await packageManager.resolve();
-			expect(result.extensions.some((p) => p.endsWith("foo.ts"))).toBe(true);
-			expect(result.extensions.some((p) => p.endsWith("bar.ts"))).toBe(true);
-			expect(result.extensions.some((p) => p.endsWith("baz.ts"))).toBe(false);
+			expect(result.extensions.some((r) => isEnabled(r, "foo.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isEnabled(r, "bar.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isDisabled(r, "baz.ts"))).toBe(true);
 		});
 
 		it("should filter themes from package", async () => {
@@ -363,8 +376,8 @@ Content`,
 			]);
 
 			const result = await packageManager.resolve();
-			expect(result.themes.some((p) => p.endsWith("nice.json"))).toBe(true);
-			expect(result.themes.some((p) => p.endsWith("ugly.json"))).toBe(false);
+			expect(result.themes.some((r) => isEnabled(r, "nice.json"))).toBe(true);
+			expect(result.themes.some((r) => isDisabled(r, "ugly.json"))).toBe(true);
 		});
 
 		it("should combine include and exclude patterns", async () => {
@@ -385,9 +398,9 @@ Content`,
 			]);
 
 			const result = await packageManager.resolve();
-			expect(result.extensions.some((p) => p.endsWith("alpha.ts"))).toBe(true);
-			expect(result.extensions.some((p) => p.endsWith("beta.ts"))).toBe(false);
-			expect(result.extensions.some((p) => p.endsWith("gamma.ts"))).toBe(false);
+			expect(result.extensions.some((r) => isEnabled(r, "alpha.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isDisabled(r, "beta.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isDisabled(r, "gamma.ts"))).toBe(true);
 		});
 
 		it("should work with direct paths (no patterns)", async () => {
@@ -407,8 +420,140 @@ Content`,
 			]);
 
 			const result = await packageManager.resolve();
-			expect(result.extensions.some((p) => p.endsWith("one.ts"))).toBe(true);
-			expect(result.extensions.some((p) => p.endsWith("two.ts"))).toBe(false);
+			expect(result.extensions.some((r) => isEnabled(r, "one.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isDisabled(r, "two.ts"))).toBe(true);
+		});
+	});
+
+	describe("force-include patterns", () => {
+		it("should force-include extensions with + pattern after exclusion", async () => {
+			const extDir = join(tempDir, "extensions");
+			mkdirSync(extDir, { recursive: true });
+			writeFileSync(join(extDir, "keep.ts"), "export default function() {}");
+			writeFileSync(join(extDir, "excluded.ts"), "export default function() {}");
+			writeFileSync(join(extDir, "force-back.ts"), "export default function() {}");
+
+			// Exclude all, then force-include one back
+			settingsManager.setExtensionPaths([extDir, "!**/*.ts", "+**/force-back.ts"]);
+
+			const result = await packageManager.resolve();
+			expect(result.extensions.some((r) => isDisabled(r, "keep.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isDisabled(r, "excluded.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isEnabled(r, "force-back.ts"))).toBe(true);
+		});
+
+		it("should force-include overrides exclude in package filters", async () => {
+			const pkgDir = join(tempDir, "force-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "alpha.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "beta.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "gamma.ts"), "export default function() {}");
+
+			settingsManager.setPackages([
+				{
+					source: pkgDir,
+					extensions: ["!*", "+**/beta.ts"],
+					skills: [],
+					prompts: [],
+					themes: [],
+				},
+			]);
+
+			const result = await packageManager.resolve();
+			expect(result.extensions.some((r) => isDisabled(r, "alpha.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isEnabled(r, "beta.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isDisabled(r, "gamma.ts"))).toBe(true);
+		});
+
+		it("should force-include multiple resources", async () => {
+			const pkgDir = join(tempDir, "multi-force-pkg");
+			mkdirSync(join(pkgDir, "skills/skill-a"), { recursive: true });
+			mkdirSync(join(pkgDir, "skills/skill-b"), { recursive: true });
+			mkdirSync(join(pkgDir, "skills/skill-c"), { recursive: true });
+			writeFileSync(join(pkgDir, "skills/skill-a", "SKILL.md"), "---\nname: skill-a\ndescription: A\n---\nContent");
+			writeFileSync(join(pkgDir, "skills/skill-b", "SKILL.md"), "---\nname: skill-b\ndescription: B\n---\nContent");
+			writeFileSync(join(pkgDir, "skills/skill-c", "SKILL.md"), "---\nname: skill-c\ndescription: C\n---\nContent");
+
+			settingsManager.setPackages([
+				{
+					source: pkgDir,
+					extensions: [],
+					skills: ["!*", "+**/skill-a", "+**/skill-c"],
+					prompts: [],
+					themes: [],
+				},
+			]);
+
+			const result = await packageManager.resolve();
+			expect(result.skills.some((r) => isEnabled(r, "skill-a", "includes"))).toBe(true);
+			expect(result.skills.some((r) => isDisabled(r, "skill-b", "includes"))).toBe(true);
+			expect(result.skills.some((r) => isEnabled(r, "skill-c", "includes"))).toBe(true);
+		});
+
+		it("should force-include after specific exclusion", async () => {
+			const extDir = join(tempDir, "specific-force");
+			mkdirSync(extDir, { recursive: true });
+			writeFileSync(join(extDir, "a.ts"), "export default function() {}");
+			writeFileSync(join(extDir, "b.ts"), "export default function() {}");
+
+			// Specifically exclude b.ts, then force it back
+			settingsManager.setExtensionPaths([extDir, "!**/b.ts", "+**/b.ts"]);
+
+			const result = await packageManager.resolve();
+			expect(result.extensions.some((r) => isEnabled(r, "a.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isEnabled(r, "b.ts"))).toBe(true);
+		});
+
+		it("should handle force-include in manifest patterns", async () => {
+			const pkgDir = join(tempDir, "manifest-force-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "one.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "two.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "three.ts"), "export default function() {}");
+			writeFileSync(
+				join(pkgDir, "package.json"),
+				JSON.stringify({
+					name: "manifest-force-pkg",
+					pi: {
+						extensions: ["extensions", "!**/two.ts", "+**/two.ts"],
+					},
+				}),
+			);
+
+			const result = await packageManager.resolveExtensionSources([pkgDir]);
+			expect(result.extensions.some((r) => isEnabled(r, "one.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isEnabled(r, "two.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isEnabled(r, "three.ts"))).toBe(true);
+		});
+
+		it("should force-include themes", async () => {
+			const themesDir = join(tempDir, "force-themes");
+			mkdirSync(themesDir, { recursive: true });
+			writeFileSync(join(themesDir, "dark.json"), "{}");
+			writeFileSync(join(themesDir, "light.json"), "{}");
+			writeFileSync(join(themesDir, "special.json"), "{}");
+
+			settingsManager.setThemePaths([themesDir, "!*.json", "+special.json"]);
+
+			const result = await packageManager.resolve();
+			expect(result.themes.some((r) => isDisabled(r, "dark.json"))).toBe(true);
+			expect(result.themes.some((r) => isDisabled(r, "light.json"))).toBe(true);
+			expect(result.themes.some((r) => isEnabled(r, "special.json"))).toBe(true);
+		});
+
+		it("should force-include prompts", async () => {
+			const promptsDir = join(tempDir, "force-prompts");
+			mkdirSync(promptsDir, { recursive: true });
+			writeFileSync(join(promptsDir, "review.md"), "Review");
+			writeFileSync(join(promptsDir, "explain.md"), "Explain");
+			writeFileSync(join(promptsDir, "debug.md"), "Debug");
+
+			settingsManager.setPromptTemplatePaths([promptsDir, "!*", "+debug.md"]);
+
+			const result = await packageManager.resolve();
+			expect(result.prompts.some((r) => isDisabled(r, "review.md"))).toBe(true);
+			expect(result.prompts.some((r) => isDisabled(r, "explain.md"))).toBe(true);
+			expect(result.prompts.some((r) => isEnabled(r, "debug.md"))).toBe(true);
 		});
 	});
 
@@ -429,12 +574,10 @@ Content`,
 			expect(projectSettings.packages).toEqual([pkgDir]);
 
 			const result = await packageManager.resolve();
-			// Auto-discovery returns directories, not individual files
 			// Should only appear once (deduped), with project scope
-			const sharedPaths = result.extensions.filter((p) => p.includes("shared-pkg"));
+			const sharedPaths = result.extensions.filter((r) => r.path.includes("shared-pkg"));
 			expect(sharedPaths.length).toBe(1);
-			const meta = result.metadata.get(sharedPaths[0]);
-			expect(meta?.scope).toBe("project");
+			expect(sharedPaths[0].metadata.scope).toBe("project");
 		});
 
 		it("should keep both if different packages", async () => {
@@ -449,9 +592,8 @@ Content`,
 			settingsManager.setProjectPackages([pkg2Dir]); // project
 
 			const result = await packageManager.resolve();
-			// Auto-discovery returns directories, not individual files
-			expect(result.extensions.some((p) => p.includes("pkg1"))).toBe(true);
-			expect(result.extensions.some((p) => p.includes("pkg2"))).toBe(true);
+			expect(result.extensions.some((r) => r.path.includes("pkg1"))).toBe(true);
+			expect(result.extensions.some((r) => r.path.includes("pkg2"))).toBe(true);
 		});
 	});
 });

@@ -126,6 +126,7 @@ export type {
 	ProgressCallback,
 	ProgressEvent,
 	ResolvedPaths,
+	ResolvedResource,
 } from "./core/package-manager.js";
 export { DefaultPackageManager } from "./core/package-manager.js";
 export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.js";

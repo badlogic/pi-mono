@@ -14,12 +14,17 @@ export interface PathMetadata {
 	origin: "package" | "top-level";
 }
 
+export interface ResolvedResource {
+	path: string;
+	enabled: boolean;
+	metadata: PathMetadata;
+}
+
 export interface ResolvedPaths {
-	extensions: string[];
-	skills: string[];
-	prompts: string[];
-	themes: string[];
-	metadata: Map<string, PathMetadata>;
+	extensions: ResolvedResource[];
+	skills: ResolvedResource[];
+	prompts: ResolvedResource[];
+	themes: ResolvedResource[];
 }
 
 export type MissingSourceAction = "install" | "skip" | "error";
@@ -85,11 +90,10 @@ interface PiManifest {
 }
 
 interface ResourceAccumulator {
-	extensions: Set<string>;
-	skills: Set<string>;
-	prompts: Set<string>;
-	themes: Set<string>;
-	metadata: Map<string, PathMetadata>;
+	extensions: Map<string, { metadata: PathMetadata; enabled: boolean }>;
+	skills: Map<string, { metadata: PathMetadata; enabled: boolean }>;
+	prompts: Map<string, { metadata: PathMetadata; enabled: boolean }>;
+	themes: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 }
 
 interface PackageFilter {
@@ -111,11 +115,7 @@ const FILE_PATTERNS: Record<ResourceType, RegExp> = {
 };
 
 function isPattern(s: string): boolean {
-	return s.startsWith("!") || s.includes("*") || s.includes("?");
-}
-
-function hasPatterns(entries: string[]): boolean {
-	return entries.some(isPattern);
+	return s.startsWith("!") || s.startsWith("+") || s.includes("*") || s.includes("?");
 }
 
 function splitPatterns(entries: string[]): { plain: string[]; patterns: string[] } {
@@ -210,42 +210,59 @@ function collectSkillEntries(dir: string): string[] {
 	return entries;
 }
 
-function applyPatterns(allPaths: string[], patterns: string[], baseDir: string): string[] {
+function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
+	const rel = relative(baseDir, filePath);
+	const name = basename(filePath);
+	return patterns.some(
+		(pattern) => minimatch(rel, pattern) || minimatch(name, pattern) || minimatch(filePath, pattern),
+	);
+}
+
+/**
+ * Apply patterns to paths and return a Set of enabled paths.
+ * Pattern types:
+ * - Plain patterns: include matching paths
+ * - `!pattern`: exclude matching paths
+ * - `+pattern`: force-include matching paths (overrides exclusions)
+ */
+function applyPatterns(allPaths: string[], patterns: string[], baseDir: string): Set<string> {
 	const includes: string[] = [];
 	const excludes: string[] = [];
+	const forceIncludes: string[] = [];
 
 	for (const p of patterns) {
-		if (p.startsWith("!")) {
+		if (p.startsWith("+")) {
+			forceIncludes.push(p.slice(1));
+		} else if (p.startsWith("!")) {
 			excludes.push(p.slice(1));
 		} else {
 			includes.push(p);
 		}
 	}
 
+	// Step 1: Apply includes (or all if no includes)
 	let result: string[];
 	if (includes.length === 0) {
 		result = [...allPaths];
 	} else {
-		result = allPaths.filter((filePath) => {
-			const rel = relative(baseDir, filePath);
-			const name = basename(filePath);
-			return includes.some((pattern) => {
-				return minimatch(rel, pattern) || minimatch(name, pattern) || minimatch(filePath, pattern);
-			});
-		});
+		result = allPaths.filter((filePath) => matchesAnyPattern(filePath, includes, baseDir));
 	}
 
+	// Step 2: Apply excludes
 	if (excludes.length > 0) {
-		result = result.filter((filePath) => {
-			const rel = relative(baseDir, filePath);
-			const name = basename(filePath);
-			return !excludes.some((pattern) => {
-				return minimatch(rel, pattern) || minimatch(name, pattern) || minimatch(filePath, pattern);
-			});
-		});
+		result = result.filter((filePath) => !matchesAnyPattern(filePath, excludes, baseDir));
 	}
 
-	return result;
+	// Step 3: Force-include (add back from allPaths, overriding exclusions)
+	if (forceIncludes.length > 0) {
+		for (const filePath of allPaths) {
+			if (!result.includes(filePath) && matchesAnyPattern(filePath, forceIncludes, baseDir)) {
+				result.push(filePath);
+			}
+		}
+	}
+
+	return new Set(result);
 }
 
 export class DefaultPackageManager implements PackageManager {
@@ -322,23 +339,19 @@ export class DefaultPackageManager implements PackageManager {
 		await this.resolvePackageSources(packageSources, accumulator, onMissing);
 
 		for (const resourceType of RESOURCE_TYPES) {
-			const target = this.getTargetSet(accumulator, resourceType);
+			const target = this.getTargetMap(accumulator, resourceType);
 			const globalEntries = (globalSettings[resourceType] ?? []) as string[];
 			const projectEntries = (projectSettings[resourceType] ?? []) as string[];
-			this.resolveLocalEntries(
-				globalEntries,
-				resourceType,
-				target,
-				{ source: "local", scope: "user", origin: "top-level" },
-				accumulator,
-			);
-			this.resolveLocalEntries(
-				projectEntries,
-				resourceType,
-				target,
-				{ source: "local", scope: "project", origin: "top-level" },
-				accumulator,
-			);
+			this.resolveLocalEntries(globalEntries, resourceType, target, {
+				source: "local",
+				scope: "user",
+				origin: "top-level",
+			});
+			this.resolveLocalEntries(projectEntries, resourceType, target, {
+				source: "local",
+				scope: "project",
+				origin: "top-level",
+			});
 		}
 
 		return this.toResolvedPaths(accumulator);
@@ -486,13 +499,13 @@ export class DefaultPackageManager implements PackageManager {
 		try {
 			const stats = statSync(resolved);
 			if (stats.isFile()) {
-				this.addPath(accumulator.extensions, resolved, metadata, accumulator);
+				this.addResource(accumulator.extensions, resolved, metadata, true);
 				return;
 			}
 			if (stats.isDirectory()) {
 				const resources = this.collectPackageResources(resolved, accumulator, filter, metadata);
 				if (!resources) {
-					this.addPath(accumulator.extensions, resolved, metadata, accumulator);
+					this.addResource(accumulator.extensions, resolved, metadata, true);
 				}
 			}
 		} catch {
@@ -798,11 +811,11 @@ export class DefaultPackageManager implements PackageManager {
 		if (filter) {
 			for (const resourceType of RESOURCE_TYPES) {
 				const patterns = filter[resourceType as keyof PackageFilter];
-				const target = this.getTargetSet(accumulator, resourceType);
+				const target = this.getTargetMap(accumulator, resourceType);
 				if (patterns !== undefined) {
-					this.applyPackageFilter(packageRoot, patterns, resourceType, target, metadata, accumulator);
+					this.applyPackageFilter(packageRoot, patterns, resourceType, target, metadata);
 				} else {
-					this.collectDefaultResources(packageRoot, resourceType, target, metadata, accumulator);
+					this.collectDefaultResources(packageRoot, resourceType, target, metadata);
 				}
 			}
 			return true;
@@ -816,9 +829,8 @@ export class DefaultPackageManager implements PackageManager {
 					entries,
 					packageRoot,
 					resourceType,
-					this.getTargetSet(accumulator, resourceType),
+					this.getTargetMap(accumulator, resourceType),
 					metadata,
-					accumulator,
 				);
 			}
 			return true;
@@ -828,7 +840,12 @@ export class DefaultPackageManager implements PackageManager {
 		for (const resourceType of RESOURCE_TYPES) {
 			const dir = join(packageRoot, resourceType);
 			if (existsSync(dir)) {
-				this.addPath(this.getTargetSet(accumulator, resourceType), dir, metadata, accumulator);
+				// Collect all files from the directory (all enabled by default)
+				const files =
+					resourceType === "skills" ? collectSkillEntries(dir) : collectFiles(dir, FILE_PATTERNS[resourceType]);
+				for (const f of files) {
+					this.addResource(this.getTargetMap(accumulator, resourceType), f, metadata, true);
+				}
 				hasAnyDir = true;
 			}
 		}
@@ -838,19 +855,23 @@ export class DefaultPackageManager implements PackageManager {
 	private collectDefaultResources(
 		packageRoot: string,
 		resourceType: ResourceType,
-		target: Set<string>,
+		target: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		metadata: PathMetadata,
-		accumulator: ResourceAccumulator,
 	): void {
 		const manifest = this.readPiManifest(packageRoot);
 		const entries = manifest?.[resourceType as keyof PiManifest];
 		if (entries) {
-			this.addManifestEntries(entries, packageRoot, resourceType, target, metadata, accumulator);
+			this.addManifestEntries(entries, packageRoot, resourceType, target, metadata);
 			return;
 		}
 		const dir = join(packageRoot, resourceType);
 		if (existsSync(dir)) {
-			this.addPath(target, dir, metadata, accumulator);
+			// Collect all files from the directory (all enabled by default)
+			const files =
+				resourceType === "skills" ? collectSkillEntries(dir) : collectFiles(dir, FILE_PATTERNS[resourceType]);
+			for (const f of files) {
+				this.addResource(target, f, metadata, true);
+			}
 		}
 	}
 
@@ -858,37 +879,64 @@ export class DefaultPackageManager implements PackageManager {
 		packageRoot: string,
 		userPatterns: string[],
 		resourceType: ResourceType,
-		target: Set<string>,
+		target: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		metadata: PathMetadata,
-		accumulator: ResourceAccumulator,
 	): void {
+		const { allFiles, enabledByManifest } = this.collectManifestFiles(packageRoot, resourceType);
+
 		if (userPatterns.length === 0) {
+			// No user patterns, just use manifest filtering
+			for (const f of allFiles) {
+				this.addResource(target, f, metadata, enabledByManifest.has(f));
+			}
 			return;
 		}
 
-		const manifestFiles = this.collectManifestFilteredFiles(packageRoot, resourceType);
-		const filtered = applyPatterns(manifestFiles, userPatterns, packageRoot);
-		for (const f of filtered) {
-			this.addPath(target, f, metadata, accumulator);
+		// Apply user patterns on top of manifest-enabled files
+		const enabledByUser = applyPatterns(Array.from(enabledByManifest), userPatterns, packageRoot);
+
+		// A file is enabled if it passes both manifest AND user patterns
+		// But force-include (+) in user patterns can bring back files excluded by manifest
+		const forceIncludePatterns = userPatterns.filter((p) => p.startsWith("+")).map((p) => p.slice(1));
+		const forceEnabled =
+			forceIncludePatterns.length > 0
+				? new Set(allFiles.filter((f) => matchesAnyPattern(f, forceIncludePatterns, packageRoot)))
+				: new Set<string>();
+
+		for (const f of allFiles) {
+			const enabled = enabledByUser.has(f) || forceEnabled.has(f);
+			this.addResource(target, f, metadata, enabled);
 		}
 	}
 
-	private collectManifestFilteredFiles(packageRoot: string, resourceType: ResourceType): string[] {
+	/**
+	 * Collect all files from a package for a resource type, applying manifest patterns.
+	 * Returns { allFiles, enabledByManifest } where enabledByManifest is the set of files
+	 * that pass the manifest's own patterns.
+	 */
+	private collectManifestFiles(
+		packageRoot: string,
+		resourceType: ResourceType,
+	): { allFiles: string[]; enabledByManifest: Set<string> } {
 		const manifest = this.readPiManifest(packageRoot);
 		const entries = manifest?.[resourceType as keyof PiManifest];
 		if (entries && entries.length > 0) {
 			const allFiles = this.collectFilesFromManifestEntries(entries, packageRoot, resourceType);
 			const manifestPatterns = entries.filter(isPattern);
-			return manifestPatterns.length > 0 ? applyPatterns(allFiles, manifestPatterns, packageRoot) : allFiles;
+			const enabledByManifest =
+				manifestPatterns.length > 0 ? applyPatterns(allFiles, manifestPatterns, packageRoot) : new Set(allFiles);
+			return { allFiles, enabledByManifest };
 		}
 
 		const conventionDir = join(packageRoot, resourceType);
 		if (!existsSync(conventionDir)) {
-			return [];
+			return { allFiles: [], enabledByManifest: new Set() };
 		}
-		return resourceType === "skills"
-			? collectSkillEntries(conventionDir)
-			: collectFiles(conventionDir, FILE_PATTERNS[resourceType]);
+		const allFiles =
+			resourceType === "skills"
+				? collectSkillEntries(conventionDir)
+				: collectFiles(conventionDir, FILE_PATTERNS[resourceType]);
+		return { allFiles, enabledByManifest: new Set(allFiles) };
 	}
 
 	private readPiManifest(packageRoot: string): PiManifest | null {
@@ -910,25 +958,17 @@ export class DefaultPackageManager implements PackageManager {
 		entries: string[] | undefined,
 		root: string,
 		resourceType: ResourceType,
-		target: Set<string>,
+		target: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		metadata: PathMetadata,
-		accumulator: ResourceAccumulator,
 	): void {
 		if (!entries) return;
 
-		if (!hasPatterns(entries)) {
-			for (const entry of entries) {
-				const resolved = resolve(root, entry);
-				this.addPath(target, resolved, metadata, accumulator);
-			}
-			return;
-		}
-
 		const allFiles = this.collectFilesFromManifestEntries(entries, root, resourceType);
 		const patterns = entries.filter(isPattern);
-		const filtered = applyPatterns(allFiles, patterns, root);
-		for (const f of filtered) {
-			this.addPath(target, f, metadata, accumulator);
+		const enabledPaths = applyPatterns(allFiles, patterns, root);
+
+		for (const f of allFiles) {
+			this.addResource(target, f, metadata, enabledPaths.has(f));
 		}
 	}
 
@@ -941,28 +981,22 @@ export class DefaultPackageManager implements PackageManager {
 	private resolveLocalEntries(
 		entries: string[],
 		resourceType: ResourceType,
-		target: Set<string>,
+		target: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		metadata: PathMetadata,
-		accumulator: ResourceAccumulator,
 	): void {
 		if (entries.length === 0) return;
 
-		if (!hasPatterns(entries)) {
-			for (const entry of entries) {
-				const resolved = this.resolvePath(entry);
-				if (existsSync(resolved)) {
-					this.addPath(target, resolved, metadata, accumulator);
-				}
-			}
-			return;
-		}
-
+		// Collect all files from plain entries (non-pattern entries)
 		const { plain, patterns } = splitPatterns(entries);
 		const resolvedPlain = plain.map((p) => this.resolvePath(p));
 		const allFiles = this.collectFilesFromPaths(resolvedPlain, resourceType);
-		const filtered = applyPatterns(allFiles, patterns, this.cwd);
-		for (const f of filtered) {
-			this.addPath(target, f, metadata, accumulator);
+
+		// Determine which files are enabled based on patterns
+		const enabledPaths = applyPatterns(allFiles, patterns, this.cwd);
+
+		// Add all files with their enabled state
+		for (const f of allFiles) {
+			this.addResource(target, f, metadata, enabledPaths.has(f));
 		}
 	}
 
@@ -989,7 +1023,10 @@ export class DefaultPackageManager implements PackageManager {
 		return files;
 	}
 
-	private getTargetSet(accumulator: ResourceAccumulator, resourceType: ResourceType): Set<string> {
+	private getTargetMap(
+		accumulator: ResourceAccumulator,
+		resourceType: ResourceType,
+	): Map<string, { metadata: PathMetadata; enabled: boolean }> {
 		switch (resourceType) {
 			case "extensions":
 				return accumulator.extensions;
@@ -1004,31 +1041,41 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	private addPath(set: Set<string>, value: string, metadata?: PathMetadata, accumulator?: ResourceAccumulator): void {
-		if (!value) return;
-		set.add(value);
-		if (metadata && accumulator && !accumulator.metadata.has(value)) {
-			accumulator.metadata.set(value, metadata);
+	private addResource(
+		map: Map<string, { metadata: PathMetadata; enabled: boolean }>,
+		path: string,
+		metadata: PathMetadata,
+		enabled: boolean,
+	): void {
+		if (!path) return;
+		if (!map.has(path)) {
+			map.set(path, { metadata, enabled });
 		}
 	}
 
 	private createAccumulator(): ResourceAccumulator {
 		return {
-			extensions: new Set<string>(),
-			skills: new Set<string>(),
-			prompts: new Set<string>(),
-			themes: new Set<string>(),
-			metadata: new Map<string, PathMetadata>(),
+			extensions: new Map(),
+			skills: new Map(),
+			prompts: new Map(),
+			themes: new Map(),
 		};
 	}
 
 	private toResolvedPaths(accumulator: ResourceAccumulator): ResolvedPaths {
+		const toResolved = (entries: Map<string, { metadata: PathMetadata; enabled: boolean }>): ResolvedResource[] => {
+			return Array.from(entries.entries()).map(([path, { metadata, enabled }]) => ({
+				path,
+				enabled,
+				metadata,
+			}));
+		};
+
 		return {
-			extensions: Array.from(accumulator.extensions),
-			skills: Array.from(accumulator.skills),
-			prompts: Array.from(accumulator.prompts),
-			themes: Array.from(accumulator.themes),
-			metadata: accumulator.metadata,
+			extensions: toResolved(accumulator.extensions),
+			skills: toResolved(accumulator.skills),
+			prompts: toResolved(accumulator.prompts),
+			themes: toResolved(accumulator.themes),
 		};
 	}
 
