@@ -105,18 +105,24 @@ Pi uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-p
 
 ### Authentication
 
-Set an API key via environment variable or `~/.pi/agent/auth.json`:
+**Subscriptions:** Use `/login` in interactive mode to authenticate with your existing plan:
+
+- Claude Pro/Max (Anthropic)
+- ChatGPT Plus/Pro (OpenAI Codex)
+- GitHub Copilot
+- Google Gemini CLI (free)
+- Google Antigravity (free)
+
+**API keys:** Set via environment variable or `~/.pi/agent/auth.json`:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 pi
 ```
 
-Supported environment variables: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `XAI_API_KEY`, `OPENROUTER_API_KEY`, `AI_GATEWAY_API_KEY`, `ZAI_API_KEY`, `MINIMAX_API_KEY`, `OPENCODE_API_KEY`, `AWS_PROFILE`.
+Supported: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `XAI_API_KEY`, `OPENROUTER_API_KEY`, `AI_GATEWAY_API_KEY`, `ZAI_API_KEY`, `MINIMAX_API_KEY`, `OPENCODE_API_KEY`, `AWS_PROFILE`.
 
-For OAuth providers (GitHub Copilot, Google Gemini CLI, Anthropic Pro/Max), use `/login` in interactive mode.
-
-See [docs/authentication.md](docs/authentication.md) for auth file format, all providers, and OAuth details.
+See [docs/authentication.md](docs/authentication.md) for details.
 
 ### Quick Start
 
