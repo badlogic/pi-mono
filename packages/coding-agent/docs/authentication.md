@@ -13,24 +13,17 @@ Pi supports subscription-based providers via OAuth and API key providers via env
 
 ## Subscriptions
 
-Use `/login` in interactive mode to authenticate with your existing subscription or free tier:
+Use `/login` in interactive mode, then select a provider:
 
-| Provider | Command | Cost |
-|----------|---------|------|
-| Claude Pro/Max | `/login anthropic` | Subscription |
-| ChatGPT Plus/Pro | `/login openai-codex` | Subscription |
-| GitHub Copilot | `/login github-copilot` | Subscription |
-| Google Gemini CLI | `/login google-gemini-cli` | Free |
-| Google Antigravity | `/login google-antigravity` | Free |
+| Provider | Cost |
+|----------|------|
+| Claude Pro/Max | Subscription |
+| ChatGPT Plus/Pro | Subscription |
+| GitHub Copilot | Subscription |
+| Google Gemini CLI | Free |
+| Google Antigravity | Free |
 
-```bash
-pi
-/login           # Interactive provider selection
-/login anthropic # Direct login
-/logout          # Clear credentials
-```
-
-Credentials are stored in `~/.pi/agent/auth.json` and auto-refresh when expired.
+Use `/logout` to clear credentials. Tokens are stored in `~/.pi/agent/auth.json` and auto-refresh when expired.
 
 ### GitHub Copilot
 
