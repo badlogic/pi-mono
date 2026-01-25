@@ -1,5 +1,13 @@
 #!/usr/bin/env tsx
 
+import { setGlobalDispatcher, EnvHttpProxyAgent, } from "undici";
+if (process.env['HTTP_PROXY'] || process.env['HTTPS_PROXY'] || process.env['NO_PROXY'] ||
+	process.env['http_proxy'] || process.env['https_proxy'] || process.env['no_proxy']
+) {
+	setGlobalDispatcher(new EnvHttpProxyAgent());
+}
+
+
 import { writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";

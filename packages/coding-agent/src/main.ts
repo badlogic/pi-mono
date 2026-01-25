@@ -5,6 +5,19 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
+import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+
+if (
+	process.env["HTTP_PROXY"] ||
+	process.env["HTTPS_PROXY"] ||
+	process.env["NO_PROXY"] ||
+	process.env["http_proxy"] ||
+	process.env["https_proxy"] ||
+	process.env["no_proxy"]
+) {
+	setGlobalDispatcher(new EnvHttpProxyAgent());
+}
+
 import { type ImageContent, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { createInterface } from "readline";
