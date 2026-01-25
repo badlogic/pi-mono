@@ -57,9 +57,9 @@ Then just talk to pi. Ask it to work on your codebase, run commands, or perform 
 
 ## Providers & Models
 
-Pi has built-in support for the providers listed below. Authenticate via subscription (`/login`) or API key. Select any tool-capable model from authenticated providers via `/model` (or Ctrl+L).
+For each built-in provider, pi maintains a list of tool-capable models, updated with every release. Authenticate via subscription (`/login`) or API key, then select any model from that provider via `/model` (or Ctrl+L).
 
-**Subscriptions**:
+**Subscriptions:**
 - Anthropic Claude Pro/Max
 - OpenAI ChatGPT Plus/Pro (Codex)
 - GitHub Copilot
@@ -83,15 +83,15 @@ Pi has built-in support for the providers listed below. Authenticate via subscri
 - OpenCode Zen
 - MiniMax
 
-See [docs/providers.md](docs/providers.md) for setup.
+See [docs/providers.md](docs/providers.md) for detailed setup instructions.
 
-**Custom providers:** Add Ollama, LM Studio, vLLM, or any OpenAI-compatible endpoint via `~/.pi/agent/models.json`. See [docs/models.md](docs/models.md).
-
-**Full control:** Use [Extensions](#extensions) for custom API implementations and OAuth flows.
+**Custom providers & models:** Add providers via `~/.pi/agent/models.json` if they speak a supported API (OpenAI, Anthropic, Google). For custom APIs or OAuth, use extensions. See [docs/models.md](docs/models.md) and [docs/custom-provider.md](docs/custom-provider.md).
 
 ---
 
 ## Interactive Mode
+
+![Interactive Mode](docs/images/interactive-mode.png)
 
 ### Editor
 
