@@ -9,7 +9,6 @@ Pi supports subscription-based providers via OAuth and API key providers via env
 - [Auth File](#auth-file)
 - [Cloud Providers](#cloud-providers)
 - [Resolution Order](#resolution-order)
-- [Troubleshooting](#troubleshooting)
 
 ## Subscriptions
 
@@ -135,18 +134,7 @@ Or set `GOOGLE_APPLICATION_CREDENTIALS` to a service account key file.
 
 When resolving credentials for a provider:
 
-1. CLI `--api-key` flag (runtime override)
-2. API key from `auth.json`
-3. OAuth token from `auth.json` (auto-refreshed)
-4. Environment variable
-5. Custom provider keys from `models.json`
-
-## Troubleshooting
-
-**Port 1455 in use:** OAuth callback server can't start. Close the conflicting process or paste the auth URL manually when prompted.
-
-**Token expired / refresh failed:** Run `/login` again to re-authenticate.
-
-**Rate limits (429):** Wait for the reset window. Pi shows the approximate retry time.
-
-**"model not supported" (GitHub Copilot):** Enable the model in VS Code first.
+1. CLI `--api-key` flag
+2. `auth.json` entry (API key or OAuth token)
+3. Environment variable
+4. Custom provider keys from `models.json`
