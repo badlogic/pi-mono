@@ -100,7 +100,7 @@ The interface from top to bottom:
 - **Editor** - Where you type
 - **Footer** - Working directory, token usage, cost, current model
 
-The editor can be temporarily replaced by other UI, like built-in `/settings` or custom UI from extensions. Extensions can also replace the editor, add widgets above/below it, a status line, custom footer, or overlays.
+The editor can be temporarily replaced by other UI, like built-in `/settings` or custom UI from extensions (e.g., a Q&A tool that lets the user answer model questions in a structured format). Extensions can also replace the editor, add widgets above/below it, a status line, custom footer, or overlays.
 
 ### Editor
 
