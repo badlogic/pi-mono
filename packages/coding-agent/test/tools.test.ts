@@ -66,7 +66,7 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("Line 1");
 			expect(output).toContain("Line 2000");
 			expect(output).not.toContain("Line 2001");
-			expect(output).toContain("[Showing lines 1-2000 of 2500. Use offset=2001 to continue]");
+			expect(output).toContain("[Showing lines 1-2000 of 2500. Use offset=2001 to continue.]");
 		});
 
 		it("should truncate when byte limit exceeded", async () => {
@@ -80,7 +80,7 @@ describe("Coding Agent Tools", () => {
 
 			expect(output).toContain("Line 1:");
 			// Should show byte limit message
-			expect(output).toMatch(/\[Showing lines 1-\d+ of 500 \(.* limit\)\. Use offset=\d+ to continue\]/);
+			expect(output).toMatch(/\[Showing lines 1-\d+ of 500 \(.* limit\)\. Use offset=\d+ to continue\.\]/);
 		});
 
 		it("should handle offset parameter", async () => {
@@ -109,7 +109,7 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("Line 1");
 			expect(output).toContain("Line 10");
 			expect(output).not.toContain("Line 11");
-			expect(output).toContain("[90 more lines in file. Use offset=11 to continue]");
+			expect(output).toContain("[90 more lines in file. Use offset=11 to continue.]");
 		});
 
 		it("should handle offset + limit together", async () => {
@@ -128,7 +128,7 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("Line 41");
 			expect(output).toContain("Line 60");
 			expect(output).not.toContain("Line 61");
-			expect(output).toContain("[40 more lines in file. Use offset=61 to continue]");
+			expect(output).toContain("[40 more lines in file. Use offset=61 to continue.]");
 		});
 
 		it("should show error when offset is beyond file length", async () => {
