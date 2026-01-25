@@ -67,38 +67,7 @@ Pi runs in four modes: interactive, print or JSON, RPC for process integration, 
 npm install -g @mariozechner/pi-coding-agent
 ```
 
-**Standalone binary:**
-
-Download from [GitHub Releases](https://github.com/badlogic/pi-mono/releases):
-
-| Platform | Archive |
-|----------|---------|
-| macOS Apple Silicon | `pi-darwin-arm64.tar.gz` |
-| macOS Intel | `pi-darwin-x64.tar.gz` |
-| Linux x64 | `pi-linux-x64.tar.gz` |
-| Linux ARM64 | `pi-linux-arm64.tar.gz` |
-| Windows x64 | `pi-windows-x64.zip` |
-
-```bash
-# macOS/Linux
-tar -xzf pi-darwin-arm64.tar.gz
-./pi
-
-# Windows
-unzip pi-windows-x64.zip
-pi.exe
-```
-
-**macOS note:** The binary is unsigned. If blocked, run: `xattr -c ./pi`
-
-**Build from source** (requires [Bun](https://bun.sh) 1.0+):
-
-```bash
-git clone https://github.com/badlogic/pi-mono.git
-cd pi-mono && npm install && npm run build
-cd packages/coding-agent && npm run build:binary
-./dist/pi
-```
+Standalone binaries and build instructions available on [GitHub Releases](https://github.com/badlogic/pi-mono/releases).
 
 ### Windows Setup
 
