@@ -20,6 +20,7 @@ Pi runs in four modes: interactive, print or JSON, RPC for process integration, 
 - [Getting Started](#getting-started)
   - [Installation](#installation)
   - [Windows Setup](#windows-setup)
+  - [Shell Aliases](#shell-aliases)
   - [Terminal Setup](#terminal-setup)
   - [API Keys & OAuth](#api-keys--oauth)
   - [Quick Start](#quick-start)
@@ -84,7 +85,9 @@ For most users, [Git for Windows](https://git-scm.com/download/win) is sufficien
 }
 ```
 
-**Alias expansion:** Pi runs bash in non-interactive mode (`bash -c`), which doesn't expand aliases by default. To enable your shell aliases:
+### Shell Aliases
+
+Pi runs bash in non-interactive mode (`bash -c`), which doesn't expand aliases by default. To enable your shell aliases:
 
 ```json
 // ~/.pi/agent/settings.json
