@@ -8,6 +8,7 @@ Pi supports subscription-based providers via OAuth and API key providers via env
 - [API Keys](#api-keys)
 - [Auth File](#auth-file)
 - [Cloud Providers](#cloud-providers)
+- [Custom Providers](#custom-providers)
 - [Resolution Order](#resolution-order)
 
 ## Subscriptions
@@ -129,6 +130,12 @@ export GOOGLE_CLOUD_LOCATION=us-central1
 ```
 
 Or set `GOOGLE_APPLICATION_CREDENTIALS` to a service account key file.
+
+## Custom Providers
+
+**Via models.json:** Add Ollama, LM Studio, vLLM, or any provider that speaks a supported API (OpenAI Completions, OpenAI Responses, Anthropic Messages, Google Generative AI). See [models.md](models.md).
+
+**Via extensions:** For providers that need custom API implementations or OAuth flows, create an extension. See [extensions.md](extensions.md) and [examples/extensions/custom-provider-gitlab-duo](../examples/extensions/custom-provider-gitlab-duo/).
 
 ## Resolution Order
 
