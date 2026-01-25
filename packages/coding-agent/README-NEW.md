@@ -114,6 +114,8 @@ The editor can be temporarily replaced by other UI, like built-in `/settings` or
 
 ### Commands
 
+Type `/` in the editor to trigger commands. Extensions can register custom commands, skills are available as `/skill:name`, and prompt templates expand via `/templatename`.
+
 | Command | Description |
 |---------|-------------|
 | `/login`, `/logout` | OAuth authentication |
@@ -125,6 +127,8 @@ The editor can be temporarily replaced by other UI, like built-in `/settings` or
 | `/export`, `/share` | Export to HTML or GitHub gist |
 | `/reload` | Reload extensions, skills, prompts, themes |
 | `/hotkeys` | Show all keyboard shortcuts |
+
+See [Customization](#customization) for skills, prompt templates, and extensions.
 
 ### Keyboard Shortcuts
 
