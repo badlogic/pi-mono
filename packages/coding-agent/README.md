@@ -22,7 +22,7 @@ Pi runs in four modes: interactive, print or JSON, RPC for process integration, 
   - [Windows Setup](#windows-setup)
   - [Shell Aliases](#shell-aliases)
   - [Terminal Setup](#terminal-setup)
-  - [API Keys & OAuth](#api-keys--oauth)
+  - [API Keys](#api-keys)
   - [Quick Start](#quick-start)
 - [Usage](#usage)
   - [Slash Commands](#slash-commands)
@@ -103,106 +103,20 @@ Adjust the path (`~/.zshrc`, `~/.bashrc`, etc.) to match your shell config.
 
 Pi uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Kitty and iTerm2 work out of the box. Other terminals may need configuration. See [docs/terminal-setup.md](docs/terminal-setup.md).
 
-### API Keys & OAuth
+### API Keys
 
-**Option 1: Auth file** (recommended)
-
-Add API keys to `~/.pi/agent/auth.json`:
-
-```json
-{
-  "anthropic": { "type": "api_key", "key": "sk-ant-..." },
-  "openai": { "type": "api_key", "key": "sk-..." },
-  "google": { "type": "api_key", "key": "..." }
-}
-```
-
-**Option 2: Environment variables**
-
-| Provider | Auth Key | Environment Variable |
-|----------|--------------|---------------------|
-| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
-| OpenAI | `openai` | `OPENAI_API_KEY` |
-| Azure OpenAI | `azure-openai-responses` | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_BASE_URL` or `AZURE_OPENAI_RESOURCE_NAME` |
-| Google | `google` | `GEMINI_API_KEY` |
-| Mistral | `mistral` | `MISTRAL_API_KEY` |
-| Groq | `groq` | `GROQ_API_KEY` |
-| Cerebras | `cerebras` | `CEREBRAS_API_KEY` |
-| xAI | `xai` | `XAI_API_KEY` |
-| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
-| Vercel AI Gateway | `vercel-ai-gateway` | `AI_GATEWAY_API_KEY` |
-| ZAI | `zai` | `ZAI_API_KEY` |
-| OpenCode Zen | `opencode` | `OPENCODE_API_KEY` |
-| MiniMax | `minimax` | `MINIMAX_API_KEY` |
-| MiniMax (China) | `minimax-cn` | `MINIMAX_CN_API_KEY` |
-
-Azure OpenAI also requires `AZURE_OPENAI_BASE_URL` or `AZURE_OPENAI_RESOURCE_NAME`. Optional: `AZURE_OPENAI_API_VERSION` (defaults to `v1`) and `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` using comma-separated `model=deployment` pairs for overrides.
-
-Auth file keys take priority over environment variables.
-
-**OAuth Providers:**
-
-Use `/login` to authenticate with subscription-based or free-tier providers:
-
-| Provider | Models | Cost |
-|----------|--------|------|
-| Anthropic (Claude Pro/Max) | Claude models via your subscription | Subscription |
-| GitHub Copilot | GPT-4o, Claude, Gemini via Copilot subscription | Subscription |
-| Google Gemini CLI | Gemini 2.0/2.5 models | Free (Google account) |
-| Google Antigravity | Gemini 3, Claude, GPT-OSS | Free (Google account) |
-| OpenAI Codex (ChatGPT Plus/Pro) | Codex models via ChatGPT subscription | Subscription |
+Set an API key via environment variable or `~/.pi/agent/auth.json`:
 
 ```bash
+export ANTHROPIC_API_KEY=sk-ant-...
 pi
-/login  # Select provider, authorize in browser
 ```
 
-**Note:** `/login` replaces any existing API key for that provider with OAuth credentials in `auth.json`.
+Supported environment variables: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `XAI_API_KEY`, `OPENROUTER_API_KEY`, `AI_GATEWAY_API_KEY`, `ZAI_API_KEY`, `MINIMAX_API_KEY`, `OPENCODE_API_KEY`, `AWS_PROFILE`.
 
-**GitHub Copilot notes:**
-- Press Enter for github.com, or enter your GitHub Enterprise Server domain
-- If you get "model not supported" error, enable it in VS Code: Copilot Chat → model selector → select model → "Enable"
+For OAuth providers (GitHub Copilot, Google Gemini CLI, Anthropic Pro/Max), use `/login` in interactive mode.
 
-**Google providers notes:**
-- Gemini CLI uses the production Cloud Code Assist endpoint (standard Gemini models)
-- Antigravity uses a sandbox endpoint with access to Gemini 3, Claude (sonnet/opus thinking), and GPT-OSS models
-- Both are free with any Google account, subject to rate limits
-- Paid Cloud Code Assist subscriptions: set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_CLOUD_PROJECT_ID` env var to your project ID
-
-**OpenAI Codex notes:**
-- Requires ChatGPT Plus/Pro OAuth (`/login openai-codex`)
-- Prompt cache stored under `~/.pi/agent/cache/openai-codex/`
-- Intended for personal use with your own subscription; not for resale or multi-user services. For production, use the OpenAI Platform API.
-
-Credentials stored in `~/.pi/agent/auth.json`. Use `/logout` to clear.
-
-**Troubleshooting (OAuth):**
-- **Port 1455 in use:** Close the conflicting process or paste the auth code/URL when prompted.
-- **Token expired / refresh failed:** Run `/login` again for the provider to refresh credentials.
-- **Usage limits (429):** Wait for the reset window; pi will surface a friendly message with the approximate retry time.
-
-**Amazon Bedrock:**
-
-Amazon Bedrock supports multiple authentication methods:
-
-```bash
-# Option 1: AWS Profile (from ~/.aws/credentials)
-export AWS_PROFILE=your-profile-name
-
-# Option 2: IAM Access Keys
-export AWS_ACCESS_KEY_ID=AKIA...
-export AWS_SECRET_ACCESS_KEY=...
-
-# Option 3: Bedrock API Key (bearer token)
-export AWS_BEARER_TOKEN_BEDROCK=...
-
-# Optional: Set region (defaults to us-east-1)
-export AWS_REGION=us-east-1
-
-pi --provider amazon-bedrock --model global.anthropic.claude-sonnet-4-5-20250929-v1:0
-```
-
-See [Supported foundation models in Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html).
+See [docs/authentication.md](docs/authentication.md) for auth file format, all providers, and OAuth details.
 
 ### Quick Start
 
