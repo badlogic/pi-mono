@@ -5,6 +5,7 @@
 ### Fixed
 
 - Slash command menu now only triggers when the editor input is otherwise empty ([#904](https://github.com/badlogic/pi-mono/issues/904))
+- Center-anchored overlays now stay vertically centered when resizing the terminal taller after a shrink
 
 ## [0.49.3] - 2026-01-22
 
