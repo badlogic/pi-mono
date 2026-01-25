@@ -38,32 +38,6 @@
         byId.set(entry.id, entry);
       }
 
-      const settingsTypes = [
-        "label",
-        "custom",
-        "model_change",
-        "thinking_level_change",
-      ];
-      function isSettingsEntry(entry) {
-        return settingsTypes.includes(entry.type);
-      }
-
-      // Children lookup (parentId -> array of child entries)
-      // Excludes settings entries so findBranchLeaf won't return them as leaves
-      const childrenMap = new Map();
-      for (const entry of entries) {
-        if (entry.parentId && entry.parentId !== entry.id && !isSettingsEntry(entry)) {
-          if (!childrenMap.has(entry.parentId)) {
-            childrenMap.set(entry.parentId, []);
-          }
-          childrenMap.get(entry.parentId).push(entry);
-        }
-      }
-      // Sort children by timestamp
-      for (const [, children] of childrenMap) {
-        children.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-      }
-
       // Tool call lookup (toolCallId -> {name, arguments})
       const toolCallMap = new Map();
       for (const entry of entries) {
@@ -199,22 +173,6 @@
           current = current.children[current.children.length - 1];
         }
         return current.entry.id;
-      }
-
-      /**
-       * Find the leaf of a branch starting from any entry.
-       * Follows the latest (chronologically newest) child at each level.
-       */
-      function findBranchLeaf(entryId) {
-        let current = entryId;
-        while (true) {
-          const children = childrenMap.get(current);
-          if (!children || children.length === 0) {
-            return current;
-          }
-          // Follow the latest child (children sorted by timestamp ascending)
-          current = children[children.length - 1].id;
-        }
       }
 
       /**
@@ -411,6 +369,7 @@
           }
 
           // Apply filter mode
+          const isSettingsEntry = ['label', 'custom', 'model_change', 'thinking_level_change'].includes(entry.type);
           let passesFilter = true;
 
           switch (filterMode) {
@@ -418,7 +377,7 @@
               passesFilter = entry.type === 'message' && entry.message.role === 'user';
               break;
             case 'no-tools':
-              passesFilter = !isSettingsEntry(entry) && !(entry.type === 'message' && entry.message.role === 'toolResult');
+              passesFilter = !isSettingsEntry && !(entry.type === 'message' && entry.message.role === 'toolResult');
               break;
             case 'labeled-only':
               passesFilter = label !== undefined;
@@ -427,7 +386,7 @@
               passesFilter = true;
               break;
             default: // 'default'
-              passesFilter = !isSettingsEntry(entry);
+              passesFilter = !isSettingsEntry;
               break;
           }
 
@@ -1389,40 +1348,6 @@
           entryCache.set(entry.id, node.cloneNode(true));
         }
         return node;
-      }
-
-      /**
-       * Scroll to a specific entry in the messages view without re-rendering.
-       */
-      function scrollToEntry(entryId, highlight = true) {
-        const targetEl = document.getElementById(`entry-${entryId}`);
-        if (targetEl) {
-          targetEl.scrollIntoView({ block: 'center' });
-          if (highlight) {
-            targetEl.classList.add('highlight');
-            setTimeout(() => targetEl.classList.remove('highlight'), 2000);
-          }
-        }
-      }
-
-      /**
-       * Handle click on a tree node in the sidebar.
-       * If the entry is on the current path, just scroll to it.
-       * If on a different branch, navigate to that branch's leaf and scroll to the entry.
-       */
-      function handleTreeNodeClick(entryId) {
-        const currentPathIds = buildActivePathIds(currentLeafId);
-
-        if (currentPathIds.has(entryId)) {
-          // Entry is on current path - just scroll to it and update target
-          currentTargetId = entryId;
-          renderTree(); // Update active marker
-          scrollToEntry(entryId);
-        } else {
-          // Entry is on a different branch - find that branch's leaf and navigate
-          const branchLeaf = findBranchLeaf(entryId);
-          navigateTo(branchLeaf, 'target', entryId);
-        }
       }
 
       function navigateTo(targetId, scrollMode = 'target', scrollToEntryId = null) {
