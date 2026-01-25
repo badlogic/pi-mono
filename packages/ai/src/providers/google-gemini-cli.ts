@@ -685,7 +685,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli", GoogleGe
 											type: "toolCall",
 											id: toolCallId,
 											name: part.functionCall.name || "",
-											arguments: part.functionCall.args as Record<string, unknown>,
+											arguments: (part.functionCall.args as Record<string, unknown>) ?? {},
 											...(part.thoughtSignature && { thoughtSignature: part.thoughtSignature }),
 										};
 

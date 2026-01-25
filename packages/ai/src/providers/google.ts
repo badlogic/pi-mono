@@ -179,7 +179,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai", GoogleOptions>
 								type: "toolCall",
 								id: toolCallId,
 								name: part.functionCall.name || "",
-								arguments: part.functionCall.args as Record<string, any>,
+								arguments: (part.functionCall.args as Record<string, any>) ?? {},
 								...(part.thoughtSignature && { thoughtSignature: part.thoughtSignature }),
 							};
 
