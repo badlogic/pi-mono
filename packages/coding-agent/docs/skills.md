@@ -6,52 +6,73 @@ Skills are self-contained capability packages that the agent loads on-demand. A 
 
 Pi implements the [Agent Skills standard](https://agentskills.io/specification).
 
-**Example use cases:**
-- Web search and content extraction (Brave Search API)
-- Browser automation via Chrome DevTools Protocol
-- Google Calendar, Gmail, Drive integration
-- PDF/DOCX processing and creation
-- Speech-to-text transcription
-- YouTube transcript extraction
+## Table of Contents
 
-See [Skill Repositories](#skill-repositories) for ready-to-use skills.
+- [Locations](#locations)
+- [How Skills Work](#how-skills-work)
+- [Skill Commands](#skill-commands)
+- [Skill Structure](#skill-structure)
+- [Frontmatter](#frontmatter)
+- [Validation](#validation)
+- [Example](#example)
+- [Skill Repositories](#skill-repositories)
 
-## When to Use Skills
+## Locations
 
-| Need | Solution |
-|------|----------|
-| Always-needed context (conventions, commands) | AGENTS.md |
-| User triggers a specific prompt template | Slash command |
-| Additional tool directly callable by the LLM (like read/write/edit/bash) | Custom tool |
-| On-demand capability package (workflows, scripts, setup) | Skill |
+Pi loads skills from:
 
-Skills are loaded when:
-- The agent decides the task matches a skill's description
-- The user explicitly asks to use a skill (e.g., "use the pdf skill to extract tables")
+- Global: `~/.pi/agent/skills/`
+- Project: `.pi/skills/`
+- Packages: `skills/` directories or `pi.skills` entries in `package.json`
+- Settings: `skills` array with files or directories
+- CLI: `--skill <path>` (repeatable, additive even with `--no-skills`)
 
-**Good skill examples:**
-- Browser automation with helper scripts and CDP workflow
-- Google Calendar CLI with setup instructions and usage patterns
-- PDF processing with multiple tools and extraction patterns
-- Speech-to-text transcription with API setup
+Discovery rules:
+- Direct `.md` files in the skills directory root
+- Recursive `SKILL.md` files under subdirectories
 
-**Not a good fit for skills:**
-- "Always use TypeScript strict mode" → put in AGENTS.md
-- "Review my code" → make a prompt template
-- Need user confirmation dialogs or custom TUI rendering → make a custom tool
+Disable discovery with `--no-skills` (explicit `--skill` paths still load).
+
+## How Skills Work
+
+1. At startup, pi scans skill locations and extracts names and descriptions
+2. The system prompt includes available skills in XML format
+3. When a task matches, the agent uses `read` to load the full SKILL.md
+4. The agent follows the instructions, using relative paths to reference scripts and assets
+
+This is progressive disclosure: only descriptions are always in context, full instructions load on-demand.
+
+## Skill Commands
+
+Skills register as `/skill:name` commands:
+
+```bash
+/skill:brave-search           # Load and execute the skill
+/skill:pdf-tools extract      # Load skill with arguments
+```
+
+Arguments after the command are appended to the skill content as `User: <args>`.
+
+Toggle skill commands in settings:
+
+```json
+{
+  "enableSkillCommands": true
+}
+```
 
 ## Skill Structure
 
-A skill is a directory with a `SKILL.md` file. Everything else is freeform. Example structure:
+A skill is a directory with a `SKILL.md` file. Everything else is freeform.
 
 ```
 my-skill/
 ├── SKILL.md              # Required: frontmatter + instructions
-├── scripts/              # Helper scripts (bash, python, node)
+├── scripts/              # Helper scripts
 │   └── process.sh
 ├── references/           # Detailed docs loaded on-demand
 │   └── api-reference.md
-└── assets/               # Templates, images, etc.
+└── assets/
     └── template.json
 ```
 
@@ -77,47 +98,46 @@ cd /path/to/skill && npm install
 \`\`\`bash
 ./scripts/process.sh <input>
 \`\`\`
-
-## Workflow
-
-1. First step
-2. Second step
-3. Third step
 ```
 
-### Frontmatter Fields
+Use relative paths from the skill directory:
+
+```markdown
+See [the reference guide](references/REFERENCE.md) for details.
+```
+
+## Frontmatter
 
 Per the [Agent Skills specification](https://agentskills.io/specification#frontmatter-required):
 
-| Field | Required | Constraints |
+| Field | Required | Description |
 |-------|----------|-------------|
-| `name` | Yes | Max 64 chars. Lowercase a-z, 0-9, hyphens only. Must match parent directory name. |
+| `name` | Yes | Max 64 chars. Lowercase a-z, 0-9, hyphens. Must match parent directory. |
 | `description` | Yes | Max 1024 chars. What the skill does and when to use it. |
-| `license` | No | License name or reference to bundled license file. |
-| `compatibility` | No | Max 500 chars. Environment requirements (system packages, network access, etc.). |
-| `metadata` | No | Arbitrary key-value mapping for additional metadata. |
+| `license` | No | License name or reference to bundled file. |
+| `compatibility` | No | Max 500 chars. Environment requirements. |
+| `metadata` | No | Arbitrary key-value mapping. |
 | `allowed-tools` | No | Space-delimited list of pre-approved tools (experimental). |
-| `disable-model-invocation` | No | When `true`, the skill is hidden from the system prompt. The model cannot invoke it agentically; users must use `/skill:name`. |
+| `disable-model-invocation` | No | When `true`, skill is hidden from system prompt. Users must use `/skill:name`. |
 
-#### Name Validation
+### Name Rules
 
-The `name` field must:
-- Be 1-64 characters
-- Contain only lowercase letters (a-z), numbers (0-9), and hyphens
-- Not start or end with a hyphen
-- Not contain consecutive hyphens (--)
-- Match the parent directory name exactly
+- 1-64 characters
+- Lowercase letters, numbers, hyphens only
+- No leading/trailing hyphens
+- No consecutive hyphens
+- Must match parent directory name
 
 Valid: `pdf-processing`, `data-analysis`, `code-review`
 Invalid: `PDF-Processing`, `-pdf`, `pdf--processing`
 
-#### Description Best Practices
+### Description Best Practices
 
-The `description` is critical. It determines when the agent loads the skill. Be specific about both what it does and when to use it.
+The description determines when the agent loads the skill. Be specific.
 
 Good:
 ```yaml
-description: Extracts text and tables from PDF files, fills PDF forms, and merges multiple PDFs. Use when working with PDF documents or when the user mentions PDFs, forms, or document extraction.
+description: Extracts text and tables from PDF files, fills PDF forms, and merges multiple PDFs. Use when working with PDF documents.
 ```
 
 Poor:
@@ -125,107 +145,19 @@ Poor:
 description: Helps with PDFs.
 ```
 
-### File References
-
-Use relative paths from the skill directory:
-
-```markdown
-See [the reference guide](references/REFERENCE.md) for details.
-
-Run the extraction script:
-\`\`\`bash
-./scripts/extract.py input.pdf
-\`\`\`
-```
-
-## Skill Locations
-
-Skills are discovered from these locations (later wins on name collision):
-
-1. `~/.pi/agent/skills/` (global)
-2. `<cwd>/.pi/skills/` (project)
-3. Paths listed in `settings.json` under `skills`
-4. CLI `--skill` paths (additive even with `--no-skills`)
-
-Discovery rules for each directory:
-- Direct `.md` files in the root
-- Recursive `SKILL.md` files under subdirectories
-
-## Configuration
-
-Configure skill paths in `~/.pi/agent/settings.json`:
-
-```json
-{
-  "skills": ["~/my-skills-repo", "/path/to/skill/SKILL.md"],
-  "enableSkillCommands": true
-}
-```
-
-Use project-local settings in `<cwd>/.pi/settings.json` to scope skills to a single project.
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `skills` | `[]` | Additional skill file or directory paths |
-| `enableSkillCommands` | `true` | Register skills as `/skill:name` commands |
-
-### CLI Additions
-
-Use `--skill` to add skills for a specific invocation:
-
-```bash
-pi --skill ~/my-skills/terraform
-pi --skill ./skills/custom-skill/SKILL.md
-```
-
-Use `--no-skills` to disable automatic discovery (CLI `--skill` paths still load).
-
-## How Skills Work
-
-1. At startup, pi scans skill locations and extracts names + descriptions
-2. The system prompt includes available skills in XML format
-3. When a task matches, the agent uses `read` to load the full SKILL.md
-4. The agent follows the instructions, using relative paths to reference scripts/assets
-
-This is progressive disclosure: only descriptions are always in context, full instructions load on-demand.
-
-## Skill Commands
-
-Skills are automatically registered as slash commands with a `/skill:` prefix:
-
-```bash
-/skill:brave-search         # Load and execute the brave-search skill
-/skill:pdf-tools extract    # Load skill with arguments
-```
-
-Arguments after the command name are appended to the skill content as `User: <args>`.
-
-Toggle skill commands via `/settings` or in `settings.json`:
-
-```json
-{
-  "enableSkillCommands": true
-}
-```
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `enableSkillCommands` | `true` | Register skills as `/skill:name` commands |
-
-## Validation Warnings
+## Validation
 
 Pi validates skills against the Agent Skills standard and warns (but still loads) non-compliant skills:
 
 - Name doesn't match parent directory
-- Name exceeds 64 characters
-- Name contains invalid characters
+- Name exceeds 64 characters or contains invalid characters
 - Name starts/ends with hyphen or has consecutive hyphens
 - Description missing or exceeds 1024 characters
 - Unknown frontmatter fields
 
 Name collisions (same name from different locations) warn and keep the first skill found.
 
-## Example: Web Search Skill
+## Example
 
 ```
 brave-search/
@@ -265,16 +197,5 @@ cd /path/to/brave-search && npm install
 
 ## Skill Repositories
 
-For inspiration and ready-to-use skills:
-
-- [Anthropic Skills](https://github.com/anthropics/skills) - Official skills for document processing (docx, pdf, pptx, xlsx), web development, and more
-- [Pi Skills](https://github.com/badlogic/pi-skills) - Skills for web search, browser automation, Google APIs, transcription
-
-## Disabling Skills
-
-CLI:
-```bash
-pi --no-skills
-```
-
-Use `--no-skills` to disable automatic discovery while keeping explicit `--skill` paths.
+- [Anthropic Skills](https://github.com/anthropics/skills) - Document processing (docx, pdf, pptx, xlsx), web development
+- [Pi Skills](https://github.com/badlogic/pi-skills) - Web search, browser automation, Google APIs, transcription

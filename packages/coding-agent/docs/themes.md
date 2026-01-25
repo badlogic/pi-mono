@@ -139,13 +139,13 @@ vim ~/.pi/agent/themes/my-theme.json
 
 - `name` is required and must be unique.
 - `vars` is optional. Define reusable colors here, then reference them in `colors`.
-- `colors` must define all 50 required tokens.
+- `colors` must define all 51 required tokens.
 
 The `$schema` field enables editor auto-completion and validation.
 
 ## Color Tokens
 
-Every theme must define all 50 color tokens. There are no optional colors.
+Every theme must define all 51 color tokens. There are no optional colors.
 
 ### Core UI (11 colors)
 
