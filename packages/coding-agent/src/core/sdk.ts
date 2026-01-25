@@ -221,7 +221,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			}
 		} else {
 			// No models available - set message so user knows to /login or configure keys
-			modelFallbackMessage = `No models available. Use /login or set an API key environment variable. See ${join(getDocsPath(), "authentication.md")}`;
+			modelFallbackMessage = `No models available. Use /login or set an API key environment variable. See ${join(getDocsPath(), "authentication.md")}. Then use /model to select a model.`;
 		}
 	}
 
