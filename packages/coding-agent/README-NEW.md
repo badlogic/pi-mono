@@ -93,7 +93,14 @@ See [docs/providers.md](docs/providers.md) for detailed setup instructions.
 
 ![Interactive Mode](docs/images/interactive-mode.png)
 
-On startup, pi shows common shortcuts (`/hotkeys` for all), loaded AGENTS.md files, prompt templates, skills, and extensions. The status bar at the bottom shows the working directory, token usage, cost, and current model.
+The interface from top to bottom:
+
+- **Header** - On startup, shows shortcuts (`/hotkeys` for all), loaded AGENTS.md files, prompt templates, skills, and extensions
+- **Messages** - Your messages, assistant responses, tool calls and results, custom UI from extensions
+- **Editor** - Where you type
+- **Footer** - Working directory, token usage, cost, current model
+
+Extensions can add widgets above/below the editor, a status line, custom footer, or overlays.
 
 ### Editor
 
