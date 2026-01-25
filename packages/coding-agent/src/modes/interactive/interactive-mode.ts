@@ -3659,11 +3659,11 @@ export class InteractiveMode {
 		this.ui.setFocus(loader);
 		this.ui.requestRender();
 
-		const restoreEditor = () => {
+		const dismissLoader = (editor: Component) => {
 			loader.dispose();
 			this.editorContainer.clear();
-			this.editorContainer.addChild(previousEditor);
-			this.ui.setFocus(previousEditor as Component);
+			this.editorContainer.addChild(editor);
+			this.ui.setFocus(editor);
 			this.ui.requestRender();
 		};
 
@@ -3676,7 +3676,7 @@ export class InteractiveMode {
 				this.setupExtensionShortcuts(runner);
 			}
 			this.rebuildChatFromMessages();
-			restoreEditor();
+			dismissLoader(this.editor as Component);
 			this.showLoadedResources({ extensionPaths: runner?.getExtensionPaths() ?? [], force: true });
 			const modelsJsonError = this.session.modelRegistry.getError();
 			if (modelsJsonError) {
@@ -3684,7 +3684,7 @@ export class InteractiveMode {
 			}
 			this.showStatus("Reloaded extensions, skills, prompts, themes");
 		} catch (error) {
-			restoreEditor();
+			dismissLoader(previousEditor as Component);
 			this.showError(`Reload failed: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
