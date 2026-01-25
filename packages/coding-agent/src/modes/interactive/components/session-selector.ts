@@ -153,7 +153,7 @@ class SessionSelectorHeader implements Component {
 			const sep = theme.fg("muted", " · ");
 			const hint1 = keyHint("tab", "scope") + sep + theme.fg("muted", 're:<pattern> regex · "phrase" exact');
 			const hint2Parts = [
-				rawKeyHint("ctrl+n", "sort"),
+				rawKeyHint("ctrl+s", "sort"),
 				rawKeyHint("ctrl+d", "delete"),
 				rawKeyHint("ctrl+p", `path ${pathState}`),
 			];
@@ -383,7 +383,7 @@ class SessionList implements Component, Focusable {
 			return;
 		}
 
-		if (matchesKey(keyData, "ctrl+n")) {
+		if (matchesKey(keyData, "ctrl+s")) {
 			this.onToggleSort?.();
 			return;
 		}
