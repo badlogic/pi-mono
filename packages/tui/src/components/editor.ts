@@ -282,9 +282,6 @@ export class Editor implements Component, Focusable {
 
 	/** Internal setText that doesn't reset history state - used by navigateHistory */
 	private setTextInternal(text: string): void {
-		// Reset kill ring state - external text changes break accumulation/yank chains
-		this.lastAction = null;
-
 		const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
 		this.state.lines = lines.length === 0 ? [""] : lines;
 		this.state.cursorLine = this.state.lines.length - 1;
@@ -805,13 +802,13 @@ export class Editor implements Component, Focusable {
 	}
 
 	setText(text: string): void {
+		this.lastAction = null;
 		this.historyIndex = -1; // Exit history browsing mode
 		// Push undo snapshot if content differs (makes programmatic changes undoable)
 		if (this.getText() !== text) {
 			this.pushUndoSnapshot();
 		}
 		this.setTextInternal(text);
-		this.lastAction = null;
 	}
 
 	/**
