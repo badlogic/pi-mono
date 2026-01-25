@@ -168,13 +168,15 @@ description: Helps with PDFs.
 
 ## Validation
 
-Pi validates skills against the Agent Skills standard and warns (but still loads) non-compliant skills:
+Pi validates skills against the Agent Skills standard. Most issues produce warnings but still load the skill:
 
 - Name doesn't match parent directory
 - Name exceeds 64 characters or contains invalid characters
 - Name starts/ends with hyphen or has consecutive hyphens
-- Description missing or exceeds 1024 characters
+- Description exceeds 1024 characters
 - Unknown frontmatter fields
+
+**Exception:** Skills with missing description are not loaded.
 
 Name collisions (same name from different locations) warn and keep the first skill found.
 
