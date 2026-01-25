@@ -114,9 +114,9 @@ export ANTHROPIC_API_KEY=sk-ant-...
 pi
 ```
 
-Supported: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `XAI_API_KEY`, `OPENROUTER_API_KEY`, `AWS_PROFILE`, and [more](docs/authentication.md).
+Supported: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `XAI_API_KEY`, `OPENROUTER_API_KEY`, `AWS_PROFILE`, and [more](docs/providers.md).
 
-See [docs/authentication.md](docs/authentication.md) for auth file format, Azure, Bedrock, and Vertex setup.
+See [docs/providers.md](docs/providers.md) for auth file format, Azure, Bedrock, and Vertex setup.
 
 ### Quick Start
 

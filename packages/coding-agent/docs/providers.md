@@ -1,4 +1,4 @@
-# Authentication
+# Providers
 
 Pi supports subscription-based providers via OAuth and API key providers via environment variables or auth file.
 
