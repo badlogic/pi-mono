@@ -9,17 +9,20 @@
   <a href="https://github.com/badlogic/pi-mono/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/badlogic/pi-mono/ci.yml?style=flat-square&branch=main" /></a>
 </p>
 
-A terminal-based coding agent with multi-model support, mid-session model switching, and a simple CLI for headless coding tasks.
+Pi is a minimal terminal coding harness. Adapt pi to your workflows, not the other way around, without having to fork and modify pi internals. Extend it with TypeScript [Extensions](#extensions), [Skills](#skills), [Prompt Templates](#prompt-templates), and [Themes](#themes). Put your extensions, skills, prompt templates, and themes in [Pi Packages](#pi-packages) and share them with others via npm or git.
 
-Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-setup)). [Separately maintained port](https://github.com/VaclavSynacek/pi-coding-agent-termux) works on Termux/Android.
+Pi ships with powerful defaults but skips features like sub agents and plan mode. Instead, you can ask pi to build what you want or install a third party pi package that matches your workflow.
+
+Pi runs in four modes: interactive, print or JSON, RPC for process integration, and an SDK for embedding in your own apps. See [clawdbot/clawdbot](https://github.com/clawdbot/clawdbot) for a real-world SDK integration.
 
 ## Table of Contents
 
 - [Getting Started](#getting-started)
   - [Installation](#installation)
   - [Windows Setup](#windows-setup)
+  - [Shell Aliases](#shell-aliases)
   - [Terminal Setup](#terminal-setup)
-  - [API Keys & OAuth](#api-keys--oauth)
+  - [Authentication](#authentication)
   - [Quick Start](#quick-start)
 - [Usage](#usage)
   - [Slash Commands](#slash-commands)
@@ -42,6 +45,7 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
   - [Prompt Templates](#prompt-templates)
   - [Skills](#skills)
   - [Extensions](#extensions)
+  - [Pi Packages](#pi-packages)
 - [CLI Reference](#cli-reference)
 - [Tools](#tools)
 - [Programmatic Usage](#programmatic-usage)
@@ -58,43 +62,9 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
 
 ### Installation
 
-**npm (recommended):**
-
 ```bash
 npm install -g @mariozechner/pi-coding-agent
-```
-
-**Standalone binary:**
-
-Download from [GitHub Releases](https://github.com/badlogic/pi-mono/releases):
-
-| Platform | Archive |
-|----------|---------|
-| macOS Apple Silicon | `pi-darwin-arm64.tar.gz` |
-| macOS Intel | `pi-darwin-x64.tar.gz` |
-| Linux x64 | `pi-linux-x64.tar.gz` |
-| Linux ARM64 | `pi-linux-arm64.tar.gz` |
-| Windows x64 | `pi-windows-x64.zip` |
-
-```bash
-# macOS/Linux
-tar -xzf pi-darwin-arm64.tar.gz
-./pi
-
-# Windows
-unzip pi-windows-x64.zip
-pi.exe
-```
-
-**macOS note:** The binary is unsigned. If blocked, run: `xattr -c ./pi`
-
-**Build from source** (requires [Bun](https://bun.sh) 1.0+):
-
-```bash
-git clone https://github.com/badlogic/pi-mono.git
-cd pi-mono && npm install && npm run build
-cd packages/coding-agent && npm run build:binary
-./dist/pi
+pi
 ```
 
 ### Windows Setup
@@ -116,7 +86,9 @@ For most users, [Git for Windows](https://git-scm.com/download/win) is sufficien
 }
 ```
 
-**Alias expansion:** Pi runs bash in non-interactive mode (`bash -c`), which doesn't expand aliases by default. To enable your shell aliases:
+### Shell Aliases
+
+Pi runs bash in non-interactive mode (`bash -c`), which doesn't expand aliases by default. To enable your shell aliases:
 
 ```json
 // ~/.pi/agent/settings.json
@@ -129,161 +101,22 @@ Adjust the path (`~/.zshrc`, `~/.bashrc`, etc.) to match your shell config.
 
 ### Terminal Setup
 
-Pi uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Most modern terminals support this protocol, but some require configuration.
+Pi uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Kitty and iTerm2 work out of the box. Other terminals may need configuration. See [docs/terminal-setup.md](docs/terminal-setup.md).
 
-**Kitty, iTerm2:** Work out of the box.
+### Authentication
 
-**Ghostty:** Add to your Ghostty config (`~/.config/ghostty/config`):
+**Subscriptions:** Use `/login` to authenticate with Claude Pro/Max, ChatGPT Plus/Pro, GitHub Copilot, or Google Gemini (free).
 
-```
-keybind = alt+backspace=text:\x1b\x7f
-keybind = shift+enter=text:\n
-```
-
-**wezterm:** Create `~/.wezterm.lua`:
-
-```lua
-local wezterm = require 'wezterm'
-local config = wezterm.config_builder()
-config.enable_kitty_keyboard = true
-return config
-```
-
-**VS Code (Integrated Terminal):** Add to `keybindings.json` to enable `Shift+Enter` for multi-line input:
-
-```json
-{
-  "key": "shift+enter",
-  "command": "workbench.action.terminal.sendSequence",
-  "args": { "text": "\u001b[13;2u" },
-  "when": "terminalFocus"
-}
-```
-
-**Windows Terminal:** Add to `settings.json` (Ctrl+Shift+, or Settings → Open JSON file):
-
-```json
-{
-  "actions": [
-    {
-      "command": { "action": "sendInput", "input": "\u001b[13;2u" },
-      "keys": "shift+enter"
-    }
-  ]
-}
-```
-
-If you already have an `actions` array, add the object to it.
-
-**IntelliJ IDEA (Integrated Terminal):** The built-in terminal has limited escape sequence support. Note that Shift+Enter cannot be distinguished from Enter in IntelliJ's terminal. If you want the hardware cursor visible, set `PI_HARDWARE_CURSOR=1` before running pi (disabled by default for compatibility). Consider using a dedicated terminal emulator for the best experience.
-
-### API Keys & OAuth
-
-**Option 1: Auth file** (recommended)
-
-Add API keys to `~/.pi/agent/auth.json`:
-
-```json
-{
-  "anthropic": { "type": "api_key", "key": "sk-ant-..." },
-  "openai": { "type": "api_key", "key": "sk-..." },
-  "google": { "type": "api_key", "key": "..." },
-  "zai-coding-plan": { "type": "api_key", "key": "..." }
-}
-```
-
-**Option 2: Environment variables**
-
-| Provider | Auth Key | Environment Variable |
-|----------|--------------|---------------------|
-| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
-| OpenAI | `openai` | `OPENAI_API_KEY` |
-| Azure OpenAI | `azure-openai-responses` | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_BASE_URL` or `AZURE_OPENAI_RESOURCE_NAME` |
-| Google | `google` | `GEMINI_API_KEY` |
-| Mistral | `mistral` | `MISTRAL_API_KEY` |
-| Groq | `groq` | `GROQ_API_KEY` |
-| Cerebras | `cerebras` | `CEREBRAS_API_KEY` |
-| xAI | `xai` | `XAI_API_KEY` |
-| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
-| Vercel AI Gateway | `vercel-ai-gateway` | `AI_GATEWAY_API_KEY` |
-| ZAI Coding Plan | `zai-coding-plan` | `ZAI_API_KEY` |
-| OpenCode Zen | `opencode` | `OPENCODE_API_KEY` |
-| MiniMax | `minimax` | `MINIMAX_API_KEY` |
-| MiniMax (China) | `minimax-cn` | `MINIMAX_CN_API_KEY` |
-
-Azure OpenAI also requires `AZURE_OPENAI_BASE_URL` or `AZURE_OPENAI_RESOURCE_NAME`. Optional: `AZURE_OPENAI_API_VERSION` (defaults to `v1`) and `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` using comma-separated `model=deployment` pairs for overrides.
-
-Auth file keys take priority over environment variables.
-
-**OAuth Providers:**
-
-Use `/login` to authenticate with subscription-based or free-tier providers:
-
-| Provider | Models | Cost |
-|----------|--------|------|
-| Anthropic (Claude Pro/Max) | Claude models via your subscription | Subscription |
-| GitHub Copilot | GPT-4o, Claude, Gemini via Copilot subscription | Subscription |
-| Google Gemini CLI | Gemini 2.0/2.5 models | Free (Google account) |
-| Google Antigravity | Gemini 3, Claude, GPT-OSS | Free (Google account) |
-| OpenAI Codex (ChatGPT Plus/Pro) | Codex models via ChatGPT subscription | Subscription |
+**API keys:** Set via environment variable:
 
 ```bash
+export ANTHROPIC_API_KEY=sk-ant-...
 pi
-/login  # Select provider, authorize in browser
 ```
 
-**Note:** `/login` replaces any existing API key for that provider with OAuth credentials in `auth.json`.
+Supported: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `XAI_API_KEY`, `OPENROUTER_API_KEY`, `AWS_PROFILE`, and [more](docs/authentication.md).
 
-**GitHub Copilot notes:**
-- Press Enter for github.com, or enter your GitHub Enterprise Server domain
-- If you get "model not supported" error, enable it in VS Code: Copilot Chat → model selector → select model → "Enable"
-
-**Google providers notes:**
-- Gemini CLI uses the production Cloud Code Assist endpoint (standard Gemini models)
-- Antigravity uses a sandbox endpoint with access to Gemini 3, Claude (sonnet/opus thinking), and GPT-OSS models
-- Both are free with any Google account, subject to rate limits
-- Paid Cloud Code Assist subscriptions: set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_CLOUD_PROJECT_ID` env var to your project ID
-
-**OpenAI Codex notes:**
-- Requires ChatGPT Plus/Pro OAuth (`/login openai-codex`)
-- Prompt cache stored under `~/.pi/agent/cache/openai-codex/`
-- Intended for personal use with your own subscription; not for resale or multi-user services. For production, use the OpenAI Platform API.
-
-**Z.AI GLM Coding Plan notes:**
-- Pi uses the dedicated coding plan endpoint: `https://api.z.ai/api/coding/paas/v4`
-- Requires Z.AI API key from [Z.AI Open Platform](https://z.ai) with an active [Coding Plan](https://z.ai/subscribe) subscription
-- Z.AI API keys are the same for both the subscription and regular API. In order to use the regular API, you need to configure a custom provider pointing at the [regular endpoint](https://docs.z.ai/api-reference/llm/chat-completion)
-- Consult the [docs](https://docs.z.ai/guides/llm/glm-4.7) to learn more about the models
-
-Credentials stored in `~/.pi/agent/auth.json`. Use `/logout` to clear.
-
-**Troubleshooting (OAuth):**
-- **Port 1455 in use:** Close the conflicting process or paste the auth code/URL when prompted.
-- **Token expired / refresh failed:** Run `/login` again for the provider to refresh credentials.
-- **Usage limits (429):** Wait for the reset window; pi will surface a friendly message with the approximate retry time.
-
-**Amazon Bedrock:**
-
-Amazon Bedrock supports multiple authentication methods:
-
-```bash
-# Option 1: AWS Profile (from ~/.aws/credentials)
-export AWS_PROFILE=your-profile-name
-
-# Option 2: IAM Access Keys
-export AWS_ACCESS_KEY_ID=AKIA...
-export AWS_SECRET_ACCESS_KEY=...
-
-# Option 3: Bedrock API Key (bearer token)
-export AWS_BEARER_TOKEN_BEDROCK=...
-
-# Optional: Set region (defaults to us-east-1)
-export AWS_REGION=us-east-1
-
-pi --provider amazon-bedrock --model global.anthropic.claude-sonnet-4-5-20250929-v1:0
-```
-
-See [Supported foundation models in Amazon Bedrock](https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html).
+See [docs/authentication.md](docs/authentication.md) for auth file format, Azure, Bedrock, and Vertex setup.
 
 ### Quick Start
 
@@ -442,6 +275,11 @@ All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Eac
 | `selectDown` | `down` | Move selection down in lists |
 | `selectConfirm` | `enter` | Confirm selection |
 | `selectCancel` | `escape`, `ctrl+c` | Cancel selection |
+| `toggleSessionPath` | `ctrl+p` | Toggle path display in session picker |
+| `toggleSessionSort` | `ctrl+s` | Toggle sort mode in session picker |
+| `renameSession` | `ctrl+r` | Rename selected session |
+| `deleteSession` | `ctrl+d` | Delete selected session |
+| `deleteSessionNoninvasive` | `ctrl+backspace` | Delete session (when query empty) |
 
 **Example (Emacs-style):**
 
@@ -888,7 +726,7 @@ cp $(npm root -g)/@mariozechner/pi-coding-agent/dist/theme/dark.json ~/.pi/agent
 
 Select with `/settings`, then edit the file. Changes apply on save.
 
-> See [Theme Documentation](docs/theme.md) on how to create custom themes in detail. Pi can help you create a new one.
+> See [Theme Documentation](docs/themes.md) for details. Pi can help you create a new one.
 
 **VS Code terminal fix:** Set `terminal.integrated.minimumContrastRatio` to `1` for accurate colors.
 
@@ -1285,6 +1123,12 @@ await ctx.ui.custom((tui, theme, done) => ({
 > See [docs/tui.md](docs/tui.md) for TUI components and custom rendering.
 > See [examples/extensions/](examples/extensions/) for working examples.
 
+### Pi Packages
+
+Pi packages bundle extensions, skills, prompt templates, and themes for sharing through npm or git. A package can declare resources in `package.json` under the `pi` key, or use the conventional `extensions/`, `skills/`, `prompts/`, and `themes/` directories. Install packages with `pi install` and manage them in the `packages` settings array.
+
+See [docs/packages.md](docs/packages.md) for package structure, filtering, and install behavior.
+
 ---
 
 ## CLI Reference
@@ -1307,7 +1151,7 @@ pi [options] [@files...] [messages...]
 
 | Option | Description |
 |--------|-------------|
-| `--provider <name>` | Provider: `anthropic`, `openai`, `openai-codex`, `google`, `google-vertex`, `amazon-bedrock`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`, `vercel-ai-gateway`, `zai-coding-plan`, `opencode`, `minimax`, `minimax-cn`, `github-copilot`, `google-gemini-cli`, `google-antigravity`, or custom |
+| `--provider <name>` | Provider: `anthropic`, `openai`, `openai-codex`, `google`, `google-vertex`, `amazon-bedrock`, `mistral`, `xai`, `groq`, `cerebras`, `openrouter`, `vercel-ai-gateway`, `zai`, `opencode`, `minimax`, `minimax-cn`, `github-copilot`, `google-gemini-cli`, `google-antigravity`, or custom |
 | `--model <id>` | Model ID |
 | `--api-key <key>` | API key (overrides environment) |
 | `--system-prompt <text\|file>` | Custom system prompt (text or file path) |

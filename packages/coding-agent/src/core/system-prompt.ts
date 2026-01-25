@@ -158,7 +158,7 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 - Main documentation: ${readmePath}
 - Additional docs: ${docsPath}
 - Examples: ${examplesPath} (extensions, custom tools, SDK)
-- When asked to create: custom models/providers (README.md), extensions (docs/extensions.md, examples/extensions/), themes (docs/theme.md), skills (docs/skills.md), TUI components (docs/tui.md - has copy-paste patterns)
+- When asked to create: custom models/providers (README.md), extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), TUI components (docs/tui.md - has copy-paste patterns)
 - When working on pi topics, read the docs and examples, and follow .md cross-references before implementing`;
 
 	if (appendSection) {
