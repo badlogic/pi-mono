@@ -9,9 +9,11 @@
   <a href="https://github.com/badlogic/pi-mono/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/badlogic/pi-mono/ci.yml?style=flat-square&branch=main" /></a>
 </p>
 
-A terminal-based coding agent with multi-model support, mid-session model switching, and a simple CLI for headless coding tasks.
+Pi is a minimal terminal coding harness. Adapt pi to your workflows, not the other way around, without having to fork and modify pi internals. Extend it with TypeScript [Extensions](#extensions), [Skills](#skills), [Prompt Templates](#prompt-templates), and [Themes](#themes). Put your extensions, skills, prompt templates, and themes in [Pi Packages](#pi-packages) and share them with others via npm or git.
 
-Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-setup)). [Separately maintained port](https://github.com/VaclavSynacek/pi-coding-agent-termux) works on Termux/Android.
+Pi ships with powerful defaults but skips features like sub agents and plan mode. Instead, you can ask pi to build what you want or install a third party pi package that matches your workflow.
+
+Pi runs in four modes: interactive, print or JSON, RPC for process integration, and an SDK for embedding in your own apps. See [clawdbot/clawdbot](https://github.com/clawdbot/clawdbot) for a real-world SDK integration.
 
 ## Table of Contents
 
@@ -42,6 +44,7 @@ Works on Linux, macOS, and Windows (requires bash; see [Windows Setup](#windows-
   - [Prompt Templates](#prompt-templates)
   - [Skills](#skills)
   - [Extensions](#extensions)
+  - [Pi Packages](#pi-packages)
 - [CLI Reference](#cli-reference)
 - [Tools](#tools)
 - [Programmatic Usage](#programmatic-usage)
@@ -1282,6 +1285,12 @@ await ctx.ui.custom((tui, theme, done) => ({
 > See [docs/extensions.md](docs/extensions.md) for full API reference.
 > See [docs/tui.md](docs/tui.md) for TUI components and custom rendering.
 > See [examples/extensions/](examples/extensions/) for working examples.
+
+### Pi Packages
+
+Pi packages bundle extensions, skills, prompt templates, and themes for sharing through npm or git. A package can declare resources in `package.json` under the `pi` key, or use the conventional `extensions/`, `skills/`, `prompts/`, and `themes/` directories. Install packages with `pi install` and manage them in the `packages` settings array.
+
+See [docs/packages.md](docs/packages.md) for package structure, filtering, and install behavior.
 
 ---
 
