@@ -93,6 +93,8 @@ See [docs/providers.md](docs/providers.md) for detailed setup instructions.
 
 ![Interactive Mode](docs/images/interactive-mode.png)
 
+Interactive mode lets you collaboratively work with pi on coding and other computer tasks. Pi can read and write files, run commands, and use tools to help you.
+
 ### Editor
 
 | Feature | How |
