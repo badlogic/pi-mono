@@ -1,5 +1,6 @@
 import {
 	BedrockRuntimeClient,
+	type BedrockRuntimeClientConfig,
 	StopReason as BedrockStopReason,
 	type Tool as BedrockTool,
 	CachePointType,
@@ -84,11 +85,42 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 
 		const blocks = output.content as Block[];
 
+		const config: BedrockRuntimeClientConfig = {
+			region: options.region,
+			profile: options.profile,
+		};
+
+		// in Node.js/Bun environment only
+		if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
+			config.region = config.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
+
+			if (
+				process.env.HTTP_PROXY ||
+				process.env.HTTPS_PROXY ||
+				process.env.NO_PROXY ||
+				process.env.http_proxy ||
+				process.env.https_proxy ||
+				process.env.no_proxy
+			) {
+				const nodeHttpHandler = await import("@smithy/node-http-handler");
+				const proxyAgent = await import("proxy-agent");
+
+				const agent = new proxyAgent.ProxyAgent();
+
+				// Bedrock runtime uses NodeHttp2Handler by default since v3.798.0, which is based
+				// on `http2` module and has no support for http agent.
+				// Use NodeHttpHandler to support http agent.
+				config.requestHandler = new nodeHttpHandler.NodeHttpHandler({
+					httpAgent: agent,
+					httpsAgent: agent,
+				});
+			}
+		}
+
+		config.region = config.region || "us-east-1";
+
 		try {
-			const client = new BedrockRuntimeClient({
-				region: options.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1",
-				profile: options.profile,
-			});
+			const client = new BedrockRuntimeClient(config);
 
 			const commandInput = {
 				modelId: model.id,
