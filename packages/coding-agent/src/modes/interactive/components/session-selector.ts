@@ -10,6 +10,7 @@ import {
 	Input,
 	matchesKey,
 	Spacer,
+	Text,
 	truncateToWidth,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
@@ -56,6 +57,7 @@ class SessionSelectorHeader implements Component {
 	private confirmingDeletePath: string | null = null;
 	private statusMessage: { type: "info" | "error"; message: string } | null = null;
 	private statusTimeout: ReturnType<typeof setTimeout> | null = null;
+	private showRenameHint = false;
 
 	constructor(scope: SessionScope, sortMode: SortMode, requestRender: () => void) {
 		this.scope = scope;
@@ -83,6 +85,10 @@ class SessionSelectorHeader implements Component {
 
 	setShowPath(showPath: boolean): void {
 		this.showPath = showPath;
+	}
+
+	setShowRenameHint(show: boolean): void {
+		this.showRenameHint = show;
 	}
 
 	setConfirmingDeletePath(path: string | null): void {
@@ -146,12 +152,15 @@ class SessionSelectorHeader implements Component {
 			const pathState = this.showPath ? "(on)" : "(off)";
 			const sep = theme.fg("muted", " · ");
 			const hint1 = keyHint("tab", "scope") + sep + theme.fg("muted", 're:<pattern> regex · "phrase" exact');
-			const hint2 =
-				rawKeyHint("ctrl+r", "sort") +
-				sep +
-				rawKeyHint("ctrl+d", "delete") +
-				sep +
-				rawKeyHint("ctrl+p", `path ${pathState}`);
+			const hint2Parts = [
+				rawKeyHint("ctrl+n", "sort"),
+				rawKeyHint("ctrl+d", "delete"),
+				rawKeyHint("ctrl+p", `path ${pathState}`),
+			];
+			if (this.showRenameHint) {
+				hint2Parts.push(rawKeyHint("ctrl+r", "rename"));
+			}
+			const hint2 = hint2Parts.join(sep);
 			hintLine1 = truncateToWidth(hint1, width, "…");
 			hintLine2 = truncateToWidth(hint2, width, "…");
 		}
@@ -164,6 +173,10 @@ class SessionSelectorHeader implements Component {
  * Custom session list component with multi-line items and search
  */
 class SessionList implements Component, Focusable {
+	public getSelectedSessionPath(): string | undefined {
+		const selected = this.filteredSessions[this.selectedIndex];
+		return selected?.path;
+	}
 	private allSessions: SessionInfo[] = [];
 	private filteredSessions: SessionInfo[] = [];
 	private selectedIndex: number = 0;
@@ -181,6 +194,7 @@ class SessionList implements Component, Focusable {
 	public onTogglePath?: (showPath: boolean) => void;
 	public onDeleteConfirmationChange?: (path: string | null) => void;
 	public onDeleteSession?: (sessionPath: string) => Promise<void>;
+	public onRenameSession?: (sessionPath: string) => void;
 	public onError?: (message: string) => void;
 	private maxVisible: number = 5; // Max sessions visible (each session: message + metadata + optional path + blank)
 
@@ -369,7 +383,7 @@ class SessionList implements Component, Focusable {
 			return;
 		}
 
-		if (matchesKey(keyData, "ctrl+r")) {
+		if (matchesKey(keyData, "ctrl+n")) {
 			this.onToggleSort?.();
 			return;
 		}
@@ -384,6 +398,15 @@ class SessionList implements Component, Focusable {
 		// Ctrl+D: initiate delete confirmation (useful on terminals that don't distinguish Ctrl+Backspace from Backspace)
 		if (matchesKey(keyData, "ctrl+d")) {
 			this.startDeleteConfirmationForSelectedSession();
+			return;
+		}
+
+		// Ctrl+R: rename selected session
+		if (matchesKey(keyData, "ctrl+r")) {
+			const selected = this.filteredSessions[this.selectedIndex];
+			if (selected) {
+				this.onRenameSession?.(selected.path);
+			}
 			return;
 		}
 
@@ -483,6 +506,21 @@ async function deleteSessionFile(
  * Component that renders a session selector
  */
 export class SessionSelectorComponent extends Container implements Focusable {
+	handleInput(data: string): void {
+		if (this.mode === "rename") {
+			const kb = getEditorKeybindings();
+			if (kb.matches(data, "selectCancel") || matchesKey(data, "ctrl+c")) {
+				this.exitRenameMode();
+				return;
+			}
+			this.renameInput.handleInput(data);
+			return;
+		}
+
+		this.sessionList.handleInput(data);
+	}
+
+	private canRename = true;
 	private sessionList: SessionList;
 	private header: SessionSelectorHeader;
 	private scope: SessionScope = "current";
@@ -493,9 +531,14 @@ export class SessionSelectorComponent extends Container implements Focusable {
 	private allSessionsLoader: SessionsLoader;
 	private onCancel: () => void;
 	private requestRender: () => void;
+	private renameSession?: (sessionPath: string, currentName: string | undefined) => Promise<void>;
 	private currentLoading = false;
 	private allLoading = false;
 	private allLoadSeq = 0;
+
+	private mode: "list" | "rename" = "list";
+	private renameInput = new Input();
+	private renameTargetPath: string | null = null;
 
 	// Focusable implementation - propagate to sessionList for IME cursor positioning
 	private _focused = false;
@@ -505,6 +548,24 @@ export class SessionSelectorComponent extends Container implements Focusable {
 	set focused(value: boolean) {
 		this._focused = value;
 		this.sessionList.focused = value;
+		this.renameInput.focused = value;
+		if (value && this.mode === "rename") {
+			this.renameInput.focused = true;
+		}
+	}
+
+	private buildBaseLayout(content: Component, options?: { showHeader?: boolean }): void {
+		this.clear();
+		this.addChild(new Spacer(1));
+		this.addChild(new DynamicBorder((s) => theme.fg("accent", s)));
+		this.addChild(new Spacer(1));
+		if (options?.showHeader ?? true) {
+			this.addChild(this.header);
+			this.addChild(new Spacer(1));
+		}
+		this.addChild(content);
+		this.addChild(new Spacer(1));
+		this.addChild(new DynamicBorder((s) => theme.fg("accent", s)));
 	}
 
 	constructor(
@@ -514,6 +575,10 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		onCancel: () => void,
 		onExit: () => void,
 		requestRender: () => void,
+		options?: {
+			renameSession?: (sessionPath: string, currentName: string | undefined) => Promise<void>;
+			showRenameHint?: boolean;
+		},
 		currentSessionFilePath?: string,
 	) {
 		super();
@@ -522,16 +587,19 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		this.onCancel = onCancel;
 		this.requestRender = requestRender;
 		this.header = new SessionSelectorHeader(this.scope, this.sortMode, this.requestRender);
-
-		// Add header
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
-		this.addChild(this.header);
-		this.addChild(new Spacer(1));
+		const renameSession = options?.renameSession;
+		this.renameSession = renameSession;
+		this.canRename = !!renameSession;
+		this.header.setShowRenameHint(options?.showRenameHint ?? this.canRename);
 
 		// Create session list (starts empty, will be populated after load)
 		this.sessionList = new SessionList([], false, this.sortMode, currentSessionFilePath);
+
+		this.buildBaseLayout(this.sessionList);
+
+		this.renameInput.onSubmit = (value) => {
+			void this.confirmRename(value);
+		};
 
 		// Ensure header status timeouts are cleared when leaving the selector
 		const clearStatusMessage = () => this.header.setStatusMessage(null);
@@ -549,6 +617,15 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		};
 		this.sessionList.onToggleScope = () => this.toggleScope();
 		this.sessionList.onToggleSort = () => this.toggleSortMode();
+		this.sessionList.onRenameSession = (sessionPath) => {
+			if (!renameSession) return;
+			if (this.scope === "current" && this.currentLoading) return;
+			if (this.scope === "all" && this.allLoading) return;
+
+			const sessions = this.scope === "all" ? (this.allSessions ?? []) : (this.currentSessions ?? []);
+			const session = sessions.find((s) => s.path === sessionPath);
+			this.enterRenameMode(sessionPath, session?.name);
+		};
 
 		// Sync list events to header
 		this.sessionList.onTogglePath = (showPath) => {
@@ -582,6 +659,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 
 				const msg = result.method === "trash" ? "Session moved to trash" : "Session deleted";
 				this.header.setStatusMessage({ type: "info", message: msg }, 2000);
+				await this.refreshSessionsAfterMutation();
 			} else {
 				const errorMessage = result.error ?? "Unknown error";
 				this.header.setStatusMessage({ type: "error", message: `Failed to delete: ${errorMessage}` }, 3000);
@@ -590,48 +668,128 @@ export class SessionSelectorComponent extends Container implements Focusable {
 			this.requestRender();
 		};
 
-		this.addChild(this.sessionList);
-
-		// Add bottom border
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
-
 		// Start loading current sessions immediately
 		this.loadCurrentSessions();
 	}
 
 	private loadCurrentSessions(): void {
-		this.currentLoading = true;
-		this.header.setScope("current");
+		void this.loadScope("current", "initial");
+	}
+
+	private enterRenameMode(sessionPath: string, currentName: string | undefined): void {
+		this.mode = "rename";
+		this.renameTargetPath = sessionPath;
+		this.renameInput.setValue(currentName ?? "");
+		this.renameInput.focused = true;
+
+		const panel = new Container();
+		panel.addChild(new Text(theme.bold("Rename Session"), 1, 0));
+		panel.addChild(new Spacer(1));
+		panel.addChild(this.renameInput);
+		panel.addChild(new Spacer(1));
+		panel.addChild(new Text(theme.fg("muted", "Enter to save · Esc/Ctrl+C to cancel"), 1, 0));
+
+		this.buildBaseLayout(panel, { showHeader: false });
+		this.requestRender();
+	}
+
+	private exitRenameMode(): void {
+		this.mode = "list";
+		this.renameTargetPath = null;
+
+		this.buildBaseLayout(this.sessionList);
+
+		this.requestRender();
+	}
+
+	private async confirmRename(value: string): Promise<void> {
+		const next = value.trim();
+		if (!next) return;
+		const target = this.renameTargetPath;
+		if (!target) {
+			this.exitRenameMode();
+			return;
+		}
+
+		// Find current name for callback
+		const renameSession = this.renameSession;
+		if (!renameSession) {
+			this.exitRenameMode();
+			return;
+		}
+
+		try {
+			await renameSession(target, next);
+			await this.refreshSessionsAfterMutation();
+		} finally {
+			this.exitRenameMode();
+		}
+	}
+
+	private async loadScope(scope: SessionScope, reason: "initial" | "refresh" | "toggle"): Promise<void> {
+		const showCwd = scope === "all";
+
+		// Mark loading
+		if (scope === "current") {
+			this.currentLoading = true;
+		} else {
+			this.allLoading = true;
+		}
+
+		const seq = scope === "all" ? ++this.allLoadSeq : undefined;
+		this.header.setScope(scope);
 		this.header.setLoading(true);
 		this.requestRender();
 
-		this.currentSessionsLoader((loaded, total) => {
-			if (this.scope !== "current") return;
+		const onProgress = (loaded: number, total: number) => {
+			if (scope !== this.scope) return;
+			if (seq !== undefined && seq !== this.allLoadSeq) return;
 			this.header.setProgress(loaded, total);
 			this.requestRender();
-		})
-			.then((sessions) => {
+		};
+
+		try {
+			const sessions = await (scope === "current"
+				? this.currentSessionsLoader(onProgress)
+				: this.allSessionsLoader(onProgress));
+
+			if (scope === "current") {
 				this.currentSessions = sessions;
 				this.currentLoading = false;
+			} else {
+				this.allSessions = sessions;
+				this.allLoading = false;
+			}
 
-				if (this.scope !== "current") return;
+			if (scope !== this.scope) return;
+			if (seq !== undefined && seq !== this.allLoadSeq) return;
 
-				this.header.setLoading(false);
-				this.sessionList.setSessions(sessions, false);
-				this.requestRender();
-			})
-			.catch((error: unknown) => {
+			this.header.setLoading(false);
+			this.sessionList.setSessions(sessions, showCwd);
+			this.requestRender();
+
+			if (scope === "all" && sessions.length === 0 && (this.currentSessions?.length ?? 0) === 0) {
+				this.onCancel();
+			}
+		} catch (err) {
+			if (scope === "current") {
 				this.currentLoading = false;
-				const message = error instanceof Error ? error.message : String(error);
+			} else {
+				this.allLoading = false;
+			}
 
-				if (this.scope !== "current") return;
+			if (scope !== this.scope) return;
+			if (seq !== undefined && seq !== this.allLoadSeq) return;
 
-				this.header.setLoading(false);
-				this.header.setStatusMessage({ type: "error", message: `Failed to load sessions: ${message}` }, 4000);
-				this.sessionList.setSessions([], false);
-				this.requestRender();
-			});
+			const message = err instanceof Error ? err.message : String(err);
+			this.header.setLoading(false);
+			this.header.setStatusMessage({ type: "error", message: `Failed to load sessions: ${message}` }, 4000);
+
+			if (reason === "initial") {
+				this.sessionList.setSessions([], showCwd);
+			}
+			this.requestRender();
+		}
 	}
 
 	private toggleSortMode(): void {
@@ -639,6 +797,10 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		this.header.setSortMode(this.sortMode);
 		this.sessionList.setSortMode(this.sortMode);
 		this.requestRender();
+	}
+
+	private async refreshSessionsAfterMutation(): Promise<void> {
+		await this.loadScope(this.scope, "refresh");
 	}
 
 	private toggleScope(): void {
@@ -653,55 +815,17 @@ export class SessionSelectorComponent extends Container implements Focusable {
 				return;
 			}
 
-			this.header.setLoading(true);
-			this.sessionList.setSessions([], true);
-			this.requestRender();
-
-			if (this.allLoading) return;
-
-			this.allLoading = true;
-			const seq = ++this.allLoadSeq;
-
-			this.allSessionsLoader((loaded, total) => {
-				if (seq !== this.allLoadSeq) return;
-				if (this.scope !== "all") return;
-				this.header.setProgress(loaded, total);
-				this.requestRender();
-			})
-				.then((sessions) => {
-					this.allSessions = sessions;
-					this.allLoading = false;
-
-					if (seq !== this.allLoadSeq) return;
-					if (this.scope !== "all") return;
-
-					this.header.setLoading(false);
-					this.sessionList.setSessions(sessions, true);
-					this.requestRender();
-
-					if (sessions.length === 0 && (this.currentSessions?.length ?? 0) === 0) {
-						this.onCancel();
-					}
-				})
-				.catch((error: unknown) => {
-					this.allLoading = false;
-					const message = error instanceof Error ? error.message : String(error);
-
-					if (seq !== this.allLoadSeq) return;
-					if (this.scope !== "all") return;
-
-					this.header.setLoading(false);
-					this.header.setStatusMessage({ type: "error", message: `Failed to load sessions: ${message}` }, 4000);
-					this.sessionList.setSessions([], true);
-					this.requestRender();
-				});
-		} else {
-			this.scope = "current";
-			this.header.setScope(this.scope);
-			this.header.setLoading(this.currentLoading);
-			this.sessionList.setSessions(this.currentSessions ?? [], false);
-			this.requestRender();
+			if (!this.allLoading) {
+				void this.loadScope("all", "toggle");
+			}
+			return;
 		}
+
+		this.scope = "current";
+		this.header.setScope(this.scope);
+		this.header.setLoading(this.currentLoading);
+		this.sessionList.setSessions(this.currentSessions ?? [], false);
+		this.requestRender();
 	}
 
 	getSessionList(): SessionList {

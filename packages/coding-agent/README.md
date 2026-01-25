@@ -554,6 +554,7 @@ pi --session a8ec1c2a             # Resume by session ID (partial UUID)
 In the `/resume` picker:
 - `Ctrl+P` toggles display of the session `.jsonl` file path
 - `Ctrl+D` deletes the selected session (inline confirmation; uses `trash` if available and cannot delete the active session)
+- `Ctrl+R` opens `Rename Session` component, `Esc` cancels and returns to session list, `Enter` applies the new name and reloads the list.
 
 **Resuming by session ID:** The `--session` flag accepts a session UUID (or prefix). Session IDs are visible in filenames under `~/.pi/agent/sessions/<project>/` (e.g., `2025-12-13T17-47-46-817Z_a8ec1c2a-5a5f-4699-88cb-03e7d3cb9292.jsonl`). The UUID is the part after the underscore. You can also search by session ID in the `pi -r` picker.
 

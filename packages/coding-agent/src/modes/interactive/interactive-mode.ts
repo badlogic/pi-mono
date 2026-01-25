@@ -3460,9 +3460,19 @@ export class InteractiveMode {
 					void this.shutdown();
 				},
 				() => this.ui.requestRender(),
+				{
+					renameSession: async (sessionFilePath: string, nextName: string | undefined) => {
+						const next = (nextName ?? "").trim();
+						if (!next) return;
+						const mgr = SessionManager.open(sessionFilePath);
+						mgr.appendSessionInfo(next);
+					},
+					showRenameHint: true,
+				},
+
 				this.sessionManager.getSessionFile(),
 			);
-			return { component: selector, focus: selector.getSessionList() };
+			return { component: selector, focus: selector };
 		});
 	}
 
