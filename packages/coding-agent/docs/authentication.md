@@ -16,10 +16,10 @@ Pi supports subscription-based providers via OAuth and API key providers via env
 Use `/login` in interactive mode, then select a provider:
 
 - Claude Pro/Max
-- ChatGPT Plus/Pro
+- ChatGPT Plus/Pro (Codex)
 - GitHub Copilot
-- Google Gemini CLI (free)
-- Google Antigravity (free)
+- Google Gemini CLI
+- Google Antigravity
 
 Use `/logout` to clear credentials. Tokens are stored in `~/.pi/agent/auth.json` and auto-refresh when expired.
 
