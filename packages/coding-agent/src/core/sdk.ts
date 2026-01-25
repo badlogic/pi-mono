@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { Agent, type AgentMessage, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Message, Model } from "@mariozechner/pi-ai";
-import { getAgentDir, getAuthPath } from "../config.js";
+import { getAgentDir, getDocsPath } from "../config.js";
 import { AgentSession } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
 import type { ExtensionRunner, LoadExtensionsResult, ToolDefinition } from "./extensions/index.js";
@@ -221,7 +221,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			}
 		} else {
 			// No models available - set message so user knows to /login or configure keys
-			modelFallbackMessage = `No models available. Use /login, set an API key environment variable, or create ${getAuthPath()}`;
+			modelFallbackMessage = `No models available. Use /login or set an API key environment variable. See ${join(getDocsPath(), "authentication.md")}`;
 		}
 	}
 

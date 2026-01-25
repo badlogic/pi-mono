@@ -14,6 +14,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type {
 	Agent,
 	AgentEvent,
@@ -24,7 +25,7 @@ import type {
 } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@mariozechner/pi-ai";
-import { getAuthPath } from "../config.js";
+import { getDocsPath } from "../config.js";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { stripFrontmatter } from "../utils/frontmatter.js";
 import { sleep } from "../utils/sleep.js";
@@ -693,7 +694,7 @@ export class AgentSession {
 		if (!this.model) {
 			throw new Error(
 				"No model selected.\n\n" +
-					`Use /login, set an API key environment variable, or create ${getAuthPath()}\n\n` +
+					`Use /login or set an API key environment variable. See ${join(getDocsPath(), "authentication.md")}\n\n` +
 					"Then use /model to select a model.",
 			);
 		}
@@ -711,7 +712,7 @@ export class AgentSession {
 			}
 			throw new Error(
 				`No API key found for ${this.model.provider}.\n\n` +
-					`Use /login, set an API key environment variable, or create ${getAuthPath()}`,
+					`Use /login or set an API key environment variable. See ${join(getDocsPath(), "authentication.md")}`,
 			);
 		}
 
