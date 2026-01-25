@@ -1575,7 +1575,7 @@ export class InteractiveMode {
 				customEditor.onEscape = this.defaultEditor.onEscape;
 				customEditor.onCtrlD = this.defaultEditor.onCtrlD;
 				customEditor.onPasteImage = this.defaultEditor.onPasteImage;
-				customEditor.onExtensionShortcut = this.defaultEditor.onExtensionShortcut;
+				customEditor.onExtensionShortcut = (data: string) => this.defaultEditor.onExtensionShortcut?.(data);
 				// Copy action handlers (clear, suspend, model switching, etc.)
 				for (const [action, handler] of this.defaultEditor.actionHandlers) {
 					(customEditor.actionHandlers as Map<string, () => void>).set(action, handler);
