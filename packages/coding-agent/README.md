@@ -61,13 +61,9 @@ Pi runs in four modes: interactive, print or JSON, RPC for process integration, 
 
 ### Installation
 
-**npm (recommended):**
-
 ```bash
 npm install -g @mariozechner/pi-coding-agent
 ```
-
-Standalone binaries and build instructions available on [GitHub Releases](https://github.com/badlogic/pi-mono/releases).
 
 ### Windows Setup
 
