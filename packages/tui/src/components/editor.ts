@@ -282,9 +282,6 @@ export class Editor implements Component, Focusable {
 
 	/** Internal setText that doesn't reset history state - used by navigateHistory */
 	private setTextInternal(text: string): void {
-		// Reset kill ring state - external text changes break accumulation/yank chains
-		this.lastAction = null;
-
 		const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
 		this.state.lines = lines.length === 0 ? [""] : lines;
 		this.state.cursorLine = this.state.lines.length - 1;
@@ -805,13 +802,13 @@ export class Editor implements Component, Focusable {
 	}
 
 	setText(text: string): void {
+		this.lastAction = null;
 		this.historyIndex = -1; // Exit history browsing mode
 		// Push undo snapshot if content differs (makes programmatic changes undoable)
 		if (this.getText() !== text) {
 			this.pushUndoSnapshot();
 		}
 		this.setTextInternal(text);
-		this.lastAction = null;
 	}
 
 	/**
@@ -823,8 +820,55 @@ export class Editor implements Component, Focusable {
 		if (!text) return;
 		this.pushUndoSnapshot();
 		this.lastAction = null;
-		for (const char of text) {
-			this.insertCharacter(char, true);
+		this.historyIndex = -1;
+		this.insertTextAtCursorInternal(text);
+	}
+
+	/**
+	 * Internal text insertion at cursor. Handles single and multi-line text.
+	 * Does not push undo snapshots or trigger autocomplete - caller is responsible.
+	 * Normalizes line endings and calls onChange once at the end.
+	 */
+	private insertTextAtCursorInternal(text: string): void {
+		if (!text) return;
+
+		// Normalize line endings
+		const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+		const insertedLines = normalized.split("\n");
+
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+		const beforeCursor = currentLine.slice(0, this.state.cursorCol);
+		const afterCursor = currentLine.slice(this.state.cursorCol);
+
+		if (insertedLines.length === 1) {
+			// Single line - insert at cursor position
+			this.state.lines[this.state.cursorLine] = beforeCursor + normalized + afterCursor;
+			this.state.cursorCol += normalized.length;
+		} else {
+			// Multi-line insertion
+			this.state.lines = [
+				// All lines before current line
+				...this.state.lines.slice(0, this.state.cursorLine),
+
+				// The first inserted line merged with text before cursor
+				beforeCursor + insertedLines[0],
+
+				// All middle inserted lines
+				...insertedLines.slice(1, -1),
+
+				// The last inserted line with text after cursor
+				insertedLines[insertedLines.length - 1] + afterCursor,
+
+				// All lines after current line
+				...this.state.lines.slice(this.state.cursorLine + 1),
+			];
+
+			this.state.cursorLine += insertedLines.length - 1;
+			this.state.cursorCol = (insertedLines[insertedLines.length - 1] || "").length;
+		}
+
+		if (this.onChange) {
+			this.onChange(this.getText());
 		}
 	}
 
@@ -836,7 +880,7 @@ export class Editor implements Component, Focusable {
 		// - Consecutive word chars coalesce into one undo unit
 		// - Space captures state before itself (so undo removes space+following word together)
 		// - Each space is separately undoable
-		// Skip coalescing when called from atomic operations (paste, insertTextAtCursor)
+		// Skip coalescing when called from atomic operations (e.g., handlePaste)
 		if (!skipUndoCoalescing) {
 			if (isWhitespaceChar(char) || this.lastAction !== "type-word") {
 				this.pushUndoSnapshot();
@@ -918,7 +962,7 @@ export class Editor implements Component, Focusable {
 			}
 		}
 
-		// Split into lines
+		// Split into lines to check for large paste
 		const pastedLines = filteredText.split("\n");
 
 		// Check if this is a large paste (> 10 lines or > 1000 characters)
@@ -934,61 +978,20 @@ export class Editor implements Component, Focusable {
 				pastedLines.length > 10
 					? `[paste #${pasteId} +${pastedLines.length} lines]`
 					: `[paste #${pasteId} ${totalChars} chars]`;
-			for (const char of marker) {
-				this.insertCharacter(char, true);
-			}
+			this.insertTextAtCursorInternal(marker);
 			return;
 		}
 
 		if (pastedLines.length === 1) {
-			// Single line - just insert each character
-			const text = pastedLines[0] || "";
-			for (const char of text) {
+			// Single line - insert character by character to trigger autocomplete
+			for (const char of filteredText) {
 				this.insertCharacter(char, true);
 			}
 			return;
 		}
 
-		// Multi-line paste - be very careful with array manipulation
-		const currentLine = this.state.lines[this.state.cursorLine] || "";
-		const beforeCursor = currentLine.slice(0, this.state.cursorCol);
-		const afterCursor = currentLine.slice(this.state.cursorCol);
-
-		// Build the new lines array step by step
-		const newLines: string[] = [];
-
-		// Add all lines before current line
-		for (let i = 0; i < this.state.cursorLine; i++) {
-			newLines.push(this.state.lines[i] || "");
-		}
-
-		// Add the first pasted line merged with before cursor text
-		newLines.push(beforeCursor + (pastedLines[0] || ""));
-
-		// Add all middle pasted lines
-		for (let i = 1; i < pastedLines.length - 1; i++) {
-			newLines.push(pastedLines[i] || "");
-		}
-
-		// Add the last pasted line with after cursor text
-		newLines.push((pastedLines[pastedLines.length - 1] || "") + afterCursor);
-
-		// Add all lines after current line
-		for (let i = this.state.cursorLine + 1; i < this.state.lines.length; i++) {
-			newLines.push(this.state.lines[i] || "");
-		}
-
-		// Replace the entire lines array
-		this.state.lines = newLines;
-
-		// Update cursor position to end of pasted content
-		this.state.cursorLine += pastedLines.length - 1;
-		this.state.cursorCol = (pastedLines[pastedLines.length - 1] || "").length;
-
-		// Notify of change
-		if (this.onChange) {
-			this.onChange(this.getText());
-		}
+		// Multi-line paste - use direct state manipulation
+		this.insertTextAtCursorInternal(filteredText);
 	}
 
 	private addNewLine(): void {
