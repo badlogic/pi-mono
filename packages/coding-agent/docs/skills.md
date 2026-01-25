@@ -33,6 +33,27 @@ Discovery rules:
 
 Disable discovery with `--no-skills` (explicit `--skill` paths still load).
 
+### Using Skills from Other Harnesses
+
+To use skills from Claude Code or OpenAI Codex, add their directories to settings:
+
+```json
+{
+  "skills": [
+    "~/.claude/skills",
+    "~/.codex/skills"
+  ]
+}
+```
+
+For project-level Claude Code skills, add to `.pi/settings.json`:
+
+```json
+{
+  "skills": [".claude/skills"]
+}
+```
+
 ## How Skills Work
 
 1. At startup, pi scans skill locations and extracts names and descriptions
