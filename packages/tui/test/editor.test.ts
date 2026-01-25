@@ -1466,6 +1466,44 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.getText(), "hello| world");
 		});
 
+		it("insertTextAtCursor handles multiline text", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[C"); // Move right 5 (after "hello", before space)
+
+			// Insert multiline text
+			editor.insertTextAtCursor("line1\nline2\nline3");
+			assert.strictEqual(editor.getText(), "helloline1\nline2\nline3 world");
+
+			// Cursor should be at end of inserted text (after "line3", before " world")
+			const cursor = editor.getCursor();
+			assert.strictEqual(cursor.line, 2);
+			assert.strictEqual(cursor.col, 5); // "line3".length
+
+			// Single undo should restore entire pre-insert state
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("insertTextAtCursor normalizes CRLF and CR line endings", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("");
+
+			// Insert text with CRLF
+			editor.insertTextAtCursor("a\r\nb\r\nc");
+			assert.strictEqual(editor.getText(), "a\nb\nc");
+
+			editor.handleInput("\x1b[45;5u"); // Undo
+			assert.strictEqual(editor.getText(), "");
+
+			// Insert text with CR only
+			editor.insertTextAtCursor("x\ry\rz");
+			assert.strictEqual(editor.getText(), "x\ny\nz");
+		});
+
 		it("undoes setText to empty string", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
