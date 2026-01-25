@@ -9,6 +9,7 @@ import { type ImageContent, modelsAreEqual, supportsXhigh } from "@mariozechner/
 import chalk from "chalk";
 import { createInterface } from "readline";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
+import { selectConfig } from "./cli/config-selector.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
@@ -424,8 +425,34 @@ function buildSessionOptions(
 	return options;
 }
 
+async function handleConfigCommand(args: string[]): Promise<boolean> {
+	if (args[0] !== "config") {
+		return false;
+	}
+
+	const cwd = process.cwd();
+	const agentDir = getAgentDir();
+	const settingsManager = SettingsManager.create(cwd, agentDir);
+	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+
+	const resolvedPaths = await packageManager.resolve();
+
+	await selectConfig({
+		resolvedPaths,
+		settingsManager,
+		cwd,
+		agentDir,
+	});
+
+	process.exit(0);
+}
+
 export async function main(args: string[]) {
 	if (await handlePackageCommand(args)) {
+		return;
+	}
+
+	if (await handleConfigCommand(args)) {
 		return;
 	}
 

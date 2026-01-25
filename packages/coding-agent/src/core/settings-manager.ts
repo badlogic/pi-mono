@@ -487,6 +487,13 @@ export class SettingsManager {
 		this.save();
 	}
 
+	setProjectSkillPaths(paths: string[]): void {
+		const projectSettings = this.loadProjectSettings();
+		projectSettings.skills = paths;
+		this.saveProjectSettings(projectSettings);
+		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
+	}
+
 	getPromptTemplatePaths(): string[] {
 		return [...(this.settings.prompts ?? [])];
 	}
@@ -496,6 +503,13 @@ export class SettingsManager {
 		this.save();
 	}
 
+	setProjectPromptTemplatePaths(paths: string[]): void {
+		const projectSettings = this.loadProjectSettings();
+		projectSettings.prompts = paths;
+		this.saveProjectSettings(projectSettings);
+		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
+	}
+
 	getThemePaths(): string[] {
 		return [...(this.settings.themes ?? [])];
 	}
@@ -503,6 +517,13 @@ export class SettingsManager {
 	setThemePaths(paths: string[]): void {
 		this.globalSettings.themes = paths;
 		this.save();
+	}
+
+	setProjectThemePaths(paths: string[]): void {
+		const projectSettings = this.loadProjectSettings();
+		projectSettings.themes = paths;
+		this.saveProjectSettings(projectSettings);
+		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
 	}
 
 	getEnableSkillCommands(): boolean {

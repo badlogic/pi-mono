@@ -184,6 +184,7 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} remove <source> [-l]     Remove extension source from settings
   ${APP_NAME} update [source]          Update installed extensions (skips pinned sources)
   ${APP_NAME} list                     List installed extensions from settings
+  ${APP_NAME} config                   Open TUI to enable/disable package resources
 
 ${chalk.bold("Options:")}
   --provider <name>              Provider name (default: google)
