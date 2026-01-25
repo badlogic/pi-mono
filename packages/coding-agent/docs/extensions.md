@@ -242,6 +242,18 @@ To include resources from another pi package, add it as a dependency with `bundl
 
 `bundledDependencies` embeds the package inside your tarball, preserving the `node_modules/` structure. Without it, npm's hoisting could move the dependency elsewhere, breaking the paths.
 
+**Discoverability:** Add the `pi-package` keyword to your `package.json` so users can find your package on npm:
+
+```json
+{
+  "name": "my-extension-pack",
+  "keywords": ["pi-package", "pi-extension", "..."],
+  ...
+}
+```
+
+Search for pi packages: `curl -s "https://registry.npmjs.org/-/v1/search?text=keywords:pi-package"`
+
 The `package.json` approach enables:
 - Multiple extensions from one package
 - Skills, prompts, and themes declared alongside extensions

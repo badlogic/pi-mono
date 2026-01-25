@@ -1010,6 +1010,12 @@ pi update  # update all non-pinned packages
 
 Use `-l` to install into project settings (`.pi/settings.json`).
 
+**Discoverability:** Published pi packages should include the `pi-package` keyword in their `package.json` for npm search:
+
+```bash
+curl -s "https://registry.npmjs.org/-/v1/search?text=keywords:pi-package" | jq '.objects[].package.name'
+```
+
 **Package filtering:** By default, packages load all resources (extensions, skills, prompts, themes). To selectively load only certain resources, use the object form in settings.json:
 
 ```json
