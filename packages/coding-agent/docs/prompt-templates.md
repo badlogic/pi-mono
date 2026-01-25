@@ -2,7 +2,7 @@
 
 # Prompt Templates
 
-Prompt templates are Markdown snippets that expand into full prompts when you type `/name` in the editor.
+Prompt templates are Markdown snippets that expand into full prompts. Type `/name` in the editor to invoke a template, where `name` is the filename without `.md`.
 
 ## Locations
 
@@ -30,6 +30,16 @@ Review the staged changes (`git diff --cached`). Focus on:
 
 - The filename becomes the command name. `review.md` becomes `/review`.
 - `description` is optional. If missing, the first non-empty line is used.
+
+## Usage
+
+Type `/` followed by the template name in the editor. Autocomplete shows available templates with descriptions.
+
+```
+/review                           # Expands review.md
+/component Button                 # Expands with argument
+/component Button "click handler" # Multiple arguments
+```
 
 ## Arguments
 

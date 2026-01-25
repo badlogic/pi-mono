@@ -74,7 +74,7 @@ Skills register as `/skill:name` commands:
 
 Arguments after the command are appended to the skill content as `User: <args>`.
 
-Toggle skill commands in settings:
+Toggle skill commands via `/settings` in interactive mode or in `settings.json`:
 
 ```json
 {
