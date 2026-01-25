@@ -9,6 +9,7 @@ import {
 	Spacer,
 	Text,
 	type TUI,
+	truncateToWidth,
 } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
 import type { ToolDefinition } from "../../../core/extensions/types.js";
@@ -384,7 +385,7 @@ export class ToolExecutionComponent extends Container {
 								const hint =
 									theme.fg("muted", `... (${cachedSkipped} earlier lines,`) +
 									` ${keyHint("expandTools", "to expand")})`;
-								return ["", hint, ...cachedLines];
+								return ["", truncateToWidth(hint, width, "..."), ...cachedLines];
 							}
 							// Add blank line for spacing (matches expanded case)
 							return ["", ...cachedLines];
