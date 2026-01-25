@@ -4,7 +4,7 @@
 
 Skills are self-contained capability packages that the agent loads on-demand. A skill provides specialized workflows, setup instructions, helper scripts, and reference documentation for specific tasks.
 
-Pi implements the [Agent Skills standard](https://agentskills.io/specification).
+Pi implements the [Agent Skills standard](https://agentskills.io/specification), warning about violations but remaining lenient.
 
 ## Table of Contents
 
