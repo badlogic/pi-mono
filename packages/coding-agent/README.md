@@ -435,6 +435,11 @@ All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Eac
 | `selectDown` | `down` | Move selection down in lists |
 | `selectConfirm` | `enter` | Confirm selection |
 | `selectCancel` | `escape`, `ctrl+c` | Cancel selection |
+| `toggleSessionPath` | `ctrl+p` | Toggle path display in session picker |
+| `toggleSessionSort` | `ctrl+s` | Toggle sort mode in session picker |
+| `renameSession` | `ctrl+r` | Rename selected session |
+| `deleteSession` | `ctrl+d` | Delete selected session |
+| `deleteSessionNoninvasive` | `ctrl+backspace` | Delete session (when query empty) |
 
 **Example (Emacs-style):**
 
