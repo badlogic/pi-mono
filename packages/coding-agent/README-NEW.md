@@ -93,7 +93,7 @@ See [docs/providers.md](docs/providers.md) for detailed setup instructions.
 
 ![Interactive Mode](docs/images/interactive-mode.png)
 
-Interactive mode lets you collaboratively work with pi on coding and other computer tasks. On startup, pi shows the most common shortcuts (use `/hotkeys` to see all), loaded AGENTS.md context files, and any prompt templates, skills, and extensions that have been loaded.
+On startup, pi shows common shortcuts (`/hotkeys` for all), loaded AGENTS.md files, prompt templates, skills, and extensions. The status bar at the bottom shows the working directory, token usage, cost, and current model.
 
 ### Editor
 
