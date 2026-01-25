@@ -108,7 +108,6 @@ Use `/logout` to clear credentials.
 ### OpenAI Codex
 
 - Requires ChatGPT Plus/Pro subscription
-- Prompt cache stored under `~/.pi/agent/cache/openai-codex/`
 - Personal use only; for production, use the OpenAI Platform API
 
 ## Troubleshooting
