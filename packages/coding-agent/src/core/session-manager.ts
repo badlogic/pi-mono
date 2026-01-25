@@ -648,6 +648,18 @@ export class SessionManager {
 		this.sessionFile = resolve(sessionFile);
 		if (existsSync(this.sessionFile)) {
 			this.fileEntries = loadEntriesFromFile(this.sessionFile);
+
+			// If file was empty or corrupted (no valid header), truncate and start fresh
+			// to avoid appending messages without a session header (which breaks the session)
+			if (this.fileEntries.length === 0) {
+				const explicitPath = this.sessionFile;
+				this.newSession();
+				this.sessionFile = explicitPath;
+				this._rewriteFile();
+				this.flushed = true;
+				return;
+			}
+
 			const header = this.fileEntries.find((e) => e.type === "session") as SessionHeader | undefined;
 			this.sessionId = header?.id ?? randomUUID();
 
