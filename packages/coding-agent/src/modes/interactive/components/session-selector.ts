@@ -17,7 +17,7 @@ import {
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
-import { keyHint, rawKeyHint } from "./keybinding-hints.js";
+import { keyHint } from "./keybinding-hints.js";
 import { filterAndSortSessions, type SortMode } from "./session-selector-search.js";
 
 type SessionScope = "current" | "all";
@@ -153,12 +153,12 @@ class SessionSelectorHeader implements Component {
 			const sep = theme.fg("muted", " · ");
 			const hint1 = keyHint("tab", "scope") + sep + theme.fg("muted", 're:<pattern> regex · "phrase" exact');
 			const hint2Parts = [
-				rawKeyHint("ctrl+s", "sort"),
-				rawKeyHint("ctrl+d", "delete"),
-				rawKeyHint("ctrl+p", `path ${pathState}`),
+				keyHint("toggleSessionSort", "sort"),
+				keyHint("deleteSession", "delete"),
+				keyHint("toggleSessionPath", `path ${pathState}`),
 			];
 			if (this.showRenameHint) {
-				hint2Parts.push(rawKeyHint("ctrl+r", "rename"));
+				hint2Parts.push(keyHint("renameSession", "rename"));
 			}
 			const hint2 = hint2Parts.join(sep);
 			hintLine1 = truncateToWidth(hint1, width, "…");
@@ -383,20 +383,20 @@ class SessionList implements Component, Focusable {
 			return;
 		}
 
-		if (matchesKey(keyData, "ctrl+s")) {
+		if (kb.matches(keyData, "toggleSessionSort")) {
 			this.onToggleSort?.();
 			return;
 		}
 
 		// Ctrl+P: toggle path display
-		if (matchesKey(keyData, "ctrl+p")) {
+		if (kb.matches(keyData, "toggleSessionPath")) {
 			this.showPath = !this.showPath;
 			this.onTogglePath?.(this.showPath);
 			return;
 		}
 
 		// Ctrl+D: initiate delete confirmation (useful on terminals that don't distinguish Ctrl+Backspace from Backspace)
-		if (matchesKey(keyData, "ctrl+d")) {
+		if (kb.matches(keyData, "deleteSession")) {
 			this.startDeleteConfirmationForSelectedSession();
 			return;
 		}
@@ -412,7 +412,7 @@ class SessionList implements Component, Focusable {
 
 		// Ctrl+Backspace: non-invasive convenience alias for delete
 		// Only triggers deletion when the query is empty; otherwise it is forwarded to the input
-		if (matchesKey(keyData, "ctrl+backspace")) {
+		if (kb.matches(keyData, "deleteSessionNoninvasive")) {
 			if (this.searchInput.getValue().length > 0) {
 				this.searchInput.handleInput(keyData);
 				this.filterSessions(this.searchInput.getValue());
