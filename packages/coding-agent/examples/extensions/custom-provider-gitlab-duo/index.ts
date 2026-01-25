@@ -32,7 +32,7 @@ const AI_GATEWAY_URL = "https://cloud.gitlab.com";
 const ANTHROPIC_PROXY_URL = `${AI_GATEWAY_URL}/ai/v1/proxy/anthropic/`;
 const OPENAI_PROXY_URL = `${AI_GATEWAY_URL}/ai/v1/proxy/openai/v1`;
 
-const BUNDLED_CLIENT_ID = "1d89f9fdb23ee96d4e603201f6861dab6e143c5c3c00469a018a2d94bdc03d4e";
+const BUNDLED_CLIENT_ID = "da4edff2e6ebd2bc3208611e2768bc1c1dd7be791dc5ff26ca34ca9ee44f7d4b";
 const OAUTH_SCOPES = ["api"];
 const REDIRECT_URI = "http://127.0.0.1:8080/callback";
 const DIRECT_ACCESS_TTL = 25 * 60 * 1000;
