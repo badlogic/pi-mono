@@ -18,7 +18,7 @@ if (typeof process !== "undefined" && (process.versions?.node || process.version
 
 import { supportsXhigh } from "./models.js";
 import { type BedrockOptions, streamBedrock } from "./providers/amazon-bedrock.js";
-import { type AnthropicOptions, streamAnthropic } from "./providers/anthropic.js";
+import { streamAnthropic } from "./providers/anthropic.js";
 import { type AnthropicVertexOptions, streamAnthropicVertex } from "./providers/anthropic-vertex.js";
 import { type GoogleOptions, streamGoogle } from "./providers/google.js";
 import {
@@ -157,7 +157,11 @@ export function stream<TApi extends Api>(
 		return streamGoogleVertex(model as Model<"google-vertex">, context, options as GoogleVertexOptions);
 	} else if (model.api === "anthropic-vertex") {
 		// Anthropic Vertex also uses Google ADC, no API key needed
-		return streamAnthropicVertex(model as Model<"anthropic-vertex">, context, (options || {}) as AnthropicVertexOptions);
+		return streamAnthropicVertex(
+			model as Model<"anthropic-vertex">,
+			context,
+			(options || {}) as AnthropicVertexOptions,
+		);
 	} else if (model.api === "bedrock-converse-stream") {
 		// Bedrock doesn't have any API keys instead it sources credentials from standard AWS env variables or from given AWS profile.
 		return streamBedrock(model as Model<"bedrock-converse-stream">, context, (options || {}) as BedrockOptions);
@@ -299,33 +303,11 @@ function mapOptionsForApi<TApi extends Api>(
 	};
 
 	switch (model.api) {
-		case "anthropic-messages": {
-			// Explicitly disable thinking when reasoning is not specified
-			if (!options?.reasoning) {
-				return { ...base, thinkingEnabled: false } satisfies AnthropicOptions;
-			}
-
-			// Claude requires max_tokens > thinking.budget_tokens
-			// So we need to ensure maxTokens accounts for both thinking and output
-			const adjusted = adjustMaxTokensForThinking(
-				base.maxTokens || 0,
-				model.maxTokens,
-				options.reasoning,
-				options?.thinkingBudgets,
-			);
-
-			return {
-				...base,
-				maxTokens: adjusted.maxTokens,
-				thinkingEnabled: true,
-				thinkingBudgetTokens: adjusted.thinkingBudget,
-			} satisfies AnthropicOptions;
-		}
-
+		case "anthropic-messages":
 		case "anthropic-vertex": {
 			// Explicitly disable thinking when reasoning is not specified
 			if (!options?.reasoning) {
-				return { ...base, thinkingEnabled: false } satisfies AnthropicVertexOptions;
+				return { ...base, thinkingEnabled: false } as OptionsForApi<TApi>;
 			}
 
 			// Claude requires max_tokens > thinking.budget_tokens
@@ -342,7 +324,7 @@ function mapOptionsForApi<TApi extends Api>(
 				maxTokens: adjusted.maxTokens,
 				thinkingEnabled: true,
 				thinkingBudgetTokens: adjusted.thinkingBudget,
-			} satisfies AnthropicVertexOptions;
+			} as OptionsForApi<TApi>;
 		}
 
 		case "bedrock-converse-stream": {

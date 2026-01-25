@@ -1,18 +1,17 @@
-import { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
 import type {
+	Tool as AnthropicTool,
 	ContentBlockParam,
 	MessageCreateParamsStreaming,
 	MessageParam,
 } from "@anthropic-ai/sdk/resources/messages.js";
+import { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
 import { calculateCost } from "../models.js";
 import type {
 	Api,
 	AssistantMessage,
 	Context,
-	ImageContent,
 	Message,
 	Model,
-	StopReason,
 	StreamFunction,
 	StreamOptions,
 	TextContent,
@@ -24,6 +23,7 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import { convertContentBlocks, mapStopReason, mergeHeaders, normalizeToolCallId } from "./anthropic-shared.js";
 import { transformMessages } from "./transform-messages.js";
 
 export interface AnthropicVertexOptions extends StreamOptions {
@@ -33,68 +33,6 @@ export interface AnthropicVertexOptions extends StreamOptions {
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
 	project?: string;
 	region?: string;
-}
-
-/**
- * Convert content blocks to Anthropic API format
- */
-function convertContentBlocks(content: (TextContent | ImageContent)[]):
-	| string
-	| Array<
-			| { type: "text"; text: string }
-			| {
-					type: "image";
-					source: {
-						type: "base64";
-						media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
-						data: string;
-					};
-			  }
-	  > {
-	// If only text blocks, return as concatenated string for simplicity
-	const hasImages = content.some((c) => c.type === "image");
-	if (!hasImages) {
-		return sanitizeSurrogates(content.map((c) => (c as TextContent).text).join("\n"));
-	}
-
-	// If we have images, convert to content block array
-	const blocks = content.map((block) => {
-		if (block.type === "text") {
-			return {
-				type: "text" as const,
-				text: sanitizeSurrogates(block.text),
-			};
-		}
-		return {
-			type: "image" as const,
-			source: {
-				type: "base64" as const,
-				media_type: block.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-				data: block.data,
-			},
-		};
-	});
-
-	// If only images (no text), add placeholder text block
-	const hasText = blocks.some((b) => b.type === "text");
-	if (!hasText) {
-		blocks.unshift({
-			type: "text" as const,
-			text: "(see attached image)",
-		});
-	}
-
-	return blocks;
-}
-
-function mergeHeaders(...headerSources: (Record<string, string> | undefined)[]): Record<string, string> {
-	const merged: Record<string, string> = {};
-	for (const headers of headerSources) {
-		if (headers) {
-			Object.assign(merged, headers);
-		}
-	}
-	return merged;
 }
 
 export const streamAnthropicVertex: StreamFunction<"anthropic-vertex"> = (
@@ -285,10 +223,7 @@ export const streamAnthropicVertex: StreamFunction<"anthropic-vertex"> = (
 	return stream;
 };
 
-function createClient(
-	model: Model<"anthropic-vertex">,
-	options?: AnthropicVertexOptions,
-): AnthropicVertex {
+function createClient(model: Model<"anthropic-vertex">, options?: AnthropicVertexOptions): AnthropicVertex {
 	const betaFeatures = ["fine-grained-tool-streaming-2025-05-14"];
 	if (options?.interleavedThinking ?? true) {
 		betaFeatures.push("interleaved-thinking-2025-05-14");
@@ -370,15 +305,7 @@ function buildParams(
 	return params;
 }
 
-// Normalize tool call IDs to match Anthropic's required pattern and length
-function normalizeToolCallId(id: string): string {
-	return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
-}
-
-function convertMessages(
-	messages: Message[],
-	model: Model<"anthropic-vertex">,
-): MessageParam[] {
+function convertMessages(messages: Message[], model: Model<"anthropic-vertex">): MessageParam[] {
 	const params: MessageParam[] = [];
 
 	// Transform messages for cross-provider compatibility
@@ -522,7 +449,7 @@ function convertMessages(
 	return params;
 }
 
-function convertTools(tools: Tool[]): AnthropicVertex.Messages.Tool[] {
+function convertTools(tools: Tool[]): AnthropicTool[] {
 	if (!tools) return [];
 
 	return tools.map((tool) => {
@@ -538,23 +465,4 @@ function convertTools(tools: Tool[]): AnthropicVertex.Messages.Tool[] {
 			},
 		};
 	});
-}
-
-function mapStopReason(reason: string): StopReason {
-	switch (reason) {
-		case "end_turn":
-			return "stop";
-		case "max_tokens":
-			return "length";
-		case "tool_use":
-			return "toolUse";
-		case "refusal":
-			return "error";
-		case "pause_turn":
-			return "stop";
-		case "stop_sequence":
-			return "stop";
-		default:
-			return "stop";
-	}
 }

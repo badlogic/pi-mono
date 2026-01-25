@@ -10,10 +10,8 @@ import type {
 	Api,
 	AssistantMessage,
 	Context,
-	ImageContent,
 	Message,
 	Model,
-	StopReason,
 	StreamFunction,
 	StreamOptions,
 	TextContent,
@@ -26,6 +24,7 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 
+import { convertContentBlocks, mapStopReason, mergeHeaders, normalizeToolCallId } from "./anthropic-shared.js";
 import { transformMessages } from "./transform-messages.js";
 
 // Stealth mode: Mimic Claude Code's tool naming exactly
@@ -67,73 +66,11 @@ const fromClaudeCodeName = (name: string, tools?: Tool[]) => {
 	return name;
 };
 
-/**
- * Convert content blocks to Anthropic API format
- */
-function convertContentBlocks(content: (TextContent | ImageContent)[]):
-	| string
-	| Array<
-			| { type: "text"; text: string }
-			| {
-					type: "image";
-					source: {
-						type: "base64";
-						media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
-						data: string;
-					};
-			  }
-	  > {
-	// If only text blocks, return as concatenated string for simplicity
-	const hasImages = content.some((c) => c.type === "image");
-	if (!hasImages) {
-		return sanitizeSurrogates(content.map((c) => (c as TextContent).text).join("\n"));
-	}
-
-	// If we have images, convert to content block array
-	const blocks = content.map((block) => {
-		if (block.type === "text") {
-			return {
-				type: "text" as const,
-				text: sanitizeSurrogates(block.text),
-			};
-		}
-		return {
-			type: "image" as const,
-			source: {
-				type: "base64" as const,
-				media_type: block.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-				data: block.data,
-			},
-		};
-	});
-
-	// If only images (no text), add placeholder text block
-	const hasText = blocks.some((b) => b.type === "text");
-	if (!hasText) {
-		blocks.unshift({
-			type: "text" as const,
-			text: "(see attached image)",
-		});
-	}
-
-	return blocks;
-}
-
 export interface AnthropicOptions extends StreamOptions {
 	thinkingEnabled?: boolean;
 	thinkingBudgetTokens?: number;
 	interleavedThinking?: boolean;
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
-}
-
-function mergeHeaders(...headerSources: (Record<string, string> | undefined)[]): Record<string, string> {
-	const merged: Record<string, string> = {};
-	for (const headers of headerSources) {
-		if (headers) {
-			Object.assign(merged, headers);
-		}
-	}
-	return merged;
 }
 
 export const streamAnthropic: StreamFunction<"anthropic-messages"> = (
@@ -468,11 +405,6 @@ function buildParams(
 	return params;
 }
 
-// Normalize tool call IDs to match Anthropic's required pattern and length
-function normalizeToolCallId(id: string): string {
-	return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
-}
-
 function convertMessages(
 	messages: Message[],
 	model: Model<"anthropic-messages">,
@@ -638,25 +570,4 @@ function convertTools(tools: Tool[], isOAuthToken: boolean): Anthropic.Messages.
 			},
 		};
 	});
-}
-
-function mapStopReason(reason: Anthropic.Messages.StopReason): StopReason {
-	switch (reason) {
-		case "end_turn":
-			return "stop";
-		case "max_tokens":
-			return "length";
-		case "tool_use":
-			return "toolUse";
-		case "refusal":
-			return "error";
-		case "pause_turn": // Stop is good enough -> resubmit
-			return "stop";
-		case "stop_sequence":
-			return "stop"; // We don't supply stop sequences, so this should never happen
-		default: {
-			const _exhaustive: never = reason;
-			throw new Error(`Unhandled stop reason: ${_exhaustive}`);
-		}
-	}
 }
