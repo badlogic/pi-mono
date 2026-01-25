@@ -889,7 +889,7 @@ cp $(npm root -g)/@mariozechner/pi-coding-agent/dist/theme/dark.json ~/.pi/agent
 
 Select with `/settings`, then edit the file. Changes apply on save.
 
-> See [Theme Documentation](docs/theme.md) on how to create custom themes in detail. Pi can help you create a new one.
+> See [Theme Documentation](docs/themes.md) for details. Pi can help you create a new one.
 
 **VS Code terminal fix:** Set `terminal.integrated.minimumContrastRatio` to `1` for accurate colors.
 

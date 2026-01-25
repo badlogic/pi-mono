@@ -1204,7 +1204,7 @@ Custom themes must add these new color tokens or they will fail to load:
 - `customMessageText`: text color for hook messages
 - `customMessageLabel`: label color for hook messages (the `[customType]` prefix)
 
-Total color count increased from 46 to 50. See [docs/theme.md](docs/theme.md) for the full color list and copy values from the built-in dark/light themes.
+Total color count increased from 46 to 50. See [docs/themes.md](docs/themes.md) for the full color list and copy values from the built-in dark/light themes.
 
 **Settings:**
 
