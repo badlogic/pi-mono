@@ -95,6 +95,7 @@ export function transformMessages<TApi extends Api>(
 	const result: Message[] = [];
 	let pendingToolCalls: ToolCall[] = [];
 	let existingToolResultIds = new Set<string>();
+	const skippedToolIds = new Set<string>(); // Track tool IDs from skipped messages
 
 	for (let i = 0; i < transformed.length; i++) {
 		const msg = transformed[i];
@@ -125,6 +126,11 @@ export function transformMessages<TApi extends Api>(
 			// - The model should retry from the last valid state
 			const assistantMsg = msg as AssistantMessage;
 			if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
+				// Collect tool IDs from this skipped message to filter orphaned tool results
+				const toolCalls = assistantMsg.content.filter((b) => b.type === "toolCall") as ToolCall[];
+				for (const tc of toolCalls) {
+					skippedToolIds.add(tc.id);
+				}
 				continue;
 			}
 
@@ -137,6 +143,10 @@ export function transformMessages<TApi extends Api>(
 
 			result.push(msg);
 		} else if (msg.role === "toolResult") {
+			// Skip tool results for skipped assistant messages (orphaned tool results)
+			if (skippedToolIds.has(msg.toolCallId)) {
+				continue;
+			}
 			existingToolResultIds.add(msg.toolCallId);
 			result.push(msg);
 		} else if (msg.role === "user") {
