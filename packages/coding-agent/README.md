@@ -22,7 +22,7 @@ Pi runs in four modes: interactive, print or JSON, RPC for process integration, 
   - [Windows Setup](#windows-setup)
   - [Shell Aliases](#shell-aliases)
   - [Terminal Setup](#terminal-setup)
-  - [API Keys](#api-keys)
+  - [Authentication](#authentication)
   - [Quick Start](#quick-start)
 - [Usage](#usage)
   - [Slash Commands](#slash-commands)
@@ -103,7 +103,7 @@ Adjust the path (`~/.zshrc`, `~/.bashrc`, etc.) to match your shell config.
 
 Pi uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Kitty and iTerm2 work out of the box. Other terminals may need configuration. See [docs/terminal-setup.md](docs/terminal-setup.md).
 
-### API Keys
+### Authentication
 
 Set an API key via environment variable or `~/.pi/agent/auth.json`:
 
