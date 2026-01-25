@@ -163,6 +163,7 @@ export class InteractiveMode {
 	private isInitialized = false;
 	private onInputCallback?: (text: string) => void;
 	private loadingAnimation: Loader | undefined = undefined;
+	private pendingWorkingMessage: string | undefined = undefined;
 	private readonly defaultWorkingMessage = "Working...";
 
 	private lastSigintTime = 0;
@@ -1337,6 +1338,9 @@ export class InteractiveMode {
 							`${this.defaultWorkingMessage} (${appKey(this.keybindings, "interrupt")} to interrupt)`,
 						);
 					}
+				} else {
+					// Queue message for when loadingAnimation is created (handles agent_start race)
+					this.pendingWorkingMessage = message;
 				}
 			},
 			setWidget: (key, content, options) => this.setExtensionWidget(key, content, options),
@@ -1990,6 +1994,13 @@ export class InteractiveMode {
 					this.defaultWorkingMessage,
 				);
 				this.statusContainer.addChild(this.loadingAnimation);
+				// Apply any pending working message queued before loader existed
+				if (this.pendingWorkingMessage !== undefined) {
+					if (this.pendingWorkingMessage) {
+						this.loadingAnimation.setMessage(this.pendingWorkingMessage);
+					}
+					this.pendingWorkingMessage = undefined;
+				}
 				this.ui.requestRender();
 				break;
 
