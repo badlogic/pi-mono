@@ -4010,7 +4010,8 @@ export class InteractiveMode {
 `;
 				for (const [key, shortcut] of shortcuts) {
 					const description = shortcut.description ?? shortcut.extensionPath;
-					hotkeys += `| \`${key}\` | ${description} |\n`;
+					const keyDisplay = key.replace(/\b\w/g, (c) => c.toUpperCase());
+					hotkeys += `| \`${keyDisplay}\` | ${description} |\n`;
 				}
 			}
 		}
