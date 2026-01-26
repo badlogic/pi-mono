@@ -432,7 +432,7 @@ pi.on("turn_end", async (event, ctx) => {
 
 #### context
 
-Fired before each LLM call. Modify messages non-destructively.
+Fired before each LLM call. Modify messages non-destructively. See [session.md](session.md) for message types.
 
 ```typescript
 pi.on("context", async (event, ctx) => {
