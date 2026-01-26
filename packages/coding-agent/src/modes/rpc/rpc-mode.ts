@@ -261,10 +261,8 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			commandContextActions: {
 				waitForIdle: () => session.agent.waitForIdle(),
 				newSession: async (options) => {
-					const success = await session.newSession({ parentSession: options?.parentSession });
-					if (success && options?.setup) {
-						await options.setup(session.sessionManager);
-					}
+					// Delegate to AgentSession (handles setup + agent state sync)
+					const success = await session.newSession(options);
 					return { cancelled: !success };
 				},
 				fork: async (entryId) => {

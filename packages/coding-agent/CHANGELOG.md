@@ -5,6 +5,7 @@
 ### Fixed
 
 - Git extension updates now handle force-pushed remotes gracefully instead of failing ([#961](https://github.com/badlogic/pi-mono/pull/961) by [@aliou](https://github.com/aliou))
+- Extension `ctx.newSession({ setup })` now properly syncs agent state and renders messages after setup callback runs ([#968](https://github.com/badlogic/pi-mono/issues/968))
 
 ## [0.50.0] - 2026-01-26
 

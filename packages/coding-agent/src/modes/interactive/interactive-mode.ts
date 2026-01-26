@@ -995,15 +995,13 @@ export class InteractiveMode {
 					}
 					this.statusContainer.clear();
 
-					const success = await this.session.newSession({ parentSession: options?.parentSession });
+					// Delegate to AgentSession (handles setup + agent state sync)
+					const success = await this.session.newSession(options);
 					if (!success) {
 						return { cancelled: true };
 					}
 
-					if (options?.setup) {
-						await options.setup(this.sessionManager);
-					}
-
+					// Clear UI state
 					this.chatContainer.clear();
 					this.pendingMessagesContainer.clear();
 					this.compactionQueuedMessages = [];
@@ -1011,8 +1009,8 @@ export class InteractiveMode {
 					this.streamingMessage = undefined;
 					this.pendingTools.clear();
 
-					this.chatContainer.addChild(new Spacer(1));
-					this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
+					// Render any messages added via setup, or show empty session
+					this.renderInitialMessages();
 					this.ui.requestRender();
 
 					return { cancelled: false };
