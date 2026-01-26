@@ -354,7 +354,7 @@ pi.on("session_compact", async (event, ctx) => {
 
 #### session_before_tree / session_tree
 
-Fired on `/tree` navigation.
+Fired on `/tree` navigation. See [tree.md](tree.md) for tree navigation concepts.
 
 ```typescript
 pi.on("session_before_tree", async (event, ctx) => {
@@ -950,7 +950,7 @@ pi.setActiveTools(["read", "bash"]); // Switch to read-only
 
 ### pi.setModel(model)
 
-Set the current model. Returns `false` if no API key is available for the model.
+Set the current model. Returns `false` if no API key is available for the model. See [models.md](models.md) for configuring custom models.
 
 ```typescript
 const model = ctx.modelRegistry.find("anthropic", "claude-sonnet-4-5");
@@ -1651,10 +1651,11 @@ const highlighted = highlightCode(code, lang, theme);
 | Mode | UI Methods | Notes |
 |------|-----------|-------|
 | Interactive | Full TUI | Normal operation |
-| RPC | JSON protocol | Host handles UI |
+| RPC (`--mode rpc`) | JSON protocol | Host handles UI, see [rpc.md](rpc.md) |
+| JSON (`--mode json`) | No-op | Event stream to stdout, see [json.md](json.md) |
 | Print (`-p`) | No-op | Extensions run but can't prompt |
 
-In print mode, check `ctx.hasUI` before using UI methods.
+In non-interactive modes, check `ctx.hasUI` before using UI methods.
 
 ## Examples Reference
 
