@@ -66,8 +66,29 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			const openSelected = async (fileInfo: FileInfo): Promise<void> => {
+				try {
+					// Open in VS Code diff view.
+					// For untracked files, git difftool won't work, so fall back to just opening the file.
+					if (fileInfo.status === "?") {
+						await pi.exec("code", ["-g", fileInfo.file], { cwd: ctx.cwd });
+						return;
+					}
+
+					const diffResult = await pi.exec("git", ["difftool", "-y", "--tool=vscode", fileInfo.file], {
+						cwd: ctx.cwd,
+					});
+					if (diffResult.code !== 0) {
+						await pi.exec("code", ["-g", fileInfo.file], { cwd: ctx.cwd });
+					}
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					ctx.ui.notify(`Failed to open ${fileInfo.file}: ${message}`, "error");
+				}
+			};
+
 			// Show file picker with SelectList
-			const selected = await ctx.ui.custom<FileInfo | null>((tui, theme, _kb, done) => {
+			await ctx.ui.custom<void>((tui, theme, _kb, done) => {
 				const container = new Container();
 
 				// Top border
@@ -111,8 +132,10 @@ export default function (pi: ExtensionAPI) {
 					scrollInfo: (t) => theme.fg("dim", t),
 					noMatch: (t) => theme.fg("warning", t),
 				});
-				selectList.onSelect = (item) => done(item.value as FileInfo);
-				selectList.onCancel = () => done(null);
+				selectList.onSelect = (item) => {
+					void openSelected(item.value as FileInfo);
+				};
+				selectList.onCancel = () => done();
 				selectList.onSelectionChange = (item) => {
 					currentIndex = items.indexOf(item);
 				};
@@ -120,7 +143,7 @@ export default function (pi: ExtensionAPI) {
 
 				// Help text
 				container.addChild(
-					new Text(theme.fg("dim", " ↑↓ navigate • ←→ page • enter select • esc cancel"), 0, 0),
+					new Text(theme.fg("dim", " ↑↓ navigate • ←→ page • enter open • esc close"), 0, 0),
 				);
 
 				// Bottom border
@@ -146,22 +169,6 @@ export default function (pi: ExtensionAPI) {
 					},
 				};
 			});
-
-			if (!selected) return;
-
-			// Open in VS Code diff view (this will block until VS Code is closed)
-			// For untracked files, git difftool won't work, so fall back to just opening the file
-			if (selected.status === "?") {
-				await pi.exec("code", ["-g", selected.file], { cwd: ctx.cwd });
-			} else {
-				const diffResult = await pi.exec("git", ["difftool", "-y", "--tool=vscode", selected.file], {
-					cwd: ctx.cwd,
-				});
-				// Fallback if difftool fails
-				if (diffResult.code !== 0) {
-					await pi.exec("code", ["-g", selected.file], { cwd: ctx.cwd });
-				}
-			}
 		},
 	});
 }
