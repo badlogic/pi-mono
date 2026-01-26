@@ -5,6 +5,11 @@
 ### Breaking Changes
 
 - Renamed `zai` provider to `zai-coding-plan` to align with naming in models.dev and be explicit about which endpoint we use
+## [0.50.1] - 2026-01-26
+
+### Fixed
+
+- Fixed OpenCode Zen model generation to exclude deprecated models ([#970](https://github.com/badlogic/pi-mono/pull/970) by [@DanielTatarkin](https://github.com/DanielTatarkin))
 
 ## [0.50.0] - 2026-01-26
 

@@ -935,7 +935,16 @@ export class DefaultPackageManager implements PackageManager {
 			await this.installGit(source, scope);
 			return;
 		}
-		await this.runCommand("git", ["pull"], { cwd: targetDir });
+
+		// Fetch latest from remote (handles force-push by getting new history)
+		await this.runCommand("git", ["fetch", "--prune", "origin"], { cwd: targetDir });
+
+		// Reset to upstream tracking branch (handles force-push gracefully)
+		await this.runCommand("git", ["reset", "--hard", "@{upstream}"], { cwd: targetDir });
+
+		// Clean untracked files (extensions should be pristine)
+		await this.runCommand("git", ["clean", "-fdx"], { cwd: targetDir });
+
 		const packageJsonPath = join(targetDir, "package.json");
 		if (existsSync(packageJsonPath)) {
 			await this.runCommand("npm", ["install"], { cwd: targetDir });
@@ -946,6 +955,29 @@ export class DefaultPackageManager implements PackageManager {
 		const targetDir = this.getGitInstallPath(source, scope);
 		if (!existsSync(targetDir)) return;
 		rmSync(targetDir, { recursive: true, force: true });
+		this.pruneEmptyGitParents(targetDir, this.getGitInstallRoot(scope));
+	}
+
+	private pruneEmptyGitParents(targetDir: string, installRoot: string | undefined): void {
+		if (!installRoot) return;
+		const resolvedRoot = resolve(installRoot);
+		let current = dirname(targetDir);
+		while (current.startsWith(resolvedRoot) && current !== resolvedRoot) {
+			if (!existsSync(current)) {
+				current = dirname(current);
+				continue;
+			}
+			const entries = readdirSync(current);
+			if (entries.length > 0) {
+				break;
+			}
+			try {
+				rmSync(current, { recursive: true, force: true });
+			} catch {
+				break;
+			}
+			current = dirname(current);
+		}
 	}
 
 	private ensureNpmProject(installRoot: string): void {
