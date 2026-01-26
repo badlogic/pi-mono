@@ -46,6 +46,7 @@ See [examples/extensions/](../examples/extensions/) for working implementations.
 - [Custom UI](#custom-ui)
 - [Error Handling](#error-handling)
 - [Mode Behavior](#mode-behavior)
+- [Examples Reference](#examples-reference)
 
 ## Quick Start
 
@@ -407,6 +408,8 @@ exit (Ctrl+C, Ctrl+D)
 
 ### Session Events
 
+See [session.md](session.md) for session storage internals and the SessionManager API.
+
 #### session_start
 
 Fired on initial session load.
@@ -416,8 +419,6 @@ pi.on("session_start", async (_event, ctx) => {
   ctx.ui.notify(`Session: ${ctx.sessionManager.getSessionFile() ?? "ephemeral"}`, "info");
 });
 ```
-
-**Examples:** [claude-rules.ts](../examples/extensions/claude-rules.ts), [custom-header.ts](../examples/extensions/custom-header.ts), [file-trigger.ts](../examples/extensions/file-trigger.ts), [status-line.ts](../examples/extensions/status-line.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts)
 
 #### session_before_switch / session_switch
 
@@ -440,8 +441,6 @@ pi.on("session_switch", async (event, ctx) => {
 });
 ```
 
-**Examples:** [confirm-destructive.ts](../examples/extensions/confirm-destructive.ts), [dirty-repo-guard.ts](../examples/extensions/dirty-repo-guard.ts), [status-line.ts](../examples/extensions/status-line.ts), [todo.ts](../examples/extensions/todo.ts)
-
 #### session_before_fork / session_fork
 
 Fired when forking via `/fork`.
@@ -458,8 +457,6 @@ pi.on("session_fork", async (event, ctx) => {
   // event.previousSessionFile - previous session file
 });
 ```
-
-**Examples:** [confirm-destructive.ts](../examples/extensions/confirm-destructive.ts), [dirty-repo-guard.ts](../examples/extensions/dirty-repo-guard.ts), [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts)
 
 #### session_before_compact / session_compact
 
@@ -488,8 +485,6 @@ pi.on("session_compact", async (event, ctx) => {
 });
 ```
 
-**Examples:** [custom-compaction.ts](../examples/extensions/custom-compaction.ts), [trigger-compact.ts](../examples/extensions/trigger-compact.ts)
-
 #### session_before_tree / session_tree
 
 Fired on `/tree` navigation.
@@ -507,8 +502,6 @@ pi.on("session_tree", async (event, ctx) => {
 });
 ```
 
-**Examples:** [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts)
-
 #### session_shutdown
 
 Fired on exit (Ctrl+C, Ctrl+D, SIGTERM).
@@ -518,8 +511,6 @@ pi.on("session_shutdown", async (_event, ctx) => {
   // Cleanup, save state, etc.
 });
 ```
-
-**Examples:** [auto-commit-on-exit.ts](../examples/extensions/auto-commit-on-exit.ts)
 
 ### Agent Events
 
@@ -546,8 +537,6 @@ pi.on("before_agent_start", async (event, ctx) => {
 });
 ```
 
-**Examples:** [claude-rules.ts](../examples/extensions/claude-rules.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [ssh.ts](../examples/extensions/ssh.ts)
-
 #### agent_start / agent_end
 
 Fired once per user prompt.
@@ -559,8 +548,6 @@ pi.on("agent_end", async (event, ctx) => {
   // event.messages - messages from this prompt
 });
 ```
-
-**Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 
 #### turn_start / turn_end
 
@@ -576,8 +563,6 @@ pi.on("turn_end", async (event, ctx) => {
 });
 ```
 
-**Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [status-line.ts](../examples/extensions/status-line.ts)
-
 #### context
 
 Fired before each LLM call. Modify messages non-destructively.
@@ -589,8 +574,6 @@ pi.on("context", async (event, ctx) => {
   return { messages: filtered };
 });
 ```
-
-**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 
 ### Model Events
 
@@ -615,8 +598,6 @@ pi.on("model_select", async (event, ctx) => {
 
 Use this to update UI elements (status bars, footers) or perform model-specific initialization when the active model changes.
 
-**Examples:** [model-status.ts](../examples/extensions/model-status.ts)
-
 ### Tool Events
 
 #### tool_call
@@ -634,8 +615,6 @@ pi.on("tool_call", async (event, ctx) => {
   }
 });
 ```
-
-**Examples:** [permission-gate.ts](../examples/extensions/permission-gate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [protected-paths.ts](../examples/extensions/protected-paths.ts)
 
 #### tool_result
 
@@ -657,8 +636,6 @@ pi.on("tool_result", async (event, ctx) => {
 });
 ```
 
-**Examples:** [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
-
 ### User Bash Events
 
 #### user_bash
@@ -678,8 +655,6 @@ pi.on("user_bash", (event, ctx) => {
   return { result: { output: "...", exitCode: 0, cancelled: false, truncated: false } };
 });
 ```
-
-**Examples:** [ssh.ts](../examples/extensions/ssh.ts), [interactive-shell.ts](../examples/extensions/interactive-shell.ts)
 
 ### Input Events
 
@@ -915,8 +890,6 @@ pi.registerTool({
 });
 ```
 
-**Examples:** [hello.ts](../examples/extensions/hello.ts), [question.ts](../examples/extensions/question.ts), [questionnaire.ts](../examples/extensions/questionnaire.ts), [todo.ts](../examples/extensions/todo.ts), [truncated-tool.ts](../examples/extensions/truncated-tool.ts)
-
 ### pi.sendMessage(message, options?)
 
 Inject a custom message into the session.
@@ -939,8 +912,6 @@ pi.sendMessage({
   - `"followUp"` - Waits for agent to finish. Delivered only when agent has no more tool calls.
   - `"nextTurn"` - Queued for next user prompt. Does not interrupt or trigger anything.
 - `triggerTurn: true` - If agent is idle, trigger an LLM response immediately. Only applies to `"steer"` and `"followUp"` modes (ignored for `"nextTurn"`).
-
-**Examples:** [file-trigger.ts](../examples/extensions/file-trigger.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
 
 ### pi.sendUserMessage(content, options?)
 
@@ -986,8 +957,6 @@ pi.on("session_start", async (_event, ctx) => {
   }
 });
 ```
-
-**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [snake.ts](../examples/extensions/snake.ts), [tools.ts](../examples/extensions/tools.ts)
 
 ### pi.setSessionName(name)
 
@@ -1058,15 +1027,13 @@ pi.registerCommand("deploy", {
 });
 ```
 
-**Examples:** [custom-footer.ts](../examples/extensions/custom-footer.ts), [custom-header.ts](../examples/extensions/custom-header.ts), [handoff.ts](../examples/extensions/handoff.ts), [pirate.ts](../examples/extensions/pirate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [send-user-message.ts](../examples/extensions/send-user-message.ts), [snake.ts](../examples/extensions/snake.ts), [summarize.ts](../examples/extensions/summarize.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts)
-
 ### pi.registerMessageRenderer(customType, renderer)
 
 Register a custom TUI renderer for messages with your `customType`. See [Custom UI](#custom-ui).
 
 ### pi.registerShortcut(shortcut, options)
 
-Register a keyboard shortcut.
+Register a keyboard shortcut. See [keybindings.md](keybindings.md) for the shortcut format and built-in keybindings.
 
 ```typescript
 pi.registerShortcut("ctrl+shift+p", {
@@ -1076,8 +1043,6 @@ pi.registerShortcut("ctrl+shift+p", {
   },
 });
 ```
-
-**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts)
 
 ### pi.registerFlag(name, options)
 
@@ -1096,8 +1061,6 @@ if (pi.getFlag("--plan")) {
 }
 ```
 
-**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts)
-
 ### pi.exec(command, args, options?)
 
 Execute a shell command.
@@ -1106,8 +1069,6 @@ Execute a shell command.
 const result = await pi.exec("git", ["status"], { signal, timeout: 5000 });
 // result.stdout, result.stderr, result.code, result.killed
 ```
-
-**Examples:** [auto-commit-on-exit.ts](../examples/extensions/auto-commit-on-exit.ts), [dirty-repo-guard.ts](../examples/extensions/dirty-repo-guard.ts), [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts)
 
 ### pi.getActiveTools() / pi.getAllTools() / pi.setActiveTools(names)
 
@@ -1119,8 +1080,6 @@ const all = pi.getAllTools();        // [{ name: "read", description: "Read file
 const names = all.map(t => t.name);  // Just names if needed
 pi.setActiveTools(["read", "bash"]); // Switch to read-only
 ```
-
-**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [tools.ts](../examples/extensions/tools.ts)
 
 ### pi.setModel(model)
 
@@ -1136,8 +1095,6 @@ if (model) {
 }
 ```
 
-**Examples:** [preset.ts](../examples/extensions/preset.ts)
-
 ### pi.getThinkingLevel() / pi.setThinkingLevel(level)
 
 Get or set the thinking level. Level is clamped to model capabilities (non-reasoning models always use "off").
@@ -1146,8 +1103,6 @@ Get or set the thinking level. Level is clamped to model capabilities (non-reaso
 const current = pi.getThinkingLevel();  // "off" | "minimal" | "low" | "medium" | "high" | "xhigh"
 pi.setThinkingLevel("high");
 ```
-
-**Examples:** [preset.ts](../examples/extensions/preset.ts)
 
 ### pi.events
 
@@ -1382,6 +1337,7 @@ The built-in limit is **50KB** (~10k tokens) and **2000 lines**, whichever is hi
 import {
   truncateHead,      // Keep first N lines/bytes (good for file reads, search results)
   truncateTail,      // Keep last N lines/bytes (good for logs, command output)
+  truncateLine,      // Truncate a single line to maxBytes with ellipsis
   formatSize,        // Human-readable size (e.g., "50KB", "1.5MB")
   DEFAULT_MAX_BYTES, // 50KB
   DEFAULT_MAX_LINES, // 2000
@@ -1556,12 +1512,6 @@ const text = await ctx.ui.editor("Edit:", "prefilled text");
 ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
 ```
 
-**Examples:**
-- `ctx.ui.select()`: [confirm-destructive.ts](../examples/extensions/confirm-destructive.ts), [dirty-repo-guard.ts](../examples/extensions/dirty-repo-guard.ts), [git-checkpoint.ts](../examples/extensions/git-checkpoint.ts), [permission-gate.ts](../examples/extensions/permission-gate.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [question.ts](../examples/extensions/question.ts), [questionnaire.ts](../examples/extensions/questionnaire.ts)
-- `ctx.ui.confirm()`: [confirm-destructive.ts](../examples/extensions/confirm-destructive.ts)
-- `ctx.ui.editor()`: [handoff.ts](../examples/extensions/handoff.ts)
-- `ctx.ui.setEditorText()`: [handoff.ts](../examples/extensions/handoff.ts), [qna.ts](../examples/extensions/qna.ts)
-
 #### Timed Dialogs with Countdown
 
 Dialogs support a `timeout` option that auto-dismisses with a live countdown display:
@@ -1649,7 +1599,7 @@ const current = ctx.ui.getEditorText();
 ctx.ui.setEditorComponent((tui, theme, keybindings) => new VimEditor(tui, theme, keybindings));
 ctx.ui.setEditorComponent(undefined);  // Restore default editor
 
-// Theme management
+// Theme management (see themes.md for creating themes)
 const themes = ctx.ui.getAllThemes();  // [{ name: "dark", path: "/..." | undefined }, ...]
 const lightTheme = ctx.ui.getTheme("light");  // Load without switching
 const result = ctx.ui.setTheme("light");  // Switch by name
@@ -1659,14 +1609,6 @@ if (!result.success) {
 ctx.ui.setTheme(lightTheme!);  // Or switch by Theme object
 ctx.ui.theme.fg("accent", "styled text");  // Access current theme
 ```
-
-**Examples:**
-- `ctx.ui.setStatus()`: [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [status-line.ts](../examples/extensions/status-line.ts)
-- `ctx.ui.setWidget()`: [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
-- `ctx.ui.setFooter()`: [custom-footer.ts](../examples/extensions/custom-footer.ts)
-- `ctx.ui.setHeader()`: [custom-header.ts](../examples/extensions/custom-header.ts)
-- `ctx.ui.setEditorComponent()`: [modal-editor.ts](../examples/extensions/modal-editor.ts)
-- `ctx.ui.setTheme()`: [mac-system-theme.ts](../examples/extensions/mac-system-theme.ts)
 
 ### Custom Components
 
@@ -1726,8 +1668,6 @@ const result = await ctx.ui.custom<string | null>(
 
 See [tui.md](tui.md) for the full `OverlayOptions` API and [overlay-qa-tests.ts](../examples/extensions/overlay-qa-tests.ts) for examples.
 
-**Examples:** [handoff.ts](../examples/extensions/handoff.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts), [qna.ts](../examples/extensions/qna.ts), [snake.ts](../examples/extensions/snake.ts), [summarize.ts](../examples/extensions/summarize.ts), [todo.ts](../examples/extensions/todo.ts), [tools.ts](../examples/extensions/tools.ts), [overlay-test.ts](../examples/extensions/overlay-test.ts)
-
 ### Custom Editor
 
 Replace the main input editor with a custom implementation (vim mode, emacs mode, etc.):
@@ -1768,8 +1708,6 @@ export default function (pi: ExtensionAPI) {
 - Pass `undefined` to restore default: `ctx.ui.setEditorComponent(undefined)`
 
 See [tui.md](tui.md) Pattern 7 for a complete example with mode indicator.
-
-**Examples:** [modal-editor.ts](../examples/extensions/modal-editor.ts)
 
 ### Message Rendering
 
@@ -1822,6 +1760,19 @@ theme.italic(text)
 theme.strikethrough(text)
 ```
 
+For syntax highlighting in custom tool renderers:
+
+```typescript
+import { highlightCode, getLanguageFromPath } from "@mariozechner/pi-coding-agent";
+
+// Highlight code with explicit language
+const highlighted = highlightCode("const x = 1;", "typescript", theme);
+
+// Auto-detect language from file path
+const lang = getLanguageFromPath("/path/to/file.rs");  // "rust"
+const highlighted = highlightCode(code, lang, theme);
+```
+
 ## Error Handling
 
 - Extension errors are logged, agent continues
@@ -1837,3 +1788,76 @@ theme.strikethrough(text)
 | Print (`-p`) | No-op | Extensions run but can't prompt |
 
 In print mode, check `ctx.hasUI` before using UI methods.
+
+## Examples Reference
+
+All examples in [examples/extensions/](../examples/extensions/).
+
+| Example | Description | Key APIs |
+|---------|-------------|----------|
+| **Tools** |||
+| `hello.ts` | Minimal tool registration | `registerTool` |
+| `question.ts` | Tool with user interaction | `registerTool`, `ui.select` |
+| `questionnaire.ts` | Multi-step wizard tool | `registerTool`, `ui.custom` |
+| `todo.ts` | Stateful tool with persistence | `registerTool`, `appendEntry`, `renderResult`, session events |
+| `truncated-tool.ts` | Output truncation example | `registerTool`, `truncateHead` |
+| `tool-override.ts` | Override built-in read tool | `registerTool` (same name as built-in) |
+| **Commands** |||
+| `pirate.ts` | Modify system prompt per-turn | `registerCommand`, `before_agent_start` |
+| `summarize.ts` | Conversation summary command | `registerCommand`, `ui.custom` |
+| `handoff.ts` | Cross-provider model handoff | `registerCommand`, `ui.editor`, `ui.custom` |
+| `qna.ts` | Q&A with custom UI | `registerCommand`, `ui.custom`, `setEditorText` |
+| `send-user-message.ts` | Inject user messages | `registerCommand`, `sendUserMessage` |
+| `shutdown-command.ts` | Graceful shutdown command | `registerCommand`, `shutdown()` |
+| **Events & Gates** |||
+| `permission-gate.ts` | Block dangerous commands | `on("tool_call")`, `ui.confirm` |
+| `protected-paths.ts` | Block writes to specific paths | `on("tool_call")` |
+| `confirm-destructive.ts` | Confirm session changes | `on("session_before_switch")`, `on("session_before_fork")` |
+| `dirty-repo-guard.ts` | Warn on dirty git repo | `on("session_before_*")`, `exec` |
+| `input-transform.ts` | Transform user input | `on("input")` |
+| `model-status.ts` | React to model changes | `on("model_select")`, `setStatus` |
+| `claude-rules.ts` | Load rules from files | `on("session_start")`, `on("before_agent_start")` |
+| `file-trigger.ts` | File watcher triggers messages | `sendMessage` |
+| **Compaction & Sessions** |||
+| `custom-compaction.ts` | Custom compaction summary | `on("session_before_compact")` |
+| `trigger-compact.ts` | Trigger compaction manually | `compact()` |
+| `git-checkpoint.ts` | Git stash on turns | `on("turn_end")`, `on("session_fork")`, `exec` |
+| `auto-commit-on-exit.ts` | Commit on shutdown | `on("session_shutdown")`, `exec` |
+| **UI Components** |||
+| `status-line.ts` | Footer status indicator | `setStatus`, session events |
+| `custom-footer.ts` | Replace footer entirely | `registerCommand`, `setFooter` |
+| `custom-header.ts` | Replace startup header | `on("session_start")`, `setHeader` |
+| `modal-editor.ts` | Vim-style modal editor | `setEditorComponent`, `CustomEditor` |
+| `rainbow-editor.ts` | Custom editor styling | `setEditorComponent` |
+| `widget-placement.ts` | Widget above/below editor | `setWidget` |
+| `overlay-test.ts` | Overlay components | `ui.custom` with overlay options |
+| `overlay-qa-tests.ts` | Comprehensive overlay tests | `ui.custom`, all overlay options |
+| `notify.ts` | Simple notifications | `ui.notify` |
+| `timed-confirm.ts` | Dialogs with timeout | `ui.confirm` with timeout/signal |
+| `mac-system-theme.ts` | Auto-switch theme | `setTheme`, `exec` |
+| **Complex Extensions** |||
+| `plan-mode/` | Full plan mode implementation | All event types, `registerCommand`, `registerShortcut`, `registerFlag`, `setStatus`, `setWidget`, `sendMessage`, `setActiveTools` |
+| `preset.ts` | Saveable presets (model, tools, thinking) | `registerCommand`, `registerShortcut`, `registerFlag`, `setModel`, `setActiveTools`, `setThinkingLevel`, `appendEntry` |
+| `tools.ts` | Toggle tools on/off UI | `registerCommand`, `setActiveTools`, `SettingsList`, session events |
+| **Remote & Sandbox** |||
+| `ssh.ts` | SSH remote execution | `registerFlag`, `on("user_bash")`, `on("before_agent_start")`, tool operations |
+| `interactive-shell.ts` | Persistent shell session | `on("user_bash")` |
+| `sandbox/` | Sandboxed tool execution | Tool operations |
+| `subagent/` | Spawn sub-agents | `registerTool`, `exec` |
+| **Games** |||
+| `snake.ts` | Snake game | `registerCommand`, `ui.custom`, keyboard handling |
+| `space-invaders.ts` | Space Invaders game | `registerCommand`, `ui.custom` |
+| `doom-overlay/` | Doom in overlay | `ui.custom` with overlay |
+| **Providers** |||
+| `custom-provider-anthropic/` | Custom Anthropic proxy | `registerProvider` |
+| `custom-provider-gitlab-duo/` | GitLab Duo integration | `registerProvider` with OAuth |
+| **Messages & Communication** |||
+| `message-renderer.ts` | Custom message rendering | `registerMessageRenderer`, `sendMessage` |
+| `event-bus.ts` | Inter-extension events | `pi.events` |
+| **Session Metadata** |||
+| `session-name.ts` | Name sessions for selector | `setSessionName`, `getSessionName` |
+| `bookmark.ts` | Bookmark entries for /tree | `setLabel` |
+| **Misc** |||
+| `antigravity-image-gen.ts` | Image generation tool | `registerTool`, Google Antigravity |
+| `inline-bash.ts` | Inline bash in tool calls | `on("tool_call")` |
+| `with-deps/` | Extension with npm dependencies | Package structure with `package.json` |

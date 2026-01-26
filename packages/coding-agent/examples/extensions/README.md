@@ -88,6 +88,20 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 |-----------|-------------|
 | `mac-system-theme.ts` | Syncs pi theme with macOS dark/light mode |
 
+### Messages & Communication
+
+| Extension | Description |
+|-----------|-------------|
+| `message-renderer.ts` | Custom message rendering with colors and expandable details via `registerMessageRenderer` |
+| `event-bus.ts` | Inter-extension communication via `pi.events` |
+
+### Session Metadata
+
+| Extension | Description |
+|-----------|-------------|
+| `session-name.ts` | Name sessions for the session selector via `setSessionName` |
+| `bookmark.ts` | Bookmark entries with labels for `/tree` navigation via `setLabel` |
+
 ### Custom Providers
 
 | Extension | Description |
