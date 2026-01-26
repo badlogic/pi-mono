@@ -103,6 +103,8 @@ pi -e ./my-extension.ts
 
 ## Extension Locations
 
+> **Security:** Extensions run with your full system permissions and can execute arbitrary code. Only install from sources you trust.
+
 Extensions are auto-discovered from:
 
 | Location | Scope |

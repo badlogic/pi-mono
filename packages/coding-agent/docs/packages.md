@@ -16,6 +16,8 @@ Pi packages bundle extensions, skills, prompt templates, and themes so you can s
 
 ## Install and Manage
 
+> **Security:** Pi packages run with full system access. Extensions execute arbitrary code, and skills can instruct the model to perform any action including running executables. Review source code before installing third-party packages.
+
 ```bash
 pi install npm:@foo/bar@1.0.0
 pi install git:github.com/user/repo@v1
@@ -139,10 +141,13 @@ Filter what a package loads using the object form in settings:
 }
 ```
 
+`+path` and `-path` are exact paths relative to the package root.
+
 - Omit a key to load all of that type.
 - Use `[]` to load none of that type.
 - `!pattern` excludes matches.
-- `+pattern` force-includes, even if excluded by manifest.
+- `+path` force-includes an exact path.
+- `-path` force-excludes an exact path.
 - Filters layer on top of the manifest. They narrow down what is already allowed.
 
 ## Enable and Disable Resources
