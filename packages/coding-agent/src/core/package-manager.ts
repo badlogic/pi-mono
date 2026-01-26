@@ -955,6 +955,29 @@ export class DefaultPackageManager implements PackageManager {
 		const targetDir = this.getGitInstallPath(source, scope);
 		if (!existsSync(targetDir)) return;
 		rmSync(targetDir, { recursive: true, force: true });
+		this.pruneEmptyGitParents(targetDir, this.getGitInstallRoot(scope));
+	}
+
+	private pruneEmptyGitParents(targetDir: string, installRoot: string | undefined): void {
+		if (!installRoot) return;
+		const resolvedRoot = resolve(installRoot);
+		let current = dirname(targetDir);
+		while (current.startsWith(resolvedRoot) && current !== resolvedRoot) {
+			if (!existsSync(current)) {
+				current = dirname(current);
+				continue;
+			}
+			const entries = readdirSync(current);
+			if (entries.length > 0) {
+				break;
+			}
+			try {
+				rmSync(current, { recursive: true, force: true });
+			} catch {
+				break;
+			}
+			current = dirname(current);
+		}
 	}
 
 	private ensureNpmProject(installRoot: string): void {
