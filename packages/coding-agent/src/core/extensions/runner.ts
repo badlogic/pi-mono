@@ -628,7 +628,7 @@ export class ExtensionRunner {
 		return undefined;
 	}
 
-/** Emit input event. Transforms chain, "handled" short-circuits. */
+	/** Emit input event. Transforms chain, "handled" short-circuits. */
 	async emitInput(text: string, images: ImageContent[] | undefined, source: InputSource): Promise<InputEventResult> {
 		const ctx = this.createContext();
 		let currentText = text;
