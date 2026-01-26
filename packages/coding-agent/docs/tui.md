@@ -2,7 +2,7 @@
 
 # TUI Components
 
-Hooks and custom tools can render custom TUI components for interactive user interfaces. This page covers the component system and available building blocks.
+Extensions and custom tools can render custom TUI components for interactive user interfaces. This page covers the component system and available building blocks.
 
 **Source:** [`@mariozechner/pi-tui`](https://github.com/badlogic/pi-mono/tree/main/packages/tui)
 
@@ -14,7 +14,8 @@ All components implement:
 interface Component {
   render(width: number): string[];
   handleInput?(data: string): void;
-  invalidate?(): void;
+  wantsKeyRelease?: boolean;
+  invalidate(): void;
 }
 ```
 
@@ -22,7 +23,8 @@ interface Component {
 |--------|-------------|
 | `render(width)` | Return array of strings (one per line). Each line **must not exceed `width`**. |
 | `handleInput?(data)` | Receive keyboard input when component has focus. |
-| `invalidate?()` | Clear cached render state. |
+| `wantsKeyRelease?` | If true, component receives key release events (Kitty protocol). Default: false. |
+| `invalidate()` | Clear cached render state. Called on theme changes. |
 
 The TUI appends a full SGR reset and OSC 8 reset at the end of each rendered line. Styles do not carry across lines. If you emit multi-line text with styling, reapply styles per line or use `wrapTextWithAnsi()` so styles are preserved for each wrapped line.
 
@@ -84,7 +86,7 @@ Without this propagation, typing with an IME (Chinese, Japanese, Korean, etc.) w
 
 ## Using Components
 
-**In hooks** via `ctx.ui.custom()`:
+**In extensions** via `ctx.ui.custom()`:
 
 ```typescript
 pi.on("session_start", async (_event, ctx) => {
@@ -337,7 +339,7 @@ class MySelector {
 }
 ```
 
-Usage in a hook:
+Usage in an extension:
 
 ```typescript
 pi.registerCommand("pick", {

@@ -20,12 +20,24 @@ Pi runs in four modes: interactive, print or JSON, RPC for process integration, 
 - [Quick Start](#quick-start)
 - [Providers & Models](#providers--models)
 - [Interactive Mode](#interactive-mode)
+  - [Editor](#editor)
+  - [Commands](#commands)
+  - [Keyboard Shortcuts](#keyboard-shortcuts)
+  - [Message Queue](#message-queue)
 - [Sessions](#sessions)
-- [Configuration](#configuration)
+  - [Branching](#branching)
+  - [Compaction](#compaction)
+- [Settings](#settings)
+- [Context Files](#context-files)
 - [Customization](#customization)
-- [CLI Reference](#cli-reference)
+  - [Prompt Templates](#prompt-templates)
+  - [Skills](#skills)
+  - [Extensions](#extensions)
+  - [Themes](#themes)
+  - [Pi Packages](#pi-packages)
 - [Programmatic Usage](#programmatic-usage)
 - [Philosophy](#philosophy)
+- [CLI Reference](#cli-reference)
 
 ---
 
@@ -91,7 +103,7 @@ See [docs/providers.md](docs/providers.md) for detailed setup instructions.
 
 ## Interactive Mode
 
-<img src="docs/images/interactive-mode.png" alt="Interactive Mode" width="600">
+<p align="center"><img src="docs/images/interactive-mode.png" alt="Interactive Mode" width="600"></p>
 
 The interface from top to bottom:
 
@@ -134,7 +146,7 @@ Type `/` in the editor to trigger commands. [Extensions](#extensions) can regist
 | `/copy` | Copy last assistant message to clipboard |
 | `/export [file]` | Export session to HTML file |
 | `/share` | Upload as private GitHub gist with shareable HTML link |
-| `/reload` | Reload extensions, skills, prompts, themes |
+| `/reload` | Reload extensions, skills, prompts, context files (themes hot-reload automatically) |
 | `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display version history |
 | `/quit`, `/exit` | Quit pi |
@@ -157,11 +169,22 @@ See `/hotkeys` for the full list. Customize via `~/.pi/agent/keybindings.json`. 
 | Ctrl+O | Collapse/expand tool output |
 | Ctrl+T | Collapse/expand thinking blocks |
 
+### Message Queue
+
+Submit messages while the agent is working:
+
+- **Enter** queues a *steering* message, delivered after current tool execution (interrupts remaining tools)
+- **Alt+Enter** queues a *follow-up* message, delivered only after the agent finishes all work
+- **Escape** aborts and restores queued messages to editor
+- **Alt+Up** retrieves queued messages back to editor
+
+Configure delivery in [settings](docs/settings.md): `steeringMode` and `followUpMode` can be `"one-at-a-time"` (default, waits for response) or `"all"` (delivers all queued at once).
+
 ---
 
 ## Sessions
 
-Sessions are stored as JSONL files with a tree structure. Each entry has an `id` and `parentId`, enabling in-place branching without creating new files.
+Sessions are stored as JSONL files with a tree structure. Each entry has an `id` and `parentId`, enabling in-place branching without creating new files. See [docs/session.md](docs/session.md) for file format.
 
 ### Management
 
@@ -178,6 +201,8 @@ pi --session <path>    # Use specific session file or ID
 
 **`/tree`** - Navigate the session tree in-place. Select any previous point, continue from there, and switch between branches. All history preserved in a single file.
 
+<p align="center"><img src="docs/images/tree-view.png" alt="Tree View" width="600"></p>
+
 - Search by typing, page with ←/→
 - Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
 - Press `l` to label entries as bookmarks
@@ -192,71 +217,73 @@ Long sessions can exhaust context windows. Compaction summarizes older messages 
 
 **Automatic:** Enabled by default. Triggers on context overflow (recovers and retries) or when approaching the limit (proactive). Configure via `/settings` or `settings.json`.
 
-Compaction is lossy. The full history remains in the JSONL file; use `/tree` to revisit. Customize compaction behavior via [extensions](#extensions).
-
-See [docs/session.md](docs/session.md) for file format and [docs/compaction.md](docs/compaction.md) for internals.
+Compaction is lossy. The full history remains in the JSONL file; use `/tree` to revisit. Customize compaction behavior via [extensions](#extensions). See [docs/compaction.md](docs/compaction.md) for internals.
 
 ---
 
-## Configuration
+## Settings
 
-### Context Files
+Use `/settings` to modify common options, or edit JSON files directly:
 
-Pi loads `AGENTS.md` files at startup (global `~/.pi/agent/AGENTS.md`, parent directories, current directory). Use for project instructions, conventions, common commands.
-
-### System Prompt
-
-Replace the default system prompt with `.pi/SYSTEM.md` (project) or `~/.pi/agent/SYSTEM.md` (global). Append without replacing via `APPEND_SYSTEM.md`.
-
-### Custom Models
-
-Add Ollama, vLLM, LM Studio, or proxy endpoints via `~/.pi/agent/models.json`:
-
-```json
-{
-  "providers": {
-    "ollama": {
-      "baseUrl": "http://localhost:11434/v1",
-      "api": "openai-completions",
-      "models": [{ "id": "llama-3.1-8b", "name": "Llama 3.1 8B", ... }]
-    }
-  }
-}
-```
-
-See [docs/models.md](docs/models.md) for full schema and examples.
-
-### Settings
-
-Global settings in `~/.pi/agent/settings.json`, project overrides in `.pi/settings.json`.
+| Location | Scope |
+|----------|-------|
+| `~/.pi/agent/settings.json` | Global (all projects) |
+| `.pi/settings.json` | Project (overrides global) |
 
 See [docs/settings.md](docs/settings.md) for all options.
 
 ---
 
+## Context Files
+
+Pi loads `AGENTS.md` (or `CLAUDE.md`) at startup from:
+- `~/.pi/agent/AGENTS.md` (global)
+- Parent directories (walking up from cwd)
+- Current directory
+
+Use for project instructions, conventions, common commands. All matching files are concatenated.
+
+### System Prompt
+
+Replace the default system prompt with `.pi/SYSTEM.md` (project) or `~/.pi/agent/SYSTEM.md` (global). Append without replacing via `APPEND_SYSTEM.md`.
+
+---
+
 ## Customization
-
-### Themes
-
-Built-in: `dark`, `light`. Create custom themes in `~/.pi/agent/themes/*.json` with live reload.
-
-See [docs/themes.md](docs/themes.md).
 
 ### Prompt Templates
 
-Reusable prompts as Markdown files in `~/.pi/agent/prompts/` or `.pi/prompts/`. Type `/name` to expand.
+Reusable prompts as Markdown files. Type `/name` to expand.
 
-See [docs/prompt-templates.md](docs/prompt-templates.md).
+```markdown
+<!-- ~/.pi/agent/prompts/review.md -->
+Review this code for bugs, security issues, and performance problems.
+Focus on: {{focus}}
+```
+
+Place in `~/.pi/agent/prompts/`, `.pi/prompts/`, or a [pi package](#pi-packages) to share with others. See [docs/prompt-templates.md](docs/prompt-templates.md).
 
 ### Skills
 
-On-demand capability packages following the [Agent Skills standard](https://agentskills.io). Place in `~/.pi/agent/skills/` or `.pi/skills/`. Invoke via `/skill:name` or let the agent load them automatically.
+On-demand capability packages following the [Agent Skills standard](https://agentskills.io). Invoke via `/skill:name` or let the agent load them automatically.
 
-See [docs/skills.md](docs/skills.md).
+```markdown
+<!-- ~/.pi/agent/skills/my-skill/SKILL.md -->
+# My Skill
+Use this skill when the user asks about X.
+
+## Steps
+1. Do this
+2. Then that
+```
+
+Place in `~/.pi/agent/skills/`, `.pi/skills/`, or a [pi package](#pi-packages) to share with others. See [docs/skills.md](docs/skills.md).
 
 ### Extensions
 
-TypeScript modules for custom tools, commands, event interception, and UI.
+<p align="center"><img src="docs/images/doom-extension.png" alt="Doom Extension" width="600"></p>
+
+TypeScript modules that extend pi with custom tools, commands, keyboard shortcuts, event handlers, and UI components.
 
 ```typescript
 export default function (pi: ExtensionAPI) {
@@ -266,59 +293,64 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-Place in `~/.pi/agent/extensions/` or `.pi/extensions/`.
+**What's possible:**
+- Custom tools (or replace built-in tools entirely)
+- Sub-agents and plan mode
+- Custom compaction and summarization
+- Permission gates and path protection
+- Custom editors and UI components
+- Status lines, headers, footers
+- Git checkpointing and auto-commit
+- SSH and sandbox execution
+- MCP server integration
+- Make pi look like Claude Code
+- Games while waiting (yes, Doom runs)
+- ...anything you can dream up
 
-See [docs/extensions.md](docs/extensions.md) and [examples/extensions/](examples/extensions/).
+Place in `~/.pi/agent/extensions/`, `.pi/extensions/`, or a [pi package](#pi-packages) to share with others. See [docs/extensions.md](docs/extensions.md) and [examples/extensions/](examples/extensions/).
+
+### Themes
+
+Built-in: `dark`, `light`. Themes hot-reload: modify the active theme file and pi immediately applies changes.
+
+Place in `~/.pi/agent/themes/`, `.pi/themes/`, or a [pi package](#pi-packages) to share with others. See [docs/themes.md](docs/themes.md).
 
 ### Pi Packages
 
-Bundle and share extensions, skills, prompts, and themes via npm or git:
+Bundle and share extensions, skills, prompts, and themes via npm or git.
 
 ```bash
 pi install npm:@foo/pi-tools
+pi install npm:@foo/pi-tools@1.2.3      # pinned version
 pi install git:github.com/user/repo
+pi install git:github.com/user/repo@v1  # tag or commit
+pi install https://github.com/user/repo
+pi remove npm:@foo/pi-tools
 pi list
-pi update
+pi update                               # skips pinned packages
+pi config                               # enable/disable extensions, skills, prompts, themes
 ```
+
+Packages install to `~/.pi/agent/git/` (git) or global npm. Use `-l` for project-local installs (`.pi/git/`, `.pi/npm/`).
+
+Create a package by adding a `pi` key to `package.json`:
+
+```json
+{
+  "name": "my-pi-package",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"],
+    "prompts": ["./prompts"],
+    "themes": ["./themes"]
+  }
+}
+```
+
+Without a `pi` manifest, pi auto-discovers from conventional directories (`extensions/`, `skills/`, `prompts/`, `themes/`).
 
 See [docs/packages.md](docs/packages.md).
-
----
-
-## CLI Reference
-
-```bash
-pi [options] [@files...] [messages...]
-```
-
-### Modes
-
-| Flag | Description |
-|------|-------------|
-| (default) | Interactive mode |
-| `-p`, `--print` | Print response and exit |
-| `--mode json` | JSON event stream |
-| `--mode rpc` | RPC mode for process integration |
-
-### Common Options
-
-| Option | Description |
-|--------|-------------|
-| `--provider`, `--model` | Select provider and model |
-| `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high` |
-| `--models <patterns>` | Patterns for Ctrl+P cycling |
-| `-c`, `--continue` | Continue most recent session |
-| `-r`, `--resume` | Browse and select session |
-| `--tools <list>` | Limit tools (default: `read,bash,edit,write`) |
-
-### File Arguments
-
-```bash
-pi @prompt.md "Answer this"
-pi @screenshot.png "What's in this image?"
-```
-
-See `pi --help` for all options.
 
 ---
 
@@ -342,37 +374,162 @@ See [docs/sdk.md](docs/sdk.md) and [examples/sdk/](examples/sdk/).
 
 ### RPC Mode
 
+For non-Node.js integrations, use RPC mode over stdin/stdout:
+
 ```bash
-pi --mode rpc --no-session
+pi --mode rpc
 ```
 
 See [docs/rpc.md](docs/rpc.md) for the protocol.
-
-### HTML Export
-
-```bash
-pi --export session.jsonl output.html
-```
 
 ---
 
 ## Philosophy
 
-**No MCP.** Build CLI tools with READMEs (see [Skills](#skills)). [Why?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
+Pi is aggressively extensible so it doesn't have to dictate your workflow. Features that other tools bake in can be built with [extensions](#extensions), [skills](#skills), or installed from third-party [pi packages](#pi-packages). This keeps the core minimal while letting you shape pi to fit how you work.
 
-**No sub-agents.** Spawn pi instances via tmux, or build your own with [Extensions](#extensions).
+**No MCP.** Build CLI tools with READMEs (see [Skills](#skills)), or build an extension that adds MCP support. [Why?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
 
-**No permission popups.** Run in a container or build your own confirmation flow.
+**No sub-agents.** There's many ways to do this. Spawn pi instances via tmux, or build your own with [extensions](#extensions), or install a package that does it your way.
 
-**No plan mode.** Write plans to files, start fresh for implementation.
+**No permission popups.** Run in a container, or build your own confirmation flow with [extensions](#extensions) inline with your environment and security requirements.
+
+**No plan mode.** Write plans to files, or build it with [extensions](#extensions), or install a package.
+
+**No built-in to-dos.** They confuse models. Use a TODO.md file, or build your own with [extensions](#extensions).
+
+**No background bash.** Use tmux. Full observability, direct interaction.
 
 Read the [blog post](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/) for the full rationale.
 
 ---
 
-## Development
+## CLI Reference
 
-See [docs/development.md](docs/development.md) for forking, rebranding, and debugging.
+```bash
+pi [options] [@files...] [messages...]
+```
+
+### Package Commands
+
+```bash
+pi install <source> [-l]    # Install package, -l for project-local
+pi remove <source> [-l]     # Remove package
+pi update [source]          # Update packages (skips pinned)
+pi list                     # List installed packages
+pi config                   # Enable/disable package resources
+```
+
+### Modes
+
+| Flag | Description |
+|------|-------------|
+| (default) | Interactive mode |
+| `-p`, `--print` | Print response and exit |
+| `--mode json` | Output all events as JSON lines (see [docs/json.md](docs/json.md)) |
+| `--mode rpc` | RPC mode for process integration (see [docs/rpc.md](docs/rpc.md)) |
+| `--export <in> [out]` | Export session to HTML |
+
+### Model Options
+
+| Option | Description |
+|--------|-------------|
+| `--provider <name>` | Provider (anthropic, openai, google, etc.) |
+| `--model <id>` | Model ID |
+| `--api-key <key>` | API key (overrides env vars) |
+| `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
+| `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling |
+| `--list-models [search]` | List available models |
+
+### Session Options
+
+| Option | Description |
+|--------|-------------|
+| `-c`, `--continue` | Continue most recent session |
+| `-r`, `--resume` | Browse and select session |
+| `--session <path>` | Use specific session file or partial UUID |
+| `--session-dir <dir>` | Custom session storage directory |
+| `--no-session` | Ephemeral mode (don't save) |
+
+### Tool Options
+
+| Option | Description |
+|--------|-------------|
+| `--tools <list>` | Enable specific built-in tools (default: `read,bash,edit,write`) |
+| `--no-tools` | Disable all built-in tools (extension tools still work) |
+
+Available built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`
+
+### Resource Options
+
+| Option | Description |
+|--------|-------------|
+| `-e`, `--extension <source>` | Load extension from path, npm, or git (repeatable) |
+| `--no-extensions` | Disable extension discovery |
+| `--skill <path>` | Load skill (repeatable) |
+| `--no-skills` | Disable skill discovery |
+| `--prompt-template <path>` | Load prompt template (repeatable) |
+| `--no-prompt-templates` | Disable prompt template discovery |
+| `--theme <path>` | Load theme (repeatable) |
+| `--no-themes` | Disable theme discovery |
+
+Combine `--no-*` with explicit flags to load exactly what you need, ignoring settings.json (e.g., `--no-extensions -e ./my-ext.ts`).
+
+### Other Options
+
+| Option | Description |
+|--------|-------------|
+| `--system-prompt <text>` | Replace default prompt (context files and skills still appended) |
+| `--append-system-prompt <text>` | Append to system prompt |
+| `--verbose` | Force verbose startup |
+| `-h`, `--help` | Show help |
+| `-v`, `--version` | Show version |
+
+### File Arguments
+
+Prefix files with `@` to include in the message:
+
+```bash
+pi @prompt.md "Answer this"
+pi -p @screenshot.png "What's in this image?"
+pi @code.ts @test.ts "Review these files"
+```
+
+### Examples
+
+```bash
+# Interactive with initial prompt
+pi "List all .ts files in src/"
+
+# Non-interactive
+pi -p "Summarize this codebase"
+
+# Different model
+pi --provider openai --model gpt-4o "Help me refactor"
+
+# Limit model cycling
+pi --models "claude-*,gpt-4o"
+
+# Read-only mode
+pi --tools read,grep,find,ls -p "Review the code"
+
+# High thinking level
+pi --thinking high "Solve this complex problem"
+```
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `PI_CODING_AGENT_DIR` | Override config directory (default: `~/.pi/agent`) |
+| `PI_SKIP_VERSION_CHECK` | Skip version check at startup |
+| `VISUAL`, `EDITOR` | External editor for Ctrl+G |
+
+---
+
+## Contributing & Development
+
+See [CONTRIBUTING.md](../../CONTRIBUTING.md) for guidelines and [docs/development.md](docs/development.md) for setup, forking, and debugging.
 
 ---
 
