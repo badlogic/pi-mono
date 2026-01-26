@@ -49,7 +49,7 @@ pi
 /login  # Then select provider
 ```
 
-Then just talk to pi. Ask it to work on your codebase, run commands, or perform tasks for you.
+Then just talk to pi. By default, pi gives the model four tools: `read`, `write`, `edit`, and `bash`. The model uses these to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [pi packages](#pi-packages).
 
 **Platform notes:** [Windows](docs/windows.md) | [Terminal setup](docs/terminal-setup.md) | [Shell aliases](docs/shell-aliases.md)
 
@@ -91,16 +91,16 @@ See [docs/providers.md](docs/providers.md) for detailed setup instructions.
 
 ## Interactive Mode
 
-![Interactive Mode](docs/images/interactive-mode.png)
+<img src="docs/images/interactive-mode.png" alt="Interactive Mode" width="600">
 
 The interface from top to bottom:
 
 - **Startup header** - Shows shortcuts (`/hotkeys` for all), loaded AGENTS.md files, prompt templates, skills, and extensions
-- **Messages** - Your messages, assistant responses, tool calls and results, custom UI from extensions
-- **Editor** - Where you type
-- **Footer** - Working directory, token usage, cost, current model
+- **Messages** - Your messages, assistant responses, tool calls and results, notifications, errors, and extension UI
+- **Editor** - Where you type; border color indicates thinking level
+- **Footer** - Working directory, session name, total token/cache usage, cost, context usage, current model
 
-The editor can be temporarily replaced by other UI, like built-in `/settings` or custom UI from extensions (e.g., a Q&A tool that lets the user answer model questions in a structured format). Extensions can also replace the editor, add widgets above/below it, a status line, custom footer, or overlays.
+The editor can be temporarily replaced by other UI, like built-in `/settings` or custom UI from extensions (e.g., a Q&A tool that lets the user answer model questions in a structured format). [Extensions](#extensions) can also replace the editor, add widgets above/below it, a status line, custom footer, or overlays.
 
 ### Editor
 
@@ -110,58 +110,91 @@ The editor can be temporarily replaced by other UI, like built-in `/settings` or
 | Path completion | Tab to complete paths |
 | Multi-line | Shift+Enter (or Ctrl+Enter on Windows Terminal) |
 | Images | Ctrl+V to paste, or drag onto terminal |
-| Bash commands | Prefix with `!` (e.g., `!git status`) |
+| Bash commands | `!command` runs and sends output to LLM, `!!command` runs without sending |
+
+Standard editing keybindings for delete word, undo, etc. See [docs/keybindings.md](docs/keybindings.md).
 
 ### Commands
 
-Type `/` in the editor to trigger commands. Extensions can register custom commands, skills are available as `/skill:name`, and prompt templates expand via `/templatename`.
+Type `/` in the editor to trigger commands. [Extensions](#extensions) can register custom commands, [skills](#skills) are available as `/skill:name`, and [prompt templates](#prompt-templates) expand via `/templatename`.
 
 | Command | Description |
 |---------|-------------|
 | `/login`, `/logout` | OAuth authentication |
 | `/model` | Switch models |
+| `/scoped-models` | Enable/disable models for Ctrl+P cycling |
 | `/settings` | Thinking level, theme, message delivery |
-| `/resume`, `/new` | Session management |
-| `/tree`, `/fork` | Navigate and branch session history |
-| `/compact` | Manually compact context |
-| `/export`, `/share` | Export to HTML or GitHub gist |
+| `/resume` | Pick from previous sessions |
+| `/new` | Start a new session |
+| `/name <name>` | Set session display name |
+| `/session` | Show session info (path, tokens, cost) |
+| `/tree` | Jump to any point in the session and continue from there |
+| `/fork` | Create a new session from the current branch |
+| `/compact [prompt]` | Manually compact context, optional custom instructions |
+| `/copy` | Copy last assistant message to clipboard |
+| `/export [file]` | Export session to HTML file |
+| `/share` | Upload as private GitHub gist with shareable HTML link |
 | `/reload` | Reload extensions, skills, prompts, themes |
 | `/hotkeys` | Show all keyboard shortcuts |
-
-See [Customization](#customization) for skills, prompt templates, and extensions.
+| `/changelog` | Display version history |
+| `/quit`, `/exit` | Quit pi |
 
 ### Keyboard Shortcuts
 
 See `/hotkeys` for the full list. Customize via `~/.pi/agent/keybindings.json`. See [docs/keybindings.md](docs/keybindings.md).
 
-**Highlights:**
+**Commonly used:**
 
 | Key | Action |
 |-----|--------|
-| Ctrl+P | Cycle models |
-| Ctrl+L | Open model selector |
-| Shift+Tab | Cycle thinking level |
-| Ctrl+O | Toggle tool output |
-| Ctrl+T | Toggle thinking blocks |
+| Ctrl+C | Clear editor |
+| Ctrl+C twice | Quit |
 | Escape | Cancel/abort |
+| Escape twice | Open `/tree` |
+| Ctrl+L | Open model selector |
+| Ctrl+P / Shift+Ctrl+P | Cycle scoped models forward/backward |
+| Shift+Tab | Cycle thinking level |
+| Ctrl+O | Collapse/expand tool output |
+| Ctrl+T | Collapse/expand thinking blocks |
 
 ---
 
 ## Sessions
 
-Sessions auto-save to `~/.pi/agent/sessions/` with tree structure for branching.
+Sessions are stored as JSONL files with a tree structure. Each entry has an `id` and `parentId`, enabling in-place branching without creating new files.
+
+### Management
+
+Sessions auto-save to `~/.pi/agent/sessions/` organized by working directory.
 
 ```bash
-pi -c              # Continue most recent
-pi -r              # Browse and select
-pi --no-session    # Ephemeral mode
+pi -c                  # Continue most recent session
+pi -r                  # Browse and select from past sessions
+pi --no-session        # Ephemeral mode (don't save)
+pi --session <path>    # Use specific session file or ID
 ```
 
-**Branching:** Use `/tree` to navigate history in-place, or `/fork` to create a new session from any point.
+### Branching
 
-**Compaction:** Long sessions can exhaust context. Use `/compact` manually or enable auto-compaction in `/settings`.
+**`/tree`** - Navigate the session tree in-place. Select any previous point, continue from there, and switch between branches. All history preserved in a single file.
 
-See [docs/sessions.md](docs/sessions.md) for file format and branching details.
+- Search by typing, page with ←/→
+- Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
+- Press `l` to label entries as bookmarks
+
+**`/fork`** - Create a new session file from the current branch. Opens a selector, copies history up to the selected point, and places that message in the editor for modification.
+
+### Compaction
+
+Long sessions can exhaust context windows. Compaction summarizes older messages while keeping recent ones.
+
+**Manual:** `/compact` or `/compact <custom instructions>`
+
+**Automatic:** Enabled by default. Triggers on context overflow (recovers and retries) or when approaching the limit (proactive). Configure via `/settings` or `settings.json`.
+
+Compaction is lossy. The full history remains in the JSONL file; use `/tree` to revisit. Customize compaction behavior via [extensions](#extensions).
+
+See [docs/session.md](docs/session.md) for file format and [docs/compaction.md](docs/compaction.md) for internals.
 
 ---
 

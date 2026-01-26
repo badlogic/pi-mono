@@ -2,12 +2,14 @@
 
 LLMs have limited context windows. When conversations grow too long, pi uses compaction to summarize older content while preserving recent work. This page covers both auto-compaction and branch summarization.
 
-**Source files:**
-- [`src/core/compaction/compaction.ts`](../src/core/compaction/compaction.ts) - Auto-compaction logic
-- [`src/core/compaction/branch-summarization.ts`](../src/core/compaction/branch-summarization.ts) - Branch summarization
-- [`src/core/compaction/utils.ts`](../src/core/compaction/utils.ts) - Shared utilities (file tracking, serialization)
-- [`src/core/session-manager.ts`](../src/core/session-manager.ts) - Entry types (`CompactionEntry`, `BranchSummaryEntry`)
-- [`src/core/hooks/types.ts`](../src/core/hooks/types.ts) - Hook event types
+**Source files** ([pi-mono](https://github.com/badlogic/pi-mono)):
+- [`packages/coding-agent/src/core/compaction/compaction.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/compaction/compaction.ts) - Auto-compaction logic
+- [`packages/coding-agent/src/core/compaction/branch-summarization.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/compaction/branch-summarization.ts) - Branch summarization
+- [`packages/coding-agent/src/core/compaction/utils.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/compaction/utils.ts) - Shared utilities (file tracking, serialization)
+- [`packages/coding-agent/src/core/session-manager.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/session-manager.ts) - Entry types (`CompactionEntry`, `BranchSummaryEntry`)
+- [`packages/coding-agent/src/core/extensions/types.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/extensions/types.ts) - Extension event types
+
+For TypeScript definitions in your project, inspect `node_modules/@mariozechner/pi-coding-agent/dist/`.
 
 ## Overview
 
@@ -108,13 +110,13 @@ Valid cut points are:
 - User messages
 - Assistant messages
 - BashExecution messages
-- Hook messages (custom_message, branch_summary)
+- Custom messages (custom_message, branch_summary)
 
 Never cut at tool results (they must stay with their tool call).
 
 ### CompactionEntry Structure
 
-Defined in [`src/core/session-manager.ts`](../src/core/session-manager.ts):
+Defined in [`session-manager.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/session-manager.ts):
 
 ```typescript
 interface CompactionEntry<T = unknown> {
@@ -125,8 +127,8 @@ interface CompactionEntry<T = unknown> {
   summary: string;
   firstKeptEntryId: string;
   tokensBefore: number;
-  fromHook?: boolean;  // true if hook provided the compaction
-  details?: T;         // hook-specific data
+  fromHook?: boolean;  // true if provided by extension (legacy field name)
+  details?: T;         // implementation-specific data
 }
 
 // Default compaction uses this for details (from compaction.ts):
@@ -136,9 +138,9 @@ interface CompactionDetails {
 }
 ```
 
-Hooks can store any JSON-serializable data in `details`. The default compaction tracks file operations, but custom compaction hooks can use their own structure.
+Extensions can store any JSON-serializable data in `details`. The default compaction tracks file operations, but custom extension implementations can use their own structure.
 
-See [`prepareCompaction()`](../src/core/compaction/compaction.ts) and [`compact()`](../src/core/compaction/compaction.ts) for the implementation.
+See [`prepareCompaction()`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/compaction/compaction.ts) and [`compact()`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/compaction/compaction.ts) for the implementation.
 
 ## Branch Summarization
 
@@ -181,7 +183,7 @@ This means file tracking accumulates across multiple compactions or nested branc
 
 ### BranchSummaryEntry Structure
 
-Defined in [`src/core/session-manager.ts`](../src/core/session-manager.ts):
+Defined in [`session-manager.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/session-manager.ts):
 
 ```typescript
 interface BranchSummaryEntry<T = unknown> {
@@ -191,8 +193,8 @@ interface BranchSummaryEntry<T = unknown> {
   timestamp: number;
   summary: string;
   fromId: string;      // Entry we navigated from
-  fromHook?: boolean;  // true if hook provided the summary
-  details?: T;         // hook-specific data
+  fromHook?: boolean;  // true if provided by extension (legacy field name)
+  details?: T;         // implementation-specific data
 }
 
 // Default branch summarization uses this for details (from branch-summarization.ts):
@@ -202,9 +204,9 @@ interface BranchSummaryDetails {
 }
 ```
 
-Same as compaction, hooks can store custom data in `details`.
+Same as compaction, extensions can store custom data in `details`.
 
-See [`collectEntriesForBranchSummary()`](../src/core/compaction/branch-summarization.ts), [`prepareBranchEntries()`](../src/core/compaction/branch-summarization.ts), and [`generateBranchSummary()`](../src/core/compaction/branch-summarization.ts) for the implementation.
+See [`collectEntriesForBranchSummary()`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/compaction/branch-summarization.ts), [`prepareBranchEntries()`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/compaction/branch-summarization.ts), and [`generateBranchSummary()`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/compaction/branch-summarization.ts) for the implementation.
 
 ## Summary Format
 
@@ -248,7 +250,7 @@ path/to/changed.ts
 
 ### Message Serialization
 
-Before summarization, messages are serialized to text via [`serializeConversation()`](../src/core/compaction/utils.ts):
+Before summarization, messages are serialized to text via [`serializeConversation()`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/compaction/utils.ts):
 
 ```
 [User]: What they said
@@ -260,9 +262,9 @@ Before summarization, messages are serialized to text via [`serializeConversatio
 
 This prevents the model from treating it as a conversation to continue.
 
-## Custom Summarization via Hooks
+## Custom Summarization via Extensions
 
-Hooks can intercept and customize both compaction and branch summarization. See [`src/core/hooks/types.ts`](../src/core/hooks/types.ts) for event type definitions.
+Extensions can intercept and customize both compaction and branch summarization. See [`extensions/types.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/extensions/types.ts) for event type definitions.
 
 ### session_before_compact
 
@@ -332,7 +334,7 @@ pi.on("session_before_compact", async (event, ctx) => {
 });
 ```
 
-See [examples/hooks/custom-compaction.ts](../examples/hooks/custom-compaction.ts) for a complete example using a different model.
+See [custom-compaction.ts](../examples/extensions/custom-compaction.ts) for a complete example using a different model.
 
 ### session_before_tree
 
