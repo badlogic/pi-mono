@@ -417,34 +417,39 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
-		// Process zAi models
-		if (data.zai?.models) {
-			for (const [modelId, model] of Object.entries(data.zai.models)) {
-				const m = model as ModelsDevModel;
-				if (m.tool_call !== true) continue;
-				const supportsImage = m.modalities?.input?.includes("image")
+		// Process zAi models (from both 'zai' and 'zai-coding-plan' providers - same API endpoint)
+		const zaiProviders = ['zai', 'zai-coding-plan'] as const;
+		for (const zaiProvider of zaiProviders) {
+			if (data[zaiProvider]?.models) {
+				for (const [modelId, model] of Object.entries(data[zaiProvider].models)) {
+					const m = model as ModelsDevModel;
+					if (m.tool_call !== true) continue;
+					// Skip if already added from another zai provider
+					if (models.some(existing => existing.provider === "zai" && existing.id === modelId)) continue;
+					const supportsImage = m.modalities?.input?.includes("image")
 
-				models.push({
-				id: modelId,
-				name: m.name || modelId,
-				api: "openai-completions",
-				provider: "zai",
-				baseUrl: "https://api.z.ai/api/coding/paas/v4",
-				reasoning: m.reasoning === true,
-				input: supportsImage ? ["text", "image"] : ["text"],
-				cost: {
-					input: m.cost?.input || 0,
-					output: m.cost?.output || 0,
-					cacheRead: m.cost?.cache_read || 0,
-					cacheWrite: m.cost?.cache_write || 0,
-				},
-				compat: {
-					supportsDeveloperRole: false,
-					thinkingFormat: "zai",
-				},
-				contextWindow: m.limit?.context || 4096,
-				maxTokens: m.limit?.output || 4096,
-				});
+					models.push({
+					id: modelId,
+					name: m.name || modelId,
+					api: "openai-completions",
+					provider: "zai",
+					baseUrl: "https://api.z.ai/api/coding/paas/v4",
+					reasoning: m.reasoning === true,
+					input: supportsImage ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					compat: {
+						supportsDeveloperRole: false,
+						thinkingFormat: "zai",
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+					});
+				}
 			}
 		}
 
