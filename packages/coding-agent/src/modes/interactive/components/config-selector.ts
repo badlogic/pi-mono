@@ -98,12 +98,14 @@ function buildGroups(resolved: ResolvedPaths): ResourceGroup[] {
 				group.subgroups.push(subgroup);
 			}
 
+			const displayName =
+				resourceType === "skills" && basename(path) === "SKILL.md" ? basename(dirname(path)) : basename(path);
 			subgroup.items.push({
 				path,
 				enabled,
 				metadata,
 				resourceType,
-				displayName: basename(path),
+				displayName,
 				groupKey,
 				subgroupKey,
 			});

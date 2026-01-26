@@ -169,7 +169,7 @@ function collectFiles(dir: string, filePattern: RegExp, skipNodeModules = true):
 	return files;
 }
 
-function collectSkillEntries(dir: string): string[] {
+function collectSkillEntries(dir: string, includeRootFiles = true): string[] {
 	const entries: string[] = [];
 	if (!existsSync(dir)) return entries;
 
@@ -194,14 +194,13 @@ function collectSkillEntries(dir: string): string[] {
 			}
 
 			if (isDir) {
-				const skillMd = join(fullPath, "SKILL.md");
-				if (existsSync(skillMd)) {
+				entries.push(...collectSkillEntries(fullPath, false));
+			} else if (isFile) {
+				const isRootMd = includeRootFiles && entry.name.endsWith(".md");
+				const isSkillMd = !includeRootFiles && entry.name === "SKILL.md";
+				if (isRootMd || isSkillMd) {
 					entries.push(fullPath);
-				} else {
-					entries.push(...collectSkillEntries(fullPath));
 				}
-			} else if (isFile && entry.name.endsWith(".md")) {
-				entries.push(fullPath);
 			}
 		}
 	} catch {
@@ -211,48 +210,8 @@ function collectSkillEntries(dir: string): string[] {
 	return entries;
 }
 
-function collectAutoSkillEntries(dir: string, isRoot = true): string[] {
-	const entries: string[] = [];
-	if (!existsSync(dir)) return entries;
-
-	try {
-		const dirEntries = readdirSync(dir, { withFileTypes: true });
-		for (const entry of dirEntries) {
-			if (entry.name.startsWith(".")) continue;
-			if (entry.name === "node_modules") continue;
-
-			const fullPath = join(dir, entry.name);
-			let isDir = entry.isDirectory();
-			let isFile = entry.isFile();
-
-			if (entry.isSymbolicLink()) {
-				try {
-					const stats = statSync(fullPath);
-					isDir = stats.isDirectory();
-					isFile = stats.isFile();
-				} catch {
-					continue;
-				}
-			}
-
-			if (isDir) {
-				const skillMd = join(fullPath, "SKILL.md");
-				if (existsSync(skillMd)) {
-					entries.push(fullPath);
-				} else {
-					entries.push(...collectAutoSkillEntries(fullPath, false));
-				}
-			} else if (isFile && entry.name.endsWith(".md")) {
-				if (isRoot || entry.name === "SKILL.md") {
-					entries.push(fullPath);
-				}
-			}
-		}
-	} catch {
-		// Ignore errors
-	}
-
-	return entries;
+function collectAutoSkillEntries(dir: string, includeRootFiles = true): string[] {
+	return collectSkillEntries(dir, includeRootFiles);
 }
 
 function collectAutoPromptEntries(dir: string): string[] {
@@ -400,9 +359,18 @@ function collectAutoExtensionEntries(dir: string): string[] {
 function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
 	const rel = relative(baseDir, filePath);
 	const name = basename(filePath);
-	return patterns.some(
-		(pattern) => minimatch(rel, pattern) || minimatch(name, pattern) || minimatch(filePath, pattern),
-	);
+	const isSkillFile = name === "SKILL.md";
+	const parentDir = isSkillFile ? dirname(filePath) : undefined;
+	const parentRel = isSkillFile ? relative(baseDir, parentDir!) : undefined;
+	const parentName = isSkillFile ? basename(parentDir!) : undefined;
+
+	return patterns.some((pattern) => {
+		if (minimatch(rel, pattern) || minimatch(name, pattern) || minimatch(filePath, pattern)) {
+			return true;
+		}
+		if (!isSkillFile) return false;
+		return minimatch(parentRel!, pattern) || minimatch(parentName!, pattern) || minimatch(parentDir!, pattern);
+	});
 }
 
 function normalizeExactPattern(pattern: string): string {
@@ -415,9 +383,18 @@ function normalizeExactPattern(pattern: string): string {
 function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: string): boolean {
 	if (patterns.length === 0) return false;
 	const rel = relative(baseDir, filePath);
+	const name = basename(filePath);
+	const isSkillFile = name === "SKILL.md";
+	const parentDir = isSkillFile ? dirname(filePath) : undefined;
+	const parentRel = isSkillFile ? relative(baseDir, parentDir!) : undefined;
+
 	return patterns.some((pattern) => {
 		const normalized = normalizeExactPattern(pattern);
-		return normalized === rel || normalized === filePath;
+		if (normalized === rel || normalized === filePath) {
+			return true;
+		}
+		if (!isSkillFile) return false;
+		return normalized === parentRel || normalized === parentDir;
 	});
 }
 

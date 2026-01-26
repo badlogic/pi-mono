@@ -59,8 +59,9 @@ describe("DefaultPackageManager", () => {
 		it("should resolve skill paths from settings", async () => {
 			const skillDir = join(agentDir, "skills", "my-skill");
 			mkdirSync(skillDir, { recursive: true });
+			const skillFile = join(skillDir, "SKILL.md");
 			writeFileSync(
-				join(skillDir, "SKILL.md"),
+				skillFile,
 				`---
 name: test-skill
 description: A test skill
@@ -71,8 +72,8 @@ Content`,
 			settingsManager.setSkillPaths(["skills"]);
 
 			const result = await packageManager.resolve();
-			// Skills with SKILL.md are returned as directory paths
-			expect(result.skills.some((r) => r.path === skillDir && r.enabled)).toBe(true);
+			// Skills with SKILL.md are returned as file paths
+			expect(result.skills.some((r) => r.path === skillFile && r.enabled)).toBe(true);
 		});
 
 		it("should resolve project paths relative to .pi", async () => {
@@ -144,8 +145,10 @@ Content`,
 
 			const result = await packageManager.resolveExtensionSources([pkgDir]);
 			expect(result.extensions.some((r) => r.path === join(pkgDir, "src", "index.ts") && r.enabled)).toBe(true);
-			// Skills with SKILL.md are returned as directory paths
-			expect(result.skills.some((r) => r.path === join(pkgDir, "skills", "my-skill") && r.enabled)).toBe(true);
+			// Skills with SKILL.md are returned as file paths
+			expect(result.skills.some((r) => r.path === join(pkgDir, "skills", "my-skill", "SKILL.md") && r.enabled)).toBe(
+				true,
+			);
 		});
 
 		it("should handle directories with auto-discovery layout", async () => {

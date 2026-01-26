@@ -268,23 +268,51 @@ export class DefaultResourceLoader implements ResourceLoader {
 		});
 
 		// Helper to extract enabled paths and store metadata
-		const getEnabledPaths = (
+		const getEnabledResources = (
 			resources: Array<{ path: string; enabled: boolean; metadata: PathMetadata }>,
-		): string[] => {
+		): Array<{ path: string; enabled: boolean; metadata: PathMetadata }> => {
 			for (const r of resources) {
 				if (!this.pathMetadata.has(r.path)) {
 					this.pathMetadata.set(r.path, r.metadata);
 				}
 			}
-			return resources.filter((r) => r.enabled).map((r) => r.path);
+			return resources.filter((r) => r.enabled);
 		};
+
+		const getEnabledPaths = (
+			resources: Array<{ path: string; enabled: boolean; metadata: PathMetadata }>,
+		): string[] => getEnabledResources(resources).map((r) => r.path);
 
 		// Store metadata and get enabled paths
 		this.pathMetadata = new Map();
 		const enabledExtensions = getEnabledPaths(resolvedPaths.extensions);
-		const enabledSkills = getEnabledPaths(resolvedPaths.skills);
+		const enabledSkillResources = getEnabledResources(resolvedPaths.skills);
 		const enabledPrompts = getEnabledPaths(resolvedPaths.prompts);
 		const enabledThemes = getEnabledPaths(resolvedPaths.themes);
+
+		const mapSkillPath = (resource: { path: string; metadata: PathMetadata }): string => {
+			if (resource.metadata.source !== "auto" && resource.metadata.origin !== "package") {
+				return resource.path;
+			}
+			try {
+				const stats = statSync(resource.path);
+				if (!stats.isDirectory()) {
+					return resource.path;
+				}
+			} catch {
+				return resource.path;
+			}
+			const skillFile = join(resource.path, "SKILL.md");
+			if (existsSync(skillFile)) {
+				if (!this.pathMetadata.has(skillFile)) {
+					this.pathMetadata.set(skillFile, resource.metadata);
+				}
+				return skillFile;
+			}
+			return resource.path;
+		};
+
+		const enabledSkills = enabledSkillResources.map(mapSkillPath);
 
 		// Add CLI paths metadata
 		for (const r of cliExtensionPaths.extensions) {
