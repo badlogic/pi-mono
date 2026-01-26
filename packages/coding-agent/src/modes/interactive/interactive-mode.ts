@@ -976,13 +976,6 @@ export class InteractiveMode {
 	 * Initialize the extension system with TUI-based UI context.
 	 */
 	private async initExtensions(): Promise<void> {
-		const extensionRunner = this.session.extensionRunner;
-		if (!extensionRunner) {
-			this.showLoadedResources({ extensionPaths: [], force: false });
-			return;
-		}
-
-		// Create extension UI context
 		const uiContext = this.createExtensionUIContext();
 		await this.session.bindExtensions({
 			uiContext,
@@ -995,15 +988,13 @@ export class InteractiveMode {
 					}
 					this.statusContainer.clear();
 
-					const success = await this.session.newSession({ parentSession: options?.parentSession });
+					// Delegate to AgentSession (handles setup + agent state sync)
+					const success = await this.session.newSession(options);
 					if (!success) {
 						return { cancelled: true };
 					}
 
-					if (options?.setup) {
-						await options.setup(this.sessionManager);
-					}
-
+					// Clear UI state
 					this.chatContainer.clear();
 					this.pendingMessagesContainer.clear();
 					this.compactionQueuedMessages = [];
@@ -1011,8 +1002,8 @@ export class InteractiveMode {
 					this.streamingMessage = undefined;
 					this.pendingTools.clear();
 
-					this.chatContainer.addChild(new Spacer(1));
-					this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
+					// Render any messages added via setup, or show empty session
+					this.renderInitialMessages();
 					this.ui.requestRender();
 
 					return { cancelled: false };
@@ -1058,6 +1049,12 @@ export class InteractiveMode {
 				this.showExtensionError(error.extensionPath, error.error, error.stack);
 			},
 		});
+
+		const extensionRunner = this.session.extensionRunner;
+		if (!extensionRunner) {
+			this.showLoadedResources({ extensionPaths: [], force: false });
+			return;
+		}
 
 		this.setupExtensionShortcuts(extensionRunner);
 		this.showLoadedResources({ extensionPaths: extensionRunner.getExtensionPaths(), force: false });
@@ -4010,7 +4007,8 @@ export class InteractiveMode {
 `;
 				for (const [key, shortcut] of shortcuts) {
 					const description = shortcut.description ?? shortcut.extensionPath;
-					hotkeys += `| \`${key}\` | ${description} |\n`;
+					const keyDisplay = key.replace(/\b\w/g, (c) => c.toUpperCase());
+					hotkeys += `| \`${keyDisplay}\` | ${description} |\n`;
 				}
 			}
 		}

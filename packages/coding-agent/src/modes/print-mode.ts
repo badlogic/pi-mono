@@ -36,37 +36,34 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 		}
 	}
 	// Set up extensions for print mode (no UI)
-	const extensionRunner = session.extensionRunner;
-	if (extensionRunner) {
-		await session.bindExtensions({
-			commandContextActions: {
-				waitForIdle: () => session.agent.waitForIdle(),
-				newSession: async (options) => {
-					const success = await session.newSession({ parentSession: options?.parentSession });
-					if (success && options?.setup) {
-						await options.setup(session.sessionManager);
-					}
-					return { cancelled: !success };
-				},
-				fork: async (entryId) => {
-					const result = await session.fork(entryId);
-					return { cancelled: result.cancelled };
-				},
-				navigateTree: async (targetId, options) => {
-					const result = await session.navigateTree(targetId, {
-						summarize: options?.summarize,
-						customInstructions: options?.customInstructions,
-						replaceInstructions: options?.replaceInstructions,
-						label: options?.label,
-					});
-					return { cancelled: result.cancelled };
-				},
+	await session.bindExtensions({
+		commandContextActions: {
+			waitForIdle: () => session.agent.waitForIdle(),
+			newSession: async (options) => {
+				const success = await session.newSession({ parentSession: options?.parentSession });
+				if (success && options?.setup) {
+					await options.setup(session.sessionManager);
+				}
+				return { cancelled: !success };
 			},
-			onError: (err) => {
-				console.error(`Extension error (${err.extensionPath}): ${err.error}`);
+			fork: async (entryId) => {
+				const result = await session.fork(entryId);
+				return { cancelled: result.cancelled };
 			},
-		});
-	}
+			navigateTree: async (targetId, options) => {
+				const result = await session.navigateTree(targetId, {
+					summarize: options?.summarize,
+					customInstructions: options?.customInstructions,
+					replaceInstructions: options?.replaceInstructions,
+					label: options?.label,
+				});
+				return { cancelled: result.cancelled };
+			},
+		},
+		onError: (err) => {
+			console.error(`Extension error (${err.extensionPath}): ${err.error}`);
+		},
+	});
 
 	// Always subscribe to enable session persistence via _handleAgentEvent
 	session.subscribe((event) => {
