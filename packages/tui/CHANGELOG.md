@@ -2,8 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `fullRedraws` readonly property to TUI class for tracking full screen redraws
+- Added `PI_TUI_WRITE_LOG` environment variable to capture raw ANSI output for debugging
+
 ### Fixed
 
+- Fixed appended lines not being committed to scrollback, causing earlier content to be overwritten when viewport fills ([#954](https://github.com/badlogic/pi-mono/issues/954))
 - Slash command menu now only triggers when the editor input is otherwise empty ([#904](https://github.com/badlogic/pi-mono/issues/904))
 - Center-anchored overlays now stay vertically centered when resizing the terminal taller after a shrink ([#950](https://github.com/badlogic/pi-mono/pull/950) by [@nicobailon](https://github.com/nicobailon))
 - Fixed editor multi-line insertion handling and lastAction tracking ([#945](https://github.com/badlogic/pi-mono/pull/945) by [@Perlence](https://github.com/Perlence))
