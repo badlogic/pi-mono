@@ -127,7 +127,7 @@ Additional paths via `settings.json`:
 }
 ```
 
-To share extensions via npm or git, see [packages.md](packages.md).
+To share extensions via npm or git as pi packages, see [packages.md](packages.md).
 
 ## Available Imports
 
@@ -453,12 +453,12 @@ pi.on("model_select", async (event, ctx) => {
   // event.model - newly selected model
   // event.previousModel - previous model (undefined if first selection)
   // event.source - "set" | "cycle" | "restore"
-  
-  const prev = event.previousModel 
-    ? `${event.previousModel.provider}/${event.previousModel.id}` 
+
+  const prev = event.previousModel
+    ? `${event.previousModel.provider}/${event.previousModel.id}`
     : "none";
   const next = `${event.model.provider}/${event.model.id}`;
-  
+
   ctx.ui.notify(`Model changed (${event.source}): ${prev} -> ${next}`, "info");
 });
 ```
@@ -1263,7 +1263,7 @@ export default function (pi: ExtensionAPI) {
 
 ### Custom Rendering
 
-Tools can provide `renderCall` and `renderResult` for custom TUI display. See [tui.md](tui.md) for the full component API.
+Tools can provide `renderCall` and `renderResult` for custom TUI display. See [tui.md](tui.md) for the full component API and [tool-execution.ts](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/modes/interactive/components/tool-execution.ts) for how built-in tools render.
 
 Tool output is wrapped in a `Box` that handles padding and background. Your render methods return `Component` instances (typically `Text`).
 
