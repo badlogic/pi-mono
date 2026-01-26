@@ -5074,8 +5074,8 @@ export const MODELS = {
 			cost: {
 				input: 0.7999999999999999,
 				output: 4,
-				cacheRead: 0.08,
-				cacheWrite: 1,
+				cacheRead: 0,
+				cacheWrite: 0,
 			},
 			contextWindow: 200000,
 			maxTokens: 8192,
@@ -8219,7 +8219,7 @@ export const MODELS = {
 			cost: {
 				input: 0.15,
 				output: 0.6,
-				cacheRead: 0,
+				cacheRead: 0.075,
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
@@ -8599,23 +8599,6 @@ export const MODELS = {
 			contextWindow: 262144,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
-		"xiaomi/mimo-v2-flash:free": {
-			id: "xiaomi/mimo-v2-flash:free",
-			name: "Xiaomi: MiMo-V2-Flash (free)",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: true,
-			input: ["text"],
-			cost: {
-				input: 0,
-				output: 0,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 262144,
-			maxTokens: 65536,
-		} satisfies Model<"openai-completions">,
 		"z-ai/glm-4-32b": {
 			id: "z-ai/glm-4-32b",
 			name: "Z.AI: GLM 4 32B ",
@@ -8729,7 +8712,7 @@ export const MODELS = {
 			cost: {
 				input: 0.44,
 				output: 1.76,
-				cacheRead: 0,
+				cacheRead: 0.11,
 				cacheWrite: 0,
 			},
 			contextWindow: 204800,
