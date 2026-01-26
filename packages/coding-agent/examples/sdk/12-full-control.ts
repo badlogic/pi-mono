@@ -52,6 +52,7 @@ const resourceLoader: ResourceLoader = {
 	getAgentsFiles: () => ({ agentsFiles: [] }),
 	getSystemPrompt: () => `You are a minimal assistant.
 Available: read, bash. Be concise.`,
+	getSystemPromptTemplates: () => undefined,
 	getAppendSystemPrompt: () => [],
 	getPathMetadata: () => new Map(),
 	reload: async () => {},

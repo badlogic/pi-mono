@@ -31,8 +31,17 @@ export interface BuildSystemPromptOptions {
 	skills?: Skill[];
 }
 
+export interface BuildSystemPromptResult {
+	/** The built system prompt */
+	prompt: string;
+	/** Whether context files were injected (always true for default prompt, depends on {{context}} for custom) */
+	contextInjected: boolean;
+	/** Whether skills were injected (always true for default prompt, depends on {{skills}} for custom) */
+	skillsInjected: boolean;
+}
+
 /** Build the system prompt with tools, guidelines, and context */
-export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): string {
+export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): BuildSystemPromptResult {
 	const {
 		customPrompt,
 		selectedTools,
@@ -63,30 +72,48 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 	if (customPrompt) {
 		let prompt = customPrompt;
 
+		// Template variable replacement (opt-in injection)
+		// No template variables = full replacement mode (no automatic appending)
+		const contextInjected = prompt.includes("{{context}}");
+		const skillsInjected = prompt.includes("{{skills}}");
+
+		if (prompt.includes("{{tools}}")) {
+			const tools = selectedTools || ["read", "bash", "edit", "write"];
+			const toolsList =
+				tools.length > 0
+					? tools.map((t) => `- ${t}: ${toolDescriptions[t] ?? "Custom tool"}`).join("\n")
+					: "(none)";
+			prompt = prompt.replace("{{tools}}", toolsList);
+		}
+
+		if (contextInjected) {
+			let contextStr = "";
+			if (contextFiles.length > 0) {
+				contextStr = "# Project Context\n\n";
+				contextStr += "Project-specific instructions and guidelines:\n\n";
+				for (const { path: filePath, content } of contextFiles) {
+					contextStr += `## ${filePath}\n\n${content}\n\n`;
+				}
+			}
+			prompt = prompt.replace("{{context}}", contextStr);
+		}
+
+		if (skillsInjected) {
+			const customPromptHasRead = !selectedTools || selectedTools.includes("read");
+			const skillsStr = customPromptHasRead && skills.length > 0 ? formatSkillsForPrompt(skills) : "";
+			prompt = prompt.replace("{{skills}}", skillsStr);
+		}
+
+		// Append section always applies (for --append-system-prompt)
 		if (appendSection) {
 			prompt += appendSection;
 		}
 
-		// Append project context files
-		if (contextFiles.length > 0) {
-			prompt += "\n\n# Project Context\n\n";
-			prompt += "Project-specific instructions and guidelines:\n\n";
-			for (const { path: filePath, content } of contextFiles) {
-				prompt += `## ${filePath}\n\n${content}\n\n`;
-			}
-		}
-
-		// Append skills section (only if read tool is available)
-		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
-		if (customPromptHasRead && skills.length > 0) {
-			prompt += formatSkillsForPrompt(skills);
-		}
-
-		// Add date/time and working directory last
+		// Add date/time and working directory last (always)
 		prompt += `\nCurrent date and time: ${dateTime}`;
 		prompt += `\nCurrent working directory: ${resolvedCwd}`;
 
-		return prompt;
+		return { prompt, contextInjected, skillsInjected };
 	}
 
 	// Get absolute paths to documentation and examples
@@ -175,7 +202,8 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 	}
 
 	// Append skills section (only if read tool is available)
-	if (hasRead && skills.length > 0) {
+	const skillsInjected = hasRead;
+	if (skillsInjected && skills.length > 0) {
 		prompt += formatSkillsForPrompt(skills);
 	}
 
@@ -183,5 +211,6 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 	prompt += `\nCurrent date and time: ${dateTime}`;
 	prompt += `\nCurrent working directory: ${resolvedCwd}`;
 
-	return prompt;
+	// Default prompt always injects context, skills depend on read tool
+	return { prompt, contextInjected: true, skillsInjected };
 }
