@@ -939,9 +939,8 @@ export class DefaultPackageManager implements PackageManager {
 		// Fetch latest from remote (handles force-push by getting new history)
 		await this.runCommand("git", ["fetch", "--prune", "origin"], { cwd: targetDir });
 
-		// Detect default branch and reset to it
-		const defaultBranch = this.getGitDefaultBranch(targetDir);
-		await this.runCommand("git", ["reset", "--hard", `origin/${defaultBranch}`], { cwd: targetDir });
+		// Reset to upstream tracking branch (handles force-push gracefully)
+		await this.runCommand("git", ["reset", "--hard", "@{upstream}"], { cwd: targetDir });
 
 		// Clean untracked files (extensions should be pristine)
 		await this.runCommand("git", ["clean", "-fdx"], { cwd: targetDir });
@@ -950,50 +949,6 @@ export class DefaultPackageManager implements PackageManager {
 		if (existsSync(packageJsonPath)) {
 			await this.runCommand("npm", ["install"], { cwd: targetDir });
 		}
-	}
-
-	/**
-	 * Detect the default branch of a git repository.
-	 * Tries multiple methods with fallbacks.
-	 */
-	private getGitDefaultBranch(repoDir: string): string {
-		// Try symbolic-ref first (fast and reliable)
-		const symbolicRef = spawnSync("git", ["symbolic-ref", "-q", "refs/remotes/origin/HEAD"], {
-			cwd: repoDir,
-			encoding: "utf-8",
-		});
-		if (symbolicRef.status === 0 && symbolicRef.stdout) {
-			// Returns something like "refs/remotes/origin/main"
-			const match = symbolicRef.stdout.trim().match(/refs\/remotes\/origin\/(.+)/);
-			if (match) {
-				return match[1];
-			}
-		}
-
-		// Try common branch names
-		for (const branch of ["main", "master"]) {
-			const showRef = spawnSync("git", ["show-ref", "--verify", `refs/remotes/origin/${branch}`], {
-				cwd: repoDir,
-				encoding: "utf-8",
-			});
-			if (showRef.status === 0) {
-				return branch;
-			}
-		}
-
-		// Last resort: use current branch
-		const revParse = spawnSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
-			cwd: repoDir,
-			encoding: "utf-8",
-		});
-		if (revParse.status === 0 && revParse.stdout) {
-			const branch = revParse.stdout.trim();
-			if (branch && branch !== "HEAD") {
-				return branch;
-			}
-		}
-
-		return "main";
 	}
 
 	private async removeGit(source: GitSource, scope: SourceScope): Promise<void> {
