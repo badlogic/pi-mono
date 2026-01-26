@@ -164,3 +164,30 @@ For providers with partial OpenAI compatibility, use the `compat` field:
 | `supportsReasoningEffort` | Support for `reasoning_effort` parameter |
 | `supportsUsageInStreaming` | Supports `stream_options: { include_usage: true }` (default: `true`) |
 | `maxTokensField` | Use `max_completion_tokens` or `max_tokens` |
+| `openRouterRouting` | OpenRouter routing config passed to OpenRouter for model/provider selection |
+
+Example:
+
+```json
+{
+  "providers": {
+    "openrouter": {
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKey": "OPENROUTER_API_KEY",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "openrouter/anthropic/claude-3.5-sonnet",
+          "name": "OpenRouter Claude 3.5 Sonnet",
+          "compat": {
+            "openRouterRouting": {
+              "order": ["anthropic"],
+              "fallbacks": ["openai"]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+```
