@@ -2,7 +2,7 @@
  * TUI component for managing package resources (enable/disable)
  */
 
-import { basename, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import {
 	type Component,
 	Container,
@@ -14,6 +14,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
+import { CONFIG_DIR_NAME } from "../../../config.js";
 import type { PathMetadata, ResolvedPaths, ResolvedResource } from "../../../core/package-manager.js";
 import type { PackageSource, SettingsManager } from "../../../core/settings-manager.js";
 import { theme } from "../theme/theme.js";
@@ -97,12 +98,14 @@ function buildGroups(resolved: ResolvedPaths): ResourceGroup[] {
 				group.subgroups.push(subgroup);
 			}
 
+			const displayName =
+				resourceType === "skills" && basename(path) === "SKILL.md" ? basename(dirname(path)) : basename(path);
 			subgroup.items.push({
 				path,
 				enabled,
 				metadata,
 				resourceType,
-				displayName: basename(path),
+				displayName,
 				groupKey,
 				subgroupKey,
 			});
@@ -170,6 +173,7 @@ class ResourceList implements Component, Focusable {
 	private maxVisible = 15;
 	private settingsManager: SettingsManager;
 	private cwd: string;
+	private agentDir: string;
 
 	public onCancel?: () => void;
 	public onExit?: () => void;
@@ -184,10 +188,11 @@ class ResourceList implements Component, Focusable {
 		this.searchInput.focused = value;
 	}
 
-	constructor(groups: ResourceGroup[], settingsManager: SettingsManager, cwd: string) {
+	constructor(groups: ResourceGroup[], settingsManager: SettingsManager, cwd: string, agentDir: string) {
 		this.groups = groups;
 		this.settingsManager = settingsManager;
 		this.cwd = cwd;
+		this.agentDir = agentDir;
 		this.searchInput = new Input();
 		this.buildFlatList();
 		this.filteredItems = [...this.flatItems];
@@ -416,19 +421,20 @@ class ResourceList implements Component, Focusable {
 
 		// Generate pattern for this resource
 		const pattern = this.getResourcePattern(item);
-		const disablePattern = `!${pattern}`;
+		const disablePattern = `-${pattern}`;
+		const enablePattern = `+${pattern}`;
 
 		// Filter out existing patterns for this resource
 		const updated = current.filter((p) => {
-			const stripped = p.startsWith("!") || p.startsWith("+") ? p.slice(1) : p;
+			const stripped = p.startsWith("!") || p.startsWith("+") || p.startsWith("-") ? p.slice(1) : p;
 			return stripped !== pattern;
 		});
 
-		if (!enabled) {
-			// Add !pattern to disable
+		if (enabled) {
+			updated.push(enablePattern);
+		} else {
 			updated.push(disablePattern);
 		}
-		// For enabling, just remove the !pattern (done above)
 
 		if (scope === "project") {
 			if (arrayKey === "extensions") {
@@ -480,18 +486,20 @@ class ResourceList implements Component, Focusable {
 
 		// Generate pattern relative to package root
 		const pattern = this.getPackageResourcePattern(item);
-		const disablePattern = `!${pattern}`;
+		const disablePattern = `-${pattern}`;
+		const enablePattern = `+${pattern}`;
 
 		// Filter out existing patterns for this resource
 		const updated = current.filter((p) => {
-			const stripped = p.startsWith("!") || p.startsWith("+") ? p.slice(1) : p;
+			const stripped = p.startsWith("!") || p.startsWith("+") || p.startsWith("-") ? p.slice(1) : p;
 			return stripped !== pattern;
 		});
 
-		if (!enabled) {
+		if (enabled) {
+			updated.push(enablePattern);
+		} else {
 			updated.push(disablePattern);
 		}
-		// For enabling, just remove the !pattern (done above)
 
 		(pkg as Record<string, unknown>)[arrayKey] = updated.length > 0 ? updated : undefined;
 
@@ -510,19 +518,19 @@ class ResourceList implements Component, Focusable {
 		}
 	}
 
+	private getTopLevelBaseDir(scope: "user" | "project"): string {
+		return scope === "project" ? join(this.cwd, CONFIG_DIR_NAME) : this.agentDir;
+	}
+
 	private getResourcePattern(item: ResourceItem): string {
-		// Try relative path from cwd first
-		const rel = relative(this.cwd, item.path);
-		if (!rel.startsWith("..") && !rel.startsWith("/")) {
-			return rel;
-		}
-		// Fall back to basename
-		return basename(item.path);
+		const scope = item.metadata.scope as "user" | "project";
+		const baseDir = this.getTopLevelBaseDir(scope);
+		return relative(baseDir, item.path);
 	}
 
 	private getPackageResourcePattern(item: ResourceItem): string {
-		// For package resources, use just the filename
-		return basename(item.path);
+		const baseDir = item.metadata.baseDir ?? dirname(item.path);
+		return relative(baseDir, item.path);
 	}
 }
 
@@ -542,6 +550,7 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 		resolvedPaths: ResolvedPaths,
 		settingsManager: SettingsManager,
 		cwd: string,
+		agentDir: string,
 		onClose: () => void,
 		onExit: () => void,
 		requestRender: () => void,
@@ -558,7 +567,7 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 		this.addChild(new Spacer(1));
 
 		// Resource list
-		this.resourceList = new ResourceList(groups, settingsManager, cwd);
+		this.resourceList = new ResourceList(groups, settingsManager, cwd, agentDir);
 		this.resourceList.onCancel = onClose;
 		this.resourceList.onExit = onExit;
 		this.resourceList.onToggle = () => requestRender();

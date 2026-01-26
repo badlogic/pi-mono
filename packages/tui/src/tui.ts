@@ -211,6 +211,7 @@ export class TUI extends Container {
 	private showHardwareCursor = process.env.PI_HARDWARE_CURSOR === "1";
 	private maxLinesRendered = 0; // Track terminal's working area (max lines ever rendered)
 	private previousViewportTop = 0; // Track previous viewport top for resize-aware cursor moves
+	private fullRedrawCount = 0;
 
 	// Overlay stack for modal components rendered on top of base content
 	private overlayStack: {
@@ -226,6 +227,10 @@ export class TUI extends Container {
 		if (showHardwareCursor !== undefined) {
 			this.showHardwareCursor = showHardwareCursor;
 		}
+	}
+
+	get fullRedraws(): number {
+		return this.fullRedrawCount;
 	}
 
 	getShowHardwareCursor(): boolean {
@@ -787,10 +792,11 @@ export class TUI extends Container {
 	private doRender(): void {
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
-		const viewportTop = Math.max(0, this.maxLinesRendered - height);
-		const prevViewportTop = this.previousViewportTop;
+		let viewportTop = Math.max(0, this.maxLinesRendered - height);
+		let prevViewportTop = this.previousViewportTop;
+		let hardwareCursorRow = this.hardwareCursorRow;
 		const computeLineDiff = (targetRow: number): number => {
-			const currentScreenRow = this.hardwareCursorRow - prevViewportTop;
+			const currentScreenRow = hardwareCursorRow - prevViewportTop;
 			const targetScreenRow = targetRow - viewportTop;
 			return targetScreenRow - currentScreenRow;
 		};
@@ -813,6 +819,7 @@ export class TUI extends Container {
 
 		// Helper to clear scrollback and viewport and render all new lines
 		const fullRender = (clear: boolean): void => {
+			this.fullRedrawCount += 1;
 			let buffer = "\x1b[?2026h"; // Begin synchronized output
 			if (clear) buffer += "\x1b[3J\x1b[2J\x1b[H"; // Clear scrollback, screen, and home
 			for (let i = 0; i < newLines.length; i++) {
@@ -869,6 +876,7 @@ export class TUI extends Container {
 			}
 			lastChanged = newLines.length - 1;
 		}
+		const appendStart = appendedLines && firstChanged === this.previousLines.length && firstChanged > 0;
 
 		// No changes - but still need to update hardware cursor position if it moved
 		if (firstChanged === -1) {
@@ -926,16 +934,30 @@ export class TUI extends Container {
 		// Render from first changed line to end
 		// Build buffer with all updates wrapped in synchronized output
 		let buffer = "\x1b[?2026h"; // Begin synchronized output
+		const prevViewportBottom = prevViewportTop + height - 1;
+		const moveTargetRow = appendStart ? firstChanged - 1 : firstChanged;
+		if (moveTargetRow > prevViewportBottom) {
+			const currentScreenRow = Math.max(0, Math.min(height - 1, hardwareCursorRow - prevViewportTop));
+			const moveToBottom = height - 1 - currentScreenRow;
+			if (moveToBottom > 0) {
+				buffer += `\x1b[${moveToBottom}B`;
+			}
+			const scroll = moveTargetRow - prevViewportBottom;
+			buffer += "\r\n".repeat(scroll);
+			prevViewportTop += scroll;
+			viewportTop += scroll;
+			hardwareCursorRow = moveTargetRow;
+		}
 
 		// Move cursor to first changed line (use hardwareCursorRow for actual position)
-		const lineDiff = computeLineDiff(firstChanged);
+		const lineDiff = computeLineDiff(moveTargetRow);
 		if (lineDiff > 0) {
 			buffer += `\x1b[${lineDiff}B`; // Move down
 		} else if (lineDiff < 0) {
 			buffer += `\x1b[${-lineDiff}A`; // Move up
 		}
 
-		buffer += "\r"; // Move to column 0
+		buffer += appendStart ? "\r\n" : "\r"; // Move to column 0
 
 		// Only render changed lines (firstChanged to lastChanged), not all lines to end
 		// This reduces flicker when only a single line changes (e.g., spinner animation)
@@ -1007,7 +1029,7 @@ export class TUI extends Container {
 				`cursorRow: ${this.cursorRow}`,
 				`height: ${height}`,
 				`lineDiff: ${lineDiff}`,
-				`hardwareCursorRow: ${this.hardwareCursorRow}`,
+				`hardwareCursorRow: ${hardwareCursorRow}`,
 				`renderEnd: ${renderEnd}`,
 				`finalCursorRow: ${finalCursorRow}`,
 				`cursorPos: ${JSON.stringify(cursorPos)}`,

@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import { setKittyProtocolActive } from "./keys.js";
 import { StdinBuffer } from "./stdin-buffer.js";
 
@@ -47,6 +48,7 @@ export class ProcessTerminal implements Terminal {
 	private _kittyProtocolActive = false;
 	private stdinBuffer?: StdinBuffer;
 	private stdinDataHandler?: (data: string) => void;
+	private writeLogPath = process.env.PI_TUI_WRITE_LOG || "";
 
 	get kittyProtocolActive(): boolean {
 		return this._kittyProtocolActive;
@@ -184,6 +186,13 @@ export class ProcessTerminal implements Terminal {
 
 	write(data: string): void {
 		process.stdout.write(data);
+		if (this.writeLogPath) {
+			try {
+				fs.appendFileSync(this.writeLogPath, data, { encoding: "utf8" });
+			} catch {
+				// Ignore logging errors
+			}
+		}
 	}
 
 	get columns(): number {

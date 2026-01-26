@@ -9,12 +9,7 @@ import type { ResourceDiagnostic } from "./diagnostics.js";
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.js";
 
 import { createEventBus, type EventBus } from "./event-bus.js";
-import {
-	createExtensionRuntime,
-	discoverAndLoadExtensions,
-	loadExtensionFromFactory,
-	loadExtensions,
-} from "./extensions/loader.js";
+import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "./extensions/loader.js";
 import type { Extension, ExtensionFactory, ExtensionRuntime, LoadExtensionsResult } from "./extensions/types.js";
 import { DefaultPackageManager, type PathMetadata } from "./package-manager.js";
 import type { PromptTemplate } from "./prompt-templates.js";
@@ -273,23 +268,51 @@ export class DefaultResourceLoader implements ResourceLoader {
 		});
 
 		// Helper to extract enabled paths and store metadata
-		const getEnabledPaths = (
+		const getEnabledResources = (
 			resources: Array<{ path: string; enabled: boolean; metadata: PathMetadata }>,
-		): string[] => {
+		): Array<{ path: string; enabled: boolean; metadata: PathMetadata }> => {
 			for (const r of resources) {
 				if (!this.pathMetadata.has(r.path)) {
 					this.pathMetadata.set(r.path, r.metadata);
 				}
 			}
-			return resources.filter((r) => r.enabled).map((r) => r.path);
+			return resources.filter((r) => r.enabled);
 		};
+
+		const getEnabledPaths = (
+			resources: Array<{ path: string; enabled: boolean; metadata: PathMetadata }>,
+		): string[] => getEnabledResources(resources).map((r) => r.path);
 
 		// Store metadata and get enabled paths
 		this.pathMetadata = new Map();
 		const enabledExtensions = getEnabledPaths(resolvedPaths.extensions);
-		const enabledSkills = getEnabledPaths(resolvedPaths.skills);
+		const enabledSkillResources = getEnabledResources(resolvedPaths.skills);
 		const enabledPrompts = getEnabledPaths(resolvedPaths.prompts);
 		const enabledThemes = getEnabledPaths(resolvedPaths.themes);
+
+		const mapSkillPath = (resource: { path: string; metadata: PathMetadata }): string => {
+			if (resource.metadata.source !== "auto" && resource.metadata.origin !== "package") {
+				return resource.path;
+			}
+			try {
+				const stats = statSync(resource.path);
+				if (!stats.isDirectory()) {
+					return resource.path;
+				}
+			} catch {
+				return resource.path;
+			}
+			const skillFile = join(resource.path, "SKILL.md");
+			if (existsSync(skillFile)) {
+				if (!this.pathMetadata.has(skillFile)) {
+					this.pathMetadata.set(skillFile, resource.metadata);
+				}
+				return skillFile;
+			}
+			return resource.path;
+		};
+
+		const enabledSkills = enabledSkillResources.map(mapSkillPath);
 
 		// Add CLI paths metadata
 		for (const r of cliExtensionPaths.extensions) {
@@ -312,12 +335,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 			? cliEnabledExtensions
 			: this.mergePaths(enabledExtensions, cliEnabledExtensions);
 
-		let extensionsResult: LoadExtensionsResult;
-		if (this.noExtensions) {
-			extensionsResult = await loadExtensions(extensionPaths, this.cwd, this.eventBus);
-		} else {
-			extensionsResult = await discoverAndLoadExtensions(extensionPaths, this.cwd, this.agentDir, this.eventBus);
-		}
+		const extensionsResult = await loadExtensions(extensionPaths, this.cwd, this.eventBus);
 		const inlineExtensions = await this.loadExtensionFactories(extensionsResult.runtime);
 		extensionsResult.extensions.push(...inlineExtensions.extensions);
 		extensionsResult.errors.push(...inlineExtensions.errors);
@@ -346,6 +364,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				cwd: this.cwd,
 				agentDir: this.agentDir,
 				skillPaths,
+				includeDefaults: false,
 			});
 		}
 		const resolvedSkills = this.skillsOverride ? this.skillsOverride(skillsResult) : skillsResult;
@@ -367,6 +386,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				cwd: this.cwd,
 				agentDir: this.agentDir,
 				promptPaths,
+				includeDefaults: false,
 			});
 			promptsResult = this.dedupePrompts(allPrompts);
 		}
@@ -385,7 +405,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		if (this.noThemes && themePaths.length === 0) {
 			themesResult = { themes: [], diagnostics: [] };
 		} else {
-			const loaded = this.loadThemes(themePaths);
+			const loaded = this.loadThemes(themePaths, false);
 			const deduped = this.dedupeThemes(loaded.themes);
 			themesResult = { themes: deduped.themes, diagnostics: [...loaded.diagnostics, ...deduped.diagnostics] };
 		}
@@ -447,13 +467,21 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return resolve(this.cwd, expanded);
 	}
 
-	private loadThemes(paths: string[]): { themes: Theme[]; diagnostics: ResourceDiagnostic[] } {
+	private loadThemes(
+		paths: string[],
+		includeDefaults: boolean = true,
+	): {
+		themes: Theme[];
+		diagnostics: ResourceDiagnostic[];
+	} {
 		const themes: Theme[] = [];
 		const diagnostics: ResourceDiagnostic[] = [];
-		const defaultDirs = [join(this.agentDir, "themes"), join(this.cwd, CONFIG_DIR_NAME, "themes")];
+		if (includeDefaults) {
+			const defaultDirs = [join(this.agentDir, "themes"), join(this.cwd, CONFIG_DIR_NAME, "themes")];
 
-		for (const dir of defaultDirs) {
-			this.loadThemesFromDir(dir, themes, diagnostics);
+			for (const dir of defaultDirs) {
+				this.loadThemesFromDir(dir, themes, diagnostics);
+			}
 		}
 
 		for (const p of paths) {

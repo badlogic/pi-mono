@@ -29,7 +29,12 @@ Audit changelog entries for all commits since the last release.
 5. **Cross-package duplication rule:**
    Changes in `ai`, `agent` or `tui` that affect end users should be duplicated to `coding-agent` changelog, since coding-agent is the user-facing package that depends on them.
 
-6. **Report:**
+6. **Add New Features section after changelog fixes:**
+   - Insert a `### New Features` section at the start of `## [Unreleased]` in `packages/coding-agent/CHANGELOG.md`.
+   - Propose the top new features to the user for confirmation before writing them.
+   - Link to relevant docs and sections whenever possible.
+
+7. **Report:**
    - List commits with missing entries
    - List entries that need cross-package duplication
    - Add any missing entries directly

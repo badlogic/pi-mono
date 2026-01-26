@@ -19,6 +19,8 @@ Pi implements the [Agent Skills standard](https://agentskills.io/specification),
 
 ## Locations
 
+> **Security:** Skills can instruct the model to perform any action and may include executable code the model invokes. Review skill content before use.
+
 Pi loads skills from:
 
 - Global: `~/.pi/agent/skills/`
@@ -50,7 +52,7 @@ For project-level Claude Code skills, add to `.pi/settings.json`:
 
 ```json
 {
-  "skills": [".claude/skills"]
+  "skills": ["../.claude/skills"]
 }
 ```
 

@@ -12,6 +12,7 @@ export interface PathMetadata {
 	source: string;
 	scope: SourceScope;
 	origin: "package" | "top-level";
+	baseDir?: string;
 }
 
 export interface ResolvedResource {
@@ -115,7 +116,7 @@ const FILE_PATTERNS: Record<ResourceType, RegExp> = {
 };
 
 function isPattern(s: string): boolean {
-	return s.startsWith("!") || s.startsWith("+") || s.includes("*") || s.includes("?");
+	return s.startsWith("!") || s.startsWith("+") || s.startsWith("-") || s.includes("*") || s.includes("?");
 }
 
 function splitPatterns(entries: string[]): { plain: string[]; patterns: string[] } {
@@ -168,7 +169,7 @@ function collectFiles(dir: string, filePattern: RegExp, skipNodeModules = true):
 	return files;
 }
 
-function collectSkillEntries(dir: string): string[] {
+function collectSkillEntries(dir: string, includeRootFiles = true): string[] {
 	const entries: string[] = [];
 	if (!existsSync(dir)) return entries;
 
@@ -193,14 +194,159 @@ function collectSkillEntries(dir: string): string[] {
 			}
 
 			if (isDir) {
-				const skillMd = join(fullPath, "SKILL.md");
-				if (existsSync(skillMd)) {
+				entries.push(...collectSkillEntries(fullPath, false));
+			} else if (isFile) {
+				const isRootMd = includeRootFiles && entry.name.endsWith(".md");
+				const isSkillMd = !includeRootFiles && entry.name === "SKILL.md";
+				if (isRootMd || isSkillMd) {
 					entries.push(fullPath);
-				} else {
-					entries.push(...collectSkillEntries(fullPath));
 				}
-			} else if (isFile && entry.name.endsWith(".md")) {
+			}
+		}
+	} catch {
+		// Ignore errors
+	}
+
+	return entries;
+}
+
+function collectAutoSkillEntries(dir: string, includeRootFiles = true): string[] {
+	return collectSkillEntries(dir, includeRootFiles);
+}
+
+function collectAutoPromptEntries(dir: string): string[] {
+	const entries: string[] = [];
+	if (!existsSync(dir)) return entries;
+
+	try {
+		const dirEntries = readdirSync(dir, { withFileTypes: true });
+		for (const entry of dirEntries) {
+			if (entry.name.startsWith(".")) continue;
+			if (entry.name === "node_modules") continue;
+
+			const fullPath = join(dir, entry.name);
+			let isFile = entry.isFile();
+			if (entry.isSymbolicLink()) {
+				try {
+					isFile = statSync(fullPath).isFile();
+				} catch {
+					continue;
+				}
+			}
+
+			if (isFile && entry.name.endsWith(".md")) {
 				entries.push(fullPath);
+			}
+		}
+	} catch {
+		// Ignore errors
+	}
+
+	return entries;
+}
+
+function collectAutoThemeEntries(dir: string): string[] {
+	const entries: string[] = [];
+	if (!existsSync(dir)) return entries;
+
+	try {
+		const dirEntries = readdirSync(dir, { withFileTypes: true });
+		for (const entry of dirEntries) {
+			if (entry.name.startsWith(".")) continue;
+			if (entry.name === "node_modules") continue;
+
+			const fullPath = join(dir, entry.name);
+			let isFile = entry.isFile();
+			if (entry.isSymbolicLink()) {
+				try {
+					isFile = statSync(fullPath).isFile();
+				} catch {
+					continue;
+				}
+			}
+
+			if (isFile && entry.name.endsWith(".json")) {
+				entries.push(fullPath);
+			}
+		}
+	} catch {
+		// Ignore errors
+	}
+
+	return entries;
+}
+
+function readPiManifestFile(packageJsonPath: string): PiManifest | null {
+	try {
+		const content = readFileSync(packageJsonPath, "utf-8");
+		const pkg = JSON.parse(content) as { pi?: PiManifest };
+		return pkg.pi ?? null;
+	} catch {
+		return null;
+	}
+}
+
+function resolveExtensionEntries(dir: string): string[] | null {
+	const packageJsonPath = join(dir, "package.json");
+	if (existsSync(packageJsonPath)) {
+		const manifest = readPiManifestFile(packageJsonPath);
+		if (manifest?.extensions?.length) {
+			const entries: string[] = [];
+			for (const extPath of manifest.extensions) {
+				const resolvedExtPath = resolve(dir, extPath);
+				if (existsSync(resolvedExtPath)) {
+					entries.push(resolvedExtPath);
+				}
+			}
+			if (entries.length > 0) {
+				return entries;
+			}
+		}
+	}
+
+	const indexTs = join(dir, "index.ts");
+	const indexJs = join(dir, "index.js");
+	if (existsSync(indexTs)) {
+		return [indexTs];
+	}
+	if (existsSync(indexJs)) {
+		return [indexJs];
+	}
+
+	return null;
+}
+
+function collectAutoExtensionEntries(dir: string): string[] {
+	const entries: string[] = [];
+	if (!existsSync(dir)) return entries;
+
+	try {
+		const dirEntries = readdirSync(dir, { withFileTypes: true });
+		for (const entry of dirEntries) {
+			if (entry.name.startsWith(".")) continue;
+			if (entry.name === "node_modules") continue;
+
+			const fullPath = join(dir, entry.name);
+			let isDir = entry.isDirectory();
+			let isFile = entry.isFile();
+
+			if (entry.isSymbolicLink()) {
+				try {
+					const stats = statSync(fullPath);
+					isDir = stats.isDirectory();
+					isFile = stats.isFile();
+				} catch {
+					continue;
+				}
+			}
+
+			if (isFile && (entry.name.endsWith(".ts") || entry.name.endsWith(".js"))) {
+				entries.push(fullPath);
+			} else if (isDir) {
+				const resolvedEntries = resolveExtensionEntries(fullPath);
+				if (resolvedEntries) {
+					entries.push(...resolvedEntries);
+				}
 			}
 		}
 	} catch {
@@ -213,9 +359,66 @@ function collectSkillEntries(dir: string): string[] {
 function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
 	const rel = relative(baseDir, filePath);
 	const name = basename(filePath);
-	return patterns.some(
-		(pattern) => minimatch(rel, pattern) || minimatch(name, pattern) || minimatch(filePath, pattern),
-	);
+	const isSkillFile = name === "SKILL.md";
+	const parentDir = isSkillFile ? dirname(filePath) : undefined;
+	const parentRel = isSkillFile ? relative(baseDir, parentDir!) : undefined;
+	const parentName = isSkillFile ? basename(parentDir!) : undefined;
+
+	return patterns.some((pattern) => {
+		if (minimatch(rel, pattern) || minimatch(name, pattern) || minimatch(filePath, pattern)) {
+			return true;
+		}
+		if (!isSkillFile) return false;
+		return minimatch(parentRel!, pattern) || minimatch(parentName!, pattern) || minimatch(parentDir!, pattern);
+	});
+}
+
+function normalizeExactPattern(pattern: string): string {
+	if (pattern.startsWith("./") || pattern.startsWith(".\\")) {
+		return pattern.slice(2);
+	}
+	return pattern;
+}
+
+function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: string): boolean {
+	if (patterns.length === 0) return false;
+	const rel = relative(baseDir, filePath);
+	const name = basename(filePath);
+	const isSkillFile = name === "SKILL.md";
+	const parentDir = isSkillFile ? dirname(filePath) : undefined;
+	const parentRel = isSkillFile ? relative(baseDir, parentDir!) : undefined;
+
+	return patterns.some((pattern) => {
+		const normalized = normalizeExactPattern(pattern);
+		if (normalized === rel || normalized === filePath) {
+			return true;
+		}
+		if (!isSkillFile) return false;
+		return normalized === parentRel || normalized === parentDir;
+	});
+}
+
+function getOverridePatterns(entries: string[]): string[] {
+	return entries.filter((pattern) => pattern.startsWith("!") || pattern.startsWith("+") || pattern.startsWith("-"));
+}
+
+function isEnabledByOverrides(filePath: string, patterns: string[], baseDir: string): boolean {
+	const overrides = getOverridePatterns(patterns);
+	const excludes = overrides.filter((pattern) => pattern.startsWith("!")).map((pattern) => pattern.slice(1));
+	const forceIncludes = overrides.filter((pattern) => pattern.startsWith("+")).map((pattern) => pattern.slice(1));
+	const forceExcludes = overrides.filter((pattern) => pattern.startsWith("-")).map((pattern) => pattern.slice(1));
+
+	let enabled = true;
+	if (excludes.length > 0 && matchesAnyPattern(filePath, excludes, baseDir)) {
+		enabled = false;
+	}
+	if (forceIncludes.length > 0 && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
+		enabled = true;
+	}
+	if (forceExcludes.length > 0 && matchesAnyExactPattern(filePath, forceExcludes, baseDir)) {
+		enabled = false;
+	}
+	return enabled;
 }
 
 /**
@@ -223,16 +426,20 @@ function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string
  * Pattern types:
  * - Plain patterns: include matching paths
  * - `!pattern`: exclude matching paths
- * - `+pattern`: force-include matching paths (overrides exclusions)
+ * - `+path`: force-include exact path (overrides exclusions)
+ * - `-path`: force-exclude exact path (overrides force-includes)
  */
 function applyPatterns(allPaths: string[], patterns: string[], baseDir: string): Set<string> {
 	const includes: string[] = [];
 	const excludes: string[] = [];
 	const forceIncludes: string[] = [];
+	const forceExcludes: string[] = [];
 
 	for (const p of patterns) {
 		if (p.startsWith("+")) {
 			forceIncludes.push(p.slice(1));
+		} else if (p.startsWith("-")) {
+			forceExcludes.push(p.slice(1));
 		} else if (p.startsWith("!")) {
 			excludes.push(p.slice(1));
 		} else {
@@ -256,10 +463,15 @@ function applyPatterns(allPaths: string[], patterns: string[], baseDir: string):
 	// Step 3: Force-include (add back from allPaths, overriding exclusions)
 	if (forceIncludes.length > 0) {
 		for (const filePath of allPaths) {
-			if (!result.includes(filePath) && matchesAnyPattern(filePath, forceIncludes, baseDir)) {
+			if (!result.includes(filePath) && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
 				result.push(filePath);
 			}
 		}
+	}
+
+	// Step 4: Force-exclude (remove even if included or force-included)
+	if (forceExcludes.length > 0) {
+		result = result.filter((filePath) => !matchesAnyExactPattern(filePath, forceExcludes, baseDir));
 	}
 
 	return new Set(result);
@@ -338,21 +550,38 @@ export class DefaultPackageManager implements PackageManager {
 		const packageSources = this.dedupePackages(allPackages);
 		await this.resolvePackageSources(packageSources, accumulator, onMissing);
 
+		const globalBaseDir = this.agentDir;
+		const projectBaseDir = join(this.cwd, CONFIG_DIR_NAME);
+
 		for (const resourceType of RESOURCE_TYPES) {
 			const target = this.getTargetMap(accumulator, resourceType);
 			const globalEntries = (globalSettings[resourceType] ?? []) as string[];
 			const projectEntries = (projectSettings[resourceType] ?? []) as string[];
-			this.resolveLocalEntries(globalEntries, resourceType, target, {
-				source: "local",
-				scope: "user",
-				origin: "top-level",
-			});
-			this.resolveLocalEntries(projectEntries, resourceType, target, {
-				source: "local",
-				scope: "project",
-				origin: "top-level",
-			});
+			this.resolveLocalEntries(
+				globalEntries,
+				resourceType,
+				target,
+				{
+					source: "local",
+					scope: "user",
+					origin: "top-level",
+				},
+				globalBaseDir,
+			);
+			this.resolveLocalEntries(
+				projectEntries,
+				resourceType,
+				target,
+				{
+					source: "local",
+					scope: "project",
+					origin: "top-level",
+				},
+				projectBaseDir,
+			);
 		}
+
+		this.addAutoDiscoveredResources(accumulator, globalSettings, projectSettings, globalBaseDir, projectBaseDir);
 
 		return this.toResolvedPaths(accumulator);
 	}
@@ -470,6 +699,7 @@ export class DefaultPackageManager implements PackageManager {
 					const installed = await installMissing();
 					if (!installed) continue;
 				}
+				metadata.baseDir = installedPath;
 				this.collectPackageResources(installedPath, accumulator, filter, metadata);
 				continue;
 			}
@@ -480,6 +710,7 @@ export class DefaultPackageManager implements PackageManager {
 					const installed = await installMissing();
 					if (!installed) continue;
 				}
+				metadata.baseDir = installedPath;
 				this.collectPackageResources(installedPath, accumulator, filter, metadata);
 			}
 		}
@@ -499,10 +730,12 @@ export class DefaultPackageManager implements PackageManager {
 		try {
 			const stats = statSync(resolved);
 			if (stats.isFile()) {
+				metadata.baseDir = dirname(resolved);
 				this.addResource(accumulator.extensions, resolved, metadata, true);
 				return;
 			}
 			if (stats.isDirectory()) {
+				metadata.baseDir = resolved;
 				const resources = this.collectPackageResources(resolved, accumulator, filter, metadata);
 				if (!resources) {
 					this.addResource(accumulator.extensions, resolved, metadata, true);
@@ -802,6 +1035,14 @@ export class DefaultPackageManager implements PackageManager {
 		return resolve(this.cwd, trimmed);
 	}
 
+	private resolvePathFromBase(input: string, baseDir: string): string {
+		const trimmed = input.trim();
+		if (trimmed === "~") return homedir();
+		if (trimmed.startsWith("~/")) return join(homedir(), trimmed.slice(2));
+		if (trimmed.startsWith("~")) return join(homedir(), trimmed.slice(1));
+		return resolve(baseDir, trimmed);
+	}
+
 	private collectPackageResources(
 		packageRoot: string,
 		accumulator: ResourceAccumulator,
@@ -893,18 +1134,10 @@ export class DefaultPackageManager implements PackageManager {
 		}
 
 		// Apply user patterns on top of manifest-enabled files
-		const enabledByUser = applyPatterns(Array.from(enabledByManifest), userPatterns, packageRoot);
-
-		// A file is enabled if it passes both manifest AND user patterns
-		// But force-include (+) in user patterns can bring back files excluded by manifest
-		const forceIncludePatterns = userPatterns.filter((p) => p.startsWith("+")).map((p) => p.slice(1));
-		const forceEnabled =
-			forceIncludePatterns.length > 0
-				? new Set(allFiles.filter((f) => matchesAnyPattern(f, forceIncludePatterns, packageRoot)))
-				: new Set<string>();
+		const enabledByUser = applyPatterns(allFiles, userPatterns, packageRoot);
 
 		for (const f of allFiles) {
-			const enabled = enabledByUser.has(f) || forceEnabled.has(f);
+			const enabled = enabledByUser.has(f);
 			this.addResource(target, f, metadata, enabled);
 		}
 	}
@@ -925,7 +1158,7 @@ export class DefaultPackageManager implements PackageManager {
 			const manifestPatterns = entries.filter(isPattern);
 			const enabledByManifest =
 				manifestPatterns.length > 0 ? applyPatterns(allFiles, manifestPatterns, packageRoot) : new Set(allFiles);
-			return { allFiles, enabledByManifest };
+			return { allFiles: Array.from(enabledByManifest), enabledByManifest };
 		}
 
 		const conventionDir = join(packageRoot, resourceType);
@@ -968,7 +1201,9 @@ export class DefaultPackageManager implements PackageManager {
 		const enabledPaths = applyPatterns(allFiles, patterns, root);
 
 		for (const f of allFiles) {
-			this.addResource(target, f, metadata, enabledPaths.has(f));
+			if (enabledPaths.has(f)) {
+				this.addResource(target, f, metadata, true);
+			}
 		}
 	}
 
@@ -983,21 +1218,141 @@ export class DefaultPackageManager implements PackageManager {
 		resourceType: ResourceType,
 		target: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		metadata: PathMetadata,
+		baseDir: string,
 	): void {
 		if (entries.length === 0) return;
 
 		// Collect all files from plain entries (non-pattern entries)
 		const { plain, patterns } = splitPatterns(entries);
-		const resolvedPlain = plain.map((p) => this.resolvePath(p));
+		const resolvedPlain = plain.map((p) => this.resolvePathFromBase(p, baseDir));
 		const allFiles = this.collectFilesFromPaths(resolvedPlain, resourceType);
 
 		// Determine which files are enabled based on patterns
-		const enabledPaths = applyPatterns(allFiles, patterns, this.cwd);
+		const enabledPaths = applyPatterns(allFiles, patterns, baseDir);
 
 		// Add all files with their enabled state
 		for (const f of allFiles) {
 			this.addResource(target, f, metadata, enabledPaths.has(f));
 		}
+	}
+
+	private addAutoDiscoveredResources(
+		accumulator: ResourceAccumulator,
+		globalSettings: ReturnType<SettingsManager["getGlobalSettings"]>,
+		projectSettings: ReturnType<SettingsManager["getProjectSettings"]>,
+		globalBaseDir: string,
+		projectBaseDir: string,
+	): void {
+		const userMetadata: PathMetadata = {
+			source: "auto",
+			scope: "user",
+			origin: "top-level",
+			baseDir: globalBaseDir,
+		};
+		const projectMetadata: PathMetadata = {
+			source: "auto",
+			scope: "project",
+			origin: "top-level",
+			baseDir: projectBaseDir,
+		};
+
+		const userOverrides = {
+			extensions: (globalSettings.extensions ?? []) as string[],
+			skills: (globalSettings.skills ?? []) as string[],
+			prompts: (globalSettings.prompts ?? []) as string[],
+			themes: (globalSettings.themes ?? []) as string[],
+		};
+		const projectOverrides = {
+			extensions: (projectSettings.extensions ?? []) as string[],
+			skills: (projectSettings.skills ?? []) as string[],
+			prompts: (projectSettings.prompts ?? []) as string[],
+			themes: (projectSettings.themes ?? []) as string[],
+		};
+
+		const userDirs = {
+			extensions: join(globalBaseDir, "extensions"),
+			skills: join(globalBaseDir, "skills"),
+			prompts: join(globalBaseDir, "prompts"),
+			themes: join(globalBaseDir, "themes"),
+		};
+		const projectDirs = {
+			extensions: join(projectBaseDir, "extensions"),
+			skills: join(projectBaseDir, "skills"),
+			prompts: join(projectBaseDir, "prompts"),
+			themes: join(projectBaseDir, "themes"),
+		};
+
+		const addResources = (
+			resourceType: ResourceType,
+			paths: string[],
+			metadata: PathMetadata,
+			overrides: string[],
+			baseDir: string,
+		) => {
+			const target = this.getTargetMap(accumulator, resourceType);
+			for (const path of paths) {
+				const enabled = isEnabledByOverrides(path, overrides, baseDir);
+				this.addResource(target, path, metadata, enabled);
+			}
+		};
+
+		addResources(
+			"extensions",
+			collectAutoExtensionEntries(userDirs.extensions),
+			userMetadata,
+			userOverrides.extensions,
+			globalBaseDir,
+		);
+		addResources(
+			"skills",
+			collectAutoSkillEntries(userDirs.skills),
+			userMetadata,
+			userOverrides.skills,
+			globalBaseDir,
+		);
+		addResources(
+			"prompts",
+			collectAutoPromptEntries(userDirs.prompts),
+			userMetadata,
+			userOverrides.prompts,
+			globalBaseDir,
+		);
+		addResources(
+			"themes",
+			collectAutoThemeEntries(userDirs.themes),
+			userMetadata,
+			userOverrides.themes,
+			globalBaseDir,
+		);
+
+		addResources(
+			"extensions",
+			collectAutoExtensionEntries(projectDirs.extensions),
+			projectMetadata,
+			projectOverrides.extensions,
+			projectBaseDir,
+		);
+		addResources(
+			"skills",
+			collectAutoSkillEntries(projectDirs.skills),
+			projectMetadata,
+			projectOverrides.skills,
+			projectBaseDir,
+		);
+		addResources(
+			"prompts",
+			collectAutoPromptEntries(projectDirs.prompts),
+			projectMetadata,
+			projectOverrides.prompts,
+			projectBaseDir,
+		);
+		addResources(
+			"themes",
+			collectAutoThemeEntries(projectDirs.themes),
+			projectMetadata,
+			projectOverrides.themes,
+			projectBaseDir,
+		);
 	}
 
 	private collectFilesFromPaths(paths: string[], resourceType: ResourceType): string[] {
