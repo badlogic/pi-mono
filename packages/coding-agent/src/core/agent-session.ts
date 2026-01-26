@@ -2106,8 +2106,8 @@ export class AgentSession {
 		if (previousName !== trimmed && this._extensionRunner?.hasHandlers("session_metadata_change")) {
 			void this._extensionRunner.emit({
 				type: "session_metadata_change",
-				changes: {
-					name: { previous: previousName, next: trimmed },
+				update: {
+					name: trimmed,
 				},
 			});
 		}

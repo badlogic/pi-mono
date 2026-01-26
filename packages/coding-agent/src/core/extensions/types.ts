@@ -350,22 +350,15 @@ export interface SessionSwitchEvent {
 	previousSessionFile: string | undefined;
 }
 
-/** Metadata change entry for session_metadata_change event. */
-export interface SessionMetadataChange {
-	previous?: unknown;
-	next?: unknown;
-}
-
-/** Known metadata change fields (extensible via string index). */
-export interface SessionMetadataChanges {
-	name?: SessionMetadataChange;
-	[key: string]: SessionMetadataChange | undefined;
+/** Latest session metadata values. */
+export interface SessionMetadataUpdate {
+	name: string;
 }
 
 /** Fired when session metadata changes (e.g., name). */
 export interface SessionMetadataChangeEvent {
 	type: "session_metadata_change";
-	changes: SessionMetadataChanges;
+	update: SessionMetadataUpdate;
 }
 
 /** Fired before forking a session (can be cancelled) */

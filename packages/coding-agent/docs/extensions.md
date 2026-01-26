@@ -316,11 +316,8 @@ Fired when session metadata changes (e.g., session name via `/name` or `pi.setSe
 
 ```typescript
 pi.on("session_metadata_change", async (event, ctx) => {
-  // event.changes contains fields with previous/next values
-  const nameChange = event.changes.name;
-  if (nameChange?.next) {
-    ctx.ui.notify(`Session renamed to ${nameChange.next}`, "info");
-  }
+  // event.update contains the latest metadata values
+  ctx.ui.notify(`Session renamed to ${event.update.name}`, "info");
 });
 ```
 
