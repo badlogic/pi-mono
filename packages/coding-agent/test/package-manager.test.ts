@@ -14,13 +14,14 @@ const isDisabled = (r: ResolvedResource, pathMatch: string, matchFn: "endsWith" 
 
 describe("DefaultPackageManager", () => {
 	let tempDir: string;
+	let agentDir: string;
 	let settingsManager: SettingsManager;
 	let packageManager: DefaultPackageManager;
 
 	beforeEach(() => {
 		tempDir = join(tmpdir(), `pm-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
-		const agentDir = join(tempDir, "agent");
+		agentDir = join(tempDir, "agent");
 		mkdirSync(agentDir, { recursive: true });
 
 		settingsManager = SettingsManager.inMemory();
@@ -45,16 +46,18 @@ describe("DefaultPackageManager", () => {
 		});
 
 		it("should resolve local extension paths from settings", async () => {
-			const extPath = join(tempDir, "my-extension.ts");
+			const extDir = join(agentDir, "extensions");
+			mkdirSync(extDir, { recursive: true });
+			const extPath = join(extDir, "my-extension.ts");
 			writeFileSync(extPath, "export default function() {}");
-			settingsManager.setExtensionPaths([extPath]);
+			settingsManager.setExtensionPaths(["extensions/my-extension.ts"]);
 
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => r.path === extPath && r.enabled)).toBe(true);
 		});
 
 		it("should resolve skill paths from settings", async () => {
-			const skillDir = join(tempDir, "skills", "my-skill");
+			const skillDir = join(agentDir, "skills", "my-skill");
 			mkdirSync(skillDir, { recursive: true });
 			writeFileSync(
 				join(skillDir, "SKILL.md"),
@@ -65,11 +68,23 @@ description: A test skill
 Content`,
 			);
 
-			settingsManager.setSkillPaths([join(tempDir, "skills")]);
+			settingsManager.setSkillPaths(["skills"]);
 
 			const result = await packageManager.resolve();
 			// Skills with SKILL.md are returned as directory paths
 			expect(result.skills.some((r) => r.path === skillDir && r.enabled)).toBe(true);
+		});
+
+		it("should resolve project paths relative to .pi", async () => {
+			const extDir = join(tempDir, ".pi", "extensions");
+			mkdirSync(extDir, { recursive: true });
+			const extPath = join(extDir, "project-ext.ts");
+			writeFileSync(extPath, "export default function() {}");
+
+			settingsManager.setProjectExtensionPaths(["extensions/project-ext.ts"]);
+
+			const result = await packageManager.resolve();
+			expect(result.extensions.some((r) => r.path === extPath && r.enabled)).toBe(true);
 		});
 	});
 
@@ -174,12 +189,12 @@ Content`,
 
 	describe("pattern filtering in top-level arrays", () => {
 		it("should exclude extensions with ! pattern", async () => {
-			const extDir = join(tempDir, "extensions");
+			const extDir = join(agentDir, "extensions");
 			mkdirSync(extDir, { recursive: true });
 			writeFileSync(join(extDir, "keep.ts"), "export default function() {}");
 			writeFileSync(join(extDir, "remove.ts"), "export default function() {}");
 
-			settingsManager.setExtensionPaths([extDir, "!**/remove.ts"]);
+			settingsManager.setExtensionPaths(["extensions", "!**/remove.ts"]);
 
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => isEnabled(r, "keep.ts"))).toBe(true);
@@ -187,13 +202,13 @@ Content`,
 		});
 
 		it("should filter themes with glob patterns", async () => {
-			const themesDir = join(tempDir, "themes");
+			const themesDir = join(agentDir, "themes");
 			mkdirSync(themesDir, { recursive: true });
 			writeFileSync(join(themesDir, "dark.json"), "{}");
 			writeFileSync(join(themesDir, "light.json"), "{}");
 			writeFileSync(join(themesDir, "funky.json"), "{}");
 
-			settingsManager.setThemePaths([themesDir, "!funky.json"]);
+			settingsManager.setThemePaths(["themes", "!funky.json"]);
 
 			const result = await packageManager.resolve();
 			expect(result.themes.some((r) => isEnabled(r, "dark.json"))).toBe(true);
@@ -202,12 +217,12 @@ Content`,
 		});
 
 		it("should filter prompts with exclusion pattern", async () => {
-			const promptsDir = join(tempDir, "prompts");
+			const promptsDir = join(agentDir, "prompts");
 			mkdirSync(promptsDir, { recursive: true });
 			writeFileSync(join(promptsDir, "review.md"), "Review code");
 			writeFileSync(join(promptsDir, "explain.md"), "Explain code");
 
-			settingsManager.setPromptTemplatePaths([promptsDir, "!explain.md"]);
+			settingsManager.setPromptTemplatePaths(["prompts", "!explain.md"]);
 
 			const result = await packageManager.resolve();
 			expect(result.prompts.some((r) => isEnabled(r, "review.md"))).toBe(true);
@@ -215,7 +230,7 @@ Content`,
 		});
 
 		it("should filter skills with exclusion pattern", async () => {
-			const skillsDir = join(tempDir, "skills");
+			const skillsDir = join(agentDir, "skills");
 			mkdirSync(join(skillsDir, "good-skill"), { recursive: true });
 			mkdirSync(join(skillsDir, "bad-skill"), { recursive: true });
 			writeFileSync(
@@ -227,7 +242,7 @@ Content`,
 				"---\nname: bad-skill\ndescription: Bad\n---\nContent",
 			);
 
-			settingsManager.setSkillPaths([skillsDir, "!**/bad-skill"]);
+			settingsManager.setSkillPaths(["skills", "!**/bad-skill"]);
 
 			const result = await packageManager.resolve();
 			expect(result.skills.some((r) => isEnabled(r, "good-skill", "includes"))).toBe(true);
@@ -235,10 +250,12 @@ Content`,
 		});
 
 		it("should work without patterns (backward compatible)", async () => {
-			const extPath = join(tempDir, "my-ext.ts");
+			const extDir = join(agentDir, "extensions");
+			mkdirSync(extDir, { recursive: true });
+			const extPath = join(extDir, "my-ext.ts");
 			writeFileSync(extPath, "export default function() {}");
 
-			settingsManager.setExtensionPaths([extPath]);
+			settingsManager.setExtensionPaths(["extensions/my-ext.ts"]);
 
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => r.path === extPath && r.enabled)).toBe(true);
@@ -266,7 +283,7 @@ Content`,
 			const result = await packageManager.resolveExtensionSources([pkgDir]);
 			expect(result.extensions.some((r) => isEnabled(r, "local.ts"))).toBe(true);
 			expect(result.extensions.some((r) => isEnabled(r, "remote.ts"))).toBe(true);
-			expect(result.extensions.some((r) => isDisabled(r, "skip.ts"))).toBe(true);
+			expect(result.extensions.some((r) => r.path.endsWith("skip.ts"))).toBe(false);
 		});
 
 		it("should support glob patterns in manifest skills", async () => {
@@ -293,7 +310,7 @@ Content`,
 
 			const result = await packageManager.resolveExtensionSources([pkgDir]);
 			expect(result.skills.some((r) => isEnabled(r, "good-skill", "includes"))).toBe(true);
-			expect(result.skills.some((r) => isDisabled(r, "bad-skill", "includes"))).toBe(true);
+			expect(result.skills.some((r) => r.path.includes("bad-skill"))).toBe(false);
 		});
 	});
 
@@ -333,7 +350,7 @@ Content`,
 			// bar.ts should be excluded (by user)
 			expect(result.extensions.some((r) => isDisabled(r, "bar.ts"))).toBe(true);
 			// baz.ts should be excluded (by manifest)
-			expect(result.extensions.some((r) => isDisabled(r, "baz.ts"))).toBe(true);
+			expect(result.extensions.some((r) => r.path.endsWith("baz.ts"))).toBe(false);
 		});
 
 		it("should exclude extensions from package with ! pattern", async () => {
@@ -427,14 +444,14 @@ Content`,
 
 	describe("force-include patterns", () => {
 		it("should force-include extensions with + pattern after exclusion", async () => {
-			const extDir = join(tempDir, "extensions");
+			const extDir = join(agentDir, "extensions");
 			mkdirSync(extDir, { recursive: true });
 			writeFileSync(join(extDir, "keep.ts"), "export default function() {}");
 			writeFileSync(join(extDir, "excluded.ts"), "export default function() {}");
 			writeFileSync(join(extDir, "force-back.ts"), "export default function() {}");
 
 			// Exclude all, then force-include one back
-			settingsManager.setExtensionPaths([extDir, "!**/*.ts", "+**/force-back.ts"]);
+			settingsManager.setExtensionPaths(["extensions", "!extensions/*.ts", "+extensions/force-back.ts"]);
 
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => isDisabled(r, "keep.ts"))).toBe(true);
@@ -452,7 +469,7 @@ Content`,
 			settingsManager.setPackages([
 				{
 					source: pkgDir,
-					extensions: ["!*", "+**/beta.ts"],
+					extensions: ["!**/*.ts", "+extensions/beta.ts"],
 					skills: [],
 					prompts: [],
 					themes: [],
@@ -478,7 +495,7 @@ Content`,
 				{
 					source: pkgDir,
 					extensions: [],
-					skills: ["!*", "+**/skill-a", "+**/skill-c"],
+					skills: ["!**/*", "+skills/skill-a", "+skills/skill-c"],
 					prompts: [],
 					themes: [],
 				},
@@ -491,13 +508,13 @@ Content`,
 		});
 
 		it("should force-include after specific exclusion", async () => {
-			const extDir = join(tempDir, "specific-force");
+			const extDir = join(agentDir, "extensions");
 			mkdirSync(extDir, { recursive: true });
 			writeFileSync(join(extDir, "a.ts"), "export default function() {}");
 			writeFileSync(join(extDir, "b.ts"), "export default function() {}");
 
 			// Specifically exclude b.ts, then force it back
-			settingsManager.setExtensionPaths([extDir, "!**/b.ts", "+**/b.ts"]);
+			settingsManager.setExtensionPaths(["extensions", "!extensions/b.ts", "+extensions/b.ts"]);
 
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => isEnabled(r, "a.ts"))).toBe(true);
@@ -515,7 +532,7 @@ Content`,
 				JSON.stringify({
 					name: "manifest-force-pkg",
 					pi: {
-						extensions: ["extensions", "!**/two.ts", "+**/two.ts"],
+						extensions: ["extensions", "!**/two.ts", "+extensions/two.ts"],
 					},
 				}),
 			);
@@ -527,13 +544,13 @@ Content`,
 		});
 
 		it("should force-include themes", async () => {
-			const themesDir = join(tempDir, "force-themes");
+			const themesDir = join(agentDir, "themes");
 			mkdirSync(themesDir, { recursive: true });
 			writeFileSync(join(themesDir, "dark.json"), "{}");
 			writeFileSync(join(themesDir, "light.json"), "{}");
 			writeFileSync(join(themesDir, "special.json"), "{}");
 
-			settingsManager.setThemePaths([themesDir, "!*.json", "+special.json"]);
+			settingsManager.setThemePaths(["themes", "!themes/*.json", "+themes/special.json"]);
 
 			const result = await packageManager.resolve();
 			expect(result.themes.some((r) => isDisabled(r, "dark.json"))).toBe(true);
@@ -542,18 +559,54 @@ Content`,
 		});
 
 		it("should force-include prompts", async () => {
-			const promptsDir = join(tempDir, "force-prompts");
+			const promptsDir = join(agentDir, "prompts");
 			mkdirSync(promptsDir, { recursive: true });
 			writeFileSync(join(promptsDir, "review.md"), "Review");
 			writeFileSync(join(promptsDir, "explain.md"), "Explain");
 			writeFileSync(join(promptsDir, "debug.md"), "Debug");
 
-			settingsManager.setPromptTemplatePaths([promptsDir, "!*", "+debug.md"]);
+			settingsManager.setPromptTemplatePaths(["prompts", "!prompts/*.md", "+prompts/debug.md"]);
 
 			const result = await packageManager.resolve();
 			expect(result.prompts.some((r) => isDisabled(r, "review.md"))).toBe(true);
 			expect(result.prompts.some((r) => isDisabled(r, "explain.md"))).toBe(true);
 			expect(result.prompts.some((r) => isEnabled(r, "debug.md"))).toBe(true);
+		});
+	});
+
+	describe("force-exclude patterns", () => {
+		it("should force-exclude top-level resources", async () => {
+			const extDir = join(agentDir, "extensions");
+			mkdirSync(extDir, { recursive: true });
+			writeFileSync(join(extDir, "alpha.ts"), "export default function() {}");
+			writeFileSync(join(extDir, "beta.ts"), "export default function() {}");
+
+			settingsManager.setExtensionPaths(["extensions", "+extensions/alpha.ts", "-extensions/alpha.ts"]);
+
+			const result = await packageManager.resolve();
+			expect(result.extensions.some((r) => isDisabled(r, "alpha.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isEnabled(r, "beta.ts"))).toBe(true);
+		});
+
+		it("should force-exclude in package filters", async () => {
+			const pkgDir = join(tempDir, "force-exclude-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "alpha.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "beta.ts"), "export default function() {}");
+
+			settingsManager.setPackages([
+				{
+					source: pkgDir,
+					extensions: ["extensions/*.ts", "+extensions/alpha.ts", "-extensions/alpha.ts"],
+					skills: [],
+					prompts: [],
+					themes: [],
+				},
+			]);
+
+			const result = await packageManager.resolve();
+			expect(result.extensions.some((r) => isDisabled(r, "alpha.ts"))).toBe(true);
+			expect(result.extensions.some((r) => isEnabled(r, "beta.ts"))).toBe(true);
 		});
 	});
 

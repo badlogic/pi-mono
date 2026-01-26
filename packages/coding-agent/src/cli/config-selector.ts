@@ -3,8 +3,9 @@
  */
 
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, relative } from "node:path";
 import { ProcessTerminal, TUI } from "@mariozechner/pi-tui";
+import { minimatch } from "minimatch";
 import { CONFIG_DIR_NAME } from "../config.js";
 import type { PathMetadata, ResolvedPaths, ResolvedResource } from "../core/package-manager.js";
 import type { SettingsManager } from "../core/settings-manager.js";
@@ -164,18 +165,49 @@ function collectExtensionEntries(dir: string): string[] {
 	return entries;
 }
 
-function isExcludedByPatterns(filePath: string, patterns: string[]): boolean {
-	const name = basename(filePath);
-	for (const pattern of patterns) {
-		if (pattern.startsWith("!")) {
-			const excludePattern = pattern.slice(1);
-			// Match against basename or full path
-			if (name === excludePattern || filePath.endsWith(excludePattern)) {
-				return true;
-			}
-		}
+function normalizeExactPattern(pattern: string): string {
+	if (pattern.startsWith("./") || pattern.startsWith(".\\")) {
+		return pattern.slice(2);
 	}
-	return false;
+	return pattern;
+}
+
+function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
+	const rel = relative(baseDir, filePath);
+	const name = basename(filePath);
+	return patterns.some(
+		(pattern) => minimatch(rel, pattern) || minimatch(name, pattern) || minimatch(filePath, pattern),
+	);
+}
+
+function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: string): boolean {
+	if (patterns.length === 0) return false;
+	const rel = relative(baseDir, filePath);
+	return patterns.some((pattern) => {
+		const normalized = normalizeExactPattern(pattern);
+		return normalized === rel || normalized === filePath;
+	});
+}
+
+function isEnabledByOverrides(filePath: string, patterns: string[], baseDir: string): boolean {
+	const overrides = patterns.filter(
+		(pattern) => pattern.startsWith("!") || pattern.startsWith("+") || pattern.startsWith("-"),
+	);
+	const excludes = overrides.filter((pattern) => pattern.startsWith("!")).map((pattern) => pattern.slice(1));
+	const forceIncludes = overrides.filter((pattern) => pattern.startsWith("+")).map((pattern) => pattern.slice(1));
+	const forceExcludes = overrides.filter((pattern) => pattern.startsWith("-")).map((pattern) => pattern.slice(1));
+
+	let enabled = true;
+	if (excludes.length > 0 && matchesAnyPattern(filePath, excludes, baseDir)) {
+		enabled = false;
+	}
+	if (forceIncludes.length > 0 && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
+		enabled = true;
+	}
+	if (forceExcludes.length > 0 && matchesAnyExactPattern(filePath, forceExcludes, baseDir)) {
+		enabled = false;
+	}
+	return enabled;
 }
 
 /**
@@ -202,18 +234,18 @@ function mergeAutoDiscoveredResources(
 		themes: new Set(resolvedPaths.themes.map((r) => r.path)),
 	};
 
-	// Get exclusion patterns from settings
+	// Get override patterns from settings
 	const globalSettings = settingsManager.getGlobalSettings();
 	const projectSettings = settingsManager.getProjectSettings();
 
-	const userExclusions = {
+	const userOverrides = {
 		extensions: globalSettings.extensions ?? [],
 		skills: globalSettings.skills ?? [],
 		prompts: globalSettings.prompts ?? [],
 		themes: globalSettings.themes ?? [],
 	};
 
-	const projectExclusions = {
+	const projectOverrides = {
 		extensions: projectSettings.extensions ?? [],
 		skills: projectSettings.skills ?? [],
 		prompts: projectSettings.prompts ?? [],
@@ -225,16 +257,20 @@ function mergeAutoDiscoveredResources(
 		existing: Set<string>,
 		paths: string[],
 		metadata: PathMetadata,
-		exclusions: string[],
+		overrides: string[],
+		baseDir: string,
 	) => {
 		for (const path of paths) {
 			if (!existing.has(path)) {
-				const enabled = !isExcludedByPatterns(path, exclusions);
+				const enabled = isEnabledByOverrides(path, overrides, baseDir);
 				target.push({ path, enabled, metadata });
 				existing.add(path);
 			}
 		}
 	};
+
+	const userBaseDir = agentDir;
+	const projectBaseDir = join(cwd, CONFIG_DIR_NAME);
 
 	// User scope auto-discovery
 	const userExtDir = join(agentDir, "extensions");
@@ -247,28 +283,32 @@ function mergeAutoDiscoveredResources(
 		existingPaths.extensions,
 		collectExtensionEntries(userExtDir),
 		{ source: "auto", scope: "user", origin: "top-level" },
-		userExclusions.extensions,
+		userOverrides.extensions,
+		userBaseDir,
 	);
 	addResources(
 		result.skills,
 		existingPaths.skills,
 		collectSkillEntries(userSkillsDir),
 		{ source: "auto", scope: "user", origin: "top-level" },
-		userExclusions.skills,
+		userOverrides.skills,
+		userBaseDir,
 	);
 	addResources(
 		result.prompts,
 		existingPaths.prompts,
 		collectFiles(userPromptsDir, FILE_PATTERNS.prompts),
 		{ source: "auto", scope: "user", origin: "top-level" },
-		userExclusions.prompts,
+		userOverrides.prompts,
+		userBaseDir,
 	);
 	addResources(
 		result.themes,
 		existingPaths.themes,
 		collectFiles(userThemesDir, FILE_PATTERNS.themes),
 		{ source: "auto", scope: "user", origin: "top-level" },
-		userExclusions.themes,
+		userOverrides.themes,
+		userBaseDir,
 	);
 
 	// Project scope auto-discovery
@@ -282,28 +322,32 @@ function mergeAutoDiscoveredResources(
 		existingPaths.extensions,
 		collectExtensionEntries(projectExtDir),
 		{ source: "auto", scope: "project", origin: "top-level" },
-		projectExclusions.extensions,
+		projectOverrides.extensions,
+		projectBaseDir,
 	);
 	addResources(
 		result.skills,
 		existingPaths.skills,
 		collectSkillEntries(projectSkillsDir),
 		{ source: "auto", scope: "project", origin: "top-level" },
-		projectExclusions.skills,
+		projectOverrides.skills,
+		projectBaseDir,
 	);
 	addResources(
 		result.prompts,
 		existingPaths.prompts,
 		collectFiles(projectPromptsDir, FILE_PATTERNS.prompts),
 		{ source: "auto", scope: "project", origin: "top-level" },
-		projectExclusions.prompts,
+		projectOverrides.prompts,
+		projectBaseDir,
 	);
 	addResources(
 		result.themes,
 		existingPaths.themes,
 		collectFiles(projectThemesDir, FILE_PATTERNS.themes),
 		{ source: "auto", scope: "project", origin: "top-level" },
-		projectExclusions.themes,
+		projectOverrides.themes,
+		projectBaseDir,
 	);
 
 	return result;
@@ -330,6 +374,7 @@ export async function selectConfig(options: ConfigSelectorOptions): Promise<void
 			allPaths,
 			options.settingsManager,
 			options.cwd,
+			options.agentDir,
 			() => {
 				if (!resolved) {
 					resolved = true;

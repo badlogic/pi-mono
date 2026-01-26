@@ -12,6 +12,7 @@ export interface PathMetadata {
 	source: string;
 	scope: SourceScope;
 	origin: "package" | "top-level";
+	baseDir?: string;
 }
 
 export interface ResolvedResource {
@@ -115,7 +116,7 @@ const FILE_PATTERNS: Record<ResourceType, RegExp> = {
 };
 
 function isPattern(s: string): boolean {
-	return s.startsWith("!") || s.startsWith("+") || s.includes("*") || s.includes("?");
+	return s.startsWith("!") || s.startsWith("+") || s.startsWith("-") || s.includes("*") || s.includes("?");
 }
 
 function splitPatterns(entries: string[]): { plain: string[]; patterns: string[] } {
@@ -218,21 +219,41 @@ function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string
 	);
 }
 
+function normalizeExactPattern(pattern: string): string {
+	if (pattern.startsWith("./") || pattern.startsWith(".\\")) {
+		return pattern.slice(2);
+	}
+	return pattern;
+}
+
+function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: string): boolean {
+	if (patterns.length === 0) return false;
+	const rel = relative(baseDir, filePath);
+	return patterns.some((pattern) => {
+		const normalized = normalizeExactPattern(pattern);
+		return normalized === rel || normalized === filePath;
+	});
+}
+
 /**
  * Apply patterns to paths and return a Set of enabled paths.
  * Pattern types:
  * - Plain patterns: include matching paths
  * - `!pattern`: exclude matching paths
- * - `+pattern`: force-include matching paths (overrides exclusions)
+ * - `+path`: force-include exact path (overrides exclusions)
+ * - `-path`: force-exclude exact path (overrides force-includes)
  */
 function applyPatterns(allPaths: string[], patterns: string[], baseDir: string): Set<string> {
 	const includes: string[] = [];
 	const excludes: string[] = [];
 	const forceIncludes: string[] = [];
+	const forceExcludes: string[] = [];
 
 	for (const p of patterns) {
 		if (p.startsWith("+")) {
 			forceIncludes.push(p.slice(1));
+		} else if (p.startsWith("-")) {
+			forceExcludes.push(p.slice(1));
 		} else if (p.startsWith("!")) {
 			excludes.push(p.slice(1));
 		} else {
@@ -256,10 +277,15 @@ function applyPatterns(allPaths: string[], patterns: string[], baseDir: string):
 	// Step 3: Force-include (add back from allPaths, overriding exclusions)
 	if (forceIncludes.length > 0) {
 		for (const filePath of allPaths) {
-			if (!result.includes(filePath) && matchesAnyPattern(filePath, forceIncludes, baseDir)) {
+			if (!result.includes(filePath) && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
 				result.push(filePath);
 			}
 		}
+	}
+
+	// Step 4: Force-exclude (remove even if included or force-included)
+	if (forceExcludes.length > 0) {
+		result = result.filter((filePath) => !matchesAnyExactPattern(filePath, forceExcludes, baseDir));
 	}
 
 	return new Set(result);
@@ -338,20 +364,35 @@ export class DefaultPackageManager implements PackageManager {
 		const packageSources = this.dedupePackages(allPackages);
 		await this.resolvePackageSources(packageSources, accumulator, onMissing);
 
+		const globalBaseDir = this.agentDir;
+		const projectBaseDir = join(this.cwd, CONFIG_DIR_NAME);
+
 		for (const resourceType of RESOURCE_TYPES) {
 			const target = this.getTargetMap(accumulator, resourceType);
 			const globalEntries = (globalSettings[resourceType] ?? []) as string[];
 			const projectEntries = (projectSettings[resourceType] ?? []) as string[];
-			this.resolveLocalEntries(globalEntries, resourceType, target, {
-				source: "local",
-				scope: "user",
-				origin: "top-level",
-			});
-			this.resolveLocalEntries(projectEntries, resourceType, target, {
-				source: "local",
-				scope: "project",
-				origin: "top-level",
-			});
+			this.resolveLocalEntries(
+				globalEntries,
+				resourceType,
+				target,
+				{
+					source: "local",
+					scope: "user",
+					origin: "top-level",
+				},
+				globalBaseDir,
+			);
+			this.resolveLocalEntries(
+				projectEntries,
+				resourceType,
+				target,
+				{
+					source: "local",
+					scope: "project",
+					origin: "top-level",
+				},
+				projectBaseDir,
+			);
 		}
 
 		return this.toResolvedPaths(accumulator);
@@ -470,6 +511,7 @@ export class DefaultPackageManager implements PackageManager {
 					const installed = await installMissing();
 					if (!installed) continue;
 				}
+				metadata.baseDir = installedPath;
 				this.collectPackageResources(installedPath, accumulator, filter, metadata);
 				continue;
 			}
@@ -480,6 +522,7 @@ export class DefaultPackageManager implements PackageManager {
 					const installed = await installMissing();
 					if (!installed) continue;
 				}
+				metadata.baseDir = installedPath;
 				this.collectPackageResources(installedPath, accumulator, filter, metadata);
 			}
 		}
@@ -499,10 +542,12 @@ export class DefaultPackageManager implements PackageManager {
 		try {
 			const stats = statSync(resolved);
 			if (stats.isFile()) {
+				metadata.baseDir = dirname(resolved);
 				this.addResource(accumulator.extensions, resolved, metadata, true);
 				return;
 			}
 			if (stats.isDirectory()) {
+				metadata.baseDir = resolved;
 				const resources = this.collectPackageResources(resolved, accumulator, filter, metadata);
 				if (!resources) {
 					this.addResource(accumulator.extensions, resolved, metadata, true);
@@ -802,6 +847,14 @@ export class DefaultPackageManager implements PackageManager {
 		return resolve(this.cwd, trimmed);
 	}
 
+	private resolvePathFromBase(input: string, baseDir: string): string {
+		const trimmed = input.trim();
+		if (trimmed === "~") return homedir();
+		if (trimmed.startsWith("~/")) return join(homedir(), trimmed.slice(2));
+		if (trimmed.startsWith("~")) return join(homedir(), trimmed.slice(1));
+		return resolve(baseDir, trimmed);
+	}
+
 	private collectPackageResources(
 		packageRoot: string,
 		accumulator: ResourceAccumulator,
@@ -893,18 +946,10 @@ export class DefaultPackageManager implements PackageManager {
 		}
 
 		// Apply user patterns on top of manifest-enabled files
-		const enabledByUser = applyPatterns(Array.from(enabledByManifest), userPatterns, packageRoot);
-
-		// A file is enabled if it passes both manifest AND user patterns
-		// But force-include (+) in user patterns can bring back files excluded by manifest
-		const forceIncludePatterns = userPatterns.filter((p) => p.startsWith("+")).map((p) => p.slice(1));
-		const forceEnabled =
-			forceIncludePatterns.length > 0
-				? new Set(allFiles.filter((f) => matchesAnyPattern(f, forceIncludePatterns, packageRoot)))
-				: new Set<string>();
+		const enabledByUser = applyPatterns(allFiles, userPatterns, packageRoot);
 
 		for (const f of allFiles) {
-			const enabled = enabledByUser.has(f) || forceEnabled.has(f);
+			const enabled = enabledByUser.has(f);
 			this.addResource(target, f, metadata, enabled);
 		}
 	}
@@ -925,7 +970,7 @@ export class DefaultPackageManager implements PackageManager {
 			const manifestPatterns = entries.filter(isPattern);
 			const enabledByManifest =
 				manifestPatterns.length > 0 ? applyPatterns(allFiles, manifestPatterns, packageRoot) : new Set(allFiles);
-			return { allFiles, enabledByManifest };
+			return { allFiles: Array.from(enabledByManifest), enabledByManifest };
 		}
 
 		const conventionDir = join(packageRoot, resourceType);
@@ -968,7 +1013,9 @@ export class DefaultPackageManager implements PackageManager {
 		const enabledPaths = applyPatterns(allFiles, patterns, root);
 
 		for (const f of allFiles) {
-			this.addResource(target, f, metadata, enabledPaths.has(f));
+			if (enabledPaths.has(f)) {
+				this.addResource(target, f, metadata, true);
+			}
 		}
 	}
 
@@ -983,16 +1030,17 @@ export class DefaultPackageManager implements PackageManager {
 		resourceType: ResourceType,
 		target: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		metadata: PathMetadata,
+		baseDir: string,
 	): void {
 		if (entries.length === 0) return;
 
 		// Collect all files from plain entries (non-pattern entries)
 		const { plain, patterns } = splitPatterns(entries);
-		const resolvedPlain = plain.map((p) => this.resolvePath(p));
+		const resolvedPlain = plain.map((p) => this.resolvePathFromBase(p, baseDir));
 		const allFiles = this.collectFilesFromPaths(resolvedPlain, resourceType);
 
 		// Determine which files are enabled based on patterns
-		const enabledPaths = applyPatterns(allFiles, patterns, this.cwd);
+		const enabledPaths = applyPatterns(allFiles, patterns, baseDir);
 
 		// Add all files with their enabled state
 		for (const f of allFiles) {
