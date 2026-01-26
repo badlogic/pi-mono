@@ -17,6 +17,7 @@ read README.md, then ask which module(s) to work on. Based on the answer, read t
 - **NEVER use inline imports** - no `await import("./foo.js")`, no `import("pkg").Type` in type positions, no dynamic imports for types. Always use standard top-level imports.
 - NEVER remove or downgrade code to fix type errors from outdated dependencies; upgrade the dependency instead
 - Always ask before removing functionality or code that appears to be intentional
+- Never hardcode key checks with, eg. `matchesKey(keyData, "ctrl+x")`. All keybindings must be configurable. Add default to matching object (`DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS`)
 
 ## Commands
 - After code changes (not documentation changes): `npm run check` (get full output, no tail). Fix all errors, warnings, and infos before committing.
