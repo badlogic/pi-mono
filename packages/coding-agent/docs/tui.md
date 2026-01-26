@@ -154,6 +154,27 @@ const result = await ctx.ui.custom<string | null>(
 );
 ```
 
+### Overlay Lifecycle
+
+Overlay components are disposed when closed. Don't reuse references - create fresh instances:
+
+```typescript
+// Wrong - stale reference
+let menu: MenuComponent;
+await ctx.ui.custom((_, __, ___, done) => {
+  menu = new MenuComponent(done);
+  return menu;
+}, { overlay: true });
+setActiveComponent(menu);  // Disposed
+
+// Correct - re-call to re-show
+const showMenu = () => ctx.ui.custom((_, __, ___, done) => 
+  new MenuComponent(done), { overlay: true });
+
+await showMenu();  // First show
+await showMenu();  // "Back" = just call again
+```
+
 See [overlay-qa-tests.ts](../examples/extensions/overlay-qa-tests.ts) for comprehensive examples covering anchors, margins, stacking, responsive visibility, and animation.
 
 ## Built-in Components
