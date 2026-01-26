@@ -482,8 +482,9 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 		// - null/undefined/@ai-sdk/openai-compatible → openai-completions
 		if (data.opencode?.models) {
 			for (const [modelId, model] of Object.entries(data.opencode.models)) {
-				const m = model as ModelsDevModel;
+				const m = model as ModelsDevModel & { status?: string };
 				if (m.tool_call !== true) continue;
+				if (m.status === "deprecated") continue;
 
 				const npm = m.provider?.npm;
 				let api: Api;
