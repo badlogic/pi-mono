@@ -350,6 +350,24 @@ export interface SessionSwitchEvent {
 	previousSessionFile: string | undefined;
 }
 
+/** Metadata change entry for session_metadata_change event. */
+export interface SessionMetadataChange {
+	previous?: unknown;
+	next?: unknown;
+}
+
+/** Known metadata change fields (extensible via string index). */
+export interface SessionMetadataChanges {
+	name?: SessionMetadataChange;
+	[key: string]: SessionMetadataChange | undefined;
+}
+
+/** Fired when session metadata changes (e.g., name). */
+export interface SessionMetadataChangeEvent {
+	type: "session_metadata_change";
+	changes: SessionMetadataChanges;
+}
+
 /** Fired before forking a session (can be cancelled) */
 export interface SessionBeforeForkEvent {
 	type: "session_before_fork";
@@ -418,6 +436,7 @@ export type SessionEvent =
 	| SessionStartEvent
 	| SessionBeforeSwitchEvent
 	| SessionSwitchEvent
+	| SessionMetadataChangeEvent
 	| SessionBeforeForkEvent
 	| SessionForkEvent
 	| SessionBeforeCompactEvent
@@ -740,6 +759,7 @@ export interface ExtensionAPI {
 		handler: ExtensionHandler<SessionBeforeSwitchEvent, SessionBeforeSwitchResult>,
 	): void;
 	on(event: "session_switch", handler: ExtensionHandler<SessionSwitchEvent>): void;
+	on(event: "session_metadata_change", handler: ExtensionHandler<SessionMetadataChangeEvent>): void;
 	on(event: "session_before_fork", handler: ExtensionHandler<SessionBeforeForkEvent, SessionBeforeForkResult>): void;
 	on(event: "session_fork", handler: ExtensionHandler<SessionForkEvent>): void;
 	on(

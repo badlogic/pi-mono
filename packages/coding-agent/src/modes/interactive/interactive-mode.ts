@@ -3824,7 +3824,7 @@ export class InteractiveMode {
 			return;
 		}
 
-		this.sessionManager.appendSessionInfo(name);
+		this.session.setSessionName(name);
 		this.updateTerminalTitle();
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("dim", `Session name set: ${name}`), 1, 0));

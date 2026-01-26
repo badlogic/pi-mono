@@ -1695,7 +1695,7 @@ export class AgentSession {
 					this.sessionManager.appendCustomEntry(customType, data);
 				},
 				setSessionName: (name) => {
-					this.sessionManager.appendSessionInfo(name);
+					this.setSessionName(name);
 				},
 				getSessionName: () => {
 					return this.sessionManager.getSessionName();
@@ -2094,6 +2094,24 @@ export class AgentSession {
 	// =========================================================================
 	// Session Management
 	// =========================================================================
+
+	/**
+	 * Set the session display name and emit a metadata change event.
+	 */
+	setSessionName(name: string): void {
+		const trimmed = name.trim();
+		const previousName = this.sessionManager.getSessionName();
+		this.sessionManager.appendSessionInfo(trimmed);
+
+		if (previousName !== trimmed && this._extensionRunner?.hasHandlers("session_metadata_change")) {
+			void this._extensionRunner.emit({
+				type: "session_metadata_change",
+				changes: {
+					name: { previous: previousName, next: trimmed },
+				},
+			});
+		}
+	}
 
 	/**
 	 * Switch to a different session file.
