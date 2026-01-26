@@ -254,39 +254,36 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	});
 
 	// Set up extensions with RPC-based UI context
-	const extensionRunner = session.extensionRunner;
-	if (extensionRunner) {
-		await session.bindExtensions({
-			uiContext: createExtensionUIContext(),
-			commandContextActions: {
-				waitForIdle: () => session.agent.waitForIdle(),
-				newSession: async (options) => {
-					// Delegate to AgentSession (handles setup + agent state sync)
-					const success = await session.newSession(options);
-					return { cancelled: !success };
-				},
-				fork: async (entryId) => {
-					const result = await session.fork(entryId);
-					return { cancelled: result.cancelled };
-				},
-				navigateTree: async (targetId, options) => {
-					const result = await session.navigateTree(targetId, {
-						summarize: options?.summarize,
-						customInstructions: options?.customInstructions,
-						replaceInstructions: options?.replaceInstructions,
-						label: options?.label,
-					});
-					return { cancelled: result.cancelled };
-				},
+	await session.bindExtensions({
+		uiContext: createExtensionUIContext(),
+		commandContextActions: {
+			waitForIdle: () => session.agent.waitForIdle(),
+			newSession: async (options) => {
+				// Delegate to AgentSession (handles setup + agent state sync)
+				const success = await session.newSession(options);
+				return { cancelled: !success };
 			},
-			shutdownHandler: () => {
-				shutdownRequested = true;
+			fork: async (entryId) => {
+				const result = await session.fork(entryId);
+				return { cancelled: result.cancelled };
 			},
-			onError: (err) => {
-				output({ type: "extension_error", extensionPath: err.extensionPath, event: err.event, error: err.error });
+			navigateTree: async (targetId, options) => {
+				const result = await session.navigateTree(targetId, {
+					summarize: options?.summarize,
+					customInstructions: options?.customInstructions,
+					replaceInstructions: options?.replaceInstructions,
+					label: options?.label,
+				});
+				return { cancelled: result.cancelled };
 			},
-		});
-	}
+		},
+		shutdownHandler: () => {
+			shutdownRequested = true;
+		},
+		onError: (err) => {
+			output({ type: "extension_error", extensionPath: err.extensionPath, event: err.event, error: err.error });
+		},
+	});
 
 	// Output all agent events as JSON
 	session.subscribe((event) => {

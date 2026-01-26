@@ -976,13 +976,6 @@ export class InteractiveMode {
 	 * Initialize the extension system with TUI-based UI context.
 	 */
 	private async initExtensions(): Promise<void> {
-		const extensionRunner = this.session.extensionRunner;
-		if (!extensionRunner) {
-			this.showLoadedResources({ extensionPaths: [], force: false });
-			return;
-		}
-
-		// Create extension UI context
 		const uiContext = this.createExtensionUIContext();
 		await this.session.bindExtensions({
 			uiContext,
@@ -1056,6 +1049,12 @@ export class InteractiveMode {
 				this.showExtensionError(error.extensionPath, error.error, error.stack);
 			},
 		});
+
+		const extensionRunner = this.session.extensionRunner;
+		if (!extensionRunner) {
+			this.showLoadedResources({ extensionPaths: [], force: false });
+			return;
+		}
 
 		this.setupExtensionShortcuts(extensionRunner);
 		this.showLoadedResources({ extensionPaths: extensionRunner.getExtensionPaths(), force: false });
