@@ -589,7 +589,7 @@ Current working directory.
 
 ### ctx.sessionManager
 
-Read-only access to session state:
+Read-only access to session state. See [session.md](session.md) for the full SessionManager API and entry types.
 
 ```typescript
 ctx.sessionManager.getEntries()       // All entries
@@ -1609,7 +1609,7 @@ pi.sendMessage({
 
 ### Theme Colors
 
-All render functions receive a `theme` object:
+All render functions receive a `theme` object. See [themes.md](themes.md) for creating custom themes and the full color palette.
 
 ```typescript
 // Foreground colors
