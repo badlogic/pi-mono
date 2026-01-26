@@ -10,6 +10,7 @@ Pi packages bundle extensions, skills, prompt templates, and themes so you can s
 - [Package Sources](#package-sources)
 - [Creating a Pi Package](#creating-a-pi-package)
 - [Package Structure](#package-structure)
+- [Dependencies](#dependencies)
 - [Package Filtering](#package-filtering)
 - [Enable and Disable Resources](#enable-and-disable-resources)
 - [Scope and Deduplication](#scope-and-deduplication)
@@ -103,9 +104,15 @@ If no `pi` manifest is present, pi auto-discovers resources from these directori
 - `prompts/` loads `.md` files
 - `themes/` loads `.json` files
 
-### Bundling Other Pi Packages
+## Dependencies
 
-Bundle other pi packages by adding them as dependencies and listing them in `bundledDependencies`. Reference their resources via `node_modules/` paths.
+Third party runtime dependencies belong in `dependencies` in `package.json`. When pi installs a package from npm or git, it runs `npm install`, so those dependencies are installed automatically.
+
+Pi bundles core packages for extensions and skills. If you import any of these, list them in `peerDependencies` with a `"*"` range and do not bundle them: `@mariozechner/pi-ai`, `@mariozechner/pi-agent-core`, `@mariozechner/pi-coding-agent`, `@mariozechner/pi-tui`, `@sinclair/typebox`.
+
+Other pi packages must be bundled in your tarball. Add them to `dependencies` and `bundledDependencies`, then reference their resources through `node_modules/` paths. Pi loads packages with separate module roots, so separate installs do not collide or share modules.
+
+Example:
 
 ```json
 {
@@ -119,8 +126,6 @@ Bundle other pi packages by adding them as dependencies and listing them in `bun
   }
 }
 ```
-
-`bundledDependencies` embeds the package in the published tarball, keeping paths stable. See `pi-package-test` for a working example.
 
 ## Package Filtering
 
