@@ -246,7 +246,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai", GoogleOptions>
 			}
 
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error("An unkown error ocurred");
+				throw new Error("An unknown error occurred");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
