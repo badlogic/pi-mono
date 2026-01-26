@@ -211,6 +211,192 @@ function collectSkillEntries(dir: string): string[] {
 	return entries;
 }
 
+function collectAutoSkillEntries(dir: string, isRoot = true): string[] {
+	const entries: string[] = [];
+	if (!existsSync(dir)) return entries;
+
+	try {
+		const dirEntries = readdirSync(dir, { withFileTypes: true });
+		for (const entry of dirEntries) {
+			if (entry.name.startsWith(".")) continue;
+			if (entry.name === "node_modules") continue;
+
+			const fullPath = join(dir, entry.name);
+			let isDir = entry.isDirectory();
+			let isFile = entry.isFile();
+
+			if (entry.isSymbolicLink()) {
+				try {
+					const stats = statSync(fullPath);
+					isDir = stats.isDirectory();
+					isFile = stats.isFile();
+				} catch {
+					continue;
+				}
+			}
+
+			if (isDir) {
+				const skillMd = join(fullPath, "SKILL.md");
+				if (existsSync(skillMd)) {
+					entries.push(fullPath);
+				} else {
+					entries.push(...collectAutoSkillEntries(fullPath, false));
+				}
+			} else if (isFile && entry.name.endsWith(".md")) {
+				if (isRoot || entry.name === "SKILL.md") {
+					entries.push(fullPath);
+				}
+			}
+		}
+	} catch {
+		// Ignore errors
+	}
+
+	return entries;
+}
+
+function collectAutoPromptEntries(dir: string): string[] {
+	const entries: string[] = [];
+	if (!existsSync(dir)) return entries;
+
+	try {
+		const dirEntries = readdirSync(dir, { withFileTypes: true });
+		for (const entry of dirEntries) {
+			if (entry.name.startsWith(".")) continue;
+			if (entry.name === "node_modules") continue;
+
+			const fullPath = join(dir, entry.name);
+			let isFile = entry.isFile();
+			if (entry.isSymbolicLink()) {
+				try {
+					isFile = statSync(fullPath).isFile();
+				} catch {
+					continue;
+				}
+			}
+
+			if (isFile && entry.name.endsWith(".md")) {
+				entries.push(fullPath);
+			}
+		}
+	} catch {
+		// Ignore errors
+	}
+
+	return entries;
+}
+
+function collectAutoThemeEntries(dir: string): string[] {
+	const entries: string[] = [];
+	if (!existsSync(dir)) return entries;
+
+	try {
+		const dirEntries = readdirSync(dir, { withFileTypes: true });
+		for (const entry of dirEntries) {
+			if (entry.name.startsWith(".")) continue;
+			if (entry.name === "node_modules") continue;
+
+			const fullPath = join(dir, entry.name);
+			let isFile = entry.isFile();
+			if (entry.isSymbolicLink()) {
+				try {
+					isFile = statSync(fullPath).isFile();
+				} catch {
+					continue;
+				}
+			}
+
+			if (isFile && entry.name.endsWith(".json")) {
+				entries.push(fullPath);
+			}
+		}
+	} catch {
+		// Ignore errors
+	}
+
+	return entries;
+}
+
+function readPiManifestFile(packageJsonPath: string): PiManifest | null {
+	try {
+		const content = readFileSync(packageJsonPath, "utf-8");
+		const pkg = JSON.parse(content) as { pi?: PiManifest };
+		return pkg.pi ?? null;
+	} catch {
+		return null;
+	}
+}
+
+function resolveExtensionEntries(dir: string): string[] | null {
+	const packageJsonPath = join(dir, "package.json");
+	if (existsSync(packageJsonPath)) {
+		const manifest = readPiManifestFile(packageJsonPath);
+		if (manifest?.extensions?.length) {
+			const entries: string[] = [];
+			for (const extPath of manifest.extensions) {
+				const resolvedExtPath = resolve(dir, extPath);
+				if (existsSync(resolvedExtPath)) {
+					entries.push(resolvedExtPath);
+				}
+			}
+			if (entries.length > 0) {
+				return entries;
+			}
+		}
+	}
+
+	const indexTs = join(dir, "index.ts");
+	const indexJs = join(dir, "index.js");
+	if (existsSync(indexTs)) {
+		return [indexTs];
+	}
+	if (existsSync(indexJs)) {
+		return [indexJs];
+	}
+
+	return null;
+}
+
+function collectAutoExtensionEntries(dir: string): string[] {
+	const entries: string[] = [];
+	if (!existsSync(dir)) return entries;
+
+	try {
+		const dirEntries = readdirSync(dir, { withFileTypes: true });
+		for (const entry of dirEntries) {
+			if (entry.name.startsWith(".")) continue;
+			if (entry.name === "node_modules") continue;
+
+			const fullPath = join(dir, entry.name);
+			let isDir = entry.isDirectory();
+			let isFile = entry.isFile();
+
+			if (entry.isSymbolicLink()) {
+				try {
+					const stats = statSync(fullPath);
+					isDir = stats.isDirectory();
+					isFile = stats.isFile();
+				} catch {
+					continue;
+				}
+			}
+
+			if (isFile && (entry.name.endsWith(".ts") || entry.name.endsWith(".js"))) {
+				entries.push(fullPath);
+			} else if (isDir) {
+				const resolvedEntries = resolveExtensionEntries(fullPath);
+				if (resolvedEntries) {
+					entries.push(...resolvedEntries);
+				}
+			}
+		}
+	} catch {
+		// Ignore errors
+	}
+
+	return entries;
+}
+
 function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
 	const rel = relative(baseDir, filePath);
 	const name = basename(filePath);
@@ -233,6 +419,29 @@ function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: s
 		const normalized = normalizeExactPattern(pattern);
 		return normalized === rel || normalized === filePath;
 	});
+}
+
+function getOverridePatterns(entries: string[]): string[] {
+	return entries.filter((pattern) => pattern.startsWith("!") || pattern.startsWith("+") || pattern.startsWith("-"));
+}
+
+function isEnabledByOverrides(filePath: string, patterns: string[], baseDir: string): boolean {
+	const overrides = getOverridePatterns(patterns);
+	const excludes = overrides.filter((pattern) => pattern.startsWith("!")).map((pattern) => pattern.slice(1));
+	const forceIncludes = overrides.filter((pattern) => pattern.startsWith("+")).map((pattern) => pattern.slice(1));
+	const forceExcludes = overrides.filter((pattern) => pattern.startsWith("-")).map((pattern) => pattern.slice(1));
+
+	let enabled = true;
+	if (excludes.length > 0 && matchesAnyPattern(filePath, excludes, baseDir)) {
+		enabled = false;
+	}
+	if (forceIncludes.length > 0 && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
+		enabled = true;
+	}
+	if (forceExcludes.length > 0 && matchesAnyExactPattern(filePath, forceExcludes, baseDir)) {
+		enabled = false;
+	}
+	return enabled;
 }
 
 /**
@@ -394,6 +603,8 @@ export class DefaultPackageManager implements PackageManager {
 				projectBaseDir,
 			);
 		}
+
+		this.addAutoDiscoveredResources(accumulator, globalSettings, projectSettings, globalBaseDir, projectBaseDir);
 
 		return this.toResolvedPaths(accumulator);
 	}
@@ -1046,6 +1257,125 @@ export class DefaultPackageManager implements PackageManager {
 		for (const f of allFiles) {
 			this.addResource(target, f, metadata, enabledPaths.has(f));
 		}
+	}
+
+	private addAutoDiscoveredResources(
+		accumulator: ResourceAccumulator,
+		globalSettings: ReturnType<SettingsManager["getGlobalSettings"]>,
+		projectSettings: ReturnType<SettingsManager["getProjectSettings"]>,
+		globalBaseDir: string,
+		projectBaseDir: string,
+	): void {
+		const userMetadata: PathMetadata = {
+			source: "auto",
+			scope: "user",
+			origin: "top-level",
+			baseDir: globalBaseDir,
+		};
+		const projectMetadata: PathMetadata = {
+			source: "auto",
+			scope: "project",
+			origin: "top-level",
+			baseDir: projectBaseDir,
+		};
+
+		const userOverrides = {
+			extensions: (globalSettings.extensions ?? []) as string[],
+			skills: (globalSettings.skills ?? []) as string[],
+			prompts: (globalSettings.prompts ?? []) as string[],
+			themes: (globalSettings.themes ?? []) as string[],
+		};
+		const projectOverrides = {
+			extensions: (projectSettings.extensions ?? []) as string[],
+			skills: (projectSettings.skills ?? []) as string[],
+			prompts: (projectSettings.prompts ?? []) as string[],
+			themes: (projectSettings.themes ?? []) as string[],
+		};
+
+		const userDirs = {
+			extensions: join(globalBaseDir, "extensions"),
+			skills: join(globalBaseDir, "skills"),
+			prompts: join(globalBaseDir, "prompts"),
+			themes: join(globalBaseDir, "themes"),
+		};
+		const projectDirs = {
+			extensions: join(projectBaseDir, "extensions"),
+			skills: join(projectBaseDir, "skills"),
+			prompts: join(projectBaseDir, "prompts"),
+			themes: join(projectBaseDir, "themes"),
+		};
+
+		const addResources = (
+			resourceType: ResourceType,
+			paths: string[],
+			metadata: PathMetadata,
+			overrides: string[],
+			baseDir: string,
+		) => {
+			const target = this.getTargetMap(accumulator, resourceType);
+			for (const path of paths) {
+				const enabled = isEnabledByOverrides(path, overrides, baseDir);
+				this.addResource(target, path, metadata, enabled);
+			}
+		};
+
+		addResources(
+			"extensions",
+			collectAutoExtensionEntries(userDirs.extensions),
+			userMetadata,
+			userOverrides.extensions,
+			globalBaseDir,
+		);
+		addResources(
+			"skills",
+			collectAutoSkillEntries(userDirs.skills),
+			userMetadata,
+			userOverrides.skills,
+			globalBaseDir,
+		);
+		addResources(
+			"prompts",
+			collectAutoPromptEntries(userDirs.prompts),
+			userMetadata,
+			userOverrides.prompts,
+			globalBaseDir,
+		);
+		addResources(
+			"themes",
+			collectAutoThemeEntries(userDirs.themes),
+			userMetadata,
+			userOverrides.themes,
+			globalBaseDir,
+		);
+
+		addResources(
+			"extensions",
+			collectAutoExtensionEntries(projectDirs.extensions),
+			projectMetadata,
+			projectOverrides.extensions,
+			projectBaseDir,
+		);
+		addResources(
+			"skills",
+			collectAutoSkillEntries(projectDirs.skills),
+			projectMetadata,
+			projectOverrides.skills,
+			projectBaseDir,
+		);
+		addResources(
+			"prompts",
+			collectAutoPromptEntries(projectDirs.prompts),
+			projectMetadata,
+			projectOverrides.prompts,
+			projectBaseDir,
+		);
+		addResources(
+			"themes",
+			collectAutoThemeEntries(projectDirs.themes),
+			projectMetadata,
+			projectOverrides.themes,
+			projectBaseDir,
+		);
 	}
 
 	private collectFilesFromPaths(paths: string[], resourceType: ResourceType): string[] {

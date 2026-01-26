@@ -86,6 +86,30 @@ Content`,
 			const result = await packageManager.resolve();
 			expect(result.extensions.some((r) => r.path === extPath && r.enabled)).toBe(true);
 		});
+
+		it("should auto-discover user prompts with overrides", async () => {
+			const promptsDir = join(agentDir, "prompts");
+			mkdirSync(promptsDir, { recursive: true });
+			const promptPath = join(promptsDir, "auto.md");
+			writeFileSync(promptPath, "Auto prompt");
+
+			settingsManager.setPromptTemplatePaths(["!prompts/auto.md"]);
+
+			const result = await packageManager.resolve();
+			expect(result.prompts.some((r) => r.path === promptPath && !r.enabled)).toBe(true);
+		});
+
+		it("should auto-discover project prompts with overrides", async () => {
+			const promptsDir = join(tempDir, ".pi", "prompts");
+			mkdirSync(promptsDir, { recursive: true });
+			const promptPath = join(promptsDir, "is.md");
+			writeFileSync(promptPath, "Is prompt");
+
+			settingsManager.setProjectPromptTemplatePaths(["!prompts/is.md"]);
+
+			const result = await packageManager.resolve();
+			expect(result.prompts.some((r) => r.path === promptPath && !r.enabled)).toBe(true);
+		});
 	});
 
 	describe("resolveExtensionSources", () => {
