@@ -396,7 +396,8 @@ function createClient(
 
 function buildParams(model: Model<"openai-completions">, context: Context, options?: OpenAICompletionsOptions) {
 	const compat = getCompat(model);
-	const messages = convertMessages(model, context, compat);
+	const reasoningEnabled = Boolean(options?.reasoningEffort);
+	const messages = convertMessages(model, context, compat, reasoningEnabled);
 	maybeAddOpenRouterAnthropicCacheControl(model, messages);
 
 	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
@@ -490,8 +491,10 @@ export function convertMessages(
 	model: Model<"openai-completions">,
 	context: Context,
 	compat: Required<OpenAICompletionsCompat>,
+	reasoningEnabled = false,
 ): ChatCompletionMessageParam[] {
 	const params: ChatCompletionMessageParam[] = [];
+	const isOpenRouter = model.provider === "openrouter";
 
 	const normalizeToolCallId = (id: string): string => {
 		if (compat.requiresMistralToolIds) return normalizeMistralToolId(id);
@@ -595,7 +598,15 @@ export function convertMessages(
 					// Use the signature from the first thinking block if available (for llama.cpp server + gpt-oss)
 					const signature = nonEmptyThinkingBlocks[0].thinkingSignature;
 					if (signature && signature.length > 0) {
-						(assistantMsg as any)[signature] = nonEmptyThinkingBlocks.map((b) => b.thinking).join("\n");
+						const thinkingText = nonEmptyThinkingBlocks.map((b) => b.thinking).join("\n");
+						if (
+							isOpenRouter &&
+							(signature === "reasoning" || signature === "reasoning_text" || signature === "reasoning_content")
+						) {
+							(assistantMsg as any).reasoning_content = thinkingText;
+						} else {
+							(assistantMsg as any)[signature] = thinkingText;
+						}
 					}
 				}
 			}
@@ -610,6 +621,10 @@ export function convertMessages(
 						arguments: JSON.stringify(tc.arguments),
 					},
 				}));
+
+				if (reasoningEnabled && isOpenRouter && (assistantMsg as any).reasoning_content === undefined) {
+					(assistantMsg as any).reasoning_content = "";
+				}
 				const reasoningDetails = toolCalls
 					.filter((tc) => tc.thoughtSignature)
 					.map((tc) => {
