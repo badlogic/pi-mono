@@ -1888,5 +1888,43 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.getText(), "readme.md");
 			assert.strictEqual(editor.isShowingAutocomplete(), false);
 		});
+
+		it("hides autocomplete when backspacing slash command to empty", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Mock provider with slash commands
+			const mockProvider: AutocompleteProvider = {
+				getSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const prefix = text.slice(0, cursorCol);
+					// Only return slash command suggestions when line starts with /
+					if (prefix.startsWith("/")) {
+						const commands = [
+							{ value: "/model", label: "model", description: "Change model" },
+							{ value: "/help", label: "help", description: "Show help" },
+						];
+						const query = prefix.slice(1); // Remove leading /
+						const filtered = commands.filter((c) => c.value.startsWith(query));
+						if (filtered.length > 0) {
+							return { items: filtered, prefix };
+						}
+					}
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Type "/" - should show slash command suggestions
+			editor.handleInput("/");
+			assert.strictEqual(editor.getText(), "/");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Backspace to delete "/" - should hide autocomplete completely
+			editor.handleInput("\x7f"); // Backspace
+			assert.strictEqual(editor.getText(), "");
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+		});
 	});
 });

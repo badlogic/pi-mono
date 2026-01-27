@@ -312,9 +312,9 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			return pathPrefix;
 		}
 
-		// Return empty string only if we're at the beginning of the line or after a space
-		// (not after quotes or other delimiters that don't suggest file paths)
-		if (pathPrefix === "" && (text === "" || text.endsWith(" "))) {
+		// Return empty string only after a space (not for completely empty text)
+		// Empty text should not trigger file suggestions - that's for forced Tab completion
+		if (pathPrefix === "" && text.endsWith(" ")) {
 			return pathPrefix;
 		}
 
