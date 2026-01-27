@@ -12,7 +12,7 @@
         bytes[i] = binary.charCodeAt(i);
       }
       const data = JSON.parse(new TextDecoder('utf-8').decode(bytes));
-      const { header, entries, leafId: defaultLeafId, systemPrompt, tools, renderedTools } = data;
+      const { header, entries, leafId: defaultLeafId, systemPrompt, tools, renderedTools, pipelineMetadata } = data;
 
       // ============================================================
       // URL PARAMETER HANDLING
@@ -1272,7 +1272,18 @@
         if (globalStats.compactions) msgParts.push(`${globalStats.compactions} compactions`);
         if (globalStats.branchSummaries) msgParts.push(`${globalStats.branchSummaries} branch summaries`);
 
+        const warningMessage = pipelineMetadata?.warning;
+        let warningHtml = '';
+        if (typeof warningMessage === 'string' && warningMessage.trim()) {
+          warningHtml = `
+            <div class="pipeline-warning">
+              <div class="pipeline-warning-title">Warning</div>
+              <div class="pipeline-warning-text">${escapeHtml(warningMessage)}</div>
+            </div>`;
+        }
+
         let html = `
+          ${warningHtml}
           <div class="header">
             <h1>Session: ${escapeHtml(header?.id || 'unknown')}</h1>
             <div class="help-bar">

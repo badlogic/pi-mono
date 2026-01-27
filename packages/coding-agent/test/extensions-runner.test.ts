@@ -12,12 +12,14 @@ import { ExtensionRunner } from "../src/core/extensions/runner.js";
 import { DEFAULT_KEYBINDINGS, type KeyId } from "../src/core/keybindings.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
+import { SettingsManager } from "../src/core/settings-manager.js";
 
 describe("ExtensionRunner", () => {
 	let tempDir: string;
 	let extensionsDir: string;
 	let sessionManager: SessionManager;
 	let modelRegistry: ModelRegistry;
+	let settingsManager: SettingsManager;
 
 	beforeEach(() => {
 		tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-runner-test-"));
@@ -26,6 +28,7 @@ describe("ExtensionRunner", () => {
 		sessionManager = SessionManager.inMemory();
 		const authStorage = new AuthStorage(path.join(tempDir, "auth.json"));
 		modelRegistry = new ModelRegistry(authStorage);
+		settingsManager = SettingsManager.inMemory();
 	});
 
 	afterEach(() => {
@@ -47,7 +50,14 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 			const shortcuts = runner.getShortcuts(DEFAULT_KEYBINDINGS);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
@@ -70,7 +80,14 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 			const keybindings = { ...DEFAULT_KEYBINDINGS, cycleModelForward: "ctrl+n" as KeyId };
 			const shortcuts = runner.getShortcuts(keybindings);
 
@@ -94,7 +111,14 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 			const shortcuts = runner.getShortcuts(DEFAULT_KEYBINDINGS);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("built-in shortcut for pasteImage"));
@@ -117,7 +141,14 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 			const keybindings = { ...DEFAULT_KEYBINDINGS, interrupt: "ctrl+x" as KeyId };
 			const shortcuts = runner.getShortcuts(keybindings);
 
@@ -141,7 +172,14 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 			const keybindings = { ...DEFAULT_KEYBINDINGS, clear: ["ctrl+x", "ctrl+y"] as KeyId[] };
 			const shortcuts = runner.getShortcuts(keybindings);
 
@@ -165,7 +203,14 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 			const keybindings = { ...DEFAULT_KEYBINDINGS, pasteImage: ["ctrl+x", "ctrl+y"] as KeyId[] };
 			const shortcuts = runner.getShortcuts(keybindings);
 
@@ -199,7 +244,14 @@ describe("ExtensionRunner", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 			const shortcuts = runner.getShortcuts(DEFAULT_KEYBINDINGS);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("shortcut conflict"));
@@ -228,7 +280,14 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "tool-b.ts"), toolCode("tool_b"));
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 			const tools = runner.getAllRegisteredTools();
 
 			expect(tools.length).toBe(2);
@@ -250,7 +309,14 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "cmd-b.ts"), cmdCode("cmd-b"));
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 			const commands = runner.getRegisteredCommands();
 
 			expect(commands.length).toBe(2);
@@ -269,7 +335,14 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "cmd.ts"), cmdCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 
 			const cmd = runner.getCommand("my-cmd");
 			expect(cmd).toBeDefined();
@@ -293,7 +366,14 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "throws.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 
 			const errors: Array<{ extensionPath: string; event: string; error: string }> = [];
 			runner.onError((err) => {
@@ -319,7 +399,14 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "renderer.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 
 			const renderer = runner.getMessageRenderer("my-type");
 			expect(renderer).toBeDefined();
@@ -342,7 +429,14 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "with-flag.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 			const flags = runner.getFlags();
 
 			expect(flags.has("my-flag")).toBe(true);
@@ -360,7 +454,14 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "flag.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 
 			// Setting a flag value should not throw
 			runner.setFlagValue("--test-flag", true);
@@ -380,7 +481,14 @@ describe("ExtensionRunner", () => {
 			fs.writeFileSync(path.join(extensionsDir, "handler.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const runner = new ExtensionRunner(
+				result.extensions,
+				result.runtime,
+				tempDir,
+				sessionManager,
+				modelRegistry,
+				settingsManager,
+			);
 
 			expect(runner.hasHandlers("tool_call")).toBe(true);
 			expect(runner.hasHandlers("agent_end")).toBe(false);

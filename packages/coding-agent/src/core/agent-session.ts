@@ -43,7 +43,10 @@ import {
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.js";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import {
+	type CommandMetadata,
+	type CommandResult,
 	type ContextUsage,
+	type ExportCommandData,
 	type ExtensionCommandContextActions,
 	type ExtensionErrorListener,
 	ExtensionRunner,
@@ -1785,6 +1788,7 @@ export class AgentSession {
 						this._cwd,
 						this.sessionManager,
 						this._modelRegistry,
+						this.settingsManager,
 					)
 				: undefined;
 		if (this._extensionRunnerRef) {
@@ -2537,12 +2541,7 @@ export class AgentSession {
 		};
 	}
 
-	/**
-	 * Export session to HTML.
-	 * @param outputPath Optional output path (defaults to session directory)
-	 * @returns Path to exported file
-	 */
-	async exportToHtml(outputPath?: string): Promise<string> {
+	private async _executeExport(data: ExportCommandData, metadata: CommandMetadata): Promise<CommandResult> {
 		const themeName = this.settingsManager.getTheme();
 
 		// Create tool renderer if we have an extension runner (for custom tool HTML rendering)
@@ -2554,11 +2553,65 @@ export class AgentSession {
 			});
 		}
 
-		return await exportSessionToHtml(this.sessionManager, this.state, {
+		try {
+			const filePath = await exportSessionToHtml(this.sessionManager, this.state, {
+				outputPath: data.outputPath,
+				themeName,
+				toolRenderer,
+				entries: data.entries,
+				pipelineMetadata: metadata,
+			});
+
+			return { success: true, filePath };
+		} catch (error) {
+			return {
+				success: false,
+				error: error instanceof Error ? error.message : String(error),
+			};
+		}
+	}
+
+	/**
+	 * Export session to HTML.
+	 * @param outputPath Optional output path (defaults to session directory)
+	 * @returns Path to exported file
+	 */
+	async exportToHtml(outputPath?: string): Promise<string> {
+		const entries = this.sessionManager.getEntries();
+		const commandData: ExportCommandData = {
+			entries,
 			outputPath,
-			themeName,
-			toolRenderer,
-		});
+			target: "file",
+		};
+
+		if (this._extensionRunner?.hasCommandHandlers("export")) {
+			const { cancelled, result } = await this._extensionRunner.dispatchCommand(
+				"export",
+				commandData,
+				async (data, metadata) => this._executeExport(data, metadata),
+			);
+
+			if (cancelled) {
+				throw new Error("Export cancelled by extension");
+			}
+
+			if (result?.error) {
+				throw new Error(result.error);
+			}
+
+			if (!result?.filePath) {
+				throw new Error("Export failed");
+			}
+
+			return result.filePath;
+		}
+
+		const result = await this._executeExport(commandData, {});
+		if (!result.success || !result.filePath) {
+			throw new Error(result.error ?? "Failed to export session");
+		}
+
+		return result.filePath;
 	}
 
 	// =========================================================================

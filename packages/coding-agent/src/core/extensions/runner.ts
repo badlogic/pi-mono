@@ -10,9 +10,15 @@ import type { ResourceDiagnostic } from "../diagnostics.js";
 import type { KeyAction, KeybindingsConfig } from "../keybindings.js";
 import type { ModelRegistry } from "../model-registry.js";
 import type { SessionManager } from "../session-manager.js";
+import type { SettingsManager } from "../settings-manager.js";
 import type {
+	AfterCommandHandler,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	BeforeCommandHandler,
+	CommandDataMap,
+	CommandMetadata,
+	CommandResult,
 	CompactOptions,
 	ContextEvent,
 	ContextEventResult,
@@ -33,7 +39,9 @@ import type {
 	InputEventResult,
 	InputSource,
 	MessageRenderer,
+	PipelineStageInfo,
 	RegisteredCommand,
+	RegisteredCommandHandler,
 	RegisteredTool,
 	SessionBeforeCompactResult,
 	SessionBeforeTreeResult,
@@ -151,6 +159,7 @@ export class ExtensionRunner {
 	private cwd: string;
 	private sessionManager: SessionManager;
 	private modelRegistry: ModelRegistry;
+	private settingsManager: SettingsManager | undefined;
 	private errorListeners: Set<ExtensionErrorListener> = new Set();
 	private getModel: () => Model<any> | undefined = () => undefined;
 	private isIdleFn: () => boolean = () => true;
@@ -164,6 +173,8 @@ export class ExtensionRunner {
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
 	private shutdownHandler: ShutdownHandler = () => {};
 	private shortcutDiagnostics: ResourceDiagnostic[] = [];
+	private commandHandlers: Map<string, RegisteredCommandHandler[]> = new Map();
+	private executingCommands: Set<string> = new Set();
 
 	constructor(
 		extensions: Extension[],
@@ -171,6 +182,7 @@ export class ExtensionRunner {
 		cwd: string,
 		sessionManager: SessionManager,
 		modelRegistry: ModelRegistry,
+		settingsManager?: SettingsManager,
 	) {
 		this.extensions = extensions;
 		this.runtime = runtime;
@@ -178,6 +190,8 @@ export class ExtensionRunner {
 		this.cwd = cwd;
 		this.sessionManager = sessionManager;
 		this.modelRegistry = modelRegistry;
+		this.settingsManager = settingsManager;
+		this.commandHandlers = this.collectCommandHandlers();
 	}
 
 	bindCore(actions: ExtensionActions, contextActions: ExtensionContextActions): void {
@@ -191,6 +205,7 @@ export class ExtensionRunner {
 		this.runtime.getActiveTools = actions.getActiveTools;
 		this.runtime.getAllTools = actions.getAllTools;
 		this.runtime.setActiveTools = actions.setActiveTools;
+		this.runtime.getPipeline = (command) => this.getPipeline(command);
 		this.runtime.setModel = actions.setModel;
 		this.runtime.getThinkingLevel = actions.getThinkingLevel;
 		this.runtime.setThinkingLevel = actions.setThinkingLevel;
@@ -382,6 +397,34 @@ export class ExtensionRunner {
 		return undefined;
 	}
 
+	private collectCommandHandlers(): Map<string, RegisteredCommandHandler[]> {
+		const collected = new Map<string, RegisteredCommandHandler[]>();
+		const seenByCommand = new Map<string, Set<string>>();
+
+		for (const ext of this.extensions) {
+			for (const [command, handlers] of ext.commandHandlers) {
+				const list = collected.get(command) ?? [];
+				const seen = seenByCommand.get(command) ?? new Set<string>();
+
+				for (const handler of handlers) {
+					if (seen.has(handler.id)) {
+						console.warn(
+							`Warning: duplicate command handler id '${handler.id}' for '${command}' in ${handler.extensionPath}.`,
+						);
+					} else {
+						seen.add(handler.id);
+					}
+					list.push(handler);
+				}
+
+				collected.set(command, list);
+				seenByCommand.set(command, seen);
+			}
+		}
+
+		return collected;
+	}
+
 	/**
 	 * Request a graceful shutdown. Called by extension tools and event handlers.
 	 * The actual shutdown behavior is provided by the mode via bindExtensions().
@@ -422,6 +465,158 @@ export class ExtensionRunner {
 			fork: (entryId) => this.forkHandler(entryId),
 			navigateTree: (targetId, options) => this.navigateTreeHandler(targetId, options),
 		};
+	}
+
+	hasCommandHandlers(command: keyof CommandDataMap): boolean {
+		return (this.commandHandlers.get(command)?.length ?? 0) > 0;
+	}
+
+	getPipeline(command: keyof CommandDataMap): PipelineStageInfo[] {
+		const ordered = this.getOrderedCommandHandlers(command, { includeDisabled: true });
+		const disabled = this.getDisabledCommandHandlerIds(command);
+
+		return ordered.map((handler) => ({
+			id: handler.id,
+			label: handler.label,
+			phase: handler.phase,
+			transforms: [...handler.transforms],
+			extensionPath: handler.extensionPath,
+			enabled: !disabled.has(handler.id),
+		}));
+	}
+
+	async dispatchCommand<K extends keyof CommandDataMap>(
+		command: K,
+		initialData: CommandDataMap[K],
+		executeBuiltIn: (data: CommandDataMap[K], metadata: CommandMetadata) => Promise<CommandResult>,
+	): Promise<{ cancelled: boolean; result?: CommandResult }> {
+		if (this.executingCommands.has(command)) {
+			const result = await executeBuiltIn(initialData, {});
+			return { cancelled: false, result };
+		}
+
+		this.executingCommands.add(command);
+
+		try {
+			const orderedHandlers = this.getOrderedCommandHandlers(command, { includeDisabled: false });
+			const beforeHandlers = orderedHandlers.filter((handler) => handler.phase === "before");
+			const afterHandlers = orderedHandlers.filter((handler) => handler.phase === "after");
+
+			let currentData = structuredClone(initialData);
+			let metadata: CommandMetadata = {};
+
+			for (const handlerInfo of beforeHandlers) {
+				try {
+					const result = await (handlerInfo.handler as BeforeCommandHandler<K>)(currentData, this.createContext());
+
+					if (!result) {
+						continue;
+					}
+
+					if (result.cancel) {
+						return { cancelled: true };
+					}
+
+					if (result.data) {
+						this.warnOnUnexpectedTransforms(command, handlerInfo, result.data);
+						currentData = { ...currentData, ...result.data };
+					}
+
+					if (result.metadata) {
+						metadata = { ...metadata, ...result.metadata };
+					}
+				} catch (err) {
+					this.emitError({
+						extensionPath: handlerInfo.extensionPath,
+						event: `beforeCommand:${command}`,
+						error: err instanceof Error ? err.message : String(err),
+						stack: err instanceof Error ? err.stack : undefined,
+					});
+				}
+			}
+
+			const result = await executeBuiltIn(currentData, metadata);
+
+			if (afterHandlers.length > 0) {
+				const afterData = { ...currentData, result, metadata };
+				await Promise.allSettled(
+					afterHandlers.map(async (handlerInfo) => {
+						try {
+							await (handlerInfo.handler as AfterCommandHandler<K>)(afterData, this.createContext());
+						} catch (err) {
+							this.emitError({
+								extensionPath: handlerInfo.extensionPath,
+								event: `afterCommand:${command}`,
+								error: err instanceof Error ? err.message : String(err),
+								stack: err instanceof Error ? err.stack : undefined,
+							});
+						}
+					}),
+				);
+			}
+
+			return { cancelled: false, result };
+		} finally {
+			this.executingCommands.delete(command);
+		}
+	}
+
+	private getOrderedCommandHandlers(
+		command: keyof CommandDataMap,
+		options: { includeDisabled: boolean },
+	): RegisteredCommandHandler[] {
+		const handlers = this.commandHandlers.get(command) ?? [];
+		const disabled = this.getDisabledCommandHandlerIds(command);
+		const order = this.settingsManager?.getPipelineConfig(command)?.order ?? [];
+		const orderIndex = new Map(order.map((id, index) => [id, index]));
+
+		const withIndex = handlers.map((handler, index) => ({
+			handler,
+			index,
+			orderIndex: orderIndex.get(handler.id),
+		}));
+
+		const sorted = withIndex.sort((a, b) => {
+			const aOrder = a.orderIndex ?? Number.POSITIVE_INFINITY;
+			const bOrder = b.orderIndex ?? Number.POSITIVE_INFINITY;
+			if (aOrder !== bOrder) {
+				return aOrder - bOrder;
+			}
+			return a.index - b.index;
+		});
+
+		const ordered = sorted.map((entry) => entry.handler);
+		if (options.includeDisabled) {
+			return ordered;
+		}
+
+		return ordered.filter((handler) => !disabled.has(handler.id));
+	}
+
+	private getDisabledCommandHandlerIds(command: keyof CommandDataMap): Set<string> {
+		const disabled = this.settingsManager?.getPipelineConfig(command)?.disabled ?? [];
+		return new Set(disabled);
+	}
+
+	private warnOnUnexpectedTransforms(
+		command: keyof CommandDataMap,
+		handler: RegisteredCommandHandler,
+		data: Partial<CommandDataMap[keyof CommandDataMap]>,
+	): void {
+		const declared = new Set(handler.transforms);
+		const keys = Object.keys(data);
+		const unexpected = keys.filter((key) => !declared.has(key));
+
+		if (unexpected.length === 0) {
+			return;
+		}
+
+		const transformsLabel = handler.transforms.length > 0 ? handler.transforms.join(", ") : "(none)";
+		console.warn(
+			`Warning: beforeCommand handler '${handler.id}' for '${command}' returned data for [${unexpected.join(
+				", ",
+			)}] but declared transforms [${transformsLabel}].`,
+		);
 	}
 
 	private isSessionBeforeEvent(

@@ -17,6 +17,8 @@ export type {
 } from "./runner.js";
 export { ExtensionRunner } from "./runner.js";
 export type {
+	// Commands
+	AfterCommandHandler,
 	AgentEndEvent,
 	AgentStartEvent,
 	// Re-exports
@@ -28,6 +30,12 @@ export type {
 	BashToolResultEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	BeforeCommandHandler,
+	BeforeCommandResult,
+	CommandDataMap,
+	CommandHandlerOptions,
+	CommandMetadata,
+	CommandResult,
 	// Context
 	CompactOptions,
 	// Events - Agent
@@ -35,10 +43,12 @@ export type {
 	// Event Results
 	ContextEventResult,
 	ContextUsage,
+	CopyCommandData,
 	CustomToolResultEvent,
 	EditToolResultEvent,
 	ExecOptions,
 	ExecResult,
+	ExportCommandData,
 	Extension,
 	ExtensionActions,
 	// API
@@ -62,6 +72,7 @@ export type {
 	FindToolResultEvent,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
+	GetPipelineHandler,
 	GetThinkingLevelHandler,
 	GrepToolResultEvent,
 	// Events - Input
@@ -76,13 +87,14 @@ export type {
 	MessageRenderOptions,
 	ModelSelectEvent,
 	ModelSelectSource,
+	PipelineStageInfo,
 	// Provider Registration
 	ProviderConfig,
 	ProviderModelConfig,
 	ReadToolResultEvent,
-	// Commands
 	RegisteredCommand,
 	RegisteredTool,
+	ResumeCommandData,
 	SendMessageHandler,
 	SendUserMessageHandler,
 	SessionBeforeCompactEvent,
@@ -105,6 +117,7 @@ export type {
 	SetLabelHandler,
 	SetModelHandler,
 	SetThinkingLevelHandler,
+	ShareCommandData,
 	// Events - Tool
 	ToolCallEvent,
 	ToolCallEventResult,

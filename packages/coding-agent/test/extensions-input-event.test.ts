@@ -7,6 +7,7 @@ import { discoverAndLoadExtensions } from "../src/core/extensions/loader.js";
 import { ExtensionRunner } from "../src/core/extensions/runner.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
+import { SettingsManager } from "../src/core/settings-manager.js";
 
 describe("Input Event", () => {
 	let tempDir: string;
@@ -30,7 +31,8 @@ describe("Input Event", () => {
 		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 		const sm = SessionManager.inMemory();
 		const mr = new ModelRegistry(new AuthStorage(path.join(tempDir, "auth.json")));
-		return new ExtensionRunner(result.extensions, result.runtime, tempDir, sm, mr);
+		const settingsManager = SettingsManager.inMemory();
+		return new ExtensionRunner(result.extensions, result.runtime, tempDir, sm, mr, settingsManager);
 	}
 
 	it("returns continue when no handlers, undefined return, or explicit continue", async () => {

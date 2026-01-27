@@ -119,6 +119,7 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		getActiveTools: notInitialized,
 		getAllTools: notInitialized,
 		setActiveTools: notInitialized,
+		getPipeline: notInitialized,
 		setModel: () => Promise.reject(new Error("Extension runtime not initialized")),
 		getThinkingLevel: notInitialized,
 		setThinkingLevel: notInitialized,
@@ -151,6 +152,41 @@ function createExtensionAPI(
 				definition: tool,
 				extensionPath: extension.path,
 			});
+		},
+
+		beforeCommand(command, options, handler): void {
+			const list = extension.commandHandlers.get(command) ?? [];
+			list.push({
+				id: options.id,
+				label: options.label,
+				phase: "before",
+				transforms: (options.transforms ?? []).map((transform) => String(transform)),
+				extensionPath: extension.path,
+				handler,
+			});
+			extension.commandHandlers.set(command, list);
+		},
+
+		afterCommand(command, options, handler): void {
+			const list = extension.commandHandlers.get(command) ?? [];
+			if (options.transforms && options.transforms.length > 0) {
+				console.warn(
+					`Warning: afterCommand handler '${options.id}' for '${command}' declared transforms, which are ignored.`,
+				);
+			}
+			list.push({
+				id: options.id,
+				label: options.label,
+				phase: "after",
+				transforms: [],
+				extensionPath: extension.path,
+				handler,
+			});
+			extension.commandHandlers.set(command, list);
+		},
+
+		getPipeline(command) {
+			return runtime.getPipeline(command);
 		},
 
 		registerCommand(name: string, options: Omit<RegisteredCommand, "name">): void {
@@ -277,6 +313,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		commands: new Map(),
 		flags: new Map(),
 		shortcuts: new Map(),
+		commandHandlers: new Map(),
 	};
 }
 

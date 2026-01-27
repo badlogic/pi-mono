@@ -38,6 +38,13 @@ export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
+export interface PipelineConfig {
+	/** Handler IDs in execution order (per command, shared across phases) */
+	order?: string[];
+	/** Handler IDs to disable */
+	disabled?: string[];
+}
+
 /**
  * Package source for npm/git packages.
  * - String form: load all resources from the package
@@ -83,6 +90,8 @@ export interface Settings {
 	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
+	/** Per-command pipeline configuration */
+	pipelines?: Record<string, PipelineConfig>;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -608,6 +617,25 @@ export class SettingsManager {
 
 	setEditorPaddingX(padding: number): void {
 		this.globalSettings.editorPaddingX = Math.max(0, Math.min(3, Math.floor(padding)));
+		this.save();
+	}
+
+	getPipelineConfig(command: string): PipelineConfig | undefined {
+		const config = this.settings.pipelines?.[command];
+		return config ? structuredClone(config) : undefined;
+	}
+
+	setPipelineConfig(command: string, config: PipelineConfig | undefined): void {
+		if (!this.globalSettings.pipelines) {
+			this.globalSettings.pipelines = {};
+		}
+
+		if (config) {
+			this.globalSettings.pipelines[command] = structuredClone(config);
+		} else {
+			delete this.globalSettings.pipelines[command];
+		}
+
 		this.save();
 	}
 

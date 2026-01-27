@@ -1,0 +1,12 @@
+{
+  "name": "pi-command-pipeline-demos",
+  "private": true,
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./redaction-audit.ts",
+      "./copy-plain.ts",
+      "./resume-blocked.ts"
+    ]
+  }
+}

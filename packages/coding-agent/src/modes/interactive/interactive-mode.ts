@@ -54,12 +54,19 @@ import {
 } from "../../config.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
+import { renderSessionToHtml, type ToolHtmlRenderer } from "../../core/export-html/index.js";
+import { createToolHtmlRenderer } from "../../core/export-html/tool-renderer.js";
 import type {
+	CommandMetadata,
+	CommandResult,
+	CopyCommandData,
 	ExtensionContext,
 	ExtensionRunner,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
+	ResumeCommandData,
+	ShareCommandData,
 } from "../../core/extensions/index.js";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
 import { type AppAction, KeybindingsManager } from "../../core/keybindings.js";
@@ -1822,7 +1829,7 @@ export class InteractiveMode {
 				return;
 			}
 			if (text === "/copy") {
-				this.handleCopyCommand();
+				await this.handleCopyCommand();
 				this.editor.setText("");
 				return;
 			}
@@ -1952,6 +1959,7 @@ export class InteractiveMode {
 				this.onInputCallback(text);
 			}
 			this.editor.addToHistory?.(text);
+			this.editor.setText("");
 		};
 	}
 
@@ -3488,8 +3496,36 @@ export class InteractiveMode {
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
 
-		// Switch session via AgentSession (emits extension session events)
-		await this.session.switchSession(sessionPath);
+		const commandData: ResumeCommandData = {
+			targetSession: sessionPath,
+			previousSession: this.sessionManager.getSessionFile(),
+		};
+
+		const extensionRunner = this.session.extensionRunner;
+		if (extensionRunner?.hasCommandHandlers("resume")) {
+			const { cancelled, result } = await extensionRunner.dispatchCommand("resume", commandData, async (data) => {
+				const switched = await this.session.switchSession(data.targetSession);
+				return switched ? { success: true } : { success: false, error: "Resume cancelled" };
+			});
+
+			if (cancelled) {
+				this.showStatus("Resume cancelled");
+				return;
+			}
+
+			if (result?.error) {
+				this.showStatus(result.error);
+				return;
+			}
+
+			if (result?.success === false) {
+				this.showStatus("Resume cancelled");
+				return;
+			}
+		} else {
+			// Switch session via AgentSession (emits extension session events)
+			await this.session.switchSession(sessionPath);
+		}
 
 		// Clear and re-render the chat
 		this.chatContainer.clear();
@@ -3698,26 +3734,18 @@ export class InteractiveMode {
 		}
 	}
 
-	private async handleShareCommand(): Promise<void> {
-		// Check if gh is available and logged in
-		try {
-			const authResult = spawnSync("gh", ["auth", "status"], { encoding: "utf-8" });
-			if (authResult.status !== 0) {
-				this.showError("GitHub CLI is not logged in. Run 'gh auth login' first.");
-				return;
-			}
-		} catch {
-			this.showError("GitHub CLI (gh) is not installed. Install it from https://cli.github.com/");
-			return;
-		}
-
-		// Export to a temp file
+	private async _executeShare(data: ShareCommandData, metadata: CommandMetadata): Promise<CommandResult> {
+		void metadata;
 		const tmpFile = path.join(os.tmpdir(), "session.html");
+
 		try {
-			await this.session.exportToHtml(tmpFile);
-		} catch (error: unknown) {
-			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
-			return;
+			fs.writeFileSync(tmpFile, data.html, "utf-8");
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			return {
+				success: false,
+				error: `Failed to write session HTML: ${errorMessage}`,
+			};
 		}
 
 		// Show cancellable loader, replacing the editor
@@ -3727,7 +3755,10 @@ export class InteractiveMode {
 		this.ui.setFocus(loader);
 		this.ui.requestRender();
 
+		let restored = false;
 		const restoreEditor = () => {
+			if (restored) return;
+			restored = true;
 			loader.dispose();
 			this.editorContainer.clear();
 			this.editorContainer.addChild(this.editor);
@@ -3745,7 +3776,6 @@ export class InteractiveMode {
 		loader.onAbort = () => {
 			proc?.kill();
 			restoreEditor();
-			this.showStatus("Share cancelled");
 		};
 
 		try {
@@ -3753,23 +3783,24 @@ export class InteractiveMode {
 				proc = spawn("gh", ["gist", "create", "--public=false", tmpFile]);
 				let stdout = "";
 				let stderr = "";
-				proc.stdout?.on("data", (data) => {
-					stdout += data.toString();
+				proc.stdout?.on("data", (chunk) => {
+					stdout += chunk.toString();
 				});
-				proc.stderr?.on("data", (data) => {
-					stderr += data.toString();
+				proc.stderr?.on("data", (chunk) => {
+					stderr += chunk.toString();
 				});
 				proc.on("close", (code) => resolve({ stdout, stderr, code }));
 			});
 
-			if (loader.signal.aborted) return;
+			if (loader.signal.aborted) {
+				return { success: false, error: "Share cancelled" };
+			}
 
 			restoreEditor();
 
 			if (result.code !== 0) {
 				const errorMsg = result.stderr?.trim() || "Unknown error";
-				this.showError(`Failed to create gist: ${errorMsg}`);
-				return;
+				return { success: false, error: `Failed to create gist: ${errorMsg}` };
 			}
 
 			// Extract gist ID from the URL returned by gh
@@ -3777,25 +3808,153 @@ export class InteractiveMode {
 			const gistUrl = result.stdout?.trim();
 			const gistId = gistUrl?.split("/").pop();
 			if (!gistId) {
-				this.showError("Failed to parse gist ID from gh output");
-				return;
+				return { success: false, error: "Failed to parse gist ID from gh output" };
 			}
 
 			// Create the preview URL
 			const previewUrl = getShareViewerUrl(gistId);
-			this.showStatus(`Share URL: ${previewUrl}\nGist: ${gistUrl}`);
+			return { success: true, gistUrl, viewerUrl: previewUrl };
 		} catch (error: unknown) {
 			if (!loader.signal.aborted) {
 				restoreEditor();
-				this.showError(`Failed to create gist: ${error instanceof Error ? error.message : "Unknown error"}`);
+				return {
+					success: false,
+					error: `Failed to create gist: ${error instanceof Error ? error.message : String(error)}`,
+				};
 			}
+			return { success: false, error: "Share cancelled" };
 		}
 	}
 
-	private handleCopyCommand(): void {
+	private async handleShareCommand(): Promise<void> {
+		// Check if gh is available and logged in
+		try {
+			const authResult = spawnSync("gh", ["auth", "status"], { encoding: "utf-8" });
+			if (authResult.status !== 0) {
+				this.showError("GitHub CLI is not logged in. Run 'gh auth login' first.");
+				return;
+			}
+		} catch {
+			this.showError("GitHub CLI (gh) is not installed. Install it from https://cli.github.com/");
+			return;
+		}
+
+		const entries = this.sessionManager.getEntries();
+		const themeName = this.settingsManager.getTheme();
+
+		let toolRenderer: ToolHtmlRenderer | undefined;
+		const extensionRunner = this.session.extensionRunner;
+		if (extensionRunner) {
+			toolRenderer = createToolHtmlRenderer({
+				getToolDefinition: (name) => extensionRunner.getToolDefinition(name),
+				theme,
+			});
+		}
+
+		let html: string;
+		try {
+			html = renderSessionToHtml(this.sessionManager, this.session.state, {
+				themeName,
+				toolRenderer,
+				entries,
+			});
+		} catch (error: unknown) {
+			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
+			return;
+		}
+
+		const commandData: ShareCommandData = {
+			entries,
+			html,
+			target: "gist",
+		};
+
+		if (extensionRunner?.hasCommandHandlers("share")) {
+			const { cancelled, result } = await extensionRunner.dispatchCommand(
+				"share",
+				commandData,
+				async (data, metadata) => this._executeShare(data, metadata),
+			);
+
+			if (cancelled) {
+				return;
+			}
+
+			if (result?.error) {
+				if (result.error === "Share cancelled") {
+					this.showStatus("Share cancelled");
+					return;
+				}
+				this.showError(result.error);
+				return;
+			}
+
+			if (!result?.gistUrl || !result?.viewerUrl) {
+				this.showError("Failed to create gist");
+				return;
+			}
+
+			this.showStatus(`Share URL: ${result.viewerUrl}\nGist: ${result.gistUrl}`);
+			return;
+		}
+
+		const result = await this._executeShare(commandData, {});
+		if (result.error) {
+			if (result.error === "Share cancelled") {
+				this.showStatus("Share cancelled");
+			} else {
+				this.showError(result.error);
+			}
+			return;
+		}
+
+		if (!result.gistUrl || !result.viewerUrl) {
+			this.showError("Failed to create gist");
+			return;
+		}
+
+		this.showStatus(`Share URL: ${result.viewerUrl}\nGist: ${result.gistUrl}`);
+	}
+
+	private async handleCopyCommand(): Promise<void> {
 		const text = this.session.getLastAssistantText();
 		if (!text) {
 			this.showError("No agent messages to copy yet.");
+			return;
+		}
+
+		const commandData: CopyCommandData = {
+			text,
+			source: "last_assistant",
+		};
+
+		const extensionRunner = this.session.extensionRunner;
+		if (extensionRunner?.hasCommandHandlers("copy")) {
+			const { cancelled, result } = await extensionRunner.dispatchCommand("copy", commandData, async (data) => {
+				try {
+					copyToClipboard(data.text);
+					return { success: true };
+				} catch (error) {
+					return { success: false, error: error instanceof Error ? error.message : String(error) };
+				}
+			});
+
+			if (cancelled) {
+				this.showStatus("Copy cancelled");
+				return;
+			}
+
+			if (result?.error) {
+				this.showError(result.error);
+				return;
+			}
+
+			if (result?.success === false) {
+				this.showError("Copy failed");
+				return;
+			}
+
+			this.showStatus("Copied last agent message to clipboard");
 			return;
 		}
 

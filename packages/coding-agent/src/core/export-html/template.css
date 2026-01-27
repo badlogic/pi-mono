@@ -251,6 +251,25 @@
       border-color: var(--borderAccent);
     }
 
+    /* Pipeline warning */
+    .pipeline-warning {
+      background: color-mix(in srgb, var(--warning) 20%, var(--container-bg));
+      border: 1px solid var(--warning);
+      border-radius: 4px;
+      padding: var(--line-height);
+      margin-bottom: var(--line-height);
+    }
+
+    .pipeline-warning-title {
+      color: var(--warning);
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .pipeline-warning-text {
+      color: var(--text);
+    }
+
     /* Header */
     .header {
       background: var(--container-bg);

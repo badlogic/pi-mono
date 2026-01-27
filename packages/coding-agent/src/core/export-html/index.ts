@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir } from "../../config.js";
 import { getResolvedThemeColors, getThemeExportColors } from "../../modes/interactive/theme/theme.js";
+import type { CommandMetadata } from "../extensions/types.js";
 import type { SessionEntry } from "../session-manager.js";
 import { SessionManager } from "../session-manager.js";
 
@@ -33,6 +34,10 @@ export interface ExportOptions {
 	themeName?: string;
 	/** Optional tool renderer for custom tools */
 	toolRenderer?: ToolHtmlRenderer;
+	/** Optional session entries override (e.g., from pipeline transformations) */
+	entries?: SessionEntry[];
+	/** Optional pipeline metadata (for export warnings, etc.) */
+	pipelineMetadata?: CommandMetadata;
 }
 
 /** Parse a color string to RGB values. Supports hex (#RRGGBB) and rgb(r,g,b) formats. */
@@ -131,6 +136,8 @@ interface SessionData {
 	tools?: { name: string; description: string }[];
 	/** Pre-rendered HTML for custom tool calls/results, keyed by tool call ID */
 	renderedTools?: Record<string, RenderedToolHtml>;
+	/** Pipeline metadata for rendering warnings in export/share HTML */
+	pipelineMetadata?: CommandMetadata;
 }
 
 /**
@@ -218,14 +225,10 @@ function preRenderCustomTools(
 }
 
 /**
- * Export session to HTML using SessionManager and AgentState.
- * Used by TUI's /export command.
+ * Render session to an HTML string.
+ * Used by /share and the export pipeline.
  */
-export async function exportSessionToHtml(
-	sm: SessionManager,
-	state?: AgentState,
-	options?: ExportOptions | string,
-): Promise<string> {
+export function renderSessionToHtml(sm: SessionManager, state?: AgentState, options?: ExportOptions | string): string {
 	const opts: ExportOptions = typeof options === "string" ? { outputPath: options } : options || {};
 
 	const sessionFile = sm.getSessionFile();
@@ -236,7 +239,7 @@ export async function exportSessionToHtml(
 		throw new Error("Nothing to export yet - start a conversation first");
 	}
 
-	const entries = sm.getEntries();
+	const entries = opts.entries ?? sm.getEntries();
 
 	// Pre-render custom tools if a tool renderer is provided
 	let renderedTools: Record<string, RenderedToolHtml> | undefined;
@@ -255,12 +258,31 @@ export async function exportSessionToHtml(
 		systemPrompt: state?.systemPrompt,
 		tools: state?.tools?.map((t) => ({ name: t.name, description: t.description })),
 		renderedTools,
+		pipelineMetadata: opts.pipelineMetadata,
 	};
 
-	const html = generateHtml(sessionData, opts.themeName);
+	return generateHtml(sessionData, opts.themeName);
+}
+
+/**
+ * Export session to HTML using SessionManager and AgentState.
+ * Used by TUI's /export command.
+ */
+export async function exportSessionToHtml(
+	sm: SessionManager,
+	state?: AgentState,
+	options?: ExportOptions | string,
+): Promise<string> {
+	const opts: ExportOptions = typeof options === "string" ? { outputPath: options } : options || {};
+
+	const html = renderSessionToHtml(sm, state, opts);
 
 	let outputPath = opts.outputPath;
 	if (!outputPath) {
+		const sessionFile = sm.getSessionFile();
+		if (!sessionFile) {
+			throw new Error("Cannot export in-memory session to HTML");
+		}
 		const sessionBasename = basename(sessionFile, ".jsonl");
 		outputPath = `${APP_NAME}-session-${sessionBasename}.html`;
 	}
@@ -282,15 +304,7 @@ export async function exportFromFile(inputPath: string, options?: ExportOptions 
 
 	const sm = SessionManager.open(inputPath);
 
-	const sessionData: SessionData = {
-		header: sm.getHeader(),
-		entries: sm.getEntries(),
-		leafId: sm.getLeafId(),
-		systemPrompt: undefined,
-		tools: undefined,
-	};
-
-	const html = generateHtml(sessionData, opts.themeName);
+	const html = renderSessionToHtml(sm, undefined, opts);
 
 	let outputPath = opts.outputPath;
 	if (!outputPath) {

@@ -708,6 +708,113 @@ export type MessageRenderer<T = unknown> = (
 ) => Component | undefined;
 
 // ============================================================================
+// Command Pipeline
+// ============================================================================
+
+/** Data shapes for command pipeline hooks. */
+export interface CommandDataMap {
+	export: ExportCommandData;
+	share: ShareCommandData;
+	copy: CopyCommandData;
+	resume: ResumeCommandData;
+}
+
+export interface ExportCommandData {
+	/** Session entries to export */
+	entries: SessionEntry[];
+	/** Output file path (undefined = auto-generated) */
+	outputPath?: string;
+	/** Export target type */
+	target: "file";
+}
+
+export interface ShareCommandData {
+	/** Session entries to share */
+	entries: SessionEntry[];
+	/** Pre-rendered HTML content */
+	html: string;
+	/** Share target type */
+	target: "gist";
+}
+
+export interface CopyCommandData {
+	/** Text to copy */
+	text: string;
+	/** Source of the text */
+	source: "last_assistant" | "selection";
+}
+
+export interface ResumeCommandData {
+	/** Session file path selected for resume */
+	targetSession: string;
+	/** Previously active session file path */
+	previousSession?: string;
+}
+
+/** Metadata attached by command pipeline handlers. */
+export interface CommandMetadata {
+	/** Warning message to display in output */
+	warning?: string;
+	/** Arbitrary extension-specific metadata */
+	[key: string]: unknown;
+}
+
+/** Result returned by before handlers. */
+export interface BeforeCommandResult<T> {
+	/** If true, cancel the command. Chain stops, built-in does not execute. */
+	cancel?: boolean;
+	/** Partial data to merge with input. Passed to next handler. */
+	data?: Partial<T>;
+	/** Metadata accumulated across handlers. */
+	metadata?: CommandMetadata;
+}
+
+/** Result from built-in command execution. */
+export interface CommandResult {
+	/** Whether the command succeeded */
+	success: boolean;
+	/** For export: the output file path */
+	filePath?: string;
+	/** For share: the gist URL */
+	gistUrl?: string;
+	/** For share: the viewer URL */
+	viewerUrl?: string;
+	/** Error message if failed */
+	error?: string;
+}
+
+/** Options for registering a command handler. */
+export interface CommandHandlerOptions<K extends keyof CommandDataMap> {
+	/** Unique identifier for this handler within the command */
+	id: string;
+	/** Human-readable label for UI */
+	label?: string;
+	/** Which data fields this handler modifies. Empty array = observe only. */
+	transforms?: Array<keyof CommandDataMap[K]>;
+}
+
+/** Before handler function signature. */
+export type BeforeCommandHandler<K extends keyof CommandDataMap> = (
+	data: CommandDataMap[K],
+	ctx: ExtensionContext,
+) => Promise<BeforeCommandResult<CommandDataMap[K]> | undefined>;
+
+/** After handler function signature. */
+export type AfterCommandHandler<K extends keyof CommandDataMap> = (
+	data: CommandDataMap[K] & { result: CommandResult; metadata: CommandMetadata },
+	ctx: ExtensionContext,
+) => Promise<void>;
+
+export interface PipelineStageInfo {
+	id: string;
+	label?: string;
+	phase: "before" | "after";
+	transforms: string[];
+	extensionPath: string;
+	enabled: boolean;
+}
+
+// ============================================================================
 // Command Registration
 // ============================================================================
 
@@ -768,6 +875,27 @@ export interface ExtensionAPI {
 
 	/** Register a tool that the LLM can call. */
 	registerTool<TParams extends TSchema = TSchema, TDetails = unknown>(tool: ToolDefinition<TParams, TDetails>): void;
+
+	// =========================================================================
+	// Command Pipeline
+	// =========================================================================
+
+	/** Register a handler that runs before a built-in command. */
+	beforeCommand<K extends keyof CommandDataMap>(
+		command: K,
+		options: CommandHandlerOptions<K>,
+		handler: BeforeCommandHandler<K>,
+	): void;
+
+	/** Register a handler that runs after a built-in command. */
+	afterCommand<K extends keyof CommandDataMap>(
+		command: K,
+		options: CommandHandlerOptions<K>,
+		handler: AfterCommandHandler<K>,
+	): void;
+
+	/** Get the current pipeline configuration for a command. */
+	getPipeline(command: keyof CommandDataMap): PipelineStageInfo[];
 
 	// =========================================================================
 	// Command, Shortcut, Flag Registration
@@ -1035,6 +1163,8 @@ export type GetAllToolsHandler = () => ToolInfo[];
 
 export type SetActiveToolsHandler = (toolNames: string[]) => void;
 
+export type GetPipelineHandler = (command: keyof CommandDataMap) => PipelineStageInfo[];
+
 export type SetModelHandler = (model: Model<any>) => Promise<boolean>;
 
 export type GetThinkingLevelHandler = () => ThinkingLevel;
@@ -1107,9 +1237,20 @@ export interface ExtensionCommandContextActions {
  * Full runtime = state + actions.
  * Created by loader with throwing action stubs, completed by runner.initialize().
  */
-export interface ExtensionRuntime extends ExtensionRuntimeState, ExtensionActions {}
+export interface ExtensionRuntime extends ExtensionRuntimeState, ExtensionActions {
+	getPipeline: GetPipelineHandler;
+}
 
 /** Loaded extension with all registered items. */
+export interface RegisteredCommandHandler {
+	id: string;
+	label?: string;
+	phase: "before" | "after";
+	transforms: string[];
+	extensionPath: string;
+	handler: BeforeCommandHandler<any> | AfterCommandHandler<any>;
+}
+
 export interface Extension {
 	path: string;
 	resolvedPath: string;
@@ -1119,6 +1260,7 @@ export interface Extension {
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
+	commandHandlers: Map<string, RegisteredCommandHandler[]>;
 }
 
 /** Result of loading extensions. */
