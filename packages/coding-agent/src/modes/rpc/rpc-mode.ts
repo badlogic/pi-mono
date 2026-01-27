@@ -506,22 +506,34 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				const commands: RpcSlashCommand[] = [];
 
 				// Extension commands
-				const extensionCmds = session.extensionRunner?.getRegisteredCommands() ?? [];
-				for (const cmd of extensionCmds) {
-					commands.push({ name: cmd.name, description: cmd.description, source: "extension" });
+				for (const { command, extensionPath } of session.extensionRunner?.getRegisteredCommandsWithPaths() ?? []) {
+					commands.push({
+						name: command.name,
+						description: command.description,
+						source: "extension",
+						path: extensionPath,
+					});
 				}
 
-				// Prompt templates
+				// Prompt templates (source is always "user" | "project" | "path" in coding-agent)
 				for (const template of session.promptTemplates) {
-					commands.push({ name: template.name, description: template.description, source: "template" });
+					commands.push({
+						name: template.name,
+						description: template.description,
+						source: "template",
+						location: template.source as RpcSlashCommand["location"],
+						path: template.filePath,
+					});
 				}
 
-				// Skills
+				// Skills (source is always "user" | "project" | "path" in coding-agent)
 				for (const skill of session.resourceLoader.getSkills().skills) {
 					commands.push({
 						name: `skill:${skill.name}`,
 						description: skill.description,
 						source: "skill",
+						location: skill.source as RpcSlashCommand["location"],
+						path: skill.filePath,
 					});
 				}
 

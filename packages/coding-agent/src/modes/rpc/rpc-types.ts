@@ -75,8 +75,12 @@ export interface RpcSlashCommand {
 	name: string;
 	/** Human-readable description */
 	description?: string;
-	/** Where the command comes from */
+	/** What kind of command this is */
 	source: "extension" | "template" | "skill";
+	/** Where the command was loaded from (undefined for extensions) */
+	location?: "user" | "project" | "path";
+	/** File path to the command source */
+	path?: string;
 }
 
 // ============================================================================
