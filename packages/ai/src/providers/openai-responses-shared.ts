@@ -80,8 +80,8 @@ export function convertResponsesMessages<TApi extends Api>(
 		if (!allowedToolCallProviders.has(model.provider)) return id;
 		if (!id.includes("|")) return id;
 		const [callId, itemId] = id.split("|");
-		const sanitizedCallId = callId.replace(/[^a-zA-Z0-9_-]/g, "_");
-		let sanitizedItemId = itemId.replace(/[^a-zA-Z0-9_-]/g, "_");
+		const sanitizedCallId = callId.replace(/[^a-zA-Z0-9_-]/g, "_").toLowerCase();
+		let sanitizedItemId = itemId.replace(/[^a-zA-Z0-9_-]/g, "_").toLowerCase();
 		// OpenAI Responses API requires item id to start with "fc"
 		if (!sanitizedItemId.startsWith("fc")) {
 			sanitizedItemId = `fc_${sanitizedItemId}`;
