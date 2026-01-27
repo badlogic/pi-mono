@@ -565,6 +565,13 @@ export class Markdown implements Component {
 		// Calculate border overhead: "│ " + (n-1) * " │ " + " │"
 		// = 2 + (n-1) * 3 + 2 = 3n + 1
 		const borderOverhead = 3 * numCols + 1;
+		const availableForCells = availableWidth - borderOverhead;
+		if (availableForCells < numCols) {
+			// Too narrow to render a stable table. Fall back to raw markdown.
+			const fallbackLines = token.raw ? wrapTextWithAnsi(token.raw, availableWidth) : [];
+			fallbackLines.push("");
+			return fallbackLines;
+		}
 
 		const maxUnbrokenWordWidth = 30;
 
@@ -587,13 +594,33 @@ export class Markdown implements Component {
 			}
 		}
 
-		const minCellsWidth = minWordWidths.reduce((a, b) => a + b, 0);
-		const minWordTableWidth = borderOverhead + minCellsWidth;
-		if (availableWidth < minWordTableWidth) {
-			// Too narrow to render a stable table with word-sized columns.
-			const fallbackLines = token.raw ? wrapTextWithAnsi(token.raw, availableWidth) : [];
-			fallbackLines.push("");
-			return fallbackLines;
+		let minColumnWidths = minWordWidths;
+		let minCellsWidth = minColumnWidths.reduce((a, b) => a + b, 0);
+
+		if (minCellsWidth > availableForCells) {
+			minColumnWidths = new Array(numCols).fill(1);
+			const remaining = availableForCells - numCols;
+
+			if (remaining > 0) {
+				const totalWeight = minWordWidths.reduce((total, width) => total + Math.max(0, width - 1), 0);
+				const growth = minWordWidths.map((width) => {
+					const weight = Math.max(0, width - 1);
+					return totalWeight > 0 ? Math.floor((weight / totalWeight) * remaining) : 0;
+				});
+
+				for (let i = 0; i < numCols; i++) {
+					minColumnWidths[i] += growth[i] ?? 0;
+				}
+
+				const allocated = growth.reduce((total, width) => total + width, 0);
+				let leftover = remaining - allocated;
+				for (let i = 0; leftover > 0 && i < numCols; i++) {
+					minColumnWidths[i]++;
+					leftover--;
+				}
+			}
+
+			minCellsWidth = minColumnWidths.reduce((a, b) => a + b, 0);
 		}
 
 		// Calculate column widths that fit within available width
@@ -602,15 +629,14 @@ export class Markdown implements Component {
 
 		if (totalNaturalWidth <= availableWidth) {
 			// Everything fits naturally
-			columnWidths = naturalWidths.map((width, index) => Math.max(width, minWordWidths[index]));
+			columnWidths = naturalWidths.map((width, index) => Math.max(width, minColumnWidths[index]));
 		} else {
 			// Need to shrink columns to fit
-			const availableForCells = availableWidth - borderOverhead;
 			const totalGrowPotential = naturalWidths.reduce((total, width, index) => {
-				return total + Math.max(0, width - minWordWidths[index]);
+				return total + Math.max(0, width - minColumnWidths[index]);
 			}, 0);
 			const extraWidth = Math.max(0, availableForCells - minCellsWidth);
-			columnWidths = minWordWidths.map((minWidth, index) => {
+			columnWidths = minColumnWidths.map((minWidth, index) => {
 				const naturalWidth = naturalWidths[index];
 				const minWidthDelta = Math.max(0, naturalWidth - minWidth);
 				let grow = 0;
