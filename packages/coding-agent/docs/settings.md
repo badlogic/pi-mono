@@ -94,6 +94,28 @@ Edit directly or use `/settings` for common options.
 | `steeringMode` | string | `"one-at-a-time"` | How steering messages are sent: `"all"` or `"one-at-a-time"` |
 | `followUpMode` | string | `"one-at-a-time"` | How follow-up messages are sent: `"all"` or `"one-at-a-time"` |
 
+### Command Pipelines
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `pipelines` | object | - | Per-command pipeline order/disablement for built-in commands |
+
+`pipelines.<command>.order` sets the handler execution order for both before and after stages. `pipelines.<command>.disabled` disables handlers entirely. Supported commands: `export`, `share`, `copy`, `resume`.
+
+```json
+{
+  "pipelines": {
+    "export": {
+      "order": ["redact", "audit"],
+      "disabled": ["legacy-export"]
+    },
+    "share": {
+      "disabled": ["share:slack"]
+    }
+  }
+}
+```
+
 ### Terminal & Images
 
 | Setting | Type | Default | Description |

@@ -12,6 +12,7 @@ Extensions are TypeScript modules that extend pi's behavior. They can subscribe 
 - **User interaction** - Prompt users via `ctx.ui` (select, confirm, input, notify)
 - **Custom UI components** - Full TUI components with keyboard input via `ctx.ui.custom()` for complex interactions
 - **Custom commands** - Register commands like `/mycommand` via `pi.registerCommand()`
+- **Command pipelines** - Hook `/export`, `/share`, `/copy`, and `/resume` with `beforeCommand`/`afterCommand`, inspect with `getPipeline()`
 - **Session persistence** - Store state that survives restarts via `pi.appendEntry()`
 - **Custom rendering** - Control how tool calls/results and messages appear in TUI
 
@@ -896,6 +897,45 @@ pi.registerCommand("deploy", {
     ctx.ui.notify(`Deploying: ${args}`, "info");
   },
 });
+```
+
+### pi.beforeCommand(command, options, handler)
+
+Register a handler that runs before a built-in command (`export`, `share`, `copy`, or `resume`). Handlers run sequentially in pipeline order. Return `{ cancel: true }` to stop the chain and skip the built-in command. Return `{ data: ... }` to merge changes into the command data for the next handler. Return `{ metadata: ... }` to attach metadata rendered in export/share HTML.
+
+Users can configure ordering and disablement in `settings.json` via `pipelines.<command>.order` and `pipelines.<command>.disabled`.
+
+```typescript
+pi.beforeCommand("export", { id: "redact", transforms: ["entries"] }, async (data, ctx) => {
+  const entries = data.entries.filter((entry) => entry.type !== "custom");
+  return {
+    data: { entries },
+    metadata: { warning: "Custom entries removed", "ext:redact": true },
+  };
+});
+```
+
+### pi.afterCommand(command, options, handler)
+
+Register a handler that runs after the built-in command completes. Handlers run in parallel and cannot modify the result.
+
+```typescript
+pi.afterCommand("share", { id: "audit" }, async (data) => {
+  if (data.result.success) {
+    console.log(`Shared to ${data.result.viewerUrl}`);
+  }
+});
+```
+
+### pi.getPipeline(command)
+
+Inspect the current pipeline configuration for a command, including ordering and disabled stages.
+
+```typescript
+const stages = pi.getPipeline("export");
+for (const stage of stages) {
+  console.log(`${stage.phase}:${stage.id} enabled=${stage.enabled}`);
+}
 ```
 
 ### pi.registerMessageRenderer(customType, renderer)

@@ -16,6 +16,27 @@ pi -e packages/coding-agent/examples/extensions/command-pipeline
 - Redaction + audit: `redaction-audit.ts`
 - Copy format conversion: `copy-plain.ts`
 - Resume access control: `resume-blocked.ts`
+- Share warning banner: `share-warning.ts`
+
+## Pipeline configuration
+
+Order and disablement are configured in `settings.json` using `pipelines.<command>`. Handler IDs come from the `id` field passed to `beforeCommand`/`afterCommand`.
+
+```json
+{
+  "pipelines": {
+    "export": {
+      "order": ["redact", "audit"],
+      "disabled": ["legacy-export"]
+    },
+    "share": {
+      "disabled": ["share:slack"]
+    }
+  }
+}
+```
+
+Pipeline metadata (for example, `metadata.warning`) renders as a warning banner in both exported HTML files and `/share` output.
 
 ## Demo: /export redaction
 
@@ -41,6 +62,13 @@ Expected: the export shows `[REDACTED:...]` for each matched pattern.
 3. Wait for completion.
 
 Expected: a UI notification shows the audit log entry.
+
+## Demo: /share warning banner
+
+1. Add a message that includes the word "secret".
+2. Run `/share` and open the viewer URL.
+
+Expected: the shared HTML shows a warning banner and the word is redacted.
 
 ## Demo: /copy format conversion
 

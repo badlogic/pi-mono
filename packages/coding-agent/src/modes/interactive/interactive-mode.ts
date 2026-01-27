@@ -3851,13 +3851,17 @@ export class InteractiveMode {
 			});
 		}
 
-		let html: string;
-		try {
-			html = renderSessionToHtml(this.sessionManager, this.session.state, {
+		const buildShareHtml = (entriesToRender: typeof entries, pipelineMetadata?: CommandMetadata): string =>
+			renderSessionToHtml(this.sessionManager, this.session.state, {
 				themeName,
 				toolRenderer,
-				entries,
+				entries: entriesToRender,
+				pipelineMetadata,
 			});
+
+		let html: string;
+		try {
+			html = buildShareHtml(entries);
 		} catch (error: unknown) {
 			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
 			return;
@@ -3873,7 +3877,20 @@ export class InteractiveMode {
 			const { cancelled, result } = await extensionRunner.dispatchCommand(
 				"share",
 				commandData,
-				async (data, metadata) => this._executeShare(data, metadata),
+				async (data, metadata) => {
+					const updatedEntries = data.entries ?? entries;
+					let updatedHtml: string;
+					try {
+						updatedHtml = buildShareHtml(updatedEntries, metadata);
+					} catch (error: unknown) {
+						return {
+							success: false,
+							error: `Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`,
+						};
+					}
+
+					return this._executeShare({ ...data, entries: updatedEntries, html: updatedHtml }, metadata);
+				},
 			);
 
 			if (cancelled) {

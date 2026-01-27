@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added command pipeline hooks for built-in commands (`/export`, `/share`, `/copy`, `/resume`) with settings-driven ordering/disablement and HTML pipeline metadata warnings ([#984](https://github.com/badlogic/pi-mono/pull/984) by [@justram](https://github.com/justram))
+
+### Fixed
+
+- Fixed `/share` pipelines to re-render HTML after before handlers so entry transformations and warning metadata apply in shared output ([#984](https://github.com/badlogic/pi-mono/pull/984) by [@justram](https://github.com/justram))
+
 ## [0.50.1] - 2026-01-26
 
 ### Fixed

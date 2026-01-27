@@ -6,7 +6,8 @@
     "extensions": [
       "./redaction-audit.ts",
       "./copy-plain.ts",
-      "./resume-blocked.ts"
+      "./resume-blocked.ts",
+      "./share-warning.ts"
     ]
   }
 }

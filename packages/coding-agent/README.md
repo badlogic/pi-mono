@@ -298,6 +298,7 @@ export default function (pi: ExtensionAPI) {
 - Sub-agents and plan mode
 - Custom compaction and summarization
 - Permission gates and path protection
+- Command pipelines for `/export`, `/share`, `/copy`, and `/resume` with settings-driven ordering/disablement and metadata warnings in HTML exports
 - Custom editors and UI components
 - Status lines, headers, footers
 - Git checkpointing and auto-commit
