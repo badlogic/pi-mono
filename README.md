@@ -44,4 +44,5 @@ npm run check        # Lint, format, and type check
 
 ## License
 
-MIT
+MIT licence 
+@copright 2026 all rights reserved
