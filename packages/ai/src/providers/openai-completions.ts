@@ -280,7 +280,14 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 
 					const reasoningDetails = (choice.delta as any).reasoning_details;
 					if (reasoningDetails && Array.isArray(reasoningDetails)) {
+						// Store ALL reasoning_details for OpenRouter compatibility (Kimi, etc.)
+						// Some models return reasoning.text type at message level, not tied to tool calls
+						if (!(output as any)._rawReasoningDetails) {
+							(output as any)._rawReasoningDetails = [];
+						}
 						for (const detail of reasoningDetails) {
+							(output as any)._rawReasoningDetails.push(detail);
+							// Also handle encrypted type tied to tool calls (existing behavior)
 							if (detail.type === "reasoning.encrypted" && detail.id && detail.data) {
 								const matchingToolCall = output.content.find(
 									(b) => b.type === "toolCall" && b.id === detail.id,
@@ -610,18 +617,25 @@ export function convertMessages(
 						arguments: JSON.stringify(tc.arguments),
 					},
 				}));
-				const reasoningDetails = toolCalls
-					.filter((tc) => tc.thoughtSignature)
-					.map((tc) => {
-						try {
-							return JSON.parse(tc.thoughtSignature!);
-						} catch {
-							return null;
-						}
-					})
-					.filter(Boolean);
-				if (reasoningDetails.length > 0) {
-					(assistantMsg as any).reasoning_details = reasoningDetails;
+				// First check for raw reasoning_details stored on the message (OpenRouter models like Kimi)
+				const rawDetails = (msg as any)._rawReasoningDetails;
+				if (rawDetails && Array.isArray(rawDetails) && rawDetails.length > 0) {
+					(assistantMsg as any).reasoning_details = rawDetails;
+				} else {
+					// Fall back to extracting from tool call thoughtSignatures (encrypted type)
+					const reasoningDetails = toolCalls
+						.filter((tc) => tc.thoughtSignature)
+						.map((tc) => {
+							try {
+								return JSON.parse(tc.thoughtSignature!);
+							} catch {
+								return null;
+							}
+						})
+						.filter(Boolean);
+					if (reasoningDetails.length > 0) {
+						(assistantMsg as any).reasoning_details = reasoningDetails;
+					}
 				}
 			}
 			// Skip assistant messages that have no content and no tool calls.
