@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed OpenRouter Kimi K2.5 tool-call replay by mapping reasoning fields to `reasoning_content` and ensuring it is present when reasoning is enabled.
+
 ## [0.50.1] - 2026-01-26
 
 ### Fixed
