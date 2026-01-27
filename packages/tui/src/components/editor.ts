@@ -146,6 +146,7 @@ export interface EditorTheme {
 
 export interface EditorOptions {
 	paddingX?: number;
+	autocompleteMaxVisible?: number;
 }
 
 export class Editor implements Component, Focusable {
@@ -176,6 +177,7 @@ export class Editor implements Component, Focusable {
 	private autocompleteList?: SelectList;
 	private isAutocompleting: boolean = false;
 	private autocompletePrefix: string = "";
+	private autocompleteMaxVisible: number = 5;
 
 	// Paste tracking for large pastes
 	private pastes: Map<number, string> = new Map();
@@ -208,6 +210,8 @@ export class Editor implements Component, Focusable {
 		this.borderColor = theme.borderColor;
 		const paddingX = options.paddingX ?? 0;
 		this.paddingX = Number.isFinite(paddingX) ? Math.max(0, Math.floor(paddingX)) : 0;
+		const maxVisible = options.autocompleteMaxVisible ?? 5;
+		this.autocompleteMaxVisible = Number.isFinite(maxVisible) ? Math.max(3, Math.min(20, Math.floor(maxVisible))) : 5;
 	}
 
 	getPaddingX(): number {
@@ -218,6 +222,18 @@ export class Editor implements Component, Focusable {
 		const newPadding = Number.isFinite(padding) ? Math.max(0, Math.floor(padding)) : 0;
 		if (this.paddingX !== newPadding) {
 			this.paddingX = newPadding;
+			this.tui.requestRender();
+		}
+	}
+
+	getAutocompleteMaxVisible(): number {
+		return this.autocompleteMaxVisible;
+	}
+
+	setAutocompleteMaxVisible(maxVisible: number): void {
+		const newMaxVisible = Number.isFinite(maxVisible) ? Math.max(3, Math.min(20, Math.floor(maxVisible))) : 5;
+		if (this.autocompleteMaxVisible !== newMaxVisible) {
+			this.autocompleteMaxVisible = newMaxVisible;
 			this.tui.requestRender();
 		}
 	}
@@ -1742,7 +1758,7 @@ export class Editor implements Component, Focusable {
 
 		if (suggestions && suggestions.items.length > 0) {
 			this.autocompletePrefix = suggestions.prefix;
-			this.autocompleteList = new SelectList(suggestions.items, 5, this.theme.selectList);
+			this.autocompleteList = new SelectList(suggestions.items, this.autocompleteMaxVisible, this.theme.selectList);
 			this.isAutocompleting = true;
 		} else {
 			this.cancelAutocomplete();
@@ -1792,7 +1808,7 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 
 		if (suggestions && suggestions.items.length > 0) {
 			this.autocompletePrefix = suggestions.prefix;
-			this.autocompleteList = new SelectList(suggestions.items, 5, this.theme.selectList);
+			this.autocompleteList = new SelectList(suggestions.items, this.autocompleteMaxVisible, this.theme.selectList);
 			this.isAutocompleting = true;
 		} else {
 			this.cancelAutocomplete();
@@ -1821,7 +1837,7 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 		if (suggestions && suggestions.items.length > 0) {
 			this.autocompletePrefix = suggestions.prefix;
 			// Always create new SelectList to ensure update
-			this.autocompleteList = new SelectList(suggestions.items, 5, this.theme.selectList);
+			this.autocompleteList = new SelectList(suggestions.items, this.autocompleteMaxVisible, this.theme.selectList);
 		} else {
 			this.cancelAutocomplete();
 		}
