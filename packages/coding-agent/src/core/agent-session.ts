@@ -251,6 +251,7 @@ export class AgentSession {
 	private _extensionShutdownHandler?: ShutdownHandler;
 	private _extensionErrorListener?: ExtensionErrorListener;
 	private _extensionErrorUnsubscriber?: () => void;
+	private _isSettingSessionName = false;
 
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
@@ -2099,17 +2100,23 @@ export class AgentSession {
 	 * Set the session display name and emit a metadata change event.
 	 */
 	setSessionName(name: string): void {
-		const trimmed = name.trim();
-		const previousName = this.sessionManager.getSessionName();
-		this.sessionManager.appendSessionInfo(trimmed);
+		if (this._isSettingSessionName) return;
+		this._isSettingSessionName = true;
+		try {
+			const trimmed = name.trim();
+			const previousName = this.sessionManager.getSessionName();
+			this.sessionManager.appendSessionInfo(trimmed);
 
-		if (previousName !== trimmed && this._extensionRunner?.hasHandlers("session_metadata_change")) {
-			void this._extensionRunner.emit({
-				type: "session_metadata_change",
-				update: {
-					name: trimmed,
-				},
-			});
+			if (previousName !== trimmed && this._extensionRunner?.hasHandlers("session_metadata_change")) {
+				void this._extensionRunner.emit({
+					type: "session_metadata_change",
+					update: {
+						name: trimmed,
+					},
+				});
+			}
+		} finally {
+			this._isSettingSessionName = false;
 		}
 	}
 
