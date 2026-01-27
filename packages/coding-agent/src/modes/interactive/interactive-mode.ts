@@ -1421,7 +1421,7 @@ export class InteractiveMode {
 					this.hideExtensionSelector();
 					resolve(undefined);
 				},
-				{ tui: this.ui, timeout: opts?.timeout },
+				{ tui: this.ui, timeout: opts?.timeout, hotkeys: opts?.hotkeys },
 			);
 
 			this.editorContainer.clear();
@@ -1451,7 +1451,10 @@ export class InteractiveMode {
 		message: string,
 		opts?: ExtensionUIDialogOptions,
 	): Promise<boolean> {
-		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts);
+		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], {
+			...opts,
+			hotkeys: { y: "Yes", Y: "Yes", n: "No", N: "No" },
+		});
 		return result === "Yes";
 	}
 

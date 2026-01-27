@@ -77,6 +77,8 @@ export interface ExtensionUIDialogOptions {
 	signal?: AbortSignal;
 	/** Timeout in milliseconds. Dialog auto-dismisses with live countdown display. */
 	timeout?: number;
+	/** Optional hotkey mapping (e.g., { "y": "Yes", "n": "No" }). Keys are case-sensitive. */
+	hotkeys?: Record<string, string>;
 }
 
 /** Placement for extension widgets. */

@@ -12,6 +12,8 @@ import { keyHint, rawKeyHint } from "./keybinding-hints.js";
 export interface ExtensionSelectorOptions {
 	tui?: TUI;
 	timeout?: number;
+	/** Optional hotkey mapping (e.g., { "y": "Yes", "n": "No" }). Keys are case-sensitive. */
+	hotkeys?: Record<string, string>;
 }
 
 export class ExtensionSelectorComponent extends Container {
@@ -23,6 +25,7 @@ export class ExtensionSelectorComponent extends Container {
 	private titleText: Text;
 	private baseTitle: string;
 	private countdown: CountdownTimer | undefined;
+	private hotkeys: Record<string, string> | undefined;
 
 	constructor(
 		title: string,
@@ -37,6 +40,7 @@ export class ExtensionSelectorComponent extends Container {
 		this.onSelectCallback = onSelect;
 		this.onCancelCallback = onCancel;
 		this.baseTitle = title;
+		this.hotkeys = opts?.hotkeys;
 
 		this.addChild(new DynamicBorder());
 		this.addChild(new Spacer(1));
@@ -57,17 +61,22 @@ export class ExtensionSelectorComponent extends Container {
 		this.listContainer = new Container();
 		this.addChild(this.listContainer);
 		this.addChild(new Spacer(1));
-		this.addChild(
-			new Text(
-				rawKeyHint("↑↓", "navigate") +
-					"  " +
-					keyHint("selectConfirm", "select") +
-					"  " +
-					keyHint("selectCancel", "cancel"),
-				1,
-				0,
-			),
-		);
+
+		const hintParts = [rawKeyHint("↑↓", "navigate"), keyHint("selectConfirm", "select")];
+
+		if (this.hotkeys) {
+			const uniqueKeys = new Set<string>();
+			for (const key of Object.keys(this.hotkeys)) {
+				if (key.length === 1) uniqueKeys.add(key.toLowerCase());
+			}
+			if (uniqueKeys.size > 0) {
+				hintParts.push(rawKeyHint(Array.from(uniqueKeys).sort().join("/"), "hotkey"));
+			}
+		}
+
+		hintParts.push(keyHint("selectCancel", "cancel"));
+
+		this.addChild(new Text(hintParts.join("  "), 1, 0));
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
 
@@ -87,6 +96,12 @@ export class ExtensionSelectorComponent extends Container {
 
 	handleInput(keyData: string): void {
 		const kb = getEditorKeybindings();
+
+		if (this.hotkeys?.[keyData]) {
+			this.onSelectCallback(this.hotkeys[keyData]!);
+			return;
+		}
+
 		if (kb.matches(keyData, "selectUp") || keyData === "k") {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
 			this.updateList();
