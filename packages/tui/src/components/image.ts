@@ -26,6 +26,8 @@ export class Image implements Component {
 
 	private cachedLines?: string[];
 	private cachedWidth?: number;
+	/** Track whether image data has been transmitted (tmux mode only) */
+	private imageTransmitted = false;
 
 	constructor(
 		base64Data: string,
@@ -44,6 +46,7 @@ export class Image implements Component {
 	invalidate(): void {
 		this.cachedLines = undefined;
 		this.cachedWidth = undefined;
+		this.imageTransmitted = false;
 	}
 
 	render(width: number): string[] {
@@ -61,11 +64,17 @@ export class Image implements Component {
 
 			if (result) {
 				if (result.placeholderLines) {
-					// tmux mode: output image sequence first (hidden), then placeholder lines
-					// The sequence transmits the image, placeholders display it
+					// tmux mode: transmit image data once, then use placeholder lines
+					// Placeholders reference the image by ID encoded in foreground color
 					lines = [];
-					// First line includes the image transmission sequence (invisible) + first placeholder row
-					lines.push(result.sequence + result.placeholderLines[0]);
+					if (!this.imageTransmitted) {
+						// First render: transmit image data + first placeholder row
+						lines.push(result.sequence + result.placeholderLines[0]);
+						this.imageTransmitted = true;
+					} else {
+						// Subsequent renders: placeholders only (image already in terminal memory)
+						lines.push(result.placeholderLines[0]);
+					}
 					// Rest of the placeholder rows
 					for (let i = 1; i < result.placeholderLines.length; i++) {
 						lines.push(result.placeholderLines[i]);

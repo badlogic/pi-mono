@@ -77,6 +77,7 @@ export {
 	resetTmuxPassthroughCache,
 	setCellDimensions,
 	type TerminalCapabilities,
+	wrapTmuxPassthrough,
 } from "./terminal-image.js";
 export {
 	type Component,

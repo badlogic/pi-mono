@@ -141,7 +141,7 @@ export function resetTmuxPassthroughCache(): void {
  * Format: \x1bPtmux;<escaped_sequence>\x1b\\
  * Every \x1b inside the sequence must be doubled.
  */
-function wrapTmuxPassthrough(sequence: string): string {
+export function wrapTmuxPassthrough(sequence: string): string {
 	// Double every ESC (\x1b) in the sequence
 	const escaped = sequence.replace(/\x1b/g, "\x1b\x1b");
 	return `\x1bPtmux;${escaped}\x1b\\`;
@@ -272,11 +272,13 @@ export function encodeKitty(
 			seq = `\x1b_Gm=1;${chunk}\x1b\\`;
 		}
 
-		chunks.push(inTmux ? wrapTmuxPassthrough(seq) : seq);
+		chunks.push(seq);
 		offset += CHUNK_SIZE;
 	}
 
-	return chunks.join("");
+	// Wrap all chunks in a single tmux passthrough frame (much faster than wrapping each chunk)
+	const result = chunks.join("");
+	return inTmux ? wrapTmuxPassthrough(result) : result;
 }
 
 export function encodeITerm2(

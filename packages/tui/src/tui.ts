@@ -7,7 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { isKeyRelease, matchesKey } from "./keys.js";
 import type { Terminal } from "./terminal.js";
-import { getCapabilities, setCellDimensions } from "./terminal-image.js";
+import { getCapabilities, isTmuxPassthroughEnabled, setCellDimensions, wrapTmuxPassthrough } from "./terminal-image.js";
 import { extractSegments, sliceByColumn, sliceWithWidth, visibleWidth } from "./utils.js";
 
 /**
@@ -490,7 +490,8 @@ export class TUI extends Container {
 	}
 
 	private containsImage(line: string): boolean {
-		return line.includes("\x1b_G") || line.includes("\x1b]1337;File=");
+		// Detect Kitty direct placement, iTerm2, or Kitty unicode placeholder (tmux mode)
+		return line.includes("\x1b_G") || line.includes("\x1b]1337;File=") || line.includes("\u{10EEEE}");
 	}
 
 	/**
@@ -801,6 +802,11 @@ export class TUI extends Container {
 			return targetScreenRow - currentScreenRow;
 		};
 
+		// Synchronized output markers - wrap in tmux passthrough so outer terminal honors them
+		const tmuxPassthrough = isTmuxPassthroughEnabled();
+		const syncBegin = tmuxPassthrough ? `${wrapTmuxPassthrough("\x1b[?2026h")}\x1b[?2026h` : "\x1b[?2026h";
+		const syncEnd = tmuxPassthrough ? `\x1b[?2026l${wrapTmuxPassthrough("\x1b[?2026l")}` : "\x1b[?2026l";
+
 		// Render all components to get new lines
 		let newLines = this.render(width);
 
@@ -820,13 +826,13 @@ export class TUI extends Container {
 		// Helper to clear scrollback and viewport and render all new lines
 		const fullRender = (clear: boolean): void => {
 			this.fullRedrawCount += 1;
-			let buffer = "\x1b[?2026h"; // Begin synchronized output
+			let buffer = syncBegin;
 			if (clear) buffer += "\x1b[3J\x1b[2J\x1b[H"; // Clear scrollback, screen, and home
 			for (let i = 0; i < newLines.length; i++) {
 				if (i > 0) buffer += "\r\n";
 				buffer += newLines[i];
 			}
-			buffer += "\x1b[?2026l"; // End synchronized output
+			buffer += syncEnd;
 			this.terminal.write(buffer);
 			this.cursorRow = Math.max(0, newLines.length - 1);
 			this.hardwareCursorRow = this.cursorRow;
@@ -888,7 +894,7 @@ export class TUI extends Container {
 		// All changes are in deleted lines (nothing to render, just clear)
 		if (firstChanged >= newLines.length) {
 			if (this.previousLines.length > newLines.length) {
-				let buffer = "\x1b[?2026h";
+				let buffer = syncBegin;
 				// Move to end of new content (clamp to 0 for empty content)
 				const targetRow = Math.max(0, newLines.length - 1);
 				const lineDiff = computeLineDiff(targetRow);
@@ -911,7 +917,7 @@ export class TUI extends Container {
 				if (extraLines > 0) {
 					buffer += `\x1b[${extraLines}A`;
 				}
-				buffer += "\x1b[?2026l";
+				buffer += syncEnd;
 				this.terminal.write(buffer);
 				this.cursorRow = targetRow;
 				this.hardwareCursorRow = targetRow;
@@ -933,7 +939,7 @@ export class TUI extends Container {
 
 		// Render from first changed line to end
 		// Build buffer with all updates wrapped in synchronized output
-		let buffer = "\x1b[?2026h"; // Begin synchronized output
+		let buffer = syncBegin;
 		const prevViewportBottom = prevViewportTop + height - 1;
 		const moveTargetRow = appendStart ? firstChanged - 1 : firstChanged;
 		if (moveTargetRow > prevViewportBottom) {
@@ -1017,7 +1023,7 @@ export class TUI extends Container {
 			buffer += `\x1b[${extraLines}A`;
 		}
 
-		buffer += "\x1b[?2026l"; // End synchronized output
+		buffer += syncEnd;
 
 		if (process.env.PI_TUI_DEBUG === "1") {
 			const debugDir = "/tmp/tui";
