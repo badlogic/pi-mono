@@ -26,6 +26,7 @@ import type {
 	RpcExtensionUIResponse,
 	RpcResponse,
 	RpcSessionState,
+	RpcSlashCommand,
 } from "./rpc-types.js";
 
 // Re-export types for consumers
@@ -495,6 +496,36 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 
 			case "get_messages": {
 				return success(id, "get_messages", { messages: session.messages });
+			}
+
+			// =================================================================
+			// Commands (available for invocation via prompt)
+			// =================================================================
+
+			case "get_commands": {
+				const commands: RpcSlashCommand[] = [];
+
+				// Extension commands
+				const extensionCmds = session.extensionRunner?.getRegisteredCommands() ?? [];
+				for (const cmd of extensionCmds) {
+					commands.push({ name: cmd.name, description: cmd.description, source: "extension" });
+				}
+
+				// Prompt templates
+				for (const template of session.promptTemplates) {
+					commands.push({ name: template.name, description: template.description, source: "template" });
+				}
+
+				// Skills
+				for (const skill of session.resourceLoader.getSkills().skills) {
+					commands.push({
+						name: `skill:${skill.name}`,
+						description: skill.description,
+						source: "skill",
+					});
+				}
+
+				return success(id, "get_commands", { commands });
 			}
 
 			default: {

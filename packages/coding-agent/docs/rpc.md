@@ -612,6 +612,42 @@ Response:
 
 Returns `{"text": null}` if no assistant messages exist.
 
+### Commands
+
+#### get_commands
+
+Get available commands (extension commands, prompt templates, and skills). These can be invoked via the `prompt` command by prefixing with `/`.
+
+```json
+{"type": "get_commands"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "get_commands",
+  "success": true,
+  "data": {
+    "commands": [
+      {"name": "session-name", "description": "Set or clear session name", "source": "extension"},
+      {"name": "fix-tests", "description": "Fix failing tests", "source": "template"},
+      {"name": "skill:brave-search", "description": "Web search via Brave API", "source": "skill"}
+    ]
+  }
+}
+```
+
+Each command has:
+- `name`: Command name (invoke with `/name`)
+- `description`: Human-readable description (optional for extension commands)
+- `source`: Where the command comes from:
+  - `"extension"`: Registered via `pi.registerCommand()` in an extension
+  - `"template"`: Loaded from a prompt template `.md` file
+  - `"skill"`: Loaded from a skill directory (name is prefixed with `skill:`)
+
+**Note**: Built-in TUI commands (`/settings`, `/hotkeys`, etc.) are not included. They are handled only in interactive mode and would not execute if sent via `prompt`.
+
 ## Events
 
 Events are streamed to stdout as JSON lines during agent operation. Events do NOT include an `id` field (only responses do).
