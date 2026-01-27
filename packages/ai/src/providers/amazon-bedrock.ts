@@ -94,6 +94,12 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 		if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
 			config.region = config.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
 
+			// Support bearer token authentication via AWS_BEARER_TOKEN_BEDROCK
+			const bearerToken = process.env.AWS_BEARER_TOKEN_BEDROCK?.trim();
+			if (bearerToken) {
+				config.token = { token: bearerToken };
+			}
+
 			if (
 				process.env.HTTP_PROXY ||
 				process.env.HTTPS_PROXY ||
