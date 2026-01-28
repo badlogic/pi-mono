@@ -3465,8 +3465,8 @@ export class InteractiveMode {
 						mgr.appendSessionInfo(next);
 					},
 					showRenameHint: true,
+					keybindings: this.keybindings,
 				},
-
 				this.sessionManager.getSessionFile(),
 			);
 			return { component: selector, focus: selector };
