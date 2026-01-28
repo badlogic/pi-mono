@@ -31,7 +31,7 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	minimax: "MiniMax-M2.1",
 	"minimax-cn": "MiniMax-M2.1",
 	opencode: "claude-opus-4-5",
-	volcengine: "doubao-seed-code-251028",
+	volcengine: "doubao-seed-code-preview-251028",
 };
 
 export interface ScopedModel {
