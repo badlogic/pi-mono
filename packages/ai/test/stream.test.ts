@@ -783,7 +783,7 @@ describe("Generate E2E Tests", () => {
 			});
 
 			it("should handle thinking mode", { retry: 3 }, async () => {
-				// FIXME Skip for now, getting a 422 stauts code, need to test with official SDK
+				// FIXME Skip for now, getting a 422 status code, need to test with official SDK
 				// const llm = getModel("mistral", "magistral-medium-latest");
 				// await handleThinking(llm, { reasoningEffort: "medium" });
 			});
