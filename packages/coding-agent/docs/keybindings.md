@@ -23,8 +23,8 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, etc.
 | `cursorDown` | `down` | Move cursor down |
 | `cursorLeft` | `left` | Move cursor left |
 | `cursorRight` | `right` | Move cursor right |
-| `cursorWordLeft` | `alt+left`, `ctrl+left` | Move cursor word left |
-| `cursorWordRight` | `alt+right`, `ctrl+right` | Move cursor word right |
+| `cursorWordLeft` | `alt+left`, `ctrl+left`, `alt+b` | Move cursor word left |
+| `cursorWordRight` | `alt+right`, `ctrl+right`, `alt+f` | Move cursor word right |
 | `cursorLineStart` | `home`, `ctrl+a` | Move to line start |
 | `cursorLineEnd` | `end`, `ctrl+e` | Move to line end |
 | `pageUp` | `pageUp` | Scroll up by page |
@@ -35,7 +35,7 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, etc.
 | Action | Default | Description |
 |--------|---------|-------------|
 | `deleteCharBackward` | `backspace` | Delete character backward |
-| `deleteCharForward` | `delete` | Delete character forward |
+| `deleteCharForward` | `delete`, `ctrl+d` | Delete character forward |
 | `deleteWordBackward` | `ctrl+w`, `alt+backspace` | Delete word backward |
 | `deleteWordForward` | `alt+d`, `alt+delete` | Delete word forward |
 | `deleteToLineStart` | `ctrl+u` | Delete to line start |
