@@ -765,6 +765,8 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		baseUrl.includes("chutes.ai") ||
 		isZai ||
 		provider === "opencode" ||
+		provider === "deepseek" ||
+		baseUrl.includes("api.deepseek.com") ||
 		baseUrl.includes("opencode.ai");
 
 	const useMaxTokens = provider === "mistral" || baseUrl.includes("mistral.ai") || baseUrl.includes("chutes.ai");
