@@ -6,6 +6,10 @@
 
 - Added `headers` option to `StreamOptions` for custom HTTP headers in API requests. Supported by all providers except Amazon Bedrock (which uses AWS SDK auth). Headers are merged with provider defaults and `model.headers`, with `options.headers` taking precedence.
 
+### Fixed
+
+- Fixed Google providers rejecting tool schemas with `anyOf`/`const` patterns from extensions using `Type.Union(Type.Literal(...))`. `convertTools()` now recursively sanitizes schemas, converting `anyOf`+`const` to `enum` ([#1000](https://github.com/badlogic/pi-mono/issues/1000))
+
 ## [0.49.2] - 2026-01-19
 
 ### Added

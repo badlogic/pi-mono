@@ -231,7 +231,92 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 }
 
 /**
+ * Recursively convert a JSON Schema object to Gemini-compatible format.
+ *
+ * Gemini's API does not support `const` or `anyOf`-of-`const` patterns.
+ * TypeBox `Type.Union([Type.Literal("a"), ...])` compiles to:
+ *   { anyOf: [{ const: "a", type: "string" }, ...] }
+ * which must be converted to:
+ *   { type: "string", enum: ["a", "b", ...] }
+ *
+ * Handles:
+ * - anyOf where every item has `const` → enum
+ * - Nested anyOf (union of unions) → flatten, then convert
+ * - anyOf with mixed schemas (e.g. string | array) → keep as anyOf, convert children
+ * - Strips stray `const` fields from any node
+ * - Recurses into `properties`, `items`
+ */
+export function convertSchemaForGoogle(schema: Record<string, unknown>): Record<string, unknown> {
+	if (!schema || typeof schema !== "object") return schema;
+
+	const result = { ...schema };
+
+	// Remove `const` — Gemini doesn't support it as a schema field
+	if ("const" in result) {
+		delete result.const;
+	}
+
+	// Handle anyOf
+	if (Array.isArray(result.anyOf)) {
+		const flattened = flattenAnyOf(result.anyOf as Record<string, unknown>[]);
+
+		// Check if all items are const-style: { const: "value", type: "string" }
+		if (flattened.length > 0 && flattened.every((item) => "const" in item)) {
+			const enumValues = flattened.map((item) => item.const as string);
+			const type = (flattened[0].type as string) || "string";
+			delete result.anyOf;
+			result.type = type;
+			result.enum = enumValues;
+		} else {
+			// Mixed anyOf — convert each branch recursively
+			result.anyOf = (result.anyOf as Record<string, unknown>[]).map(convertSchemaForGoogle);
+		}
+	}
+
+	// Recurse into properties
+	if (result.properties && typeof result.properties === "object") {
+		const props = result.properties as Record<string, Record<string, unknown>>;
+		const converted: Record<string, unknown> = {};
+		for (const [key, value] of Object.entries(props)) {
+			converted[key] = convertSchemaForGoogle(value);
+		}
+		result.properties = converted;
+	}
+
+	// Recurse into items (arrays)
+	if (result.items && typeof result.items === "object" && !Array.isArray(result.items)) {
+		result.items = convertSchemaForGoogle(result.items as Record<string, unknown>);
+	}
+
+	return result;
+}
+
+/**
+ * Flatten nested anyOf arrays. Expands inner anyOf-of-const into the parent list.
+ * E.g. [{ anyOf: [{const:"a"}, {const:"b"}] }, {type:"array",...}]
+ *    → [{const:"a"}, {const:"b"}, {type:"array",...}]
+ */
+function flattenAnyOf(items: Record<string, unknown>[]): Record<string, unknown>[] {
+	const result: Record<string, unknown>[] = [];
+	for (const item of items) {
+		if (Array.isArray(item.anyOf)) {
+			// Only flatten if ALL inner items are const — otherwise keep as-is
+			const inner = item.anyOf as Record<string, unknown>[];
+			if (inner.every((i) => "const" in i)) {
+				result.push(...inner);
+			} else {
+				result.push(item);
+			}
+		} else {
+			result.push(item);
+		}
+	}
+	return result;
+}
+
+/**
  * Convert tools to Gemini function declarations format.
+ * Converts tool parameter schemas to Gemini-compatible format (anyOf/const → enum).
  */
 export function convertTools(
 	tools: Tool[],
@@ -242,7 +327,7 @@ export function convertTools(
 			functionDeclarations: tools.map((tool) => ({
 				name: tool.name,
 				description: tool.description,
-				parameters: tool.parameters as Schema,
+				parameters: convertSchemaForGoogle(tool.parameters as Record<string, unknown>) as Schema,
 			})),
 		},
 	];
