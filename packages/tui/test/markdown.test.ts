@@ -172,6 +172,52 @@ describe("Markdown component", () => {
 			assert.ok(plainLines.some((line) => line.includes("─")));
 		});
 
+		it("should render row dividers between data rows", () => {
+			const markdown = new Markdown(
+				`| Name | Age |
+| --- | --- |
+| Alice | 30 |
+| Bob | 25 |`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+			const dividerLines = plainLines.filter((line) => line.includes("┼"));
+
+			assert.strictEqual(dividerLines.length, 2, "Expected header + row divider");
+		});
+
+		it("should keep column width at least the longest word", () => {
+			const longestWord = "superlongword";
+			const markdown = new Markdown(
+				`| Column One | Column Two |
+| --- | --- |
+| ${longestWord} short | otherword |
+| small | tiny |`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const lines = markdown.render(32);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+			const dataLine = plainLines.find((line) => line.includes(longestWord));
+			assert.ok(dataLine, "Expected data row containing longest word");
+
+			const segments = dataLine.split("│").slice(1, -1);
+			const [firstSegment] = segments;
+			assert.ok(firstSegment, "Expected first column segment");
+			const firstColumnWidth = firstSegment.length - 2;
+
+			assert.ok(
+				firstColumnWidth >= longestWord.length,
+				`Expected first column width >= ${longestWord.length}, got ${firstColumnWidth}`,
+			);
+		});
+
 		it("should render table with alignment", () => {
 			const markdown = new Markdown(
 				`| Left | Center | Right |
@@ -289,6 +335,7 @@ describe("Markdown component", () => {
 
 			// Borders should stay intact (exactly 2 vertical borders for a 1-col table)
 			const tableLines = plainLines.filter((line) => line.startsWith("│"));
+			assert.ok(tableLines.length > 0, "Expected table rows to render");
 			for (const line of tableLines) {
 				const borderCount = line.split("│").length - 1;
 				assert.strictEqual(borderCount, 2, `Expected 2 borders, got ${borderCount}: "${line}"`);

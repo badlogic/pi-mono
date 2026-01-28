@@ -562,7 +562,7 @@ export class SandboxIframe extends LitElement {
 			.join("\n");
 
 		// TODO the font-size is needed, as chrome seems to inject a stylesheet into iframes
-		// found in an extension context like sidepanel, settin body { font-size: 75% }. It's
+		// found in an extension context like sidepanel, setting body { font-size: 75% }. It's
 		// definitely not our code doing that.
 		// See  https://stackoverflow.com/questions/71480433/chrome-is-injecting-some-stylesheet-in-popup-ui-which-reduces-the-font-size-to-7
 

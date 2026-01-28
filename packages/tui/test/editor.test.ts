@@ -1726,4 +1726,113 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.getText(), "di");
 		});
 	});
+
+	describe("Autocomplete", () => {
+		it("auto-applies single force-file suggestion without showing menu", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create a mock provider with getForceFileSuggestions that returns single item
+			const mockProvider: AutocompleteProvider & {
+				getForceFileSuggestions: AutocompleteProvider["getSuggestions"];
+			} = {
+				getSuggestions: () => null,
+				getForceFileSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const prefix = text.slice(0, cursorCol);
+					if (prefix === "Work") {
+						return {
+							items: [{ value: "Workspace/", label: "Workspace/" }],
+							prefix: "Work",
+						};
+					}
+					return null;
+				},
+				applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => {
+					const line = lines[cursorLine] || "";
+					const before = line.slice(0, cursorCol - prefix.length);
+					const after = line.slice(cursorCol);
+					const newLines = [...lines];
+					newLines[cursorLine] = before + item.value + after;
+					return {
+						lines: newLines,
+						cursorLine,
+						cursorCol: cursorCol - prefix.length + item.value.length,
+					};
+				},
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Type "Work"
+			editor.handleInput("W");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("k");
+			assert.strictEqual(editor.getText(), "Work");
+
+			// Press Tab - should auto-apply without showing menu
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "Workspace/");
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+
+			// Undo should restore to "Work"
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "Work");
+		});
+
+		it("shows menu when force-file has multiple suggestions", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create a mock provider with getForceFileSuggestions that returns multiple items
+			const mockProvider: AutocompleteProvider & {
+				getForceFileSuggestions: AutocompleteProvider["getSuggestions"];
+			} = {
+				getSuggestions: () => null,
+				getForceFileSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const prefix = text.slice(0, cursorCol);
+					if (prefix === "src") {
+						return {
+							items: [
+								{ value: "src/", label: "src/" },
+								{ value: "src.txt", label: "src.txt" },
+							],
+							prefix: "src",
+						};
+					}
+					return null;
+				},
+				applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => {
+					const line = lines[cursorLine] || "";
+					const before = line.slice(0, cursorCol - prefix.length);
+					const after = line.slice(cursorCol);
+					const newLines = [...lines];
+					newLines[cursorLine] = before + item.value + after;
+					return {
+						lines: newLines,
+						cursorLine,
+						cursorCol: cursorCol - prefix.length + item.value.length,
+					};
+				},
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Type "src"
+			editor.handleInput("s");
+			editor.handleInput("r");
+			editor.handleInput("c");
+			assert.strictEqual(editor.getText(), "src");
+
+			// Press Tab - should show menu because there are multiple suggestions
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "src"); // Text unchanged
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Press Tab again to accept first suggestion
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "src/");
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+		});
+	});
 });

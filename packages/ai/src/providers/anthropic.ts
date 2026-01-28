@@ -672,7 +672,7 @@ function convertTools(tools: Tool[], isOAuthToken: boolean): Anthropic.Messages.
 	});
 }
 
-function mapStopReason(reason: Anthropic.Messages.StopReason): StopReason {
+function mapStopReason(reason: Anthropic.Messages.StopReason | string): StopReason {
 	switch (reason) {
 		case "end_turn":
 			return "stop";
@@ -686,9 +686,10 @@ function mapStopReason(reason: Anthropic.Messages.StopReason): StopReason {
 			return "stop";
 		case "stop_sequence":
 			return "stop"; // We don't supply stop sequences, so this should never happen
-		default: {
-			const _exhaustive: never = reason;
-			throw new Error(`Unhandled stop reason: ${_exhaustive}`);
-		}
+		case "sensitive": // Content flagged by safety filters (not yet in SDK types)
+			return "error";
+		default:
+			// Handle unknown stop reasons gracefully (API may add new values)
+			throw new Error(`Unhandled stop reason: ${reason}`);
 	}
 }
