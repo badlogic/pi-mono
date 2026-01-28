@@ -57,6 +57,22 @@ body {
 	animation: shimmer 2s ease-in-out infinite;
 }
 
+/* Tactical Launchpad animations */
+@keyframes tactical-pulse {
+	0%, 100% {
+		box-shadow: 0 0 5px var(--tactical-color);
+	}
+	50% {
+		box-shadow: 0 0 20px var(--tactical-color);
+	}
+}
+
+@keyframes tactical-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
 /* User message with fancy pill styling */
 .user-message-container {
 	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
