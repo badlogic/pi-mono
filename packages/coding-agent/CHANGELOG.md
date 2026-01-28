@@ -6,6 +6,10 @@
 
 - Session selector (`/resume`) now supports named-only filter toggle (default `Ctrl+N`, configurable via `toggleSessionNamedFilter`) to show only named sessions ([#862](https://github.com/badlogic/pi-mono/issues/862))
 
+### Fixed
+
+- Empty array in package filter now disables all resources instead of falling back to manifest defaults ([#1044](https://github.com/badlogic/pi-mono/issues/1044))
+
 ## [0.50.1] - 2026-01-26
 
 ### Fixed
