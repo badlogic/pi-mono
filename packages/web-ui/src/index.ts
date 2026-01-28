@@ -14,12 +14,14 @@ export { MessageList } from "./components/MessageList.js";
 // Message components
 export type { ArtifactMessage, UserMessageWithAttachments } from "./components/Messages.js";
 export {
+	AbortedMessage,
 	AssistantMessage,
 	convertAttachments,
 	defaultConvertToLlm,
 	isArtifactMessage,
 	isUserMessageWithAttachments,
 	ToolMessage,
+	ToolMessageDebugView,
 	UserMessage,
 } from "./components/Messages.js";
 // Message renderer registry
