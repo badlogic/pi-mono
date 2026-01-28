@@ -30,6 +30,7 @@ export {
 	registerMessageRenderer,
 	renderMessage,
 } from "./components/message-renderer-registry.js";
+export { ProviderKeyInput } from "./components/ProviderKeyInput.js";
 export {
 	type SandboxFile,
 	SandboxIframe,
