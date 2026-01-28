@@ -1791,6 +1791,25 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 		);
 
 		if (suggestions && suggestions.items.length > 0) {
+			// If there's exactly one suggestion, apply it immediately
+			if (suggestions.items.length === 1) {
+				const item = suggestions.items[0]!;
+				this.pushUndoSnapshot();
+				this.lastAction = null;
+				const result = this.autocompleteProvider.applyCompletion(
+					this.state.lines,
+					this.state.cursorLine,
+					this.state.cursorCol,
+					item,
+					suggestions.prefix,
+				);
+				this.state.lines = result.lines;
+				this.state.cursorLine = result.cursorLine;
+				this.state.cursorCol = result.cursorCol;
+				if (this.onChange) this.onChange(this.getText());
+				return;
+			}
+
 			this.autocompletePrefix = suggestions.prefix;
 			this.autocompleteList = new SelectList(suggestions.items, 5, this.theme.selectList);
 			this.isAutocompleting = true;

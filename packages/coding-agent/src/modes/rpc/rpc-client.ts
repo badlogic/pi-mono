@@ -11,7 +11,7 @@ import type { ImageContent } from "@mariozechner/pi-ai";
 import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
-import type { RpcCommand, RpcResponse, RpcSessionState } from "./rpc-types.js";
+import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.js";
 
 // ============================================================================
 // Types
@@ -368,6 +368,14 @@ export class RpcClient {
 	async getMessages(): Promise<AgentMessage[]> {
 		const response = await this.send({ type: "get_messages" });
 		return this.getData<{ messages: AgentMessage[] }>(response).messages;
+	}
+
+	/**
+	 * Get available commands (extension commands, prompt templates, skills).
+	 */
+	async getCommands(): Promise<RpcSlashCommand[]> {
+		const response = await this.send({ type: "get_commands" });
+		return this.getData<{ commands: RpcSlashCommand[] }>(response).commands;
 	}
 
 	// =========================================================================

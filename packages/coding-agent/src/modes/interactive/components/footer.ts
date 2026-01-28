@@ -159,22 +159,7 @@ export class FooterComponent implements Component {
 		// Add model name on the right side, plus thinking level if model supports it
 		const modelName = state.model?.id || "no-model";
 
-		// Add thinking level hint if model supports reasoning and thinking is enabled
-		let rightSide = modelName;
-		if (state.model?.reasoning) {
-			const thinkingLevel = state.thinkingLevel || "off";
-			if (thinkingLevel !== "off") {
-				rightSide = `${modelName} • ${thinkingLevel}`;
-			}
-		}
-
-		// Prepend the provider in parenthesis to the right side if there's multiple providers
-		if (this.footerData.getAvailableProviderCount() > 1 && state.model) {
-			rightSide = `(${state.model.provider}) ${rightSide}`;
-		}
-
 		let statsLeftWidth = visibleWidth(statsLeft);
-		const rightSideWidth = visibleWidth(rightSide);
 
 		// If statsLeft is too wide, truncate it
 		if (statsLeftWidth > width) {
@@ -186,6 +171,27 @@ export class FooterComponent implements Component {
 
 		// Calculate available space for padding (minimum 2 spaces between stats and model)
 		const minPadding = 2;
+
+		// Add thinking level hint if model supports reasoning and thinking is enabled
+		let rightSideWithoutProvider = modelName;
+		if (state.model?.reasoning) {
+			const thinkingLevel = state.thinkingLevel || "off";
+			if (thinkingLevel !== "off") {
+				rightSideWithoutProvider = `${modelName} • ${thinkingLevel}`;
+			}
+		}
+
+		// Prepend the provider in parentheses if there are multiple providers and there's enough room
+		let rightSide = rightSideWithoutProvider;
+		if (this.footerData.getAvailableProviderCount() > 1 && state.model) {
+			rightSide = `(${state.model!.provider}) ${rightSideWithoutProvider}`;
+			if (statsLeftWidth + minPadding + visibleWidth(rightSide) > width) {
+				// Too wide, fall back
+				rightSide = rightSideWithoutProvider;
+			}
+		}
+
+		const rightSideWidth = visibleWidth(rightSide);
 		const totalNeeded = statsLeftWidth + minPadding + rightSideWidth;
 
 		let statsLine: string;

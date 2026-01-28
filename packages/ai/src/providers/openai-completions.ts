@@ -333,10 +333,12 @@ export const streamSimpleOpenAICompletions: StreamFunction<"openai-completions",
 
 	const base = buildBaseOptions(model, options, apiKey);
 	const reasoningEffort = supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning);
+	const toolChoice = (options as OpenAICompletionsOptions | undefined)?.toolChoice;
 
 	return streamOpenAICompletions(model, context, {
 		...base,
 		reasoningEffort,
+		toolChoice,
 	} satisfies OpenAICompletionsOptions);
 };
 
@@ -761,6 +763,7 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		provider === "mistral" ||
 		baseUrl.includes("mistral.ai") ||
 		baseUrl.includes("chutes.ai") ||
+		baseUrl.includes("deepseek.com") ||
 		isZai ||
 		provider === "opencode" ||
 		baseUrl.includes("opencode.ai");

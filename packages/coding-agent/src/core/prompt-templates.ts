@@ -11,7 +11,7 @@ export interface PromptTemplate {
 	name: string;
 	description: string;
 	content: string;
-	source: string; // e.g., "user", "project", "path", "inline"
+	source: string; // "user", "project", or "path"
 	filePath: string; // Absolute path to the template file
 }
 

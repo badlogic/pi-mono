@@ -1155,17 +1155,17 @@ export class DefaultPackageManager implements PackageManager {
 		target: Map<string, { metadata: PathMetadata; enabled: boolean }>,
 		metadata: PathMetadata,
 	): void {
-		const { allFiles, enabledByManifest } = this.collectManifestFiles(packageRoot, resourceType);
+		const { allFiles } = this.collectManifestFiles(packageRoot, resourceType);
 
 		if (userPatterns.length === 0) {
-			// No user patterns, just use manifest filtering
+			// Empty array explicitly disables all resources of this type
 			for (const f of allFiles) {
-				this.addResource(target, f, metadata, enabledByManifest.has(f));
+				this.addResource(target, f, metadata, false);
 			}
 			return;
 		}
 
-		// Apply user patterns on top of manifest-enabled files
+		// Apply user patterns
 		const enabledByUser = applyPatterns(allFiles, userPatterns, packageRoot);
 
 		for (const f of allFiles) {

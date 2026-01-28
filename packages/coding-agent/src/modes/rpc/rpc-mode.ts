@@ -26,6 +26,7 @@ import type {
 	RpcExtensionUIResponse,
 	RpcResponse,
 	RpcSessionState,
+	RpcSlashCommand,
 } from "./rpc-types.js";
 
 // Re-export types for consumers
@@ -495,6 +496,48 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 
 			case "get_messages": {
 				return success(id, "get_messages", { messages: session.messages });
+			}
+
+			// =================================================================
+			// Commands (available for invocation via prompt)
+			// =================================================================
+
+			case "get_commands": {
+				const commands: RpcSlashCommand[] = [];
+
+				// Extension commands
+				for (const { command, extensionPath } of session.extensionRunner?.getRegisteredCommandsWithPaths() ?? []) {
+					commands.push({
+						name: command.name,
+						description: command.description,
+						source: "extension",
+						path: extensionPath,
+					});
+				}
+
+				// Prompt templates (source is always "user" | "project" | "path" in coding-agent)
+				for (const template of session.promptTemplates) {
+					commands.push({
+						name: template.name,
+						description: template.description,
+						source: "template",
+						location: template.source as RpcSlashCommand["location"],
+						path: template.filePath,
+					});
+				}
+
+				// Skills (source is always "user" | "project" | "path" in coding-agent)
+				for (const skill of session.resourceLoader.getSkills().skills) {
+					commands.push({
+						name: `skill:${skill.name}`,
+						description: skill.description,
+						source: "skill",
+						location: skill.source as RpcSlashCommand["location"],
+						path: skill.filePath,
+					});
+				}
+
+				return success(id, "get_commands", { commands });
 			}
 
 			default: {
