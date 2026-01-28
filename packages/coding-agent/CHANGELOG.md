@@ -5,6 +5,7 @@
 ### Added
 
 - Session selector (`/resume`) now supports named-only filter toggle (default `Ctrl+N`, configurable via `toggleSessionNamedFilter`) to show only named sessions ([#862](https://github.com/badlogic/pi-mono/issues/862))
+- Added shell-style keybindings: `alt+b`/`alt+f` for word navigation, `ctrl+d` for delete character forward (when editor has text) ([#1043](https://github.com/badlogic/pi-mono/issues/1043) by [@jasonish](https://github.com/jasonish))
 
 ### Fixed
 
