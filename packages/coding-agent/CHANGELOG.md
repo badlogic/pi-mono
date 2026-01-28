@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- External edits to `settings.json` are now preserved when pi reloads or saves unrelated settings. Previously, editing settings.json directly (e.g., removing a package from `packages` array) would be silently reverted on next pi startup when automatic setters like `setLastChangelogVersion()` triggered a save.
+
 ## [0.50.1] - 2026-01-26
 
 ### Fixed
