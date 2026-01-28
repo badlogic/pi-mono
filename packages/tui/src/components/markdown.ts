@@ -523,6 +523,21 @@ export class Markdown implements Component {
 	}
 
 	/**
+	 * Get the visible width of the longest word in a string.
+	 */
+	private getLongestWordWidth(text: string, maxWidth?: number): number {
+		const words = text.split(/\s+/).filter((word) => word.length > 0);
+		let longest = 0;
+		for (const word of words) {
+			longest = Math.max(longest, visibleWidth(word));
+		}
+		if (maxWidth === undefined) {
+			return longest;
+		}
+		return Math.min(longest, maxWidth);
+	}
+
+	/**
 	 * Wrap a table cell to fit into a column.
 	 *
 	 * Delegates to wrapTextWithAnsi() so ANSI codes + long tokens are handled
@@ -550,27 +565,62 @@ export class Markdown implements Component {
 		// Calculate border overhead: "│ " + (n-1) * " │ " + " │"
 		// = 2 + (n-1) * 3 + 2 = 3n + 1
 		const borderOverhead = 3 * numCols + 1;
-
-		// Minimum width for a bordered table with at least 1 char per column.
-		const minTableWidth = borderOverhead + numCols;
-		if (availableWidth < minTableWidth) {
+		const availableForCells = availableWidth - borderOverhead;
+		if (availableForCells < numCols) {
 			// Too narrow to render a stable table. Fall back to raw markdown.
 			const fallbackLines = token.raw ? wrapTextWithAnsi(token.raw, availableWidth) : [];
 			fallbackLines.push("");
 			return fallbackLines;
 		}
 
+		const maxUnbrokenWordWidth = 30;
+
 		// Calculate natural column widths (what each column needs without constraints)
 		const naturalWidths: number[] = [];
+		const minWordWidths: number[] = [];
 		for (let i = 0; i < numCols; i++) {
 			const headerText = this.renderInlineTokens(token.header[i].tokens || []);
 			naturalWidths[i] = visibleWidth(headerText);
+			minWordWidths[i] = Math.max(1, this.getLongestWordWidth(headerText, maxUnbrokenWordWidth));
 		}
 		for (const row of token.rows) {
 			for (let i = 0; i < row.length; i++) {
 				const cellText = this.renderInlineTokens(row[i].tokens || []);
 				naturalWidths[i] = Math.max(naturalWidths[i] || 0, visibleWidth(cellText));
+				minWordWidths[i] = Math.max(
+					minWordWidths[i] || 1,
+					this.getLongestWordWidth(cellText, maxUnbrokenWordWidth),
+				);
 			}
+		}
+
+		let minColumnWidths = minWordWidths;
+		let minCellsWidth = minColumnWidths.reduce((a, b) => a + b, 0);
+
+		if (minCellsWidth > availableForCells) {
+			minColumnWidths = new Array(numCols).fill(1);
+			const remaining = availableForCells - numCols;
+
+			if (remaining > 0) {
+				const totalWeight = minWordWidths.reduce((total, width) => total + Math.max(0, width - 1), 0);
+				const growth = minWordWidths.map((width) => {
+					const weight = Math.max(0, width - 1);
+					return totalWeight > 0 ? Math.floor((weight / totalWeight) * remaining) : 0;
+				});
+
+				for (let i = 0; i < numCols; i++) {
+					minColumnWidths[i] += growth[i] ?? 0;
+				}
+
+				const allocated = growth.reduce((total, width) => total + width, 0);
+				let leftover = remaining - allocated;
+				for (let i = 0; leftover > 0 && i < numCols; i++) {
+					minColumnWidths[i]++;
+					leftover--;
+				}
+			}
+
+			minCellsWidth = minColumnWidths.reduce((a, b) => a + b, 0);
 		}
 
 		// Calculate column widths that fit within available width
@@ -579,27 +629,37 @@ export class Markdown implements Component {
 
 		if (totalNaturalWidth <= availableWidth) {
 			// Everything fits naturally
-			columnWidths = naturalWidths;
+			columnWidths = naturalWidths.map((width, index) => Math.max(width, minColumnWidths[index]));
 		} else {
 			// Need to shrink columns to fit
-			const availableForCells = availableWidth - borderOverhead;
-			if (availableForCells <= numCols) {
-				// Extremely narrow - give each column at least 1 char
-				columnWidths = naturalWidths.map(() => Math.max(1, Math.floor(availableForCells / numCols)));
-			} else {
-				// Distribute space proportionally based on natural widths
-				const totalNatural = naturalWidths.reduce((a, b) => a + b, 0);
-				columnWidths = naturalWidths.map((w) => {
-					const proportion = w / totalNatural;
-					return Math.max(1, Math.floor(proportion * availableForCells));
-				});
+			const totalGrowPotential = naturalWidths.reduce((total, width, index) => {
+				return total + Math.max(0, width - minColumnWidths[index]);
+			}, 0);
+			const extraWidth = Math.max(0, availableForCells - minCellsWidth);
+			columnWidths = minColumnWidths.map((minWidth, index) => {
+				const naturalWidth = naturalWidths[index];
+				const minWidthDelta = Math.max(0, naturalWidth - minWidth);
+				let grow = 0;
+				if (totalGrowPotential > 0) {
+					grow = Math.floor((minWidthDelta / totalGrowPotential) * extraWidth);
+				}
+				return minWidth + grow;
+			});
 
-				// Adjust for rounding errors - distribute remaining space
-				const allocated = columnWidths.reduce((a, b) => a + b, 0);
-				let remaining = availableForCells - allocated;
-				for (let i = 0; remaining > 0 && i < numCols; i++) {
-					columnWidths[i]++;
-					remaining--;
+			// Adjust for rounding errors - distribute remaining space
+			const allocated = columnWidths.reduce((a, b) => a + b, 0);
+			let remaining = availableForCells - allocated;
+			while (remaining > 0) {
+				let grew = false;
+				for (let i = 0; i < numCols && remaining > 0; i++) {
+					if (columnWidths[i] < naturalWidths[i]) {
+						columnWidths[i]++;
+						remaining--;
+						grew = true;
+					}
+				}
+				if (!grew) {
+					break;
 				}
 			}
 		}
@@ -626,10 +686,12 @@ export class Markdown implements Component {
 
 		// Render separator
 		const separatorCells = columnWidths.map((w) => "─".repeat(w));
-		lines.push(`├─${separatorCells.join("─┼─")}─┤`);
+		const separatorLine = `├─${separatorCells.join("─┼─")}─┤`;
+		lines.push(separatorLine);
 
 		// Render rows with wrapping
-		for (const row of token.rows) {
+		for (let rowIndex = 0; rowIndex < token.rows.length; rowIndex++) {
+			const row = token.rows[rowIndex];
 			const rowCellLines: string[][] = row.map((cell, i) => {
 				const text = this.renderInlineTokens(cell.tokens || []);
 				return this.wrapCellText(text, columnWidths[i]);
@@ -642,6 +704,10 @@ export class Markdown implements Component {
 					return text + " ".repeat(Math.max(0, columnWidths[colIdx] - visibleWidth(text)));
 				});
 				lines.push(`│ ${rowParts.join(" │ ")} │`);
+			}
+
+			if (rowIndex < token.rows.length - 1) {
+				lines.push(separatorLine);
 			}
 		}
 
