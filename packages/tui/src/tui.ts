@@ -769,10 +769,17 @@ export class TUI extends Container {
 	/**
 	 * Find and extract cursor position from rendered lines.
 	 * Searches for CURSOR_MARKER, calculates its position, and strips it from the output.
+	 * @param lines - Rendered lines to search
+	 * @param height - Terminal height (to calculate viewport)
 	 * @returns Cursor position { row, col } or null if no marker found
 	 */
-	private extractCursorPosition(lines: string[]): { row: number; col: number } | null {
+	private extractCursorPosition(lines: string[], height: number): { row: number; col: number } | null {
+		const viewportTop = Math.max(0, lines.length - height);
 		for (let row = lines.length - 1; row >= 0; row--) {
+			// Early out if above visible viewport
+			if (row < viewportTop) {
+				return null;
+			}
 			const line = lines[row];
 			const markerIndex = line.indexOf(CURSOR_MARKER);
 			if (markerIndex !== -1) {
@@ -810,7 +817,7 @@ export class TUI extends Container {
 		}
 
 		// Extract cursor position before applying line resets (marker must be found first)
-		const cursorPos = this.extractCursorPosition(newLines);
+		const cursorPos = this.extractCursorPosition(newLines, height);
 
 		newLines = this.applyLineResets(newLines);
 
