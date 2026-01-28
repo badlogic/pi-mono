@@ -7,6 +7,7 @@ export { ChatPanel } from "./ChatPanel.js";
 export { AgentInterface } from "./components/AgentInterface.js";
 export { AttachmentTile } from "./components/AttachmentTile.js";
 export { ConsoleBlock } from "./components/ConsoleBlock.js";
+export { CustomProviderCard } from "./components/CustomProviderCard.js";
 export { ExpandableSection } from "./components/ExpandableSection.js";
 export { Input } from "./components/Input.js";
 export { MessageEditor } from "./components/MessageEditor.js";
@@ -14,12 +15,14 @@ export { MessageList } from "./components/MessageList.js";
 // Message components
 export type { ArtifactMessage, UserMessageWithAttachments } from "./components/Messages.js";
 export {
+	AbortedMessage,
 	AssistantMessage,
 	convertAttachments,
 	defaultConvertToLlm,
 	isArtifactMessage,
 	isUserMessageWithAttachments,
 	ToolMessage,
+	ToolMessageDebugView,
 	UserMessage,
 } from "./components/Messages.js";
 // Message renderer registry
@@ -30,6 +33,7 @@ export {
 	registerMessageRenderer,
 	renderMessage,
 } from "./components/message-renderer-registry.js";
+export { ProviderKeyInput } from "./components/ProviderKeyInput.js";
 export {
 	type SandboxFile,
 	SandboxIframe,
