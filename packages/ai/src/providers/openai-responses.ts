@@ -85,7 +85,17 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses", OpenAIRes
 		} catch (error) {
 			for (const block of output.content) delete (block as { index?: number }).index;
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			if (error instanceof Error && error.stack) {
+				console.error("[pi-ai] openai-responses error stack:", error.stack);
+			} else {
+				console.error("[pi-ai] openai-responses error:", error);
+			}
+			const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			const stackSnippet =
+				error instanceof Error && error.stack
+					? `\n\`\`\`\n${error.stack.split("\n").slice(0, 6).join("\n")}\n\`\`\``
+					: "";
+			output.errorMessage = errorMessage + stackSnippet;
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}

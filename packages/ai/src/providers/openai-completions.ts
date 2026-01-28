@@ -309,7 +309,17 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 		} catch (error) {
 			for (const block of output.content) delete (block as any).index;
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			if (error instanceof Error && error.stack) {
+				console.error("[pi-ai] openai-completions error stack:", error.stack);
+			} else {
+				console.error("[pi-ai] openai-completions error:", error);
+			}
+			const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			const stackSnippet =
+				error instanceof Error && error.stack
+					? `\n\`\`\`\n${error.stack.split("\n").slice(0, 6).join("\n")}\n\`\`\``
+					: "";
+			output.errorMessage = errorMessage + stackSnippet;
 			// Some providers via OpenRouter give additional information in this field.
 			const rawMetadata = (error as any)?.error?.metadata?.raw;
 			if (rawMetadata) output.errorMessage += `\n${rawMetadata}`;
@@ -448,7 +458,7 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 	}
 
 	// OpenRouter provider routing preferences
-	if (model.baseUrl.includes("openrouter.ai") && model.compat?.openRouterRouting) {
+	if ((model.baseUrl ?? "").includes("openrouter.ai") && model.compat?.openRouterRouting) {
 		(params as any).provider = model.compat.openRouterRouting;
 	}
 
@@ -751,7 +761,7 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): Sto
  */
 function detectCompat(model: Model<"openai-completions">): Required<OpenAICompletionsCompat> {
 	const provider = model.provider;
-	const baseUrl = model.baseUrl;
+	const baseUrl = (model.baseUrl ?? "").toLowerCase();
 
 	const isZai = provider === "zai" || baseUrl.includes("api.z.ai");
 

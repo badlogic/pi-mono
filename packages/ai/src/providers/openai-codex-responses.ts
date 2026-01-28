@@ -208,7 +208,17 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 			stream.end();
 		} catch (error) {
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-			output.errorMessage = error instanceof Error ? error.message : String(error);
+			if (error instanceof Error && error.stack) {
+				console.error("[pi-ai] openai-codex-responses error stack:", error.stack);
+			} else {
+				console.error("[pi-ai] openai-codex-responses error:", error);
+			}
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			const stackSnippet =
+				error instanceof Error && error.stack
+					? `\n\`\`\`\n${error.stack.split("\n").slice(0, 6).join("\n")}\n\`\`\``
+					: "";
+			output.errorMessage = errorMessage + stackSnippet;
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}
