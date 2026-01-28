@@ -60,7 +60,28 @@ export type RpcCommand =
 	| { id?: string; type: "get_last_assistant_text" }
 
 	// Messages
-	| { id?: string; type: "get_messages" };
+	| { id?: string; type: "get_messages" }
+
+	// Commands (available for invocation via prompt)
+	| { id?: string; type: "get_commands" };
+
+// ============================================================================
+// RPC Slash Command (for get_commands response)
+// ============================================================================
+
+/** A command available for invocation via prompt */
+export interface RpcSlashCommand {
+	/** Command name (without leading slash) */
+	name: string;
+	/** Human-readable description */
+	description?: string;
+	/** What kind of command this is */
+	source: "extension" | "template" | "skill";
+	/** Where the command was loaded from (undefined for extensions) */
+	location?: "user" | "project" | "path";
+	/** File path to the command source */
+	path?: string;
+}
 
 // ============================================================================
 // RPC State
@@ -167,6 +188,15 @@ export type RpcResponse =
 
 	// Messages
 	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
+
+	// Commands
+	| {
+			id?: string;
+			type: "response";
+			command: "get_commands";
+			success: true;
+			data: { commands: RpcSlashCommand[] };
+	  }
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };

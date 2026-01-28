@@ -372,6 +372,16 @@ export class ExtensionRunner {
 		return commands;
 	}
 
+	getRegisteredCommandsWithPaths(): Array<{ command: RegisteredCommand; extensionPath: string }> {
+		const result: Array<{ command: RegisteredCommand; extensionPath: string }> = [];
+		for (const ext of this.extensions) {
+			for (const command of ext.commands.values()) {
+				result.push({ command, extensionPath: ext.path });
+			}
+		}
+		return result;
+	}
+
 	getCommand(name: string): RegisteredCommand | undefined {
 		for (const ext of this.extensions) {
 			const command = ext.commands.get(name);
