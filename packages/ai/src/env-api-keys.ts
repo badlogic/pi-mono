@@ -106,6 +106,7 @@ export function getEnvApiKey(provider: any): string | undefined {
 		minimax: "MINIMAX_API_KEY",
 		"minimax-cn": "MINIMAX_CN_API_KEY",
 		opencode: "OPENCODE_API_KEY",
+		volcengine: "VOLCENGINE_API_KEY",
 	};
 
 	const envVar = envMap[provider];

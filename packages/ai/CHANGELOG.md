@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Volcengine provider support with Ark models.
+
 ## [0.50.1] - 2026-01-26
 
 ### Fixed
