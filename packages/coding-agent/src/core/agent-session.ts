@@ -716,6 +716,13 @@ export class AgentSession {
 			);
 		}
 
+		// Reset retry counter for new user prompts (not retries)
+		// This prevents retry failures from accumulating across separate prompts
+		if (this._retryAttempt > 0) {
+			this._retryAttempt = 0;
+			this._resolveRetry();
+		}
+
 		// Check if we need to compact before sending (catches aborted responses)
 		const lastAssistant = this._findLastAssistantMessage();
 		if (lastAssistant) {
