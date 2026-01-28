@@ -1,0 +1,175 @@
+/* =============================================================================
+   CRT / Phosphor Monitor Effect
+   Retro scanlines, flicker, vignette, and glow for that Fallout-terminal vibe.
+   ============================================================================= */
+
+/* -----------------------------------------------------------------------------
+   Color Mode Variables
+   ----------------------------------------------------------------------------- */
+
+/* Default: Green phosphor (P1/P39 style) */
+crt-container,
+crt-container[color-mode="green"] {
+	--crt-phosphor: #33ff33;
+	--crt-phosphor-dim: #1a8c1a;
+	--crt-phosphor-glow: rgba(51, 255, 51, 0.4);
+	--crt-scanline-dark: rgba(0, 0, 0, 0.15);
+	--crt-vignette-color: rgba(0, 0, 0, 0.5);
+}
+
+/* Amber phosphor (P3 style) */
+crt-container[color-mode="amber"] {
+	--crt-phosphor: #ffb347;
+	--crt-phosphor-dim: #cc8a30;
+	--crt-phosphor-glow: rgba(255, 179, 71, 0.4);
+	--crt-scanline-dark: rgba(0, 0, 0, 0.12);
+	--crt-vignette-color: rgba(20, 10, 0, 0.5);
+}
+
+/* Blue phosphor (cool terminal) */
+crt-container[color-mode="blue"] {
+	--crt-phosphor: #66ccff;
+	--crt-phosphor-dim: #3399cc;
+	--crt-phosphor-glow: rgba(102, 204, 255, 0.4);
+	--crt-scanline-dark: rgba(0, 0, 0, 0.12);
+	--crt-vignette-color: rgba(0, 10, 20, 0.5);
+}
+
+/* -----------------------------------------------------------------------------
+   Wrapper & Content
+   ----------------------------------------------------------------------------- */
+
+.crt-wrapper {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	background: #0a0a0a;
+}
+
+.crt-content {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	z-index: 1;
+}
+
+/* -----------------------------------------------------------------------------
+   Curvature Effect (optional 3D transform)
+   ----------------------------------------------------------------------------- */
+
+.crt-curvature {
+	perspective: 1000px;
+	border-radius: 20px;
+	overflow: hidden;
+}
+
+.crt-curvature .crt-content {
+	transform: rotateX(1deg) rotateY(0deg);
+	transform-origin: center center;
+}
+
+.crt-curvature .crt-overlay {
+	border-radius: 20px;
+}
+
+/* -----------------------------------------------------------------------------
+   Overlay Layer (scanlines + vignette + flicker)
+   pointer-events: none so it doesn't block interaction
+   ----------------------------------------------------------------------------- */
+
+.crt-overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 1000;
+	pointer-events: none;
+
+	/* Scanlines: horizontal repeating dark lines */
+	background:
+		/* Scanlines */
+		repeating-linear-gradient(
+			to bottom,
+			transparent 0px,
+			transparent 2px,
+			var(--crt-scanline-dark) 2px,
+			var(--crt-scanline-dark) 4px
+		),
+		/* Vignette: radial gradient darkening corners */
+		radial-gradient(
+			ellipse at center,
+			transparent 0%,
+			transparent 60%,
+			var(--crt-vignette-color) 100%
+		);
+
+	/* Subtle flicker animation */
+	animation: crt-flicker 0.1s infinite;
+}
+
+/* -----------------------------------------------------------------------------
+   Flicker Animation
+   Very subtle opacity variation to simulate 60Hz CRT hum
+   ----------------------------------------------------------------------------- */
+
+@keyframes crt-flicker {
+	0% {
+		opacity: 0.97;
+	}
+	50% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0.98;
+	}
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+	.crt-overlay {
+		animation: none;
+		opacity: 1;
+	}
+}
+
+/* -----------------------------------------------------------------------------
+   Text Glow (Phosphor Bloom Effect)
+   Applied to common text elements within the CRT container
+   ----------------------------------------------------------------------------- */
+
+crt-container {
+	color: var(--crt-phosphor);
+}
+
+crt-container p,
+crt-container span,
+crt-container div,
+crt-container h1,
+crt-container h2,
+crt-container h3,
+crt-container h4,
+crt-container h5,
+crt-container h6,
+crt-container li,
+crt-container td,
+crt-container th,
+crt-container label,
+crt-container button,
+crt-container a,
+crt-container input,
+crt-container textarea,
+crt-container pre,
+crt-container code {
+	text-shadow:
+		0 0 2px var(--crt-phosphor-glow),
+		0 0 4px var(--crt-phosphor-glow);
+}
+
+/* Slightly stronger glow for headings */
+crt-container h1,
+crt-container h2,
+crt-container h3 {
+	text-shadow:
+		0 0 3px var(--crt-phosphor-glow),
+		0 0 6px var(--crt-phosphor-glow),
+		0 0 10px var(--crt-phosphor-glow);
+}

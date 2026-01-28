@@ -27,6 +27,9 @@ import { Button } from "@mariozechner/mini-lit/dist/Button.js";
 import { Input } from "@mariozechner/mini-lit/dist/Input.js";
 import { createSystemNotification, customConvertToLlm, registerCustomMessageRenderers } from "./custom-messages.js";
 
+// Register CRT overlay component (side-effect import)
+import "../../src/components/CRTOverlay.js";
+
 // Register custom message renderers
 registerCustomMessageRenderers();
 
@@ -254,56 +257,47 @@ const renderApp = () => {
 	if (!app) return;
 
 	const appHtml = html`
-		<div class="w-full h-screen flex flex-col bg-background text-foreground overflow-hidden">
-			<!-- Header -->
-			<div class="flex items-center justify-between border-b border-border shrink-0">
-				<div class="flex items-center gap-2 px-4 py-">
-					${Button({
-						variant: "ghost",
-						size: "sm",
-						children: icon(History, "sm"),
-						onClick: () => {
-							SessionListDialog.open(
-								async (sessionId) => {
-									await loadSession(sessionId);
-								},
-								(deletedSessionId) => {
-									// Only reload if the current session was deleted
-									if (deletedSessionId === currentSessionId) {
-										newSession();
-									}
-								},
-							);
-						},
-						title: "Sessions",
-					})}
-					${Button({
-						variant: "ghost",
-						size: "sm",
-						children: icon(Plus, "sm"),
-						onClick: newSession,
-						title: "New Session",
-					})}
+		<crt-container color-mode="green">
+			<div class="w-full h-screen flex flex-col bg-background text-foreground overflow-hidden">
+				<!-- Header -->
+				<div class="flex items-center justify-between border-b border-border shrink-0">
+					<div class="flex items-center gap-2 px-4 py-">
+						${Button({
+							variant: "ghost",
+							size: "sm",
+							children: icon(History, "sm"),
+							onClick: () => {
+								SessionListDialog.open(
+									async (sessionId) => {
+										await loadSession(sessionId);
+									},
+									(deletedSessionId) => {
+										// Only reload if the current session was deleted
+										if (deletedSessionId === currentSessionId) {
+											newSession();
+										}
+									},
+								);
+							},
+							title: "Sessions",
+						})}
+						${Button({
+							variant: "ghost",
+							size: "sm",
+							children: icon(Plus, "sm"),
+							onClick: newSession,
+							title: "New Session",
+						})}
 
-					${
-						currentTitle
-							? isEditingTitle
-								? html`<div class="flex items-center gap-2">
-									${Input({
-										type: "text",
-										value: currentTitle,
-										className: "text-sm w-64",
-										onChange: async (e: Event) => {
-											const newTitle = (e.target as HTMLInputElement).value.trim();
-											if (newTitle && newTitle !== currentTitle && storage.sessions && currentSessionId) {
-												await storage.sessions.updateTitle(currentSessionId, newTitle);
-												currentTitle = newTitle;
-											}
-											isEditingTitle = false;
-											renderApp();
-										},
-										onKeyDown: async (e: KeyboardEvent) => {
-											if (e.key === "Enter") {
+						${
+							currentTitle
+								? isEditingTitle
+									? html`<div class="flex items-center gap-2">
+										${Input({
+											type: "text",
+											value: currentTitle,
+											className: "text-sm w-64",
+											onChange: async (e: Event) => {
 												const newTitle = (e.target as HTMLInputElement).value.trim();
 												if (newTitle && newTitle !== currentTitle && storage.sessions && currentSessionId) {
 													await storage.sessions.updateTitle(currentSessionId, newTitle);
@@ -311,64 +305,80 @@ const renderApp = () => {
 												}
 												isEditingTitle = false;
 												renderApp();
-											} else if (e.key === "Escape") {
-												isEditingTitle = false;
-												renderApp();
-											}
-										},
-									})}
-								</div>`
-								: html`<button
-									class="px-2 py-1 text-sm text-foreground hover:bg-secondary rounded transition-colors"
-									@click=${() => {
-										isEditingTitle = true;
-										renderApp();
-										requestAnimationFrame(() => {
-											const input = app?.querySelector('input[type="text"]') as HTMLInputElement;
-											if (input) {
-												input.focus();
-												input.select();
-											}
-										});
-									}}
-									title="Click to edit title"
-								>
-									${currentTitle}
-								</button>`
-							: html`<span class="text-base font-semibold text-foreground">Pi Web UI Example</span>`
-					}
+											},
+											onKeyDown: async (e: KeyboardEvent) => {
+												if (e.key === "Enter") {
+													const newTitle = (e.target as HTMLInputElement).value.trim();
+													if (
+														newTitle &&
+														newTitle !== currentTitle &&
+														storage.sessions &&
+														currentSessionId
+													) {
+														await storage.sessions.updateTitle(currentSessionId, newTitle);
+														currentTitle = newTitle;
+													}
+													isEditingTitle = false;
+													renderApp();
+												} else if (e.key === "Escape") {
+													isEditingTitle = false;
+													renderApp();
+												}
+											},
+										})}
+									</div>`
+									: html`<button
+										class="px-2 py-1 text-sm text-foreground hover:bg-secondary rounded transition-colors"
+										@click=${() => {
+											isEditingTitle = true;
+											renderApp();
+											requestAnimationFrame(() => {
+												const input = app?.querySelector('input[type="text"]') as HTMLInputElement;
+												if (input) {
+													input.focus();
+													input.select();
+												}
+											});
+										}}
+										title="Click to edit title"
+									>
+										${currentTitle}
+									</button>`
+								: html`<span class="text-base font-semibold text-foreground">Pi Web UI Example</span>`
+						}
+					</div>
+					<div class="flex items-center gap-1 px-2">
+						${Button({
+							variant: "ghost",
+							size: "sm",
+							children: icon(Bell, "sm"),
+							onClick: () => {
+								// Demo: Inject custom message (will appear on next agent run)
+								if (agent) {
+									agent.steer(
+										createSystemNotification(
+											"This is a custom message! It appears in the UI but is never sent to the LLM.",
+										),
+									);
+								}
+							},
+							title: "Demo: Add Custom Notification",
+						})}
+						<theme-toggle></theme-toggle>
+						${Button({
+							variant: "ghost",
+							size: "sm",
+							children: icon(Settings, "sm"),
+							onClick: () => SettingsDialog.open([new ProvidersModelsTab(), new ProxyTab()]),
+							title: "Settings",
+						})}
+					</div>
 				</div>
-				<div class="flex items-center gap-1 px-2">
-					${Button({
-						variant: "ghost",
-						size: "sm",
-						children: icon(Bell, "sm"),
-						onClick: () => {
-							// Demo: Inject custom message (will appear on next agent run)
-							if (agent) {
-								agent.steer(
-									createSystemNotification(
-										"This is a custom message! It appears in the UI but is never sent to the LLM.",
-									),
-								);
-							}
-						},
-						title: "Demo: Add Custom Notification",
-					})}
-					<theme-toggle></theme-toggle>
-					${Button({
-						variant: "ghost",
-						size: "sm",
-						children: icon(Settings, "sm"),
-						onClick: () => SettingsDialog.open([new ProvidersModelsTab(), new ProxyTab()]),
-						title: "Settings",
-					})}
-				</div>
-			</div>
 
-			<!-- Chat Panel -->
-			${chatPanel}
-		</div>
+				<!-- Chat Panel -->
+				${chatPanel}
+			</div>
+		</crt-container>
 	`;
 
 	render(appHtml, app);

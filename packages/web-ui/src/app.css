@@ -9,6 +9,9 @@
 /* biome-ignore lint/correctness/noInvalidPositionAtImportRule: fuck you */
 @import "tailwindcss";
 
+/* CRT / Phosphor overlay effect */
+@import "./components/CRTOverlay.module.css";
+
 body {
 	font-size: 16px;
 	-webkit-font-smoothing: antialiased;
