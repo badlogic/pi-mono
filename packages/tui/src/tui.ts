@@ -772,7 +772,7 @@ export class TUI extends Container {
 	 * @returns Cursor position { row, col } or null if no marker found
 	 */
 	private extractCursorPosition(lines: string[]): { row: number; col: number } | null {
-		for (let row = 0; row < lines.length; row++) {
+		for (let row = lines.length - 1; row >= 0; row--) {
 			const line = lines[row];
 			const markerIndex = line.indexOf(CURSOR_MARKER);
 			if (markerIndex !== -1) {
