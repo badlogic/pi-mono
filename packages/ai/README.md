@@ -59,6 +59,7 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - **OpenRouter**
 - **Vercel AI Gateway**
 - **MiniMax**
+- **Volcengine**
 - **GitHub Copilot** (requires OAuth, see below)
 - **Google Gemini CLI** (requires OAuth, see below)
 - **Antigravity** (requires OAuth, see below)
@@ -893,6 +894,7 @@ In Node.js environments, you can set environment variables to avoid passing API 
 | OpenRouter | `OPENROUTER_API_KEY` |
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` |
 | zAI | `ZAI_API_KEY` |
+| Volcengine | `VOLCENGINE_API_KEY` |
 | MiniMax | `MINIMAX_API_KEY` |
 | GitHub Copilot | `COPILOT_GITHUB_TOKEN` or `GH_TOKEN` or `GITHUB_TOKEN` |
 

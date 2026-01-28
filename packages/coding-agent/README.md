@@ -94,6 +94,7 @@ For each built-in provider, pi maintains a list of tool-capable models, updated 
 - ZAI
 - OpenCode Zen
 - MiniMax
+- Volcengine
 
 See [docs/providers.md](docs/providers.md) for detailed setup instructions.
 

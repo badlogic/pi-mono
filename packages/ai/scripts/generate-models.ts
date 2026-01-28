@@ -964,6 +964,48 @@ async function generateModels() {
 	];
 	allModels.push(...antigravityModels);
 
+	const VOLCENGINE_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+	const VOLCENGINE_CODE_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v3";
+	const volcengineModels: Model<"openai-completions">[] = [
+		{
+			id: "ark-code-latest",
+			name: "Coding Plan",
+			api: "openai-completions",
+			provider: "volcengine",
+			baseUrl: VOLCENGINE_CODE_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 96000,
+			maxTokens: 32000,
+		},
+		{
+			id: "doubao-seed-1-8-251228",
+			name: "Doubao-Seed-1.8",
+			api: "openai-completions",
+			provider: "volcengine",
+			baseUrl: VOLCENGINE_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0.17, output: 1.1, cacheRead: 0.03, cacheWrite: 0.002 },
+			contextWindow: 256000,
+			maxTokens: 64000,
+		},
+		{
+			id: "doubao-seed-code-preview-251028",
+			name: "Doubao-Seed-Code",
+			api: "openai-completions",
+			provider: "volcengine",
+			baseUrl: VOLCENGINE_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0.11, output: 0.28, cacheRead: 0.023, cacheWrite: 0.002 },
+			contextWindow: 256000,
+			maxTokens: 64000,
+		},
+	];
+	allModels.push(...volcengineModels);
+
 	const VERTEX_BASE_URL = "https://{location}-aiplatform.googleapis.com";
 	const vertexModels: Model<"google-vertex">[] = [
 		{
