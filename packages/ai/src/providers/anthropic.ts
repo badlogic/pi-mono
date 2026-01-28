@@ -304,10 +304,20 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 					if (event.delta.stop_reason) {
 						output.stopReason = mapStopReason(event.delta.stop_reason);
 					}
-					output.usage.input = event.usage.input_tokens || 0;
-					output.usage.output = event.usage.output_tokens || 0;
-					output.usage.cacheRead = event.usage.cache_read_input_tokens || 0;
-					output.usage.cacheWrite = event.usage.cache_creation_input_tokens || 0;
+					// Only update usage fields if present (not null).
+					// Preserves input_tokens from message_start when proxies omit it in message_delta.
+					if (event.usage.input_tokens != null) {
+						output.usage.input = event.usage.input_tokens;
+					}
+					if (event.usage.output_tokens != null) {
+						output.usage.output = event.usage.output_tokens;
+					}
+					if (event.usage.cache_read_input_tokens != null) {
+						output.usage.cacheRead = event.usage.cache_read_input_tokens;
+					}
+					if (event.usage.cache_creation_input_tokens != null) {
+						output.usage.cacheWrite = event.usage.cache_creation_input_tokens;
+					}
 					// Anthropic doesn't provide total_tokens, compute from components
 					output.usage.totalTokens =
 						output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
