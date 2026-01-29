@@ -909,6 +909,19 @@ const response = await complete(model, context, {
 });
 ```
 
+#### Cache Retention
+
+Set `PI_CACHE_RETENTION=long` to extend prompt cache retention:
+
+| Provider | Default | With `PI_CACHE_RETENTION=long` |
+|----------|---------|-------------------------------|
+| Anthropic | 5 minutes | 1 hour |
+| OpenAI | in-memory | 24 hours |
+
+This only affects direct API calls to `api.anthropic.com` and `api.openai.com`. Proxies and other providers are unaffected.
+
+> **Note**: Extended cache retention may increase costs for Anthropic (cache writes are charged at a higher rate). OpenAI's 24h retention has no additional cost.
+
 ### Checking Environment Variables
 
 ```typescript

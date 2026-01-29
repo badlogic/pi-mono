@@ -307,6 +307,25 @@ describe("totalTokens field", () => {
 	});
 
 	// =========================================================================
+	// Hugging Face
+	// =========================================================================
+
+	describe.skipIf(!process.env.HF_TOKEN)("Hugging Face", () => {
+		it("Kimi-K2.5 - should return totalTokens equal to sum of components", { retry: 3, timeout: 60000 }, async () => {
+			const llm = getModel("huggingface", "moonshotai/Kimi-K2.5");
+
+			console.log(`\nHugging Face / ${llm.id}:`);
+			const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.HF_TOKEN });
+
+			logUsage("First request", first);
+			logUsage("Second request", second);
+
+			assertTotalTokensEqualsComponents(first);
+			assertTotalTokensEqualsComponents(second);
+		});
+	});
+
+	// =========================================================================
 	// z.ai
 	// =========================================================================
 

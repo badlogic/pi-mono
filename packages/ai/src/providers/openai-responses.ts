@@ -18,6 +18,22 @@ import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 
+/**
+ * Get prompt cache retention based on PI_CACHE_RETENTION env var.
+ * Only applies to direct OpenAI API calls (api.openai.com).
+ * Returns '24h' for long retention, undefined for default (in-memory).
+ */
+function getPromptCacheRetention(baseUrl: string): "24h" | undefined {
+	if (
+		typeof process !== "undefined" &&
+		process.env.PI_CACHE_RETENTION === "long" &&
+		baseUrl.includes("api.openai.com")
+	) {
+		return "24h";
+	}
+	return undefined;
+}
+
 // OpenAI Responses-specific options
 export interface OpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -175,6 +191,7 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		input: messages,
 		stream: true,
 		prompt_cache_key: options?.sessionId,
+		prompt_cache_retention: getPromptCacheRetention(model.baseUrl),
 	};
 
 	if (options?.maxTokens) {

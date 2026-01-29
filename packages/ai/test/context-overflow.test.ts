@@ -367,6 +367,22 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
+	// Hugging Face
+	// Uses OpenAI-compatible Inference Router
+	// =============================================================================
+
+	describe.skipIf(!process.env.HF_TOKEN)("Hugging Face", () => {
+		it("Kimi-K2.5 - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("huggingface", "moonshotai/Kimi-K2.5");
+			const result = await testContextOverflow(model, process.env.HF_TOKEN!);
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
 	// z.ai
 	// Special case: Sometimes accepts overflow silently, sometimes rate limits
 	// Detection via usage.input > contextWindow when successful

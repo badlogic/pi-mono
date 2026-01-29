@@ -2,9 +2,18 @@
 
 ## [Unreleased]
 
+
 ### Fixed
 
 - External edits to `settings.json` are now preserved when pi reloads or saves unrelated settings. Previously, editing settings.json directly (e.g., removing a package from `packages` array) would be silently reverted on next pi startup when automatic setters like `setLastChangelogVersion()` triggered a save.
+### Added
+
+- Added shell-style keybindings: `alt+b`/`alt+f` for word navigation, `ctrl+d` for delete character forward (when editor has text) ([#1043](https://github.com/badlogic/pi-mono/issues/1043) by [@jasonish](https://github.com/jasonish))
+
+### Fixed
+
+- Empty array in package filter now disables all resources instead of falling back to manifest defaults ([#1044](https://github.com/badlogic/pi-mono/issues/1044))
+- Auto-retry counter now resets after each successful LLM response instead of accumulating across tool-use turns ([#1019](https://github.com/badlogic/pi-mono/issues/1019))
 
 ## [0.50.1] - 2026-01-26
 

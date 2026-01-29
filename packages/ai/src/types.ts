@@ -35,6 +35,7 @@ export type KnownProvider =
 	| "mistral"
 	| "minimax"
 	| "minimax-cn"
+	| "huggingface"
 	| "opencode";
 export type Provider = KnownProvider | string;
 
