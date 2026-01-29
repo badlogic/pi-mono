@@ -184,7 +184,6 @@ export class Editor implements Component, Focusable {
 	// Bracketed paste mode buffering
 	private pasteBuffer: string = "";
 	private isInPaste: boolean = false;
-	private pendingShiftEnter: boolean = false;
 
 	// Prompt history for up/down navigation
 	private history: string[] = [];
@@ -448,21 +447,6 @@ export class Editor implements Component, Focusable {
 			return;
 		}
 
-		if (this.pendingShiftEnter) {
-			if (data === "\r") {
-				this.pendingShiftEnter = false;
-				this.addNewLine();
-				return;
-			}
-			this.pendingShiftEnter = false;
-			this.insertCharacter("\\");
-		}
-
-		if (data === "\\") {
-			this.pendingShiftEnter = true;
-			return;
-		}
-
 		// Ctrl+C - let parent handle (exit/clear)
 		if (kb.matches(data, "copy")) {
 			return;
@@ -602,8 +586,7 @@ export class Editor implements Component, Focusable {
 			data === "\x1b\r" ||
 			data === "\x1b[13;2~" ||
 			(data.length > 1 && data.includes("\x1b") && data.includes("\r")) ||
-			(data === "\n" && data.length === 1) ||
-			data === "\\\r"
+			(data === "\n" && data.length === 1)
 		) {
 			this.addNewLine();
 			return;
@@ -612,6 +595,15 @@ export class Editor implements Component, Focusable {
 		// Submit (Enter)
 		if (kb.matches(data, "submit")) {
 			if (this.disableSubmit) return;
+
+			// Workaround for terminals without Shift+Enter support:
+			// If char before cursor is \, delete it and insert newline instead of submitting.
+			const currentLine = this.state.lines[this.state.cursorLine] || "";
+			if (this.state.cursorCol > 0 && currentLine[this.state.cursorCol - 1] === "\\") {
+				this.handleBackspace();
+				this.addNewLine();
+				return;
+			}
 
 			let result = this.state.lines.join("\n").trim();
 			for (const [pasteId, pasteContent] of this.pastes) {
