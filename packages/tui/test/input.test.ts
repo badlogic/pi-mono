@@ -3,23 +3,28 @@ import { describe, it } from "node:test";
 import { Input } from "../src/components/input.js";
 
 describe("Input component", () => {
-	it("treats split VS Code Shift+Enter as submit", () => {
+	it("submits value including backslash on Enter", () => {
 		const input = new Input();
 		let submitted: string | undefined;
 
-		input.setValue("hello");
 		input.onSubmit = (value) => {
 			submitted = value;
 		};
 
+		// Type hello, then backslash, then Enter
+		input.handleInput("h");
+		input.handleInput("e");
+		input.handleInput("l");
+		input.handleInput("l");
+		input.handleInput("o");
 		input.handleInput("\\");
 		input.handleInput("\r");
 
-		assert.strictEqual(submitted, "hello");
-		assert.strictEqual(input.getValue(), "hello");
+		// Input is single-line, no backslash+Enter workaround
+		assert.strictEqual(submitted, "hello\\");
 	});
 
-	it("inserts a literal backslash when not followed by Enter", () => {
+	it("inserts backslash as regular character", () => {
 		const input = new Input();
 
 		input.handleInput("\\");

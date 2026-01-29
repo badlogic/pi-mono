@@ -64,6 +64,7 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - **Google Gemini CLI** (requires OAuth, see below)
 - **Antigravity** (requires OAuth, see below)
 - **Amazon Bedrock**
+- **Kimi For Coding** (Moonshot AI, uses Anthropic-compatible API)
 - **Any OpenAI-compatible API**: Ollama, vLLM, LM Studio, etc.
 
 ## Installation
@@ -895,6 +896,7 @@ In Node.js environments, you can set environment variables to avoid passing API 
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` |
 | zAI Coding Plan | `ZAI_API_KEY` |
 | MiniMax | `MINIMAX_API_KEY` |
+| Kimi For Coding | `KIMI_API_KEY` |
 | GitHub Copilot | `COPILOT_GITHUB_TOKEN` or `GH_TOKEN` or `GITHUB_TOKEN` |
 
 When set, the library automatically uses these keys:
@@ -909,6 +911,19 @@ const response = await complete(model, context, {
   apiKey: 'sk-different-key'
 });
 ```
+
+#### Cache Retention
+
+Set `PI_CACHE_RETENTION=long` to extend prompt cache retention:
+
+| Provider | Default | With `PI_CACHE_RETENTION=long` |
+|----------|---------|-------------------------------|
+| Anthropic | 5 minutes | 1 hour |
+| OpenAI | in-memory | 24 hours |
+
+This only affects direct API calls to `api.anthropic.com` and `api.openai.com`. Proxies and other providers are unaffected.
+
+> **Note**: Extended cache retention may increase costs for Anthropic (cache writes are charged at a higher rate). OpenAI's 24h retention has no additional cost.
 
 ### Checking Environment Variables
 

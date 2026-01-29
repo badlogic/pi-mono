@@ -93,6 +93,8 @@ For each built-in provider, pi maintains a list of tool-capable models, updated 
 - Vercel AI Gateway
 - ZAI
 - OpenCode Zen
+- Hugging Face
+- Kimi For Coding
 - MiniMax
 
 See [docs/providers.md](docs/providers.md) for detailed setup instructions.
@@ -525,6 +527,7 @@ pi --thinking high "Solve this complex problem"
 |----------|-------------|
 | `PI_CODING_AGENT_DIR` | Override config directory (default: `~/.pi/agent`) |
 | `PI_SKIP_VERSION_CHECK` | Skip version check at startup |
+| `PI_CACHE_RETENTION` | Set to `long` for extended prompt cache (Anthropic: 1h, OpenAI: 24h) |
 | `VISUAL`, `EDITOR` | External editor for Ctrl+G |
 
 ---

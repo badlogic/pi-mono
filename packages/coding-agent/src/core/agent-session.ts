@@ -354,6 +354,19 @@ export class AgentSession {
 			// Track assistant message for auto-compaction (checked on agent_end)
 			if (event.message.role === "assistant") {
 				this._lastAssistantMessage = event.message;
+
+				// Reset retry counter immediately on successful assistant response
+				// This prevents accumulation across multiple LLM calls within a turn
+				const assistantMsg = event.message as AssistantMessage;
+				if (assistantMsg.stopReason !== "error" && this._retryAttempt > 0) {
+					this._emit({
+						type: "auto_retry_end",
+						success: true,
+						attempt: this._retryAttempt,
+					});
+					this._retryAttempt = 0;
+					this._resolveRetry();
+				}
 			}
 		}
 
@@ -366,16 +379,6 @@ export class AgentSession {
 			if (this._isRetryableError(msg)) {
 				const didRetry = await this._handleRetryableError(msg);
 				if (didRetry) return; // Retry was initiated, don't proceed to compaction
-			} else if (this._retryAttempt > 0) {
-				// Previous retry succeeded - emit success event and reset counter
-				this._emit({
-					type: "auto_retry_end",
-					success: true,
-					attempt: this._retryAttempt,
-				});
-				this._retryAttempt = 0;
-				// Resolve the retry promise so waitForRetry() completes
-				this._resolveRetry();
 			}
 
 			await this._checkCompaction(msg);
@@ -694,7 +697,7 @@ export class AgentSession {
 		if (!this.model) {
 			throw new Error(
 				"No model selected.\n\n" +
-					`Use /login or set an API key environment variable. See ${join(getDocsPath(), "authentication.md")}\n\n` +
+					`Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}\n\n` +
 					"Then use /model to select a model.",
 			);
 		}
@@ -712,7 +715,7 @@ export class AgentSession {
 			}
 			throw new Error(
 				`No API key found for ${this.model.provider}.\n\n` +
-					`Use /login or set an API key environment variable. See ${join(getDocsPath(), "authentication.md")}`,
+					`Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}`,
 			);
 		}
 

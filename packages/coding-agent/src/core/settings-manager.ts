@@ -81,6 +81,7 @@ export interface Settings {
 	doubleEscapeAction?: "fork" | "tree"; // Action for double-escape with empty editor (default: "tree")
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
 	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
+	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
 }
@@ -123,6 +124,8 @@ export class SettingsManager {
 	private inMemoryProjectSettings: Settings; // For in-memory mode
 	private settings: Settings;
 	private persist: boolean;
+	private modifiedFields = new Set<keyof Settings>(); // Track fields modified during session
+	private modifiedNestedFields = new Map<keyof Settings, Set<string>>(); // Track nested field modifications
 
 	private constructor(
 		settingsPath: string | null,
@@ -231,6 +234,17 @@ export class SettingsManager {
 		this.settings = deepMergeSettings(this.settings, overrides);
 	}
 
+	/** Mark a field as modified during this session */
+	private markModified(field: keyof Settings, nestedKey?: string): void {
+		this.modifiedFields.add(field);
+		if (nestedKey) {
+			if (!this.modifiedNestedFields.has(field)) {
+				this.modifiedNestedFields.set(field, new Set());
+			}
+			this.modifiedNestedFields.get(field)!.add(nestedKey);
+		}
+	}
+
 	private save(): void {
 		if (this.persist && this.settingsPath) {
 			try {
@@ -239,13 +253,33 @@ export class SettingsManager {
 					mkdirSync(dir, { recursive: true });
 				}
 
-				// Re-read current file to preserve any settings added externally while running
+				// Re-read current file to get latest external changes
 				const currentFileSettings = SettingsManager.loadFromFile(this.settingsPath);
-				// Merge: file settings as base, globalSettings (in-memory changes) as overrides
-				const mergedSettings = deepMergeSettings(currentFileSettings, this.globalSettings);
-				this.globalSettings = mergedSettings;
 
-				// Save merged settings (project settings are read-only)
+				// Start with file settings as base - preserves external edits
+				const mergedSettings: Settings = { ...currentFileSettings };
+
+				// Only override with in-memory values for fields that were explicitly modified during this session
+				for (const field of this.modifiedFields) {
+					const value = this.globalSettings[field];
+
+					// Handle nested objects specially - merge at nested level to preserve unmodified nested keys
+					if (this.modifiedNestedFields.has(field) && typeof value === "object" && value !== null) {
+						const nestedModified = this.modifiedNestedFields.get(field)!;
+						const baseNested = (currentFileSettings[field] as Record<string, unknown>) ?? {};
+						const inMemoryNested = value as Record<string, unknown>;
+						const mergedNested = { ...baseNested };
+						for (const nestedKey of nestedModified) {
+							mergedNested[nestedKey] = inMemoryNested[nestedKey];
+						}
+						(mergedSettings as Record<string, unknown>)[field] = mergedNested;
+					} else {
+						// For top-level primitives and arrays, use the modified value directly
+						(mergedSettings as Record<string, unknown>)[field] = value;
+					}
+				}
+
+				this.globalSettings = mergedSettings;
 				writeFileSync(this.settingsPath, JSON.stringify(this.globalSettings, null, 2), "utf-8");
 			} catch (error) {
 				console.error(`Warning: Could not save settings file: ${error}`);
@@ -284,6 +318,7 @@ export class SettingsManager {
 
 	setLastChangelogVersion(version: string): void {
 		this.globalSettings.lastChangelogVersion = version;
+		this.markModified("lastChangelogVersion");
 		this.save();
 	}
 
@@ -297,17 +332,21 @@ export class SettingsManager {
 
 	setDefaultProvider(provider: string): void {
 		this.globalSettings.defaultProvider = provider;
+		this.markModified("defaultProvider");
 		this.save();
 	}
 
 	setDefaultModel(modelId: string): void {
 		this.globalSettings.defaultModel = modelId;
+		this.markModified("defaultModel");
 		this.save();
 	}
 
 	setDefaultModelAndProvider(provider: string, modelId: string): void {
 		this.globalSettings.defaultProvider = provider;
 		this.globalSettings.defaultModel = modelId;
+		this.markModified("defaultProvider");
+		this.markModified("defaultModel");
 		this.save();
 	}
 
@@ -317,6 +356,7 @@ export class SettingsManager {
 
 	setSteeringMode(mode: "all" | "one-at-a-time"): void {
 		this.globalSettings.steeringMode = mode;
+		this.markModified("steeringMode");
 		this.save();
 	}
 
@@ -326,6 +366,7 @@ export class SettingsManager {
 
 	setFollowUpMode(mode: "all" | "one-at-a-time"): void {
 		this.globalSettings.followUpMode = mode;
+		this.markModified("followUpMode");
 		this.save();
 	}
 
@@ -335,6 +376,7 @@ export class SettingsManager {
 
 	setTheme(theme: string): void {
 		this.globalSettings.theme = theme;
+		this.markModified("theme");
 		this.save();
 	}
 
@@ -344,6 +386,7 @@ export class SettingsManager {
 
 	setDefaultThinkingLevel(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh"): void {
 		this.globalSettings.defaultThinkingLevel = level;
+		this.markModified("defaultThinkingLevel");
 		this.save();
 	}
 
@@ -356,6 +399,7 @@ export class SettingsManager {
 			this.globalSettings.compaction = {};
 		}
 		this.globalSettings.compaction.enabled = enabled;
+		this.markModified("compaction", "enabled");
 		this.save();
 	}
 
@@ -390,6 +434,7 @@ export class SettingsManager {
 			this.globalSettings.retry = {};
 		}
 		this.globalSettings.retry.enabled = enabled;
+		this.markModified("retry", "enabled");
 		this.save();
 	}
 
@@ -407,6 +452,7 @@ export class SettingsManager {
 
 	setHideThinkingBlock(hide: boolean): void {
 		this.globalSettings.hideThinkingBlock = hide;
+		this.markModified("hideThinkingBlock");
 		this.save();
 	}
 
@@ -416,6 +462,7 @@ export class SettingsManager {
 
 	setShellPath(path: string | undefined): void {
 		this.globalSettings.shellPath = path;
+		this.markModified("shellPath");
 		this.save();
 	}
 
@@ -425,6 +472,7 @@ export class SettingsManager {
 
 	setQuietStartup(quiet: boolean): void {
 		this.globalSettings.quietStartup = quiet;
+		this.markModified("quietStartup");
 		this.save();
 	}
 
@@ -434,6 +482,7 @@ export class SettingsManager {
 
 	setShellCommandPrefix(prefix: string | undefined): void {
 		this.globalSettings.shellCommandPrefix = prefix;
+		this.markModified("shellCommandPrefix");
 		this.save();
 	}
 
@@ -443,6 +492,7 @@ export class SettingsManager {
 
 	setCollapseChangelog(collapse: boolean): void {
 		this.globalSettings.collapseChangelog = collapse;
+		this.markModified("collapseChangelog");
 		this.save();
 	}
 
@@ -452,6 +502,7 @@ export class SettingsManager {
 
 	setPackages(packages: PackageSource[]): void {
 		this.globalSettings.packages = packages;
+		this.markModified("packages");
 		this.save();
 	}
 
@@ -468,6 +519,7 @@ export class SettingsManager {
 
 	setExtensionPaths(paths: string[]): void {
 		this.globalSettings.extensions = paths;
+		this.markModified("extensions");
 		this.save();
 	}
 
@@ -484,6 +536,7 @@ export class SettingsManager {
 
 	setSkillPaths(paths: string[]): void {
 		this.globalSettings.skills = paths;
+		this.markModified("skills");
 		this.save();
 	}
 
@@ -500,6 +553,7 @@ export class SettingsManager {
 
 	setPromptTemplatePaths(paths: string[]): void {
 		this.globalSettings.prompts = paths;
+		this.markModified("prompts");
 		this.save();
 	}
 
@@ -516,6 +570,7 @@ export class SettingsManager {
 
 	setThemePaths(paths: string[]): void {
 		this.globalSettings.themes = paths;
+		this.markModified("themes");
 		this.save();
 	}
 
@@ -532,6 +587,7 @@ export class SettingsManager {
 
 	setEnableSkillCommands(enabled: boolean): void {
 		this.globalSettings.enableSkillCommands = enabled;
+		this.markModified("enableSkillCommands");
 		this.save();
 	}
 
@@ -548,6 +604,7 @@ export class SettingsManager {
 			this.globalSettings.terminal = {};
 		}
 		this.globalSettings.terminal.showImages = show;
+		this.markModified("terminal", "showImages");
 		this.save();
 	}
 
@@ -560,6 +617,7 @@ export class SettingsManager {
 			this.globalSettings.images = {};
 		}
 		this.globalSettings.images.autoResize = enabled;
+		this.markModified("images", "autoResize");
 		this.save();
 	}
 
@@ -572,6 +630,7 @@ export class SettingsManager {
 			this.globalSettings.images = {};
 		}
 		this.globalSettings.images.blockImages = blocked;
+		this.markModified("images", "blockImages");
 		this.save();
 	}
 
@@ -581,6 +640,7 @@ export class SettingsManager {
 
 	setEnabledModels(patterns: string[] | undefined): void {
 		this.globalSettings.enabledModels = patterns;
+		this.markModified("enabledModels");
 		this.save();
 	}
 
@@ -590,6 +650,7 @@ export class SettingsManager {
 
 	setDoubleEscapeAction(action: "fork" | "tree"): void {
 		this.globalSettings.doubleEscapeAction = action;
+		this.markModified("doubleEscapeAction");
 		this.save();
 	}
 
@@ -599,6 +660,7 @@ export class SettingsManager {
 
 	setShowHardwareCursor(enabled: boolean): void {
 		this.globalSettings.showHardwareCursor = enabled;
+		this.markModified("showHardwareCursor");
 		this.save();
 	}
 
@@ -608,6 +670,17 @@ export class SettingsManager {
 
 	setEditorPaddingX(padding: number): void {
 		this.globalSettings.editorPaddingX = Math.max(0, Math.min(3, Math.floor(padding)));
+		this.markModified("editorPaddingX");
+		this.save();
+	}
+
+	getAutocompleteMaxVisible(): number {
+		return this.settings.autocompleteMaxVisible ?? 5;
+	}
+
+	setAutocompleteMaxVisible(maxVisible: number): void {
+		this.globalSettings.autocompleteMaxVisible = Math.max(3, Math.min(20, Math.floor(maxVisible)));
+		this.markModified("autocompleteMaxVisible");
 		this.save();
 	}
 

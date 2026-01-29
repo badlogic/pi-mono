@@ -35,7 +35,9 @@ export type KnownProvider =
 	| "mistral"
 	| "minimax"
 	| "minimax-cn"
-	| "opencode";
+	| "huggingface"
+	| "opencode"
+	| "kimi-coding";
 export type Provider = KnownProvider | string;
 
 export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";

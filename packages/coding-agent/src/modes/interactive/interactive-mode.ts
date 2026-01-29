@@ -230,6 +230,9 @@ export class InteractiveMode {
 	// Custom footer from extension (undefined = use built-in footer)
 	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
 
+	// Header container that holds the built-in or custom header
+	private headerContainer: Container;
+
 	// Built-in header (logo + keybinding hints + changelog)
 	private builtInHeader: Component | undefined = undefined;
 
@@ -254,6 +257,7 @@ export class InteractiveMode {
 		this.session = session;
 		this.version = VERSION;
 		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
+		this.headerContainer = new Container();
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
@@ -261,7 +265,11 @@ export class InteractiveMode {
 		this.widgetContainerBelow = new Container();
 		this.keybindings = KeybindingsManager.create();
 		const editorPaddingX = this.settingsManager.getEditorPaddingX();
-		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings, { paddingX: editorPaddingX });
+		const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
+		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings, {
+			paddingX: editorPaddingX,
+			autocompleteMaxVisible,
+		});
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
@@ -379,6 +387,9 @@ export class InteractiveMode {
 		this.fdPath = await ensureTool("fd");
 		this.setupAutocomplete(this.fdPath);
 
+		// Add header container as first child
+		this.ui.addChild(this.headerContainer);
+
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
 			const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
@@ -411,36 +422,39 @@ export class InteractiveMode {
 			this.builtInHeader = new Text(`${logo}\n${instructions}`, 1, 0);
 
 			// Setup UI layout
-			this.ui.addChild(new Spacer(1));
-			this.ui.addChild(this.builtInHeader);
-			this.ui.addChild(new Spacer(1));
+			this.headerContainer.addChild(new Spacer(1));
+			this.headerContainer.addChild(this.builtInHeader);
+			this.headerContainer.addChild(new Spacer(1));
 
 			// Add changelog if provided
 			if (this.changelogMarkdown) {
-				this.ui.addChild(new DynamicBorder());
+				this.headerContainer.addChild(new DynamicBorder());
 				if (this.settingsManager.getCollapseChangelog()) {
 					const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
 					const latestVersion = versionMatch ? versionMatch[1] : this.version;
 					const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
-					this.ui.addChild(new Text(condensedText, 1, 0));
+					this.headerContainer.addChild(new Text(condensedText, 1, 0));
 				} else {
-					this.ui.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
-					this.ui.addChild(new Spacer(1));
-					this.ui.addChild(new Markdown(this.changelogMarkdown.trim(), 1, 0, this.getMarkdownThemeWithSettings()));
-					this.ui.addChild(new Spacer(1));
+					this.headerContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
+					this.headerContainer.addChild(new Spacer(1));
+					this.headerContainer.addChild(
+						new Markdown(this.changelogMarkdown.trim(), 1, 0, this.getMarkdownThemeWithSettings()),
+					);
+					this.headerContainer.addChild(new Spacer(1));
 				}
-				this.ui.addChild(new DynamicBorder());
+				this.headerContainer.addChild(new DynamicBorder());
 			}
 		} else {
 			// Minimal header when silenced
 			this.builtInHeader = new Text("", 0, 0);
+			this.headerContainer.addChild(this.builtInHeader);
 			if (this.changelogMarkdown) {
 				// Still show changelog notification even in silent mode
-				this.ui.addChild(new Spacer(1));
+				this.headerContainer.addChild(new Spacer(1));
 				const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
 				const latestVersion = versionMatch ? versionMatch[1] : this.version;
 				const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
-				this.ui.addChild(new Text(condensedText, 1, 0));
+				this.headerContainer.addChild(new Text(condensedText, 1, 0));
 			}
 		}
 
@@ -457,15 +471,18 @@ export class InteractiveMode {
 		this.setupKeyHandlers();
 		this.setupEditorSubmitHandler();
 
+		// Initialize extensions first so resources are shown before messages
+		await this.initExtensions();
+
+		// Render initial messages AFTER showing loaded resources
+		this.renderInitialMessages();
+
 		// Start the UI
 		this.ui.start();
 		this.isInitialized = true;
 
 		// Set terminal title
 		this.updateTerminalTitle();
-
-		// Initialize extensions with TUI-based UI context
-		await this.initExtensions();
 
 		// Subscribe to agent events
 		this.subscribeToAgent();
@@ -512,8 +529,6 @@ export class InteractiveMode {
 				this.showNewVersionNotification(newVersion);
 			}
 		});
-
-		this.renderInitialMessages();
 
 		// Show startup warnings
 		const { migratedProviders, modelFallbackMessage, initialMessage, initialImages, initialMessages } = this.options;
@@ -1296,21 +1311,25 @@ export class InteractiveMode {
 			this.customHeader.dispose();
 		}
 
-		// Remove current header from UI
-		if (this.customHeader) {
-			this.ui.removeChild(this.customHeader);
-		} else {
-			this.ui.removeChild(this.builtInHeader);
-		}
+		// Find the index of the current header in the header container
+		const currentHeader = this.customHeader || this.builtInHeader;
+		const index = this.headerContainer.children.indexOf(currentHeader);
 
 		if (factory) {
-			// Create and add custom header at position 1 (after initial spacer)
+			// Create and add custom header
 			this.customHeader = factory(this.ui, theme);
-			this.ui.children.splice(1, 0, this.customHeader);
+			if (index !== -1) {
+				this.headerContainer.children[index] = this.customHeader;
+			} else {
+				// If not found (e.g. builtInHeader was never added), add at the top
+				this.headerContainer.children.unshift(this.customHeader);
+			}
 		} else {
-			// Restore built-in header at position 1
+			// Restore built-in header
 			this.customHeader = undefined;
-			this.ui.children.splice(1, 0, this.builtInHeader);
+			if (index !== -1) {
+				this.headerContainer.children[index] = this.builtInHeader;
+			}
 		}
 
 		this.ui.requestRender();
@@ -2963,6 +2982,7 @@ export class InteractiveMode {
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
 					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
+					autocompleteMaxVisible: this.settingsManager.getAutocompleteMaxVisible(),
 					quietStartup: this.settingsManager.getQuietStartup(),
 				},
 				{
@@ -3043,6 +3063,13 @@ export class InteractiveMode {
 						this.defaultEditor.setPaddingX(padding);
 						if (this.editor !== this.defaultEditor && this.editor.setPaddingX !== undefined) {
 							this.editor.setPaddingX(padding);
+						}
+					},
+					onAutocompleteMaxVisibleChange: (maxVisible) => {
+						this.settingsManager.setAutocompleteMaxVisible(maxVisible);
+						this.defaultEditor.setAutocompleteMaxVisible(maxVisible);
+						if (this.editor !== this.defaultEditor && this.editor.setAutocompleteMaxVisible !== undefined) {
+							this.editor.setAutocompleteMaxVisible(maxVisible);
 						}
 					},
 					onCancel: () => {

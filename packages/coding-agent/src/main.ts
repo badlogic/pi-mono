@@ -15,6 +15,7 @@ import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getAgentDir, getModelsPath, VERSION } from "./config.js";
 import { AuthStorage } from "./core/auth-storage.js";
+import { DEFAULT_THINKING_LEVEL } from "./core/defaults.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import type { LoadExtensionsResult } from "./core/extensions/index.js";
 import { KeybindingsManager } from "./core/keybindings.js";
@@ -399,7 +400,7 @@ function buildSessionOptions(
 
 	// Scoped models for Ctrl+P cycling - fill in default thinking level for models without explicit level
 	if (scopedModels.length > 0) {
-		const defaultThinkingLevel = settingsManager.getDefaultThinkingLevel() ?? "off";
+		const defaultThinkingLevel = settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;
 		options.scopedModels = scopedModels.map((sm) => ({
 			model: sm.model,
 			thinkingLevel: sm.thinkingLevel ?? defaultThinkingLevel,
