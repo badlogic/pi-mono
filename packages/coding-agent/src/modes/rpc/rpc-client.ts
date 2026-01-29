@@ -363,6 +363,13 @@ export class RpcClient {
 	}
 
 	/**
+	 * Set the session display name.
+	 */
+	async setSessionName(name: string): Promise<void> {
+		await this.send({ type: "set_session_name", name });
+	}
+
+	/**
 	 * Get all messages in the session.
 	 */
 	async getMessages(): Promise<AgentMessage[]> {

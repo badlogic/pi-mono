@@ -154,6 +154,7 @@ Response:
     "followUpMode": "one-at-a-time",
     "sessionFile": "/path/to/session.jsonl",
     "sessionId": "abc123",
+    "sessionName": "my-feature-work",
     "autoCompactionEnabled": true,
     "messageCount": 5,
     "pendingMessageCount": 0
@@ -161,7 +162,7 @@ Response:
 }
 ```
 
-The `model` field is a full [Model](#model) object or `null`.
+The `model` field is a full [Model](#model) object or `null`. The `sessionName` field is the display name set via `set_session_name`, or omitted if not set.
 
 #### get_messages
 
@@ -611,6 +612,25 @@ Response:
 ```
 
 Returns `{"text": null}` if no assistant messages exist.
+
+#### set_session_name
+
+Set a display name for the current session. The name appears in session listings and helps identify sessions.
+
+```json
+{"type": "set_session_name", "name": "my-feature-work"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "set_session_name",
+  "success": true
+}
+```
+
+The current session name is available via `get_state` in the `sessionName` field.
 
 ### Commands
 
