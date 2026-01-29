@@ -73,7 +73,7 @@ const GEMINI_CLI_HEADERS = {
 
 // Headers for Antigravity (sandbox endpoint) - requires specific User-Agent
 const ANTIGRAVITY_HEADERS = {
-	"User-Agent": "antigravity/1.11.5 darwin/arm64",
+	"User-Agent": "antigravity/1.15.8 darwin/arm64",
 	"X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
 	"Client-Metadata": JSON.stringify({
 		ideType: "IDE_UNSPECIFIED",

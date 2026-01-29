@@ -50,7 +50,7 @@ type SaveMode = (typeof SAVE_MODES)[number];
 const ANTIGRAVITY_ENDPOINT = "https://daily-cloudcode-pa.sandbox.googleapis.com";
 
 const ANTIGRAVITY_HEADERS = {
-	"User-Agent": "antigravity/1.11.5 darwin/arm64",
+	"User-Agent": "antigravity/1.15.8 darwin/arm64",
 	"X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
 	"Client-Metadata": JSON.stringify({
 		ideType: "IDE_UNSPECIFIED",
