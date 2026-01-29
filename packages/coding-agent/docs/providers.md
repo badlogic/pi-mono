@@ -40,6 +40,13 @@ Use `/logout` to clear credentials. Tokens are stored in `~/.pi/agent/auth.json`
 - Requires ChatGPT Plus or Pro subscription
 - Personal use only; for production, use the OpenAI Platform API
 
+### Z.AI Coding Plan
+
+- Uses the dedicated coding plan endpoint: `https://api.z.ai/api/coding/paas/v4`
+- Requires Z.AI API key from [Z.AI Open Platform](https://z.ai) with an active [Coding Plan](https://z.ai/subscribe) subscription
+- Z.AI API keys are the same for both the subscription and regular API. To use the regular API, configure a custom provider pointing at the [regular endpoint](https://docs.z.ai/api-reference/llm/chat-completion)
+- See the [docs](https://docs.z.ai/guides/llm/glm-4.7) for more about the models
+
 ## API Keys
 
 Set via environment variable:
@@ -60,7 +67,7 @@ pi
 | xAI | `XAI_API_KEY` |
 | OpenRouter | `OPENROUTER_API_KEY` |
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` |
-| ZAI | `ZAI_API_KEY` |
+| ZAI Coding Plan | `ZAI_API_KEY` |
 | OpenCode Zen | `OPENCODE_API_KEY` |
 | Hugging Face | `HF_TOKEN` |
 | Kimi For Coding | `KIMI_API_KEY` |
@@ -75,7 +82,8 @@ Store credentials in `~/.pi/agent/auth.json`:
 {
   "anthropic": { "type": "api_key", "key": "sk-ant-..." },
   "openai": { "type": "api_key", "key": "sk-..." },
-  "google": { "type": "api_key", "key": "..." }
+  "google": { "type": "api_key", "key": "..." },
+  "zai-coding-plan": { "type": "api_key", "key": "..." }
 }
 ```
 

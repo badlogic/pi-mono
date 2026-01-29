@@ -93,6 +93,8 @@ There are multiple SDK breaking changes since v0.49.3. For the quickest migratio
 - External packages (npm/git) are now configured via `packages` array in settings.json instead of `extensions`. Existing npm:/git: entries in `extensions` are auto-migrated. ([#645](https://github.com/badlogic/pi-mono/issues/645))
 - Resource loading now uses `ResourceLoader` only and settings.json uses arrays for extensions, skills, prompts, and themes ([#645](https://github.com/badlogic/pi-mono/issues/645))
 - Removed `discoverAuthStorage` and `discoverModels` from the SDK. `AuthStorage` and `ModelRegistry` now default to `~/.pi/agent` paths unless you pass an `agentDir` ([#645](https://github.com/badlogic/pi-mono/issues/645))
+- Renamed `zai` provider to `zai-coding-plan` to align with naming in models.dev and be explicit about which endpoint we use
+
 
 ### Added
 
