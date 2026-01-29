@@ -20,6 +20,10 @@
 - Fixed backslash input buffering causing delayed character display in editor and input components ([#1037](https://github.com/badlogic/pi-mono/pull/1037) by [@Perlence](https://github.com/Perlence))
 - Fixed markdown table rendering with proper row dividers and minimum column width ([#997](https://github.com/badlogic/pi-mono/pull/997) by [@tmustier](https://github.com/tmustier))
 
+### Added
+
+- Added tmux support for Kitty graphics protocol using unicode placeholders, enabling inline images to render correctly inside tmux without getting stuck during screen redraws ([#908](https://github.com/badlogic/pi-mono/pull/908) by [@ogulcancelik](https://github.com/ogulcancelik))
+
 ## [0.50.1] - 2026-01-26
 
 ## [0.50.0] - 2026-01-26
