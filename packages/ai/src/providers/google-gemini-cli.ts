@@ -55,6 +55,11 @@ export interface GoogleGeminiCliOptions extends StreamOptions {
 		level?: GoogleThinkingLevel;
 	};
 	projectId?: string;
+	/**
+	 * Antigravity version string for the User-Agent header (e.g. "1.23.0").
+	 * If not provided, uses PI_AI_ANTIGRAVITY_VERSION env var or a hardcoded default.
+	 */
+	antigravityVersion?: string;
 }
 
 const DEFAULT_ENDPOINT = "https://cloudcode-pa.googleapis.com";
@@ -71,16 +76,21 @@ const GEMINI_CLI_HEADERS = {
 	}),
 };
 
+const DEFAULT_ANTIGRAVITY_VERSION = "1.23.0";
+
 // Headers for Antigravity (sandbox endpoint) - requires specific User-Agent
-const ANTIGRAVITY_HEADERS = {
-	"User-Agent": "antigravity/1.15.8 darwin/arm64",
-	"X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-	"Client-Metadata": JSON.stringify({
-		ideType: "IDE_UNSPECIFIED",
-		platform: "PLATFORM_UNSPECIFIED",
-		pluginType: "GEMINI",
-	}),
-};
+function getAntigravityHeaders(version?: string): Record<string, string> {
+	const v = version || process.env.PI_AI_ANTIGRAVITY_VERSION || DEFAULT_ANTIGRAVITY_VERSION;
+	return {
+		"User-Agent": `antigravity/${v} darwin/arm64`,
+		"X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
+		"Client-Metadata": JSON.stringify({
+			ideType: "IDE_UNSPECIFIED",
+			platform: "PLATFORM_UNSPECIFIED",
+			pluginType: "GEMINI",
+		}),
+	};
+}
 
 // Antigravity system instruction (ported from CLIProxyAPI v6.6.89).
 const ANTIGRAVITY_SYSTEM_INSTRUCTION = `<identity>
@@ -430,7 +440,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli", GoogleGe
 
 			const requestBody = buildRequest(model, context, projectId, options, isAntigravity);
 			options?.onPayload?.(requestBody);
-			const headers = isAntigravity ? ANTIGRAVITY_HEADERS : GEMINI_CLI_HEADERS;
+			const headers = isAntigravity ? getAntigravityHeaders(options?.antigravityVersion) : GEMINI_CLI_HEADERS;
 
 			const requestHeaders = {
 				Authorization: `Bearer ${accessToken}`,
@@ -546,7 +556,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli", GoogleGe
 
 				// Set up abort handler to cancel reader when signal fires
 				const abortHandler = () => {
-					void reader.cancel().catch(() => {});
+					void reader.cancel().catch(() => { });
 				};
 				options?.signal?.addEventListener("abort", abortHandler);
 
