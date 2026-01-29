@@ -471,7 +471,10 @@ export class InteractiveMode {
 		this.setupKeyHandlers();
 		this.setupEditorSubmitHandler();
 
-		// Render initial messages before starting the UI to avoid layout jump
+		// Initialize extensions first so resources are shown before messages
+		await this.initExtensions();
+
+		// Render initial messages AFTER showing loaded resources
 		this.renderInitialMessages();
 
 		// Start the UI
@@ -480,9 +483,6 @@ export class InteractiveMode {
 
 		// Set terminal title
 		this.updateTerminalTitle();
-
-		// Initialize extensions with TUI-based UI context
-		await this.initExtensions();
 
 		// Subscribe to agent events
 		this.subscribeToAgent();
