@@ -31,6 +31,7 @@ const compat: Required<OpenAICompletionsCompat> = {
 	requiresMistralToolIds: false,
 	thinkingFormat: "openai",
 	openRouterRouting: {},
+	vercelGatewayRouting: {},
 };
 
 function buildToolResult(toolCallId: string, timestamp: number): ToolResultMessage {
