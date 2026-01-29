@@ -5,6 +5,7 @@
 ### Fixed
 
 - Fixed autocomplete for paths with spaces by supporting quoted path tokens ([#1077](https://github.com/badlogic/pi-mono/issues/1077))
+- Fixed quoted path completions to avoid duplicating closing quotes during autocomplete ([#1077](https://github.com/badlogic/pi-mono/issues/1077))
 
 ## [0.50.3] - 2026-01-29
 
