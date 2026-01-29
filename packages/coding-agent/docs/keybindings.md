@@ -27,6 +27,8 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, etc.
 | `cursorWordRight` | `alt+right`, `ctrl+right`, `alt+f` | Move cursor word right |
 | `cursorLineStart` | `home`, `ctrl+a` | Move to line start |
 | `cursorLineEnd` | `end`, `ctrl+e` | Move to line end |
+| `jumpForward` | `ctrl+]` | Jump forward to character |
+| `jumpBackward` | `ctrl+alt+]` | Jump backward to character |
 | `pageUp` | `pageUp` | Scroll up by page |
 | `pageDown` | `pageDown` | Scroll down by page |
 

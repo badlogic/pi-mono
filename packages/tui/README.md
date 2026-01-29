@@ -298,8 +298,13 @@ editor.getPaddingX();  // Get current padding
 - `Enter` - Submit
 - `Shift+Enter`, `Ctrl+Enter`, or `Alt+Enter` - New line (terminal-dependent, Alt+Enter most reliable)
 - `Tab` - Autocomplete
-- `Ctrl+K` - Delete line
+- `Ctrl+K` - Delete to end of line
+- `Ctrl+U` - Delete to start of line
+- `Ctrl+W` or `Alt+Backspace` - Delete word backwards
+- `Alt+D` or `Alt+Delete` - Delete word forwards
 - `Ctrl+A` / `Ctrl+E` - Line start/end
+- `Ctrl+]` - Jump forward to character (awaits next keypress, then moves cursor to first occurrence)
+- `Ctrl+Alt+]` - Jump backward to character
 - Arrow keys, Backspace, Delete work as expected
 
 ### Markdown
