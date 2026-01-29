@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- exits with an error when settings.json has syntax errors, preventing data loss from save operations overwriting the user content.
+
 ## [0.50.3] - 2026-01-29
 
 ### New Features

@@ -164,8 +164,9 @@ export class SettingsManager {
 			const settings = JSON.parse(content);
 			return SettingsManager.migrateSettings(settings);
 		} catch (error) {
-			console.error(`Warning: Could not read settings file ${path}: ${error}`);
-			return {};
+			console.error(`Error: Could not read settings file ${path}: ${error}`);
+			console.error(`\nPlease fix error in ${path} and try again.`);
+			process.exit(1);
 		}
 	}
 
