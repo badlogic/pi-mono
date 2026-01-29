@@ -3,17 +3,29 @@ import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import chalk from "chalk";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
-import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.js";
+import { loadThemeFromPath, type Theme, theme } from "../modes/interactive/theme/theme.js";
+import { AuthStorage } from "./auth-storage.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";
+import { ModelRegistry } from "./model-registry.js";
 
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.js";
 
 import { createEventBus, type EventBus } from "./event-bus.js";
 import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "./extensions/loader.js";
-import type { Extension, ExtensionFactory, ExtensionRuntime, LoadExtensionsResult } from "./extensions/types.js";
+import type {
+	Extension,
+	ExtensionContext,
+	ExtensionFactory,
+	ExtensionRuntime,
+	ExtensionUIContext,
+	LoadExtensionsResult,
+	SkillsDiscoverEvent,
+	SkillsDiscoverResult,
+} from "./extensions/types.js";
 import { DefaultPackageManager, type PathMetadata } from "./package-manager.js";
 import type { PromptTemplate } from "./prompt-templates.js";
 import { loadPromptTemplates } from "./prompt-templates.js";
+import { SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
 import type { Skill } from "./skills.js";
 import { loadSkills } from "./skills.js";
@@ -139,6 +151,30 @@ export interface DefaultResourceLoaderOptions {
 	systemPromptOverride?: (base: string | undefined) => string | undefined;
 	appendSystemPromptOverride?: (base: string[]) => string[];
 }
+
+const noOpUIContext: ExtensionUIContext = {
+	select: async () => undefined,
+	confirm: async () => false,
+	input: async () => undefined,
+	notify: () => {},
+	setStatus: () => {},
+	setWorkingMessage: () => {},
+	setWidget: () => {},
+	setFooter: () => {},
+	setHeader: () => {},
+	setTitle: () => {},
+	custom: async () => undefined as never,
+	setEditorText: () => {},
+	getEditorText: () => "",
+	editor: async () => undefined,
+	setEditorComponent: () => {},
+	get theme() {
+		return theme;
+	},
+	getAllThemes: () => [],
+	getTheme: () => undefined,
+	setTheme: (_theme: string | Theme) => ({ success: false, error: "UI not available" }),
+};
 
 export class DefaultResourceLoader implements ResourceLoader {
 	private cwd: string;
@@ -352,9 +388,16 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 		this.extensionsResult = this.extensionsOverride ? this.extensionsOverride(extensionsResult) : extensionsResult;
 
+		const extensionSkillPaths = this.noSkills
+			? []
+			: await this.collectExtensionSkillPaths(this.extensionsResult.extensions, this.extensionsResult.runtime);
+
 		const skillPaths = this.noSkills
-			? this.mergePaths(cliEnabledSkills, this.additionalSkillPaths)
-			: this.mergePaths([...enabledSkills, ...cliEnabledSkills], this.additionalSkillPaths);
+			? this.mergePaths(cliEnabledSkills, [...this.additionalSkillPaths, ...extensionSkillPaths])
+			: this.mergePaths(
+					[...enabledSkills, ...cliEnabledSkills],
+					[...this.additionalSkillPaths, ...extensionSkillPaths],
+				);
 
 		let skillsResult: { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
 		if (this.noSkills && skillPaths.length === 0) {
@@ -438,6 +481,65 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.appendSystemPrompt = this.appendSystemPromptOverride
 			? this.appendSystemPromptOverride(baseAppend)
 			: baseAppend;
+	}
+
+	private async collectExtensionSkillPaths(extensions: Extension[], runtime: ExtensionRuntime): Promise<string[]> {
+		const handlersExist = extensions.some((ext) => {
+			const handlers = ext.handlers.get("skills_discover");
+			return handlers !== undefined && handlers.length > 0;
+		});
+		if (!handlersExist) {
+			return [];
+		}
+
+		const ctx = this.createSkillsDiscoverContext(runtime);
+		const event: SkillsDiscoverEvent = { type: "skills_discover", cwd: this.cwd };
+		const directories: string[] = [];
+
+		for (const ext of extensions) {
+			const handlers = ext.handlers.get("skills_discover");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					const handlerResult = await handler(event, ctx);
+					const result = handlerResult as SkillsDiscoverResult | undefined;
+					if (result?.additionalDirectories?.length) {
+						directories.push(...result.additionalDirectories);
+					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					console.error(chalk.yellow(`Warning: skills_discover handler failed (${ext.path}): ${message}`));
+				}
+			}
+		}
+
+		return directories;
+	}
+
+	private createSkillsDiscoverContext(runtime: ExtensionRuntime): ExtensionContext {
+		const authStorage = new AuthStorage(join(this.agentDir, "auth.json"));
+		const modelRegistry = new ModelRegistry(authStorage, join(this.agentDir, "models.json"));
+		const sessionManager = SessionManager.inMemory(this.cwd);
+
+		for (const { name, config } of runtime.pendingProviderRegistrations) {
+			modelRegistry.registerProvider(name, config);
+		}
+
+		return {
+			ui: noOpUIContext,
+			hasUI: false,
+			cwd: this.cwd,
+			sessionManager,
+			modelRegistry,
+			model: undefined,
+			isIdle: () => true,
+			abort: () => {},
+			hasPendingMessages: () => false,
+			shutdown: () => {},
+			getContextUsage: () => undefined,
+			compact: () => {},
+		};
 	}
 
 	private mergePaths(primary: string[], additional: string[]): string[] {
