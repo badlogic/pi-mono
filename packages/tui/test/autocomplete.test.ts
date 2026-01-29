@@ -230,5 +230,86 @@ describe("CombinedAutocompleteProvider", () => {
 			assert.ok(values?.includes("@src/components/Button.tsx"));
 			assert.ok(!values?.includes("@src/utils/helpers.ts"));
 		});
+
+		test("quotes paths with spaces for @ suggestions", () => {
+			setupFolder(baseDir, {
+				dirs: ["my folder"],
+				files: {
+					"my folder/test.txt": "content",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@my";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			const values = result?.items.map((item) => item.value);
+			assert.ok(values?.includes('@"my folder/'));
+		});
+
+		test("continues autocomplete inside quoted @ paths", () => {
+			setupFolder(baseDir, {
+				files: {
+					"my folder/test.txt": "content",
+					"my folder/other.txt": "content",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = '@"my folder/';
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			assert.notEqual(result, null, "Should return suggestions for quoted folder path");
+			const values = result?.items.map((item) => item.value);
+			assert.ok(values?.includes('@"my folder/test.txt"'));
+			assert.ok(values?.includes('@"my folder/other.txt"'));
+		});
+	});
+
+	describe("quoted path completion", () => {
+		let baseDir = "";
+
+		beforeEach(() => {
+			baseDir = mkdtempSync(join(tmpdir(), "pi-autocomplete-"));
+		});
+
+		afterEach(() => {
+			rmSync(baseDir, { recursive: true, force: true });
+		});
+
+		test("quotes paths with spaces for direct completion", () => {
+			setupFolder(baseDir, {
+				dirs: ["my folder"],
+				files: {
+					"my folder/test.txt": "content",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const line = "my";
+			const result = provider.getForceFileSuggestions([line], 0, line.length);
+
+			assert.notEqual(result, null, "Should return suggestions for path completion");
+			const values = result?.items.map((item) => item.value);
+			assert.ok(values?.includes('"my folder/'));
+		});
+
+		test("continues completion inside quoted paths", () => {
+			setupFolder(baseDir, {
+				files: {
+					"my folder/test.txt": "content",
+					"my folder/other.txt": "content",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const line = '"my folder/';
+			const result = provider.getForceFileSuggestions([line], 0, line.length);
+
+			assert.notEqual(result, null, "Should return suggestions for quoted folder path");
+			const values = result?.items.map((item) => item.value);
+			assert.ok(values?.includes('"my folder/test.txt"'));
+			assert.ok(values?.includes('"my folder/other.txt"'));
+		});
 	});
 });
