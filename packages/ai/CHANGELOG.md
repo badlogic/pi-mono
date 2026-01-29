@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Updated Antigravity User-Agent from 1.11.5 to 1.15.8 to fix rejected requests ([#1079](https://github.com/badlogic/pi-mono/issues/1079))
+
 ## [0.50.3] - 2026-01-29
 
 ### Added
