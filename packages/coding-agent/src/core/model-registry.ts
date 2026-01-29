@@ -31,6 +31,12 @@ const OpenRouterRoutingSchema = Type.Object({
 	order: Type.Optional(Type.Array(Type.String())),
 });
 
+// Schema for Vercel AI Gateway routing preferences
+const VercelGatewayRoutingSchema = Type.Object({
+	only: Type.Optional(Type.Array(Type.String())),
+	order: Type.Optional(Type.Array(Type.String())),
+});
+
 // Schema for OpenAI compatibility settings
 const OpenAICompletionsCompatSchema = Type.Object({
 	supportsStore: Type.Optional(Type.Boolean()),
@@ -44,6 +50,7 @@ const OpenAICompletionsCompatSchema = Type.Object({
 	requiresMistralToolIds: Type.Optional(Type.Boolean()),
 	thinkingFormat: Type.Optional(Type.Union([Type.Literal("openai"), Type.Literal("zai")])),
 	openRouterRouting: Type.Optional(OpenRouterRoutingSchema),
+	vercelGatewayRouting: Type.Optional(VercelGatewayRoutingSchema),
 });
 
 const OpenAIResponsesCompatSchema = Type.Object({

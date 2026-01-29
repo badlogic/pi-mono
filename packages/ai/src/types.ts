@@ -218,6 +218,8 @@ export interface OpenAICompletionsCompat {
 	thinkingFormat?: "openai" | "zai";
 	/** OpenRouter-specific routing preferences. Only used when baseUrl points to OpenRouter. */
 	openRouterRouting?: OpenRouterRouting;
+	/** Vercel AI Gateway routing preferences. Only used when baseUrl points to Vercel AI Gateway. */
+	vercelGatewayRouting?: VercelGatewayRouting;
 }
 
 /** Compatibility settings for OpenAI Responses APIs. */
@@ -232,6 +234,18 @@ export interface OpenAIResponsesCompat {
  */
 export interface OpenRouterRouting {
 	/** List of provider slugs to exclusively use for this request (e.g., ["amazon-bedrock", "anthropic"]). */
+	only?: string[];
+	/** List of provider slugs to try in order (e.g., ["anthropic", "openai"]). */
+	order?: string[];
+}
+
+/**
+ * Vercel AI Gateway routing preferences.
+ * Controls which upstream providers the gateway routes requests to.
+ * @see https://vercel.com/docs/ai-gateway/models-and-providers/provider-options
+ */
+export interface VercelGatewayRouting {
+	/** List of provider slugs to exclusively use for this request (e.g., ["bedrock", "anthropic"]). */
 	only?: string[];
 	/** List of provider slugs to try in order (e.g., ["anthropic", "openai"]). */
 	order?: string[];
