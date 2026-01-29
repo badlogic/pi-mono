@@ -619,7 +619,7 @@ function convertMessages(
 						type: "tool_use",
 						id: block.id,
 						name: isOAuthToken ? toClaudeCodeName(block.name) : block.name,
-						input: block.arguments,
+						input: block.arguments ?? {},
 					});
 				}
 			}
