@@ -299,13 +299,18 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		const currentLine = lines[cursorLine] || "";
 		const beforePrefix = currentLine.slice(0, cursorCol - prefix.length);
 		const afterCursor = currentLine.slice(cursorCol);
+		const isQuotedPrefix = prefix.startsWith('"') || prefix.startsWith('@"');
+		const hasLeadingQuoteAfterCursor = afterCursor.startsWith('"');
+		const hasTrailingQuoteInItem = item.value.endsWith('"');
+		const adjustedAfterCursor =
+			isQuotedPrefix && hasTrailingQuoteInItem && hasLeadingQuoteAfterCursor ? afterCursor.slice(1) : afterCursor;
 
 		// Check if we're completing a slash command (prefix starts with "/" but NOT a file path)
 		// Slash commands are at the start of the line and don't contain path separators after the first /
 		const isSlashCommand = prefix.startsWith("/") && beforePrefix.trim() === "" && !prefix.slice(1).includes("/");
 		if (isSlashCommand) {
 			// This is a command name completion
-			const newLine = `${beforePrefix}/${item.value} ${afterCursor}`;
+			const newLine = `${beforePrefix}/${item.value} ${adjustedAfterCursor}`;
 			const newLines = [...lines];
 			newLines[cursorLine] = newLine;
 
@@ -322,7 +327,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			// Don't add space after directories so user can continue autocompleting
 			const isDirectory = item.label.endsWith("/");
 			const suffix = isDirectory ? "" : " ";
-			const newLine = `${beforePrefix + item.value}${suffix}${afterCursor}`;
+			const newLine = `${beforePrefix + item.value}${suffix}${adjustedAfterCursor}`;
 			const newLines = [...lines];
 			newLines[cursorLine] = newLine;
 
@@ -340,7 +345,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		const textBeforeCursor = currentLine.slice(0, cursorCol);
 		if (textBeforeCursor.includes("/") && textBeforeCursor.includes(" ")) {
 			// This is likely a command argument completion
-			const newLine = beforePrefix + item.value + afterCursor;
+			const newLine = beforePrefix + item.value + adjustedAfterCursor;
 			const newLines = [...lines];
 			newLines[cursorLine] = newLine;
 
@@ -356,7 +361,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		}
 
 		// For file paths, complete the path
-		const newLine = beforePrefix + item.value + afterCursor;
+		const newLine = beforePrefix + item.value + adjustedAfterCursor;
 		const newLines = [...lines];
 		newLines[cursorLine] = newLine;
 

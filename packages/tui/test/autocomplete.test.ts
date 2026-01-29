@@ -264,6 +264,26 @@ describe("CombinedAutocompleteProvider", () => {
 			assert.ok(values?.includes('@"my folder/test.txt"'));
 			assert.ok(values?.includes('@"my folder/other.txt"'));
 		});
+
+		test("applies quoted @ completion without duplicating closing quote", () => {
+			setupFolder(baseDir, {
+				files: {
+					"my folder/test.txt": "content",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = '@"my folder/te"';
+			const cursorCol = line.length - 1;
+			const result = provider.getSuggestions([line], 0, cursorCol);
+
+			assert.notEqual(result, null, "Should return suggestions for quoted @ path");
+			const item = result?.items.find((entry) => entry.value === '@"my folder/test.txt"');
+			assert.ok(item, "Should find test.txt suggestion");
+
+			const applied = provider.applyCompletion([line], 0, cursorCol, item!, result!.prefix);
+			assert.strictEqual(applied.lines[0], '@"my folder/test.txt" ');
+		});
 	});
 
 	describe("quoted path completion", () => {
@@ -310,6 +330,26 @@ describe("CombinedAutocompleteProvider", () => {
 			const values = result?.items.map((item) => item.value);
 			assert.ok(values?.includes('"my folder/test.txt"'));
 			assert.ok(values?.includes('"my folder/other.txt"'));
+		});
+
+		test("applies quoted completion without duplicating closing quote", () => {
+			setupFolder(baseDir, {
+				files: {
+					"my folder/test.txt": "content",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const line = '"my folder/te"';
+			const cursorCol = line.length - 1;
+			const result = provider.getForceFileSuggestions([line], 0, cursorCol);
+
+			assert.notEqual(result, null, "Should return suggestions for quoted path");
+			const item = result?.items.find((entry) => entry.value === '"my folder/test.txt"');
+			assert.ok(item, "Should find test.txt suggestion");
+
+			const applied = provider.applyCompletion([line], 0, cursorCol, item!, result!.prefix);
+			assert.strictEqual(applied.lines[0], '"my folder/test.txt"');
 		});
 	});
 });
