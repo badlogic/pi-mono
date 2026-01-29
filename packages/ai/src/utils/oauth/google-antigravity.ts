@@ -141,8 +141,8 @@ async function discoverProject(accessToken: string, onProgress?: (message: strin
 	const headers = {
 		Authorization: `Bearer ${accessToken}`,
 		"Content-Type": "application/json",
-		"User-Agent": "google-api-nodejs-client/9.15.1",
-		"X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
+		"User-Agent": "google-api-nodejs-client/10.3.0",
+		"X-Goog-Api-Client": "gl-node/22.18.0",
 		"Client-Metadata": JSON.stringify({
 			ideType: "IDE_UNSPECIFIED",
 			platform: "PLATFORM_UNSPECIFIED",
