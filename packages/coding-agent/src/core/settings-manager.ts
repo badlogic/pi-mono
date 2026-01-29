@@ -138,7 +138,7 @@ export class SettingsManager {
 		this.persist = persist;
 		this.globalSettings = initialSettings;
 		this.inMemoryProjectSettings = {};
-		const projectSettings = this.loadProjectSettings();
+		const projectSettings = this.loadProjectSettings() ?? {};
 		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
 	}
 
@@ -146,7 +146,7 @@ export class SettingsManager {
 	static create(cwd: string = process.cwd(), agentDir: string = getAgentDir()): SettingsManager {
 		const settingsPath = join(agentDir, "settings.json");
 		const projectSettingsPath = join(cwd, CONFIG_DIR_NAME, "settings.json");
-		const globalSettings = SettingsManager.loadFromFile(settingsPath);
+		const globalSettings = SettingsManager.loadFromFile(settingsPath) ?? {};
 		return new SettingsManager(settingsPath, projectSettingsPath, globalSettings, true);
 	}
 
@@ -155,7 +155,7 @@ export class SettingsManager {
 		return new SettingsManager(null, null, settings, false);
 	}
 
-	private static loadFromFile(path: string): Settings {
+	private static loadFromFile(path: string): Settings | null {
 		if (!existsSync(path)) {
 			return {};
 		}
@@ -165,7 +165,7 @@ export class SettingsManager {
 			return SettingsManager.migrateSettings(settings);
 		} catch (error) {
 			console.error(`Warning: Could not read settings file ${path}: ${error}`);
-			return {};
+			return null;
 		}
 	}
 
@@ -201,7 +201,7 @@ export class SettingsManager {
 		return settings as Settings;
 	}
 
-	private loadProjectSettings(): Settings {
+	private loadProjectSettings(): Settings | null {
 		// In-memory mode: return stored in-memory project settings
 		if (!this.persist) {
 			return structuredClone(this.inMemoryProjectSettings);
@@ -217,7 +217,7 @@ export class SettingsManager {
 			return SettingsManager.migrateSettings(settings);
 		} catch (error) {
 			console.error(`Warning: Could not read project settings file: ${error}`);
-			return {};
+			return null;
 		}
 	}
 
@@ -226,7 +226,7 @@ export class SettingsManager {
 	}
 
 	getProjectSettings(): Settings {
-		return this.loadProjectSettings();
+		return this.loadProjectSettings() ?? {};
 	}
 
 	/** Apply additional overrides on top of current settings */
@@ -255,6 +255,15 @@ export class SettingsManager {
 
 				// Re-read current file to get latest external changes
 				const currentFileSettings = SettingsManager.loadFromFile(this.settingsPath);
+
+				// If we couldn't load the file (e.g. parse error), don't overwrite it
+				// to avoid losing user settings due to minor syntax errors like trailing commas.
+				if (currentFileSettings === null) {
+					console.error(
+						`Aborting save to ${this.settingsPath} because it is currently corrupted. Please fix the file manually.`,
+					);
+					return;
+				}
 
 				// Start with file settings as base - preserves external edits
 				const mergedSettings: Settings = { ...currentFileSettings };
@@ -287,7 +296,7 @@ export class SettingsManager {
 		}
 
 		// Always re-merge to update active settings (needed for both file and inMemory modes)
-		const projectSettings = this.loadProjectSettings();
+		const projectSettings = this.loadProjectSettings() ?? {};
 		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
 	}
 
@@ -507,7 +516,7 @@ export class SettingsManager {
 	}
 
 	setProjectPackages(packages: PackageSource[]): void {
-		const projectSettings = this.loadProjectSettings();
+		const projectSettings = this.loadProjectSettings() ?? {};
 		projectSettings.packages = packages;
 		this.saveProjectSettings(projectSettings);
 		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
@@ -524,7 +533,7 @@ export class SettingsManager {
 	}
 
 	setProjectExtensionPaths(paths: string[]): void {
-		const projectSettings = this.loadProjectSettings();
+		const projectSettings = this.loadProjectSettings() ?? {};
 		projectSettings.extensions = paths;
 		this.saveProjectSettings(projectSettings);
 		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
@@ -541,7 +550,7 @@ export class SettingsManager {
 	}
 
 	setProjectSkillPaths(paths: string[]): void {
-		const projectSettings = this.loadProjectSettings();
+		const projectSettings = this.loadProjectSettings() ?? {};
 		projectSettings.skills = paths;
 		this.saveProjectSettings(projectSettings);
 		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
@@ -558,7 +567,7 @@ export class SettingsManager {
 	}
 
 	setProjectPromptTemplatePaths(paths: string[]): void {
-		const projectSettings = this.loadProjectSettings();
+		const projectSettings = this.loadProjectSettings() ?? {};
 		projectSettings.prompts = paths;
 		this.saveProjectSettings(projectSettings);
 		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
@@ -575,7 +584,7 @@ export class SettingsManager {
 	}
 
 	setProjectThemePaths(paths: string[]): void {
-		const projectSettings = this.loadProjectSettings();
+		const projectSettings = this.loadProjectSettings() ?? {};
 		projectSettings.themes = paths;
 		this.saveProjectSettings(projectSettings);
 		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
