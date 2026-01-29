@@ -30,6 +30,22 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { adjustMaxTokensForThinking, buildBaseOptions } from "./simple-options.js";
 import { transformMessages } from "./transform-messages.js";
 
+/**
+ * Get cache TTL based on PI_CACHE_RETENTION env var.
+ * Only applies to direct Anthropic API calls (api.anthropic.com).
+ * Returns '1h' for long retention, undefined for default (5m).
+ */
+function getCacheTtl(baseUrl: string): "1h" | undefined {
+	if (
+		typeof process !== "undefined" &&
+		process.env.PI_CACHE_RETENTION === "long" &&
+		baseUrl.includes("api.anthropic.com")
+	) {
+		return "1h";
+	}
+	return undefined;
+}
+
 // Stealth mode: Mimic Claude Code's tool naming exactly
 const claudeCodeVersion = "2.1.2";
 
@@ -452,6 +468,7 @@ function buildParams(
 	};
 
 	// For OAuth tokens, we MUST include Claude Code identity
+	const cacheTtl = getCacheTtl(model.baseUrl);
 	if (isOAuthToken) {
 		params.system = [
 			{
@@ -459,6 +476,7 @@ function buildParams(
 				text: "You are Claude Code, Anthropic's official CLI for Claude.",
 				cache_control: {
 					type: "ephemeral",
+					...(cacheTtl && { ttl: cacheTtl }),
 				},
 			},
 		];
@@ -468,6 +486,7 @@ function buildParams(
 				text: sanitizeSurrogates(context.systemPrompt),
 				cache_control: {
 					type: "ephemeral",
+					...(cacheTtl && { ttl: cacheTtl }),
 				},
 			});
 		}
@@ -479,6 +498,7 @@ function buildParams(
 				text: sanitizeSurrogates(context.systemPrompt),
 				cache_control: {
 					type: "ephemeral",
+					...(cacheTtl && { ttl: cacheTtl }),
 				},
 			},
 		];
@@ -655,7 +675,8 @@ function convertMessages(
 					lastBlock &&
 					(lastBlock.type === "text" || lastBlock.type === "image" || lastBlock.type === "tool_result")
 				) {
-					(lastBlock as any).cache_control = { type: "ephemeral" };
+					const cacheTtl = getCacheTtl(model.baseUrl);
+					(lastBlock as any).cache_control = { type: "ephemeral", ...(cacheTtl && { ttl: cacheTtl }) };
 				}
 			}
 		}
