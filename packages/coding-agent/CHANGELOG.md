@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Session selector (`/resume`) now supports named-only filter toggle (default `Ctrl+N`, configurable via `toggleSessionNamedFilter`) to show only named sessions ([#862](https://github.com/badlogic/pi-mono/issues/862))
+
 ## [0.50.3] - 2026-01-29
 
 ### New Features
@@ -56,10 +62,6 @@
 - Fixed Anthropic provider to preserve input token counts when proxies omit them in `message_delta` events ([#1045](https://github.com/badlogic/pi-mono/issues/1045))
 - Fixed `autocompleteMaxVisible` setting not persisting to `settings.json`
 
-### Fixed
-
-- Empty array in package filter now disables all resources instead of falling back to manifest defaults ([#1044](https://github.com/badlogic/pi-mono/issues/1044))
-
 ## [0.50.1] - 2026-01-26
 
 ### Fixed
@@ -70,10 +72,6 @@
 - Fixed `/hotkeys` output to title-case extension hotkeys ([#969](https://github.com/badlogic/pi-mono/pull/969) by [@Perlence](https://github.com/Perlence))
 - Fixed model catalog generation to exclude deprecated OpenCode Zen models ([#970](https://github.com/badlogic/pi-mono/pull/970) by [@DanielTatarkin](https://github.com/DanielTatarkin))
 - Fixed git extension removal to prune empty directories
-
-### Added
-
-- Session selector (`/resume`) now supports named-only filter toggle (default `Ctrl+N`, configurable via `toggleSessionNamedFilter`) to show only named sessions ([#862](https://github.com/badlogic/pi-mono/issues/862))
 
 ## [0.50.0] - 2026-01-26
 
