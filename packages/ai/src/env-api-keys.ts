@@ -105,6 +105,7 @@ export function getEnvApiKey(provider: any): string | undefined {
 		mistral: "MISTRAL_API_KEY",
 		minimax: "MINIMAX_API_KEY",
 		"minimax-cn": "MINIMAX_CN_API_KEY",
+		huggingface: "HF_TOKEN",
 		opencode: "OPENCODE_API_KEY",
 	};
 

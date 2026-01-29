@@ -93,6 +93,7 @@ For each built-in provider, pi maintains a list of tool-capable models, updated 
 - Vercel AI Gateway
 - ZAI
 - OpenCode Zen
+- Hugging Face
 - MiniMax
 
 See [docs/providers.md](docs/providers.md) for detailed setup instructions.

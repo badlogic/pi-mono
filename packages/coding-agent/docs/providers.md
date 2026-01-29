@@ -62,6 +62,7 @@ pi
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` |
 | ZAI | `ZAI_API_KEY` |
 | OpenCode Zen | `OPENCODE_API_KEY` |
+| Hugging Face | `HF_TOKEN` |
 | MiniMax | `MINIMAX_API_KEY` |
 | MiniMax (China) | `MINIMAX_CN_API_KEY` |
 

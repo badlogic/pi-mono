@@ -31,6 +31,7 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	mistral: "devstral-medium-latest",
 	minimax: "MiniMax-M2.1",
 	"minimax-cn": "MiniMax-M2.1",
+	huggingface: "moonshotai/Kimi-K2.5",
 	opencode: "claude-opus-4-5",
 };
 
