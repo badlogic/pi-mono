@@ -2,9 +2,17 @@
 
 ## [Unreleased]
 
+### New Features
+
+- **Kimi For Coding provider**: Access Moonshot AI's Anthropic-compatible coding API. Set `KIMI_API_KEY` environment variable. See [README.md#kimi-for-coding](README.md#kimi-for-coding).
+
 ### Added
 
 - Added Kimi For Coding provider support (Moonshot AI's Anthropic-compatible coding API). Set `KIMI_API_KEY` environment variable. See [README.md#kimi-for-coding](README.md#kimi-for-coding).
+
+### Fixed
+
+- Resources now appear before messages when resuming a session, preventing loaded context from appearing at the bottom of the chat.
 
 ## [0.50.2] - 2026-01-29
 
