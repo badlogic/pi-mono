@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added `autocompleteMaxVisible` option to `EditorOptions` with getter/setter methods for configurable autocomplete dropdown height ([#972](https://github.com/badlogic/pi-mono/pull/972) by [@masonc15](https://github.com/masonc15))
 - Added `alt+b` and `alt+f` as alternative keybindings for word navigation (`cursorWordLeft`, `cursorWordRight`) and `ctrl+d` for `deleteCharForward` ([#1043](https://github.com/badlogic/pi-mono/issues/1043) by [@jasonish](https://github.com/jasonish))
 
 ## [0.50.1] - 2026-01-26
