@@ -3536,6 +3536,42 @@ export const MODELS = {
 			maxTokens: 128000,
 		} satisfies Model<"openai-completions">,
 	},
+	"kimi-coding": {
+		"k2p5": {
+			id: "k2p5",
+			name: "Kimi K2.5",
+			api: "anthropic-messages",
+			provider: "kimi-coding",
+			baseUrl: "https://api.kimi.com/coding",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 262144,
+			maxTokens: 32768,
+		} satisfies Model<"anthropic-messages">,
+		"kimi-k2-thinking": {
+			id: "kimi-k2-thinking",
+			name: "Kimi K2 Thinking",
+			api: "anthropic-messages",
+			provider: "kimi-coding",
+			baseUrl: "https://api.kimi.com/coding",
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 262144,
+			maxTokens: 32768,
+		} satisfies Model<"anthropic-messages">,
+	},
 	"minimax": {
 		"MiniMax-M2": {
 			id: "MiniMax-M2",

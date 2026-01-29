@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Kimi For Coding provider support (Moonshot AI's Anthropic-compatible coding API)
+
 ## [0.50.2] - 2026-01-29
 
 ### Added

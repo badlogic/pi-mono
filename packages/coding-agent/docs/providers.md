@@ -63,6 +63,7 @@ pi
 | ZAI | `ZAI_API_KEY` |
 | OpenCode Zen | `OPENCODE_API_KEY` |
 | Hugging Face | `HF_TOKEN` |
+| Kimi For Coding | `KIMI_API_KEY` |
 | MiniMax | `MINIMAX_API_KEY` |
 | MiniMax (China) | `MINIMAX_CN_API_KEY` |
 

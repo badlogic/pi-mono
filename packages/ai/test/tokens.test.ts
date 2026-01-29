@@ -186,6 +186,14 @@ describe("Token Statistics on Abort", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding Provider", () => {
+		const llm = getModel("kimi-coding", "kimi-k2-thinking");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
+	});
+
 	describe.skipIf(!process.env.AI_GATEWAY_API_KEY)("Vercel AI Gateway Provider", () => {
 		const llm = getModel("vercel-ai-gateway", "google/gemini-2.5-flash");
 

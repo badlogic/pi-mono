@@ -395,6 +395,29 @@ describe("totalTokens field", () => {
 	});
 
 	// =========================================================================
+	// Kimi For Coding
+	// =========================================================================
+
+	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding", () => {
+		it(
+			"kimi-k2-thinking - should return totalTokens equal to sum of components",
+			{ retry: 3, timeout: 60000 },
+			async () => {
+				const llm = getModel("kimi-coding", "kimi-k2-thinking");
+
+				console.log(`\nKimi For Coding / ${llm.id}:`);
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.KIMI_API_KEY });
+
+				logUsage("First request", first);
+				logUsage("Second request", second);
+
+				assertTotalTokensEqualsComponents(first);
+				assertTotalTokensEqualsComponents(second);
+			},
+		);
+	});
+
+	// =========================================================================
 	// Vercel AI Gateway
 	// =========================================================================
 
