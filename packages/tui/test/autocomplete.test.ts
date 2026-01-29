@@ -244,7 +244,7 @@ describe("CombinedAutocompleteProvider", () => {
 			const result = provider.getSuggestions([line], 0, line.length);
 
 			const values = result?.items.map((item) => item.value);
-			assert.ok(values?.includes('@"my folder/'));
+			assert.ok(values?.includes('@"my folder/"'));
 		});
 
 		test("continues autocomplete inside quoted @ paths", () => {
@@ -256,8 +256,8 @@ describe("CombinedAutocompleteProvider", () => {
 			});
 
 			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
-			const line = '@"my folder/';
-			const result = provider.getSuggestions([line], 0, line.length);
+			const line = '@"my folder/"';
+			const result = provider.getSuggestions([line], 0, line.length - 1);
 
 			assert.notEqual(result, null, "Should return suggestions for quoted folder path");
 			const values = result?.items.map((item) => item.value);
@@ -291,7 +291,7 @@ describe("CombinedAutocompleteProvider", () => {
 
 			assert.notEqual(result, null, "Should return suggestions for path completion");
 			const values = result?.items.map((item) => item.value);
-			assert.ok(values?.includes('"my folder/'));
+			assert.ok(values?.includes('"my folder/"'));
 		});
 
 		test("continues completion inside quoted paths", () => {
@@ -303,8 +303,8 @@ describe("CombinedAutocompleteProvider", () => {
 			});
 
 			const provider = new CombinedAutocompleteProvider([], baseDir);
-			const line = '"my folder/';
-			const result = provider.getForceFileSuggestions([line], 0, line.length);
+			const line = '"my folder/"';
+			const result = provider.getForceFileSuggestions([line], 0, line.length - 1);
 
 			assert.notEqual(result, null, "Should return suggestions for quoted folder path");
 			const values = result?.items.map((item) => item.value);

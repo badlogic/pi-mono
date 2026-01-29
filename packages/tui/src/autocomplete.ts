@@ -80,7 +80,7 @@ function buildCompletionValue(
 	}
 
 	const openQuote = `${prefix}"`;
-	const closeQuote = options.isDirectory ? "" : '"';
+	const closeQuote = '"';
 	return `${openQuote}${path}${closeQuote}`;
 }
 
@@ -320,16 +320,19 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		if (prefix.startsWith("@")) {
 			// This is a file attachment completion
 			// Don't add space after directories so user can continue autocompleting
-			const isDirectory = item.value.endsWith("/");
+			const isDirectory = item.label.endsWith("/");
 			const suffix = isDirectory ? "" : " ";
 			const newLine = `${beforePrefix + item.value}${suffix}${afterCursor}`;
 			const newLines = [...lines];
 			newLines[cursorLine] = newLine;
 
+			const hasTrailingQuote = item.value.endsWith('"');
+			const cursorOffset = isDirectory && hasTrailingQuote ? item.value.length - 1 : item.value.length;
+
 			return {
 				lines: newLines,
 				cursorLine,
-				cursorCol: beforePrefix.length + item.value.length + suffix.length,
+				cursorCol: beforePrefix.length + cursorOffset + suffix.length,
 			};
 		}
 
@@ -341,10 +344,14 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			const newLines = [...lines];
 			newLines[cursorLine] = newLine;
 
+			const isDirectory = item.label.endsWith("/");
+			const hasTrailingQuote = item.value.endsWith('"');
+			const cursorOffset = isDirectory && hasTrailingQuote ? item.value.length - 1 : item.value.length;
+
 			return {
 				lines: newLines,
 				cursorLine,
-				cursorCol: beforePrefix.length + item.value.length,
+				cursorCol: beforePrefix.length + cursorOffset,
 			};
 		}
 
@@ -353,10 +360,14 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		const newLines = [...lines];
 		newLines[cursorLine] = newLine;
 
+		const isDirectory = item.label.endsWith("/");
+		const hasTrailingQuote = item.value.endsWith('"');
+		const cursorOffset = isDirectory && hasTrailingQuote ? item.value.length - 1 : item.value.length;
+
 		return {
 			lines: newLines,
 			cursorLine,
-			cursorCol: beforePrefix.length + item.value.length,
+			cursorCol: beforePrefix.length + cursorOffset,
 		};
 	}
 
