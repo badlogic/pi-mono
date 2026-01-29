@@ -813,6 +813,36 @@ bar`,
 			// Blockquotes should NOT have the default message color (yellow)
 			assert.ok(!allOutput.includes("\x1b[33m"), "Should NOT have yellow color from default style");
 		});
+
+		it("should render inline formatting inside blockquotes and reapply quote styling after", () => {
+			const markdown = new Markdown("> Quote with **bold** and `code`", 0, 0, defaultMarkdownTheme);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+
+			// Should have the quote border
+			assert.ok(
+				plainLines.some((line) => line.startsWith("│ ")),
+				"Should have quote border",
+			);
+
+			// Content should be preserved
+			const allPlain = plainLines.join(" ");
+			assert.ok(allPlain.includes("Quote with"), "Should preserve 'Quote with'");
+			assert.ok(allPlain.includes("bold"), "Should preserve 'bold'");
+			assert.ok(allPlain.includes("code"), "Should preserve 'code'");
+
+			const allOutput = lines.join("\n");
+
+			// Should have bold styling (\x1b[1m)
+			assert.ok(allOutput.includes("\x1b[1m"), "Should have bold styling");
+
+			// Should have code styling (yellow = \x1b[33m from defaultMarkdownTheme)
+			assert.ok(allOutput.includes("\x1b[33m"), "Should have code styling (yellow)");
+
+			// Should have italic from quote styling (\x1b[3m)
+			assert.ok(allOutput.includes("\x1b[3m"), "Should have italic from quote styling");
+		});
 	});
 
 	describe("Links", () => {
