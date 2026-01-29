@@ -680,6 +680,7 @@ export class SettingsManager {
 
 	setAutocompleteMaxVisible(maxVisible: number): void {
 		this.globalSettings.autocompleteMaxVisible = Math.max(3, Math.min(20, Math.floor(maxVisible)));
+		this.markModified("autocompleteMaxVisible");
 		this.save();
 	}
 
