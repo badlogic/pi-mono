@@ -13,6 +13,26 @@ function createTestTUI(cols = 80, rows = 24): TUI {
 	return new TUI(new VirtualTerminal(cols, rows));
 }
 
+/** Standard applyCompletion that replaces prefix with item.value */
+function applyCompletion(
+	lines: string[],
+	cursorLine: number,
+	cursorCol: number,
+	item: { value: string },
+	prefix: string,
+): { lines: string[]; cursorLine: number; cursorCol: number } {
+	const line = lines[cursorLine] || "";
+	const before = line.slice(0, cursorCol - prefix.length);
+	const after = line.slice(cursorCol);
+	const newLines = [...lines];
+	newLines[cursorLine] = before + item.value + after;
+	return {
+		lines: newLines,
+		cursorLine,
+		cursorCol: cursorCol - prefix.length + item.value.length,
+	};
+}
+
 describe("Editor component", () => {
 	describe("Prompt history navigation", () => {
 		it("does nothing on Up arrow when history is empty", () => {
@@ -1728,18 +1748,7 @@ describe("Editor component", () => {
 					}
 					return null;
 				},
-				applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => {
-					const line = lines[cursorLine] || "";
-					const before = line.slice(0, cursorCol - prefix.length);
-					const after = line.slice(cursorCol);
-					const newLines = [...lines];
-					newLines[cursorLine] = before + item.value + after;
-					return {
-						lines: newLines,
-						cursorLine,
-						cursorCol: cursorCol - prefix.length + item.value.length,
-					};
-				},
+				applyCompletion,
 			};
 
 			editor.setAutocompleteProvider(mockProvider);
@@ -1785,18 +1794,7 @@ describe("Editor component", () => {
 					}
 					return null;
 				},
-				applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => {
-					const line = lines[cursorLine] || "";
-					const before = line.slice(0, cursorCol - prefix.length);
-					const after = line.slice(cursorCol);
-					const newLines = [...lines];
-					newLines[cursorLine] = before + item.value + after;
-					return {
-						lines: newLines,
-						cursorLine,
-						cursorCol: cursorCol - prefix.length + item.value.length,
-					};
-				},
+				applyCompletion,
 			};
 
 			editor.setAutocompleteProvider(mockProvider);
@@ -1840,18 +1838,7 @@ describe("Editor component", () => {
 					}
 					return null;
 				},
-				applyCompletion: (lines, cursorLine, cursorCol, item, prefix) => {
-					const line = lines[cursorLine] || "";
-					const before = line.slice(0, cursorCol - prefix.length);
-					const after = line.slice(cursorCol);
-					const newLines = [...lines];
-					newLines[cursorLine] = before + item.value + after;
-					return {
-						lines: newLines,
-						cursorLine,
-						cursorCol: cursorCol - prefix.length + item.value.length,
-					};
-				},
+				applyCompletion,
 			};
 
 			editor.setAutocompleteProvider(mockProvider);
@@ -1870,6 +1857,111 @@ describe("Editor component", () => {
 			// Press Tab again to accept first suggestion
 			editor.handleInput("\t");
 			assert.strictEqual(editor.getText(), "src/");
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+		});
+
+		it("keeps suggestions open when typing in force mode (Tab-triggered)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Mock provider with both getSuggestions and getForceFileSuggestions
+			// getSuggestions only returns results for path-like patterns
+			// getForceFileSuggestions always extracts prefix and filters
+			const allFiles = [
+				{ value: "readme.md", label: "readme.md" },
+				{ value: "package.json", label: "package.json" },
+				{ value: "src/", label: "src/" },
+				{ value: "dist/", label: "dist/" },
+			];
+
+			const mockProvider: AutocompleteProvider & {
+				getForceFileSuggestions: (
+					lines: string[],
+					cursorLine: number,
+					cursorCol: number,
+				) => { items: { value: string; label: string }[]; prefix: string } | null;
+			} = {
+				getSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const prefix = text.slice(0, cursorCol);
+					// Only return suggestions for path-like patterns (contains / or starts with .)
+					if (prefix.includes("/") || prefix.startsWith(".")) {
+						const filtered = allFiles.filter((f) => f.value.toLowerCase().startsWith(prefix.toLowerCase()));
+						if (filtered.length > 0) {
+							return { items: filtered, prefix };
+						}
+					}
+					return null;
+				},
+				getForceFileSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const prefix = text.slice(0, cursorCol);
+					// Always filter files by prefix
+					const filtered = allFiles.filter((f) => f.value.toLowerCase().startsWith(prefix.toLowerCase()));
+					if (filtered.length > 0) {
+						return { items: filtered, prefix };
+					}
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Press Tab on empty prompt - should show all files (force mode)
+			editor.handleInput("\t");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Type "r" - should narrow to "readme.md" (force mode keeps suggestions open)
+			editor.handleInput("r");
+			assert.strictEqual(editor.getText(), "r");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Type "e" - should still show "readme.md"
+			editor.handleInput("e");
+			assert.strictEqual(editor.getText(), "re");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Accept with Tab
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "readme.md");
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+		});
+
+		it("hides autocomplete when backspacing slash command to empty", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Mock provider with slash commands
+			const mockProvider: AutocompleteProvider = {
+				getSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const prefix = text.slice(0, cursorCol);
+					// Only return slash command suggestions when line starts with /
+					if (prefix.startsWith("/")) {
+						const commands = [
+							{ value: "/model", label: "model", description: "Change model" },
+							{ value: "/help", label: "help", description: "Show help" },
+						];
+						const query = prefix.slice(1); // Remove leading /
+						const filtered = commands.filter((c) => c.value.startsWith(query));
+						if (filtered.length > 0) {
+							return { items: filtered, prefix };
+						}
+					}
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Type "/" - should show slash command suggestions
+			editor.handleInput("/");
+			assert.strictEqual(editor.getText(), "/");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Backspace to delete "/" - should hide autocomplete completely
+			editor.handleInput("\x7f"); // Backspace
+			assert.strictEqual(editor.getText(), "");
 			assert.strictEqual(editor.isShowingAutocomplete(), false);
 		});
 	});

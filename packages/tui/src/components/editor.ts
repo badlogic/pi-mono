@@ -174,7 +174,7 @@ export class Editor implements Component, Focusable {
 	// Autocomplete support
 	private autocompleteProvider?: AutocompleteProvider;
 	private autocompleteList?: SelectList;
-	private isAutocompleting: boolean = false;
+	private autocompleteState: "regular" | "force" | null = null;
 	private autocompletePrefix: string = "";
 
 	// Paste tracking for large pastes
@@ -351,7 +351,7 @@ export class Editor implements Component, Focusable {
 
 		// Render each visible layout line
 		// Emit hardware cursor marker only when focused and not showing autocomplete
-		const emitCursorMarker = this.focused && !this.isAutocompleting;
+		const emitCursorMarker = this.focused && !this.autocompleteState;
 
 		for (const layoutLine of visibleLines) {
 			let displayText = layoutLine.text;
@@ -406,7 +406,7 @@ export class Editor implements Component, Focusable {
 		}
 
 		// Add autocomplete list if active
-		if (this.isAutocompleting && this.autocompleteList) {
+		if (this.autocompleteState && this.autocompleteList) {
 			const autocompleteResult = this.autocompleteList.render(contentWidth);
 			for (const line of autocompleteResult) {
 				const lineWidth = visibleWidth(line);
@@ -459,7 +459,7 @@ export class Editor implements Component, Focusable {
 		}
 
 		// Handle autocomplete mode
-		if (this.isAutocompleting && this.autocompleteList) {
+		if (this.autocompleteState && this.autocompleteList) {
 			if (kb.matches(data, "selectCancel")) {
 				this.cancelAutocomplete();
 				return;
@@ -520,7 +520,7 @@ export class Editor implements Component, Focusable {
 		}
 
 		// Tab - trigger completion
-		if (kb.matches(data, "tab") && !this.isAutocompleting) {
+		if (kb.matches(data, "tab") && !this.autocompleteState) {
 			this.handleTabCompletion();
 			return;
 		}
@@ -893,7 +893,7 @@ export class Editor implements Component, Focusable {
 		}
 
 		// Check if we should trigger or update autocomplete
-		if (!this.isAutocompleting) {
+		if (!this.autocompleteState) {
 			// Auto-trigger for "/" at the start of a line (slash commands)
 			if (char === "/" && this.isAtStartOfMessage()) {
 				this.tryTriggerAutocomplete();
@@ -1050,7 +1050,7 @@ export class Editor implements Component, Focusable {
 		}
 
 		// Update or re-trigger autocomplete after backspace
-		if (this.isAutocompleting) {
+		if (this.autocompleteState) {
 			this.updateAutocomplete();
 		} else {
 			// If autocomplete was cancelled (no matches), re-trigger if we're in a completable context
@@ -1270,7 +1270,7 @@ export class Editor implements Component, Focusable {
 		}
 
 		// Update or re-trigger autocomplete after forward delete
-		if (this.isAutocompleting) {
+		if (this.autocompleteState) {
 			this.updateAutocomplete();
 		} else {
 			const currentLine = this.state.lines[this.state.cursorLine] || "";
@@ -1735,7 +1735,7 @@ export class Editor implements Component, Focusable {
 		if (suggestions && suggestions.items.length > 0) {
 			this.autocompletePrefix = suggestions.prefix;
 			this.autocompleteList = new SelectList(suggestions.items, 5, this.theme.selectList);
-			this.isAutocompleting = true;
+			this.autocompleteState = "regular";
 		} else {
 			this.cancelAutocomplete();
 		}
@@ -1751,7 +1751,7 @@ export class Editor implements Component, Focusable {
 		if (this.isInSlashCommandContext(beforeCursor) && !beforeCursor.trimStart().includes(" ")) {
 			this.handleSlashCommandCompletion();
 		} else {
-			this.forceFileAutocomplete();
+			this.forceFileAutocomplete(true);
 		}
 	}
 
@@ -1764,7 +1764,7 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 17 this job fails with https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19
 536643416/job/55932288317 havea  look at .gi
 	 */
-	private forceFileAutocomplete(): void {
+	private forceFileAutocomplete(explicitTab: boolean = false): void {
 		if (!this.autocompleteProvider) return;
 
 		// Check if provider supports force file suggestions via runtime check
@@ -1784,7 +1784,7 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 
 		if (suggestions && suggestions.items.length > 0) {
 			// If there's exactly one suggestion, apply it immediately
-			if (suggestions.items.length === 1) {
+			if (explicitTab && suggestions.items.length === 1) {
 				const item = suggestions.items[0]!;
 				this.pushUndoSnapshot();
 				this.lastAction = null;
@@ -1804,31 +1804,35 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 
 			this.autocompletePrefix = suggestions.prefix;
 			this.autocompleteList = new SelectList(suggestions.items, 5, this.theme.selectList);
-			this.isAutocompleting = true;
+			this.autocompleteState = "force";
 		} else {
 			this.cancelAutocomplete();
 		}
 	}
 
 	private cancelAutocomplete(): void {
-		this.isAutocompleting = false;
+		this.autocompleteState = null;
 		this.autocompleteList = undefined;
 		this.autocompletePrefix = "";
 	}
 
 	public isShowingAutocomplete(): boolean {
-		return this.isAutocompleting;
+		return this.autocompleteState !== null;
 	}
 
 	private updateAutocomplete(): void {
-		if (!this.isAutocompleting || !this.autocompleteProvider) return;
+		if (!this.autocompleteState || !this.autocompleteProvider) return;
+
+		if (this.autocompleteState === "force") {
+			this.forceFileAutocomplete();
+			return;
+		}
 
 		const suggestions = this.autocompleteProvider.getSuggestions(
 			this.state.lines,
 			this.state.cursorLine,
 			this.state.cursorCol,
 		);
-
 		if (suggestions && suggestions.items.length > 0) {
 			this.autocompletePrefix = suggestions.prefix;
 			// Always create new SelectList to ensure update
