@@ -25,6 +25,20 @@ const MAX_NAME_LENGTH = 64;
 /** Max description length per spec */
 const MAX_DESCRIPTION_LENGTH = 1024;
 
+/** Common dependency and build directories to skip */
+const SKIP_DIRS = new Set([
+	"node_modules",
+	".venv",
+	"venv",
+	"__pycache__",
+	".git",
+	"dist",
+	"build",
+	".cache",
+	".npm",
+	".pnpm",
+]);
+
 export interface SkillFrontmatter {
 	name?: string;
 	description?: string;
@@ -139,8 +153,8 @@ function loadSkillsFromDirInternal(dir: string, source: string, includeRootFiles
 				continue;
 			}
 
-			// Skip node_modules to avoid scanning dependencies
-			if (entry.name === "node_modules") {
+			// Skip common dependency and build directories
+			if (SKIP_DIRS.has(entry.name)) {
 				continue;
 			}
 
