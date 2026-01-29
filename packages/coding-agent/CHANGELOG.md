@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Read tool now handles macOS filenames with curly quotes (U+2019) and NFD Unicode normalization ([#1078](https://github.com/badlogic/pi-mono/issues/1078))
+
 ## [0.50.3] - 2026-01-29
 
 ### New Features
