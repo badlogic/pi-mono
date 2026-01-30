@@ -669,6 +669,9 @@ export class Editor implements Component, Focusable {
 				this.navigateHistory(-1);
 			} else if (this.historyIndex > -1 && this.isOnFirstVisualLine()) {
 				this.navigateHistory(-1);
+			} else if (this.isOnFirstVisualLine()) {
+				// Already at top - jump to start of line
+				this.moveToLineStart();
 			} else {
 				this.moveCursor(-1, 0);
 			}
@@ -677,6 +680,9 @@ export class Editor implements Component, Focusable {
 		if (kb.matches(data, "cursorDown")) {
 			if (this.historyIndex > -1 && this.isOnLastVisualLine()) {
 				this.navigateHistory(1);
+			} else if (this.isOnLastVisualLine()) {
+				// Already at bottom - jump to end of line
+				this.moveToLineEnd();
 			} else {
 				this.moveCursor(1, 0);
 			}
