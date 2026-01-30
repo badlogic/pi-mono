@@ -199,6 +199,7 @@ export class TUI extends Container {
 	public terminal: Terminal;
 	private previousLines: string[] = [];
 	private previousWidth = 0;
+	private previousHeight = 0;
 	private focusedComponent: Component | null = null;
 
 	/** Global callback for debug key (Shift+Ctrl+D). Called before input is forwarded to focused component. */
@@ -393,6 +394,7 @@ export class TUI extends Container {
 		if (force) {
 			this.previousLines = [];
 			this.previousWidth = -1; // -1 triggers widthChanged, forcing a full clear
+			this.previousHeight = -1; // -1 triggers heightChanged, forcing a full clear
 			this.cursorRow = 0;
 			this.hardwareCursorRow = 0;
 			this.maxLinesRendered = 0;
@@ -821,8 +823,9 @@ export class TUI extends Container {
 
 		newLines = this.applyLineResets(newLines);
 
-		// Width changed - need full re-render
+		// Width or height changed - need full re-render
 		const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;
+		const heightChanged = this.previousHeight !== 0 && this.previousHeight !== height;
 
 		// Helper to clear scrollback and viewport and render all new lines
 		const fullRender = (clear: boolean): void => {
@@ -847,16 +850,24 @@ export class TUI extends Container {
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
 			this.previousWidth = width;
+			this.previousHeight = height;
 		};
 
 		// First render - just output everything without clearing (assumes clean screen)
-		if (this.previousLines.length === 0 && !widthChanged) {
+		if (this.previousLines.length === 0 && !widthChanged && !heightChanged) {
 			fullRender(false);
 			return;
 		}
 
-		// Width changed - full re-render
-		if (widthChanged) {
+		// Width or height changed - full re-render
+		if (widthChanged || heightChanged) {
+			fullRender(true);
+			return;
+		}
+
+		// Content shrunk below the working area and no overlays - re-render to clear empty rows
+		// (overlays need the padding, so only do this when no overlays are active)
+		if (newLines.length < this.maxLinesRendered && this.overlayStack.length === 0) {
 			fullRender(true);
 			return;
 		}
@@ -926,6 +937,7 @@ export class TUI extends Container {
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
 			this.previousWidth = width;
+			this.previousHeight = height;
 			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
 			return;
 		}
@@ -1072,6 +1084,7 @@ export class TUI extends Container {
 
 		this.previousLines = newLines;
 		this.previousWidth = width;
+		this.previousHeight = height;
 	}
 
 	/**
