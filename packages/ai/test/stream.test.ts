@@ -440,13 +440,17 @@ describe("Generate E2E Tests", () => {
 			});
 		});
 
-		it.skipIf(!isAnthropicVertexConfigured)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			await multiTurn(llm, {
-				...anthropicVertexOptions,
-				thinkingEnabled: true,
-				thinkingBudgetTokens: 2048,
-			});
-		});
+		it.skipIf(!isAnthropicVertexConfigured)(
+			"should handle multi-turn with thinking and tools",
+			{ retry: 3 },
+			async () => {
+				await multiTurn(llm, {
+					...anthropicVertexOptions,
+					thinkingEnabled: true,
+					thinkingBudgetTokens: 2048,
+				});
+			},
+		);
 
 		it.skipIf(!isAnthropicVertexConfigured)("should handle image input", { retry: 3 }, async () => {
 			await handleImage(llm, anthropicVertexOptions);
