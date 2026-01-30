@@ -452,6 +452,17 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		(params as any).provider = model.compat.openRouterRouting;
 	}
 
+	// Vercel AI Gateway provider routing preferences
+	if (model.baseUrl.includes("ai-gateway.vercel.sh") && model.compat?.vercelGatewayRouting) {
+		const routing = model.compat.vercelGatewayRouting;
+		if (routing.only || routing.order) {
+			const gatewayOptions: Record<string, string[]> = {};
+			if (routing.only) gatewayOptions.only = routing.only;
+			if (routing.order) gatewayOptions.order = routing.order;
+			(params as any).providerOptions = { gateway: gatewayOptions };
+		}
+	}
+
 	return params;
 }
 
@@ -797,6 +808,7 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		requiresMistralToolIds: isMistral,
 		thinkingFormat: isZai ? "zai" : "openai",
 		openRouterRouting: {},
+		vercelGatewayRouting: {},
 	};
 }
 
@@ -821,5 +833,6 @@ function getCompat(model: Model<"openai-completions">): Required<OpenAICompletio
 		requiresMistralToolIds: model.compat.requiresMistralToolIds ?? detected.requiresMistralToolIds,
 		thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
 		openRouterRouting: model.compat.openRouterRouting ?? {},
+		vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
 	};
 }

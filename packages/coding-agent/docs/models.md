@@ -165,6 +165,7 @@ For providers with partial OpenAI compatibility, use the `compat` field:
 | `supportsUsageInStreaming` | Supports `stream_options: { include_usage: true }` (default: `true`) |
 | `maxTokensField` | Use `max_completion_tokens` or `max_tokens` |
 | `openRouterRouting` | OpenRouter routing config passed to OpenRouter for model/provider selection |
+| `vercelGatewayRouting` | Vercel AI Gateway routing config for provider selection (`only`, `order`) |
 
 Example:
 
@@ -183,6 +184,37 @@ Example:
             "openRouterRouting": {
               "order": ["anthropic"],
               "fallbacks": ["openai"]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+Vercel AI Gateway example:
+
+```json
+{
+  "providers": {
+    "vercel-ai-gateway": {
+      "baseUrl": "https://ai-gateway.vercel.sh/v1",
+      "apiKey": "AI_GATEWAY_API_KEY",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "moonshotai/kimi-k2.5",
+          "name": "Kimi K2.5 (Fireworks via Vercel)",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "cost": { "input": 0.6, "output": 3, "cacheRead": 0, "cacheWrite": 0 },
+          "contextWindow": 262144,
+          "maxTokens": 262144,
+          "compat": {
+            "vercelGatewayRouting": {
+              "only": ["fireworks", "novita"],
+              "order": ["fireworks", "novita"]
             }
           }
         }
