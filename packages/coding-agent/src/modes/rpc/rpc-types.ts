@@ -58,6 +58,7 @@ export type RpcCommand =
 	| { id?: string; type: "fork"; entryId: string }
 	| { id?: string; type: "get_fork_messages" }
 	| { id?: string; type: "get_last_assistant_text" }
+	| { id?: string; type: "set_session_name"; name: string }
 
 	// Messages
 	| { id?: string; type: "get_messages" }
@@ -96,6 +97,7 @@ export interface RpcSessionState {
 	followUpMode: "all" | "one-at-a-time";
 	sessionFile?: string;
 	sessionId: string;
+	sessionName?: string;
 	autoCompactionEnabled: boolean;
 	messageCount: number;
 	pendingMessageCount: number;
@@ -185,6 +187,7 @@ export type RpcResponse =
 			success: true;
 			data: { text: string | null };
 	  }
+	| { id?: string; type: "response"; command: "set_session_name"; success: true }
 
 	// Messages
 	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }

@@ -590,6 +590,11 @@ export class AgentSession {
 		return this.sessionManager.getSessionId();
 	}
 
+	/** Current session display name, if set */
+	get sessionName(): string | undefined {
+		return this.sessionManager.getSessionName();
+	}
+
 	/** Scoped models for cycling (from --models flag) */
 	get scopedModels(): ReadonlyArray<{ model: Model<any>; thinkingLevel: ThinkingLevel }> {
 		return this._scopedModels;
@@ -2179,6 +2184,13 @@ export class AgentSession {
 
 		this._reconnectToAgent();
 		return true;
+	}
+
+	/**
+	 * Set a display name for the current session.
+	 */
+	setSessionName(name: string): void {
+		this.sessionManager.appendSessionInfo(name);
 	}
 
 	/**
