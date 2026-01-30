@@ -1740,17 +1740,20 @@ export class InteractiveMode {
 				this.isBashMode = false;
 				this.updateEditorBorderColor();
 			} else if (!this.editor.getText().trim()) {
-				// Double-escape with empty editor triggers /tree or /fork based on setting
-				const now = Date.now();
-				if (now - this.lastEscapeTime < 500) {
-					if (this.settingsManager.getDoubleEscapeAction() === "tree") {
-						this.showTreeSelector();
+				// Double-escape with empty editor triggers /tree, /fork, or nothing based on setting
+				const action = this.settingsManager.getDoubleEscapeAction();
+				if (action !== "none") {
+					const now = Date.now();
+					if (now - this.lastEscapeTime < 500) {
+						if (action === "tree") {
+							this.showTreeSelector();
+						} else {
+							this.showUserMessageSelector();
+						}
+						this.lastEscapeTime = 0;
 					} else {
-						this.showUserMessageSelector();
+						this.lastEscapeTime = now;
 					}
-					this.lastEscapeTime = 0;
-				} else {
-					this.lastEscapeTime = now;
 				}
 			}
 		};

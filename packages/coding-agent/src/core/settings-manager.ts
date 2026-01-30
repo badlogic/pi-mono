@@ -78,7 +78,7 @@ export interface Settings {
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
-	doubleEscapeAction?: "fork" | "tree"; // Action for double-escape with empty editor (default: "tree")
+	doubleEscapeAction?: "fork" | "tree" | "none"; // Action for double-escape with empty editor (default: "tree")
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
 	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
@@ -126,18 +126,21 @@ export class SettingsManager {
 	private persist: boolean;
 	private modifiedFields = new Set<keyof Settings>(); // Track fields modified during session
 	private modifiedNestedFields = new Map<keyof Settings, Set<string>>(); // Track nested field modifications
+	private globalSettingsLoadError: Error | null = null; // Track if settings file had parse errors
 
 	private constructor(
 		settingsPath: string | null,
 		projectSettingsPath: string | null,
 		initialSettings: Settings,
 		persist: boolean,
+		loadError: Error | null = null,
 	) {
 		this.settingsPath = settingsPath;
 		this.projectSettingsPath = projectSettingsPath;
 		this.persist = persist;
 		this.globalSettings = initialSettings;
 		this.inMemoryProjectSettings = {};
+		this.globalSettingsLoadError = loadError;
 		const projectSettings = this.loadProjectSettings();
 		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
 	}
@@ -146,8 +149,19 @@ export class SettingsManager {
 	static create(cwd: string = process.cwd(), agentDir: string = getAgentDir()): SettingsManager {
 		const settingsPath = join(agentDir, "settings.json");
 		const projectSettingsPath = join(cwd, CONFIG_DIR_NAME, "settings.json");
-		const globalSettings = SettingsManager.loadFromFile(settingsPath);
-		return new SettingsManager(settingsPath, projectSettingsPath, globalSettings, true);
+
+		let globalSettings: Settings = {};
+		let loadError: Error | null = null;
+
+		try {
+			globalSettings = SettingsManager.loadFromFile(settingsPath);
+		} catch (error) {
+			loadError = error as Error;
+			console.error(`Warning: Invalid JSON in ${settingsPath}: ${error}`);
+			console.error(`Fix the syntax error to enable settings persistence.`);
+		}
+
+		return new SettingsManager(settingsPath, projectSettingsPath, globalSettings, true, loadError);
 	}
 
 	/** Create an in-memory SettingsManager (no file I/O) */
@@ -159,14 +173,9 @@ export class SettingsManager {
 		if (!existsSync(path)) {
 			return {};
 		}
-		try {
-			const content = readFileSync(path, "utf-8");
-			const settings = JSON.parse(content);
-			return SettingsManager.migrateSettings(settings);
-		} catch (error) {
-			console.error(`Warning: Could not read settings file ${path}: ${error}`);
-			return {};
-		}
+		const content = readFileSync(path, "utf-8");
+		const settings = JSON.parse(content);
+		return SettingsManager.migrateSettings(settings);
 	}
 
 	/** Migrate old settings format to new format */
@@ -247,6 +256,14 @@ export class SettingsManager {
 
 	private save(): void {
 		if (this.persist && this.settingsPath) {
+			// Don't overwrite if the file had parse errors on initial load
+			if (this.globalSettingsLoadError) {
+				// Re-merge to update active settings even though we can't persist
+				const projectSettings = this.loadProjectSettings();
+				this.settings = deepMergeSettings(this.globalSettings, projectSettings);
+				return;
+			}
+
 			try {
 				const dir = dirname(this.settingsPath);
 				if (!existsSync(dir)) {
@@ -282,6 +299,7 @@ export class SettingsManager {
 				this.globalSettings = mergedSettings;
 				writeFileSync(this.settingsPath, JSON.stringify(this.globalSettings, null, 2), "utf-8");
 			} catch (error) {
+				// File may have been externally modified with invalid JSON - don't overwrite
 				console.error(`Warning: Could not save settings file: ${error}`);
 			}
 		}
@@ -644,11 +662,11 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getDoubleEscapeAction(): "fork" | "tree" {
+	getDoubleEscapeAction(): "fork" | "tree" | "none" {
 		return this.settings.doubleEscapeAction ?? "tree";
 	}
 
-	setDoubleEscapeAction(action: "fork" | "tree"): void {
+	setDoubleEscapeAction(action: "fork" | "tree" | "none"): void {
 		this.globalSettings.doubleEscapeAction = action;
 		this.markModified("doubleEscapeAction");
 		this.save();
