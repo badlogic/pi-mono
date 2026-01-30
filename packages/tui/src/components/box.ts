@@ -1,6 +1,13 @@
 import type { Component } from "../tui.js";
 import { applyBackgroundToLine, visibleWidth } from "../utils.js";
 
+type RenderCache = {
+	childLines: string[];
+	width: number;
+	bgSample: string | undefined;
+	lines: string[];
+};
+
 /**
  * Box component - a container that applies padding and background to all children
  */
@@ -11,10 +18,7 @@ export class Box implements Component {
 	private bgFn?: (text: string) => string;
 
 	// Cache for rendered output
-	private cachedWidth?: number;
-	private cachedChildLines?: string;
-	private cachedBgSample?: string;
-	private cachedLines?: string[];
+	private cache?: RenderCache;
 
 	constructor(paddingX = 1, paddingY = 1, bgFn?: (text: string) => string) {
 		this.paddingX = paddingX;
@@ -46,10 +50,18 @@ export class Box implements Component {
 	}
 
 	private invalidateCache(): void {
-		this.cachedWidth = undefined;
-		this.cachedChildLines = undefined;
-		this.cachedBgSample = undefined;
-		this.cachedLines = undefined;
+		this.cache = undefined;
+	}
+
+	private matchCache(width: number, childLines: string[], bgSample: string | undefined): boolean {
+		const cache = this.cache;
+		return (
+			!!cache &&
+			cache.width === width &&
+			cache.bgSample === bgSample &&
+			cache.childLines.length === childLines.length &&
+			cache.childLines.every((line, i) => line === childLines[i])
+		);
 	}
 
 	invalidate(): void {
@@ -84,14 +96,8 @@ export class Box implements Component {
 		const bgSample = this.bgFn ? this.bgFn("test") : undefined;
 
 		// Check cache validity
-		const childLinesKey = childLines.join("\n");
-		if (
-			this.cachedLines &&
-			this.cachedWidth === width &&
-			this.cachedChildLines === childLinesKey &&
-			this.cachedBgSample === bgSample
-		) {
-			return this.cachedLines;
+		if (this.matchCache(width, childLines, bgSample)) {
+			return this.cache!.lines;
 		}
 
 		// Apply background and padding
@@ -113,10 +119,7 @@ export class Box implements Component {
 		}
 
 		// Update cache
-		this.cachedWidth = width;
-		this.cachedChildLines = childLinesKey;
-		this.cachedBgSample = bgSample;
-		this.cachedLines = result;
+		this.cache = { childLines, width, bgSample, lines: result };
 
 		return result;
 	}

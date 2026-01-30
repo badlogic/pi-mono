@@ -7,7 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { isKeyRelease, matchesKey } from "./keys.js";
 import type { Terminal } from "./terminal.js";
-import { getCapabilities, setCellDimensions } from "./terminal-image.js";
+import { getCapabilities, isImageLine, setCellDimensions } from "./terminal-image.js";
 import { extractSegments, sliceByColumn, sliceWithWidth, visibleWidth } from "./utils.js";
 
 /**
@@ -489,10 +489,6 @@ export class TUI extends Container {
 		return result;
 	}
 
-	private containsImage(line: string): boolean {
-		return line.includes("\x1b_G") || line.includes("\x1b]1337;File=");
-	}
-
 	/**
 	 * Resolve overlay layout from options.
 	 * Returns { width, row, col, maxHeight } for rendering.
@@ -712,7 +708,13 @@ export class TUI extends Container {
 
 	private applyLineResets(lines: string[]): string[] {
 		const reset = TUI.SEGMENT_RESET;
-		return lines.map((line) => (this.containsImage(line) ? line : line + reset));
+		for (let i = 0; i < lines.length; i++) {
+			const line = lines[i];
+			if (!isImageLine(line)) {
+				lines[i] = line + reset;
+			}
+		}
+		return lines;
 	}
 
 	/** Splice overlay content into a base line at a specific column. Single-pass optimized. */
@@ -723,7 +725,7 @@ export class TUI extends Container {
 		overlayWidth: number,
 		totalWidth: number,
 	): string {
-		if (this.containsImage(baseLine)) return baseLine;
+		if (isImageLine(baseLine)) return baseLine;
 
 		// Single pass through baseLine extracts both before and after segments
 		const afterStart = startCol + overlayWidth;
@@ -971,8 +973,8 @@ export class TUI extends Container {
 			if (i > firstChanged) buffer += "\r\n";
 			buffer += "\x1b[2K"; // Clear current line
 			const line = newLines[i];
-			const isImageLine = this.containsImage(line);
-			if (!isImageLine && visibleWidth(line) > width) {
+			const isImage = isImageLine(line);
+			if (!isImage && visibleWidth(line) > width) {
 				// Log all lines to crash file for debugging
 				const crashLogPath = path.join(os.homedir(), ".pi", "agent", "pi-crash.log");
 				const crashData = [
