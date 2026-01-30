@@ -98,8 +98,16 @@ function buildGroups(resolved: ResolvedPaths): ResourceGroup[] {
 				group.subgroups.push(subgroup);
 			}
 
-			const displayName =
-				resourceType === "skills" && basename(path) === "SKILL.md" ? basename(dirname(path)) : basename(path);
+			const fileName = basename(path);
+			const parentFolder = basename(dirname(path));
+			let displayName: string;
+			if (resourceType === "extensions" && parentFolder !== "extensions") {
+				displayName = `${parentFolder}/${fileName}`;
+			} else if (resourceType === "skills" && fileName === "SKILL.md") {
+				displayName = parentFolder;
+			} else {
+				displayName = fileName;
+			}
 			subgroup.items.push({
 				path,
 				enabled,
