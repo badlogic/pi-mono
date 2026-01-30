@@ -68,8 +68,8 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	// Cursor movement
 	cursorUp: "up",
 	cursorDown: "down",
-	cursorLeft: "left",
-	cursorRight: "right",
+	cursorLeft: ["left", "ctrl+b"],
+	cursorRight: ["right", "ctrl+f"],
 	cursorWordLeft: ["alt+left", "ctrl+left", "alt+b"],
 	cursorWordRight: ["alt+right", "ctrl+right", "alt+f"],
 	cursorLineStart: ["home", "ctrl+a"],

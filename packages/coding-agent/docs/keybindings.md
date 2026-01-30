@@ -21,8 +21,8 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, etc.
 |--------|---------|-------------|
 | `cursorUp` | `up` | Move cursor up |
 | `cursorDown` | `down` | Move cursor down |
-| `cursorLeft` | `left` | Move cursor left |
-| `cursorRight` | `right` | Move cursor right |
+| `cursorLeft` | `left`, `ctrl+b` | Move cursor left |
+| `cursorRight` | `right`, `ctrl+f` | Move cursor right |
 | `cursorWordLeft` | `alt+left`, `ctrl+left`, `alt+b` | Move cursor word left |
 | `cursorWordRight` | `alt+right`, `ctrl+right`, `alt+f` | Move cursor word right |
 | `cursorLineStart` | `home`, `ctrl+a` | Move to line start |
