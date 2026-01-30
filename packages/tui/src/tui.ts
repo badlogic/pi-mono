@@ -212,6 +212,7 @@ export class TUI extends Container {
 	private maxLinesRendered = 0; // Track terminal's working area (max lines ever rendered)
 	private previousViewportTop = 0; // Track previous viewport top for resize-aware cursor moves
 	private fullRedrawCount = 0;
+	private stopped = false;
 
 	// Overlay stack for modal components rendered on top of base content
 	private overlayStack: {
@@ -352,6 +353,7 @@ export class TUI extends Container {
 	}
 
 	start(): void {
+		this.stopped = false;
 		this.terminal.start(
 			(data) => this.handleInput(data),
 			() => this.requestRender(),
@@ -373,6 +375,7 @@ export class TUI extends Container {
 	}
 
 	stop(): void {
+		this.stopped = true;
 		// Move cursor to the end of the content to prevent overwriting/artifacts on exit
 		if (this.previousLines.length > 0) {
 			const targetRow = this.previousLines.length; // Line after the last content
@@ -797,6 +800,7 @@ export class TUI extends Container {
 	}
 
 	private doRender(): void {
+		if (this.stopped) return;
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
 		let viewportTop = Math.max(0, this.maxLinesRendered - height);
