@@ -192,10 +192,10 @@ export const streamAnthropicVertex: StreamFunction<"anthropic-vertex"> = (
 						output.stopReason = mapStopReason(event.delta.stop_reason);
 					}
 					// message_delta only contains output_tokens, don't overwrite input/cache from message_start
-					if (event.usage.input_tokens !== undefined) {
+					if (event.usage.input_tokens != null) {
 						output.usage.input = event.usage.input_tokens;
 					}
-					if (event.usage.output_tokens !== undefined) {
+					if (event.usage.output_tokens != null) {
 						output.usage.output = event.usage.output_tokens;
 					}
 					if ((event.usage as any).cache_read_input_tokens !== undefined) {
