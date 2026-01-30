@@ -615,10 +615,24 @@ function matchesKittySequence(data: string, expectedCodepoint: number, expectedM
 	// Primary match: codepoint matches directly
 	if (parsed.codepoint === expectedCodepoint) return true;
 
-	// Alternate match: use base layout key for non-Latin keyboard layouts
+	// Alternate match: use base layout key for non-Latin keyboard layouts.
 	// This allows Ctrl+С (Cyrillic) to match Ctrl+c (Latin) when terminal reports
-	// the base layout key (the key in standard PC-101 layout)
-	if (parsed.baseLayoutKey !== undefined && parsed.baseLayoutKey === expectedCodepoint) return true;
+	// the base layout key (the key in standard PC-101 layout).
+	//
+	// Only fall back to base layout key when the codepoint is NOT already a
+	// recognized Latin letter (a-z) or symbol (e.g., /, -, [, ;, etc.).
+	// When the codepoint is a recognized key, it is authoritative regardless
+	// of physical key position. This prevents remapped layouts (Dvorak, Colemak,
+	// xremap, etc.) from causing false matches: both letters and symbols move
+	// to different physical positions, so Ctrl+K could falsely match Ctrl+V
+	// (letter remapping) and Ctrl+/ could falsely match Ctrl+[ (symbol remapping)
+	// if the base layout key were always considered.
+	if (parsed.baseLayoutKey !== undefined && parsed.baseLayoutKey === expectedCodepoint) {
+		const cp = parsed.codepoint;
+		const isLatinLetter = cp >= 97 && cp <= 122; // a-z
+		const isKnownSymbol = SYMBOL_KEYS.has(String.fromCharCode(cp));
+		if (!isLatinLetter && !isKnownSymbol) return true;
+	}
 
 	return false;
 }
@@ -1038,9 +1052,14 @@ export function parseKey(data: string): string | undefined {
 		if (effectiveMod & MODIFIERS.ctrl) mods.push("ctrl");
 		if (effectiveMod & MODIFIERS.alt) mods.push("alt");
 
-		// Prefer base layout key for consistent shortcut naming across keyboard layouts
-		// This ensures Ctrl+С (Cyrillic) is reported as "ctrl+c" (Latin)
-		const effectiveCodepoint = baseLayoutKey ?? codepoint;
+		// Use base layout key only when codepoint is not a recognized Latin
+		// letter (a-z) or symbol (/, -, [, ;, etc.). For those, the codepoint
+		// is authoritative regardless of physical key position. This prevents
+		// remapped layouts (Dvorak, Colemak, xremap, etc.) from reporting the
+		// wrong key name based on the QWERTY physical position.
+		const isLatinLetter = codepoint >= 97 && codepoint <= 122; // a-z
+		const isKnownSymbol = SYMBOL_KEYS.has(String.fromCharCode(codepoint));
+		const effectiveCodepoint = isLatinLetter || isKnownSymbol ? codepoint : (baseLayoutKey ?? codepoint);
 
 		let keyName: string | undefined;
 		if (effectiveCodepoint === CODEPOINTS.escape) keyName = "escape";
