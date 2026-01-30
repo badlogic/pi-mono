@@ -6,6 +6,7 @@
 
 - Read tool now handles macOS filenames with curly quotes (U+2019) and NFD Unicode normalization ([#1078](https://github.com/badlogic/pi-mono/issues/1078))
 - Respect .gitignore, .ignore, and .fdignore files when scanning package resources for skills, prompts, themes, and extensions ([#1072](https://github.com/badlogic/pi-mono/issues/1072))
+- Fixed tool call argument defaults when providers omit inputs ([#1065](https://github.com/badlogic/pi-mono/issues/1065))
 
 ## [0.50.3] - 2026-01-29
 
