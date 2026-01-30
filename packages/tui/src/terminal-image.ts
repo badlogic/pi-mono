@@ -81,10 +81,16 @@ export function resetCapabilitiesCache(): void {
 	cachedCapabilities = null;
 }
 
+const KITTY_PREFIX = "\x1b_G";
+const ITERM2_PREFIX = "\x1b]1337;File=";
+
 export function isImageLine(line: string): boolean {
-	// Check for Kitty or iTerm2 image escape sequences anywhere in the line
-	// This prevents width checks from failing on lines containing image data
-	return line.includes("\x1b_G") || line.includes("\x1b]1337;File=");
+	// Fast path: sequence at line start (single-row images)
+	if (line.startsWith(KITTY_PREFIX) || line.startsWith(ITERM2_PREFIX)) {
+		return true;
+	}
+	// Slow path: sequence elsewhere (multi-row images have cursor-up prefix)
+	return line.includes(KITTY_PREFIX) || line.includes(ITERM2_PREFIX);
 }
 
 /**
