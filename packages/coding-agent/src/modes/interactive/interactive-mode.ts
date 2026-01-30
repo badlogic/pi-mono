@@ -3951,6 +3951,8 @@ export class InteractiveMode {
 		const cursorWordRight = this.getEditorKeyDisplay("cursorWordRight");
 		const cursorLineStart = this.getEditorKeyDisplay("cursorLineStart");
 		const cursorLineEnd = this.getEditorKeyDisplay("cursorLineEnd");
+		const jumpForward = this.getEditorKeyDisplay("jumpForward");
+		const jumpBackward = this.getEditorKeyDisplay("jumpBackward");
 		const pageUp = this.getEditorKeyDisplay("pageUp");
 		const pageDown = this.getEditorKeyDisplay("pageDown");
 
@@ -3988,6 +3990,8 @@ export class InteractiveMode {
 | \`${cursorWordLeft}\` / \`${cursorWordRight}\` | Move by word |
 | \`${cursorLineStart}\` | Start of line |
 | \`${cursorLineEnd}\` | End of line |
+| \`${jumpForward}\` | Jump forward to character |
+| \`${jumpBackward}\` | Jump backward to character |
 | \`${pageUp}\` / \`${pageDown}\` | Scroll by page |
 
 **Editing**
