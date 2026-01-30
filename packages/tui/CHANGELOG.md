@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `isImageLine()` to check for image escape sequences anywhere in a line, not just at the start. This prevents TUI crashes when rendering lines containing image data. ([#1091](https://github.com/badlogic/pi-mono/pull/1091) by [@zedrdave](https://github.com/zedrdave))
+
 ## [0.50.4] - 2026-01-30
 
 ### Added
