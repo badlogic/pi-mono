@@ -191,10 +191,19 @@ export const streamAnthropicVertex: StreamFunction<"anthropic-vertex"> = (
 					if (event.delta.stop_reason) {
 						output.stopReason = mapStopReason(event.delta.stop_reason);
 					}
-					output.usage.input = event.usage.input_tokens || 0;
-					output.usage.output = event.usage.output_tokens || 0;
-					output.usage.cacheRead = event.usage.cache_read_input_tokens || 0;
-					output.usage.cacheWrite = event.usage.cache_creation_input_tokens || 0;
+					// message_delta only contains output_tokens, don't overwrite input/cache from message_start
+					if (event.usage.input_tokens !== undefined) {
+						output.usage.input = event.usage.input_tokens;
+					}
+					if (event.usage.output_tokens !== undefined) {
+						output.usage.output = event.usage.output_tokens;
+					}
+					if ((event.usage as any).cache_read_input_tokens !== undefined) {
+						output.usage.cacheRead = (event.usage as any).cache_read_input_tokens;
+					}
+					if ((event.usage as any).cache_creation_input_tokens !== undefined) {
+						output.usage.cacheWrite = (event.usage as any).cache_creation_input_tokens;
+					}
 					output.usage.totalTokens =
 						output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
 					calculateCost(model, output.usage);
