@@ -75,7 +75,8 @@ Store credentials in `~/.pi/agent/auth.json`:
 {
   "anthropic": { "type": "api_key", "key": "sk-ant-..." },
   "openai": { "type": "api_key", "key": "sk-..." },
-  "google": { "type": "api_key", "key": "..." }
+  "google": { "type": "api_key", "key": "..." },
+  "opencode": { "type": "api_key", "key": "..." }
 }
 ```
 
