@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `isImageLine()` to check for image escape sequences anywhere in a line, not just at the start. This prevents TUI width checks from failing on lines containing image data, which could cause crashes when rendering tool results with images.
+
 ## [0.50.4] - 2026-01-30
 
 ### Added
