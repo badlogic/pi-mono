@@ -5215,6 +5215,23 @@ export const MODELS = {
 			contextWindow: 262144,
 			maxTokens: 65536,
 		} satisfies Model<"openai-completions">,
+		"trinity-large-preview-free": {
+			id: "trinity-large-preview-free",
+			name: "Trinity Large Preview",
+			api: "openai-completions",
+			provider: "opencode",
+			baseUrl: "https://opencode.ai/zen/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 131072,
+			maxTokens: 131072,
+		} satisfies Model<"openai-completions">,
 	},
 	"openrouter": {
 		"ai21/jamba-large-1.7": {
