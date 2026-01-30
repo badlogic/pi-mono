@@ -77,13 +77,30 @@ export function getCapabilities(): TerminalCapabilities {
 	return cachedCapabilities;
 }
 
+let imageEscapePrefix: string | null | undefined;
+
+function getImageEscapePrefix(): string | null {
+	if (imageEscapePrefix === undefined) {
+		const protocol = getCapabilities().images;
+		if (protocol === "kitty") imageEscapePrefix = "\x1b_G";
+		else if (protocol === "iterm2") imageEscapePrefix = "\x1b]1337;File=";
+		else imageEscapePrefix = null;
+	}
+	return imageEscapePrefix;
+}
+
 export function resetCapabilitiesCache(): void {
 	cachedCapabilities = null;
+	imageEscapePrefix = undefined;
 }
 
 export function isImageLine(line: string): boolean {
-	// Check for Kitty or iTerm2 image escape sequences anywhere in the line
-	// This prevents width checks from failing on lines containing image data
+	const prefix = getImageEscapePrefix();
+	if (prefix && line.includes(prefix)) {
+		return true;
+	}
+
+	// Fallback when images are disabled or mixed protocols are present.
 	return line.includes("\x1b_G") || line.includes("\x1b]1337;File=");
 }
 

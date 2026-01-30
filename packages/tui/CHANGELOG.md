@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Optimized `isImageLine()` to first check terminal-specific protocol prefix (cached), with fallback to both protocols. This reduces string comparisons for the common case while maintaining robustness.
+
 ## [0.50.5] - 2026-01-30
 
 ### Fixed
