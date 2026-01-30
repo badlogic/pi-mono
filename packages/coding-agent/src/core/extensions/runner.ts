@@ -159,6 +159,7 @@ export class ExtensionRunner {
 	private hasPendingMessagesFn: () => boolean = () => false;
 	private getContextUsageFn: () => ContextUsage | undefined = () => undefined;
 	private compactFn: (options?: CompactOptions) => void = () => {};
+	private getSystemPromptFn: () => string = () => "";
 	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
 	private forkHandler: ForkHandler = async () => ({ cancelled: false });
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
@@ -203,6 +204,7 @@ export class ExtensionRunner {
 		this.shutdownHandler = contextActions.shutdown;
 		this.getContextUsageFn = contextActions.getContextUsage;
 		this.compactFn = contextActions.compact;
+		this.getSystemPromptFn = contextActions.getSystemPrompt;
 
 		// Process provider registrations queued during extension loading
 		for (const { name, config } of this.runtime.pendingProviderRegistrations) {
@@ -421,6 +423,7 @@ export class ExtensionRunner {
 			shutdown: () => this.shutdownHandler(),
 			getContextUsage: () => this.getContextUsageFn(),
 			compact: (options) => this.compactFn(options),
+			getSystemPrompt: () => this.getSystemPromptFn(),
 		};
 	}
 

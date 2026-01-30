@@ -654,6 +654,17 @@ ctx.compact({
 });
 ```
 
+### ctx.getSystemPrompt()
+
+Returns the current effective system prompt. This includes any modifications made by `before_agent_start` handlers for the current turn.
+
+```typescript
+pi.on("before_agent_start", (event, ctx) => {
+  const prompt = ctx.getSystemPrompt();
+  console.log(`System prompt length: ${prompt.length}`);
+});
+```
+
 ## ExtensionCommandContext
 
 Command handlers receive `ExtensionCommandContext`, which extends `ExtensionContext` with session control methods. These are only available in commands because they can deadlock if called from event handlers.
@@ -1688,6 +1699,7 @@ All examples in [examples/extensions/](../examples/extensions/).
 | `dirty-repo-guard.ts` | Warn on dirty git repo | `on("session_before_*")`, `exec` |
 | `input-transform.ts` | Transform user input | `on("input")` |
 | `model-status.ts` | React to model changes | `on("model_select")`, `setStatus` |
+| `system-prompt-header.ts` | Display system prompt info | `on("agent_start")`, `getSystemPrompt` |
 | `claude-rules.ts` | Load rules from files | `on("session_start")`, `on("before_agent_start")` |
 | `file-trigger.ts` | File watcher triggers messages | `sendMessage` |
 | **Compaction & Sessions** |||

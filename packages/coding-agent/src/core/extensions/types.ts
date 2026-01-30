@@ -260,6 +260,8 @@ export interface ExtensionContext {
 	getContextUsage(): ContextUsage | undefined;
 	/** Trigger compaction without awaiting completion. */
 	compact(options?: CompactOptions): void;
+	/** Get the current effective system prompt. */
+	getSystemPrompt(): string;
 }
 
 /**
@@ -1084,6 +1086,7 @@ export interface ExtensionContextActions {
 	shutdown: () => void;
 	getContextUsage: () => ContextUsage | undefined;
 	compact: (options?: CompactOptions) => void;
+	getSystemPrompt: () => string;
 }
 
 /**
