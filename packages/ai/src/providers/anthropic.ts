@@ -233,7 +233,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 							name: isOAuthToken
 								? fromClaudeCodeName(event.content_block.name, context.tools)
 								: event.content_block.name,
-							arguments: event.content_block.input as Record<string, any>,
+							arguments: (event.content_block.input as Record<string, any>) ?? {},
 							partialJson: "",
 							index: event.index,
 						};
@@ -619,7 +619,7 @@ function convertMessages(
 						type: "tool_use",
 						id: block.id,
 						name: isOAuthToken ? toClaudeCodeName(block.name) : block.name,
-						input: block.arguments,
+						input: block.arguments ?? {},
 					});
 				}
 			}

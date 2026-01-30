@@ -143,7 +143,7 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 					// We include a note telling the model this is historical context to prevent mimicry.
 					const isGemini3 = model.id.toLowerCase().includes("gemini-3");
 					if (isGemini3 && !thoughtSignature) {
-						const argsStr = JSON.stringify(block.arguments, null, 2);
+						const argsStr = JSON.stringify(block.arguments ?? {}, null, 2);
 						parts.push({
 							text: `[Historical context: a different model called tool "${block.name}" with arguments: ${argsStr}. Do not mimic this format - use proper function calling.]`,
 						});
@@ -151,7 +151,7 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 						const part: Part = {
 							functionCall: {
 								name: block.name,
-								args: block.arguments,
+								args: block.arguments ?? {},
 								...(requiresToolCallId(model.id) ? { id: block.id } : {}),
 							},
 						};
