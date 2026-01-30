@@ -5,6 +5,7 @@
 ### Added
 
 - Added "none" option to `doubleEscapeAction` setting to disable double-escape behavior entirely ([#973](https://github.com/badlogic/pi-mono/issues/973) by [@juanibiapina](https://github.com/juanibiapina))
+- Added OSC 52 clipboard support for SSH/mosh sessions. `/copy` now works over remote connections. ([#1069](https://github.com/badlogic/pi-mono/issues/1069) by [@gturkoglu](https://github.com/gturkoglu))
 
 ### Fixed
 
