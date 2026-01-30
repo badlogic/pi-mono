@@ -119,6 +119,8 @@ for platform in "${PLATFORMS[@]}"; do
     cp ../../node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm binaries/$platform/
     mkdir -p binaries/$platform/theme
     cp dist/modes/interactive/theme/*.json binaries/$platform/theme/
+    cp -r dist/core/export-html binaries/$platform/
+    cp -r docs binaries/$platform/
     cp -r examples binaries/$platform/
 done
 
