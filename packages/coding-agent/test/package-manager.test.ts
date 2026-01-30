@@ -113,6 +113,40 @@ Content`,
 		});
 	});
 
+	describe("ignore files", () => {
+		it("should respect .gitignore in skill directories", async () => {
+			const skillsDir = join(agentDir, "skills");
+			mkdirSync(skillsDir, { recursive: true });
+			writeFileSync(join(skillsDir, ".gitignore"), "venv\n__pycache__\n");
+
+			const goodSkillDir = join(skillsDir, "good-skill");
+			mkdirSync(goodSkillDir, { recursive: true });
+			writeFileSync(join(goodSkillDir, "SKILL.md"), "---\nname: good-skill\ndescription: Good\n---\nContent");
+
+			const ignoredSkillDir = join(skillsDir, "venv", "bad-skill");
+			mkdirSync(ignoredSkillDir, { recursive: true });
+			writeFileSync(join(ignoredSkillDir, "SKILL.md"), "---\nname: bad-skill\ndescription: Bad\n---\nContent");
+
+			settingsManager.setSkillPaths(["skills"]);
+
+			const result = await packageManager.resolve();
+			expect(result.skills.some((r) => r.path.includes("good-skill") && r.enabled)).toBe(true);
+			expect(result.skills.some((r) => r.path.includes("venv") && r.enabled)).toBe(false);
+		});
+
+		it("should not apply parent .gitignore to .pi auto-discovery", async () => {
+			writeFileSync(join(tempDir, ".gitignore"), ".pi\n");
+
+			const skillDir = join(tempDir, ".pi", "skills", "auto-skill");
+			mkdirSync(skillDir, { recursive: true });
+			const skillPath = join(skillDir, "SKILL.md");
+			writeFileSync(skillPath, "---\nname: auto-skill\ndescription: Auto\n---\nContent");
+
+			const result = await packageManager.resolve();
+			expect(result.skills.some((r) => r.path === skillPath && r.enabled)).toBe(true);
+		});
+	});
+
 	describe("resolveExtensionSources", () => {
 		it("should resolve local paths", async () => {
 			const extPath = join(tempDir, "ext.ts");
