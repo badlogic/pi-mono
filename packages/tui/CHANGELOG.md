@@ -2,8 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Optimized `isImageLine()` with `startsWith` short-circuit for faster image line detection
+
 ### Fixed
 
+- Fixed empty rows appearing below footer when content shrinks (e.g., closing `/tree`, clearing multi-line editor) ([#1095](https://github.com/badlogic/pi-mono/pull/1095) by [@marckrenn](https://github.com/marckrenn))
 - Fixed terminal cursor remaining hidden after exiting TUI via `stop()` when a render was pending ([#1099](https://github.com/badlogic/pi-mono/pull/1099) by [@haoqixu](https://github.com/haoqixu))
 
 ## [0.50.5] - 2026-01-30
