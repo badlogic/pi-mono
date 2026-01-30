@@ -79,6 +79,24 @@ export function getCapabilities(): TerminalCapabilities {
 
 export function resetCapabilitiesCache(): void {
 	cachedCapabilities = null;
+	imageEscapePrefix = undefined;
+}
+
+let imageEscapePrefix: string | null | undefined;
+
+function getImageEscapePrefix(): string | null {
+	if (imageEscapePrefix === undefined) {
+		const protocol = getCapabilities().images;
+		if (protocol === "kitty") imageEscapePrefix = "\x1b_G";
+		else if (protocol === "iterm2") imageEscapePrefix = "\x1b]1337;File=";
+		else imageEscapePrefix = null;
+	}
+	return imageEscapePrefix;
+}
+
+export function isImageLine(line: string): boolean {
+	const prefix = getImageEscapePrefix();
+	return prefix !== null && line.startsWith(prefix);
 }
 
 /**

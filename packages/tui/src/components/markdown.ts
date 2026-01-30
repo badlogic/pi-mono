@@ -1,4 +1,5 @@
 import { marked, type Token } from "marked";
+import { isImageLine } from "../terminal-image.js";
 import type { Component } from "../tui.js";
 import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.js";
 
@@ -121,7 +122,11 @@ export class Markdown implements Component {
 		// Wrap lines (NO padding, NO background yet)
 		const wrappedLines: string[] = [];
 		for (const line of renderedLines) {
-			wrappedLines.push(...wrapTextWithAnsi(line, contentWidth));
+			if (isImageLine(line)) {
+				wrappedLines.push(line);
+			} else {
+				wrappedLines.push(...wrapTextWithAnsi(line, contentWidth));
+			}
 		}
 
 		// Add margins and background to each wrapped line
@@ -131,6 +136,11 @@ export class Markdown implements Component {
 		const contentLines: string[] = [];
 
 		for (const line of wrappedLines) {
+			if (isImageLine(line)) {
+				contentLines.push(line);
+				continue;
+			}
+
 			const lineWithMargins = leftMargin + line + rightMargin;
 
 			if (bgFn) {
