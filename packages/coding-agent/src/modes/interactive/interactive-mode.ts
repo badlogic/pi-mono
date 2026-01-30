@@ -3486,9 +3486,6 @@ export class InteractiveMode {
 					done();
 					this.ui.requestRender();
 				},
-				() => {
-					void this.shutdown();
-				},
 				() => this.ui.requestRender(),
 				{
 					renameSession: async (sessionFilePath: string, nextName: string | undefined) => {

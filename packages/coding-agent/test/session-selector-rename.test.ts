@@ -39,7 +39,6 @@ describe("session selector rename", () => {
 			() => {},
 			() => {},
 			() => {},
-			() => {},
 			{ showRenameHint: true },
 		);
 		await flushPromises();
@@ -54,7 +53,6 @@ describe("session selector rename", () => {
 		const selector = new SessionSelectorComponent(
 			async () => sessions,
 			async () => [],
-			() => {},
 			() => {},
 			() => {},
 			() => {},
@@ -74,7 +72,6 @@ describe("session selector rename", () => {
 		const selector = new SessionSelectorComponent(
 			async () => sessions,
 			async () => [],
-			() => {},
 			() => {},
 			() => {},
 			() => {},

@@ -184,7 +184,6 @@ class ResourceList implements Component, Focusable {
 	private agentDir: string;
 
 	public onCancel?: () => void;
-	public onExit?: () => void;
 	public onToggle?: (item: ResourceItem, newEnabled: boolean) => void;
 
 	private _focused = false;
@@ -391,10 +390,6 @@ class ResourceList implements Component, Focusable {
 			this.onCancel?.();
 			return;
 		}
-		if (matchesKey(data, "ctrl+c")) {
-			this.onExit?.();
-			return;
-		}
 		if (data === " " || kb.matches(data, "selectConfirm")) {
 			const entry = this.filteredItems[this.selectedIndex];
 			if (entry?.type === "item") {
@@ -559,8 +554,7 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 		settingsManager: SettingsManager,
 		cwd: string,
 		agentDir: string,
-		onClose: () => void,
-		onExit: () => void,
+		onCancel: () => void,
 		requestRender: () => void,
 	) {
 		super();
@@ -576,8 +570,7 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 
 		// Resource list
 		this.resourceList = new ResourceList(groups, settingsManager, cwd, agentDir);
-		this.resourceList.onCancel = onClose;
-		this.resourceList.onExit = onExit;
+		this.resourceList.onCancel = onCancel;
 		this.resourceList.onToggle = () => requestRender();
 		this.addChild(this.resourceList);
 

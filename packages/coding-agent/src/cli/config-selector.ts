@@ -20,23 +20,14 @@ export async function selectConfig(options: ConfigSelectorOptions): Promise<void
 	// Initialize theme before showing TUI
 	initTheme(options.settingsManager.getTheme(), true);
 
-	return new Promise((resolve) => {
+	return new Promise(() => {
 		const ui = new TUI(new ProcessTerminal());
-		let resolved = false;
 
 		const selector = new ConfigSelectorComponent(
 			options.resolvedPaths,
 			options.settingsManager,
 			options.cwd,
 			options.agentDir,
-			() => {
-				if (!resolved) {
-					resolved = true;
-					ui.stop();
-					stopThemeWatcher();
-					resolve();
-				}
-			},
 			() => {
 				ui.stop();
 				stopThemeWatcher();

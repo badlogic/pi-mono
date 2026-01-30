@@ -56,7 +56,6 @@ describe("session selector path/delete interactions", () => {
 			() => {},
 			() => {},
 			() => {},
-			() => {},
 		);
 		await flushPromises();
 
@@ -79,7 +78,6 @@ describe("session selector path/delete interactions", () => {
 			() => {},
 			() => {},
 			() => {},
-			() => {},
 		);
 		await flushPromises();
 
@@ -99,7 +97,6 @@ describe("session selector path/delete interactions", () => {
 		const selector = new SessionSelectorComponent(
 			async () => sessions,
 			async () => [],
-			() => {},
 			() => {},
 			() => {},
 			() => {},
@@ -137,7 +134,6 @@ describe("session selector path/delete interactions", () => {
 			() => {},
 			() => {},
 			() => {},
-			() => {},
 		);
 		await flushPromises();
 
@@ -165,7 +161,6 @@ describe("session selector path/delete interactions", () => {
 				allLoadCalls++;
 				return allDeferred.promise;
 			},
-			() => {},
 			() => {},
 			() => {},
 			() => {},

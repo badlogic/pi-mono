@@ -28,13 +28,6 @@ export async function selectSession(
 				}
 			},
 			() => {
-				if (!resolved) {
-					resolved = true;
-					ui.stop();
-					resolve(null);
-				}
-			},
-			() => {
 				ui.stop();
 				process.exit(0);
 			},

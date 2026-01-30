@@ -188,7 +188,6 @@ class SessionList implements Component, Focusable {
 	private currentSessionFilePath?: string;
 	public onSelect?: (sessionPath: string) => void;
 	public onCancel?: () => void;
-	public onExit: () => void = () => {};
 	public onToggleScope?: () => void;
 	public onToggleSort?: () => void;
 	public onTogglePath?: (showPath: boolean) => void;
@@ -573,7 +572,6 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		allSessionsLoader: SessionsLoader,
 		onSelect: (sessionPath: string) => void,
 		onCancel: () => void,
-		onExit: () => void,
 		requestRender: () => void,
 		options?: {
 			renameSession?: (sessionPath: string, currentName: string | undefined) => Promise<void>;
@@ -610,10 +608,6 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		this.sessionList.onCancel = () => {
 			clearStatusMessage();
 			onCancel();
-		};
-		this.sessionList.onExit = () => {
-			clearStatusMessage();
-			onExit();
 		};
 		this.sessionList.onToggleScope = () => this.toggleScope();
 		this.sessionList.onToggleSort = () => this.toggleSortMode();
