@@ -514,6 +514,11 @@ export class AgentSession {
 		return this.agent.state.isStreaming;
 	}
 
+	/** Current system prompt (base prompt before per-turn extension modifications) */
+	get systemPrompt(): string {
+		return this._baseSystemPrompt;
+	}
+
 	/** Current retry attempt (0 if not retrying) */
 	get retryAttempt(): number {
 		return this._retryAttempt;
@@ -1756,6 +1761,7 @@ export class AgentSession {
 						}
 					})();
 				},
+				getSystemPrompt: () => this._baseSystemPrompt,
 			},
 		);
 	}

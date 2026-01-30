@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ctx.getSystemPrompt()` in extension context to access the current system prompt
+
 ## [0.50.5] - 2026-01-30
 
 ## [0.50.4] - 2026-01-30

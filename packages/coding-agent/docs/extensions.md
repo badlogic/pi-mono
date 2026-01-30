@@ -654,6 +654,22 @@ ctx.compact({
 });
 ```
 
+### ctx.getSystemPrompt()
+
+Returns the current system prompt. Useful for custom headers, debugging, or inspection.
+
+```typescript
+pi.on("session_start", async (_event, ctx) => {
+  ctx.ui.setHeader((_tui, theme) => ({
+    render(width) {
+      const prompt = ctx.getSystemPrompt();
+      return [`System prompt: ${prompt.length} chars`];
+    },
+    invalidate() {},
+  }));
+});
+```
+
 ## ExtensionCommandContext
 
 Command handlers receive `ExtensionCommandContext`, which extends `ExtensionContext` with session control methods. These are only available in commands because they can deadlock if called from event handlers.
