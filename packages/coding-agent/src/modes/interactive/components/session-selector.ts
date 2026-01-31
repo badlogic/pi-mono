@@ -38,13 +38,13 @@ function formatSessionDate(date: Date): string {
 	const diffHours = Math.floor(diffMs / 3600000);
 	const diffDays = Math.floor(diffMs / 86400000);
 
-	if (diffMins < 1) return "just now";
-	if (diffMins < 60) return `${diffMins} minute${diffMins !== 1 ? "s" : ""} ago`;
-	if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? "s" : ""} ago`;
-	if (diffDays === 1) return "1 day ago";
-	if (diffDays < 7) return `${diffDays} days ago`;
-
-	return date.toLocaleDateString();
+	if (diffMins < 1) return "now";
+	if (diffMins < 60) return `${diffMins}m`;
+	if (diffHours < 24) return `${diffHours}h`;
+	if (diffDays < 7) return `${diffDays}d`;
+	if (diffDays < 30) return `${Math.floor(diffDays / 7)}w`;
+	if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo`;
+	return `${Math.floor(diffDays / 365)}y`;
 }
 
 class SessionSelectorHeader implements Component {
@@ -271,7 +271,7 @@ class SessionList implements Component, Focusable {
 	public onDeleteSession?: (sessionPath: string) => Promise<void>;
 	public onRenameSession?: (sessionPath: string) => void;
 	public onError?: (message: string) => void;
-	private maxVisible: number = 5; // Max sessions visible (each session: message + metadata + optional path + blank)
+	private maxVisible: number = 10; // Max sessions visible (one line each)
 
 	// Focusable implementation - propagate to searchInput for IME cursor positioning
 	private _focused = false;
@@ -384,30 +384,50 @@ class SessionList implements Component, Focusable {
 		);
 		const endIndex = Math.min(startIndex + this.maxVisible, this.filteredSessions.length);
 
-		// Render visible sessions (message + metadata + optional path + blank line)
+		// Render visible sessions (one line each with tree structure)
 		for (let i = startIndex; i < endIndex; i++) {
 			const node = this.filteredSessions[i]!;
 			const session = node.session;
 			const isSelected = i === this.selectedIndex;
 			const isConfirmingDelete = session.path === this.confirmingDeletePath;
+			const isCurrent = this.currentSessionFilePath === session.path;
 
-			// Build tree prefix for threaded mode
+			// Build tree prefix
 			const prefix = this.buildTreePrefix(node);
 
-			// Use session name if set, otherwise first message
+			// Session display text (name or first message)
 			const hasName = !!session.name;
 			const displayText = session.name ?? session.firstMessage;
 			const normalizedMessage = displayText.replace(/\n/g, " ").trim();
 
-			// First line: cursor + prefix + message (truncate to visible width)
-			// Use warning color for custom names to distinguish from first message
+			// Right side: age
+			const age = formatSessionDate(session.modified);
+			let rightPart = age;
+			if (this.showCwd && session.cwd) {
+				rightPart = `${shortenPath(session.cwd)} ${rightPart}`;
+			}
+			if (this.showPath) {
+				rightPart = `${shortenPath(session.path)} ${rightPart}`;
+			}
+
+			// Cursor and message count prefix
 			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
+			const msgCountPrefix = `(${session.messageCount}) `;
+
+			// Calculate available width for message
 			const prefixWidth = visibleWidth(prefix);
-			const maxMsgWidth = width - 2 - prefixWidth; // Account for cursor (2 visible chars) and prefix
-			const truncatedMsg = truncateToWidth(normalizedMessage, maxMsgWidth, "...");
-			let messageColor: "error" | "warning" | null = null;
+			const msgCountWidth = visibleWidth(msgCountPrefix);
+			const rightWidth = visibleWidth(rightPart) + 2; // +2 for spacing
+			const availableForMsg = width - 2 - prefixWidth - msgCountWidth - rightWidth; // -2 for cursor
+
+			const truncatedMsg = truncateToWidth(normalizedMessage, Math.max(10, availableForMsg), "…");
+
+			// Style message
+			let messageColor: "error" | "warning" | "accent" | null = null;
 			if (isConfirmingDelete) {
 				messageColor = "error";
+			} else if (isCurrent) {
+				messageColor = "accent";
 			} else if (hasName) {
 				messageColor = "warning";
 			}
@@ -415,34 +435,19 @@ class SessionList implements Component, Focusable {
 			if (isSelected) {
 				styledMsg = theme.bold(styledMsg);
 			}
-			const styledPrefix = prefix ? theme.fg("dim", prefix) : "";
-			const messageLine = cursor + styledPrefix + styledMsg;
 
-			// Second line: metadata (dimmed) - also truncate for safety
-			const modified = formatSessionDate(session.modified);
-			const msgCount = `${session.messageCount} message${session.messageCount !== 1 ? "s" : ""}`;
-			const metadataParts = [modified, msgCount];
-			if (this.showCwd && session.cwd) {
-				metadataParts.push(shortenPath(session.cwd));
+			// Build line
+			const styledMsgCount = theme.fg("dim", msgCountPrefix);
+			const leftPart = cursor + theme.fg("dim", prefix) + styledMsgCount + styledMsg;
+			const leftWidth = visibleWidth(leftPart);
+			const spacing = Math.max(1, width - leftWidth - visibleWidth(rightPart));
+			const styledRight = theme.fg(isConfirmingDelete ? "error" : "dim", rightPart);
+
+			let line = leftPart + " ".repeat(spacing) + styledRight;
+			if (isSelected) {
+				line = theme.bg("selectedBg", line);
 			}
-			const metadataIndent = `  ${prefix ? " ".repeat(prefixWidth) : ""}`;
-			const metadata = `${metadataIndent}${metadataParts.join(" · ")}`;
-			const truncatedMetadata = truncateToWidth(metadata, width, "");
-			const metadataLine = theme.fg(isConfirmingDelete ? "error" : "dim", truncatedMetadata);
-
-			lines.push(messageLine);
-			lines.push(metadataLine);
-
-			// Optional third line: file path (when showPath is enabled)
-			if (this.showPath) {
-				const pathIndent = `  ${prefix ? " ".repeat(prefixWidth) : ""}`;
-				const pathText = `${pathIndent}${shortenPath(session.path)}`;
-				const truncatedPath = truncateToWidth(pathText, width, "…");
-				const pathLine = theme.fg(isConfirmingDelete ? "error" : "muted", truncatedPath);
-				lines.push(pathLine);
-			}
-
-			lines.push(""); // Blank line between sessions
+			lines.push(truncateToWidth(line, width));
 		}
 
 		// Add scroll indicator if needed
