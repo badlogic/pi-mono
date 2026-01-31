@@ -142,6 +142,14 @@ export interface AnthropicOptions extends StreamOptions {
 	thinkingBudgetTokens?: number;
 	interleavedThinking?: boolean;
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
+	/** Enable metadata injection for cache features */
+	enableMeta?: boolean;
+	/** Metadata to inject into request body */
+	metadata?: {
+		user_id?: string;
+		project_id?: string;
+		session_id?: string;
+	};
 }
 
 function mergeHeaders(...headerSources: (Record<string, string> | undefined)[]): Record<string, string> {
@@ -374,8 +382,10 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 	}
 
 	const base = buildBaseOptions(model, options, apiKey);
+	// Pass through enableMeta from options (may be set by openclaw)
+	const enableMeta = (options as any)?.enableMeta;
 	if (!options?.reasoning) {
-		return streamAnthropic(model, context, { ...base, thinkingEnabled: false } satisfies AnthropicOptions);
+		return streamAnthropic(model, context, { ...base, thinkingEnabled: false, enableMeta } satisfies AnthropicOptions);
 	}
 
 	const adjusted = adjustMaxTokensForThinking(
@@ -390,6 +400,7 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 		maxTokens: adjusted.maxTokens,
 		thinkingEnabled: true,
 		thinkingBudgetTokens: adjusted.thinkingBudget,
+		enableMeta,
 	} satisfies AnthropicOptions);
 };
 
@@ -525,6 +536,15 @@ function buildParams(
 		} else {
 			params.tool_choice = options.toolChoice;
 		}
+	}
+
+	// Inject metadata for cache features when enableMeta is set
+	if (options?.enableMeta) {
+		const userId = options?.metadata?.user_id ?? "pi-agent-default-user";
+		(params as any).metadata = {
+			user_id: userId,
+		};
+		console.log(`[pi-ai] enableMeta: injecting metadata.user_id=${userId}`);
 	}
 
 	return params;
