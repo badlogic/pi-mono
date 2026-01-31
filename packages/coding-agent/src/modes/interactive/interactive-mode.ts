@@ -71,6 +71,7 @@ import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
+import { convertToPng } from "../../utils/image-convert.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
@@ -1798,12 +1799,35 @@ export class InteractiveMode {
 				return;
 			}
 
+			let mimeType = image.mimeType;
+			let bytes = image.bytes;
+
+			// Convert unsupported clipboard image types (e.g. WSLg often provides image/bmp)
+			// to a format the read tool can ingest.
+			let ext = extensionForImageMimeType(mimeType);
+			if (!ext) {
+				const base64 = Buffer.from(bytes).toString("base64");
+				const converted = await convertToPng(base64, mimeType);
+				if (!converted) {
+					this.showWarning(`Clipboard image type ${mimeType} not supported; PNG conversion unavailable`);
+					return;
+				}
+
+				mimeType = converted.mimeType;
+				bytes = new Uint8Array(Buffer.from(converted.data, "base64"));
+				ext = extensionForImageMimeType(mimeType);
+			}
+
+			if (!ext) {
+				this.showWarning(`Clipboard image type ${mimeType} not supported`);
+				return;
+			}
+
 			// Write to temp file
 			const tmpDir = os.tmpdir();
-			const ext = extensionForImageMimeType(image.mimeType) ?? "png";
 			const fileName = `pi-clipboard-${crypto.randomUUID()}.${ext}`;
 			const filePath = path.join(tmpDir, fileName);
-			fs.writeFileSync(filePath, Buffer.from(image.bytes));
+			fs.writeFileSync(filePath, Buffer.from(bytes));
 
 			// Insert file path directly
 			this.editor.insertTextAtCursor?.(filePath);
