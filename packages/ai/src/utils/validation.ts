@@ -62,7 +62,8 @@ export function validateToolArguments(tool: Tool, toolCall: ToolCall): any {
 	const validate = ajv.compile(tool.parameters);
 
 	// Clone arguments so AJV can safely mutate for type coercion
-	const args = structuredClone(toolCall.arguments);
+	// Default undefined/null to {} for tools with empty object schemas (e.g. Type.Object({}))
+	const args = structuredClone(toolCall.arguments ?? {});
 
 	// Validate the arguments (AJV mutates args in-place for type coercion)
 	if (validate(args)) {
