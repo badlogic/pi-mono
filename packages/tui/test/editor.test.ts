@@ -2186,4 +2186,443 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.getText(), "xhello world");
 		});
 	});
+
+	describe("Sticky column", () => {
+		it("preserves target column when moving up through a shorter line", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Line 0: "2222222222x222" (x at col 10)
+			// Line 1: "" (empty)
+			// Line 2: "1111111111_111111111111" (_ at col 10)
+			editor.setText("2222222222x222\n\n1111111111_111111111111");
+
+			// Position cursor on _ (line 2, col 10)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 23 }); // At end
+			editor.handleInput("\x01"); // Ctrl+A - go to start of line
+			for (let i = 0; i < 10; i++) editor.handleInput("\x1b[C"); // Move right to col 10
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 10 });
+
+			// Press Up - should move to empty line (col clamped to 0)
+			editor.handleInput("\x1b[A"); // Up arrow
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 0 });
+
+			// Press Up again - should move to line 0 at col 10 (on 'x')
+			editor.handleInput("\x1b[A"); // Up arrow
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 10 });
+		});
+
+		it("preserves target column when moving down through a shorter line", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1111111111_111\n\n2222222222x222222222222");
+
+			// Position cursor on _ (line 0, col 10)
+			editor.handleInput("\x1b[A"); // Up to line 1
+			editor.handleInput("\x1b[A"); // Up to line 0
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 10; i++) editor.handleInput("\x1b[C");
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 10 });
+
+			// Press Down - should move to empty line (col clamped to 0)
+			editor.handleInput("\x1b[B"); // Down arrow
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 0 });
+
+			// Press Down again - should move to line 2 at col 10 (on 'x')
+			editor.handleInput("\x1b[B"); // Down arrow
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 10 });
+		});
+
+		it("resets sticky column on horizontal movement (left arrow)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\n\n1234567890");
+
+			// Start at line 2, col 5
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[C");
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 5 });
+
+			// Move up through empty line
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 5 (sticky)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 });
+
+			// Move left - resets sticky column
+			editor.handleInput("\x1b[D"); // Left
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 4 });
+
+			// Move down twice
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 4 (new sticky from col 4)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 4 });
+		});
+
+		it("resets sticky column on horizontal movement (right arrow)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\n\n1234567890");
+
+			// Start at line 0, col 5
+			editor.handleInput("\x1b[A"); // Up to line 1
+			editor.handleInput("\x1b[A"); // Up to line 0
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[C");
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 });
+
+			// Move down through empty line
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 5 (sticky)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 5 });
+
+			// Move right - resets sticky column
+			editor.handleInput("\x1b[C"); // Right
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 6 });
+
+			// Move up twice
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 6 (new sticky from col 6)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 6 });
+		});
+
+		it("resets sticky column on typing", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\n\n1234567890");
+
+			// Start at line 2, col 8
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 8; i++) editor.handleInput("\x1b[C");
+
+			// Move up through empty line
+			editor.handleInput("\x1b[A"); // Up
+			editor.handleInput("\x1b[A"); // Up - line 0, col 8
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 8 });
+
+			// Type a character - resets sticky column
+			editor.handleInput("X");
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 9 });
+
+			// Move down twice
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 9 (new sticky from col 9)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 9 });
+		});
+
+		it("resets sticky column on backspace", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\n\n1234567890");
+
+			// Start at line 2, col 8
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 8; i++) editor.handleInput("\x1b[C");
+
+			// Move up through empty line
+			editor.handleInput("\x1b[A"); // Up
+			editor.handleInput("\x1b[A"); // Up - line 0, col 8
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 8 });
+
+			// Backspace - resets sticky column
+			editor.handleInput("\x7f"); // Backspace
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 7 });
+
+			// Move down twice
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 7 (new sticky from col 7)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 7 });
+		});
+
+		it("resets sticky column on Ctrl+A (move to line start)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\n\n1234567890");
+
+			// Start at line 2, col 8
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 8; i++) editor.handleInput("\x1b[C");
+
+			// Move up - establishes sticky col 8
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+
+			// Ctrl+A - resets sticky column to 0
+			editor.handleInput("\x01"); // Ctrl+A
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 0 });
+
+			// Move up
+			editor.handleInput("\x1b[A"); // Up - line 0, col 0 (new sticky from col 0)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+		});
+
+		it("resets sticky column on Ctrl+E (move to line end)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("12345\n\n1234567890");
+
+			// Start at line 2, col 3
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 3; i++) editor.handleInput("\x1b[C");
+
+			// Move up through empty line - establishes sticky col 3
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 3
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 3 });
+
+			// Ctrl+E - resets sticky column to end
+			editor.handleInput("\x05"); // Ctrl+E
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 });
+
+			// Move down twice
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 5 (new sticky from col 5)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 5 });
+		});
+
+		it("resets sticky column on word movement (Ctrl+Left)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world\n\nhello world");
+
+			// Start at end of line 2 (col 11)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 11 });
+
+			// Move up through empty line - establishes sticky col 11
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 11
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 11 });
+
+			// Ctrl+Left - word movement resets sticky column
+			editor.handleInput("\x1b[1;5D"); // Ctrl+Left
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 6 }); // Before "world"
+
+			// Move down twice
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 6 (new sticky from col 6)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 6 });
+		});
+
+		it("resets sticky column on word movement (Ctrl+Right)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world\n\nhello world");
+
+			// Start at line 0, col 0
+			editor.handleInput("\x1b[A"); // Up
+			editor.handleInput("\x1b[A"); // Up
+			editor.handleInput("\x01"); // Ctrl+A
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+
+			// Move down through empty line - establishes sticky col 0
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 0
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 0 });
+
+			// Ctrl+Right - word movement resets sticky column
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 5 }); // After "hello"
+
+			// Move up twice
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 5 (new sticky from col 5)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 });
+		});
+
+		it("resets sticky column on undo", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\n\n1234567890");
+
+			// Go to line 0, col 8
+			editor.handleInput("\x1b[A"); // Up to line 1
+			editor.handleInput("\x1b[A"); // Up to line 0
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 8; i++) editor.handleInput("\x1b[C");
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 8 });
+
+			// Move down through empty line - establishes sticky col 8
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 8 (sticky)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 8 });
+
+			// Type something to create undo state - this clears sticky and sets col to 9
+			editor.handleInput("X");
+			assert.strictEqual(editor.getText(), "1234567890\n\n12345678X90");
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 9 });
+
+			// Move up - establishes new sticky col 9
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 9
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 9 });
+
+			// Undo - resets sticky column and restores cursor to line 2, col 8
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "1234567890\n\n1234567890");
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 8 });
+
+			// Move up - should capture new sticky from restored col 8, not old col 9
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 8 (new sticky from restored position)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 8 });
+		});
+
+		it("handles multiple consecutive up/down movements", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\nab\ncd\nef\n1234567890");
+
+			// Start at line 4, col 7
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 7; i++) editor.handleInput("\x1b[C");
+			assert.deepStrictEqual(editor.getCursor(), { line: 4, col: 7 });
+
+			// Move up multiple times through short lines
+			editor.handleInput("\x1b[A"); // Up - line 3, col 2 (clamped)
+			editor.handleInput("\x1b[A"); // Up - line 2, col 2 (clamped)
+			editor.handleInput("\x1b[A"); // Up - line 1, col 2 (clamped)
+			editor.handleInput("\x1b[A"); // Up - line 0, col 7 (restored)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 7 });
+
+			// Move down multiple times - sticky should still be 7
+			editor.handleInput("\x1b[B"); // Down - line 1, col 2
+			editor.handleInput("\x1b[B"); // Down - line 2, col 2
+			editor.handleInput("\x1b[B"); // Down - line 3, col 2
+			editor.handleInput("\x1b[B"); // Down - line 4, col 7 (restored)
+			assert.deepStrictEqual(editor.getCursor(), { line: 4, col: 7 });
+		});
+
+		it("moves correctly through wrapped visual lines without getting stuck", () => {
+			const tui = createTestTUI(15, 24); // Narrow terminal
+			const editor = new Editor(tui, defaultEditorTheme);
+
+			// Line 0: short
+			// Line 1: 30 chars = wraps to 3 visual lines at width 10 (after padding)
+			editor.setText("short\n123456789012345678901234567890");
+			editor.render(15); // This gives 14 layout width
+
+			// Position at end of line 1 (col 30)
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 30 });
+
+			// Move up repeatedly - should traverse all visual lines of the wrapped text
+			// and eventually reach line 0
+			editor.handleInput("\x1b[A"); // Up - to previous visual line within line 1
+			assert.strictEqual(editor.getCursor().line, 1);
+
+			editor.handleInput("\x1b[A"); // Up - another visual line
+			assert.strictEqual(editor.getCursor().line, 1);
+
+			editor.handleInput("\x1b[A"); // Up - should reach line 0
+			assert.strictEqual(editor.getCursor().line, 0);
+		});
+
+		it("handles setText resetting sticky column", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\n\n1234567890");
+
+			// Establish sticky column
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 8; i++) editor.handleInput("\x1b[C");
+			editor.handleInput("\x1b[A"); // Up
+
+			// setText should reset sticky column
+			editor.setText("abcdefghij\n\nabcdefghij");
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 10 }); // At end
+
+			// Move up - should capture new sticky from current position (10)
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 10
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 10 });
+		});
+
+		it("sets preferredVisualCol when pressing right at end of prompt (last line)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Line 0: 20 chars with 'x' at col 10
+			// Line 1: empty
+			// Line 2: 10 chars ending with '_'
+			editor.setText("111111111x1111111111\n\n333333333_");
+
+			// Go to line 0, press Ctrl+E (end of line) - col 20
+			editor.handleInput("\x1b[A"); // Up to line 1
+			editor.handleInput("\x1b[A"); // Up to line 0
+			editor.handleInput("\x05"); // Ctrl+E - move to end of line
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 20 });
+
+			// Move down to line 2 - cursor clamped to col 10 (end of line)
+			editor.handleInput("\x1b[B"); // Down to line 1, col 0
+			editor.handleInput("\x1b[B"); // Down to line 2, col 10 (clamped)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 10 });
+
+			// Press Right at end of prompt - nothing visible happens, but sets preferredVisualCol to 10
+			editor.handleInput("\x1b[C"); // Right - can't move, but sets preferredVisualCol
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 10 }); // Still at same position
+
+			// Move up twice to line 0 - should use preferredVisualCol (10) to land on 'x'
+			editor.handleInput("\x1b[A"); // Up to line 1, col 0
+			editor.handleInput("\x1b[A"); // Up to line 0, col 10 (on 'x')
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 10 });
+		});
+
+		it("handles editor resizes when preferredVisualCol is on the same line", () => {
+			// Create editor with wider terminal
+			const tui = createTestTUI(80, 24);
+			const editor = new Editor(tui, defaultEditorTheme);
+
+			editor.setText("12345678901234567890\n\n12345678901234567890");
+
+			// Start at line 2, col 15
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 15; i++) editor.handleInput("\x1b[C");
+
+			// Move up through empty line - establishes sticky col 15
+			editor.handleInput("\x1b[A"); // Up
+			editor.handleInput("\x1b[A"); // Up - line 0, col 15
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 15 });
+
+			// Render with narrower width to simulate resize
+			editor.render(12); // Width 12
+
+			// Move down - sticky should be clamped to new width
+			editor.handleInput("\x1b[B"); // Down - line 1
+			editor.handleInput("\x1b[B"); // Down - line 2, col should be clamped
+			assert.equal(editor.getCursor().col, 4);
+		});
+
+		it("handles editor resizes when preferredVisualCol is on a different line", () => {
+			const tui = createTestTUI(80, 24);
+			const editor = new Editor(tui, defaultEditorTheme);
+
+			// Create a line that wraps into multiple visual lines at width 10
+			// "12345678901234567890" = 20 chars, wraps to 2 visual lines at width 10
+			editor.setText("short\n12345678901234567890");
+
+			// Go to line 1, col 15
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 15; i++) editor.handleInput("\x1b[C");
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 15 });
+
+			// Move up to establish sticky col 15
+			editor.handleInput("\x1b[A"); // Up to line 0
+			// Line 0 has only 5 chars, so cursor at col 5
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 });
+
+			// Narrow the editor
+			editor.render(10);
+
+			// Move down - preferredVisualCol was 15, but width is 10
+			// Should land on line 1, clamped to width (visual col 9, which is logical col 9)
+			editor.handleInput("\x1b[B"); // Down to line 1
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 8 });
+
+			// Move up
+			editor.handleInput("\x1b[A"); // Up - should go to line 0
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 }); // Line 0 only has 5 chars
+
+			// Restore the original width
+			editor.render(80);
+
+			// Move down - preferredVisualCol was kept at 15
+			editor.handleInput("\x1b[B"); // Down to line 1
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 15 });
+		});
+	});
 });
