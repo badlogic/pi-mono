@@ -79,12 +79,37 @@ class TreeList implements Component {
 
 		// Start with initialSelectedId if provided, otherwise current leaf
 		const targetId = initialSelectedId ?? currentLeafId;
-		const targetIndex = this.filteredNodes.findIndex((n) => n.node.entry.id === targetId);
-		if (targetIndex !== -1) {
-			this.selectedIndex = targetIndex;
-		} else {
-			this.selectedIndex = Math.max(0, this.filteredNodes.length - 1);
+		this.selectedIndex = this.findNearestVisibleIndex(targetId);
+	}
+
+	/**
+	 * Find the index of the nearest visible entry, walking up the parent chain if needed.
+	 * Returns the index in filteredNodes, or the last index as fallback.
+	 */
+	private findNearestVisibleIndex(entryId: string | null): number {
+		if (this.filteredNodes.length === 0) return 0;
+
+		// Build a map for parent lookup
+		const entryMap = new Map<string, FlatNode>();
+		for (const flatNode of this.flatNodes) {
+			entryMap.set(flatNode.node.entry.id, flatNode);
 		}
+
+		// Build a map of visible entry IDs to their indices in filteredNodes
+		const visibleIdToIndex = new Map<string, number>(this.filteredNodes.map((node, i) => [node.node.entry.id, i]));
+
+		// Walk from entryId up to root, looking for a visible entry
+		let currentId = entryId;
+		while (currentId !== null) {
+			const index = visibleIdToIndex.get(currentId);
+			if (index !== undefined) return index;
+			const node = entryMap.get(currentId);
+			if (!node) break;
+			currentId = node.node.entry.parentId ?? null;
+		}
+
+		// Fallback: last visible entry
+		return this.filteredNodes.length - 1;
 	}
 
 	/** Build the set of entry IDs on the path from root to current leaf */
@@ -306,17 +331,11 @@ class TreeList implements Component {
 		// Recalculate visual structure (indent, connectors, gutters) based on visible tree
 		this.recalculateVisualStructure();
 
-		// Try to preserve cursor on the same node after filtering
+		// Try to preserve cursor on the same node, or find nearest visible ancestor
 		if (previouslySelectedId) {
-			const newIndex = this.filteredNodes.findIndex((n) => n.node.entry.id === previouslySelectedId);
-			if (newIndex !== -1) {
-				this.selectedIndex = newIndex;
-				return;
-			}
-		}
-
-		// Fall back: clamp index if out of bounds
-		if (this.selectedIndex >= this.filteredNodes.length) {
+			this.selectedIndex = this.findNearestVisibleIndex(previouslySelectedId);
+		} else if (this.selectedIndex >= this.filteredNodes.length) {
+			// Clamp index if out of bounds (e.g., empty previouslySelectedId)
 			this.selectedIndex = Math.max(0, this.filteredNodes.length - 1);
 		}
 	}
