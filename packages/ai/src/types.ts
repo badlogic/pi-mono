@@ -72,6 +72,14 @@ export interface StreamOptions {
 	 * Not supported by all providers (e.g., AWS Bedrock uses SDK auth).
 	 */
 	headers?: Record<string, string>;
+	/**
+	 * Maximum delay in milliseconds to wait for a retry when the server requests a long wait.
+	 * If the server's requested delay exceeds this value, the request fails immediately
+	 * with an error containing the requested delay, allowing higher-level retry logic
+	 * to handle it with user visibility.
+	 * Default: 60000 (60 seconds). Set to 0 to disable the cap.
+	 */
+	maxRetryDelayMs?: number;
 }
 
 export type ProviderStreamOptions = StreamOptions & Record<string, unknown>;

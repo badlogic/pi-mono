@@ -5,6 +5,7 @@
 ### Added
 
 - Added `newSession`, `tree`, and `fork` keybinding actions for `/new`, `/tree`, and `/fork` commands. All unbound by default. ([#1114](https://github.com/badlogic/pi-mono/pull/1114) by [@juanibiapina](https://github.com/juanibiapina))
+- Added `retry.maxDelayMs` setting to cap maximum server-requested retry delay. When a provider requests a longer delay (e.g., Google's "quota will reset after 5h"), the request fails immediately with an informative error instead of waiting silently. Default: 60000ms (60 seconds). ([#1123](https://github.com/badlogic/pi-mono/issues/1123))
 
 ### Fixed
 

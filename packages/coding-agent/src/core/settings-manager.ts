@@ -16,6 +16,7 @@ export interface RetrySettings {
 	enabled?: boolean; // default: true
 	maxRetries?: number; // default: 3
 	baseDelayMs?: number; // default: 2000 (exponential backoff: 2s, 4s, 8s)
+	maxDelayMs?: number; // default: 60000 (max server-requested delay before failing)
 }
 
 export interface TerminalSettings {
@@ -456,11 +457,12 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getRetrySettings(): { enabled: boolean; maxRetries: number; baseDelayMs: number } {
+	getRetrySettings(): { enabled: boolean; maxRetries: number; baseDelayMs: number; maxDelayMs: number } {
 		return {
 			enabled: this.getRetryEnabled(),
 			maxRetries: this.settings.retry?.maxRetries ?? 3,
 			baseDelayMs: this.settings.retry?.baseDelayMs ?? 2000,
+			maxDelayMs: this.settings.retry?.maxDelayMs ?? 60000,
 		};
 	}
 

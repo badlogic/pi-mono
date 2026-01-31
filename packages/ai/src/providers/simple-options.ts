@@ -9,6 +9,7 @@ export function buildBaseOptions(model: Model<Api>, options?: SimpleStreamOption
 		sessionId: options?.sessionId,
 		headers: options?.headers,
 		onPayload: options?.onPayload,
+		maxRetryDelayMs: options?.maxRetryDelayMs,
 	};
 }
 

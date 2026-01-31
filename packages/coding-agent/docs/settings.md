@@ -77,13 +77,17 @@ Edit directly or use `/settings` for common options.
 | `retry.enabled` | boolean | `true` | Enable automatic retry on transient errors |
 | `retry.maxRetries` | number | `3` | Maximum retry attempts |
 | `retry.baseDelayMs` | number | `2000` | Base delay for exponential backoff (2s, 4s, 8s) |
+| `retry.maxDelayMs` | number | `60000` | Max server-requested delay before failing (60s) |
+
+When a provider requests a retry delay longer than `maxDelayMs` (e.g., Google's "quota will reset after 5h"), the request fails immediately with an informative error instead of waiting silently. Set to `0` to disable the cap.
 
 ```json
 {
   "retry": {
     "enabled": true,
     "maxRetries": 3,
-    "baseDelayMs": 2000
+    "baseDelayMs": 2000,
+    "maxDelayMs": 60000
   }
 }
 ```

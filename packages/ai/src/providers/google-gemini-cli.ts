@@ -473,6 +473,16 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli", GoogleGe
 						// Use server-provided delay or exponential backoff
 						const serverDelay = extractRetryDelay(errorText, response);
 						const delayMs = serverDelay ?? BASE_DELAY_MS * 2 ** attempt;
+
+						// Check if server delay exceeds max allowed (default: 60s)
+						const maxDelayMs = options?.maxRetryDelayMs ?? 60000;
+						if (maxDelayMs > 0 && serverDelay && serverDelay > maxDelayMs) {
+							const delaySeconds = Math.ceil(serverDelay / 1000);
+							throw new Error(
+								`Server requested ${delaySeconds}s retry delay (max: ${Math.ceil(maxDelayMs / 1000)}s). ${extractErrorMessage(errorText)}`,
+							);
+						}
+
 						await sleep(delayMs, options?.signal);
 						continue;
 					}

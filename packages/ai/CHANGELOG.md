@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `maxRetryDelayMs` option to `StreamOptions` to cap server-requested retry delays. When a provider (e.g., Google Gemini CLI) requests a delay longer than this value, the request fails immediately with an informative error instead of waiting silently. Default: 60000ms (60 seconds). Set to 0 to disable the cap. ([#1123](https://github.com/badlogic/pi-mono/issues/1123))
+
 ## [0.50.7] - 2026-01-31
 
 ## [0.50.6] - 2026-01-30
