@@ -1814,7 +1814,7 @@ export class InteractiveMode {
 				}
 
 				mimeType = converted.mimeType;
-				bytes = new Uint8Array(Buffer.from(converted.data, "base64"));
+				bytes = Buffer.from(converted.data, "base64");
 				ext = extensionForImageMimeType(mimeType);
 			}
 
