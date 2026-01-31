@@ -454,6 +454,20 @@ function collectAutoExtensionEntries(dir: string): string[] {
 	return entries;
 }
 
+/**
+ * Collect resource files from a directory based on resource type.
+ * Extensions use smart discovery (index.ts in subdirs), others use recursive collection.
+ */
+function collectResourceFiles(dir: string, resourceType: ResourceType): string[] {
+	if (resourceType === "skills") {
+		return collectSkillEntries(dir);
+	}
+	if (resourceType === "extensions") {
+		return collectAutoExtensionEntries(dir);
+	}
+	return collectFiles(dir, FILE_PATTERNS[resourceType]);
+}
+
 function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
 	const rel = relative(baseDir, filePath);
 	const name = basename(filePath);
@@ -1212,8 +1226,7 @@ export class DefaultPackageManager implements PackageManager {
 			const dir = join(packageRoot, resourceType);
 			if (existsSync(dir)) {
 				// Collect all files from the directory (all enabled by default)
-				const files =
-					resourceType === "skills" ? collectSkillEntries(dir) : collectFiles(dir, FILE_PATTERNS[resourceType]);
+				const files = collectResourceFiles(dir, resourceType);
 				for (const f of files) {
 					this.addResource(this.getTargetMap(accumulator, resourceType), f, metadata, true);
 				}
@@ -1238,8 +1251,7 @@ export class DefaultPackageManager implements PackageManager {
 		const dir = join(packageRoot, resourceType);
 		if (existsSync(dir)) {
 			// Collect all files from the directory (all enabled by default)
-			const files =
-				resourceType === "skills" ? collectSkillEntries(dir) : collectFiles(dir, FILE_PATTERNS[resourceType]);
+			const files = collectResourceFiles(dir, resourceType);
 			for (const f of files) {
 				this.addResource(target, f, metadata, true);
 			}
@@ -1295,10 +1307,7 @@ export class DefaultPackageManager implements PackageManager {
 		if (!existsSync(conventionDir)) {
 			return { allFiles: [], enabledByManifest: new Set() };
 		}
-		const allFiles =
-			resourceType === "skills"
-				? collectSkillEntries(conventionDir)
-				: collectFiles(conventionDir, FILE_PATTERNS[resourceType]);
+		const allFiles = collectResourceFiles(conventionDir, resourceType);
 		return { allFiles, enabledByManifest: new Set(allFiles) };
 	}
 
@@ -1495,11 +1504,7 @@ export class DefaultPackageManager implements PackageManager {
 				if (stats.isFile()) {
 					files.push(p);
 				} else if (stats.isDirectory()) {
-					if (resourceType === "skills") {
-						files.push(...collectSkillEntries(p));
-					} else {
-						files.push(...collectFiles(p, FILE_PATTERNS[resourceType]));
-					}
+					files.push(...collectResourceFiles(p, resourceType));
 				}
 			} catch {
 				// Ignore errors

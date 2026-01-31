@@ -710,4 +710,108 @@ Content`,
 			expect(result.extensions.some((r) => r.path.includes("pkg2"))).toBe(true);
 		});
 	});
+
+	describe("multi-file extension discovery (issue #1102)", () => {
+		it("should only load index.ts from subdirectories, not helper modules", async () => {
+			// Regression test: packages with multi-file extensions in subdirectories
+			// should only load the index.ts entry point, not helper modules like agents.ts
+			const pkgDir = join(tempDir, "multifile-pkg");
+			mkdirSync(join(pkgDir, "extensions", "subagent"), { recursive: true });
+
+			// Main entry point
+			writeFileSync(
+				join(pkgDir, "extensions", "subagent", "index.ts"),
+				`import { helper } from "./agents.js";
+export default function(api) { api.registerTool({ name: "test", description: "test", execute: async () => helper() }); }`,
+			);
+			// Helper module (should NOT be loaded as standalone extension)
+			writeFileSync(
+				join(pkgDir, "extensions", "subagent", "agents.ts"),
+				`export function helper() { return "helper"; }`,
+			);
+			// Top-level extension file (should be loaded)
+			writeFileSync(join(pkgDir, "extensions", "standalone.ts"), "export default function(api) {}");
+
+			const result = await packageManager.resolveExtensionSources([pkgDir]);
+
+			// Should find the index.ts and standalone.ts
+			expect(result.extensions.some((r) => r.path.endsWith("subagent/index.ts") && r.enabled)).toBe(true);
+			expect(result.extensions.some((r) => r.path.endsWith("standalone.ts") && r.enabled)).toBe(true);
+
+			// Should NOT find agents.ts as a standalone extension
+			expect(result.extensions.some((r) => r.path.endsWith("agents.ts"))).toBe(false);
+		});
+
+		it("should respect package.json pi.extensions manifest in subdirectories", async () => {
+			const pkgDir = join(tempDir, "manifest-subdir-pkg");
+			mkdirSync(join(pkgDir, "extensions", "custom"), { recursive: true });
+
+			// Subdirectory with its own manifest
+			writeFileSync(
+				join(pkgDir, "extensions", "custom", "package.json"),
+				JSON.stringify({
+					pi: {
+						extensions: ["./main.ts"],
+					},
+				}),
+			);
+			writeFileSync(join(pkgDir, "extensions", "custom", "main.ts"), "export default function(api) {}");
+			writeFileSync(join(pkgDir, "extensions", "custom", "utils.ts"), "export const util = 1;");
+
+			const result = await packageManager.resolveExtensionSources([pkgDir]);
+
+			// Should find main.ts declared in manifest
+			expect(result.extensions.some((r) => r.path.endsWith("custom/main.ts") && r.enabled)).toBe(true);
+
+			// Should NOT find utils.ts (not declared in manifest)
+			expect(result.extensions.some((r) => r.path.endsWith("utils.ts"))).toBe(false);
+		});
+
+		it("should handle mixed top-level files and subdirectories", async () => {
+			const pkgDir = join(tempDir, "mixed-pkg");
+			mkdirSync(join(pkgDir, "extensions", "complex"), { recursive: true });
+
+			// Top-level extension
+			writeFileSync(join(pkgDir, "extensions", "simple.ts"), "export default function(api) {}");
+
+			// Subdirectory with index.ts + helpers
+			writeFileSync(
+				join(pkgDir, "extensions", "complex", "index.ts"),
+				"import { a } from './a.js'; export default function(api) {}",
+			);
+			writeFileSync(join(pkgDir, "extensions", "complex", "a.ts"), "export const a = 1;");
+			writeFileSync(join(pkgDir, "extensions", "complex", "b.ts"), "export const b = 2;");
+
+			const result = await packageManager.resolveExtensionSources([pkgDir]);
+
+			// Should find simple.ts and complex/index.ts
+			expect(result.extensions.some((r) => r.path.endsWith("simple.ts") && r.enabled)).toBe(true);
+			expect(result.extensions.some((r) => r.path.endsWith("complex/index.ts") && r.enabled)).toBe(true);
+
+			// Should NOT find helper modules
+			expect(result.extensions.some((r) => r.path.endsWith("complex/a.ts"))).toBe(false);
+			expect(result.extensions.some((r) => r.path.endsWith("complex/b.ts"))).toBe(false);
+
+			// Total should be exactly 2
+			expect(result.extensions.filter((r) => r.enabled).length).toBe(2);
+		});
+
+		it("should skip subdirectories without index.ts or manifest", async () => {
+			const pkgDir = join(tempDir, "no-entry-pkg");
+			mkdirSync(join(pkgDir, "extensions", "broken"), { recursive: true });
+
+			// Subdirectory with no index.ts and no manifest
+			writeFileSync(join(pkgDir, "extensions", "broken", "helper.ts"), "export const x = 1;");
+			writeFileSync(join(pkgDir, "extensions", "broken", "another.ts"), "export const y = 2;");
+
+			// Valid top-level extension
+			writeFileSync(join(pkgDir, "extensions", "valid.ts"), "export default function(api) {}");
+
+			const result = await packageManager.resolveExtensionSources([pkgDir]);
+
+			// Should only find the valid top-level extension
+			expect(result.extensions.some((r) => r.path.endsWith("valid.ts") && r.enabled)).toBe(true);
+			expect(result.extensions.filter((r) => r.enabled).length).toBe(1);
+		});
+	});
 });

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Multi-file extensions in packages now work correctly. Package resolution now uses the same discovery logic as local extensions: only `index.ts` (or manifest-declared entries) are loaded from subdirectories, not helper modules. ([#1102](https://github.com/badlogic/pi-mono/issues/1102))
+
 ## [0.50.6] - 2026-01-30
 
 ### Added
