@@ -216,6 +216,14 @@ export interface OpenAICompletionsCompat {
 	requiresMistralToolIds?: boolean;
 	/** Format for reasoning/thinking parameter. "openai" uses reasoning_effort, "zai" uses thinking: { type: "enabled" }. Default: "openai". */
 	thinkingFormat?: "openai" | "zai";
+	/**
+	 * Whether the provider supports tool_calls in streaming responses.
+	 * When false and tools are present, the request is sent with stream:false
+	 * and the response is converted to the event stream format.
+	 * Default: true. Auto-detected as false for Ollama.
+	 * See: https://github.com/ollama/ollama/issues/9632
+	 */
+	supportsStreamingToolCalls?: boolean;
 	/** OpenRouter-specific routing preferences. Only used when baseUrl points to OpenRouter. */
 	openRouterRouting?: OpenRouterRouting;
 	/** Vercel AI Gateway routing preferences. Only used when baseUrl points to Vercel AI Gateway. */

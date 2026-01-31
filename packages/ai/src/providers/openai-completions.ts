@@ -105,8 +105,65 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 			const client = createClient(model, context, apiKey, options?.headers);
 			const params = buildParams(model, context, options);
 			options?.onPayload?.(params);
-			const openaiStream = await client.chat.completions.create(params, { signal: options?.signal });
+			const apiResponse = await client.chat.completions.create(params, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
+
+			// Handle non-streaming response (used when tools + Ollama/local provider)
+			if (!params.stream) {
+				const completion = apiResponse as unknown as OpenAI.Chat.Completions.ChatCompletion;
+				const choice = completion.choices?.[0];
+				if (completion.usage) {
+					const cachedTokens = (completion.usage as any).prompt_tokens_details?.cached_tokens || 0;
+					const reasoningTokens = (completion.usage as any).completion_tokens_details?.reasoning_tokens || 0;
+					const input = (completion.usage.prompt_tokens || 0) - cachedTokens;
+					const outputTokens = (completion.usage.completion_tokens || 0) + reasoningTokens;
+					output.usage = {
+						input,
+						output: outputTokens,
+						cacheRead: cachedTokens,
+						cacheWrite: 0,
+						totalTokens: input + outputTokens + cachedTokens,
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					};
+					calculateCost(model, output.usage);
+				}
+				if (choice) {
+					if (choice.finish_reason) {
+						output.stopReason = mapStopReason(choice.finish_reason as StopReason);
+					}
+					const msg = choice.message;
+					// Handle text content
+					if (msg?.content) {
+						const textBlock: TextContent = { type: "text", text: msg.content };
+						output.content.push(textBlock);
+						stream.push({ type: "text_start", contentIndex: 0, partial: output });
+						stream.push({ type: "text_delta", contentIndex: 0, delta: msg.content, partial: output });
+						stream.push({ type: "text_end", contentIndex: 0, content: msg.content, partial: output });
+					}
+					// Handle tool calls
+					if (msg?.tool_calls) {
+						for (const tc of msg.tool_calls) {
+							let args: Record<string, unknown> = {};
+							try { args = JSON.parse(tc.function?.arguments || "{}"); } catch (_) { /* ignore parse errors */ }
+							const toolBlock: ToolCall = {
+								type: "toolCall",
+								id: tc.id || "",
+								name: tc.function?.name || "",
+								arguments: args,
+							};
+							output.content.push(toolBlock);
+							const idx = output.content.length - 1;
+							stream.push({ type: "toolcall_start", contentIndex: idx, partial: output });
+							stream.push({ type: "toolcall_delta", contentIndex: idx, delta: tc.function?.arguments || "", partial: output });
+							stream.push({ type: "toolcall_end", contentIndex: idx, toolCall: toolBlock, partial: output });
+						}
+					}
+				}
+				stream.push({ type: "done", reason: output.stopReason, message: output });
+				stream.end();
+				return;
+			}
+			const openaiStream = apiResponse;
 
 			let currentBlock: TextContent | ThinkingContent | (ToolCall & { partialArgs?: string }) | null = null;
 			const blocks = output.content;
@@ -401,13 +458,20 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 	const messages = convertMessages(model, context, compat);
 	maybeAddOpenRouterAnthropicCacheControl(model, messages);
 
+	// Ollama (and some other local providers) do not properly emit tool_calls
+	// in streaming mode — the tool call is silently dropped. Fall back to
+	// non-streaming when tools are present and the provider doesn't support it.
+	// See: https://github.com/ollama/ollama/issues/9632
+	const hasTools = context.tools && context.tools.length > 0;
+	const shouldStream = !(hasTools && compat.supportsStreamingToolCalls === false);
+
 	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
 		model: model.id,
 		messages,
-		stream: true,
+		stream: shouldStream as true, // cast needed: when false, we handle the non-streaming response below
 	};
 
-	if (compat.supportsUsageInStreaming !== false) {
+	if (shouldStream && compat.supportsUsageInStreaming !== false) {
 		(params as any).stream_options = { include_usage: true };
 	}
 
@@ -771,11 +835,24 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): Sto
  * Provider takes precedence over URL-based detection since it's explicitly configured.
  * Returns a fully resolved OpenAICompletionsCompat object with all fields set.
  */
+/**
+ * Detect if the model is served by Ollama based on provider name or baseUrl.
+ * Ollama's streaming implementation does not properly emit tool_calls delta chunks,
+ * so we need to fall back to non-streaming when tools are present.
+ */
+function isOllamaProvider(provider: string, baseUrl: string): boolean {
+	const p = provider.toLowerCase();
+	const url = baseUrl.toLowerCase();
+	return p === "ollama" || url.includes(":11434") || url.includes("localhost:11434") || url.includes("127.0.0.1:11434");
+}
+
 function detectCompat(model: Model<"openai-completions">): Required<OpenAICompletionsCompat> {
 	const provider = model.provider;
 	const baseUrl = model.baseUrl;
 
 	const isZai = provider === "zai" || baseUrl.includes("api.z.ai");
+
+	const isOllama = isOllamaProvider(provider, baseUrl);
 
 	const isNonStandard =
 		provider === "cerebras" ||
@@ -798,9 +875,10 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 
 	return {
 		supportsStore: !isNonStandard,
-		supportsDeveloperRole: !isNonStandard,
+		supportsDeveloperRole: !isNonStandard && !isOllama,
 		supportsReasoningEffort: !isGrok && !isZai,
-		supportsUsageInStreaming: true,
+		supportsUsageInStreaming: !isOllama,
+		supportsStreamingToolCalls: !isOllama,
 		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
 		requiresToolResultName: isMistral,
 		requiresAssistantAfterToolResult: false, // Mistral no longer requires this as of Dec 2024
@@ -832,6 +910,7 @@ function getCompat(model: Model<"openai-completions">): Required<OpenAICompletio
 		requiresThinkingAsText: model.compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
 		requiresMistralToolIds: model.compat.requiresMistralToolIds ?? detected.requiresMistralToolIds,
 		thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
+		supportsStreamingToolCalls: model.compat.supportsStreamingToolCalls ?? detected.supportsStreamingToolCalls,
 		openRouterRouting: model.compat.openRouterRouting ?? {},
 		vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
 	};
