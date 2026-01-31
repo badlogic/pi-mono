@@ -6,6 +6,10 @@
 
 - Added `newSession`, `tree`, and `fork` keybinding actions for `/new`, `/tree`, and `/fork` commands. All unbound by default. ([#1114](https://github.com/badlogic/pi-mono/pull/1114) by [@juanibiapina](https://github.com/juanibiapina))
 
+### Fixed
+
+- Fixed clipboard image paste on WSL2/WSLg writing invalid PNG files when clipboard provides `image/bmp` format. BMP images are now converted to PNG before saving. ([#1112](https://github.com/badlogic/pi-mono/pull/1112) by [@lightningRalf](https://github.com/lightningRalf))
+
 ## [0.50.7] - 2026-01-31
 
 ### Fixed
