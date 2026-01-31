@@ -76,7 +76,7 @@ describe("Bug regression: isImageLine() crash with image escape sequences", () =
 				"Suffix text \x1b_Ga=T,data...\x1b\\ suffix",
 				"Middle \x1b_Ga=T,data...\x1b\\ more text",
 				// Very long line (simulating 300KB+ crash scenario)
-				"Text before " + "\x1b_Ga=T,f=100" + "A".repeat(300000) + " text after",
+				`Text before \x1b_Ga=T,f=100${"A".repeat(300000)} text after`,
 			];
 
 			for (const line of scenarios) {
@@ -93,7 +93,7 @@ describe("Bug regression: isImageLine() crash with image escape sequences", () =
 				"Suffix text \x1b]1337;File=inline=1:data==\x07 suffix",
 				"Middle \x1b]1337;File=inline=1:data==\x07 more text",
 				// Very long line (simulating 304KB crash scenario)
-				"Text before " + "\x1b]1337;File=size=800,600;inline=1:" + "B".repeat(300000) + " text after",
+				`Text before \x1b]1337;File=size=800,600;inline=1:${"B".repeat(300000)} text after`,
 			];
 
 			for (const line of scenarios) {

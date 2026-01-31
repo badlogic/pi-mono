@@ -46,7 +46,7 @@ function buildImage(): string[] {
 		for (let x = 0; x < WIDTH; x++) {
 			const top = pixels[row][x];
 			const bottom = pixels[row + 1]?.[x] ?? top;
-			line += rgb(bottom[0], bottom[1], bottom[2]) + rgb(top[0], top[1], top[2], true) + "▄";
+			line += `${rgb(bottom[0], bottom[1], bottom[2])}${rgb(top[0], top[1], top[2], true)}▄`;
 		}
 		line += RESET;
 		lines.push(line);
