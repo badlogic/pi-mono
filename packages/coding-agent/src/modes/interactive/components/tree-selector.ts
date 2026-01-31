@@ -59,6 +59,7 @@ class TreeList implements Component {
 	private toolCallMap: Map<string, ToolCallInfo> = new Map();
 	private multipleRoots = false;
 	private activePathIds: Set<string> = new Set();
+	private lastSelectedId: string | null = null;
 
 	public onSelect?: (entryId: string) => void;
 	public onCancel?: () => void;
@@ -80,6 +81,7 @@ class TreeList implements Component {
 		// Start with initialSelectedId if provided, otherwise current leaf
 		const targetId = initialSelectedId ?? currentLeafId;
 		this.selectedIndex = this.findNearestVisibleIndex(targetId);
+		this.lastSelectedId = this.filteredNodes[this.selectedIndex]?.node.entry.id ?? null;
 	}
 
 	/**
@@ -264,8 +266,11 @@ class TreeList implements Component {
 	}
 
 	private applyFilter(): void {
-		// Remember currently selected node to preserve cursor position
-		const previouslySelectedId = this.filteredNodes[this.selectedIndex]?.node.entry.id;
+		// Update lastSelectedId only when we have a valid selection (non-empty list)
+		// This preserves the selection when switching through empty filter results
+		if (this.filteredNodes.length > 0) {
+			this.lastSelectedId = this.filteredNodes[this.selectedIndex]?.node.entry.id ?? this.lastSelectedId;
+		}
 
 		const searchTokens = this.searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
 
@@ -332,11 +337,16 @@ class TreeList implements Component {
 		this.recalculateVisualStructure();
 
 		// Try to preserve cursor on the same node, or find nearest visible ancestor
-		if (previouslySelectedId) {
-			this.selectedIndex = this.findNearestVisibleIndex(previouslySelectedId);
+		if (this.lastSelectedId) {
+			this.selectedIndex = this.findNearestVisibleIndex(this.lastSelectedId);
 		} else if (this.selectedIndex >= this.filteredNodes.length) {
-			// Clamp index if out of bounds (e.g., empty previouslySelectedId)
+			// Clamp index if out of bounds
 			this.selectedIndex = Math.max(0, this.filteredNodes.length - 1);
+		}
+
+		// Update lastSelectedId to the actual selection (may have changed due to parent walk)
+		if (this.filteredNodes.length > 0) {
+			this.lastSelectedId = this.filteredNodes[this.selectedIndex]?.node.entry.id ?? this.lastSelectedId;
 		}
 	}
 
