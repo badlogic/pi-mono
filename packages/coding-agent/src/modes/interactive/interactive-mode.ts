@@ -1776,6 +1776,9 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("externalEditor", () => this.openExternalEditor());
 		this.defaultEditor.onAction("followUp", () => this.handleFollowUp());
 		this.defaultEditor.onAction("dequeue", () => this.handleDequeue());
+		this.defaultEditor.onAction("newSession", () => this.handleClearCommand());
+		this.defaultEditor.onAction("tree", () => this.showTreeSelector());
+		this.defaultEditor.onAction("fork", () => this.showUserMessageSelector());
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;

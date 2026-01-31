@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `newSession`, `tree`, and `fork` keybinding actions for `/new`, `/tree`, and `/fork` commands. All unbound by default. ([#1114](https://github.com/badlogic/pi-mono/pull/1114) by [@juanibiapina](https://github.com/juanibiapina))
+
 ## [0.50.7] - 2026-01-31
 
 ### Fixed

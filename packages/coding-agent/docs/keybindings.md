@@ -76,6 +76,14 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, etc.
 | `suspend` | `ctrl+z` | Suspend to background |
 | `externalEditor` | `ctrl+g` | Open in external editor (`$VISUAL` or `$EDITOR`) |
 
+### Session
+
+| Action | Default | Description |
+|--------|---------|-------------|
+| `newSession` | *(none)* | Start a new session (`/new`) |
+| `tree` | *(none)* | Open session tree navigator (`/tree`) |
+| `fork` | *(none)* | Fork current session (`/fork`) |
+
 ### Models & Thinking
 
 | Action | Default | Description |
