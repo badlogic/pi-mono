@@ -1236,14 +1236,21 @@ export class AgentSession {
 	/**
 	 * Set thinking level.
 	 * Clamps to model capabilities based on available thinking levels.
-	 * Saves to session and settings.
+	 * Saves to session and settings only if the level actually changes.
 	 */
 	setThinkingLevel(level: ThinkingLevel): void {
 		const availableLevels = this.getAvailableThinkingLevels();
 		const effectiveLevel = availableLevels.includes(level) ? level : this._clampThinkingLevel(level, availableLevels);
+
+		// Only persist if actually changing
+		const isChanging = effectiveLevel !== this.agent.state.thinkingLevel;
+
 		this.agent.setThinkingLevel(effectiveLevel);
-		this.sessionManager.appendThinkingLevelChange(effectiveLevel);
-		this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
+
+		if (isChanging) {
+			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
+			this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
+		}
 	}
 
 	/**
