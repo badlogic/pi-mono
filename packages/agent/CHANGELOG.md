@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Forward `tool_exec_start`, `tool_exec_update`, `tool_exec_end` provider events as `tool_execution_*` agent events in `streamAssistantResponse`
+
 ## [0.50.7] - 2026-01-31
 
 ## [0.50.6] - 2026-01-30

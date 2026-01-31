@@ -177,6 +177,11 @@ export interface Context {
 	tools?: Tool[];
 }
 
+export interface ToolExecResult {
+	content: (TextContent | ImageContent)[];
+	details?: unknown;
+}
+
 export type AssistantMessageEvent =
 	| { type: "start"; partial: AssistantMessage }
 	| { type: "text_start"; contentIndex: number; partial: AssistantMessage }
@@ -188,6 +193,15 @@ export type AssistantMessageEvent =
 	| { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
 	| { type: "toolcall_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
 	| { type: "toolcall_end"; contentIndex: number; toolCall: ToolCall; partial: AssistantMessage }
+	| { type: "tool_exec_start"; toolCallId: string; toolName: string; args: Record<string, unknown> }
+	| {
+			type: "tool_exec_update";
+			toolCallId: string;
+			toolName: string;
+			args: Record<string, unknown>;
+			partialResult: ToolExecResult;
+	  }
+	| { type: "tool_exec_end"; toolCallId: string; toolName: string; result: ToolExecResult; isError: boolean }
 	| { type: "done"; reason: Extract<StopReason, "stop" | "length" | "toolUse">; message: AssistantMessage }
 	| { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: AssistantMessage };
 

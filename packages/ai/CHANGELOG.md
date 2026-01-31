@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `ToolExecResult` interface and `tool_exec_start`, `tool_exec_update`, `tool_exec_end` event variants to `AssistantMessageEvent` for custom providers that execute tools inside `streamSimple`
+
 ## [0.50.7] - 2026-01-31
 
 ## [0.50.6] - 2026-01-30
