@@ -14,11 +14,11 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession, type AgentSessionEvent } from "../src/core/agent-session.js";
-import { AuthStorage } from "../src/core/auth-storage.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
+import { JSONFileAuthStorage } from "../src/index.js";
 import { API_KEY, createTestResourceLoader } from "./utilities.js";
 
 describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
@@ -60,7 +60,7 @@ describe.skipIf(!API_KEY)("AgentSession compaction e2e", () => {
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		// Use minimal keepRecentTokens so small test conversations have something to summarize
 		settingsManager.applyOverrides({ compaction: { keepRecentTokens: 1 } });
-		const authStorage = new AuthStorage(join(tempDir, "auth.json"));
+		const authStorage = new JSONFileAuthStorage(join(tempDir, "auth.json"));
 		const modelRegistry = new ModelRegistry(authStorage);
 
 		session = new AgentSession({

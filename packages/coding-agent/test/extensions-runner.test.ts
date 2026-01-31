@@ -6,12 +6,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
 import { discoverAndLoadExtensions } from "../src/core/extensions/loader.js";
 import { ExtensionRunner } from "../src/core/extensions/runner.js";
 import { DEFAULT_KEYBINDINGS, type KeyId } from "../src/core/keybindings.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
+import { JSONFileAuthStorage } from "../src/index.js";
 
 describe("ExtensionRunner", () => {
 	let tempDir: string;
@@ -24,7 +24,7 @@ describe("ExtensionRunner", () => {
 		extensionsDir = path.join(tempDir, "extensions");
 		fs.mkdirSync(extensionsDir);
 		sessionManager = SessionManager.inMemory();
-		const authStorage = new AuthStorage(path.join(tempDir, "auth.json"));
+		const authStorage = new JSONFileAuthStorage(path.join(tempDir, "auth.json"));
 		modelRegistry = new ModelRegistry(authStorage);
 	});
 
@@ -71,7 +71,10 @@ describe("ExtensionRunner", () => {
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-			const keybindings = { ...DEFAULT_KEYBINDINGS, cycleModelForward: "ctrl+n" as KeyId };
+			const keybindings = {
+				...DEFAULT_KEYBINDINGS,
+				cycleModelForward: "ctrl+n" as KeyId,
+			};
 			const shortcuts = runner.getShortcuts(keybindings);
 
 			expect(shortcuts.has("ctrl+p")).toBe(true);
@@ -118,7 +121,10 @@ describe("ExtensionRunner", () => {
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-			const keybindings = { ...DEFAULT_KEYBINDINGS, interrupt: "ctrl+x" as KeyId };
+			const keybindings = {
+				...DEFAULT_KEYBINDINGS,
+				interrupt: "ctrl+x" as KeyId,
+			};
 			const shortcuts = runner.getShortcuts(keybindings);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
@@ -142,7 +148,10 @@ describe("ExtensionRunner", () => {
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-			const keybindings = { ...DEFAULT_KEYBINDINGS, clear: ["ctrl+x", "ctrl+y"] as KeyId[] };
+			const keybindings = {
+				...DEFAULT_KEYBINDINGS,
+				clear: ["ctrl+x", "ctrl+y"] as KeyId[],
+			};
 			const shortcuts = runner.getShortcuts(keybindings);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
@@ -166,7 +175,10 @@ describe("ExtensionRunner", () => {
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-			const keybindings = { ...DEFAULT_KEYBINDINGS, pasteImage: ["ctrl+x", "ctrl+y"] as KeyId[] };
+			const keybindings = {
+				...DEFAULT_KEYBINDINGS,
+				pasteImage: ["ctrl+x", "ctrl+y"] as KeyId[],
+			};
 			const shortcuts = runner.getShortcuts(keybindings);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("built-in shortcut for pasteImage"));
@@ -295,7 +307,11 @@ describe("ExtensionRunner", () => {
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
 
-			const errors: Array<{ extensionPath: string; event: string; error: string }> = [];
+			const errors: Array<{
+				extensionPath: string;
+				event: string;
+				error: string;
+			}> = [];
 			runner.onError((err) => {
 				errors.push(err);
 			});

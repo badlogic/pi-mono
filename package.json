@@ -45,5 +45,9 @@
 		"@mariozechner/jiti": "^2.6.5",
 		"@mariozechner/pi-coding-agent": "^0.30.2",
 		"get-east-asian-width": "^1.4.0"
+	},
+	"volta": {
+		"node": "24.13.0",
+		"npm": "11.8.0"
 	}
 }

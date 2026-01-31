@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel, getOAuthApiKey, type OAuthCredentials, type OAuthProvider } from "@mariozechner/pi-ai";
 import { AgentSession } from "../src/core/agent-session.js";
-import { AuthStorage } from "../src/core/auth-storage.js";
+import { type AuthStorage, JSONFileAuthStorage } from "../src/core/auth-storage.js";
 import { createExtensionRuntime } from "../src/core/extensions/loader.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import type { ResourceLoader } from "../src/core/resource-loader.js";
@@ -119,7 +119,7 @@ export const PI_AGENT_DIR = join(homedir(), ".pi", "agent");
  * Use this for tests that need real OAuth credentials.
  */
 export function getRealAuthStorage(): AuthStorage {
-	return new AuthStorage(AUTH_PATH);
+	return new JSONFileAuthStorage(AUTH_PATH);
 }
 
 /**
@@ -176,7 +176,11 @@ export interface TestSessionContext {
 
 export function createTestResourceLoader(): ResourceLoader {
 	return {
-		getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
+		getExtensions: () => ({
+			extensions: [],
+			errors: [],
+			runtime: createExtensionRuntime(),
+		}),
 		getSkills: () => ({ skills: [], diagnostics: [] }),
 		getPrompts: () => ({ prompts: [], diagnostics: [] }),
 		getThemes: () => ({ themes: [], diagnostics: [] }),
@@ -213,7 +217,7 @@ export function createTestSession(options: TestSessionOptions = {}): TestSession
 		settingsManager.applyOverrides(options.settingsOverrides);
 	}
 
-	const authStorage = new AuthStorage(join(tempDir, "auth.json"));
+	const authStorage = new JSONFileAuthStorage(join(tempDir, "auth.json"));
 	const modelRegistry = new ModelRegistry(authStorage, tempDir);
 
 	const session = new AgentSession({
@@ -252,7 +256,11 @@ export function createTestSession(options: TestSessionOptions = {}): TestSession
 export function buildTestTree(
 	session: SessionManager,
 	structure: {
-		messages: Array<{ role: "user" | "assistant"; text: string; branchFrom?: string }>;
+		messages: Array<{
+			role: "user" | "assistant";
+			text: string;
+			branchFrom?: string;
+		}>;
 	},
 ): Map<string, string> {
 	const ids = new Map<string, string>();

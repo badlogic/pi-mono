@@ -3,7 +3,7 @@ import { Agent, type AgentMessage, type ThinkingLevel } from "@mariozechner/pi-a
 import type { Message, Model } from "@mariozechner/pi-ai";
 import { getAgentDir, getDocsPath } from "../config.js";
 import { AgentSession } from "./agent-session.js";
-import { AuthStorage } from "./auth-storage.js";
+import { type AuthStorage, JSONFileAuthStorage } from "./auth-storage.js";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
 import type { ExtensionRunner, LoadExtensionsResult, ToolDefinition } from "./extensions/index.js";
 import { convertToLlm } from "./messages.js";
@@ -44,7 +44,7 @@ export interface CreateAgentSessionOptions {
 	/** Global config directory. Default: ~/.pi/agent */
 	agentDir?: string;
 
-	/** Auth storage for credentials. Default: new AuthStorage(agentDir/auth.json) */
+	/** Auth storage for credentials. Default: new JSONFileAuthStorage(agentDir/auth.json) */
 	authStorage?: AuthStorage;
 	/** Model registry. Default: new ModelRegistry(authStorage, agentDir/models.json) */
 	modelRegistry?: ModelRegistry;
@@ -95,27 +95,27 @@ export type { Skill } from "./skills.js";
 export type { Tool } from "./tools/index.js";
 
 export {
-	// Pre-built tools (use process.cwd())
-	readTool,
-	bashTool,
-	editTool,
-	writeTool,
-	grepTool,
-	findTool,
-	lsTool,
-	codingTools,
-	readOnlyTools,
 	allTools as allBuiltInTools,
+	bashTool,
+	codingTools,
+	createBashTool,
 	// Tool factories (for custom cwd)
 	createCodingTools,
+	createEditTool,
+	createFindTool,
+	createGrepTool,
+	createLsTool,
 	createReadOnlyTools,
 	createReadTool,
-	createBashTool,
-	createEditTool,
 	createWriteTool,
-	createGrepTool,
-	createFindTool,
-	createLsTool,
+	editTool,
+	findTool,
+	grepTool,
+	lsTool,
+	readOnlyTools,
+	// Pre-built tools (use process.cwd())
+	readTool,
+	writeTool,
 };
 
 // Helper Functions
@@ -167,14 +167,18 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// Use provided or create AuthStorage and ModelRegistry
 	const authPath = options.agentDir ? join(agentDir, "auth.json") : undefined;
 	const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
-	const authStorage = options.authStorage ?? new AuthStorage(authPath);
+	const authStorage = options.authStorage ?? new JSONFileAuthStorage(authPath);
 	const modelRegistry = options.modelRegistry ?? new ModelRegistry(authStorage, modelsPath);
 
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd);
 
 	if (!resourceLoader) {
-		resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+		resourceLoader = new DefaultResourceLoader({
+			cwd,
+			agentDir,
+			settingsManager,
+		});
 		await resourceLoader.reload();
 		time("resourceLoader.reload");
 	}
@@ -255,7 +259,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 					if (hasImages) {
 						const filteredContent = content
 							.map((c) =>
-								c.type === "image" ? { type: "text" as const, text: "Image reading is disabled." } : c,
+								c.type === "image"
+									? {
+											type: "text" as const,
+											text: "Image reading is disabled.",
+										}
+									: c,
 							)
 							.filter(
 								(c, i, arr) =>

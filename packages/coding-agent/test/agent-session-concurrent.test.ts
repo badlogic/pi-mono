@@ -9,10 +9,10 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
-import { AuthStorage } from "../src/core/auth-storage.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
+import { JSONFileAuthStorage } from "../src/index.js";
 import { createTestResourceLoader } from "./utilities.js";
 
 // Mock stream that mimics AssistantMessageEventStream
@@ -86,7 +86,11 @@ describe("AgentSession concurrent prompt guard", () => {
 					stream.push({ type: "start", partial: createAssistantMessage("") });
 					const checkAbort = () => {
 						if (abortSignal?.aborted) {
-							stream.push({ type: "error", reason: "aborted", error: createAssistantMessage("Aborted") });
+							stream.push({
+								type: "error",
+								reason: "aborted",
+								error: createAssistantMessage("Aborted"),
+							});
 						} else {
 							setTimeout(checkAbort, 5);
 						}
@@ -99,7 +103,7 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		const sessionManager = SessionManager.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
-		const authStorage = new AuthStorage(join(tempDir, "auth.json"));
+		const authStorage = new JSONFileAuthStorage(join(tempDir, "auth.json"));
 		const modelRegistry = new ModelRegistry(authStorage, tempDir);
 		// Set a runtime API key so validation passes
 		authStorage.setRuntimeApiKey("anthropic", "test-key");
@@ -184,7 +188,11 @@ describe("AgentSession concurrent prompt guard", () => {
 				const stream = new MockAssistantStream();
 				queueMicrotask(() => {
 					stream.push({ type: "start", partial: createAssistantMessage("") });
-					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("Done") });
+					stream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage("Done"),
+					});
 				});
 				return stream;
 			},
@@ -192,7 +200,7 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		const sessionManager = SessionManager.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
-		const authStorage = new AuthStorage(join(tempDir, "auth.json"));
+		const authStorage = new JSONFileAuthStorage(join(tempDir, "auth.json"));
 		const modelRegistry = new ModelRegistry(authStorage, tempDir);
 		authStorage.setRuntimeApiKey("anthropic", "test-key");
 

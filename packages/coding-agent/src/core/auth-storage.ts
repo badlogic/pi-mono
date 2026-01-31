@@ -14,6 +14,7 @@ import {
 	type OAuthCredentials,
 	type OAuthLoginCallbacks,
 	type OAuthProviderId,
+	type OAuthProviderInterface,
 } from "@mariozechner/pi-ai";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
@@ -33,10 +34,60 @@ export type AuthCredential = ApiKeyCredential | OAuthCredential;
 
 export type AuthStorageData = Record<string, AuthCredential>;
 
+export interface AuthStorage {
+	/**
+	 * Get credential for a provider.
+	 */
+	get(provider: string): AuthCredential | undefined;
+
+	/**
+	 * Get API key for a provider.
+	 * Priority:
+	 * 1. Runtime override (CLI --api-key)
+	 * 2. API key from auth.json
+	 * 3. OAuth token from auth.json (auto-refreshed with locking)
+	 * 4. Environment variable
+	 * 5. Fallback resolver (models.json custom providers)
+	 */
+	getApiKey(providerId: string): Promise<string | undefined>;
+
+	/**
+	 * Get all registered OAuth providers
+	 */
+	getOAuthProviders(): OAuthProviderInterface[];
+
+	/**
+	 * Check if any form of auth is configured for a provider.
+	 * Unlike getApiKey(), this doesn't refresh OAuth tokens.
+	 */
+	hasAuth(provider: string): boolean;
+
+	/**
+	 * List all providers with credentials.
+	 */
+	list(): string[];
+
+	/**
+	 * Login to an OAuth provider.
+	 */
+	login(providerId: OAuthProviderId, callbacks: OAuthLoginCallbacks): Promise<void>;
+
+	/**
+	 * Logout from a provider.
+	 */
+	logout(provider: string): void;
+
+	/**
+	 * Set a fallback resolver for API keys not found in auth.json or env vars.
+	 * Used for custom provider keys from models.json.
+	 */
+	setFallbackResolver(resolver: (provider: string) => string | undefined): void;
+}
+
 /**
  * Credential storage backed by a JSON file.
  */
-export class AuthStorage {
+export class JSONFileAuthStorage implements AuthStorage {
 	private data: AuthStorageData = {};
 	private runtimeOverrides: Map<string, string> = new Map();
 	private fallbackResolver?: (provider: string) => string | undefined;

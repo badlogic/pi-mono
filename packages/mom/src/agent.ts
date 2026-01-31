@@ -2,10 +2,11 @@ import { Agent, type AgentEvent } from "@mariozechner/pi-agent-core";
 import { getModel, type ImageContent } from "@mariozechner/pi-ai";
 import {
 	AgentSession,
-	AuthStorage,
+	type AuthStorage,
 	convertToLlm,
 	createExtensionRuntime,
 	formatSkillsForPrompt,
+	JSONFileAuthStorage,
 	loadSkillsFromDir,
 	ModelRegistry,
 	type ResourceLoader,
@@ -120,7 +121,10 @@ function loadMomSkills(channelDir: string, workspacePath: string): Skill[] {
 
 	// Load workspace-level skills (global)
 	const workspaceSkillsDir = join(hostWorkspacePath, "skills");
-	for (const skill of loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" }).skills) {
+	for (const skill of loadSkillsFromDir({
+		dir: workspaceSkillsDir,
+		source: "workspace",
+	}).skills) {
 		// Translate paths to container paths for system prompt
 		skill.filePath = translatePath(skill.filePath);
 		skill.baseDir = translatePath(skill.baseDir);
@@ -129,7 +133,10 @@ function loadMomSkills(channelDir: string, workspacePath: string): Skill[] {
 
 	// Load channel-specific skills (override workspace skills on collision)
 	const channelSkillsDir = join(channelDir, "skills");
-	for (const skill of loadSkillsFromDir({ dir: channelSkillsDir, source: "channel" }).skills) {
+	for (const skill of loadSkillsFromDir({
+		dir: channelSkillsDir,
+		source: "channel",
+	}).skills) {
 		skill.filePath = translatePath(skill.filePath);
 		skill.baseDir = translatePath(skill.baseDir);
 		skillMap.set(skill.name, skill);
@@ -428,7 +435,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 
 	// Create AuthStorage and ModelRegistry
 	// Auth stored outside workspace so agent can't access it
-	const authStorage = new AuthStorage(join(homedir(), ".pi", "mom", "auth.json"));
+	const authStorage = new JSONFileAuthStorage(join(homedir(), ".pi", "mom", "auth.json"));
 	const modelRegistry = new ModelRegistry(authStorage);
 
 	// Create agent
@@ -451,7 +458,11 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	}
 
 	const resourceLoader: ResourceLoader = {
-		getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
+		getExtensions: () => ({
+			extensions: [],
+			errors: [],
+			runtime: createExtensionRuntime(),
+		}),
 		getSkills: () => ({ skills: [], diagnostics: [] }),
 		getPrompts: () => ({ prompts: [], diagnostics: [] }),
 		getThemes: () => ({ themes: [], diagnostics: [] }),
@@ -478,7 +489,11 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	// Mutable per-run state - event handler references this
 	const runState = {
 		ctx: null as SlackContext | null,
-		logCtx: null as { channelId: string; userName?: string; channelName?: string } | null,
+		logCtx: null as {
+			channelId: string;
+			userName?: string;
+			channelName?: string;
+		} | null,
 		queue: null as {
 			enqueue(fn: () => Promise<void>, errorContext: string): void;
 			enqueueMessage(text: string, target: "main" | "thread", errorContext: string, doLog?: boolean): void;
@@ -852,7 +867,10 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			runState.logCtx = null;
 			runState.queue = null;
 
-			return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
+			return {
+				stopReason: runState.stopReason,
+				errorMessage: runState.errorMessage,
+			};
 		},
 
 		abort(): void {

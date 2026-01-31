@@ -14,7 +14,13 @@ export {
 	type SessionStats,
 } from "./core/agent-session.js";
 // Auth and model registry
-export { type ApiKeyCredential, type AuthCredential, AuthStorage, type OAuthCredential } from "./core/auth-storage.js";
+export {
+	type ApiKeyCredential,
+	type AuthCredential,
+	AuthStorage,
+	JSONFileAuthStorage,
+	type OAuthCredential,
+} from "./core/auth-storage.js";
 // Compaction
 export {
 	type BranchPreparation,
@@ -39,7 +45,6 @@ export {
 	shouldCompact,
 } from "./core/compaction/index.js";
 export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.js";
-// Extension system
 export type {
 	AgentEndEvent,
 	AgentStartEvent,
@@ -101,6 +106,7 @@ export type {
 	UserBashEventResult,
 	WidgetPlacement,
 } from "./core/extensions/index.js";
+// Extension system
 export {
 	createExtensionRuntime,
 	ExtensionRunner,

@@ -5,6 +5,7 @@
 The SDK provides programmatic access to pi's agent capabilities. Use it to embed pi in other applications, build custom interfaces, or integrate with automated workflows.
 
 **Example use cases:**
+
 - Build a custom UI (web, desktop, mobile)
 - Integrate agent capabilities into existing applications
 - Create automated pipelines with agent reasoning
@@ -16,10 +17,15 @@ See [examples/sdk/](../examples/sdk/) for working examples from minimal to full 
 ## Quick Start
 
 ```typescript
-import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@mariozechner/pi-coding-agent";
+import {
+  AuthStorage,
+  createAgentSession,
+  ModelRegistry,
+  SessionManager,
+} from "@mariozechner/pi-coding-agent";
 
 // Set up credential storage and model registry
-const authStorage = new AuthStorage();
+const authStorage = new JSONFileAuthStorage();
 const modelRegistry = new ModelRegistry(authStorage);
 
 const { session } = await createAgentSession({
@@ -29,7 +35,10 @@ const { session } = await createAgentSession({
 });
 
 session.subscribe((event) => {
-  if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+  if (
+    event.type === "message_update" &&
+    event.assistantMessageEvent.type === "text_delta"
+  ) {
     process.stdout.write(event.assistantMessageEvent.delta);
   }
 });
@@ -76,49 +85,57 @@ interface AgentSession {
   // Send a prompt and wait for completion
   // If streaming, requires streamingBehavior option to queue the message
   prompt(text: string, options?: PromptOptions): Promise<void>;
-  
+
   // Queue messages during streaming
-  steer(text: string): Promise<void>;    // Interrupt: delivered after current tool, skips remaining
+  steer(text: string): Promise<void>; // Interrupt: delivered after current tool, skips remaining
   followUp(text: string): Promise<void>; // Wait: delivered only when agent finishes
-  
+
   // Subscribe to events (returns unsubscribe function)
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
-  
+
   // Session info
-  sessionFile: string | undefined;  // undefined for in-memory
+  sessionFile: string | undefined; // undefined for in-memory
   sessionId: string;
-  
+
   // Model control
   setModel(model: Model): Promise<void>;
   setThinkingLevel(level: ThinkingLevel): void;
   cycleModel(): Promise<ModelCycleResult | undefined>;
   cycleThinkingLevel(): ThinkingLevel | undefined;
-  
+
   // State access
   agent: Agent;
   model: Model | undefined;
   thinkingLevel: ThinkingLevel;
   messages: AgentMessage[];
   isStreaming: boolean;
-  
+
   // Session management
-  newSession(options?: { parentSession?: string }): Promise<boolean>;  // Returns false if cancelled by hook
+  newSession(options?: { parentSession?: string }): Promise<boolean>; // Returns false if cancelled by hook
   switchSession(sessionPath: string): Promise<boolean>;
-  
+
   // Forking
-  fork(entryId: string): Promise<{ selectedText: string; cancelled: boolean }>;  // Creates new session file
-  navigateTree(targetId: string, options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string }): Promise<{ editorText?: string; cancelled: boolean }>;  // In-place navigation
-  
+  fork(entryId: string): Promise<{ selectedText: string; cancelled: boolean }>; // Creates new session file
+  navigateTree(
+    targetId: string,
+    options?: {
+      summarize?: boolean;
+      customInstructions?: string;
+      replaceInstructions?: boolean;
+      label?: string;
+    },
+  ): Promise<{ editorText?: string; cancelled: boolean }>; // In-place navigation
+
   // Hook message injection
   sendHookMessage(message: HookMessage, triggerTurn?: boolean): Promise<void>;
-  
+
   // Compaction
   compact(customInstructions?: string): Promise<CompactionResult>;
   abortCompaction(): void;
-  
+
   // Abort current operation
   abort(): Promise<void>;
-  
+
   // Cleanup
   dispose(): void;
 }
@@ -134,15 +151,25 @@ await session.prompt("What files are here?");
 
 // With images
 await session.prompt("What's in this image?", {
-  images: [{ type: "image", source: { type: "base64", mediaType: "image/png", data: "..." } }]
+  images: [
+    {
+      type: "image",
+      source: { type: "base64", mediaType: "image/png", data: "..." },
+    },
+  ],
 });
 
 // During streaming: must specify how to queue the message
-await session.prompt("Stop and do this instead", { streamingBehavior: "steer" });
-await session.prompt("After you're done, also check X", { streamingBehavior: "followUp" });
+await session.prompt("Stop and do this instead", {
+  streamingBehavior: "steer",
+});
+await session.prompt("After you're done, also check X", {
+  streamingBehavior: "followUp",
+});
 ```
 
 **Behavior:**
+
 - **Extension commands** (e.g., `/mycommand`): Execute immediately, even during streaming. They manage their own LLM interaction via `pi.sendMessage()`.
 - **File-based prompt templates** (from `.md` files): Expanded to their content before sending/queueing.
 - **During streaming without `streamingBehavior`**: Throws an error. Use `steer()` or `followUp()` directly, or specify the option.
@@ -196,7 +223,7 @@ session.subscribe((event) => {
         // Thinking output (if thinking enabled)
       }
       break;
-    
+
     // Tool execution
     case "tool_execution_start":
       console.log(`Tool: ${event.toolName}`);
@@ -207,7 +234,7 @@ session.subscribe((event) => {
     case "tool_execution_end":
       console.log(`Result: ${event.isError ? "error" : "success"}`);
       break;
-    
+
     // Message lifecycle
     case "message_start":
       // New message starting
@@ -215,7 +242,7 @@ session.subscribe((event) => {
     case "message_end":
       // Message complete
       break;
-    
+
     // Agent lifecycle
     case "agent_start":
       // Agent started processing prompt
@@ -223,7 +250,7 @@ session.subscribe((event) => {
     case "agent_end":
       // Agent finished (event.messages contains new messages)
       break;
-    
+
     // Turn lifecycle (one LLM response + tool calls)
     case "turn_start":
       break;
@@ -231,7 +258,7 @@ session.subscribe((event) => {
       // event.message: assistant response
       // event.toolResults: tool results from this turn
       break;
-    
+
     // Session events (auto-compaction, retry)
     case "auto_compaction_start":
     case "auto_compaction_end":
@@ -250,13 +277,14 @@ session.subscribe((event) => {
 const { session } = await createAgentSession({
   // Working directory for DefaultResourceLoader discovery
   cwd: process.cwd(), // default
-  
+
   // Global config directory
   agentDir: "~/.pi/agent", // default (expands ~)
 });
 ```
 
 `cwd` is used by `DefaultResourceLoader` for:
+
 - Project extensions (`.pi/extensions/`)
 - Project skills (`.pi/skills/`)
 - Project prompts (`.pi/prompts/`)
@@ -264,6 +292,7 @@ const { session } = await createAgentSession({
 - Session directory naming
 
 `agentDir` is used by `DefaultResourceLoader` for:
+
 - Global extensions (`extensions/`)
 - Global skills (`skills/`)
 - Global prompts (`prompts/`)
@@ -281,7 +310,7 @@ When you pass a custom `ResourceLoader`, `cwd` and `agentDir` no longer control 
 import { getModel } from "@mariozechner/pi-ai";
 import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 
-const authStorage = new AuthStorage();
+const authStorage = new JSONFileAuthStorage();
 const modelRegistry = new ModelRegistry(authStorage);
 
 // Find specific built-in model (doesn't check if API key exists)
@@ -298,19 +327,20 @@ const available = await modelRegistry.getAvailable();
 const { session } = await createAgentSession({
   model: opus,
   thinkingLevel: "medium", // off, minimal, low, medium, high, xhigh
-  
+
   // Models for cycling (Ctrl+P in interactive mode)
   scopedModels: [
     { model: opus, thinkingLevel: "high" },
     { model: haiku, thinkingLevel: "off" },
   ],
-  
+
   authStorage,
   modelRegistry,
 });
 ```
 
 If no model is provided:
+
 1. Tries to restore from session (if continuing)
 2. Uses default from settings
 3. Falls back to first available model
@@ -320,6 +350,7 @@ If no model is provided:
 ### API Keys and OAuth
 
 API key resolution priority (handled by AuthStorage):
+
 1. Runtime overrides (via `setRuntimeApiKey`, not persisted)
 2. Stored credentials in `auth.json` (API keys or OAuth tokens)
 3. Environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.)
@@ -329,7 +360,7 @@ API key resolution priority (handled by AuthStorage):
 import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 
 // Default: uses ~/.pi/agent/auth.json and ~/.pi/agent/models.json
-const authStorage = new AuthStorage();
+const authStorage = new JSONFileAuthStorage();
 const modelRegistry = new ModelRegistry(authStorage);
 
 const { session } = await createAgentSession({
@@ -342,7 +373,7 @@ const { session } = await createAgentSession({
 authStorage.setRuntimeApiKey("anthropic", "sk-my-temp-key");
 
 // Custom auth storage location
-const customAuth = new AuthStorage("/my/app/auth.json");
+const customAuth = new JSONFileAuthStorage("/my/app/auth.json");
 const customRegistry = new ModelRegistry(customAuth, "/my/app/models.json");
 
 const { session } = await createAgentSession({
@@ -362,7 +393,10 @@ const simpleRegistry = new ModelRegistry(authStorage);
 Use a `ResourceLoader` to override the system prompt:
 
 ```typescript
-import { createAgentSession, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+} from "@mariozechner/pi-coding-agent";
 
 const loader = new DefaultResourceLoader({
   systemPromptOverride: () => "You are a helpful assistant.",
@@ -378,10 +412,15 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 
 ```typescript
 import {
-  codingTools,   // read, bash, edit, write (default)
+  codingTools, // read, bash, edit, write (default)
   readOnlyTools, // read, grep, find, ls
-  readTool, bashTool, editTool, writeTool,
-  grepTool, findTool, lsTool,
+  readTool,
+  bashTool,
+  editTool,
+  writeTool,
+  grepTool,
+  findTool,
+  lsTool,
 } from "@mariozechner/pi-coding-agent";
 
 // Use built-in tool set
@@ -401,8 +440,8 @@ const { session } = await createAgentSession({
 
 ```typescript
 import {
-  createCodingTools,    // Creates [read, bash, edit, write] for specific cwd
-  createReadOnlyTools,  // Creates [read, grep, find, ls] for specific cwd
+  createCodingTools, // Creates [read, bash, edit, write] for specific cwd
+  createReadOnlyTools, // Creates [read, grep, find, ls] for specific cwd
   createReadTool,
   createBashTool,
   createEditTool,
@@ -417,7 +456,7 @@ const cwd = "/path/to/project";
 // Use factory for tool sets
 const { session } = await createAgentSession({
   cwd,
-  tools: createCodingTools(cwd),  // Tools resolve paths relative to cwd
+  tools: createCodingTools(cwd), // Tools resolve paths relative to cwd
 });
 
 // Or pick specific tools
@@ -428,10 +467,12 @@ const { session } = await createAgentSession({
 ```
 
 **When you don't need factories:**
+
 - If you omit `tools`, pi automatically creates them with the correct `cwd`
 - If you use `process.cwd()` as your `cwd`, the pre-built instances work fine
 
 **When you must use factories:**
+
 - When you specify both `cwd` (different from `process.cwd()`) AND `tools`
 
 > See [examples/sdk/05-tools.ts](../examples/sdk/05-tools.ts)
@@ -440,7 +481,10 @@ const { session } = await createAgentSession({
 
 ```typescript
 import { Type } from "@sinclair/typebox";
-import { createAgentSession, type ToolDefinition } from "@mariozechner/pi-coding-agent";
+import {
+  createAgentSession,
+  type ToolDefinition,
+} from "@mariozechner/pi-coding-agent";
 
 // Inline custom tool
 const myTool: ToolDefinition = {
@@ -471,7 +515,10 @@ Custom tools passed via `customTools` are combined with extension-registered too
 Extensions are loaded by the `ResourceLoader`. `DefaultResourceLoader` discovers extensions from `~/.pi/agent/extensions/`, `.pi/extensions/`, and settings.json extension sources.
 
 ```typescript
-import { createAgentSession, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+} from "@mariozechner/pi-coding-agent";
 
 const loader = new DefaultResourceLoader({
   additionalExtensionPaths: ["/path/to/my-extension.ts"],
@@ -493,7 +540,10 @@ Extensions can register tools, subscribe to events, add commands, and more. See 
 **Event Bus:** Extensions can communicate via `pi.events`. Pass a shared `eventBus` to `DefaultResourceLoader` if you need to emit or listen from outside:
 
 ```typescript
-import { createEventBus, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
+import {
+  createEventBus,
+  DefaultResourceLoader,
+} from "@mariozechner/pi-coding-agent";
 
 const eventBus = createEventBus();
 const loader = new DefaultResourceLoader({
@@ -539,7 +589,10 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 ### Context Files
 
 ```typescript
-import { createAgentSession, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+} from "@mariozechner/pi-coding-agent";
 
 const loader = new DefaultResourceLoader({
   agentsFilesOverride: (current) => ({
@@ -590,7 +643,10 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 Sessions use a tree structure with `id`/`parentId` linking, enabling in-place branching.
 
 ```typescript
-import { createAgentSession, SessionManager } from "@mariozechner/pi-coding-agent";
+import {
+  createAgentSession,
+  SessionManager,
+} from "@mariozechner/pi-coding-agent";
 
 // In-memory (no persistence)
 const { session } = await createAgentSession({
@@ -618,7 +674,9 @@ const { session } = await createAgentSession({
 // List available sessions (async with optional progress callback)
 const sessions = await SessionManager.list(process.cwd());
 for (const info of sessions) {
-  console.log(`${info.id}: ${info.firstMessage} (${info.messageCount} messages, cwd: ${info.cwd})`);
+  console.log(
+    `${info.id}: ${info.firstMessage} (${info.messageCount} messages, cwd: ${info.cwd})`,
+  );
 }
 
 // List all sessions across all projects
@@ -639,21 +697,21 @@ const { session } = await createAgentSession({
 const sm = SessionManager.open("/path/to/session.jsonl");
 
 // Tree traversal
-const entries = sm.getEntries();        // All entries (excludes header)
-const tree = sm.getTree();              // Full tree structure
-const path = sm.getPath();              // Path from root to current leaf
-const leaf = sm.getLeafEntry();         // Current leaf entry
-const entry = sm.getEntry(id);          // Get entry by ID
-const children = sm.getChildren(id);    // Direct children of entry
+const entries = sm.getEntries(); // All entries (excludes header)
+const tree = sm.getTree(); // Full tree structure
+const path = sm.getPath(); // Path from root to current leaf
+const leaf = sm.getLeafEntry(); // Current leaf entry
+const entry = sm.getEntry(id); // Get entry by ID
+const children = sm.getChildren(id); // Direct children of entry
 
 // Labels
-const label = sm.getLabel(id);          // Get label for entry
+const label = sm.getLabel(id); // Get label for entry
 sm.appendLabelChange(id, "checkpoint"); // Set label
 
 // Branching
-sm.branch(entryId);                     // Move leaf to earlier entry
-sm.branchWithSummary(id, "Summary...");  // Branch with context summary
-sm.createBranchedSession(leafId);       // Extract path to new file
+sm.branch(entryId); // Move leaf to earlier entry
+sm.branchWithSummary(id, "Summary..."); // Branch with context summary
+sm.createBranchedSession(leafId); // Extract path to new file
 ```
 
 > See [examples/sdk/11-sessions.ts](../examples/sdk/11-sessions.ts) and [docs/session.md](session.md)
@@ -661,7 +719,11 @@ sm.createBranchedSession(leafId);       // Extract path to new file
 ### Settings Management
 
 ```typescript
-import { createAgentSession, SettingsManager, SessionManager } from "@mariozechner/pi-coding-agent";
+import {
+  createAgentSession,
+  SettingsManager,
+  SessionManager,
+} from "@mariozechner/pi-coding-agent";
 
 // Default: loads from files (global + project merged)
 const { session } = await createAgentSession({
@@ -689,12 +751,14 @@ const { session } = await createAgentSession({
 ```
 
 **Static factories:**
+
 - `SettingsManager.create(cwd?, agentDir?)` - Load from files
 - `SettingsManager.inMemory(settings?)` - No file I/O
 
 **Project-specific settings:**
 
 Settings load from two locations and merge:
+
 1. Global: `~/.pi/agent/settings.json`
 2. Project: `<cwd>/.pi/settings.json`
 
@@ -733,10 +797,10 @@ const contextFiles = loader.getAgentsFiles().agentsFiles;
 interface CreateAgentSessionResult {
   // The session
   session: AgentSession;
-  
+
   // Extensions result (for runner setup)
   extensionsResult: LoadExtensionsResult;
-  
+
   // Warning if session model couldn't be restored
   modelFallbackMessage?: string;
 }
@@ -766,7 +830,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 
 // Set up auth storage (custom location)
-const authStorage = new AuthStorage("/custom/agent/auth.json");
+const authStorage = new JSONFileAuthStorage("/custom/agent/auth.json");
 
 // Runtime API key override (not persisted)
 if (process.env.MY_KEY) {
@@ -823,7 +887,10 @@ const { session } = await createAgentSession({
 });
 
 session.subscribe((event) => {
-  if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+  if (
+    event.type === "message_update" &&
+    event.assistantMessageEvent.type === "text_delta"
+  ) {
     process.stdout.write(event.assistantMessageEvent.delta);
   }
 });
@@ -840,20 +907,25 @@ The SDK exports run mode utilities for building custom interfaces on top of `cre
 Full TUI interactive mode with editor, chat history, and all built-in commands:
 
 ```typescript
-import { createAgentSession, InteractiveMode } from "@mariozechner/pi-coding-agent";
+import {
+  createAgentSession,
+  InteractiveMode,
+} from "@mariozechner/pi-coding-agent";
 
-const { session } = await createAgentSession({ /* ... */ });
+const { session } = await createAgentSession({
+  /* ... */
+});
 
 const mode = new InteractiveMode(session, {
   // All optional
-  migratedProviders: [],           // Show migration warnings
+  migratedProviders: [], // Show migration warnings
   modelFallbackMessage: undefined, // Show model restore warning
-  initialMessage: "Hello",         // Send on startup
-  initialImages: [],               // Images with initial message
-  initialMessages: [],             // Additional startup prompts
+  initialMessage: "Hello", // Send on startup
+  initialImages: [], // Images with initial message
+  initialMessages: [], // Additional startup prompts
 });
 
-await mode.run();  // Blocks until exit
+await mode.run(); // Blocks until exit
 ```
 
 ### runPrintMode
@@ -861,15 +933,20 @@ await mode.run();  // Blocks until exit
 Single-shot mode: send prompts, output result, exit:
 
 ```typescript
-import { createAgentSession, runPrintMode } from "@mariozechner/pi-coding-agent";
+import {
+  createAgentSession,
+  runPrintMode,
+} from "@mariozechner/pi-coding-agent";
 
-const { session } = await createAgentSession({ /* ... */ });
+const { session } = await createAgentSession({
+  /* ... */
+});
 
 await runPrintMode(session, {
-  mode: "text",              // "text" for final response, "json" for all events
-  initialMessage: "Hello",   // First message (can include @file content)
-  initialImages: [],         // Images with initial message
-  messages: ["Follow up"],   // Additional prompts
+  mode: "text", // "text" for final response, "json" for all events
+  initialMessage: "Hello", // First message (can include @file content)
+  initialImages: [], // Images with initial message
+  messages: ["Follow up"], // Additional prompts
 });
 ```
 
@@ -880,9 +957,11 @@ JSON-RPC mode for subprocess integration:
 ```typescript
 import { createAgentSession, runRpcMode } from "@mariozechner/pi-coding-agent";
 
-const { session } = await createAgentSession({ /* ... */ });
+const { session } = await createAgentSession({
+  /* ... */
+});
 
-await runRpcMode(session);  // Reads JSON commands from stdin, writes to stdout
+await runRpcMode(session); // Reads JSON commands from stdin, writes to stdout
 ```
 
 See [RPC documentation](rpc.md) for the JSON protocol.
@@ -898,12 +977,14 @@ pi --mode rpc --no-session
 See [RPC documentation](rpc.md) for the JSON protocol.
 
 The SDK is preferred when:
+
 - You want type safety
 - You're in the same Node.js process
 - You need direct access to agent state
 - You want to customize tools/extensions programmatically
 
 RPC mode is preferred when:
+
 - You're integrating from another language
 - You want process isolation
 - You're building a language-agnostic client

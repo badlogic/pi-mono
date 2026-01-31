@@ -14,7 +14,7 @@ import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getAgentDir, getModelsPath, VERSION } from "./config.js";
-import { AuthStorage } from "./core/auth-storage.js";
+import { JSONFileAuthStorage } from "./core/auth-storage.js";
 import { DEFAULT_THINKING_LEVEL } from "./core/defaults.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import type { LoadExtensionsResult } from "./core/extensions/index.js";
@@ -82,7 +82,10 @@ function parsePackageCommand(args: string[]): PackageCommandOptions | undefined 
 	return { command, source: sources[0], local };
 }
 
-function normalizeExtensionSource(source: string): { type: "npm" | "git" | "local"; key: string } {
+function normalizeExtensionSource(source: string): {
+	type: "npm" | "git" | "local";
+	key: string;
+} {
 	if (source.startsWith("npm:")) {
 		const spec = source.slice("npm:".length).trim();
 		const match = spec.match(/^(@?[^@]+(?:\/[^@]+)?)(?:@.+)?$/);
@@ -90,12 +93,18 @@ function normalizeExtensionSource(source: string): { type: "npm" | "git" | "loca
 	}
 	if (source.startsWith("git:")) {
 		const repo = source.slice("git:".length).trim().split("@")[0] ?? "";
-		return { type: "git", key: repo.replace(/^https?:\/\//, "").replace(/\.git$/, "") };
+		return {
+			type: "git",
+			key: repo.replace(/^https?:\/\//, "").replace(/\.git$/, ""),
+		};
 	}
 	// Raw git URLs
 	if (source.startsWith("https://") || source.startsWith("http://")) {
 		const repo = source.split("@")[0] ?? "";
-		return { type: "git", key: repo.replace(/^https?:\/\//, "").replace(/\.git$/, "") };
+		return {
+			type: "git",
+			key: repo.replace(/^https?:\/\//, "").replace(/\.git$/, ""),
+		};
 	}
 	return { type: "local", key: source };
 }
@@ -148,7 +157,11 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
-	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+	const packageManager = new DefaultPackageManager({
+		cwd,
+		agentDir,
+		settingsManager,
+	});
 
 	// Set up progress callback for CLI feedback
 	packageManager.setProgressCallback((event) => {
@@ -242,7 +255,9 @@ async function prepareInitialMessage(
 		return {};
 	}
 
-	const { text, images } = await processFileArguments(parsed.fileArgs, { autoResizeImages });
+	const { text, images } = await processFileArguments(parsed.fileArgs, {
+		autoResizeImages,
+	});
 
 	let initialMessage: string;
 	if (parsed.messages.length > 0) {
@@ -434,7 +449,11 @@ async function handleConfigCommand(args: string[]): Promise<boolean> {
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
-	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+	const packageManager = new DefaultPackageManager({
+		cwd,
+		agentDir,
+		settingsManager,
+	});
 
 	const resolvedPaths = await packageManager.resolve();
 
@@ -467,7 +486,7 @@ export async function main(args: string[]) {
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
-	const authStorage = new AuthStorage();
+	const authStorage = new JSONFileAuthStorage();
 	const modelRegistry = new ModelRegistry(authStorage, getModelsPath());
 
 	const resourceLoader = new DefaultResourceLoader({

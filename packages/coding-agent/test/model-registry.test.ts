@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
+import { type AuthStorage, JSONFileAuthStorage } from "../src/core/auth-storage.js";
 import { clearApiKeyCache, ModelRegistry } from "../src/core/model-registry.js";
 
 describe("ModelRegistry", () => {
@@ -14,7 +14,7 @@ describe("ModelRegistry", () => {
 		tempDir = join(tmpdir(), `pi-test-model-registry-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 		modelsJsonPath = join(tempDir, "models.json");
-		authStorage = new AuthStorage(join(tempDir, "auth.json"));
+		authStorage = new JSONFileAuthStorage(join(tempDir, "auth.json"));
 	});
 
 	afterEach(() => {

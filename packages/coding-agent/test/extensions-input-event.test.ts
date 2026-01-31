@@ -2,11 +2,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
 import { discoverAndLoadExtensions } from "../src/core/extensions/loader.js";
 import { ExtensionRunner } from "../src/core/extensions/runner.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
+import { JSONFileAuthStorage } from "../src/index.js";
 
 describe("Input Event", () => {
 	let tempDir: string;
@@ -29,7 +29,7 @@ describe("Input Event", () => {
 		for (let i = 0; i < extensions.length; i++) fs.writeFileSync(path.join(extensionsDir, `e${i}.ts`), extensions[i]);
 		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 		const sm = SessionManager.inMemory();
-		const mr = new ModelRegistry(new AuthStorage(path.join(tempDir, "auth.json")));
+		const mr = new ModelRegistry(new JSONFileAuthStorage(path.join(tempDir, "auth.json")));
 		return new ExtensionRunner(result.extensions, result.runtime, tempDir, sm, mr);
 	}
 
@@ -71,7 +71,11 @@ describe("Input Event", () => {
 			`export default p => p.on("input", async e => ({ action: "transform", text: e.text + "[2]" }));`,
 		);
 		const result = await r.emitInput("X", undefined, "interactive");
-		expect(result).toEqual({ action: "transform", text: "X[1][2]", images: undefined });
+		expect(result).toEqual({
+			action: "transform",
+			text: "X[1][2]",
+			images: undefined,
+		});
 	});
 
 	it("short-circuits on handled and skips subsequent handlers", async () => {
@@ -80,7 +84,9 @@ describe("Input Event", () => {
 			`export default p => p.on("input", async () => ({ action: "handled" }));`,
 			`export default p => p.on("input", async () => { globalThis.testVar = true; });`,
 		);
-		expect(await r.emitInput("X", undefined, "interactive")).toEqual({ action: "handled" });
+		expect(await r.emitInput("X", undefined, "interactive")).toEqual({
+			action: "handled",
+		});
 		expect((globalThis as any).testVar).toBe(false);
 	});
 

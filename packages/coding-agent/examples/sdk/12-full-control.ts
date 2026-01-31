@@ -10,11 +10,11 @@
 
 import { getModel } from "@mariozechner/pi-ai";
 import {
-	AuthStorage,
 	createAgentSession,
 	createBashTool,
 	createExtensionRuntime,
 	createReadTool,
+	JSONFileAuthStorage,
 	ModelRegistry,
 	type ResourceLoader,
 	SessionManager,
@@ -22,7 +22,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 
 // Custom auth storage location
-const authStorage = new AuthStorage("/tmp/my-agent/auth.json");
+const authStorage = new JSONFileAuthStorage("/tmp/my-agent/auth.json");
 
 // Runtime API key override (not persisted)
 if (process.env.MY_ANTHROPIC_KEY) {
@@ -45,7 +45,11 @@ const settingsManager = SettingsManager.inMemory({
 const cwd = process.cwd();
 
 const resourceLoader: ResourceLoader = {
-	getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
+	getExtensions: () => ({
+		extensions: [],
+		errors: [],
+		runtime: createExtensionRuntime(),
+	}),
 	getSkills: () => ({ skills: [], diagnostics: [] }),
 	getPrompts: () => ({ prompts: [], diagnostics: [] }),
 	getThemes: () => ({ themes: [], diagnostics: [] }),
