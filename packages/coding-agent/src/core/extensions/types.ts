@@ -57,10 +57,17 @@ import type { BashOperations } from "../tools/bash.js";
 import type { EditToolDetails } from "../tools/edit.js";
 import type {
 	BashToolDetails,
+	BashToolInput,
+	EditToolInput,
 	FindToolDetails,
+	FindToolInput,
 	GrepToolDetails,
+	GrepToolInput,
 	LsToolDetails,
+	LsToolInput,
 	ReadToolDetails,
+	ReadToolInput,
+	WriteToolInput,
 } from "../tools/index.js";
 
 export type { ExecOptions, ExecResult } from "../exec.js";
@@ -547,13 +554,61 @@ export type InputEventResult =
 // Tool Events
 // ============================================================================
 
-/** Fired before a tool executes. Can block. */
-export interface ToolCallEvent {
+interface ToolCallEventBase {
 	type: "tool_call";
-	toolName: string;
 	toolCallId: string;
+}
+
+export interface BashToolCallEvent extends ToolCallEventBase {
+	toolName: "bash";
+	input: BashToolInput;
+}
+
+export interface ReadToolCallEvent extends ToolCallEventBase {
+	toolName: "read";
+	input: ReadToolInput;
+}
+
+export interface EditToolCallEvent extends ToolCallEventBase {
+	toolName: "edit";
+	input: EditToolInput;
+}
+
+export interface WriteToolCallEvent extends ToolCallEventBase {
+	toolName: "write";
+	input: WriteToolInput;
+}
+
+export interface GrepToolCallEvent extends ToolCallEventBase {
+	toolName: "grep";
+	input: GrepToolInput;
+}
+
+export interface FindToolCallEvent extends ToolCallEventBase {
+	toolName: "find";
+	input: FindToolInput;
+}
+
+export interface LsToolCallEvent extends ToolCallEventBase {
+	toolName: "ls";
+	input: LsToolInput;
+}
+
+export interface CustomToolCallEvent extends ToolCallEventBase {
+	toolName: string;
 	input: Record<string, unknown>;
 }
+
+/** Fired before a tool executes. Can block. */
+export type ToolCallEvent =
+	| BashToolCallEvent
+	| ReadToolCallEvent
+	| EditToolCallEvent
+	| WriteToolCallEvent
+	| GrepToolCallEvent
+	| FindToolCallEvent
+	| LsToolCallEvent
+	| CustomToolCallEvent;
 
 interface ToolResultEventBase {
 	type: "tool_result";
@@ -614,7 +669,7 @@ export type ToolResultEvent =
 	| LsToolResultEvent
 	| CustomToolResultEvent;
 
-// Type guards
+// Type guards for ToolResultEvent
 export function isBashToolResult(e: ToolResultEvent): e is BashToolResultEvent {
 	return e.toolName === "bash";
 }
@@ -635,6 +690,41 @@ export function isFindToolResult(e: ToolResultEvent): e is FindToolResultEvent {
 }
 export function isLsToolResult(e: ToolResultEvent): e is LsToolResultEvent {
 	return e.toolName === "ls";
+}
+
+/**
+ * Type guard for narrowing ToolCallEvent by tool name.
+ *
+ * Built-in tools narrow automatically (no type params needed):
+ * ```ts
+ * if (isToolCallEventType("bash", event)) {
+ *   event.input.command;  // string
+ * }
+ * ```
+ *
+ * Custom tools require explicit type parameters:
+ * ```ts
+ * if (isToolCallEventType<"my_tool", MyToolInput>("my_tool", event)) {
+ *   event.input.action;  // typed
+ * }
+ * ```
+ *
+ * Note: Direct narrowing via `event.toolName === "bash"` doesn't work because
+ * CustomToolCallEvent.toolName is `string` which overlaps with all literals.
+ */
+export function isToolCallEventType(toolName: "bash", event: ToolCallEvent): event is BashToolCallEvent;
+export function isToolCallEventType(toolName: "read", event: ToolCallEvent): event is ReadToolCallEvent;
+export function isToolCallEventType(toolName: "edit", event: ToolCallEvent): event is EditToolCallEvent;
+export function isToolCallEventType(toolName: "write", event: ToolCallEvent): event is WriteToolCallEvent;
+export function isToolCallEventType(toolName: "grep", event: ToolCallEvent): event is GrepToolCallEvent;
+export function isToolCallEventType(toolName: "find", event: ToolCallEvent): event is FindToolCallEvent;
+export function isToolCallEventType(toolName: "ls", event: ToolCallEvent): event is LsToolCallEvent;
+export function isToolCallEventType<TName extends string, TInput extends Record<string, unknown>>(
+	toolName: TName,
+	event: ToolCallEvent,
+): event is ToolCallEvent & { toolName: TName; input: TInput };
+export function isToolCallEventType(toolName: string, event: ToolCallEvent): boolean {
+	return event.toolName === toolName;
 }
 
 /** Union of all event types */
