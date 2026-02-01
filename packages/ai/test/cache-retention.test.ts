@@ -166,6 +166,59 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 		});
 	});
 
+	describe("Simple stream functions - cacheRetention pass-through", () => {
+		it("should pass cacheRetention to streamAnthropic via streamSimpleAnthropic", async () => {
+			const model = getModel("anthropic", "claude-3-5-haiku-20241022");
+			let capturedPayload: any = null;
+
+			const { streamSimpleAnthropic } = await import("../src/providers/anthropic.js");
+
+			try {
+				const s = streamSimpleAnthropic(model, context, {
+					apiKey: "fake-key",
+					cacheRetention: "long",
+					onPayload: (payload) => {
+						capturedPayload = payload;
+					},
+				});
+				for await (const event of s) {
+					if (event.type === "error") break;
+				}
+			} catch {
+				// Expected to fail with fake key
+			}
+
+			expect(capturedPayload).not.toBeNull();
+			expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+		});
+
+		it("should pass cacheRetention to streamOpenAIResponses via streamSimpleOpenAIResponses", async () => {
+			const model = getModel("openai", "gpt-4o-mini");
+			let capturedPayload: any = null;
+
+			const { streamSimpleOpenAIResponses } = await import("../src/providers/openai-responses.js");
+
+			try {
+				const s = streamSimpleOpenAIResponses(model, context, {
+					apiKey: "fake-key",
+					cacheRetention: "long",
+					sessionId: "test-session",
+					onPayload: (payload) => {
+						capturedPayload = payload;
+					},
+				});
+				for await (const event of s) {
+					if (event.type === "error") break;
+				}
+			} catch {
+				// Expected to fail with fake key
+			}
+
+			expect(capturedPayload).not.toBeNull();
+			expect(capturedPayload.prompt_cache_retention).toBe("24h");
+		});
+	});
+
 	describe("OpenAI Responses Provider", () => {
 		it.skipIf(!process.env.OPENAI_API_KEY)(
 			"should not set prompt_cache_retention when PI_CACHE_RETENTION is not set",
