@@ -83,6 +83,9 @@ export type {
 	// Commands
 	RegisteredCommand,
 	RegisteredTool,
+	// Events - Resources
+	ResourcesDiscoverEvent,
+	ResourcesDiscoverResult,
 	SendMessageHandler,
 	SendUserMessageHandler,
 	SessionBeforeCompactEvent,

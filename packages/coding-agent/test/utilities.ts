@@ -184,6 +184,7 @@ export function createTestResourceLoader(): ResourceLoader {
 		getSystemPrompt: () => undefined,
 		getAppendSystemPrompt: () => [],
 		getPathMetadata: () => new Map(),
+		extendResources: () => {},
 		reload: async () => {},
 	};
 }

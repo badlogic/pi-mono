@@ -1066,6 +1066,9 @@ export class InteractiveMode {
 			},
 		});
 
+		setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
+		this.rebuildAutocomplete();
+
 		const extensionRunner = this.session.extensionRunner;
 		if (!extensionRunner) {
 			this.showLoadedResources({ extensionPaths: [], force: false });

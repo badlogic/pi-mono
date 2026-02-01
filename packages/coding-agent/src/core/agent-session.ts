@@ -14,7 +14,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type {
 	Agent,
 	AgentEvent,
@@ -64,7 +64,7 @@ import {
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
-import type { ResourceLoader } from "./resource-loader.js";
+import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.js";
 import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.js";
 import type { SettingsManager } from "./settings-manager.js";
 import { buildSystemPrompt } from "./system-prompt.js";
@@ -1690,7 +1690,61 @@ export class AgentSession {
 		if (this._extensionRunner) {
 			this._applyExtensionBindings(this._extensionRunner);
 			await this._extensionRunner.emit({ type: "session_start" });
+			await this.extendResourcesFromExtensions("startup");
 		}
+	}
+
+	private async extendResourcesFromExtensions(reason: "startup" | "reload"): Promise<void> {
+		if (!this._extensionRunner?.hasHandlers("resources_discover")) {
+			return;
+		}
+
+		const { skillPaths, promptPaths, themePaths } = await this._extensionRunner.emitResourcesDiscover(
+			this._cwd,
+			reason,
+		);
+
+		if (skillPaths.length === 0 && promptPaths.length === 0 && themePaths.length === 0) {
+			return;
+		}
+
+		const extensionPaths: ResourceExtensionPaths = {
+			skillPaths: this.buildExtensionResourcePaths(skillPaths),
+			promptPaths: this.buildExtensionResourcePaths(promptPaths),
+			themePaths: this.buildExtensionResourcePaths(themePaths),
+		};
+
+		this._resourceLoader.extendResources(extensionPaths);
+		this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+		this.agent.setSystemPrompt(this._baseSystemPrompt);
+	}
+
+	private buildExtensionResourcePaths(entries: Array<{ path: string; extensionPath: string }>): Array<{
+		path: string;
+		metadata: { source: string; scope: "temporary"; origin: "top-level"; baseDir?: string };
+	}> {
+		return entries.map((entry) => {
+			const source = this.getExtensionSourceLabel(entry.extensionPath);
+			const baseDir = entry.extensionPath.startsWith("<") ? undefined : dirname(entry.extensionPath);
+			return {
+				path: entry.path,
+				metadata: {
+					source,
+					scope: "temporary",
+					origin: "top-level",
+					baseDir,
+				},
+			};
+		});
+	}
+
+	private getExtensionSourceLabel(extensionPath: string): string {
+		if (extensionPath.startsWith("<")) {
+			return `extension:${extensionPath.replace(/[<>]/g, "")}`;
+		}
+		const base = basename(extensionPath);
+		const name = base.replace(/\.(ts|js)$/, "");
+		return `extension:${name}`;
 	}
 
 	private _applyExtensionBindings(runner: ExtensionRunner): void {
@@ -1882,6 +1936,7 @@ export class AgentSession {
 			this._extensionErrorListener;
 		if (this._extensionRunner && hasBindings) {
 			await this._extensionRunner.emit({ type: "session_start" });
+			await this.extendResourcesFromExtensions("reload");
 		}
 	}
 

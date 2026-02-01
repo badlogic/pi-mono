@@ -11,6 +11,7 @@
 - Added OAuth `modifyModels` hook support for extension-registered providers at registration time. ([#940](https://github.com/badlogic/pi-mono/pull/940) by [@4h9fbZ](https://github.com/4h9fbZ))
 - Added Qwen thinking format support for OpenAI-compatible completions via `enable_thinking`. ([#940](https://github.com/badlogic/pi-mono/pull/940) by [@4h9fbZ](https://github.com/4h9fbZ))
 - Added sticky column tracking for vertical cursor navigation so the editor restores the preferred column when moving across short lines. ([#1120](https://github.com/badlogic/pi-mono/pull/1120) by [@Perlence](https://github.com/Perlence))
+- Added `resources_discover` extension hook to supply additional skills, prompts, and themes on startup and reload.
 
 ### Fixed
 

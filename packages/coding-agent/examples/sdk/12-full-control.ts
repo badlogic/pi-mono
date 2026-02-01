@@ -54,6 +54,7 @@ const resourceLoader: ResourceLoader = {
 Available: read, bash. Be concise.`,
 	getAppendSystemPrompt: () => [],
 	getPathMetadata: () => new Map(),
+	extendResources: () => {},
 	reload: async () => {},
 };
 

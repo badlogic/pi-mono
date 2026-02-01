@@ -168,6 +168,71 @@ Content`,
 		});
 	});
 
+	describe("extendResources", () => {
+		it("should load skills and prompts with extension metadata", async () => {
+			const extraSkillDir = join(tempDir, "extra-skills", "extra-skill");
+			mkdirSync(extraSkillDir, { recursive: true });
+			const skillPath = join(extraSkillDir, "SKILL.md");
+			writeFileSync(
+				skillPath,
+				`---
+name: extra-skill
+description: Extra skill
+---
+Extra content`,
+			);
+
+			const extraPromptDir = join(tempDir, "extra-prompts");
+			mkdirSync(extraPromptDir, { recursive: true });
+			const promptPath = join(extraPromptDir, "extra.md");
+			writeFileSync(
+				promptPath,
+				`---
+description: Extra prompt
+---
+Extra prompt content`,
+			);
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			loader.extendResources({
+				skillPaths: [
+					{
+						path: extraSkillDir,
+						metadata: {
+							source: "extension:extra",
+							scope: "temporary",
+							origin: "top-level",
+							baseDir: extraSkillDir,
+						},
+					},
+				],
+				promptPaths: [
+					{
+						path: promptPath,
+						metadata: {
+							source: "extension:extra",
+							scope: "temporary",
+							origin: "top-level",
+							baseDir: extraPromptDir,
+						},
+					},
+				],
+			});
+
+			const { skills } = loader.getSkills();
+			expect(skills.some((skill) => skill.name === "extra-skill")).toBe(true);
+
+			const { prompts } = loader.getPrompts();
+			expect(prompts.some((prompt) => prompt.name === "extra")).toBe(true);
+
+			const metadata = loader.getPathMetadata();
+			expect(metadata.get(skillPath)?.source).toBe("extension:extra");
+			expect(metadata.get(promptPath)?.source).toBe("extension:extra");
+		});
+	});
+
 	describe("noSkills option", () => {
 		it("should skip skill discovery when noSkills is true", async () => {
 			const skillsDir = join(agentDir, "skills");

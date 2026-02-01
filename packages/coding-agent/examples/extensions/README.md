@@ -88,6 +88,12 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 |-----------|-------------|
 | `mac-system-theme.ts` | Syncs pi theme with macOS dark/light mode |
 
+### Resources
+
+| Extension | Description |
+|-----------|-------------|
+| `dynamic-resources/` | Loads skills, prompts, and themes using `resources_discover` |
+
 ### Messages & Communication
 
 | Extension | Description |
