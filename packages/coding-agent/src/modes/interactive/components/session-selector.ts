@@ -400,9 +400,10 @@ class SessionList implements Component, Focusable {
 			const displayText = session.name ?? session.firstMessage;
 			const normalizedMessage = displayText.replace(/\n/g, " ").trim();
 
-			// Right side: age
+			// Right side: message count and age
 			const age = formatSessionDate(session.modified);
-			let rightPart = age;
+			const msgCount = String(session.messageCount);
+			let rightPart = `${msgCount} ${age}`;
 			if (this.showCwd && session.cwd) {
 				rightPart = `${shortenPath(session.cwd)} ${rightPart}`;
 			}
@@ -410,15 +411,13 @@ class SessionList implements Component, Focusable {
 				rightPart = `${shortenPath(session.path)} ${rightPart}`;
 			}
 
-			// Cursor and message count prefix
+			// Cursor
 			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
-			const msgCountPrefix = `(${session.messageCount}) `;
 
 			// Calculate available width for message
 			const prefixWidth = visibleWidth(prefix);
-			const msgCountWidth = visibleWidth(msgCountPrefix);
 			const rightWidth = visibleWidth(rightPart) + 2; // +2 for spacing
-			const availableForMsg = width - 2 - prefixWidth - msgCountWidth - rightWidth; // -2 for cursor
+			const availableForMsg = width - 2 - prefixWidth - rightWidth; // -2 for cursor
 
 			const truncatedMsg = truncateToWidth(normalizedMessage, Math.max(10, availableForMsg), "…");
 
@@ -437,8 +436,7 @@ class SessionList implements Component, Focusable {
 			}
 
 			// Build line
-			const styledMsgCount = theme.fg("dim", msgCountPrefix);
-			const leftPart = cursor + theme.fg("dim", prefix) + styledMsgCount + styledMsg;
+			const leftPart = cursor + theme.fg("dim", prefix) + styledMsg;
 			const leftWidth = visibleWidth(leftPart);
 			const spacing = Math.max(1, width - leftWidth - visibleWidth(rightPart));
 			const styledRight = theme.fg(isConfirmingDelete ? "error" : "dim", rightPart);
