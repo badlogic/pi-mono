@@ -9,6 +9,7 @@
 - Added `rpc-demo.ts` example extension exercising all RPC-supported extension UI methods ([#1144](https://github.com/badlogic/pi-mono/pull/1144) by [@aliou](https://github.com/aliou))
 - Added `rpc-extension-ui.ts` TUI example client demonstrating the extension UI protocol with interactive dialogs ([#1144](https://github.com/badlogic/pi-mono/pull/1144) by [@aliou](https://github.com/aliou))
 - Added `PI_PACKAGE_DIR` environment variable to override package path for content-addressed package managers (Nix, Guix) where store paths tokenize poorly ([#1153](https://github.com/badlogic/pi-mono/pull/1153) by [@odysseus0](https://github.com/odysseus0))
+- `/resume` session picker now supports named-only filter toggle (default Ctrl+N, configurable via `toggleSessionNamedFilter`) to show only named sessions ([#1128](https://github.com/badlogic/pi-mono/pull/1128) by [@w-winter](https://github.com/w-winter))
 
 ### Fixed
 
