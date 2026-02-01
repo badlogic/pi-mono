@@ -31,6 +31,7 @@
 - Fixed OAuth login/refresh not using HTTP proxy settings (`HTTP_PROXY`, `HTTPS_PROXY` env vars) ([#1132](https://github.com/badlogic/pi-mono/issues/1132))
 - Fixed `pi update <source>` installing packages locally when the source is only registered globally ([#1163](https://github.com/badlogic/pi-mono/pull/1163) by [@aliou](https://github.com/aliou))
 - Fixed tree navigation with summarization overwriting editor content typed during the summarization wait ([#1169](https://github.com/badlogic/pi-mono/pull/1169) by [@aliou](https://github.com/aliou))
+- Fixed clipboard image tests crashing CI by extracting native module loading into a mockable ESM wrapper ([#1170](https://github.com/badlogic/pi-mono/pull/1170) by [@aliou](https://github.com/aliou))
 
 ## [0.50.9] - 2026-02-01
 

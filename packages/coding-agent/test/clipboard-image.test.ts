@@ -17,9 +17,9 @@ vi.mock("child_process", () => {
 	};
 });
 
-vi.mock("@mariozechner/clipboard", () => {
+vi.mock("../src/utils/clipboard-native.js", () => {
 	return {
-		default: mocks.clipboard,
+		clipboard: mocks.clipboard,
 	};
 });
 

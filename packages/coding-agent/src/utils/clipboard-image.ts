@@ -1,21 +1,6 @@
 import { spawnSync } from "child_process";
-import { createRequire } from "module";
-
+import { clipboard as Clipboard } from "./clipboard-native.js";
 import { loadPhoton } from "./photon.js";
-
-type ClipboardModule = {
-	hasImage: () => boolean;
-	getImageBinary: () => Promise<Array<number>>;
-};
-
-const require = createRequire(import.meta.url);
-let Clipboard: ClipboardModule | null = null;
-
-try {
-	Clipboard = require("@mariozechner/clipboard") as ClipboardModule;
-} catch {
-	Clipboard = null;
-}
 
 export type ClipboardImage = {
 	bytes: Uint8Array;
