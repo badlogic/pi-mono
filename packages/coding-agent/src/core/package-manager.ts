@@ -742,20 +742,18 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	async update(source?: string): Promise<void> {
-		if (source) {
-			await this.updateSourceForScope(source, "user");
-			await this.updateSourceForScope(source, "project");
-			return;
-		}
-
 		const globalSettings = this.settingsManager.getGlobalSettings();
 		const projectSettings = this.settingsManager.getProjectSettings();
+		const identity = source ? this.getPackageIdentity(source) : undefined;
+
 		for (const pkg of globalSettings.packages ?? []) {
 			const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
+			if (identity && this.getPackageIdentity(sourceStr) !== identity) continue;
 			await this.updateSourceForScope(sourceStr, "user");
 		}
 		for (const pkg of projectSettings.packages ?? []) {
 			const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
+			if (identity && this.getPackageIdentity(sourceStr) !== identity) continue;
 			await this.updateSourceForScope(sourceStr, "project");
 		}
 	}

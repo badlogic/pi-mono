@@ -27,6 +27,7 @@
 - Fixed tree selector losing focus state when navigating entries ([#1142](https://github.com/badlogic/pi-mono/pull/1142) by [@Perlence](https://github.com/Perlence))
 - Fixed `cacheRetention` option not being passed through in `buildBaseOptions` ([#1154](https://github.com/badlogic/pi-mono/issues/1154))
 - Fixed OAuth login/refresh not using HTTP proxy settings (`HTTP_PROXY`, `HTTPS_PROXY` env vars) ([#1132](https://github.com/badlogic/pi-mono/issues/1132))
+- Fixed `pi update <source>` installing packages locally when the source is only registered globally ([#1163](https://github.com/badlogic/pi-mono/pull/1163) by [@aliou](https://github.com/aliou))
 
 ## [0.50.9] - 2026-02-01
 
