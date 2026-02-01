@@ -39,7 +39,6 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@mariozechner/clipboard": "^0.3.2",
 		"@mariozechner/jiti": "^2.6.2",
 		"@mariozechner/pi-agent-core": "^0.50.9",
 		"@mariozechner/pi-ai": "^0.50.9",
@@ -55,6 +54,9 @@
 		"minimatch": "^10.1.1",
 		"proper-lockfile": "^4.1.2",
 		"yaml": "^2.8.2"
+	},
+	"optionalDependencies": {
+		"@mariozechner/clipboard": "^0.3.2"
 	},
 	"devDependencies": {
 		"@types/diff": "^7.0.2",

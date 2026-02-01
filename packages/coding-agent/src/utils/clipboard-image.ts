@@ -1,7 +1,21 @@
-import Clipboard from "@mariozechner/clipboard";
 import { spawnSync } from "child_process";
+import { createRequire } from "module";
 
 import { loadPhoton } from "./photon.js";
+
+type ClipboardModule = {
+	hasImage: () => boolean;
+	getImageBinary: () => Promise<Array<number>>;
+};
+
+const require = createRequire(import.meta.url);
+let Clipboard: ClipboardModule | null = null;
+
+try {
+	Clipboard = require("@mariozechner/clipboard") as ClipboardModule;
+} catch {
+	Clipboard = null;
+}
 
 export type ClipboardImage = {
 	bytes: Uint8Array;
@@ -168,12 +182,16 @@ export async function readClipboardImage(options?: {
 	const env = options?.env ?? process.env;
 	const platform = options?.platform ?? process.platform;
 
+	if (env.TERMUX_VERSION) {
+		return null;
+	}
+
 	let image: ClipboardImage | null = null;
 
 	if (platform === "linux" && isWaylandSession(env)) {
 		image = readClipboardImageViaWlPaste() ?? readClipboardImageViaXclip();
 	} else {
-		if (!Clipboard.hasImage()) {
+		if (!Clipboard || !Clipboard.hasImage()) {
 			return null;
 		}
 
