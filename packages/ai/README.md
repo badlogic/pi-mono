@@ -731,8 +731,16 @@ interface OpenAICompletionsCompat {
   supportsStore?: boolean;           // Whether provider supports the `store` field (default: true)
   supportsDeveloperRole?: boolean;   // Whether provider supports `developer` role vs `system` (default: true)
   supportsReasoningEffort?: boolean; // Whether provider supports `reasoning_effort` (default: true)
+  supportsUsageInStreaming?: boolean; // Whether provider supports `stream_options: { include_usage: true }` (default: true)
+  supportsStrictMode?: boolean;      // Whether provider supports `strict` in tool definitions (default: true)
   maxTokensField?: 'max_completion_tokens' | 'max_tokens';  // Which field name to use (default: max_completion_tokens)
+  requiresToolResultName?: boolean;  // Whether tool results require the `name` field (default: false)
+  requiresAssistantAfterToolResult?: boolean; // Whether tool results must be followed by an assistant message (default: false)
+  requiresThinkingAsText?: boolean;  // Whether thinking blocks must be converted to text (default: false)
+  requiresMistralToolIds?: boolean;  // Whether tool call IDs must be normalized to Mistral format (default: false)
   thinkingFormat?: 'openai' | 'zai' | 'qwen'; // Format for reasoning param: 'openai' uses reasoning_effort, 'zai' uses thinking: { type: "enabled" }, 'qwen' uses enable_thinking: boolean (default: openai)
+  openRouterRouting?: OpenRouterRouting; // OpenRouter routing preferences (default: {})
+  vercelGatewayRouting?: VercelGatewayRouting; // Vercel AI Gateway routing preferences (default: {})
 }
 
 interface OpenAIResponsesCompat {
