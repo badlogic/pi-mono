@@ -39,4 +39,4 @@ pi's core is minimal. If your feature doesn't belong in the core, it should be a
 
 ## Questions?
 
-Open an issue or ask on [Discord](https://discord.gg/XdVrgtQAzd).
+Open an issue or ask on [Discord](https://discord.com/invite/nKXTsAcmbT).
