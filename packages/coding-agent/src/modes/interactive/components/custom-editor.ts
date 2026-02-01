@@ -61,8 +61,9 @@ export class CustomEditor extends Editor {
 			if (this.getText().length === 0) {
 				const handler = this.onCtrlD ?? this.actionHandlers.get("exit");
 				if (handler) handler();
+				return;
 			}
-			return; // Always consume
+			// Fall through to editor handling for delete-char-forward when not empty
 		}
 
 		// Check all other app actions

@@ -301,7 +301,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 			}
 
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error("An unkown error ocurred");
+				throw new Error("An unknown error occurred");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -333,10 +333,12 @@ export const streamSimpleOpenAICompletions: StreamFunction<"openai-completions",
 
 	const base = buildBaseOptions(model, options, apiKey);
 	const reasoningEffort = supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning);
+	const toolChoice = (options as OpenAICompletionsOptions | undefined)?.toolChoice;
 
 	return streamOpenAICompletions(model, context, {
 		...base,
 		reasoningEffort,
+		toolChoice,
 	} satisfies OpenAICompletionsOptions);
 };
 
@@ -448,6 +450,22 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		params.reasoning_effort = options.reasoningEffort;
 	}
 
+	// OpenRouter provider routing preferences
+	if (model.baseUrl.includes("openrouter.ai") && model.compat?.openRouterRouting) {
+		(params as any).provider = model.compat.openRouterRouting;
+	}
+
+	// Vercel AI Gateway provider routing preferences
+	if (model.baseUrl.includes("ai-gateway.vercel.sh") && model.compat?.vercelGatewayRouting) {
+		const routing = model.compat.vercelGatewayRouting;
+		if (routing.only || routing.order) {
+			const gatewayOptions: Record<string, string[]> = {};
+			if (routing.only) gatewayOptions.only = routing.only;
+			if (routing.order) gatewayOptions.order = routing.order;
+			(params as any).providerOptions = { gateway: gatewayOptions };
+		}
+	}
+
 	return params;
 }
 
@@ -493,6 +511,17 @@ export function convertMessages(
 
 	const normalizeToolCallId = (id: string): string => {
 		if (compat.requiresMistralToolIds) return normalizeMistralToolId(id);
+
+		// Handle pipe-separated IDs from OpenAI Responses API
+		// Format: {call_id}|{id} where {id} can be 400+ chars with special chars (+, /, =)
+		// These come from providers like github-copilot, openai-codex, opencode
+		// Extract just the call_id part and normalize it
+		if (id.includes("|")) {
+			const [callId] = id.split("|");
+			// Sanitize to allowed chars and truncate to 40 chars (OpenAI limit)
+			return callId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40);
+		}
+
 		if (model.provider === "openai") return id.length > 40 ? id.slice(0, 40) : id;
 		// Copilot Claude models route to Claude backend which requires Anthropic ID format
 		if (model.provider === "github-copilot" && model.id.toLowerCase().includes("claude")) {
@@ -759,6 +788,7 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		provider === "mistral" ||
 		baseUrl.includes("mistral.ai") ||
 		baseUrl.includes("chutes.ai") ||
+		baseUrl.includes("deepseek.com") ||
 		isZai ||
 		provider === "opencode" ||
 		baseUrl.includes("opencode.ai");
@@ -780,6 +810,8 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		requiresThinkingAsText: isMistral,
 		requiresMistralToolIds: isMistral,
 		thinkingFormat: isZai ? "zai" : "openai",
+		openRouterRouting: {},
+		vercelGatewayRouting: {},
 	};
 }
 
@@ -803,5 +835,7 @@ function getCompat(model: Model<"openai-completions">): Required<OpenAICompletio
 		requiresThinkingAsText: model.compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
 		requiresMistralToolIds: model.compat.requiresMistralToolIds ?? detected.requiresMistralToolIds,
 		thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
+		openRouterRouting: model.compat.openRouterRouting ?? {},
+		vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
 	};
 }

@@ -144,6 +144,15 @@
     }
 
     .tree-node.in-path {
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+
+    .tree-node:not(.in-path) {
+      opacity: 0.5;
+    }
+
+    .tree-node:not(.in-path):hover {
+      opacity: 1;
     }
 
     .tree-prefix {

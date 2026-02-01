@@ -665,6 +665,7 @@
       // ============================================================
 
       let currentLeafId = leafId;
+      let currentTargetId = urlTargetId || leafId;
       let treeRendered = false;
 
       function renderTree() {
@@ -681,12 +682,12 @@
           for (const flatNode of filtered) {
             const entry = flatNode.node.entry;
             const isOnPath = activePathIds.has(entry.id);
-            const isLeaf = entry.id === currentLeafId;
+            const isTarget = entry.id === currentTargetId;
 
             const div = document.createElement('div');
             div.className = 'tree-node';
             if (isOnPath) div.classList.add('in-path');
-            if (isLeaf) div.classList.add('active');
+            if (isTarget) div.classList.add('active');
             div.dataset.id = entry.id;
 
             const prefix = buildTreePrefix(flatNode);
@@ -721,10 +722,10 @@
           for (const node of nodes) {
             const id = node.dataset.id;
             const isOnPath = activePathIds.has(id);
-            const isLeaf = id === currentLeafId;
+            const isTarget = id === currentTargetId;
 
             node.classList.toggle('in-path', isOnPath);
-            node.classList.toggle('active', isLeaf);
+            node.classList.toggle('active', isTarget);
 
             const marker = node.querySelector('.tree-marker');
             if (marker) {
@@ -1351,6 +1352,7 @@
 
       function navigateTo(targetId, scrollMode = 'target', scrollToEntryId = null) {
         currentLeafId = targetId;
+        currentTargetId = scrollToEntryId || targetId;
         const path = getPath(targetId);
 
         renderTree();

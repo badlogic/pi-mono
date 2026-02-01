@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.50.7] - 2026-01-31
+
+## [0.50.6] - 2026-01-30
+
+## [0.50.5] - 2026-01-30
+
+## [0.50.3] - 2026-01-29
+
+## [0.50.2] - 2026-01-29
+
+### Added
+
+- Exported `CustomProviderCard`, `ProviderKeyInput`, `AbortedMessage`, and `ToolMessageDebugView` components for custom UIs ([#1015](https://github.com/badlogic/pi-mono/issues/1015))
+
+## [0.50.1] - 2026-01-26
+
+## [0.50.0] - 2026-01-26
+
 ## [0.49.3] - 2026-01-22
 
 ### Changed

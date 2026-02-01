@@ -552,6 +552,14 @@ function loadThemeJson(name: string): ThemeJson {
 	if (name in builtinThemes) {
 		return builtinThemes[name];
 	}
+	const registeredTheme = registeredThemes.get(name);
+	if (registeredTheme?.sourcePath) {
+		const content = fs.readFileSync(registeredTheme.sourcePath, "utf-8");
+		return parseThemeJsonContent(registeredTheme.sourcePath, content);
+	}
+	if (registeredTheme) {
+		throw new Error(`Theme "${name}" does not have a source path for export`);
+	}
 	const customThemesDir = getCustomThemesDir();
 	const themePath = path.join(customThemesDir, `${name}.json`);
 	if (!fs.existsSync(themePath)) {

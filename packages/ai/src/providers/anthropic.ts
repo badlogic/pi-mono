@@ -30,6 +30,22 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { adjustMaxTokensForThinking, buildBaseOptions } from "./simple-options.js";
 import { transformMessages } from "./transform-messages.js";
 
+/**
+ * Get cache TTL based on PI_CACHE_RETENTION env var.
+ * Only applies to direct Anthropic API calls (api.anthropic.com).
+ * Returns '1h' for long retention, undefined for default (5m).
+ */
+function getCacheTtl(baseUrl: string): "1h" | undefined {
+	if (
+		typeof process !== "undefined" &&
+		process.env.PI_CACHE_RETENTION === "long" &&
+		baseUrl.includes("api.anthropic.com")
+	) {
+		return "1h";
+	}
+	return undefined;
+}
+
 // Stealth mode: Mimic Claude Code's tool naming exactly
 const claudeCodeVersion = "2.1.2";
 
@@ -217,7 +233,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 							name: isOAuthToken
 								? fromClaudeCodeName(event.content_block.name, context.tools)
 								: event.content_block.name,
-							arguments: event.content_block.input as Record<string, any>,
+							arguments: (event.content_block.input as Record<string, any>) ?? {},
 							partialJson: "",
 							index: event.index,
 						};
@@ -304,10 +320,20 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 					if (event.delta.stop_reason) {
 						output.stopReason = mapStopReason(event.delta.stop_reason);
 					}
-					output.usage.input = event.usage.input_tokens || 0;
-					output.usage.output = event.usage.output_tokens || 0;
-					output.usage.cacheRead = event.usage.cache_read_input_tokens || 0;
-					output.usage.cacheWrite = event.usage.cache_creation_input_tokens || 0;
+					// Only update usage fields if present (not null).
+					// Preserves input_tokens from message_start when proxies omit it in message_delta.
+					if (event.usage.input_tokens != null) {
+						output.usage.input = event.usage.input_tokens;
+					}
+					if (event.usage.output_tokens != null) {
+						output.usage.output = event.usage.output_tokens;
+					}
+					if (event.usage.cache_read_input_tokens != null) {
+						output.usage.cacheRead = event.usage.cache_read_input_tokens;
+					}
+					if (event.usage.cache_creation_input_tokens != null) {
+						output.usage.cacheWrite = event.usage.cache_creation_input_tokens;
+					}
 					// Anthropic doesn't provide total_tokens, compute from components
 					output.usage.totalTokens =
 						output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
@@ -442,6 +468,7 @@ function buildParams(
 	};
 
 	// For OAuth tokens, we MUST include Claude Code identity
+	const cacheTtl = getCacheTtl(model.baseUrl);
 	if (isOAuthToken) {
 		params.system = [
 			{
@@ -449,6 +476,7 @@ function buildParams(
 				text: "You are Claude Code, Anthropic's official CLI for Claude.",
 				cache_control: {
 					type: "ephemeral",
+					...(cacheTtl && { ttl: cacheTtl }),
 				},
 			},
 		];
@@ -458,6 +486,7 @@ function buildParams(
 				text: sanitizeSurrogates(context.systemPrompt),
 				cache_control: {
 					type: "ephemeral",
+					...(cacheTtl && { ttl: cacheTtl }),
 				},
 			});
 		}
@@ -469,6 +498,7 @@ function buildParams(
 				text: sanitizeSurrogates(context.systemPrompt),
 				cache_control: {
 					type: "ephemeral",
+					...(cacheTtl && { ttl: cacheTtl }),
 				},
 			},
 		];
@@ -589,7 +619,7 @@ function convertMessages(
 						type: "tool_use",
 						id: block.id,
 						name: isOAuthToken ? toClaudeCodeName(block.name) : block.name,
-						input: block.arguments,
+						input: block.arguments ?? {},
 					});
 				}
 			}
@@ -645,7 +675,8 @@ function convertMessages(
 					lastBlock &&
 					(lastBlock.type === "text" || lastBlock.type === "image" || lastBlock.type === "tool_result")
 				) {
-					(lastBlock as any).cache_control = { type: "ephemeral" };
+					const cacheTtl = getCacheTtl(model.baseUrl);
+					(lastBlock as any).cache_control = { type: "ephemeral", ...(cacheTtl && { ttl: cacheTtl }) };
 				}
 			}
 		}
@@ -672,7 +703,7 @@ function convertTools(tools: Tool[], isOAuthToken: boolean): Anthropic.Messages.
 	});
 }
 
-function mapStopReason(reason: Anthropic.Messages.StopReason): StopReason {
+function mapStopReason(reason: Anthropic.Messages.StopReason | string): StopReason {
 	switch (reason) {
 		case "end_turn":
 			return "stop";
@@ -686,9 +717,10 @@ function mapStopReason(reason: Anthropic.Messages.StopReason): StopReason {
 			return "stop";
 		case "stop_sequence":
 			return "stop"; // We don't supply stop sequences, so this should never happen
-		default: {
-			const _exhaustive: never = reason;
-			throw new Error(`Unhandled stop reason: ${_exhaustive}`);
-		}
+		case "sensitive": // Content flagged by safety filters (not yet in SDK types)
+			return "error";
+		default:
+			// Handle unknown stop reasons gracefully (API may add new values)
+			throw new Error(`Unhandled stop reason: ${reason}`);
 	}
 }

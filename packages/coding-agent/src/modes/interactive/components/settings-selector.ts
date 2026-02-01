@@ -35,9 +35,10 @@ export interface SettingsConfig {
 	availableThemes: string[];
 	hideThinkingBlock: boolean;
 	collapseChangelog: boolean;
-	doubleEscapeAction: "fork" | "tree";
+	doubleEscapeAction: "fork" | "tree" | "none";
 	showHardwareCursor: boolean;
 	editorPaddingX: number;
+	autocompleteMaxVisible: number;
 	quietStartup: boolean;
 }
 
@@ -54,9 +55,10 @@ export interface SettingsCallbacks {
 	onThemePreview?: (theme: string) => void;
 	onHideThinkingBlockChange: (hidden: boolean) => void;
 	onCollapseChangelogChange: (collapsed: boolean) => void;
-	onDoubleEscapeActionChange: (action: "fork" | "tree") => void;
+	onDoubleEscapeActionChange: (action: "fork" | "tree" | "none") => void;
 	onShowHardwareCursorChange: (enabled: boolean) => void;
 	onEditorPaddingXChange: (padding: number) => void;
+	onAutocompleteMaxVisibleChange: (maxVisible: number) => void;
 	onQuietStartupChange: (enabled: boolean) => void;
 	onCancel: () => void;
 }
@@ -184,7 +186,7 @@ export class SettingsSelectorComponent extends Container {
 				label: "Double-escape action",
 				description: "Action when pressing Escape twice with empty editor",
 				currentValue: config.doubleEscapeAction,
-				values: ["tree", "fork"],
+				values: ["tree", "fork", "none"],
 			},
 			{
 				id: "thinking",
@@ -300,6 +302,16 @@ export class SettingsSelectorComponent extends Container {
 			values: ["0", "1", "2", "3"],
 		});
 
+		// Autocomplete max visible toggle (insert after editor-padding)
+		const editorPaddingIndex = items.findIndex((item) => item.id === "editor-padding");
+		items.splice(editorPaddingIndex + 1, 0, {
+			id: "autocomplete-max-visible",
+			label: "Autocomplete max items",
+			description: "Max visible items in autocomplete dropdown (3-20)",
+			currentValue: String(config.autocompleteMaxVisible),
+			values: ["3", "5", "7", "10", "15", "20"],
+		});
+
 		// Add borders
 		this.addChild(new DynamicBorder());
 
@@ -347,6 +359,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "editor-padding":
 						callbacks.onEditorPaddingXChange(parseInt(newValue, 10));
+						break;
+					case "autocomplete-max-visible":
+						callbacks.onAutocompleteMaxVisibleChange(parseInt(newValue, 10));
 						break;
 				}
 			},

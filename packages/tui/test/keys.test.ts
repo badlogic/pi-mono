@@ -83,6 +83,24 @@ describe("matchesKey", () => {
 			setKittyProtocolActive(false);
 		});
 
+		it("should prefer codepoint for Latin letters even when base layout differs", () => {
+			setKittyProtocolActive(true);
+			// Dvorak Ctrl+K reports codepoint 'k' (107) and base layout 'v' (118)
+			const dvorakCtrlK = "\x1b[107::118;5u";
+			assert.strictEqual(matchesKey(dvorakCtrlK, "ctrl+k"), true);
+			assert.strictEqual(matchesKey(dvorakCtrlK, "ctrl+v"), false);
+			setKittyProtocolActive(false);
+		});
+
+		it("should prefer codepoint for symbol keys even when base layout differs", () => {
+			setKittyProtocolActive(true);
+			// Dvorak Ctrl+/ reports codepoint '/' (47) and base layout '[' (91)
+			const dvorakCtrlSlash = "\x1b[47::91;5u";
+			assert.strictEqual(matchesKey(dvorakCtrlSlash, "ctrl+/"), true);
+			assert.strictEqual(matchesKey(dvorakCtrlSlash, "ctrl+["), false);
+			setKittyProtocolActive(false);
+		});
+
 		it("should not match wrong key even with base layout", () => {
 			setKittyProtocolActive(true);
 			// Cyrillic ctrl+с with base 'c' should NOT match ctrl+d
@@ -251,6 +269,22 @@ describe("parseKey", () => {
 			// Cyrillic ctrl+с with base layout 'c'
 			const cyrillicCtrlC = "\x1b[1089::99;5u";
 			assert.strictEqual(parseKey(cyrillicCtrlC), "ctrl+c");
+			setKittyProtocolActive(false);
+		});
+
+		it("should prefer codepoint for Latin letters when base layout differs", () => {
+			setKittyProtocolActive(true);
+			// Dvorak Ctrl+K reports codepoint 'k' (107) and base layout 'v' (118)
+			const dvorakCtrlK = "\x1b[107::118;5u";
+			assert.strictEqual(parseKey(dvorakCtrlK), "ctrl+k");
+			setKittyProtocolActive(false);
+		});
+
+		it("should prefer codepoint for symbol keys when base layout differs", () => {
+			setKittyProtocolActive(true);
+			// Dvorak Ctrl+/ reports codepoint '/' (47) and base layout '[' (91)
+			const dvorakCtrlSlash = "\x1b[47::91;5u";
+			assert.strictEqual(parseKey(dvorakCtrlSlash), "ctrl+/");
 			setKittyProtocolActive(false);
 		});
 

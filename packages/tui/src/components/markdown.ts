@@ -1,4 +1,5 @@
 import { marked, type Token } from "marked";
+import { isImageLine } from "../terminal-image.js";
 import type { Component } from "../tui.js";
 import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.js";
 
@@ -43,6 +44,11 @@ export interface MarkdownTheme {
 	highlightCode?: (code: string, lang?: string) => string[];
 	/** Prefix applied to each rendered code block line (default: "  ") */
 	codeBlockIndent?: string;
+}
+
+interface InlineStyleContext {
+	applyText: (text: string) => string;
+	stylePrefix: string;
 }
 
 export class Markdown implements Component {
@@ -121,7 +127,11 @@ export class Markdown implements Component {
 		// Wrap lines (NO padding, NO background yet)
 		const wrappedLines: string[] = [];
 		for (const line of renderedLines) {
-			wrappedLines.push(...wrapTextWithAnsi(line, contentWidth));
+			if (isImageLine(line)) {
+				wrappedLines.push(line);
+			} else {
+				wrappedLines.push(...wrapTextWithAnsi(line, contentWidth));
+			}
 		}
 
 		// Add margins and background to each wrapped line
@@ -131,6 +141,11 @@ export class Markdown implements Component {
 		const contentLines: string[] = [];
 
 		for (const line of wrappedLines) {
+			if (isImageLine(line)) {
+				contentLines.push(line);
+				continue;
+			}
+
 			const lineWithMargins = leftMargin + line + rightMargin;
 
 			if (bgFn) {
@@ -231,6 +246,20 @@ export class Markdown implements Component {
 		return this.defaultStylePrefix;
 	}
 
+	private getStylePrefix(styleFn: (text: string) => string): string {
+		const sentinel = "\u0000";
+		const styled = styleFn(sentinel);
+		const sentinelIndex = styled.indexOf(sentinel);
+		return sentinelIndex >= 0 ? styled.slice(0, sentinelIndex) : "";
+	}
+
+	private getDefaultInlineStyleContext(): InlineStyleContext {
+		return {
+			applyText: (text: string) => this.applyDefaultStyle(text),
+			stylePrefix: this.getDefaultStylePrefix(),
+		};
+	}
+
 	private renderToken(token: Token, width: number, nextTokenType?: string): string[] {
 		const lines: string[] = [];
 
@@ -301,10 +330,23 @@ export class Markdown implements Component {
 			}
 
 			case "blockquote": {
-				const quoteText = this.renderInlineTokens(token.tokens || []);
+				const quoteStyle = (text: string) => this.theme.quote(this.theme.italic(text));
+				const quoteStyleContext: InlineStyleContext = {
+					applyText: quoteStyle,
+					stylePrefix: this.getStylePrefix(quoteStyle),
+				};
+				const quoteText = this.renderInlineTokens(token.tokens || [], quoteStyleContext);
 				const quoteLines = quoteText.split("\n");
+
+				// Calculate available width for quote content (subtract border "│ " = 2 chars)
+				const quoteContentWidth = Math.max(1, width - 2);
+
 				for (const quoteLine of quoteLines) {
-					lines.push(this.theme.quoteBorder("│ ") + this.theme.quote(this.theme.italic(quoteLine)));
+					// Wrap the styled line, then add border to each wrapped line
+					const wrappedLines = wrapTextWithAnsi(quoteLine, quoteContentWidth);
+					for (const wrappedLine of wrappedLines) {
+						lines.push(this.theme.quoteBorder("│ ") + wrappedLine);
+					}
 				}
 				if (nextTokenType !== "space") {
 					lines.push(""); // Add spacing after blockquotes (unless space token follows)
@@ -341,54 +383,61 @@ export class Markdown implements Component {
 		return lines;
 	}
 
-	private renderInlineTokens(tokens: Token[]): string {
+	private renderInlineTokens(tokens: Token[], styleContext?: InlineStyleContext): string {
 		let result = "";
+		const resolvedStyleContext = styleContext ?? this.getDefaultInlineStyleContext();
+		const { applyText, stylePrefix } = resolvedStyleContext;
+		const applyTextWithNewlines = (text: string): string => {
+			const segments: string[] = text.split("\n");
+			return segments.map((segment: string) => applyText(segment)).join("\n");
+		};
 
 		for (const token of tokens) {
 			switch (token.type) {
 				case "text":
 					// Text tokens in list items can have nested tokens for inline formatting
 					if (token.tokens && token.tokens.length > 0) {
-						result += this.renderInlineTokens(token.tokens);
+						result += this.renderInlineTokens(token.tokens, resolvedStyleContext);
 					} else {
-						// Apply default style to plain text
-						result += this.applyDefaultStyle(token.text);
+						result += applyTextWithNewlines(token.text);
 					}
 					break;
 
+				case "paragraph":
+					// Paragraph tokens contain nested inline tokens
+					result += this.renderInlineTokens(token.tokens || [], resolvedStyleContext);
+					break;
+
 				case "strong": {
-					// Apply bold, then reapply default style after
-					const boldContent = this.renderInlineTokens(token.tokens || []);
-					result += this.theme.bold(boldContent) + this.getDefaultStylePrefix();
+					const boldContent = this.renderInlineTokens(token.tokens || [], resolvedStyleContext);
+					result += this.theme.bold(boldContent) + stylePrefix;
 					break;
 				}
 
 				case "em": {
-					// Apply italic, then reapply default style after
-					const italicContent = this.renderInlineTokens(token.tokens || []);
-					result += this.theme.italic(italicContent) + this.getDefaultStylePrefix();
+					const italicContent = this.renderInlineTokens(token.tokens || [], resolvedStyleContext);
+					result += this.theme.italic(italicContent) + stylePrefix;
 					break;
 				}
 
 				case "codespan":
-					// Apply code styling without backticks
-					result += this.theme.code(token.text) + this.getDefaultStylePrefix();
+					result += this.theme.code(token.text) + stylePrefix;
 					break;
 
 				case "link": {
-					const linkText = this.renderInlineTokens(token.tokens || []);
+					const linkText = this.renderInlineTokens(token.tokens || [], resolvedStyleContext);
 					// If link text matches href, only show the link once
 					// Compare raw text (token.text) not styled text (linkText) since linkText has ANSI codes
 					// For mailto: links, strip the prefix before comparing (autolinked emails have
 					// text="foo@bar.com" but href="mailto:foo@bar.com")
 					const hrefForComparison = token.href.startsWith("mailto:") ? token.href.slice(7) : token.href;
 					if (token.text === token.href || token.text === hrefForComparison) {
-						result += this.theme.link(this.theme.underline(linkText)) + this.getDefaultStylePrefix();
+						result += this.theme.link(this.theme.underline(linkText)) + stylePrefix;
 					} else {
 						result +=
 							this.theme.link(this.theme.underline(linkText)) +
 							this.theme.linkUrl(` (${token.href})`) +
-							this.getDefaultStylePrefix();
+							stylePrefix;
 					}
 					break;
 				}
@@ -398,22 +447,22 @@ export class Markdown implements Component {
 					break;
 
 				case "del": {
-					const delContent = this.renderInlineTokens(token.tokens || []);
-					result += this.theme.strikethrough(delContent) + this.getDefaultStylePrefix();
+					const delContent = this.renderInlineTokens(token.tokens || [], resolvedStyleContext);
+					result += this.theme.strikethrough(delContent) + stylePrefix;
 					break;
 				}
 
 				case "html":
 					// Render inline HTML as plain text
 					if ("raw" in token && typeof token.raw === "string") {
-						result += this.applyDefaultStyle(token.raw);
+						result += applyTextWithNewlines(token.raw);
 					}
 					break;
 
 				default:
 					// Handle any other inline token types as plain text
 					if ("text" in token && typeof token.text === "string") {
-						result += this.applyDefaultStyle(token.text);
+						result += applyTextWithNewlines(token.text);
 					}
 			}
 		}
@@ -523,6 +572,21 @@ export class Markdown implements Component {
 	}
 
 	/**
+	 * Get the visible width of the longest word in a string.
+	 */
+	private getLongestWordWidth(text: string, maxWidth?: number): number {
+		const words = text.split(/\s+/).filter((word) => word.length > 0);
+		let longest = 0;
+		for (const word of words) {
+			longest = Math.max(longest, visibleWidth(word));
+		}
+		if (maxWidth === undefined) {
+			return longest;
+		}
+		return Math.min(longest, maxWidth);
+	}
+
+	/**
 	 * Wrap a table cell to fit into a column.
 	 *
 	 * Delegates to wrapTextWithAnsi() so ANSI codes + long tokens are handled
@@ -550,27 +614,62 @@ export class Markdown implements Component {
 		// Calculate border overhead: "│ " + (n-1) * " │ " + " │"
 		// = 2 + (n-1) * 3 + 2 = 3n + 1
 		const borderOverhead = 3 * numCols + 1;
-
-		// Minimum width for a bordered table with at least 1 char per column.
-		const minTableWidth = borderOverhead + numCols;
-		if (availableWidth < minTableWidth) {
+		const availableForCells = availableWidth - borderOverhead;
+		if (availableForCells < numCols) {
 			// Too narrow to render a stable table. Fall back to raw markdown.
 			const fallbackLines = token.raw ? wrapTextWithAnsi(token.raw, availableWidth) : [];
 			fallbackLines.push("");
 			return fallbackLines;
 		}
 
+		const maxUnbrokenWordWidth = 30;
+
 		// Calculate natural column widths (what each column needs without constraints)
 		const naturalWidths: number[] = [];
+		const minWordWidths: number[] = [];
 		for (let i = 0; i < numCols; i++) {
 			const headerText = this.renderInlineTokens(token.header[i].tokens || []);
 			naturalWidths[i] = visibleWidth(headerText);
+			minWordWidths[i] = Math.max(1, this.getLongestWordWidth(headerText, maxUnbrokenWordWidth));
 		}
 		for (const row of token.rows) {
 			for (let i = 0; i < row.length; i++) {
 				const cellText = this.renderInlineTokens(row[i].tokens || []);
 				naturalWidths[i] = Math.max(naturalWidths[i] || 0, visibleWidth(cellText));
+				minWordWidths[i] = Math.max(
+					minWordWidths[i] || 1,
+					this.getLongestWordWidth(cellText, maxUnbrokenWordWidth),
+				);
 			}
+		}
+
+		let minColumnWidths = minWordWidths;
+		let minCellsWidth = minColumnWidths.reduce((a, b) => a + b, 0);
+
+		if (minCellsWidth > availableForCells) {
+			minColumnWidths = new Array(numCols).fill(1);
+			const remaining = availableForCells - numCols;
+
+			if (remaining > 0) {
+				const totalWeight = minWordWidths.reduce((total, width) => total + Math.max(0, width - 1), 0);
+				const growth = minWordWidths.map((width) => {
+					const weight = Math.max(0, width - 1);
+					return totalWeight > 0 ? Math.floor((weight / totalWeight) * remaining) : 0;
+				});
+
+				for (let i = 0; i < numCols; i++) {
+					minColumnWidths[i] += growth[i] ?? 0;
+				}
+
+				const allocated = growth.reduce((total, width) => total + width, 0);
+				let leftover = remaining - allocated;
+				for (let i = 0; leftover > 0 && i < numCols; i++) {
+					minColumnWidths[i]++;
+					leftover--;
+				}
+			}
+
+			minCellsWidth = minColumnWidths.reduce((a, b) => a + b, 0);
 		}
 
 		// Calculate column widths that fit within available width
@@ -579,27 +678,37 @@ export class Markdown implements Component {
 
 		if (totalNaturalWidth <= availableWidth) {
 			// Everything fits naturally
-			columnWidths = naturalWidths;
+			columnWidths = naturalWidths.map((width, index) => Math.max(width, minColumnWidths[index]));
 		} else {
 			// Need to shrink columns to fit
-			const availableForCells = availableWidth - borderOverhead;
-			if (availableForCells <= numCols) {
-				// Extremely narrow - give each column at least 1 char
-				columnWidths = naturalWidths.map(() => Math.max(1, Math.floor(availableForCells / numCols)));
-			} else {
-				// Distribute space proportionally based on natural widths
-				const totalNatural = naturalWidths.reduce((a, b) => a + b, 0);
-				columnWidths = naturalWidths.map((w) => {
-					const proportion = w / totalNatural;
-					return Math.max(1, Math.floor(proportion * availableForCells));
-				});
+			const totalGrowPotential = naturalWidths.reduce((total, width, index) => {
+				return total + Math.max(0, width - minColumnWidths[index]);
+			}, 0);
+			const extraWidth = Math.max(0, availableForCells - minCellsWidth);
+			columnWidths = minColumnWidths.map((minWidth, index) => {
+				const naturalWidth = naturalWidths[index];
+				const minWidthDelta = Math.max(0, naturalWidth - minWidth);
+				let grow = 0;
+				if (totalGrowPotential > 0) {
+					grow = Math.floor((minWidthDelta / totalGrowPotential) * extraWidth);
+				}
+				return minWidth + grow;
+			});
 
-				// Adjust for rounding errors - distribute remaining space
-				const allocated = columnWidths.reduce((a, b) => a + b, 0);
-				let remaining = availableForCells - allocated;
-				for (let i = 0; remaining > 0 && i < numCols; i++) {
-					columnWidths[i]++;
-					remaining--;
+			// Adjust for rounding errors - distribute remaining space
+			const allocated = columnWidths.reduce((a, b) => a + b, 0);
+			let remaining = availableForCells - allocated;
+			while (remaining > 0) {
+				let grew = false;
+				for (let i = 0; i < numCols && remaining > 0; i++) {
+					if (columnWidths[i] < naturalWidths[i]) {
+						columnWidths[i]++;
+						remaining--;
+						grew = true;
+					}
+				}
+				if (!grew) {
+					break;
 				}
 			}
 		}
@@ -626,10 +735,12 @@ export class Markdown implements Component {
 
 		// Render separator
 		const separatorCells = columnWidths.map((w) => "─".repeat(w));
-		lines.push(`├─${separatorCells.join("─┼─")}─┤`);
+		const separatorLine = `├─${separatorCells.join("─┼─")}─┤`;
+		lines.push(separatorLine);
 
 		// Render rows with wrapping
-		for (const row of token.rows) {
+		for (let rowIndex = 0; rowIndex < token.rows.length; rowIndex++) {
+			const row = token.rows[rowIndex];
 			const rowCellLines: string[][] = row.map((cell, i) => {
 				const text = this.renderInlineTokens(cell.tokens || []);
 				return this.wrapCellText(text, columnWidths[i]);
@@ -642,6 +753,10 @@ export class Markdown implements Component {
 					return text + " ".repeat(Math.max(0, columnWidths[colIdx] - visibleWidth(text)));
 				});
 				lines.push(`│ ${rowParts.join(" │ ")} │`);
+			}
+
+			if (rowIndex < token.rows.length - 1) {
+				lines.push(separatorLine);
 			}
 		}
 

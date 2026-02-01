@@ -73,7 +73,7 @@ const GEMINI_CLI_HEADERS = {
 
 // Headers for Antigravity (sandbox endpoint) - requires specific User-Agent
 const ANTIGRAVITY_HEADERS = {
-	"User-Agent": "antigravity/1.11.5 darwin/arm64",
+	"User-Agent": "antigravity/1.15.8 darwin/arm64",
 	"X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
 	"Client-Metadata": JSON.stringify({
 		ideType: "IDE_UNSPECIFIED",
@@ -473,6 +473,16 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli", GoogleGe
 						// Use server-provided delay or exponential backoff
 						const serverDelay = extractRetryDelay(errorText, response);
 						const delayMs = serverDelay ?? BASE_DELAY_MS * 2 ** attempt;
+
+						// Check if server delay exceeds max allowed (default: 60s)
+						const maxDelayMs = options?.maxRetryDelayMs ?? 60000;
+						if (maxDelayMs > 0 && serverDelay && serverDelay > maxDelayMs) {
+							const delaySeconds = Math.ceil(serverDelay / 1000);
+							throw new Error(
+								`Server requested ${delaySeconds}s retry delay (max: ${Math.ceil(maxDelayMs / 1000)}s). ${extractErrorMessage(errorText)}`,
+							);
+						}
+
 						await sleep(delayMs, options?.signal);
 						continue;
 					}
@@ -685,7 +695,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli", GoogleGe
 											type: "toolCall",
 											id: toolCallId,
 											name: part.functionCall.name || "",
-											arguments: part.functionCall.args as Record<string, unknown>,
+											arguments: (part.functionCall.args as Record<string, unknown>) ?? {},
 											...(part.thoughtSignature && { thoughtSignature: part.thoughtSignature }),
 										};
 

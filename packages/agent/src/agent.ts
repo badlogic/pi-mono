@@ -77,6 +77,14 @@ export interface AgentOptions {
 	 * Custom token budgets for thinking levels (token-based providers only).
 	 */
 	thinkingBudgets?: ThinkingBudgets;
+
+	/**
+	 * Maximum delay in milliseconds to wait for a retry when the server requests a long wait.
+	 * If the server's requested delay exceeds this value, the request fails immediately,
+	 * allowing higher-level retry logic to handle it with user visibility.
+	 * Default: 60000 (60 seconds). Set to 0 to disable the cap.
+	 */
+	maxRetryDelayMs?: number;
 }
 
 export class Agent {
@@ -106,6 +114,7 @@ export class Agent {
 	private runningPrompt?: Promise<void>;
 	private resolveRunningPrompt?: () => void;
 	private _thinkingBudgets?: ThinkingBudgets;
+	private _maxRetryDelayMs?: number;
 
 	constructor(opts: AgentOptions = {}) {
 		this._state = { ...this._state, ...opts.initialState };
@@ -117,6 +126,7 @@ export class Agent {
 		this._sessionId = opts.sessionId;
 		this.getApiKey = opts.getApiKey;
 		this._thinkingBudgets = opts.thinkingBudgets;
+		this._maxRetryDelayMs = opts.maxRetryDelayMs;
 	}
 
 	/**
@@ -146,6 +156,21 @@ export class Agent {
 	 */
 	set thinkingBudgets(value: ThinkingBudgets | undefined) {
 		this._thinkingBudgets = value;
+	}
+
+	/**
+	 * Get the current max retry delay in milliseconds.
+	 */
+	get maxRetryDelayMs(): number | undefined {
+		return this._maxRetryDelayMs;
+	}
+
+	/**
+	 * Set the maximum delay to wait for server-requested retries.
+	 * Set to 0 to disable the cap.
+	 */
+	set maxRetryDelayMs(value: number | undefined) {
+		this._maxRetryDelayMs = value;
 	}
 
 	get state(): AgentState {
@@ -333,6 +358,7 @@ export class Agent {
 			reasoning,
 			sessionId: this._sessionId,
 			thinkingBudgets: this._thinkingBudgets,
+			maxRetryDelayMs: this._maxRetryDelayMs,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DefaultResourceLoader } from "../src/core/resource-loader.js";
+import { SettingsManager } from "../src/core/settings-manager.js";
 import type { Skill } from "../src/core/skills.js";
 
 describe("DefaultResourceLoader", () => {
@@ -51,6 +52,27 @@ Skill content here.`,
 			expect(skills.some((s) => s.name === "test-skill")).toBe(true);
 		});
 
+		it("should ignore extra markdown files in auto-discovered skill dirs", async () => {
+			const skillDir = join(agentDir, "skills", "pi-skills", "browser-tools");
+			mkdirSync(skillDir, { recursive: true });
+			writeFileSync(
+				join(skillDir, "SKILL.md"),
+				`---
+name: browser-tools
+description: Browser tools
+---
+Skill content here.`,
+			);
+			writeFileSync(join(skillDir, "EFFICIENCY.md"), "No frontmatter here");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			const { skills, diagnostics } = loader.getSkills();
+			expect(skills.some((s) => s.name === "browser-tools")).toBe(true);
+			expect(diagnostics.some((d) => d.path?.endsWith("EFFICIENCY.md"))).toBe(false);
+		});
+
 		it("should discover prompts from agentDir", async () => {
 			const promptsDir = join(agentDir, "prompts");
 			mkdirSync(promptsDir, { recursive: true });
@@ -67,6 +89,50 @@ Prompt content.`,
 
 			const { prompts } = loader.getPrompts();
 			expect(prompts.some((p) => p.name === "test-prompt")).toBe(true);
+		});
+
+		it("should honor overrides for auto-discovered resources", async () => {
+			const settingsManager = SettingsManager.inMemory();
+			settingsManager.setExtensionPaths(["-extensions/disabled.ts"]);
+			settingsManager.setSkillPaths(["-skills/skip-skill"]);
+			settingsManager.setPromptTemplatePaths(["-prompts/skip.md"]);
+			settingsManager.setThemePaths(["-themes/skip.json"]);
+
+			const extensionsDir = join(agentDir, "extensions");
+			mkdirSync(extensionsDir, { recursive: true });
+			writeFileSync(join(extensionsDir, "disabled.ts"), "export default function() {}");
+
+			const skillDir = join(agentDir, "skills", "skip-skill");
+			mkdirSync(skillDir, { recursive: true });
+			writeFileSync(
+				join(skillDir, "SKILL.md"),
+				`---
+name: skip-skill
+description: Skip me
+---
+Content`,
+			);
+
+			const promptsDir = join(agentDir, "prompts");
+			mkdirSync(promptsDir, { recursive: true });
+			writeFileSync(join(promptsDir, "skip.md"), "Skip prompt");
+
+			const themesDir = join(agentDir, "themes");
+			mkdirSync(themesDir, { recursive: true });
+			writeFileSync(join(themesDir, "skip.json"), "{}");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+			await loader.reload();
+
+			const { extensions } = loader.getExtensions();
+			const { skills } = loader.getSkills();
+			const { prompts } = loader.getPrompts();
+			const { themes } = loader.getThemes();
+
+			expect(extensions.some((e) => e.path.endsWith("disabled.ts"))).toBe(false);
+			expect(skills.some((s) => s.name === "skip-skill")).toBe(false);
+			expect(prompts.some((p) => p.name === "skip")).toBe(false);
+			expect(themes.some((t) => t.sourcePath?.endsWith("skip.json"))).toBe(false);
 		});
 
 		it("should discover AGENTS.md context files", async () => {

@@ -26,6 +26,7 @@ import type {
 	RpcExtensionUIResponse,
 	RpcResponse,
 	RpcSessionState,
+	RpcSlashCommand,
 } from "./rpc-types.js";
 
 // Re-export types for consumers
@@ -254,41 +255,36 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	});
 
 	// Set up extensions with RPC-based UI context
-	const extensionRunner = session.extensionRunner;
-	if (extensionRunner) {
-		await session.bindExtensions({
-			uiContext: createExtensionUIContext(),
-			commandContextActions: {
-				waitForIdle: () => session.agent.waitForIdle(),
-				newSession: async (options) => {
-					const success = await session.newSession({ parentSession: options?.parentSession });
-					if (success && options?.setup) {
-						await options.setup(session.sessionManager);
-					}
-					return { cancelled: !success };
-				},
-				fork: async (entryId) => {
-					const result = await session.fork(entryId);
-					return { cancelled: result.cancelled };
-				},
-				navigateTree: async (targetId, options) => {
-					const result = await session.navigateTree(targetId, {
-						summarize: options?.summarize,
-						customInstructions: options?.customInstructions,
-						replaceInstructions: options?.replaceInstructions,
-						label: options?.label,
-					});
-					return { cancelled: result.cancelled };
-				},
+	await session.bindExtensions({
+		uiContext: createExtensionUIContext(),
+		commandContextActions: {
+			waitForIdle: () => session.agent.waitForIdle(),
+			newSession: async (options) => {
+				// Delegate to AgentSession (handles setup + agent state sync)
+				const success = await session.newSession(options);
+				return { cancelled: !success };
 			},
-			shutdownHandler: () => {
-				shutdownRequested = true;
+			fork: async (entryId) => {
+				const result = await session.fork(entryId);
+				return { cancelled: result.cancelled };
 			},
-			onError: (err) => {
-				output({ type: "extension_error", extensionPath: err.extensionPath, event: err.event, error: err.error });
+			navigateTree: async (targetId, options) => {
+				const result = await session.navigateTree(targetId, {
+					summarize: options?.summarize,
+					customInstructions: options?.customInstructions,
+					replaceInstructions: options?.replaceInstructions,
+					label: options?.label,
+				});
+				return { cancelled: result.cancelled };
 			},
-		});
-	}
+		},
+		shutdownHandler: () => {
+			shutdownRequested = true;
+		},
+		onError: (err) => {
+			output({ type: "extension_error", extensionPath: err.extensionPath, event: err.event, error: err.error });
+		},
+	});
 
 	// Output all agent events as JSON
 	session.subscribe((event) => {
@@ -353,6 +349,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					followUpMode: session.followUpMode,
 					sessionFile: session.sessionFile,
 					sessionId: session.sessionId,
+					sessionName: session.sessionName,
 					autoCompactionEnabled: session.autoCompactionEnabled,
 					messageCount: session.messages.length,
 					pendingMessageCount: session.pendingMessageCount,
@@ -494,12 +491,63 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				return success(id, "get_last_assistant_text", { text });
 			}
 
+			case "set_session_name": {
+				const name = command.name.trim();
+				if (!name) {
+					return error(id, "set_session_name", "Session name cannot be empty");
+				}
+				session.setSessionName(name);
+				return success(id, "set_session_name");
+			}
+
 			// =================================================================
 			// Messages
 			// =================================================================
 
 			case "get_messages": {
 				return success(id, "get_messages", { messages: session.messages });
+			}
+
+			// =================================================================
+			// Commands (available for invocation via prompt)
+			// =================================================================
+
+			case "get_commands": {
+				const commands: RpcSlashCommand[] = [];
+
+				// Extension commands
+				for (const { command, extensionPath } of session.extensionRunner?.getRegisteredCommandsWithPaths() ?? []) {
+					commands.push({
+						name: command.name,
+						description: command.description,
+						source: "extension",
+						path: extensionPath,
+					});
+				}
+
+				// Prompt templates (source is always "user" | "project" | "path" in coding-agent)
+				for (const template of session.promptTemplates) {
+					commands.push({
+						name: template.name,
+						description: template.description,
+						source: "template",
+						location: template.source as RpcSlashCommand["location"],
+						path: template.filePath,
+					});
+				}
+
+				// Skills (source is always "user" | "project" | "path" in coding-agent)
+				for (const skill of session.resourceLoader.getSkills().skills) {
+					commands.push({
+						name: `skill:${skill.name}`,
+						description: skill.description,
+						source: "skill",
+						location: skill.source as RpcSlashCommand["location"],
+						path: skill.filePath,
+					});
+				}
+
+				return success(id, "get_commands", { commands });
 			}
 
 			default: {

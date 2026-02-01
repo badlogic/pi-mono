@@ -35,7 +35,9 @@ export type KnownProvider =
 	| "mistral"
 	| "minimax"
 	| "minimax-cn"
-	| "opencode";
+	| "huggingface"
+	| "opencode"
+	| "kimi-coding";
 export type Provider = KnownProvider | string;
 
 export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -70,6 +72,14 @@ export interface StreamOptions {
 	 * Not supported by all providers (e.g., AWS Bedrock uses SDK auth).
 	 */
 	headers?: Record<string, string>;
+	/**
+	 * Maximum delay in milliseconds to wait for a retry when the server requests a long wait.
+	 * If the server's requested delay exceeds this value, the request fails immediately
+	 * with an error containing the requested delay, allowing higher-level retry logic
+	 * to handle it with user visibility.
+	 * Default: 60000 (60 seconds). Set to 0 to disable the cap.
+	 */
+	maxRetryDelayMs?: number;
 }
 
 export type ProviderStreamOptions = StreamOptions & Record<string, unknown>;
@@ -214,11 +224,39 @@ export interface OpenAICompletionsCompat {
 	requiresMistralToolIds?: boolean;
 	/** Format for reasoning/thinking parameter. "openai" uses reasoning_effort, "zai" uses thinking: { type: "enabled" }, "qwen" uses enable_thinking: boolean. Default: "openai". */
 	thinkingFormat?: "openai" | "zai" | "qwen";
+	/** OpenRouter-specific routing preferences. Only used when baseUrl points to OpenRouter. */
+	openRouterRouting?: OpenRouterRouting;
+	/** Vercel AI Gateway routing preferences. Only used when baseUrl points to Vercel AI Gateway. */
+	vercelGatewayRouting?: VercelGatewayRouting;
 }
 
 /** Compatibility settings for OpenAI Responses APIs. */
 export interface OpenAIResponsesCompat {
 	// Reserved for future use
+}
+
+/**
+ * OpenRouter provider routing preferences.
+ * Controls which upstream providers OpenRouter routes requests to.
+ * @see https://openrouter.ai/docs/provider-routing
+ */
+export interface OpenRouterRouting {
+	/** List of provider slugs to exclusively use for this request (e.g., ["amazon-bedrock", "anthropic"]). */
+	only?: string[];
+	/** List of provider slugs to try in order (e.g., ["anthropic", "openai"]). */
+	order?: string[];
+}
+
+/**
+ * Vercel AI Gateway routing preferences.
+ * Controls which upstream providers the gateway routes requests to.
+ * @see https://vercel.com/docs/ai-gateway/models-and-providers/provider-options
+ */
+export interface VercelGatewayRouting {
+	/** List of provider slugs to exclusively use for this request (e.g., ["bedrock", "anthropic"]). */
+	only?: string[];
+	/** List of provider slugs to try in order (e.g., ["anthropic", "openai"]). */
+	order?: string[];
 }
 
 // Model interface for the unified model system

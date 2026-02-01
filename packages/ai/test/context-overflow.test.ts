@@ -367,6 +367,22 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
+	// Hugging Face
+	// Uses OpenAI-compatible Inference Router
+	// =============================================================================
+
+	describe.skipIf(!process.env.HF_TOKEN)("Hugging Face", () => {
+		it("Kimi-K2.5 - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("huggingface", "moonshotai/Kimi-K2.5");
+			const result = await testContextOverflow(model, process.env.HF_TOKEN!);
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
 	// z.ai
 	// Special case: Sometimes accepts overflow silently, sometimes rate limits
 	// Detection via usage.input > contextWindow when successful
@@ -420,6 +436,21 @@ describe("Context overflow error handling", () => {
 		it("MiniMax-M2.1 - should detect overflow via isContextOverflow", async () => {
 			const model = getModel("minimax", "MiniMax-M2.1");
 			const result = await testContextOverflow(model, process.env.MINIMAX_API_KEY!);
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
+	// Kimi For Coding
+	// =============================================================================
+
+	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding", () => {
+		it("kimi-k2-thinking - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("kimi-coding", "kimi-k2-thinking");
+			const result = await testContextOverflow(model, process.env.KIMI_API_KEY!);
 			logResult(result);
 
 			expect(result.stopReason).toBe("error");

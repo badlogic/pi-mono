@@ -81,6 +81,18 @@ export function resetCapabilitiesCache(): void {
 	cachedCapabilities = null;
 }
 
+const KITTY_PREFIX = "\x1b_G";
+const ITERM2_PREFIX = "\x1b]1337;File=";
+
+export function isImageLine(line: string): boolean {
+	// Fast path: sequence at line start (single-row images)
+	if (line.startsWith(KITTY_PREFIX) || line.startsWith(ITERM2_PREFIX)) {
+		return true;
+	}
+	// Slow path: sequence elsewhere (multi-row images have cursor-up prefix)
+	return line.includes(KITTY_PREFIX) || line.includes(ITERM2_PREFIX);
+}
+
 /**
  * Generate a random image ID for Kitty graphics protocol.
  * Uses random IDs to avoid collisions between different module instances

@@ -154,6 +154,7 @@ Response:
     "followUpMode": "one-at-a-time",
     "sessionFile": "/path/to/session.jsonl",
     "sessionId": "abc123",
+    "sessionName": "my-feature-work",
     "autoCompactionEnabled": true,
     "messageCount": 5,
     "pendingMessageCount": 0
@@ -161,7 +162,7 @@ Response:
 }
 ```
 
-The `model` field is a full [Model](#model) object or `null`.
+The `model` field is a full [Model](#model) object or `null`. The `sessionName` field is the display name set via `set_session_name`, or omitted if not set.
 
 #### get_messages
 
@@ -611,6 +612,66 @@ Response:
 ```
 
 Returns `{"text": null}` if no assistant messages exist.
+
+#### set_session_name
+
+Set a display name for the current session. The name appears in session listings and helps identify sessions.
+
+```json
+{"type": "set_session_name", "name": "my-feature-work"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "set_session_name",
+  "success": true
+}
+```
+
+The current session name is available via `get_state` in the `sessionName` field.
+
+### Commands
+
+#### get_commands
+
+Get available commands (extension commands, prompt templates, and skills). These can be invoked via the `prompt` command by prefixing with `/`.
+
+```json
+{"type": "get_commands"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "get_commands",
+  "success": true,
+  "data": {
+    "commands": [
+      {"name": "session-name", "description": "Set or clear session name", "source": "extension", "path": "/home/user/.pi/agent/extensions/session.ts"},
+      {"name": "fix-tests", "description": "Fix failing tests", "source": "template", "location": "project", "path": "/home/user/myproject/.pi/agent/prompts/fix-tests.md"},
+      {"name": "skill:brave-search", "description": "Web search via Brave API", "source": "skill", "location": "user", "path": "/home/user/.pi/agent/skills/brave-search/SKILL.md"}
+    ]
+  }
+}
+```
+
+Each command has:
+- `name`: Command name (invoke with `/name`)
+- `description`: Human-readable description (optional for extension commands)
+- `source`: What kind of command:
+  - `"extension"`: Registered via `pi.registerCommand()` in an extension
+  - `"template"`: Loaded from a prompt template `.md` file
+  - `"skill"`: Loaded from a skill directory (name is prefixed with `skill:`)
+- `location`: Where it was loaded from (optional, not present for extensions):
+  - `"user"`: User-level (`~/.pi/agent/`)
+  - `"project"`: Project-level (`./.pi/agent/`)
+  - `"path"`: Explicit path via CLI or settings
+- `path`: Absolute file path to the command source (optional)
+
+**Note**: Built-in TUI commands (`/settings`, `/hotkeys`, etc.) are not included. They are handled only in interactive mode and would not execute if sent via `prompt`.
 
 ## Events
 

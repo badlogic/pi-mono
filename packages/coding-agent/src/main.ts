@@ -9,11 +9,13 @@ import { type ImageContent, modelsAreEqual, supportsXhigh } from "@mariozechner/
 import chalk from "chalk";
 import { createInterface } from "readline";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
+import { selectConfig } from "./cli/config-selector.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getAgentDir, getModelsPath, VERSION } from "./config.js";
 import { AuthStorage } from "./core/auth-storage.js";
+import { DEFAULT_THINKING_LEVEL } from "./core/defaults.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import type { LoadExtensionsResult } from "./core/extensions/index.js";
 import { KeybindingsManager } from "./core/keybindings.js";
@@ -398,7 +400,7 @@ function buildSessionOptions(
 
 	// Scoped models for Ctrl+P cycling - fill in default thinking level for models without explicit level
 	if (scopedModels.length > 0) {
-		const defaultThinkingLevel = settingsManager.getDefaultThinkingLevel() ?? "off";
+		const defaultThinkingLevel = settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;
 		options.scopedModels = scopedModels.map((sm) => ({
 			model: sm.model,
 			thinkingLevel: sm.thinkingLevel ?? defaultThinkingLevel,
@@ -424,8 +426,34 @@ function buildSessionOptions(
 	return options;
 }
 
+async function handleConfigCommand(args: string[]): Promise<boolean> {
+	if (args[0] !== "config") {
+		return false;
+	}
+
+	const cwd = process.cwd();
+	const agentDir = getAgentDir();
+	const settingsManager = SettingsManager.create(cwd, agentDir);
+	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+
+	const resolvedPaths = await packageManager.resolve();
+
+	await selectConfig({
+		resolvedPaths,
+		settingsManager,
+		cwd,
+		agentDir,
+	});
+
+	process.exit(0);
+}
+
 export async function main(args: string[]) {
 	if (await handlePackageCommand(args)) {
+		return;
+	}
+
+	if (await handleConfigCommand(args)) {
 		return;
 	}
 
