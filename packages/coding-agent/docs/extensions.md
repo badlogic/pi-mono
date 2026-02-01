@@ -473,16 +473,49 @@ Use this to update UI elements (status bars, footers) or perform model-specific 
 
 #### tool_call
 
-Fired before tool executes. **Can block.**
+Fired before tool executes. **Can block.** Use `isToolCallEventType` to narrow and get typed inputs.
 
 ```typescript
+import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
+
 pi.on("tool_call", async (event, ctx) => {
   // event.toolName - "bash", "read", "write", "edit", etc.
   // event.toolCallId
   // event.input - tool parameters
 
-  if (shouldBlock(event)) {
-    return { block: true, reason: "Not allowed" };
+  // Built-in tools: no type params needed
+  if (isToolCallEventType("bash", event)) {
+    // event.input is { command: string; timeout?: number }
+    if (event.input.command.includes("rm -rf")) {
+      return { block: true, reason: "Dangerous command" };
+    }
+  }
+
+  if (isToolCallEventType("read", event)) {
+    // event.input is { path: string; offset?: number; limit?: number }
+    console.log(`Reading: ${event.input.path}`);
+  }
+});
+```
+
+#### Typing custom tool input
+
+Custom tools should export their input type:
+
+```typescript
+// my-extension.ts
+export type MyToolInput = Static<typeof myToolSchema>;
+```
+
+Use `isToolCallEventType` with explicit type parameters:
+
+```typescript
+import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
+import type { MyToolInput } from "my-extension";
+
+pi.on("tool_call", (event) => {
+  if (isToolCallEventType<"my_tool", MyToolInput>("my_tool", event)) {
+    event.input.action;  // typed
   }
 });
 ```
