@@ -39,7 +39,7 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@mariozechner/clipboard": "^0.3.0",
+		"@mariozechner/clipboard": "^0.3.2",
 		"@mariozechner/jiti": "^2.6.2",
 		"@mariozechner/pi-agent-core": "^0.50.9",
 		"@mariozechner/pi-ai": "^0.50.9",
