@@ -776,7 +776,7 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): Sto
  */
 function detectCompat(model: Model<"openai-completions">): Required<OpenAICompletionsCompat> {
 	const provider = model.provider;
-	const baseUrl = model.baseUrl;
+	const baseUrl = model.baseUrl ?? "";
 
 	const isZai = provider === "zai" || baseUrl.includes("api.z.ai");
 
