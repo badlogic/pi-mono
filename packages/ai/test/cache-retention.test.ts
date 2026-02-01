@@ -70,6 +70,68 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 			expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 		});
 
+		it("should use 1h cache TTL when cacheControlTtl option is set to '1h'", async () => {
+			// No env var set
+			delete process.env.PI_CACHE_RETENTION;
+
+			const baseModel = getModel("anthropic", "claude-3-5-haiku-20241022");
+			let capturedPayload: any = null;
+
+			const { streamAnthropic } = await import("../src/providers/anthropic.js");
+
+			try {
+				const s = streamAnthropic(baseModel, context, {
+					apiKey: "fake-key",
+					cacheControlTtl: "1h",
+					onPayload: (payload) => {
+						capturedPayload = payload;
+					},
+				});
+
+				for await (const event of s) {
+					if (event.type === "error") break;
+				}
+			} catch {
+				// Expected to fail with fake key
+			}
+
+			if (capturedPayload) {
+				// System prompt should have cache_control with ttl: "1h"
+				expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+			}
+		});
+
+		it("should prioritize cacheControlTtl option over PI_CACHE_RETENTION env var", async () => {
+			// Set env var to something, but option should override
+			process.env.PI_CACHE_RETENTION = "long";
+
+			const baseModel = getModel("anthropic", "claude-3-5-haiku-20241022");
+			let capturedPayload: any = null;
+
+			const { streamAnthropic } = await import("../src/providers/anthropic.js");
+
+			try {
+				const s = streamAnthropic(baseModel, context, {
+					apiKey: "fake-key",
+					cacheControlTtl: "5m", // Explicitly set to 5m (default), should NOT add ttl
+					onPayload: (payload) => {
+						capturedPayload = payload;
+					},
+				});
+
+				for await (const event of s) {
+					if (event.type === "error") break;
+				}
+			} catch {
+				// Expected to fail with fake key
+			}
+
+			if (capturedPayload) {
+				// System prompt should have cache_control WITHOUT ttl (5m is default, no ttl field)
+				expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral" });
+			}
+		});
+
 		it("should not add ttl when baseUrl is not api.anthropic.com", async () => {
 			process.env.PI_CACHE_RETENTION = "long";
 

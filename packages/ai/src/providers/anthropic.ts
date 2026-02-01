@@ -31,18 +31,28 @@ import { adjustMaxTokensForThinking, buildBaseOptions } from "./simple-options.j
 import { transformMessages } from "./transform-messages.js";
 
 /**
- * Get cache TTL based on PI_CACHE_RETENTION env var.
+ * Get cache TTL for prompt caching.
+ * Checks options.cacheControlTtl first, then falls back to PI_CACHE_RETENTION env var.
  * Only applies to direct Anthropic API calls (api.anthropic.com).
  * Returns '1h' for long retention, undefined for default (5m).
  */
-function getCacheTtl(baseUrl: string): "1h" | undefined {
-	if (
-		typeof process !== "undefined" &&
-		process.env.PI_CACHE_RETENTION === "long" &&
-		baseUrl.includes("api.anthropic.com")
-	) {
+function getCacheTtl(baseUrl: string, options?: { cacheControlTtl?: "5m" | "1h" }): "1h" | undefined {
+	// Only apply cache TTL for direct Anthropic API calls
+	if (!baseUrl.includes("api.anthropic.com")) {
+		return undefined;
+	}
+
+	// Check options first (explicit configuration takes precedence)
+	if (options?.cacheControlTtl !== undefined) {
+		// If explicitly set, use the value (only "1h" returns "1h", "5m" returns undefined)
+		return options.cacheControlTtl === "1h" ? "1h" : undefined;
+	}
+
+	// Fall back to env var for backwards compatibility
+	if (typeof process !== "undefined" && process.env.PI_CACHE_RETENTION === "long") {
 		return "1h";
 	}
+
 	return undefined;
 }
 
@@ -142,6 +152,8 @@ export interface AnthropicOptions extends StreamOptions {
 	thinkingBudgetTokens?: number;
 	interleavedThinking?: boolean;
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
+	/** Cache TTL for prompt caching. "1h" for 1-hour cache, "5m" for default 5-minute cache. */
+	cacheControlTtl?: "5m" | "1h";
 }
 
 function mergeHeaders(...headerSources: (Record<string, string> | undefined)[]): Record<string, string> {
@@ -462,13 +474,13 @@ function buildParams(
 ): MessageCreateParamsStreaming {
 	const params: MessageCreateParamsStreaming = {
 		model: model.id,
-		messages: convertMessages(context.messages, model, isOAuthToken),
+		messages: convertMessages(context.messages, model, isOAuthToken, options),
 		max_tokens: options?.maxTokens || (model.maxTokens / 3) | 0,
 		stream: true,
 	};
 
 	// For OAuth tokens, we MUST include Claude Code identity
-	const cacheTtl = getCacheTtl(model.baseUrl);
+	const cacheTtl = getCacheTtl(model.baseUrl, options);
 	if (isOAuthToken) {
 		params.system = [
 			{
@@ -539,6 +551,7 @@ function convertMessages(
 	messages: Message[],
 	model: Model<"anthropic-messages">,
 	isOAuthToken: boolean,
+	options?: AnthropicOptions,
 ): MessageParam[] {
 	const params: MessageParam[] = [];
 
@@ -675,7 +688,7 @@ function convertMessages(
 					lastBlock &&
 					(lastBlock.type === "text" || lastBlock.type === "image" || lastBlock.type === "tool_result")
 				) {
-					const cacheTtl = getCacheTtl(model.baseUrl);
+					const cacheTtl = getCacheTtl(model.baseUrl, options);
 					(lastBlock as any).cache_control = { type: "ephemeral", ...(cacheTtl && { ttl: cacheTtl }) };
 				}
 			}
