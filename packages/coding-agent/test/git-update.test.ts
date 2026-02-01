@@ -98,8 +98,8 @@ describe("DefaultPackageManager git update", () => {
 		git(["config", "user.email", "test@test.com"], installedDir);
 		git(["config", "user.name", "Test"], installedDir);
 
-		// Add to settings so update() only processes this scope
-		settingsManager.setExtensionPaths([gitSource]);
+		// Add to global packages so update() processes this source
+		settingsManager.setPackages([gitSource]);
 	}
 
 	describe("normal updates (no force-push)", () => {
@@ -207,7 +207,7 @@ describe("DefaultPackageManager git update", () => {
 			const initialCommit = getCurrentCommit(installedDir);
 
 			// Reconfigure with pinned ref
-			settingsManager.setExtensionPaths([`${gitSource}@${initialCommit}`]);
+			settingsManager.setPackages([`${gitSource}@${initialCommit}`]);
 
 			// Add new commit to remote
 			createCommit(remoteDir, "extension.ts", "// v2", "Second commit");
@@ -218,6 +218,27 @@ describe("DefaultPackageManager git update", () => {
 			// Should still be on initial commit
 			expect(getCurrentCommit(installedDir)).toBe(initialCommit);
 			expect(getFileContent(installedDir, "extension.ts")).toBe("// v1");
+		});
+	});
+
+	describe("scope-aware update", () => {
+		it("should not install locally when source is only registered globally", async () => {
+			setupRemoteAndInstall();
+
+			// Add a new commit to remote
+			createCommit(remoteDir, "extension.ts", "// v2", "Second commit");
+
+			// The project-scope install path should not exist before or after update
+			const projectGitDir = join(tempDir, ".pi", "git", "github.com", "test", "extension");
+			expect(existsSync(projectGitDir)).toBe(false);
+
+			await packageManager.update(gitSource);
+
+			// Global install should be updated
+			expect(getFileContent(installedDir, "extension.ts")).toBe("// v2");
+
+			// Project-scope directory should NOT have been created
+			expect(existsSync(projectGitDir)).toBe(false);
 		});
 	});
 });
