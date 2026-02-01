@@ -1051,7 +1051,7 @@ export class InteractiveMode {
 
 					this.chatContainer.clear();
 					this.renderInitialMessages();
-					if (result.editorText) {
+					if (result.editorText && !this.editor.getText().trim()) {
 						this.editor.setText(result.editorText);
 					}
 					this.showStatus("Navigated to selected point");
@@ -3443,7 +3443,7 @@ export class InteractiveMode {
 						// Update UI
 						this.chatContainer.clear();
 						this.renderInitialMessages();
-						if (result.editorText) {
+						if (result.editorText && !this.editor.getText().trim()) {
 							this.editor.setText(result.editorText);
 						}
 						this.showStatus("Navigated to selected point");
