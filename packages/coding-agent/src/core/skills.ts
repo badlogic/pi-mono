@@ -263,7 +263,7 @@ export function formatSkillsForPrompt(skills: Skill[]): string {
 	const lines = [
 		"\n\nThe following skills provide specialized instructions for specific tasks.",
 		"Use the read tool to load a skill's file when the task matches its description.",
-		"Relative paths inside skill files are resolved from the skill directory (parent of the location path).",
+		"When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
 		"",
 		"<available_skills>",
 	];
