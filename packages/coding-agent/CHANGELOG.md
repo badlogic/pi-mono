@@ -9,6 +9,8 @@
 - `/resume` session picker: new "Threaded" sort mode (now default) displays sessions in a tree structure based on fork relationships. Compact one-line format with message count and age on the right. ([#1124](https://github.com/badlogic/pi-mono/pull/1124) by [@pasky](https://github.com/pasky))
 - Added Qwen CLI OAuth provider extension example. ([#940](https://github.com/badlogic/pi-mono/pull/940) by [@4h9fbZ](https://github.com/4h9fbZ))
 - Added OAuth `modifyModels` hook support for extension-registered providers at registration time. ([#940](https://github.com/badlogic/pi-mono/pull/940) by [@4h9fbZ](https://github.com/4h9fbZ))
+- Added Qwen thinking format support for OpenAI-compatible completions via `enable_thinking`. ([#940](https://github.com/badlogic/pi-mono/pull/940) by [@4h9fbZ](https://github.com/4h9fbZ))
+- Added sticky column tracking for vertical cursor navigation so the editor restores the preferred column when moving across short lines. ([#1120](https://github.com/badlogic/pi-mono/pull/1120) by [@Perlence](https://github.com/Perlence))
 
 ### Fixed
 
