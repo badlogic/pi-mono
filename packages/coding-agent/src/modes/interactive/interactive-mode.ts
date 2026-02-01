@@ -43,13 +43,12 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { spawn, spawnSync } from "@mariozechner/pi-env/child-process";
+import { isBun as isBunRuntime, isBunBinary as isBunBinaryFn } from "@mariozechner/pi-env";
 import {
 	APP_NAME,
 	getAuthPath,
 	getDebugLogPath,
 	getShareViewerUrl,
-	isBunBinary,
-	isBunRuntime,
 	VERSION,
 } from "../../config.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
@@ -2749,7 +2748,7 @@ export class InteractiveMode {
 	}
 
 	showNewVersionNotification(newVersion: string): void {
-		const action = isBunBinary
+		const action = isBunBinaryFn()
 			? `Download from: ${theme.fg("accent", "https://github.com/badlogic/pi-mono/releases/latest")}`
 			: `Run: ${theme.fg("accent", `${isBunRuntime ? "bun" : "npm"} install -g @mariozechner/pi-coding-agent`)}`;
 		const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. `) + action;

@@ -1,26 +1,28 @@
 import { existsSync, readFileSync } from "@mariozechner/pi-env/fs";
 import { homedir } from "@mariozechner/pi-env/os";
 import { dirname, join, resolve } from "@mariozechner/pi-env/path";
-import { env, execPath, versions } from "@mariozechner/pi-env/process";
-import { isBrowser } from "@mariozechner/pi-env";
+import { env, execPath } from "@mariozechner/pi-env/process";
+import {
+	detectBunBinary,
+	isBrowser,
+	isBun as isBunRuntime,
+	isBunBinary as isBunBinaryFn,
+} from "@mariozechner/pi-env";
 
 // =============================================================================
-// Package Detection
+// Package / Runtime Detection
 // =============================================================================
+
+// Initialize Bun binary detection from this module's import.meta.url
+detectBunBinary(import.meta.url);
+
+/** @deprecated Use `isBunBinary()` from `@mariozechner/pi-env` instead */
+export const isBunBinary = isBunBinaryFn();
+
+export { isBunRuntime };
 
 // In browser environment, __dirname is not available via import.meta.url
 const __dirname = isBrowser ? "/browser" : dirname(new URL(import.meta.url).pathname);
-
-/**
- * Detect if we're running as a Bun compiled binary.
- * Bun binaries have import.meta.url containing "$bunfs", "~BUN", or "%7EBUN" (Bun's virtual filesystem path)
- */
-export const isBunBinary =
-	!isBrowser &&
-	(import.meta.url.includes("$bunfs") || import.meta.url.includes("~BUN") || import.meta.url.includes("%7EBUN"));
-
-/** Detect if Bun is the runtime (compiled binary or bun run) */
-export const isBunRuntime = !!versions.bun;
 
 // =============================================================================
 // Package Asset Paths (shipped with executable)

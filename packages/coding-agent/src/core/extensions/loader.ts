@@ -18,7 +18,8 @@ import * as _bundledPiTui from "@mariozechner/pi-tui";
 // These MUST be static so Bun bundles them into the compiled binary.
 // The virtualModules option then makes them available to extensions.
 import * as _bundledTypebox from "@sinclair/typebox";
-import { getAgentDir, isBunBinary } from "../../config.js";
+import { isBunBinary } from "@mariozechner/pi-env";
+import { getAgentDir } from "../../config.js";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
 // avoiding a circular dependency. Extensions can import from @mariozechner/pi-coding-agent.
 import * as _bundledPiCodingAgent from "../../index.js";
@@ -256,7 +257,7 @@ async function loadExtensionModule(extensionPath: string) {
 		// In Bun binary: use virtualModules for bundled packages (no filesystem resolution)
 		// Also disable tryNative so jiti handles ALL imports (not just the entry point)
 		// In Node.js/dev: use aliases to resolve to node_modules paths
-		...(isBunBinary ? { virtualModules: VIRTUAL_MODULES, tryNative: false } : { alias: getAliases() }),
+		...(isBunBinary() ? { virtualModules: VIRTUAL_MODULES, tryNative: false } : { alias: getAliases() }),
 	});
 
 	const module = await jiti.import(extensionPath, { default: true });
