@@ -593,9 +593,10 @@ export function convertMessages(
 			// Filter out empty text blocks to avoid API validation errors
 			const nonEmptyTextBlocks = textBlocks.filter((b) => b.text && b.text.trim().length > 0);
 			if (nonEmptyTextBlocks.length > 0) {
-				// GitHub Copilot requires assistant content as a string, not an array.
-				// Sending as array causes Claude models to re-answer all previous prompts.
-				if (model.provider === "github-copilot") {
+				// Some providers (e.g. GitHub Copilot, Vercel AI Gateway) require assistant content
+				// as a string, not an array. Sending as array causes issues like Claude models
+				// re-answering all previous prompts or gateway validation errors.
+				if (compat.assistantContentAsString) {
 					assistantMsg.content = nonEmptyTextBlocks.map((b) => sanitizeSurrogates(b.text)).join("");
 				} else {
 					assistantMsg.content = nonEmptyTextBlocks.map((b) => {
@@ -780,6 +781,8 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 
 	const isZai = provider === "zai" || baseUrl.includes("api.z.ai");
 
+	const isGitHubCopilot = provider === "github-copilot";
+
 	const isNonStandard =
 		provider === "cerebras" ||
 		baseUrl.includes("cerebras.ai") ||
@@ -812,6 +815,7 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		thinkingFormat: isZai ? "zai" : "openai",
 		openRouterRouting: {},
 		vercelGatewayRouting: {},
+		assistantContentAsString: isGitHubCopilot,
 	};
 }
 
@@ -837,5 +841,6 @@ function getCompat(model: Model<"openai-completions">): Required<OpenAICompletio
 		thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
 		openRouterRouting: model.compat.openRouterRouting ?? {},
 		vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
+		assistantContentAsString: model.compat.assistantContentAsString ?? detected.assistantContentAsString,
 	};
 }

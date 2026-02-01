@@ -32,6 +32,7 @@ const compat: Required<OpenAICompletionsCompat> = {
 	thinkingFormat: "openai",
 	openRouterRouting: {},
 	vercelGatewayRouting: {},
+	assistantContentAsString: false,
 };
 
 function buildToolResult(toolCallId: string, timestamp: number): ToolResultMessage {
@@ -93,5 +94,46 @@ describe("openai-completions convertMessages", () => {
 			(part) => part?.type === "image_url",
 		);
 		expect(imageParts.length).toBe(2);
+	});
+
+	it("sends assistant content as string when assistantContentAsString is true", () => {
+		const baseModel = getModel("openai", "gpt-4o-mini");
+		const model: Model<"openai-completions"> = {
+			...baseModel,
+			api: "openai-completions",
+			input: ["text"],
+		};
+
+		const now = Date.now();
+		const context: Context = {
+			messages: [
+				{ role: "user", content: "Hello", timestamp: now - 2 },
+				{
+					role: "assistant",
+					content: [
+						{ type: "text", text: "Hi there! " },
+						{ type: "text", text: "How can I help?" },
+					],
+					api: model.api,
+					provider: model.provider,
+					model: model.id,
+					usage: emptyUsage,
+					stopReason: "stop",
+					timestamp: now - 1,
+				},
+				{ role: "user", content: "Thanks", timestamp: now },
+			],
+		};
+
+		const compatWithString: Required<OpenAICompletionsCompat> = {
+			...compat,
+			assistantContentAsString: true,
+		};
+
+		const messages = convertMessages(model, context, compatWithString);
+		const assistantMsg = messages.find((m) => m.role === "assistant");
+		expect(assistantMsg).toBeDefined();
+		expect(typeof assistantMsg!.content).toBe("string");
+		expect(assistantMsg!.content).toBe("Hi there! How can I help?");
 	});
 });

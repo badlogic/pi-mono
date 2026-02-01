@@ -228,6 +228,8 @@ export interface OpenAICompletionsCompat {
 	openRouterRouting?: OpenRouterRouting;
 	/** Vercel AI Gateway routing preferences. Only used when baseUrl points to Vercel AI Gateway. */
 	vercelGatewayRouting?: VercelGatewayRouting;
+	/** Whether assistant message content should be sent as a string instead of an array. Default: false. */
+	assistantContentAsString?: boolean;
 }
 
 /** Compatibility settings for OpenAI Responses APIs. */
