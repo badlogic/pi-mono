@@ -182,6 +182,12 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 	return binaryPath;
 }
 
+// Termux package names for tools
+const TERMUX_PACKAGES: Record<string, string> = {
+	fd: "fd-find",
+	rg: "ripgrep",
+};
+
 // Ensure a tool is available, downloading if necessary
 // Returns the path to the tool, or null if unavailable
 export async function ensureTool(tool: "fd" | "rg", silent: boolean = false): Promise<string | undefined> {
@@ -192,6 +198,16 @@ export async function ensureTool(tool: "fd" | "rg", silent: boolean = false): Pr
 
 	const config = TOOLS[tool];
 	if (!config) return undefined;
+
+	// On Android/Termux, Linux binaries don't work due to Bionic libc incompatibility.
+	// Users must install via pkg.
+	if (platform() === "android") {
+		const pkgName = TERMUX_PACKAGES[tool] ?? tool;
+		if (!silent) {
+			console.log(chalk.yellow(`${config.name} not found. Install with: pkg install ${pkgName}`));
+		}
+		return undefined;
+	}
 
 	// Tool not found - download it
 	if (!silent) {
