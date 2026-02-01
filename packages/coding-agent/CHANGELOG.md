@@ -5,6 +5,7 @@
 ### Added
 
 - Added `titlebar-spinner.ts` example extension that shows a braille spinner animation in the terminal title while the agent is working.
+- Added `PI_AI_ANTIGRAVITY_VERSION` environment variable documentation to help text ([#1129](https://github.com/badlogic/pi-mono/issues/1129))
 
 ## [0.50.8] - 2026-02-01
 

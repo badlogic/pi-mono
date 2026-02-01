@@ -911,6 +911,14 @@ const response = await complete(model, context, {
 });
 ```
 
+#### Antigravity Version Override
+
+Set `PI_AI_ANTIGRAVITY_VERSION` to override the Antigravity User-Agent version when Google updates their requirements:
+
+```bash
+export PI_AI_ANTIGRAVITY_VERSION="1.23.0"
+```
+
 #### Cache Retention
 
 Set `PI_CACHE_RETENTION=long` to extend prompt cache retention:
