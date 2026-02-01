@@ -1,4 +1,6 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { DEFAULT_EDITOR_KEYBINDINGS, EditorKeybindingsManager, setEditorKeybindings } from "@mariozechner/pi-tui";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { KeybindingsManager } from "../src/core/keybindings.js";
 import type { SessionInfo } from "../src/core/session-manager.js";
 import { SessionSelectorComponent } from "../src/modes/interactive/components/session-selector.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
@@ -43,6 +45,13 @@ const CTRL_D = "\x04";
 const CTRL_BACKSPACE = "\x1b[127;5u";
 
 describe("session selector path/delete interactions", () => {
+	const keybindings = KeybindingsManager.inMemory();
+
+	beforeEach(() => {
+		// Ensure test isolation: editor keybindings are a global singleton
+		setEditorKeybindings(new EditorKeybindingsManager(DEFAULT_EDITOR_KEYBINDINGS));
+	});
+
 	beforeAll(() => {
 		// session selector uses the global theme instance
 		initTheme("dark");
@@ -57,6 +66,7 @@ describe("session selector path/delete interactions", () => {
 			() => {},
 			() => {},
 			() => {},
+			{ keybindings },
 		);
 		await flushPromises();
 
@@ -80,6 +90,7 @@ describe("session selector path/delete interactions", () => {
 			() => {},
 			() => {},
 			() => {},
+			{ keybindings },
 		);
 		await flushPromises();
 
@@ -103,6 +114,7 @@ describe("session selector path/delete interactions", () => {
 			() => {},
 			() => {},
 			() => {},
+			{ keybindings },
 		);
 		await flushPromises();
 
@@ -138,6 +150,7 @@ describe("session selector path/delete interactions", () => {
 			() => {},
 			() => {},
 			() => {},
+			{ keybindings },
 		);
 		await flushPromises();
 
@@ -169,6 +182,7 @@ describe("session selector path/delete interactions", () => {
 			() => {},
 			() => {},
 			() => {},
+			{ keybindings },
 		);
 		await flushPromises();
 
