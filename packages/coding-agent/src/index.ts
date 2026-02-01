@@ -103,6 +103,7 @@ export type {
 } from "./core/extensions/index.js";
 export {
 	createExtensionRuntime,
+	discoverAndLoadExtensions,
 	ExtensionRunner,
 	isBashToolResult,
 	isEditToolResult,
