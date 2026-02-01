@@ -3352,15 +3352,6 @@ export class InteractiveMode {
 		const tree = this.sessionManager.getTree();
 		const realLeafId = this.sessionManager.getLeafId();
 
-		// Find the visible leaf for display (skip metadata entries like labels)
-		let visibleLeafId = realLeafId;
-		while (visibleLeafId) {
-			const entry = this.sessionManager.getEntry(visibleLeafId);
-			if (!entry) break;
-			if (entry.type !== "label" && entry.type !== "custom") break;
-			visibleLeafId = entry.parentId ?? null;
-		}
-
 		if (tree.length === 0) {
 			this.showStatus("No entries in session");
 			return;
@@ -3369,11 +3360,11 @@ export class InteractiveMode {
 		this.showSelector((done) => {
 			const selector = new TreeSelectorComponent(
 				tree,
-				visibleLeafId,
+				realLeafId,
 				this.ui.terminal.rows,
 				async (entryId) => {
-					// Selecting the visible leaf is a no-op (already there)
-					if (entryId === visibleLeafId) {
+					// Selecting the current leaf is a no-op (already there)
+					if (entryId === realLeafId) {
 						done();
 						this.showStatus("Already at this point");
 						return;
