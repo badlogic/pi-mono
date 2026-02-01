@@ -99,7 +99,7 @@ describe("DefaultPackageManager git update", () => {
 		git(["config", "user.name", "Test"], installedDir);
 
 		// Add to settings so update() only processes this scope
-		settingsManager.setExtensionPaths([gitSource]);
+		settingsManager.setPackages([gitSource]);
 	}
 
 	describe("normal updates (no force-push)", () => {
@@ -207,7 +207,7 @@ describe("DefaultPackageManager git update", () => {
 			const initialCommit = getCurrentCommit(installedDir);
 
 			// Reconfigure with pinned ref
-			settingsManager.setExtensionPaths([`${gitSource}@${initialCommit}`]);
+			settingsManager.setPackages([`${gitSource}@${initialCommit}`]);
 
 			// Add new commit to remote
 			createCommit(remoteDir, "extension.ts", "// v2", "Second commit");
