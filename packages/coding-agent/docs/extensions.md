@@ -79,7 +79,7 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({
       name: Type.String({ description: "Name to greet" }),
     }),
-    async execute(toolCallId, params, onUpdate, ctx, signal) {
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
       return {
         content: [{ type: "text", text: `Hello, ${params.name}!` }],
         details: {},
@@ -789,7 +789,7 @@ pi.registerTool({
     text: Type.Optional(Type.String()),
   }),
 
-  async execute(toolCallId, params, onUpdate, ctx, signal) {
+  async execute(toolCallId, params, signal, onUpdate, ctx) {
     // Stream progress
     onUpdate?.({ content: [{ type: "text", text: "Working..." }] });
 
@@ -1115,7 +1115,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "my_tool",
     // ...
-    async execute(toolCallId, params, onUpdate, ctx, signal) {
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
       items.push("new item");
       return {
         content: [{ type: "text", text: "Added" }],
@@ -1146,7 +1146,7 @@ pi.registerTool({
     text: Type.Optional(Type.String()),
   }),
 
-  async execute(toolCallId, params, onUpdate, ctx, signal) {
+  async execute(toolCallId, params, signal, onUpdate, ctx) {
     // Check for cancellation
     if (signal?.aborted) {
       return { content: [{ type: "text", text: "Cancelled" }] };
@@ -1224,7 +1224,7 @@ const remoteRead = createReadTool(cwd, {
 // Register, checking flag at execution time
 pi.registerTool({
   ...remoteRead,
-  async execute(id, params, onUpdate, _ctx, signal) {
+  async execute(id, params, signal, onUpdate, _ctx) {
     const ssh = getSshConfig();
     if (ssh) {
       const tool = createReadTool(cwd, { operations: createRemoteOps(ssh) });
@@ -1272,7 +1272,7 @@ import {
   DEFAULT_MAX_LINES, // 2000
 } from "@mariozechner/pi-coding-agent";
 
-async execute(toolCallId, params, onUpdate, ctx, signal) {
+async execute(toolCallId, params, signal, onUpdate, ctx) {
   const output = await runCommand();
 
   // Apply truncation

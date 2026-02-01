@@ -18,7 +18,7 @@ export function wrapRegisteredTool(registeredTool: RegisteredTool, runner: Exten
 		description: definition.description,
 		parameters: definition.parameters,
 		execute: (toolCallId, params, signal, onUpdate) =>
-			definition.execute(toolCallId, params, onUpdate, runner.createContext(), signal),
+			definition.execute(toolCallId, params, signal, onUpdate, runner.createContext()),
 	};
 }
 

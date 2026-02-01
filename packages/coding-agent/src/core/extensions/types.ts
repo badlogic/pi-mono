@@ -324,9 +324,9 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	execute(
 		toolCallId: string,
 		params: Static<TParams>,
+		signal: AbortSignal | undefined,
 		onUpdate: AgentToolUpdateCallback<TDetails> | undefined,
 		ctx: ExtensionContext,
-		signal?: AbortSignal,
 	): Promise<AgentToolResult<TDetails>>;
 
 	/** Custom rendering for tool call display */
