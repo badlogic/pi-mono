@@ -168,6 +168,8 @@ export interface SessionInfo {
 	cwd: string;
 	/** User-defined display name from session_info entries. */
 	name?: string;
+	/** Path to the parent session (if this session was forked). */
+	parentSessionPath?: string;
 	created: Date;
 	modified: Date;
 	messageCount: number;
@@ -587,6 +589,7 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 		}
 
 		const cwd = typeof (header as SessionHeader).cwd === "string" ? (header as SessionHeader).cwd : "";
+		const parentSessionPath = (header as SessionHeader).parentSession;
 
 		const modified = getSessionModifiedDate(entries, header as SessionHeader, stats.mtime);
 
@@ -595,6 +598,7 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 			id: (header as SessionHeader).id,
 			cwd,
 			name,
+			parentSessionPath,
 			created: new Date((header as SessionHeader).timestamp),
 			modified,
 			messageCount,

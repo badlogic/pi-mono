@@ -1,7 +1,7 @@
 import { fuzzyMatch } from "@mariozechner/pi-tui";
 import type { SessionInfo } from "../../../core/session-manager.js";
 
-export type SortMode = "recent" | "relevance";
+export type SortMode = "threaded" | "recent" | "relevance";
 
 export interface ParsedSearchQuery {
 	mode: "tokens" | "regex";
