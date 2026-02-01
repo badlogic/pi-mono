@@ -48,7 +48,7 @@ const OpenAICompletionsCompatSchema = Type.Object({
 	requiresAssistantAfterToolResult: Type.Optional(Type.Boolean()),
 	requiresThinkingAsText: Type.Optional(Type.Boolean()),
 	requiresMistralToolIds: Type.Optional(Type.Boolean()),
-	thinkingFormat: Type.Optional(Type.Union([Type.Literal("openai"), Type.Literal("zai")])),
+	thinkingFormat: Type.Optional(Type.Union([Type.Literal("openai"), Type.Literal("zai"), Type.Literal("qwen")])),
 	openRouterRouting: Type.Optional(OpenRouterRoutingSchema),
 	vercelGatewayRouting: Type.Optional(VercelGatewayRoutingSchema),
 });
@@ -543,6 +543,14 @@ export class ModelRegistry {
 					headers,
 					compat: modelDef.compat,
 				} as Model<Api>);
+			}
+
+			// Apply OAuth modifyModels if credentials exist (e.g., to update baseUrl)
+			if (config.oauth?.modifyModels) {
+				const cred = this.authStorage.get(providerName);
+				if (cred?.type === "oauth") {
+					this.models = config.oauth.modifyModels(this.models, cred);
+				}
 			}
 		} else if (config.baseUrl) {
 			// Override-only: update baseUrl/headers for existing models

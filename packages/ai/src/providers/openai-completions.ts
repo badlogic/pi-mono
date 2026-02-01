@@ -442,6 +442,9 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		// Z.ai uses binary thinking: { type: "enabled" | "disabled" }
 		// Must explicitly disable since z.ai defaults to thinking enabled
 		(params as any).thinking = { type: options?.reasoningEffort ? "enabled" : "disabled" };
+	} else if (compat.thinkingFormat === "qwen" && model.reasoning) {
+		// Qwen uses enable_thinking: boolean
+		(params as any).enable_thinking = !!options?.reasoningEffort;
 	} else if (options?.reasoningEffort && model.reasoning && compat.supportsReasoningEffort) {
 		// OpenAI-style reasoning_effort
 		params.reasoning_effort = options.reasoningEffort;

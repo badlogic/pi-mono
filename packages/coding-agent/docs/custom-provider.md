@@ -135,6 +135,7 @@ models: [{
     maxTokensField: "max_tokens",      // instead of "max_completion_tokens"
     requiresToolResultName: true,      // tool results need name field
     requiresMistralToolIds: true       // tool IDs must be 9 alphanumeric chars
+    thinkingFormat: "qwen"             // uses enable_thinking: true
   }
 }]
 ```
@@ -532,7 +533,7 @@ interface ProviderModelConfig {
     requiresAssistantAfterToolResult?: boolean;
     requiresThinkingAsText?: boolean;
     requiresMistralToolIds?: boolean;
-    thinkingFormat?: "openai" | "zai";
+    thinkingFormat?: "openai" | "zai" | "qwen";
   };
 }
 ```
