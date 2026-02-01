@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `titlebar-spinner.ts` example extension that shows a braille spinner animation in the terminal title while the agent is working.
+
 ## [0.50.8] - 2026-02-01
 
 ### Added
