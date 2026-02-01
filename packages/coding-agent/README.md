@@ -526,6 +526,7 @@ pi --thinking high "Solve this complex problem"
 | Variable | Description |
 |----------|-------------|
 | `PI_CODING_AGENT_DIR` | Override config directory (default: `~/.pi/agent`) |
+| `PI_PACKAGE_DIR` | Override package directory (useful for Nix/Guix where store paths tokenize poorly) |
 | `PI_SKIP_VERSION_CHECK` | Skip version check at startup |
 | `PI_CACHE_RETENTION` | Set to `long` for extended prompt cache (Anthropic: 1h, OpenAI: 24h) |
 | `VISUAL`, `EDITOR` | External editor for Ctrl+G |
