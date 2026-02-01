@@ -9,6 +9,7 @@ import { calculateCost } from "../models.js";
 import type {
 	Api,
 	AssistantMessage,
+	CacheRetention,
 	Context,
 	ImageContent,
 	Message,
@@ -31,19 +32,32 @@ import { adjustMaxTokensForThinking, buildBaseOptions } from "./simple-options.j
 import { transformMessages } from "./transform-messages.js";
 
 /**
- * Get cache TTL based on PI_CACHE_RETENTION env var.
- * Only applies to direct Anthropic API calls (api.anthropic.com).
- * Returns '1h' for long retention, undefined for default (5m).
+ * Resolve cache retention preference.
+ * Defaults to "short" and uses PI_CACHE_RETENTION for backward compatibility.
  */
-function getCacheTtl(baseUrl: string): "1h" | undefined {
-	if (
-		typeof process !== "undefined" &&
-		process.env.PI_CACHE_RETENTION === "long" &&
-		baseUrl.includes("api.anthropic.com")
-	) {
-		return "1h";
+function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
+	if (cacheRetention) {
+		return cacheRetention;
 	}
-	return undefined;
+	if (typeof process !== "undefined" && process.env.PI_CACHE_RETENTION === "long") {
+		return "long";
+	}
+	return "short";
+}
+
+function getCacheControl(
+	baseUrl: string,
+	cacheRetention?: CacheRetention,
+): { retention: CacheRetention; cacheControl?: { type: "ephemeral"; ttl?: "1h" } } {
+	const retention = resolveCacheRetention(cacheRetention);
+	if (retention === "none") {
+		return { retention };
+	}
+	const ttl = retention === "long" && baseUrl.includes("api.anthropic.com") ? "1h" : undefined;
+	return {
+		retention,
+		cacheControl: { type: "ephemeral", ...(ttl && { ttl }) },
+	};
 }
 
 // Stealth mode: Mimic Claude Code's tool naming exactly
@@ -460,34 +474,28 @@ function buildParams(
 	isOAuthToken: boolean,
 	options?: AnthropicOptions,
 ): MessageCreateParamsStreaming {
+	const { cacheControl } = getCacheControl(model.baseUrl, options?.cacheRetention);
 	const params: MessageCreateParamsStreaming = {
 		model: model.id,
-		messages: convertMessages(context.messages, model, isOAuthToken),
+		messages: convertMessages(context.messages, model, isOAuthToken, cacheControl),
 		max_tokens: options?.maxTokens || (model.maxTokens / 3) | 0,
 		stream: true,
 	};
 
 	// For OAuth tokens, we MUST include Claude Code identity
-	const cacheTtl = getCacheTtl(model.baseUrl);
 	if (isOAuthToken) {
 		params.system = [
 			{
 				type: "text",
 				text: "You are Claude Code, Anthropic's official CLI for Claude.",
-				cache_control: {
-					type: "ephemeral",
-					...(cacheTtl && { ttl: cacheTtl }),
-				},
+				...(cacheControl ? { cache_control: cacheControl } : {}),
 			},
 		];
 		if (context.systemPrompt) {
 			params.system.push({
 				type: "text",
 				text: sanitizeSurrogates(context.systemPrompt),
-				cache_control: {
-					type: "ephemeral",
-					...(cacheTtl && { ttl: cacheTtl }),
-				},
+				...(cacheControl ? { cache_control: cacheControl } : {}),
 			});
 		}
 	} else if (context.systemPrompt) {
@@ -496,10 +504,7 @@ function buildParams(
 			{
 				type: "text",
 				text: sanitizeSurrogates(context.systemPrompt),
-				cache_control: {
-					type: "ephemeral",
-					...(cacheTtl && { ttl: cacheTtl }),
-				},
+				...(cacheControl ? { cache_control: cacheControl } : {}),
 			},
 		];
 	}
@@ -539,6 +544,7 @@ function convertMessages(
 	messages: Message[],
 	model: Model<"anthropic-messages">,
 	isOAuthToken: boolean,
+	cacheControl?: { type: "ephemeral"; ttl?: "1h" },
 ): MessageParam[] {
 	const params: MessageParam[] = [];
 
@@ -665,7 +671,7 @@ function convertMessages(
 	}
 
 	// Add cache_control to the last user message to cache conversation history
-	if (params.length > 0) {
+	if (cacheControl && params.length > 0) {
 		const lastMessage = params[params.length - 1];
 		if (lastMessage.role === "user") {
 			// Add cache control to the last content block
@@ -675,8 +681,7 @@ function convertMessages(
 					lastBlock &&
 					(lastBlock.type === "text" || lastBlock.type === "image" || lastBlock.type === "tool_result")
 				) {
-					const cacheTtl = getCacheTtl(model.baseUrl);
-					(lastBlock as any).cache_control = { type: "ephemeral", ...(cacheTtl && { ttl: cacheTtl }) };
+					(lastBlock as any).cache_control = cacheControl;
 				}
 			}
 		}
