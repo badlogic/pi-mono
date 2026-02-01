@@ -2,7 +2,7 @@
  * Shared command execution utilities for extensions and custom tools.
  */
 
-import { spawn } from "node:child_process";
+import { spawn } from "@mariozechner/pi-env/child-process";
 
 /**
  * Options for executing shell commands.

@@ -3,10 +3,10 @@
  * Supports Ctrl+G for external editor.
  */
 
-import { spawnSync } from "node:child_process";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import { spawnSync } from "@mariozechner/pi-env/child-process";
+import * as fs from "@mariozechner/pi-env/fs";
+import * as os from "@mariozechner/pi-env/os";
+import * as path from "@mariozechner/pi-env/path";
 import {
 	Container,
 	Editor,

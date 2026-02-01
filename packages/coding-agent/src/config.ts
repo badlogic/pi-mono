@@ -1,24 +1,26 @@
-import { existsSync, readFileSync } from "fs";
-import { homedir } from "os";
-import { dirname, join, resolve } from "path";
-import { fileURLToPath } from "url";
+import { existsSync, readFileSync } from "@mariozechner/pi-env/fs";
+import { homedir } from "@mariozechner/pi-env/os";
+import { dirname, join, resolve } from "@mariozechner/pi-env/path";
+import { env, execPath, versions } from "@mariozechner/pi-env/process";
+import { isBrowser } from "@mariozechner/pi-env";
 
 // =============================================================================
 // Package Detection
 // =============================================================================
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// In browser environment, __dirname is not available via import.meta.url
+const __dirname = isBrowser ? "/browser" : dirname(new URL(import.meta.url).pathname);
 
 /**
  * Detect if we're running as a Bun compiled binary.
  * Bun binaries have import.meta.url containing "$bunfs", "~BUN", or "%7EBUN" (Bun's virtual filesystem path)
  */
 export const isBunBinary =
-	import.meta.url.includes("$bunfs") || import.meta.url.includes("~BUN") || import.meta.url.includes("%7EBUN");
+	!isBrowser &&
+	(import.meta.url.includes("$bunfs") || import.meta.url.includes("~BUN") || import.meta.url.includes("%7EBUN"));
 
 /** Detect if Bun is the runtime (compiled binary or bun run) */
-export const isBunRuntime = !!process.versions.bun;
+export const isBunRuntime = !!versions.bun;
 
 // =============================================================================
 // Package Asset Paths (shipped with executable)
@@ -33,7 +35,7 @@ export const isBunRuntime = !!process.versions.bun;
 export function getPackageDir(): string {
 	if (isBunBinary) {
 		// Bun binary: process.execPath points to the compiled executable
-		return dirname(process.execPath);
+		return dirname(execPath);
 	}
 	// Node.js: walk up from __dirname until we find package.json
 	let dir = __dirname;
@@ -55,7 +57,7 @@ export function getPackageDir(): string {
  */
 export function getThemesDir(): string {
 	if (isBunBinary) {
-		return join(dirname(process.execPath), "theme");
+		return join(dirname(execPath), "theme");
 	}
 	// Theme is in modes/interactive/theme/ relative to src/ or dist/
 	const packageDir = getPackageDir();
@@ -71,7 +73,7 @@ export function getThemesDir(): string {
  */
 export function getExportTemplateDir(): string {
 	if (isBunBinary) {
-		return join(dirname(process.execPath), "export-html");
+		return join(dirname(execPath), "export-html");
 	}
 	const packageDir = getPackageDir();
 	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";
@@ -107,7 +109,13 @@ export function getChangelogPath(): string {
 // App Config (from package.json piConfig)
 // =============================================================================
 
-const pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8"));
+// In browser, package.json may not exist — use defaults
+let pkg: Record<string, unknown>;
+try {
+	pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8") as string);
+} catch {
+	pkg = { version: "0.0.0", piConfig: { name: "pi", configDir: ".pi" } };
+}
 
 export const APP_NAME: string = pkg.piConfig?.name || "pi";
 export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".pi";
@@ -120,7 +128,7 @@ const DEFAULT_SHARE_VIEWER_URL = "https://buildwithpi.ai/session/";
 
 /** Get the share viewer URL for a gist ID */
 export function getShareViewerUrl(gistId: string): string {
-	const baseUrl = process.env.PI_SHARE_VIEWER_URL || DEFAULT_SHARE_VIEWER_URL;
+	const baseUrl = env.PI_SHARE_VIEWER_URL || DEFAULT_SHARE_VIEWER_URL;
 	return `${baseUrl}#${gistId}`;
 }
 
@@ -130,7 +138,7 @@ export function getShareViewerUrl(gistId: string): string {
 
 /** Get the agent config directory (e.g., ~/.pi/agent/) */
 export function getAgentDir(): string {
-	const envDir = process.env[ENV_AGENT_DIR];
+	const envDir = env[ENV_AGENT_DIR];
 	if (envDir) {
 		// Expand tilde to home directory
 		if (envDir === "~") return homedir();

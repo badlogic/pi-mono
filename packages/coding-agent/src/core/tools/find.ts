@@ -1,9 +1,9 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import { spawnSync } from "child_process";
-import { existsSync } from "fs";
+import { spawnSync } from "@mariozechner/pi-env/child-process";
+import { existsSync } from "@mariozechner/pi-env/fs";
 import { globSync } from "glob";
-import path from "path";
+import path from "@mariozechner/pi-env/path";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { resolveToCwd } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";

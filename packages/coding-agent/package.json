@@ -40,6 +40,7 @@
 	},
 	"dependencies": {
 		"@mariozechner/clipboard": "^0.3.0",
+		"@mariozechner/pi-env": "^0.50.8",
 		"@mariozechner/jiti": "^2.6.2",
 		"@mariozechner/pi-agent-core": "^0.50.8",
 		"@mariozechner/pi-ai": "^0.50.8",

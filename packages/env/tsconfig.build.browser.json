@@ -1,0 +1,11 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"outDir": "./dist/browser",
+		"rootDir": "./src/browser",
+		"types": [],
+		"lib": ["ES2022", "DOM"]
+	},
+	"include": ["src/browser/**/*.ts"],
+	"exclude": ["node_modules", "dist"]
+}

@@ -4,10 +4,10 @@
  * Uses @mariozechner/jiti fork with virtualModules support for compiled Bun binaries.
  */
 
-import * as fs from "node:fs";
+import * as fs from "@mariozechner/pi-env/fs";
 import { createRequire } from "node:module";
-import * as os from "node:os";
-import * as path from "node:path";
+import * as os from "@mariozechner/pi-env/os";
+import * as path from "@mariozechner/pi-env/path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "@mariozechner/jiti";
 import * as _bundledPiAgentCore from "@mariozechner/pi-agent-core";

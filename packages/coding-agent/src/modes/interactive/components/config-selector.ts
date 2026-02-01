@@ -2,7 +2,7 @@
  * TUI component for managing package resources (enable/disable)
  */
 
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative } from "@mariozechner/pi-env/path";
 import {
 	type Component,
 	Container,

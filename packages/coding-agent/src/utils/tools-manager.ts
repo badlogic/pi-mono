@@ -1,8 +1,8 @@
 import chalk from "chalk";
-import { spawnSync } from "child_process";
-import { chmodSync, createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from "fs";
-import { arch, platform } from "os";
-import { join } from "path";
+import { spawnSync } from "@mariozechner/pi-env/child-process";
+import { chmodSync, createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from "@mariozechner/pi-env/fs";
+import { arch, platform } from "@mariozechner/pi-env/os";
+import { join } from "@mariozechner/pi-env/path";
 import { Readable } from "stream";
 import { finished } from "stream/promises";
 import { APP_NAME, getBinDir } from "../config.js";

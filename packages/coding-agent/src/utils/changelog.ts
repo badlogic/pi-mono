@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync } from "@mariozechner/pi-env/fs";
 
 export interface ChangelogEntry {
 	major: number;

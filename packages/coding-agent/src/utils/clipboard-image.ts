@@ -1,5 +1,5 @@
 import Clipboard from "@mariozechner/clipboard";
-import { spawnSync } from "child_process";
+import { spawnSync } from "@mariozechner/pi-env/child-process";
 
 import { loadPhoton } from "./photon.js";
 

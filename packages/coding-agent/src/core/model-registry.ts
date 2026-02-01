@@ -17,9 +17,9 @@ import {
 } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
-import { execSync } from "child_process";
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { execSync } from "@mariozechner/pi-env/child-process";
+import { existsSync, readFileSync } from "@mariozechner/pi-env/fs";
+import { join } from "@mariozechner/pi-env/path";
 import { getAgentDir } from "../config.js";
 import type { AuthStorage } from "./auth-storage.js";
 

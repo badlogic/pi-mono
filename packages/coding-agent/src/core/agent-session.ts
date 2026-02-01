@@ -13,8 +13,8 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import { readFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { readFileSync } from "@mariozechner/pi-env/fs";
+import { basename, dirname, join } from "@mariozechner/pi-env/path";
 import type {
 	Agent,
 	AgentEvent,

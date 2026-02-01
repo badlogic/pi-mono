@@ -3,10 +3,10 @@
  * Handles TUI rendering and user interaction, delegating business logic to AgentSession.
  */
 
-import * as crypto from "node:crypto";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import * as crypto from "@mariozechner/pi-env/crypto";
+import * as fs from "@mariozechner/pi-env/fs";
+import * as os from "@mariozechner/pi-env/os";
+import * as path from "@mariozechner/pi-env/path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import {
 	type AssistantMessage,
@@ -42,7 +42,7 @@ import {
 	TUI,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
-import { spawn, spawnSync } from "child_process";
+import { spawn, spawnSync } from "@mariozechner/pi-env/child-process";
 import {
 	APP_NAME,
 	getAuthPath,

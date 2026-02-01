@@ -1,7 +1,7 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import { constants } from "fs";
-import { access as fsAccess, readFile as fsReadFile, writeFile as fsWriteFile } from "fs/promises";
+import { constants } from "@mariozechner/pi-env/fs";
+import { access as fsAccess, readFile as fsReadFile, writeFile as fsWriteFile } from "@mariozechner/pi-env/fs";
 import {
 	detectLineEnding,
 	fuzzyFindText,

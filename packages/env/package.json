@@ -1,0 +1,110 @@
+{
+	"name": "@mariozechner/pi-env",
+	"version": "0.50.8",
+	"description": "Environment abstraction layer for Node.js and browser runtimes",
+	"type": "module",
+	"main": "./dist/node/index.js",
+	"types": "./dist/node/index.d.ts",
+	"exports": {
+		".": {
+			"browser": {
+				"types": "./dist/browser/index.d.ts",
+				"import": "./dist/browser/index.js"
+			},
+			"default": {
+				"types": "./dist/node/index.d.ts",
+				"import": "./dist/node/index.js"
+			}
+		},
+		"./fs": {
+			"browser": {
+				"types": "./dist/browser/fs.d.ts",
+				"import": "./dist/browser/fs.js"
+			},
+			"default": {
+				"types": "./dist/node/fs.d.ts",
+				"import": "./dist/node/fs.js"
+			}
+		},
+		"./path": {
+			"browser": {
+				"types": "./dist/browser/path.d.ts",
+				"import": "./dist/browser/path.js"
+			},
+			"default": {
+				"types": "./dist/node/path.d.ts",
+				"import": "./dist/node/path.js"
+			}
+		},
+		"./os": {
+			"browser": {
+				"types": "./dist/browser/os.d.ts",
+				"import": "./dist/browser/os.js"
+			},
+			"default": {
+				"types": "./dist/node/os.d.ts",
+				"import": "./dist/node/os.js"
+			}
+		},
+		"./process": {
+			"browser": {
+				"types": "./dist/browser/process.d.ts",
+				"import": "./dist/browser/process.js"
+			},
+			"default": {
+				"types": "./dist/node/process.d.ts",
+				"import": "./dist/node/process.js"
+			}
+		},
+		"./crypto": {
+			"browser": {
+				"types": "./dist/browser/crypto.d.ts",
+				"import": "./dist/browser/crypto.js"
+			},
+			"default": {
+				"types": "./dist/node/crypto.d.ts",
+				"import": "./dist/node/crypto.js"
+			}
+		},
+		"./child-process": {
+			"browser": {
+				"types": "./dist/browser/child-process.d.ts",
+				"import": "./dist/browser/child-process.js"
+			},
+			"default": {
+				"types": "./dist/node/child-process.d.ts",
+				"import": "./dist/node/child-process.js"
+			}
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsgo -p tsconfig.build.node.json && tsgo -p tsconfig.build.browser.json",
+		"dev": "tsgo -p tsconfig.build.node.json --watch --preserveWatchOutput",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"devDependencies": {
+		"@types/node": "^24.3.0",
+		"shx": "^0.4.0",
+		"typescript": "^5.7.3"
+	},
+	"keywords": [
+		"env",
+		"browser",
+		"node",
+		"abstraction"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/badlogic/pi-mono.git",
+		"directory": "packages/env"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	}
+}

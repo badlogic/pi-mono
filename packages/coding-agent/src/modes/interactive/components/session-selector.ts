@@ -1,7 +1,7 @@
-import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { unlink } from "node:fs/promises";
-import * as os from "node:os";
+import { spawnSync } from "@mariozechner/pi-env/child-process";
+import { existsSync } from "@mariozechner/pi-env/fs";
+import { unlink } from "@mariozechner/pi-env/fs";
+import * as os from "@mariozechner/pi-env/os";
 import {
 	type Component,
 	Container,

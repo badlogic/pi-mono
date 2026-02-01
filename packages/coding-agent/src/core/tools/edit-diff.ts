@@ -4,8 +4,8 @@
  */
 
 import * as Diff from "diff";
-import { constants } from "fs";
-import { access, readFile } from "fs/promises";
+import { constants } from "@mariozechner/pi-env/fs";
+import { access, readFile } from "@mariozechner/pi-env/fs";
 import { resolveToCwd } from "./path-utils.js";
 
 export function detectLineEnding(content: string): "\r\n" | "\n" {

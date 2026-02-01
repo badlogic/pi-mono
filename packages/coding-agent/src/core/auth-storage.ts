@@ -15,8 +15,8 @@ import {
 	type OAuthLoginCallbacks,
 	type OAuthProviderId,
 } from "@mariozechner/pi-ai";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "@mariozechner/pi-env/fs";
+import { dirname, join } from "@mariozechner/pi-env/path";
 import lockfile from "proper-lockfile";
 import { getAgentDir } from "../config.js";
 
