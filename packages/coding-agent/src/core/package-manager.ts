@@ -750,11 +750,13 @@ export class DefaultPackageManager implements PackageManager {
 
 		const globalSettings = this.settingsManager.getGlobalSettings();
 		const projectSettings = this.settingsManager.getProjectSettings();
-		for (const extension of globalSettings.extensions ?? []) {
-			await this.updateSourceForScope(extension, "user");
+		for (const pkg of globalSettings.packages ?? []) {
+			const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
+			await this.updateSourceForScope(sourceStr, "user");
 		}
-		for (const extension of projectSettings.extensions ?? []) {
-			await this.updateSourceForScope(extension, "project");
+		for (const pkg of projectSettings.packages ?? []) {
+			const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
+			await this.updateSourceForScope(sourceStr, "project");
 		}
 	}
 

@@ -8,6 +8,10 @@
 - Added `rpc-demo.ts` example extension exercising all RPC-supported extension UI methods ([#1144](https://github.com/badlogic/pi-mono/pull/1144) by [@aliou](https://github.com/aliou))
 - Added `rpc-extension-ui.ts` TUI example client demonstrating the extension UI protocol with interactive dialogs ([#1144](https://github.com/badlogic/pi-mono/pull/1144) by [@aliou](https://github.com/aliou))
 
+### Fixed
+
+- Fixed `pi update` not updating npm/git packages when called without arguments ([#1151](https://github.com/badlogic/pi-mono/issues/1151))
+
 ## [0.50.9] - 2026-02-01
 
 ### Added
