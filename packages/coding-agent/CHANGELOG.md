@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Clarified skill prompt guidance so relative paths are resolved from the skill directory. ([#1136](https://github.com/badlogic/pi-mono/issues/1136))
+
 ## [0.50.9] - 2026-02-01
 
 ### Added
