@@ -888,6 +888,7 @@ export class InteractiveMode {
 
 		const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
 		if (contextFiles.length > 0) {
+			this.chatContainer.addChild(new Spacer(1));
 			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`)).join("\n");
 			this.chatContainer.addChild(new Text(`${sectionHeader("Context")}\n${contextList}`, 0, 0));
 			this.chatContainer.addChild(new Spacer(1));
