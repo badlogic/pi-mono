@@ -31,6 +31,14 @@ export const isBunRuntime = !!process.versions.bun;
  * - For tsx (src/): returns parent directory (the package root)
  */
 export function getPackageDir(): string {
+	// Allow override via environment variable (useful for Nix/Guix where store paths tokenize poorly)
+	const envDir = process.env.PI_PACKAGE_DIR;
+	if (envDir) {
+		if (envDir === "~") return homedir();
+		if (envDir.startsWith("~/")) return homedir() + envDir.slice(1);
+		return envDir;
+	}
+
 	if (isBunBinary) {
 		// Bun binary: process.execPath points to the compiled executable
 		return dirname(process.execPath);
