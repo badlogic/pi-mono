@@ -5,6 +5,8 @@ export * from "./api-registry.js";
 export * from "./env-api-keys.js";
 export * from "./models.js";
 export * from "./providers/anthropic.js";
+export * from "./providers/anthropic-shared.js";
+export * from "./providers/anthropic-vertex.js";
 export * from "./providers/azure-openai-responses.js";
 export * from "./providers/google.js";
 export * from "./providers/google-gemini-cli.js";

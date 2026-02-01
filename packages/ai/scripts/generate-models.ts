@@ -1184,6 +1184,61 @@ async function generateModels() {
 	];
 	allModels.push(...vertexModels);
 
+	// Anthropic models on Vertex AI
+	// Uses different endpoint structure than google-vertex (publishers/anthropic instead of publishers/google)
+	const ANTHROPIC_VERTEX_BASE_URL = "https://{location}-aiplatform.googleapis.com";
+	const anthropicVertexModels: Model<"anthropic-vertex">[] = [
+		{
+			id: "claude-opus-4-5@20251101",
+			name: "Claude Opus 4.5 (Vertex)",
+			api: "anthropic-vertex",
+			provider: "anthropic-vertex",
+			baseUrl: ANTHROPIC_VERTEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+			contextWindow: 200000,
+			maxTokens: 64000,
+		},
+		{
+			id: "claude-sonnet-4@20250514",
+			name: "Claude Sonnet 4 (Vertex)",
+			api: "anthropic-vertex",
+			provider: "anthropic-vertex",
+			baseUrl: ANTHROPIC_VERTEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+			contextWindow: 200000,
+			maxTokens: 64000,
+		},
+		{
+			id: "claude-3-5-sonnet-v2@20241022",
+			name: "Claude 3.5 Sonnet v2 (Vertex)",
+			api: "anthropic-vertex",
+			provider: "anthropic-vertex",
+			baseUrl: ANTHROPIC_VERTEX_BASE_URL,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+			contextWindow: 200000,
+			maxTokens: 8192,
+		},
+		{
+			id: "claude-3-5-haiku@20241022",
+			name: "Claude 3.5 Haiku (Vertex)",
+			api: "anthropic-vertex",
+			provider: "anthropic-vertex",
+			baseUrl: ANTHROPIC_VERTEX_BASE_URL,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 },
+			contextWindow: 200000,
+			maxTokens: 8192,
+		},
+	];
+	allModels.push(...anthropicVertexModels);
+
 	// Kimi For Coding models (Moonshot AI's Anthropic-compatible coding API)
 	// Static fallback in case models.dev doesn't have them yet
 	const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding";
