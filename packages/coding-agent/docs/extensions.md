@@ -1237,6 +1237,20 @@ pi.registerTool({
 
 **Operations interfaces:** `ReadOperations`, `WriteOperations`, `EditOperations`, `BashOperations`, `LsOperations`, `GrepOperations`, `FindOperations`
 
+The bash tool also supports a spawn hook to adjust the command, cwd, or env before execution:
+
+```typescript
+import { createBashTool } from "@mariozechner/pi-coding-agent";
+
+const bashTool = createBashTool(cwd, {
+  spawnHook: ({ command, cwd, env }) => ({
+    command: `source ~/.profile\n${command}`,
+    cwd: `/mnt/sandbox${cwd}`,
+    env: { ...env, CI: "1" },
+  }),
+});
+```
+
 See [examples/extensions/ssh.ts](../examples/extensions/ssh.ts) for a complete SSH example with `--ssh` flag.
 
 ### Output Truncation
@@ -1777,4 +1791,5 @@ All examples in [examples/extensions/](../examples/extensions/).
 | **Misc** |||
 | `antigravity-image-gen.ts` | Image generation tool | `registerTool`, Google Antigravity |
 | `inline-bash.ts` | Inline bash in tool calls | `on("tool_call")` |
+| `bash-spawn-hook.ts` | Adjust bash command, cwd, and env before execution | `createBashTool`, `spawnHook` |
 | `with-deps/` | Extension with npm dependencies | Package structure with `package.json` |

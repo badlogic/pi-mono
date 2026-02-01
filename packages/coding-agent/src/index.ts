@@ -204,6 +204,8 @@ export {
 // Tools
 export {
 	type BashOperations,
+	type BashSpawnContext,
+	type BashSpawnHook,
 	type BashToolDetails,
 	type BashToolInput,
 	type BashToolOptions,
