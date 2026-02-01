@@ -112,6 +112,58 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 				expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral" });
 			}
 		});
+
+		it("should omit cache_control when cacheRetention is none", async () => {
+			const baseModel = getModel("anthropic", "claude-3-5-haiku-20241022");
+			let capturedPayload: any = null;
+
+			const { streamAnthropic } = await import("../src/providers/anthropic.js");
+
+			try {
+				const s = streamAnthropic(baseModel, context, {
+					apiKey: "fake-key",
+					cacheRetention: "none",
+					onPayload: (payload) => {
+						capturedPayload = payload;
+					},
+				});
+
+				for await (const event of s) {
+					if (event.type === "error") break;
+				}
+			} catch {
+				// Expected to fail
+			}
+
+			expect(capturedPayload).not.toBeNull();
+			expect(capturedPayload.system[0].cache_control).toBeUndefined();
+		});
+
+		it("should set 1h cache TTL when cacheRetention is long", async () => {
+			const baseModel = getModel("anthropic", "claude-3-5-haiku-20241022");
+			let capturedPayload: any = null;
+
+			const { streamAnthropic } = await import("../src/providers/anthropic.js");
+
+			try {
+				const s = streamAnthropic(baseModel, context, {
+					apiKey: "fake-key",
+					cacheRetention: "long",
+					onPayload: (payload) => {
+						capturedPayload = payload;
+					},
+				});
+
+				for await (const event of s) {
+					if (event.type === "error") break;
+				}
+			} catch {
+				// Expected to fail
+			}
+
+			expect(capturedPayload).not.toBeNull();
+			expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+		});
 	});
 
 	describe("OpenAI Responses Provider", () => {
@@ -194,6 +246,62 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 			if (capturedPayload) {
 				expect(capturedPayload.prompt_cache_retention).toBeUndefined();
 			}
+		});
+
+		it("should omit prompt_cache_key when cacheRetention is none", async () => {
+			const model = getModel("openai", "gpt-4o-mini");
+			let capturedPayload: any = null;
+
+			const { streamOpenAIResponses } = await import("../src/providers/openai-responses.js");
+
+			try {
+				const s = streamOpenAIResponses(model, context, {
+					apiKey: "fake-key",
+					cacheRetention: "none",
+					sessionId: "session-1",
+					onPayload: (payload) => {
+						capturedPayload = payload;
+					},
+				});
+
+				for await (const event of s) {
+					if (event.type === "error") break;
+				}
+			} catch {
+				// Expected to fail
+			}
+
+			expect(capturedPayload).not.toBeNull();
+			expect(capturedPayload.prompt_cache_key).toBeUndefined();
+			expect(capturedPayload.prompt_cache_retention).toBeUndefined();
+		});
+
+		it("should set prompt_cache_retention when cacheRetention is long", async () => {
+			const model = getModel("openai", "gpt-4o-mini");
+			let capturedPayload: any = null;
+
+			const { streamOpenAIResponses } = await import("../src/providers/openai-responses.js");
+
+			try {
+				const s = streamOpenAIResponses(model, context, {
+					apiKey: "fake-key",
+					cacheRetention: "long",
+					sessionId: "session-2",
+					onPayload: (payload) => {
+						capturedPayload = payload;
+					},
+				});
+
+				for await (const event of s) {
+					if (event.type === "error") break;
+				}
+			} catch {
+				// Expected to fail
+			}
+
+			expect(capturedPayload).not.toBeNull();
+			expect(capturedPayload.prompt_cache_key).toBe("session-2");
+			expect(capturedPayload.prompt_cache_retention).toBe("24h");
 		});
 	});
 });
