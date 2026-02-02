@@ -4,8 +4,20 @@ import type {
 	MessageCreateParamsStreaming,
 	MessageParam,
 } from "@anthropic-ai/sdk/resources/messages.js";
+import { ProxyAgent } from "undici";
 import { getEnvApiKey } from "../env-api-keys.js";
 import { calculateCost } from "../models.js";
+
+// HTTP proxy support via environment variables
+const _proxyUrl =
+	typeof process !== "undefined"
+		? process.env.HTTPS_PROXY || process.env.HTTP_PROXY
+		: undefined;
+const _proxyAgent = _proxyUrl ? new ProxyAgent(_proxyUrl) : undefined;
+const _proxyFetch = _proxyAgent
+	? (input: RequestInfo | URL, init?: RequestInit) =>
+			fetch(input, { ...init, dispatcher: _proxyAgent })
+	: undefined;
 import type {
 	Api,
 	AssistantMessage,
@@ -438,6 +450,7 @@ function createClient(
 		);
 
 		const client = new Anthropic({
+			fetch: _proxyFetch,
 			apiKey: null,
 			authToken: apiKey,
 			baseURL: model.baseUrl,
@@ -459,6 +472,7 @@ function createClient(
 	);
 
 	const client = new Anthropic({
+		fetch: _proxyFetch,
 		apiKey,
 		baseURL: model.baseUrl,
 		dangerouslyAllowBrowser: true,
