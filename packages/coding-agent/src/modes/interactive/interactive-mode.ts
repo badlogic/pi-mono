@@ -1811,6 +1811,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("fork", () => this.showUserMessageSelector());
 		this.defaultEditor.onAction("scrollOutputPageUp", () => this.handleScrollOutputPage(1));
 		this.defaultEditor.onAction("scrollOutputPageDown", () => this.handleScrollOutputPage(-1));
+		this.defaultEditor.onAction("toggleScrollOutputMouse", () => this.toggleScrollOutputMouse());
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -1871,6 +1872,15 @@ export class InteractiveMode {
 
 		this.layout.scrollByPage(direction);
 		this.ui.requestRender();
+	}
+
+	private toggleScrollOutputMouse(): void {
+		const enabled = !this.scrollOutputMouseEnabled;
+		this.settingsManager.setScrollOutputMouse(enabled);
+		this.setScrollOutputMouseEnabled(enabled);
+
+		const suffix = this.scrollOutputEnabled ? "" : " (enable scroll output to use)";
+		this.showStatus(`Scroll output mouse: ${enabled ? "on" : "off"}${suffix}`);
 	}
 
 	private handleMouseEvent(event: MouseEvent): void {
