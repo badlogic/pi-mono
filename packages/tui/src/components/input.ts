@@ -307,9 +307,12 @@ export class Input implements Component, Focusable {
 
 		// Build line with fake cursor
 		// Insert cursor character at cursor position
+		const graphemes = [...segmenter.segment(visibleText.slice(cursorDisplay))];
+		const cursorGrapheme = graphemes[0];
+
 		const beforeCursor = visibleText.slice(0, cursorDisplay);
-		const atCursor = visibleText[cursorDisplay] || " "; // Character at cursor, or space if at end
-		const afterCursor = visibleText.slice(cursorDisplay + 1);
+		const atCursor = cursorGrapheme?.segment ?? " "; // Character at cursor, or space if at end
+		const afterCursor = visibleText.slice(cursorDisplay + atCursor.length);
 
 		// Hardware cursor marker (zero-width, emitted before fake cursor for IME positioning)
 		const marker = this.focused ? CURSOR_MARKER : "";
