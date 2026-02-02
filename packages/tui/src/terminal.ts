@@ -13,12 +13,12 @@ export interface Terminal {
 	stop(): void;
 
 	/**
-	 * Prepare for process exit by disabling Kitty protocol and draining stdin.
-	 * Call this before stop() when exiting to prevent Kitty key release events
-	 * from leaking to the parent shell over slow SSH connections.
-	 * @param drainMs - How long to drain stdin (default: 50ms)
+	 * Drain stdin before exiting to prevent Kitty key release events from
+	 * leaking to the parent shell over slow SSH connections.
+	 * @param maxMs - Maximum time to drain (default: 1000ms)
+	 * @param idleMs - Exit early if no input arrives within this time (default: 50ms)
 	 */
-	prepareForExit(drainMs?: number): Promise<void>;
+	drainInput(maxMs?: number, idleMs?: number): Promise<void>;
 
 	// Write output to terminal
 	write(data: string): void;
@@ -158,25 +158,45 @@ export class ProcessTerminal implements Terminal {
 		process.stdout.write("\x1b[?u");
 	}
 
-	async prepareForExit(drainMs = 50): Promise<void> {
-		if (!this._kittyProtocolActive) return;
+	async drainInput(maxMs = 1000, idleMs = 50): Promise<void> {
+		if (this._kittyProtocolActive) {
+			// Disable Kitty keyboard protocol first so any late key releases
+			// do not generate new Kitty escape sequences.
+			process.stdout.write("\x1b[<u");
+			this._kittyProtocolActive = false;
+			setKittyProtocolActive(false);
+		}
 
-		// Disable Kitty keyboard protocol first
-		process.stdout.write("\x1b[<u");
-		this._kittyProtocolActive = false;
-		setKittyProtocolActive(false);
+		const previousHandler = this.inputHandler;
+		this.inputHandler = undefined;
 
-		// Wait briefly to let any in-flight key release events arrive and be
-		// consumed by our still-active stdin handler. This prevents Kitty
-		// escape sequences from leaking to the parent shell over slow SSH.
-		await new Promise((resolve) => setTimeout(resolve, drainMs));
+		let lastDataTime = Date.now();
+		const onData = () => {
+			lastDataTime = Date.now();
+		};
+
+		process.stdin.on("data", onData);
+		const endTime = Date.now() + maxMs;
+
+		try {
+			while (true) {
+				const now = Date.now();
+				const timeLeft = endTime - now;
+				if (timeLeft <= 0) break;
+				if (now - lastDataTime >= idleMs) break;
+				await new Promise((resolve) => setTimeout(resolve, Math.min(idleMs, timeLeft)));
+			}
+		} finally {
+			process.stdin.removeListener("data", onData);
+			this.inputHandler = previousHandler;
+		}
 	}
 
 	stop(): void {
 		// Disable bracketed paste mode
 		process.stdout.write("\x1b[?2004l");
 
-		// Disable Kitty keyboard protocol if not already done by prepareForExit()
+		// Disable Kitty keyboard protocol if not already done by drainInput()
 		if (this._kittyProtocolActive) {
 			process.stdout.write("\x1b[<u");
 			this._kittyProtocolActive = false;

@@ -2554,7 +2554,7 @@ export class InteractiveMode {
 
 		// Drain any in-flight Kitty key release events before stopping.
 		// This prevents escape sequences from leaking to the parent shell over slow SSH.
-		await this.ui.terminal.prepareForExit();
+		await this.ui.terminal.drainInput(1000);
 
 		this.stop();
 		process.exit(0);
