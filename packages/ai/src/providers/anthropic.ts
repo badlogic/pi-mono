@@ -11,11 +11,9 @@ import type {
 	AssistantMessage,
 	CacheRetention,
 	Context,
-	ImageContent,
 	Message,
 	Model,
 	SimpleStreamOptions,
-	StopReason,
 	StreamFunction,
 	StreamOptions,
 	TextContent,
@@ -28,6 +26,12 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 
+import {
+	convertContentBlocks,
+	convertTools as convertToolsShared,
+	mapStopReason,
+	normalizeToolCallId,
+} from "./anthropic-shared.js";
 import { adjustMaxTokensForThinking, buildBaseOptions } from "./simple-options.js";
 import { transformMessages } from "./transform-messages.js";
 
@@ -99,59 +103,8 @@ const fromClaudeCodeName = (name: string, tools?: Tool[]) => {
 	return name;
 };
 
-/**
- * Convert content blocks to Anthropic API format
- */
-function convertContentBlocks(content: (TextContent | ImageContent)[]):
-	| string
-	| Array<
-			| { type: "text"; text: string }
-			| {
-					type: "image";
-					source: {
-						type: "base64";
-						media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
-						data: string;
-					};
-			  }
-	  > {
-	// If only text blocks, return as concatenated string for simplicity
-	const hasImages = content.some((c) => c.type === "image");
-	if (!hasImages) {
-		return sanitizeSurrogates(content.map((c) => (c as TextContent).text).join("\n"));
-	}
-
-	// If we have images, convert to content block array
-	const blocks = content.map((block) => {
-		if (block.type === "text") {
-			return {
-				type: "text" as const,
-				text: sanitizeSurrogates(block.text),
-			};
-		}
-		return {
-			type: "image" as const,
-			source: {
-				type: "base64" as const,
-				media_type: block.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-				data: block.data,
-			},
-		};
-	});
-
-	// If only images (no text), add placeholder text block
-	const hasText = blocks.some((b) => b.type === "text");
-	if (!hasText) {
-		blocks.unshift({
-			type: "text" as const,
-			text: "(see attached image)",
-		});
-	}
-
-	return blocks;
-}
-
 export type AnthropicEffort = "low" | "medium" | "high" | "max";
+
 
 export interface AnthropicOptions extends StreamOptions {
 	/**
@@ -605,11 +558,6 @@ function buildParams(
 	return params;
 }
 
-// Normalize tool call IDs to match Anthropic's required pattern and length
-function normalizeToolCallId(id: string): string {
-	return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
-}
-
 function convertMessages(
 	messages: Message[],
 	model: Model<"anthropic-messages">,
@@ -768,41 +716,6 @@ function convertMessages(
 }
 
 function convertTools(tools: Tool[], isOAuthToken: boolean): Anthropic.Messages.Tool[] {
-	if (!tools) return [];
-
-	return tools.map((tool) => {
-		const jsonSchema = tool.parameters as any; // TypeBox already generates JSON Schema
-
-		return {
-			name: isOAuthToken ? toClaudeCodeName(tool.name) : tool.name,
-			description: tool.description,
-			input_schema: {
-				type: "object" as const,
-				properties: jsonSchema.properties || {},
-				required: jsonSchema.required || [],
-			},
-		};
-	});
-}
-
-function mapStopReason(reason: Anthropic.Messages.StopReason | string): StopReason {
-	switch (reason) {
-		case "end_turn":
-			return "stop";
-		case "max_tokens":
-			return "length";
-		case "tool_use":
-			return "toolUse";
-		case "refusal":
-			return "error";
-		case "pause_turn": // Stop is good enough -> resubmit
-			return "stop";
-		case "stop_sequence":
-			return "stop"; // We don't supply stop sequences, so this should never happen
-		case "sensitive": // Content flagged by safety filters (not yet in SDK types)
-			return "error";
-		default:
-			// Handle unknown stop reasons gracefully (API may add new values)
-			throw new Error(`Unhandled stop reason: ${reason}`);
-	}
+	const nameMapper = isOAuthToken ? toClaudeCodeName : undefined;
+	return convertToolsShared(tools, nameMapper) as Anthropic.Messages.Tool[];
 }

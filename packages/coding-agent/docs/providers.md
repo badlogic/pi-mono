@@ -170,6 +170,24 @@ export GOOGLE_CLOUD_LOCATION=us-central1
 
 Or set `GOOGLE_APPLICATION_CREDENTIALS` to a service account key file.
 
+### Anthropic on Vertex AI
+
+Access Claude models through Google Cloud Vertex AI. Uses Application Default Credentials:
+
+```bash
+gcloud auth application-default login
+export GOOGLE_CLOUD_PROJECT=your-project
+export GOOGLE_CLOUD_LOCATION=global
+```
+
+Supported locations: `global`, `us-east5`, `europe-west1`. Check [Anthropic's Vertex AI docs](https://docs.anthropic.com/en/api/claude-on-vertex-ai) for current availability.
+
+```bash
+pi --provider anthropic-vertex --model claude-opus-4-5@20251101
+```
+
+Note: Model availability on Vertex AI depends on your project's access. You may need to request access to specific Claude models in the Google Cloud Console.
+
 ## Custom Providers
 
 **Via models.json:** Add Ollama, LM Studio, vLLM, or any provider that speaks a supported API (OpenAI Completions, OpenAI Responses, Anthropic Messages, Google Generative AI). See [models.md](models.md).

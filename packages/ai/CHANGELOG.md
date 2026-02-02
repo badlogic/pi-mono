@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Anthropic Vertex AI provider (`anthropic-vertex`) for Claude models on Google Cloud Vertex AI. Uses Application Default Credentials and supports all streaming features including extended thinking. ([#1157](https://github.com/badlogic/pi-mono/pull/1157))
+
 ## [0.52.9] - 2026-02-08
 
 ### Changed

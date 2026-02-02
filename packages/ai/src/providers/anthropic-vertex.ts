@@ -11,7 +11,6 @@ import type {
 	Api,
 	AssistantMessage,
 	Context,
-	ImageContent,
 	Message,
 	Model,
 	SimpleStreamOptions,
@@ -49,9 +48,7 @@ function resolveProject(options?: AnthropicVertexOptions): string {
 		process.env.GOOGLE_CLOUD_PROJECT ||
 		process.env.GCLOUD_PROJECT;
 	if (!project) {
-		throw new Error(
-			"Vertex AI requires a project ID. Set GOOGLE_CLOUD_PROJECT or pass project in options.",
-		);
+		throw new Error("Vertex AI requires a project ID. Set GOOGLE_CLOUD_PROJECT or pass project in options.");
 	}
 	return project;
 }
@@ -61,10 +58,7 @@ function resolveProject(options?: AnthropicVertexOptions): string {
  */
 function resolveLocation(options?: AnthropicVertexOptions): string {
 	return (
-		options?.location ||
-		process.env.CLOUD_ML_REGION ||
-		process.env.GOOGLE_CLOUD_LOCATION ||
-		"us-east5" // Default to us-east5 which supports Anthropic models
+		options?.location || process.env.CLOUD_ML_REGION || process.env.GOOGLE_CLOUD_LOCATION || "global" // Default to global region for Anthropic models
 	);
 }
 
@@ -91,9 +85,7 @@ async function getAccessToken(): Promise<string> {
 function buildVertexUrl(project: string, location: string, modelId: string): string {
 	// Global region uses different base URL
 	const baseUrl =
-		location === "global"
-			? "https://aiplatform.googleapis.com"
-			: `https://${location}-aiplatform.googleapis.com`;
+		location === "global" ? "https://aiplatform.googleapis.com" : `https://${location}-aiplatform.googleapis.com`;
 
 	return `${baseUrl}/v1/projects/${project}/locations/${location}/publishers/anthropic/models/${modelId}:streamRawPredict`;
 }
@@ -140,9 +132,7 @@ function convertMessages(
 					});
 
 				// Filter images if model doesn't support them
-				const filteredBlocks = model.input.includes("image")
-					? blocks
-					: blocks.filter((b) => b.type !== "image");
+				const filteredBlocks = model.input.includes("image") ? blocks : blocks.filter((b) => b.type !== "image");
 
 				if (filteredBlocks.length > 0) {
 					params.push({ role: "user", content: filteredBlocks });
@@ -355,7 +345,11 @@ export const streamAnthropicVertex: StreamFunction<"anthropic-vertex", Anthropic
 									index: event.index,
 								};
 								output.content.push(block);
-								stream.push({ type: "thinking_start", contentIndex: output.content.length - 1, partial: output });
+								stream.push({
+									type: "thinking_start",
+									contentIndex: output.content.length - 1,
+									partial: output,
+								});
 							} else if (event.content_block?.type === "tool_use") {
 								const block: Block = {
 									type: "toolCall",
@@ -366,7 +360,11 @@ export const streamAnthropicVertex: StreamFunction<"anthropic-vertex", Anthropic
 									index: event.index,
 								};
 								output.content.push(block);
-								stream.push({ type: "toolcall_start", contentIndex: output.content.length - 1, partial: output });
+								stream.push({
+									type: "toolcall_start",
+									contentIndex: output.content.length - 1,
+									partial: output,
+								});
 							}
 						} else if (event.type === "content_block_delta") {
 							if (event.delta?.type === "text_delta") {
