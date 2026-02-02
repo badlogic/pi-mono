@@ -106,6 +106,8 @@ export type NavigateTreeHandler = (
 	options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
 ) => Promise<{ cancelled: boolean }>;
 
+export type SwitchSessionHandler = (sessionPath: string) => Promise<{ cancelled: boolean }>;
+
 export type ShutdownHandler = () => void;
 
 /**
@@ -165,6 +167,7 @@ export class ExtensionRunner {
 	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
 	private forkHandler: ForkHandler = async () => ({ cancelled: false });
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
+	private switchSessionHandler: SwitchSessionHandler = async () => ({ cancelled: false });
 	private shutdownHandler: ShutdownHandler = () => {};
 	private shortcutDiagnostics: ResourceDiagnostic[] = [];
 
@@ -221,6 +224,7 @@ export class ExtensionRunner {
 			this.newSessionHandler = actions.newSession;
 			this.forkHandler = actions.fork;
 			this.navigateTreeHandler = actions.navigateTree;
+			this.switchSessionHandler = actions.switchSession;
 			return;
 		}
 
@@ -228,6 +232,7 @@ export class ExtensionRunner {
 		this.newSessionHandler = async () => ({ cancelled: false });
 		this.forkHandler = async () => ({ cancelled: false });
 		this.navigateTreeHandler = async () => ({ cancelled: false });
+		this.switchSessionHandler = async () => ({ cancelled: false });
 	}
 
 	setUIContext(uiContext?: ExtensionUIContext): void {
@@ -436,6 +441,7 @@ export class ExtensionRunner {
 			newSession: (options) => this.newSessionHandler(options),
 			fork: (entryId) => this.forkHandler(entryId),
 			navigateTree: (targetId, options) => this.navigateTreeHandler(targetId, options),
+			switchSession: (sessionPath) => this.switchSessionHandler(sessionPath),
 		};
 	}
 

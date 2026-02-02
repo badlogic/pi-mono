@@ -293,6 +293,9 @@ export interface ExtensionCommandContext extends ExtensionContext {
 		targetId: string,
 		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
 	): Promise<{ cancelled: boolean }>;
+
+	/** Switch to a different session file. */
+	switchSession(sessionPath: string): Promise<{ cancelled: boolean }>;
 }
 
 // ============================================================================
@@ -1214,6 +1217,7 @@ export interface ExtensionCommandContextActions {
 		targetId: string,
 		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
 	) => Promise<{ cancelled: boolean }>;
+	switchSession: (sessionPath: string) => Promise<{ cancelled: boolean }>;
 }
 
 /**

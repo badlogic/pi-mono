@@ -277,6 +277,10 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				});
 				return { cancelled: result.cancelled };
 			},
+			switchSession: async (sessionPath) => {
+				const success = await session.switchSession(sessionPath);
+				return { cancelled: !success };
+			},
 		},
 		shutdownHandler: () => {
 			shutdownRequested = true;
