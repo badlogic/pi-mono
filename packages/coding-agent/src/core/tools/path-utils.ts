@@ -32,8 +32,12 @@ function fileExists(filePath: string): boolean {
 	}
 }
 
+function normalizeAtPrefix(filePath: string): string {
+	return filePath.startsWith("@") ? filePath.slice(1) : filePath;
+}
+
 export function expandPath(filePath: string): string {
-	const normalized = normalizeUnicodeSpaces(filePath);
+	const normalized = normalizeUnicodeSpaces(normalizeAtPrefix(filePath));
 	if (normalized === "~") {
 		return os.homedir();
 	}
