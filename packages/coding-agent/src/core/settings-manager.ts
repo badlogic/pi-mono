@@ -85,6 +85,7 @@ export interface Settings {
 	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
+	accessibilityMode?: boolean; // Accessibility mode: reduces UI updates during streaming for screen readers
 	markdown?: MarkdownSettings;
 }
 
@@ -724,5 +725,9 @@ export class SettingsManager {
 
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
+	}
+
+	getAccessibilityMode(): boolean {
+		return this.settings.accessibilityMode ?? false;
 	}
 }

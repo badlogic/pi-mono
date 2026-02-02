@@ -2002,10 +2002,8 @@ export class InteractiveMode {
 			await this.init();
 		}
 
-		this.footer.invalidate();
-
 		switch (event.type) {
-			case "agent_start":
+			case "agent_start": {
 				// Restore main escape handler if retry handler is still active
 				// (retry success event fires later, but we need main handler now)
 				if (this.retryEscapeHandler) {
@@ -2020,13 +2018,16 @@ export class InteractiveMode {
 					this.loadingAnimation.stop();
 				}
 				this.statusContainer.clear();
+				const accessibilityMode = this.settingsManager.getAccessibilityMode();
 				this.loadingAnimation = new Loader(
 					this.ui,
 					(spinner) => theme.fg("accent", spinner),
 					(text) => theme.fg("muted", text),
 					this.defaultWorkingMessage,
+					!accessibilityMode, // animated: false if accessibilityMode is true
 				);
 				this.statusContainer.addChild(this.loadingAnimation);
+				this.footer.invalidate();
 				// Apply any pending working message queued before loader existed
 				if (this.pendingWorkingMessage !== undefined) {
 					if (this.pendingWorkingMessage) {
@@ -2036,6 +2037,7 @@ export class InteractiveMode {
 				}
 				this.ui.requestRender();
 				break;
+			}
 
 			case "message_start":
 				if (event.message.role === "custom") {
@@ -2087,6 +2089,13 @@ export class InteractiveMode {
 							}
 						}
 					}
+
+					// In accessibility mode, skip footer invalidation during streaming
+					const accessibilityMode = this.settingsManager.getAccessibilityMode();
+					if (!accessibilityMode) {
+						this.footer.invalidate();
+					}
+
 					this.ui.requestRender();
 				}
 				break;
@@ -2183,6 +2192,7 @@ export class InteractiveMode {
 
 				await this.checkShutdownRequested();
 
+				this.footer.invalidate();
 				this.ui.requestRender();
 				break;
 
