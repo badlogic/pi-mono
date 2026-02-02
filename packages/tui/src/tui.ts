@@ -867,14 +867,24 @@ export class TUI extends Container {
 			this.previousWidth = width;
 		};
 
+		const debugRedraw = process.env.PI_DEBUG_REDRAW === "1";
+		const logRedraw = (reason: string): void => {
+			if (!debugRedraw) return;
+			const logPath = path.join(os.homedir(), ".pi", "agent", "pi-debug.log");
+			const msg = `[${new Date().toISOString()}] fullRender: ${reason} (prev=${this.previousLines.length}, new=${newLines.length}, height=${height})\n`;
+			fs.appendFileSync(logPath, msg);
+		};
+
 		// First render - just output everything without clearing (assumes clean screen)
 		if (this.previousLines.length === 0 && !widthChanged) {
+			logRedraw("first render");
 			fullRender(false);
 			return;
 		}
 
 		// Width changed - full re-render (line wrapping changes)
 		if (widthChanged) {
+			logRedraw(`width changed (${this.previousWidth} -> ${width})`);
 			fullRender(true);
 			return;
 		}
@@ -883,6 +893,7 @@ export class TUI extends Container {
 		// (overlays need the padding, so only do this when no overlays are active)
 		// Configurable via setClearOnShrink() or PI_CLEAR_ON_SHRINK=0 env var
 		if (this.clearOnShrink && newLines.length < this.maxLinesRendered && this.overlayStack.length === 0) {
+			logRedraw(`clearOnShrink (maxLinesRendered=${this.maxLinesRendered})`);
 			fullRender(true);
 			return;
 		}
@@ -931,6 +942,7 @@ export class TUI extends Container {
 				// Clear extra lines without scrolling
 				const extraLines = this.previousLines.length - newLines.length;
 				if (extraLines > height) {
+					logRedraw(`extraLines > height (${extraLines} > ${height})`);
 					fullRender(true);
 					return;
 				}
@@ -961,6 +973,7 @@ export class TUI extends Container {
 		const previousContentViewportTop = Math.max(0, this.previousLines.length - height);
 		if (firstChanged < previousContentViewportTop) {
 			// First change is above previous viewport - need full re-render
+			logRedraw(`firstChanged < viewportTop (${firstChanged} < ${previousContentViewportTop})`);
 			fullRender(true);
 			return;
 		}
