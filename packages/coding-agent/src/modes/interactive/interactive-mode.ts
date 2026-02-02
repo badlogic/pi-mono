@@ -43,7 +43,7 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { spawn, spawnSync } from "@mariozechner/pi-env/child-process";
-import { isBun as isBunRuntime, isBunBinary as isBunBinaryFn } from "@mariozechner/pi-env";
+import { isBun as isBunRuntime, isBunBinary } from "@mariozechner/pi-env";
 import {
 	APP_NAME,
 	getAuthPath,
@@ -2748,7 +2748,7 @@ export class InteractiveMode {
 	}
 
 	showNewVersionNotification(newVersion: string): void {
-		const action = isBunBinaryFn()
+		const action = isBunBinary
 			? `Download from: ${theme.fg("accent", "https://github.com/badlogic/pi-mono/releases/latest")}`
 			: `Run: ${theme.fg("accent", `${isBunRuntime ? "bun" : "npm"} install -g @mariozechner/pi-coding-agent`)}`;
 		const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. `) + action;

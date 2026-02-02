@@ -2,24 +2,13 @@ import { existsSync, readFileSync } from "@mariozechner/pi-env/fs";
 import { homedir } from "@mariozechner/pi-env/os";
 import { dirname, join, resolve } from "@mariozechner/pi-env/path";
 import { env, execPath } from "@mariozechner/pi-env/process";
-import {
-	detectBunBinary,
-	isBrowser,
-	isBun as isBunRuntime,
-	isBunBinary as isBunBinaryFn,
-} from "@mariozechner/pi-env";
+import { isBrowser, isBun, isBunBinary } from "@mariozechner/pi-env";
 
 // =============================================================================
 // Package / Runtime Detection
 // =============================================================================
 
-// Initialize Bun binary detection from this module's import.meta.url
-detectBunBinary(import.meta.url);
-
-/** @deprecated Use `isBunBinary()` from `@mariozechner/pi-env` instead */
-export const isBunBinary = isBunBinaryFn();
-
-export { isBunRuntime };
+export { isBun as isBunRuntime, isBunBinary };
 
 // In browser environment, __dirname is not available via import.meta.url
 const __dirname = isBrowser ? "/browser" : dirname(new URL(import.meta.url).pathname);

@@ -1,4 +1,4 @@
-export { detectBunBinary, isBrowser, isBun, isBunBinary, isNode } from "./runtime.js";
+export { isBrowser, isBun, isBunBinary, isNode } from "./runtime.js";
 export * as fs from "./fs.js";
 export * as path from "./path.js";
 export * as os from "./os.js";

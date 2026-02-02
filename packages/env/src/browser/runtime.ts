@@ -5,11 +5,4 @@ export const isBrowser = true;
 export const isBun = false;
 
 /** Never true in browser */
-export function isBunBinary(): boolean {
-	return false;
-}
-
-/** No-op in browser */
-export function detectBunBinary(_importMetaUrl: string): boolean {
-	return false;
-}
+export const isBunBinary = false;

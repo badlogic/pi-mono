@@ -1,12 +1,16 @@
 {
 	"name": "@mariozechner/pi-env",
 	"version": "0.50.8",
-	"description": "Environment abstraction layer for Node.js and browser runtimes",
+	"description": "Environment abstraction layer for Node.js, Bun, and browser runtimes",
 	"type": "module",
 	"main": "./dist/node/index.js",
 	"types": "./dist/node/index.d.ts",
 	"exports": {
 		".": {
+			"bun": {
+				"types": "./dist/bun/index.d.ts",
+				"import": "./dist/bun/index.js"
+			},
 			"browser": {
 				"types": "./dist/browser/index.d.ts",
 				"import": "./dist/browser/index.js"
@@ -17,6 +21,10 @@
 			}
 		},
 		"./fs": {
+			"bun": {
+				"types": "./dist/bun/fs.d.ts",
+				"import": "./dist/bun/fs.js"
+			},
 			"browser": {
 				"types": "./dist/browser/fs.d.ts",
 				"import": "./dist/browser/fs.js"
@@ -27,6 +35,10 @@
 			}
 		},
 		"./path": {
+			"bun": {
+				"types": "./dist/bun/path.d.ts",
+				"import": "./dist/bun/path.js"
+			},
 			"browser": {
 				"types": "./dist/browser/path.d.ts",
 				"import": "./dist/browser/path.js"
@@ -37,6 +49,10 @@
 			}
 		},
 		"./os": {
+			"bun": {
+				"types": "./dist/bun/os.d.ts",
+				"import": "./dist/bun/os.js"
+			},
 			"browser": {
 				"types": "./dist/browser/os.d.ts",
 				"import": "./dist/browser/os.js"
@@ -47,6 +63,10 @@
 			}
 		},
 		"./process": {
+			"bun": {
+				"types": "./dist/bun/process.d.ts",
+				"import": "./dist/bun/process.js"
+			},
 			"browser": {
 				"types": "./dist/browser/process.d.ts",
 				"import": "./dist/browser/process.js"
@@ -57,6 +77,10 @@
 			}
 		},
 		"./crypto": {
+			"bun": {
+				"types": "./dist/bun/crypto.d.ts",
+				"import": "./dist/bun/crypto.js"
+			},
 			"browser": {
 				"types": "./dist/browser/crypto.d.ts",
 				"import": "./dist/browser/crypto.js"
@@ -67,6 +91,10 @@
 			}
 		},
 		"./child-process": {
+			"bun": {
+				"types": "./dist/bun/child-process.d.ts",
+				"import": "./dist/bun/child-process.js"
+			},
 			"browser": {
 				"types": "./dist/browser/child-process.d.ts",
 				"import": "./dist/browser/child-process.js"
@@ -82,7 +110,7 @@
 	],
 	"scripts": {
 		"clean": "shx rm -rf dist",
-		"build": "tsgo -p tsconfig.build.node.json && tsgo -p tsconfig.build.browser.json",
+		"build": "tsgo -p tsconfig.build.node.json && tsgo -p tsconfig.build.bun.json && tsgo -p tsconfig.build.browser.json",
 		"dev": "tsgo -p tsconfig.build.node.json --watch --preserveWatchOutput",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
@@ -94,6 +122,7 @@
 	"keywords": [
 		"env",
 		"browser",
+		"bun",
 		"node",
 		"abstraction"
 	],
