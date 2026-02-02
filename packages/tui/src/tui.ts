@@ -227,6 +227,7 @@ export class TUI extends Container {
 	private cellSizeQueryPending = false;
 	private showHardwareCursor = process.env.PI_HARDWARE_CURSOR === "1";
 	private mouseReportingEnabled = false;
+	private alternateScreenEnabled = false;
 	private maxLinesRendered = 0; // Track terminal's working area (max lines ever rendered)
 	private previousViewportTop = 0; // Track previous viewport top for resize-aware cursor moves
 	private fullRedrawCount = 0;
@@ -269,6 +270,12 @@ export class TUI extends Container {
 		if (this.mouseReportingEnabled === enabled) return;
 		this.mouseReportingEnabled = enabled;
 		this.terminal.write(enabled ? "\x1b[?1000h\x1b[?1006h" : "\x1b[?1000l\x1b[?1006l");
+	}
+
+	setAlternateScreen(enabled: boolean): void {
+		if (this.alternateScreenEnabled === enabled) return;
+		this.alternateScreenEnabled = enabled;
+		this.terminal.write(enabled ? "\x1b[?1049h" : "\x1b[?1049l");
 	}
 
 	setFocus(component: Component | null): void {
@@ -400,11 +407,15 @@ export class TUI extends Container {
 
 	stop(): void {
 		this.stopped = true;
+		const wasAlternateScreenEnabled = this.alternateScreenEnabled;
 		if (this.mouseReportingEnabled) {
 			this.setMouseReporting(false);
 		}
+		if (wasAlternateScreenEnabled) {
+			this.setAlternateScreen(false);
+		}
 		// Move cursor to the end of the content to prevent overwriting/artifacts on exit
-		if (this.previousLines.length > 0) {
+		if (!wasAlternateScreenEnabled && this.previousLines.length > 0) {
 			const targetRow = this.previousLines.length; // Line after the last content
 			const lineDiff = targetRow - this.hardwareCursorRow;
 			if (lineDiff > 0) {

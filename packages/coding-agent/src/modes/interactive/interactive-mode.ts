@@ -1823,6 +1823,7 @@ export class InteractiveMode {
 	}
 
 	private setScrollOutputEnabled(enabled: boolean, options: { requestRender?: boolean } = {}): void {
+		const wasEnabled = this.scrollOutputEnabled;
 		this.scrollOutputEnabled = enabled;
 		this.layout.setEnabled(enabled);
 
@@ -1835,11 +1836,12 @@ export class InteractiveMode {
 
 		if (this.isInitialized) {
 			this.ui.setMouseReporting(enabled);
+			this.ui.setAlternateScreen(enabled);
 		}
 
 		const shouldRender = options.requestRender ?? this.isInitialized;
 		if (shouldRender) {
-			this.ui.requestRender();
+			this.ui.requestRender(wasEnabled !== enabled);
 		}
 	}
 
