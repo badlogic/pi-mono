@@ -34,6 +34,7 @@ import {
 	fuzzyFilter,
 	Loader,
 	Markdown,
+	type MouseEvent,
 	matchesKey,
 	ProcessTerminal,
 	Spacer,
@@ -91,6 +92,7 @@ import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.js";
+import { ScrollLayout } from "./components/scroll-layout.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
@@ -188,6 +190,9 @@ export class InteractiveMode {
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
 
+	// Scroll output behavior (keep editor/footer fixed)
+	private scrollOutputEnabled = false;
+
 	// Skill commands: command name -> skill file path
 	private skillCommands = new Map<string, string>();
 
@@ -234,6 +239,11 @@ export class InteractiveMode {
 	// Header container that holds the built-in or custom header
 	private headerContainer: Container;
 
+	// Output + fixed layout containers
+	private outputContainer: Container;
+	private fixedContainer: Container;
+	private layout: ScrollLayout;
+
 	// Built-in header (logo + keybinding hints + changelog)
 	private builtInHeader: Component | undefined = undefined;
 
@@ -277,6 +287,22 @@ export class InteractiveMode {
 		this.footerDataProvider = new FooterDataProvider();
 		this.footer = new FooterComponent(session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
+
+		this.outputContainer = new Container();
+		this.outputContainer.addChild(this.headerContainer);
+		this.outputContainer.addChild(this.chatContainer);
+
+		this.fixedContainer = new Container();
+		this.fixedContainer.addChild(this.pendingMessagesContainer);
+		this.fixedContainer.addChild(this.statusContainer);
+		this.fixedContainer.addChild(this.widgetContainerAbove);
+		this.fixedContainer.addChild(this.editorContainer);
+		this.fixedContainer.addChild(this.widgetContainerBelow);
+		this.fixedContainer.addChild(this.footer);
+
+		this.layout = new ScrollLayout(this.ui, this.outputContainer, this.fixedContainer);
+		this.scrollOutputEnabled = this.settingsManager.getScrollOutput();
+		this.layout.setEnabled(this.scrollOutputEnabled);
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -388,8 +414,8 @@ export class InteractiveMode {
 		this.fdPath = await ensureTool("fd");
 		this.setupAutocomplete(this.fdPath);
 
-		// Add header container as first child
-		this.ui.addChild(this.headerContainer);
+		// Add layout container
+		this.ui.addChild(this.layout);
 
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
@@ -459,14 +485,7 @@ export class InteractiveMode {
 			}
 		}
 
-		this.ui.addChild(this.chatContainer);
-		this.ui.addChild(this.pendingMessagesContainer);
-		this.ui.addChild(this.statusContainer);
 		this.renderWidgets(); // Initialize with default spacer
-		this.ui.addChild(this.widgetContainerAbove);
-		this.ui.addChild(this.editorContainer);
-		this.ui.addChild(this.widgetContainerBelow);
-		this.ui.addChild(this.footer);
 		this.ui.setFocus(this.editor);
 
 		this.setupKeyHandlers();
@@ -481,6 +500,7 @@ export class InteractiveMode {
 		// Start the UI
 		this.ui.start();
 		this.isInitialized = true;
+		this.setScrollOutputEnabled(this.scrollOutputEnabled, { requestRender: false });
 
 		// Set terminal title
 		this.updateTerminalTitle();
@@ -1283,21 +1303,25 @@ export class InteractiveMode {
 			this.customFooter.dispose();
 		}
 
-		// Remove current footer from UI
-		if (this.customFooter) {
-			this.ui.removeChild(this.customFooter);
-		} else {
-			this.ui.removeChild(this.footer);
-		}
+		const currentFooter = this.customFooter ?? this.footer;
+		const index = this.fixedContainer.children.indexOf(currentFooter);
 
 		if (factory) {
 			// Create and add custom footer, passing the data provider
 			this.customFooter = factory(this.ui, theme, this.footerDataProvider);
-			this.ui.addChild(this.customFooter);
+			if (index !== -1) {
+				this.fixedContainer.children[index] = this.customFooter;
+			} else {
+				this.fixedContainer.addChild(this.customFooter);
+			}
 		} else {
 			// Restore built-in footer
 			this.customFooter = undefined;
-			this.ui.addChild(this.footer);
+			if (index !== -1) {
+				this.fixedContainer.children[index] = this.footer;
+			} else {
+				this.fixedContainer.addChild(this.footer);
+			}
 		}
 
 		this.ui.requestRender();
@@ -1798,6 +1822,42 @@ export class InteractiveMode {
 		};
 	}
 
+	private setScrollOutputEnabled(enabled: boolean, options: { requestRender?: boolean } = {}): void {
+		this.scrollOutputEnabled = enabled;
+		this.layout.setEnabled(enabled);
+
+		if (enabled) {
+			this.ui.onMouse = (event) => this.handleMouseEvent(event);
+		} else {
+			this.ui.onMouse = undefined;
+			this.layout.scrollToBottom();
+		}
+
+		if (this.isInitialized) {
+			this.ui.setMouseReporting(enabled);
+		}
+
+		const shouldRender = options.requestRender ?? this.isInitialized;
+		if (shouldRender) {
+			this.ui.requestRender();
+		}
+	}
+
+	private handleMouseEvent(event: MouseEvent): void {
+		if (!this.scrollOutputEnabled) return;
+		if (event.type !== "scroll" || !event.direction) return;
+		if (this.ui.hasOverlay()) return;
+
+		const direction = event.direction === "up" ? 1 : -1;
+		if (event.shift) {
+			this.layout.scrollByPage(direction);
+			return;
+		}
+
+		const scrollStep = 3;
+		this.layout.scrollBy(direction * scrollStep);
+	}
+
 	private async handleClipboardImagePaste(): Promise<void> {
 		try {
 			const image = await readClipboardImage();
@@ -1824,6 +1884,7 @@ export class InteractiveMode {
 		this.defaultEditor.onSubmit = async (text: string) => {
 			text = text.trim();
 			if (!text) return;
+			this.layout.scrollToBottom();
 
 			// Handle commands
 			if (text === "/settings") {
@@ -2993,6 +3054,7 @@ export class InteractiveMode {
 					collapseChangelog: this.settingsManager.getCollapseChangelog(),
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
 					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
+					scrollOutput: this.settingsManager.getScrollOutput(),
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 					autocompleteMaxVisible: this.settingsManager.getAutocompleteMaxVisible(),
 					quietStartup: this.settingsManager.getQuietStartup(),
@@ -3069,6 +3131,10 @@ export class InteractiveMode {
 					onShowHardwareCursorChange: (enabled) => {
 						this.settingsManager.setShowHardwareCursor(enabled);
 						this.ui.setShowHardwareCursor(enabled);
+					},
+					onScrollOutputChange: (enabled) => {
+						this.settingsManager.setScrollOutput(enabled);
+						this.setScrollOutputEnabled(enabled);
 					},
 					onEditorPaddingXChange: (padding) => {
 						this.settingsManager.setEditorPaddingX(padding);

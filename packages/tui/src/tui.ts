@@ -156,6 +156,20 @@ export interface OverlayHandle {
 	isHidden(): boolean;
 }
 
+export type MouseEventType = "press" | "release" | "scroll";
+export type MouseScrollDirection = "up" | "down";
+
+export interface MouseEvent {
+	type: MouseEventType;
+	x: number;
+	y: number;
+	shift: boolean;
+	alt: boolean;
+	ctrl: boolean;
+	button?: number;
+	direction?: MouseScrollDirection;
+}
+
 /**
  * Container - a component that contains other components
  */
@@ -204,12 +218,15 @@ export class TUI extends Container {
 
 	/** Global callback for debug key (Shift+Ctrl+D). Called before input is forwarded to focused component. */
 	public onDebug?: () => void;
+	/** Global callback for mouse events. */
+	public onMouse?: (event: MouseEvent) => void;
 	private renderRequested = false;
 	private cursorRow = 0; // Logical cursor row (end of rendered content)
 	private hardwareCursorRow = 0; // Actual terminal cursor row (may differ due to IME positioning)
 	private inputBuffer = ""; // Buffer for parsing terminal responses
 	private cellSizeQueryPending = false;
 	private showHardwareCursor = process.env.PI_HARDWARE_CURSOR === "1";
+	private mouseReportingEnabled = false;
 	private maxLinesRendered = 0; // Track terminal's working area (max lines ever rendered)
 	private previousViewportTop = 0; // Track previous viewport top for resize-aware cursor moves
 	private fullRedrawCount = 0;
@@ -246,6 +263,12 @@ export class TUI extends Container {
 			this.terminal.hideCursor();
 		}
 		this.requestRender();
+	}
+
+	setMouseReporting(enabled: boolean): void {
+		if (this.mouseReportingEnabled === enabled) return;
+		this.mouseReportingEnabled = enabled;
+		this.terminal.write(enabled ? "\x1b[?1000h\x1b[?1006h" : "\x1b[?1000l\x1b[?1006l");
 	}
 
 	setFocus(component: Component | null): void {
@@ -377,6 +400,9 @@ export class TUI extends Container {
 
 	stop(): void {
 		this.stopped = true;
+		if (this.mouseReportingEnabled) {
+			this.setMouseReporting(false);
+		}
 		// Move cursor to the end of the content to prevent overwriting/artifacts on exit
 		if (this.previousLines.length > 0) {
 			const targetRow = this.previousLines.length; // Line after the last content
@@ -411,6 +437,28 @@ export class TUI extends Container {
 		});
 	}
 
+	private parseMouseEvent(data: string): MouseEvent | null {
+		if (!this.mouseReportingEnabled) return null;
+		const match = data.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
+		if (!match) return null;
+
+		const code = parseInt(match[1], 10);
+		const x = parseInt(match[2], 10);
+		const y = parseInt(match[3], 10);
+		const shift = (code & 4) !== 0;
+		const alt = (code & 8) !== 0;
+		const ctrl = (code & 16) !== 0;
+		const isRelease = match[4] === "m";
+
+		if ((code & 64) !== 0) {
+			const direction: MouseScrollDirection = (code & 1) === 0 ? "up" : "down";
+			return { type: "scroll", direction, x, y, shift, alt, ctrl };
+		}
+
+		const button = code & 3;
+		return { type: isRelease ? "release" : "press", button, x, y, shift, alt, ctrl };
+	}
+
 	private handleInput(data: string): void {
 		// If we're waiting for cell size response, buffer input and parse
 		if (this.cellSizeQueryPending) {
@@ -418,6 +466,15 @@ export class TUI extends Container {
 			const filtered = this.parseCellSizeResponse();
 			if (filtered.length === 0) return;
 			data = filtered;
+		}
+
+		const mouseEvent = this.parseMouseEvent(data);
+		if (mouseEvent) {
+			if (this.onMouse) {
+				this.onMouse(mouseEvent);
+				this.requestRender();
+			}
+			return;
 		}
 
 		// Global debug key handler (Shift+Ctrl+D)

@@ -182,4 +182,21 @@ describe("SettingsManager", () => {
 			expect(savedSettings.theme).toBe("light");
 		});
 	});
+
+	describe("terminal.scrollOutput", () => {
+		it("defaults to false and persists updates", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ terminal: { showImages: true } }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getScrollOutput()).toBe(false);
+
+			manager.setScrollOutput(true);
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.terminal.showImages).toBe(true);
+			expect(savedSettings.terminal.scrollOutput).toBe(true);
+		});
+	});
 });

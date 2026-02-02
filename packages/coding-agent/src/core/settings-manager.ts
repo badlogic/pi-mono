@@ -21,6 +21,7 @@ export interface RetrySettings {
 
 export interface TerminalSettings {
 	showImages?: boolean; // default: true (only relevant if terminal supports images)
+	scrollOutput?: boolean; // default: false (scroll output while keeping editor fixed)
 }
 
 export interface ImageSettings {
@@ -625,6 +626,19 @@ export class SettingsManager {
 		}
 		this.globalSettings.terminal.showImages = show;
 		this.markModified("terminal", "showImages");
+		this.save();
+	}
+
+	getScrollOutput(): boolean {
+		return this.settings.terminal?.scrollOutput ?? false;
+	}
+
+	setScrollOutput(enabled: boolean): void {
+		if (!this.globalSettings.terminal) {
+			this.globalSettings.terminal = {};
+		}
+		this.globalSettings.terminal.scrollOutput = enabled;
+		this.markModified("terminal", "scrollOutput");
 		this.save();
 	}
 
