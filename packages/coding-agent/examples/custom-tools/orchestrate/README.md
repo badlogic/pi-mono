@@ -17,6 +17,18 @@ The orchestrate tool implements a **Memory-First Task Agent Architecture** with 
 9. **Full Output Logging** - Complete task outputs saved to `/tmp/pi-orchestrate-*/`
 10. **Pause/Resume** - State persistence allows resuming interrupted orchestrations
 
+## Platform Support
+
+**Supported Platforms**: macOS and Linux
+
+**Requirements**:
+- `pgrep` command (pre-installed on macOS/Linux)
+- Task-monitor process running (MANDATORY - see below)
+
+**Windows**: Not currently supported. The task-monitor enforcement relies on `pgrep`, which is not available on Windows. Windows support can be added in the future using PowerShell-based process detection.
+
+**Development Override**: Set `ORCHESTRATE_SKIP_MONITOR_CHECK=1` to bypass task-monitor check for testing/development.
+
 ## Installation
 
 ```bash

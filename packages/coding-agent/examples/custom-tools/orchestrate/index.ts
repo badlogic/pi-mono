@@ -293,8 +293,10 @@ function loadMetrics(): MetricsStore {
 			}
 			return parsed;
 		}
-	} catch (_err) {
+	} catch (err) {
 		// If file is corrupted, start fresh
+		console.warn(`⚠️  Metrics file corrupted or unreadable: ${err instanceof Error ? err.message : String(err)}`);
+		console.warn("   Starting with fresh metrics.");
 	}
 	return { providers: {}, lastUpdated: new Date() };
 }
@@ -305,8 +307,9 @@ function loadMetrics(): MetricsStore {
 function saveMetrics(metrics: MetricsStore): void {
 	try {
 		fs.writeFileSync(METRICS_FILE, JSON.stringify(metrics, null, 2));
-	} catch (_err) {
+	} catch (err) {
 		// Non-critical - metrics are optional
+		console.warn(`⚠️  Failed to save metrics: ${err instanceof Error ? err.message : String(err)}`);
 	}
 }
 
@@ -1572,7 +1575,10 @@ async function executeAgent(
 		// Phase 2: Provider-based dispatch
 		const dispatch = getCommandForProvider(effectiveProvider, effectiveModel, agentConfig.name);
 		const command = dispatch.command;
-		const isCodex = command === "codex" || effectiveProvider === "codex";
+		// Check for codex in command/provider (handles variants like "openai-codex", "/usr/bin/codex")
+		const isCodex =
+			command.toLowerCase().includes("codex") ||
+			(effectiveProvider && effectiveProvider.toLowerCase().includes("codex"));
 		const args: string[] = [...dispatch.args];
 		let tmpDir: string | null = null; // For system prompt file
 
@@ -1756,17 +1762,34 @@ async function executeAgent(
 /**
  * Check if task-monitor is running.
  * Task-monitor is MANDATORY for all orchestrations to provide visibility into long-running processes.
- * Throws error if task-monitor is not running.
+ * Uses pgrep to detect task-monitor process (tui or api mode).
+ *
+ * @throws {Error} If task-monitor is not detected
+ *
+ * Environment Variables:
+ * - ORCHESTRATE_SKIP_MONITOR_CHECK=1: Skip check for development/testing (macOS/Linux only)
+ *
+ * Platform Support: macOS and Linux (requires pgrep)
  */
 function checkTaskMonitor(): void {
+	// Allow override for development/testing
+	if (process.env.ORCHESTRATE_SKIP_MONITOR_CHECK === "1") {
+		console.warn("⚠️  Task-monitor check skipped (ORCHESTRATE_SKIP_MONITOR_CHECK=1)");
+		return;
+	}
+
 	try {
-		// Check if task-monitor process is running (looks for the TUI or API server)
-		const result = spawnSync("pgrep", ["-f", "task-monitor.*(tui|api)"], {
+		// Check if task-monitor process is running
+		// More specific pattern to reduce false positives: looks for Python running monitor.py script
+		const result = spawnSync("pgrep", ["-f", "python.*task-monitor/monitor\\.py.*(tui|api)"], {
 			encoding: "utf-8",
-			timeout: 5000,
+			timeout: 10000, // Increased from 5s to 10s for slower systems
 		});
 
-		if (result.status !== 0 || !result.stdout.trim()) {
+		const stdout = result.stdout.trim();
+
+		// Validate result
+		if (result.status !== 0 || !stdout) {
 			throw new Error(
 				`❌ BLOCKED: Task-monitor is not running.
 
@@ -1784,6 +1807,12 @@ Then re-run orchestrate.
 
 Rule: NEVER run /orchestrate without task-monitor watchdog.`,
 			);
+		}
+
+		// Validate pgrep output is actually a PID (numeric)
+		if (!/^\d+(\n\d+)*$/.test(stdout)) {
+			console.warn(`⚠️  Unexpected pgrep output: ${stdout}`);
+			throw new Error("Task-monitor check returned unexpected output");
 		}
 	} catch (err) {
 		if (err instanceof Error && err.message.includes("BLOCKED")) {
