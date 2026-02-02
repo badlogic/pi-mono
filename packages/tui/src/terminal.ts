@@ -178,6 +178,11 @@ export class ProcessTerminal implements Terminal {
 			this.resizeHandler = undefined;
 		}
 
+		// Pause stdin to prevent any buffered input (e.g., Ctrl+D) from being
+		// re-interpreted after raw mode is disabled. This fixes a race condition
+		// where Ctrl+D could close the parent shell over SSH.
+		process.stdin.pause();
+
 		// Restore raw mode state
 		if (process.stdin.setRawMode) {
 			process.stdin.setRawMode(this.wasRaw);

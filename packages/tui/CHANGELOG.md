@@ -10,6 +10,7 @@
 ### Fixed
 
 - Fixed unnecessary full redraws when appending many lines after content had previously shrunk (viewport check now uses actual previous content size instead of stale maximum)
+- Fixed Ctrl+D exit closing the parent SSH session due to stdin buffer race condition ([#1185](https://github.com/badlogic/pi-mono/issues/1185))
 
 ## [0.51.0] - 2026-02-01
 
