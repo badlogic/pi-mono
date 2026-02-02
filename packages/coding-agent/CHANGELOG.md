@@ -2,10 +2,16 @@
 
 ## [Unreleased]
 
-### Added
+### New Features
 
-- **Extension API switchSession**: Added `ctx.switchSession(sessionPath)` to `ExtensionCommandContext` for programmatic session switching in extension commands ([#1187](https://github.com/badlogic/pi-mono/issues/1187)).
-- **Clear on shrink setting**: New `terminal.clearOnShrink` setting (and `/settings` toggle) controls whether empty rows are cleared when content shrinks. Disabled by default to reduce flicker. Enable via settings or `PI_CLEAR_ON_SHRINK=1` env var.
+- **Extension API switchSession**: Extensions can now programmatically switch sessions via `ctx.switchSession(sessionPath)`. See [docs/extensions.md](docs/extensions.md). ([#1187](https://github.com/badlogic/pi-mono/issues/1187))
+- **Clear on shrink setting**: New `terminal.clearOnShrink` setting keeps the editor and footer pinned to the bottom of the terminal when content shrinks. May cause some flicker due to redraws. Disabled by default. Enable via `/settings` or `PI_CLEAR_ON_SHRINK=1` env var.
+
+### Fixed
+
+- Fixed scoped models not finding valid credentials after logout ([#1194](https://github.com/badlogic/pi-mono/pull/1194) by [@terrorobe](https://github.com/terrorobe))
+- Fixed Ctrl+D exit closing the parent SSH session due to stdin buffer race condition ([#1185](https://github.com/badlogic/pi-mono/issues/1185))
+- Fixed emoji cursor positioning in editor input ([#1183](https://github.com/badlogic/pi-mono/pull/1183) by [@haoqixu](https://github.com/haoqixu))
 
 ## [0.51.0] - 2026-02-01
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `cache_control` not being applied to string-format user messages in Anthropic provider
+
 ## [0.51.0] - 2026-02-01
 
 ### Fixed
