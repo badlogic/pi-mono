@@ -48,8 +48,7 @@ import {
 	getAuthPath,
 	getDebugLogPath,
 	getShareViewerUrl,
-	isBunBinary,
-	isBunRuntime,
+	getUpdateInstruction,
 	VERSION,
 } from "../../config.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
@@ -2768,9 +2767,7 @@ export class InteractiveMode {
 	}
 
 	showNewVersionNotification(newVersion: string): void {
-		const action = isBunBinary
-			? `Download from: ${theme.fg("accent", "https://github.com/badlogic/pi-mono/releases/latest")}`
-			: `Run: ${theme.fg("accent", `${isBunRuntime ? "bun" : "npm"} install -g @mariozechner/pi-coding-agent`)}`;
+		const action = theme.fg("accent", getUpdateInstruction("@mariozechner/pi-coding-agent"));
 		const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. `) + action;
 		const changelogUrl = theme.fg(
 			"accent",
