@@ -13,6 +13,7 @@ import type { ModelRegistry } from "./model-registry.js";
 /** Default model IDs for each known provider */
 export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	"amazon-bedrock": "us.anthropic.claude-opus-4-20250514-v1:0",
+	"anthropic-vertex": "claude-opus-4-5@20251101",
 	anthropic: "claude-opus-4-5",
 	openai: "gpt-5.1-codex",
 	"azure-openai-responses": "gpt-5.2",

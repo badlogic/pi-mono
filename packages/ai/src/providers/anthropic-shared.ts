@@ -80,8 +80,13 @@ export function convertContentBlocks(content: (TextContent | ImageContent)[]):
 
 /**
  * Convert Pi tools to Anthropic tool format.
+ * @param tools - Array of Pi tools
+ * @param nameMapper - Optional function to transform tool names (e.g., for Claude Code OAuth compatibility)
  */
-export function convertTools(tools: Tool[]): Array<{
+export function convertTools(
+	tools: Tool[],
+	nameMapper?: (name: string) => string,
+): Array<{
 	name: string;
 	description: string;
 	input_schema: {
@@ -95,7 +100,7 @@ export function convertTools(tools: Tool[]): Array<{
 	return tools.map((tool) => {
 		const jsonSchema = tool.parameters as any;
 		return {
-			name: tool.name,
+			name: nameMapper ? nameMapper(tool.name) : tool.name,
 			description: tool.description,
 			input_schema: {
 				type: "object" as const,
