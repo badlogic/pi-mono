@@ -256,8 +256,8 @@ export class Input implements Component, Focusable {
 	}
 
 	private handlePaste(pastedText: string): void {
-		// Clean the pasted text - remove newlines and carriage returns
-		const cleanText = pastedText.replace(/\r\n/g, "").replace(/\r/g, "").replace(/\n/g, "");
+		// Clean the pasted text - remove newlines, carriage returns, and convert tabs to spaces
+		const cleanText = pastedText.replace(/\r\n/g, "").replace(/\r/g, "").replace(/\n/g, "").replace(/\t/g, " ");
 
 		// Insert at cursor position
 		this.value = this.value.slice(0, this.cursor) + cleanText + this.value.slice(this.cursor);
@@ -277,30 +277,34 @@ export class Input implements Component, Focusable {
 			return [prompt];
 		}
 
+		// Normalize value for display: convert tabs to spaces to prevent width overflow
+		// Tab characters have length 1 but render as 8 spaces in terminals
+		const displayValue = this.value.replace(/\t/g, " ");
+
 		let visibleText = "";
 		let cursorDisplay = this.cursor;
 
-		if (this.value.length < availableWidth) {
+		if (displayValue.length < availableWidth) {
 			// Everything fits (leave room for cursor at end)
-			visibleText = this.value;
+			visibleText = displayValue;
 		} else {
 			// Need horizontal scrolling
 			// Reserve one character for cursor if it's at the end
-			const scrollWidth = this.cursor === this.value.length ? availableWidth - 1 : availableWidth;
+			const scrollWidth = this.cursor === displayValue.length ? availableWidth - 1 : availableWidth;
 			const halfWidth = Math.floor(scrollWidth / 2);
 
 			if (this.cursor < halfWidth) {
 				// Cursor near start
-				visibleText = this.value.slice(0, scrollWidth);
+				visibleText = displayValue.slice(0, scrollWidth);
 				cursorDisplay = this.cursor;
-			} else if (this.cursor > this.value.length - halfWidth) {
+			} else if (this.cursor > displayValue.length - halfWidth) {
 				// Cursor near end
-				visibleText = this.value.slice(this.value.length - scrollWidth);
-				cursorDisplay = scrollWidth - (this.value.length - this.cursor);
+				visibleText = displayValue.slice(displayValue.length - scrollWidth);
+				cursorDisplay = scrollWidth - (displayValue.length - this.cursor);
 			} else {
 				// Cursor in middle
 				const start = this.cursor - halfWidth;
-				visibleText = this.value.slice(start, start + scrollWidth);
+				visibleText = displayValue.slice(start, start + scrollWidth);
 				cursorDisplay = halfWidth;
 			}
 		}
