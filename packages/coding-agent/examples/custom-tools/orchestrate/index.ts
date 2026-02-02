@@ -1576,9 +1576,7 @@ async function executeAgent(
 		const dispatch = getCommandForProvider(effectiveProvider, effectiveModel, agentConfig.name);
 		const command = dispatch.command;
 		// Check for codex in command/provider (handles variants like "openai-codex", "/usr/bin/codex")
-		const isCodex =
-			command.toLowerCase().includes("codex") ||
-			(effectiveProvider && effectiveProvider.toLowerCase().includes("codex"));
+		const isCodex = command.toLowerCase().includes("codex") || effectiveProvider?.toLowerCase().includes("codex");
 		const args: string[] = [...dispatch.args];
 		let tmpDir: string | null = null; // For system prompt file
 
