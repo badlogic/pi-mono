@@ -279,6 +279,35 @@ describe("ExtensionRunner", () => {
 			const missing = runner.getCommand("not-exists");
 			expect(missing).toBeUndefined();
 		});
+
+		it("filters out commands conflict with reseved", async () => {
+			const cmdCode = (name: string) => `
+				export default function(pi) {
+					pi.registerCommand("${name}", {
+						description: "Test command",
+						handler: async () => {},
+					});
+				}
+			`;
+			fs.writeFileSync(path.join(extensionsDir, "cmd-a.ts"), cmdCode("cmd-a"));
+			fs.writeFileSync(path.join(extensionsDir, "cmd-b.ts"), cmdCode("cmd-b"));
+
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const commands = runner.getRegisteredCommands(new Set(["cmd-a"]));
+			const diagnostics = runner.getCommandDiagnostics();
+
+			expect(commands.length).toBe(1);
+			expect(commands.map((c) => c.name).sort()).toEqual(["cmd-b"]);
+
+			expect(diagnostics.length).toBe(1);
+			expect(diagnostics[0].path).toEqual(path.join(extensionsDir, "cmd-a.ts"));
+
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in command"));
+			warnSpy.mockRestore();
+		});
 	});
 
 	describe("error handling", () => {
