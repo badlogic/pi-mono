@@ -36,6 +36,10 @@ export class VirtualTerminal implements Terminal {
 		this.xterm.write("\x1b[?2004h");
 	}
 
+	async prepareForExit(_drainMs?: number): Promise<void> {
+		// No-op for virtual terminal - no Kitty protocol to drain
+	}
+
 	stop(): void {
 		// Disable bracketed paste mode
 		this.xterm.write("\x1b[?2004l");

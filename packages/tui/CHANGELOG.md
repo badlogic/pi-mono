@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `Terminal.prepareForExit()` method to drain Kitty key release events before exit
+
+### Fixed
+
+- Fixed Kitty key release events leaking to parent shell over slow SSH connections ([#1204](https://github.com/badlogic/pi-mono/issues/1204))
+
 ## [0.51.1] - 2026-02-02
 
 ### Added

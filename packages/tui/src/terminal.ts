@@ -12,6 +12,14 @@ export interface Terminal {
 	// Stop the terminal and restore state
 	stop(): void;
 
+	/**
+	 * Prepare for process exit by disabling Kitty protocol and draining stdin.
+	 * Call this before stop() when exiting to prevent Kitty key release events
+	 * from leaking to the parent shell over slow SSH connections.
+	 * @param drainMs - How long to drain stdin (default: 50ms)
+	 */
+	prepareForExit(drainMs?: number): Promise<void>;
+
 	// Write output to terminal
 	write(data: string): void;
 
@@ -150,11 +158,25 @@ export class ProcessTerminal implements Terminal {
 		process.stdout.write("\x1b[?u");
 	}
 
+	async prepareForExit(drainMs = 50): Promise<void> {
+		if (!this._kittyProtocolActive) return;
+
+		// Disable Kitty keyboard protocol first
+		process.stdout.write("\x1b[<u");
+		this._kittyProtocolActive = false;
+		setKittyProtocolActive(false);
+
+		// Wait briefly to let any in-flight key release events arrive and be
+		// consumed by our still-active stdin handler. This prevents Kitty
+		// escape sequences from leaking to the parent shell over slow SSH.
+		await new Promise((resolve) => setTimeout(resolve, drainMs));
+	}
+
 	stop(): void {
 		// Disable bracketed paste mode
 		process.stdout.write("\x1b[?2004l");
 
-		// Disable Kitty keyboard protocol (pop the flags we pushed) - only if we enabled it
+		// Disable Kitty keyboard protocol if not already done by prepareForExit()
 		if (this._kittyProtocolActive) {
 			process.stdout.write("\x1b[<u");
 			this._kittyProtocolActive = false;

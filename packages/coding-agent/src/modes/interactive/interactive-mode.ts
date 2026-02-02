@@ -2552,6 +2552,10 @@ export class InteractiveMode {
 		// requestRender() uses process.nextTick(), so we wait one tick
 		await new Promise((resolve) => process.nextTick(resolve));
 
+		// Drain any in-flight Kitty key release events before stopping.
+		// This prevents escape sequences from leaking to the parent shell over slow SSH.
+		await this.ui.terminal.prepareForExit();
+
 		this.stop();
 		process.exit(0);
 	}
