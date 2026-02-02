@@ -139,6 +139,34 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 			expect(capturedPayload.system[0].cache_control).toBeUndefined();
 		});
 
+		it("should add cache_control to string user messages", async () => {
+			const baseModel = getModel("anthropic", "claude-3-5-haiku-20241022");
+			let capturedPayload: any = null;
+
+			const { streamAnthropic } = await import("../src/providers/anthropic.js");
+
+			try {
+				const s = streamAnthropic(baseModel, context, {
+					apiKey: "fake-key",
+					onPayload: (payload) => {
+						capturedPayload = payload;
+					},
+				});
+
+				for await (const event of s) {
+					if (event.type === "error") break;
+				}
+			} catch {
+				// Expected to fail
+			}
+
+			expect(capturedPayload).not.toBeNull();
+			const lastMessage = capturedPayload.messages[capturedPayload.messages.length - 1];
+			expect(Array.isArray(lastMessage.content)).toBe(true);
+			const lastBlock = lastMessage.content[lastMessage.content.length - 1];
+			expect(lastBlock.cache_control).toEqual({ type: "ephemeral" });
+		});
+
 		it("should set 1h cache TTL when cacheRetention is long", async () => {
 			const baseModel = getModel("anthropic", "claude-3-5-haiku-20241022");
 			let capturedPayload: any = null;

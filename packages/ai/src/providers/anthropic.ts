@@ -674,7 +674,6 @@ function convertMessages(
 	if (cacheControl && params.length > 0) {
 		const lastMessage = params[params.length - 1];
 		if (lastMessage.role === "user") {
-			// Add cache control to the last content block
 			if (Array.isArray(lastMessage.content)) {
 				const lastBlock = lastMessage.content[lastMessage.content.length - 1];
 				if (
@@ -683,6 +682,14 @@ function convertMessages(
 				) {
 					(lastBlock as any).cache_control = cacheControl;
 				}
+			} else if (typeof lastMessage.content === "string") {
+				lastMessage.content = [
+					{
+						type: "text",
+						text: lastMessage.content,
+						cache_control: cacheControl,
+					},
+				] as any;
 			}
 		}
 	}
