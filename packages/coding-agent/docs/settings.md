@@ -109,7 +109,7 @@ When a provider requests a retry delay longer than `maxDelayMs` (e.g., Google's 
 | `images.autoResize` | boolean | `true` | Resize images to 2000x2000 max |
 | `images.blockImages` | boolean | `false` | Block all images from being sent to LLM |
 
-When `terminal.scrollOutput` is enabled, pi switches to the alternate screen (terminal scrollback is hidden while active). Enable `terminal.scrollOutputMouse` to capture the mouse wheel for output scrolling; this disables normal terminal selection. In tmux, enable mouse support (`set -g mouse on`) to forward wheel events to pi.
+When `terminal.scrollOutput` is enabled, pi switches to the alternate screen (terminal scrollback is hidden while active). Enable `terminal.scrollOutputMouse` to capture the mouse wheel for output scrolling (Shift+wheel or Alt+wheel scrolls by page); this disables normal terminal selection. In tmux, enable mouse support (`set -g mouse on`) to forward wheel events to pi.
 
 ### Shell
 

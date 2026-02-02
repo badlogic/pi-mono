@@ -1879,7 +1879,7 @@ export class InteractiveMode {
 		if (this.ui.hasOverlay()) return;
 
 		const direction = event.direction === "up" ? 1 : -1;
-		if (event.shift) {
+		if (event.shift || event.alt) {
 			this.layout.scrollByPage(direction);
 			return;
 		}
