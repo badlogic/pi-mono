@@ -4,7 +4,7 @@
  * A comprehensive task execution tool with two modes:
  *
  * ## Task File Mode (default)
- * Executes tasks from a collaborative task file (e.g., 01_TASKS.md):
+ * Executes tasks from a collaborative task file (e.g., 0N_TASKS.md):
  * - Questions/Blockers gate: BLOCKS if unresolved questions exist
  * - Memory-first pre-hook: Queries memory for prior solutions
  * - Quality-gate post-hook: Runs tests after each task
@@ -50,8 +50,14 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentToolResult } from "@mariozechner/pi-ai";
-import type { CustomToolFactory, RenderResultOptions } from "@mariozechner/pi-coding-agent";
+import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import type {
+	AgentToolUpdateCallback,
+	ExtensionAPI,
+	ExtensionContext,
+	ExtensionFactory,
+	ToolRenderResultOptions,
+} from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { type Static, Type } from "@sinclair/typebox";
 
@@ -59,6 +65,9 @@ import { type Static, Type } from "@sinclair/typebox";
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_OUTPUT_BYTES = 100 * 1024; // 100KB tail buffer
 const SIGKILL_GRACE_MS = 5000; // Grace period before SIGKILL
+const DEFAULT_MODEL = "claude-sonnet-4-5-20250929"; // Anthropic's recommended balanced model
+const DEFAULT_ESCALATE_AFTER = 2; // Number of attempts before escalating
+const DEFAULT_MAX_ESCALATIONS = 2; // Maximum escalation attempts
 
 // Hook script paths
 const ORCHESTRATE_HOME = process.env.ORCHESTRATE_HOME || path.join(os.homedir(), ".pi", "skills", "orchestrate");
@@ -87,6 +96,18 @@ interface ParsedTask {
 	selfReview?: boolean; // Run self-review before marking complete (default: false)
 	// Parallel execution (inspired by Ralphy)
 	parallel?: number; // Parallel group number (0 = sequential, same number = run together)
+	// Per-task model selection with escalation (from research doc)
+	model?: string; // Base model to use for initial attempts (default: claude-sonnet-4-5-20250929)
+	escalateModel?: string; // Model to escalate to after EscalateAfter attempts
+	escalateAfter?: number; // Number of attempts before escalating (default: 2)
+	maxEscalations?: number; // Maximum escalation attempts (default: 2)
+	// Provider-based routing (Phase 2)
+	provider?: string; // Provider to use (anthropic, openai, google, github)
+	fallbackProvider?: string; // Fallback provider if primary fails
+	fallbackModel?: string; // Fallback model if primary fails
+	// Phase 4: Cost budgets and optimization
+	maxCostUSD?: number; // Task-level budget cap (fail if exceeded)
+	costStrategy?: "cheapest-first" | "balanced" | "quality-first"; // Cost optimization strategy
 }
 
 interface TaskFileContent {
@@ -95,6 +116,14 @@ interface TaskFileContent {
 	tasks: ParsedTask[];
 	questionsBlockers: string[]; // Unresolved questions/blockers - must be empty to proceed
 	rawLines: string[];
+	// Code review configuration (post-orchestration)
+	reviewAfterCompletion?: boolean; // Run code review after all tasks complete
+	reviewProvider?: string; // Provider for code review (github, anthropic, openai, google)
+	reviewModel?: string; // Model for code review
+	// Phase 4: Session-level budgets
+	maxSessionCostUSD?: number; // Session-level budget cap (halt if exceeded)
+	costAlertThreshold?: number; // Warn at this cost (default: 75% of max)
+	budgetProfile?: "dev" | "staging" | "production" | "enterprise"; // Budget preset
 }
 
 interface MemoryRecallResult {
@@ -115,6 +144,320 @@ interface TaskResult {
 	outputFile?: string; // Full output written to disk (not truncated)
 	durationMs: number;
 	error?: string;
+	// Phase 2: Cost tracking
+	provider?: string; // Provider used
+	model?: string; // Model used
+	usedFallback?: boolean; // Whether fallback was used
+	// Phase 4: Token usage and actual cost
+	tokenUsage?: TokenUsage; // Actual token usage from API
+	cost?: number; // Actual cost in USD
+}
+
+interface ProviderCostInfo {
+	provider: string;
+	model: string;
+	inputCost: number; // Cost per million input tokens
+	outputCost: number; // Cost per million output tokens
+}
+
+// Phase 2: Model cost tiers (updated 2026)
+const MODEL_COSTS: Record<string, ProviderCostInfo> = {
+	// Anthropic Claude models
+	"claude-haiku-4-5-20251001": { provider: "anthropic", model: "claude-haiku-4-5", inputCost: 1, outputCost: 5 },
+	"claude-sonnet-4-5-20250929": { provider: "anthropic", model: "claude-sonnet-4-5", inputCost: 3, outputCost: 15 },
+	"claude-opus-4-5-20251101": { provider: "anthropic", model: "claude-opus-4-5", inputCost: 5, outputCost: 25 },
+	"claude-opus-4-1-20250805": { provider: "anthropic", model: "claude-opus-4-1", inputCost: 5, outputCost: 25 },
+	// Google Gemini models
+	"gemini-2.0-flash": { provider: "google", model: "gemini-2.0-flash", inputCost: 0.075, outputCost: 0.3 },
+	"gemini-1.5-pro": { provider: "google", model: "gemini-1.5-pro", inputCost: 1.25, outputCost: 5 },
+	// OpenAI models
+	"gpt-5": { provider: "openai", model: "gpt-5", inputCost: 2.5, outputCost: 10 },
+	"gpt-5.2-codex": { provider: "openai", model: "gpt-5.2-codex", inputCost: 5, outputCost: 15 },
+	o3: { provider: "openai", model: "o3", inputCost: 10, outputCost: 30 },
+	// GitHub Copilot (FREE with subscription)
+	"github/claude-sonnet-4.5": { provider: "github", model: "claude-sonnet-4.5", inputCost: 0, outputCost: 0 },
+	"github/gpt-5": { provider: "github", model: "gpt-5", inputCost: 0, outputCost: 0 },
+};
+
+// Phase 3: Provider performance metrics
+interface ProviderMetrics {
+	provider: string;
+	totalAttempts: number;
+	successes: number;
+	failures: number;
+	rateLimits: number;
+	downtimes: number;
+	avgLatencyMs: number;
+	lastUsed: Date;
+	successRate: number; // Calculated
+}
+
+interface MetricsStore {
+	providers: Record<string, ProviderMetrics>;
+	lastUpdated: Date;
+}
+
+// Phase 4: Token usage tracking (actual usage, not estimates)
+interface TokenUsage {
+	inputTokens: number;
+	outputTokens: number;
+	totalTokens: number;
+}
+
+// Phase 4: Cost tracking per task
+interface TaskCostInfo {
+	taskId: number;
+	provider: string;
+	model: string;
+	tokenUsage: TokenUsage;
+	estimatedCost: number; // USD
+	actualCost?: number; // USD (if available from API)
+}
+
+// Phase 4: Session budget tracking
+interface SessionBudget {
+	maxCostUSD: number;
+	alertThreshold: number; // USD
+	currentCost: number; // USD
+	tasksCompleted: number;
+	taskCosts: TaskCostInfo[];
+	exceeded: boolean;
+	alertFired: boolean;
+}
+
+// Phase 4: Budget presets
+interface BudgetPreset {
+	name: string;
+	maxSessionCostUSD: number;
+	costAlertThreshold: number;
+	defaultProvider: string;
+	defaultModel: string;
+	fallbackProvider?: string;
+	costStrategy: "cheapest-first" | "balanced" | "quality-first";
+}
+
+// Phase 4: Budget preset configurations
+const BUDGET_PRESETS: Record<string, BudgetPreset> = {
+	dev: {
+		name: "Development (Unlimited)",
+		maxSessionCostUSD: Infinity,
+		costAlertThreshold: Infinity,
+		defaultProvider: "anthropic",
+		defaultModel: "claude-sonnet-4-5-20250929",
+		costStrategy: "balanced",
+	},
+	staging: {
+		name: "Staging (Moderate)",
+		maxSessionCostUSD: 5.0,
+		costAlertThreshold: 3.75, // 75%
+		defaultProvider: "anthropic",
+		defaultModel: "claude-haiku-4-5-20251001",
+		fallbackProvider: "google",
+		costStrategy: "balanced",
+	},
+	production: {
+		name: "Production (Cost-Optimized)",
+		maxSessionCostUSD: 2.0,
+		costAlertThreshold: 1.5, // 75%
+		defaultProvider: "github",
+		defaultModel: "claude-sonnet-4-5-20250929",
+		fallbackProvider: "google",
+		costStrategy: "cheapest-first",
+	},
+	enterprise: {
+		name: "Enterprise (Quality-First)",
+		maxSessionCostUSD: 20.0,
+		costAlertThreshold: 15.0, // 75%
+		defaultProvider: "anthropic",
+		defaultModel: "claude-opus-4-5-20251101",
+		fallbackProvider: "openai",
+		costStrategy: "quality-first",
+	},
+};
+
+// Metrics file path
+const METRICS_FILE = path.join(ORCHESTRATE_HOME, ".metrics.json");
+
+/**
+ * Phase 3: Load provider metrics from disk
+ */
+function loadMetrics(): MetricsStore {
+	try {
+		if (fs.existsSync(METRICS_FILE)) {
+			const data = fs.readFileSync(METRICS_FILE, "utf-8");
+			const parsed = JSON.parse(data);
+			// Convert date strings back to Date objects
+			parsed.lastUpdated = new Date(parsed.lastUpdated);
+			for (const provider in parsed.providers) {
+				parsed.providers[provider].lastUsed = new Date(parsed.providers[provider].lastUsed);
+			}
+			return parsed;
+		}
+	} catch (_err) {
+		// If file is corrupted, start fresh
+	}
+	return { providers: {}, lastUpdated: new Date() };
+}
+
+/**
+ * Phase 3: Save provider metrics to disk
+ */
+function saveMetrics(metrics: MetricsStore): void {
+	try {
+		fs.writeFileSync(METRICS_FILE, JSON.stringify(metrics, null, 2));
+	} catch (_err) {
+		// Non-critical - metrics are optional
+	}
+}
+
+/**
+ * Phase 3: Update provider metrics after execution
+ */
+function updateProviderMetrics(
+	provider: string,
+	success: boolean,
+	latencyMs: number,
+	errorType?: "rate_limit" | "downtime",
+): void {
+	const metrics = loadMetrics();
+
+	if (!metrics.providers[provider]) {
+		metrics.providers[provider] = {
+			provider,
+			totalAttempts: 0,
+			successes: 0,
+			failures: 0,
+			rateLimits: 0,
+			downtimes: 0,
+			avgLatencyMs: 0,
+			lastUsed: new Date(),
+			successRate: 0,
+		};
+	}
+
+	const providerMetrics = metrics.providers[provider];
+	providerMetrics.totalAttempts++;
+	providerMetrics.lastUsed = new Date();
+
+	if (success) {
+		providerMetrics.successes++;
+	} else {
+		providerMetrics.failures++;
+		if (errorType === "rate_limit") {
+			providerMetrics.rateLimits++;
+		} else if (errorType === "downtime") {
+			providerMetrics.downtimes++;
+		}
+	}
+
+	// Update average latency (exponential moving average)
+	if (providerMetrics.avgLatencyMs === 0) {
+		providerMetrics.avgLatencyMs = latencyMs;
+	} else {
+		providerMetrics.avgLatencyMs = providerMetrics.avgLatencyMs * 0.7 + latencyMs * 0.3;
+	}
+
+	// Calculate success rate
+	providerMetrics.successRate = providerMetrics.successes / providerMetrics.totalAttempts;
+
+	metrics.lastUpdated = new Date();
+	saveMetrics(metrics);
+}
+
+/**
+ * Phase 3: Smart fallback selection - choose best fallback based on metrics and cost
+ */
+function selectSmartFallback(
+	primaryProvider: string,
+	excludeProviders: string[] = [],
+): { provider: string; model: string } | null {
+	const metrics = loadMetrics();
+	const availableProviders = ["anthropic", "google", "openai", "github"].filter(
+		(p) => p !== primaryProvider && !excludeProviders.includes(p),
+	);
+
+	if (availableProviders.length === 0) {
+		return null;
+	}
+
+	// Score providers by: success rate (60%), cost (30%), latency (10%)
+	const scored = availableProviders.map((provider) => {
+		const providerMetrics = metrics.providers[provider] || {
+			successRate: 0.95, // Assume 95% for new providers
+			avgLatencyMs: 3000,
+			rateLimits: 0,
+		};
+
+		// Find cheapest model for this provider
+		const providerModels = Object.entries(MODEL_COSTS)
+			.filter(([_model, info]) => info.provider === provider)
+			.sort((a, b) => a[1].inputCost - b[1].inputCost);
+
+		if (providerModels.length === 0) {
+			return { provider, score: 0, model: "" };
+		}
+
+		const [cheapestModel, costInfo] = providerModels[0];
+
+		// Calculate score
+		const successScore = providerMetrics.successRate * 60;
+		const costScore = (1 - Math.min(costInfo.inputCost / 10, 1)) * 30; // Normalize cost to 0-1
+		const latencyScore = (1 - Math.min(providerMetrics.avgLatencyMs / 10000, 1)) * 10;
+
+		// Penalty for recent rate limits
+		const rateLimitPenalty = providerMetrics.rateLimits > 0 ? 20 : 0;
+
+		const totalScore = successScore + costScore + latencyScore - rateLimitPenalty;
+
+		return {
+			provider,
+			model: cheapestModel,
+			score: totalScore,
+			successRate: providerMetrics.successRate,
+			cost: costInfo.inputCost,
+		};
+	});
+
+	// Sort by score descending
+	scored.sort((a, b) => b.score - a.score);
+
+	// Return best provider
+	if (scored.length > 0 && scored[0].score > 0) {
+		return { provider: scored[0].provider, model: scored[0].model };
+	}
+
+	return null;
+}
+
+/**
+ * Phase 3: Provider health check - verify provider is responding before use
+ */
+async function checkProviderHealth(provider: string, timeoutMs: number = 5000): Promise<boolean> {
+	// Simple health check: try to spawn the command with --help
+	return new Promise((resolve) => {
+		const dispatch = getCommandForProvider(provider, undefined, "general-purpose");
+		const proc = spawn(dispatch.command, ["--help"], {
+			stdio: ["ignore", "ignore", "ignore"],
+			timeout: timeoutMs,
+		});
+
+		const timer = setTimeout(() => {
+			try {
+				proc.kill();
+			} catch {}
+			resolve(false);
+		}, timeoutMs);
+
+		proc.on("exit", (code) => {
+			clearTimeout(timer);
+			resolve(code === 0 || code === null); // null = timeout but responded
+		});
+
+		proc.on("error", () => {
+			clearTimeout(timer);
+			resolve(false);
+		});
+	});
 }
 
 interface OrchestrateDetails {
@@ -127,6 +470,9 @@ interface OrchestrateDetails {
 	archived: boolean;
 	outputDir?: string; // Directory containing full task outputs
 	sessionId?: string; // For pause/resume
+	// Phase 2: Cost tracking
+	costByProvider?: Record<string, { count: number; estimatedCost: number }>; // Provider usage stats
+	fallbacksUsed?: number; // Number of times fallback was triggered
 }
 
 /**
@@ -357,6 +703,15 @@ function parseTaskFile(filePath: string): TaskFileContent {
 	let currentTask: Partial<ParsedTask> | null = null;
 	let taskLineStart = 0;
 
+	// Review configuration metadata (parsed from top-level fields)
+	let reviewAfterCompletion: boolean | undefined;
+	let reviewProvider: string | undefined;
+	let reviewModel: string | undefined;
+	// Phase 4: Session-level budget metadata
+	let maxSessionCostUSD: number | undefined;
+	let costAlertThreshold: number | undefined;
+	let budgetProfile: "dev" | "staging" | "production" | "enterprise" | undefined;
+
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
 		const trimmed = line.trim();
@@ -367,6 +722,37 @@ function parseTaskFile(filePath: string): TaskFileContent {
 				.slice(2)
 				.replace(/^Task List:\s*/i, "")
 				.trim();
+			continue;
+		}
+
+		// Parse top-level metadata (review configuration + Phase 4 budgets)
+		// Format: review_after_completion: true
+		const reviewAfterMatch = trimmed.match(/^review_after_completion:\s*(true|false|yes|no)/i);
+		const reviewProviderMatch = trimmed.match(/^review_provider:\s*(.+)/i);
+		const reviewModelMatch = trimmed.match(/^review_model:\s*(.+)/i);
+		// Phase 4: Budget field parsing
+		const maxSessionCostMatch = trimmed.match(/^max_session_cost_usd:\s*([\d.]+)/i);
+		const costAlertMatch = trimmed.match(/^cost_alert_threshold:\s*([\d.]+)/i);
+		const budgetProfileMatch = trimmed.match(/^budget_profile:\s*(dev|staging|production|enterprise)/i);
+
+		if (reviewAfterMatch) {
+			const value = reviewAfterMatch[1].toLowerCase();
+			reviewAfterCompletion = value === "true" || value === "yes";
+			continue;
+		} else if (reviewProviderMatch) {
+			reviewProvider = reviewProviderMatch[1].trim();
+			continue;
+		} else if (reviewModelMatch) {
+			reviewModel = reviewModelMatch[1].trim();
+			continue;
+		} else if (maxSessionCostMatch) {
+			maxSessionCostUSD = parseFloat(maxSessionCostMatch[1]);
+			continue;
+		} else if (costAlertMatch) {
+			costAlertThreshold = parseFloat(costAlertMatch[1]);
+			continue;
+		} else if (budgetProfileMatch) {
+			budgetProfile = budgetProfileMatch[1] as "dev" | "staging" | "production" | "enterprise";
 			continue;
 		}
 
@@ -437,6 +823,18 @@ function parseTaskFile(filePath: string): TaskFileContent {
 				const maxRetriesMatch = trimmed.match(/^-\s*MaxRetries:\s*(\d+)/i);
 				const selfReviewMatch = trimmed.match(/^-\s*SelfReview:\s*(true|false|yes|no)/i);
 				const parallelMatch = trimmed.match(/^-\s*Parallel:\s*(\d+)/i);
+				// Model selection fields
+				const modelMatch = trimmed.match(/^-\s*Model:\s*(.+)/i);
+				const escalateModelMatch = trimmed.match(/^-\s*EscalateModel:\s*(.+)/i);
+				const escalateAfterMatch = trimmed.match(/^-\s*EscalateAfter:\s*(\d+)/i);
+				const maxEscalationsMatch = trimmed.match(/^-\s*MaxEscalations:\s*(\d+)/i);
+				// Provider fields (Phase 2)
+				const providerMatch = trimmed.match(/^-\s*Provider:\s*(.+)/i);
+				const fallbackProviderMatch = trimmed.match(/^-\s*FallbackProvider:\s*(.+)/i);
+				const fallbackModelMatch = trimmed.match(/^-\s*FallbackModel:\s*(.+)/i);
+				// Phase 4: Budget fields
+				const maxCostMatch = trimmed.match(/^-\s*MaxCostUSD:\s*([\d.]+)/i);
+				const costStrategyMatch = trimmed.match(/^-\s*CostStrategy:\s*(cheapest-first|balanced|quality-first)/i);
 
 				// Definition of Done parsing (Test detection)
 				// Format: - Test: tests/foo.py
@@ -479,6 +877,24 @@ function parseTaskFile(filePath: string): TaskFileContent {
 					currentTask.selfReview = value === "true" || value === "yes";
 				} else if (parallelMatch) {
 					currentTask.parallel = parseInt(parallelMatch[1], 10);
+				} else if (modelMatch) {
+					currentTask.model = modelMatch[1].trim();
+				} else if (escalateModelMatch) {
+					currentTask.escalateModel = escalateModelMatch[1].trim();
+				} else if (escalateAfterMatch) {
+					currentTask.escalateAfter = parseInt(escalateAfterMatch[1], 10);
+				} else if (maxEscalationsMatch) {
+					currentTask.maxEscalations = parseInt(maxEscalationsMatch[1], 10);
+				} else if (providerMatch) {
+					currentTask.provider = providerMatch[1].trim();
+				} else if (fallbackProviderMatch) {
+					currentTask.fallbackProvider = fallbackProviderMatch[1].trim();
+				} else if (fallbackModelMatch) {
+					currentTask.fallbackModel = fallbackModelMatch[1].trim();
+				} else if (maxCostMatch) {
+					currentTask.maxCostUSD = parseFloat(maxCostMatch[1]);
+				} else if (costStrategyMatch) {
+					currentTask.costStrategy = costStrategyMatch[1] as "cheapest-first" | "balanced" | "quality-first";
 				} else if (trimmed && !trimmed.startsWith("-")) {
 					currentTask.description =
 						(currentTask.description || "") + (currentTask.description ? "\n" : "") + trimmed;
@@ -491,7 +907,19 @@ function parseTaskFile(filePath: string): TaskFileContent {
 	const finalized = finalizeTask(currentTask, taskLineStart, lines.length - 1);
 	if (finalized) tasks.push(finalized);
 
-	return { title, context, tasks, questionsBlockers, rawLines: lines };
+	return {
+		title,
+		context,
+		tasks,
+		questionsBlockers,
+		rawLines: lines,
+		reviewAfterCompletion,
+		reviewProvider,
+		reviewModel,
+		maxSessionCostUSD,
+		costAlertThreshold,
+		budgetProfile,
+	};
 }
 
 function validateTaskFile(parsed: TaskFileContent): void {
@@ -815,9 +1243,35 @@ function runGate(gatePath: string, cwd: string): GateResult {
 }
 
 /**
+ * Choose model for current attempt based on escalation policy.
+ * Implements deterministic routing from research doc:
+ * - attempt <= EscalateAfter → use base Model
+ * - else → use EscalateModel (up to MaxEscalations times)
+ * - if escalations exhausted → fall back to base Model
+ */
+function chooseModel(attempt: number, task: ParsedTask, escalationsUsed: number, agentModel?: string): string {
+	const baseModel = task.model || agentModel || DEFAULT_MODEL;
+	const escalateAfter = task.escalateAfter ?? DEFAULT_ESCALATE_AFTER;
+	const maxEscalations = task.maxEscalations ?? DEFAULT_MAX_ESCALATIONS;
+
+	// Early attempts: use base model
+	if (attempt <= escalateAfter) {
+		return baseModel;
+	}
+
+	// Escalation phase: use escalate model if available and budget allows
+	if (task.escalateModel && escalationsUsed < maxEscalations) {
+		return task.escalateModel;
+	}
+
+	// Escalation budget exhausted or no escalate model: fall back to base
+	return baseModel;
+}
+
+/**
  * PRE-HOOK: Memory Recall
  * Query memory for prior solutions before each task.
- * Returns recalled items to inject as context into the task prompt.
+ * Returns strictly prior solutions to inject as context into the task prompt.
  */
 function runMemoryRecall(task: ParsedTask, cwd: string): MemoryRecallResult | null {
 	if (!fs.existsSync(MEMORY_RECALL_SCRIPT)) {
@@ -856,6 +1310,239 @@ function runMemoryRecall(task: ParsedTask, cwd: string): MemoryRecallResult | nu
 interface AgentExecutionResult {
 	output: string;
 	toolCallCount: number;
+	// Phase 4: Token usage tracking
+	tokenUsage?: TokenUsage; // Actual usage from API (if available)
+	estimatedCost?: number; // Estimated cost in USD
+}
+
+/**
+ * Determines the command and args to use based on provider and model
+ * Phase 2: Provider-based routing for multi-provider support
+ */
+function getCommandForProvider(
+	provider: string | undefined,
+	model: string | undefined,
+	agentName: string,
+): { command: string; args: string[]; usePromptFlag: boolean } {
+	// Determine effective provider
+	// Priority: explicit provider > inferred from agent name > default (anthropic)
+	let effectiveProvider = provider || "anthropic";
+
+	// Infer provider from agent name if not explicitly set
+	if (!provider) {
+		const lowerAgent = agentName.toLowerCase();
+		if (lowerAgent.includes("codex")) {
+			effectiveProvider = "openai";
+		} else if (lowerAgent.includes("review")) {
+			effectiveProvider = "github";
+		}
+	}
+
+	// Route based on provider
+	switch (effectiveProvider) {
+		case "anthropic":
+		case "google":
+			// Use pi CLI for Anthropic and Google
+			return {
+				command: "pi",
+				args: ["--mode", "json", "-p", "--no-session", "--provider", effectiveProvider],
+				usePromptFlag: false, // Prompt added at end
+			};
+
+		case "openai":
+			// Check if model requires codex CLI
+			if (model?.includes("codex") || model?.includes("o3") || model?.includes("gpt-5.2")) {
+				return {
+					command: "codex",
+					args: ["exec", "--json"],
+					usePromptFlag: true, // Uses -p flag
+				};
+			} else {
+				// Use pi CLI for standard OpenAI models
+				return {
+					command: "pi",
+					args: ["--mode", "json", "-p", "--no-session", "--provider", "openai"],
+					usePromptFlag: false,
+				};
+			}
+
+		case "github":
+			// Use copilot CLI for GitHub provider (FREE)
+			return {
+				command: "copilot",
+				args: [],
+				usePromptFlag: false,
+			};
+
+		default:
+			// Fallback to pi with anthropic
+			return {
+				command: "pi",
+				args: ["--mode", "json", "-p", "--no-session", "--provider", "anthropic"],
+				usePromptFlag: false,
+			};
+	}
+}
+
+/**
+ * Checks if an error is a rate limit error
+ */
+function isRateLimitError(error: unknown): boolean {
+	const errorMsg = String(error).toLowerCase();
+	return (
+		errorMsg.includes("rate limit") ||
+		errorMsg.includes("429") ||
+		errorMsg.includes("too many requests") ||
+		errorMsg.includes("quota exceeded")
+	);
+}
+
+/**
+ * Checks if an error is a provider downtime error
+ */
+function isProviderDownError(error: unknown): boolean {
+	const errorMsg = String(error).toLowerCase();
+	return (
+		errorMsg.includes("503") ||
+		errorMsg.includes("service unavailable") ||
+		errorMsg.includes("connection refused") ||
+		errorMsg.includes("econnrefused") ||
+		errorMsg.includes("timeout")
+	);
+}
+
+/**
+ * Executes agent with fallback support for rate limits and downtime
+ * Phase 2: Fallback logic
+ * Phase 3: Metrics tracking, smart fallback, health checks
+ */
+async function executeAgentWithFallback(
+	agentConfig: AgentConfig,
+	prompt: string,
+	cwd: string,
+	writeToFile: (line: string) => void,
+	timeoutMs: number,
+	signal?: AbortSignal,
+	modelOverride?: string,
+	providerOverride?: string,
+	fallbackProvider?: string,
+	fallbackModel?: string,
+): Promise<AgentExecutionResult & { usedFallback?: boolean; provider?: string }> {
+	const primaryProvider = providerOverride || agentConfig.provider || "anthropic";
+	const primaryModel = modelOverride || agentConfig.model;
+
+	// Phase 3: Determine fallback (explicit or smart)
+	let effectiveFallbackProvider = fallbackProvider;
+	let effectiveFallbackModel = fallbackModel;
+
+	if (!effectiveFallbackProvider && !effectiveFallbackModel) {
+		// No explicit fallback - use smart selection
+		const smartFallback = selectSmartFallback(primaryProvider);
+		if (smartFallback) {
+			effectiveFallbackProvider = smartFallback.provider;
+			effectiveFallbackModel = smartFallback.model;
+			writeToFile(
+				`[system] 💡 Smart fallback selected: ${effectiveFallbackProvider}/${effectiveFallbackModel} (optimized for cost/reliability)\n`,
+			);
+		}
+	}
+
+	// Try primary provider first
+	const primaryStartTime = Date.now();
+	try {
+		writeToFile(`[system] Attempting with provider: ${primaryProvider}, model: ${primaryModel || "default"}\n`);
+		const result = await executeAgent(
+			agentConfig,
+			prompt,
+			cwd,
+			writeToFile,
+			timeoutMs,
+			signal,
+			modelOverride,
+			providerOverride,
+		);
+
+		// Phase 3: Track metrics for success
+		const latency = Date.now() - primaryStartTime;
+		updateProviderMetrics(primaryProvider, true, latency);
+
+		return { ...result, usedFallback: false, provider: primaryProvider };
+	} catch (primaryError) {
+		// Determine error type
+		const isRateLimit = isRateLimitError(primaryError);
+		const isDowntime = isProviderDownError(primaryError);
+		const errorType = isRateLimit ? "rate_limit" : isDowntime ? "downtime" : undefined;
+
+		// Phase 3: Track metrics for failure
+		const latency = Date.now() - primaryStartTime;
+		updateProviderMetrics(primaryProvider, false, latency, errorType as "rate_limit" | "downtime" | undefined);
+
+		// Check if we should try fallback
+		const shouldFallback = (effectiveFallbackProvider || effectiveFallbackModel) && (isRateLimit || isDowntime);
+
+		if (!shouldFallback) {
+			// No fallback available or error is not rate limit/downtime
+			throw primaryError;
+		}
+
+		// Log fallback attempt
+		const errorTypeLabel = isRateLimit ? "RATE_LIMIT" : "PROVIDER_DOWN";
+		writeToFile(
+			`[system] ⚠️  Primary provider failed (${errorTypeLabel}): ${primaryError}\n` +
+				`[system] 🔄 Attempting fallback - provider: ${effectiveFallbackProvider || "same"}, model: ${effectiveFallbackModel || "same"}\n`,
+		);
+
+		// Phase 3: Health check before trying fallback
+		if (effectiveFallbackProvider && effectiveFallbackProvider !== primaryProvider) {
+			writeToFile(`[system] 🏥 Health check: ${effectiveFallbackProvider}...\n`);
+			const healthy = await checkProviderHealth(effectiveFallbackProvider);
+			if (!healthy) {
+				writeToFile(`[system] ⚠️  Fallback provider ${effectiveFallbackProvider} health check failed, skipping\n`);
+				throw primaryError;
+			}
+			writeToFile(`[system] ✅ Health check passed\n`);
+		}
+
+		// Try fallback
+		const fallbackStartTime = Date.now();
+		try {
+			const result = await executeAgent(
+				agentConfig,
+				prompt,
+				cwd,
+				writeToFile,
+				timeoutMs,
+				signal,
+				effectiveFallbackModel || modelOverride,
+				effectiveFallbackProvider || providerOverride,
+			);
+
+			// Phase 3: Track metrics for fallback success
+			const fallbackLatency = Date.now() - fallbackStartTime;
+			updateProviderMetrics(effectiveFallbackProvider || primaryProvider, true, fallbackLatency);
+
+			writeToFile(`[system] ✅ Fallback succeeded\n`);
+			return { ...result, usedFallback: true, provider: effectiveFallbackProvider };
+		} catch (fallbackError) {
+			// Phase 3: Track metrics for fallback failure
+			const fallbackLatency = Date.now() - fallbackStartTime;
+			const fallbackErrorType = isRateLimitError(fallbackError)
+				? "rate_limit"
+				: isProviderDownError(fallbackError)
+					? "downtime"
+					: undefined;
+			updateProviderMetrics(
+				effectiveFallbackProvider || primaryProvider,
+				false,
+				fallbackLatency,
+				fallbackErrorType as "rate_limit" | "downtime" | undefined,
+			);
+
+			// Both primary and fallback failed
+			writeToFile(`[system] ❌ Fallback also failed: ${fallbackError}\n`);
+			throw new Error(`Primary provider failed: ${primaryError}\nFallback provider also failed: ${fallbackError}`);
+		}
+	}
 }
 
 /**
@@ -868,55 +1555,57 @@ async function executeAgent(
 	writeToFile: (line: string) => void,
 	timeoutMs: number,
 	signal?: AbortSignal,
+	modelOverride?: string,
+	providerOverride?: string,
 ): Promise<AgentExecutionResult> {
 	return new Promise<AgentExecutionResult>((resolve, reject) => {
 		let settled = false;
 		let toolCallCount = 0; // Tracking tool calls if possible
 		const output = new OutputAccumulator(MAX_OUTPUT_BYTES); // Use OutputAccumulator here
+		// Phase 4: Token usage tracking
+		let tokenUsage: TokenUsage | undefined;
 
-		// Determine backend
-		const isCodex = agentConfig.name.toLowerCase() === "codex" || agentConfig.name.toLowerCase().includes("codex");
-		const command = isCodex ? "codex" : "pi";
+		// Determine effective provider and model
+		const effectiveProvider = providerOverride || agentConfig.provider;
+		const effectiveModel = modelOverride || agentConfig.model;
 
-		// Build arguments
-		let args: string[] = [];
+		// Phase 2: Provider-based dispatch
+		const dispatch = getCommandForProvider(effectiveProvider, effectiveModel, agentConfig.name);
+		const command = dispatch.command;
+		const isCodex = command === "codex" || effectiveProvider === "codex";
+		const args: string[] = [...dispatch.args];
 		let tmpDir: string | null = null; // For system prompt file
 
-		if (isCodex) {
-			// Codex: exec --json -p <prompt>
-			// Note: Codex experimental tool uses "exec --json"
-			args = ["exec", "--json", "-p", prompt];
+		// Add model if specified
+		if (effectiveModel) {
+			args.push("--model", effectiveModel);
+		}
+
+		// Add tools if using pi CLI
+		if (command === "pi" && agentConfig.tools?.length) {
+			const builtinTools: string[] = [];
+			for (const tool of agentConfig.tools) {
+				if (!tool.includes("/") && !tool.endsWith(".ts") && !tool.endsWith(".js")) {
+					builtinTools.push(tool);
+				}
+			}
+			if (builtinTools.length > 0) {
+				args.push("--tools", builtinTools.join(","));
+			}
+		}
+
+		// Add system prompt if using pi CLI
+		if (command === "pi" && agentConfig.systemPrompt?.trim()) {
+			const tmp = writePromptFile(agentConfig.name, agentConfig.systemPrompt);
+			tmpDir = tmp.dir;
+			args.push("--append-system-prompt", tmp.path);
+		}
+
+		// Add prompt (different format for different CLIs)
+		if (dispatch.usePromptFlag) {
+			args.push("-p", prompt);
 		} else {
-			// Pi: as before
-			args = ["--mode", "json", "-p", "--no-session"];
-
-			if (agentConfig.provider) {
-				args.push("--provider", agentConfig.provider);
-			}
-
-			if (agentConfig.model) {
-				args.push("--model", agentConfig.model);
-			}
-
-			if (agentConfig.tools?.length) {
-				const builtinTools: string[] = [];
-				for (const tool of agentConfig.tools) {
-					if (!tool.includes("/") && !tool.endsWith(".ts") && !tool.endsWith(".js")) {
-						builtinTools.push(tool);
-					}
-				}
-				if (builtinTools.length > 0) {
-					args.push("--tools", builtinTools.join(","));
-				}
-			}
-
-			// Add system prompt
-			if (agentConfig.systemPrompt?.trim()) {
-				const tmp = writePromptFile(agentConfig.name, agentConfig.systemPrompt);
-				tmpDir = tmp.dir;
-				args.push("--append-system-prompt", tmp.path);
-			}
-			args.push(prompt); // Add the main prompt last for pi
+			args.push(prompt);
 		}
 
 		writeToFile(`[system] Spawning agent: ${command} ${args.join(" ")}\n`);
@@ -977,6 +1666,14 @@ async function executeAgent(
 							output.append(`${part.text}\n`);
 						}
 					}
+					// Phase 4: Capture token usage from Claude API
+					if (evt.message?.usage) {
+						tokenUsage = {
+							inputTokens: evt.message.usage.input_tokens || 0,
+							outputTokens: evt.message.usage.output_tokens || 0,
+							totalTokens: (evt.message.usage.input_tokens || 0) + (evt.message.usage.output_tokens || 0),
+						};
+					}
 				}
 				// Also capture tool results for visibility
 				if (evt.type === "tool_result" && evt.result?.content) {
@@ -994,12 +1691,12 @@ async function executeAgent(
 				// If codex outputs non-standard JSON, we might need adjustments.
 				// For now, relying on JSON compatibility or fallback.
 				if (isCodex && evt.response) {
-					output.append(evt.response + "\n");
+					output.append(`${evt.response}\n`);
 				}
 			} catch {
 				// Not valid JSON, might be raw text
 				if (isCodex) {
-					output.append(line + "\n");
+					output.append(`${line}\n`);
 				}
 			}
 		};
@@ -1030,7 +1727,18 @@ async function executeAgent(
 			}
 
 			if (code === 0) {
-				resolve({ output: output.finalize(), toolCallCount });
+				// Phase 4: Calculate estimated cost if token usage available
+				let estimatedCost: number | undefined;
+				if (tokenUsage && effectiveModel) {
+					const costInfo = MODEL_COSTS[effectiveModel];
+					if (costInfo) {
+						estimatedCost =
+							(tokenUsage.inputTokens / 1_000_000) * costInfo.inputCost +
+							(tokenUsage.outputTokens / 1_000_000) * costInfo.outputCost;
+					}
+				}
+
+				resolve({ output: output.finalize(), toolCallCount, tokenUsage, estimatedCost });
 			} else {
 				reject(new Error(`Agent exited with code ${code}`));
 			}
@@ -1043,6 +1751,51 @@ async function executeAgent(
 			reject(err);
 		});
 	});
+}
+
+/**
+ * Check if task-monitor is running.
+ * Task-monitor is MANDATORY for all orchestrations to provide visibility into long-running processes.
+ * Throws error if task-monitor is not running.
+ */
+function checkTaskMonitor(): void {
+	try {
+		// Check if task-monitor process is running (looks for the TUI or API server)
+		const result = spawnSync("pgrep", ["-f", "task-monitor.*(tui|api)"], {
+			encoding: "utf-8",
+			timeout: 5000,
+		});
+
+		if (result.status !== 0 || !result.stdout.trim()) {
+			throw new Error(
+				`❌ BLOCKED: Task-monitor is not running.
+
+Orchestrations run 5-30+ minutes and REQUIRE monitoring for:
+- Real-time progress tracking
+- Error detection and alerts
+- Budget usage and cost tracking
+- Early failure detection (saves hours of wasted compute)
+
+Start task-monitor BEFORE running orchestrate:
+
+  .pi/skills/task-monitor/run.sh tui &
+
+Then re-run orchestrate.
+
+Rule: NEVER run /orchestrate without task-monitor watchdog.`,
+			);
+		}
+	} catch (err) {
+		if (err instanceof Error && err.message.includes("BLOCKED")) {
+			throw err;
+		}
+		// If pgrep command fails (not found), issue a warning but don't block
+		// This allows orchestrate to run in environments where pgrep isn't available
+		console.warn(
+			"⚠️  Warning: Could not verify task-monitor status (pgrep not available). " +
+				"Ensure task-monitor is running manually: .pi/skills/task-monitor/run.sh tui &",
+		);
+	}
 }
 
 /**
@@ -1085,6 +1838,7 @@ async function runAgentFix(
 	agent: AgentConfig,
 	cwd: string,
 	outputDir: string,
+	modelOverride?: string,
 ): Promise<{ fixed: boolean; output: string }> {
 	// Build fix prompt with failure context
 	const tailLines = 160;
@@ -1137,7 +1891,26 @@ Analyze the failure and make the minimal fix needed. Do NOT introduce unrelated 
 	};
 
 	try {
-		const agentExecutionResult = await executeAgent(agent, fixPrompt, cwd, writeToFile, 300000); // 5 minute timeout
+		// Phase 2: Use fallback-aware execution
+		const agentExecutionResult = await executeAgentWithFallback(
+			agent,
+			fixPrompt,
+			cwd,
+			writeToFile,
+			300000, // 5 minute timeout
+			undefined,
+			modelOverride,
+			task.provider,
+			task.fallbackProvider,
+			task.fallbackModel,
+		);
+
+		if (agentExecutionResult.usedFallback) {
+			writeToFile(
+				`\n[system] 🔄 Fix attempt completed using fallback provider: ${agentExecutionResult.provider || "unknown"}\n`,
+			);
+		}
+
 		return { fixed: true, output: agentExecutionResult.output };
 	} catch (err) {
 		return { fixed: false, output: `Agent fix error: ${err instanceof Error ? err.message : String(err)}` };
@@ -1343,9 +2116,28 @@ ${task.notes ? `Notes: ${task.notes}` : ""}
 4. Only when it passes, summarize what was accomplished.
 `.trim();
 
-	let agentExecutionResult: AgentExecutionResult;
+	let agentExecutionResult: AgentExecutionResult & { usedFallback?: boolean; provider?: string };
 	try {
-		agentExecutionResult = await executeAgent(agent, taskPrompt, cwd, writeToFile, timeoutMs, signal);
+		// Phase 2: Use fallback-aware execution
+		agentExecutionResult = await executeAgentWithFallback(
+			agent,
+			taskPrompt,
+			cwd,
+			writeToFile,
+			timeoutMs,
+			signal,
+			undefined, // modelOverride (handled by chooseModel in retry loop)
+			task.provider, // providerOverride from task
+			task.fallbackProvider,
+			task.fallbackModel,
+		);
+
+		// Log if fallback was used
+		if (agentExecutionResult.usedFallback) {
+			writeToFile(
+				`\n[system] 🔄 Task completed using fallback provider: ${agentExecutionResult.provider || "unknown"}\n`,
+			);
+		}
 	} catch (err) {
 		writeToFile(`\nERROR: ${err instanceof Error ? err.message : String(err)}\n`);
 		closeOutputFile();
@@ -1391,6 +2183,13 @@ ${task.notes ? `Notes: ${task.notes}` : ""}
 		output: agentExecutionResult.output,
 		outputFile,
 		durationMs: Date.now() - startTime,
+		// Phase 2: Cost tracking
+		provider: agentExecutionResult.provider || task.provider,
+		model: task.model,
+		usedFallback: agentExecutionResult.usedFallback,
+		// Phase 4: Token usage and cost
+		tokenUsage: agentExecutionResult.tokenUsage,
+		cost: agentExecutionResult.estimatedCost,
 	};
 }
 
@@ -1444,6 +2243,7 @@ async function runTaskWithRetry(
 
 	const agent = agentResult;
 	const allOutput: string[] = [];
+	let escalationsUsed = 0; // Track how many times we've escalated models
 
 	// First, run the initial task to set up the work
 	const initialResult = await runTask(task, taskFile, cwd, timeoutMs, outputDir, signal);
@@ -1503,6 +2303,14 @@ async function runTaskWithRetry(
 
 		// Gate failed - run agent fix (except on last attempt)
 		if (attempt < maxRetries) {
+			// Choose model for this attempt
+			const chosenModel = chooseModel(attempt, task, escalationsUsed, agent.model);
+
+			// Track if we're using an escalated model
+			if (task.escalateModel && chosenModel === task.escalateModel) {
+				escalationsUsed++;
+			}
+
 			const fixResult = await runAgentFix(
 				task,
 				taskFile,
@@ -1512,8 +2320,9 @@ async function runTaskWithRetry(
 				agent,
 				cwd,
 				outputDir,
+				chosenModel,
 			);
-			allOutput.push(`=== FIX ATTEMPT ${attempt} ===\n${fixResult.output}`);
+			allOutput.push(`=== FIX ATTEMPT ${attempt} (model: ${chosenModel}) ===\n${fixResult.output}`);
 		}
 	}
 
@@ -1528,6 +2337,70 @@ async function runTaskWithRetry(
 		durationMs: Date.now() - startTime,
 		error: `Exhausted ${maxRetries} retries - gate still failing`,
 	};
+}
+
+/**
+ * Runs post-orchestration code review using the review-code skill
+ */
+function runPostOrchestrationReview(
+	taskFile: TaskFileContent,
+	cwd: string,
+): { success: boolean; output?: string; error?: string } {
+	const reviewerPath = path.join(os.homedir(), ".pi", "skills", "review-code", "run.sh");
+
+	if (!fs.existsSync(reviewerPath)) {
+		return { success: false, error: "review-code skill not found" };
+	}
+
+	// Get git diff of all changes
+	const diffResult = spawnSync("git", ["diff", "HEAD"], {
+		cwd,
+		encoding: "utf-8",
+		maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large diffs
+	});
+
+	if (diffResult.status !== 0 || !diffResult.stdout.trim()) {
+		return { success: false, error: "No changes to review (git diff returned nothing)" };
+	}
+
+	// Build review-code command
+	// Format: review-code review-full --provider <provider> --model <model>
+	const args = ["review-full"];
+
+	if (taskFile.reviewProvider) {
+		args.push("--provider", taskFile.reviewProvider);
+	}
+
+	if (taskFile.reviewModel) {
+		args.push("--model", taskFile.reviewModel);
+	}
+
+	try {
+		const result = spawnSync("bash", [reviewerPath, ...args], {
+			cwd,
+			encoding: "utf-8",
+			timeout: 5 * 60 * 1000, // 5 minutes
+			stdio: ["pipe", "pipe", "pipe"],
+		});
+
+		if (result.status !== 0) {
+			return {
+				success: false,
+				output: result.stdout || result.stderr,
+				error: `review-code exited with status ${result.status}`,
+			};
+		}
+
+		return {
+			success: true,
+			output: result.stdout,
+		};
+	} catch (error) {
+		return {
+			success: false,
+			error: `Failed to run review-code: ${error}`,
+		};
+	}
 }
 
 function archiveSession(
@@ -1756,6 +2629,37 @@ async function executeTaskFileMode(
 		sessionId,
 	};
 
+	// Phase 4: Initialize session budget
+	let sessionBudget: SessionBudget | null = null;
+	if (parsed.maxSessionCostUSD !== undefined || parsed.budgetProfile) {
+		// Apply budget preset if specified
+		let maxCost = parsed.maxSessionCostUSD ?? Infinity;
+		let alertThreshold = parsed.costAlertThreshold;
+
+		if (parsed.budgetProfile) {
+			const preset = BUDGET_PRESETS[parsed.budgetProfile];
+			if (preset) {
+				maxCost = parsed.maxSessionCostUSD ?? preset.maxSessionCostUSD;
+				alertThreshold = parsed.costAlertThreshold ?? preset.costAlertThreshold;
+			}
+		}
+
+		// Default alert threshold to 75% of max budget
+		if (alertThreshold === undefined && maxCost !== Infinity) {
+			alertThreshold = maxCost * 0.75;
+		}
+
+		sessionBudget = {
+			maxCostUSD: maxCost,
+			alertThreshold: alertThreshold ?? Infinity,
+			currentCost: 0,
+			tasksCompleted: 0,
+			taskCosts: [],
+			exceeded: false,
+			alertFired: false,
+		};
+	}
+
 	// Multi-pass execution: retry skipped tasks until no progress
 	let remainingTasks = [...initialPendingTasks];
 	let wasPaused = false;
@@ -1790,9 +2694,25 @@ async function executeTaskFileMode(
 				continue;
 			}
 
-			details.currentTask = `Task ${task.id}: ${task.title}`;
+			details.currentTask = `Task ${task.id}/${parsed.tasks.length}: ${task.title}`;
 			state.currentTaskId = task.id;
 			saveState(cwd, state);
+
+			// Phase 4: Budget enforcement - check before executing
+			if (sessionBudget?.exceeded) {
+				// Budget already exceeded - halt orchestration
+				results.push({
+					taskId: task.id,
+					title: task.title,
+					agent: task.agent,
+					status: "skipped",
+					output: `Skipped - session budget of $${sessionBudget.maxCostUSD.toFixed(2)} exceeded (current: $${sessionBudget.currentCost.toFixed(2)})`,
+					durationMs: 0,
+					error: "Session budget exceeded",
+				});
+				stillPending.push(...remainingTasks.slice(remainingTasks.indexOf(task) + 1));
+				break;
+			}
 
 			// Update progress
 			if (onUpdate) {
@@ -1817,6 +2737,68 @@ async function executeTaskFileMode(
 				updateTaskCheckbox(absolutePath, task.lineStart, task.id, true);
 				completedIds.add(task.id);
 				details.completedTasks++;
+
+				// Phase 4: Update session budget
+				if (sessionBudget && result.cost !== undefined) {
+					sessionBudget.currentCost += result.cost;
+					sessionBudget.tasksCompleted++;
+					sessionBudget.taskCosts.push({
+						taskId: task.id,
+						provider: result.provider || "unknown",
+						model: result.model || "unknown",
+						tokenUsage: result.tokenUsage || { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+						estimatedCost: result.cost,
+					});
+
+					// Check alert threshold
+					if (!sessionBudget.alertFired && sessionBudget.currentCost >= sessionBudget.alertThreshold) {
+						sessionBudget.alertFired = true;
+						if (onUpdate) {
+							const alertPct = ((sessionBudget.currentCost / sessionBudget.maxCostUSD) * 100).toFixed(1);
+							onUpdate({
+								content: [
+									{
+										type: "text" as const,
+										text: `⚠️  Cost alert: ${alertPct}% of budget used ($${sessionBudget.currentCost.toFixed(2)}/$${sessionBudget.maxCostUSD.toFixed(2)})`,
+									},
+								],
+								details,
+							});
+						}
+					}
+
+					// Check budget exceeded
+					if (sessionBudget.currentCost > sessionBudget.maxCostUSD) {
+						sessionBudget.exceeded = true;
+						if (onUpdate) {
+							onUpdate({
+								content: [
+									{
+										type: "text" as const,
+										text: `❌ Budget exceeded: $${sessionBudget.currentCost.toFixed(2)}/$${sessionBudget.maxCostUSD.toFixed(2)} - Halting orchestration`,
+									},
+								],
+								details,
+							});
+						}
+					}
+
+					// Task-level budget check
+					if (task.maxCostUSD !== undefined && result.cost > task.maxCostUSD) {
+						// Note: Task already completed, but log the budget violation
+						if (onUpdate) {
+							onUpdate({
+								content: [
+									{
+										type: "text" as const,
+										text: `⚠️  Task ${task.id} exceeded its budget: $${result.cost.toFixed(2)}/$${task.maxCostUSD.toFixed(2)}`,
+									},
+								],
+								details,
+							});
+						}
+					}
+				}
 
 				// Save progress after each successful task
 				state.completedTaskIds = Array.from(completedIds);
@@ -1885,6 +2867,18 @@ async function executeTaskFileMode(
 		details.archived = archiveResult.success;
 	}
 
+	// Run post-orchestration code review if configured
+	let reviewOutput: string | undefined;
+	if (parsed.reviewAfterCompletion && details.status === "completed") {
+		const reviewResult = runPostOrchestrationReview(parsed, cwd);
+		if (reviewResult.success) {
+			reviewOutput = reviewResult.output;
+		} else {
+			// Log review failure but don't fail the orchestration
+			reviewOutput = `Code review failed: ${reviewResult.error}`;
+		}
+	}
+
 	// Clean up state file on completion (success or failure)
 	if (details.status === "completed" || details.status === "failed") {
 		deleteState(cwd, sessionId);
@@ -1906,6 +2900,140 @@ async function executeTaskFileMode(
 		summary.push("", "Session archived to episodic memory.");
 	}
 
+	// Phase 2: Cost tracking summary
+	const costByProvider: Record<string, { count: number; models: Set<string>; fallbacks: number }> = {};
+	let totalFallbacks = 0;
+
+	for (const result of results) {
+		if (result.provider && result.status !== "skipped") {
+			if (!costByProvider[result.provider]) {
+				costByProvider[result.provider] = { count: 0, models: new Set(), fallbacks: 0 };
+			}
+			costByProvider[result.provider].count++;
+			if (result.model) {
+				costByProvider[result.provider].models.add(result.model);
+			}
+			if (result.usedFallback) {
+				costByProvider[result.provider].fallbacks++;
+				totalFallbacks++;
+			}
+		}
+	}
+
+	if (Object.keys(costByProvider).length > 0) {
+		summary.push("", "=== PROVIDER USAGE ===");
+		let estimatedTotalCost = 0;
+		let hasFreeProvider = false;
+
+		for (const [provider, stats] of Object.entries(costByProvider)) {
+			const modelsList = Array.from(stats.models).join(", ");
+			const fallbackNote =
+				stats.fallbacks > 0 ? ` (${stats.fallbacks} fallback${stats.fallbacks > 1 ? "s" : ""})` : "";
+
+			// Phase 3: Cost estimation
+			let providerCost = 0;
+			const models = Array.from(stats.models);
+			for (const model of models) {
+				const costInfo = MODEL_COSTS[model];
+				if (costInfo) {
+					if (costInfo.inputCost === 0) {
+						hasFreeProvider = true;
+					} else {
+						// Rough estimate: assume 1000 input tokens per task
+						providerCost += (costInfo.inputCost / 1000) * stats.count * 1;
+					}
+				}
+			}
+			estimatedTotalCost += providerCost;
+
+			const costNote = providerCost > 0 ? ` (~$${providerCost.toFixed(2)})` : provider === "github" ? " (FREE)" : "";
+			summary.push(`${provider}: ${stats.count} task${stats.count > 1 ? "s" : ""}${fallbackNote}${costNote}`);
+			if (modelsList) {
+				summary.push(`  Models: ${modelsList}`);
+			}
+		}
+
+		// Phase 4: Use actual cost from token tracking if available
+		let actualTotalCost = 0;
+		let hasActualCost = false;
+		for (const result of results) {
+			if (result.cost !== undefined && result.status !== "skipped") {
+				actualTotalCost += result.cost;
+				hasActualCost = true;
+			}
+		}
+
+		// Display cost information
+		if (hasActualCost || estimatedTotalCost > 0 || hasFreeProvider) {
+			summary.push("");
+			if (hasActualCost) {
+				summary.push(`💰 Actual cost: $${actualTotalCost.toFixed(2)}`);
+			} else if (estimatedTotalCost > 0) {
+				summary.push(`💰 Estimated cost: ~$${estimatedTotalCost.toFixed(2)}`);
+			}
+			if (hasFreeProvider) {
+				summary.push(`✨ FREE provider usage detected (GitHub Copilot)`);
+			}
+		}
+
+		// Phase 4: Budget summary
+		if (sessionBudget) {
+			summary.push("");
+			summary.push("=== BUDGET SUMMARY ===");
+			const budgetUsagePct = ((sessionBudget.currentCost / sessionBudget.maxCostUSD) * 100).toFixed(1);
+			summary.push(
+				`Budget: $${sessionBudget.currentCost.toFixed(2)}/$${sessionBudget.maxCostUSD.toFixed(2)} (${budgetUsagePct}%)`,
+			);
+			if (sessionBudget.alertFired) {
+				summary.push(`⚠️  Budget alert threshold reached`);
+			}
+			if (sessionBudget.exceeded) {
+				summary.push(`❌ Budget exceeded - orchestration halted`);
+			}
+			if (sessionBudget.taskCosts.length > 0) {
+				summary.push("");
+				summary.push("Per-task costs:");
+				for (const taskCost of sessionBudget.taskCosts) {
+					summary.push(
+						`  Task ${taskCost.taskId}: $${taskCost.estimatedCost.toFixed(3)} (${taskCost.provider}/${taskCost.model})`,
+					);
+				}
+			}
+		}
+
+		if (totalFallbacks > 0) {
+			summary.push(
+				"",
+				`🔄 Fallback providers used ${totalFallbacks} time${totalFallbacks > 1 ? "s" : ""} (rate limit/downtime protection)`,
+			);
+		}
+
+		// Phase 3: Provider metrics summary
+		const metrics = loadMetrics();
+		const usedProviders = Object.keys(costByProvider);
+		if (usedProviders.length > 0 && Object.keys(metrics.providers).length > 0) {
+			summary.push("", "=== PROVIDER METRICS (Historical) ===");
+			for (const provider of usedProviders) {
+				const providerMetrics = metrics.providers[provider];
+				if (providerMetrics) {
+					const successRate = (providerMetrics.successRate * 100).toFixed(1);
+					const avgLatency = (providerMetrics.avgLatencyMs / 1000).toFixed(1);
+					summary.push(`${provider}: ${successRate}% success rate, ${avgLatency}s avg latency`);
+					if (providerMetrics.rateLimits > 0) {
+						summary.push(
+							`  ⚠️  ${providerMetrics.rateLimits} rate limit${providerMetrics.rateLimits > 1 ? "s" : ""} in history`,
+						);
+					}
+				}
+			}
+		}
+	}
+
+	// Include code review output if it was run
+	if (reviewOutput) {
+		summary.push("", "=== CODE REVIEW ===", reviewOutput);
+	}
+
 	// Include output directory for debugging
 	summary.push("", `Full task outputs: ${outputDir}`);
 
@@ -1923,87 +3051,125 @@ interface ThemeInterface {
 
 type OrchestrateParamsType = Static<typeof OrchestrateParams>;
 
-const factory: CustomToolFactory = (pi) => ({
-	name: "orchestrate",
-	label: "Orchestrate Tasks",
-	description:
-		"Execute tasks from a collaborative task file (e.g., 0N_TASKS.md) with memory-first approach, " +
-		"quality gates, and session archiving. Use when user says 'run the tasks', 'execute the task file', " +
-		"or 'orchestrate'. Each task runs in protected context with pre/post hooks from agent configs. " +
-		"Direct mode: Use 'gate' parameter instead of 'taskFile' for simple single-gate retry workflows.",
-	parameters: OrchestrateParams,
+const factory: ExtensionFactory = (pi: ExtensionAPI) => {
+	const cwd: string = process.cwd();
 
-	async execute(
-		_toolCallId: string,
-		params: OrchestrateParamsType,
-		signal?: AbortSignal,
-		onUpdate?: (result: AgentToolResult<OrchestrateDetails>) => void,
-	) {
-		const {
-			taskFile,
-			continueOnError = false,
-			archive = true,
-			taskTimeoutMs = DEFAULT_TASK_TIMEOUT_MS,
-			// Direct mode parameters
-			gate,
-			maxRetries = 3,
-			selfReview = false,
-			agent: agentName = "general-purpose",
-			prompt,
-			// Resume parameter
-			resume,
-		} = params;
+	pi.registerTool<typeof OrchestrateParams, OrchestrateDetails>({
+		name: "orchestrate",
+		label: "Orchestrate Tasks",
+		description:
+			"Execute tasks from a collaborative task file (e.g., 0N_TASKS.md) with memory-first approach, " +
+			"quality gates, and session archiving. Use when user says 'run the tasks', 'execute the task file', " +
+			"or 'orchestrate'. Each task runs in protected context with pre/post hooks from agent configs. " +
+			"Direct mode: Use 'gate' parameter instead of 'taskFile' for simple single-gate retry workflows.",
+		parameters: OrchestrateParams,
 
-		// Validate timeout parameter
-		if (!Number.isFinite(taskTimeoutMs) || taskTimeoutMs <= 0) {
-			throw new Error(`taskTimeoutMs must be a positive number, got ${taskTimeoutMs}`);
-		}
+		async execute(
+			_toolCallId: string,
+			params: OrchestrateParamsType,
+			onUpdate: AgentToolUpdateCallback<OrchestrateDetails> | undefined,
+			_ctx: ExtensionContext,
+			signal?: AbortSignal,
+		): Promise<AgentToolResult<OrchestrateDetails>> {
+			const {
+				taskFile,
+				continueOnError = false,
+				archive = true,
+				taskTimeoutMs = DEFAULT_TASK_TIMEOUT_MS,
+				// Direct mode parameters
+				gate,
+				maxRetries = 3,
+				selfReview = false,
+				agent: agentName = "general-purpose",
+				prompt,
+				// Resume parameter
+				resume,
+			} = params;
 
-		// ============================================================
-		// LIST PAUSED SESSIONS
-		// ============================================================
-		if (resume === "list") {
-			const stateDir = getStateDir(pi.cwd);
-			if (!fs.existsSync(stateDir)) {
-				return {
-					content: [{ type: "text" as const, text: "No paused orchestration sessions found." }],
-					details: {
-						taskFile: "",
-						status: "completed",
-						totalTasks: 0,
-						completedTasks: 0,
-						results: [],
-						archived: false,
-					} as OrchestrateDetails,
-				};
+			// Validate timeout parameter
+			if (!Number.isFinite(taskTimeoutMs) || taskTimeoutMs <= 0) {
+				throw new Error(`taskTimeoutMs must be a positive number, got ${taskTimeoutMs}`);
 			}
 
-			const pausedSessions: OrchestrationState[] = [];
-			try {
-				const files = fs.readdirSync(stateDir);
-				for (const file of files) {
-					if (!file.endsWith(".state.json")) continue;
-					try {
-						const content = fs.readFileSync(path.join(stateDir, file), "utf-8");
-						const state = JSON.parse(content) as OrchestrationState;
-						if (state.status === "paused") {
-							pausedSessions.push(state);
-						}
-					} catch {
-						// Ignore invalid files
-					}
+			// ============================================================
+			// LIST PAUSED SESSIONS
+			// ============================================================
+			if (resume === "list") {
+				const stateDir = getStateDir(cwd);
+				if (!fs.existsSync(stateDir)) {
+					return {
+						content: [{ type: "text" as const, text: "No paused orchestration sessions found." }],
+						details: {
+							taskFile: "",
+							status: "completed",
+							totalTasks: 0,
+							completedTasks: 0,
+							results: [],
+							archived: false,
+						} as OrchestrateDetails,
+					};
 				}
-			} catch {
-				// Ignore errors
-			}
 
-			if (pausedSessions.length === 0) {
+				const pausedSessions: OrchestrationState[] = [];
+				try {
+					const files = fs.readdirSync(stateDir);
+					for (const file of files) {
+						if (!file.endsWith(".state.json")) continue;
+						try {
+							const content = fs.readFileSync(path.join(stateDir, file), "utf-8");
+							const state = JSON.parse(content) as OrchestrationState;
+							if (state.status === "paused") {
+								pausedSessions.push(state);
+							}
+						} catch {
+							// Ignore invalid files
+						}
+					}
+				} catch {
+					// Ignore errors
+				}
+
+				if (pausedSessions.length === 0) {
+					return {
+						content: [{ type: "text" as const, text: "No paused orchestration sessions found." }],
+						details: {
+							taskFile: "",
+							status: "completed",
+							totalTasks: 0,
+							completedTasks: 0,
+							results: [],
+							archived: false,
+						} as OrchestrateDetails,
+					};
+				}
+
+				// Sort by pausedAt descending
+				pausedSessions.sort((a, b) => {
+					const aTime = a.pausedAt ? new Date(a.pausedAt).getTime() : 0;
+					const bTime = b.pausedAt ? new Date(b.pausedAt).getTime() : 0;
+					return bTime - aTime;
+				});
+
+				const sessionList = pausedSessions
+					.map((s) => {
+						const pausedAt = s.pausedAt ? new Date(s.pausedAt).toLocaleString() : "unknown";
+						const taskFileName = path.basename(s.taskFile);
+						const progress = `${s.completedTaskIds.length}/${s.completedTaskIds.length + s.results.filter((r) => r.status !== "success").length} tasks`;
+						return `- **${s.sessionId}**\n  File: ${taskFileName}\n  Paused: ${pausedAt}\n  Progress: ${progress}`;
+					})
+					.join("\n\n");
+
 				return {
-					content: [{ type: "text" as const, text: "No paused orchestration sessions found." }],
+					content: [
+						{
+							type: "text" as const,
+							text: `## Paused Orchestration Sessions\n\n${sessionList}\n\nTo resume, use: orchestrate({ resume: "<session-id>" })`,
+						},
+					],
 					details: {
 						taskFile: "",
 						status: "completed",
-						totalTasks: 0,
+						totalTasks: pausedSessions.length,
 						completedTasks: 0,
 						results: [],
 						archived: false,
@@ -2011,251 +3177,225 @@ const factory: CustomToolFactory = (pi) => ({
 				};
 			}
 
-			// Sort by pausedAt descending
-			pausedSessions.sort((a, b) => {
-				const aTime = a.pausedAt ? new Date(a.pausedAt).getTime() : 0;
-				const bTime = b.pausedAt ? new Date(b.pausedAt).getTime() : 0;
-				return bTime - aTime;
-			});
+			// ============================================================
+			// RESUME A PAUSED SESSION
+			// ============================================================
+			if (resume) {
+				const savedState = loadState(cwd, resume);
+				if (!savedState) {
+					throw new Error(
+						`No paused session found with ID: ${resume}. Use resume: "list" to see available sessions.`,
+					);
+				}
+				if (savedState.status !== "paused") {
+					throw new Error(`Session ${resume} is not paused (status: ${savedState.status})`);
+				}
 
-			const sessionList = pausedSessions
-				.map((s) => {
-					const pausedAt = s.pausedAt ? new Date(s.pausedAt).toLocaleString() : "unknown";
-					const taskFileName = path.basename(s.taskFile);
-					const progress = `${s.completedTaskIds.length}/${s.completedTaskIds.length + s.results.filter((r) => r.status !== "success").length} tasks`;
-					return `- **${s.sessionId}**\n  File: ${taskFileName}\n  Paused: ${pausedAt}\n  Progress: ${progress}`;
-				})
-				.join("\n\n");
+				// Restore state and continue execution
+				const absolutePath = savedState.taskFile;
+				if (!fs.existsSync(absolutePath)) {
+					throw new Error(`Task file no longer exists: ${absolutePath}`);
+				}
 
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `## Paused Orchestration Sessions\n\n${sessionList}\n\nTo resume, use: orchestrate({ resume: "<session-id>" })`,
-					},
-				],
-				details: {
-					taskFile: "",
-					status: "completed",
-					totalTasks: pausedSessions.length,
-					completedTasks: 0,
-					results: [],
+				// Re-parse task file to get current state
+				const parsed = parseTaskFile(absolutePath);
+				validateTaskFile(parsed);
+
+				// Restore completed IDs from saved state
+				const completedIds = new Set(savedState.completedTaskIds);
+				const results = [...savedState.results];
+				const outputDir = savedState.outputDir;
+
+				// Update state to running
+				savedState.status = "running";
+				savedState.pausedAt = undefined;
+				saveState(cwd, savedState);
+
+				// Get remaining pending tasks
+				const pendingTasks = parsed.tasks.filter((t) => !t.completed && !completedIds.has(t.id));
+
+				const details: OrchestrateDetails = {
+					taskFile: absolutePath,
+					status: "running",
+					totalTasks: parsed.tasks.length,
+					completedTasks: completedIds.size,
+					results,
 					archived: false,
-				} as OrchestrateDetails,
-			};
-		}
+					outputDir,
+					sessionId: savedState.sessionId,
+				};
 
-		// ============================================================
-		// RESUME A PAUSED SESSION
-		// ============================================================
-		if (resume) {
-			const savedState = loadState(pi.cwd, resume);
-			if (!savedState) {
-				throw new Error(
-					`No paused session found with ID: ${resume}. Use resume: "list" to see available sessions.`,
+				if (pendingTasks.length === 0) {
+					details.status = "completed";
+					deleteState(cwd, savedState.sessionId);
+					return {
+						content: [{ type: "text" as const, text: "Resumed session - all tasks are already completed." }],
+						details,
+					};
+				}
+
+				// Continue with task execution (shared logic below)
+				return executeTaskFileMode(
+					parsed,
+					absolutePath,
+					pendingTasks,
+					completedIds,
+					results,
+					outputDir,
+					savedState,
+					cwd,
+					savedState.continueOnError,
+					savedState.archive,
+					savedState.taskTimeoutMs,
+					signal,
+					onUpdate,
 				);
 			}
-			if (savedState.status !== "paused") {
-				throw new Error(`Session ${resume} is not paused (status: ${savedState.status})`);
+
+			// ============================================================
+			// DIRECT MODE: Run a single gate without a task file
+			// ============================================================
+			if (gate) {
+				return executeDirectMode(
+					gate,
+					maxRetries,
+					selfReview,
+					agentName,
+					prompt,
+					taskTimeoutMs,
+					archive,
+					cwd,
+					signal,
+					onUpdate,
+				);
 			}
 
-			// Restore state and continue execution
-			const absolutePath = savedState.taskFile;
+			// ============================================================
+			// TASK FILE MODE: Parse and execute tasks from file
+			// ============================================================
+			if (!taskFile) {
+				throw new Error("Either 'taskFile' or 'gate' parameter is required");
+			}
+
+			// Resolve task file path
+			const absolutePath = path.isAbsolute(taskFile) ? taskFile : path.join(cwd, taskFile);
+
 			if (!fs.existsSync(absolutePath)) {
-				throw new Error(`Task file no longer exists: ${absolutePath}`);
+				throw new Error(`Task file not found: ${absolutePath}`);
 			}
 
-			// Re-parse task file to get current state
+			// Parse and validate task file
 			const parsed = parseTaskFile(absolutePath);
 			validateTaskFile(parsed);
 
-			// Restore completed IDs from saved state
-			const completedIds = new Set(savedState.completedTaskIds);
-			const results = [...savedState.results];
-			const outputDir = savedState.outputDir;
+			// Check that task-monitor is running (MANDATORY for all orchestrations)
+			checkTaskMonitor();
 
-			// Update state to running
-			savedState.status = "running";
-			savedState.pausedAt = undefined;
-			saveState(pi.cwd, savedState);
+			// Run pre-flight check (enforces Definition of Done & Sanity Scripts)
+			runPreflight(absolutePath, cwd);
 
-			// Get remaining pending tasks
-			const pendingTasks = parsed.tasks.filter((t) => !t.completed && !completedIds.has(t.id));
-
-			const details: OrchestrateDetails = {
-				taskFile: absolutePath,
-				status: "running",
-				totalTasks: parsed.tasks.length,
-				completedTasks: completedIds.size,
-				results,
-				archived: false,
-				outputDir,
-				sessionId: savedState.sessionId,
-			};
+			const pendingTasks = parsed.tasks.filter((t) => !t.completed);
 
 			if (pendingTasks.length === 0) {
-				details.status = "completed";
-				deleteState(pi.cwd, savedState.sessionId);
 				return {
-					content: [{ type: "text" as const, text: "Resumed session - all tasks are already completed." }],
-					details,
+					content: [{ type: "text" as const, text: "All tasks are already completed." }],
+					details: {
+						taskFile: absolutePath,
+						status: "completed",
+						totalTasks: parsed.tasks.length,
+						completedTasks: parsed.tasks.length,
+						results: [],
+						archived: false,
+					} as OrchestrateDetails,
 				};
 			}
 
-			// Continue with task execution (shared logic below)
+			// Check for existing paused session for this task file
+			const pausedSessions = findPausedSessions(cwd, absolutePath);
+			if (pausedSessions.length > 0) {
+				const mostRecent = pausedSessions[0];
+				// Notify user about existing paused session
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Found paused session for this task file.\n\nSession ID: ${mostRecent.sessionId}\nPaused: ${mostRecent.pausedAt ? new Date(mostRecent.pausedAt).toLocaleString() : "unknown"}\nProgress: ${mostRecent.completedTaskIds.length} tasks completed\n\nTo resume: orchestrate({ resume: "${mostRecent.sessionId}" })\nTo start fresh: delete .orchestrate/${mostRecent.sessionId}.state.json first`,
+						},
+					],
+					details: {
+						taskFile: absolutePath,
+						status: "paused",
+						totalTasks: parsed.tasks.length,
+						completedTasks: mostRecent.completedTaskIds.length,
+						results: [],
+						archived: false,
+						sessionId: mostRecent.sessionId,
+					} as OrchestrateDetails,
+				};
+			}
+
+			// Create output directory for complete task outputs
+			const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-orchestrate-"));
+
+			// Initialize state for fresh start
+			const completedIds = new Set(parsed.tasks.filter((t) => t.completed).map((t) => t.id));
+
 			return executeTaskFileMode(
 				parsed,
 				absolutePath,
 				pendingTasks,
 				completedIds,
-				results,
+				[], // No prior results
 				outputDir,
-				savedState,
-				pi.cwd,
-				savedState.continueOnError,
-				savedState.archive,
-				savedState.taskTimeoutMs,
-				signal,
-				onUpdate,
-			);
-		}
-
-		// ============================================================
-		// DIRECT MODE: Run a single gate without a task file
-		// ============================================================
-		if (gate) {
-			return executeDirectMode(
-				gate,
-				maxRetries,
-				selfReview,
-				agentName,
-				prompt,
-				taskTimeoutMs,
+				null, // No existing state
+				cwd,
+				continueOnError,
 				archive,
-				pi.cwd,
+				taskTimeoutMs,
 				signal,
 				onUpdate,
 			);
-		}
+		},
 
-		// ============================================================
-		// TASK FILE MODE: Parse and execute tasks from file
-		// ============================================================
-		if (!taskFile) {
-			throw new Error("Either 'taskFile' or 'gate' parameter is required");
-		}
+		renderCall(args: OrchestrateParamsType, theme: ThemeInterface) {
+			const { taskFile, gate } = args;
+			let label: string;
+			if (gate) {
+				label = `Orchestrate (direct): ${path.basename(gate)}`;
+			} else if (taskFile) {
+				label = `Orchestrate: ${path.basename(taskFile)}`;
+			} else {
+				label = "Orchestrate Tasks";
+			}
+			return new Text(theme.fg("toolTitle", theme.bold(label)), 0, 0);
+		},
 
-		// Resolve task file path
-		const absolutePath = path.isAbsolute(taskFile) ? taskFile : path.join(pi.cwd, taskFile);
+		renderResult(
+			result: AgentToolResult<OrchestrateDetails>,
+			_options: ToolRenderResultOptions,
+			theme: ThemeInterface,
+		) {
+			const details = result.details;
+			if (!details) return new Text("Orchestrate", 0, 0);
 
-		if (!fs.existsSync(absolutePath)) {
-			throw new Error(`Task file not found: ${absolutePath}`);
-		}
+			const statusColor =
+				details.status === "completed"
+					? "success"
+					: details.status === "running"
+						? "info"
+						: details.status === "cancelled"
+							? "warning"
+							: "error";
 
-		// Parse and validate task file
-		const parsed = parseTaskFile(absolutePath);
-		validateTaskFile(parsed);
+			const statusText = `${details.status.toUpperCase()} (${details.completedTasks}/${details.totalTasks} tasks)`;
 
-		// Run pre-flight check (enforces Definition of Done & Sanity Scripts)
-		runPreflight(absolutePath, pi.cwd);
+			if (details.currentTask && details.status === "running") {
+				return new Text(`${theme.fg(statusColor, statusText)}\n${theme.fg("dim", details.currentTask)}`, 0, 0);
+			}
 
-		const pendingTasks = parsed.tasks.filter((t) => !t.completed);
-
-		if (pendingTasks.length === 0) {
-			return {
-				content: [{ type: "text" as const, text: "All tasks are already completed." }],
-				details: {
-					taskFile: absolutePath,
-					status: "completed",
-					totalTasks: parsed.tasks.length,
-					completedTasks: parsed.tasks.length,
-					results: [],
-					archived: false,
-				} as OrchestrateDetails,
-			};
-		}
-
-		// Check for existing paused session for this task file
-		const pausedSessions = findPausedSessions(pi.cwd, absolutePath);
-		if (pausedSessions.length > 0) {
-			const mostRecent = pausedSessions[0];
-			// Notify user about existing paused session
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: `Found paused session for this task file.\n\nSession ID: ${mostRecent.sessionId}\nPaused: ${mostRecent.pausedAt ? new Date(mostRecent.pausedAt).toLocaleString() : "unknown"}\nProgress: ${mostRecent.completedTaskIds.length} tasks completed\n\nTo resume: orchestrate({ resume: "${mostRecent.sessionId}" })\nTo start fresh: delete .orchestrate/${mostRecent.sessionId}.state.json first`,
-					},
-				],
-				details: {
-					taskFile: absolutePath,
-					status: "paused",
-					totalTasks: parsed.tasks.length,
-					completedTasks: mostRecent.completedTaskIds.length,
-					results: [],
-					archived: false,
-					sessionId: mostRecent.sessionId,
-				} as OrchestrateDetails,
-			};
-		}
-
-		// Create output directory for complete task outputs
-		const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-orchestrate-"));
-
-		// Initialize state for fresh start
-		const completedIds = new Set(parsed.tasks.filter((t) => t.completed).map((t) => t.id));
-
-		return executeTaskFileMode(
-			parsed,
-			absolutePath,
-			pendingTasks,
-			completedIds,
-			[], // No prior results
-			outputDir,
-			null, // No existing state
-			pi.cwd,
-			continueOnError,
-			archive,
-			taskTimeoutMs,
-			signal,
-			onUpdate,
-		);
-	},
-
-	renderCall(args: OrchestrateParamsType, theme: ThemeInterface) {
-		const { taskFile, gate } = args;
-		let label: string;
-		if (gate) {
-			label = `Orchestrate (direct): ${path.basename(gate)}`;
-		} else if (taskFile) {
-			label = `Orchestrate: ${path.basename(taskFile)}`;
-		} else {
-			label = "Orchestrate Tasks";
-		}
-		return new Text(theme.fg("toolTitle", theme.bold(label)), 0, 0);
-	},
-
-	renderResult(result: AgentToolResult<OrchestrateDetails>, _options: RenderResultOptions, theme: ThemeInterface) {
-		const details = result.details;
-		if (!details) return new Text("Orchestrate", 0, 0);
-
-		const statusColor =
-			details.status === "completed"
-				? "success"
-				: details.status === "running"
-					? "info"
-					: details.status === "cancelled"
-						? "warning"
-						: "error";
-
-		const statusText = `${details.status.toUpperCase()} (${details.completedTasks}/${details.totalTasks} tasks)`;
-
-		if (details.currentTask && details.status === "running") {
-			return new Text(`${theme.fg(statusColor, statusText)}\n${theme.fg("dim", details.currentTask)}`, 0, 0);
-		}
-
-		return new Text(theme.fg(statusColor, statusText), 0, 0);
-	},
-});
+			return new Text(theme.fg(statusColor, statusText), 0, 0);
+		},
+	});
+};
 
 export default factory;
