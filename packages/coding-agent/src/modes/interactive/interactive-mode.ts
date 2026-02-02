@@ -3261,6 +3261,8 @@ export class InteractiveMode {
 				// All enabled or none enabled = no filter
 				this.session.setScopedModels([]);
 			}
+			await this.updateAvailableProviderCount();
+			this.ui.requestRender();
 		};
 
 		this.showSelector((done) => {

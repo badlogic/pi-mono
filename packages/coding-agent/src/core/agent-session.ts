@@ -1170,22 +1170,39 @@ export class AgentSession {
 		return this._cycleAvailableModel(direction);
 	}
 
+	private async _getScopedModelsWithApiKey(): Promise<Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>> {
+		const apiKeysByProvider = new Map<string, string | undefined>();
+		const result: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }> = [];
+
+		for (const scoped of this._scopedModels) {
+			const provider = scoped.model.provider;
+			let apiKey: string | undefined;
+			if (apiKeysByProvider.has(provider)) {
+				apiKey = apiKeysByProvider.get(provider);
+			} else {
+				apiKey = await this._modelRegistry.getApiKeyForProvider(provider);
+				apiKeysByProvider.set(provider, apiKey);
+			}
+
+			if (apiKey) {
+				result.push(scoped);
+			}
+		}
+
+		return result;
+	}
+
 	private async _cycleScopedModel(direction: "forward" | "backward"): Promise<ModelCycleResult | undefined> {
-		if (this._scopedModels.length <= 1) return undefined;
+		const scopedModels = await this._getScopedModelsWithApiKey();
+		if (scopedModels.length <= 1) return undefined;
 
 		const currentModel = this.model;
-		let currentIndex = this._scopedModels.findIndex((sm) => modelsAreEqual(sm.model, currentModel));
+		let currentIndex = scopedModels.findIndex((sm) => modelsAreEqual(sm.model, currentModel));
 
 		if (currentIndex === -1) currentIndex = 0;
-		const len = this._scopedModels.length;
+		const len = scopedModels.length;
 		const nextIndex = direction === "forward" ? (currentIndex + 1) % len : (currentIndex - 1 + len) % len;
-		const next = this._scopedModels[nextIndex];
-
-		// Validate API key
-		const apiKey = await this._modelRegistry.getApiKey(next.model);
-		if (!apiKey) {
-			throw new Error(`No API key for ${next.model.provider}/${next.model.id}`);
-		}
+		const next = scopedModels[nextIndex];
 
 		// Apply model
 		this.agent.setModel(next.model);
