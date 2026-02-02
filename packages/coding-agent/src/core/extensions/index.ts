@@ -14,6 +14,7 @@ export type {
 	NavigateTreeHandler,
 	NewSessionHandler,
 	ShutdownHandler,
+	SwitchSessionHandler,
 } from "./runner.js";
 export { ExtensionRunner } from "./runner.js";
 export type {

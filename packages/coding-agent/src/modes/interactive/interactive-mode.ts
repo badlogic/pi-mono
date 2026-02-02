@@ -1059,6 +1059,10 @@ export class InteractiveMode {
 
 					return { cancelled: false };
 				},
+				switchSession: async (sessionPath) => {
+					await this.handleResumeSession(sessionPath);
+					return { cancelled: false };
+				},
 			},
 			shutdownHandler: () => {
 				this.shutdownRequested = true;
