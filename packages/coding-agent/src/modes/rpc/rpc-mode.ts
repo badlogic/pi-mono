@@ -252,6 +252,15 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			// Theme switching not supported in RPC mode
 			return { success: false, error: "Theme switching not supported in RPC mode" };
 		},
+
+		getToolsExpanded() {
+			// Tool expansion not supported in RPC mode - no TUI
+			return false;
+		},
+
+		setToolsExpanded(_expanded: boolean) {
+			// Tool expansion not supported in RPC mode - no TUI
+		},
 	});
 
 	// Set up extensions with RPC-based UI context

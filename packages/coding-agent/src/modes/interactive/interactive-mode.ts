@@ -1396,6 +1396,8 @@ export class InteractiveMode {
 				}
 				return result;
 			},
+			getToolsExpanded: () => this.toolOutputExpanded,
+			setToolsExpanded: (expanded) => this.setToolsExpanded(expanded),
 		};
 	}
 
@@ -2658,10 +2660,14 @@ export class InteractiveMode {
 	}
 
 	private toggleToolOutputExpansion(): void {
-		this.toolOutputExpanded = !this.toolOutputExpanded;
+		this.setToolsExpanded(!this.toolOutputExpanded);
+	}
+
+	private setToolsExpanded(expanded: boolean): void {
+		this.toolOutputExpanded = expanded;
 		for (const child of this.chatContainer.children) {
 			if (isExpandable(child)) {
-				child.setExpanded(this.toolOutputExpanded);
+				child.setExpanded(expanded);
 			}
 		}
 		this.ui.requestRender();
