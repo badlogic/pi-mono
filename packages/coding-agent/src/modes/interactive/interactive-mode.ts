@@ -1811,7 +1811,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("fork", () => this.showUserMessageSelector());
 		this.defaultEditor.onAction("scrollOutputPageUp", () => this.handleScrollOutputPage(1));
 		this.defaultEditor.onAction("scrollOutputPageDown", () => this.handleScrollOutputPage(-1));
-		this.defaultEditor.onAction("toggleScrollOutputMouse", () => this.toggleScrollOutputMouse());
+		this.defaultEditor.onAction("toggleScrollOutputMode", () => this.toggleScrollOutputMode());
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -1866,6 +1866,13 @@ export class InteractiveMode {
 		this.applyScrollOutputState(this.scrollOutputEnabled, options);
 	}
 
+	private setScrollOutputModeEnabled(enabled: boolean, options: { requestRender?: boolean } = {}): void {
+		const wasEnabled = this.scrollOutputEnabled;
+		this.scrollOutputEnabled = enabled;
+		this.scrollOutputMouseEnabled = enabled;
+		this.applyScrollOutputState(wasEnabled, options);
+	}
+
 	private handleScrollOutputPage(direction: number): void {
 		if (!this.scrollOutputEnabled) return;
 		if (this.ui.hasOverlay()) return;
@@ -1874,13 +1881,13 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private toggleScrollOutputMouse(): void {
-		const enabled = !this.scrollOutputMouseEnabled;
+	private toggleScrollOutputMode(): void {
+		const enabled = !(this.scrollOutputEnabled && this.scrollOutputMouseEnabled);
+		this.settingsManager.setScrollOutput(enabled);
 		this.settingsManager.setScrollOutputMouse(enabled);
-		this.setScrollOutputMouseEnabled(enabled);
+		this.setScrollOutputModeEnabled(enabled);
 
-		const suffix = this.scrollOutputEnabled ? "" : " (enable scroll output to use)";
-		this.showStatus(`Scroll output mouse: ${enabled ? "on" : "off"}${suffix}`);
+		this.showStatus(`Scroll output mode: ${enabled ? "on" : "off"}`);
 	}
 
 	private handleMouseEvent(event: MouseEvent): void {
