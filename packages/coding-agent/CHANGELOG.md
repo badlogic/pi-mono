@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Clear on shrink setting**: New `terminal.clearOnShrink` setting (and `/settings` toggle) controls whether empty rows are cleared when content shrinks. Disabled by default to reduce flicker. Enable via settings or `PI_CLEAR_ON_SHRINK=1` env var.
+
 ## [0.51.0] - 2026-02-01
 
 ### Breaking Changes

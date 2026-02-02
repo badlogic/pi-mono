@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Terminal height changes no longer trigger full redraws, reducing flicker on resize
+- `clearOnShrink` now defaults to `false` (use `PI_CLEAR_ON_SHRINK=1` or `setClearOnShrink(true)` to enable)
+
+### Fixed
+
+- Fixed unnecessary full redraws when appending many lines after content had previously shrunk (viewport check now uses actual previous content size instead of stale maximum)
+
 ## [0.51.0] - 2026-02-01
 
 ## [0.50.9] - 2026-02-01

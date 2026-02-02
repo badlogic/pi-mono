@@ -258,6 +258,7 @@ export class InteractiveMode {
 		this.session = session;
 		this.version = VERSION;
 		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
+		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
 		this.headerContainer = new Container();
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
@@ -2996,6 +2997,7 @@ export class InteractiveMode {
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 					autocompleteMaxVisible: this.settingsManager.getAutocompleteMaxVisible(),
 					quietStartup: this.settingsManager.getQuietStartup(),
+					clearOnShrink: this.settingsManager.getClearOnShrink(),
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -3083,6 +3085,10 @@ export class InteractiveMode {
 						if (this.editor !== this.defaultEditor && this.editor.setAutocompleteMaxVisible !== undefined) {
 							this.editor.setAutocompleteMaxVisible(maxVisible);
 						}
+					},
+					onClearOnShrinkChange: (enabled) => {
+						this.settingsManager.setClearOnShrink(enabled);
+						this.ui.setClearOnShrink(enabled);
 					},
 					onCancel: () => {
 						done();
