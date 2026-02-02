@@ -191,12 +191,15 @@ describe("SettingsManager", () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 
 			expect(manager.getScrollOutput()).toBe(false);
+			expect(manager.getScrollOutputMouse()).toBe(false);
 
 			manager.setScrollOutput(true);
+			manager.setScrollOutputMouse(true);
 
 			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
 			expect(savedSettings.terminal.showImages).toBe(true);
 			expect(savedSettings.terminal.scrollOutput).toBe(true);
+			expect(savedSettings.terminal.scrollOutputMouse).toBe(true);
 		});
 	});
 });

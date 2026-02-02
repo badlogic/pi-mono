@@ -99,6 +99,8 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, etc.
 |--------|---------|-------------|
 | `expandTools` | `ctrl+o` | Collapse/expand tool output |
 | `toggleThinking` | `ctrl+t` | Collapse/expand thinking blocks |
+| `scrollOutputPageUp` | `shift+pageUp` | Scroll output up by page (when scroll-output is enabled) |
+| `scrollOutputPageDown` | `shift+pageDown` | Scroll output down by page (when scroll-output is enabled) |
 
 ### Message Queue
 

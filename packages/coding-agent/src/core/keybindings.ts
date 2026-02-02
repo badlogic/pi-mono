@@ -25,6 +25,8 @@ export type AppAction =
 	| "selectModel"
 	| "expandTools"
 	| "toggleThinking"
+	| "scrollOutputPageUp"
+	| "scrollOutputPageDown"
 	| "toggleSessionNamedFilter"
 	| "externalEditor"
 	| "followUp"
@@ -60,6 +62,8 @@ export const DEFAULT_APP_KEYBINDINGS: Record<AppAction, KeyId | KeyId[]> = {
 	selectModel: "ctrl+l",
 	expandTools: "ctrl+o",
 	toggleThinking: "ctrl+t",
+	scrollOutputPageUp: "shift+pageUp",
+	scrollOutputPageDown: "shift+pageDown",
 	toggleSessionNamedFilter: "ctrl+n",
 	externalEditor: "ctrl+g",
 	followUp: "alt+enter",
@@ -90,6 +94,8 @@ const APP_ACTIONS: AppAction[] = [
 	"selectModel",
 	"expandTools",
 	"toggleThinking",
+	"scrollOutputPageUp",
+	"scrollOutputPageDown",
 	"toggleSessionNamedFilter",
 	"externalEditor",
 	"followUp",

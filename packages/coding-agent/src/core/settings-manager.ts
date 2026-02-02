@@ -22,6 +22,7 @@ export interface RetrySettings {
 export interface TerminalSettings {
 	showImages?: boolean; // default: true (only relevant if terminal supports images)
 	scrollOutput?: boolean; // default: false (scroll output while keeping editor fixed)
+	scrollOutputMouse?: boolean; // default: false (capture mouse wheel, disables selection)
 }
 
 export interface ImageSettings {
@@ -639,6 +640,19 @@ export class SettingsManager {
 		}
 		this.globalSettings.terminal.scrollOutput = enabled;
 		this.markModified("terminal", "scrollOutput");
+		this.save();
+	}
+
+	getScrollOutputMouse(): boolean {
+		return this.settings.terminal?.scrollOutputMouse ?? false;
+	}
+
+	setScrollOutputMouse(enabled: boolean): void {
+		if (!this.globalSettings.terminal) {
+			this.globalSettings.terminal = {};
+		}
+		this.globalSettings.terminal.scrollOutputMouse = enabled;
+		this.markModified("terminal", "scrollOutputMouse");
 		this.save();
 	}
 

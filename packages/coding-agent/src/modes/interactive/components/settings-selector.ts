@@ -38,6 +38,7 @@ export interface SettingsConfig {
 	doubleEscapeAction: "fork" | "tree" | "none";
 	showHardwareCursor: boolean;
 	scrollOutput: boolean;
+	scrollOutputMouse: boolean;
 	editorPaddingX: number;
 	autocompleteMaxVisible: number;
 	quietStartup: boolean;
@@ -59,6 +60,7 @@ export interface SettingsCallbacks {
 	onDoubleEscapeActionChange: (action: "fork" | "tree" | "none") => void;
 	onShowHardwareCursorChange: (enabled: boolean) => void;
 	onScrollOutputChange: (enabled: boolean) => void;
+	onScrollOutputMouseChange: (enabled: boolean) => void;
 	onEditorPaddingXChange: (padding: number) => void;
 	onAutocompleteMaxVisibleChange: (maxVisible: number) => void;
 	onQuietStartupChange: (enabled: boolean) => void;
@@ -299,14 +301,24 @@ export class SettingsSelectorComponent extends Container {
 		items.splice(hardwareCursorIndex + 1, 0, {
 			id: "scroll-output",
 			label: "Scroll output only",
-			description: "Keep editor/footer fixed while scrolling output with the mouse wheel",
+			description: "Keep editor/footer fixed while scrolling output",
 			currentValue: config.scrollOutput ? "true" : "false",
 			values: ["true", "false"],
 		});
 
-		// Editor padding toggle (insert after scroll-output)
+		// Scroll output mouse toggle (insert after scroll-output)
 		const scrollOutputIndex = items.findIndex((item) => item.id === "scroll-output");
 		items.splice(scrollOutputIndex + 1, 0, {
+			id: "scroll-output-mouse",
+			label: "Scroll output with mouse",
+			description: "Capture mouse wheel for output scrolling (disables selection)",
+			currentValue: config.scrollOutputMouse ? "true" : "false",
+			values: ["true", "false"],
+		});
+
+		// Editor padding toggle (insert after scroll-output-mouse)
+		const scrollOutputMouseIndex = items.findIndex((item) => item.id === "scroll-output-mouse");
+		items.splice(scrollOutputMouseIndex + 1, 0, {
 			id: "editor-padding",
 			label: "Editor padding",
 			description: "Horizontal padding for input editor (0-3)",
@@ -371,6 +383,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "scroll-output":
 						callbacks.onScrollOutputChange(newValue === "true");
+						break;
+					case "scroll-output-mouse":
+						callbacks.onScrollOutputMouseChange(newValue === "true");
 						break;
 					case "editor-padding":
 						callbacks.onEditorPaddingXChange(parseInt(newValue, 10));
