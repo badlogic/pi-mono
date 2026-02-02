@@ -155,11 +155,14 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 	}
 
 	private buildItems(): ModelItem[] {
-		return getSortedIds(this.enabledIds, this.allIds).map((id) => ({
-			fullId: id,
-			model: this.modelsById.get(id)!,
-			enabled: isEnabled(this.enabledIds, id),
-		}));
+		// Filter out IDs that no longer have a corresponding model (e.g., after logout)
+		return getSortedIds(this.enabledIds, this.allIds)
+			.filter((id) => this.modelsById.has(id))
+			.map((id) => ({
+				fullId: id,
+				model: this.modelsById.get(id)!,
+				enabled: isEnabled(this.enabledIds, id),
+			}));
 	}
 
 	private getFooterText(): string {
