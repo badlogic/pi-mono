@@ -8,6 +8,7 @@ export type KnownApi =
 	| "azure-openai-responses"
 	| "openai-codex-responses"
 	| "anthropic-messages"
+	| "anthropic-vertex"
 	| "bedrock-converse-stream"
 	| "google-generative-ai"
 	| "google-gemini-cli"
@@ -18,6 +19,7 @@ export type Api = KnownApi | (string & {});
 export type KnownProvider =
 	| "amazon-bedrock"
 	| "anthropic"
+	| "anthropic-vertex"
 	| "google"
 	| "google-gemini-cli"
 	| "google-antigravity"
