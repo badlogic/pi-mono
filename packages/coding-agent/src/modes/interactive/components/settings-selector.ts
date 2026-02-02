@@ -37,8 +37,7 @@ export interface SettingsConfig {
 	collapseChangelog: boolean;
 	doubleEscapeAction: "fork" | "tree" | "none";
 	showHardwareCursor: boolean;
-	scrollOutput: boolean;
-	scrollOutputMouse: boolean;
+	scrollOutputOnly: boolean;
 	editorPaddingX: number;
 	autocompleteMaxVisible: number;
 	quietStartup: boolean;
@@ -59,8 +58,7 @@ export interface SettingsCallbacks {
 	onCollapseChangelogChange: (collapsed: boolean) => void;
 	onDoubleEscapeActionChange: (action: "fork" | "tree" | "none") => void;
 	onShowHardwareCursorChange: (enabled: boolean) => void;
-	onScrollOutputChange: (enabled: boolean) => void;
-	onScrollOutputMouseChange: (enabled: boolean) => void;
+	onScrollOutputOnlyChange: (enabled: boolean) => void;
 	onEditorPaddingXChange: (padding: number) => void;
 	onAutocompleteMaxVisibleChange: (maxVisible: number) => void;
 	onQuietStartupChange: (enabled: boolean) => void;
@@ -299,26 +297,16 @@ export class SettingsSelectorComponent extends Container {
 		// Scroll output toggle (insert after show-hardware-cursor)
 		const hardwareCursorIndex = items.findIndex((item) => item.id === "show-hardware-cursor");
 		items.splice(hardwareCursorIndex + 1, 0, {
-			id: "scroll-output",
+			id: "scroll-output-only",
 			label: "Scroll output only",
-			description: "Keep editor/footer fixed while scrolling output",
-			currentValue: config.scrollOutput ? "true" : "false",
+			description: "Keep editor/footer fixed (disables mouse selection)",
+			currentValue: config.scrollOutputOnly ? "true" : "false",
 			values: ["true", "false"],
 		});
 
-		// Scroll output mouse toggle (insert after scroll-output)
-		const scrollOutputIndex = items.findIndex((item) => item.id === "scroll-output");
+		// Editor padding toggle (insert after scroll-output-only)
+		const scrollOutputIndex = items.findIndex((item) => item.id === "scroll-output-only");
 		items.splice(scrollOutputIndex + 1, 0, {
-			id: "scroll-output-mouse",
-			label: "Scroll output with mouse",
-			description: "Capture mouse wheel for output scrolling (disables selection)",
-			currentValue: config.scrollOutputMouse ? "true" : "false",
-			values: ["true", "false"],
-		});
-
-		// Editor padding toggle (insert after scroll-output-mouse)
-		const scrollOutputMouseIndex = items.findIndex((item) => item.id === "scroll-output-mouse");
-		items.splice(scrollOutputMouseIndex + 1, 0, {
 			id: "editor-padding",
 			label: "Editor padding",
 			description: "Horizontal padding for input editor (0-3)",
@@ -381,11 +369,8 @@ export class SettingsSelectorComponent extends Container {
 					case "show-hardware-cursor":
 						callbacks.onShowHardwareCursorChange(newValue === "true");
 						break;
-					case "scroll-output":
-						callbacks.onScrollOutputChange(newValue === "true");
-						break;
-					case "scroll-output-mouse":
-						callbacks.onScrollOutputMouseChange(newValue === "true");
+					case "scroll-output-only":
+						callbacks.onScrollOutputOnlyChange(newValue === "true");
 						break;
 					case "editor-padding":
 						callbacks.onEditorPaddingXChange(parseInt(newValue, 10));

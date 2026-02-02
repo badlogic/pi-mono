@@ -104,12 +104,11 @@ When a provider requests a retry delay longer than `maxDelayMs` (e.g., Google's 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `terminal.showImages` | boolean | `true` | Show images in terminal (if supported) |
-| `terminal.scrollOutput` | boolean | `false` | Scroll output only and keep editor/footer fixed (uses alternate screen) |
-| `terminal.scrollOutputMouse` | boolean | `false` | Capture mouse wheel for output scrolling (disables terminal selection) |
+| `terminal.scrollOutputOnly` | boolean | `false` | Scroll output only and keep editor/footer fixed (uses alternate screen; disables selection) |
 | `images.autoResize` | boolean | `true` | Resize images to 2000x2000 max |
 | `images.blockImages` | boolean | `false` | Block all images from being sent to LLM |
 
-When `terminal.scrollOutput` is enabled, pi switches to the alternate screen (terminal scrollback is hidden while active). Enable `terminal.scrollOutputMouse` to capture the mouse wheel for output scrolling (Shift+wheel or Alt+wheel scrolls by page); this disables normal terminal selection. In tmux, enable mouse support (`set -g mouse on`) to forward wheel events to pi.
+When `terminal.scrollOutputOnly` is enabled, pi switches to the alternate screen and captures the mouse wheel for output scrolling (Shift+wheel or Alt+wheel scrolls by page). This disables normal terminal selection. Use `ctrl+shift+m` to toggle the mode on/off quickly. In tmux, enable mouse support (`set -g mouse on`) to forward wheel events to pi.
 
 ### Shell
 

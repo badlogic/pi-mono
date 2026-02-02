@@ -183,23 +183,20 @@ describe("SettingsManager", () => {
 		});
 	});
 
-	describe("terminal.scrollOutput", () => {
+	describe("terminal.scrollOutputOnly", () => {
 		it("defaults to false and persists updates", () => {
 			const settingsPath = join(agentDir, "settings.json");
 			writeFileSync(settingsPath, JSON.stringify({ terminal: { showImages: true } }));
 
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			expect(manager.getScrollOutput()).toBe(false);
-			expect(manager.getScrollOutputMouse()).toBe(false);
+			expect(manager.getScrollOutputOnly()).toBe(false);
 
-			manager.setScrollOutput(true);
-			manager.setScrollOutputMouse(true);
+			manager.setScrollOutputOnly(true);
 
 			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
 			expect(savedSettings.terminal.showImages).toBe(true);
-			expect(savedSettings.terminal.scrollOutput).toBe(true);
-			expect(savedSettings.terminal.scrollOutputMouse).toBe(true);
+			expect(savedSettings.terminal.scrollOutputOnly).toBe(true);
 		});
 	});
 });

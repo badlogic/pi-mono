@@ -21,8 +21,7 @@ export interface RetrySettings {
 
 export interface TerminalSettings {
 	showImages?: boolean; // default: true (only relevant if terminal supports images)
-	scrollOutput?: boolean; // default: false (scroll output while keeping editor fixed)
-	scrollOutputMouse?: boolean; // default: false (capture mouse wheel, disables selection)
+	scrollOutputOnly?: boolean; // default: false (scroll output while keeping editor fixed)
 }
 
 export interface ImageSettings {
@@ -207,6 +206,18 @@ export class SettingsManager {
 				settings.skills = skillsSettings.customDirectories;
 			} else {
 				delete settings.skills;
+			}
+		}
+
+		// Migrate scrollOutput + scrollOutputMouse -> scrollOutputOnly
+		if ("terminal" in settings && typeof settings.terminal === "object" && settings.terminal !== null) {
+			const terminal = settings.terminal as Record<string, unknown>;
+			if (!("scrollOutputOnly" in terminal)) {
+				const scrollOutput = terminal.scrollOutput === true;
+				const scrollOutputMouse = terminal.scrollOutputMouse === true;
+				if (scrollOutput || scrollOutputMouse) {
+					terminal.scrollOutputOnly = scrollOutput && scrollOutputMouse;
+				}
 			}
 		}
 
@@ -630,29 +641,16 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getScrollOutput(): boolean {
-		return this.settings.terminal?.scrollOutput ?? false;
+	getScrollOutputOnly(): boolean {
+		return this.settings.terminal?.scrollOutputOnly ?? false;
 	}
 
-	setScrollOutput(enabled: boolean): void {
+	setScrollOutputOnly(enabled: boolean): void {
 		if (!this.globalSettings.terminal) {
 			this.globalSettings.terminal = {};
 		}
-		this.globalSettings.terminal.scrollOutput = enabled;
-		this.markModified("terminal", "scrollOutput");
-		this.save();
-	}
-
-	getScrollOutputMouse(): boolean {
-		return this.settings.terminal?.scrollOutputMouse ?? false;
-	}
-
-	setScrollOutputMouse(enabled: boolean): void {
-		if (!this.globalSettings.terminal) {
-			this.globalSettings.terminal = {};
-		}
-		this.globalSettings.terminal.scrollOutputMouse = enabled;
-		this.markModified("terminal", "scrollOutputMouse");
+		this.globalSettings.terminal.scrollOutputOnly = enabled;
+		this.markModified("terminal", "scrollOutputOnly");
 		this.save();
 	}
 

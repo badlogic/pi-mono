@@ -27,7 +27,7 @@ export type AppAction =
 	| "toggleThinking"
 	| "scrollOutputPageUp"
 	| "scrollOutputPageDown"
-	| "toggleScrollOutputMode"
+	| "toggleScrollOutputOnly"
 	| "toggleSessionNamedFilter"
 	| "externalEditor"
 	| "followUp"
@@ -65,7 +65,7 @@ export const DEFAULT_APP_KEYBINDINGS: Record<AppAction, KeyId | KeyId[]> = {
 	toggleThinking: "ctrl+t",
 	scrollOutputPageUp: ["shift+pageUp", "ctrl+shift+up", "alt+shift+up"],
 	scrollOutputPageDown: ["shift+pageDown", "ctrl+shift+down", "alt+shift+down"],
-	toggleScrollOutputMode: "ctrl+shift+m",
+	toggleScrollOutputOnly: "ctrl+shift+m",
 	toggleSessionNamedFilter: "ctrl+n",
 	externalEditor: "ctrl+g",
 	followUp: "alt+enter",
@@ -98,7 +98,7 @@ const APP_ACTIONS: AppAction[] = [
 	"toggleThinking",
 	"scrollOutputPageUp",
 	"scrollOutputPageDown",
-	"toggleScrollOutputMode",
+	"toggleScrollOutputOnly",
 	"toggleSessionNamedFilter",
 	"externalEditor",
 	"followUp",

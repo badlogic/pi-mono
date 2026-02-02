@@ -192,7 +192,6 @@ export class InteractiveMode {
 
 	// Scroll output behavior (keep editor/footer fixed)
 	private scrollOutputEnabled = false;
-	private scrollOutputMouseEnabled = false;
 
 	// Skill commands: command name -> skill file path
 	private skillCommands = new Map<string, string>();
@@ -302,8 +301,7 @@ export class InteractiveMode {
 		this.fixedContainer.addChild(this.footer);
 
 		this.layout = new ScrollLayout(this.ui, this.outputContainer, this.fixedContainer);
-		this.scrollOutputEnabled = this.settingsManager.getScrollOutput();
-		this.scrollOutputMouseEnabled = this.settingsManager.getScrollOutputMouse();
+		this.scrollOutputEnabled = this.settingsManager.getScrollOutputOnly();
 		this.layout.setEnabled(this.scrollOutputEnabled);
 
 		// Load hide thinking block setting
@@ -1811,7 +1809,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("fork", () => this.showUserMessageSelector());
 		this.defaultEditor.onAction("scrollOutputPageUp", () => this.handleScrollOutputPage(1));
 		this.defaultEditor.onAction("scrollOutputPageDown", () => this.handleScrollOutputPage(-1));
-		this.defaultEditor.onAction("toggleScrollOutputMode", () => this.toggleScrollOutputMode());
+		this.defaultEditor.onAction("toggleScrollOutputOnly", () => this.toggleScrollOutputOnly());
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -1831,21 +1829,17 @@ export class InteractiveMode {
 		previousScrollOutputEnabled: boolean,
 		options: { requestRender?: boolean } = {},
 	): void {
-		const mouseEnabled = this.scrollOutputEnabled && this.scrollOutputMouseEnabled;
 		this.layout.setEnabled(this.scrollOutputEnabled);
 
-		if (mouseEnabled) {
+		if (this.scrollOutputEnabled) {
 			this.ui.onMouse = (event) => this.handleMouseEvent(event);
 		} else {
 			this.ui.onMouse = undefined;
-		}
-
-		if (!this.scrollOutputEnabled) {
 			this.layout.scrollToBottom();
 		}
 
 		if (this.isInitialized) {
-			this.ui.setMouseReporting(mouseEnabled);
+			this.ui.setMouseReporting(this.scrollOutputEnabled);
 			this.ui.setAlternateScreen(this.scrollOutputEnabled);
 		}
 
@@ -1861,18 +1855,6 @@ export class InteractiveMode {
 		this.applyScrollOutputState(wasEnabled, options);
 	}
 
-	private setScrollOutputMouseEnabled(enabled: boolean, options: { requestRender?: boolean } = {}): void {
-		this.scrollOutputMouseEnabled = enabled;
-		this.applyScrollOutputState(this.scrollOutputEnabled, options);
-	}
-
-	private setScrollOutputModeEnabled(enabled: boolean, options: { requestRender?: boolean } = {}): void {
-		const wasEnabled = this.scrollOutputEnabled;
-		this.scrollOutputEnabled = enabled;
-		this.scrollOutputMouseEnabled = enabled;
-		this.applyScrollOutputState(wasEnabled, options);
-	}
-
 	private handleScrollOutputPage(direction: number): void {
 		if (!this.scrollOutputEnabled) return;
 		if (this.ui.hasOverlay()) return;
@@ -1881,17 +1863,16 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private toggleScrollOutputMode(): void {
-		const enabled = !(this.scrollOutputEnabled && this.scrollOutputMouseEnabled);
-		this.settingsManager.setScrollOutput(enabled);
-		this.settingsManager.setScrollOutputMouse(enabled);
-		this.setScrollOutputModeEnabled(enabled);
+	private toggleScrollOutputOnly(): void {
+		const enabled = !this.scrollOutputEnabled;
+		this.settingsManager.setScrollOutputOnly(enabled);
+		this.setScrollOutputEnabled(enabled);
 
-		this.showStatus(`Scroll output mode: ${enabled ? "on" : "off"}`);
+		this.showStatus(`Scroll output only: ${enabled ? "on" : "off"}`);
 	}
 
 	private handleMouseEvent(event: MouseEvent): void {
-		if (!this.scrollOutputEnabled || !this.scrollOutputMouseEnabled) return;
+		if (!this.scrollOutputEnabled) return;
 		if (event.type !== "scroll" || !event.direction) return;
 		if (this.ui.hasOverlay()) return;
 
@@ -3101,8 +3082,7 @@ export class InteractiveMode {
 					collapseChangelog: this.settingsManager.getCollapseChangelog(),
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
 					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
-					scrollOutput: this.settingsManager.getScrollOutput(),
-					scrollOutputMouse: this.settingsManager.getScrollOutputMouse(),
+					scrollOutputOnly: this.settingsManager.getScrollOutputOnly(),
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 					autocompleteMaxVisible: this.settingsManager.getAutocompleteMaxVisible(),
 					quietStartup: this.settingsManager.getQuietStartup(),
@@ -3180,13 +3160,9 @@ export class InteractiveMode {
 						this.settingsManager.setShowHardwareCursor(enabled);
 						this.ui.setShowHardwareCursor(enabled);
 					},
-					onScrollOutputChange: (enabled) => {
-						this.settingsManager.setScrollOutput(enabled);
+					onScrollOutputOnlyChange: (enabled) => {
+						this.settingsManager.setScrollOutputOnly(enabled);
 						this.setScrollOutputEnabled(enabled);
-					},
-					onScrollOutputMouseChange: (enabled) => {
-						this.settingsManager.setScrollOutputMouse(enabled);
-						this.setScrollOutputMouseEnabled(enabled);
 					},
 					onEditorPaddingXChange: (padding) => {
 						this.settingsManager.setEditorPaddingX(padding);

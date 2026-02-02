@@ -99,9 +99,9 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, etc.
 |--------|---------|-------------|
 | `expandTools` | `ctrl+o` | Collapse/expand tool output |
 | `toggleThinking` | `ctrl+t` | Collapse/expand thinking blocks |
-| `scrollOutputPageUp` | `shift+pageUp`, `ctrl+shift+up`, `alt+shift+up` | Scroll output up by page (when scroll-output is enabled) |
-| `scrollOutputPageDown` | `shift+pageDown`, `ctrl+shift+down`, `alt+shift+down` | Scroll output down by page (when scroll-output is enabled) |
-| `toggleScrollOutputMode` | `ctrl+shift+m` | Toggle output-only scroll mode (enables mouse wheel capture) |
+| `scrollOutputPageUp` | `shift+pageUp`, `ctrl+shift+up`, `alt+shift+up` | Scroll output up by page (when output-only scroll is enabled) |
+| `scrollOutputPageDown` | `shift+pageDown`, `ctrl+shift+down`, `alt+shift+down` | Scroll output down by page (when output-only scroll is enabled) |
+| `toggleScrollOutputOnly` | `ctrl+shift+m` | Toggle output-only scroll mode (enables mouse wheel capture) |
 
 ### Message Queue
 
