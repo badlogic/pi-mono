@@ -93,6 +93,27 @@ Add a `pi` manifest to `package.json` or use conventional directories. Include t
 
 Paths are relative to the package root. Arrays support glob patterns and `!exclusions`.
 
+### Gallery Metadata
+
+The [package gallery](https://shittycodingagent.ai/packages) displays packages tagged with `pi-package`. Add `video` or `image` fields to show a preview:
+
+```json
+{
+  "name": "my-package",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./extensions"],
+    "video": "https://example.com/demo.mp4",
+    "image": "https://example.com/screenshot.png"
+  }
+}
+```
+
+- **video**: MP4 only. On desktop, autoplays on hover. Clicking opens a fullscreen player.
+- **image**: PNG, JPEG, GIF, or WebP. Displayed as a static preview.
+
+If both are set, video takes precedence.
+
 ## Package Structure
 
 ### Convention Directories
