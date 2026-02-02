@@ -2019,31 +2019,22 @@ export class InteractiveMode {
 				}
 				this.statusContainer.clear();
 				const accessibilityMode = this.settingsManager.getAccessibilityMode();
-
-				// In accessibility mode, skip the loader entirely to avoid screen reader spam
-				if (!accessibilityMode) {
-					this.loadingAnimation = new Loader(
-						this.ui,
-						(spinner) => theme.fg("accent", spinner),
-						(text) => theme.fg("muted", text),
-						this.defaultWorkingMessage,
-					);
-					this.statusContainer.addChild(this.loadingAnimation);
-					// Apply any pending working message queued before loader existed
-					if (this.pendingWorkingMessage !== undefined) {
-						if (this.pendingWorkingMessage) {
-							this.loadingAnimation.setMessage(this.pendingWorkingMessage);
-						}
-						this.pendingWorkingMessage = undefined;
-					}
-				} else {
-					this.statusContainer.addChild(new Text("Working..."));
-					// In accessibility mode, clear any pending working message (no loader to apply it to)
-					this.pendingWorkingMessage = undefined;
-					this.loadingAnimation = undefined;
-				}
-
+				this.loadingAnimation = new Loader(
+					this.ui,
+					(spinner) => theme.fg("accent", spinner),
+					(text) => theme.fg("muted", text),
+					this.defaultWorkingMessage,
+					!accessibilityMode, // animated: false if accessibilityMode is true
+				);
+				this.statusContainer.addChild(this.loadingAnimation);
 				this.footer.invalidate();
+				// Apply any pending working message queued before loader existed
+				if (this.pendingWorkingMessage !== undefined) {
+					if (this.pendingWorkingMessage) {
+						this.loadingAnimation.setMessage(this.pendingWorkingMessage);
+					}
+					this.pendingWorkingMessage = undefined;
+				}
 				this.ui.requestRender();
 				break;
 			}
@@ -2143,7 +2134,6 @@ export class InteractiveMode {
 					}
 					this.streamingComponent = undefined;
 					this.streamingMessage = undefined;
-					this.statusContainer.clear();
 					this.footer.invalidate();
 				}
 				this.ui.requestRender();

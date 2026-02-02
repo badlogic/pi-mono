@@ -15,10 +15,15 @@ export class Loader extends Text {
 		private spinnerColorFn: (str: string) => string,
 		private messageColorFn: (str: string) => string,
 		private message: string = "Loading...",
+		private animated: boolean = true,
 	) {
 		super("", 1, 0);
 		this.ui = ui;
-		this.start();
+		if (this.animated) {
+			this.start();
+		} else {
+			this.updateDisplay();
+		}
 	}
 
 	render(width: number): string[] {
