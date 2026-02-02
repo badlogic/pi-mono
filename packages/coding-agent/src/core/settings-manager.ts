@@ -22,6 +22,7 @@ export interface RetrySettings {
 
 export interface TerminalSettings {
 	showImages?: boolean; // default: true (only relevant if terminal supports images)
+	clearOnShrink?: boolean; // default: false (clear empty rows when content shrinks)
 }
 
 export interface ImageSettings {
@@ -626,6 +627,23 @@ export class SettingsManager {
 		}
 		this.globalSettings.terminal.showImages = show;
 		this.markModified("terminal", "showImages");
+		this.save();
+	}
+
+	getClearOnShrink(): boolean {
+		// Settings takes precedence, then env var, then default false
+		if (this.settings.terminal?.clearOnShrink !== undefined) {
+			return this.settings.terminal.clearOnShrink;
+		}
+		return process.env.PI_CLEAR_ON_SHRINK === "1";
+	}
+
+	setClearOnShrink(enabled: boolean): void {
+		if (!this.globalSettings.terminal) {
+			this.globalSettings.terminal = {};
+		}
+		this.globalSettings.terminal.clearOnShrink = enabled;
+		this.markModified("terminal", "clearOnShrink");
 		this.save();
 	}
 

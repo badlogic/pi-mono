@@ -428,7 +428,7 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 	}
 
 	if (context.tools) {
-		params.tools = convertTools(context.tools);
+		params.tools = convertTools(context.tools, compat);
 	} else if (hasToolHistory(context.messages)) {
 		// Anthropic (via LiteLLM/proxy) requires tools param when conversation has tool_calls/tool_results
 		params.tools = [];
@@ -738,14 +738,18 @@ export function convertMessages(
 	return params;
 }
 
-function convertTools(tools: Tool[]): OpenAI.Chat.Completions.ChatCompletionTool[] {
+function convertTools(
+	tools: Tool[],
+	compat: Required<OpenAICompletionsCompat>,
+): OpenAI.Chat.Completions.ChatCompletionTool[] {
 	return tools.map((tool) => ({
 		type: "function",
 		function: {
 			name: tool.name,
 			description: tool.description,
 			parameters: tool.parameters as any, // TypeBox already generates JSON Schema
-			strict: false, // Disable strict mode to allow optional parameters without null unions
+			// Only include strict if provider supports it. Some reject unknown fields.
+			...(compat.supportsStrictMode !== false && { strict: false }),
 		},
 	}));
 }
@@ -812,6 +816,7 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		thinkingFormat: isZai ? "zai" : "openai",
 		openRouterRouting: {},
 		vercelGatewayRouting: {},
+		supportsStrictMode: true,
 	};
 }
 
@@ -837,5 +842,6 @@ function getCompat(model: Model<"openai-completions">): Required<OpenAICompletio
 		thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
 		openRouterRouting: model.compat.openRouterRouting ?? {},
 		vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
+		supportsStrictMode: model.compat.supportsStrictMode ?? detected.supportsStrictMode,
 	};
 }

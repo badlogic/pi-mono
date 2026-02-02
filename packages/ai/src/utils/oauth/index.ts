@@ -9,6 +9,9 @@
  * - Antigravity (Gemini 3, Claude, GPT-OSS via Google Cloud)
  */
 
+// Set up HTTP proxy for fetch() calls (respects HTTP_PROXY, HTTPS_PROXY env vars)
+import "../http-proxy.js";
+
 // Anthropic
 export { anthropicOAuthProvider, loginAnthropic, refreshAnthropicToken } from "./anthropic.js";
 // GitHub Copilot

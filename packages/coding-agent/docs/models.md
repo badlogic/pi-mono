@@ -4,14 +4,17 @@ Add custom providers and models (Ollama, vLLM, LM Studio, proxies) via `~/.pi/ag
 
 ## Table of Contents
 
-- [Basic Example](#basic-example)
+- [Minimal Example](#minimal-example)
+- [Full Example](#full-example)
 - [Supported APIs](#supported-apis)
 - [Provider Configuration](#provider-configuration)
 - [Model Configuration](#model-configuration)
 - [Overriding Built-in Providers](#overriding-built-in-providers)
 - [OpenAI Compatibility](#openai-compatibility)
 
-## Basic Example
+## Minimal Example
+
+For local models (Ollama, LM Studio, vLLM), only `id` is required per model:
 
 ```json
 {
@@ -19,12 +22,38 @@ Add custom providers and models (Ollama, vLLM, LM Studio, proxies) via `~/.pi/ag
     "ollama": {
       "baseUrl": "http://localhost:11434/v1",
       "api": "openai-completions",
+      "apiKey": "ollama",
+      "models": [
+        { "id": "llama3.1:8b" },
+        { "id": "qwen2.5-coder:7b" }
+      ]
+    }
+  }
+}
+```
+
+The `apiKey` is required but Ollama ignores it, so any value works.
+
+## Full Example
+
+Override defaults when you need specific values:
+
+```json
+{
+  "providers": {
+    "ollama": {
+      "baseUrl": "http://localhost:11434/v1",
+      "api": "openai-completions",
+      "apiKey": "ollama",
       "models": [
         {
-          "id": "llama-3.1-8b",
+          "id": "llama3.1:8b",
           "name": "Llama 3.1 8B (Local)",
+          "reasoning": false,
+          "input": ["text"],
           "contextWindow": 128000,
-          "maxTokens": 32000
+          "maxTokens": 32000,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }
       ]
     }
@@ -95,16 +124,16 @@ The `apiKey` and `headers` fields support three formats:
 
 ## Model Configuration
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `id` | Yes | Model identifier |
-| `name` | No | Display name |
-| `api` | No | Override provider's API for this model |
-| `contextWindow` | No | Context window size in tokens |
-| `maxTokens` | No | Maximum output tokens |
-| `reasoning` | No | Supports extended thinking |
-| `input` | No | Input types: `["text"]` or `["text", "image"]` |
-| `cost` | No | `{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}` |
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `id` | Yes | — | Model identifier (passed to the API) |
+| `name` | No | `id` | Display name in model selector |
+| `api` | No | provider's `api` | Override provider's API for this model |
+| `reasoning` | No | `false` | Supports extended thinking |
+| `input` | No | `["text"]` | Input types: `["text"]` or `["text", "image"]` |
+| `contextWindow` | No | `128000` | Context window size in tokens |
+| `maxTokens` | No | `16384` | Maximum output tokens |
+| `cost` | No | all zeros | `{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}` (per million tokens) |
 
 ## Overriding Built-in Providers
 

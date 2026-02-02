@@ -141,7 +141,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Manage a todo list. Actions: list, add (text), toggle (id), clear",
 		parameters: TodoParams,
 
-		async execute(_toolCallId, params, _onUpdate, _ctx, _signal) {
+		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			switch (params.action) {
 				case "list":
 					return {

@@ -71,7 +71,7 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({
 			input: Type.String(),
 		}),
-		execute: async (_toolCallId, params, _onUpdate, _ctx, _signal) => ({
+		execute: async (_toolCallId, params, _signal, _onUpdate, _ctx) => ({
 			content: [{ type: "text", text: \`Processed: \${params.input}\` }],
 			details: {},
 		}),

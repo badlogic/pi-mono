@@ -17,7 +17,16 @@ export function copyToClipboard(text: string): void {
 		} else if (p === "win32") {
 			execSync("clip", options);
 		} else {
-			// Linux - try wl-copy for Wayland, fall back to xclip/xsel for X11
+			// Linux. Try Termux, Wayland, or X11 clipboard tools.
+			if (process.env.TERMUX_VERSION) {
+				try {
+					execSync("termux-clipboard-set", options);
+					return;
+				} catch {
+					// Fall back to Wayland or X11 tools.
+				}
+			}
+
 			const isWayland = isWaylandSession();
 			if (isWayland) {
 				try {

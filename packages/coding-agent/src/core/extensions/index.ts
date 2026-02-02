@@ -25,6 +25,8 @@ export type {
 	// App keybindings (for custom editors)
 	AppAction,
 	AppendEntryHandler,
+	// Events - Tool (ToolCallEvent types)
+	BashToolCallEvent,
 	BashToolResultEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
@@ -35,7 +37,9 @@ export type {
 	// Event Results
 	ContextEventResult,
 	ContextUsage,
+	CustomToolCallEvent,
 	CustomToolResultEvent,
+	EditToolCallEvent,
 	EditToolResultEvent,
 	ExecOptions,
 	ExecResult,
@@ -59,10 +63,12 @@ export type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
+	FindToolCallEvent,
 	FindToolResultEvent,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
 	GetThinkingLevelHandler,
+	GrepToolCallEvent,
 	GrepToolResultEvent,
 	// Events - Input
 	InputEvent,
@@ -70,6 +76,7 @@ export type {
 	InputSource,
 	KeybindingsManager,
 	LoadExtensionsResult,
+	LsToolCallEvent,
 	LsToolResultEvent,
 	// Message Rendering
 	MessageRenderer,
@@ -79,6 +86,7 @@ export type {
 	// Provider Registration
 	ProviderConfig,
 	ProviderModelConfig,
+	ReadToolCallEvent,
 	ReadToolResultEvent,
 	// Commands
 	RegisteredCommand,
@@ -124,6 +132,7 @@ export type {
 	UserBashEvent,
 	UserBashEventResult,
 	WidgetPlacement,
+	WriteToolCallEvent,
 	WriteToolResultEvent,
 } from "./types.js";
 // Type guards
@@ -134,6 +143,7 @@ export {
 	isGrepToolResult,
 	isLsToolResult,
 	isReadToolResult,
+	isToolCallEventType,
 	isWriteToolResult,
 } from "./types.js";
 export {

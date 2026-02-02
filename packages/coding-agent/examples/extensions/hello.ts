@@ -14,7 +14,7 @@ export default function (pi: ExtensionAPI) {
 			name: Type.String({ description: "Name to greet" }),
 		}),
 
-		async execute(_toolCallId, params, _onUpdate, _ctx, _signal) {
+		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			const { name } = params as { name: string };
 			return {
 				content: [{ type: "text", text: `Hello, ${name}!` }],

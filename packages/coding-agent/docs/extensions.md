@@ -79,7 +79,7 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({
       name: Type.String({ description: "Name to greet" }),
     }),
-    async execute(toolCallId, params, onUpdate, ctx, signal) {
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
       return {
         content: [{ type: "text", text: `Hello, ${params.name}!` }],
         details: {},
@@ -473,16 +473,49 @@ Use this to update UI elements (status bars, footers) or perform model-specific 
 
 #### tool_call
 
-Fired before tool executes. **Can block.**
+Fired before tool executes. **Can block.** Use `isToolCallEventType` to narrow and get typed inputs.
 
 ```typescript
+import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
+
 pi.on("tool_call", async (event, ctx) => {
   // event.toolName - "bash", "read", "write", "edit", etc.
   // event.toolCallId
   // event.input - tool parameters
 
-  if (shouldBlock(event)) {
-    return { block: true, reason: "Not allowed" };
+  // Built-in tools: no type params needed
+  if (isToolCallEventType("bash", event)) {
+    // event.input is { command: string; timeout?: number }
+    if (event.input.command.includes("rm -rf")) {
+      return { block: true, reason: "Dangerous command" };
+    }
+  }
+
+  if (isToolCallEventType("read", event)) {
+    // event.input is { path: string; offset?: number; limit?: number }
+    console.log(`Reading: ${event.input.path}`);
+  }
+});
+```
+
+#### Typing custom tool input
+
+Custom tools should export their input type:
+
+```typescript
+// my-extension.ts
+export type MyToolInput = Static<typeof myToolSchema>;
+```
+
+Use `isToolCallEventType` with explicit type parameters:
+
+```typescript
+import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
+import type { MyToolInput } from "my-extension";
+
+pi.on("tool_call", (event) => {
+  if (isToolCallEventType<"my_tool", MyToolInput>("my_tool", event)) {
+    event.input.action;  // typed
   }
 });
 ```
@@ -756,7 +789,7 @@ pi.registerTool({
     text: Type.Optional(Type.String()),
   }),
 
-  async execute(toolCallId, params, onUpdate, ctx, signal) {
+  async execute(toolCallId, params, signal, onUpdate, ctx) {
     // Stream progress
     onUpdate?.({ content: [{ type: "text", text: "Working..." }] });
 
@@ -1082,7 +1115,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "my_tool",
     // ...
-    async execute(toolCallId, params, onUpdate, ctx, signal) {
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
       items.push("new item");
       return {
         content: [{ type: "text", text: "Added" }],
@@ -1113,7 +1146,7 @@ pi.registerTool({
     text: Type.Optional(Type.String()),
   }),
 
-  async execute(toolCallId, params, onUpdate, ctx, signal) {
+  async execute(toolCallId, params, signal, onUpdate, ctx) {
     // Check for cancellation
     if (signal?.aborted) {
       return { content: [{ type: "text", text: "Cancelled" }] };
@@ -1191,7 +1224,7 @@ const remoteRead = createReadTool(cwd, {
 // Register, checking flag at execution time
 pi.registerTool({
   ...remoteRead,
-  async execute(id, params, onUpdate, _ctx, signal) {
+  async execute(id, params, signal, onUpdate, _ctx) {
     const ssh = getSshConfig();
     if (ssh) {
       const tool = createReadTool(cwd, { operations: createRemoteOps(ssh) });
@@ -1203,6 +1236,20 @@ pi.registerTool({
 ```
 
 **Operations interfaces:** `ReadOperations`, `WriteOperations`, `EditOperations`, `BashOperations`, `LsOperations`, `GrepOperations`, `FindOperations`
+
+The bash tool also supports a spawn hook to adjust the command, cwd, or env before execution:
+
+```typescript
+import { createBashTool } from "@mariozechner/pi-coding-agent";
+
+const bashTool = createBashTool(cwd, {
+  spawnHook: ({ command, cwd, env }) => ({
+    command: `source ~/.profile\n${command}`,
+    cwd: `/mnt/sandbox${cwd}`,
+    env: { ...env, CI: "1" },
+  }),
+});
+```
 
 See [examples/extensions/ssh.ts](../examples/extensions/ssh.ts) for a complete SSH example with `--ssh` flag.
 
@@ -1225,7 +1272,7 @@ import {
   DEFAULT_MAX_LINES, // 2000
 } from "@mariozechner/pi-coding-agent";
 
-async execute(toolCallId, params, onUpdate, ctx, signal) {
+async execute(toolCallId, params, signal, onUpdate, ctx) {
   const output = await runCommand();
 
   // Apply truncation
@@ -1744,4 +1791,5 @@ All examples in [examples/extensions/](../examples/extensions/).
 | **Misc** |||
 | `antigravity-image-gen.ts` | Image generation tool | `registerTool`, Google Antigravity |
 | `inline-bash.ts` | Inline bash in tool calls | `on("tool_call")` |
+| `bash-spawn-hook.ts` | Adjust bash command, cwd, and env before execution | `createBashTool`, `spawnHook` |
 | `with-deps/` | Extension with npm dependencies | Package structure with `package.json` |

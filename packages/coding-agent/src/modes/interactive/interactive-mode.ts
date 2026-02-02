@@ -257,6 +257,7 @@ export class InteractiveMode {
 		this.session = session;
 		this.version = VERSION;
 		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
+		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
 		this.headerContainer = new Container();
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
@@ -1050,7 +1051,7 @@ export class InteractiveMode {
 
 					this.chatContainer.clear();
 					this.renderInitialMessages();
-					if (result.editorText) {
+					if (result.editorText && !this.editor.getText().trim()) {
 						this.editor.setText(result.editorText);
 					}
 					this.showStatus("Navigated to selected point");
@@ -2995,6 +2996,7 @@ export class InteractiveMode {
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 					autocompleteMaxVisible: this.settingsManager.getAutocompleteMaxVisible(),
 					quietStartup: this.settingsManager.getQuietStartup(),
+					clearOnShrink: this.settingsManager.getClearOnShrink(),
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -3082,6 +3084,10 @@ export class InteractiveMode {
 						if (this.editor !== this.defaultEditor && this.editor.setAutocompleteMaxVisible !== undefined) {
 							this.editor.setAutocompleteMaxVisible(maxVisible);
 						}
+					},
+					onClearOnShrinkChange: (enabled) => {
+						this.settingsManager.setClearOnShrink(enabled);
+						this.ui.setClearOnShrink(enabled);
 					},
 					onCancel: () => {
 						done();
@@ -3351,15 +3357,6 @@ export class InteractiveMode {
 		const tree = this.sessionManager.getTree();
 		const realLeafId = this.sessionManager.getLeafId();
 
-		// Find the visible leaf for display (skip metadata entries like labels)
-		let visibleLeafId = realLeafId;
-		while (visibleLeafId) {
-			const entry = this.sessionManager.getEntry(visibleLeafId);
-			if (!entry) break;
-			if (entry.type !== "label" && entry.type !== "custom") break;
-			visibleLeafId = entry.parentId ?? null;
-		}
-
 		if (tree.length === 0) {
 			this.showStatus("No entries in session");
 			return;
@@ -3368,11 +3365,11 @@ export class InteractiveMode {
 		this.showSelector((done) => {
 			const selector = new TreeSelectorComponent(
 				tree,
-				visibleLeafId,
+				realLeafId,
 				this.ui.terminal.rows,
 				async (entryId) => {
-					// Selecting the visible leaf is a no-op (already there)
-					if (entryId === visibleLeafId) {
+					// Selecting the current leaf is a no-op (already there)
+					if (entryId === realLeafId) {
 						done();
 						this.showStatus("Already at this point");
 						return;
@@ -3451,7 +3448,7 @@ export class InteractiveMode {
 						// Update UI
 						this.chatContainer.clear();
 						this.renderInitialMessages();
-						if (result.editorText) {
+						if (result.editorText && !this.editor.getText().trim()) {
 							this.editor.setText(result.editorText);
 						}
 						this.showStatus("Navigated to selected point");
@@ -3505,6 +3502,7 @@ export class InteractiveMode {
 						mgr.appendSessionInfo(next);
 					},
 					showRenameHint: true,
+					keybindings: this.keybindings,
 				},
 
 				this.sessionManager.getSessionFile(),

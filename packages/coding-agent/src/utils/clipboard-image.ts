@@ -1,6 +1,6 @@
-import Clipboard from "@mariozechner/clipboard";
 import { spawnSync } from "@mariozechner/pi-env/child-process";
 
+import { clipboard } from "./clipboard-native.js";
 import { loadPhoton } from "./photon.js";
 
 export type ClipboardImage = {
@@ -168,16 +168,20 @@ export async function readClipboardImage(options?: {
 	const env = options?.env ?? process.env;
 	const platform = options?.platform ?? process.platform;
 
+	if (env.TERMUX_VERSION) {
+		return null;
+	}
+
 	let image: ClipboardImage | null = null;
 
 	if (platform === "linux" && isWaylandSession(env)) {
 		image = readClipboardImageViaWlPaste() ?? readClipboardImageViaXclip();
 	} else {
-		if (!Clipboard.hasImage()) {
+		if (!clipboard || !clipboard.hasImage()) {
 			return null;
 		}
 
-		const imageData = await Clipboard.getImageBinary();
+		const imageData = await clipboard.getImageBinary();
 		if (!imageData || imageData.length === 0) {
 			return null;
 		}

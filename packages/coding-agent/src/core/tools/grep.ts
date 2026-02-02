@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { Type } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
 import { spawn } from "@mariozechner/pi-env/child-process";
 import { readFileSync, statSync } from "@mariozechner/pi-env/fs";
 import path from "@mariozechner/pi-env/path";
@@ -28,6 +28,8 @@ const grepSchema = Type.Object({
 	),
 	limit: Type.Optional(Type.Number({ description: "Maximum number of matches to return (default: 100)" })),
 });
+
+export type GrepToolInput = Static<typeof grepSchema>;
 
 const DEFAULT_LIMIT = 100;
 

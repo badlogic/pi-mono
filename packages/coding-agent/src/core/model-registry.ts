@@ -60,20 +60,23 @@ const OpenAIResponsesCompatSchema = Type.Object({
 const OpenAICompatSchema = Type.Union([OpenAICompletionsCompatSchema, OpenAIResponsesCompatSchema]);
 
 // Schema for custom model definition
+// Most fields are optional with sensible defaults for local models (Ollama, LM Studio, etc.)
 const ModelDefinitionSchema = Type.Object({
 	id: Type.String({ minLength: 1 }),
-	name: Type.String({ minLength: 1 }),
+	name: Type.Optional(Type.String({ minLength: 1 })),
 	api: Type.Optional(Type.String({ minLength: 1 })),
-	reasoning: Type.Boolean(),
-	input: Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")])),
-	cost: Type.Object({
-		input: Type.Number(),
-		output: Type.Number(),
-		cacheRead: Type.Number(),
-		cacheWrite: Type.Number(),
-	}),
-	contextWindow: Type.Number(),
-	maxTokens: Type.Number(),
+	reasoning: Type.Optional(Type.Boolean()),
+	input: Type.Optional(Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]))),
+	cost: Type.Optional(
+		Type.Object({
+			input: Type.Number(),
+			output: Type.Number(),
+			cacheRead: Type.Number(),
+			cacheWrite: Type.Number(),
+		}),
+	),
+	contextWindow: Type.Optional(Type.Number()),
+	maxTokens: Type.Optional(Type.Number()),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
 	compat: Type.Optional(OpenAICompatSchema),
 });
@@ -352,10 +355,10 @@ export class ModelRegistry {
 				}
 
 				if (!modelDef.id) throw new Error(`Provider ${providerName}: model missing "id"`);
-				if (!modelDef.name) throw new Error(`Provider ${providerName}: model missing "name"`);
-				if (modelDef.contextWindow <= 0)
+				// Validate contextWindow/maxTokens only if provided (they have defaults)
+				if (modelDef.contextWindow !== undefined && modelDef.contextWindow <= 0)
 					throw new Error(`Provider ${providerName}, model ${modelDef.id}: invalid contextWindow`);
-				if (modelDef.maxTokens <= 0)
+				if (modelDef.maxTokens !== undefined && modelDef.maxTokens <= 0)
 					throw new Error(`Provider ${providerName}, model ${modelDef.id}: invalid maxTokens`);
 			}
 		}
@@ -392,17 +395,19 @@ export class ModelRegistry {
 				}
 
 				// baseUrl is validated to exist for providers with models
+				// Apply defaults for optional fields
+				const defaultCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 				models.push({
 					id: modelDef.id,
-					name: modelDef.name,
+					name: modelDef.name ?? modelDef.id,
 					api: api as Api,
 					provider: providerName,
 					baseUrl: providerConfig.baseUrl!,
-					reasoning: modelDef.reasoning,
-					input: modelDef.input as ("text" | "image")[],
-					cost: modelDef.cost,
-					contextWindow: modelDef.contextWindow,
-					maxTokens: modelDef.maxTokens,
+					reasoning: modelDef.reasoning ?? false,
+					input: (modelDef.input ?? ["text"]) as ("text" | "image")[],
+					cost: modelDef.cost ?? defaultCost,
+					contextWindow: modelDef.contextWindow ?? 128000,
+					maxTokens: modelDef.maxTokens ?? 16384,
 					headers,
 					compat: modelDef.compat,
 				} as Model<Api>);

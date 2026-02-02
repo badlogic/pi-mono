@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-02-01
+
+## [0.50.9] - 2026-02-01
+
 ## [0.50.8] - 2026-02-01
 
 ### Added
@@ -165,7 +169,7 @@
 
 - **`UserMessageWithAttachments` and `Attachment` types removed**: Attachment handling is now the responsibility of the `convertToLlm` function.
 
-- **Agent loop moved from `@mariozechner/pi-ai`**: The `agentLoop`, `agentLoopContinue`, and related types have moved to this package. Import from `@mariozechner/pi-agent` instead.
+- **Agent loop moved from `@mariozechner/pi-ai`**: The `agentLoop`, `agentLoopContinue`, and related types have moved to this package. Import from `@mariozechner/pi-agent-core` instead.
 
 ### Added
 

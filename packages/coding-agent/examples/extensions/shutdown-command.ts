@@ -23,7 +23,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Finish and Exit",
 		description: "Complete a task and exit pi",
 		parameters: Type.Object({}),
-		async execute(_toolCallId, _params, _onUpdate, ctx, _signal) {
+		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			// Do any final work here...
 			// Request graceful shutdown (deferred until agent is idle)
 			ctx.shutdown();
@@ -44,7 +44,7 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({
 			environment: Type.String({ description: "Target environment (e.g., production, staging)" }),
 		}),
-		async execute(_toolCallId, params, onUpdate, ctx, _signal) {
+		async execute(_toolCallId, params, _signal, onUpdate, ctx) {
 			onUpdate?.({ content: [{ type: "text", text: `Deploying to ${params.environment}...` }], details: {} });
 
 			// Example deployment logic

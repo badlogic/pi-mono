@@ -124,6 +124,7 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, etc.
 |--------|---------|-------------|
 | `toggleSessionPath` | `ctrl+p` | Toggle path display |
 | `toggleSessionSort` | `ctrl+s` | Toggle sort mode |
+| `toggleSessionNamedFilter` | `ctrl+n` | Toggle named-only filter |
 | `renameSession` | `ctrl+r` | Rename session |
 | `deleteSession` | `ctrl+d` | Delete session |
 | `deleteSessionNoninvasive` | `ctrl+backspace` | Delete session (when query empty) |

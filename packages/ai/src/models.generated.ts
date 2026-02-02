@@ -5880,23 +5880,6 @@ export const MODELS = {
 			contextWindow: 163840,
 			maxTokens: 65536,
 		} satisfies Model<"openai-completions">,
-		"deepseek/deepseek-r1-distill-llama-70b": {
-			id: "deepseek/deepseek-r1-distill-llama-70b",
-			name: "DeepSeek: R1 Distill Llama 70B",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: true,
-			input: ["text"],
-			cost: {
-				input: 0.03,
-				output: 0.11,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 131072,
-			maxTokens: 131072,
-		} satisfies Model<"openai-completions">,
 		"deepseek/deepseek-v3.1-terminus": {
 			id: "deepseek/deepseek-v3.1-terminus",
 			name: "DeepSeek: DeepSeek V3.1 Terminus",
@@ -7799,7 +7782,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
-			maxTokens: 4096,
+			maxTokens: 131072,
 		} satisfies Model<"openai-completions">,
 		"openai/gpt-oss-20b": {
 			id: "openai/gpt-oss-20b",
@@ -7833,7 +7816,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
-			maxTokens: 4096,
+			maxTokens: 131072,
 		} satisfies Model<"openai-completions">,
 		"openai/gpt-oss-safeguard-20b": {
 			id: "openai/gpt-oss-safeguard-20b",
@@ -8632,7 +8615,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 32768,
-			maxTokens: 4096,
+			maxTokens: 32768,
 		} satisfies Model<"openai-completions">,
 		"relace/relace-search": {
 			id: "relace/relace-search",
@@ -8683,7 +8666,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 32768,
-			maxTokens: 4096,
+			maxTokens: 32768,
 		} satisfies Model<"openai-completions">,
 		"stepfun-ai/step3": {
 			id: "stepfun-ai/step3",
@@ -8717,7 +8700,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 32768,
-			maxTokens: 4096,
+			maxTokens: 32768,
 		} satisfies Model<"openai-completions">,
 		"thedrummer/unslopnemo-12b": {
 			id: "thedrummer/unslopnemo-12b",
@@ -8734,7 +8717,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 32768,
-			maxTokens: 4096,
+			maxTokens: 32768,
 		} satisfies Model<"openai-completions">,
 		"tngtech/deepseek-r1t2-chimera": {
 			id: "tngtech/deepseek-r1t2-chimera",
