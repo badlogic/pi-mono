@@ -21,6 +21,65 @@ export const isBunBinary =
 export const isBunRuntime = !!process.versions.bun;
 
 // =============================================================================
+// Install Method Detection
+// =============================================================================
+
+export type InstallMethod = "bun-binary" | "npm" | "pnpm" | "yarn" | "bun" | "unknown";
+
+let _cachedInstallMethod: InstallMethod | undefined;
+
+export function detectInstallMethod(): InstallMethod {
+	if (_cachedInstallMethod) return _cachedInstallMethod;
+
+	if (isBunBinary) {
+		_cachedInstallMethod = "bun-binary";
+		return _cachedInstallMethod;
+	}
+
+	const resolvedPath = `${__dirname}\0${process.execPath || ""}`.toLowerCase();
+
+	if (resolvedPath.includes("/pnpm/") || resolvedPath.includes("/.pnpm/") || resolvedPath.includes("\\pnpm\\")) {
+		_cachedInstallMethod = "pnpm";
+	} else if (
+		resolvedPath.includes("/yarn/") ||
+		resolvedPath.includes("/.yarn/") ||
+		resolvedPath.includes("\\yarn\\")
+	) {
+		_cachedInstallMethod = "yarn";
+	} else if (isBunRuntime) {
+		_cachedInstallMethod = "bun";
+	} else if (
+		resolvedPath.includes("/npm/") ||
+		resolvedPath.includes("/node_modules/") ||
+		resolvedPath.includes("\\npm\\")
+	) {
+		_cachedInstallMethod = "npm";
+	} else {
+		_cachedInstallMethod = "unknown";
+	}
+
+	return _cachedInstallMethod;
+}
+
+export function getUpdateInstruction(packageName: string): string {
+	const method = detectInstallMethod();
+	switch (method) {
+		case "bun-binary":
+			return `Download from: https://github.com/badlogic/pi-mono/releases/latest`;
+		case "pnpm":
+			return `Run: pnpm install -g ${packageName}`;
+		case "yarn":
+			return `Run: yarn global add ${packageName}`;
+		case "bun":
+			return `Run: bun install -g ${packageName}`;
+		case "npm":
+			return `Run: npm install -g ${packageName}`;
+		default:
+			return `Run: npm install -g ${packageName}`;
+	}
+}
+
+// =============================================================================
 // Package Asset Paths (shipped with executable)
 // =============================================================================
 
