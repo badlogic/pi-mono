@@ -36,6 +36,8 @@ import {
 	Markdown,
 	matchesKey,
 	ProcessTerminal,
+	type SelectItem,
+	SelectList,
 	type SettingItem,
 	SettingsList,
 	Spacer,
@@ -1934,6 +1936,11 @@ export class InteractiveMode {
 			}
 			if (text === "/prompts") {
 				this.handlePromptsCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/agents") {
+				await this.handleAgentsCommand();
 				this.editor.setText("");
 				return;
 			}
@@ -4137,6 +4144,7 @@ export class InteractiveMode {
 | \`/extensions\` | List loaded extensions |
 | \`/skills\` | List available skills |
 | \`/prompts\` | List prompt templates |
+| \`/agents\` | List and manage subagents |
 
 **Authentication**
 | Command | Description |
@@ -4345,6 +4353,300 @@ Use \`/prompts\` to see the full list, or invoke with \`/name\`.
 		this.chatContainer.addChild(new Text(content, 1, 0));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();
+	}
+
+	private async handleAgentsCommand(): Promise<void> {
+		// Scan for agent files
+		const agents = this.discoverAgents();
+
+		const result = await this.showCustomUIAsync<string | null>((tui, _theme, _kb, done) => {
+			const container = new Container();
+			container.addChild(new DynamicBorder());
+			container.addChild(new Text(theme.bold(theme.fg("accent", "Subagents")), 1, 0));
+			container.addChild(new Spacer(1));
+
+			if (agents.length === 0) {
+				container.addChild(new Text(theme.fg("muted", "No agents found.\n"), 1, 0));
+				container.addChild(new Text(theme.fg("dim", "Agents can be created in:\n"), 1, 0));
+				container.addChild(new Text(theme.fg("dim", "  • ~/.pi/agent/agents/\n"), 1, 0));
+				container.addChild(new Text(theme.fg("dim", "  • .pi/agents/\n"), 1, 0));
+			}
+
+			const items: SelectItem[] = [
+				...agents.map((a) => ({
+					value: `view:${a.path}`,
+					label: theme.fg("accent", a.name),
+					description: a.description || theme.fg("dim", "(no description)"),
+				})),
+				{
+					value: "create",
+					label: theme.fg("success", "+ Create new agent"),
+					description: "Create a new agent definition",
+				},
+			];
+
+			const selectList = new SelectList(items, Math.min(items.length + 2, 15), {
+				selectedPrefix: (t) => theme.fg("accent", t),
+				selectedText: (t) => theme.fg("accent", t),
+				description: (t) => theme.fg("muted", t),
+				scrollInfo: (t) => theme.fg("dim", t),
+				noMatch: (t) => theme.fg("warning", t),
+			});
+
+			selectList.onSelect = (item) => done(item.value);
+			selectList.onCancel = () => done(null);
+
+			container.addChild(selectList);
+			container.addChild(new Spacer(1));
+			container.addChild(new Text(theme.fg("dim", "↑↓ navigate • enter select • esc close"), 1, 0));
+			container.addChild(new DynamicBorder());
+
+			return {
+				render: (w) => container.render(w),
+				invalidate: () => container.invalidate(),
+				handleInput: (data) => {
+					selectList.handleInput(data);
+					tui.requestRender();
+				},
+			};
+		});
+
+		if (!result) return;
+
+		if (result === "create") {
+			await this.createNewAgent();
+		} else if (result.startsWith("view:")) {
+			const agentPath = result.slice(5);
+			await this.viewAgent(agentPath);
+		}
+	}
+
+	private discoverAgents(): Array<{
+		name: string;
+		description: string;
+		model?: string;
+		tools?: string;
+		path: string;
+	}> {
+		const agents: Array<{ name: string; description: string; model?: string; tools?: string; path: string }> = [];
+		const seen = new Set<string>();
+
+		const scanDir = (dir: string) => {
+			if (!fs.existsSync(dir)) return;
+			try {
+				const files = fs.readdirSync(dir);
+				for (const file of files) {
+					if (!file.endsWith(".md")) continue;
+					const filePath = path.join(dir, file);
+					try {
+						const content = fs.readFileSync(filePath, "utf-8");
+						const parsed = this.parseAgentFrontmatter(content);
+						if (parsed && !seen.has(parsed.name)) {
+							seen.add(parsed.name);
+							agents.push({ ...parsed, path: filePath });
+						}
+					} catch {
+						// Skip files that can't be read
+					}
+				}
+			} catch {
+				// Skip directories that can't be read
+			}
+		};
+
+		// User-level agents
+		scanDir(path.join(os.homedir(), ".pi", "agent", "agents"));
+
+		// Project-level agents
+		scanDir(path.join(process.cwd(), ".pi", "agents"));
+
+		return agents;
+	}
+
+	private parseAgentFrontmatter(
+		content: string,
+	): { name: string; description: string; model?: string; tools?: string } | null {
+		const match = content.match(/^---\n([\s\S]*?)\n---/);
+		if (!match) return null;
+
+		const frontmatter = match[1];
+		const name = frontmatter.match(/^name:\s*(.+)$/m)?.[1]?.trim();
+		const description = frontmatter.match(/^description:\s*(.+)$/m)?.[1]?.trim() || "";
+		const model = frontmatter.match(/^model:\s*(.+)$/m)?.[1]?.trim();
+		const tools = frontmatter.match(/^tools:\s*(.+)$/m)?.[1]?.trim();
+
+		if (!name) return null;
+		return { name, description, model, tools };
+	}
+
+	private async viewAgent(agentPath: string): Promise<void> {
+		try {
+			const content = fs.readFileSync(agentPath, "utf-8");
+			const parsed = this.parseAgentFrontmatter(content);
+
+			let _display = "";
+			_display += `${theme.fg("accent", `Name: `) + (parsed?.name || "unknown")}\n`;
+			_display += `${theme.fg("accent", `Path: `) + theme.fg("dim", agentPath)}\n`;
+			if (parsed?.description) {
+				_display += `${theme.fg("accent", `Description: `) + parsed.description}\n`;
+			}
+			if (parsed?.model) {
+				_display += `${theme.fg("accent", `Model: `) + parsed.model}\n`;
+			}
+			if (parsed?.tools) {
+				_display += `${theme.fg("accent", `Tools: `) + parsed.tools}\n`;
+			}
+			_display += `\n${theme.fg("muted", "--- Content ---\n")}`;
+			_display += theme.fg("dim", content.replace(/^---\n[\s\S]*?\n---\n*/, "").slice(0, 500));
+			if (content.length > 500) {
+				_display += theme.fg("dim", "\n...(truncated)");
+			}
+
+			const action = await this.showSelectUI(`Agent: ${parsed?.name}`, ["Edit in $EDITOR", "Back"]);
+
+			if (action === "Edit in $EDITOR") {
+				const editor = process.env.EDITOR || process.env.VISUAL || "vi";
+				const child = spawn(editor, [agentPath], { stdio: "inherit" });
+				await new Promise<void>((resolve) => child.on("close", () => resolve()));
+			}
+		} catch (error) {
+			this.showWarning(`Failed to read agent: ${error}`);
+		}
+	}
+
+	private async createNewAgent(): Promise<void> {
+		const name = await this.showInputUI("Agent name:", "my-agent");
+		if (!name) return;
+
+		const description = await this.showInputUI("Description:", "A helpful assistant");
+		if (!description) return;
+
+		const model = await this.showInputUI("Model (optional):", "claude-sonnet-4-5");
+		const tools = await this.showInputUI("Tools (comma-separated, optional):", "read, grep, find, ls, bash");
+
+		const location = await this.showSelectUI("Save location:", [
+			"~/.pi/agent/agents/ (user)",
+			".pi/agents/ (project)",
+		]);
+		if (!location) return;
+
+		const dir = location.startsWith("~")
+			? path.join(os.homedir(), ".pi", "agent", "agents")
+			: path.join(process.cwd(), ".pi", "agents");
+
+		// Ensure directory exists
+		fs.mkdirSync(dir, { recursive: true });
+
+		const filePath = path.join(dir, `${name}.md`);
+
+		const content = `---
+name: ${name}
+description: ${description}${model ? `\nmodel: ${model}` : ""}${tools ? `\ntools: ${tools}` : ""}
+---
+
+You are ${name}. ${description}
+
+## Instructions
+
+[Add your agent instructions here]
+`;
+
+		fs.writeFileSync(filePath, content);
+		this.showNotification(`Created agent: ${filePath}`, "info");
+
+		// Offer to edit
+		const edit = await this.showConfirmUI("Edit agent?", "Open in $EDITOR?");
+		if (edit) {
+			const editor = process.env.EDITOR || process.env.VISUAL || "vi";
+			const child = spawn(editor, [filePath], { stdio: "inherit" });
+			await new Promise<void>((resolve) => child.on("close", () => resolve()));
+		}
+	}
+
+	private async showCustomUIAsync<T>(
+		factory: (
+			tui: TUI,
+			theme: Theme,
+			kb: KeybindingsManager,
+			done: (value: T) => void,
+		) => { render: (w: number) => string[]; invalidate: () => void; handleInput: (data: string) => void },
+	): Promise<T> {
+		return new Promise((resolve) => {
+			this.showSelector((done) => {
+				const component = factory(this.ui, theme, this.keybindings, (value: T) => {
+					done();
+					resolve(value);
+				});
+				return {
+					component: {
+						render: component.render,
+						invalidate: component.invalidate,
+						handleInput: component.handleInput,
+					},
+					focus: {
+						render: component.render,
+						invalidate: component.invalidate,
+						handleInput: component.handleInput,
+					},
+				};
+			});
+		});
+	}
+
+	private async showSelectUI(title: string, options: string[]): Promise<string | undefined> {
+		return new Promise((resolve) => {
+			this.showSelector((done) => {
+				const items: SelectItem[] = options.map((o) => ({ value: o, label: o }));
+				const selectList = new SelectList(items, Math.min(items.length + 2, 10), {
+					selectedPrefix: (t) => theme.fg("accent", t),
+					selectedText: (t) => theme.fg("accent", t),
+					description: (t) => theme.fg("muted", t),
+					scrollInfo: (t) => theme.fg("dim", t),
+					noMatch: (t) => theme.fg("warning", t),
+				});
+
+				selectList.onSelect = (item) => {
+					done();
+					resolve(item.value);
+				};
+				selectList.onCancel = () => {
+					done();
+					resolve(undefined);
+				};
+
+				const container = new Container();
+				container.addChild(new DynamicBorder());
+				container.addChild(new Text(theme.fg("accent", title), 1, 0));
+				container.addChild(selectList);
+				container.addChild(new DynamicBorder());
+
+				return { component: container, focus: selectList };
+			});
+		});
+	}
+
+	private async showInputUI(prompt: string, placeholder: string): Promise<string | undefined> {
+		// Use the extension UI context for input
+		const ctx = this.session.extensionRunner?.getUIContext();
+		if (ctx) {
+			return ctx.input(prompt, placeholder);
+		}
+		return placeholder; // Fallback
+	}
+
+	private async showConfirmUI(title: string, message: string): Promise<boolean> {
+		const ctx = this.session.extensionRunner?.getUIContext();
+		if (ctx) {
+			return ctx.confirm(title, message);
+		}
+		return false;
+	}
+
+	private showNotification(message: string, type: "info" | "warning" | "error"): void {
+		const ctx = this.session.extensionRunner?.getUIContext();
+		if (ctx) {
+			ctx.notify(message, type);
+		}
 	}
 
 	private handleContextCommand(): void {

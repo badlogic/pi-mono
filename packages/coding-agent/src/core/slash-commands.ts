@@ -43,6 +43,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "extensions", description: "List loaded extensions" },
 	{ name: "skills", description: "List available skills" },
 	{ name: "prompts", description: "List prompt templates" },
+	{ name: "agents", description: "List and manage subagents" },
 
 	// Authentication
 	{ name: "login", description: "Login with OAuth provider" },
