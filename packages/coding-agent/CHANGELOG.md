@@ -14,6 +14,7 @@
 - Added `/skills` command to list available skills
 - Added `/prompts` command to list prompt templates
 - Added `/context` command showing context usage and token counts
+- Added MCP (Model Context Protocol) extension example with stdio/SSE support, dynamic tool registration, and TUI server management
 - Added `ExtensionAPI.getCommands()` to let extensions list available slash commands (extensions, prompt templates, skills) for invocation via `prompt` ([#1210](https://github.com/badlogic/pi-mono/pull/1210) by [@w-winter](https://github.com/w-winter))
 
 ## [0.51.2] - 2026-02-03
