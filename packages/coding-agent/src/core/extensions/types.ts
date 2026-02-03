@@ -53,6 +53,7 @@ import type {
 	SessionEntry,
 	SessionManager,
 } from "../session-manager.js";
+import type { SlashCommandInfo } from "../slash-commands.js";
 import type { BashOperations } from "../tools/bash.js";
 import type { EditToolDetails } from "../tools/edit.js";
 import type {
@@ -973,6 +974,9 @@ export interface ExtensionAPI {
 	/** Set the active tools by name. */
 	setActiveTools(toolNames: string[]): void;
 
+	/** Get available slash commands in the current session. */
+	getCommands(): SlashCommandInfo[];
+
 	// =========================================================================
 	// Model and Thinking Level
 	// =========================================================================
@@ -1154,6 +1158,8 @@ export type ToolInfo = Pick<ToolDefinition, "name" | "description">;
 
 export type GetAllToolsHandler = () => ToolInfo[];
 
+export type GetCommandsHandler = () => SlashCommandInfo[];
+
 export type SetActiveToolsHandler = (toolNames: string[]) => void;
 
 export type SetModelHandler = (model: Model<any>) => Promise<boolean>;
@@ -1188,6 +1194,7 @@ export interface ExtensionActions {
 	getActiveTools: GetActiveToolsHandler;
 	getAllTools: GetAllToolsHandler;
 	setActiveTools: SetActiveToolsHandler;
+	getCommands: GetCommandsHandler;
 	setModel: SetModelHandler;
 	getThinkingLevel: GetThinkingLevelHandler;
 	setThinkingLevel: SetThinkingLevelHandler;

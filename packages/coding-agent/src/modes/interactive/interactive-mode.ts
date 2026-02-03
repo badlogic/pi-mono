@@ -66,6 +66,7 @@ import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { resolveModelScope } from "../../core/model-resolver.js";
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
+import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
@@ -288,56 +289,41 @@ export class InteractiveMode {
 
 	private setupAutocomplete(fdPath: string | undefined): void {
 		// Define commands for autocomplete
-		const slashCommands: SlashCommand[] = [
-			{ name: "settings", description: "Open settings menu" },
-			{
-				name: "model",
-				description: "Select model (opens selector UI)",
-				getArgumentCompletions: (prefix: string): AutocompleteItem[] | null => {
-					// Get available models (scoped or from registry)
-					const models =
-						this.session.scopedModels.length > 0
-							? this.session.scopedModels.map((s) => s.model)
-							: this.session.modelRegistry.getAvailable();
+		const slashCommands: SlashCommand[] = BUILTIN_SLASH_COMMANDS.map((command) => ({
+			name: command.name,
+			description: command.description,
+		}));
 
-					if (models.length === 0) return null;
+		const modelCommand = slashCommands.find((command) => command.name === "model");
+		if (modelCommand) {
+			modelCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+				// Get available models (scoped or from registry)
+				const models =
+					this.session.scopedModels.length > 0
+						? this.session.scopedModels.map((s) => s.model)
+						: this.session.modelRegistry.getAvailable();
 
-					// Create items with provider/id format
-					const items = models.map((m) => ({
-						id: m.id,
-						provider: m.provider,
-						label: `${m.provider}/${m.id}`,
-					}));
+				if (models.length === 0) return null;
 
-					// Fuzzy filter by model ID + provider (allows "opus anthropic" to match)
-					const filtered = fuzzyFilter(items, prefix, (item) => `${item.id} ${item.provider}`);
+				// Create items with provider/id format
+				const items = models.map((m) => ({
+					id: m.id,
+					provider: m.provider,
+					label: `${m.provider}/${m.id}`,
+				}));
 
-					if (filtered.length === 0) return null;
+				// Fuzzy filter by model ID + provider (allows "opus anthropic" to match)
+				const filtered = fuzzyFilter(items, prefix, (item) => `${item.id} ${item.provider}`);
 
-					return filtered.map((item) => ({
-						value: item.label,
-						label: item.id,
-						description: item.provider,
-					}));
-				},
-			},
-			{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
-			{ name: "export", description: "Export session to HTML file" },
-			{ name: "share", description: "Share session as a secret GitHub gist" },
-			{ name: "copy", description: "Copy last agent message to clipboard" },
-			{ name: "name", description: "Set session display name" },
-			{ name: "session", description: "Show session info and stats" },
-			{ name: "changelog", description: "Show changelog entries" },
-			{ name: "hotkeys", description: "Show all keyboard shortcuts" },
-			{ name: "fork", description: "Create a new fork from a previous message" },
-			{ name: "tree", description: "Navigate session tree (switch branches)" },
-			{ name: "login", description: "Login with OAuth provider" },
-			{ name: "logout", description: "Logout from OAuth provider" },
-			{ name: "new", description: "Start a new session" },
-			{ name: "compact", description: "Manually compact the session context" },
-			{ name: "resume", description: "Resume a different session" },
-			{ name: "reload", description: "Reload extensions, skills, prompts, and themes" },
-		];
+				if (filtered.length === 0) return null;
+
+				return filtered.map((item) => ({
+					value: item.label,
+					label: item.id,
+					description: item.provider,
+				}));
+			};
+		}
 
 		// Convert prompt templates to SlashCommand format for autocomplete
 		const templateCommands: SlashCommand[] = this.session.promptTemplates.map((cmd) => ({
