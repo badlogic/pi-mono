@@ -942,6 +942,31 @@ pi.registerCommand("deploy", {
 });
 ```
 
+### pi.getCommands()
+
+Get the slash commands available for invocation via `prompt` in the current session. Includes extension commands, prompt templates, and skill commands.
+The list matches the RPC `get_commands` ordering: extensions first, then templates, then skills.
+
+```typescript
+const commands = pi.getCommands();
+const bySource = commands.filter((command) => command.source === "extension");
+```
+
+Each entry has this shape:
+
+```typescript
+{
+  name: string; // Command name without the leading slash
+  description?: string;
+  source: "extension" | "template" | "skill";
+  location?: "user" | "project" | "path"; // For templates and skills
+  path?: string; // Files backing templates, skills, and extensions
+}
+```
+
+Built-in interactive commands (like `/model` and `/settings`) are not included here. They are handled only in interactive
+mode and would not execute if sent via `prompt`.
+
 ### pi.registerMessageRenderer(customType, renderer)
 
 Register a custom TUI renderer for messages with your `customType`. See [Custom UI](#custom-ui).
