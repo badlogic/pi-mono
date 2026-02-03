@@ -178,6 +178,7 @@ Multiple agents may work on different files in the same worktree simultaneously.
 
 ### Committing
 - **ONLY commit files YOU changed in THIS session**
+- ALWAYS include `fixes #<number>` or `closes #<number>` in the commit message when there is a related issue or PR
 - NEVER use `git add -A` or `git add .` - these sweep up changes from other agents
 - ALWAYS use `git add <specific-file-paths>` listing only files you modified
 - Before committing, run `git status` and verify you are only staging YOUR files
