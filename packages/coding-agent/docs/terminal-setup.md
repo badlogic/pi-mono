@@ -28,6 +28,11 @@ return config
 
 ## VS Code (Integrated Terminal)
 
+`keybindings.json` locations:
+- macOS: `~/Library/Application Support/Code/User/keybindings.json`
+- Linux: `~/.config/Code/User/keybindings.json`
+- Windows: `%APPDATA%\\Code\\User\\keybindings.json`
+
 Add to `keybindings.json` to enable `Shift+Enter` for multi-line input:
 
 ```json

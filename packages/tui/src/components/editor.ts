@@ -621,15 +621,13 @@ export class Editor implements Component, Focusable {
 			return;
 		}
 
-		// New line (Shift+Enter, Alt+Enter, etc.)
-		if (
-			kb.matches(data, "newLine") ||
-			(data.charCodeAt(0) === 10 && data.length > 1) ||
-			data === "\x1b\r" ||
-			data === "\x1b[13;2~" ||
-			(data.length > 1 && data.includes("\x1b") && data.includes("\r")) ||
-			(data === "\n" && data.length === 1)
-		) {
+		// New line
+		if (kb.matches(data, "newLine")) {
+			if (this.shouldSubmitOnBackslashEnter(data, kb)) {
+				this.handleBackspace();
+				this.submitValue();
+				return;
+			}
 			this.addNewLine();
 			return;
 		}
@@ -647,22 +645,7 @@ export class Editor implements Component, Focusable {
 				return;
 			}
 
-			let result = this.state.lines.join("\n").trim();
-			for (const [pasteId, pasteContent] of this.pastes) {
-				const markerRegex = new RegExp(`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`, "g");
-				result = result.replace(markerRegex, pasteContent);
-			}
-
-			this.state = { lines: [""], cursorLine: 0, cursorCol: 0 };
-			this.pastes.clear();
-			this.pasteCounter = 0;
-			this.historyIndex = -1;
-			this.scrollOffset = 0;
-			this.undoStack.length = 0;
-			this.lastAction = null;
-
-			if (this.onChange) this.onChange("");
-			if (this.onSubmit) this.onSubmit(result);
+			this.submitValue();
 			return;
 		}
 
@@ -1066,6 +1049,36 @@ export class Editor implements Component, Focusable {
 		if (this.onChange) {
 			this.onChange(this.getText());
 		}
+	}
+
+	private shouldSubmitOnBackslashEnter(data: string, kb: ReturnType<typeof getEditorKeybindings>): boolean {
+		if (this.disableSubmit) return false;
+		if (!matchesKey(data, "enter")) return false;
+		const submitKeys = kb.getKeys("submit");
+		const hasShiftEnter = submitKeys.includes("shift+enter") || submitKeys.includes("shift+return");
+		if (!hasShiftEnter) return false;
+
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+		return this.state.cursorCol > 0 && currentLine[this.state.cursorCol - 1] === "\\";
+	}
+
+	private submitValue(): void {
+		let result = this.state.lines.join("\n").trim();
+		for (const [pasteId, pasteContent] of this.pastes) {
+			const markerRegex = new RegExp(`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`, "g");
+			result = result.replace(markerRegex, pasteContent);
+		}
+
+		this.state = { lines: [""], cursorLine: 0, cursorCol: 0 };
+		this.pastes.clear();
+		this.pasteCounter = 0;
+		this.historyIndex = -1;
+		this.scrollOffset = 0;
+		this.undoStack.length = 0;
+		this.lastAction = null;
+
+		if (this.onChange) this.onChange("");
+		if (this.onSubmit) this.onSubmit(result);
 	}
 
 	private handleBackspace(): void {
