@@ -3628,6 +3628,7 @@ export const MODELS = {
 			api: "anthropic-messages",
 			provider: "kimi-coding",
 			baseUrl: "https://api.kimi.com/coding",
+			headers: {"User-Agent":"kimi-cli/1.0.0 (external, cli)","X-Msh-Platform":"kimi_cli"},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -3645,6 +3646,7 @@ export const MODELS = {
 			api: "anthropic-messages",
 			provider: "kimi-coding",
 			baseUrl: "https://api.kimi.com/coding",
+			headers: {"User-Agent":"kimi-cli/1.0.0 (external, cli)","X-Msh-Platform":"kimi_cli"},
 			reasoning: true,
 			input: ["text"],
 			cost: {
