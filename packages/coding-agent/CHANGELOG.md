@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### New Features
+
+- Extension tool output expansion controls via ExtensionUIContext getToolsExpanded and setToolsExpanded. See [docs/extensions.md](docs/extensions.md) and [docs/rpc.md](docs/rpc.md).
+
 ### Added
 
 - Added ExtensionUIContext getToolsExpanded and setToolsExpanded for controlling tool output expansion ([#1199](https://github.com/badlogic/pi-mono/pull/1199) by [@academo](https://github.com/academo))
@@ -10,6 +14,12 @@
 ### Fixed
 
 - Fixed Kitty key release events leaking to parent shell over slow SSH connections by draining stdin for up to 1s on exit ([#1204](https://github.com/badlogic/pi-mono/issues/1204))
+- Fixed legacy newline handling in the editor to preserve previous newline behavior
+- Fixed @ autocomplete to include hidden paths
+- Fixed submit fallback to honor configured keybindings
+- Fixed extension commands conflicting with built-in commands by skipping them ([#1196](https://github.com/badlogic/pi-mono/pull/1196) by [@haoqixu](https://github.com/haoqixu))
+- Fixed @-prefixed tool paths failing to resolve by stripping the prefix ([#1206](https://github.com/badlogic/pi-mono/issues/1206))
+- Fixed install method detection to avoid stale cached results
 
 ## [0.51.1] - 2026-02-02
 
