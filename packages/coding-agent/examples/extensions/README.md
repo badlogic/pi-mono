@@ -37,6 +37,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `antigravity-image-gen.ts` | Generate images via Google Antigravity with optional save-to-disk modes |
 | `ssh.ts` | Delegate all tools to a remote machine via SSH using pluggable operations |
 | `subagent/` | Delegate tasks to specialized subagents with isolated context windows |
+| `mcp/` | MCP (Model Context Protocol) support with stdio/SSE transports and TUI server management |
 
 ### Commands & UI
 

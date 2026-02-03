@@ -36,6 +36,8 @@ import {
 	Markdown,
 	matchesKey,
 	ProcessTerminal,
+	type SettingItem,
+	SettingsList,
 	Spacer,
 	Text,
 	TruncatedText,
@@ -103,6 +105,7 @@ import {
 	getAvailableThemesWithPaths,
 	getEditorTheme,
 	getMarkdownTheme,
+	getSettingsListTheme,
 	getThemeByName,
 	initTheme,
 	onThemeChange,
@@ -1907,6 +1910,36 @@ export class InteractiveMode {
 			if (text === "/reload") {
 				this.editor.setText("");
 				await this.handleReloadCommand();
+				return;
+			}
+			if (text === "/help") {
+				this.handleHelpCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/tools") {
+				this.handleToolsCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/extensions") {
+				this.handleExtensionsCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/skills") {
+				this.handleSkillsCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/prompts") {
+				this.handlePromptsCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/context") {
+				this.handleContextCommand();
+				this.editor.setText("");
 				return;
 			}
 			if (text === "/debug") {
@@ -4064,6 +4097,320 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Keyboard Shortcuts")), 1, 0));
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Markdown(hotkeys.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.ui.requestRender();
+	}
+
+	private handleHelpCommand(): void {
+		const extensionRunner = this.session.extensionRunner;
+		const extensionCommands = extensionRunner?.getRegisteredCommandsWithPaths() ?? [];
+		const skills = this.session.resourceLoader.getSkills().skills;
+		const templates = this.session.promptTemplates;
+
+		let help = `
+**Session**
+| Command | Description |
+|---------|-------------|
+| \`/new\` | Start a new session |
+| \`/resume\` | Resume a different session |
+| \`/fork\` | Create a new fork from a previous message |
+| \`/tree\` | Navigate session tree (switch branches) |
+| \`/compact\` | Manually compact the session context |
+| \`/export\` | Export session to HTML file |
+| \`/share\` | Share session as a secret GitHub gist |
+| \`/copy\` | Copy last agent message to clipboard |
+| \`/name\` | Set session display name |
+| \`/session\` | Show session info and stats |
+| \`/context\` | Show context usage and token counts |
+
+**Configuration**
+| Command | Description |
+|---------|-------------|
+| \`/settings\` | Open settings menu |
+| \`/model\` | Select model (opens selector UI) |
+| \`/scoped-models\` | Enable/disable models for Ctrl+P cycling |
+| \`/tools\` | Enable/disable tools |
+
+**Extensibility**
+| Command | Description |
+|---------|-------------|
+| \`/extensions\` | List loaded extensions |
+| \`/skills\` | List available skills |
+| \`/prompts\` | List prompt templates |
+
+**Authentication**
+| Command | Description |
+|---------|-------------|
+| \`/login\` | Login with OAuth provider |
+| \`/logout\` | Logout from OAuth provider |
+
+**System**
+| Command | Description |
+|---------|-------------|
+| \`/reload\` | Reload extensions, skills, prompts, and themes |
+| \`/hotkeys\` | Show all keyboard shortcuts |
+| \`/changelog\` | Show changelog entries |
+`;
+
+		// Add extension commands
+		if (extensionCommands.length > 0) {
+			help += `
+**Extension Commands**
+| Command | Description |
+|---------|-------------|
+`;
+			for (const { command } of extensionCommands) {
+				const desc = command.description ?? "(no description)";
+				help += `| \`/${command.name}\` | ${desc} |\n`;
+			}
+		}
+
+		// Add skills summary
+		if (skills.length > 0) {
+			help += `
+**Skills** (${skills.length} available)
+Use \`/skills\` to see the full list, or invoke with \`/skill:name\`.
+`;
+		}
+
+		// Add templates summary
+		if (templates.length > 0) {
+			help += `
+**Prompt Templates** (${templates.length} available)
+Use \`/prompts\` to see the full list, or invoke with \`/name\`.
+`;
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Help")), 1, 0));
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Markdown(help.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.ui.requestRender();
+	}
+
+	private handleToolsCommand(): void {
+		this.showSelector((done) => {
+			const allTools = this.session.getAllTools();
+			const activeToolNames = new Set(this.session.getActiveToolNames());
+
+			// Separate built-in tools from extension tools (MCP tools start with mcp_)
+			const builtinTools = allTools.filter((t) => !t.name.startsWith("mcp_"));
+			const mcpTools = allTools.filter((t) => t.name.startsWith("mcp_"));
+
+			// Build items with grouping
+			const items: SettingItem[] = [];
+
+			// Built-in tools
+			for (const tool of builtinTools) {
+				items.push({
+					id: tool.name,
+					label: tool.name,
+					currentValue: activeToolNames.has(tool.name) ? "enabled" : "disabled",
+					values: ["enabled", "disabled"],
+				});
+			}
+
+			// MCP tools with formatted labels
+			for (const tool of mcpTools) {
+				// Parse mcp_<server>_<toolname> format
+				const parts = tool.name.split("_");
+				const server = parts[1] ?? "unknown";
+				const toolName = parts.slice(2).join("_") || tool.name;
+				items.push({
+					id: tool.name,
+					label: `${server}/${toolName}`,
+					currentValue: activeToolNames.has(tool.name) ? "enabled" : "disabled",
+					values: ["enabled", "disabled"],
+				});
+			}
+
+			const container = new Container();
+			container.addChild(new DynamicBorder());
+
+			// Title with counts
+			const builtinCount = builtinTools.length;
+			const mcpCount = mcpTools.length;
+			let title = theme.bold(theme.fg("accent", "Tool Configuration"));
+			if (mcpCount > 0) {
+				title += theme.fg("dim", ` (${builtinCount} built-in, ${mcpCount} MCP)`);
+			}
+			container.addChild(new Text(title, 1, 0));
+			container.addChild(new Spacer(1));
+
+			const settingsList = new SettingsList(
+				items,
+				Math.min(items.length + 2, 15),
+				getSettingsListTheme(),
+				(id, newValue) => {
+					if (newValue === "enabled") {
+						activeToolNames.add(id);
+					} else {
+						activeToolNames.delete(id);
+					}
+					this.session.setActiveToolsByName(Array.from(activeToolNames));
+				},
+				() => done(),
+			);
+
+			container.addChild(settingsList);
+			container.addChild(new DynamicBorder());
+
+			return { component: container, focus: settingsList };
+		});
+	}
+
+	private handleExtensionsCommand(): void {
+		// Get extensions from resource loader
+		const loadedExtensions = this.session.resourceLoader.getExtensions().extensions;
+
+		let content = "";
+
+		if (loadedExtensions.length === 0) {
+			content = theme.fg("muted", "No extensions loaded.\n\n");
+			content += theme.fg("dim", "Extensions can be loaded from:\n");
+			content += theme.fg("dim", "  • ~/.pi/agent/extensions/\n");
+			content += theme.fg("dim", "  • .pi/extensions/\n");
+			content += theme.fg("dim", "  • --extension <path>\n");
+		} else {
+			content = theme.fg("muted", `${loadedExtensions.length} extension(s) loaded:\n\n`);
+			for (const ext of loadedExtensions) {
+				content += `${theme.fg("accent", "• ")}${ext.path}\n`;
+			}
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Extensions")), 1, 0));
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(content, 1, 0));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.ui.requestRender();
+	}
+
+	private handleSkillsCommand(): void {
+		const skills = this.session.resourceLoader.getSkills().skills;
+
+		let content = "";
+
+		if (skills.length === 0) {
+			content = theme.fg("muted", "No skills loaded.\n\n");
+			content += theme.fg("dim", "Skills can be loaded from:\n");
+			content += theme.fg("dim", "  • ~/.pi/agent/skills/\n");
+			content += theme.fg("dim", "  • .pi/skills/\n");
+			content += theme.fg("dim", "  • --skill <path>\n");
+		} else {
+			content = theme.fg("muted", `${skills.length} skill(s) available:\n\n`);
+			for (const skill of skills) {
+				const name = theme.fg("accent", `/skill:${skill.name}`);
+				const desc = skill.description ? theme.fg("dim", ` - ${skill.description}`) : "";
+				content += `${name + desc}\n`;
+			}
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Skills")), 1, 0));
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(content, 1, 0));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.ui.requestRender();
+	}
+
+	private handlePromptsCommand(): void {
+		const templates = this.session.promptTemplates;
+
+		let content = "";
+
+		if (templates.length === 0) {
+			content = theme.fg("muted", "No prompt templates loaded.\n\n");
+			content += theme.fg("dim", "Templates can be loaded from:\n");
+			content += theme.fg("dim", "  • ~/.pi/agent/prompts/\n");
+			content += theme.fg("dim", "  • .pi/prompts/\n");
+			content += theme.fg("dim", "  • --prompt-template <path>\n");
+		} else {
+			content = theme.fg("muted", `${templates.length} template(s) available:\n\n`);
+			for (const tpl of templates) {
+				const name = theme.fg("accent", `/${tpl.name}`);
+				const desc = tpl.description ? theme.fg("dim", ` - ${tpl.description}`) : "";
+				content += `${name + desc}\n`;
+			}
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Prompt Templates")), 1, 0));
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(content, 1, 0));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.ui.requestRender();
+	}
+
+	private handleContextCommand(): void {
+		const usage = this.session.getContextUsage();
+		const model = this.session.model;
+		const entries = this.session.sessionManager.getBranch();
+
+		// Count message types
+		let userMessages = 0;
+		let assistantMessages = 0;
+		let toolCalls = 0;
+		let customMessages = 0;
+
+		for (const entry of entries) {
+			if (entry.type === "message") {
+				const role = entry.message.role;
+				if (role === "user") userMessages++;
+				else if (role === "assistant") assistantMessages++;
+				else if (role === "toolResult") toolCalls++;
+				else if (role === "custom") customMessages++;
+			}
+		}
+
+		let content = "";
+
+		// Model info
+		if (model) {
+			content += `${theme.fg("muted", "Model: ") + theme.fg("accent", `${model.provider}/${model.id}`)}\n`;
+			content +=
+				theme.fg("muted", "Context window: ") +
+				theme.fg("text", `${model.contextWindow.toLocaleString()} tokens`) +
+				"\n";
+			content += "\n";
+		}
+
+		// Token usage
+		if (usage) {
+			content +=
+				theme.fg("muted", "Current usage: ") +
+				theme.fg("text", `${usage.tokens.toLocaleString()} tokens (${usage.percent.toFixed(1)}%)`) +
+				"\n";
+			if (usage.trailingTokens > 0) {
+				content += `${theme.fg(
+					"dim",
+					`  (${usage.usageTokens.toLocaleString()} from last response + ${usage.trailingTokens.toLocaleString()} estimated)`,
+				)}\n`;
+			}
+		} else {
+			content += `${theme.fg("muted", "Token usage: ") + theme.fg("dim", "not available")}\n`;
+		}
+		content += "\n";
+
+		// Message counts
+		content += theme.fg("muted", "Messages in branch:\n");
+		content += `${theme.fg("dim", "  • User: ") + theme.fg("text", `${userMessages}`)}\n`;
+		content += `${theme.fg("dim", "  • Assistant: ") + theme.fg("text", `${assistantMessages}`)}\n`;
+		content += `${theme.fg("dim", "  • Tool calls: ") + theme.fg("text", `${toolCalls}`)}\n`;
+		if (customMessages > 0) {
+			content += `${theme.fg("dim", "  • Custom: ") + theme.fg("text", `${customMessages}`)}\n`;
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Context Usage")), 1, 0));
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(content, 1, 0));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.ui.requestRender();
 	}

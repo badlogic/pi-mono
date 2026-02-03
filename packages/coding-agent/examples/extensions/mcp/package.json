@@ -1,0 +1,10 @@
+{
+	"name": "pi-mcp-extension",
+	"version": "1.0.0",
+	"type": "module",
+	"description": "MCP (Model Context Protocol) support for pi",
+	"main": "index.ts",
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.25.0"
+	}
+}
