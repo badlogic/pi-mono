@@ -106,6 +106,7 @@ export class Agent {
 	private transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
 	private steeringQueue: AgentMessage[] = [];
 	private followUpQueue: AgentMessage[] = [];
+	private injectQueue: AgentMessage[] = [];
 	private steeringMode: "all" | "one-at-a-time";
 	private followUpMode: "all" | "one-at-a-time";
 	public streamFn: StreamFn;
@@ -239,6 +240,15 @@ export class Agent {
 		this.followUpQueue.push(m);
 	}
 
+	/**
+	 * Queue a message to be silently injected into context after tool execution.
+	 * The LLM sees it on its next call within the current run.
+	 * Does not skip tools, does not trigger new turns.
+	 */
+	inject(m: AgentMessage) {
+		this.injectQueue.push(m);
+	}
+
 	clearSteeringQueue() {
 		this.steeringQueue = [];
 	}
@@ -247,9 +257,14 @@ export class Agent {
 		this.followUpQueue = [];
 	}
 
+	clearInjectQueue() {
+		this.injectQueue = [];
+	}
+
 	clearAllQueues() {
 		this.steeringQueue = [];
 		this.followUpQueue = [];
+		this.injectQueue = [];
 	}
 
 	clearMessages() {
@@ -272,6 +287,7 @@ export class Agent {
 		this._state.error = undefined;
 		this.steeringQueue = [];
 		this.followUpQueue = [];
+		this.injectQueue = [];
 	}
 
 	/** Send a prompt with an AgentMessage */
@@ -389,6 +405,11 @@ export class Agent {
 					this.followUpQueue = [];
 					return followUp;
 				}
+			},
+			getInjectedMessages: async () => {
+				const injected = this.injectQueue.slice();
+				this.injectQueue = [];
+				return injected;
 			},
 		};
 

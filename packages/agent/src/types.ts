@@ -95,6 +95,20 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * Use this for follow-up messages that should wait until the agent finishes.
 	 */
 	getFollowUpMessages?: () => Promise<AgentMessage[]>;
+
+	/**
+	 * Returns messages to silently inject into context after tool execution.
+	 *
+	 * Called after all tool calls in a turn complete, before the turn_end event.
+	 * Messages are appended to context so the LLM sees them on its next call.
+	 *
+	 * Unlike steering: does not skip remaining tool calls.
+	 * Unlike follow-up: does not trigger new turns when the agent would stop.
+	 *
+	 * Use this for system nudges, state notifications, and context injection
+	 * that should be visible to the LLM without affecting the agent lifecycle.
+	 */
+	getInjectedMessages?: () => Promise<AgentMessage[]>;
 }
 
 /**

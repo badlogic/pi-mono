@@ -414,6 +414,263 @@ describe("agentLoop with AgentMessage", () => {
 	});
 });
 
+describe("inject messages", () => {
+	it("should append injected messages to context without skipping tool calls", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.value);
+				return {
+					content: [{ type: "text", text: `ok:${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("start");
+		const injectedMessage: AgentMessage = {
+			role: "custom" as any,
+			customType: "nudge",
+			content: "Remember to track tasks",
+			display: false,
+			timestamp: Date.now(),
+		} as unknown as AgentMessage;
+
+		let injectedDelivered = false;
+		let callIndex = 0;
+
+		// convertToLlm that passes custom messages through (as real extensions do)
+		const convertWithCustom = (messages: AgentMessage[]): Message[] => {
+			return messages
+				.map((m) => {
+					if ((m as any).customType) {
+						return { role: "user" as const, content: (m as any).content, timestamp: m.timestamp };
+					}
+					return m;
+				})
+				.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult") as Message[];
+		};
+
+		let sawInjectedInContext = false;
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: convertWithCustom,
+			getInjectedMessages: async () => {
+				// Return inject message after first tool call completes (turn with tools)
+				if (executed.length >= 1 && !injectedDelivered) {
+					injectedDelivered = true;
+					return [injectedMessage];
+				}
+				return [];
+			},
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([userPrompt], context, config, undefined, (_model, ctx, _options) => {
+			if (callIndex === 1) {
+				sawInjectedInContext = ctx.messages.some(
+					(m) => m.role === "user" && typeof m.content === "string" && m.content === "Remember to track tasks",
+				);
+			}
+
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					// Two tool calls — both should execute (inject does NOT skip)
+					const message = createAssistantMessage(
+						[
+							{ type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "first" } },
+							{ type: "toolCall", id: "tool-2", name: "echo", arguments: { value: "second" } },
+						],
+						"toolUse",
+					);
+					mockStream.push({ type: "done", reason: "toolUse", message });
+				} else {
+					const message = createAssistantMessage([{ type: "text", text: "done" }]);
+					mockStream.push({ type: "done", reason: "stop", message });
+				}
+				callIndex++;
+			});
+			return mockStream;
+		});
+
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		// Both tools should have executed (unlike steering which skips)
+		expect(executed).toEqual(["first", "second"]);
+
+		// No tool should be marked as error/skipped
+		const toolEnds = events.filter(
+			(e): e is Extract<AgentEvent, { type: "tool_execution_end" }> => e.type === "tool_execution_end",
+		);
+		expect(toolEnds.length).toBe(2);
+		expect(toolEnds[0].isError).toBe(false);
+		expect(toolEnds[1].isError).toBe(false);
+
+		// Injected message should appear in events
+		const injectedEvent = events.find((e) => e.type === "message_start" && (e.message as any).customType === "nudge");
+		expect(injectedEvent).toBeDefined();
+
+		// Injected message should be in context when second LLM call is made
+		expect(sawInjectedInContext).toBe(true);
+	});
+
+	it("should not trigger new turns when agent would stop", async () => {
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("hello");
+		const injectedMessage: AgentMessage = {
+			role: "custom" as any,
+			customType: "nudge",
+			content: "You have pending tasks",
+			display: false,
+			timestamp: Date.now(),
+		} as unknown as AgentMessage;
+
+		let injectedDelivered = false;
+		let llmCallCount = 0;
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			getInjectedMessages: async () => {
+				// Queue inject after the first (and only) turn
+				if (llmCallCount === 1 && !injectedDelivered) {
+					injectedDelivered = true;
+					return [injectedMessage];
+				}
+				return [];
+			},
+		};
+
+		const stream = agentLoop([userPrompt], context, config, undefined, () => {
+			llmCallCount++;
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				// Always respond with text only (no tools) — agent should stop
+				const message = createAssistantMessage([{ type: "text", text: "done" }]);
+				mockStream.push({ type: "done", reason: "stop", message });
+			});
+			return mockStream;
+		});
+
+		const events: AgentEvent[] = [];
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		// LLM should only be called ONCE — inject does not force continuation
+		expect(llmCallCount).toBe(1);
+
+		// Should still see agent_end
+		expect(events.some((e) => e.type === "agent_end")).toBe(true);
+
+		// Injected message should still appear in context (appended, just not acted on)
+		expect(injectedDelivered).toBe(true);
+	});
+
+	it("should drain injected messages on turns without tool calls", async () => {
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("start");
+		const steeringMessage: AgentMessage = createUserMessage("keep going");
+		const injectedMessage: AgentMessage = {
+			role: "custom" as any,
+			customType: "state-update",
+			content: "task list updated",
+			display: false,
+			timestamp: Date.now(),
+		} as unknown as AgentMessage;
+
+		let steeringDelivered = false;
+		let injectedDelivered = false;
+		let llmCallCount = 0;
+		let sawInjectedOnSecondCall = false;
+
+		// convertToLlm that passes custom messages through
+		const convertWithCustom = (messages: AgentMessage[]): Message[] => {
+			return messages
+				.map((m) => {
+					if ((m as any).customType) {
+						return { role: "user" as const, content: (m as any).content, timestamp: m.timestamp };
+					}
+					return m;
+				})
+				.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult") as Message[];
+		};
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: convertWithCustom,
+			getSteeringMessages: async () => {
+				// Steer after first turn to force a second turn (no tools involved)
+				if (llmCallCount === 1 && !steeringDelivered) {
+					steeringDelivered = true;
+					return [steeringMessage];
+				}
+				return [];
+			},
+			getInjectedMessages: async () => {
+				// Inject after first turn (which has no tools)
+				if (llmCallCount === 1 && !injectedDelivered) {
+					injectedDelivered = true;
+					return [injectedMessage];
+				}
+				return [];
+			},
+		};
+
+		const stream = agentLoop([userPrompt], context, config, undefined, (_model, ctx) => {
+			llmCallCount++;
+			if (llmCallCount === 2) {
+				sawInjectedOnSecondCall = ctx.messages.some(
+					(m) => m.role === "user" && typeof m.content === "string" && m.content === "task list updated",
+				);
+			}
+
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				const message = createAssistantMessage([{ type: "text", text: "ok" }]);
+				mockStream.push({ type: "done", reason: "stop", message });
+			});
+			return mockStream;
+		});
+
+		for await (const _ of stream) {
+			// consume
+		}
+
+		// Two LLM calls: first response + steering forces second
+		expect(llmCallCount).toBe(2);
+
+		// Injected message should be visible on the second call
+		// even though no tools were involved
+		expect(sawInjectedOnSecondCall).toBe(true);
+	});
+});
+
 describe("agentLoopContinue with AgentMessage", () => {
 	it("should throw when context has no messages", () => {
 		const context: AgentContext = {

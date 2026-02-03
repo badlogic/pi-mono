@@ -170,6 +170,16 @@ async function runLoop(
 				}
 			}
 
+			// Drain injected context messages every turn (silent, no turn trigger, no tool skip).
+			// Placed after tool results (if any) and before turn_end so the LLM sees them on its next call.
+			const injected = (await config.getInjectedMessages?.()) || [];
+			for (const msg of injected) {
+				stream.push({ type: "message_start", message: msg });
+				stream.push({ type: "message_end", message: msg });
+				currentContext.messages.push(msg);
+				newMessages.push(msg);
+			}
+
 			stream.push({ type: "turn_end", message, toolResults });
 
 			// Get steering messages after turn completes
