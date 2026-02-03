@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed input scrolling to avoid splitting emoji sequences ([#1228](https://github.com/badlogic/pi-mono/pull/1228) by [@haoqixu](https://github.com/haoqixu))
+
 ## [0.51.3] - 2026-02-03
 
 ## [0.51.2] - 2026-02-03

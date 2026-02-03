@@ -11,8 +11,6 @@
   <a href="https://pi.dev">pi.dev</a> domain graciously donated by
   <br /><br />
   <a href="https://exe.dev"><img src="packages/coding-agent/docs/images/exy.png" alt="Exy mascot" width="48" /><br />exe.dev</a>
-  <br />
-  ❤️
 </p>
 
 # Pi Monorepo
