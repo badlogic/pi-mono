@@ -347,13 +347,14 @@ export class InteractiveMode {
 		}));
 
 		// Convert extension commands to SlashCommand format
-		const extensionCommands: SlashCommand[] = (this.session.extensionRunner?.getRegisteredCommands() ?? []).map(
-			(cmd) => ({
-				name: cmd.name,
-				description: cmd.description ?? "(extension command)",
-				getArgumentCompletions: cmd.getArgumentCompletions,
-			}),
-		);
+		const builtinCommandNames = new Set(slashCommands.map((c) => c.name));
+		const extensionCommands: SlashCommand[] = (
+			this.session.extensionRunner?.getRegisteredCommands(builtinCommandNames) ?? []
+		).map((cmd) => ({
+			name: cmd.name,
+			description: cmd.description ?? "(extension command)",
+			getArgumentCompletions: cmd.getArgumentCompletions,
+		}));
 
 		// Build skill commands from session.skills (if enabled)
 		this.skillCommands.clear();
@@ -958,6 +959,9 @@ export class InteractiveMode {
 				extensionDiagnostics.push({ type: "error", message: error.error, path: error.path });
 			}
 		}
+
+		const commandDiagnostics = this.session.extensionRunner?.getCommandDiagnostics() ?? [];
+		extensionDiagnostics.push(...commandDiagnostics);
 
 		const shortcutDiagnostics = this.session.extensionRunner?.getShortcutDiagnostics() ?? [];
 		extensionDiagnostics.push(...shortcutDiagnostics);

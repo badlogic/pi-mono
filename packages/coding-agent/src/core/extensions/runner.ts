@@ -172,6 +172,7 @@ export class ExtensionRunner {
 	private switchSessionHandler: SwitchSessionHandler = async () => ({ cancelled: false });
 	private shutdownHandler: ShutdownHandler = () => {};
 	private shortcutDiagnostics: ResourceDiagnostic[] = [];
+	private commandDiagnostics: ResourceDiagnostic[] = [];
 
 	constructor(
 		extensions: Extension[],
@@ -373,14 +374,29 @@ export class ExtensionRunner {
 		return undefined;
 	}
 
-	getRegisteredCommands(): RegisteredCommand[] {
+	getRegisteredCommands(reserved?: Set<string>): RegisteredCommand[] {
+		this.commandDiagnostics = [];
+
 		const commands: RegisteredCommand[] = [];
 		for (const ext of this.extensions) {
 			for (const command of ext.commands.values()) {
+				if (reserved?.has(command.name)) {
+					const message = `Extension command '${command.name}' from ${ext.path} conflicts with built-in commands. Skipping.`;
+					this.commandDiagnostics.push({ type: "warning", message, path: ext.path });
+					if (!this.hasUI()) {
+						console.warn(message);
+					}
+					continue;
+				}
+
 				commands.push(command);
 			}
 		}
 		return commands;
+	}
+
+	getCommandDiagnostics(): ResourceDiagnostic[] {
+		return this.commandDiagnostics;
 	}
 
 	getRegisteredCommandsWithPaths(): Array<{ command: RegisteredCommand; extensionPath: string }> {
