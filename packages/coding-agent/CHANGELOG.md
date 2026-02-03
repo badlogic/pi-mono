@@ -8,6 +8,12 @@
 
 ### Added
 
+- Added `/help` command showing all commands grouped by category
+- Added `/tools` command for enabling/disabling tools interactively
+- Added `/extensions` command to list loaded extensions
+- Added `/skills` command to list available skills
+- Added `/prompts` command to list prompt templates
+- Added `/context` command showing context usage and token counts
 - Added `ExtensionAPI.getCommands()` to let extensions list available slash commands (extensions, prompt templates, skills) for invocation via `prompt` ([#1210](https://github.com/badlogic/pi-mono/pull/1210) by [@w-winter](https://github.com/w-winter))
 
 ## [0.51.2] - 2026-02-03
