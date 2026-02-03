@@ -289,18 +289,45 @@ export class Input implements Component, Focusable {
 			const scrollWidth = this.cursor === this.value.length ? availableWidth - 1 : availableWidth;
 			const halfWidth = Math.floor(scrollWidth / 2);
 
+			const findValidStart = (start: number) => {
+				while (start < this.value.length) {
+					const charCode = this.value.charCodeAt(start);
+					// this is low surrogate, not a valid start
+					if (charCode >= 0xdc00 && charCode < 0xe000) {
+						start++;
+						continue;
+					}
+					break;
+				}
+				return start;
+			};
+
+			const findValidEnd = (end: number) => {
+				while (end > 0) {
+					const charCode = this.value.charCodeAt(end - 1);
+					// this is high surrogate, might be split.
+					if (charCode >= 0xd800 && charCode < 0xdc00) {
+						end--;
+						continue;
+					}
+					break;
+				}
+				return end;
+			};
+
 			if (this.cursor < halfWidth) {
 				// Cursor near start
-				visibleText = this.value.slice(0, scrollWidth);
+				visibleText = this.value.slice(0, findValidEnd(scrollWidth));
 				cursorDisplay = this.cursor;
 			} else if (this.cursor > this.value.length - halfWidth) {
 				// Cursor near end
-				visibleText = this.value.slice(this.value.length - scrollWidth);
-				cursorDisplay = scrollWidth - (this.value.length - this.cursor);
+				const start = findValidStart(this.value.length - scrollWidth);
+				visibleText = this.value.slice(start);
+				cursorDisplay = this.cursor - start;
 			} else {
 				// Cursor in middle
-				const start = this.cursor - halfWidth;
-				visibleText = this.value.slice(start, start + scrollWidth);
+				const start = findValidStart(this.cursor - halfWidth);
+				visibleText = this.value.slice(start, findValidEnd(start + scrollWidth));
 				cursorDisplay = halfWidth;
 			}
 		}
