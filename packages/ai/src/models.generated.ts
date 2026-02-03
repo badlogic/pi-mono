@@ -2168,7 +2168,7 @@ export const MODELS = {
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
-			contextWindow: 64000,
+			contextWindow: 128000,
 			maxTokens: 16384,
 		} satisfies Model<"openai-completions">,
 		"gpt-4o": {
@@ -9284,7 +9284,7 @@ export const MODELS = {
 		} satisfies Model<"anthropic-messages">,
 		"alibaba/qwen-3-32b": {
 			id: "alibaba/qwen-3-32b",
-			name: "Qwen 3.32B",
+			name: "Qwen 3 32B",
 			api: "anthropic-messages",
 			provider: "vercel-ai-gateway",
 			baseUrl: "https://ai-gateway.vercel.sh",
@@ -10328,13 +10328,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
-				input: 0.6,
-				output: 3,
-				cacheRead: 0.09999999999999999,
+				input: 0.44999999999999996,
+				output: 2.8,
+				cacheRead: 0,
 				cacheWrite: 0,
 			},
-			contextWindow: 256000,
-			maxTokens: 256000,
+			contextWindow: 262144,
+			maxTokens: 252144,
 		} satisfies Model<"anthropic-messages">,
 		"nvidia/nemotron-nano-12b-v2-vl": {
 			id: "nvidia/nemotron-nano-12b-v2-vl",
