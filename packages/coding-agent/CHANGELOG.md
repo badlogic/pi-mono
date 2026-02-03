@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Share URLs now use pi.dev by default while shittycodingagent.ai and buildwithpi.ai continue to work.
+
 ## [0.51.3] - 2026-02-03
 
 ### New Features
