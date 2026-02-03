@@ -26,39 +26,27 @@ export const isBunRuntime = !!process.versions.bun;
 
 export type InstallMethod = "bun-binary" | "npm" | "pnpm" | "yarn" | "bun" | "unknown";
 
-let _cachedInstallMethod: InstallMethod | undefined;
-
 export function detectInstallMethod(): InstallMethod {
-	if (_cachedInstallMethod) return _cachedInstallMethod;
-
 	if (isBunBinary) {
-		_cachedInstallMethod = "bun-binary";
-		return _cachedInstallMethod;
+		return "bun-binary";
 	}
 
 	const resolvedPath = `${__dirname}\0${process.execPath || ""}`.toLowerCase();
 
 	if (resolvedPath.includes("/pnpm/") || resolvedPath.includes("/.pnpm/") || resolvedPath.includes("\\pnpm\\")) {
-		_cachedInstallMethod = "pnpm";
-	} else if (
-		resolvedPath.includes("/yarn/") ||
-		resolvedPath.includes("/.yarn/") ||
-		resolvedPath.includes("\\yarn\\")
-	) {
-		_cachedInstallMethod = "yarn";
-	} else if (isBunRuntime) {
-		_cachedInstallMethod = "bun";
-	} else if (
-		resolvedPath.includes("/npm/") ||
-		resolvedPath.includes("/node_modules/") ||
-		resolvedPath.includes("\\npm\\")
-	) {
-		_cachedInstallMethod = "npm";
-	} else {
-		_cachedInstallMethod = "unknown";
+		return "pnpm";
+	}
+	if (resolvedPath.includes("/yarn/") || resolvedPath.includes("/.yarn/") || resolvedPath.includes("\\yarn\\")) {
+		return "yarn";
+	}
+	if (isBunRuntime) {
+		return "bun";
+	}
+	if (resolvedPath.includes("/npm/") || resolvedPath.includes("/node_modules/") || resolvedPath.includes("\\npm\\")) {
+		return "npm";
 	}
 
-	return _cachedInstallMethod;
+	return "unknown";
 }
 
 export function getUpdateInstruction(packageName: string): string {
