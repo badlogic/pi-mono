@@ -210,6 +210,12 @@ export class TUI extends Container {
 	private cellSizeQueryPending = false;
 	private showHardwareCursor = process.env.PI_HARDWARE_CURSOR === "1";
 	private clearOnShrink = process.env.PI_CLEAR_ON_SHRINK === "1"; // Clear empty rows when content shrinks (default: off)
+
+	// Auto-follow output at bottom of viewport by default.
+	// When disabled, viewportTop is preserved across renders.
+	private followOutput = true;
+	private viewportTop = 0;
+
 	private maxLinesRendered = 0; // Track terminal's working area (max lines ever rendered)
 	private previousViewportTop = 0; // Track previous viewport top for resize-aware cursor moves
 	private fullRedrawCount = 0;
@@ -259,6 +265,44 @@ export class TUI extends Container {
 	 */
 	setClearOnShrink(enabled: boolean): void {
 		this.clearOnShrink = enabled;
+	}
+
+	getFollowOutput(): boolean {
+		return this.followOutput;
+	}
+
+	/**
+	 * Enable/disable auto-follow behavior.
+	 *
+	 * When enabled, the viewport snaps to the bottom on the next render.
+	 */
+	setFollowOutput(enabled: boolean): void {
+		if (this.followOutput === enabled) return;
+		this.followOutput = enabled;
+		if (enabled) {
+			// Snap to bottom on next render.
+			this.viewportTop = Math.max(0, this.maxLinesRendered - this.terminal.rows);
+		}
+		this.previousViewportTop = this.viewportTop;
+		this.requestRender();
+	}
+
+	getViewportTop(): number {
+		return this.viewportTop;
+	}
+
+	/**
+	 * Set the viewport's top row (0-indexed) and disable followOutput.
+	 */
+	setViewportTop(top: number): void {
+		this.followOutput = false;
+		const height = this.terminal.rows;
+		const maxTop = Math.max(0, this.maxLinesRendered - height);
+		const next = Number.isFinite(top) ? Math.max(0, Math.min(Math.floor(top), maxTop)) : 0;
+		if (next === this.viewportTop) return;
+		this.viewportTop = next;
+		this.previousViewportTop = next;
+		this.requestRender();
 	}
 
 	setFocus(component: Component | null): void {
@@ -435,6 +479,26 @@ export class TUI extends Container {
 		// Global debug key handler (Shift+Ctrl+D)
 		if (matchesKey(data, "shift+ctrl+d") && this.onDebug) {
 			this.onDebug();
+			return;
+		}
+
+		// Global viewport scrolling (chat history). Uses Shift+PageUp/Down to avoid
+		// clashing with Editor's PageUp/PageDown cursor navigation.
+		const pageSize = Math.max(1, Math.floor(this.terminal.rows * 0.5));
+		if (matchesKey(data, "shift+pageUp")) {
+			this.setViewportTop(this.viewportTop - pageSize);
+			return;
+		}
+		if (matchesKey(data, "shift+pageDown")) {
+			this.setViewportTop(this.viewportTop + pageSize);
+			return;
+		}
+		if (matchesKey(data, "shift+end")) {
+			this.setFollowOutput(true);
+			return;
+		}
+		if (matchesKey(data, "shift+home")) {
+			this.setViewportTop(0);
 			return;
 		}
 
@@ -817,7 +881,7 @@ export class TUI extends Container {
 		if (this.stopped) return;
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
-		let viewportTop = Math.max(0, this.maxLinesRendered - height);
+		let viewportTop = this.followOutput ? Math.max(0, this.maxLinesRendered - height) : this.viewportTop;
 		let prevViewportTop = this.previousViewportTop;
 		let hardwareCursorRow = this.hardwareCursorRow;
 		const computeLineDiff = (targetRow: number): number => {
@@ -846,7 +910,7 @@ export class TUI extends Container {
 		const fullRender = (clear: boolean): void => {
 			this.fullRedrawCount += 1;
 			let buffer = "\x1b[?2026h"; // Begin synchronized output
-			if (clear) buffer += "\x1b[3J\x1b[2J\x1b[H"; // Clear scrollback, screen, and home
+			if (clear) buffer += "\x1b[2J\x1b[H"; // Clear screen and home (avoid clearing scrollback)
 			for (let i = 0; i < newLines.length; i++) {
 				if (i > 0) buffer += "\r\n";
 				buffer += newLines[i];
@@ -861,7 +925,10 @@ export class TUI extends Container {
 			} else {
 				this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
 			}
-			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+			this.previousViewportTop = this.followOutput ? Math.max(0, this.maxLinesRendered - height) : this.viewportTop;
+			if (this.followOutput) {
+				this.viewportTop = this.previousViewportTop;
+			}
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
 			this.previousWidth = width;
@@ -925,7 +992,10 @@ export class TUI extends Container {
 		// No changes - but still need to update hardware cursor position if it moved
 		if (firstChanged === -1) {
 			this.positionHardwareCursor(cursorPos, newLines.length);
-			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+			this.previousViewportTop = this.followOutput ? Math.max(0, this.maxLinesRendered - height) : this.viewportTop;
+			if (this.followOutput) {
+				this.viewportTop = this.previousViewportTop;
+			}
 			return;
 		}
 
@@ -964,7 +1034,10 @@ export class TUI extends Container {
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
 			this.previousWidth = width;
-			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+			this.previousViewportTop = this.followOutput ? Math.max(0, this.maxLinesRendered - height) : this.viewportTop;
+			if (this.followOutput) {
+				this.viewportTop = this.previousViewportTop;
+			}
 			return;
 		}
 
@@ -1105,7 +1178,10 @@ export class TUI extends Container {
 		this.hardwareCursorRow = finalCursorRow;
 		// Track terminal's working area (grows but doesn't shrink unless cleared)
 		this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
-		this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+		this.previousViewportTop = this.followOutput ? Math.max(0, this.maxLinesRendered - height) : this.viewportTop;
+		if (this.followOutput) {
+			this.viewportTop = this.previousViewportTop;
+		}
 
 		// Position hardware cursor for IME
 		this.positionHardwareCursor(cursorPos, newLines.length);
