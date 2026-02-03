@@ -5,6 +5,8 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
+import { homedir } from "node:os";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { type ImageContent, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { createInterface } from "readline";
@@ -13,7 +15,7 @@ import { selectConfig } from "./cli/config-selector.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
-import { getAgentDir, getModelsPath, VERSION } from "./config.js";
+import { CONFIG_DIR_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { DEFAULT_THINKING_LEVEL } from "./core/defaults.js";
 import { exportFromFile } from "./core/export-html/index.js";
@@ -82,6 +84,38 @@ function parsePackageCommand(args: string[]): PackageCommandOptions | undefined 
 	return { command, source: sources[0], local };
 }
 
+function expandTildePath(input: string): string {
+	const trimmed = input.trim();
+	if (trimmed === "~") return homedir();
+	if (trimmed.startsWith("~/")) return resolve(homedir(), trimmed.slice(2));
+	if (trimmed.startsWith("~")) return resolve(homedir(), trimmed.slice(1));
+	return trimmed;
+}
+
+function resolveLocalSourceFromInput(source: string, cwd: string): string {
+	const expanded = expandTildePath(source);
+	return isAbsolute(expanded) ? expanded : resolve(cwd, expanded);
+}
+
+function resolveLocalSourceFromSettings(source: string, baseDir: string): string {
+	const expanded = expandTildePath(source);
+	return isAbsolute(expanded) ? expanded : resolve(baseDir, expanded);
+}
+
+function normalizeLocalSourceForSettings(source: string, baseDir: string, cwd: string): string {
+	const resolved = resolveLocalSourceFromInput(source, cwd);
+	const rel = relative(baseDir, resolved);
+	return rel || ".";
+}
+
+function normalizePackageSourceForSettings(source: string, baseDir: string, cwd: string): string {
+	const normalized = normalizeExtensionSource(source);
+	if (normalized.type !== "local") {
+		return source;
+	}
+	return normalizeLocalSourceForSettings(source, baseDir, cwd);
+}
+
 function normalizeExtensionSource(source: string): { type: "npm" | "git" | "local"; key: string } {
 	if (source.startsWith("npm:")) {
 		const spec = source.slice("npm:".length).trim();
@@ -100,9 +134,25 @@ function normalizeExtensionSource(source: string): { type: "npm" | "git" | "loca
 	return { type: "local", key: source };
 }
 
-function sourcesMatch(a: string, b: string): boolean {
-	const left = normalizeExtensionSource(a);
-	const right = normalizeExtensionSource(b);
+function normalizeSourceForInput(source: string, cwd: string): { type: "npm" | "git" | "local"; key: string } {
+	const normalized = normalizeExtensionSource(source);
+	if (normalized.type !== "local") {
+		return normalized;
+	}
+	return { type: "local", key: resolveLocalSourceFromInput(source, cwd) };
+}
+
+function normalizeSourceForSettings(source: string, baseDir: string): { type: "npm" | "git" | "local"; key: string } {
+	const normalized = normalizeExtensionSource(source);
+	if (normalized.type !== "local") {
+		return normalized;
+	}
+	return { type: "local", key: resolveLocalSourceFromSettings(source, baseDir) };
+}
+
+function sourcesMatch(a: string, b: string, baseDir: string, cwd: string): boolean {
+	const left = normalizeSourceForSettings(a, baseDir);
+	const right = normalizeSourceForInput(b, cwd);
 	return left.type === right.type && left.key === right.key;
 }
 
@@ -110,26 +160,30 @@ function getPackageSourceString(pkg: PackageSource): string {
 	return typeof pkg === "string" ? pkg : pkg.source;
 }
 
-function packageSourcesMatch(a: PackageSource, b: string): boolean {
+function packageSourcesMatch(a: PackageSource, b: string, baseDir: string, cwd: string): boolean {
 	const aSource = getPackageSourceString(a);
-	return sourcesMatch(aSource, b);
+	return sourcesMatch(aSource, b, baseDir, cwd);
 }
 
 function updatePackageSources(
 	settingsManager: SettingsManager,
 	source: string,
 	local: boolean,
+	cwd: string,
+	agentDir: string,
 	action: "add" | "remove",
 ): void {
 	const currentSettings = local ? settingsManager.getProjectSettings() : settingsManager.getGlobalSettings();
 	const currentPackages = currentSettings.packages ?? [];
+	const baseDir = local ? join(cwd, CONFIG_DIR_NAME) : agentDir;
+	const normalizedSource = normalizePackageSourceForSettings(source, baseDir, cwd);
 
 	let nextPackages: PackageSource[];
 	if (action === "add") {
-		const exists = currentPackages.some((existing) => packageSourcesMatch(existing, source));
-		nextPackages = exists ? currentPackages : [...currentPackages, source];
+		const exists = currentPackages.some((existing) => packageSourcesMatch(existing, source, baseDir, cwd));
+		nextPackages = exists ? currentPackages : [...currentPackages, normalizedSource];
 	} else {
-		nextPackages = currentPackages.filter((existing) => !packageSourcesMatch(existing, source));
+		nextPackages = currentPackages.filter((existing) => !packageSourcesMatch(existing, source, baseDir, cwd));
 	}
 
 	if (local) {
@@ -165,7 +219,7 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 			process.exit(1);
 		}
 		await packageManager.install(options.source, { local: options.local });
-		updatePackageSources(settingsManager, options.source, options.local, "add");
+		updatePackageSources(settingsManager, options.source, options.local, cwd, agentDir, "add");
 		console.log(chalk.green(`Installed ${options.source}`));
 		return true;
 	}
@@ -176,7 +230,7 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 			process.exit(1);
 		}
 		await packageManager.remove(options.source, { local: options.local });
-		updatePackageSources(settingsManager, options.source, options.local, "remove");
+		updatePackageSources(settingsManager, options.source, options.local, cwd, agentDir, "remove");
 		console.log(chalk.green(`Removed ${options.source}`));
 		return true;
 	}

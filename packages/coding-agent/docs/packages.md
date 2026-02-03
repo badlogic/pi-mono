@@ -23,6 +23,8 @@ Pi packages bundle extensions, skills, prompt templates, and themes so you can s
 pi install npm:@foo/bar@1.0.0
 pi install git:github.com/user/repo@v1
 pi install https://github.com/user/repo  # raw URLs work too
+pi install /absolute/path/to/package
+pi install ./relative/path/to/package
 
 pi remove npm:@foo/bar
 pi list    # show installed packages from settings
@@ -72,7 +74,7 @@ https://github.com/user/repo@v1
 ./relative/path/to/package
 ```
 
-Local paths work in settings but not with `pi install`. If the path is a file, it loads as a single extension. If it is a directory, pi loads resources using package rules.
+Local paths point to files or directories on disk and are added to settings without copying. Relative paths are resolved against the settings file they appear in. If the path is a file, it loads as a single extension. If it is a directory, pi loads resources using package rules.
 
 ## Creating a Pi Package
 

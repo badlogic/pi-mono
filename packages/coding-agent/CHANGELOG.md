@@ -9,6 +9,7 @@
 ### Added
 
 - Added `ExtensionAPI.getCommands()` to let extensions list available slash commands (extensions, prompt templates, skills) for invocation via `prompt` ([#1210](https://github.com/badlogic/pi-mono/pull/1210) by [@w-winter](https://github.com/w-winter))
+- Added local path support for `pi install` and `pi remove` with relative paths stored against the target settings file ([#1216](https://github.com/badlogic/pi-mono/issues/1216))
 
 ## [0.51.2] - 2026-02-03
 

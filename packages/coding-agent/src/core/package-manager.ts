@@ -617,7 +617,8 @@ export class DefaultPackageManager implements PackageManager {
 			return existsSync(path) ? path : undefined;
 		}
 		if (parsed.type === "local") {
-			const path = this.resolvePath(parsed.path);
+			const baseDir = this.getBaseDirForScope(scope);
+			const path = this.resolvePathFromBase(parsed.path, baseDir);
 			return existsSync(path) ? path : undefined;
 		}
 		return undefined;
@@ -721,6 +722,13 @@ export class DefaultPackageManager implements PackageManager {
 				await this.installGit(parsed, scope);
 				return;
 			}
+			if (parsed.type === "local") {
+				const resolved = this.resolvePath(parsed.path);
+				if (!existsSync(resolved)) {
+					throw new Error(`Path does not exist: ${resolved}`);
+				}
+				return;
+			}
 			throw new Error(`Unsupported install source: ${source}`);
 		});
 	}
@@ -737,6 +745,9 @@ export class DefaultPackageManager implements PackageManager {
 				await this.removeGit(parsed, scope);
 				return;
 			}
+			if (parsed.type === "local") {
+				return;
+			}
 			throw new Error(`Unsupported remove source: ${source}`);
 		});
 	}
@@ -748,12 +759,12 @@ export class DefaultPackageManager implements PackageManager {
 
 		for (const pkg of globalSettings.packages ?? []) {
 			const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
-			if (identity && this.getPackageIdentity(sourceStr) !== identity) continue;
+			if (identity && this.getPackageIdentity(sourceStr, "user") !== identity) continue;
 			await this.updateSourceForScope(sourceStr, "user");
 		}
 		for (const pkg of projectSettings.packages ?? []) {
 			const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
-			if (identity && this.getPackageIdentity(sourceStr) !== identity) continue;
+			if (identity && this.getPackageIdentity(sourceStr, "project") !== identity) continue;
 			await this.updateSourceForScope(sourceStr, "project");
 		}
 	}
@@ -788,7 +799,8 @@ export class DefaultPackageManager implements PackageManager {
 			const metadata: PathMetadata = { source: sourceStr, scope, origin: "package" };
 
 			if (parsed.type === "local") {
-				this.resolveLocalExtensionSource(parsed, accumulator, filter, metadata);
+				const baseDir = this.getBaseDirForScope(scope);
+				this.resolveLocalExtensionSource(parsed, accumulator, filter, metadata, baseDir);
 				continue;
 			}
 
@@ -833,8 +845,9 @@ export class DefaultPackageManager implements PackageManager {
 		accumulator: ResourceAccumulator,
 		filter: PackageFilter | undefined,
 		metadata: PathMetadata,
+		baseDir: string,
 	): void {
-		const resolved = this.resolvePath(source.path);
+		const resolved = this.resolvePathFromBase(source.path, baseDir);
 		if (!existsSync(resolved)) {
 			return;
 		}
@@ -949,7 +962,7 @@ export class DefaultPackageManager implements PackageManager {
 	 * Get a unique identity for a package, ignoring version/ref.
 	 * Used to detect when the same package is in both global and project settings.
 	 */
-	private getPackageIdentity(source: string): string {
+	private getPackageIdentity(source: string, scope?: SourceScope): string {
 		const parsed = this.parseSource(source);
 		if (parsed.type === "npm") {
 			return `npm:${parsed.name}`;
@@ -957,7 +970,10 @@ export class DefaultPackageManager implements PackageManager {
 		if (parsed.type === "git") {
 			return `git:${parsed.repo}`;
 		}
-		// For local paths, use the absolute resolved path
+		if (scope) {
+			const baseDir = this.getBaseDirForScope(scope);
+			return `local:${this.resolvePathFromBase(parsed.path, baseDir)}`;
+		}
 		return `local:${this.resolvePath(parsed.path)}`;
 	}
 
@@ -972,7 +988,7 @@ export class DefaultPackageManager implements PackageManager {
 
 		for (const entry of packages) {
 			const sourceStr = typeof entry.pkg === "string" ? entry.pkg : entry.pkg.source;
-			const identity = this.getPackageIdentity(sourceStr);
+			const identity = this.getPackageIdentity(sourceStr, entry.scope);
 
 			const existing = seen.get(identity);
 			if (!existing) {
@@ -1169,6 +1185,16 @@ export class DefaultPackageManager implements PackageManager {
 			.digest("hex")
 			.slice(0, 8);
 		return join(tmpdir(), "pi-extensions", prefix, hash, suffix ?? "");
+	}
+
+	private getBaseDirForScope(scope: SourceScope): string {
+		if (scope === "project") {
+			return join(this.cwd, CONFIG_DIR_NAME);
+		}
+		if (scope === "user") {
+			return this.agentDir;
+		}
+		return this.cwd;
 	}
 
 	private resolvePath(input: string): string {
