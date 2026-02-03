@@ -1,25 +1,27 @@
 import { Alert } from "@mariozechner/mini-lit/dist/Alert.js";
-import type { Message } from "@mariozechner/pi-ai";
-import type { AgentMessage, MessageRenderer } from "@mariozechner/pi-web-ui";
-import { defaultConvertToLlm, registerMessageRenderer } from "@mariozechner/pi-web-ui";
+import type { MessageRenderer } from "@mariozechner/pi-web-ui";
+import { registerMessageRenderer } from "@mariozechner/pi-web-ui";
 import { html } from "lit";
 
 // ============================================================================
 // 1. EXTEND AppMessage TYPE VIA DECLARATION MERGING
 // ============================================================================
 
-// Define custom message types
 export interface SystemNotificationMessage {
 	role: "system-notification";
 	message: string;
 	variant: "default" | "destructive";
-	timestamp: string;
+	timestamp: number;
 }
 
-// Extend CustomAgentMessages interface via declaration merging
-// This must target pi-agent-core where CustomAgentMessages is defined
-declare module "@mariozechner/pi-agent-core" {
-	interface CustomAgentMessages {
+// Extend pi-web-ui's CustomMessages interface (used to build AppMessage)
+// This enables:
+// - registering a renderer for `role: "system-notification"`
+// - using SystemNotificationMessage anywhere AppMessage is expected
+//
+// NOTE: We augment the public module because deep imports are blocked by the package's exports map.
+declare module "@mariozechner/pi-web-ui" {
+	interface CustomMessages {
 		"system-notification": SystemNotificationMessage;
 	}
 }
@@ -30,7 +32,6 @@ declare module "@mariozechner/pi-agent-core" {
 
 const systemNotificationRenderer: MessageRenderer<SystemNotificationMessage> = {
 	render: (notification) => {
-		// notification is fully typed as SystemNotificationMessage!
 		return html`
 			<div class="px-4">
 				${Alert({
@@ -67,33 +68,6 @@ export function createSystemNotification(
 		role: "system-notification",
 		message,
 		variant,
-		timestamp: new Date().toISOString(),
+		timestamp: Date.now(),
 	};
-}
-
-// ============================================================================
-// 5. CUSTOM MESSAGE TRANSFORMER
-// ============================================================================
-
-/**
- * Custom message transformer that extends defaultConvertToLlm.
- * Handles system-notification messages by converting them to user messages.
- */
-export function customConvertToLlm(messages: AgentMessage[]): Message[] {
-	// First, handle our custom system-notification type
-	const processed = messages.map((m): AgentMessage => {
-		if (m.role === "system-notification") {
-			const notification = m as SystemNotificationMessage;
-			// Convert to user message with <system> tags
-			return {
-				role: "user",
-				content: `<system>${notification.message}</system>`,
-				timestamp: Date.now(),
-			};
-		}
-		return m;
-	});
-
-	// Then use defaultConvertToLlm for standard handling
-	return defaultConvertToLlm(processed);
 }

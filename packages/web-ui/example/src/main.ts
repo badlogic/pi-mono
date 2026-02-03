@@ -1,7 +1,11 @@
 import "@mariozechner/mini-lit/dist/ThemeToggle.js";
-import { Agent, type AgentMessage } from "@mariozechner/pi-agent-core";
+import { icon } from "@mariozechner/mini-lit";
+import { Button } from "@mariozechner/mini-lit/dist/Button.js";
+import { Input } from "@mariozechner/mini-lit/dist/Input.js";
+import type { TextContent } from "@mariozechner/pi-ai";
 import { getModel } from "@mariozechner/pi-ai";
 import {
+	Agent,
 	type AgentState,
 	ApiKeyPromptDialog,
 	AppStorage,
@@ -9,23 +13,21 @@ import {
 	CustomProvidersStore,
 	createJavaScriptReplTool,
 	IndexedDBStorageBackend,
-	// PersistentStorageDialog, // TODO: Fix - currently broken
 	ProviderKeysStore,
 	ProvidersModelsTab,
+	ProviderTransport,
 	ProxyTab,
 	SessionListDialog,
 	SessionsStore,
 	SettingsDialog,
 	SettingsStore,
 	setAppStorage,
+	type UserMessageWithAttachments,
 } from "@mariozechner/pi-web-ui";
 import { html, render } from "lit";
 import { Bell, History, Plus, Settings } from "lucide";
 import "./app.css";
-import { icon } from "@mariozechner/mini-lit";
-import { Button } from "@mariozechner/mini-lit/dist/Button.js";
-import { Input } from "@mariozechner/mini-lit/dist/Input.js";
-import { createSystemNotification, customConvertToLlm, registerCustomMessageRenderers } from "./custom-messages.js";
+import { createSystemNotification, registerCustomMessageRenderers } from "./custom-messages.js";
 
 // Register custom message renderers
 registerCustomMessageRenderers();
@@ -69,9 +71,13 @@ let agent: Agent;
 let chatPanel: ChatPanel;
 let agentUnsubscribe: (() => void) | undefined;
 
-const generateTitle = (messages: AgentMessage[]): string => {
-	const firstUserMsg = messages.find((m) => m.role === "user" || m.role === "user-with-attachments");
-	if (!firstUserMsg || (firstUserMsg.role !== "user" && firstUserMsg.role !== "user-with-attachments")) return "";
+function isUserMessage(m: unknown): m is UserMessageWithAttachments {
+	return typeof m === "object" && m !== null && (m as { role?: unknown }).role === "user";
+}
+
+const generateTitle = (messages: AgentState["messages"]): string => {
+	const firstUserMsg = messages.find(isUserMessage);
+	if (!firstUserMsg) return "";
 
 	let text = "";
 	const content = firstUserMsg.content;
@@ -79,8 +85,8 @@ const generateTitle = (messages: AgentMessage[]): string => {
 	if (typeof content === "string") {
 		text = content;
 	} else {
-		const textBlocks = content.filter((c: any) => c.type === "text");
-		text = textBlocks.map((c: any) => c.text || "").join(" ");
+		const textBlocks = content.filter((c): c is TextContent => c.type === "text");
+		text = textBlocks.map((c) => c.text).join(" ");
 	}
 
 	text = text.trim();
@@ -93,14 +99,14 @@ const generateTitle = (messages: AgentMessage[]): string => {
 	return text.length <= 50 ? text : `${text.substring(0, 47)}...`;
 };
 
-const shouldSaveSession = (messages: AgentMessage[]): boolean => {
-	const hasUserMsg = messages.some((m: any) => m.role === "user" || m.role === "user-with-attachments");
-	const hasAssistantMsg = messages.some((m: any) => m.role === "assistant");
+const shouldSaveSession = (messages: AgentState["messages"]): boolean => {
+	const hasUserMsg = messages.some((m) => m.role === "user");
+	const hasAssistantMsg = messages.some((m) => m.role === "assistant");
 	return hasUserMsg && hasAssistantMsg;
 };
 
 const saveSession = async () => {
-	if (!storage.sessions || !currentSessionId || !agent || !currentTitle) return;
+	if (!storage.sessions || !currentSessionId || !currentTitle) return;
 
 	const state = agent.state;
 	if (!shouldSaveSession(state.messages)) return;
@@ -110,7 +116,7 @@ const saveSession = async () => {
 		const sessionData = {
 			id: currentSessionId,
 			title: currentTitle,
-			model: state.model!,
+			model: state.model,
 			thinkingLevel: state.thinkingLevel,
 			messages: state.messages,
 			createdAt: new Date().toISOString(),
@@ -161,6 +167,7 @@ const createAgent = async (initialState?: Partial<AgentState>) => {
 	}
 
 	agent = new Agent({
+		transport: new ProviderTransport(),
 		initialState: initialState || {
 			systemPrompt: `You are a helpful AI assistant with access to various tools.
 
@@ -174,11 +181,9 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 			messages: [],
 			tools: [],
 		},
-		// Custom transformer: convert custom messages to LLM-compatible format
-		convertToLlm: customConvertToLlm,
 	});
 
-	agentUnsubscribe = agent.subscribe((event: any) => {
+	agentUnsubscribe = agent.subscribe((event) => {
 		if (event.type === "state-update") {
 			const messages = event.state.messages;
 
@@ -195,7 +200,7 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 
 			// Auto-save
 			if (currentSessionId) {
-				saveSession();
+				void saveSession();
 			}
 
 			renderApp();
@@ -344,14 +349,12 @@ const renderApp = () => {
 						size: "sm",
 						children: icon(Bell, "sm"),
 						onClick: () => {
-							// Demo: Inject custom message (will appear on next agent run)
-							if (agent) {
-								agent.steer(
-									createSystemNotification(
-										"This is a custom message! It appears in the UI but is never sent to the LLM.",
-									),
-								);
-							}
+							// Demo: Add a custom message to the UI (never sent to the LLM)
+							agent.appendMessage(
+								createSystemNotification(
+									"This is a custom message! It appears in the UI but is never sent to the LLM.",
+								),
+							);
 						},
 						title: "Demo: Add Custom Notification",
 					})}
@@ -418,4 +421,4 @@ async function initApp() {
 	renderApp();
 }
 
-initApp();
+void initApp();
