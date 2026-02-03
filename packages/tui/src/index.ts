@@ -14,7 +14,16 @@ export { Editor, type EditorOptions, type EditorTheme } from "./components/edito
 export { Image, type ImageOptions, type ImageTheme } from "./components/image.js";
 export { Input } from "./components/input.js";
 export { Loader } from "./components/loader.js";
-export { type DefaultTextStyle, Markdown, type MarkdownTheme } from "./components/markdown.js";
+export {
+	CODE_BLOCK_MARKER_REGEX,
+	type CodeBlockInfo,
+	type CodeBlockLabelInfo,
+	type DefaultTextStyle,
+	extractCodeBlockId,
+	Markdown,
+	type MarkdownOptions,
+	type MarkdownTheme,
+} from "./components/markdown.js";
 export { type SelectItem, SelectList, type SelectListTheme } from "./components/select-list.js";
 export { type SettingItem, SettingsList, type SettingsListTheme } from "./components/settings-list.js";
 export { Spacer } from "./components/spacer.js";

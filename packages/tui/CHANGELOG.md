@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Markdown code block metadata and labels for identifying blocks in rendered output.
+- Added `submitOnSelect` to `AutocompleteItem` for immediate submit after selecting a completion.
+
 ## [0.51.4] - 2026-02-03
 
 ### Fixed

@@ -8,6 +8,7 @@ export interface SelectItem {
 	value: string;
 	label: string;
 	description?: string;
+	submitOnSelect?: boolean;
 }
 
 export interface SelectListTheme {

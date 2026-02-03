@@ -1,6 +1,35 @@
 import type { AssistantMessage } from "@mariozechner/pi-ai";
-import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@mariozechner/pi-tui";
+import {
+	type CodeBlockInfo,
+	Container,
+	Markdown,
+	type MarkdownOptions,
+	type MarkdownTheme,
+	Spacer,
+	Text,
+} from "@mariozechner/pi-tui";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
+
+export type CodeBlockRegistry = {
+	register(info: CodeBlockInfo, owner: Markdown): void;
+	clearPrefix(prefix: string): void;
+};
+
+const CODE_FENCE_REGEX = /^\s*```/;
+
+function countCodeBlocks(text: string): number {
+	let count = 0;
+	let inFence = false;
+	for (const line of text.split(/\r?\n/)) {
+		if (CODE_FENCE_REGEX.test(line)) {
+			if (!inFence) {
+				count += 1;
+			}
+			inFence = !inFence;
+		}
+	}
+	return count;
+}
 
 /**
  * Component that renders a complete assistant message
@@ -10,16 +39,20 @@ export class AssistantMessageComponent extends Container {
 	private hideThinkingBlock: boolean;
 	private markdownTheme: MarkdownTheme;
 	private lastMessage?: AssistantMessage;
+	private codeBlockRegistry?: CodeBlockRegistry;
+	private showCodeBlockLabels = false;
 
 	constructor(
 		message?: AssistantMessage,
 		hideThinkingBlock = false,
 		markdownTheme: MarkdownTheme = getMarkdownTheme(),
+		codeBlockRegistry?: CodeBlockRegistry,
 	) {
 		super();
 
 		this.hideThinkingBlock = hideThinkingBlock;
 		this.markdownTheme = markdownTheme;
+		this.codeBlockRegistry = codeBlockRegistry;
 
 		// Container for text/thinking content
 		this.contentContainer = new Container();
@@ -41,6 +74,16 @@ export class AssistantMessageComponent extends Container {
 		this.hideThinkingBlock = hide;
 	}
 
+	setShowCodeBlockLabels(show: boolean): void {
+		if (this.showCodeBlockLabels === show) {
+			return;
+		}
+		this.showCodeBlockLabels = show;
+		if (this.lastMessage) {
+			this.updateContent(this.lastMessage);
+		}
+	}
+
 	updateContent(message: AssistantMessage): void {
 		this.lastMessage = message;
 
@@ -55,13 +98,37 @@ export class AssistantMessageComponent extends Container {
 			this.contentContainer.addChild(new Spacer(1));
 		}
 
+		let codeBlockLabelOffset = 0;
+
 		// Render content in order
 		for (let i = 0; i < message.content.length; i++) {
 			const content = message.content[i];
 			if (content.type === "text" && content.text.trim()) {
+				const prefix = `am-${message.timestamp}-${i}-`;
+				const trimmedText = content.text.trim();
+				this.codeBlockRegistry?.clearPrefix(prefix);
+				let markdown: Markdown | undefined;
+				const labelOffset = this.showCodeBlockLabels ? codeBlockLabelOffset : undefined;
+				if (this.showCodeBlockLabels) {
+					codeBlockLabelOffset += countCodeBlocks(trimmedText);
+				}
+				const options: MarkdownOptions | undefined = this.codeBlockRegistry
+					? {
+							codeBlockIdPrefix: prefix,
+							codeBlockLabel: this.showCodeBlockLabels ? ({ index }) => `[#${index}]` : undefined,
+							codeBlockLabelOffset: labelOffset,
+							onCodeBlock: (info: CodeBlockInfo) => {
+								if (markdown) {
+									this.codeBlockRegistry?.register(info, markdown);
+								}
+							},
+						}
+					: undefined;
+
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
-				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
+				markdown = new Markdown(trimmedText, 1, 0, this.markdownTheme, undefined, options);
+				this.contentContainer.addChild(markdown);
 			} else if (content.type === "thinking" && content.thinking.trim()) {
 				// Check if there's text content after this thinking block
 				const hasTextAfter = message.content.slice(i + 1).some((c) => c.type === "text" && c.text.trim());

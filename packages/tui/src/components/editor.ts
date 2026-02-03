@@ -549,6 +549,12 @@ export class Editor implements Component, Focusable {
 					this.state.cursorLine = result.cursorLine;
 					this.setCursorCol(result.cursorCol);
 
+					if (selected.submitOnSelect && !this.disableSubmit) {
+						this.cancelAutocomplete();
+						this.submitValue();
+						return;
+					}
+
 					if (this.autocompletePrefix.startsWith("/")) {
 						this.cancelAutocomplete();
 						// Fall through to submit

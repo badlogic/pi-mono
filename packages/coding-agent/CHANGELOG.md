@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Enhanced `/copy` to target numbered code blocks with autocomplete suggestions, labels, and immediate submit on selection.
+
 ## [0.51.4] - 2026-02-03
 
 ### New Features

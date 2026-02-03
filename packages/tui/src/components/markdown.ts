@@ -51,6 +51,36 @@ interface InlineStyleContext {
 	stylePrefix: string;
 }
 
+export type CodeBlockInfo = {
+	id: string;
+	language?: string;
+	code: string;
+};
+
+export type CodeBlockLabelInfo = {
+	index: number;
+	language?: string;
+	code: string;
+};
+
+export type MarkdownOptions = {
+	codeBlockIdPrefix?: string;
+	onCodeBlock?: (info: CodeBlockInfo) => void;
+	codeBlockLabel?: (info: CodeBlockLabelInfo) => string | undefined;
+	codeBlockLabelOffset?: number;
+};
+
+export const CODE_BLOCK_MARKER_REGEX = /\x1b_pi:cb:([^\x07]+)\x07/;
+
+export function extractCodeBlockId(line: string): string | undefined {
+	const match = line.match(CODE_BLOCK_MARKER_REGEX);
+	return match?.[1];
+}
+
+const buildCodeBlockMarker = (id: string): string => `\x1b_pi:cb:${id}\x07`;
+
+let markdownInstanceCounter = 0;
+
 export class Markdown implements Component {
 	private text: string;
 	private paddingX: number; // Left/right padding
@@ -58,11 +88,20 @@ export class Markdown implements Component {
 	private defaultTextStyle?: DefaultTextStyle;
 	private theme: MarkdownTheme;
 	private defaultStylePrefix?: string;
+	private codeBlockIdPrefix?: string;
+	private onCodeBlock?: (info: CodeBlockInfo) => void;
+	private codeBlockLabel?: (info: CodeBlockLabelInfo) => string | undefined;
+	private codeBlockLabelOffset?: number;
+	private codeBlockIndex = 0;
+	private codeBlockRenderIndex = 0;
+	private codeBlocks: CodeBlockInfo[] = [];
+	private instanceId: number;
 
 	// Cache for rendered output
 	private cachedText?: string;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
+	private cachedCodeBlocks?: CodeBlockInfo[];
 
 	constructor(
 		text: string,
@@ -70,12 +109,18 @@ export class Markdown implements Component {
 		paddingY: number,
 		theme: MarkdownTheme,
 		defaultTextStyle?: DefaultTextStyle,
+		options?: MarkdownOptions,
 	) {
 		this.text = text;
 		this.paddingX = paddingX;
 		this.paddingY = paddingY;
 		this.theme = theme;
 		this.defaultTextStyle = defaultTextStyle;
+		this.codeBlockIdPrefix = options?.codeBlockIdPrefix;
+		this.onCodeBlock = options?.onCodeBlock;
+		this.codeBlockLabel = options?.codeBlockLabel;
+		this.codeBlockLabelOffset = options?.codeBlockLabelOffset;
+		this.instanceId = ++markdownInstanceCounter;
 	}
 
 	setText(text: string): void {
@@ -87,13 +132,23 @@ export class Markdown implements Component {
 		this.cachedText = undefined;
 		this.cachedWidth = undefined;
 		this.cachedLines = undefined;
+		this.cachedCodeBlocks = undefined;
 	}
 
 	render(width: number): string[] {
 		// Check cache
 		if (this.cachedLines && this.cachedText === this.text && this.cachedWidth === width) {
+			if (this.onCodeBlock && this.cachedCodeBlocks) {
+				for (const info of this.cachedCodeBlocks) {
+					this.onCodeBlock(info);
+				}
+			}
 			return this.cachedLines;
 		}
+
+		this.codeBlocks = [];
+		this.codeBlockIndex = 0;
+		this.codeBlockRenderIndex = 0;
 
 		// Calculate available width for content (subtract horizontal padding)
 		const contentWidth = Math.max(1, width - this.paddingX * 2);
@@ -105,6 +160,7 @@ export class Markdown implements Component {
 			this.cachedText = this.text;
 			this.cachedWidth = width;
 			this.cachedLines = result;
+			this.cachedCodeBlocks = [];
 			return result;
 		}
 
@@ -127,7 +183,7 @@ export class Markdown implements Component {
 		// Wrap lines (NO padding, NO background yet)
 		const wrappedLines: string[] = [];
 		for (const line of renderedLines) {
-			if (isImageLine(line)) {
+			if (isImageLine(line) || CODE_BLOCK_MARKER_REGEX.test(line)) {
 				wrappedLines.push(line);
 			} else {
 				wrappedLines.push(...wrapTextWithAnsi(line, contentWidth));
@@ -173,6 +229,7 @@ export class Markdown implements Component {
 		this.cachedText = this.text;
 		this.cachedWidth = width;
 		this.cachedLines = result;
+		this.cachedCodeBlocks = [...this.codeBlocks];
 
 		return result.length > 0 ? result : [""];
 	}
@@ -210,6 +267,58 @@ export class Markdown implements Component {
 		}
 
 		return styled;
+	}
+
+	private registerCodeBlock(code: string, language?: string): string | undefined {
+		if (!this.onCodeBlock) {
+			return undefined;
+		}
+
+		const prefix = this.codeBlockIdPrefix ?? `md-${this.instanceId}-`;
+		const id = `${prefix}${this.codeBlockIndex}`;
+		const info: CodeBlockInfo = { id, language, code };
+
+		this.codeBlocks.push(info);
+		this.onCodeBlock(info);
+		this.codeBlockIndex += 1;
+
+		return id;
+	}
+
+	private getCodeBlockHeader(language: string | undefined, code: string): string {
+		let label: string | undefined;
+		if (this.codeBlockLabel) {
+			const index = (this.codeBlockLabelOffset ?? 0) + this.codeBlockRenderIndex + 1;
+			label = this.codeBlockLabel({ index, language, code });
+		}
+		this.codeBlockRenderIndex += 1;
+
+		const langPart = language ?? "";
+		const labelPart = label ? ` ${label}` : "";
+		return this.theme.codeBlockBorder(`\`\`\`${langPart}${labelPart}`);
+	}
+
+	private renderCodeBlockLines(code: string, language: string | undefined, width: number, indent: string): string[] {
+		const markerId = this.registerCodeBlock(code, language);
+		const marker = markerId ? buildCodeBlockMarker(markerId) : "";
+		const output: string[] = [];
+		const codeLines = this.theme.highlightCode
+			? this.theme.highlightCode(code, language)
+			: code.split("\n").map((line) => this.theme.codeBlock(line));
+
+		for (const codeLine of codeLines) {
+			const line = `${indent}${codeLine}`;
+			if (marker) {
+				const wrapped = wrapTextWithAnsi(line, width);
+				for (const wrappedLine of wrapped) {
+					output.push(`${marker}${wrappedLine}`);
+				}
+			} else {
+				output.push(line);
+			}
+		}
+
+		return output;
 	}
 
 	private getDefaultStylePrefix(): string {
@@ -295,19 +404,8 @@ export class Markdown implements Component {
 
 			case "code": {
 				const indent = this.theme.codeBlockIndent ?? "  ";
-				lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
-				if (this.theme.highlightCode) {
-					const highlightedLines = this.theme.highlightCode(token.text, token.lang);
-					for (const hlLine of highlightedLines) {
-						lines.push(`${indent}${hlLine}`);
-					}
-				} else {
-					// Split code by newlines and style each line
-					const codeLines = token.text.split("\n");
-					for (const codeLine of codeLines) {
-						lines.push(`${indent}${this.theme.codeBlock(codeLine)}`);
-					}
-				}
+				lines.push(this.getCodeBlockHeader(token.lang, token.text));
+				lines.push(...this.renderCodeBlockLines(token.text, token.lang, width, indent));
 				lines.push(this.theme.codeBlockBorder("```"));
 				if (nextTokenType !== "space") {
 					lines.push(""); // Add spacing after code blocks (unless space token follows)
@@ -316,7 +414,7 @@ export class Markdown implements Component {
 			}
 
 			case "list": {
-				const listLines = this.renderList(token as any, 0);
+				const listLines = this.renderList(token as any, 0, width);
 				lines.push(...listLines);
 				// Don't add spacing after lists if a space token follows
 				// (the space token will handle it)
@@ -473,7 +571,11 @@ export class Markdown implements Component {
 	/**
 	 * Render a list with proper nesting support
 	 */
-	private renderList(token: Token & { items: any[]; ordered: boolean; start?: number }, depth: number): string[] {
+	private renderList(
+		token: Token & { items: any[]; ordered: boolean; start?: number },
+		depth: number,
+		width: number,
+	): string[] {
 		const lines: string[] = [];
 		const indent = "  ".repeat(depth);
 		// Use the list's start property (defaults to 1 for ordered lists)
@@ -484,7 +586,7 @@ export class Markdown implements Component {
 			const bullet = token.ordered ? `${startNumber + i}. ` : "- ";
 
 			// Process item tokens to handle nested lists
-			const itemLines = this.renderListItem(item.tokens || [], depth);
+			const itemLines = this.renderListItem(item.tokens || [], depth, width);
 
 			if (itemLines.length > 0) {
 				// First line - check if it's a nested list
@@ -525,14 +627,14 @@ export class Markdown implements Component {
 	 * Render list item tokens, handling nested lists
 	 * Returns lines WITHOUT the parent indent (renderList will add it)
 	 */
-	private renderListItem(tokens: Token[], parentDepth: number): string[] {
+	private renderListItem(tokens: Token[], parentDepth: number, width: number): string[] {
 		const lines: string[] = [];
 
 		for (const token of tokens) {
 			if (token.type === "list") {
 				// Nested list - render with one additional indent level
 				// These lines will have their own indent, so we just add them as-is
-				const nestedLines = this.renderList(token as any, parentDepth + 1);
+				const nestedLines = this.renderList(token as any, parentDepth + 1, width);
 				lines.push(...nestedLines);
 			} else if (token.type === "text") {
 				// Text content (may have inline tokens)
@@ -546,18 +648,8 @@ export class Markdown implements Component {
 			} else if (token.type === "code") {
 				// Code block in list item
 				const indent = this.theme.codeBlockIndent ?? "  ";
-				lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
-				if (this.theme.highlightCode) {
-					const highlightedLines = this.theme.highlightCode(token.text, token.lang);
-					for (const hlLine of highlightedLines) {
-						lines.push(`${indent}${hlLine}`);
-					}
-				} else {
-					const codeLines = token.text.split("\n");
-					for (const codeLine of codeLines) {
-						lines.push(`${indent}${this.theme.codeBlock(codeLine)}`);
-					}
-				}
+				lines.push(this.getCodeBlockHeader(token.lang, token.text));
+				lines.push(...this.renderCodeBlockLines(token.text, token.lang, width, indent));
 				lines.push(this.theme.codeBlockBorder("```"));
 			} else {
 				// Other token types - try to render as inline

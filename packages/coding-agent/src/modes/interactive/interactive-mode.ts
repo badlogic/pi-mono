@@ -18,6 +18,7 @@ import {
 } from "@mariozechner/pi-ai";
 import type {
 	AutocompleteItem,
+	CodeBlockInfo,
 	EditorAction,
 	EditorComponent,
 	EditorTheme,
@@ -73,7 +74,7 @@ import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { ArminComponent } from "./components/armin.js";
-import { AssistantMessageComponent } from "./components/assistant-message.js";
+import { AssistantMessageComponent, type CodeBlockRegistry } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
 import { BorderedLoader } from "./components/bordered-loader.js";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.js";
@@ -121,6 +122,45 @@ interface Expandable {
 
 function isExpandable(obj: unknown): obj is Expandable {
 	return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
+}
+
+type CodeBlockEntry = {
+	info: CodeBlockInfo;
+	owner: Markdown;
+	order: number;
+};
+
+class CodeBlockStore implements CodeBlockRegistry {
+	private blocks = new Map<string, CodeBlockEntry>();
+	private orderCounter = 0;
+
+	register(info: CodeBlockInfo, owner: Markdown): void {
+		this.blocks.set(info.id, { info, owner, order: this.orderCounter++ });
+	}
+
+	clearPrefix(prefix: string): void {
+		for (const id of this.blocks.keys()) {
+			if (id.startsWith(prefix)) {
+				this.blocks.delete(id);
+			}
+		}
+	}
+
+	clear(): void {
+		this.blocks.clear();
+		this.orderCounter = 0;
+	}
+
+	get(id: string): CodeBlockEntry | undefined {
+		return this.blocks.get(id);
+	}
+
+	getEntriesForMessage(timestamp: number): CodeBlockEntry[] {
+		const prefix = `am-${timestamp}-`;
+		return [...this.blocks.values()]
+			.filter((entry) => entry.info.id.startsWith(prefix))
+			.sort((a, b) => a.order - b.order);
+	}
 }
 
 type CompactionQueuedMessage = {
@@ -178,6 +218,8 @@ export class InteractiveMode {
 	// Streaming message tracking
 	private streamingComponent: AssistantMessageComponent | undefined = undefined;
 	private streamingMessage: AssistantMessage | undefined = undefined;
+	private lastAssistantComponent: AssistantMessageComponent | undefined = undefined;
+	private lastAssistantMessageTimestamp: number | undefined = undefined;
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
@@ -187,6 +229,11 @@ export class InteractiveMode {
 
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
+
+	private copyAutocompleteActive = false;
+
+	// Code block registry for /copy
+	private codeBlockRegistry = new CodeBlockStore();
 
 	// Skill commands: command name -> skill file path
 	private skillCommands = new Map<string, string>();
@@ -272,6 +319,7 @@ export class InteractiveMode {
 			paddingX: editorPaddingX,
 			autocompleteMaxVisible,
 		});
+		this.defaultEditor.onAutocompleteStateChange = (visible) => this.handleAutocompleteStateChange(visible);
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
@@ -322,6 +370,35 @@ export class InteractiveMode {
 					label: item.id,
 					description: item.provider,
 				}));
+			};
+		}
+
+		const copyCommand = slashCommands.find((command) => command.name === "copy");
+		if (copyCommand) {
+			copyCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+				const timestamp = this.lastAssistantMessageTimestamp;
+				if (!timestamp) return null;
+
+				const blocks = this.codeBlockRegistry.getEntriesForMessage(timestamp);
+				if (blocks.length === 0) return null;
+
+				const items = blocks.map((entry, index) => {
+					const value = String(index + 1);
+					const label = `#${value}`;
+					const firstLine = entry.info.code.split(/\r?\n/, 1)[0]?.trim() ?? "";
+					const preview = firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine;
+					const descriptionParts = [entry.info.language, preview].filter((part): part is string => Boolean(part));
+					return {
+						value,
+						label,
+						description: descriptionParts.length > 0 ? descriptionParts.join(" · ") : undefined,
+						submitOnSelect: true,
+					};
+				});
+
+				const filtered = prefix ? fuzzyFilter(items, prefix, (item) => `${item.value} ${item.label}`) : items;
+
+				return filtered.length > 0 ? filtered : null;
 			};
 		}
 
@@ -1593,6 +1670,7 @@ export class InteractiveMode {
 				customEditor.onEscape = this.defaultEditor.onEscape;
 				customEditor.onCtrlD = this.defaultEditor.onCtrlD;
 				customEditor.onPasteImage = this.defaultEditor.onPasteImage;
+				customEditor.onAutocompleteStateChange = this.defaultEditor.onAutocompleteStateChange;
 				customEditor.onExtensionShortcut = (data: string) => this.defaultEditor.onExtensionShortcut?.(data);
 				// Copy action handlers (clear, suspend, model switching, etc.)
 				for (const [action, handler] of this.defaultEditor.actionHandlers) {
@@ -1848,8 +1926,8 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
-			if (text === "/copy") {
-				this.handleCopyCommand();
+			if (text === "/copy" || text.startsWith("/copy ")) {
+				this.handleCopyCommand(text);
 				this.editor.setText("");
 				return;
 			}
@@ -2041,8 +2119,15 @@ export class InteractiveMode {
 						undefined,
 						this.hideThinkingBlock,
 						this.getMarkdownThemeWithSettings(),
+						this.codeBlockRegistry,
 					);
 					this.streamingMessage = event.message;
+					this.lastAssistantComponent?.setShowCodeBlockLabels(false);
+					this.lastAssistantComponent = this.streamingComponent;
+					this.lastAssistantMessageTimestamp = event.message.timestamp;
+					if (this.shouldShowCodeBlockLabels()) {
+						this.streamingComponent.setShowCodeBlockLabels(true);
+					}
 					this.chatContainer.addChild(this.streamingComponent);
 					this.streamingComponent.updateContent(this.streamingMessage);
 					this.ui.requestRender();
@@ -2388,7 +2473,14 @@ export class InteractiveMode {
 					message,
 					this.hideThinkingBlock,
 					this.getMarkdownThemeWithSettings(),
+					this.codeBlockRegistry,
 				);
+				this.lastAssistantComponent?.setShowCodeBlockLabels(false);
+				this.lastAssistantComponent = assistantComponent;
+				this.lastAssistantMessageTimestamp = message.timestamp;
+				if (this.shouldShowCodeBlockLabels()) {
+					assistantComponent.setShowCodeBlockLabels(true);
+				}
 				this.chatContainer.addChild(assistantComponent);
 				break;
 			}
@@ -2413,6 +2505,9 @@ export class InteractiveMode {
 		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
 	): void {
 		this.pendingTools.clear();
+		this.codeBlockRegistry.clear();
+		this.lastAssistantComponent = undefined;
+		this.lastAssistantMessageTimestamp = undefined;
 
 		if (options.updateFooter) {
 			this.footer.invalidate();
@@ -2467,6 +2562,7 @@ export class InteractiveMode {
 		}
 
 		this.pendingTools.clear();
+		this.updateLastAssistantLabels();
 		this.ui.requestRender();
 	}
 
@@ -2682,6 +2778,41 @@ export class InteractiveMode {
 		}
 
 		this.showStatus(`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`);
+	}
+
+	private shouldShowCodeBlockLabels(): boolean {
+		return this.copyAutocompleteActive;
+	}
+
+	private handleAutocompleteStateChange(visible: boolean): void {
+		if (!visible) {
+			if (this.copyAutocompleteActive) {
+				this.copyAutocompleteActive = false;
+				this.updateLastAssistantLabels();
+			}
+			return;
+		}
+
+		const shouldEnable = this.isCopyAutocompleteContext();
+		if (shouldEnable !== this.copyAutocompleteActive) {
+			this.copyAutocompleteActive = shouldEnable;
+			this.updateLastAssistantLabels();
+		}
+	}
+
+	private isCopyAutocompleteContext(): boolean {
+		if (this.editor !== this.defaultEditor) {
+			return false;
+		}
+
+		const { line, col } = this.defaultEditor.getCursor();
+		const currentLine = this.defaultEditor.getLines()[line] ?? "";
+		const textBeforeCursor = currentLine.slice(0, col);
+		return /^\/copy\s+/.test(textBeforeCursor);
+	}
+
+	private updateLastAssistantLabels(): void {
+		this.lastAssistantComponent?.setShowCodeBlockLabels(this.shouldShowCodeBlockLabels());
 	}
 
 	private openExternalEditor(): void {
@@ -3834,15 +3965,47 @@ export class InteractiveMode {
 		}
 	}
 
-	private handleCopyCommand(): void {
-		const text = this.session.getLastAssistantText();
-		if (!text) {
+	private handleCopyCommand(text: string): void {
+		const args = text.split(/\s+/).slice(1);
+		if (args.length > 0) {
+			const index = Number.parseInt(args[0] ?? "", 10);
+			if (!Number.isFinite(index) || index < 1) {
+				this.showError("Usage: /copy [code block number]");
+				return;
+			}
+			const timestamp = this.lastAssistantMessageTimestamp;
+			if (!timestamp) {
+				this.showError("No agent messages to copy yet.");
+				return;
+			}
+			const blocks = this.codeBlockRegistry.getEntriesForMessage(timestamp);
+			if (blocks.length === 0) {
+				this.showError("No code blocks in the last agent message.");
+				return;
+			}
+			const entry = blocks[index - 1];
+			if (!entry) {
+				this.showError(`Code block ${index} not found.`);
+				return;
+			}
+			try {
+				copyToClipboard(entry.info.code);
+				const lang = entry.info.language ? ` (${entry.info.language})` : "";
+				this.showStatus(`Copied code block ${index}${lang}`);
+			} catch (error) {
+				this.showError(error instanceof Error ? error.message : String(error));
+			}
+			return;
+		}
+
+		const lastText = this.session.getLastAssistantText();
+		if (!lastText) {
 			this.showError("No agent messages to copy yet.");
 			return;
 		}
 
 		try {
-			copyToClipboard(text);
+			copyToClipboard(lastText);
 			this.showStatus("Copied last agent message to clipboard");
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
@@ -4086,6 +4249,9 @@ export class InteractiveMode {
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
+		this.codeBlockRegistry.clear();
+		this.lastAssistantComponent = undefined;
+		this.lastAssistantMessageTimestamp = undefined;
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
