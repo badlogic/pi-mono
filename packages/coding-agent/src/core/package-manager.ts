@@ -1595,9 +1595,17 @@ export class DefaultPackageManager implements PackageManager {
 		};
 	}
 
+	private resolveCommand(command: string): string {
+		if (process.platform === "win32" && command === "npm") {
+			return "npm.cmd";
+		}
+		return command;
+	}
+
 	private runCommand(command: string, args: string[], options?: { cwd?: string }): Promise<void> {
+		const resolvedCommand = this.resolveCommand(command);
 		return new Promise((resolvePromise, reject) => {
-			const child = spawn(command, args, {
+			const child = spawn(resolvedCommand, args, {
 				cwd: options?.cwd,
 				stdio: "inherit",
 			});
@@ -1613,7 +1621,8 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private runCommandSync(command: string, args: string[]): string {
-		const result = spawnSync(command, args, { stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" });
+		const resolvedCommand = this.resolveCommand(command);
+		const result = spawnSync(resolvedCommand, args, { stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" });
 		if (result.status !== 0) {
 			throw new Error(`Failed to run ${command} ${args.join(" ")}: ${result.stderr || result.stdout}`);
 		}
