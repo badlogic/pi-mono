@@ -7,6 +7,12 @@
  * - Maximum image dimensions
  * - Maximum payload (realistic large images stress test)
  *
+ * ⚠️  QUOTA PROTECTION:
+ * - Expensive limit-finding tests are SKIPPED by default
+ * - These tests burn through API quotas with many large requests
+ * - Set RUN_EXPENSIVE_LIMIT_TESTS=1 to enable (only when needed)
+ * - Example: RUN_EXPENSIVE_LIMIT_TESTS=1 npm test
+ *
  * ============================================================================
  * DISCOVERED LIMITS (Dec 2025):
  * ============================================================================
@@ -439,67 +445,85 @@ describe("Image Limits E2E Tests", () => {
 			expect(result.success, result.error).toBe(true);
 		});
 
-		it("should find maximum image count limit", { timeout: 900000 }, async () => {
-			// Known to work up to ~2500, hits errors around 3000
-			const { limit, lastError } = await findLimit(
-				(count) => testImageCount(model, count, smallImage),
-				500,
-				3000,
-				500,
-			);
-			console.log(`\n  Gemini max images: ~${limit} (last error: ${lastError})`);
-			expect(limit).toBeGreaterThanOrEqual(500);
-		});
+		// EXPENSIVE: Burns through quota with multiple large API calls
+		// Set RUN_EXPENSIVE_LIMIT_TESTS=1 to enable
+		it.skipIf(!process.env.RUN_EXPENSIVE_LIMIT_TESTS)(
+			"should find maximum image count limit",
+			{ timeout: 900000 },
+			async () => {
+				// Known to work up to ~2500, hits errors around 3000
+				const { limit, lastError } = await findLimit(
+					(count) => testImageCount(model, count, smallImage),
+					500,
+					3000,
+					500,
+				);
+				console.log(`\n  Gemini max images: ~${limit} (last error: ${lastError})`);
+				expect(limit).toBeGreaterThanOrEqual(500);
+			},
+		);
 
-		it("should find maximum image size limit", { timeout: 600000 }, async () => {
-			const MB = 1024 * 1024;
-			// Very permissive, tested up to 60MB successfully
-			const sizes = [10, 20, 30, 40];
+		// EXPENSIVE: Burns through quota testing large image sizes
+		// Set RUN_EXPENSIVE_LIMIT_TESTS=1 to enable
+		it.skipIf(!process.env.RUN_EXPENSIVE_LIMIT_TESTS)(
+			"should find maximum image size limit",
+			{ timeout: 600000 },
+			async () => {
+				const MB = 1024 * 1024;
+				// Very permissive, tested up to 60MB successfully
+				const sizes = [10, 20, 30, 40];
 
-			let lastSuccess = 0;
-			let lastError: string | undefined;
+				let lastSuccess = 0;
+				let lastError: string | undefined;
 
-			for (const sizeMB of sizes) {
-				console.log(`  Testing size: ${sizeMB}MB...`);
-				const imageBase64 = generateImageWithSize(sizeMB * MB, `size-${sizeMB}mb.png`);
-				const result = await testImageSize(model, imageBase64);
-				if (result.success) {
-					lastSuccess = sizeMB;
-					console.log(`    SUCCESS`);
-				} else {
-					lastError = result.error;
-					console.log(`    FAILED: ${result.error?.substring(0, 100)}`);
-					break;
+				for (const sizeMB of sizes) {
+					console.log(`  Testing size: ${sizeMB}MB...`);
+					const imageBase64 = generateImageWithSize(sizeMB * MB, `size-${sizeMB}mb.png`);
+					const result = await testImageSize(model, imageBase64);
+					if (result.success) {
+						lastSuccess = sizeMB;
+						console.log(`    SUCCESS`);
+					} else {
+						lastError = result.error;
+						console.log(`    FAILED: ${result.error?.substring(0, 100)}`);
+						break;
+					}
 				}
-			}
 
-			console.log(`\n  Gemini max image size: ~${lastSuccess}MB (last error: ${lastError})`);
-			expect(lastSuccess).toBeGreaterThanOrEqual(20);
-		});
+				console.log(`\n  Gemini max image size: ~${lastSuccess}MB (last error: ${lastError})`);
+				expect(lastSuccess).toBeGreaterThanOrEqual(20);
+			},
+		);
 
-		it("should find maximum image dimension limit", { timeout: 600000 }, async () => {
-			const dimensions = [2000, 4000, 8000, 16000, 20000];
+		// EXPENSIVE: Burns through quota testing large dimensions
+		// Set RUN_EXPENSIVE_LIMIT_TESTS=1 to enable
+		it.skipIf(!process.env.RUN_EXPENSIVE_LIMIT_TESTS)(
+			"should find maximum image dimension limit",
+			{ timeout: 600000 },
+			async () => {
+				const dimensions = [2000, 4000, 8000, 16000, 20000];
 
-			let lastSuccess = 0;
-			let lastError: string | undefined;
+				let lastSuccess = 0;
+				let lastError: string | undefined;
 
-			for (const dim of dimensions) {
-				console.log(`  Testing dimension: ${dim}x${dim}...`);
-				const imageBase64 = generateImage(dim, dim, `dim-${dim}.png`);
-				const result = await testImageDimensions(model, imageBase64);
-				if (result.success) {
-					lastSuccess = dim;
-					console.log(`    SUCCESS`);
-				} else {
-					lastError = result.error;
-					console.log(`    FAILED: ${result.error?.substring(0, 100)}`);
-					break;
+				for (const dim of dimensions) {
+					console.log(`  Testing dimension: ${dim}x${dim}...`);
+					const imageBase64 = generateImage(dim, dim, `dim-${dim}.png`);
+					const result = await testImageDimensions(model, imageBase64);
+					if (result.success) {
+						lastSuccess = dim;
+						console.log(`    SUCCESS`);
+					} else {
+						lastError = result.error;
+						console.log(`    FAILED: ${result.error?.substring(0, 100)}`);
+						break;
+					}
 				}
-			}
 
-			console.log(`\n  Gemini max dimension: ~${lastSuccess}px (last error: ${lastError})`);
-			expect(lastSuccess).toBeGreaterThanOrEqual(2000);
-		});
+				console.log(`\n  Gemini max dimension: ~${lastSuccess}px (last error: ${lastError})`);
+				expect(lastSuccess).toBeGreaterThanOrEqual(2000);
+			},
+		);
 	});
 
 	// -------------------------------------------------------------------------
