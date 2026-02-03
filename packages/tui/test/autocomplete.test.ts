@@ -247,6 +247,26 @@ describe("CombinedAutocompleteProvider", () => {
 			assert.ok(values?.includes('@"my folder/"'));
 		});
 
+		test("includes hidden paths but excludes .git", () => {
+			setupFolder(baseDir, {
+				dirs: [".pi", ".github", ".git"],
+				files: {
+					".pi/config.json": "{}",
+					".github/workflows/ci.yml": "name: ci",
+					".git/config": "[core]",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			const values = result?.items.map((item) => item.value) ?? [];
+			assert.ok(values.includes("@.pi/"));
+			assert.ok(values.includes("@.github/"));
+			assert.ok(!values.some((value) => value === "@.git" || value.startsWith("@.git/")));
+		});
+
 		test("continues autocomplete inside quoted @ paths", () => {
 			setupFolder(baseDir, {
 				files: {

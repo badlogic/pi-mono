@@ -101,6 +101,13 @@ function walkDirectoryWithFd(
 		"--type",
 		"d",
 		"--full-path",
+		"--hidden",
+		"--exclude",
+		".git",
+		"--exclude",
+		".git/*",
+		"--exclude",
+		".git/**",
 	];
 
 	// Add query as pattern if provided
@@ -122,6 +129,11 @@ function walkDirectoryWithFd(
 	const results: Array<{ path: string; isDirectory: boolean }> = [];
 
 	for (const line of lines) {
+		const normalizedPath = line.endsWith("/") ? line.slice(0, -1) : line;
+		if (normalizedPath === ".git" || normalizedPath.startsWith(".git/") || normalizedPath.includes("/.git/")) {
+			continue;
+		}
+
 		// fd outputs directories with trailing /
 		const isDirectory = line.endsWith("/");
 		results.push({
