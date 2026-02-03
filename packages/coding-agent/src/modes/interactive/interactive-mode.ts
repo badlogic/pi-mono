@@ -4195,16 +4195,48 @@ Use \`/prompts\` to see the full list, or invoke with \`/name\`.
 			const allTools = this.session.getAllTools();
 			const activeToolNames = new Set(this.session.getActiveToolNames());
 
-			const items: SettingItem[] = allTools.map((tool) => ({
-				id: tool.name,
-				label: tool.name,
-				currentValue: activeToolNames.has(tool.name) ? "enabled" : "disabled",
-				values: ["enabled", "disabled"],
-			}));
+			// Separate built-in tools from extension tools (MCP tools start with mcp_)
+			const builtinTools = allTools.filter((t) => !t.name.startsWith("mcp_"));
+			const mcpTools = allTools.filter((t) => t.name.startsWith("mcp_"));
+
+			// Build items with grouping
+			const items: SettingItem[] = [];
+
+			// Built-in tools
+			for (const tool of builtinTools) {
+				items.push({
+					id: tool.name,
+					label: tool.name,
+					currentValue: activeToolNames.has(tool.name) ? "enabled" : "disabled",
+					values: ["enabled", "disabled"],
+				});
+			}
+
+			// MCP tools with formatted labels
+			for (const tool of mcpTools) {
+				// Parse mcp_<server>_<toolname> format
+				const parts = tool.name.split("_");
+				const server = parts[1] ?? "unknown";
+				const toolName = parts.slice(2).join("_") || tool.name;
+				items.push({
+					id: tool.name,
+					label: `${server}/${toolName}`,
+					currentValue: activeToolNames.has(tool.name) ? "enabled" : "disabled",
+					values: ["enabled", "disabled"],
+				});
+			}
 
 			const container = new Container();
 			container.addChild(new DynamicBorder());
-			container.addChild(new Text(theme.bold(theme.fg("accent", "Tool Configuration")), 1, 0));
+
+			// Title with counts
+			const builtinCount = builtinTools.length;
+			const mcpCount = mcpTools.length;
+			let title = theme.bold(theme.fg("accent", "Tool Configuration"));
+			if (mcpCount > 0) {
+				title += theme.fg("dim", ` (${builtinCount} built-in, ${mcpCount} MCP)`);
+			}
+			container.addChild(new Text(title, 1, 0));
 			container.addChild(new Spacer(1));
 
 			const settingsList = new SettingsList(
