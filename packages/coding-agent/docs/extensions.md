@@ -1157,6 +1157,10 @@ Register tools the LLM can call via `pi.registerTool()`. Tools appear in the sys
 
 Note: Some models are idiots and include the @ prefix in tool path arguments. Built-in tools strip a leading @ before resolving paths. If your custom tool accepts a path, normalize a leading @ as well.
 
+- `description` — detailed description sent to the LLM via the API tool listing (can be multi-line).
+- `shortDescription` — optional short one-liner shown in the system prompt tool list. Falls back to the first line of `description` if omitted.
+- `systemGuidelines` — bullet points added to the system prompt guidelines section when the tool is active.
+
 ### Tool Definition
 
 ```typescript
@@ -1167,7 +1171,9 @@ import { Text } from "@mariozechner/pi-tui";
 pi.registerTool({
   name: "my_tool",
   label: "My Tool",
-  description: "What this tool does (shown to LLM)",
+  description: "Detailed description sent to the LLM via the API tool listing. Can be multi-line.",
+  shortDescription: "One-liner shown in the system prompt 'Available tools' list",
+  systemGuidelines: ["Guideline bullet appended to system prompt Guidelines section"],
   parameters: Type.Object({
     action: StringEnum(["list", "add"] as const),  // Use StringEnum for Google compatibility
     text: Type.Optional(Type.String()),
@@ -1200,6 +1206,8 @@ pi.registerTool({
   renderResult(result, options, theme) { ... },
 });
 ```
+
+See the field descriptions [above](#custom-tools) for how `shortDescription`, `description`, and `systemGuidelines` map to the system prompt and API tool listing.
 
 **Important:** Use `StringEnum` from `@mariozechner/pi-ai` for string enums. `Type.Union`/`Type.Literal` doesn't work with Google's API.
 
