@@ -40,6 +40,7 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.js";
+import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.js";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import {
@@ -1093,6 +1094,8 @@ export class AgentSession {
 		this._steeringMessages = [];
 		this._followUpMessages = [];
 		this._pendingNextTurnMessages = [];
+
+		this.sessionManager.appendThinkingLevelChange(this.thinkingLevel);
 
 		// Run setup callback if provided (e.g., to append initial messages)
 		if (options?.setup) {
@@ -2303,9 +2306,19 @@ export class AgentSession {
 			}
 		}
 
-		// Restore thinking level if saved (setThinkingLevel clamps to model capabilities)
-		if (sessionContext.thinkingLevel) {
+		const hasThinkingEntry = this.sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
+		const defaultThinkingLevel = this.settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;
+
+		if (hasThinkingEntry) {
+			// Restore thinking level if saved (setThinkingLevel clamps to model capabilities)
 			this.setThinkingLevel(sessionContext.thinkingLevel as ThinkingLevel);
+		} else {
+			const availableLevels = this.getAvailableThinkingLevels();
+			const effectiveLevel = availableLevels.includes(defaultThinkingLevel)
+				? defaultThinkingLevel
+				: this._clampThinkingLevel(defaultThinkingLevel, availableLevels);
+			this.agent.setThinkingLevel(effectiveLevel);
+			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
 		}
 
 		this._reconnectToAgent();
