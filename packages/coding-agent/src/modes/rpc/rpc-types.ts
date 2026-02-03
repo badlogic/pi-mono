@@ -77,7 +77,7 @@ export interface RpcSlashCommand {
 	/** Human-readable description */
 	description?: string;
 	/** What kind of command this is */
-	source: "extension" | "template" | "skill";
+	source: "extension" | "prompt" | "skill";
 	/** Where the command was loaded from (undefined for extensions) */
 	location?: "user" | "project" | "path";
 	/** File path to the command source */

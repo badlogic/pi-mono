@@ -16,13 +16,13 @@ export default function commandsExtension(pi: ExtensionAPI) {
 	pi.registerCommand("commands", {
 		description: "List available slash commands",
 		getArgumentCompletions: (prefix) => {
-			const sources = ["extension", "template", "skill"];
+			const sources = ["extension", "prompt", "skill"];
 			const filtered = sources.filter((s) => s.startsWith(prefix));
 			return filtered.length > 0 ? filtered.map((s) => ({ value: s, label: s })) : null;
 		},
 		handler: async (args, ctx) => {
 			const commands = pi.getCommands();
-			const sourceFilter = args.trim() as "extension" | "template" | "skill" | "";
+			const sourceFilter = args.trim() as "extension" | "prompt" | "skill" | "";
 
 			// Filter by source if specified
 			const filtered = sourceFilter ? commands.filter((c) => c.source === sourceFilter) : commands;
@@ -39,9 +39,9 @@ export default function commandsExtension(pi: ExtensionAPI) {
 			};
 
 			const items: string[] = [];
-			const sources: Array<{ key: "extension" | "template" | "skill"; label: string }> = [
+			const sources: Array<{ key: "extension" | "prompt" | "skill"; label: string }> = [
 				{ key: "extension", label: "Extensions" },
-				{ key: "template", label: "Templates" },
+				{ key: "prompt", label: "Prompts" },
 				{ key: "skill", label: "Skills" },
 			];
 

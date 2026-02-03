@@ -543,7 +543,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					commands.push({
 						name: template.name,
 						description: template.description,
-						source: "template",
+						source: "prompt",
 						location: template.source as RpcSlashCommand["location"],
 						path: template.filePath,
 					});

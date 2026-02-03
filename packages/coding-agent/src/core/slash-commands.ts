@@ -1,4 +1,4 @@
-export type SlashCommandSource = "extension" | "template" | "skill";
+export type SlashCommandSource = "extension" | "prompt" | "skill";
 
 export type SlashCommandLocation = "user" | "project" | "path";
 

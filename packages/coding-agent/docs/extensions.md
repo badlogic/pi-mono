@@ -958,7 +958,7 @@ Each entry has this shape:
 {
   name: string; // Command name without the leading slash
   description?: string;
-  source: "extension" | "template" | "skill";
+  source: "extension" | "prompt" | "skill";
   location?: "user" | "project" | "path"; // For templates and skills
   path?: string; // Files backing templates, skills, and extensions
 }

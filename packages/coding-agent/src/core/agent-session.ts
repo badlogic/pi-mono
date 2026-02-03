@@ -1799,7 +1799,7 @@ export class AgentSession {
 			const templates: SlashCommandInfo[] = this.promptTemplates.map((template) => ({
 				name: template.name,
 				description: template.description,
-				source: "template",
+				source: "prompt",
 				location: normalizeLocation(template.source),
 				path: template.filePath,
 			}));
