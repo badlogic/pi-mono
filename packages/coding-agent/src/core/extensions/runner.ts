@@ -146,6 +146,8 @@ const noOpUIContext: ExtensionUIContext = {
 	getAllThemes: () => [],
 	getTheme: () => undefined,
 	setTheme: (_theme: string | Theme) => ({ success: false, error: "UI not available" }),
+	getToolsExpanded: () => false,
+	setToolsExpanded: () => {},
 };
 
 export class ExtensionRunner {
