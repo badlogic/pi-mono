@@ -88,6 +88,9 @@ export type {
 	ExtensionCommandContext,
 	ExtensionContext,
 	ExtensionFactory,
+	SlashCommandInfo,
+	SlashCommandLocation,
+	SlashCommandSource,
 	ToolDefinition,
 } from "./extensions/index.js";
 export type { PromptTemplate } from "./prompt-templates.js";

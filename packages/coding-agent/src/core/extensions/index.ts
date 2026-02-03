@@ -2,6 +2,7 @@
  * Extension system for lifecycle events and custom tools.
  */
 
+export type { SlashCommandInfo, SlashCommandLocation, SlashCommandSource } from "../slash-commands.js";
 export {
 	createExtensionRuntime,
 	discoverAndLoadExtensions,
@@ -68,6 +69,7 @@ export type {
 	FindToolResultEvent,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
+	GetCommandsHandler,
 	GetThinkingLevelHandler,
 	GrepToolCallEvent,
 	GrepToolResultEvent,
