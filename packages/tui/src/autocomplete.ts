@@ -191,6 +191,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	private commands: (SlashCommand | AutocompleteItem)[];
 	private basePath: string;
 	private fdPath: string | null;
+	private priorityItems: AutocompleteItem[] = [];
 
 	constructor(
 		commands: (SlashCommand | AutocompleteItem)[] = [],
@@ -200,6 +201,11 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		this.commands = commands;
 		this.basePath = basePath;
 		this.fdPath = fdPath;
+	}
+
+	/** Set priority items that appear at the top of @ suggestions */
+	setPriorityItems(items: AutocompleteItem[]): void {
+		this.priorityItems = items;
 	}
 
 	getSuggestions(
@@ -214,7 +220,19 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		const atPrefix = this.extractAtPrefix(textBeforeCursor);
 		if (atPrefix) {
 			const { rawPrefix, isQuotedPrefix } = parsePathPrefix(atPrefix);
-			const suggestions = this.getFuzzyFileSuggestions(rawPrefix, { isQuotedPrefix: isQuotedPrefix });
+			const fileSuggestions = this.getFuzzyFileSuggestions(rawPrefix, { isQuotedPrefix: isQuotedPrefix });
+
+			// Filter priority items by prefix (without the @)
+			const searchTerm = rawPrefix.toLowerCase();
+			const filteredPriorityItems = this.priorityItems.filter(
+				(item) =>
+					item.value.toLowerCase().includes(searchTerm) ||
+					item.label.toLowerCase().includes(searchTerm) ||
+					(item.description?.toLowerCase().includes(searchTerm) ?? false),
+			);
+
+			// Combine priority items first, then file suggestions
+			const suggestions = [...filteredPriorityItems, ...fileSuggestions];
 			if (suggestions.length === 0) return null;
 
 			return {

@@ -363,6 +363,16 @@ export class InteractiveMode {
 			process.cwd(),
 			fdPath,
 		);
+
+		// Add agents as priority items for @ autocomplete
+		const agents = this.discoverAgents();
+		const agentItems = agents.map((agent) => ({
+			value: `@agent:${agent.name}`,
+			label: `🤖 ${agent.name}`,
+			description: agent.description || `Agent: ${agent.name}`,
+		}));
+		this.autocompleteProvider.setPriorityItems(agentItems);
+
 		this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
 	}
 
