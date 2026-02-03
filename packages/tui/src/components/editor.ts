@@ -1504,6 +1504,92 @@ export class Editor implements Component, Focusable {
 		return visualLines.length - 1;
 	}
 
+	/**
+	 * Handle a mouse click at the given terminal coordinates.
+	 * Moves the cursor to the clicked position if it's within the editor bounds.
+	 *
+	 * @param col - Terminal column (1-indexed)
+	 * @param row - Terminal row (1-indexed)
+	 */
+	handleMouseClick(col: number, row: number): void {
+		// Cancel autocomplete on click
+		if (this.autocompleteState) {
+			this.cancelAutocomplete();
+		}
+
+		// Calculate editor layout dimensions
+		const termWidth = this.tui.terminal.columns;
+		const maxPadding = Math.max(0, Math.floor((termWidth - 1) / 2));
+		const effectivePaddingX = Math.min(this.paddingX, maxPadding);
+		const contentWidth = Math.max(1, termWidth - effectivePaddingX * 2);
+		const layoutWidth = Math.max(1, contentWidth - (effectivePaddingX ? 0 : 1));
+
+		// Build visual line map
+		const visualLines = this.buildVisualLineMap(layoutWidth);
+
+		// Calculate visible content dimensions
+		const terminalRows = this.tui.terminal.rows;
+		const maxVisibleLines = Math.max(5, Math.floor(terminalRows * 0.3));
+		const visibleContentLines = Math.min(visualLines.length, maxVisibleLines);
+		const editorHeight = 2 + visibleContentLines; // top border + content + bottom border
+
+		// Calculate editor position on screen
+		// In interactive mode, layout from bottom is: footer (2 rows) + editor
+		const footerHeight = 2;
+		const editorTopRow = terminalRows - footerHeight - editorHeight + 1;
+		const editorContentStartRow = editorTopRow + 1; // Skip top border
+
+		// Convert column: remove 1-indexing and padding
+		const contentCol = col - 1 - effectivePaddingX;
+		if (contentCol < 0) {
+			return; // Click in left padding
+		}
+
+		// Convert absolute row to visual line index
+		const visualLineOffset = row - editorContentStartRow;
+		if (visualLineOffset < 0 || visualLineOffset >= visibleContentLines) {
+			return; // Click on border or outside editor content
+		}
+
+		const visualLineIndex = this.scrollOffset + visualLineOffset;
+		if (visualLineIndex < 0 || visualLineIndex >= visualLines.length) {
+			return; // Click outside content bounds
+		}
+
+		const visualLine = visualLines[visualLineIndex];
+		if (!visualLine) return;
+
+		// Convert visual column to logical column
+		const logicalLine = this.state.lines[visualLine.logicalLine] || "";
+		const textInVisualLine = logicalLine.slice(visualLine.startCol, visualLine.startCol + visualLine.length);
+
+		// Walk through graphemes to find the column position
+		let logicalCol = visualLine.startCol;
+		let visualColSoFar = 0;
+
+		for (const seg of segmenter.segment(textInVisualLine)) {
+			const grapheme = seg.segment;
+			const graphemeWidth = visibleWidth(grapheme);
+
+			if (visualColSoFar + graphemeWidth > contentCol) {
+				break; // Click is within this grapheme
+			}
+
+			visualColSoFar += graphemeWidth;
+			logicalCol += grapheme.length;
+		}
+
+		// If click is past the end of the line, position at end
+		if (contentCol >= visibleWidth(textInVisualLine)) {
+			logicalCol = visualLine.startCol + visualLine.length;
+		}
+
+		// Update cursor position
+		this.state.cursorLine = visualLine.logicalLine;
+		this.setCursorCol(Math.min(logicalCol, logicalLine.length));
+		this.lastAction = null;
+	}
+
 	private moveCursor(deltaLine: number, deltaCol: number): void {
 		this.lastAction = null;
 		const visualLines = this.buildVisualLineMap(this.lastWidth);

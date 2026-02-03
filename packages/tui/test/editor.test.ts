@@ -2625,4 +2625,137 @@ describe("Editor component", () => {
 			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 15 });
 		});
 	});
+
+	describe("Mouse click handling", () => {
+		// Helper to calculate editor content row for testing
+		// Editor position: terminalRows - footerHeight(2) - editorHeight + 1 = top border
+		// Content starts one row below top border
+		function getContentRow(terminalRows: number, visualLines: number, lineOffset: number): number {
+			const editorHeight = 2 + visualLines; // borders + content
+			const footerHeight = 2;
+			const editorTopRow = terminalRows - footerHeight - editorHeight + 1;
+			return editorTopRow + 1 + lineOffset; // +1 for top border, +lineOffset for the line
+		}
+
+		it("moves cursor to clicked position on single line", () => {
+			const tui = createTestTUI(80, 24);
+			const editor = new Editor(tui, defaultEditorTheme);
+
+			editor.setText("Hello World");
+			// Cursor is at the end (col 11) initially
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 11 });
+
+			// Render to set layout width
+			editor.render(80);
+
+			// Calculate content row: terminalRows=24, 1 visual line, line offset 0
+			const contentRow = getContentRow(24, 1, 0);
+			editor.handleMouseClick(6, contentRow); // Click on "W" in "World"
+
+			// Should move cursor to col 5 (before "W")
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 });
+		});
+
+		it("handles click at end of line", () => {
+			const tui = createTestTUI(80, 24);
+			const editor = new Editor(tui, defaultEditorTheme);
+
+			editor.setText("Hello");
+			editor.handleInput("\x01"); // Ctrl+A to go to start
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+
+			editor.render(80);
+
+			// Click past the end of the line (column 20)
+			const contentRow = getContentRow(24, 1, 0);
+			editor.handleMouseClick(20, contentRow);
+
+			// Should move cursor to end of line
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 });
+		});
+
+		it("handles click on multi-line text", () => {
+			const tui = createTestTUI(80, 24);
+			const editor = new Editor(tui, defaultEditorTheme);
+
+			editor.setText("Line 1\nLine 2\nLine 3");
+			// After setText, cursor is at end of text (line 2, col 6)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 6 });
+
+			editor.render(80);
+
+			// Click on the second content line (visual line 1 = "Line 2")
+			// Column 4 (1-indexed) = column 3 (0-indexed) = after "Lin"
+			const contentRow = getContentRow(24, 3, 1); // 3 visual lines, click on line 1
+			editor.handleMouseClick(4, contentRow);
+
+			// Should move cursor to line 1, col 3
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 3 });
+		});
+
+		it("ignores click on top border", () => {
+			const tui = createTestTUI(80, 24);
+			const editor = new Editor(tui, defaultEditorTheme);
+
+			editor.setText("Hello");
+			const initialCursor = editor.getCursor();
+
+			editor.render(80);
+
+			// Click on top border (one row above content)
+			const contentRow = getContentRow(24, 1, 0);
+			editor.handleMouseClick(5, contentRow - 1);
+
+			// Cursor should not move
+			assert.deepStrictEqual(editor.getCursor(), initialCursor);
+		});
+
+		it("cancels autocomplete on click", () => {
+			const tui = createTestTUI(80, 24);
+			const editor = new Editor(tui, defaultEditorTheme);
+
+			// Set up autocomplete
+			editor.setAutocompleteProvider({
+				getSuggestions: () => ({
+					items: [{ label: "test", value: "test" }],
+					prefix: "",
+				}),
+				applyCompletion: (lines, cursorLine, cursorCol, item, prefix) =>
+					applyCompletion(lines, cursorLine, cursorCol, item, prefix),
+			});
+
+			editor.setText("/");
+			editor.render(80);
+
+			// Trigger autocomplete
+			editor.handleInput("\t");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Click somewhere - should cancel autocomplete (even on border, autocomplete cancels)
+			const contentRow = getContentRow(24, 1, 0);
+			editor.handleMouseClick(5, contentRow);
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+		});
+
+		it("handles wide characters correctly", () => {
+			const tui = createTestTUI(80, 24);
+			const editor = new Editor(tui, defaultEditorTheme);
+
+			// ✅ is 2 columns wide
+			editor.setText("A✅B");
+			editor.handleInput("\x01"); // Ctrl+A to go to start
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+
+			editor.render(80);
+
+			// Click at column 5 (after ✅, which spans columns 2-3, on B)
+			// "A" = col 1, "✅" = cols 2-3, "B" = col 4+
+			const contentRow = getContentRow(24, 1, 0);
+			editor.handleMouseClick(5, contentRow);
+
+			// The ✅ emoji takes 2 bytes in JS string, so B is at col 3 (A=0, ✅=1-2, B=3)
+			// But since we clicked after ✅, we should be at col 3 (before B)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 3 });
+		});
+	});
 });

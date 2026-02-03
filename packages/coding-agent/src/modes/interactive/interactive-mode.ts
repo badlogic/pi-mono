@@ -483,6 +483,10 @@ export class InteractiveMode {
 		this.ui.start();
 		this.isInitialized = true;
 
+		// Enable click events for OSC 133 protocol (allows clicking to position cursor)
+		this.ui.enableClickEvents();
+		this.ui.terminal.emitPromptStart({ clickEvents: true });
+
 		// Set terminal title
 		this.updateTerminalTitle();
 

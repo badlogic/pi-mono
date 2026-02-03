@@ -6,6 +6,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { isKeyRelease, matchesKey } from "./keys.js";
+import { isMouseEvent, parseMouseEvent } from "./mouse.js";
 import type { Terminal } from "./terminal.js";
 import { getCapabilities, isImageLine, setCellDimensions } from "./terminal-image.js";
 import { extractSegments, sliceByColumn, sliceWithWidth, visibleWidth } from "./utils.js";
@@ -37,6 +38,14 @@ export interface Component {
 	 * Called when theme changes or when component needs to re-render from scratch.
 	 */
 	invalidate(): void;
+
+	/**
+	 * Optional handler for mouse clicks when component has focus.
+	 * Only called when click events are enabled via OSC 133.
+	 * @param col - Terminal column (1-indexed)
+	 * @param row - Terminal row (1-indexed)
+	 */
+	handleMouseClick?(col: number, row: number): void;
 }
 
 /**
@@ -214,6 +223,7 @@ export class TUI extends Container {
 	private previousViewportTop = 0; // Track previous viewport top for resize-aware cursor moves
 	private fullRedrawCount = 0;
 	private stopped = false;
+	private clickEventsEnabled = false;
 
 	// Overlay stack for modal components rendered on top of base content
 	private overlayStack: {
@@ -259,6 +269,29 @@ export class TUI extends Container {
 	 */
 	setClearOnShrink(enabled: boolean): void {
 		this.clearOnShrink = enabled;
+	}
+
+	/**
+	 * Enable click events via OSC 133 protocol.
+	 * When enabled, the TUI will emit OSC 133 prompt markers and route
+	 * mouse click events to the focused component's handleMouseClick method.
+	 */
+	enableClickEvents(): void {
+		this.clickEventsEnabled = true;
+	}
+
+	/**
+	 * Disable click events.
+	 */
+	disableClickEvents(): void {
+		this.clickEventsEnabled = false;
+	}
+
+	/**
+	 * Check if click events are enabled.
+	 */
+	isClickEventsEnabled(): boolean {
+		return this.clickEventsEnabled;
 	}
 
 	setFocus(component: Component | null): void {
@@ -430,6 +463,26 @@ export class TUI extends Container {
 			const filtered = this.parseCellSizeResponse();
 			if (filtered.length === 0) return;
 			data = filtered;
+		}
+
+		// Handle mouse events when click events are enabled
+		if (this.clickEventsEnabled && isMouseEvent(data)) {
+			const mouseEvent = parseMouseEvent(data);
+			if (mouseEvent && mouseEvent.button === "left" && mouseEvent.type === "press") {
+				// Route left-click press to focused component
+				if (this.focusedComponent?.handleMouseClick) {
+					// Translate row coordinate: content is rendered at top of screen,
+					// but components may assume bottom-anchored layout.
+					// Add offset so components see coordinates as if content filled the terminal.
+					const contentHeight = this.previousLines.length;
+					const terminalHeight = this.terminal.rows;
+					const rowOffset = Math.max(0, terminalHeight - contentHeight);
+					const adjustedRow = mouseEvent.row + rowOffset;
+					this.focusedComponent.handleMouseClick(mouseEvent.col, adjustedRow);
+					this.requestRender();
+				}
+			}
+			return;
 		}
 
 		// Global debug key handler (Shift+Ctrl+D)
@@ -847,6 +900,13 @@ export class TUI extends Container {
 			this.fullRedrawCount += 1;
 			let buffer = "\x1b[?2026h"; // Begin synchronized output
 			if (clear) buffer += "\x1b[3J\x1b[2J\x1b[H"; // Clear scrollback, screen, and home
+			// Emit OSC 133;A at line 0 for Kitty click support.
+			// This marks line 0 as prompt start, allowing clicks on all lines below.
+			// Move to home first to ensure we mark line 0, then emit the marker.
+			if (this.clickEventsEnabled) {
+				if (!clear) buffer += "\x1b[H"; // Move to home if we didn't clear
+				buffer += "\x1b]133;A;click_events=1\x07";
+			}
 			for (let i = 0; i < newLines.length; i++) {
 				if (i > 0) buffer += "\r\n";
 				buffer += newLines[i];

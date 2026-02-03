@@ -36,6 +36,10 @@ export interface Terminal {
 
 	// Title operations
 	setTitle(title: string): void; // Set terminal window title
+
+	// OSC 133 shell integration (prompt marking)
+	emitPromptStart(options?: { clickEvents?: boolean }): void; // Emit prompt start marker
+	emitPromptEnd(): void; // Emit prompt end / input start marker
 }
 
 /**
@@ -242,5 +246,21 @@ export class ProcessTerminal implements Terminal {
 	setTitle(title: string): void {
 		// OSC 0;title BEL - set terminal window title
 		process.stdout.write(`\x1b]0;${title}\x07`);
+	}
+
+	emitPromptStart(options?: { clickEvents?: boolean }): void {
+		// OSC 133;A - prompt start marker
+		// See: https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md
+		if (options?.clickEvents) {
+			// Advertise click_events=1 for terminals that support it (e.g., Ghostty)
+			this.write("\x1b]133;A;click_events=1\x07");
+		} else {
+			this.write("\x1b]133;A\x07");
+		}
+	}
+
+	emitPromptEnd(): void {
+		// OSC 133;B - prompt end / input start marker
+		this.write("\x1b]133;B\x07");
 	}
 }

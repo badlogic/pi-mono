@@ -96,6 +96,20 @@ export class VirtualTerminal implements Terminal {
 		this.xterm.write(`\x1b]0;${title}\x07`);
 	}
 
+	emitPromptStart(options?: { clickEvents?: boolean }): void {
+		// OSC 133;A - prompt start marker
+		if (options?.clickEvents) {
+			this.xterm.write("\x1b]133;A;click_events=1\x07");
+		} else {
+			this.xterm.write("\x1b]133;A\x07");
+		}
+	}
+
+	emitPromptEnd(): void {
+		// OSC 133;B - prompt end marker
+		this.xterm.write("\x1b]133;B\x07");
+	}
+
 	// Test-specific methods not in Terminal interface
 
 	/**
