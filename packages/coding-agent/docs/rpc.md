@@ -916,8 +916,9 @@ If a dialog method includes a `timeout` field, the agent-side will auto-resolve 
 
 Some `ExtensionUIContext` methods are not supported in RPC mode because they require direct TUI access:
 - `custom()` returns `undefined`
-- `setWorkingMessage()`, `setFooter()`, `setHeader()`, `setEditorComponent()` are no-ops
+- `setWorkingMessage()`, `setFooter()`, `setHeader()`, `setEditorComponent()`, `setToolsExpanded()` are no-ops
 - `getEditorText()` returns `""`
+- `getToolsExpanded()` returns `false`
 
 ### Extension UI Requests (stdout)
 

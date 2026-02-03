@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added ExtensionUIContext getToolsExpanded and setToolsExpanded for controlling tool output expansion ([#1199](https://github.com/badlogic/pi-mono/pull/1199) by [@academo](https://github.com/academo))
+
 ### Fixed
 
 - Fixed Kitty key release events leaking to parent shell over slow SSH connections by draining stdin for up to 1s on exit ([#1204](https://github.com/badlogic/pi-mono/issues/1204))

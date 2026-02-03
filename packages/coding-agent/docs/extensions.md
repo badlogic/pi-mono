@@ -1526,6 +1526,11 @@ ctx.ui.setTitle("pi - my-project");
 ctx.ui.setEditorText("Prefill text");
 const current = ctx.ui.getEditorText();
 
+// Tool output expansion
+const wasExpanded = ctx.ui.getToolsExpanded();
+ctx.ui.setToolsExpanded(true);
+ctx.ui.setToolsExpanded(wasExpanded);
+
 // Custom editor (vim mode, emacs mode, etc.)
 ctx.ui.setEditorComponent((tui, theme, keybindings) => new VimEditor(tui, theme, keybindings));
 ctx.ui.setEditorComponent(undefined);  // Restore default editor
