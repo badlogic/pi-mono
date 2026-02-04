@@ -67,6 +67,7 @@ export class MessageList extends LitElement {
 						.pendingToolCalls=${this.pendingToolCalls}
 						.toolResultsById=${resultByCallId}
 						.hideToolCalls=${false}
+						.hidePendingToolCalls=${this.isStreaming}
 						.onCostClick=${this.onCostClick}
 					></assistant-message>`,
 				});

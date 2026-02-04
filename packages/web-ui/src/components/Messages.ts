@@ -89,6 +89,7 @@ export class AssistantMessage extends LitElement {
 	@property({ type: Boolean }) hideToolCalls = false;
 	@property({ type: Object }) toolResultsById?: Map<string, ToolResultMessageType>;
 	@property({ type: Boolean }) isStreaming: boolean = false;
+	@property({ type: Boolean }) hidePendingToolCalls = false;
 	@property({ attribute: false }) onCostClick?: () => void;
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
@@ -116,6 +117,11 @@ export class AssistantMessage extends LitElement {
 					const tool = this.tools?.find((t) => t.name === chunk.name);
 					const pending = this.pendingToolCalls?.has(chunk.id) ?? false;
 					const result = this.toolResultsById?.get(chunk.id);
+					// Skip rendering pending tool calls when hidePendingToolCalls is true
+					// (used to prevent duplication when StreamingMessageContainer is showing them)
+					if (this.hidePendingToolCalls && pending && !result) {
+						continue;
+					}
 					// A tool call is aborted if the message was aborted and there's no result for this tool call
 					const aborted = this.message.stopReason === "aborted" && !result;
 					orderedParts.push(
