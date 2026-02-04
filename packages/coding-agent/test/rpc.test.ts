@@ -290,6 +290,9 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		let state = await client.getState();
 		expect(state.sessionName).toBeUndefined();
 
+		// Send a prompt first - session files are only written after first assistant message
+		await client.promptAndWait("Reply with just 'ok'");
+
 		// Set name
 		await client.setSessionName("my-test-session");
 
@@ -314,5 +317,5 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		const sessionInfoEntries = entries.filter((e: { type: string }) => e.type === "session_info");
 		expect(sessionInfoEntries.length).toBe(1);
 		expect(sessionInfoEntries[0].name).toBe("my-test-session");
-	}, 30000);
+	}, 60000);
 });
