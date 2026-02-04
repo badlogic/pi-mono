@@ -1884,13 +1884,9 @@ export class Editor implements Component, Focusable {
 		this.setCursorCol(newCol);
 	}
 
-	// Slash menu only allowed when all other lines are empty (no mixed content)
+	// Slash menu only allowed on the first line of the editor
 	private isSlashMenuAllowed(): boolean {
-		for (let i = 0; i < this.state.lines.length; i++) {
-			if (i === this.state.cursorLine) continue;
-			if (this.state.lines[i].trim() !== "") return false;
-		}
-		return true;
+		return this.state.cursorLine === 0;
 	}
 
 	// Helper method to check if cursor is at start of message (for slash command detection)

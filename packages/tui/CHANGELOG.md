@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Slash command menu now triggers on the first line even when other lines have content, allowing commands to be prepended to existing text ([#1227](https://github.com/badlogic/pi-mono/pull/1227) by [@aliou](https://github.com/aliou))
+
 ## [0.51.5] - 2026-02-04
 
 ## [0.51.4] - 2026-02-03
