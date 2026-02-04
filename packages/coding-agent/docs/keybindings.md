@@ -83,6 +83,7 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, etc.
 | `newSession` | *(none)* | Start a new session (`/new`) |
 | `tree` | *(none)* | Open session tree navigator (`/tree`) |
 | `fork` | *(none)* | Fork current session (`/fork`) |
+| `resume` | *(none)* | Open session resume picker (`/resume`) |
 
 ### Models & Thinking
 
