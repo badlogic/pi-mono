@@ -94,7 +94,7 @@ function expandTildePath(input: string): string {
 
 function resolveLocalSourceFromInput(source: string, cwd: string): string {
 	const expanded = expandTildePath(source);
-	return isAbsolute(expanded) ? expanded : resolve(cwd, expanded);
+	return isAbsolute(expanded) ? resolve(expanded) : resolve(cwd, expanded);
 }
 
 function resolveLocalSourceFromSettings(source: string, baseDir: string): string {
@@ -172,18 +172,21 @@ function updatePackageSources(
 	cwd: string,
 	agentDir: string,
 	action: "add" | "remove",
-): void {
+): boolean {
 	const currentSettings = local ? settingsManager.getProjectSettings() : settingsManager.getGlobalSettings();
 	const currentPackages = currentSettings.packages ?? [];
 	const baseDir = local ? join(cwd, CONFIG_DIR_NAME) : agentDir;
 	const normalizedSource = normalizePackageSourceForSettings(source, baseDir, cwd);
 
 	let nextPackages: PackageSource[];
+	let changed = false;
 	if (action === "add") {
 		const exists = currentPackages.some((existing) => packageSourcesMatch(existing, source, baseDir, cwd));
 		nextPackages = exists ? currentPackages : [...currentPackages, normalizedSource];
+		changed = !exists;
 	} else {
 		nextPackages = currentPackages.filter((existing) => !packageSourcesMatch(existing, source, baseDir, cwd));
+		changed = nextPackages.length !== currentPackages.length;
 	}
 
 	if (local) {
@@ -191,6 +194,8 @@ function updatePackageSources(
 	} else {
 		settingsManager.setPackages(nextPackages);
 	}
+
+	return changed;
 }
 
 async function handlePackageCommand(args: string[]): Promise<boolean> {
@@ -230,7 +235,11 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 			process.exit(1);
 		}
 		await packageManager.remove(options.source, { local: options.local });
-		updatePackageSources(settingsManager, options.source, options.local, cwd, agentDir, "remove");
+		const removed = updatePackageSources(settingsManager, options.source, options.local, cwd, agentDir, "remove");
+		if (!removed) {
+			console.error(chalk.red(`No matching package found for ${options.source}`));
+			process.exit(1);
+		}
 		console.log(chalk.green(`Removed ${options.source}`));
 		return true;
 	}
