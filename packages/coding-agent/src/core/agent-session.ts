@@ -2370,7 +2370,7 @@ export class AgentSession {
 		this._pendingNextTurnMessages = [];
 
 		if (!selectedEntry.parentId) {
-			this.sessionManager.newSession();
+			this.sessionManager.newSession({ parentSession: previousSessionFile });
 		} else {
 			this.sessionManager.createBranchedSession(selectedEntry.parentId);
 		}

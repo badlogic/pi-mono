@@ -88,15 +88,15 @@ describe("DefaultPackageManager git update", () => {
 		// Create "remote" repository
 		mkdirSync(remoteDir, { recursive: true });
 		git(["init"], remoteDir);
-		git(["config", "user.email", "test@test.com"], remoteDir);
-		git(["config", "user.name", "Test"], remoteDir);
+		git(["config", "--local", "user.email", "test@test.com"], remoteDir);
+		git(["config", "--local", "user.name", "Test"], remoteDir);
 		createCommit(remoteDir, "extension.ts", "// v1", "Initial commit");
 
 		// Clone to installed directory (simulating what install() does)
 		mkdirSync(join(agentDir, "git", "github.com", "test"), { recursive: true });
 		git(["clone", remoteDir, installedDir], tempDir);
-		git(["config", "user.email", "test@test.com"], installedDir);
-		git(["config", "user.name", "Test"], installedDir);
+		git(["config", "--local", "user.email", "test@test.com"], installedDir);
+		git(["config", "--local", "user.name", "Test"], installedDir);
 
 		// Add to global packages so update() processes this source
 		settingsManager.setPackages([gitSource]);
