@@ -1595,12 +1595,31 @@ export class DefaultPackageManager implements PackageManager {
 		};
 	}
 
+	private resolveCommand(command: string): { command: string; shell: boolean } {
+		if (process.platform === "win32" && command === "npm") {
+			const whereResult = spawnSync("where", [command], { encoding: "utf-8" });
+			const resolved = whereResult.status === 0 ? (whereResult.stdout || "").split(/\r?\n/)[0] : "";
+			const lower = resolved.toLowerCase();
+			if (resolved) {
+				if (lower.endsWith(".exe")) {
+					return { command: resolved, shell: false };
+				}
+				if (lower.endsWith(".cmd") || lower.endsWith(".bat") || lower.endsWith(".ps1")) {
+					return { command: resolved, shell: true };
+				}
+			}
+			return { command, shell: true };
+		}
+		return { command, shell: process.platform === "win32" };
+	}
+
 	private runCommand(command: string, args: string[], options?: { cwd?: string }): Promise<void> {
+		const resolved = this.resolveCommand(command);
 		return new Promise((resolvePromise, reject) => {
-			const child = spawn(command, args, {
+			const child = spawn(resolved.command, args, {
 				cwd: options?.cwd,
 				stdio: "inherit",
-				shell: process.platform === "win32",
+				shell: resolved.shell,
 			});
 			child.on("error", reject);
 			child.on("exit", (code) => {
@@ -1614,10 +1633,11 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private runCommandSync(command: string, args: string[]): string {
-		const result = spawnSync(command, args, {
+		const resolved = this.resolveCommand(command);
+		const result = spawnSync(resolved.command, args, {
 			stdio: ["ignore", "pipe", "pipe"],
 			encoding: "utf-8",
-			shell: process.platform === "win32",
+			shell: resolved.shell,
 		});
 		if (result.status !== 0) {
 			throw new Error(`Failed to run ${command} ${args.join(" ")}: ${result.stderr || result.stdout}`);
