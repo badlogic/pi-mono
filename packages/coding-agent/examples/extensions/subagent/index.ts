@@ -28,6 +28,31 @@ const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
 const COLLAPSED_ITEM_COUNT = 10;
 
+function getAgentDir(): string {
+	const envDir = process.env.PI_AGENT_DIR;
+	if (envDir) {
+		if (envDir === "~") return os.homedir();
+		if (envDir.startsWith("~/")) return os.homedir() + envDir.slice(1);
+		return envDir;
+	}
+	return path.join(os.homedir(), ".pi", "agent");
+}
+
+function getContextPathsFromSettings(): string[] {
+	const agentDir = getAgentDir();
+	const settingsPath = path.join(agentDir, "settings.json");
+	try {
+		if (fs.existsSync(settingsPath)) {
+			const content = fs.readFileSync(settingsPath, "utf-8");
+			const settings = JSON.parse(content);
+			return settings.context ?? [];
+		}
+	} catch {
+		// Ignore parse errors
+	}
+	return [];
+}
+
 function formatTokens(count: number): string {
 	if (count < 1000) return count.toString();
 	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
@@ -418,7 +443,8 @@ export default function (pi: ExtensionAPI) {
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const agentScope: AgentScope = params.agentScope ?? "user";
-			const discovery = discoverAgents(ctx.cwd, agentScope);
+			const extraAgentDirs = getContextPathsFromSettings();
+			const discovery = discoverAgents(ctx.cwd, agentScope, { extraAgentDirs });
 			const agents = discovery.agents;
 			const confirmProjectAgents = params.confirmProjectAgents ?? true;
 

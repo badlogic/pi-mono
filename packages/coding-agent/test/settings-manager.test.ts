@@ -224,4 +224,36 @@ describe("SettingsManager", () => {
 			expect(savedSettings.theme).toBe("light");
 		});
 	});
+
+	describe("context", () => {
+		it("should load context paths from settings", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ context: ["~/.claude", "/custom/dir"] }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getContextPaths()).toEqual(["~/.claude", "/custom/dir"]);
+		});
+
+		it("should return empty array when context is not set", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getContextPaths()).toEqual([]);
+		});
+
+		it("should preserve context when saving unrelated settings", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ context: ["~/.claude"] }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setTheme("light");
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.context).toEqual(["~/.claude"]);
+			expect(savedSettings.theme).toBe("light");
+		});
+	});
 });

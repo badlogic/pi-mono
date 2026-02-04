@@ -278,6 +278,94 @@ Content`,
 		});
 	});
 
+	describe("context setting", () => {
+		it("should load AGENTS.md from extra context directories", async () => {
+			const extraContextDir = join(tempDir, "extra-context");
+			mkdirSync(extraContextDir, { recursive: true });
+			writeFileSync(join(extraContextDir, "AGENTS.md"), "# Extra Context\n\nFrom extra dir.");
+
+			const settingsManager = SettingsManager.inMemory();
+			settingsManager.setContextPaths([extraContextDir]);
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+			await loader.reload();
+
+			const { agentsFiles } = loader.getAgentsFiles();
+			expect(agentsFiles.some((f) => f.path.includes("extra-context") && f.content.includes("From extra dir"))).toBe(
+				true,
+			);
+		});
+
+		it("should load CLAUDE.md from extra context directories", async () => {
+			const claudeDir = join(tempDir, "claude-compat");
+			mkdirSync(claudeDir, { recursive: true });
+			writeFileSync(join(claudeDir, "CLAUDE.md"), "# Claude Config\n\nClaude-specific instructions.");
+
+			const settingsManager = SettingsManager.inMemory();
+			settingsManager.setContextPaths([claudeDir]);
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+			await loader.reload();
+
+			const { agentsFiles } = loader.getAgentsFiles();
+			expect(agentsFiles.some((f) => f.path.endsWith("CLAUDE.md") && f.content.includes("Claude-specific"))).toBe(
+				true,
+			);
+		});
+
+		it("should prefer AGENTS.md over CLAUDE.md in same directory", async () => {
+			const mixedDir = join(tempDir, "mixed-context");
+			mkdirSync(mixedDir, { recursive: true });
+			writeFileSync(join(mixedDir, "AGENTS.md"), "# AGENTS wins");
+			writeFileSync(join(mixedDir, "CLAUDE.md"), "# CLAUDE loses");
+
+			const settingsManager = SettingsManager.inMemory();
+			settingsManager.setContextPaths([mixedDir]);
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+			await loader.reload();
+
+			const { agentsFiles } = loader.getAgentsFiles();
+			const mixedFiles = agentsFiles.filter((f) => f.path.includes("mixed-context"));
+			expect(mixedFiles).toHaveLength(1);
+			expect(mixedFiles[0].content).toContain("AGENTS wins");
+		});
+
+		it("should load context from ancestor .claude subdirectories when context includes ~/.claude pattern", async () => {
+			// Create .claude/CLAUDE.md in project directory (simulating Claude Code structure)
+			const claudeSubdir = join(cwd, ".claude");
+			mkdirSync(claudeSubdir, { recursive: true });
+			writeFileSync(join(claudeSubdir, "CLAUDE.md"), "# Project Claude Config");
+
+			const settingsManager = SettingsManager.inMemory();
+			settingsManager.setContextPaths(["~/.claude"]);
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+			await loader.reload();
+
+			const { agentsFiles } = loader.getAgentsFiles();
+			expect(
+				agentsFiles.some((f) => f.path.includes(".claude") && f.content.includes("Project Claude Config")),
+			).toBe(true);
+		});
+
+		it("should dedupe context files from multiple sources", async () => {
+			// Same file should not appear twice
+			writeFileSync(join(cwd, "AGENTS.md"), "# Project Guidelines");
+
+			const settingsManager = SettingsManager.inMemory();
+			// Even if we somehow reference cwd twice, should dedupe
+			settingsManager.setContextPaths([cwd]);
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+			await loader.reload();
+
+			const { agentsFiles } = loader.getAgentsFiles();
+			const projectFiles = agentsFiles.filter((f) => f.path === join(cwd, "AGENTS.md"));
+			expect(projectFiles).toHaveLength(1);
+		});
+	});
+
 	describe("override functions", () => {
 		it("should apply skillsOverride", async () => {
 			const injectedSkill: Skill = {

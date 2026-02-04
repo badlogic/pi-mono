@@ -5,6 +5,8 @@
 ### Added
 
 - API keys in `auth.json` now support shell command resolution (`!command`) and environment variable lookup, matching the behavior in `models.json`
+- **Context directories setting**: New `context` setting allows specifying extra directories to search for AGENTS.md/CLAUDE.md files. Enables compatibility with other tools like Claude Code. See [docs/settings.md](docs/settings.md).
+- **Subagent extension**: Now respects `context` setting for agent discovery, enabling agents defined in `~/.claude/agents/` to be used when `context: ["~/.claude"]` is configured.
 
 ## [0.51.6] - 2026-02-04
 

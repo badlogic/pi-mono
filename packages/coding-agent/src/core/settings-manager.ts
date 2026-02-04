@@ -76,6 +76,7 @@ export interface Settings {
 	skills?: string[]; // Array of local skill file paths or directories
 	prompts?: string[]; // Array of local prompt template paths or directories
 	themes?: string[]; // Array of local theme file paths or directories
+	context?: string[]; // Array of directories to search for AGENTS.md/CLAUDE.md files
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
@@ -621,6 +622,23 @@ export class SettingsManager {
 	setProjectThemePaths(paths: string[]): void {
 		const projectSettings = this.loadProjectSettings();
 		projectSettings.themes = paths;
+		this.saveProjectSettings(projectSettings);
+		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
+	}
+
+	getContextPaths(): string[] {
+		return [...(this.settings.context ?? [])];
+	}
+
+	setContextPaths(paths: string[]): void {
+		this.globalSettings.context = paths;
+		this.markModified("context");
+		this.save();
+	}
+
+	setProjectContextPaths(paths: string[]): void {
+		const projectSettings = this.loadProjectSettings();
+		projectSettings.context = paths;
 		this.saveProjectSettings(projectSettings);
 		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
 	}

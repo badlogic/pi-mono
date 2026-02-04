@@ -73,19 +73,30 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
 }
 
 function loadProjectContextFiles(
-	options: { cwd?: string; agentDir?: string } = {},
+	options: { cwd?: string; agentDir?: string; extraContextDirs?: string[] } = {},
 ): Array<{ path: string; content: string }> {
 	const resolvedCwd = options.cwd ?? process.cwd();
 	const resolvedAgentDir = options.agentDir ?? getAgentDir();
+	const extraDirs = options.extraContextDirs ?? [];
 
 	const contextFiles: Array<{ path: string; content: string }> = [];
 	const seenPaths = new Set<string>();
 
-	const globalContext = loadContextFileFromDir(resolvedAgentDir);
-	if (globalContext) {
-		contextFiles.push(globalContext);
-		seenPaths.add(globalContext.path);
+	const addContextFile = (file: { path: string; content: string } | null) => {
+		if (file && !seenPaths.has(file.path)) {
+			contextFiles.push(file);
+			seenPaths.add(file.path);
+		}
+	};
+
+	// Load from extra context directories first (e.g., ~/.claude for Claude Code compat)
+	for (const dir of extraDirs) {
+		const resolved = dir.startsWith("~") ? join(homedir(), dir.slice(1).replace(/^\//, "")) : resolve(dir);
+		addContextFile(loadContextFileFromDir(resolved));
 	}
+
+	// Then load from pi's agent dir (e.g., ~/.pi/agent/)
+	addContextFile(loadContextFileFromDir(resolvedAgentDir));
 
 	const ancestorContextFiles: Array<{ path: string; content: string }> = [];
 
@@ -97,6 +108,20 @@ function loadProjectContextFiles(
 		if (contextFile && !seenPaths.has(contextFile.path)) {
 			ancestorContextFiles.unshift(contextFile);
 			seenPaths.add(contextFile.path);
+		}
+
+		// Also check subdirectories specified in extraContextDirs pattern
+		// e.g., if "~/.claude" is specified, also check ".claude" subdirs in ancestors
+		for (const dir of extraDirs) {
+			if (dir.startsWith("~/.")) {
+				const subdirName = dir.slice(2); // e.g., ".claude" from "~/.claude"
+				const subdir = join(currentDir, subdirName);
+				const subdirContext = loadContextFileFromDir(subdir);
+				if (subdirContext && !seenPaths.has(subdirContext.path)) {
+					ancestorContextFiles.unshift(subdirContext);
+					seenPaths.add(subdirContext.path);
+				}
+			}
 		}
 
 		if (currentDir === root) break;
@@ -420,7 +445,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 			this.addDefaultMetadataForPath(extension.path);
 		}
 
-		const agentsFiles = { agentsFiles: loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir }) };
+		const contextPaths = this.settingsManager.getContextPaths();
+		const agentsFiles = {
+			agentsFiles: loadProjectContextFiles({
+				cwd: this.cwd,
+				agentDir: this.agentDir,
+				extraContextDirs: contextPaths,
+			}),
+		};
 		const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(agentsFiles) : agentsFiles;
 		this.agentsFiles = resolvedAgentsFiles.agentsFiles;
 
