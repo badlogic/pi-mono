@@ -2333,9 +2333,9 @@ export class InteractiveMode {
 			case "custom": {
 				if (message.display) {
 					const renderer = this.session.extensionRunner?.getMessageRenderer(message.customType);
-					this.chatContainer.addChild(
-						new CustomMessageComponent(message, renderer, this.getMarkdownThemeWithSettings()),
-					);
+					const component = new CustomMessageComponent(message, renderer, this.getMarkdownThemeWithSettings());
+					component.setExpanded(this.toolOutputExpanded);
+					this.chatContainer.addChild(component);
 				}
 				break;
 			}
