@@ -1158,8 +1158,8 @@ Register tools the LLM can call via `pi.registerTool()`. Tools appear in the sys
 Note: Some models are idiots and include the @ prefix in tool path arguments. Built-in tools strip a leading @ before resolving paths. If your custom tool accepts a path, normalize a leading @ as well.
 
 - `description` — detailed description sent to the LLM via the API tool listing (can be multi-line).
-- `shortDescription` — optional short one-liner shown in the system prompt tool list. Falls back to the first line of `description` if omitted.
-- `systemGuidelines` — bullet points added to the system prompt guidelines section when the tool is active.
+- `shortDescription` — optional short one-liner for the system prompt tool list. If provided, the tool appears in the "Available tools" section. If omitted, the tool is not listed in the system prompt (but still callable via the API tool listing).
+- `systemGuidelines` — optional bullet points added to the system prompt guidelines section when the tool is active.
 
 ### Tool Definition
 

@@ -64,22 +64,9 @@ describe("buildSystemPrompt", () => {
 			expect(prompt).toContain("- my_tool: Manage a todo list");
 		});
 
-		test("falls back to tool name when shortDescription is undefined", () => {
+		test("hides tool from list when shortDescription is undefined (opt-in)", () => {
 			const prompt = buildSystemPrompt({
-				tools: [{ name: "my_tool" }],
-				contextFiles: [],
-				skills: [],
-			});
-
-			expect(prompt).toContain("- my_tool: my_tool");
-		});
-
-		test("hides tool from list when shortDescription is empty string", () => {
-			const prompt = buildSystemPrompt({
-				tools: [
-					{ name: "read", shortDescription: "Read file contents" },
-					{ name: "hidden_tool", shortDescription: "" },
-				],
+				tools: [{ name: "read", shortDescription: "Read file contents" }, { name: "hidden_tool" }],
 				contextFiles: [],
 				skills: [],
 			});
@@ -102,6 +89,22 @@ describe("buildSystemPrompt", () => {
 			});
 
 			expect(prompt).toContain("- Confirm with the user before removing items");
+		});
+
+		test("includes systemGuidelines even when tool is hidden from tool list", () => {
+			const prompt = buildSystemPrompt({
+				tools: [
+					{
+						name: "hidden_tool",
+						systemGuidelines: ["Always check permissions before modifying files"],
+					},
+				],
+				contextFiles: [],
+				skills: [],
+			});
+
+			expect(prompt).not.toContain("hidden_tool");
+			expect(prompt).toContain("- Always check permissions before modifying files");
 		});
 
 		test("deduplicates guidelines", () => {

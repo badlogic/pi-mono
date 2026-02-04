@@ -327,7 +327,7 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	label: string;
 	/** Description sent to the LLM via the API tool listing (can be detailed/long) */
 	description: string;
-	/** Short one-line description shown in the system prompt tool list. Undefined = falls back to first line of `description`. Empty string = hidden from the system prompt tool list. */
+	/** Short one-line description for the system prompt tool list. If provided, the tool appears in the "Available tools" section of the system prompt. If omitted, the tool is not listed in the system prompt (but still available to the LLM via the API tool listing). */
 	shortDescription?: string;
 	/** Additional guideline bullets appended to the system prompt guidelines section when tool is active */
 	systemGuidelines?: string[];

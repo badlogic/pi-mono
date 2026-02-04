@@ -22,7 +22,7 @@ export const BUILTIN_TOOL_SHORT_DESCRIPTIONS: Record<BuiltinToolName, string> = 
 export interface SystemPromptToolInfo {
 	/** Tool name (used in the Available tools list) */
 	name: string;
-	/** Short one-line description for the system prompt tool list. Empty string = hidden from list. Undefined = resolve from full description at construction time. */
+	/** Short one-line description for the system prompt tool list. If provided, the tool is shown. If undefined, the tool is hidden. */
 	shortDescription?: string;
 	/** Additional guideline bullets appended to the system prompt guidelines section */
 	systemGuidelines?: string[];
@@ -126,10 +126,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 	const examplesPath = getExamplesPath();
 
 	// Build tools list based on provided tool info (short one-liners)
-	const visibleTools = tools.filter((tool) => tool.shortDescription !== "");
+	const visibleTools = tools.filter((tool) => tool.shortDescription != null);
 	const toolsList =
 		visibleTools.length > 0
-			? visibleTools.map((tool) => `- ${tool.name}: ${tool.shortDescription ?? tool.name}`).join("\n")
+			? visibleTools.map((tool) => `- ${tool.name}: ${tool.shortDescription}`).join("\n")
 			: "(none)";
 
 	// Build guidelines based on which tools are actually available
