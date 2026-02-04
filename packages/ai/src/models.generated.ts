@@ -8821,6 +8821,23 @@ export const MODELS = {
 			contextWindow: 128000,
 			maxTokens: 65536,
 		} satisfies Model<"openai-completions">,
+		"qwen/qwen3-coder-next": {
+			id: "qwen/qwen3-coder-next",
+			name: "Qwen: Qwen3 Coder Next",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: {
+				input: 0.19999999999999998,
+				output: 1.5,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 262144,
+			maxTokens: 65536,
+		} satisfies Model<"openai-completions">,
 		"qwen/qwen3-coder-plus": {
 			id: "qwen/qwen3-coder-plus",
 			name: "Qwen: Qwen3 Coder Plus",
