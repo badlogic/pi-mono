@@ -103,9 +103,11 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 				process.env.no_proxy
 			) {
 				const nodeHttpHandler = await import("@smithy/node-http-handler");
-				const proxyAgent = await import("proxy-agent");
+				const { HttpsProxyAgent } = await import("https-proxy-agent");
 
-				const agent = new proxyAgent.ProxyAgent();
+				const proxyUrl =
+					process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+				const agent = new HttpsProxyAgent(proxyUrl!);
 
 				// Bedrock runtime uses NodeHttp2Handler by default since v3.798.0, which is based
 				// on `http2` module and has no support for http agent.
