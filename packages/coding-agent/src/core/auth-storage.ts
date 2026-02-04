@@ -19,6 +19,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "f
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { getAgentDir } from "../config.js";
+import { resolveConfigValue } from "./resolve-config-value.js";
 
 export type ApiKeyCredential = {
 	type: "api_key";
@@ -273,7 +274,7 @@ export class AuthStorage {
 		const cred = this.data[providerId];
 
 		if (cred?.type === "api_key") {
-			return cred.key;
+			return resolveConfigValue(cred.key);
 		}
 
 		if (cred?.type === "oauth") {

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- API keys in `auth.json` now support shell command resolution (`!command`) and environment variable lookup, matching the behavior in `models.json`
+
 ## [0.51.6] - 2026-02-04
 
 ### New Features

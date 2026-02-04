@@ -17,11 +17,11 @@ import {
 } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
-import { execSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { getAgentDir } from "../config.js";
 import type { AuthStorage } from "./auth-storage.js";
+import { clearConfigValueCache, resolveConfigValue, resolveHeaders } from "./resolve-config-value.js";
 
 const Ajv = (AjvModule as any).default || AjvModule;
 
@@ -117,63 +117,8 @@ function emptyCustomModelsResult(error?: string): CustomModelsResult {
 	return { models: [], replacedProviders: new Set(), overrides: new Map(), error };
 }
 
-// Cache for shell command results (persists for process lifetime)
-const commandResultCache = new Map<string, string | undefined>();
-
-/**
- * Resolve a config value (API key, header value, etc.) to an actual value.
- * - If starts with "!", executes the rest as a shell command and uses stdout (cached)
- * - Otherwise checks environment variable first, then treats as literal (not cached)
- */
-function resolveConfigValue(config: string): string | undefined {
-	if (config.startsWith("!")) {
-		return executeCommand(config);
-	}
-	const envValue = process.env[config];
-	return envValue || config;
-}
-
-function executeCommand(commandConfig: string): string | undefined {
-	if (commandResultCache.has(commandConfig)) {
-		return commandResultCache.get(commandConfig);
-	}
-
-	const command = commandConfig.slice(1);
-	let result: string | undefined;
-	try {
-		const output = execSync(command, {
-			encoding: "utf-8",
-			timeout: 10000,
-			stdio: ["ignore", "pipe", "ignore"],
-		});
-		result = output.trim() || undefined;
-	} catch {
-		result = undefined;
-	}
-
-	commandResultCache.set(commandConfig, result);
-	return result;
-}
-
-/**
- * Resolve all header values using the same resolution logic as API keys.
- */
-function resolveHeaders(headers: Record<string, string> | undefined): Record<string, string> | undefined {
-	if (!headers) return undefined;
-	const resolved: Record<string, string> = {};
-	for (const [key, value] of Object.entries(headers)) {
-		const resolvedValue = resolveConfigValue(value);
-		if (resolvedValue) {
-			resolved[key] = resolvedValue;
-		}
-	}
-	return Object.keys(resolved).length > 0 ? resolved : undefined;
-}
-
 /** Clear the config value command cache. Exported for testing. */
-export function clearApiKeyCache(): void {
-	commandResultCache.clear();
-}
+export const clearApiKeyCache = clearConfigValueCache;
 
 /**
  * Model registry - loads and manages models, resolves API keys via AuthStorage.

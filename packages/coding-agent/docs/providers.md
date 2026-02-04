@@ -82,6 +82,24 @@ Store credentials in `~/.pi/agent/auth.json`:
 
 The file is created with `0600` permissions (user read/write only). Auth file credentials take priority over environment variables.
 
+### Key Resolution
+
+The `key` field supports three formats:
+
+- **Shell command:** `"!command"` executes and uses stdout (cached for process lifetime)
+  ```json
+  { "type": "api_key", "key": "!security find-generic-password -ws 'anthropic'" }
+  { "type": "api_key", "key": "!op read 'op://vault/item/credential'" }
+  ```
+- **Environment variable:** Uses the value of the named variable
+  ```json
+  { "type": "api_key", "key": "MY_ANTHROPIC_KEY" }
+  ```
+- **Literal value:** Used directly
+  ```json
+  { "type": "api_key", "key": "sk-ant-..." }
+  ```
+
 OAuth credentials are also stored here after `/login` and managed automatically.
 
 ## Cloud Providers
