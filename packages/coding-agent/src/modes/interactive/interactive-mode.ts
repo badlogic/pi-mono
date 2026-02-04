@@ -1779,6 +1779,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("newSession", () => this.handleClearCommand());
 		this.defaultEditor.onAction("tree", () => this.showTreeSelector());
 		this.defaultEditor.onAction("fork", () => this.showUserMessageSelector());
+		this.defaultEditor.onAction("resume", () => this.showSessionSelector());
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
