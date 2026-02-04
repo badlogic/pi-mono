@@ -3,10 +3,6 @@
  * Handles TUI rendering and user interaction, delegating business logic to AgentSession.
  */
 
-import * as crypto from "node:crypto";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import {
 	type AssistantMessage,
@@ -16,6 +12,12 @@ import {
 	type Model,
 	type OAuthProvider,
 } from "@mariozechner/pi-ai";
+import { getUpdateAction } from "@mariozechner/pi-env/app";
+import { spawn, spawnSync } from "@mariozechner/pi-env/child-process";
+import * as crypto from "@mariozechner/pi-env/crypto";
+import * as fs from "@mariozechner/pi-env/fs";
+import * as os from "@mariozechner/pi-env/os";
+import * as path from "@mariozechner/pi-env/path";
 import type {
 	AutocompleteItem,
 	EditorAction,
@@ -42,16 +44,7 @@ import {
 	TUI,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
-import { spawn, spawnSync } from "child_process";
-import {
-	APP_NAME,
-	getAuthPath,
-	getDebugLogPath,
-	getShareViewerUrl,
-	isBunBinary,
-	isBunRuntime,
-	VERSION,
-} from "../../config.js";
+import { APP_NAME, getAuthPath, getDebugLogPath, getShareViewerUrl, VERSION } from "../../config.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
 import type {
@@ -2750,9 +2743,8 @@ export class InteractiveMode {
 	}
 
 	showNewVersionNotification(newVersion: string): void {
-		const action = isBunBinary
-			? `Download from: ${theme.fg("accent", "https://github.com/badlogic/pi-mono/releases/latest")}`
-			: `Run: ${theme.fg("accent", `${isBunRuntime ? "bun" : "npm"} install -g @mariozechner/pi-coding-agent`)}`;
+		const rawAction = getUpdateAction("@mariozechner/pi-coding-agent");
+		const action = rawAction ? theme.fg("accent", rawAction) : "";
 		const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. `) + action;
 		const changelogUrl = theme.fg(
 			"accent",

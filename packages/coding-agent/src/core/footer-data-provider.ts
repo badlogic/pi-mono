@@ -1,5 +1,5 @@
-import { existsSync, type FSWatcher, readFileSync, statSync, watch } from "fs";
-import { dirname, join, resolve } from "path";
+import { existsSync, type FSWatcher, readFileSync, statSync, watch } from "@mariozechner/pi-env/fs";
+import { dirname, join, resolve } from "@mariozechner/pi-env/path";
 
 /**
  * Find the git HEAD path by walking up from cwd.

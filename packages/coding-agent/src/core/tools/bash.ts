@@ -1,10 +1,10 @@
-import { randomBytes } from "node:crypto";
-import { createWriteStream, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { randomBytes } from "@mariozechner/pi-env/crypto";
+import { createWriteStream, existsSync } from "@mariozechner/pi-env/fs";
+import { tmpdir } from "@mariozechner/pi-env/os";
+import { join } from "@mariozechner/pi-env/path";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { type Static, Type } from "@sinclair/typebox";
-import { spawn } from "child_process";
+import { spawn } from "@mariozechner/pi-env/child-process";
 import { getShellConfig, getShellEnv, killProcessTree } from "../../utils/shell.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateTail } from "./truncate.js";
 

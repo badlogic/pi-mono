@@ -1,0 +1,153 @@
+{
+	"name": "@mariozechner/pi-env",
+	"version": "0.50.8",
+	"description": "Environment abstraction layer for Node.js, Bun, and browser runtimes",
+	"type": "module",
+	"main": "./dist/node/index.js",
+	"types": "./dist/node/index.d.ts",
+	"exports": {
+		".": {
+			"bun": {
+				"types": "./dist/bun/index.d.ts",
+				"import": "./dist/bun/index.js"
+			},
+			"browser": {
+				"types": "./dist/browser/index.d.ts",
+				"import": "./dist/browser/index.js"
+			},
+			"default": {
+				"types": "./dist/node/index.d.ts",
+				"import": "./dist/node/index.js"
+			}
+		},
+		"./fs": {
+			"bun": {
+				"types": "./dist/bun/fs.d.ts",
+				"import": "./dist/bun/fs.js"
+			},
+			"browser": {
+				"types": "./dist/browser/fs.d.ts",
+				"import": "./dist/browser/fs.js"
+			},
+			"default": {
+				"types": "./dist/node/fs.d.ts",
+				"import": "./dist/node/fs.js"
+			}
+		},
+		"./path": {
+			"bun": {
+				"types": "./dist/bun/path.d.ts",
+				"import": "./dist/bun/path.js"
+			},
+			"browser": {
+				"types": "./dist/browser/path.d.ts",
+				"import": "./dist/browser/path.js"
+			},
+			"default": {
+				"types": "./dist/node/path.d.ts",
+				"import": "./dist/node/path.js"
+			}
+		},
+		"./os": {
+			"bun": {
+				"types": "./dist/bun/os.d.ts",
+				"import": "./dist/bun/os.js"
+			},
+			"browser": {
+				"types": "./dist/browser/os.d.ts",
+				"import": "./dist/browser/os.js"
+			},
+			"default": {
+				"types": "./dist/node/os.d.ts",
+				"import": "./dist/node/os.js"
+			}
+		},
+		"./process": {
+			"bun": {
+				"types": "./dist/bun/process.d.ts",
+				"import": "./dist/bun/process.js"
+			},
+			"browser": {
+				"types": "./dist/browser/process.d.ts",
+				"import": "./dist/browser/process.js"
+			},
+			"default": {
+				"types": "./dist/node/process.d.ts",
+				"import": "./dist/node/process.js"
+			}
+		},
+		"./crypto": {
+			"bun": {
+				"types": "./dist/bun/crypto.d.ts",
+				"import": "./dist/bun/crypto.js"
+			},
+			"browser": {
+				"types": "./dist/browser/crypto.d.ts",
+				"import": "./dist/browser/crypto.js"
+			},
+			"default": {
+				"types": "./dist/node/crypto.d.ts",
+				"import": "./dist/node/crypto.js"
+			}
+		},
+		"./app": {
+			"bun": {
+				"types": "./dist/bun/app.d.ts",
+				"import": "./dist/bun/app.js"
+			},
+			"browser": {
+				"types": "./dist/browser/app.d.ts",
+				"import": "./dist/browser/app.js"
+			},
+			"default": {
+				"types": "./dist/node/app.d.ts",
+				"import": "./dist/node/app.js"
+			}
+		},
+		"./child-process": {
+			"bun": {
+				"types": "./dist/bun/child-process.d.ts",
+				"import": "./dist/bun/child-process.js"
+			},
+			"browser": {
+				"types": "./dist/browser/child-process.d.ts",
+				"import": "./dist/browser/child-process.js"
+			},
+			"default": {
+				"types": "./dist/node/child-process.d.ts",
+				"import": "./dist/node/child-process.js"
+			}
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsgo -p tsconfig.build.node.json && tsgo -p tsconfig.build.bun.json && tsgo -p tsconfig.build.browser.json",
+		"dev": "tsgo -p tsconfig.build.node.json --watch --preserveWatchOutput",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"devDependencies": {
+		"@types/node": "^24.3.0",
+		"shx": "^0.4.0",
+		"typescript": "^5.7.3"
+	},
+	"keywords": [
+		"env",
+		"browser",
+		"bun",
+		"node",
+		"abstraction"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/badlogic/pi-mono.git",
+		"directory": "packages/env"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	}
+}

@@ -1,5 +1,5 @@
-import { execSync, spawn } from "child_process";
-import { platform } from "os";
+import { execSync, spawn } from "@mariozechner/pi-env/child-process";
+import { platform } from "@mariozechner/pi-env/os";
 import { isWaylandSession } from "./clipboard-image.js";
 
 export function copyToClipboard(text: string): void {

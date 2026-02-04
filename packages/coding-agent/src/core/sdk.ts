@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join } from "@mariozechner/pi-env/path";
 import { Agent, type AgentMessage, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Message, Model } from "@mariozechner/pi-ai";
 import { getAgentDir, getDocsPath } from "../config.js";

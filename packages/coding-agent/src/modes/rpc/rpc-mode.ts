@@ -11,7 +11,7 @@
  * - Extension UI: Extension UI requests are emitted, client responds with extension_ui_response
  */
 
-import * as crypto from "node:crypto";
+import * as crypto from "@mariozechner/pi-env/crypto";
 import * as readline from "readline";
 import type { AgentSession } from "../../core/agent-session.js";
 import type {

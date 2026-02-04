@@ -7,8 +7,8 @@ import {
 	matchesKey,
 	setEditorKeybindings,
 } from "@mariozechner/pi-tui";
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync } from "@mariozechner/pi-env/fs";
+import { join } from "@mariozechner/pi-env/path";
 import { getAgentDir } from "../config.js";
 
 /**

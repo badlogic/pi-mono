@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "fs";
-import { homedir } from "os";
-import { basename, dirname, isAbsolute, join, resolve, sep } from "path";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "@mariozechner/pi-env/fs";
+import { homedir } from "@mariozechner/pi-env/os";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "@mariozechner/pi-env/path";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { parseFrontmatter } from "../utils/frontmatter.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";

@@ -1,4 +1,4 @@
-import { open } from "node:fs/promises";
+import { open } from "@mariozechner/pi-env/fs";
 import { fileTypeFromBuffer } from "file-type";
 
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);

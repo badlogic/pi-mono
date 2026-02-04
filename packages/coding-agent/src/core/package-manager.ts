@@ -1,8 +1,8 @@
-import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { spawn, spawnSync } from "@mariozechner/pi-env/child-process";
+import { createHash } from "@mariozechner/pi-env/crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "@mariozechner/pi-env/fs";
+import { homedir, tmpdir } from "@mariozechner/pi-env/os";
+import { basename, dirname, join, relative, resolve, sep } from "@mariozechner/pi-env/path";
 import ignore from "ignore";
 import { minimatch } from "minimatch";
 import { CONFIG_DIR_NAME } from "../config.js";

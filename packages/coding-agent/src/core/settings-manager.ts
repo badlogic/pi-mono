@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "@mariozechner/pi-env/fs";
+import { dirname, join } from "@mariozechner/pi-env/path";
+import { cwd as processCwd, env as processEnv } from "@mariozechner/pi-env/process";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 
 export interface CompactionSettings {
@@ -148,7 +149,7 @@ export class SettingsManager {
 	}
 
 	/** Create a SettingsManager that loads from files */
-	static create(cwd: string = process.cwd(), agentDir: string = getAgentDir()): SettingsManager {
+	static create(cwd: string = processCwd(), agentDir: string = getAgentDir()): SettingsManager {
 		const settingsPath = join(agentDir, "settings.json");
 		const projectSettingsPath = join(cwd, CONFIG_DIR_NAME, "settings.json");
 
@@ -693,7 +694,7 @@ export class SettingsManager {
 	}
 
 	getShowHardwareCursor(): boolean {
-		return this.settings.showHardwareCursor ?? process.env.PI_HARDWARE_CURSOR === "1";
+		return this.settings.showHardwareCursor ?? processEnv.PI_HARDWARE_CURSOR === "1";
 	}
 
 	setShowHardwareCursor(enabled: boolean): void {

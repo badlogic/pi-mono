@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "@mariozechner/pi-env/fs";
+import { homedir } from "@mariozechner/pi-env/os";
+import { join, resolve, sep } from "@mariozechner/pi-env/path";
 import chalk from "chalk";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.js";

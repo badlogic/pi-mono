@@ -1,4 +1,4 @@
-import * as os from "node:os";
+import * as os from "@mariozechner/pi-env/os";
 import {
 	Box,
 	Container,

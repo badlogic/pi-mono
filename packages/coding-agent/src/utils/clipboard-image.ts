@@ -1,4 +1,4 @@
-import { spawnSync } from "child_process";
+import { spawnSync } from "@mariozechner/pi-env/child-process";
 
 import { clipboard } from "./clipboard-native.js";
 import { loadPhoton } from "./photon.js";
