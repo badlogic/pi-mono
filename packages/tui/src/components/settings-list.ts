@@ -98,15 +98,15 @@ export class SettingsList implements Component {
 		if (this.items.length === 0) {
 			lines.push(this.theme.hint("  No settings available"));
 			if (this.searchEnabled) {
-				this.addHintLine(lines);
+				this.addHintLine(lines, width);
 			}
 			return lines;
 		}
 
 		const displayItems = this.searchEnabled ? this.filteredItems : this.items;
 		if (displayItems.length === 0) {
-			lines.push(this.theme.hint("  No matching settings"));
-			this.addHintLine(lines);
+			lines.push(truncateToWidth(this.theme.hint("  No matching settings"), width));
+			this.addHintLine(lines, width);
 			return lines;
 		}
 
@@ -140,7 +140,7 @@ export class SettingsList implements Component {
 
 			const valueText = this.theme.value(truncateToWidth(item.currentValue, valueMaxWidth, ""), isSelected);
 
-			lines.push(prefix + labelText + separator + valueText);
+			lines.push(truncateToWidth(prefix + labelText + separator + valueText, width));
 		}
 
 		// Add scroll indicator if needed
@@ -160,7 +160,7 @@ export class SettingsList implements Component {
 		}
 
 		// Add hint
-		this.addHintLine(lines);
+		this.addHintLine(lines, width);
 
 		return lines;
 	}
@@ -234,13 +234,16 @@ export class SettingsList implements Component {
 		this.selectedIndex = 0;
 	}
 
-	private addHintLine(lines: string[]): void {
+	private addHintLine(lines: string[], width: number): void {
 		lines.push("");
 		lines.push(
-			this.theme.hint(
-				this.searchEnabled
-					? "  Type to search · Enter/Space to change · Esc to cancel"
-					: "  Enter/Space to change · Esc to cancel",
+			truncateToWidth(
+				this.theme.hint(
+					this.searchEnabled
+						? "  Type to search · Enter/Space to change · Esc to cancel"
+						: "  Enter/Space to change · Esc to cancel",
+				),
+				width,
 			),
 		);
 	}

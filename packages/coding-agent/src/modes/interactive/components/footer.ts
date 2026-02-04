@@ -118,7 +118,7 @@ export class FooterComponent implements Component {
 		// Truncate path if too long to fit width
 		if (pwd.length > width) {
 			const half = Math.floor(width / 2) - 2;
-			if (half > 0) {
+			if (half > 1) {
 				const start = pwd.slice(0, half);
 				const end = pwd.slice(-(half - 1));
 				pwd = `${start}...${end}`;
