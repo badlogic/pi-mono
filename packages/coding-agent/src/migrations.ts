@@ -2,9 +2,17 @@
  * One-time migrations that run on startup.
  */
 
-import chalk from "chalk";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "@mariozechner/pi-env/fs";
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "@mariozechner/pi-env/fs";
 import { dirname, join } from "@mariozechner/pi-env/path";
+import chalk from "chalk";
 import { CONFIG_DIR_NAME, getAgentDir, getBinDir } from "./config.js";
 
 const MIGRATION_GUIDE_URL =

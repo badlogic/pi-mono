@@ -2,10 +2,10 @@
  * Process @file CLI arguments into text content and image attachments
  */
 
-import { access, readFile, stat } from "@mariozechner/pi-env/fs";
 import type { ImageContent } from "@mariozechner/pi-ai";
-import chalk from "chalk";
+import { access, readFile, stat } from "@mariozechner/pi-env/fs";
 import { resolve } from "@mariozechner/pi-env/path";
+import chalk from "chalk";
 import { resolveReadPath } from "../core/tools/path-utils.js";
 import { formatDimensionNote, resizeImage } from "../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../utils/mime.js";

@@ -1,6 +1,6 @@
+import { spawn, spawnSync } from "@mariozechner/pi-env/child-process";
 import { existsSync } from "@mariozechner/pi-env/fs";
 import { delimiter } from "@mariozechner/pi-env/path";
-import { spawn, spawnSync } from "@mariozechner/pi-env/child-process";
 import { getBinDir, getSettingsPath } from "../config.js";
 import { SettingsManager } from "../core/settings-manager.js";
 

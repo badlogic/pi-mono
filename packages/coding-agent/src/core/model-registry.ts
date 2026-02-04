@@ -15,11 +15,11 @@ import {
 	registerOAuthProvider,
 	type SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
-import { type Static, Type } from "@sinclair/typebox";
-import AjvModule from "ajv";
 import { execSync } from "@mariozechner/pi-env/child-process";
 import { existsSync, readFileSync } from "@mariozechner/pi-env/fs";
 import { join } from "@mariozechner/pi-env/path";
+import { type Static, Type } from "@sinclair/typebox";
+import AjvModule from "ajv";
 import { getAgentDir } from "../config.js";
 import type { AuthStorage } from "./auth-storage.js";
 

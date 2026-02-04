@@ -3,6 +3,7 @@
  */
 export {
 	basename,
+	default,
 	delimiter,
 	dirname,
 	isAbsolute,
@@ -11,5 +12,3 @@ export {
 	resolve,
 	sep,
 } from "node:path";
-
-export { default } from "node:path";

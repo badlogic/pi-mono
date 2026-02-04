@@ -1,7 +1,7 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { type Static, Type } from "@sinclair/typebox";
 import { mkdir as fsMkdir, writeFile as fsWriteFile } from "@mariozechner/pi-env/fs";
 import { dirname } from "@mariozechner/pi-env/path";
+import { type Static, Type } from "@sinclair/typebox";
 import { resolveToCwd } from "./path-utils.js";
 
 const writeSchema = Type.Object({

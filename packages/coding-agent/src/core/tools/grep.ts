@@ -1,9 +1,9 @@
 import { createInterface } from "node:readline";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { type Static, Type } from "@sinclair/typebox";
 import { spawn } from "@mariozechner/pi-env/child-process";
 import { readFileSync, statSync } from "@mariozechner/pi-env/fs";
 import path from "@mariozechner/pi-env/path";
+import { type Static, Type } from "@sinclair/typebox";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { resolveToCwd } from "./path-utils.js";
 import {
