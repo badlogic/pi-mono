@@ -176,7 +176,8 @@ Pi validates skills against the Agent Skills standard. Most issues produce warni
 - Name exceeds 64 characters or contains invalid characters
 - Name starts/ends with hyphen or has consecutive hyphens
 - Description exceeds 1024 characters
-- Unknown frontmatter fields
+
+Unknown frontmatter fields are ignored.
 
 **Exception:** Skills with missing description are not loaded.
 

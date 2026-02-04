@@ -65,19 +65,14 @@ describe("skills", () => {
 			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("description is required"))).toBe(true);
 		});
 
-		it("should warn when unknown frontmatter fields are present", () => {
+		it("should ignore unknown frontmatter fields", () => {
 			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "unknown-field"),
 				source: "test",
 			});
 
 			expect(skills).toHaveLength(1);
-			expect(
-				diagnostics.some((d: ResourceDiagnostic) => d.message.includes('unknown frontmatter field "author"')),
-			).toBe(true);
-			expect(
-				diagnostics.some((d: ResourceDiagnostic) => d.message.includes('unknown frontmatter field "version"')),
-			).toBe(true);
+			expect(diagnostics).toHaveLength(0);
 		});
 
 		it("should load nested skills recursively", () => {

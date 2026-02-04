@@ -5,20 +5,6 @@ import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { parseFrontmatter } from "../utils/frontmatter.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";
 
-/**
- * Standard frontmatter fields per Agent Skills spec.
- * See: https://agentskills.io/specification#frontmatter-required
- */
-const ALLOWED_FRONTMATTER_FIELDS = new Set([
-	"name",
-	"description",
-	"license",
-	"compatibility",
-	"metadata",
-	"allowed-tools",
-	"disable-model-invocation",
-]);
-
 /** Max name length per spec */
 const MAX_NAME_LENGTH = 64;
 
@@ -88,19 +74,6 @@ function validateDescription(description: string | undefined): string[] {
 		errors.push(`description exceeds ${MAX_DESCRIPTION_LENGTH} characters (${description.length})`);
 	}
 
-	return errors;
-}
-
-/**
- * Check for unknown frontmatter fields.
- */
-function validateFrontmatterFields(keys: string[]): string[] {
-	const errors: string[] = [];
-	for (const key of keys) {
-		if (!ALLOWED_FRONTMATTER_FIELDS.has(key)) {
-			errors.push(`unknown frontmatter field "${key}"`);
-		}
-	}
 	return errors;
 }
 
@@ -197,15 +170,8 @@ function loadSkillFromFile(
 	try {
 		const rawContent = readFileSync(filePath, "utf-8");
 		const { frontmatter } = parseFrontmatter<SkillFrontmatter>(rawContent);
-		const allKeys = Object.keys(frontmatter);
 		const skillDir = dirname(filePath);
 		const parentDirName = basename(skillDir);
-
-		// Validate frontmatter fields
-		const fieldErrors = validateFrontmatterFields(allKeys);
-		for (const error of fieldErrors) {
-			diagnostics.push({ type: "warning", message: error, path: filePath });
-		}
 
 		// Validate description
 		const descErrors = validateDescription(frontmatter.description);
