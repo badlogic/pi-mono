@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added SSH URL support for git packages. You can now use SSH URLs with `pi install` (e.g., `git@github.com:user/repo`, `ssh://git@github.com/user/repo`). SSH URLs respect your configured SSH keys and `~/.ssh/config` settings.
+
 ## [0.51.6] - 2026-02-04
 
 ### New Features

@@ -33,6 +33,7 @@ import { allTools } from "./core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
+import { looksLikeGitUrl, looksLikeSshGitUrl } from "./utils/git.js";
 
 /**
  * Read all content from piped stdin.
@@ -126,10 +127,19 @@ function normalizeExtensionSource(source: string): { type: "npm" | "git" | "loca
 		const repo = source.slice("git:".length).trim().split("@")[0] ?? "";
 		return { type: "git", key: repo.replace(/^https?:\/\//, "").replace(/\.git$/, "") };
 	}
-	// Raw git URLs
+	// Raw HTTPS git URLs
 	if (source.startsWith("https://") || source.startsWith("http://")) {
 		const repo = source.split("@")[0] ?? "";
 		return { type: "git", key: repo.replace(/^https?:\/\//, "").replace(/\.git$/, "") };
+	}
+	// SSH git URLs (git@host:path or ssh://...)
+	if (looksLikeSshGitUrl(source)) {
+		return { type: "git", key: source };
+	}
+	// Known git hosts without protocol
+	if (looksLikeGitUrl(source)) {
+		const repo = source.split("@")[0] ?? "";
+		return { type: "git", key: repo.replace(/\.git$/, "") };
 	}
 	return { type: "local", key: source };
 }
