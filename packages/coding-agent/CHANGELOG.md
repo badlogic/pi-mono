@@ -5,6 +5,7 @@
 ### Added
 
 - API keys in `auth.json` now support shell command resolution (`!command`) and environment variable lookup, matching the behavior in `models.json`
+- Added `minimal-mode.ts` example extension demonstrating how to override built-in tool rendering for a minimal display mode
 
 ## [0.51.6] - 2026-02-04
 
