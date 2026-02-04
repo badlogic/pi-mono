@@ -5,6 +5,57 @@ import type { Model } from "./types.js";
 
 export const MODELS = {
 	"amazon-bedrock": {
+		"amazon.nova-lite-v1:0": {
+			id: "amazon.nova-lite-v1:0",
+			name: "Nova Lite",
+			api: "bedrock-converse-stream",
+			provider: "amazon-bedrock",
+			baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+			reasoning: false,
+			input: ["text", "image"],
+			cost: {
+				input: 0.06,
+				output: 0.24,
+				cacheRead: 0.015,
+				cacheWrite: 0,
+			},
+			contextWindow: 300000,
+			maxTokens: 8192,
+		} satisfies Model<"bedrock-converse-stream">,
+		"amazon.nova-micro-v1:0": {
+			id: "amazon.nova-micro-v1:0",
+			name: "Nova Micro",
+			api: "bedrock-converse-stream",
+			provider: "amazon-bedrock",
+			baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+			reasoning: false,
+			input: ["text"],
+			cost: {
+				input: 0.035,
+				output: 0.14,
+				cacheRead: 0.00875,
+				cacheWrite: 0,
+			},
+			contextWindow: 128000,
+			maxTokens: 8192,
+		} satisfies Model<"bedrock-converse-stream">,
+		"amazon.nova-pro-v1:0": {
+			id: "amazon.nova-pro-v1:0",
+			name: "Nova Pro",
+			api: "bedrock-converse-stream",
+			provider: "amazon-bedrock",
+			baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+			reasoning: false,
+			input: ["text", "image"],
+			cost: {
+				input: 0.8,
+				output: 3.2,
+				cacheRead: 0.2,
+				cacheWrite: 0,
+			},
+			contextWindow: 300000,
+			maxTokens: 8192,
+		} satisfies Model<"bedrock-converse-stream">,
 		"anthropic.claude-3-5-haiku-20241022-v1:0": {
 			id: "anthropic.claude-3-5-haiku-20241022-v1:0",
 			name: "Claude Haiku 3.5",
@@ -1010,7 +1061,7 @@ export const MODELS = {
 		} satisfies Model<"bedrock-converse-stream">,
 		"us.amazon.nova-pro-v1:0": {
 			id: "us.amazon.nova-pro-v1:0",
-			name: "Nova Pro",
+			name: "Nova Pro (US)",
 			api: "bedrock-converse-stream",
 			provider: "amazon-bedrock",
 			baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",

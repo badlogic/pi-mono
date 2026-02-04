@@ -193,43 +193,12 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					continue;
 				}
 
-				if (id.startsWith("amazon.titan-text-express") ||
-				    id.startsWith("mistral.mistral-7b-instruct-v0")) {
+				if (id.startsWith("mistral.mistral-7b-instruct-v0")) {
 					// These models doesn't support system messages
 					continue;
 				}
 
-				// Some Amazon Bedrock models require cross-region inference profiles to work.
-				// To use cross-region inference, we need to add a region prefix to the models.
-				// See https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html#inference-profiles-support-system
-				// TODO: Remove Claude models once https://github.com/anomalyco/models.dev/pull/607 is merged, and follow-up with other models.
-
-				// Models with global cross-region inference profiles
-				if (id.startsWith("anthropic.claude-haiku-4-5") ||
-						id.startsWith("anthropic.claude-sonnet-4") ||
-						id.startsWith("anthropic.claude-opus-4-5") ||
-						id.startsWith("amazon.nova-2-lite") ||
-						id.startsWith("cohere.embed-v4") ||
-						id.startsWith("twelvelabs.pegasus-1-2")) {
-						id = "global." + id;
-				}
-
-				// Models with US cross-region inference profiles
-				if (id.startsWith("amazon.nova-lite") ||
-						id.startsWith("amazon.nova-micro") ||
-						id.startsWith("amazon.nova-premier") ||
-						id.startsWith("amazon.nova-pro") ||
-						id.startsWith("anthropic.claude-3-7-sonnet") ||
-						id.startsWith("anthropic.claude-opus-4-1") ||
-						id.startsWith("anthropic.claude-opus-4-20250514") ||
-						id.startsWith("deepseek.r1") ||
-						id.startsWith("meta.llama3-2") ||
-						id.startsWith("meta.llama3-3") ||
-						id.startsWith("meta.llama4")) {
-						id = "us." + id;
-				}
-
-				const bedrockModel = {
+				models.push({
 					id,
 					name: m.name || id,
 					api: "bedrock-converse-stream" as const,
@@ -245,19 +214,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					},
 					contextWindow: m.limit?.context || 4096,
 					maxTokens: m.limit?.output || 4096,
-				};
-				models.push(bedrockModel);
-
-				// Add EU cross-region inference variants for Claude models
-				if (modelId.startsWith("anthropic.claude-haiku-4-5") ||
-						modelId.startsWith("anthropic.claude-sonnet-4-5") ||
-						modelId.startsWith("anthropic.claude-opus-4-5")) {
-					models.push({
-						...bedrockModel,
-						id: "eu." + modelId,
-						name: (m.name || modelId) + " (EU)",
-					});
-				}
+				});
 			}
 		}
 
