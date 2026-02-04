@@ -55,11 +55,27 @@ function resolvePromptInput(input: string | undefined, description: string): str
 }
 
 function loadContextFileFromDir(dir: string): { path: string; content: string } | null {
+	let dirStats: ReturnType<typeof statSync> | null = null;
+	try {
+		dirStats = statSync(dir);
+	} catch (error) {
+		console.error(chalk.yellow(`Warning: Could not read ${dir}: ${error}`));
+		return null;
+	}
+
+	if (!dirStats.isDirectory()) {
+		return null;
+	}
+
 	const candidates = ["AGENTS.md", "CLAUDE.md"];
 	for (const filename of candidates) {
 		const filePath = join(dir, filename);
 		if (existsSync(filePath)) {
 			try {
+				const fileStats = statSync(filePath);
+				if (!fileStats.isFile()) {
+					continue;
+				}
 				return {
 					path: filePath,
 					content: readFileSync(filePath, "utf-8"),

@@ -18,6 +18,7 @@ Programmatic usage of pi-coding-agent via `createAgentSession()`.
 | `10-settings.ts` | Override compaction, retry, terminal settings |
 | `11-sessions.ts` | In-memory, persistent, continue, list sessions |
 | `12-full-control.ts` | Replace everything, no discovery |
+| `13-pwa-nutrition-scanner.ts` | Single prompt to design a nutrition-label scanner PWA |
 
 ## Running
 
