@@ -151,6 +151,48 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("reload", () => {
+		it("should reload global settings from disk", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					theme: "dark",
+					extensions: ["/before.ts"],
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					theme: "light",
+					extensions: ["/after.ts"],
+					defaultModel: "claude-sonnet",
+				}),
+			);
+
+			manager.reload();
+
+			expect(manager.getTheme()).toBe("light");
+			expect(manager.getExtensionPaths()).toEqual(["/after.ts"]);
+			expect(manager.getDefaultModel()).toBe("claude-sonnet");
+		});
+
+		it("should keep previous settings when file is invalid", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			writeFileSync(settingsPath, "{ invalid json");
+			manager.reload();
+
+			expect(manager.getTheme()).toBe("dark");
+		});
+	});
+
 	describe("shellCommandPrefix", () => {
 		it("should load shellCommandPrefix from settings", () => {
 			const settingsPath = join(agentDir, "settings.json");

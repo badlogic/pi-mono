@@ -3710,6 +3710,22 @@ export class InteractiveMode {
 		try {
 			await this.session.reload();
 			setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
+			this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
+			const themeName = this.settingsManager.getTheme();
+			const themeResult = themeName ? setTheme(themeName, true) : { success: true };
+			if (!themeResult.success) {
+				this.showError(`Failed to load theme "${themeName}": ${themeResult.error}\nFell back to dark theme.`);
+			}
+			const editorPaddingX = this.settingsManager.getEditorPaddingX();
+			const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
+			this.defaultEditor.setPaddingX(editorPaddingX);
+			this.defaultEditor.setAutocompleteMaxVisible(autocompleteMaxVisible);
+			if (this.editor !== this.defaultEditor) {
+				this.editor.setPaddingX?.(editorPaddingX);
+				this.editor.setAutocompleteMaxVisible?.(autocompleteMaxVisible);
+			}
+			this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
+			this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
 			this.rebuildAutocomplete();
 			const runner = this.session.extensionRunner;
 			if (runner) {

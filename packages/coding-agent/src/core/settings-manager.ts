@@ -240,6 +240,29 @@ export class SettingsManager {
 		return this.loadProjectSettings();
 	}
 
+	reload(): void {
+		let nextGlobalSettings: Settings | null = null;
+
+		if (this.persist && this.settingsPath) {
+			try {
+				nextGlobalSettings = SettingsManager.loadFromFile(this.settingsPath);
+				this.globalSettingsLoadError = null;
+			} catch (error) {
+				this.globalSettingsLoadError = error as Error;
+			}
+		}
+
+		if (nextGlobalSettings) {
+			this.globalSettings = nextGlobalSettings;
+		}
+
+		this.modifiedFields.clear();
+		this.modifiedNestedFields.clear();
+
+		const projectSettings = this.loadProjectSettings();
+		this.settings = deepMergeSettings(this.globalSettings, projectSettings);
+	}
+
 	/** Apply additional overrides on top of current settings */
 	applyOverrides(overrides: Partial<Settings>): void {
 		this.settings = deepMergeSettings(this.settings, overrides);
