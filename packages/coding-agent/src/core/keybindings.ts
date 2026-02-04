@@ -32,7 +32,8 @@ export type AppAction =
 	| "pasteImage"
 	| "newSession"
 	| "tree"
-	| "fork";
+	| "fork"
+	| "resume";
 
 /**
  * All configurable actions.
@@ -68,6 +69,7 @@ export const DEFAULT_APP_KEYBINDINGS: Record<AppAction, KeyId | KeyId[]> = {
 	newSession: [],
 	tree: [],
 	fork: [],
+	resume: [],
 };
 
 /**
@@ -98,6 +100,7 @@ const APP_ACTIONS: AppAction[] = [
 	"newSession",
 	"tree",
 	"fork",
+	"resume",
 ];
 
 function isAppAction(action: string): action is AppAction {
