@@ -26,7 +26,7 @@ import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 // Configuration
 // ============================================================================
 
-const CODEX_URL = "https://chatgpt.com/backend-api/codex/responses";
+const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 const JWT_CLAIM_PATH = "https://api.openai.com/auth" as const;
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
@@ -147,7 +147,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				}
 
 				try {
-					response = await fetch(CODEX_URL, {
+					response = await fetch(resolveCodexUrl(model.baseUrl), {
 						method: "POST",
 						headers,
 						body: bodyJson,
@@ -286,6 +286,14 @@ function clampReasoningEffort(modelId: string, effort: string): string {
 	if (id === "gpt-5.1" && effort === "xhigh") return "high";
 	if (id === "gpt-5.1-codex-mini") return effort === "high" || effort === "xhigh" ? "high" : "medium";
 	return effort;
+}
+
+function resolveCodexUrl(baseUrl?: string): string {
+	const raw = baseUrl && baseUrl.trim().length > 0 ? baseUrl : DEFAULT_CODEX_BASE_URL;
+	const normalized = raw.replace(/\/+$/, "");
+	if (normalized.endsWith("/codex/responses")) return normalized;
+	if (normalized.endsWith("/codex")) return `${normalized}/responses`;
+	return `${normalized}/codex/responses`;
 }
 
 // ============================================================================
