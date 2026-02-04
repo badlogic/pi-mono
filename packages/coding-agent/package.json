@@ -48,12 +48,18 @@
 		"cli-highlight": "^2.1.11",
 		"diff": "^8.0.2",
 		"file-type": "^21.1.1",
-		"glob": "^11.0.3",
+		"glob": "^13.0.1",
 		"ignore": "^7.0.5",
 		"marked": "^15.0.12",
 		"minimatch": "^10.1.1",
 		"proper-lockfile": "^4.1.2",
 		"yaml": "^2.8.2"
+	},
+	"overrides": {
+		"rimraf": "6.1.2",
+		"gaxios": {
+			"rimraf": "6.1.2"
+		}
 	},
 	"optionalDependencies": {
 		"@mariozechner/clipboard": "^0.3.2"
