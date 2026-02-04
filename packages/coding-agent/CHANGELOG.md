@@ -2,14 +2,27 @@
 
 ## [Unreleased]
 
+### New Features
+
+- Configurable resume keybinding action for opening the session resume selector. See [docs/keybindings.md](docs/keybindings.md). ([#1249](https://github.com/badlogic/pi-mono/pull/1249) by [@juanibiapina](https://github.com/juanibiapina))
+
 ### Added
 
 - Added `resume` as a configurable keybinding action, allowing users to bind a key to open the session resume selector (like `newSession`, `tree`, and `fork`) ([#1249](https://github.com/badlogic/pi-mono/pull/1249) by [@juanibiapina](https://github.com/juanibiapina))
+
+### Changed
+
+- Slash command menu now triggers on the first line even when other lines have content, allowing commands to be prepended to existing text ([#1227](https://github.com/badlogic/pi-mono/pull/1227) by [@aliou](https://github.com/aliou))
 
 ### Fixed
 
 - Ignored unknown skill frontmatter fields when loading skills
 - Fixed `/reload` not picking up changes in global settings.json ([#1241](https://github.com/badlogic/pi-mono/issues/1241))
+- Fixed forked sessions to persist the user message after forking
+- Fixed forked sessions to write to new session files instead of the parent ([#1242](https://github.com/badlogic/pi-mono/issues/1242))
+- Fixed local package removal to normalize paths before comparison ([#1243](https://github.com/badlogic/pi-mono/issues/1243))
+- Fixed OpenAI Codex Responses provider to respect configured baseUrl ([#1244](https://github.com/badlogic/pi-mono/issues/1244))
+- Fixed `/settings` crashing in narrow terminals by handling small widths in the settings list ([#1246](https://github.com/badlogic/pi-mono/pull/1246) by [@haoqixu](https://github.com/haoqixu))
 - Fixed Unix bash detection to fall back to PATH lookup when `/bin/bash` is unavailable, including Termux setups ([#1230](https://github.com/badlogic/pi-mono/pull/1230) by [@VaclavSynacek](https://github.com/VaclavSynacek))
 
 ## [0.51.5] - 2026-02-04
