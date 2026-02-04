@@ -792,7 +792,11 @@ export class SessionManager {
 		if (!this.persist || !this.sessionFile) return;
 
 		const hasAssistant = this.fileEntries.some((e) => e.type === "message" && e.message.role === "assistant");
-		if (!hasAssistant) return;
+		if (!hasAssistant) {
+			// Mark as not flushed so when assistant arrives, all entries get written
+			this.flushed = false;
+			return;
+		}
 
 		if (!this.flushed) {
 			for (const e of this.fileEntries) {
