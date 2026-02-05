@@ -642,17 +642,19 @@ async function generateModels() {
 		opus45.cost.cacheWrite = 6.25;
 	}
 
-	// Temporary Bedrock overrides until https://github.com/anomalyco/models.dev/pull/816 is merged.
-	// 1. Fix incorrect Opus 4.6 Bedrock metadata
+	// Temporary Opus 4.6 overrides until upstream model metadata is corrected.
 	for (const candidate of allModels) {
 		if (candidate.provider === "amazon-bedrock" && candidate.id.includes("anthropic.claude-opus-4-6-v1")) {
 			candidate.cost.cacheRead = 0.5;
 			candidate.cost.cacheWrite = 6.25;
 			candidate.contextWindow = 200000;
 		}
+		if ((candidate.provider === "anthropic" || candidate.provider === "opencode") && candidate.id === "claude-opus-4-6") {
+			candidate.contextWindow = 200000;
+		}
 	}
 
-	// 2. Add missing EU Opus 4.6 profile
+	// Add missing EU Opus 4.6 profile
 	if (!allModels.some((m) => m.provider === "amazon-bedrock" && m.id === "eu.anthropic.claude-opus-4-6-v1")) {
 		allModels.push({
 			id: "eu.anthropic.claude-opus-4-6-v1",

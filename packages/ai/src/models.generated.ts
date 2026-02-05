@@ -1534,7 +1534,7 @@ export const MODELS = {
 				cacheRead: 0.5,
 				cacheWrite: 6.25,
 			},
-			contextWindow: 1000000,
+			contextWindow: 200000,
 			maxTokens: 128000,
 		} satisfies Model<"anthropic-messages">,
 		"claude-sonnet-4-0": {
@@ -5214,7 +5214,7 @@ export const MODELS = {
 				cacheRead: 0.5,
 				cacheWrite: 6.25,
 			},
-			contextWindow: 1000000,
+			contextWindow: 200000,
 			maxTokens: 128000,
 		} satisfies Model<"anthropic-messages">,
 		"claude-sonnet-4": {
