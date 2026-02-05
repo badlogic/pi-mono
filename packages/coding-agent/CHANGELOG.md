@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Updated default model for `anthropic` provider to `claude-opus-4-6`
+- Updated default model for `openai-codex` provider to `gpt-5.3-codex`
+- Updated default model for `amazon-bedrock` provider to `us.anthropic.claude-opus-4-6-v1:0`
+- Updated default model for `vercel-ai-gateway` provider to `anthropic/claude-opus-4-6`
+- Updated default model for `opencode` provider to `claude-opus-4-6`
+
 ## [0.52.1] - 2026-02-05
 
 ## [0.52.0] - 2026-02-05
