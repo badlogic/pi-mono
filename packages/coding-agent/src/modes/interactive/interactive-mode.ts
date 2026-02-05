@@ -121,6 +121,14 @@ type CompactionQueuedMessage = {
 	mode: "steer" | "followUp";
 };
 
+type TuiClearOnShrink = {
+	setClearOnShrink(enabled: boolean): void;
+};
+
+function canSetClearOnShrink(ui: TUI): ui is TUI & TuiClearOnShrink {
+	return "setClearOnShrink" in ui && typeof (ui as TuiClearOnShrink).setClearOnShrink === "function";
+}
+
 /**
  * Options for InteractiveMode initialization.
  */
@@ -251,7 +259,7 @@ export class InteractiveMode {
 		this.session = session;
 		this.version = VERSION;
 		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
-		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
+		this.setClearOnShrink(this.settingsManager.getClearOnShrink());
 		this.headerContainer = new Container();
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
@@ -278,6 +286,12 @@ export class InteractiveMode {
 		// Register themes from resource loader and initialize
 		setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
 		initTheme(this.settingsManager.getTheme(), true);
+	}
+
+	private setClearOnShrink(enabled: boolean): void {
+		if (canSetClearOnShrink(this.ui)) {
+			this.ui.setClearOnShrink(enabled);
+		}
 	}
 
 	private setupAutocomplete(fdPath: string | undefined): void {
@@ -3080,7 +3094,7 @@ export class InteractiveMode {
 					},
 					onClearOnShrinkChange: (enabled) => {
 						this.settingsManager.setClearOnShrink(enabled);
-						this.ui.setClearOnShrink(enabled);
+						this.setClearOnShrink(enabled);
 					},
 					onCancel: () => {
 						done();

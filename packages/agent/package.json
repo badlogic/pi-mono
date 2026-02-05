@@ -18,7 +18,7 @@
 	},
 	"dependencies": {
 		"@mariozechner/pi-ai": "^0.51.0",
-		"@mariozechner/pi-tui": "^0.51.0"
+		"@mariozechner/pi-tui": "^0.50.7"
 	},
 	"keywords": [
 		"ai",
