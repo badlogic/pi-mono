@@ -192,6 +192,7 @@ These commands can destroy other agents' work:
 - `git clean -fd` - deletes untracked files
 - `git stash` - stashes ALL changes including other agents' work
 - `git add -A` / `git add .` - stages other agents' uncommitted work
+- `git commit --no-verify` - bypasses required checks and is never allowed
 
 ### Safe Workflow
 ```bash
