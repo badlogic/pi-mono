@@ -2329,7 +2329,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 128000,
-			maxTokens: 16000,
+			maxTokens: 64000,
 		} satisfies Model<"openai-completions">,
 		"claude-sonnet-4": {
 			id: "claude-sonnet-4",
