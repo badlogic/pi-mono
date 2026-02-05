@@ -642,6 +642,27 @@ async function generateModels() {
 		opus45.cost.cacheWrite = 6.25;
 	}
 
+	// Add missing Claude Opus 4.6
+	if (!allModels.some(m => m.provider === "anthropic" && m.id === "claude-opus-4-6")) {
+		allModels.push({
+			id: "claude-opus-4-6",
+			name: "Claude Opus 4.6",
+			api: "anthropic-messages",
+			baseUrl: "https://api.anthropic.com",
+			provider: "anthropic",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 5,
+				output: 25,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
+			},
+			contextWindow: 200000,
+			maxTokens: 128000,
+		});
+	}
+
 	// Add missing gpt models
 	if (!allModels.some(m => m.provider === "openai" && m.id === "gpt-5-chat-latest")) {
 		allModels.push({
