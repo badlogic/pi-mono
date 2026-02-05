@@ -7,6 +7,7 @@
 ### Fixed
 
 - Fixed git package parsing fallback for unknown hosts so enterprise git sources like `git:github.tools.sap/org/repo` are treated as git packages instead of local paths
+- Fixed Bedrock default model ID from `us.anthropic.claude-opus-4-6-v1:0` to `us.anthropic.claude-opus-4-6-v1`
 
 ## [0.52.2] - 2026-02-05
 

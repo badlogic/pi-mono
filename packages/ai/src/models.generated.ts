@@ -311,8 +311,8 @@ export const MODELS = {
 			contextWindow: 200000,
 			maxTokens: 64000,
 		} satisfies Model<"bedrock-converse-stream">,
-		"anthropic.claude-opus-4-6-v1:0": {
-			id: "anthropic.claude-opus-4-6-v1:0",
+		"anthropic.claude-opus-4-6-v1": {
+			id: "anthropic.claude-opus-4-6-v1",
 			name: "Claude Opus 4.6",
 			api: "bedrock-converse-stream",
 			provider: "amazon-bedrock",
@@ -464,8 +464,8 @@ export const MODELS = {
 			contextWindow: 200000,
 			maxTokens: 64000,
 		} satisfies Model<"bedrock-converse-stream">,
-		"eu.anthropic.claude-opus-4-6-v1:0": {
-			id: "eu.anthropic.claude-opus-4-6-v1:0",
+		"eu.anthropic.claude-opus-4-6-v1": {
+			id: "eu.anthropic.claude-opus-4-6-v1",
 			name: "Claude Opus 4.6 (EU)",
 			api: "bedrock-converse-stream",
 			provider: "amazon-bedrock",
@@ -475,8 +475,8 @@ export const MODELS = {
 			cost: {
 				input: 5,
 				output: 25,
-				cacheRead: 1.5,
-				cacheWrite: 18.75,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
 			},
 			contextWindow: 200000,
 			maxTokens: 128000,
@@ -549,8 +549,8 @@ export const MODELS = {
 			contextWindow: 200000,
 			maxTokens: 64000,
 		} satisfies Model<"bedrock-converse-stream">,
-		"global.anthropic.claude-opus-4-6-v1:0": {
-			id: "global.anthropic.claude-opus-4-6-v1:0",
+		"global.anthropic.claude-opus-4-6-v1": {
+			id: "global.anthropic.claude-opus-4-6-v1",
 			name: "Claude Opus 4.6 (Global)",
 			api: "bedrock-converse-stream",
 			provider: "amazon-bedrock",
@@ -1178,8 +1178,8 @@ export const MODELS = {
 			contextWindow: 200000,
 			maxTokens: 64000,
 		} satisfies Model<"bedrock-converse-stream">,
-		"us.anthropic.claude-opus-4-6-v1:0": {
-			id: "us.anthropic.claude-opus-4-6-v1:0",
+		"us.anthropic.claude-opus-4-6-v1": {
+			id: "us.anthropic.claude-opus-4-6-v1",
 			name: "Claude Opus 4.6 (US)",
 			api: "bedrock-converse-stream",
 			provider: "amazon-bedrock",
@@ -1189,8 +1189,8 @@ export const MODELS = {
 			cost: {
 				input: 5,
 				output: 25,
-				cacheRead: 1.5,
-				cacheWrite: 18.75,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
 			},
 			contextWindow: 200000,
 			maxTokens: 128000,
@@ -1535,23 +1535,6 @@ export const MODELS = {
 				cacheWrite: 6.25,
 			},
 			contextWindow: 1000000,
-			maxTokens: 128000,
-		} satisfies Model<"anthropic-messages">,
-		"claude-opus-4-6-20260205": {
-			id: "claude-opus-4-6-20260205",
-			name: "Claude Opus 4.6",
-			api: "anthropic-messages",
-			provider: "anthropic",
-			baseUrl: "https://api.anthropic.com",
-			reasoning: true,
-			input: ["text", "image"],
-			cost: {
-				input: 5,
-				output: 25,
-				cacheRead: 0.5,
-				cacheWrite: 6.25,
-			},
-			contextWindow: 200000,
 			maxTokens: 128000,
 		} satisfies Model<"anthropic-messages">,
 		"claude-sonnet-4-0": {

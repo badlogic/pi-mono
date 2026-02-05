@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed Bedrock Opus 4.6 model IDs (removed `:0` suffix) and cache pricing for `us.*` and `eu.*` variants
+- Added missing `eu.anthropic.claude-opus-4-6-v1` inference profile to model catalog
+
 ## [0.52.2] - 2026-02-05
 
 ## [0.52.1] - 2026-02-05
