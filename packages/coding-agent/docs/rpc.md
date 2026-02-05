@@ -38,7 +38,7 @@ Send a user prompt to the agent. Returns immediately; events stream asynchronous
 
 With images:
 ```json
-{"type": "prompt", "message": "What's in this image?", "images": [{"type": "image", "source": {"type": "base64", "mediaType": "image/png", "data": "..."}}]}
+{"type": "prompt", "message": "What's in this image?", "images": [{"type": "image", "data": "base64-encoded-data", "mimeType": "image/png"}]}
 ```
 
 **During streaming**: If the agent is already streaming, you must specify `streamingBehavior` to queue the message:
@@ -61,7 +61,7 @@ Response:
 {"id": "req-1", "type": "response", "command": "prompt", "success": true}
 ```
 
-The `images` field is optional. Each image uses `ImageContent` format with base64 or URL source.
+The `images` field is optional. Each image uses `ImageContent` format: `{"type": "image", "data": "base64-encoded-data", "mimeType": "image/png"}`.
 
 #### steer
 
@@ -70,6 +70,13 @@ Queue a steering message to interrupt the agent mid-run. Delivered after current
 ```json
 {"type": "steer", "message": "Stop and do this instead"}
 ```
+
+With images:
+```json
+{"type": "steer", "message": "Look at this instead", "images": [{"type": "image", "data": "base64-encoded-data", "mimeType": "image/png"}]}
+```
+
+The `images` field is optional. Each image uses `ImageContent` format (same as `prompt`).
 
 Response:
 ```json
@@ -85,6 +92,13 @@ Queue a follow-up message to be processed after the agent finishes. Delivered on
 ```json
 {"type": "follow_up", "message": "After you're done, also do this"}
 ```
+
+With images:
+```json
+{"type": "follow_up", "message": "Also check this image", "images": [{"type": "image", "data": "base64-encoded-data", "mimeType": "image/png"}]}
+```
+
+The `images` field is optional. Each image uses `ImageContent` format (same as `prompt`).
 
 Response:
 ```json
