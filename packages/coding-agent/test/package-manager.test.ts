@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DefaultPackageManager, type ProgressEvent, type ResolvedResource } from "../src/core/package-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
@@ -279,6 +279,67 @@ Content`,
 
 			// Should have attempted clone, not thrown unsupported error
 			expect(events.some((e) => e.type === "start" && e.action === "install")).toBe(true);
+		});
+
+		it("should parse package source types from docs examples", () => {
+			expect((packageManager as any).parseSource("npm:@scope/pkg@1.2.3").type).toBe("npm");
+			expect((packageManager as any).parseSource("npm:pkg").type).toBe("npm");
+
+			expect((packageManager as any).parseSource("git:github.com/user/repo@v1").type).toBe("git");
+			expect((packageManager as any).parseSource("https://github.com/user/repo@v1").type).toBe("git");
+			expect((packageManager as any).parseSource("git@github.com:user/repo@v1").type).toBe("git");
+			expect((packageManager as any).parseSource("ssh://git@github.com/user/repo@v1").type).toBe("git");
+
+			expect((packageManager as any).parseSource("/absolute/path/to/package").type).toBe("local");
+			expect((packageManager as any).parseSource("./relative/path/to/package").type).toBe("local");
+			expect((packageManager as any).parseSource("../relative/path/to/package").type).toBe("local");
+		});
+
+		it("should never parse dot-relative paths as git", () => {
+			const dotSlash = (packageManager as any).parseSource("./packages/agent-timers");
+			expect(dotSlash.type).toBe("local");
+			expect(dotSlash.path).toBe("./packages/agent-timers");
+
+			const dotDotSlash = (packageManager as any).parseSource("../packages/agent-timers");
+			expect(dotDotSlash.type).toBe("local");
+			expect(dotDotSlash.path).toBe("../packages/agent-timers");
+		});
+	});
+
+	describe("settings source normalization", () => {
+		it("should store global local packages relative to agent settings base", () => {
+			const pkgDir = join(tempDir, "packages", "local-global-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "index.ts"), "export default function() {}");
+
+			const added = packageManager.addSourceToSettings("./packages/local-global-pkg");
+			expect(added).toBe(true);
+
+			const settings = settingsManager.getGlobalSettings();
+			expect(settings.packages?.[0]).toBe(relative(agentDir, pkgDir) || ".");
+		});
+
+		it("should store project local packages relative to .pi settings base", () => {
+			const projectPkgDir = join(tempDir, "project-local-pkg");
+			mkdirSync(join(projectPkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(projectPkgDir, "extensions", "index.ts"), "export default function() {}");
+
+			const added = packageManager.addSourceToSettings("./project-local-pkg", { local: true });
+			expect(added).toBe(true);
+
+			const settings = settingsManager.getProjectSettings();
+			expect(settings.packages?.[0]).toBe(relative(join(tempDir, ".pi"), projectPkgDir) || ".");
+		});
+
+		it("should remove local package entries using equivalent path forms", () => {
+			const pkgDir = join(tempDir, "remove-local-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(join(pkgDir, "extensions", "index.ts"), "export default function() {}");
+
+			packageManager.addSourceToSettings("./remove-local-pkg");
+			const removed = packageManager.removeSourceFromSettings(`${pkgDir}/`);
+			expect(removed).toBe(true);
+			expect(settingsManager.getGlobalSettings().packages ?? []).toHaveLength(0);
 		});
 	});
 

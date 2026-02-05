@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -36,6 +36,20 @@ describe("package commands", () => {
 			process.env[ENV_AGENT_DIR] = originalAgentDir;
 		}
 		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	it("should persist global relative local package paths relative to settings.json", async () => {
+		const relativePkgDir = join(projectDir, "packages", "local-package");
+		mkdirSync(relativePkgDir, { recursive: true });
+
+		await main(["install", "./packages/local-package"]);
+
+		const settingsPath = join(agentDir, "settings.json");
+		const settings = JSON.parse(readFileSync(settingsPath, "utf-8")) as { packages?: string[] };
+		expect(settings.packages?.length).toBe(1);
+		const stored = settings.packages?.[0] ?? "";
+		const resolvedFromSettings = realpathSync(join(agentDir, stored));
+		expect(resolvedFromSettings).toBe(realpathSync(relativePkgDir));
 	});
 
 	it("should remove local packages using a path with a trailing slash", async () => {
