@@ -503,6 +503,10 @@
       display: block;
     }
 
+    .ansi-line {
+      white-space: pre-wrap;
+    }
+
     .tool-images {
     }
 
