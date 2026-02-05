@@ -1,6 +1,7 @@
 import { getOAuthProviders } from "@mariozechner/pi-ai";
 import { Container, type Focusable, getEditorKeybindings, Input, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
 import { exec } from "child_process";
+import { copyToClipboard } from "../../../utils/clipboard.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";
@@ -28,7 +29,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 
 	constructor(
 		tui: TUI,
-		providerId: string,
+		private providerId: string,
 		private onComplete: (success: boolean, message?: string) => void,
 	) {
 		super();
@@ -93,6 +94,14 @@ export class LoginDialogComponent extends Container implements Focusable {
 		if (instructions) {
 			this.contentContainer.addChild(new Spacer(1));
 			this.contentContainer.addChild(new Text(theme.fg("warning", instructions), 1, 0));
+		}
+
+		if (this.providerId === "github-copilot" && instructions) {
+			const match = instructions.match(/code:\s*([A-Z0-9-]+)/i);
+			if (match) {
+				copyToClipboard(match[1]);
+				this.contentContainer.addChild(new Text(theme.fg("dim", "Code copied to clipboard"), 1, 0));
+			}
 		}
 
 		// Try to open browser
