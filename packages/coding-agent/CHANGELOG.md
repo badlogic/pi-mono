@@ -7,6 +7,10 @@
 - API keys in `auth.json` now support shell command resolution (`!command`) and environment variable lookup, matching the behavior in `models.json`
 - Added `minimal-mode.ts` example extension demonstrating how to override built-in tool rendering for a minimal display mode
 
+### Fixed
+
+- Fixed HTML export losing indentation in ANSI-rendered tool output (e.g. JSON code blocks in custom tool results)
+
 ## [0.51.6] - 2026-02-04
 
 ### New Features
