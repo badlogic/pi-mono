@@ -18,72 +18,131 @@ export type GitSource = {
 	pinned: boolean;
 };
 
+function splitRef(url: string): { repo: string; ref?: string } {
+	const lastAt = url.lastIndexOf("@");
+	if (lastAt <= 0) {
+		return { repo: url };
+	}
+
+	const lastSlash = url.lastIndexOf("/");
+	const hasScheme = url.includes("://");
+	const scpLikeMatch = url.match(/^[^@]+@[^:]+:/);
+	if (scpLikeMatch) {
+		const separatorIndex = scpLikeMatch[0].length - 1;
+		if (lastAt <= separatorIndex || lastAt <= lastSlash) {
+			return { repo: url };
+		}
+	} else if (hasScheme) {
+		const schemeIndex = url.indexOf("://");
+		const pathStart = url.indexOf("/", schemeIndex + 3);
+		if (pathStart < 0 || lastAt <= pathStart || lastAt <= lastSlash) {
+			return { repo: url };
+		}
+	} else if (lastAt <= lastSlash) {
+		return { repo: url };
+	}
+
+	return {
+		repo: url.slice(0, lastAt),
+		ref: url.slice(lastAt + 1),
+	};
+}
+
+function parseGenericGitUrl(url: string): GitSource | null {
+	const { repo: repoWithoutRef, ref } = splitRef(url);
+	let repo = repoWithoutRef;
+	let host = "";
+	let path = "";
+
+	const scpLikeMatch = repoWithoutRef.match(/^git@([^:]+):(.+)$/);
+	if (scpLikeMatch) {
+		host = scpLikeMatch[1] ?? "";
+		path = scpLikeMatch[2] ?? "";
+	} else if (
+		repoWithoutRef.startsWith("https://") ||
+		repoWithoutRef.startsWith("http://") ||
+		repoWithoutRef.startsWith("ssh://")
+	) {
+		try {
+			const parsed = new URL(repoWithoutRef);
+			host = parsed.hostname;
+			path = parsed.pathname.replace(/^\/+/, "");
+		} catch {
+			return null;
+		}
+	} else {
+		const slashIndex = repoWithoutRef.indexOf("/");
+		if (slashIndex < 0) {
+			return null;
+		}
+		host = repoWithoutRef.slice(0, slashIndex);
+		path = repoWithoutRef.slice(slashIndex + 1);
+		if (!host.includes(".") && host !== "localhost") {
+			return null;
+		}
+		repo = `https://${repoWithoutRef}`;
+	}
+
+	const normalizedPath = path.replace(/\.git$/, "").replace(/^\/+/, "");
+	if (!host || !normalizedPath || normalizedPath.split("/").length < 2) {
+		return null;
+	}
+
+	return {
+		type: "git",
+		repo,
+		host,
+		path: normalizedPath,
+		ref,
+		pinned: Boolean(ref),
+	};
+}
+
 /**
  * Parse any git URL (SSH or HTTPS) into a GitSource.
  */
 export function parseGitUrl(source: string): GitSource | null {
-	let url = source.startsWith("git:") ? source.slice(4).trim() : source;
-	let ref: string | undefined;
+	const url = source.startsWith("git:") ? source.slice(4).trim() : source;
+	const split = splitRef(url);
 
-	// Try hosted-git-info, converting @ref to #ref if needed
-	let info = hostedGitInfo.fromUrl(url);
-	const lastAt = url.lastIndexOf("@");
-
-	// If the parsed project contains '@' or parsing failed, there may be a trailing @ref
-	if ((info?.project?.includes("@") || !info) && lastAt > 0) {
-		// Extract the ref (everything after the last '@')
-		ref = url.slice(lastAt + 1);
-		const withoutRef = url.slice(0, lastAt);
-		// Re-parse using '#ref' syntax that hosted-git-info understands
-		info = hostedGitInfo.fromUrl(`${withoutRef}#${ref}`) ?? info;
+	const hostedCandidates = [url, split.ref ? `${split.repo}#${split.ref}` : undefined].filter(
+		(value): value is string => Boolean(value),
+	);
+	for (const candidate of hostedCandidates) {
+		const info = hostedGitInfo.fromUrl(candidate);
 		if (info) {
-			url = withoutRef; // use clean URL for repo field
-		}
-	}
-
-	// If still no info, try adding https:// prefix for shorthand URLs (e.g., host/path)
-	if (!info) {
-		const withHttps = `https://${url}`;
-		info = hostedGitInfo.fromUrl(withHttps);
-		if (info) {
-			url = withHttps; // use full URL
-		}
-	}
-
-	if (info) {
-		// Ensure repo is a valid clone URL (has scheme or is SSH)
-		let repoUrl = url;
-		if (!url.includes("://") && !url.includes("@")) {
-			repoUrl = `https://${url}`;
-		}
-		return {
-			type: "git",
-			repo: repoUrl,
-			host: info.domain || "",
-			path: `${info.user}/${info.project}`.replace(/\.git$/, ""),
-			ref: info.committish || ref,
-			pinned: Boolean(info.committish || ref),
-		};
-	}
-
-	// Fallback for codeberg (not in hosted-git-info)
-	const normalized = url.replace(/^https?:\/\//, "").replace(/\.git$/, "");
-	const codebergHost = "codeberg.org";
-	if (normalized.startsWith(`${codebergHost}/`)) {
-		const parts = normalized.slice(codebergHost.length + 1).split("/");
-		if (parts.length >= 2) {
-			const [owner, project] = parts;
-			const repoUrl = url.startsWith("http") || url.includes("@") ? url : `https://${url}`;
+			const useHttpsPrefix =
+				!split.repo.startsWith("http://") &&
+				!split.repo.startsWith("https://") &&
+				!split.repo.startsWith("ssh://") &&
+				!split.repo.startsWith("git@");
 			return {
 				type: "git",
-				repo: repoUrl,
-				host: codebergHost,
-				path: `${owner}/${project}`.replace(/\.git$/, ""),
-				ref,
-				pinned: Boolean(ref),
+				repo: useHttpsPrefix ? `https://${split.repo}` : split.repo,
+				host: info.domain || "",
+				path: `${info.user}/${info.project}`,
+				ref: info.committish || split.ref || undefined,
+				pinned: Boolean(info.committish || split.ref),
 			};
 		}
 	}
 
-	return null;
+	const httpsCandidates = [`https://${url}`, split.ref ? `https://${split.repo}#${split.ref}` : undefined].filter(
+		(value): value is string => Boolean(value),
+	);
+	for (const candidate of httpsCandidates) {
+		const info = hostedGitInfo.fromUrl(candidate);
+		if (info) {
+			return {
+				type: "git",
+				repo: `https://${split.repo}`,
+				host: info.domain || "",
+				path: `${info.user}/${info.project}`,
+				ref: info.committish || split.ref || undefined,
+				pinned: Boolean(info.committish || split.ref),
+			};
+		}
+	}
+
+	return parseGenericGitUrl(url);
 }

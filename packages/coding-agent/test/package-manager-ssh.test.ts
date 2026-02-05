@@ -146,5 +146,30 @@ describe("Package Manager SSH URL Support", () => {
 			expect(parsed.path).toBe("team/repo");
 			expect(parsed.repo).toBe("git@bitbucket.org:team/repo");
 		});
+
+		it("should parse unknown enterprise host shorthand", () => {
+			const parsed = (packageManager as any).parseSource("git:github.tools.sap/agent-dev/sap-pie");
+			expect(parsed.type).toBe("git");
+			expect(parsed.host).toBe("github.tools.sap");
+			expect(parsed.path).toBe("agent-dev/sap-pie");
+			expect(parsed.repo).toBe("https://github.tools.sap/agent-dev/sap-pie");
+		});
+
+		it("should parse unknown enterprise host with ref", () => {
+			const parsed = (packageManager as any).parseSource("git:github.tools.sap/agent-dev/sap-pie@v1");
+			expect(parsed.type).toBe("git");
+			expect(parsed.host).toBe("github.tools.sap");
+			expect(parsed.path).toBe("agent-dev/sap-pie");
+			expect(parsed.ref).toBe("v1");
+			expect(parsed.repo).toBe("https://github.tools.sap/agent-dev/sap-pie");
+			expect(parsed.pinned).toBe(true);
+		});
+
+		it("should normalize unknown enterprise host identities", () => {
+			const withPrefix = (packageManager as any).getPackageIdentity("git:github.tools.sap/agent-dev/sap-pie");
+			const withHttps = (packageManager as any).getPackageIdentity("https://github.tools.sap/agent-dev/sap-pie");
+			expect(withPrefix).toBe("git:github.tools.sap/agent-dev/sap-pie");
+			expect(withPrefix).toBe(withHttps);
+		});
 	});
 });
