@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added adaptive thinking support for Claude Opus 4.6 with effort levels (`low`, `medium`, `high`, `max`)
+- Added `effort` option to `AnthropicOptions` for controlling adaptive thinking depth
+- `thinkingEnabled` now automatically uses adaptive thinking for Opus 4.6+ models and budget-based thinking for older models
+- `streamSimple`/`completeSimple` automatically map `ThinkingLevel` to effort levels for Opus 4.6
+
+### Changed
+
+- Updated `@anthropic-ai/sdk` to 0.73.0
+- Updated `@aws-sdk/client-bedrock-runtime` to 3.983.0
+- Updated `@google/genai` to 1.40.0
+- Removed `fast-xml-parser` override (no longer needed)
+
 ## [0.52.0] - 2026-02-05
 
 ### Added

@@ -922,6 +922,42 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe("Anthropic OAuth Provider (claude-opus-4-6 with adaptive thinking)", () => {
+		const model = getModel("anthropic", "claude-opus-4-6");
+
+		it.skipIf(!anthropicOAuthToken)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(model, { apiKey: anthropicOAuthToken });
+		});
+
+		it.skipIf(!anthropicOAuthToken)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(model, { apiKey: anthropicOAuthToken });
+		});
+
+		it.skipIf(!anthropicOAuthToken)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(model, { apiKey: anthropicOAuthToken });
+		});
+
+		it.skipIf(!anthropicOAuthToken)("should handle adaptive thinking with effort high", { retry: 3 }, async () => {
+			await handleThinking(model, { apiKey: anthropicOAuthToken, thinkingEnabled: true, effort: "high" });
+		});
+
+		it.skipIf(!anthropicOAuthToken)("should handle adaptive thinking with effort medium", { retry: 3 }, async () => {
+			await handleThinking(model, { apiKey: anthropicOAuthToken, thinkingEnabled: true, effort: "medium" });
+		});
+
+		it.skipIf(!anthropicOAuthToken)(
+			"should handle multi-turn with adaptive thinking and tools",
+			{ retry: 3 },
+			async () => {
+				await multiTurn(model, { apiKey: anthropicOAuthToken, thinkingEnabled: true, effort: "high" });
+			},
+		);
+
+		it.skipIf(!anthropicOAuthToken)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(model, { apiKey: anthropicOAuthToken });
+		});
+	});
+
 	describe("GitHub Copilot Provider (gpt-4o via OpenAI Completions)", () => {
 		const llm = getModel("github-copilot", "gpt-4o");
 
@@ -1091,6 +1127,34 @@ describe("Generate E2E Tests", () => {
 
 		it.skipIf(!openaiCodexToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
 			await multiTurn(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm, { apiKey: openaiCodexToken });
+		});
+	});
+
+	describe("OpenAI Codex Provider (gpt-5.3-codex)", () => {
+		const llm = getModel("openai-codex", "gpt-5.3-codex");
+
+		it.skipIf(!openaiCodexToken)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle thinking with reasoningEffort high", { retry: 3 }, async () => {
+			await handleThinking(llm, { apiKey: openaiCodexToken, reasoningEffort: "high" });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { apiKey: openaiCodexToken, reasoningEffort: "high" });
 		});
 
 		it.skipIf(!openaiCodexToken)("should handle image input", { retry: 3 }, async () => {
