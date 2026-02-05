@@ -5,9 +5,8 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@mariozechner/pi-agent-core";
-import { getModel } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { Agent } from "../src/core/agent.js";
 import { AgentSession } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import {
@@ -18,6 +17,7 @@ import {
 	type SessionEvent,
 } from "../src/core/extensions/index.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
+import { getModel } from "../src/core/models.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";

@@ -1,9 +1,7 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, Usage } from "@mariozechner/pi-ai";
-import { getModel } from "@mariozechner/pi-ai";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { beforeEach, describe, expect, it } from "vitest";
+import type { AgentMessage, AssistantMessage, Usage } from "../src/core/ai-types.js";
 import {
 	type CompactionSettings,
 	calculateContextTokens,
@@ -14,6 +12,7 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "../src/core/compaction/index.js";
+import { getModel } from "../src/core/models.js";
 import {
 	buildSessionContext,
 	type CompactionEntry,

@@ -545,6 +545,5 @@ MIT
 
 ## See Also
 
-- [@mariozechner/pi-ai](https://www.npmjs.com/package/@mariozechner/pi-ai): Core LLM toolkit
-- [@mariozechner/pi-agent](https://www.npmjs.com/package/@mariozechner/pi-agent): Agent framework
+- [Vercel AI SDK](https://sdk.vercel.ai/): Core LLM toolkit
 - [@mariozechner/pi-tui](https://www.npmjs.com/package/@mariozechner/pi-tui): Terminal UI components

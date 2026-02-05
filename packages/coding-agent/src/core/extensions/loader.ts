@@ -6,9 +6,10 @@
 
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import * as _bundledAiSdkAnthropic from "@ai-sdk/anthropic";
+import * as _bundledAiSdkGoogle from "@ai-sdk/google";
+import * as _bundledAiSdkOpenai from "@ai-sdk/openai";
 import { createJiti } from "@mariozechner/jiti";
-import * as _bundledPiAgentCore from "@mariozechner/pi-agent-core";
-import * as _bundledPiAi from "@mariozechner/pi-ai";
 import { getJitiOptions } from "@mariozechner/pi-env/app";
 import * as fs from "@mariozechner/pi-env/fs";
 import * as os from "@mariozechner/pi-env/os";
@@ -19,6 +20,8 @@ import * as _bundledPiTui from "@mariozechner/pi-tui";
 // These MUST be static so Bun bundles them into the compiled binary.
 // The virtualModules option then makes them available to extensions.
 import * as _bundledTypebox from "@sinclair/typebox";
+import * as _bundledAi from "ai";
+import * as _bundledZod from "zod";
 import { getAgentDir } from "../../config.js";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
 // avoiding a circular dependency. Extensions can import from @mariozechner/pi-coding-agent.
@@ -41,10 +44,14 @@ import type {
 /** Modules available to extensions via virtualModules (for compiled Bun binary) */
 const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@sinclair/typebox": _bundledTypebox,
-	"@mariozechner/pi-agent-core": _bundledPiAgentCore,
 	"@mariozechner/pi-tui": _bundledPiTui,
-	"@mariozechner/pi-ai": _bundledPiAi,
 	"@mariozechner/pi-coding-agent": _bundledPiCodingAgent,
+	// Vercel AI SDK modules
+	zod: _bundledZod,
+	ai: _bundledAi,
+	"@ai-sdk/anthropic": _bundledAiSdkAnthropic,
+	"@ai-sdk/openai": _bundledAiSdkOpenai,
+	"@ai-sdk/google": _bundledAiSdkGoogle,
 };
 
 const require = createRequire(import.meta.url);
@@ -65,10 +72,14 @@ function getAliases(): Record<string, string> {
 
 	_aliases = {
 		"@mariozechner/pi-coding-agent": packageIndex,
-		"@mariozechner/pi-agent-core": require.resolve("@mariozechner/pi-agent-core"),
 		"@mariozechner/pi-tui": require.resolve("@mariozechner/pi-tui"),
-		"@mariozechner/pi-ai": require.resolve("@mariozechner/pi-ai"),
 		"@sinclair/typebox": typeboxRoot,
+		// Vercel AI SDK modules
+		zod: require.resolve("zod"),
+		ai: require.resolve("ai"),
+		"@ai-sdk/anthropic": require.resolve("@ai-sdk/anthropic"),
+		"@ai-sdk/openai": require.resolve("@ai-sdk/openai"),
+		"@ai-sdk/google": require.resolve("@ai-sdk/google"),
 	};
 
 	return _aliases;

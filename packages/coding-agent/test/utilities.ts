@@ -5,12 +5,13 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Agent } from "@mariozechner/pi-agent-core";
-import { getModel, getOAuthApiKey, type OAuthCredentials, type OAuthProvider } from "@mariozechner/pi-ai";
+import { Agent } from "../src/core/agent.js";
 import { AgentSession } from "../src/core/agent-session.js";
-import { AuthStorage } from "../src/core/auth-storage.js";
+import type { OAuthCredentials } from "../src/core/ai-types.js";
+import { AuthStorage, getOAuthApiKey, type OAuthProvider } from "../src/core/auth-storage.js";
 import { createExtensionRuntime } from "../src/core/extensions/loader.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
+import { getModel } from "../src/core/models.js";
 import type { ResourceLoader } from "../src/core/resource-loader.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";

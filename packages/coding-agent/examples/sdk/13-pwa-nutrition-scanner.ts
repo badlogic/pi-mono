@@ -4,8 +4,13 @@
  * Uses a single prompt to generate a PWA and write it to disk.
  */
 
-import { getModel } from "@mariozechner/pi-ai";
-import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@mariozechner/pi-coding-agent";
+import {
+	AuthStorage,
+	createAgentSession,
+	getModel,
+	ModelRegistry,
+	SessionManager,
+} from "@mariozechner/pi-coding-agent";
 
 const PROMPT = `Make an app to scan the nutrition label (macros and ingredients list) of any food packaging using the camera. The label could be in any language. Use AI to extract calories, protein, fat, carbs and each ingredient and translate them to English. While doing so show a funny progress bar. Then display to the user an aggregated health score together with a funny witty verdict of the health value of the food from the point of view of Bryan Johnson. Below that show calories, protein, fat, carbs, and below that the ingredient list. Next to each ingredient show a health score from 0-10, 10 being the best. Below each ingredient explain in one sentence in easy language what it is.`;
 const OUTPUT_DIR = "examples/sdk/pwa-nutrition-scanner";

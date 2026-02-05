@@ -1,4 +1,3 @@
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import {
 	Container,
 	getCapabilities,
@@ -9,6 +8,7 @@ import {
 	Spacer,
 	Text,
 } from "@mariozechner/pi-tui";
+import type { ThinkingLevel } from "../../../core/ai-types.js";
 import { getSelectListTheme, getSettingsListTheme, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 

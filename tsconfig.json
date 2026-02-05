@@ -4,17 +4,10 @@
 		"noEmit": true,
 		"paths": {
 			"*": ["./*"],
-			"@mariozechner/pi-ai": ["./packages/ai/src/index.ts"],
-			"@mariozechner/pi-ai/*": ["./packages/ai/src/*"],
-			"@mariozechner/pi-ai/dist/*": ["./packages/ai/src/*"],
-			"@mariozechner/pi-agent-core": ["./packages/agent/src/index.ts"],
-			"@mariozechner/pi-agent-core/*": ["./packages/agent/src/*"],
 			"@mariozechner/pi-coding-agent": ["./packages/coding-agent/src/index.ts"],
 			"@mariozechner/pi-coding-agent/hooks": ["./packages/coding-agent/src/core/hooks/index.ts"],
 			"@mariozechner/pi-coding-agent/*": ["./packages/coding-agent/src/*"],
-			"@sinclair/typebox": ["./node_modules/@sinclair/typebox"],
-			"@mariozechner/pi-agent-old": ["./packages/agent-old/src/index.ts"],
-			"@mariozechner/pi-agent-old/*": ["./packages/agent-old/src/*"]
+			"@sinclair/typebox": ["./node_modules/@sinclair/typebox"]
 		}
 	},
 	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],

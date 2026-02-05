@@ -36,15 +36,23 @@
 		"copy-assets": "shx mkdir -p dist/modes/interactive/theme && shx cp src/modes/interactive/theme/*.json dist/modes/interactive/theme/ && shx mkdir -p dist/core/export-html/vendor && shx cp src/core/export-html/template.html src/core/export-html/template.css src/core/export-html/template.js dist/core/export-html/ && shx cp src/core/export-html/vendor/*.js dist/core/export-html/vendor/",
 		"copy-binary-assets": "shx cp package.json dist/ && shx cp README.md dist/ && shx cp CHANGELOG.md dist/ && shx mkdir -p dist/theme && shx cp src/modes/interactive/theme/*.json dist/theme/ && shx mkdir -p dist/export-html/vendor && shx cp src/core/export-html/template.html dist/export-html/ && shx cp src/core/export-html/vendor/*.js dist/export-html/vendor/ && shx cp -r docs dist/ && shx cp -r examples dist/ && shx cp ../../node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm dist/",
 		"test": "vitest --run",
+		"generate-models": "npx tsx scripts/generate-models.ts",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@mariozechner/pi-env": "^0.50.8",
+		"@ai-sdk/amazon-bedrock": "^4.0.48",
+		"@ai-sdk/anthropic": "^3.0.36",
+		"@ai-sdk/azure": "^3.0.26",
+		"@ai-sdk/google": "^3.0.21",
+		"@ai-sdk/google-vertex": "^4.0.43",
+		"@ai-sdk/openai": "^3.0.25",
 		"@mariozechner/jiti": "^2.6.2",
-		"@mariozechner/pi-agent-core": "^0.51.0",
-		"@mariozechner/pi-ai": "^0.51.0",
+		"@mariozechner/pi-env": "^0.50.8",
 		"@mariozechner/pi-tui": "^0.50.7",
 		"@silvia-odwyer/photon-node": "^0.3.4",
+		"@sinclair/typebox": "^0.34.33",
+		"ai": "^6.0.71",
+		"ajv": "^8.17.1",
 		"chalk": "^5.5.0",
 		"cli-highlight": "^2.1.11",
 		"diff": "^8.0.2",
@@ -54,7 +62,8 @@
 		"marked": "^15.0.12",
 		"minimatch": "^10.1.1",
 		"proper-lockfile": "^4.1.2",
-		"yaml": "^2.8.2"
+		"yaml": "^2.8.2",
+		"zod": "^4.1.8"
 	},
 	"optionalDependencies": {
 		"@mariozechner/clipboard": "^0.3.2"

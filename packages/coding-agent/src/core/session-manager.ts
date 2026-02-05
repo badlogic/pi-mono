@@ -1,5 +1,3 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { ImageContent, Message, TextContent } from "@mariozechner/pi-ai";
 import { randomUUID } from "@mariozechner/pi-env/crypto";
 import {
 	appendFileSync,
@@ -18,6 +16,7 @@ import {
 } from "@mariozechner/pi-env/fs";
 import { join, resolve } from "@mariozechner/pi-env/path";
 import { getAgentDir as getDefaultAgentDir, getSessionsDir } from "../config.js";
+import type { AgentMessage, ImageContent, Message, TextContent } from "./ai-types.js";
 import {
 	type BashExecutionMessage,
 	type CustomMessage,

@@ -6,15 +6,12 @@
  * try to refresh tokens simultaneously.
  */
 
-import {
-	getEnvApiKey,
-	getOAuthApiKey,
-	getOAuthProvider,
-	getOAuthProviders,
-	type OAuthCredentials,
-	type OAuthLoginCallbacks,
-	type OAuthProviderId,
-} from "@mariozechner/pi-ai";
+import type { OAuthCredentials, OAuthLoginCallbacks } from "./ai-types.js";
+import { getEnvApiKey } from "./env-api-keys.js";
+import { getOAuthProvider, getOAuthProviders } from "./model-registry.js";
+
+type OAuthProviderId = string;
+
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "@mariozechner/pi-env/fs";
 import { dirname, join } from "@mariozechner/pi-env/path";
 import lockfile from "proper-lockfile";
@@ -32,6 +29,43 @@ export type OAuthCredential = {
 export type AuthCredential = ApiKeyCredential | OAuthCredential;
 
 export type AuthStorageData = Record<string, AuthCredential>;
+
+/**
+ * OAuth provider ID (a string type alias for clarity in test code).
+ */
+export type OAuthProvider = string;
+
+/**
+ * Get API key for a provider from OAuth credentials.
+ * Automatically refreshes expired tokens.
+ */
+export async function getOAuthApiKey(
+	providerId: string,
+	credentials: Record<string, OAuthCredentials>,
+): Promise<{ newCredentials: OAuthCredentials; apiKey: string } | null> {
+	const provider = getOAuthProvider(providerId);
+	if (!provider) {
+		throw new Error(`Unknown OAuth provider: ${providerId}`);
+	}
+
+	let creds = credentials[providerId];
+	if (!creds) {
+		return null;
+	}
+
+	// Refresh if expired
+	if (Date.now() >= creds.expires) {
+		try {
+			creds = await provider.refreshToken(creds);
+		} catch (_error) {
+			throw new Error(`Failed to refresh OAuth token for ${providerId}`);
+		}
+	}
+
+	// Get API key from credentials using the provider's method
+	const apiKey = provider.getApiKey(creds);
+	return { newCredentials: creds, apiKey };
+}
 
 /**
  * Credential storage backed by a JSON file.

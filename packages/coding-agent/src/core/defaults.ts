@@ -1,3 +1,3 @@
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ThinkingLevel } from "./ai-types.js";
 
 export const DEFAULT_THINKING_LEVEL: ThinkingLevel = "medium";

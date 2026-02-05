@@ -5,10 +5,9 @@
  */
 
 import * as readline from "node:readline";
-import type { AgentEvent, AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { ImageContent } from "@mariozechner/pi-ai";
 import { type ChildProcess, spawn } from "@mariozechner/pi-env/child-process";
 import type { SessionStats } from "../../core/agent-session.js";
+import type { AgentEvent, AgentMessage, ImageContent, ThinkingLevel } from "../../core/ai-types.js";
 import type { BashResult } from "../../core/bash-executor.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
 import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.js";

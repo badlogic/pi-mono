@@ -3,15 +3,6 @@
  * Handles TUI rendering and user interaction, delegating business logic to AgentSession.
  */
 
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import {
-	type AssistantMessage,
-	getOAuthProviders,
-	type ImageContent,
-	type Message,
-	type Model,
-	type OAuthProvider,
-} from "@mariozechner/pi-ai";
 import { getUpdateAction } from "@mariozechner/pi-env/app";
 import { spawn, spawnSync } from "@mariozechner/pi-env/child-process";
 import * as crypto from "@mariozechner/pi-env/crypto";
@@ -46,6 +37,7 @@ import {
 } from "@mariozechner/pi-tui";
 import { APP_NAME, getAuthPath, getDebugLogPath, getShareViewerUrl, VERSION } from "../../config.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
+import type { AgentMessage, AssistantMessage, ImageContent, Message, Model } from "../../core/ai-types.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
 import type {
 	ExtensionContext,
@@ -57,6 +49,7 @@ import type {
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
 import { type AppAction, KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
+import { getOAuthProviders } from "../../core/model-registry.js";
 import { resolveModelScope } from "../../core/model-resolver.js";
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
@@ -2155,7 +2148,11 @@ export class InteractiveMode {
 			case "tool_execution_update": {
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
-					component.updateResult({ ...event.partialResult, isError: false }, true);
+					const partialResult = event.partialResult as {
+						content: Array<{ type: string; text?: string }>;
+						details?: unknown;
+					};
+					component.updateResult({ ...partialResult, isError: false }, true);
 					this.ui.requestRender();
 				}
 				break;
@@ -2164,7 +2161,8 @@ export class InteractiveMode {
 			case "tool_execution_end": {
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
-					component.updateResult({ ...event.result, isError: event.isError });
+					const result = event.result as { content: Array<{ type: string; text?: string }>; details?: unknown };
+					component.updateResult({ ...result, isError: event.isError });
 					this.pendingTools.delete(event.toolCallId);
 					this.ui.requestRender();
 				}
@@ -3622,7 +3620,7 @@ export class InteractiveMode {
 		};
 
 		try {
-			await this.session.modelRegistry.authStorage.login(providerId as OAuthProvider, {
+			await this.session.modelRegistry.authStorage.login(providerId, {
 				onAuth: (info: { url: string; instructions?: string }) => {
 					dialog.showAuth(info.url, info.instructions);
 

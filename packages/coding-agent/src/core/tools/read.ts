@@ -1,9 +1,8 @@
-import type { AgentTool } from "@mariozechner/pi-agent-core";
-import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
 import { constants, access as fsAccess, readFile as fsReadFile } from "@mariozechner/pi-env/fs";
 import { type Static, Type } from "@sinclair/typebox";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
+import type { AgentTool, ImageContent, TextContent } from "../ai-types.js";
 import { resolveReadPath } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 

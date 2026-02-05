@@ -1,43 +1,35 @@
 /**
  * Model registry - manages built-in and custom models, provides API key resolution.
+ *
+ * This module uses Vercel AI SDK providers to create model instances.
  */
 
-import {
-	type Api,
-	type AssistantMessageEventStream,
-	type Context,
-	getModels,
-	getProviders,
-	type KnownProvider,
-	type Model,
-	type OAuthProviderInterface,
-	registerApiProvider,
-	registerOAuthProvider,
-	type SimpleStreamOptions,
-} from "@mariozechner/pi-ai";
 import { execSync } from "@mariozechner/pi-env/child-process";
 import { existsSync, readFileSync } from "@mariozechner/pi-env/fs";
 import { join } from "@mariozechner/pi-env/path";
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import { getAgentDir } from "../config.js";
+import type { Api, KnownProvider, ModelInfo } from "./ai-types.js";
 import type { AuthStorage } from "./auth-storage.js";
+import { getModels, getProviders } from "./models.js";
 
 const Ajv = (AjvModule as any).default || AjvModule;
 
-// Schema for OpenRouter routing preferences
+// ============================================================================
+// TypeBox Schemas for models.json validation
+// ============================================================================
+
 const OpenRouterRoutingSchema = Type.Object({
 	only: Type.Optional(Type.Array(Type.String())),
 	order: Type.Optional(Type.Array(Type.String())),
 });
 
-// Schema for Vercel AI Gateway routing preferences
 const VercelGatewayRoutingSchema = Type.Object({
 	only: Type.Optional(Type.Array(Type.String())),
 	order: Type.Optional(Type.Array(Type.String())),
 });
 
-// Schema for OpenAI compatibility settings
 const OpenAICompletionsCompatSchema = Type.Object({
 	supportsStore: Type.Optional(Type.Boolean()),
 	supportsDeveloperRole: Type.Optional(Type.Boolean()),
@@ -59,8 +51,6 @@ const OpenAIResponsesCompatSchema = Type.Object({
 
 const OpenAICompatSchema = Type.Union([OpenAICompletionsCompatSchema, OpenAIResponsesCompatSchema]);
 
-// Schema for custom model definition
-// Most fields are optional with sensible defaults for local models (Ollama, LM Studio, etc.)
 const ModelDefinitionSchema = Type.Object({
 	id: Type.String({ minLength: 1 }),
 	name: Type.Optional(Type.String({ minLength: 1 })),
@@ -96,6 +86,10 @@ const ModelsConfigSchema = Type.Object({
 
 type ModelsConfig = Static<typeof ModelsConfigSchema>;
 
+// ============================================================================
+// Types
+// ============================================================================
+
 /** Provider override config (baseUrl, headers, apiKey) without custom models */
 interface ProviderOverride {
 	baseUrl?: string;
@@ -105,7 +99,7 @@ interface ProviderOverride {
 
 /** Result of loading custom models from models.json */
 interface CustomModelsResult {
-	models: Model<Api>[];
+	models: ModelInfo<Api>[];
 	/** Providers with custom models (full replacement) */
 	replacedProviders: Set<string>;
 	/** Providers with only baseUrl/headers override (no custom models) */
@@ -117,13 +111,16 @@ function emptyCustomModelsResult(error?: string): CustomModelsResult {
 	return { models: [], replacedProviders: new Set(), overrides: new Map(), error };
 }
 
-// Cache for shell command results (persists for process lifetime)
+// ============================================================================
+// Config Value Resolution
+// ============================================================================
+
 const commandResultCache = new Map<string, string | undefined>();
 
 /**
  * Resolve a config value (API key, header value, etc.) to an actual value.
- * - If starts with "!", executes the rest as a shell command and uses stdout (cached)
- * - Otherwise checks environment variable first, then treats as literal (not cached)
+ * - If starts with "!", executes the rest as a shell command (cached)
+ * - Otherwise checks environment variable first, then treats as literal
  */
 function resolveConfigValue(config: string): string | undefined {
 	if (config.startsWith("!")) {
@@ -175,11 +172,61 @@ export function clearApiKeyCache(): void {
 	commandResultCache.clear();
 }
 
+// ============================================================================
+// OAuth Provider Interface
+// ============================================================================
+
+import type { OAuthCredentials, OAuthLoginCallbacks } from "./ai-types.js";
+
+/** OAuth credential stored in auth storage */
+export interface OAuthCredential {
+	type: "oauth";
+	refresh: string;
+	access: string;
+	expires: number;
+	[key: string]: unknown;
+}
+
+/** OAuth provider interface for /login support */
+export interface OAuthProviderInterface {
+	readonly id: string;
+	readonly name: string;
+	/** Whether login uses a local callback server and supports manual code input. */
+	usesCallbackServer?: boolean;
+	/** Run the login flow, return credentials to persist */
+	login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials>;
+	/** Refresh expired credentials, return updated credentials to persist */
+	refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials>;
+	/** Convert credentials to API key string for the provider */
+	getApiKey(credentials: OAuthCredentials): string;
+	/** Optional: modify models for this provider (e.g., update baseUrl) */
+	modifyModels?(models: ModelInfo<Api>[], credentials: OAuthCredentials): ModelInfo<Api>[];
+}
+
+// OAuth provider registry
+const oauthProviderRegistry = new Map<string, OAuthProviderInterface>();
+
+export function registerOAuthProvider(provider: OAuthProviderInterface): void {
+	oauthProviderRegistry.set(provider.id, provider);
+}
+
+export function getOAuthProvider(id: string): OAuthProviderInterface | undefined {
+	return oauthProviderRegistry.get(id);
+}
+
+export function getOAuthProviders(): OAuthProviderInterface[] {
+	return Array.from(oauthProviderRegistry.values());
+}
+
+// ============================================================================
+// Model Registry Class
+// ============================================================================
+
 /**
  * Model registry - loads and manages models, resolves API keys via AuthStorage.
  */
 export class ModelRegistry {
-	private models: Model<Api>[] = [];
+	private models: ModelInfo<Api>[] = [];
 	private customProviderApiKeys: Map<string, string> = new Map();
 	private registeredProviders: Map<string, ProviderConfigInput> = new Map();
 	private loadError: string | undefined = undefined;
@@ -239,7 +286,7 @@ export class ModelRegistry {
 		let combined = [...builtInModels, ...customModels];
 
 		// Let OAuth providers modify their models (e.g., update baseUrl)
-		for (const oauthProvider of this.authStorage.getOAuthProviders()) {
+		for (const oauthProvider of getOAuthProviders()) {
 			const cred = this.authStorage.get(oauthProvider.id);
 			if (cred?.type === "oauth" && oauthProvider.modifyModels) {
 				combined = oauthProvider.modifyModels(combined, cred);
@@ -250,11 +297,14 @@ export class ModelRegistry {
 	}
 
 	/** Load built-in models, skipping replaced providers and applying overrides */
-	private loadBuiltInModels(replacedProviders: Set<string>, overrides: Map<string, ProviderOverride>): Model<Api>[] {
+	private loadBuiltInModels(
+		replacedProviders: Set<string>,
+		overrides: Map<string, ProviderOverride>,
+	): ModelInfo<Api>[] {
 		return getProviders()
 			.filter((provider) => !replacedProviders.has(provider))
 			.flatMap((provider) => {
-				const models = getModels(provider as KnownProvider) as Model<Api>[];
+				const models = getModels(provider as KnownProvider) as ModelInfo<Api>[];
 				const override = overrides.get(provider);
 				if (!override) return models;
 
@@ -282,8 +332,12 @@ export class ModelRegistry {
 			const validate = ajv.compile(ModelsConfigSchema);
 			if (!validate(config)) {
 				const errors =
-					validate.errors?.map((e: any) => `  - ${e.instancePath || "root"}: ${e.message}`).join("\n") ||
-					"Unknown schema error";
+					validate.errors
+						?.map(
+							(e: { instancePath?: string; message?: string }) =>
+								`  - ${e.instancePath || "root"}: ${e.message}`,
+						)
+						.join("\n") || "Unknown schema error";
 				return emptyCustomModelsResult(`Invalid models.json schema:\n${errors}\n\nFile: ${modelsJsonPath}`);
 			}
 
@@ -364,8 +418,8 @@ export class ModelRegistry {
 		}
 	}
 
-	private parseModels(config: ModelsConfig): Model<Api>[] {
-		const models: Model<Api>[] = [];
+	private parseModels(config: ModelsConfig): ModelInfo<Api>[] {
+		const models: ModelInfo<Api>[] = [];
 
 		for (const [providerName, providerConfig] of Object.entries(config.providers)) {
 			const modelDefs = providerConfig.models ?? [];
@@ -410,7 +464,7 @@ export class ModelRegistry {
 					maxTokens: modelDef.maxTokens ?? 16384,
 					headers,
 					compat: modelDef.compat,
-				} as Model<Api>);
+				} as ModelInfo<Api>);
 			}
 		}
 
@@ -419,31 +473,29 @@ export class ModelRegistry {
 
 	/**
 	 * Get all models (built-in + custom).
-	 * If models.json had errors, returns only built-in models.
 	 */
-	getAll(): Model<Api>[] {
+	getAll(): ModelInfo<Api>[] {
 		return this.models;
 	}
 
 	/**
 	 * Get only models that have auth configured.
-	 * This is a fast check that doesn't refresh OAuth tokens.
 	 */
-	getAvailable(): Model<Api>[] {
+	getAvailable(): ModelInfo<Api>[] {
 		return this.models.filter((m) => this.authStorage.hasAuth(m.provider));
 	}
 
 	/**
 	 * Find a model by provider and ID.
 	 */
-	find(provider: string, modelId: string): Model<Api> | undefined {
+	find(provider: string, modelId: string): ModelInfo<Api> | undefined {
 		return this.models.find((m) => m.provider === provider && m.id === modelId);
 	}
 
 	/**
 	 * Get API key for a model.
 	 */
-	async getApiKey(model: Model<Api>): Promise<string | undefined> {
+	async getApiKey(model: ModelInfo<Api>): Promise<string | undefined> {
 		return this.authStorage.getApiKey(model.provider);
 	}
 
@@ -457,17 +509,13 @@ export class ModelRegistry {
 	/**
 	 * Check if a model is using OAuth credentials (subscription).
 	 */
-	isUsingOAuth(model: Model<Api>): boolean {
+	isUsingOAuth(model: ModelInfo<Api>): boolean {
 		const cred = this.authStorage.get(model.provider);
 		return cred?.type === "oauth";
 	}
 
 	/**
 	 * Register a provider dynamically (from extensions).
-	 *
-	 * If provider has models: replaces all existing models for this provider.
-	 * If provider has only baseUrl/headers: overrides existing models' URLs.
-	 * If provider has oauth: registers OAuth provider for /login support.
 	 */
 	registerProvider(providerName: string, config: ProviderConfigInput): void {
 		this.registeredProviders.set(providerName, config);
@@ -477,24 +525,11 @@ export class ModelRegistry {
 	private applyProviderConfig(providerName: string, config: ProviderConfigInput): void {
 		// Register OAuth provider if provided
 		if (config.oauth) {
-			// Ensure the OAuth provider ID matches the provider name
 			const oauthProvider: OAuthProviderInterface = {
 				...config.oauth,
 				id: providerName,
 			};
 			registerOAuthProvider(oauthProvider);
-		}
-
-		if (config.streamSimple) {
-			if (!config.api) {
-				throw new Error(`Provider ${providerName}: "api" is required when registering streamSimple.`);
-			}
-			const streamSimple = config.streamSimple;
-			registerApiProvider({
-				api: config.api,
-				stream: (model, context, options) => streamSimple(model, context, options as SimpleStreamOptions),
-				streamSimple,
-			});
 		}
 
 		// Store API key for auth resolution
@@ -547,10 +582,10 @@ export class ModelRegistry {
 					maxTokens: modelDef.maxTokens,
 					headers,
 					compat: modelDef.compat,
-				} as Model<Api>);
+				} as ModelInfo<Api>);
 			}
 
-			// Apply OAuth modifyModels if credentials exist (e.g., to update baseUrl)
+			// Apply OAuth modifyModels if credentials exist
 			if (config.oauth?.modifyModels) {
 				const cred = this.authStorage.get(providerName);
 				if (cred?.type === "oauth") {
@@ -579,7 +614,6 @@ export interface ProviderConfigInput {
 	baseUrl?: string;
 	apiKey?: string;
 	api?: Api;
-	streamSimple?: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 	headers?: Record<string, string>;
 	authHeader?: boolean;
 	/** OAuth provider for /login support */
@@ -594,6 +628,6 @@ export interface ProviderConfigInput {
 		contextWindow: number;
 		maxTokens: number;
 		headers?: Record<string, string>;
-		compat?: Model<Api>["compat"];
+		compat?: ModelInfo<Api>["compat"];
 	}>;
 }

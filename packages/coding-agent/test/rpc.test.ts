@@ -2,8 +2,8 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import type { AgentEvent } from "../src/core/ai-types.js";
 import { RpcClient } from "../src/modes/rpc/rpc-client.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

@@ -13,22 +13,25 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import type {
-	Agent,
-	AgentEvent,
-	AgentMessage,
-	AgentState,
-	AgentTool,
-	ThinkingLevel,
-} from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
-import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@mariozechner/pi-ai";
 import { readFileSync } from "@mariozechner/pi-env/fs";
 import { basename, dirname, join } from "@mariozechner/pi-env/path";
 import { getDocsPath } from "../config.js";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { stripFrontmatter } from "../utils/frontmatter.js";
 import { sleep } from "../utils/sleep.js";
+import type { Agent } from "./agent.js";
+import type {
+	AgentEvent,
+	AgentMessage,
+	AgentState,
+	AgentTool,
+	AssistantMessage,
+	ImageContent,
+	Message,
+	Model,
+	TextContent,
+	ThinkingLevel,
+} from "./ai-types.js";
 import { type BashResult, executeBash as executeBashCommand, executeBashWithOperations } from "./bash-executor.js";
 import {
 	type CompactionResult,
@@ -62,7 +65,10 @@ import {
 	wrapToolsWithExtensions,
 } from "./extensions/index.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
+import { resetApiProviders } from "./model-providers.js";
 import type { ModelRegistry } from "./model-registry.js";
+import { modelsAreEqual, supportsXhigh } from "./models.js";
+import { isContextOverflow } from "./overflow.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.js";
 import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.js";

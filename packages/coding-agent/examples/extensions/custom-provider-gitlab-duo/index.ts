@@ -14,14 +14,14 @@ import {
 	type AssistantMessageEventStream,
 	type Context,
 	createAssistantMessageEventStream,
+	type ExtensionAPI,
 	type Model,
 	type OAuthCredentials,
 	type OAuthLoginCallbacks,
 	type SimpleStreamOptions,
 	streamSimpleAnthropic,
 	streamSimpleOpenAIResponses,
-} from "@mariozechner/pi-ai";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+} from "@mariozechner/pi-coding-agent";
 
 // =============================================================================
 // Constants

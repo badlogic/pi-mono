@@ -2,6 +2,53 @@
 
 // Config paths
 export { getAgentDir, VERSION } from "./config.js";
+
+// AI types and utilities (from Vercel AI SDK integration)
+export type {
+	AgentEvent,
+	AgentMessage,
+	AgentState,
+	AgentTool,
+	Api,
+	AssistantMessage,
+	AssistantMessageEvent,
+	AssistantModelMessage,
+	Context,
+	CustomAgentMessages,
+	ImageContent,
+	KnownProvider,
+	LanguageModel,
+	Message,
+	Model,
+	ModelInfo,
+	ModelMessage,
+	OAuthCredentials,
+	OAuthLoginCallbacks,
+	SimpleStreamOptions,
+	StopReason,
+	SystemModelMessage,
+	TextContent,
+	ThinkingContent,
+	ThinkingLevel,
+	Tool,
+	ToolCall,
+	ToolModelMessage,
+	ToolResultMessage,
+	Usage,
+	UserMessage,
+	UserModelMessage,
+} from "./core/ai-types.js";
+export {
+	AssistantMessageEventStream,
+	calculateCost,
+	createAssistantMessageEventStream,
+	createEmptyUsage,
+	EventStream,
+	StringEnum,
+} from "./core/ai-types.js";
+export { getModel, getModels, getProviders } from "./core/models.js";
+export { complete } from "./core/stream.js";
+export { Agent, type AgentOptions } from "./core/agent.js";
 export {
 	AgentSession,
 	type AgentSessionConfig,

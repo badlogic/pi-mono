@@ -1,5 +1,5 @@
-import type { Model } from "@mariozechner/pi-ai";
 import { describe, expect, test } from "vitest";
+import type { Model } from "../src/core/ai-types.js";
 import { defaultModelPerProvider, findInitialModel, parseModelPattern } from "../src/core/model-resolver.js";
 
 // Mock models for testing

@@ -1,4 +1,3 @@
-import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { spawn } from "@mariozechner/pi-env/child-process";
 import { randomBytes } from "@mariozechner/pi-env/crypto";
 import { createWriteStream, existsSync } from "@mariozechner/pi-env/fs";
@@ -6,6 +5,7 @@ import { tmpdir } from "@mariozechner/pi-env/os";
 import { join } from "@mariozechner/pi-env/path";
 import { type Static, Type } from "@sinclair/typebox";
 import { getShellConfig, getShellEnv, killProcessTree } from "../../utils/shell.js";
+import type { AgentTool } from "../ai-types.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateTail } from "./truncate.js";
 
 /**

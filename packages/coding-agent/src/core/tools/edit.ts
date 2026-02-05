@@ -1,4 +1,3 @@
-import type { AgentTool } from "@mariozechner/pi-agent-core";
 import {
 	constants,
 	access as fsAccess,
@@ -6,6 +5,7 @@ import {
 	writeFile as fsWriteFile,
 } from "@mariozechner/pi-env/fs";
 import { type Static, Type } from "@sinclair/typebox";
+import type { AgentTool } from "../ai-types.js";
 import {
 	detectLineEnding,
 	fuzzyFindText,

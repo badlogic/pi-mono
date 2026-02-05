@@ -9,24 +9,6 @@
  */
 
 import type {
-	AgentMessage,
-	AgentToolResult,
-	AgentToolUpdateCallback,
-	ThinkingLevel,
-} from "@mariozechner/pi-agent-core";
-import type {
-	Api,
-	AssistantMessageEventStream,
-	Context,
-	ImageContent,
-	Model,
-	OAuthCredentials,
-	OAuthLoginCallbacks,
-	SimpleStreamOptions,
-	TextContent,
-	ToolResultMessage,
-} from "@mariozechner/pi-ai";
-import type {
 	AutocompleteItem,
 	Component,
 	EditorComponent,
@@ -38,6 +20,22 @@ import type {
 } from "@mariozechner/pi-tui";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
+import type {
+	AgentMessage,
+	AgentToolResult,
+	AgentToolUpdateCallback,
+	Api,
+	AssistantMessageEventStream,
+	Context,
+	ImageContent,
+	Model,
+	OAuthCredentials,
+	OAuthLoginCallbacks,
+	SimpleStreamOptions,
+	TextContent,
+	ThinkingLevel,
+	ToolResultMessage,
+} from "../ai-types.js";
 import type { BashResult } from "../bash-executor.js";
 import type { CompactionPreparation, CompactionResult } from "../compaction/index.js";
 import type { EventBus } from "../event-bus.js";

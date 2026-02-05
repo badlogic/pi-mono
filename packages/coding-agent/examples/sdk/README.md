@@ -30,11 +30,11 @@ npx tsx examples/sdk/01-minimal.ts
 ## Quick Reference
 
 ```typescript
-import { getModel } from "@mariozechner/pi-ai";
 import {
   AuthStorage,
   createAgentSession,
   DefaultResourceLoader,
+  getModel,
   ModelRegistry,
   SessionManager,
   SettingsManager,

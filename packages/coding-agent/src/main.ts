@@ -5,7 +5,6 @@
  * createAgentSession() options. The SDK does the heavy lifting.
  */
 
-import { type ImageContent, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import { createInterface } from "readline";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
@@ -14,6 +13,7 @@ import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
 import { getAgentDir, getModelsPath, VERSION } from "./config.js";
+import type { ImageContent } from "./core/ai-types.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { DEFAULT_THINKING_LEVEL } from "./core/defaults.js";
 import { exportFromFile } from "./core/export-html/index.js";
@@ -21,6 +21,7 @@ import type { LoadExtensionsResult } from "./core/extensions/index.js";
 import { KeybindingsManager } from "./core/keybindings.js";
 import { ModelRegistry } from "./core/model-registry.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
+import { modelsAreEqual, supportsXhigh } from "./core/models.js";
 import { DefaultPackageManager } from "./core/package-manager.js";
 import { DefaultResourceLoader } from "./core/resource-loader.js";
 import { type CreateAgentSessionOptions, createAgentSession } from "./core/sdk.js";

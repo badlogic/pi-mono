@@ -5,9 +5,7 @@
  * a summary of the branch being left so context isn't lost.
  */
 
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { Model } from "@mariozechner/pi-ai";
-import { completeSimple } from "@mariozechner/pi-ai";
+import type { AgentMessage, Model } from "../ai-types.js";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,
@@ -15,6 +13,7 @@ import {
 	createCustomMessage,
 } from "../messages.js";
 import type { ReadonlySessionManager, SessionEntry } from "../session-manager.js";
+import { completeSimple } from "../stream.js";
 import { estimateTokens } from "./compaction.js";
 import {
 	computeFileLists,

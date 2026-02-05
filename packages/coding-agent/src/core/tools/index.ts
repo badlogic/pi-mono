@@ -66,7 +66,7 @@ export {
 	writeTool,
 } from "./write.js";
 
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { AgentTool } from "../ai-types.js";
 import { type BashToolOptions, bashTool, createBashTool } from "./bash.js";
 import { createEditTool, editTool } from "./edit.js";
 import { createFindTool, findTool } from "./find.js";

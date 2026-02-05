@@ -8,13 +8,13 @@
  * paths relative to your cwd.
  */
 
-import { getModel } from "@mariozechner/pi-ai";
 import {
 	AuthStorage,
 	createAgentSession,
 	createBashTool,
 	createExtensionRuntime,
 	createReadTool,
+	getModel,
 	ModelRegistry,
 	type ResourceLoader,
 	SessionManager,

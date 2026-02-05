@@ -1,7 +1,7 @@
-import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { existsSync, readdirSync, statSync } from "@mariozechner/pi-env/fs";
 import nodePath from "@mariozechner/pi-env/path";
 import { type Static, Type } from "@sinclair/typebox";
+import type { AgentTool } from "../ai-types.js";
 import { resolveToCwd } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 

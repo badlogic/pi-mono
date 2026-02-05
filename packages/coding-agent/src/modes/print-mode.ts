@@ -6,8 +6,8 @@
  * - `pi --mode json "prompt"` - JSON event stream
  */
 
-import type { AssistantMessage, ImageContent } from "@mariozechner/pi-ai";
 import type { AgentSession } from "../core/agent-session.js";
+import type { AssistantMessage, ImageContent } from "../core/ai-types.js";
 
 /**
  * Options for print mode.
