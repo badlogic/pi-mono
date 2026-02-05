@@ -4,6 +4,8 @@
 
 ### New Features
 
+- Claude Opus 4.6 model support.
+- GPT-5.3 Codex model support (OpenAI Codex provider only).
 - SSH URL support for git packages. See [docs/packages.md](docs/packages.md).
 - `auth.json` API keys now support shell command resolution (`!command`) and environment variable lookup. See [docs/providers.md](docs/providers.md).
 - Model selectors now display the selected model name.
