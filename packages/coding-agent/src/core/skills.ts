@@ -116,6 +116,10 @@ function loadSkillsFromDirInternal(dir: string, source: string, includeRootFiles
 			if (entry.name === "node_modules") {
 				continue;
 			}
+            // Also skip Python virtual environments and caches
+            if (entry.name === "venv" || entry.name === ".venv" || entry.name === "__pycache__" || entry.name === "site-packages") {
+                continue;
+            }
 
 			const fullPath = join(dir, entry.name);
 
