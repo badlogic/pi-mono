@@ -1,49 +1,49 @@
 {
-	"name": "@mariozechner/pi-tui",
-	"version": "0.51.6",
-	"description": "Terminal User Interface library with differential rendering for efficient text-based applications",
-	"type": "module",
-	"main": "dist/index.js",
-	"scripts": {
-		"clean": "rm -rf dist",
-		"build": "tsgo -p tsconfig.build.json",
-		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
-		"test": "node --test --import tsx test/*.test.ts",
-		"prepublishOnly": "npm run clean && npm run build"
-	},
-	"files": [
-		"dist/**/*",
-		"README.md"
-	],
-	"keywords": [
-		"tui",
-		"terminal",
-		"ui",
-		"text-editor",
-		"differential-rendering",
-		"typescript",
-		"cli"
-	],
-	"author": "Mario Zechner",
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/badlogic/pi-mono.git",
-		"directory": "packages/tui"
-	},
-	"engines": {
-		"node": ">=20.0.0"
-	},
-	"types": "./dist/index.d.ts",
-	"dependencies": {
-		"@types/mime-types": "^2.1.4",
-		"chalk": "^5.5.0",
-		"get-east-asian-width": "^1.3.0",
-		"marked": "^15.0.12",
-		"mime-types": "^3.0.1"
-	},
-	"devDependencies": {
-		"@xterm/headless": "^5.5.0",
-		"@xterm/xterm": "^5.5.0"
-	}
+  "name": "@mariozechner/pi-tui",
+  "version": "0.51.6",
+  "description": "Terminal User Interface library with differential rendering for efficient text-based applications",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "clean": "shx rm -rf dist",
+    "build": "tsgo -p tsconfig.build.json",
+    "dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+    "test": "node --test --import tsx test/*.test.ts",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
+  "keywords": [
+    "tui",
+    "terminal",
+    "ui",
+    "text-editor",
+    "differential-rendering",
+    "typescript",
+    "cli"
+  ],
+  "author": "Mario Zechner",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/badlogic/pi-mono.git",
+    "directory": "packages/tui"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@types/mime-types": "^2.1.4",
+    "chalk": "^5.5.0",
+    "get-east-asian-width": "^1.3.0",
+    "marked": "^15.0.12",
+    "mime-types": "^3.0.1"
+  },
+  "devDependencies": {
+    "@xterm/headless": "^5.5.0",
+    "@xterm/xterm": "^5.5.0"
+  }
 }
