@@ -77,16 +77,21 @@ export class Image implements Component {
 					this.imageId = result.imageId;
 				}
 
-				// Return `rows` lines so TUI accounts for image height
-				// First (rows-1) lines are empty (TUI clears them)
-				// Last line: move cursor back up, then output image sequence
-				lines = [];
-				for (let i = 0; i < result.rows - 1; i++) {
-					lines.push("");
+				if (result.placeholderLines) {
+					// Unicode placeholder mode (tmux): placeholder chars are normal text.
+					// Prepend the transmit sequence (invisible escape codes) to the first line.
+					lines = [...result.placeholderLines];
+					lines[0] = result.sequence + lines[0];
+				} else {
+					// Direct mode: reserve rows with empty lines, then cursor-up + image sequence
+					lines = [];
+					for (let i = 0; i < result.rows - 1; i++) {
+						lines.push("");
+					}
+					// Move cursor up to first row, then output image
+					const moveUp = result.rows > 1 ? `\x1b[${result.rows - 1}A` : "";
+					lines.push(moveUp + result.sequence);
 				}
-				// Move cursor up to first row, then output image
-				const moveUp = result.rows > 1 ? `\x1b[${result.rows - 1}A` : "";
-				lines.push(moveUp + result.sequence);
 			} else {
 				const fallback = imageFallback(this.mimeType, this.dimensions, this.options.filename);
 				lines = [this.theme.fallbackColor(fallback)];

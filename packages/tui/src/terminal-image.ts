@@ -1,3 +1,5 @@
+import { PLACEHOLDER_DIACRITICS } from "./placeholder-diacritics.js";
+
 export type ImageProtocol = "kitty" | "iterm2" | null;
 
 export interface TerminalCapabilities {
@@ -25,6 +27,23 @@ export interface ImageRenderOptions {
 }
 
 let cachedCapabilities: TerminalCapabilities | null = null;
+
+/**
+ * Check if the process is running inside tmux.
+ */
+export function isInTmux(): boolean {
+	return !!process.env.TMUX;
+}
+
+/**
+ * Wrap an escape sequence in tmux DCS passthrough.
+ * Every ESC (\x1b) in the payload is doubled, then wrapped in \x1bPtmux;...\x1b\\
+ * Requires `set -g allow-passthrough on` in tmux.conf.
+ */
+export function wrapTmuxPassthrough(sequence: string): string {
+	const escaped = sequence.replaceAll("\x1b", "\x1b\x1b");
+	return `\x1bPtmux;${escaped}\x1b\\`;
+}
 
 // Default cell dimensions - updated by TUI when terminal responds to query
 let cellDimensions: CellDimensions = { widthPx: 9, heightPx: 18 };
@@ -84,13 +103,23 @@ export function resetCapabilitiesCache(): void {
 const KITTY_PREFIX = "\x1b_G";
 const ITERM2_PREFIX = "\x1b]1337;File=";
 
+/**
+ * Unicode placeholder character for Kitty graphics protocol.
+ * Terminals that support this render the referenced image at cells containing this char.
+ */
+const PLACEHOLDER_CHAR = "\u{10EEEE}";
+
 export function isImageLine(line: string): boolean {
 	// Fast path: sequence at line start (single-row images)
 	if (line.startsWith(KITTY_PREFIX) || line.startsWith(ITERM2_PREFIX)) {
 		return true;
 	}
 	// Slow path: sequence elsewhere (multi-row images have cursor-up prefix)
-	return line.includes(KITTY_PREFIX) || line.includes(ITERM2_PREFIX);
+	if (line.includes(KITTY_PREFIX) || line.includes(ITERM2_PREFIX)) {
+		return true;
+	}
+	// Unicode placeholder lines (kitty protocol in tmux)
+	return line.includes(PLACEHOLDER_CHAR);
 }
 
 /**
@@ -101,6 +130,112 @@ export function isImageLine(line: string): boolean {
 export function allocateImageId(): number {
 	// Use random ID in range [1, 0xffffffff] to avoid collisions
 	return Math.floor(Math.random() * 0xfffffffe) + 1;
+}
+
+/**
+ * Allocate an image ID suitable for Unicode placeholder mode (24-bit).
+ * The ID is encoded in the foreground truecolor, so it must fit in 24 bits.
+ */
+export function allocatePlaceholderImageId(): number {
+	return Math.floor(Math.random() * 0xfffffe) + 1;
+}
+
+/**
+ * Transmit image data to the terminal without displaying it (a=t).
+ * Used for Unicode placeholder mode where display is handled by placeholder characters.
+ * Always wraps in tmux passthrough since this is only used in tmux.
+ */
+function encodeKittyTransmit(base64Data: string, imageId: number): string {
+	const CHUNK_SIZE = 4096;
+
+	const params: string[] = [`a=t`, "f=100", "q=2", `i=${imageId}`];
+
+	if (base64Data.length <= CHUNK_SIZE) {
+		return wrapTmuxPassthrough(`\x1b_G${params.join(",")};${base64Data}\x1b\\`);
+	}
+
+	const chunks: string[] = [];
+	let offset = 0;
+	let isFirst = true;
+
+	while (offset < base64Data.length) {
+		const chunk = base64Data.slice(offset, offset + CHUNK_SIZE);
+		const isLast = offset + CHUNK_SIZE >= base64Data.length;
+
+		if (isFirst) {
+			chunks.push(wrapTmuxPassthrough(`\x1b_G${params.join(",")},m=1;${chunk}\x1b\\`));
+			isFirst = false;
+		} else if (isLast) {
+			chunks.push(wrapTmuxPassthrough(`\x1b_Gm=0;${chunk}\x1b\\`));
+		} else {
+			chunks.push(wrapTmuxPassthrough(`\x1b_Gm=1;${chunk}\x1b\\`));
+		}
+
+		offset += CHUNK_SIZE;
+	}
+
+	return chunks.join("");
+}
+
+/**
+ * Generate Unicode placeholder text lines for a Kitty image.
+ * Each cell contains U+10EEEE with a row diacritic on the first cell of each row.
+ * The foreground color encodes the 24-bit image ID.
+ * See: https://sw.kovidgoyal.net/kitty/graphics-protocol/#unicode-placeholders
+ */
+function generatePlaceholderLines(imageId: number, columns: number, rows: number): string[] {
+	const r = (imageId >> 16) & 0xff;
+	const g = (imageId >> 8) & 0xff;
+	const b = imageId & 0xff;
+	const colorStart = `\x1b[38;2;${r};${g};${b}m`;
+	const colorEnd = `\x1b[39m`;
+
+	const lines: string[] = [];
+	for (let row = 0; row < rows; row++) {
+		const rowDiacritic =
+			row < PLACEHOLDER_DIACRITICS.length
+				? String.fromCodePoint(PLACEHOLDER_DIACRITICS[row])
+				: String.fromCodePoint(PLACEHOLDER_DIACRITICS[0]);
+		// First cell gets row diacritic, subsequent cells inherit via shorthand
+		let line = colorStart + PLACEHOLDER_CHAR + rowDiacritic;
+		for (let col = 1; col < columns; col++) {
+			line += PLACEHOLDER_CHAR;
+		}
+		line += colorEnd;
+		lines.push(line);
+	}
+	return lines;
+}
+
+/**
+ * Render an image using Kitty Unicode placeholder mode for tmux.
+ * Transmits image data via passthrough, creates virtual placement,
+ * and returns placeholder text lines that tmux handles as normal text.
+ */
+export function renderKittyUnicodePlaceholder(
+	base64Data: string,
+	options: {
+		columns: number;
+		rows: number;
+		imageId: number;
+	},
+): { transmitSequence: string; placeholderLines: string[]; imageId: number } {
+	const { columns, rows, imageId } = options;
+
+	// Step 1: Transmit image data (no display) via passthrough
+	const transmitSeq = encodeKittyTransmit(base64Data, imageId);
+
+	// Step 2: Create virtual placement via passthrough
+	const placementSeq = wrapTmuxPassthrough(`\x1b_Ga=p,U=1,i=${imageId},c=${columns},r=${rows},q=2\x1b\\`);
+
+	// Step 3: Generate placeholder text lines
+	const placeholderLines = generatePlaceholderLines(imageId, columns, rows);
+
+	return {
+		transmitSequence: transmitSeq + placementSeq,
+		placeholderLines,
+		imageId,
+	};
 }
 
 export function encodeKitty(
@@ -151,7 +286,8 @@ export function encodeKitty(
  * Uses uppercase 'I' to also free the image data.
  */
 export function deleteKittyImage(imageId: number): string {
-	return `\x1b_Ga=d,d=I,i=${imageId}\x1b\\`;
+	const seq = `\x1b_Ga=d,d=I,i=${imageId}\x1b\\`;
+	return isInTmux() ? wrapTmuxPassthrough(seq) : seq;
 }
 
 /**
@@ -159,7 +295,8 @@ export function deleteKittyImage(imageId: number): string {
  * Uses uppercase 'A' to also free the image data.
  */
 export function deleteAllKittyImages(): string {
-	return `\x1b_Ga=d,d=A\x1b\\`;
+	const seq = `\x1b_Ga=d,d=A\x1b\\`;
+	return isInTmux() ? wrapTmuxPassthrough(seq) : seq;
 }
 
 export function encodeITerm2(
@@ -340,11 +477,22 @@ export function getImageDimensions(base64Data: string, mimeType: string): ImageD
 	return null;
 }
 
+export interface RenderImageResult {
+	/** Escape sequence for direct image display (non-placeholder mode). */
+	sequence: string;
+	/** Number of rows the image occupies. */
+	rows: number;
+	/** Image ID used (if any). */
+	imageId?: number;
+	/** Unicode placeholder text lines for tmux mode. When present, use these as visible content. */
+	placeholderLines?: string[];
+}
+
 export function renderImage(
 	base64Data: string,
 	imageDimensions: ImageDimensions,
 	options: ImageRenderOptions = {},
-): { sequence: string; rows: number; imageId?: number } | null {
+): RenderImageResult | null {
 	const caps = getCapabilities();
 
 	if (!caps.images) {
@@ -355,7 +503,23 @@ export function renderImage(
 	const rows = calculateImageRows(imageDimensions, maxWidth, getCellDimensions());
 
 	if (caps.images === "kitty") {
-		// Only use imageId if explicitly provided - static images don't need IDs
+		// In tmux: use Unicode placeholder mode for proper pane-relative rendering
+		if (isInTmux()) {
+			const imageId = options.imageId ?? allocatePlaceholderImageId();
+			const result = renderKittyUnicodePlaceholder(base64Data, {
+				columns: maxWidth,
+				rows,
+				imageId,
+			});
+			return {
+				sequence: result.transmitSequence,
+				rows,
+				imageId: result.imageId,
+				placeholderLines: result.placeholderLines,
+			};
+		}
+
+		// Direct mode: transmit and display in one step
 		const sequence = encodeKitty(base64Data, { columns: maxWidth, rows, imageId: options.imageId });
 		return { sequence, rows, imageId: options.imageId };
 	}

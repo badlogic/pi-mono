@@ -52,6 +52,7 @@ export { ProcessTerminal, type Terminal } from "./terminal.js";
 // Terminal image support
 export {
 	allocateImageId,
+	allocatePlaceholderImageId,
 	type CellDimensions,
 	calculateImageRows,
 	deleteAllKittyImages,
@@ -70,10 +71,14 @@ export {
 	type ImageProtocol,
 	type ImageRenderOptions,
 	imageFallback,
+	isInTmux,
+	type RenderImageResult,
 	renderImage,
+	renderKittyUnicodePlaceholder,
 	resetCapabilitiesCache,
 	setCellDimensions,
 	type TerminalCapabilities,
+	wrapTmuxPassthrough,
 } from "./terminal-image.js";
 export {
 	type Component,
