@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `/quit` being shadowed by fuzzy slash command autocomplete matches from skills by adding `/quit` to built-in command autocomplete, and removed `/exit` command handling ([#1303](https://github.com/badlogic/pi-mono/issues/1303))
+
 ## [0.52.5] - 2026-02-05
 
 ### Fixed
