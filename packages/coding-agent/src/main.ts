@@ -33,6 +33,7 @@ import { allTools } from "./core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
+import { parseGitUrl } from "./utils/git.js";
 
 /**
  * Read all content from piped stdin.
@@ -122,15 +123,13 @@ function normalizeExtensionSource(source: string): { type: "npm" | "git" | "loca
 		const match = spec.match(/^(@?[^@]+(?:\/[^@]+)?)(?:@.+)?$/);
 		return { type: "npm", key: match?.[1] ?? spec };
 	}
-	if (source.startsWith("git:")) {
-		const repo = source.slice("git:".length).trim().split("@")[0] ?? "";
-		return { type: "git", key: repo.replace(/^https?:\/\//, "").replace(/\.git$/, "") };
+
+	// Try parsing as git URL
+	const parsed = parseGitUrl(source);
+	if (parsed) {
+		return { type: "git", key: `${parsed.host}/${parsed.path}` };
 	}
-	// Raw git URLs
-	if (source.startsWith("https://") || source.startsWith("http://")) {
-		const repo = source.split("@")[0] ?? "";
-		return { type: "git", key: repo.replace(/^https?:\/\//, "").replace(/\.git$/, "") };
-	}
+
 	return { type: "local", key: source };
 }
 
