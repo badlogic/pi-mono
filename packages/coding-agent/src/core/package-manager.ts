@@ -1580,10 +1580,20 @@ export class DefaultPackageManager implements PackageManager {
 
 	private runCommand(command: string, args: string[], options?: { cwd?: string }): Promise<void> {
 		return new Promise((resolvePromise, reject) => {
+			const env: typeof process.env | undefined =
+				command === "git"
+					? {
+							...process.env,
+							GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o ConnectTimeout=5",
+							GIT_TERMINAL_PROMPT: "0",
+						}
+					: undefined;
+
 			const child = spawn(command, args, {
 				cwd: options?.cwd,
 				stdio: "inherit",
 				shell: process.platform === "win32",
+				env,
 			});
 			child.on("error", reject);
 			child.on("exit", (code) => {
