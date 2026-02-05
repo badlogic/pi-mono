@@ -328,12 +328,12 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			case "steer": {
-				await session.steer(command.message);
+				await session.steer(command.message, command.images);
 				return success(id, "steer");
 			}
 
 			case "follow_up": {
-				await session.followUp(command.message);
+				await session.followUp(command.message, command.images);
 				return success(id, "follow_up");
 			}
 
