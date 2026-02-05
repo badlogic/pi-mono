@@ -1748,6 +1748,7 @@ describe("Editor component", () => {
 					}
 					return null;
 				},
+				getSuggestionsAsync: async (_lines, _cursorLine, _cursorCol, _signal, _onUpdate) => null,
 				applyCompletion,
 			};
 
@@ -1783,6 +1784,7 @@ describe("Editor component", () => {
 				getForceFileSuggestions: AutocompleteProvider["getSuggestions"];
 			} = {
 				getSuggestions: () => null,
+				getSuggestionsAsync: async (_lines, _cursorLine, _cursorCol, _signal, _onUpdate) => null,
 				getForceFileSuggestions: (lines, _cursorLine, cursorCol) => {
 					const text = lines[0] || "";
 					const prefix = text.slice(0, cursorCol);
@@ -1824,6 +1826,7 @@ describe("Editor component", () => {
 				getForceFileSuggestions: AutocompleteProvider["getSuggestions"];
 			} = {
 				getSuggestions: () => null,
+				getSuggestionsAsync: async (_lines, _cursorLine, _cursorCol, _signal, _onUpdate) => null,
 				getForceFileSuggestions: (lines, _cursorLine, cursorCol) => {
 					const text = lines[0] || "";
 					const prefix = text.slice(0, cursorCol);
@@ -1892,6 +1895,7 @@ describe("Editor component", () => {
 					}
 					return null;
 				},
+				getSuggestionsAsync: async (_lines, _cursorLine, _cursorCol, _signal, _onUpdate) => null,
 				getForceFileSuggestions: (lines, _cursorLine, cursorCol) => {
 					const text = lines[0] || "";
 					const prefix = text.slice(0, cursorCol);
@@ -1949,6 +1953,7 @@ describe("Editor component", () => {
 					}
 					return null;
 				},
+				getSuggestionsAsync: async (_lines, _cursorLine, _cursorCol, _signal, _onUpdate) => null,
 				applyCompletion,
 			};
 

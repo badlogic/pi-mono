@@ -4,6 +4,7 @@
 export {
 	type AutocompleteItem,
 	type AutocompleteProvider,
+	type AutocompleteSuggestions,
 	CombinedAutocompleteProvider,
 	type SlashCommand,
 } from "./autocomplete.js";

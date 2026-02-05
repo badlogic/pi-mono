@@ -1,7 +1,8 @@
-import { spawnSync } from "child_process";
+import { spawn } from "child_process";
 import { readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join } from "path";
+import { createInterface } from "readline";
 import { fuzzyFilter } from "./fuzzy.js";
 
 const PATH_DELIMITERS = new Set([" ", "\t", '"', "'", "="]);
@@ -90,7 +91,11 @@ function walkDirectoryWithFd(
 	fdPath: string,
 	query: string,
 	maxResults: number,
-): Array<{ path: string; isDirectory: boolean }> {
+	options: {
+		onEntry: (entry: { path: string; isDirectory: boolean }) => void;
+		signal?: AbortSignal;
+	},
+): Promise<void> {
 	const args = [
 		"--base-directory",
 		baseDir,
@@ -115,40 +120,83 @@ function walkDirectoryWithFd(
 		args.push(query);
 	}
 
-	const result = spawnSync(fdPath, args, {
-		encoding: "utf-8",
-		stdio: ["pipe", "pipe", "pipe"],
-		maxBuffer: 10 * 1024 * 1024,
-	});
+	return new Promise((resolve) => {
+		let done = false;
+		let rl: ReturnType<typeof createInterface> | null = null;
+		let abortListener: (() => void) | null = null;
 
-	if (result.status !== 0 || !result.stdout) {
-		return [];
-	}
+		const cleanup = (): void => {
+			if (rl) {
+				rl.close();
+				rl.removeAllListeners();
+			}
+			if (options.signal && abortListener) {
+				options.signal.removeEventListener("abort", abortListener);
+			}
+		};
 
-	const lines = result.stdout.trim().split("\n").filter(Boolean);
-	const results: Array<{ path: string; isDirectory: boolean }> = [];
+		const finalize = (): void => {
+			if (done) return;
+			done = true;
+			cleanup();
+			resolve();
+		};
 
-	for (const line of lines) {
-		const normalizedPath = line.endsWith("/") ? line.slice(0, -1) : line;
-		if (normalizedPath === ".git" || normalizedPath.startsWith(".git/") || normalizedPath.includes("/.git/")) {
-			continue;
+		const child = spawn(fdPath, args, {
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+
+		const stdout = child.stdout;
+		if (!stdout) {
+			finalize();
+			return;
 		}
 
-		// fd outputs directories with trailing /
-		const isDirectory = line.endsWith("/");
-		results.push({
-			path: line,
-			isDirectory,
-		});
-	}
+		stdout.setEncoding("utf-8");
+		rl = createInterface({ input: stdout });
 
-	return results;
+		const handleLine = (line: string): void => {
+			if (!line) return;
+			const normalizedPath = line.endsWith("/") ? line.slice(0, -1) : line;
+			if (normalizedPath === ".git" || normalizedPath.startsWith(".git/") || normalizedPath.includes("/.git/")) {
+				return;
+			}
+
+			// fd outputs directories with trailing /
+			const isDirectory = line.endsWith("/");
+			options.onEntry({ path: line, isDirectory });
+		};
+
+		rl.on("line", handleLine);
+
+		const handleAbort = (): void => {
+			child.kill();
+			finalize();
+		};
+		abortListener = handleAbort;
+
+		if (options.signal) {
+			if (options.signal.aborted) {
+				handleAbort();
+				return;
+			}
+			options.signal.addEventListener("abort", handleAbort, { once: true });
+		}
+
+		child.on("close", finalize);
+		child.on("error", finalize);
+	});
 }
 
 export interface AutocompleteItem {
 	value: string;
 	label: string;
 	description?: string;
+}
+
+export interface AutocompleteSuggestions {
+	items: AutocompleteItem[];
+	prefix: string;
 }
 
 export interface SlashCommand {
@@ -162,14 +210,16 @@ export interface SlashCommand {
 export interface AutocompleteProvider {
 	// Get autocomplete suggestions for current text/cursor position
 	// Returns null if no suggestions available
-	getSuggestions(
+	getSuggestions(lines: string[], cursorLine: number, cursorCol: number): AutocompleteSuggestions | null;
+
+	// Stream async autocomplete suggestions (used for slow operations like @ file search)
+	getSuggestionsAsync?(
 		lines: string[],
 		cursorLine: number,
 		cursorCol: number,
-	): {
-		items: AutocompleteItem[];
-		prefix: string; // What we're matching against (e.g., "/" or "src/")
-	} | null;
+		signal: AbortSignal,
+		onUpdate: (suggestions: AutocompleteSuggestions) => void,
+	): Promise<AutocompleteSuggestions | null>;
 
 	// Apply the selected item
 	// Returns the new text and cursor position
@@ -202,25 +252,14 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		this.fdPath = fdPath;
 	}
 
-	getSuggestions(
-		lines: string[],
-		cursorLine: number,
-		cursorCol: number,
-	): { items: AutocompleteItem[]; prefix: string } | null {
+	getSuggestions(lines: string[], cursorLine: number, cursorCol: number): AutocompleteSuggestions | null {
 		const currentLine = lines[cursorLine] || "";
 		const textBeforeCursor = currentLine.slice(0, cursorCol);
 
 		// Check for @ file reference (fuzzy search) - must be after a delimiter or at start
 		const atPrefix = this.extractAtPrefix(textBeforeCursor);
 		if (atPrefix) {
-			const { rawPrefix, isQuotedPrefix } = parsePathPrefix(atPrefix);
-			const suggestions = this.getFuzzyFileSuggestions(rawPrefix, { isQuotedPrefix: isQuotedPrefix });
-			if (suggestions.length === 0) return null;
-
-			return {
-				items: suggestions,
-				prefix: atPrefix,
-			};
+			return null;
 		}
 
 		// Check for slash commands
@@ -299,6 +338,29 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		}
 
 		return null;
+	}
+
+	async getSuggestionsAsync(
+		lines: string[],
+		cursorLine: number,
+		cursorCol: number,
+		signal: AbortSignal,
+		onUpdate: (suggestions: AutocompleteSuggestions) => void,
+	): Promise<AutocompleteSuggestions | null> {
+		if (!this.fdPath) return null;
+
+		const currentLine = lines[cursorLine] || "";
+		const textBeforeCursor = currentLine.slice(0, cursorCol);
+		const atPrefix = this.extractAtPrefix(textBeforeCursor);
+		if (!atPrefix) return null;
+
+		const { rawPrefix, isQuotedPrefix } = parsePathPrefix(atPrefix);
+		return this.getFuzzyFileSuggestionsAsync(rawPrefix, {
+			isQuotedPrefix,
+			prefix: atPrefix,
+			signal,
+			onUpdate,
+		});
 	}
 
 	applyCompletion(
@@ -603,31 +665,31 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	}
 
 	// Fuzzy file search using fd (fast, respects .gitignore)
-	private getFuzzyFileSuggestions(query: string, options: { isQuotedPrefix: boolean }): AutocompleteItem[] {
-		if (!this.fdPath) {
-			// fd not available, return empty results
-			return [];
+	private async getFuzzyFileSuggestionsAsync(
+		query: string,
+		options: {
+			isQuotedPrefix: boolean;
+			prefix: string;
+			signal: AbortSignal;
+			onUpdate: (suggestions: AutocompleteSuggestions) => void;
+		},
+	): Promise<AutocompleteSuggestions | null> {
+		if (!this.fdPath || options.signal.aborted) {
+			return null;
 		}
 
-		try {
-			const entries = walkDirectoryWithFd(this.basePath, this.fdPath, query, 100);
+		const entries: Array<{ path: string; isDirectory: boolean; score: number }> = [];
+		let lastKey = "";
+		let lastSuggestions: AutocompleteSuggestions | null = null;
 
-			// Score entries
-			const scoredEntries = entries
-				.map((entry) => ({
-					...entry,
-					score: query ? this.scoreEntry(entry.path, query, entry.isDirectory) : 1,
-				}))
-				.filter((entry) => entry.score > 0);
-
-			// Sort by score (descending) and take top 20
+		const buildSuggestions = (): AutocompleteSuggestions | null => {
+			const scoredEntries = entries.filter((entry) => entry.score > 0);
 			scoredEntries.sort((a, b) => b.score - a.score);
 			const topEntries = scoredEntries.slice(0, 20);
+			if (topEntries.length === 0) return null;
 
-			// Build suggestions
 			const suggestions: AutocompleteItem[] = [];
 			for (const { path: entryPath, isDirectory } of topEntries) {
-				// fd already includes trailing / for directories
 				const pathWithoutSlash = isDirectory ? entryPath.slice(0, -1) : entryPath;
 				const entryName = basename(pathWithoutSlash);
 				const value = buildCompletionValue(entryPath, {
@@ -643,18 +705,41 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				});
 			}
 
-			return suggestions;
-		} catch {
-			return [];
+			return { items: suggestions, prefix: options.prefix };
+		};
+
+		const emitSuggestions = (): void => {
+			if (options.signal.aborted) return;
+			const suggestions = buildSuggestions();
+			if (!suggestions) return;
+
+			lastSuggestions = suggestions;
+			const key = suggestions.items.map((item) => item.value).join("\n");
+			if (key === lastKey) return;
+			lastKey = key;
+			options.onUpdate(suggestions);
+		};
+
+		await walkDirectoryWithFd(this.basePath, this.fdPath, query, 100, {
+			signal: options.signal,
+			onEntry: (entry) => {
+				if (options.signal.aborted) return;
+				const score = query ? this.scoreEntry(entry.path, query, entry.isDirectory) : 1;
+				if (score <= 0) return;
+				entries.push({ ...entry, score });
+				emitSuggestions();
+			},
+		});
+
+		if (lastSuggestions) {
+			return lastSuggestions;
 		}
+
+		return buildSuggestions();
 	}
 
 	// Force file completion (called on Tab key) - always returns suggestions
-	getForceFileSuggestions(
-		lines: string[],
-		cursorLine: number,
-		cursorCol: number,
-	): { items: AutocompleteItem[]; prefix: string } | null {
+	getForceFileSuggestions(lines: string[], cursorLine: number, cursorCol: number): AutocompleteSuggestions | null {
 		const currentLine = lines[cursorLine] || "";
 		const textBeforeCursor = currentLine.slice(0, cursorCol);
 

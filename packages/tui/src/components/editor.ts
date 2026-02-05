@@ -1,4 +1,4 @@
-import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
+import type { AutocompleteProvider, AutocompleteSuggestions, CombinedAutocompleteProvider } from "../autocomplete.js";
 import { getEditorKeybindings } from "../keybindings.js";
 import { matchesKey } from "../keys.js";
 import { type Component, CURSOR_MARKER, type Focusable, type TUI } from "../tui.js";
@@ -133,6 +133,12 @@ interface EditorState {
 	cursorCol: number;
 }
 
+interface AutocompleteSnapshot {
+	text: string;
+	cursorLine: number;
+	cursorCol: number;
+}
+
 interface LayoutLine {
 	text: string;
 	hasCursor: boolean;
@@ -178,6 +184,10 @@ export class Editor implements Component, Focusable {
 	private autocompleteState: "regular" | "force" | null = null;
 	private autocompletePrefix: string = "";
 	private autocompleteMaxVisible: number = 5;
+	private autocompleteAbortController: AbortController | null = null;
+	private autocompleteSnapshot: AutocompleteSnapshot | null = null;
+	private autocompleteSelectionChanged: boolean = false;
+	private autocompleteSelectedValue: string | null = null;
 
 	// Paste tracking for large pastes
 	private pastes: Map<number, string> = new Map();
@@ -509,6 +519,9 @@ export class Editor implements Component, Focusable {
 
 			if (kb.matches(data, "selectUp") || kb.matches(data, "selectDown")) {
 				this.autocompleteList.handleInput(data);
+				this.autocompleteSelectionChanged = true;
+				const selected = this.autocompleteList.getSelectedItem();
+				this.autocompleteSelectedValue = selected ? selected.value : null;
 				return;
 			}
 
@@ -1902,6 +1915,110 @@ export class Editor implements Component, Focusable {
 	}
 
 	// Autocomplete methods
+	private captureAutocompleteSnapshot(): AutocompleteSnapshot {
+		return {
+			text: this.getText(),
+			cursorLine: this.state.cursorLine,
+			cursorCol: this.state.cursorCol,
+		};
+	}
+
+	private isAutocompleteSnapshotCurrent(snapshot: AutocompleteSnapshot): boolean {
+		return (
+			snapshot.text === this.getText() &&
+			snapshot.cursorLine === this.state.cursorLine &&
+			snapshot.cursorCol === this.state.cursorCol
+		);
+	}
+
+	private abortAutocompleteRequest(): void {
+		if (this.autocompleteAbortController) {
+			this.autocompleteAbortController.abort();
+			this.autocompleteAbortController = null;
+		}
+		this.autocompleteSnapshot = null;
+	}
+
+	private applyAutocompleteSuggestions(suggestions: AutocompleteSuggestions): void {
+		if (suggestions.items.length === 0) {
+			this.cancelAutocomplete();
+			return;
+		}
+
+		if (this.autocompletePrefix !== suggestions.prefix) {
+			this.autocompleteSelectionChanged = false;
+			this.autocompleteSelectedValue = null;
+		}
+
+		const list = new SelectList(suggestions.items, this.autocompleteMaxVisible, this.theme.selectList);
+		if (this.autocompleteSelectionChanged && this.autocompleteSelectedValue) {
+			const index = suggestions.items.findIndex((item) => item.value === this.autocompleteSelectedValue);
+			if (index >= 0) {
+				list.setSelectedIndex(index);
+			}
+		}
+
+		this.autocompleteList = list;
+		this.autocompletePrefix = suggestions.prefix;
+		this.autocompleteState = "regular";
+
+		const selected = list.getSelectedItem();
+		this.autocompleteSelectedValue = selected ? selected.value : null;
+	}
+
+	private startAsyncAutocomplete(): void {
+		if (!this.autocompleteProvider) return;
+		if (typeof this.autocompleteProvider.getSuggestionsAsync !== "function") {
+			this.cancelAutocomplete();
+			return;
+		}
+
+		this.abortAutocompleteRequest();
+		this.autocompleteState = null;
+		this.autocompleteList = undefined;
+		this.autocompletePrefix = "";
+		this.autocompleteSelectionChanged = false;
+		this.autocompleteSelectedValue = null;
+
+		const controller = new AbortController();
+		this.autocompleteAbortController = controller;
+
+		const linesSnapshot = [...this.state.lines];
+		const cursorLine = this.state.cursorLine;
+		const cursorCol = this.state.cursorCol;
+		const snapshot = this.captureAutocompleteSnapshot();
+		this.autocompleteSnapshot = snapshot;
+
+		let hasUpdates = false;
+		const handleUpdate = (suggestions: AutocompleteSuggestions): void => {
+			if (controller.signal.aborted) return;
+			if (this.autocompleteSnapshot !== snapshot) return;
+			if (!this.isAutocompleteSnapshotCurrent(snapshot)) return;
+			if (suggestions.items.length === 0) return;
+
+			this.applyAutocompleteSuggestions(suggestions);
+			hasUpdates = true;
+			this.tui.requestRender();
+		};
+
+		void this.autocompleteProvider
+			.getSuggestionsAsync(linesSnapshot, cursorLine, cursorCol, controller.signal, handleUpdate)
+			.then((finalSuggestions) => {
+				if (controller.signal.aborted) return;
+				if (this.autocompleteSnapshot !== snapshot) return;
+				if (!this.isAutocompleteSnapshotCurrent(snapshot)) return;
+				if (finalSuggestions && finalSuggestions.items.length > 0) {
+					this.applyAutocompleteSuggestions(finalSuggestions);
+					this.tui.requestRender();
+					return;
+				}
+				if (!hasUpdates) {
+					this.cancelAutocomplete();
+				}
+			})
+			.catch(() => {});
+	}
+
 	private tryTriggerAutocomplete(explicitTab: boolean = false): void {
 		if (!this.autocompleteProvider) return;
 
@@ -1923,11 +2040,10 @@ export class Editor implements Component, Focusable {
 		);
 
 		if (suggestions && suggestions.items.length > 0) {
-			this.autocompletePrefix = suggestions.prefix;
-			this.autocompleteList = new SelectList(suggestions.items, this.autocompleteMaxVisible, this.theme.selectList);
-			this.autocompleteState = "regular";
+			this.abortAutocompleteRequest();
+			this.applyAutocompleteSuggestions(suggestions);
 		} else {
-			this.cancelAutocomplete();
+			this.startAsyncAutocomplete();
 		}
 	}
 
@@ -1973,6 +2089,7 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 		);
 
 		if (suggestions && suggestions.items.length > 0) {
+			this.abortAutocompleteRequest();
 			// If there's exactly one suggestion, apply it immediately
 			if (explicitTab && suggestions.items.length === 1) {
 				const item = suggestions.items[0]!;
@@ -2001,9 +2118,12 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 	}
 
 	private cancelAutocomplete(): void {
+		this.abortAutocompleteRequest();
 		this.autocompleteState = null;
 		this.autocompleteList = undefined;
 		this.autocompletePrefix = "";
+		this.autocompleteSelectionChanged = false;
+		this.autocompleteSelectedValue = null;
 	}
 
 	public isShowingAutocomplete(): boolean {
@@ -2024,11 +2144,10 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 			this.state.cursorCol,
 		);
 		if (suggestions && suggestions.items.length > 0) {
-			this.autocompletePrefix = suggestions.prefix;
-			// Always create new SelectList to ensure update
-			this.autocompleteList = new SelectList(suggestions.items, this.autocompleteMaxVisible, this.theme.selectList);
+			this.abortAutocompleteRequest();
+			this.applyAutocompleteSuggestions(suggestions);
 		} else {
-			this.cancelAutocomplete();
+			this.startAsyncAutocomplete();
 		}
 	}
 }
