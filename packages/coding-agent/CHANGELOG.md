@@ -7,6 +7,7 @@
 ### Fixed
 
 - Fixed git package parsing fallback for unknown hosts so enterprise git sources like `git:github.tools.sap/org/repo` are treated as git packages instead of local paths
+- Fixed extensions setting not loading directories with `package.json` containing `pi.extensions` manifest (e.g., `"extensions": ["~/my-extensions"]` now correctly reads the manifest)
 
 ## [0.52.2] - 2026-02-05
 
