@@ -27,8 +27,13 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-
-import { adjustMaxTokensForThinking, buildBaseOptions } from "./simple-options.js";
+import {
+	adjustMaxTokensForThinking,
+	buildBaseOptions,
+	type EffortLevel,
+	mapThinkingLevelToEffort,
+	supportsAdaptiveThinking,
+} from "./simple-options.js";
 import { transformMessages } from "./transform-messages.js";
 
 /**
@@ -154,6 +159,8 @@ function convertContentBlocks(content: (TextContent | ImageContent)[]):
 export interface AnthropicOptions extends StreamOptions {
 	thinkingEnabled?: boolean;
 	thinkingBudgetTokens?: number;
+	thinkingMode?: "enabled" | "adaptive" | "disabled";
+	effort?: EffortLevel;
 	interleavedThinking?: boolean;
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
 }
@@ -392,6 +399,15 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 		return streamAnthropic(model, context, { ...base, thinkingEnabled: false } satisfies AnthropicOptions);
 	}
 
+	const useAdaptive = supportsAdaptiveThinking(model.id, model.baseUrl);
+	if (useAdaptive) {
+		return streamAnthropic(model, context, {
+			...base,
+			thinkingEnabled: true,
+			effort: mapThinkingLevelToEffort(options.reasoning),
+		} satisfies AnthropicOptions);
+	}
+
 	const adjusted = adjustMaxTokensForThinking(
 		base.maxTokens || 0,
 		model.maxTokens,
@@ -518,10 +534,28 @@ function buildParams(
 	}
 
 	if (options?.thinkingEnabled && model.reasoning) {
-		params.thinking = {
-			type: "enabled",
-			budget_tokens: options.thinkingBudgetTokens || 1024,
-		};
+		const useAdaptive = supportsAdaptiveThinking(model.id, model.baseUrl);
+		if (options.thinkingMode === "disabled") {
+			params.thinking = { type: "disabled" };
+		} else if (options.thinkingMode === "enabled") {
+			params.thinking = {
+				type: "enabled",
+				budget_tokens: options.thinkingBudgetTokens || 1024,
+			};
+		} else if (useAdaptive || options.thinkingMode === "adaptive") {
+			params.thinking = { type: "adaptive" };
+			if (options.effort) {
+				params.output_config = {
+					...(params.output_config || {}),
+					effort: options.effort,
+				};
+			}
+		} else {
+			params.thinking = {
+				type: "enabled",
+				budget_tokens: options.thinkingBudgetTokens || 1024,
+			};
+		}
 	}
 
 	if (options?.toolChoice) {

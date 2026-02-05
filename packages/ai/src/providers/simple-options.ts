@@ -43,3 +43,32 @@ export function adjustMaxTokensForThinking(
 
 	return { maxTokens, thinkingBudget };
 }
+
+export function supportsAdaptiveThinking(modelId: string, baseUrl?: string): boolean {
+	const normalizedBaseUrl = baseUrl?.trim().toLowerCase();
+	if (!normalizedBaseUrl) {
+		return false;
+	}
+	if (!normalizedBaseUrl.includes("api.anthropic.com")) {
+		return false;
+	}
+
+	const id = modelId.toLowerCase();
+	return id.includes("opus-4-6") || id.includes("opus-4.6");
+}
+
+export type EffortLevel = "low" | "medium" | "high" | "max";
+
+export function mapThinkingLevelToEffort(level: ThinkingLevel): EffortLevel {
+	switch (level) {
+		case "minimal":
+		case "low":
+			return "low";
+		case "medium":
+			return "medium";
+		case "high":
+			return "high";
+		case "xhigh":
+			return "max";
+	}
+}
