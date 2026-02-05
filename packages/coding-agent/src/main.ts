@@ -580,18 +580,18 @@ export async function main(args: string[]) {
 
 	if (parsed.version) {
 		console.log(VERSION);
-		return;
+		process.exit(0);
 	}
 
 	if (parsed.help) {
 		printHelp();
-		return;
+		process.exit(0);
 	}
 
 	if (parsed.listModels !== undefined) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
 		await listModels(modelRegistry, searchPattern);
-		return;
+		process.exit(0);
 	}
 
 	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
@@ -606,16 +606,17 @@ export async function main(args: string[]) {
 	}
 
 	if (parsed.export) {
+		let result: string;
 		try {
 			const outputPath = parsed.messages.length > 0 ? parsed.messages[0] : undefined;
-			const result = await exportFromFile(parsed.export, outputPath);
-			console.log(`Exported to: ${result}`);
-			return;
+			result = await exportFromFile(parsed.export, outputPath);
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : "Failed to export session";
 			console.error(chalk.red(`Error: ${message}`));
 			process.exit(1);
 		}
+		console.log(`Exported to: ${result}`);
+		process.exit(0);
 	}
 
 	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
