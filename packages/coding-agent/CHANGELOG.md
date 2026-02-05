@@ -9,7 +9,7 @@
 
 ### Fixed
 
-- Fixed HTML export losing indentation in ANSI-rendered tool output (e.g. JSON code blocks in custom tool results)
+- Fixed HTML export losing indentation in ANSI-rendered tool output (e.g. JSON code blocks in custom tool results) ([#1269](https://github.com/badlogic/pi-mono/pull/1269) by [@aliou](https://github.com/aliou))
 
 ## [0.51.6] - 2026-02-04
 
