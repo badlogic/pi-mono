@@ -693,6 +693,9 @@
       color: var(--error);
       padding: 0 var(--line-height);
     }
+    .tool-error {
+      color: var(--error);
+    }
 
     /* Images */
     .message-images {

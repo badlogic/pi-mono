@@ -50,7 +50,7 @@ export function calculateCost<TApi extends Api>(model: Model<TApi>, usage: Usage
  * Currently only certain OpenAI Codex models support this.
  */
 export function supportsXhigh<TApi extends Api>(model: Model<TApi>): boolean {
-	return model.id.includes("gpt-5.2");
+	return model.id.includes("gpt-5.2") || model.id.includes("gpt-5.3");
 }
 
 /**

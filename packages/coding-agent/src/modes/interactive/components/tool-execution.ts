@@ -29,7 +29,8 @@ const BASH_PREVIEW_LINES = 5;
 /**
  * Convert absolute path to tilde notation if it's in home directory
  */
-function shortenPath(path: string): string {
+function shortenPath(path: unknown): string {
+	if (typeof path !== "string") return "";
 	const home = os.homedir();
 	if (path.startsWith(home)) {
 		return `~${path.slice(home.length)}`;
@@ -42,6 +43,13 @@ function shortenPath(path: string): string {
  */
 function replaceTabs(text: string): string {
 	return text.replace(/\t/g, "   ");
+}
+
+/** Safely coerce value to string for display. Returns null if invalid type. */
+function str(value: unknown): string | null {
+	if (typeof value === "string") return value;
+	if (value == null) return "";
+	return null; // Invalid type
 }
 
 export interface ToolExecutionOptions {
@@ -341,17 +349,15 @@ export class ToolExecutionComponent extends Container {
 	 * Render bash content using visual line truncation (like bash-execution.ts)
 	 */
 	private renderBashContent(): void {
-		const command = this.args?.command || "";
+		const command = str(this.args?.command);
 		const timeout = this.args?.timeout as number | undefined;
 
 		// Header
 		const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
+		const commandDisplay =
+			command === null ? theme.fg("error", "[invalid arg]") : command ? command : theme.fg("toolOutput", "...");
 		this.contentBox.addChild(
-			new Text(
-				theme.fg("toolTitle", theme.bold(`$ ${command || theme.fg("toolOutput", "...")}`)) + timeoutSuffix,
-				0,
-				0,
-			),
+			new Text(theme.fg("toolTitle", theme.bold(`$ ${commandDisplay}`)) + timeoutSuffix, 0, 0),
 		);
 
 		if (this.result) {
@@ -450,13 +456,15 @@ export class ToolExecutionComponent extends Container {
 
 	private formatToolExecution(): string {
 		let text = "";
+		const invalidArg = theme.fg("error", "[invalid arg]");
 
 		if (this.toolName === "read") {
-			const path = shortenPath(this.args?.file_path || this.args?.path || "");
+			const rawPath = str(this.args?.file_path ?? this.args?.path);
+			const path = rawPath !== null ? shortenPath(rawPath) : null;
 			const offset = this.args?.offset;
 			const limit = this.args?.limit;
 
-			let pathDisplay = path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
+			let pathDisplay = path === null ? invalidArg : path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
 			if (offset !== undefined || limit !== undefined) {
 				const startLine = offset ?? 1;
 				const endLine = limit !== undefined ? startLine + limit - 1 : "";
@@ -467,8 +475,8 @@ export class ToolExecutionComponent extends Container {
 
 			if (this.result) {
 				const output = this.getTextOutput();
-				const rawPath = this.args?.file_path || this.args?.path || "";
-				const lang = getLanguageFromPath(rawPath);
+				const rawPath = str(this.args?.file_path ?? this.args?.path);
+				const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
 				const lines = lang ? highlightCode(replaceTabs(output), lang) : output.split("\n");
 
 				const maxLines = this.expanded ? lines.length : 10;
@@ -511,23 +519,21 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else if (this.toolName === "write") {
-			const rawPath = this.args?.file_path || this.args?.path || "";
-			const path = shortenPath(rawPath);
-			const fileContent = this.args?.content || "";
-			const lang = getLanguageFromPath(rawPath);
-			const lines = fileContent
-				? lang
-					? highlightCode(replaceTabs(fileContent), lang)
-					: fileContent.split("\n")
-				: [];
-			const totalLines = lines.length;
+			const rawPath = str(this.args?.file_path ?? this.args?.path);
+			const fileContent = str(this.args?.content);
+			const path = rawPath !== null ? shortenPath(rawPath) : null;
 
 			text =
 				theme.fg("toolTitle", theme.bold("write")) +
 				" " +
-				(path ? theme.fg("accent", path) : theme.fg("toolOutput", "..."));
+				(path === null ? invalidArg : path ? theme.fg("accent", path) : theme.fg("toolOutput", "..."));
 
-			if (fileContent) {
+			if (fileContent === null) {
+				text += `\n\n${theme.fg("error", "[invalid content arg - expected string]")}`;
+			} else if (fileContent) {
+				const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
+				const lines = lang ? highlightCode(replaceTabs(fileContent), lang) : fileContent.split("\n");
+				const totalLines = lines.length;
 				const maxLines = this.expanded ? lines.length : 10;
 				const displayLines = lines.slice(0, maxLines);
 				const remaining = lines.length - maxLines;
@@ -552,11 +558,11 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else if (this.toolName === "edit") {
-			const rawPath = this.args?.file_path || this.args?.path || "";
-			const path = shortenPath(rawPath);
+			const rawPath = str(this.args?.file_path ?? this.args?.path);
+			const path = rawPath !== null ? shortenPath(rawPath) : null;
 
 			// Build path display, appending :line if we have diff info
-			let pathDisplay = path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
+			let pathDisplay = path === null ? invalidArg : path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
 			const firstChangedLine =
 				(this.editDiffPreview && "firstChangedLine" in this.editDiffPreview
 					? this.editDiffPreview.firstChangedLine
@@ -578,20 +584,21 @@ export class ToolExecutionComponent extends Container {
 				// Tool executed successfully - use the diff from result
 				// This takes priority over editDiffPreview which may have a stale error
 				// due to race condition (async preview computed after file was modified)
-				text += `\n\n${renderDiff(this.result.details.diff, { filePath: rawPath })}`;
+				text += `\n\n${renderDiff(this.result.details.diff, { filePath: rawPath ?? undefined })}`;
 			} else if (this.editDiffPreview) {
 				// Use cached diff preview (before tool executes)
 				if ("error" in this.editDiffPreview) {
 					text += `\n\n${theme.fg("error", this.editDiffPreview.error)}`;
 				} else if (this.editDiffPreview.diff) {
-					text += `\n\n${renderDiff(this.editDiffPreview.diff, { filePath: rawPath })}`;
+					text += `\n\n${renderDiff(this.editDiffPreview.diff, { filePath: rawPath ?? undefined })}`;
 				}
 			}
 		} else if (this.toolName === "ls") {
-			const path = shortenPath(this.args?.path || ".");
+			const rawPath = str(this.args?.path);
+			const path = rawPath !== null ? shortenPath(rawPath || ".") : null;
 			const limit = this.args?.limit;
 
-			text = `${theme.fg("toolTitle", theme.bold("ls"))} ${theme.fg("accent", path)}`;
+			text = `${theme.fg("toolTitle", theme.bold("ls"))} ${path === null ? invalidArg : theme.fg("accent", path)}`;
 			if (limit !== undefined) {
 				text += theme.fg("toolOutput", ` (limit ${limit})`);
 			}
@@ -624,15 +631,16 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else if (this.toolName === "find") {
-			const pattern = this.args?.pattern || "";
-			const path = shortenPath(this.args?.path || ".");
+			const pattern = str(this.args?.pattern);
+			const rawPath = str(this.args?.path);
+			const path = rawPath !== null ? shortenPath(rawPath || ".") : null;
 			const limit = this.args?.limit;
 
 			text =
 				theme.fg("toolTitle", theme.bold("find")) +
 				" " +
-				theme.fg("accent", pattern) +
-				theme.fg("toolOutput", ` in ${path}`);
+				(pattern === null ? invalidArg : theme.fg("accent", pattern || "")) +
+				theme.fg("toolOutput", ` in ${path === null ? invalidArg : path}`);
 			if (limit !== undefined) {
 				text += theme.fg("toolOutput", ` (limit ${limit})`);
 			}
@@ -665,16 +673,17 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else if (this.toolName === "grep") {
-			const pattern = this.args?.pattern || "";
-			const path = shortenPath(this.args?.path || ".");
-			const glob = this.args?.glob;
+			const pattern = str(this.args?.pattern);
+			const rawPath = str(this.args?.path);
+			const path = rawPath !== null ? shortenPath(rawPath || ".") : null;
+			const glob = str(this.args?.glob);
 			const limit = this.args?.limit;
 
 			text =
 				theme.fg("toolTitle", theme.bold("grep")) +
 				" " +
-				theme.fg("accent", `/${pattern}/`) +
-				theme.fg("toolOutput", ` in ${path}`);
+				(pattern === null ? invalidArg : theme.fg("accent", `/${pattern || ""}/`)) +
+				theme.fg("toolOutput", ` in ${path === null ? invalidArg : path}`);
 			if (glob) {
 				text += theme.fg("toolOutput", ` (${glob})`);
 			}

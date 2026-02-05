@@ -48,7 +48,6 @@
 		"get-east-asian-width": "^1.4.0"
 	},
 	"overrides": {
-		"fast-xml-parser": "5.3.4",
 		"rimraf": "6.1.2",
 		"gaxios": {
 			"rimraf": "6.1.2"
