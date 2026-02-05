@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Claude Opus 4.6 model to the generated model catalog
+
 ## [0.51.6] - 2026-02-04
 
 ### Fixed
