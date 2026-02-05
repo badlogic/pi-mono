@@ -83,8 +83,9 @@ describe("DefaultPackageManager git update", () => {
 	/**
 	 * Sets up a "remote" repository and clones it to the installed directory.
 	 * This simulates what packageManager.install() would do.
+	 * @param sourceOverride Optional source string to use instead of gitSource (e.g., with @ref for pinned tests)
 	 */
-	function setupRemoteAndInstall(): void {
+	function setupRemoteAndInstall(sourceOverride?: string): void {
 		// Create "remote" repository
 		mkdirSync(remoteDir, { recursive: true });
 		git(["init"], remoteDir);
@@ -99,7 +100,7 @@ describe("DefaultPackageManager git update", () => {
 		git(["config", "--local", "user.name", "Test"], installedDir);
 
 		// Add to global packages so update() processes this source
-		settingsManager.setPackages([gitSource]);
+		settingsManager.setPackages([sourceOverride ?? gitSource]);
 	}
 
 	describe("normal updates (no force-push)", () => {
@@ -203,10 +204,21 @@ describe("DefaultPackageManager git update", () => {
 
 	describe("pinned sources", () => {
 		it("should not update pinned git sources (with @ref)", async () => {
-			setupRemoteAndInstall();
-			const initialCommit = getCurrentCommit(installedDir);
+			// Create remote repo first to get the initial commit
+			mkdirSync(remoteDir, { recursive: true });
+			git(["init"], remoteDir);
+			git(["config", "--local", "user.email", "test@test.com"], remoteDir);
+			git(["config", "--local", "user.name", "Test"], remoteDir);
+			const initialCommit = createCommit(remoteDir, "extension.ts", "// v1", "Initial commit");
 
-			// Reconfigure with pinned ref
+			// Install with pinned ref from the start - full clone to ensure commit is available
+			mkdirSync(join(agentDir, "git", "github.com", "test"), { recursive: true });
+			git(["clone", remoteDir, installedDir], tempDir);
+			git(["checkout", initialCommit], installedDir);
+			git(["config", "--local", "user.email", "test@test.com"], installedDir);
+			git(["config", "--local", "user.name", "Test"], installedDir);
+
+			// Add to global packages with pinned ref
 			settingsManager.setPackages([`${gitSource}@${initialCommit}`]);
 
 			// Add new commit to remote
