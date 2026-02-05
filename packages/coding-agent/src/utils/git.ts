@@ -24,21 +24,23 @@ function splitRef(url: string): { repo: string; ref?: string } {
 		return { repo: url };
 	}
 
-	const lastSlash = url.lastIndexOf("/");
+	// Find the last slash that occurs before the @
+	const lastSlashBeforeAt = url.lastIndexOf("/", lastAt - 1);
+
 	const hasScheme = url.includes("://");
 	const scpLikeMatch = url.match(/^[^@]+@[^:]+:/);
 	if (scpLikeMatch) {
 		const separatorIndex = scpLikeMatch[0].length - 1;
-		if (lastAt <= separatorIndex || lastAt <= lastSlash) {
+		if (lastAt <= separatorIndex || lastAt <= lastSlashBeforeAt) {
 			return { repo: url };
 		}
 	} else if (hasScheme) {
 		const schemeIndex = url.indexOf("://");
 		const pathStart = url.indexOf("/", schemeIndex + 3);
-		if (pathStart < 0 || lastAt <= pathStart || lastAt <= lastSlash) {
+		if (pathStart < 0 || lastAt <= pathStart || lastAt <= lastSlashBeforeAt) {
 			return { repo: url };
 		}
-	} else if (lastAt <= lastSlash) {
+	} else if (lastAt <= lastSlashBeforeAt) {
 		return { repo: url };
 	}
 
