@@ -98,6 +98,7 @@ import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
+import { PostTurnQueue, type PostTurnQueueItem } from "./post-turn-queue.js";
 import {
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
@@ -123,10 +124,8 @@ function isExpandable(obj: unknown): obj is Expandable {
 	return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
 }
 
-type CompactionQueuedMessage = {
-	text: string;
-	mode: "steer" | "followUp";
-};
+const BUILTIN_COMMANDS_BY_NAME = new Map(BUILTIN_SLASH_COMMANDS.map((command) => [command.name, command]));
+const BUILTIN_COMMAND_NAMES = new Set([...BUILTIN_COMMANDS_BY_NAME.keys(), "debug", "arminsayshi", "quit", "exit"]);
 
 /**
  * Options for InteractiveMode initialization.
@@ -211,8 +210,8 @@ export class InteractiveMode {
 	private retryLoader: Loader | undefined = undefined;
 	private retryEscapeHandler?: () => void;
 
-	// Messages queued while compaction is running
-	private compactionQueuedMessages: CompactionQueuedMessage[] = [];
+	// Messages and commands queued for after the current turn/compaction
+	private postTurnQueue: PostTurnQueue;
 
 	// Shutdown state
 	private shutdownRequested = false;
@@ -278,6 +277,23 @@ export class InteractiveMode {
 		this.footerDataProvider = new FooterDataProvider();
 		this.footer = new FooterComponent(session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
+		this.postTurnQueue = new PostTurnQueue({
+			isStreaming: () => this.session.isStreaming,
+			isCompacting: () => this.session.isCompacting,
+			prompt: (text) => this.session.prompt(text),
+			queueUserInput: (text, mode) => this.session.queueUserInput(text, mode, { source: "interactive" }),
+			executeQueuedCommand: (item) => this.executeQueuedCommand(item),
+			clearSessionQueue: () => {
+				this.session.clearQueue();
+			},
+			onQueueUpdated: () => {
+				this.updatePendingMessagesDisplay();
+				this.ui.requestRender();
+			},
+			onError: (message) => {
+				this.showError(message);
+			},
+		});
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -1004,7 +1020,7 @@ export class InteractiveMode {
 					// Clear UI state
 					this.chatContainer.clear();
 					this.pendingMessagesContainer.clear();
-					this.compactionQueuedMessages = [];
+					this.postTurnQueue.reset({ notify: false });
 					this.streamingComponent = undefined;
 					this.streamingMessage = undefined;
 					this.pendingTools.clear();
@@ -1839,14 +1855,12 @@ export class InteractiveMode {
 				await this.handleModelCommand(searchTerm);
 				return;
 			}
-			if (text.startsWith("/export")) {
-				await this.handleExportCommand(text);
+
+			const parsedCommand = this.parseSlashCommand(text);
+			const builtinCommand = parsedCommand ? BUILTIN_COMMANDS_BY_NAME.get(parsedCommand.name) : undefined;
+			if (parsedCommand && builtinCommand?.queueable) {
 				this.editor.setText("");
-				return;
-			}
-			if (text === "/share") {
-				await this.handleShareCommand();
-				this.editor.setText("");
+				await this.executeQueueableBuiltinCommand(parsedCommand.name, parsedCommand.args);
 				return;
 			}
 			if (text === "/copy") {
@@ -1899,17 +1913,6 @@ export class InteractiveMode {
 				await this.handleClearCommand();
 				return;
 			}
-			if (text === "/compact" || text.startsWith("/compact ")) {
-				const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
-				this.editor.setText("");
-				await this.handleCompactCommand(customInstructions);
-				return;
-			}
-			if (text === "/reload") {
-				this.editor.setText("");
-				await this.handleReloadCommand();
-				return;
-			}
 			if (text === "/debug") {
 				this.handleDebugCommand();
 				this.editor.setText("");
@@ -1951,12 +1954,17 @@ export class InteractiveMode {
 
 			// Queue input during compaction (extension commands execute immediately)
 			if (this.session.isCompacting) {
-				if (this.isExtensionCommand(text)) {
+				const extensionRunner = this.session.extensionRunner;
+				const parsedCommand = this.parseSlashCommand(text);
+				const commandName = parsedCommand?.name ?? "";
+				const isExtensionCommand =
+					parsedCommand && extensionRunner ? !!extensionRunner.getCommand(commandName) : false;
+				if (isExtensionCommand) {
 					this.editor.addToHistory?.(text);
 					this.editor.setText("");
 					await this.session.prompt(text);
 				} else {
-					this.queueCompactionMessage(text, "steer");
+					await this.queuePostTurnItem(text, "steer");
 				}
 				return;
 			}
@@ -2174,6 +2182,9 @@ export class InteractiveMode {
 				this.pendingTools.clear();
 
 				await this.checkShutdownRequested();
+				queueMicrotask(() => {
+					void this.postTurnQueue.flush();
+				});
 
 				this.ui.requestRender();
 				break;
@@ -2231,7 +2242,7 @@ export class InteractiveMode {
 					this.chatContainer.addChild(new Spacer(1));
 					this.chatContainer.addChild(new Text(theme.fg("error", event.errorMessage), 1, 0));
 				}
-				void this.flushCompactionQueue({ willRetry: event.willRetry });
+				void this.postTurnQueue.flush({ willRetry: event.willRetry });
 				this.ui.requestRender();
 				break;
 			}
@@ -2578,40 +2589,26 @@ export class InteractiveMode {
 		const text = (this.editor.getExpandedText?.() ?? this.editor.getText()).trim();
 		if (!text) return;
 
-		// Queue input during compaction (extension commands execute immediately)
-		if (this.session.isCompacting) {
-			if (this.isExtensionCommand(text)) {
-				this.editor.addToHistory?.(text);
-				this.editor.setText("");
-				await this.session.prompt(text);
-			} else {
-				this.queueCompactionMessage(text, "followUp");
-			}
+		if (this.session.isCompacting || this.session.isStreaming) {
+			await this.queuePostTurnItem(text, "followUp");
 			return;
 		}
 
-		// Alt+Enter queues a follow-up message (waits until agent finishes)
-		// This handles extension commands (execute immediately), prompt template expansion, and queueing
-		if (this.session.isStreaming) {
-			this.editor.addToHistory?.(text);
-			this.editor.setText("");
-			await this.session.prompt(text, { streamingBehavior: "followUp" });
-			this.updatePendingMessagesDisplay();
-			this.ui.requestRender();
-		}
-		// If not streaming, Alt+Enter acts like regular Enter (trigger onSubmit)
-		else if (this.editor.onSubmit) {
+		if (this.editor.onSubmit) {
 			this.editor.onSubmit(text);
 		}
 	}
 
 	private handleDequeue(): void {
 		const restored = this.restoreQueuedMessagesToEditor();
-		if (restored === 0) {
-			this.showStatus("No queued messages to restore");
-		} else {
-			this.showStatus(`Restored ${restored} queued message${restored > 1 ? "s" : ""} to editor`);
+		if (restored.total === 0) {
+			this.showStatus("No queued items to restore");
+			return;
 		}
+
+		const suffix = restored.commandCount > 0 ? " (includes commands; re-queue them manually)" : "";
+		const label = restored.total === 1 ? "item" : "items";
+		this.showStatus(`Restored ${restored.total} queued ${label} to editor${suffix}`);
 	}
 
 	private updateEditorBorderColor(): void {
@@ -2776,71 +2773,60 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Get all queued messages (read-only).
-	 * Combines session queue and compaction queue.
-	 */
-	private getAllQueuedMessages(): { steering: string[]; followUp: string[] } {
-		return {
-			steering: [
-				...this.session.getSteeringMessages(),
-				...this.compactionQueuedMessages.filter((msg) => msg.mode === "steer").map((msg) => msg.text),
-			],
-			followUp: [
-				...this.session.getFollowUpMessages(),
-				...this.compactionQueuedMessages.filter((msg) => msg.mode === "followUp").map((msg) => msg.text),
-			],
-		};
-	}
-
-	/**
 	 * Clear all queued messages and return their contents.
-	 * Clears both session queue and compaction queue.
+	 * Clears both session queue and post-turn queue.
 	 */
-	private clearAllQueues(): { steering: string[]; followUp: string[] } {
+	private clearAllQueues(): { steering: string[]; followUp: string[]; postTurnQueue: PostTurnQueueItem[] } {
 		const { steering, followUp } = this.session.clearQueue();
-		const compactionSteering = this.compactionQueuedMessages
-			.filter((msg) => msg.mode === "steer")
-			.map((msg) => msg.text);
-		const compactionFollowUp = this.compactionQueuedMessages
-			.filter((msg) => msg.mode === "followUp")
-			.map((msg) => msg.text);
-		this.compactionQueuedMessages = [];
-		return {
-			steering: [...steering, ...compactionSteering],
-			followUp: [...followUp, ...compactionFollowUp],
-		};
+		const postTurnQueue = this.postTurnQueue.reset({ notify: false });
+		return { steering, followUp, postTurnQueue };
 	}
 
 	private updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
-		const { steering: steeringMessages, followUp: followUpMessages } = this.getAllQueuedMessages();
-		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
+		const items: Array<{ label: string; text: string }> = [];
+
+		for (const item of this.postTurnQueue.getItems()) {
+			const modeLabel = item.mode === "followUp" ? "Follow-up" : "Steering";
+			const label = item.kind === "command" ? `${modeLabel} (command)` : modeLabel;
+			items.push({ label, text: item.text });
+		}
+
+		for (const message of this.session.getSteeringMessages()) {
+			items.push({ label: "Steering", text: message });
+		}
+
+		for (const message of this.session.getFollowUpMessages()) {
+			items.push({ label: "Follow-up", text: message });
+		}
+
+		if (items.length > 0) {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
-			for (const message of steeringMessages) {
-				const text = theme.fg("dim", `Steering: ${message}`);
-				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
-			}
-			for (const message of followUpMessages) {
-				const text = theme.fg("dim", `Follow-up: ${message}`);
+			for (const item of items) {
+				const text = theme.fg("dim", `${item.label}: ${item.text}`);
 				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
 			}
 			const dequeueHint = this.getAppKeyDisplay("dequeue");
-			const hintText = theme.fg("dim", `↳ ${dequeueHint} to edit all queued messages`);
+			const hintText = theme.fg("dim", `↳ ${dequeueHint} to edit all queued items`);
 			this.pendingMessagesContainer.addChild(new TruncatedText(hintText, 1, 0));
 		}
 	}
 
-	private restoreQueuedMessagesToEditor(options?: { abort?: boolean; currentText?: string }): number {
-		const { steering, followUp } = this.clearAllQueues();
-		const allQueued = [...steering, ...followUp];
-		if (allQueued.length === 0) {
+	private restoreQueuedMessagesToEditor(options?: { abort?: boolean; currentText?: string }): {
+		total: number;
+		commandCount: number;
+	} {
+		const { steering, followUp, postTurnQueue } = this.clearAllQueues();
+		const queuedItems = [...postTurnQueue.map((item) => item.text), ...steering, ...followUp];
+		const commandCount = postTurnQueue.filter((item) => item.kind === "command").length;
+		if (queuedItems.length === 0) {
 			this.updatePendingMessagesDisplay();
 			if (options?.abort) {
 				this.agent.abort();
 			}
-			return 0;
+			return { total: 0, commandCount: 0 };
 		}
-		const queuedText = allQueued.join("\n\n");
+		const queuedText = queuedItems.join("\n\n");
 		const currentText = options?.currentText ?? this.editor.getText();
 		const combinedText = [queuedText, currentText].filter((t) => t.trim()).join("\n\n");
 		this.editor.setText(combinedText);
@@ -2848,102 +2834,125 @@ export class InteractiveMode {
 		if (options?.abort) {
 			this.agent.abort();
 		}
-		return allQueued.length;
+		return { total: queuedItems.length, commandCount };
 	}
 
-	private queueCompactionMessage(text: string, mode: "steer" | "followUp"): void {
-		this.compactionQueuedMessages.push({ text, mode });
-		this.editor.addToHistory?.(text);
-		this.editor.setText("");
-		this.updatePendingMessagesDisplay();
-		this.showStatus("Queued message for after compaction");
-	}
-
-	private isExtensionCommand(text: string): boolean {
-		if (!text.startsWith("/")) return false;
-
-		const extensionRunner = this.session.extensionRunner;
-		if (!extensionRunner) return false;
-
+	private parseSlashCommand(text: string): { name: string; args: string } | undefined {
+		if (!text.startsWith("/")) return undefined;
 		const spaceIndex = text.indexOf(" ");
-		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
-		return !!extensionRunner.getCommand(commandName);
+		const name = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+		return { name, args };
 	}
 
-	private async flushCompactionQueue(options?: { willRetry?: boolean }): Promise<void> {
-		if (this.compactionQueuedMessages.length === 0) {
+	private async queuePostTurnItem(text: string, mode: "steer" | "followUp"): Promise<void> {
+		const queueableCommand = await this.getQueueableCommand(text, mode);
+		if (queueableCommand === null) {
 			return;
 		}
 
-		const queuedMessages = [...this.compactionQueuedMessages];
-		this.compactionQueuedMessages = [];
-		this.updatePendingMessagesDisplay();
+		const item =
+			queueableCommand ??
+			({
+				text,
+				mode,
+				kind: "message",
+			} satisfies PostTurnQueueItem);
 
-		const restoreQueue = (error: unknown) => {
-			this.session.clearQueue();
-			this.compactionQueuedMessages = queuedMessages;
-			this.updatePendingMessagesDisplay();
-			this.showError(
-				`Failed to send queued message${queuedMessages.length > 1 ? "s" : ""}: ${
-					error instanceof Error ? error.message : String(error)
-				}`,
-			);
+		this.postTurnQueue.enqueue(item);
+		this.editor.addToHistory?.(text);
+		this.editor.setText("");
+		this.showStatus("Queued item for after the current turn");
+	}
+
+	private async getQueueableCommand(
+		text: string,
+		mode: "steer" | "followUp",
+	): Promise<PostTurnQueueItem | null | undefined> {
+		const parsed = this.parseSlashCommand(text);
+		if (!parsed) return undefined;
+		const { name, args } = parsed;
+
+		if (BUILTIN_COMMAND_NAMES.has(name)) {
+			const builtinCommand = BUILTIN_COMMANDS_BY_NAME.get(name);
+			if (!builtinCommand?.queueable) {
+				this.showWarning(`"/${name}" cannot be queued. Use Enter to run it.`);
+				return null;
+			}
+
+			return {
+				text,
+				mode,
+				kind: "command",
+				commandSource: "builtin",
+				commandName: name,
+				commandArgs: args,
+			};
+		}
+
+		const extensionRunner = this.session.extensionRunner;
+		if (!extensionRunner) return undefined;
+
+		const command = extensionRunner.getCommand(name);
+		if (!command) return undefined;
+
+		if (!command.queueable) {
+			this.showWarning(`"/${name}" is not queueable. Run it with Enter instead.`);
+			return null;
+		}
+
+		return {
+			text,
+			mode,
+			kind: "command",
+			commandSource: "extension",
+			commandName: name,
+			commandArgs: args,
 		};
+	}
 
-		try {
-			if (options?.willRetry) {
-				// When retry is pending, queue messages for the retry turn
-				for (const message of queuedMessages) {
-					if (this.isExtensionCommand(message.text)) {
-						await this.session.prompt(message.text);
-					} else if (message.mode === "followUp") {
-						await this.session.followUp(message.text);
-					} else {
-						await this.session.steer(message.text);
-					}
-				}
-				this.updatePendingMessagesDisplay();
-				return;
+	private async executeQueueableBuiltinCommand(
+		name: string,
+		args: string,
+		options?: {
+			fromQueue?: boolean;
+		},
+	): Promise<boolean> {
+		switch (name) {
+			case "compact": {
+				const customInstructions = args.trim() || undefined;
+				await this.handleCompactCommand(customInstructions, { fromQueue: options?.fromQueue });
+				return true;
 			}
-
-			// Find first non-extension-command message to use as prompt
-			const firstPromptIndex = queuedMessages.findIndex((message) => !this.isExtensionCommand(message.text));
-			if (firstPromptIndex === -1) {
-				// All extension commands - execute them all
-				for (const message of queuedMessages) {
-					await this.session.prompt(message.text);
-				}
-				return;
+			case "share":
+				await this.handleShareCommand();
+				return true;
+			case "export": {
+				const exportText = args ? `/export ${args}` : "/export";
+				await this.handleExportCommand(exportText);
+				return true;
 			}
+			case "reload":
+				await this.handleReloadCommand();
+				return true;
+		}
 
-			// Execute any extension commands before the first prompt
-			const preCommands = queuedMessages.slice(0, firstPromptIndex);
-			const firstPrompt = queuedMessages[firstPromptIndex];
-			const rest = queuedMessages.slice(firstPromptIndex + 1);
+		return false;
+	}
 
-			for (const message of preCommands) {
-				await this.session.prompt(message.text);
-			}
+	private async executeQueuedCommand(item: PostTurnQueueItem): Promise<void> {
+		if (item.kind !== "command") return;
 
-			// Send first prompt (starts streaming)
-			const promptPromise = this.session.prompt(firstPrompt.text).catch((error) => {
-				restoreQueue(error);
-			});
+		if (item.commandSource === "extension") {
+			await this.session.prompt(item.text);
+			return;
+		}
 
-			// Queue remaining messages
-			for (const message of rest) {
-				if (this.isExtensionCommand(message.text)) {
-					await this.session.prompt(message.text);
-				} else if (message.mode === "followUp") {
-					await this.session.followUp(message.text);
-				} else {
-					await this.session.steer(message.text);
-				}
-			}
-			this.updatePendingMessagesDisplay();
-			void promptPromise;
-		} catch (error) {
-			restoreQueue(error);
+		const handled = await this.executeQueueableBuiltinCommand(item.commandName ?? "", item.commandArgs ?? "", {
+			fromQueue: true,
+		});
+		if (!handled) {
+			this.showWarning(`Unhandled queued command "/${item.commandName ?? item.text}"`);
 		}
 	}
 
@@ -3103,12 +3112,13 @@ export class InteractiveMode {
 	}
 
 	private async handleModelCommand(searchTerm?: string): Promise<void> {
-		if (!searchTerm) {
+		const term = searchTerm?.trim();
+		if (!term) {
 			this.showModelSelector();
 			return;
 		}
 
-		const model = await this.findExactModelMatch(searchTerm);
+		const model = await this.findExactModelMatch(term);
 		if (model) {
 			try {
 				await this.session.setModel(model);
@@ -3122,7 +3132,7 @@ export class InteractiveMode {
 			return;
 		}
 
-		this.showModelSelector(searchTerm);
+		this.showModelSelector(term);
 	}
 
 	private async findExactModelMatch(searchTerm: string): Promise<Model<any> | undefined> {
@@ -3526,7 +3536,7 @@ export class InteractiveMode {
 
 		// Clear UI state
 		this.pendingMessagesContainer.clear();
-		this.compactionQueuedMessages = [];
+		this.postTurnQueue.reset({ notify: false });
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
@@ -4099,7 +4109,7 @@ export class InteractiveMode {
 		// Clear UI state
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
-		this.compactionQueuedMessages = [];
+		this.postTurnQueue.reset({ notify: false });
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
@@ -4249,7 +4259,12 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private async handleCompactCommand(customInstructions?: string): Promise<void> {
+	private async handleCompactCommand(
+		customInstructions?: string,
+		options?: {
+			fromQueue?: boolean;
+		},
+	): Promise<void> {
 		const entries = this.sessionManager.getEntries();
 		const messageCount = entries.filter((e) => e.type === "message").length;
 
@@ -4258,10 +4273,16 @@ export class InteractiveMode {
 			return;
 		}
 
-		await this.executeCompaction(customInstructions, false);
+		await this.executeCompaction(customInstructions, false, options);
 	}
 
-	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<CompactionResult | undefined> {
+	private async executeCompaction(
+		customInstructions?: string,
+		isAuto = false,
+		options?: {
+			fromQueue?: boolean;
+		},
+	): Promise<CompactionResult | undefined> {
 		// Stop loading animation
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
@@ -4313,7 +4334,9 @@ export class InteractiveMode {
 			this.statusContainer.clear();
 			this.defaultEditor.onEscape = originalOnEscape;
 		}
-		void this.flushCompactionQueue({ willRetry: false });
+		if (!options?.fromQueue) {
+			void this.postTurnQueue.flush({ willRetry: false });
+		}
 		return result;
 	}
 

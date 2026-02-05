@@ -923,6 +923,18 @@ pi.registerCommand("stats", {
 });
 ```
 
+Optional: mark the command as queueable so users can queue it with Alt+Enter (default: false):
+
+```typescript
+pi.registerCommand("stats", {
+  description: "Show session statistics",
+  queueable: true,
+  handler: async (args, ctx) => {
+    ctx.ui.notify(`Queued stats: ${args}`, "info");
+  }
+});
+```
+
 Optional: add argument auto-completion for `/command ...`:
 
 ```typescript

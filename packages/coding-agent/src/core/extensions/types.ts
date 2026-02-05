@@ -836,6 +836,8 @@ export interface RegisteredCommand {
 	name: string;
 	description?: string;
 	getArgumentCompletions?: (argumentPrefix: string) => AutocompleteItem[] | null;
+	/** Whether the command can be queued for after the current turn (ALT+ENTER). */
+	queueable?: boolean;
 	handler: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 }
 

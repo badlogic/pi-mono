@@ -13,14 +13,15 @@ export interface SlashCommandInfo {
 export interface BuiltinSlashCommand {
 	name: string;
 	description: string;
+	queueable?: boolean;
 }
 
 export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "settings", description: "Open settings menu" },
 	{ name: "model", description: "Select model (opens selector UI)" },
 	{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
-	{ name: "export", description: "Export session to HTML file" },
-	{ name: "share", description: "Share session as a secret GitHub gist" },
+	{ name: "export", description: "Export session to HTML file", queueable: true },
+	{ name: "share", description: "Share session as a secret GitHub gist", queueable: true },
 	{ name: "copy", description: "Copy last agent message to clipboard" },
 	{ name: "name", description: "Set session display name" },
 	{ name: "session", description: "Show session info and stats" },
@@ -31,7 +32,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "login", description: "Login with OAuth provider" },
 	{ name: "logout", description: "Logout from OAuth provider" },
 	{ name: "new", description: "Start a new session" },
-	{ name: "compact", description: "Manually compact the session context" },
+	{ name: "compact", description: "Manually compact the session context", queueable: true },
 	{ name: "resume", description: "Resume a different session" },
-	{ name: "reload", description: "Reload extensions, skills, prompts, and themes" },
+	{ name: "reload", description: "Reload extensions, skills, prompts, and themes", queueable: true },
 ];

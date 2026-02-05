@@ -640,6 +640,28 @@ export class AgentSession {
 	// Prompting
 	// =========================================================================
 
+	private async _applyInputHandlers(
+		text: string,
+		images: ImageContent[] | undefined,
+		source: InputSource,
+	): Promise<{ handled: boolean; text: string; images?: ImageContent[] }> {
+		let currentText = text;
+		let currentImages = images;
+
+		if (this._extensionRunner?.hasHandlers("input")) {
+			const inputResult = await this._extensionRunner.emitInput(currentText, currentImages, source);
+			if (inputResult.action === "handled") {
+				return { handled: true, text: currentText, images: currentImages };
+			}
+			if (inputResult.action === "transform") {
+				currentText = inputResult.text;
+				currentImages = inputResult.images ?? currentImages;
+			}
+		}
+
+		return { handled: false, text: currentText, images: currentImages };
+	}
+
 	/**
 	 * Send a prompt to the agent.
 	 * - Handles extension commands (registered via pi.registerCommand) immediately, even during streaming
@@ -663,22 +685,12 @@ export class AgentSession {
 		}
 
 		// Emit input event for extension interception (before skill/template expansion)
-		let currentText = text;
-		let currentImages = options?.images;
-		if (this._extensionRunner?.hasHandlers("input")) {
-			const inputResult = await this._extensionRunner.emitInput(
-				currentText,
-				currentImages,
-				options?.source ?? "interactive",
-			);
-			if (inputResult.action === "handled") {
-				return;
-			}
-			if (inputResult.action === "transform") {
-				currentText = inputResult.text;
-				currentImages = inputResult.images ?? currentImages;
-			}
+		const inputResult = await this._applyInputHandlers(text, options?.images, options?.source ?? "interactive");
+		if (inputResult.handled) {
+			return;
 		}
+		const currentText = inputResult.text;
+		const currentImages = inputResult.images;
 
 		// Expand skill commands (/skill:name args) and prompt templates (/template args)
 		let expandedText = currentText;
@@ -890,6 +902,30 @@ export class AgentSession {
 		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
 
 		await this._queueFollowUp(expandedText, images);
+	}
+
+	/**
+	 * Queue a user message while applying input handlers and template expansion.
+	 * Intended for post-turn queues.
+	 */
+	async queueUserInput(text: string, mode: "steer" | "followUp", options?: { source?: InputSource }): Promise<void> {
+		if (text.startsWith("/")) {
+			this._throwIfExtensionCommand(text);
+		}
+
+		const inputResult = await this._applyInputHandlers(text, undefined, options?.source ?? "interactive");
+		if (inputResult.handled) {
+			return;
+		}
+
+		let expandedText = this._expandSkillCommand(inputResult.text);
+		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+
+		if (mode === "followUp") {
+			await this._queueFollowUp(expandedText);
+		} else {
+			await this._queueSteer(expandedText);
+		}
 	}
 
 	/**
