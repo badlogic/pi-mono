@@ -1,5 +1,7 @@
 # Changelog
 
+## [Unreleased]
+
 ## [0.52.0] - 2026-02-05
 
 ### New Features
