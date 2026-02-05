@@ -5,6 +5,7 @@
 ### Added
 
 - Added Claude Opus 4.6 model to the generated model catalog
+- Added GPT-5.3 Codex model to the generated model catalog (OpenAI Codex provider only)
 
 ## [0.51.6] - 2026-02-04
 

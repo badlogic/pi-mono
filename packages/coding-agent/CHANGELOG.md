@@ -13,6 +13,7 @@
 - API keys in `auth.json` now support shell command resolution (`!command`) and environment variable lookup, matching the behavior in `models.json`
 - Added `minimal-mode.ts` example extension demonstrating how to override built-in tool rendering for a minimal display mode
 - Added Claude Opus 4.6 model to the model catalog
+- Added GPT-5.3 Codex model to the model catalog (OpenAI Codex provider only)
 - Added SSH URL support for git packages ([#1287](https://github.com/badlogic/pi-mono/pull/1287) by [@markusn](https://github.com/markusn))
 - Model selectors now display the selected model name ([#1275](https://github.com/badlogic/pi-mono/pull/1275) by [@haoqixu](https://github.com/haoqixu))
 
