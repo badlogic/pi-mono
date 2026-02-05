@@ -215,6 +215,12 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 				new Text(theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredItems.length})`), 0, 0),
 			);
 		}
+
+		if (this.filteredItems.length > 0) {
+			const selected = this.filteredItems[this.selectedIndex];
+			this.listContainer.addChild(new Spacer(1));
+			this.listContainer.addChild(new Text(theme.fg("muted", `  Model Name: ${selected.model.name}`), 0, 0));
+		}
 	}
 
 	handleInput(data: string): void {

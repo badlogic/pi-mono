@@ -268,6 +268,10 @@ export class ModelSelectorComponent extends Container implements Focusable {
 			}
 		} else if (this.filteredModels.length === 0) {
 			this.listContainer.addChild(new Text(theme.fg("muted", "  No matching models"), 0, 0));
+		} else {
+			const selected = this.filteredModels[this.selectedIndex];
+			this.listContainer.addChild(new Spacer(1));
+			this.listContainer.addChild(new Text(theme.fg("muted", `  Model Name: ${selected.model.name}`), 0, 0));
 		}
 	}
 
