@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### New Features
+
+### Fixed
+
+- Fixed git package parsing fallback for unknown hosts so enterprise git sources like `git:github.tools.sap/org/repo` are treated as git packages instead of local paths
+
 ## [0.52.2] - 2026-02-05
 
 ### Changed
