@@ -3,7 +3,7 @@
  */
 
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { ImageContent, Model } from "@mariozechner/pi-ai";
+import type { ImageContent, Model, ToolResultMessage } from "@mariozechner/pi-ai";
 import type { KeyId } from "@mariozechner/pi-tui";
 import { type Theme, theme } from "../../modes/interactive/theme/theme.js";
 import type { ResourceDiagnostic } from "../diagnostics.js";
@@ -170,6 +170,8 @@ export class ExtensionRunner {
 	private forkHandler: ForkHandler = async () => ({ cancelled: false });
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
 	private switchSessionHandler: SwitchSessionHandler = async () => ({ cancelled: false });
+	private dispatchToolCallHandler: (toolName: string, args: Record<string, unknown>) => Promise<ToolResultMessage> =
+		() => Promise.reject(new Error("Tool dispatch not available"));
 	private shutdownHandler: ShutdownHandler = () => {};
 	private shortcutDiagnostics: ResourceDiagnostic[] = [];
 	private commandDiagnostics: ResourceDiagnostic[] = [];
@@ -229,6 +231,7 @@ export class ExtensionRunner {
 			this.forkHandler = actions.fork;
 			this.navigateTreeHandler = actions.navigateTree;
 			this.switchSessionHandler = actions.switchSession;
+			this.dispatchToolCallHandler = actions.dispatchToolCall;
 			return;
 		}
 
@@ -237,6 +240,7 @@ export class ExtensionRunner {
 		this.forkHandler = async () => ({ cancelled: false });
 		this.navigateTreeHandler = async () => ({ cancelled: false });
 		this.switchSessionHandler = async () => ({ cancelled: false });
+		this.dispatchToolCallHandler = () => Promise.reject(new Error("Tool dispatch not available"));
 	}
 
 	setUIContext(uiContext?: ExtensionUIContext): void {
@@ -454,14 +458,15 @@ export class ExtensionRunner {
 	}
 
 	createCommandContext(): ExtensionCommandContext {
-		return {
-			...this.createContext(),
-			waitForIdle: () => this.waitForIdleFn(),
-			newSession: (options) => this.newSessionHandler(options),
-			fork: (entryId) => this.forkHandler(entryId),
-			navigateTree: (targetId, options) => this.navigateTreeHandler(targetId, options),
-			switchSession: (sessionPath) => this.switchSessionHandler(sessionPath),
-		};
+		const base = this.createContext();
+		const ctx = Object.create(base) as ExtensionCommandContext;
+		ctx.waitForIdle = () => this.waitForIdleFn();
+		ctx.newSession = (options) => this.newSessionHandler(options);
+		ctx.fork = (entryId) => this.forkHandler(entryId);
+		ctx.navigateTree = (targetId, options) => this.navigateTreeHandler(targetId, options);
+		ctx.switchSession = (sessionPath) => this.switchSessionHandler(sessionPath);
+		ctx.dispatchToolCall = (toolName, args) => this.dispatchToolCallHandler(toolName, args);
+		return ctx;
 	}
 
 	private isSessionBeforeEvent(

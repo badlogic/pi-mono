@@ -39,6 +39,7 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 	await session.bindExtensions({
 		commandContextActions: {
 			waitForIdle: () => session.agent.waitForIdle(),
+			dispatchToolCall: (toolName, args) => session.dispatchToolCall(toolName, args),
 			newSession: async (options) => {
 				const success = await session.newSession({ parentSession: options?.parentSession });
 				if (success && options?.setup) {

@@ -303,6 +303,9 @@ export interface ExtensionCommandContext extends ExtensionContext {
 
 	/** Switch to a different session file. */
 	switchSession(sessionPath: string): Promise<{ cancelled: boolean }>;
+
+	/** Dispatch an active tool directly, without an LLM turn. */
+	dispatchToolCall(toolName: string, args: Record<string, unknown>): Promise<ToolResultMessage>;
 }
 
 // ============================================================================
@@ -903,7 +906,7 @@ export interface ExtensionAPI {
 		shortcut: KeyId,
 		options: {
 			description?: string;
-			handler: (ctx: ExtensionContext) => Promise<void> | void;
+			handler: (ctx: ExtensionCommandContext) => Promise<void> | void;
 		},
 	): void;
 
@@ -1129,7 +1132,7 @@ export interface ExtensionFlag {
 export interface ExtensionShortcut {
 	shortcut: KeyId;
 	description?: string;
-	handler: (ctx: ExtensionContext) => Promise<void> | void;
+	handler: (ctx: ExtensionCommandContext) => Promise<void> | void;
 	extensionPath: string;
 }
 
@@ -1231,6 +1234,7 @@ export interface ExtensionCommandContextActions {
 		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
 	) => Promise<{ cancelled: boolean }>;
 	switchSession: (sessionPath: string) => Promise<{ cancelled: boolean }>;
+	dispatchToolCall: (toolName: string, args: Record<string, unknown>) => Promise<ToolResultMessage>;
 }
 
 /**

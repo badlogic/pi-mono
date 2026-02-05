@@ -54,7 +54,6 @@ import {
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
 import type {
-	ExtensionContext,
 	ExtensionRunner,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -988,6 +987,7 @@ export class InteractiveMode {
 			uiContext,
 			commandContextActions: {
 				waitForIdle: () => this.session.agent.waitForIdle(),
+				dispatchToolCall: (toolName, args) => this.session.dispatchToolCall(toolName, args),
 				newSession: async (options) => {
 					if (this.loadingAnimation) {
 						this.loadingAnimation.stop();
@@ -1090,36 +1090,7 @@ export class InteractiveMode {
 		const shortcuts = extensionRunner.getShortcuts(this.keybindings.getEffectiveConfig());
 		if (shortcuts.size === 0) return;
 
-		// Create a context for shortcut handlers
-		const createContext = (): ExtensionContext => ({
-			ui: this.createExtensionUIContext(),
-			hasUI: true,
-			cwd: process.cwd(),
-			sessionManager: this.sessionManager,
-			modelRegistry: this.session.modelRegistry,
-			model: this.session.model,
-			isIdle: () => !this.session.isStreaming,
-			abort: () => this.session.abort(),
-			hasPendingMessages: () => this.session.pendingMessageCount > 0,
-			shutdown: () => {
-				this.shutdownRequested = true;
-			},
-			getContextUsage: () => this.session.getContextUsage(),
-			compact: (options) => {
-				void (async () => {
-					try {
-						const result = await this.executeCompaction(options?.customInstructions, false);
-						if (result) {
-							options?.onComplete?.(result);
-						}
-					} catch (error) {
-						const err = error instanceof Error ? error : new Error(String(error));
-						options?.onError?.(err);
-					}
-				})();
-			},
-			getSystemPrompt: () => this.session.systemPrompt,
-		});
+		const createContext = () => extensionRunner.createCommandContext();
 
 		// Set up the extension shortcut handler on the default editor
 		this.defaultEditor.onExtensionShortcut = (data: string) => {
@@ -2124,6 +2095,7 @@ export class InteractiveMode {
 
 			case "tool_execution_start": {
 				if (!this.pendingTools.has(event.toolCallId)) {
+					this.chatContainer.addChild(new Text("", 0, 0));
 					const component = new ToolExecutionComponent(
 						event.toolName,
 						event.args,
@@ -2134,6 +2106,7 @@ export class InteractiveMode {
 						this.ui,
 					);
 					component.setExpanded(this.toolOutputExpanded);
+					component.setArgsComplete();
 					this.chatContainer.addChild(component);
 					this.pendingTools.set(event.toolCallId, component);
 					this.ui.requestRender();

@@ -268,6 +268,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		uiContext: createExtensionUIContext(),
 		commandContextActions: {
 			waitForIdle: () => session.agent.waitForIdle(),
+			dispatchToolCall: (toolName, args) => session.dispatchToolCall(toolName, args),
 			newSession: async (options) => {
 				// Delegate to AgentSession (handles setup + agent state sync)
 				const success = await session.newSession(options);

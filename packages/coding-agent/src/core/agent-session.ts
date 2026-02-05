@@ -13,6 +13,7 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type {
@@ -23,8 +24,22 @@ import type {
 	AgentTool,
 	ThinkingLevel,
 } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
-import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@mariozechner/pi-ai";
+import type {
+	AssistantMessage,
+	ImageContent,
+	Message,
+	Model,
+	TextContent,
+	ToolCall,
+	ToolResultMessage,
+} from "@mariozechner/pi-ai";
+import {
+	isContextOverflow,
+	modelsAreEqual,
+	resetApiProviders,
+	supportsXhigh,
+	validateToolArguments,
+} from "@mariozechner/pi-ai";
 import { getDocsPath } from "../config.js";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { stripFrontmatter } from "../utils/frontmatter.js";
@@ -236,6 +251,8 @@ export class AgentSession {
 	// Bash execution state
 	private _bashAbortController: AbortController | undefined = undefined;
 	private _pendingBashMessages: BashExecutionMessage[] = [];
+
+	private _toolDispatchAbortController: AbortController | undefined = undefined;
 
 	// Extension system
 	private _extensionRunner: ExtensionRunner | undefined = undefined;
@@ -1028,6 +1045,105 @@ export class AgentSession {
 		});
 	}
 
+	/** Dispatch an active tool directly, without an LLM turn. */
+	async dispatchToolCall(toolName: string, args: Record<string, unknown>): Promise<ToolResultMessage> {
+		if (this.isStreaming) {
+			throw new Error("Cannot dispatch tools while the agent is streaming");
+		}
+		if (this.isCompacting) {
+			throw new Error("Cannot dispatch tools while compacting");
+		}
+		if (this._toolDispatchAbortController) {
+			throw new Error("A tool dispatch is already in progress");
+		}
+
+		const tool = this.agent.state.tools.find((t) => t.name === toolName);
+		if (!tool) {
+			const active = this.agent.state.tools.map((t) => t.name).sort();
+			throw new Error(`Tool is not active: ${toolName}${active.length ? ` (active: ${active.join(", ")})` : ""}`);
+		}
+
+		const model = this.model;
+		const safeArgs = JSON.parse(JSON.stringify(args)) as Record<string, unknown>;
+
+		const toolCallId = randomUUID();
+		const toolCall: ToolCall = { type: "toolCall", id: toolCallId, name: toolName, arguments: safeArgs };
+
+		const assistantMsg: AssistantMessage = {
+			role: "assistant",
+			content: [toolCall],
+			api: model?.api ?? "tool-dispatch",
+			provider: model?.provider ?? "tool-dispatch",
+			model: model?.id ?? "tool-dispatch",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse",
+			timestamp: Date.now(),
+		};
+
+		this.agent.appendMessage(assistantMsg);
+		this.sessionManager.appendMessage(assistantMsg);
+		this._emit({ type: "message_start", message: assistantMsg });
+		this._emit({ type: "message_end", message: assistantMsg });
+
+		this._toolDispatchAbortController = new AbortController();
+		const signal = this._toolDispatchAbortController.signal;
+
+		this.agent.state.pendingToolCalls = new Set([...this.agent.state.pendingToolCalls, toolCallId]);
+		this._emit({ type: "tool_execution_start", toolCallId, toolName, args: safeArgs });
+
+		let result: { content: (TextContent | ImageContent)[]; details?: unknown };
+		let isError = false;
+
+		try {
+			const validatedArgs = validateToolArguments(tool, toolCall);
+			result = await tool.execute(toolCallId, validatedArgs, signal, (partialResult) => {
+				this._emit({
+					type: "tool_execution_update",
+					toolCallId,
+					toolName,
+					args: safeArgs,
+					partialResult,
+				});
+			});
+		} catch (err) {
+			isError = true;
+			result = {
+				content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
+				details: undefined,
+			};
+		} finally {
+			this._toolDispatchAbortController = undefined;
+			const s = new Set(this.agent.state.pendingToolCalls);
+			s.delete(toolCallId);
+			this.agent.state.pendingToolCalls = s;
+		}
+
+		this._emit({ type: "tool_execution_end", toolCallId, toolName, result, isError });
+		const toolResultMessage: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId,
+			toolName,
+			content: result.content,
+			details: result.details,
+			isError,
+			timestamp: Date.now(),
+		};
+
+		this.agent.appendMessage(toolResultMessage);
+		this.sessionManager.appendMessage(toolResultMessage);
+		this._emit({ type: "message_start", message: toolResultMessage });
+		this._emit({ type: "message_end", message: toolResultMessage });
+
+		return toolResultMessage;
+	}
+
 	/**
 	 * Clear all queued messages and return them.
 	 * Useful for restoring to editor when user aborts.
@@ -1066,6 +1182,7 @@ export class AgentSession {
 	 */
 	async abort(): Promise<void> {
 		this.abortRetry();
+		this._toolDispatchAbortController?.abort();
 		this.agent.abort();
 		await this.agent.waitForIdle();
 	}

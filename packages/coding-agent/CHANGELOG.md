@@ -2,10 +2,16 @@
 
 ## [Unreleased]
 
+### New Features
+
+- **User-initiated tool dispatch**: Extensions can now dispatch tools directly from command and shortcut handlers via `ctx.dispatchToolCall(toolName, args)`. The tool executes through pi's normal pipeline (events, UI, session history) without triggering an LLM turn. Useful for overlays and UI-driven workflows where the arguments are already known. See [docs/extensions.md#ctxdispatchtoolcalltoolname-args](docs/extensions.md#ctxdispatchtoolcalltoolname-args).
+
 ### Added
 
 - API keys in `auth.json` now support shell command resolution (`!command`) and environment variable lookup, matching the behavior in `models.json`
 - Added `minimal-mode.ts` example extension demonstrating how to override built-in tool rendering for a minimal display mode
+- Added `ctx.dispatchToolCall(toolName, args)` to `ExtensionCommandContext` for dispatching tool calls directly from commands and shortcuts
+- Shortcut handlers now receive `ExtensionCommandContext` (previously `ExtensionContext`), giving them access to session control methods including `dispatchToolCall`
 
 ### Fixed
 

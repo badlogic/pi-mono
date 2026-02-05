@@ -700,7 +700,7 @@ pi.on("before_agent_start", (event, ctx) => {
 
 ## ExtensionCommandContext
 
-Command handlers receive `ExtensionCommandContext`, which extends `ExtensionContext` with session control methods. These are only available in commands because they can deadlock if called from event handlers.
+Command and shortcut handlers receive `ExtensionCommandContext`, which extends `ExtensionContext` with session control methods. These are only available in user-initiated handlers because they can deadlock if called from event handlers.
 
 ### ctx.waitForIdle()
 
@@ -765,6 +765,28 @@ Options:
 - `customInstructions`: Custom instructions for the summarizer
 - `replaceInstructions`: If true, `customInstructions` replaces the default prompt instead of being appended
 - `label`: Label to attach to the branch summary entry (or target entry if not summarizing)
+
+### ctx.dispatchToolCall(toolName, args)
+
+Dispatch an *active* tool call directly, without triggering an LLM turn. This is intended for explicit user-initiated actions in command and shortcut handlers.
+
+Notes:
+- The agent must be idle. This throws if the agent is currently streaming.
+- The agent must not be compacting. This throws if compaction is in progress.
+- The tool must be active (see `pi.getActiveTools()` / `pi.setActiveTools()`).
+- `args` must be JSON-serializable.
+- This appends an assistant message containing the tool call and a corresponding `toolResult` message to the session history.
+- You can cancel an in-flight dispatch via `ctx.abort()`.
+
+```ts
+pi.registerCommand("read-file", {
+  handler: async (_args, ctx) => {
+    const result = await ctx.dispatchToolCall("read", { path: "README.md" });
+    const text = result.content.find((c) => c.type === "text")?.text ?? "";
+    ctx.ui.notify(`Read ${text.length} chars`, "info");
+  },
+});
+```
 
 ## ExtensionAPI Methods
 
@@ -974,6 +996,8 @@ Register a custom TUI renderer for messages with your `customType`. See [Custom 
 ### pi.registerShortcut(shortcut, options)
 
 Register a keyboard shortcut. See [keybindings.md](keybindings.md) for the shortcut format and built-in keybindings.
+
+Shortcut handlers also receive `ExtensionCommandContext`.
 
 ```typescript
 pi.registerShortcut("ctrl+shift+p", {
