@@ -31,7 +31,7 @@
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/badlogic/pi-mono.git",
-		"directory": "packages/agent"
+		"directory": "packages/agent-core"
 	},
 	"engines": {
 		"node": ">=20.0.0"

@@ -19,7 +19,7 @@ type AgentSessionEvent =
   | { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
 ```
 
-Base events from [`AgentEvent`](https://github.com/badlogic/pi-mono/blob/main/packages/agent/src/types.ts#L179):
+Base events from [`AgentEvent`](https://github.com/badlogic/pi-mono/blob/main/packages/agent-core/src/types.ts#L179):
 
 ```typescript
 type AgentEvent =

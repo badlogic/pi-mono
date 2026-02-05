@@ -32,7 +32,7 @@ Source on GitHub ([pi-mono](https://github.com/badlogic/pi-mono)):
 - [`packages/coding-agent/src/core/session-manager.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/session-manager.ts) - Session entry types and SessionManager
 - [`packages/coding-agent/src/core/messages.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/messages.ts) - Extended message types (BashExecutionMessage, CustomMessage, etc.)
 - [`packages/ai/src/types.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/types.ts) - Base message types (UserMessage, AssistantMessage, ToolResultMessage)
-- [`packages/agent/src/types.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/agent/src/types.ts) - AgentMessage union type
+- [`packages/agent-core/src/types.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/agent-core/src/types.ts) - AgentMessage union type
 
 For TypeScript definitions in your project, inspect `node_modules/@mariozechner/pi-coding-agent/dist/` and `node_modules/@mariozechner/pi-ai/dist/`.
 
