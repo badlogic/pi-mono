@@ -6,6 +6,7 @@
 
 - Fixed Bedrock Opus 4.6 model IDs (removed `:0` suffix) and cache pricing for `us.*` and `eu.*` variants
 - Added missing `eu.anthropic.claude-opus-4-6-v1` inference profile to model catalog
+- Fixed Claude Opus 4.6 context window metadata to 200000 for Anthropic and OpenCode providers
 
 ## [0.52.2] - 2026-02-05
 
