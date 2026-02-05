@@ -402,6 +402,13 @@ function collectAutoExtensionEntries(dir: string): string[] {
 	const entries: string[] = [];
 	if (!existsSync(dir)) return entries;
 
+	// First check if this directory itself has explicit extension entries (package.json or index)
+	const rootEntries = resolveExtensionEntries(dir);
+	if (rootEntries) {
+		return rootEntries;
+	}
+
+	// Otherwise, discover extensions from directory contents
 	const ig = ignore();
 	addIgnoreRules(ig, dir, dir);
 

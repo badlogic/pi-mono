@@ -111,6 +111,40 @@ Content`,
 			const result = await packageManager.resolve();
 			expect(result.prompts.some((r) => r.path === promptPath && !r.enabled)).toBe(true);
 		});
+
+		it("should resolve directory with package.json pi.extensions in extensions setting", async () => {
+			// Create a package with pi.extensions in package.json
+			const pkgDir = join(tempDir, "my-extensions-pkg");
+			mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+			writeFileSync(
+				join(pkgDir, "package.json"),
+				JSON.stringify({
+					name: "my-extensions-pkg",
+					pi: {
+						extensions: ["./extensions/clip.ts", "./extensions/cost.ts"],
+					},
+				}),
+			);
+			writeFileSync(join(pkgDir, "extensions", "clip.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "cost.ts"), "export default function() {}");
+			writeFileSync(join(pkgDir, "extensions", "helper.ts"), "export const x = 1;"); // Not in manifest, shouldn't be loaded
+
+			// Add the directory to extensions setting (not packages setting)
+			settingsManager.setExtensionPaths([pkgDir]);
+
+			const result = await packageManager.resolve();
+
+			// Should find the extensions declared in package.json pi.extensions
+			expect(result.extensions.some((r) => r.path === join(pkgDir, "extensions", "clip.ts") && r.enabled)).toBe(
+				true,
+			);
+			expect(result.extensions.some((r) => r.path === join(pkgDir, "extensions", "cost.ts") && r.enabled)).toBe(
+				true,
+			);
+
+			// Should NOT find helper.ts (not declared in manifest)
+			expect(result.extensions.some((r) => r.path.endsWith("helper.ts"))).toBe(false);
+		});
 	});
 
 	describe("ignore files", () => {
