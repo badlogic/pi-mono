@@ -10447,13 +10447,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
-				input: 0.44999999999999996,
+				input: 0.5,
 				output: 2.8,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
-			contextWindow: 262144,
-			maxTokens: 252144,
+			contextWindow: 256000,
+			maxTokens: 256000,
 		} satisfies Model<"anthropic-messages">,
 		"nvidia/nemotron-nano-12b-v2-vl": {
 			id: "nvidia/nemotron-nano-12b-v2-vl",

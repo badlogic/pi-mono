@@ -1,12 +1,14 @@
 {
-	"folders": [
-		{
-			"name": "pi-mono",
-			"path": "."
-		},
-		{
-			"path": "../../moms"
-		}
-	],
-	"settings": {}
+  "folders": [
+    {
+      "name": "pi-mono",
+      "path": ".",
+    },
+    {
+      "path": "../../moms",
+    },
+  ],
+  "settings": {
+    "powershell.cwd": "pi-mono",
+  },
 }
