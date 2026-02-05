@@ -97,6 +97,9 @@ export interface ExtensionWidgetOptions {
 	placement?: WidgetPlacement;
 }
 
+/** Raw terminal input listener for extensions. */
+export type TerminalInputHandler = (data: string) => { consume?: boolean; data?: string } | undefined;
+
 /**
  * UI context for extensions to request interactive UI.
  * Each mode (interactive, RPC, print) provides its own implementation.
@@ -113,6 +116,9 @@ export interface ExtensionUIContext {
 
 	/** Show a notification to the user. */
 	notify(message: string, type?: "info" | "warning" | "error"): void;
+
+	/** Listen to raw terminal input (interactive mode only). Returns an unsubscribe function. */
+	onTerminalInput(handler: TerminalInputHandler): () => void;
 
 	/** Set status text in the footer/status bar. Pass undefined to clear. */
 	setStatus(key: string, text: string | undefined): void;
