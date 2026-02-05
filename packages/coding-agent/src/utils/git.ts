@@ -105,7 +105,7 @@ export function parseGitUrl(source: string): GitSource | null {
 	const url = source.startsWith("git:") ? source.slice(4).trim() : source;
 	const split = splitRef(url);
 
-	const hostedCandidates = [url, split.ref ? `${split.repo}#${split.ref}` : undefined].filter(
+	const hostedCandidates = [split.ref ? `${split.repo}#${split.ref}` : undefined, url].filter(
 		(value): value is string => Boolean(value),
 	);
 	for (const candidate of hostedCandidates) {
@@ -127,7 +127,7 @@ export function parseGitUrl(source: string): GitSource | null {
 		}
 	}
 
-	const httpsCandidates = [`https://${url}`, split.ref ? `https://${split.repo}#${split.ref}` : undefined].filter(
+	const httpsCandidates = [split.ref ? `https://${split.repo}#${split.ref}` : undefined, `https://${url}`].filter(
 		(value): value is string => Boolean(value),
 	);
 	for (const candidate of httpsCandidates) {
