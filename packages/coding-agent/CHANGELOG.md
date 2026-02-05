@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [0.52.6] - 2026-02-05
+
+### Breaking Changes
+
+- Removed `/exit` command handling. Use `/quit` to exit ([#1303](https://github.com/badlogic/pi-mono/issues/1303))
+
+### Fixed
+
+- Fixed `/quit` being shadowed by fuzzy slash command autocomplete matches from skills by adding `/quit` to built-in command autocomplete ([#1303](https://github.com/badlogic/pi-mono/issues/1303))
+- Fixed local package source parsing and settings normalization regression that misclassified relative paths as git URLs and prevented globally installed local packages from loading after restart ([#1304](https://github.com/badlogic/pi-mono/issues/1304))
+
+## [0.52.5] - 2026-02-05
+
+### Fixed
+
+- Fixed thinking level capability detection so Anthropic Opus 4.6 models expose `xhigh` in selectors and cycling
+
+## [0.52.4] - 2026-02-05
+
+### Fixed
+
+- Fixed extensions setting not respecting `package.json` `pi.extensions` manifest when directory is specified directly ([#1302](https://github.com/badlogic/pi-mono/pull/1302) by [@hjanuschka](https://github.com/hjanuschka))
+
 ## [0.52.3] - 2026-02-05
 
 ### Fixed

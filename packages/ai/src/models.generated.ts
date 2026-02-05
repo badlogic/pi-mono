@@ -458,8 +458,8 @@ export const MODELS = {
 			cost: {
 				input: 5,
 				output: 25,
-				cacheRead: 1.5,
-				cacheWrite: 18.75,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
 			},
 			contextWindow: 200000,
 			maxTokens: 64000,
@@ -1172,8 +1172,8 @@ export const MODELS = {
 			cost: {
 				input: 5,
 				output: 25,
-				cacheRead: 1.5,
-				cacheWrite: 18.75,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
 			},
 			contextWindow: 200000,
 			maxTokens: 64000,
