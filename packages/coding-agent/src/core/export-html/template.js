@@ -540,6 +540,7 @@
       // ============================================================
 
       function shortenPath(p) {
+        if (typeof p !== 'string') return '';
         if (p.startsWith('/Users/')) {
           const parts = p.split('/');
           if (parts.length > 2) return '~' + p.slice(('/Users/' + parts[2]).length);
@@ -771,6 +772,13 @@
         return text.replace(/\t/g, '   ');
       }
 
+      /** Safely coerce value to string for display. Returns null if invalid type. */
+      function str(value) {
+        if (typeof value === 'string') return value;
+        if (value == null) return '';
+        return null;
+      }
+
       function getLanguageFromPath(filePath) {
         const ext = filePath.split('.').pop()?.toLowerCase();
         const extToLang = {
@@ -880,10 +888,13 @@
         const args = call.arguments || {};
         const name = call.name;
 
+        const invalidArg = '<span class="tool-error">[invalid arg]</span>';
+
         switch (name) {
           case 'bash': {
-            const command = args.command || '';
-            html += `<div class="tool-command">$ ${escapeHtml(command)}</div>`;
+            const command = str(args.command);
+            const cmdDisplay = command === null ? invalidArg : escapeHtml(command || '...');
+            html += `<div class="tool-command">$ ${cmdDisplay}</div>`;
             if (result) {
               const output = getResultText().trim();
               if (output) html += formatExpandableOutput(output, 5);
@@ -891,13 +902,12 @@
             break;
           }
           case 'read': {
-            const filePath = args.file_path || args.path || '';
+            const filePath = str(args.file_path ?? args.path);
             const offset = args.offset;
             const limit = args.limit;
-            const lang = getLanguageFromPath(filePath);
 
-            let pathHtml = escapeHtml(shortenPath(filePath));
-            if (offset !== undefined || limit !== undefined) {
+            let pathHtml = filePath === null ? invalidArg : escapeHtml(shortenPath(filePath || ''));
+            if (filePath !== null && (offset !== undefined || limit !== undefined)) {
               const startLine = offset ?? 1;
               const endLine = limit !== undefined ? startLine + limit - 1 : '';
               pathHtml += `<span class="line-numbers">:${startLine}${endLine ? '-' + endLine : ''}</span>`;
@@ -907,21 +917,28 @@
             if (result) {
               html += renderResultImages();
               const output = getResultText();
+              const lang = filePath ? getLanguageFromPath(filePath) : null;
               if (output) html += formatExpandableOutput(output, 10, lang);
             }
             break;
           }
           case 'write': {
-            const filePath = args.file_path || args.path || '';
-            const content = args.content || '';
-            const lines = content.split('\n');
-            const lang = getLanguageFromPath(filePath);
+            const filePath = str(args.file_path ?? args.path);
+            const content = str(args.content);
 
-            html += `<div class="tool-header"><span class="tool-name">write</span> <span class="tool-path">${escapeHtml(shortenPath(filePath))}</span>`;
-            if (lines.length > 10) html += ` <span class="line-count">(${lines.length} lines)</span>`;
+            html += `<div class="tool-header"><span class="tool-name">write</span> <span class="tool-path">${filePath === null ? invalidArg : escapeHtml(shortenPath(filePath || ''))}</span>`;
+            if (content !== null && content) {
+              const lines = content.split('\n');
+              if (lines.length > 10) html += ` <span class="line-count">(${lines.length} lines)</span>`;
+            }
             html += '</div>';
 
-            if (content) html += formatExpandableOutput(content, 10, lang);
+            if (content === null) {
+              html += `<div class="tool-error">[invalid content arg - expected string]</div>`;
+            } else if (content) {
+              const lang = filePath ? getLanguageFromPath(filePath) : null;
+              html += formatExpandableOutput(content, 10, lang);
+            }
             if (result) {
               const output = getResultText().trim();
               if (output) html += `<div class="tool-output"><div>${escapeHtml(output)}</div></div>`;
@@ -929,8 +946,8 @@
             break;
           }
           case 'edit': {
-            const filePath = args.file_path || args.path || '';
-            html += `<div class="tool-header"><span class="tool-name">edit</span> <span class="tool-path">${escapeHtml(shortenPath(filePath))}</span></div>`;
+            const filePath = str(args.file_path ?? args.path);
+            html += `<div class="tool-header"><span class="tool-name">edit</span> <span class="tool-path">${filePath === null ? invalidArg : escapeHtml(shortenPath(filePath || ''))}</span></div>`;
 
             if (result?.details?.diff) {
               const diffLines = result.details.diff.split('\n');
