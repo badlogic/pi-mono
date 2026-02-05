@@ -6,7 +6,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import ignore from "ignore";
 import { minimatch } from "minimatch";
 import { CONFIG_DIR_NAME } from "../config.js";
-import { looksLikeGitUrl } from "../utils/git.js";
+import { type GitSource, parseGitUrl } from "../utils/git.js";
 import type { PackageSource, SettingsManager } from "./settings-manager.js";
 
 export interface PathMetadata {
@@ -65,15 +65,6 @@ type NpmSource = {
 	type: "npm";
 	spec: string;
 	name: string;
-	pinned: boolean;
-};
-
-type GitSource = {
-	type: "git";
-	repo: string;
-	host: string;
-	path: string;
-	ref?: string;
 	pinned: boolean;
 };
 
@@ -894,21 +885,10 @@ export class DefaultPackageManager implements PackageManager {
 			};
 		}
 
-		if (source.startsWith("git:") || looksLikeGitUrl(source)) {
-			const repoSpec = source.startsWith("git:") ? source.slice("git:".length).trim() : source;
-			const [repo, ref] = repoSpec.split("@");
-			const normalized = repo.replace(/^https?:\/\//, "").replace(/\.git$/, "");
-			const parts = normalized.split("/");
-			const host = parts.shift() ?? "";
-			const repoPath = parts.join("/");
-			return {
-				type: "git",
-				repo: normalized,
-				host,
-				path: repoPath,
-				ref,
-				pinned: Boolean(ref),
-			};
+		// Try parsing as git URL
+		const gitParsed = parseGitUrl(source);
+		if (gitParsed) {
+			return gitParsed;
 		}
 
 		return { type: "local", path: source };
@@ -961,6 +941,8 @@ export class DefaultPackageManager implements PackageManager {
 	/**
 	 * Get a unique identity for a package, ignoring version/ref.
 	 * Used to detect when the same package is in both global and project settings.
+	 * For git packages, uses normalized host/path to ensure SSH and HTTPS URLs
+	 * for the same repository are treated as identical.
 	 */
 	private getPackageIdentity(source: string, scope?: SourceScope): string {
 		const parsed = this.parseSource(source);
@@ -968,7 +950,8 @@ export class DefaultPackageManager implements PackageManager {
 			return `npm:${parsed.name}`;
 		}
 		if (parsed.type === "git") {
-			return `git:${parsed.repo}`;
+			// Use host/path for identity to normalize SSH and HTTPS
+			return `git:${parsed.host}/${parsed.path}`;
 		}
 		if (scope) {
 			const baseDir = this.getBaseDirForScope(scope);
@@ -1046,8 +1029,8 @@ export class DefaultPackageManager implements PackageManager {
 			this.ensureGitIgnore(gitRoot);
 		}
 		mkdirSync(dirname(targetDir), { recursive: true });
-		const cloneUrl = source.repo.startsWith("http") ? source.repo : `https://${source.repo}`;
-		await this.runCommand("git", ["clone", cloneUrl, targetDir]);
+
+		await this.runCommand("git", ["clone", source.repo, targetDir]);
 		if (source.ref) {
 			await this.runCommand("git", ["checkout", source.ref], { cwd: targetDir });
 		}
