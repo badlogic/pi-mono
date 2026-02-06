@@ -373,7 +373,6 @@ export class InteractiveMode {
 
 		// Setup autocomplete with fd tool for file path completion
 		this.fdPath = await ensureTool("fd");
-		this.setupAutocomplete(this.fdPath);
 
 		// Add header container as first child
 		this.ui.addChild(this.headerContainer);
