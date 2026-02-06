@@ -11,6 +11,8 @@ import {
 	type KnownProvider,
 	type Model,
 	type OAuthProviderInterface,
+	type OpenAICompletionsCompat,
+	type OpenAIResponsesCompat,
 	registerApiProvider,
 	registerOAuthProvider,
 	type SimpleStreamOptions,
@@ -141,6 +143,37 @@ function emptyCustomModelsResult(error?: string): CustomModelsResult {
 	return { models: [], replacedProviders: new Set(), overrides: new Map(), modelOverrides: new Map(), error };
 }
 
+function mergeCompat(
+	baseCompat: Model<Api>["compat"],
+	overrideCompat: ModelOverride["compat"],
+): Model<Api>["compat"] | undefined {
+	if (!overrideCompat) return baseCompat;
+
+	const base = baseCompat as OpenAICompletionsCompat | OpenAIResponsesCompat | undefined;
+	const override = overrideCompat as OpenAICompletionsCompat | OpenAIResponsesCompat;
+	const merged = { ...base, ...override } as OpenAICompletionsCompat | OpenAIResponsesCompat;
+
+	const baseCompletions = base as OpenAICompletionsCompat | undefined;
+	const overrideCompletions = override as OpenAICompletionsCompat;
+	const mergedCompletions = merged as OpenAICompletionsCompat;
+
+	if (baseCompletions?.openRouterRouting || overrideCompletions.openRouterRouting) {
+		mergedCompletions.openRouterRouting = {
+			...baseCompletions?.openRouterRouting,
+			...overrideCompletions.openRouterRouting,
+		};
+	}
+
+	if (baseCompletions?.vercelGatewayRouting || overrideCompletions.vercelGatewayRouting) {
+		mergedCompletions.vercelGatewayRouting = {
+			...baseCompletions?.vercelGatewayRouting,
+			...overrideCompletions.vercelGatewayRouting,
+		};
+	}
+
+	return merged as Model<Api>["compat"];
+}
+
 /**
  * Deep merge a model override into a model.
  * Handles nested objects (cost, compat) by merging rather than replacing.
@@ -172,9 +205,7 @@ function applyModelOverride(model: Model<Api>, override: ModelOverride): Model<A
 	}
 
 	// Deep merge compat
-	if (override.compat) {
-		result.compat = model.compat ? { ...model.compat, ...override.compat } : override.compat;
-	}
+	result.compat = mergeCompat(model.compat, override.compat);
 
 	return result;
 }

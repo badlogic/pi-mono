@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `modelOverrides` in `models.json` to customize individual built-in models per provider without full provider replacement ([#1332](https://github.com/badlogic/pi-mono/pull/1332) by [@charles-cooper](https://github.com/charles-cooper))
+
 ### Fixed
 
 - Fixed extra spacing between thinking-only assistant content and subsequent tool execution blocks when assistant messages contain no text

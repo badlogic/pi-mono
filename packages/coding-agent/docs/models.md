@@ -10,6 +10,7 @@ Add custom providers and models (Ollama, vLLM, LM Studio, proxies) via `~/.pi/ag
 - [Provider Configuration](#provider-configuration)
 - [Model Configuration](#model-configuration)
 - [Overriding Built-in Providers](#overriding-built-in-providers)
+- [Per-model Overrides](#per-model-overrides)
 - [OpenAI Compatibility](#openai-compatibility)
 
 ## Minimal Example
@@ -84,6 +85,7 @@ Set `api` at provider level (default for all models) or model level (override pe
 | `headers` | Custom headers (see value resolution below) |
 | `authHeader` | Set `true` to add `Authorization: Bearer <apiKey>` automatically |
 | `models` | Array of model configurations |
+| `modelOverrides` | Per-model overrides for built-in models on this provider |
 
 ### Value Resolution
 
@@ -165,6 +167,37 @@ To fully replace a built-in provider with custom models, include the `models` ar
   }
 }
 ```
+
+## Per-model Overrides
+
+Use `modelOverrides` to customize specific built-in models without replacing the provider's full model list.
+
+```json
+{
+  "providers": {
+    "openrouter": {
+      "modelOverrides": {
+        "anthropic/claude-sonnet-4": {
+          "name": "Claude Sonnet 4 (Bedrock Route)",
+          "compat": {
+            "openRouterRouting": {
+              "only": ["amazon-bedrock"]
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+`modelOverrides` supports these fields per model: `name`, `reasoning`, `input`, `cost` (partial), `contextWindow`, `maxTokens`, `headers`, `compat`.
+
+Behavior notes:
+- Overrides are applied only to models that exist for that provider.
+- Unknown model IDs are ignored.
+- You can combine provider-level `baseUrl`/`headers` with `modelOverrides`.
+- If `models` is defined for a provider (full replacement), built-in models are removed first. `modelOverrides` entries that do not match the resulting provider model list are ignored.
 
 ## OpenAI Compatibility
 
