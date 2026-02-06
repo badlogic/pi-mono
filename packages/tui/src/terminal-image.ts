@@ -192,10 +192,7 @@ function generatePlaceholderLines(imageId: number, columns: number, rows: number
 
 	const lines: string[] = [];
 	for (let row = 0; row < rows; row++) {
-		const rowDiacritic =
-			row < PLACEHOLDER_DIACRITICS.length
-				? String.fromCodePoint(PLACEHOLDER_DIACRITICS[row])
-				: String.fromCodePoint(PLACEHOLDER_DIACRITICS[0]);
+		const rowDiacritic = String.fromCodePoint(PLACEHOLDER_DIACRITICS[row]);
 		// First cell gets row diacritic, subsequent cells inherit via shorthand
 		let line = colorStart + PLACEHOLDER_CHAR + rowDiacritic;
 		for (let col = 1; col < columns; col++) {
@@ -505,10 +502,13 @@ export function renderImage(
 	if (caps.images === "kitty") {
 		// In tmux: use Unicode placeholder mode for proper pane-relative rendering
 		if (isInTmux()) {
-			const imageId = options.imageId ?? allocatePlaceholderImageId();
+			// Placeholder IDs are encoded in 24-bit foreground color, so mask to 24 bits
+			const imageId = (options.imageId ?? allocatePlaceholderImageId()) & 0xffffff;
+			// Row encoding uses diacritics table — cap to available entries
+			const placeholderRows = Math.min(rows, PLACEHOLDER_DIACRITICS.length);
 			const result = renderKittyUnicodePlaceholder(base64Data, {
 				columns: maxWidth,
-				rows,
+				rows: placeholderRows,
 				imageId,
 			});
 			return {

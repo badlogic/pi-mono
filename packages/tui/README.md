@@ -505,6 +505,18 @@ tui.addChild(image);
 
 Supported formats: PNG, JPEG, GIF, WebP. Dimensions are parsed from the image headers automatically.
 
+#### tmux support
+
+When running inside tmux, images are rendered using [Kitty Unicode placeholders](https://sw.kovidgoyal.net/kitty/graphics-protocol/#unicode-placeholders). Image data is transmitted to the outer terminal via DCS passthrough, then displayed using placeholder characters that tmux treats as normal text — scrolling, pane clipping, and redraw work correctly.
+
+**Requirements:**
+- tmux `allow-passthrough` must be enabled: `set -g allow-passthrough on` (or `all`)
+- The outer terminal must support Kitty Unicode placeholders (Ghostty, kitty >= 0.28.0)
+
+**Known limitations:**
+- Images rendered while on a different tmux window may not display until a re-render (e.g. scrolling or session continue). This is inherent to the passthrough mechanism — tmux does not replay passthrough sequences on redraw.
+- If `allow-passthrough` is not enabled, images will appear as blank cells instead of a text fallback.
+
 ## Autocomplete
 
 ### CombinedAutocompleteProvider
