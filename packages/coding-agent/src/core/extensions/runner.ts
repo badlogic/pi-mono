@@ -38,9 +38,12 @@ import type {
 	ResourcesDiscoverEvent,
 	ResourcesDiscoverResult,
 	SessionBeforeCompactResult,
+	SessionBeforeForkResult,
+	SessionBeforeSwitchResult,
 	SessionBeforeTreeResult,
 	ToolCallEvent,
 	ToolCallEventResult,
+	ToolResultEvent,
 	ToolResultEventResult,
 	UserBashEvent,
 	UserBashEventResult,
@@ -91,6 +94,42 @@ interface BeforeAgentStartCombinedResult {
 	messages?: NonNullable<BeforeAgentStartEventResult["message"]>[];
 	systemPrompt?: string;
 }
+
+/**
+ * Events handled by the generic emit() method.
+ * Events with dedicated emitXxx() methods are excluded for stronger type safety.
+ */
+type RunnerEmitEvent = Exclude<
+	ExtensionEvent,
+	| ToolCallEvent
+	| ToolResultEvent
+	| UserBashEvent
+	| ContextEvent
+	| BeforeAgentStartEvent
+	| ResourcesDiscoverEvent
+	| InputEvent
+>;
+
+type SessionBeforeEvent = Extract<
+	RunnerEmitEvent,
+	{ type: "session_before_switch" | "session_before_fork" | "session_before_compact" | "session_before_tree" }
+>;
+
+type SessionBeforeEventResult =
+	| SessionBeforeSwitchResult
+	| SessionBeforeForkResult
+	| SessionBeforeCompactResult
+	| SessionBeforeTreeResult;
+
+type RunnerEmitResult<TEvent extends RunnerEmitEvent> = TEvent extends { type: "session_before_switch" }
+	? SessionBeforeSwitchResult | undefined
+	: TEvent extends { type: "session_before_fork" }
+		? SessionBeforeForkResult | undefined
+		: TEvent extends { type: "session_before_compact" }
+			? SessionBeforeCompactResult | undefined
+			: TEvent extends { type: "session_before_tree" }
+				? SessionBeforeTreeResult | undefined
+				: undefined;
 
 export type ExtensionErrorListener = (error: ExtensionError) => void;
 
@@ -464,22 +503,18 @@ export class ExtensionRunner {
 		};
 	}
 
-	private isSessionBeforeEvent(
-		type: string,
-	): type is "session_before_switch" | "session_before_fork" | "session_before_compact" | "session_before_tree" {
+	private isSessionBeforeEvent(event: RunnerEmitEvent): event is SessionBeforeEvent {
 		return (
-			type === "session_before_switch" ||
-			type === "session_before_fork" ||
-			type === "session_before_compact" ||
-			type === "session_before_tree"
+			event.type === "session_before_switch" ||
+			event.type === "session_before_fork" ||
+			event.type === "session_before_compact" ||
+			event.type === "session_before_tree"
 		);
 	}
 
-	async emit(
-		event: ExtensionEvent,
-	): Promise<SessionBeforeCompactResult | SessionBeforeTreeResult | ToolResultEventResult | undefined> {
+	async emit<TEvent extends RunnerEmitEvent>(event: TEvent): Promise<RunnerEmitResult<TEvent>> {
 		const ctx = this.createContext();
-		let result: SessionBeforeCompactResult | SessionBeforeTreeResult | ToolResultEventResult | undefined;
+		let result: SessionBeforeEventResult | undefined;
 
 		for (const ext of this.extensions) {
 			const handlers = ext.handlers.get(event.type);
@@ -489,15 +524,11 @@ export class ExtensionRunner {
 				try {
 					const handlerResult = await handler(event, ctx);
 
-					if (this.isSessionBeforeEvent(event.type) && handlerResult) {
-						result = handlerResult as SessionBeforeCompactResult | SessionBeforeTreeResult;
+					if (this.isSessionBeforeEvent(event) && handlerResult) {
+						result = handlerResult as SessionBeforeEventResult;
 						if (result.cancel) {
-							return result;
+							return result as RunnerEmitResult<TEvent>;
 						}
-					}
-
-					if (event.type === "tool_result" && handlerResult) {
-						result = handlerResult as ToolResultEventResult;
 					}
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
@@ -512,7 +543,57 @@ export class ExtensionRunner {
 			}
 		}
 
-		return result;
+		return result as RunnerEmitResult<TEvent>;
+	}
+
+	async emitToolResult(event: ToolResultEvent): Promise<ToolResultEventResult | undefined> {
+		const ctx = this.createContext();
+		const currentEvent: ToolResultEvent = { ...event };
+		let modified = false;
+
+		for (const ext of this.extensions) {
+			const handlers = ext.handlers.get("tool_result");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					const handlerResult = (await handler(currentEvent, ctx)) as ToolResultEventResult | undefined;
+					if (!handlerResult) continue;
+
+					if (handlerResult.content !== undefined) {
+						currentEvent.content = handlerResult.content;
+						modified = true;
+					}
+					if (handlerResult.details !== undefined) {
+						currentEvent.details = handlerResult.details;
+						modified = true;
+					}
+					if (handlerResult.isError !== undefined) {
+						currentEvent.isError = handlerResult.isError;
+						modified = true;
+					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
+					this.emitError({
+						extensionPath: ext.path,
+						event: "tool_result",
+						error: message,
+						stack,
+					});
+				}
+			}
+		}
+
+		if (!modified) {
+			return undefined;
+		}
+
+		return {
+			content: currentEvent.content,
+			details: currentEvent.details,
+			isError: currentEvent.isError,
+		};
 	}
 
 	async emitToolCall(event: ToolCallEvent): Promise<ToolCallEventResult | undefined> {

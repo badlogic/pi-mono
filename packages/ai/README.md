@@ -72,6 +72,8 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 npm install @mariozechner/pi-ai
 ```
 
+TypeBox exports are re-exported from `@mariozechner/pi-ai`: `Type`, `Static`, and `TSchema`.
+
 ## Quick Start
 
 ```typescript

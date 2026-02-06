@@ -10,6 +10,7 @@ Add custom providers and models (Ollama, vLLM, LM Studio, proxies) via `~/.pi/ag
 - [Provider Configuration](#provider-configuration)
 - [Model Configuration](#model-configuration)
 - [Overriding Built-in Providers](#overriding-built-in-providers)
+- [Per-model Overrides](#per-model-overrides)
 - [OpenAI Compatibility](#openai-compatibility)
 
 ## Minimal Example
@@ -84,6 +85,7 @@ Set `api` at provider level (default for all models) or model level (override pe
 | `headers` | Custom headers (see value resolution below) |
 | `authHeader` | Set `true` to add `Authorization: Bearer <apiKey>` automatically |
 | `models` | Array of model configurations |
+| `modelOverrides` | Per-model overrides for built-in models on this provider |
 
 ### Value Resolution
 
@@ -151,7 +153,7 @@ Route a built-in provider through a proxy without redefining models:
 
 All built-in Anthropic models remain available. Existing OAuth or API key auth continues to work.
 
-To fully replace a built-in provider with custom models, include the `models` array:
+To merge custom models into a built-in provider, include the `models` array:
 
 ```json
 {
@@ -165,6 +167,43 @@ To fully replace a built-in provider with custom models, include the `models` ar
   }
 }
 ```
+
+Merge semantics:
+- Built-in models are kept.
+- Custom models are upserted by `id` within the provider.
+- If a custom model `id` matches a built-in model `id`, the custom model replaces that built-in model.
+- If a custom model `id` is new, it is added alongside built-in models.
+
+## Per-model Overrides
+
+Use `modelOverrides` to customize specific built-in models without replacing the provider's full model list.
+
+```json
+{
+  "providers": {
+    "openrouter": {
+      "modelOverrides": {
+        "anthropic/claude-sonnet-4": {
+          "name": "Claude Sonnet 4 (Bedrock Route)",
+          "compat": {
+            "openRouterRouting": {
+              "only": ["amazon-bedrock"]
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+`modelOverrides` supports these fields per model: `name`, `reasoning`, `input`, `cost` (partial), `contextWindow`, `maxTokens`, `headers`, `compat`.
+
+Behavior notes:
+- `modelOverrides` are applied to built-in provider models.
+- Unknown model IDs are ignored.
+- You can combine provider-level `baseUrl`/`headers` with `modelOverrides`.
+- If `models` is also defined for a provider, custom models are merged after built-in overrides. A custom model with the same `id` replaces the overridden built-in model entry.
 
 ## OpenAI Compatibility
 

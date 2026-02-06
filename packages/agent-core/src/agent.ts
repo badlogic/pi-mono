@@ -252,6 +252,40 @@ export class Agent {
 		this.followUpQueue = [];
 	}
 
+	hasQueuedMessages(): boolean {
+		return this.steeringQueue.length > 0 || this.followUpQueue.length > 0;
+	}
+
+	private dequeueSteeringMessages(): AgentMessage[] {
+		if (this.steeringMode === "one-at-a-time") {
+			if (this.steeringQueue.length > 0) {
+				const first = this.steeringQueue[0];
+				this.steeringQueue = this.steeringQueue.slice(1);
+				return [first];
+			}
+			return [];
+		}
+
+		const steering = this.steeringQueue.slice();
+		this.steeringQueue = [];
+		return steering;
+	}
+
+	private dequeueFollowUpMessages(): AgentMessage[] {
+		if (this.followUpMode === "one-at-a-time") {
+			if (this.followUpQueue.length > 0) {
+				const first = this.followUpQueue[0];
+				this.followUpQueue = this.followUpQueue.slice(1);
+				return [first];
+			}
+			return [];
+		}
+
+		const followUp = this.followUpQueue.slice();
+		this.followUpQueue = [];
+		return followUp;
+	}
+
 	clearMessages() {
 		this._state.messages = [];
 	}
@@ -310,7 +344,9 @@ export class Agent {
 		await this._runLoop(msgs);
 	}
 
-	/** Continue from current context (for retry after overflow) */
+	/**
+	 * Continue from current context (used for retries and resuming queued messages).
+	 */
 	async continue() {
 		if (this._state.isStreaming) {
 			throw new Error("Agent is already processing. Wait for completion before continuing.");
@@ -321,6 +357,18 @@ export class Agent {
 			throw new Error("No messages to continue from");
 		}
 		if (messages[messages.length - 1].role === "assistant") {
+			const queuedSteering = this.dequeueSteeringMessages();
+			if (queuedSteering.length > 0) {
+				await this._runLoop(queuedSteering, { skipInitialSteeringPoll: true });
+				return;
+			}
+
+			const queuedFollowUp = this.dequeueFollowUpMessages();
+			if (queuedFollowUp.length > 0) {
+				await this._runLoop(queuedFollowUp);
+				return;
+			}
+
 			throw new Error("Cannot continue from message role: assistant");
 		}
 
@@ -332,7 +380,7 @@ export class Agent {
 	 * If messages are provided, starts a new conversation turn with those messages.
 	 * Otherwise, continues from existing context.
 	 */
-	private async _runLoop(messages?: AgentMessage[]) {
+	private async _runLoop(messages?: AgentMessage[], options?: { skipInitialSteeringPoll?: boolean }) {
 		const model = this._state.model;
 		if (!model) throw new Error("No model configured");
 
@@ -353,6 +401,8 @@ export class Agent {
 			tools: this._state.tools,
 		};
 
+		let skipInitialSteeringPoll = options?.skipInitialSteeringPoll === true;
+
 		const config: AgentLoopConfig = {
 			model,
 			reasoning,
@@ -363,33 +413,13 @@ export class Agent {
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,
 			getSteeringMessages: async () => {
-				if (this.steeringMode === "one-at-a-time") {
-					if (this.steeringQueue.length > 0) {
-						const first = this.steeringQueue[0];
-						this.steeringQueue = this.steeringQueue.slice(1);
-						return [first];
-					}
+				if (skipInitialSteeringPoll) {
+					skipInitialSteeringPoll = false;
 					return [];
-				} else {
-					const steering = this.steeringQueue.slice();
-					this.steeringQueue = [];
-					return steering;
 				}
+				return this.dequeueSteeringMessages();
 			},
-			getFollowUpMessages: async () => {
-				if (this.followUpMode === "one-at-a-time") {
-					if (this.followUpQueue.length > 0) {
-						const first = this.followUpQueue[0];
-						this.followUpQueue = this.followUpQueue.slice(1);
-						return [first];
-					}
-					return [];
-				} else {
-					const followUp = this.followUpQueue.slice();
-					this.followUpQueue = [];
-					return followUp;
-				}
-			},
+			getFollowUpMessages: async () => this.dequeueFollowUpMessages(),
 		};
 
 		let partial: AgentMessage | null = null;

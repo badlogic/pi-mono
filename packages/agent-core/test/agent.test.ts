@@ -230,6 +230,88 @@ describe("Agent", () => {
 		await firstPrompt.catch(() => {});
 	});
 
+	it("continue() should process queued follow-up messages after an assistant turn", async () => {
+		const agent = new Agent({
+			streamFn: () => {
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("Processed") });
+				});
+				return stream;
+			},
+		});
+
+		agent.replaceMessages([
+			{
+				role: "user",
+				content: [{ type: "text", text: "Initial" }],
+				timestamp: Date.now() - 10,
+			},
+			createAssistantMessage("Initial response"),
+		]);
+
+		agent.followUp({
+			role: "user",
+			content: [{ type: "text", text: "Queued follow-up" }],
+			timestamp: Date.now(),
+		});
+
+		await expect(agent.continue()).resolves.toBeUndefined();
+
+		const hasQueuedFollowUp = agent.state.messages.some((message) => {
+			if (message.role !== "user") return false;
+			if (typeof message.content === "string") return message.content === "Queued follow-up";
+			return message.content.some((part) => part.type === "text" && part.text === "Queued follow-up");
+		});
+
+		expect(hasQueuedFollowUp).toBe(true);
+		expect(agent.state.messages[agent.state.messages.length - 1].role).toBe("assistant");
+	});
+
+	it("continue() should keep one-at-a-time steering semantics from assistant tail", async () => {
+		let responseCount = 0;
+		const agent = new Agent({
+			streamFn: () => {
+				const stream = new MockAssistantStream();
+				responseCount++;
+				queueMicrotask(() => {
+					stream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage(`Processed ${responseCount}`),
+					});
+				});
+				return stream;
+			},
+		});
+
+		agent.replaceMessages([
+			{
+				role: "user",
+				content: [{ type: "text", text: "Initial" }],
+				timestamp: Date.now() - 10,
+			},
+			createAssistantMessage("Initial response"),
+		]);
+
+		agent.steer({
+			role: "user",
+			content: [{ type: "text", text: "Steering 1" }],
+			timestamp: Date.now(),
+		});
+		agent.steer({
+			role: "user",
+			content: [{ type: "text", text: "Steering 2" }],
+			timestamp: Date.now() + 1,
+		});
+
+		await expect(agent.continue()).resolves.toBeUndefined();
+
+		const recentMessages = agent.state.messages.slice(-4);
+		expect(recentMessages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
+		expect(responseCount).toBe(2);
+	});
+
 	it("forwards sessionId to streamFn options", async () => {
 		let receivedSessionId: string | undefined;
 		const agent = new Agent({

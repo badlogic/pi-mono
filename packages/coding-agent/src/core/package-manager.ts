@@ -870,6 +870,8 @@ export class DefaultPackageManager implements PackageManager {
 				if (!existsSync(installedPath)) {
 					const installed = await installMissing();
 					if (!installed) continue;
+				} else if (scope === "temporary" && !parsed.pinned) {
+					await this.refreshTemporaryGitSource(parsed, sourceStr);
 				}
 				metadata.baseDir = installedPath;
 				this.collectPackageResources(installedPath, accumulator, filter, metadata);
@@ -1153,8 +1155,13 @@ export class DefaultPackageManager implements PackageManager {
 		// Fetch latest from remote (handles force-push by getting new history)
 		await this.runCommand("git", ["fetch", "--prune", "origin"], { cwd: targetDir });
 
-		// Reset to upstream tracking branch (handles force-push gracefully)
-		await this.runCommand("git", ["reset", "--hard", "@{upstream}"], { cwd: targetDir });
+		// Reset to tracking branch. Fall back to origin/HEAD when no upstream is configured.
+		try {
+			await this.runCommand("git", ["reset", "--hard", "@{upstream}"], { cwd: targetDir });
+		} catch {
+			await this.runCommand("git", ["remote", "set-head", "origin", "-a"], { cwd: targetDir }).catch(() => {});
+			await this.runCommand("git", ["reset", "--hard", "origin/HEAD"], { cwd: targetDir });
+		}
 
 		// Clean untracked files (extensions should be pristine)
 		await this.runCommand("git", ["clean", "-fdx"], { cwd: targetDir });
@@ -1162,6 +1169,16 @@ export class DefaultPackageManager implements PackageManager {
 		const packageJsonPath = join(targetDir, "package.json");
 		if (existsSync(packageJsonPath)) {
 			await this.runCommand("npm", ["install"], { cwd: targetDir });
+		}
+	}
+
+	private async refreshTemporaryGitSource(source: GitSource, sourceStr: string): Promise<void> {
+		try {
+			await this.withProgress("pull", sourceStr, `Refreshing ${sourceStr}...`, async () => {
+				await this.updateGit(source, "temporary");
+			});
+		} catch {
+			// Keep cached temporary checkout if refresh fails.
 		}
 	}
 

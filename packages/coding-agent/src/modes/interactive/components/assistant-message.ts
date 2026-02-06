@@ -63,13 +63,16 @@ export class AssistantMessageComponent extends Container {
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
 			} else if (content.type === "thinking" && content.thinking.trim()) {
-				// Check if there's text content after this thinking block
-				const hasTextAfter = message.content.slice(i + 1).some((c) => c.type === "text" && c.text.trim());
+				// Add spacing only when another visible assistant content block follows.
+				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
+				const hasVisibleContentAfter = message.content
+					.slice(i + 1)
+					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
 
 				if (this.hideThinkingBlock) {
 					// Show static "Thinking..." label when hidden
 					this.contentContainer.addChild(new Text(theme.italic(theme.fg("thinkingText", "Thinking...")), 1, 0));
-					if (hasTextAfter) {
+					if (hasVisibleContentAfter) {
 						this.contentContainer.addChild(new Spacer(1));
 					}
 				} else {
@@ -80,7 +83,9 @@ export class AssistantMessageComponent extends Container {
 							italic: true,
 						}),
 					);
-					this.contentContainer.addChild(new Spacer(1));
+					if (hasVisibleContentAfter) {
+						this.contentContainer.addChild(new Spacer(1));
+					}
 				}
 			}
 		}
