@@ -90,17 +90,17 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 			profile: options.profile,
 		};
 
-		// Support proxies that don't need authentication
-		if (process.env.AWS_BEDROCK_SKIP_AUTH === "1") {
-			config.credentials = {
-				accessKeyId: "dummy-access-key",
-				secretAccessKey: "dummy-secret-key",
-			};
-		}
-
 		// in Node.js/Bun environment only
 		if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
 			config.region = config.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
+
+			// Support proxies that don't need authentication
+			if (process.env.AWS_BEDROCK_SKIP_AUTH === "1") {
+				config.credentials = {
+					accessKeyId: "dummy-access-key",
+					secretAccessKey: "dummy-secret-key",
+				};
+			}
 
 			if (
 				process.env.HTTP_PROXY ||

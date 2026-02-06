@@ -140,17 +140,16 @@ Also supports ECS task roles (`AWS_CONTAINER_CREDENTIALS_*`) and IRSA (`AWS_WEB_
 pi --provider amazon-bedrock --model us.anthropic.claude-sonnet-4-20250514-v1:0
 ```
 
-If you are connecting to a bedrock API proxy, the following environment variables can be used
-instead:
+If you are connecting to a Bedrock API proxy, the following environment variables can be used:
 
 ```bash
-# Set the URL for the bedrock proxy
-export AWS_ENDPOINT_URL_BEDROCK_RUNTIME
+# Set the URL for the Bedrock proxy (standard AWS SDK env var)
+export AWS_ENDPOINT_URL_BEDROCK_RUNTIME=https://my.corp.proxy/bedrock
 
 # Set if your proxy does not require authentication
 export AWS_BEDROCK_SKIP_AUTH=1
 
-# Set if your proxy only supports HTTP 1.1
+# Set if your proxy only supports HTTP/1.1
 export AWS_BEDROCK_FORCE_HTTP1=1
 ```
 
