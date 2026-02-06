@@ -483,102 +483,6 @@ function isOAuthToken(apiKey: string): boolean {
 	return apiKey.includes("sk-ant-oat");
 }
 
-export interface BuildAnthropicClientOptionsParams {
-	model: Model<"anthropic-messages">;
-	apiKey: string;
-	interleavedThinking: boolean;
-	dynamicHeaders?: Record<string, string>;
-	optionsHeaders?: Record<string, string>;
-}
-
-export interface AnthropicClientConfig {
-	apiKey: string | null;
-	authToken?: string;
-	baseURL: string;
-	defaultHeaders: Record<string, string>;
-	dangerouslyAllowBrowser: boolean;
-	isOAuthToken: boolean;
-}
-
-export function buildAnthropicClientOptions(params: BuildAnthropicClientOptionsParams): AnthropicClientConfig {
-	const { model, apiKey, interleavedThinking, dynamicHeaders, optionsHeaders } = params;
-
-	// Copilot: Bearer auth, selective betas
-	if (model.provider === "github-copilot") {
-		const betaFeatures: string[] = [];
-		if (interleavedThinking) {
-			betaFeatures.push("interleaved-thinking-2025-05-14");
-		}
-
-		const defaultHeaders = mergeHeaders(
-			{
-				accept: "application/json",
-				"anthropic-dangerous-direct-browser-access": "true",
-				...(betaFeatures.length > 0 ? { "anthropic-beta": betaFeatures.join(",") } : {}),
-				Authorization: `Bearer ${apiKey}`,
-			},
-			dynamicHeaders,
-			model.headers,
-			optionsHeaders,
-		);
-
-		return {
-			apiKey: null,
-			baseURL: model.baseUrl,
-			defaultHeaders,
-			dangerouslyAllowBrowser: true,
-			isOAuthToken: false,
-		};
-	}
-
-	const betaFeatures = ["fine-grained-tool-streaming-2025-05-14"];
-	if (interleavedThinking) {
-		betaFeatures.push("interleaved-thinking-2025-05-14");
-	}
-
-	const oauthToken = isOAuthToken(apiKey);
-	if (oauthToken) {
-		const defaultHeaders = mergeHeaders(
-			{
-				accept: "application/json",
-				"anthropic-dangerous-direct-browser-access": "true",
-				"anthropic-beta": `claude-code-20250219,oauth-2025-04-20,${betaFeatures.join(",")}`,
-				"user-agent": `claude-cli/${claudeCodeVersion} (external, cli)`,
-				"x-app": "cli",
-			},
-			model.headers,
-			optionsHeaders,
-		);
-
-		return {
-			apiKey: null,
-			authToken: apiKey,
-			baseURL: model.baseUrl,
-			defaultHeaders,
-			dangerouslyAllowBrowser: true,
-			isOAuthToken: true,
-		};
-	}
-
-	const defaultHeaders = mergeHeaders(
-		{
-			accept: "application/json",
-			"anthropic-dangerous-direct-browser-access": "true",
-			"anthropic-beta": betaFeatures.join(","),
-		},
-		model.headers,
-		optionsHeaders,
-	);
-
-	return {
-		apiKey,
-		baseURL: model.baseUrl,
-		defaultHeaders,
-		dangerouslyAllowBrowser: true,
-		isOAuthToken: false,
-	};
-}
-
 function createClient(
 	model: Model<"anthropic-messages">,
 	apiKey: string,
@@ -586,23 +490,78 @@ function createClient(
 	optionsHeaders?: Record<string, string>,
 	dynamicHeaders?: Record<string, string>,
 ): { client: Anthropic; isOAuthToken: boolean } {
-	const config = buildAnthropicClientOptions({
-		model,
-		apiKey,
-		interleavedThinking,
-		dynamicHeaders,
-		optionsHeaders,
-	});
+	// Copilot: Bearer auth, selective betas (no fine-grained-tool-streaming)
+	if (model.provider === "github-copilot") {
+		const betaFeatures: string[] = [];
+		if (interleavedThinking) {
+			betaFeatures.push("interleaved-thinking-2025-05-14");
+		}
 
+		const client = new Anthropic({
+			apiKey: null,
+			authToken: apiKey,
+			baseURL: model.baseUrl,
+			dangerouslyAllowBrowser: true,
+			defaultHeaders: mergeHeaders(
+				{
+					accept: "application/json",
+					"anthropic-dangerous-direct-browser-access": "true",
+					...(betaFeatures.length > 0 ? { "anthropic-beta": betaFeatures.join(",") } : {}),
+				},
+				model.headers,
+				dynamicHeaders,
+				optionsHeaders,
+			),
+		});
+
+		return { client, isOAuthToken: false };
+	}
+
+	const betaFeatures = ["fine-grained-tool-streaming-2025-05-14"];
+	if (interleavedThinking) {
+		betaFeatures.push("interleaved-thinking-2025-05-14");
+	}
+
+	// OAuth: Bearer auth, Claude Code identity headers
+	if (isOAuthToken(apiKey)) {
+		const client = new Anthropic({
+			apiKey: null,
+			authToken: apiKey,
+			baseURL: model.baseUrl,
+			dangerouslyAllowBrowser: true,
+			defaultHeaders: mergeHeaders(
+				{
+					accept: "application/json",
+					"anthropic-dangerous-direct-browser-access": "true",
+					"anthropic-beta": `claude-code-20250219,oauth-2025-04-20,${betaFeatures.join(",")}`,
+					"user-agent": `claude-cli/${claudeCodeVersion} (external, cli)`,
+					"x-app": "cli",
+				},
+				model.headers,
+				optionsHeaders,
+			),
+		});
+
+		return { client, isOAuthToken: true };
+	}
+
+	// API key auth
 	const client = new Anthropic({
-		apiKey: config.apiKey,
-		...(config.authToken ? { authToken: config.authToken } : {}),
-		baseURL: config.baseURL,
-		defaultHeaders: config.defaultHeaders,
-		dangerouslyAllowBrowser: config.dangerouslyAllowBrowser,
+		apiKey,
+		baseURL: model.baseUrl,
+		dangerouslyAllowBrowser: true,
+		defaultHeaders: mergeHeaders(
+			{
+				accept: "application/json",
+				"anthropic-dangerous-direct-browser-access": "true",
+				"anthropic-beta": betaFeatures.join(","),
+			},
+			model.headers,
+			optionsHeaders,
+		),
 	});
 
-	return { client, isOAuthToken: config.isOAuthToken };
+	return { client, isOAuthToken: false };
 }
 
 function buildParams(

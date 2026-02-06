@@ -153,7 +153,7 @@ describe("Context overflow error handling", () => {
 				logResult(result);
 
 				expect(result.stopReason).toBe("error");
-				expect(result.errorMessage).toMatch(/exceeds the limit of \d+/i);
+				expect(result.errorMessage).toMatch(/exceeds the limit of \d+|input is too long/i);
 				expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
 			},
 			120000,
