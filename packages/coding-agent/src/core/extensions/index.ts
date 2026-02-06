@@ -94,6 +94,7 @@ export type {
 	// Commands
 	RegisteredCommand,
 	RegisteredTool,
+	ReplaceEntriesHandler,
 	// Events - Resources
 	ResourcesDiscoverEvent,
 	ResourcesDiscoverResult,

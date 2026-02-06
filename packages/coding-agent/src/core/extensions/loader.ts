@@ -116,6 +116,7 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		setSessionName: notInitialized,
 		getSessionName: notInitialized,
 		setLabel: notInitialized,
+		replaceEntries: notInitialized,
 		getActiveTools: notInitialized,
 		getAllTools: notInitialized,
 		setActiveTools: notInitialized,
@@ -211,6 +212,10 @@ function createExtensionAPI(
 
 		setLabel(entryId: string, label: string | undefined): void {
 			runtime.setLabel(entryId, label);
+		},
+
+		replaceEntries(deleteIds, newEntry) {
+			return runtime.replaceEntries(deleteIds, newEntry);
 		},
 
 		exec(command: string, args: string[], options?: ExecOptions) {

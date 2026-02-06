@@ -952,6 +952,98 @@ export class SessionManager {
 	}
 
 	// =========================================================================
+	// Session Editing (for cognitive memory / cooling)
+	// =========================================================================
+
+	/**
+	 * Atomically replace multiple entries with a single new entry.
+	 * Used by cognitive memory extension to replace "overheated" messages
+	 * with a compact cognition fragment.
+	 *
+	 * Maintains parentId chain integrity via re-linking:
+	 *   Before: A → B → C → D → E → F  (delete B,C,D,E, insert X)
+	 *   After:  A → X → F
+	 *
+	 * @returns The id of the newly inserted entry
+	 */
+	replaceEntries(
+		deleteIds: string[],
+		newEntry: Pick<CustomMessageEntry, "customType" | "content" | "display" | "details">,
+	): string {
+		if (deleteIds.length === 0) {
+			throw new Error("replaceEntries: deleteIds must not be empty");
+		}
+
+		const deleteSet = new Set(deleteIds);
+
+		// Protect compaction and branch_summary entries from deletion
+		for (const id of deleteIds) {
+			const entry = this.byId.get(id);
+			if (!entry) continue;
+			if (entry.type === "compaction" || entry.type === "branch_summary") {
+				throw new Error(`replaceEntries: cannot delete ${entry.type} entry ${id}`);
+			}
+		}
+
+		// Find the first deleted entry to determine newEntry's parentId
+		const firstDeletedIdx = this.fileEntries.findIndex((e) => e.type !== "session" && deleteSet.has(e.id));
+		if (firstDeletedIdx === -1) {
+			throw new Error("replaceEntries: none of the deleteIds found in session");
+		}
+		const firstDeleted = this.fileEntries[firstDeletedIdx] as SessionEntry;
+
+		// Create the replacement entry
+		const replacement: CustomMessageEntry = {
+			type: "custom_message",
+			id: generateId(this.byId),
+			parentId: firstDeleted.parentId,
+			timestamp: new Date().toISOString(),
+			customType: newEntry.customType,
+			content: newEntry.content,
+			display: newEntry.display,
+			details: newEntry.details,
+		};
+
+		// Re-link: any non-deleted entry whose parentId points into the deleted set
+		// should now point to the replacement entry
+		for (const entry of this.fileEntries) {
+			if (entry.type === "session") continue;
+			if (!deleteSet.has(entry.id) && entry.parentId && deleteSet.has(entry.parentId)) {
+				entry.parentId = replacement.id;
+			}
+		}
+
+		// Remove deleted entries from fileEntries and insert replacement at the right position
+		this.fileEntries = this.fileEntries.filter((e) => e.type === "session" || !deleteSet.has(e.id));
+
+		// Insert replacement after its parent
+		if (replacement.parentId) {
+			const parentIdx = this.fileEntries.findIndex((e) => e.type !== "session" && e.id === replacement.parentId);
+			this.fileEntries.splice(parentIdx + 1, 0, replacement);
+		} else {
+			// Parent is null (first entry) — insert after header
+			const headerIdx = this.fileEntries.findIndex((e) => e.type === "session");
+			this.fileEntries.splice(headerIdx + 1, 0, replacement);
+		}
+
+		// Update byId: remove deleted, add replacement
+		for (const id of deleteIds) {
+			this.byId.delete(id);
+		}
+		this.byId.set(replacement.id, replacement);
+
+		// Update leafId if it was in the deleted set
+		if (this.leafId && deleteSet.has(this.leafId)) {
+			this.leafId = replacement.id;
+		}
+
+		// Persist: full rewrite
+		this._rewriteFile();
+
+		return replacement.id;
+	}
+
+	// =========================================================================
 	// Tree Traversal
 	// =========================================================================
 

@@ -955,6 +955,21 @@ export interface ExtensionAPI {
 	/** Append a custom entry to the session for state persistence (not sent to LLM). */
 	appendEntry<T = unknown>(customType: string, data?: T): void;
 
+	/**
+	 * Replace multiple session entries with a single new entry (atomic operation).
+	 * Used for cognitive memory cooling: replace overheated messages with a cognition fragment.
+	 * Maintains parentId chain integrity. Returns the new entry's id.
+	 */
+	replaceEntries(
+		deleteIds: string[],
+		newEntry: {
+			customType: string;
+			content: string | (TextContent | ImageContent)[];
+			display: boolean;
+			details?: unknown;
+		},
+	): string;
+
 	// =========================================================================
 	// Session Metadata
 	// =========================================================================
@@ -1176,6 +1191,16 @@ export type SetThinkingLevelHandler = (level: ThinkingLevel) => void;
 
 export type SetLabelHandler = (entryId: string, label: string | undefined) => void;
 
+export type ReplaceEntriesHandler = (
+	deleteIds: string[],
+	newEntry: {
+		customType: string;
+		content: string | (TextContent | ImageContent)[];
+		display: boolean;
+		details?: unknown;
+	},
+) => string;
+
 /**
  * Shared state created by loader, used during registration and runtime.
  * Contains flag values (defaults set during registration, CLI values set after).
@@ -1197,6 +1222,7 @@ export interface ExtensionActions {
 	setSessionName: SetSessionNameHandler;
 	getSessionName: GetSessionNameHandler;
 	setLabel: SetLabelHandler;
+	replaceEntries: ReplaceEntriesHandler;
 	getActiveTools: GetActiveToolsHandler;
 	getAllTools: GetAllToolsHandler;
 	setActiveTools: SetActiveToolsHandler;
