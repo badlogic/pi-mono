@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { registerOAuthProvider } from "@mariozechner/pi-ai";
+import lockfile from "proper-lockfile";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { clearConfigValueCache } from "../src/core/resolve-config-value.js";
 
@@ -21,6 +23,7 @@ describe("AuthStorage", () => {
 			rmSync(tempDir, { recursive: true });
 		}
 		clearConfigValueCache();
+		vi.restoreAllMocks();
 	});
 
 	function writeAuthJson(data: Record<string, unknown>) {
@@ -284,6 +287,55 @@ describe("AuthStorage", () => {
 					}
 				}
 			});
+		});
+	});
+
+	describe("oauth lock compromise handling", () => {
+		test("returns undefined on compromised lock and allows a later retry", async () => {
+			const providerId = `test-oauth-provider-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+			registerOAuthProvider({
+				id: providerId,
+				name: "Test OAuth Provider",
+				async login() {
+					throw new Error("Not used in this test");
+				},
+				async refreshToken(credentials) {
+					return {
+						...credentials,
+						access: "refreshed-access-token",
+						expires: Date.now() + 60_000,
+					};
+				},
+				getApiKey(credentials) {
+					return `Bearer ${credentials.access}`;
+				},
+			});
+
+			writeAuthJson({
+				[providerId]: {
+					type: "oauth",
+					refresh: "refresh-token",
+					access: "expired-access-token",
+					expires: Date.now() - 10_000,
+				},
+			});
+
+			authStorage = new AuthStorage(authJsonPath);
+
+			const realLock = lockfile.lock.bind(lockfile);
+			const lockSpy = vi.spyOn(lockfile, "lock");
+			lockSpy.mockImplementationOnce(async (file, options) => {
+				options?.onCompromised?.(new Error("Unable to update lock within the stale threshold"));
+				return realLock(file, options);
+			});
+
+			const firstTry = await authStorage.getApiKey(providerId);
+			expect(firstTry).toBeUndefined();
+
+			lockSpy.mockRestore();
+
+			const secondTry = await authStorage.getApiKey(providerId);
+			expect(secondTry).toBe("Bearer refreshed-access-token");
 		});
 	});
 

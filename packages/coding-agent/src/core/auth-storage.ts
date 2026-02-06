@@ -196,6 +196,13 @@ export class AuthStorage {
 		}
 
 		let release: (() => Promise<void>) | undefined;
+		let lockCompromised = false;
+		let lockCompromisedError: Error | undefined;
+		const throwIfLockCompromised = () => {
+			if (lockCompromised) {
+				throw lockCompromisedError ?? new Error("OAuth refresh lock was compromised");
+			}
+		};
 
 		try {
 			// Acquire exclusive lock with retry and timeout
@@ -209,7 +216,13 @@ export class AuthStorage {
 					randomize: true,
 				},
 				stale: 30000, // Consider lock stale after 30 seconds
+				onCompromised: (err) => {
+					lockCompromised = true;
+					lockCompromisedError = err;
+				},
 			});
+
+			throwIfLockCompromised();
 
 			// Re-read file after acquiring lock - another instance may have refreshed
 			this.reload();
@@ -223,6 +236,7 @@ export class AuthStorage {
 			// (another instance may have already refreshed it)
 			if (Date.now() < cred.expires) {
 				// Token is now valid - another instance refreshed it
+				throwIfLockCompromised();
 				const apiKey = provider.getApiKey(cred);
 				return { apiKey, newCredentials: cred };
 			}
@@ -237,11 +251,14 @@ export class AuthStorage {
 
 			const result = await getOAuthApiKey(providerId, oauthCreds);
 			if (result) {
+				throwIfLockCompromised();
 				this.data[providerId] = { type: "oauth", ...result.newCredentials };
 				this.save();
+				throwIfLockCompromised();
 				return result;
 			}
 
+			throwIfLockCompromised();
 			return null;
 		} finally {
 			// Always release the lock
