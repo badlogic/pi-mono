@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Set OpenAI Responses API requests to `store: false` by default to avoid server-side history logging ([#1308](https://github.com/badlogic/pi-mono/issues/1308))
+
 ## [0.52.6] - 2026-02-05
 
 ## [0.52.5] - 2026-02-05
