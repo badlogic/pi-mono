@@ -1190,6 +1190,50 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider (claude-opus-4-6 interleaved thinking)", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-opus-4-6-v1");
+
+		it("should use adaptive thinking without anthropic_beta", { retry: 3 }, async () => {
+			let capturedPayload: unknown;
+			const response = await complete(
+				llm,
+				{
+					systemPrompt: "You are a helpful assistant that uses tools when asked.",
+					messages: [
+						{
+							role: "user",
+							content: "Think first, then calculate 15 + 27 using the calculator tool.",
+							timestamp: Date.now(),
+						},
+					],
+					tools: [calculatorTool],
+				},
+				{
+					reasoning: "xhigh",
+					interleavedThinking: true,
+					onPayload: (payload) => {
+						capturedPayload = payload;
+					},
+				},
+			);
+
+			expect(response.stopReason, `Error: ${response.errorMessage}`).not.toBe("error");
+			expect(capturedPayload).toBeTruthy();
+
+			const payload = capturedPayload as {
+				additionalModelRequestFields?: {
+					thinking?: { type?: string };
+					output_config?: { effort?: string };
+					anthropic_beta?: string[];
+				};
+			};
+
+			expect(payload.additionalModelRequestFields?.thinking).toEqual({ type: "adaptive" });
+			expect(payload.additionalModelRequestFields?.output_config).toEqual({ effort: "max" });
+			expect(payload.additionalModelRequestFields?.anthropic_beta).toBeUndefined();
+		});
+	});
+
 	// Check if ollama is installed and local LLM tests are enabled
 	let ollamaInstalled = false;
 	if (!process.env.PI_NO_LOCAL_LLM) {
