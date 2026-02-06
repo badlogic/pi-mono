@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { OpenAICompletionsCompat } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { clearApiKeyCache, ModelRegistry } from "../src/core/model-registry.js";
@@ -288,7 +289,8 @@ describe("ModelRegistry", () => {
 			const models = getModelsForProvider(registry, "openrouter");
 
 			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
-			expect((sonnet?.compat as any)?.openRouterRouting).toEqual({ only: ["amazon-bedrock"] });
+			const compat = sonnet?.compat as OpenAICompletionsCompat | undefined;
+			expect(compat?.openRouterRouting).toEqual({ only: ["amazon-bedrock"] });
 		});
 
 		test("model override deep merges compat settings", () => {
@@ -309,7 +311,8 @@ describe("ModelRegistry", () => {
 			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
 
 			// Should have both the new routing AND preserve other compat settings
-			expect((sonnet?.compat as any)?.openRouterRouting).toEqual({ order: ["anthropic", "together"] });
+			const compat = sonnet?.compat as OpenAICompletionsCompat | undefined;
+			expect(compat?.openRouterRouting).toEqual({ order: ["anthropic", "together"] });
 		});
 
 		test("multiple model overrides on same provider", () => {
@@ -332,8 +335,10 @@ describe("ModelRegistry", () => {
 			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
 			const opus = models.find((m) => m.id === "anthropic/claude-opus-4");
 
-			expect((sonnet?.compat as any)?.openRouterRouting).toEqual({ only: ["amazon-bedrock"] });
-			expect((opus?.compat as any)?.openRouterRouting).toEqual({ only: ["anthropic"] });
+			const sonnetCompat = sonnet?.compat as OpenAICompletionsCompat | undefined;
+			const opusCompat = opus?.compat as OpenAICompletionsCompat | undefined;
+			expect(sonnetCompat?.openRouterRouting).toEqual({ only: ["amazon-bedrock"] });
+			expect(opusCompat?.openRouterRouting).toEqual({ only: ["anthropic"] });
 		});
 
 		test("model override combined with baseUrl override", () => {
@@ -360,6 +365,40 @@ describe("ModelRegistry", () => {
 			const opus = models.find((m) => m.id === "anthropic/claude-opus-4");
 			expect(opus?.baseUrl).toBe("https://my-proxy.example.com/v1");
 			expect(opus?.name).not.toBe("Proxied Sonnet");
+		});
+
+		test("model overrides are ignored when provider fully replaces built-in models", () => {
+			writeRawModelsJson({
+				openrouter: {
+					baseUrl: "https://my-proxy.example.com/v1",
+					apiKey: "OPENROUTER_API_KEY",
+					api: "openai-completions",
+					models: [
+						{
+							id: "custom/openrouter-model",
+							name: "Custom OpenRouter Model",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow: 128000,
+							maxTokens: 16384,
+						},
+					],
+					modelOverrides: {
+						"anthropic/claude-sonnet-4": {
+							name: "Ignored Sonnet Override",
+						},
+					},
+				},
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const models = getModelsForProvider(registry, "openrouter");
+
+			expect(models).toHaveLength(1);
+			expect(models[0].id).toBe("custom/openrouter-model");
+			expect(models[0].name).toBe("Custom OpenRouter Model");
+			expect(registry.getError()).toBeUndefined();
 		});
 
 		test("model override for non-existent model ID is ignored", () => {
