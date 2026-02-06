@@ -1068,6 +1068,9 @@ export class InteractiveMode {
 			},
 			shutdownHandler: () => {
 				this.shutdownRequested = true;
+				if (!this.session.isStreaming) {
+					void this.shutdown();
+				}
 			},
 			onError: (error) => {
 				this.showExtensionError(error.extensionPath, error.error, error.stack);
