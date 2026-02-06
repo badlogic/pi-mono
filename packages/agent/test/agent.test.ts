@@ -230,6 +230,44 @@ describe("Agent", () => {
 		await firstPrompt.catch(() => {});
 	});
 
+	it("continue() should process queued follow-up messages after an assistant turn", async () => {
+		const agent = new Agent({
+			streamFn: () => {
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("Processed") });
+				});
+				return stream;
+			},
+		});
+
+		agent.replaceMessages([
+			{
+				role: "user",
+				content: [{ type: "text", text: "Initial" }],
+				timestamp: Date.now() - 10,
+			},
+			createAssistantMessage("Initial response"),
+		]);
+
+		agent.followUp({
+			role: "user",
+			content: [{ type: "text", text: "Queued follow-up" }],
+			timestamp: Date.now(),
+		});
+
+		await expect(agent.continue()).resolves.toBeUndefined();
+
+		const hasQueuedFollowUp = agent.state.messages.some((message) => {
+			if (message.role !== "user") return false;
+			if (typeof message.content === "string") return message.content === "Queued follow-up";
+			return message.content.some((part) => part.type === "text" && part.text === "Queued follow-up");
+		});
+
+		expect(hasQueuedFollowUp).toBe(true);
+		expect(agent.state.messages[agent.state.messages.length - 1].role).toBe("assistant");
+	});
+
 	it("forwards sessionId to streamFn options", async () => {
 		let receivedSessionId: string | undefined;
 		const agent = new Agent({
