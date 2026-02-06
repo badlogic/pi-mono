@@ -31,6 +31,7 @@ import {
 	CombinedAutocompleteProvider,
 	type Component,
 	Container,
+	type ExtraAtItemsProvider,
 	fuzzyFilter,
 	Loader,
 	Markdown,
@@ -66,6 +67,13 @@ import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { resolveModelScope } from "../../core/model-resolver.js";
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
+import {
+	buildSessionSearchItems,
+	discoverSessions,
+	extractSessionAsMarkdown,
+	type SessionSearchItem,
+	searchSessions,
+} from "../../core/session-search.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
@@ -240,6 +248,9 @@ export class InteractiveMode {
 	// Custom header from extension (undefined = use built-in header)
 	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
 
+	// Cached session search items for autocomplete
+	private sessionSearchItems: SessionSearchItem[] = [];
+
 	// Convenience accessors
 	private get agent() {
 		return this.session.agent;
@@ -352,11 +363,31 @@ export class InteractiveMode {
 			}
 		}
 
+		// Build session search provider
+		const extraAtProviders: ExtraAtItemsProvider[] = [];
+		const sessionSearchSettings = this.settingsManager.getSessionSearchSettings();
+		if (sessionSearchSettings.enabled) {
+			const cachedItems = this.sessionSearchItems;
+			extraAtProviders.push({
+				getItems(query: string) {
+					const results = searchSessions(cachedItems, query);
+					return results.map((item) => {
+						return {
+							value: `@[s: "${item.cleanName}"]`,
+							label: `[session] ${item.label}`,
+							// No description field at all - don't include it
+						};
+					});
+				},
+			});
+		}
+
 		// Setup autocomplete
 		this.autocompleteProvider = new CombinedAutocompleteProvider(
 			[...slashCommands, ...templateCommands, ...extensionCommands, ...skillCommandList],
 			process.cwd(),
 			fdPath,
+			extraAtProviders,
 		);
 		this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
 	}
@@ -373,6 +404,13 @@ export class InteractiveMode {
 
 		// Setup autocomplete with fd tool for file path completion
 		this.fdPath = await ensureTool("fd");
+
+		// Load session search items (async, non-blocking)
+		const sessionSearchSettings = this.settingsManager.getSessionSearchSettings();
+		if (sessionSearchSettings.enabled) {
+			void this.loadSessionSearchItems(sessionSearchSettings.scope, sessionSearchSettings.recentLimit);
+		}
+
 		this.setupAutocomplete(this.fdPath);
 
 		// Add header container as first child
@@ -1976,6 +2014,35 @@ export class InteractiveMode {
 			// First, move any pending bash components to chat
 			this.flushPendingBashComponents();
 
+			// Detect and process session references - extract as markdown and replace with @file references
+			const sessionRefPattern = /@\[s:\s+"([^"]+)"\]/g;
+			const sessionRefs = [...text.matchAll(sessionRefPattern)];
+
+			if (sessionRefs.length > 0) {
+				let processedText = text;
+
+				for (const match of sessionRefs) {
+					const fullMatch = match[0];
+					const sessionName = match[1]?.trim();
+
+					if (sessionName) {
+						// Find the session path by matching the clean name
+						const sessionItem = this.sessionSearchItems.find((item) => item.cleanName === sessionName);
+
+						if (sessionItem) {
+							// Extract conversation as markdown to temp file
+							const markdownPath = extractSessionAsMarkdown(sessionItem.sessionInfo.path);
+
+							// Replace with @file reference to the markdown file
+							// This allows existing file attachment logic to handle it (truncation/chunking)
+							processedText = processedText.replace(fullMatch, `@${markdownPath}`);
+						}
+					}
+				}
+
+				text = processedText;
+			}
+
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
 			}
@@ -2312,6 +2379,27 @@ export class InteractiveMode {
 		this.lastStatusSpacer = spacer;
 		this.lastStatusText = text;
 		this.ui.requestRender();
+	}
+
+	private async loadSessionSearchItems(scope: "cwd" | "all" | "recent", recentLimit: number): Promise<void> {
+		try {
+			const currentSessionFile = this.sessionManager.getSessionFile();
+			const sessions = await discoverSessions(this.sessionManager.getCwd(), scope, recentLimit);
+			// Exclude the current session and deduplicate by path
+			const seen = new Set<string>();
+			const filtered = sessions.filter((s) => {
+				if (s.path === currentSessionFile || seen.has(s.path)) {
+					return false;
+				}
+				seen.add(s.path);
+				return true;
+			});
+			this.sessionSearchItems = buildSessionSearchItems(filtered);
+			// Rebuild autocomplete so session items are available
+			this.rebuildAutocomplete();
+		} catch {
+			// Non-critical - sessions just won't appear in @ menu
+		}
 	}
 
 	private addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {

@@ -186,20 +186,27 @@ export interface AutocompleteProvider {
 	};
 }
 
+export interface ExtraAtItemsProvider {
+	getItems(query: string): AutocompleteItem[];
+}
+
 // Combined provider that handles both slash commands and file paths
 export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	private commands: (SlashCommand | AutocompleteItem)[];
 	private basePath: string;
 	private fdPath: string | null;
+	private extraAtProviders: ExtraAtItemsProvider[];
 
 	constructor(
 		commands: (SlashCommand | AutocompleteItem)[] = [],
 		basePath: string = process.cwd(),
 		fdPath: string | null = null,
+		extraAtProviders: ExtraAtItemsProvider[] = [],
 	) {
 		this.commands = commands;
 		this.basePath = basePath;
 		this.fdPath = fdPath;
+		this.extraAtProviders = extraAtProviders;
 	}
 
 	getSuggestions(
@@ -214,7 +221,17 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		const atPrefix = this.extractAtPrefix(textBeforeCursor);
 		if (atPrefix) {
 			const { rawPrefix, isQuotedPrefix } = parsePathPrefix(atPrefix);
-			const suggestions = this.getFuzzyFileSuggestions(rawPrefix, { isQuotedPrefix: isQuotedPrefix });
+
+			// Collect extra items (e.g., sessions) from registered providers first
+			const extraItems: AutocompleteItem[] = [];
+			for (const provider of this.extraAtProviders) {
+				extraItems.push(...provider.getItems(rawPrefix));
+			}
+
+			const fileSuggestions = this.getFuzzyFileSuggestions(rawPrefix, { isQuotedPrefix: isQuotedPrefix });
+
+			// Sessions appear first, then file suggestions, capped at 25 total
+			const suggestions = [...extraItems, ...fileSuggestions].slice(0, 25);
 			if (suggestions.length === 0) return null;
 
 			return {

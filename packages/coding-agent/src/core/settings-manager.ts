@@ -40,6 +40,12 @@ export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
+export interface SessionSearchSettings {
+	enabled?: boolean; // default: true
+	scope?: "cwd" | "all" | "recent"; // default: "all"
+	recentLimit?: number; // default: 25 (only for scope "recent")
+}
+
 /**
  * Package source for npm/git packages.
  * - String form: load all resources from the package
@@ -86,6 +92,7 @@ export interface Settings {
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
+	sessionSearch?: SessionSearchSettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -747,5 +754,52 @@ export class SettingsManager {
 
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
+	}
+
+	getSessionSearchEnabled(): boolean {
+		return this.settings.sessionSearch?.enabled ?? true;
+	}
+
+	setSessionSearchEnabled(enabled: boolean): void {
+		if (!this.globalSettings.sessionSearch) {
+			this.globalSettings.sessionSearch = {};
+		}
+		this.globalSettings.sessionSearch.enabled = enabled;
+		this.markModified("sessionSearch", "enabled");
+		this.save();
+	}
+
+	getSessionSearchScope(): "cwd" | "all" | "recent" {
+		return this.settings.sessionSearch?.scope ?? "all";
+	}
+
+	setSessionSearchScope(scope: "cwd" | "all" | "recent"): void {
+		if (!this.globalSettings.sessionSearch) {
+			this.globalSettings.sessionSearch = {};
+		}
+		this.globalSettings.sessionSearch.scope = scope;
+		this.markModified("sessionSearch", "scope");
+		this.save();
+	}
+
+	getSessionSearchRecentLimit(): number {
+		return this.settings.sessionSearch?.recentLimit ?? 25;
+	}
+
+	setSessionSearchRecentLimit(limit: number): void {
+		if (!this.globalSettings.sessionSearch) {
+			this.globalSettings.sessionSearch = {};
+		}
+		this.globalSettings.sessionSearch.recentLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+		this.markModified("sessionSearch", "recentLimit");
+		this.save();
+	}
+
+	getSessionSearchSettings(): { enabled: boolean; scope: "cwd" | "all" | "recent"; recentLimit: number } {
+		return {
+			enabled: this.getSessionSearchEnabled(),
+			scope: this.getSessionSearchScope(),
+			recentLimit: this.getSessionSearchRecentLimit(),
+		};
 	}
 }
