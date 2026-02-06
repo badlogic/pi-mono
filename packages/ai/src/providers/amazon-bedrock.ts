@@ -200,6 +200,14 @@ export const streamSimpleBedrock: StreamFunction<"bedrock-converse-stream", Simp
 	}
 
 	if (model.id.includes("anthropic.claude") || model.id.includes("anthropic/claude")) {
+		if (supportsAdaptiveThinking(model.id)) {
+			return streamBedrock(model, context, {
+				...base,
+				reasoning: options.reasoning,
+				thinkingBudgets: options.thinkingBudgets,
+			} satisfies BedrockOptions);
+		}
+
 		const adjusted = adjustMaxTokensForThinking(
 			base.maxTokens || 0,
 			model.maxTokens,
@@ -344,6 +352,29 @@ function handleContentBlockStop(
 			delete (block as Block).partialJson;
 			stream.push({ type: "toolcall_end", contentIndex: index, toolCall: block, partial: output });
 			break;
+	}
+}
+
+/**
+ * Check if the model supports adaptive thinking (Opus 4.6+).
+ */
+function supportsAdaptiveThinking(modelId: string): boolean {
+	return modelId.includes("opus-4-6") || modelId.includes("opus-4.6");
+}
+
+function mapThinkingLevelToEffort(level: SimpleStreamOptions["reasoning"]): "low" | "medium" | "high" | "max" {
+	switch (level) {
+		case "minimal":
+		case "low":
+			return "low";
+		case "medium":
+			return "medium";
+		case "high":
+			return "high";
+		case "xhigh":
+			return "max";
+		default:
+			return "high";
 	}
 }
 
@@ -589,26 +620,33 @@ function buildAdditionalModelRequestFields(
 	}
 
 	if (model.id.includes("anthropic.claude")) {
-		const defaultBudgets: Record<ThinkingLevel, number> = {
-			minimal: 1024,
-			low: 2048,
-			medium: 8192,
-			high: 16384,
-			xhigh: 16384, // Claude doesn't support xhigh, clamp to high
-		};
+		const result: Record<string, any> = supportsAdaptiveThinking(model.id)
+			? {
+					thinking: { type: "adaptive" },
+					output_config: { effort: mapThinkingLevelToEffort(options.reasoning) },
+				}
+			: (() => {
+					const defaultBudgets: Record<ThinkingLevel, number> = {
+						minimal: 1024,
+						low: 2048,
+						medium: 8192,
+						high: 16384,
+						xhigh: 16384, // Claude doesn't support xhigh, clamp to high
+					};
 
-		// Custom budgets override defaults (xhigh not in ThinkingBudgets, use high)
-		const level = options.reasoning === "xhigh" ? "high" : options.reasoning;
-		const budget = options.thinkingBudgets?.[level] ?? defaultBudgets[options.reasoning];
+					// Custom budgets override defaults (xhigh not in ThinkingBudgets, use high)
+					const level = options.reasoning === "xhigh" ? "high" : options.reasoning;
+					const budget = options.thinkingBudgets?.[level] ?? defaultBudgets[options.reasoning];
 
-		const result: Record<string, any> = {
-			thinking: {
-				type: "enabled",
-				budget_tokens: budget,
-			},
-		};
+					return {
+						thinking: {
+							type: "enabled",
+							budget_tokens: budget,
+						},
+					};
+				})();
 
-		if (options.interleavedThinking) {
+		if (options.interleavedThinking && !supportsAdaptiveThinking(model.id)) {
 			result.anthropic_beta = ["interleaved-thinking-2025-05-14"];
 		}
 
