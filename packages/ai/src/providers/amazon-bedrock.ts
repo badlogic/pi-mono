@@ -90,6 +90,14 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 			profile: options.profile,
 		};
 
+		// Support proxies that don't need authentication
+		if (process.env.AWS_BEDROCK_SKIP_AUTH === "1") {
+			config.credentials = {
+				accessKeyId: "dummy-access-key",
+				secretAccessKey: "dummy-secret-key",
+			};
+		}
+
 		// in Node.js/Bun environment only
 		if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
 			config.region = config.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
@@ -114,6 +122,10 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 					httpAgent: agent,
 					httpsAgent: agent,
 				});
+			} else if (process.env.AWS_BEDROCK_FORCE_HTTP1 === "1") {
+				// Some custom endpoints require HTTP/1.1 instead of HTTP/2
+				const nodeHttpHandler = await import("@smithy/node-http-handler");
+				config.requestHandler = new nodeHttpHandler.NodeHttpHandler();
 			}
 		}
 
