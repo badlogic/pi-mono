@@ -6,13 +6,21 @@
  * It is only intended for CLI use, not browser environments.
  */
 
-import type { Server } from "http";
+import type { Server } from "node:http";
 import { generatePKCE } from "./pkce.js";
 import type { OAuthCredentials, OAuthLoginCallbacks, OAuthProviderInterface } from "./types.js";
 
 type AntigravityCredentials = OAuthCredentials & {
 	projectId: string;
 };
+
+let _createServer: typeof import("node:http").createServer | null = null;
+let _httpImportPromise: Promise<void> | null = null;
+if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
+	_httpImportPromise = import("node:http").then((m) => {
+		_createServer = m.createServer;
+	});
+}
 
 // Antigravity OAuth credentials (different from Gemini CLI)
 const decode = (s: string) => atob(s);
@@ -46,8 +54,17 @@ type CallbackServerInfo = {
 /**
  * Start a local HTTP server to receive the OAuth callback
  */
+async function getNodeCreateServer(): Promise<typeof import("node:http").createServer> {
+	if (_createServer) return _createServer;
+	if (_httpImportPromise) {
+		await _httpImportPromise;
+	}
+	if (_createServer) return _createServer;
+	throw new Error("Antigravity OAuth is only available in Node.js environments");
+}
+
 async function startCallbackServer(): Promise<CallbackServerInfo> {
-	const { createServer } = await import("http");
+	const createServer = await getNodeCreateServer();
 
 	return new Promise((resolve, reject) => {
 		let result: { code: string; state: string } | null = null;
