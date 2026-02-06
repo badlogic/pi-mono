@@ -81,6 +81,27 @@ const ModelDefinitionSchema = Type.Object({
 	compat: Type.Optional(OpenAICompatSchema),
 });
 
+// Schema for per-model overrides (all fields optional, merged with built-in model)
+const ModelOverrideSchema = Type.Object({
+	name: Type.Optional(Type.String({ minLength: 1 })),
+	reasoning: Type.Optional(Type.Boolean()),
+	input: Type.Optional(Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]))),
+	cost: Type.Optional(
+		Type.Object({
+			input: Type.Optional(Type.Number()),
+			output: Type.Optional(Type.Number()),
+			cacheRead: Type.Optional(Type.Number()),
+			cacheWrite: Type.Optional(Type.Number()),
+		}),
+	),
+	contextWindow: Type.Optional(Type.Number()),
+	maxTokens: Type.Optional(Type.Number()),
+	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
+	compat: Type.Optional(OpenAICompatSchema),
+});
+
+type ModelOverride = Static<typeof ModelOverrideSchema>;
+
 const ProviderConfigSchema = Type.Object({
 	baseUrl: Type.Optional(Type.String({ minLength: 1 })),
 	apiKey: Type.Optional(Type.String({ minLength: 1 })),
@@ -88,6 +109,7 @@ const ProviderConfigSchema = Type.Object({
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
 	authHeader: Type.Optional(Type.Boolean()),
 	models: Type.Optional(Type.Array(ModelDefinitionSchema)),
+	modelOverrides: Type.Optional(Type.Record(Type.String(), ModelOverrideSchema)),
 });
 
 const ModelsConfigSchema = Type.Object({
@@ -110,11 +132,51 @@ interface CustomModelsResult {
 	replacedProviders: Set<string>;
 	/** Providers with only baseUrl/headers override (no custom models) */
 	overrides: Map<string, ProviderOverride>;
+	/** Per-model overrides: provider -> modelId -> override */
+	modelOverrides: Map<string, Map<string, ModelOverride>>;
 	error: string | undefined;
 }
 
 function emptyCustomModelsResult(error?: string): CustomModelsResult {
-	return { models: [], replacedProviders: new Set(), overrides: new Map(), error };
+	return { models: [], replacedProviders: new Set(), overrides: new Map(), modelOverrides: new Map(), error };
+}
+
+/**
+ * Deep merge a model override into a model.
+ * Handles nested objects (cost, compat) by merging rather than replacing.
+ */
+function applyModelOverride(model: Model<Api>, override: ModelOverride): Model<Api> {
+	const result = { ...model };
+
+	// Simple field overrides
+	if (override.name !== undefined) result.name = override.name;
+	if (override.reasoning !== undefined) result.reasoning = override.reasoning;
+	if (override.input !== undefined) result.input = override.input as ("text" | "image")[];
+	if (override.contextWindow !== undefined) result.contextWindow = override.contextWindow;
+	if (override.maxTokens !== undefined) result.maxTokens = override.maxTokens;
+
+	// Merge cost (partial override)
+	if (override.cost) {
+		result.cost = {
+			input: override.cost.input ?? model.cost.input,
+			output: override.cost.output ?? model.cost.output,
+			cacheRead: override.cost.cacheRead ?? model.cost.cacheRead,
+			cacheWrite: override.cost.cacheWrite ?? model.cost.cacheWrite,
+		};
+	}
+
+	// Merge headers
+	if (override.headers) {
+		const resolvedHeaders = resolveHeaders(override.headers);
+		result.headers = resolvedHeaders ? { ...model.headers, ...resolvedHeaders } : model.headers;
+	}
+
+	// Deep merge compat
+	if (override.compat) {
+		result.compat = model.compat ? { ...model.compat, ...override.compat } : override.compat;
+	}
+
+	return result;
 }
 
 /** Clear the config value command cache. Exported for testing. */
@@ -172,6 +234,7 @@ export class ModelRegistry {
 			models: customModels,
 			replacedProviders,
 			overrides,
+			modelOverrides,
 			error,
 		} = this.modelsJsonPath ? this.loadCustomModels(this.modelsJsonPath) : emptyCustomModelsResult();
 
@@ -180,7 +243,7 @@ export class ModelRegistry {
 			// Keep built-in models even if custom models failed to load
 		}
 
-		const builtInModels = this.loadBuiltInModels(replacedProviders, overrides);
+		const builtInModels = this.loadBuiltInModels(replacedProviders, overrides, modelOverrides);
 		let combined = [...builtInModels, ...customModels];
 
 		// Let OAuth providers modify their models (e.g., update baseUrl)
@@ -195,21 +258,39 @@ export class ModelRegistry {
 	}
 
 	/** Load built-in models, skipping replaced providers and applying overrides */
-	private loadBuiltInModels(replacedProviders: Set<string>, overrides: Map<string, ProviderOverride>): Model<Api>[] {
+	private loadBuiltInModels(
+		replacedProviders: Set<string>,
+		overrides: Map<string, ProviderOverride>,
+		modelOverrides: Map<string, Map<string, ModelOverride>>,
+	): Model<Api>[] {
 		return getProviders()
 			.filter((provider) => !replacedProviders.has(provider))
 			.flatMap((provider) => {
 				const models = getModels(provider as KnownProvider) as Model<Api>[];
-				const override = overrides.get(provider);
-				if (!override) return models;
+				const providerOverride = overrides.get(provider);
+				const perModelOverrides = modelOverrides.get(provider);
 
-				// Apply baseUrl/headers override to all models of this provider
-				const resolvedHeaders = resolveHeaders(override.headers);
-				return models.map((m) => ({
-					...m,
-					baseUrl: override.baseUrl ?? m.baseUrl,
-					headers: resolvedHeaders ? { ...m.headers, ...resolvedHeaders } : m.headers,
-				}));
+				return models.map((m) => {
+					let model = m;
+
+					// Apply provider-level baseUrl/headers override
+					if (providerOverride) {
+						const resolvedHeaders = resolveHeaders(providerOverride.headers);
+						model = {
+							...model,
+							baseUrl: providerOverride.baseUrl ?? model.baseUrl,
+							headers: resolvedHeaders ? { ...model.headers, ...resolvedHeaders } : model.headers,
+						};
+					}
+
+					// Apply per-model override
+					const modelOverride = perModelOverrides?.get(m.id);
+					if (modelOverride) {
+						model = applyModelOverride(model, modelOverride);
+					}
+
+					return model;
+				});
 			});
 	}
 
@@ -238,6 +319,7 @@ export class ModelRegistry {
 			// Separate providers into "full replacement" (has models) vs "override-only" (no models)
 			const replacedProviders = new Set<string>();
 			const overrides = new Map<string, ProviderOverride>();
+			const modelOverrides = new Map<string, Map<string, ModelOverride>>();
 
 			for (const [providerName, providerConfig] of Object.entries(config.providers)) {
 				if (providerConfig.models && providerConfig.models.length > 0) {
@@ -255,9 +337,14 @@ export class ModelRegistry {
 						this.customProviderApiKeys.set(providerName, providerConfig.apiKey);
 					}
 				}
+
+				// Collect per-model overrides (works with both full replacement and override-only)
+				if (providerConfig.modelOverrides) {
+					modelOverrides.set(providerName, new Map(Object.entries(providerConfig.modelOverrides)));
+				}
 			}
 
-			return { models: this.parseModels(config), replacedProviders, overrides, error: undefined };
+			return { models: this.parseModels(config), replacedProviders, overrides, modelOverrides, error: undefined };
 		} catch (error) {
 			if (error instanceof SyntaxError) {
 				return emptyCustomModelsResult(`Failed to parse models.json: ${error.message}\n\nFile: ${modelsJsonPath}`);
@@ -272,13 +359,13 @@ export class ModelRegistry {
 		for (const [providerName, providerConfig] of Object.entries(config.providers)) {
 			const hasProviderApi = !!providerConfig.api;
 			const models = providerConfig.models ?? [];
+			const hasModelOverrides =
+				providerConfig.modelOverrides && Object.keys(providerConfig.modelOverrides).length > 0;
 
 			if (models.length === 0) {
-				// Override-only config: just needs baseUrl (to override built-in)
-				if (!providerConfig.baseUrl) {
-					throw new Error(
-						`Provider ${providerName}: must specify either "baseUrl" (for override) or "models" (for replacement).`,
-					);
+				// Override-only config: needs baseUrl OR modelOverrides (or both)
+				if (!providerConfig.baseUrl && !hasModelOverrides) {
+					throw new Error(`Provider ${providerName}: must specify "baseUrl", "modelOverrides", or "models".`);
 				}
 			} else {
 				// Full replacement: needs baseUrl and apiKey
