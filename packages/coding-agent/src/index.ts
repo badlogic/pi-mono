@@ -4,6 +4,9 @@
 export { getAgentDir, VERSION } from "./config.js";
 export {
 	AgentSession,
+	type AutoCompactionRetryHook,
+	type AutoCompactionRetryHookContext,
+	type AutoCompactionRetryHookResult,
 	type AgentSessionConfig,
 	type AgentSessionEvent,
 	type AgentSessionEventListener,

@@ -117,6 +117,37 @@ export type AgentSessionEvent =
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
 
+export type AutoCompactionRetryHookContext = {
+	reason: "overflow";
+	compaction: CompactionResult;
+
+	/** Current state after compaction has been applied */
+	messages: AgentMessage[];
+	systemPrompt: string;
+
+	model: Model<any>;
+	contextWindow: number;
+	reserveTokens: number;
+
+	/** Token estimates (consistent with Pi compaction estimator: chars/4 heuristic) */
+	estimates: {
+		messageTokens: number;
+		systemPromptTokens: number;
+		totalTokens: number;
+		tokenBudget: number;
+		overBy: number;
+	};
+};
+
+export type AutoCompactionRetryHookResult =
+	| { action: "proceed" }
+	| { action: "proceed"; systemPrompt: string }
+	| { action: "cancel"; errorMessage?: string };
+
+export type AutoCompactionRetryHook = (
+	ctx: AutoCompactionRetryHookContext,
+) => Promise<AutoCompactionRetryHookResult | void> | AutoCompactionRetryHookResult | void;
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -223,6 +254,7 @@ export class AgentSession {
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
+	private _autoCompactionRetryHook: AutoCompactionRetryHook | undefined = undefined;
 
 	// Branch summarization state
 	private _branchSummaryAbortController: AbortController | undefined = undefined;
@@ -1662,7 +1694,58 @@ export class AgentSession {
 				tokensBefore,
 				details,
 			};
-			this._emit({ type: "auto_compaction_end", result, aborted: false, willRetry });
+
+			// Give embedded consumers a chance to adjust or cancel the retry based on prompt sizing.
+			// This runs after the compacted context has been applied to agent state.
+			let retryBlockedErrorMessage: string | undefined = undefined;
+			if (willRetry) {
+				const model = this.model;
+				const contextWindow = model?.contextWindow ?? 0;
+				const reserveTokens = settings.reserveTokens;
+
+				const systemPrompt = this.agent.state.systemPrompt;
+				const systemPromptTokens = Math.ceil(systemPrompt.length / 4);
+				const messageTokens = estimateContextTokens(this.agent.state.messages).tokens;
+				const totalTokens = systemPromptTokens + messageTokens;
+				const tokenBudget = Math.max(0, contextWindow - reserveTokens);
+
+				try {
+					const decision = await this._autoCompactionRetryHook?.({
+						reason: "overflow",
+						compaction: result,
+						messages: this.agent.state.messages,
+						systemPrompt,
+						model: model!,
+						contextWindow,
+						reserveTokens,
+						estimates: {
+							messageTokens,
+							systemPromptTokens,
+							totalTokens,
+							tokenBudget,
+							overBy: Math.max(0, totalTokens - tokenBudget),
+						},
+					});
+
+					if (decision?.action === "cancel") {
+						willRetry = false;
+						retryBlockedErrorMessage = decision.errorMessage;
+					} else if (decision && "systemPrompt" in decision && typeof decision.systemPrompt === "string") {
+						this.agent.setSystemPrompt(decision.systemPrompt);
+						this._baseSystemPrompt = decision.systemPrompt;
+					}
+				} catch {
+					// Defensive: hook failure should not block retry.
+				}
+			}
+
+			this._emit({
+				type: "auto_compaction_end",
+				result,
+				aborted: false,
+				willRetry,
+				errorMessage: retryBlockedErrorMessage,
+			});
 
 			if (willRetry) {
 				const messages = this.agent.state.messages;
@@ -1702,6 +1785,14 @@ export class AgentSession {
 	/** Whether auto-compaction is enabled */
 	get autoCompactionEnabled(): boolean {
 		return this.settingsManager.getCompactionEnabled();
+	}
+
+	/**
+	 * Hook invoked after auto-compaction has been applied, but before Pi schedules an auto-retry.
+	 * Intended for embedded consumers to adjust system prompt sizing or cancel retry.
+	 */
+	setAutoCompactionRetryHook(hook: AutoCompactionRetryHook | undefined): void {
+		this._autoCompactionRetryHook = hook;
 	}
 
 	async bindExtensions(bindings: ExtensionBindings): Promise<void> {
