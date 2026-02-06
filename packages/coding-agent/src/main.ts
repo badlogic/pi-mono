@@ -92,6 +92,8 @@ Options:
 Examples:
   ${APP_NAME} install npm:@foo/bar
   ${APP_NAME} install git:github.com/user/repo
+  ${APP_NAME} install https://github.com/user/repo
+  ${APP_NAME} install git@github.com:user/repo
   ${APP_NAME} install ./local/path
 `);
 			return;
