@@ -1220,6 +1220,108 @@ async function generateModels() {
 		}
 	}
 
+	// Kiro models (AWS CodeWhisperer/Q Developer API)
+	const KIRO_BASE_URL = "https://q.us-east-1.amazonaws.com/generateAssistantResponse";
+	const kiroModels: Model<"kiro">[] = [
+		{
+			id: "auto",
+			name: "Auto (Kiro)",
+			api: "kiro",
+			provider: "kiro",
+			baseUrl: KIRO_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 200000,
+			maxTokens: 128000,
+		},
+		{
+			id: "claude-opus-4-6",
+			name: "Claude Opus 4.6 (Kiro)",
+			api: "kiro",
+			provider: "kiro",
+			baseUrl: KIRO_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 5.0, output: 25.0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 200000,
+			maxTokens: 128000,
+		},
+		{
+			id: "claude-opus-4-5",
+			name: "Claude Opus 4.5 (Kiro)",
+			api: "kiro",
+			provider: "kiro",
+			baseUrl: KIRO_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 15.0, output: 75.0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 200000,
+			maxTokens: 128000,
+		},
+		{
+			id: "claude-sonnet-4-5",
+			name: "Claude Sonnet 4.5 (Kiro)",
+			api: "kiro",
+			provider: "kiro",
+			baseUrl: KIRO_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 3.0, output: 15.0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 200000,
+			maxTokens: 64000,
+		},
+		{
+			id: "claude-sonnet-4",
+			name: "Claude Sonnet 4 (Kiro)",
+			api: "kiro",
+			provider: "kiro",
+			baseUrl: KIRO_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 3.0, output: 15.0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 200000,
+			maxTokens: 64000,
+		},
+		{
+			id: "claude-haiku-4-5",
+			name: "Claude Haiku 4.5 (Kiro)",
+			api: "kiro",
+			provider: "kiro",
+			baseUrl: KIRO_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0.8, output: 4.0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 200000,
+			maxTokens: 8192,
+		},
+		{
+			id: "qwen3-coder-480b",
+			name: "Qwen3 Coder 480B (Kiro)",
+			api: "kiro",
+			provider: "kiro",
+			baseUrl: KIRO_BASE_URL,
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 131072,
+			maxTokens: 32768,
+		},
+		{
+			id: "claude-sonnet-4-5-1m",
+			name: "Claude Sonnet 4.5 1M (Kiro)",
+			api: "kiro",
+			provider: "kiro",
+			baseUrl: KIRO_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 3.0, output: 15.0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1000000,
+			maxTokens: 64000,
+		},
+	];
+	allModels.push(...kiroModels);
+
 	const azureOpenAiModels: Model<Api>[] = allModels
 		.filter((model) => model.provider === "openai" && model.api === "openai-responses")
 		.map((model) => ({

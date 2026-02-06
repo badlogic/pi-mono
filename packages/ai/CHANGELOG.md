@@ -29,6 +29,7 @@
 ### Added
 
 - Added `AWS_BEDROCK_SKIP_AUTH` and `AWS_BEDROCK_FORCE_HTTP1` environment variables for connecting to unauthenticated Bedrock proxies ([#1320](https://github.com/badlogic/pi-mono/pull/1320) by [@virtuald](https://github.com/virtuald))
+- Added Kiro provider for AWS AI assistant with OAuth authentication support
 
 ### Fixed
 

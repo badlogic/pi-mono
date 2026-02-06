@@ -5,6 +5,7 @@ import { streamAzureOpenAIResponses, streamSimpleAzureOpenAIResponses } from "./
 import { streamGoogle, streamSimpleGoogle } from "./google.js";
 import { streamGoogleGeminiCli, streamSimpleGoogleGeminiCli } from "./google-gemini-cli.js";
 import { streamGoogleVertex, streamSimpleGoogleVertex } from "./google-vertex.js";
+import { streamKiro, streamSimpleKiro } from "./kiro.js";
 import { streamOpenAICodexResponses, streamSimpleOpenAICodexResponses } from "./openai-codex-responses.js";
 import { streamOpenAICompletions, streamSimpleOpenAICompletions } from "./openai-completions.js";
 import { streamOpenAIResponses, streamSimpleOpenAIResponses } from "./openai-responses.js";
@@ -62,6 +63,12 @@ export function registerBuiltInApiProviders(): void {
 		api: "bedrock-converse-stream",
 		stream: streamBedrock,
 		streamSimple: streamSimpleBedrock,
+	});
+
+	registerApiProvider({
+		api: "kiro",
+		stream: streamKiro,
+		streamSimple: streamSimpleKiro,
 	});
 }
 

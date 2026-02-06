@@ -69,6 +69,7 @@ pi
 | Kimi For Coding | `KIMI_API_KEY` | `kimi-coding` |
 | MiniMax | `MINIMAX_API_KEY` | `minimax` |
 | MiniMax (China) | `MINIMAX_CN_API_KEY` | `minimax-cn` |
+| Kiro | `KIRO_ACCESS_TOKEN` | `kiro` |
 
 Reference for environment variables and `auth.json` keys: [`const envMap`](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/env-api-keys.ts) in [`packages/ai/src/env-api-keys.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/env-api-keys.ts).
 
@@ -169,6 +170,16 @@ export GOOGLE_CLOUD_LOCATION=us-central1
 ```
 
 Or set `GOOGLE_APPLICATION_CREDENTIALS` to a service account key file.
+
+### Kiro
+
+Kiro is AWS's AI coding assistant. Authenticate via OAuth or access token:
+
+```bash
+export KIRO_ACCESS_TOKEN=your-access-token
+```
+
+Supports Claude models (claude-haiku-4-5, claude-sonnet-4-5, claude-sonnet-4-5-1m, claude-opus-4-5) with built-in thinking mode and automatic context management.
 
 ## Custom Providers
 

@@ -1234,6 +1234,34 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.KIRO_ACCESS_TOKEN)("Kiro Provider (claude-sonnet-4-5)", () => {
+		const llm = getModel("kiro", "claude-sonnet-4-5");
+
+		it("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm);
+		});
+
+		it("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm);
+		});
+
+		it("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm);
+		});
+
+		it("should handle thinking", { retry: 3 }, async () => {
+			await handleThinking(llm, { thinkingEnabled: true });
+		});
+
+		it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { thinkingEnabled: true });
+		});
+
+		it("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm);
+		});
+	});
+
 	// Check if ollama is installed and local LLM tests are enabled
 	let ollamaInstalled = false;
 	if (!process.env.PI_NO_LOCAL_LLM) {

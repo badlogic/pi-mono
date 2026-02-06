@@ -670,6 +670,25 @@ describe("totalTokens field", () => {
 		);
 	});
 
+	describe.skipIf(!process.env.KIRO_ACCESS_TOKEN)("Kiro", () => {
+		it(
+			"claude-sonnet-4-5 - should return totalTokens equal to sum of components",
+			{ retry: 3, timeout: 60000 },
+			async () => {
+				const llm = getModel("kiro", "claude-sonnet-4-5");
+
+				console.log(`\nKiro / ${llm.id}:`);
+				const { first, second } = await testTotalTokensWithCache(llm);
+
+				logUsage("First request", first);
+				logUsage("Second request", second);
+
+				assertTotalTokensEqualsComponents(first);
+				assertTotalTokensEqualsComponents(second);
+			},
+		);
+	});
+
 	// =========================================================================
 	// OpenAI Codex (OAuth)
 	// =========================================================================

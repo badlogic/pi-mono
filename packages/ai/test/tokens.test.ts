@@ -296,4 +296,12 @@ describe("Token Statistics on Abort", () => {
 			await testTokensOnAbort(llm);
 		});
 	});
+
+	describe.skipIf(!process.env.KIRO_ACCESS_TOKEN)("Kiro Provider", () => {
+		const llm = getModel("kiro", "claude-sonnet-4-5");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
+	});
 });
