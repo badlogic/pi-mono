@@ -361,10 +361,6 @@ export class InteractiveMode {
 		this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
 	}
 
-	private rebuildAutocomplete(): void {
-		this.setupAutocomplete(this.fdPath);
-	}
-
 	async init(): Promise<void> {
 		if (this.isInitialized) return;
 
@@ -373,7 +369,6 @@ export class InteractiveMode {
 
 		// Setup autocomplete with fd tool for file path completion
 		this.fdPath = await ensureTool("fd");
-		this.setupAutocomplete(this.fdPath);
 
 		// Add header container as first child
 		this.ui.addChild(this.headerContainer);
@@ -1062,7 +1057,7 @@ export class InteractiveMode {
 		});
 
 		setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
-		this.rebuildAutocomplete();
+		this.setupAutocomplete(this.fdPath);
 
 		const extensionRunner = this.session.extensionRunner;
 		if (!extensionRunner) {
@@ -3022,7 +3017,7 @@ export class InteractiveMode {
 					},
 					onEnableSkillCommandsChange: (enabled) => {
 						this.settingsManager.setEnableSkillCommands(enabled);
-						this.rebuildAutocomplete();
+						this.setupAutocomplete(this.fdPath);
 					},
 					onSteeringModeChange: (mode) => {
 						this.session.setSteeringMode(mode);
@@ -3726,7 +3721,7 @@ export class InteractiveMode {
 			}
 			this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
 			this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
-			this.rebuildAutocomplete();
+			this.setupAutocomplete(this.fdPath);
 			const runner = this.session.extensionRunner;
 			if (runner) {
 				this.setupExtensionShortcuts(runner);
