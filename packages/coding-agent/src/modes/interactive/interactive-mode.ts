@@ -375,10 +375,10 @@ export class InteractiveMode {
 				getItems(query: string) {
 					const results = searchSessions(cachedItems, query);
 					return results.map((item) => {
-						// Use session ID to avoid name collisions
-						const sessionId = item.sessionInfo.id;
+						// Use short ID (first 8 chars) for readability
+						const shortId = item.sessionInfo.id.slice(0, 8);
 						return {
-							value: `@[s:${sessionId}]`,
+							value: `@[s:${shortId}]`,
 							label: `[session] ${item.label}`,
 							// No description field at all - don't include it
 						};
@@ -2020,7 +2020,7 @@ export class InteractiveMode {
 			this.flushPendingBashComponents();
 
 			// Detect and process session references - extract as markdown and replace with @file references
-			const sessionRefPattern = /@\[s:([a-f0-9-]+)\]/g;
+			const sessionRefPattern = /@\[s:([a-f0-9]+)\]/g;
 			const sessionRefs = [...text.matchAll(sessionRefPattern)];
 
 			if (sessionRefs.length > 0) {
@@ -2028,11 +2028,11 @@ export class InteractiveMode {
 
 				for (const match of sessionRefs) {
 					const fullMatch = match[0];
-					const sessionId = match[1]?.trim();
+					const shortId = match[1]?.trim();
 
-					if (sessionId) {
-						// Find the session by ID
-						const sessionItem = this.sessionSearchItems.find((item) => item.sessionInfo.id === sessionId);
+					if (shortId) {
+						// Find the session by short ID (prefix match on full ID)
+						const sessionItem = this.sessionSearchItems.find((item) => item.sessionInfo.id.startsWith(shortId));
 
 						if (sessionItem) {
 							try {
@@ -2051,7 +2051,7 @@ export class InteractiveMode {
 								return;
 							}
 						} else {
-							this.showError(`Session not found: ${sessionId}`);
+							this.showError(`Session not found: ${shortId}`);
 							return;
 						}
 					}
@@ -2418,7 +2418,7 @@ export class InteractiveMode {
 			// Rebuild autocomplete so session items are available
 			this.rebuildAutocomplete();
 		} catch {
-			// Non-critical — sessions just won't appear in @ menu
+			// Non-critical - sessions just won't appear in @ menu
 		}
 	}
 
