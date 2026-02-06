@@ -42,7 +42,7 @@ export interface MarkdownSettings {
 
 export interface SessionSearchSettings {
 	enabled?: boolean; // default: true
-	scope?: "cwd" | "all" | "recent"; // default: "all"
+	scope?: "cwd" | "all" | "recent"; // default: "cwd"
 	recentLimit?: number; // default: 25 (only for scope "recent")
 }
 
@@ -770,7 +770,7 @@ export class SettingsManager {
 	}
 
 	getSessionSearchScope(): "cwd" | "all" | "recent" {
-		return this.settings.sessionSearch?.scope ?? "all";
+		return this.settings.sessionSearch?.scope ?? "cwd";
 	}
 
 	setSessionSearchScope(scope: "cwd" | "all" | "recent"): void {

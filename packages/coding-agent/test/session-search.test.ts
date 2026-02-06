@@ -218,7 +218,7 @@ describe("session search", () => {
 			});
 
 			expect(deduplicated).toHaveLength(2);
-			expect(deduplicated[0]!.id).toBe("a"); // First occurrence kept
+			expect(deduplicated[0]!.id).toBe("a"); //urrence kept
 			expect(deduplicated[1]!.id).toBe("c");
 		});
 
@@ -249,6 +249,90 @@ describe("session search", () => {
 			const limited = sessions.slice(0, recentLimit);
 
 			expect(limited).toHaveLength(10);
+		});
+	});
+
+	describe("edge cases", () => {
+		it("handles empty sessions list", () => {
+			const items = buildSessionSearchItems([]);
+			expect(items).toHaveLength(0);
+
+			const results = searchSessions(items, "query");
+			expect(results).toHaveLength(0);
+		});
+
+		it("handles sessions with very long names", () => {
+			const longName = "A".repeat(500);
+			const sessions: SessionInfo[] = [
+				makeSession({
+					id: "long",
+					path: "/tmp/long.jsonl",
+					name: longName,
+					modified: new Date(),
+				}),
+			];
+
+			const items = buildSessionSearchItems(sessions);
+			expect(items).toHaveLength(1);
+			expect(items[0]!.cleanName).toBe(longName);
+		});
+
+		it("handles sessions with special characters in names", () => {
+			const specialNames = [
+				"Session with @mention",
+				"Session [with] brackets",
+				"Session/with/slashes",
+				"Session\\with\\backslashes",
+				"Session\nwith\nnewlines",
+			];
+
+			const sessions = specialNames.map((name, i) =>
+				makeSession({
+					id: `special-${i}`,
+					path: `/tmp/special-${i}.jsonl`,
+					name,
+					modified: new Date(),
+				}),
+			);
+
+			const items = buildSessionSearchItems(sessions);
+			expect(items).toHaveLength(specialNames.length);
+
+			// Newlines should be normalized to spaces
+			const newlineItem = items.find((item) => item.sessionInfo.id === "special-4");
+			expect(newlineItem!.cleanName).toBe("Session with newlines");
+			expect(newlineItem!.cleanName).not.toContain("\n");
+		});
+
+		it("handles sessions with undefined name and empty firstMessage", () => {
+			const sessions: SessionInfo[] = [
+				makeSession({
+					id: "empty",
+					path: "/tmp/empty.jsonl",
+					name: undefined,
+					firstMessage: "",
+					modified: new Date(),
+				}),
+			];
+
+			const items = buildSessionSearchItems(sessions);
+			expect(items).toHaveLength(1);
+			expect(items[0]!.cleanName).toBe("");
+		});
+
+		it("handles sessions with only whitespace in name", () => {
+			const sessions: SessionInfo[] = [
+				makeSession({
+					id: "whitespace",
+					path: "/tmp/whitespace.jsonl",
+					name: "   \t\n   ",
+					modified: new Date(),
+				}),
+			];
+
+			const items = buildSessionSearchItems(sessions);
+			expect(items).toHaveLength(1);
+			expect(items[0]!.cleanName).toBe("");
 		});
 	});
 });

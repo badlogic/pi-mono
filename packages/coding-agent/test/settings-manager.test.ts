@@ -224,4 +224,180 @@ describe("SettingsManager", () => {
 			expect(savedSettings.theme).toBe("light");
 		});
 	});
+
+	describe("sessionSearch settings", () => {
+		it("should default to enabled=true", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getSessionSearchEnabled()).toBe(true);
+		});
+
+		it("should default to scope=cwd", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getSessionSearchScope()).toBe("cwd");
+		});
+
+		it("should default to recentLimit=25", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getSessionSearchRecentLimit()).toBe(25);
+		});
+
+		it("should load custom sessionSearch settings", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					sessionSearch: {
+						enabled: false,
+						scope: "all",
+						recentLimit: 50,
+					},
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getSessionSearchEnabled()).toBe(false);
+			expect(manager.getSessionSearchScope()).toBe("all");
+			expect(manager.getSessionSearchRecentLimit()).toBe(50);
+		});
+
+		it("should persist enabled setting", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			manager.setSessionSearchEnabled(false);
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.sessionSearch?.enabled).toBe(false);
+		});
+
+		it("should persist scope setting", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			manager.setSessionSearchScope("recent");
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.sessionSearch?.scope).toBe("recent");
+		});
+
+		it("should persist recentLimit setting", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			manager.setSessionSearchRecentLimit(10);
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.sessionSearch?.recentLimit).toBe(10);
+		});
+
+		it("should clamp recentLimit to 1-100 range", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			manager.setSessionSearchRecentLimit(0);
+			expect(manager.getSessionSearchRecentLimit()).toBe(1);
+
+			manager.setSessionSearchRecentLimit(150);
+			expect(manager.getSessionSearchRecentLimit()).toBe(100);
+
+			manager.setSessionSearchRecentLimit(50);
+			expect(manager.getSessionSearchRecentLimit()).toBe(50);
+		});
+
+		it("should floor fractional recentLimit values", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			manager.setSessionSearchRecentLimit(15.7);
+			expect(manager.getSessionSearchRecentLimit()).toBe(15);
+		});
+
+		it("should preserve sessionSearch settings when changing unrelated settings", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					sessionSearch: {
+						enabled: false,
+						scope: "recent",
+						recentLimit: 15,
+					},
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setTheme("dark");
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.sessionSearch).toEqual({
+				enabled: false,
+				scope: "recent",
+				recentLimit: 15,
+			});
+			expect(savedSettings.theme).toBe("dark");
+		});
+
+		it("should only modify changed nested fields", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					sessionSearch: {
+						enabled: true,
+						scope: "all",
+						recentLimit: 25,
+					},
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			// Externally modify recentLimit
+			const current = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			current.sessionSearch.recentLimit = 100;
+			writeFileSync(settingsPath, JSON.stringify(current));
+
+			// Change only scope via manager
+			manager.setSessionSearchScope("cwd");
+
+			// Should preserve external recentLimit change
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.sessionSearch.scope).toBe("cwd");
+			expect(savedSettings.sessionSearch.recentLimit).toBe(100);
+			expect(savedSettings.sessionSearch.enabled).toBe(true);
+		});
+
+		it("should return merged sessionSearch settings", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					sessionSearch: {
+						enabled: false,
+						scope: "recent",
+						recentLimit: 10,
+					},
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			const settings = manager.getSessionSearchSettings();
+
+			expect(settings).toEqual({
+				enabled: false,
+				scope: "recent",
+				recentLimit: 10,
+			});
+		});
+
+		it("should return default sessionSearch settings when not configured", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			const settings = manager.getSessionSearchSettings();
+
+			expect(settings).toEqual({
+				enabled: true,
+				scope: "cwd",
+				recentLimit: 25,
+			});
+		});
+	});
 });
