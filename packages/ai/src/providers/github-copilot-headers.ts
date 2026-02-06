@@ -1,31 +1,13 @@
 import type { Message } from "../types.js";
 
-/**
- * Infer whether the current request to Copilot is user-initiated or agent-initiated.
- * Accepts `unknown[]` because providers may pass pre-converted message shapes.
- */
-export function inferCopilotInitiator(messages: unknown[]): "user" | "agent" {
-	if (messages.length === 0) return "user";
-
-	const last = messages[messages.length - 1] as Record<string, unknown>;
-	const role = last.role as string | undefined;
-	if (!role) return "user";
-
-	if (role !== "user") return "agent";
-
-	// Check if last content block is a tool_result (Anthropic-converted shape)
-	const content = last.content;
-	if (Array.isArray(content) && content.length > 0) {
-		const lastBlock = content[content.length - 1] as Record<string, unknown>;
-		if (lastBlock.type === "tool_result") {
-			return "agent";
-		}
-	}
-
-	return "user";
+// Copilot expects X-Initiator to indicate whether the request is user-initiated
+// or agent-initiated (e.g. follow-up after assistant/tool messages).
+export function inferCopilotInitiator(messages: Message[]): "user" | "agent" {
+	const last = messages[messages.length - 1];
+	return last && last.role !== "user" ? "agent" : "user";
 }
 
-/** Check whether any message in the conversation contains image content. */
+// Copilot requires Copilot-Vision-Request header when sending images
 export function hasCopilotVisionInput(messages: Message[]): boolean {
 	return messages.some((msg) => {
 		if (msg.role === "user" && Array.isArray(msg.content)) {
@@ -38,12 +20,8 @@ export function hasCopilotVisionInput(messages: Message[]): boolean {
 	});
 }
 
-/**
- * Build dynamic Copilot headers that vary per-request.
- * Static headers (User-Agent, Editor-Version, etc.) come from model.headers.
- */
 export function buildCopilotDynamicHeaders(params: {
-	messages: unknown[];
+	messages: Message[];
 	hasImages: boolean;
 }): Record<string, string> {
 	const headers: Record<string, string> = {

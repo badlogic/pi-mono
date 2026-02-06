@@ -3,7 +3,11 @@ import { transformMessages } from "../src/providers/transform-messages.js";
 import type { AssistantMessage, Message, Model, ToolCall } from "../src/types.js";
 
 // Normalize function matching what anthropic.ts uses
-function anthropicNormalizeToolCallId(id: string): string {
+function anthropicNormalizeToolCallId(
+	id: string,
+	_model: Model<"anthropic-messages">,
+	_source: AssistantMessage,
+): string {
 	return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
 }
 
@@ -61,64 +65,6 @@ describe("OpenAI to Anthropic session migration for Copilot Claude", () => {
 		const thinkingBlocks = assistantMsg.content.filter((b) => b.type === "thinking");
 		expect(thinkingBlocks).toHaveLength(0);
 		expect(textBlocks.length).toBeGreaterThanOrEqual(2);
-	});
-
-	it("normalizes tool call IDs with disallowed characters", () => {
-		const model = makeCopilotClaudeModel();
-		const toolCallId = "call_abc+123/def=456|some_very_long_id_that_exceeds_limits";
-		const messages: Message[] = [
-			{ role: "user", content: "run a command", timestamp: Date.now() },
-			{
-				role: "assistant",
-				content: [
-					{
-						type: "toolCall",
-						id: toolCallId,
-						name: "bash",
-						arguments: { command: "ls" },
-					},
-				],
-				api: "openai-completions",
-				provider: "github-copilot",
-				model: "gpt-4o",
-				usage: {
-					input: 0,
-					output: 0,
-					cacheRead: 0,
-					cacheWrite: 0,
-					totalTokens: 0,
-					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-				},
-				stopReason: "toolUse",
-				timestamp: Date.now(),
-			},
-			{
-				role: "toolResult",
-				toolCallId,
-				toolName: "bash",
-				content: [{ type: "text", text: "file1.txt\nfile2.txt" }],
-				isError: false,
-				timestamp: Date.now(),
-			},
-		];
-
-		const result = transformMessages(messages, model, anthropicNormalizeToolCallId);
-
-		// Get the normalized tool call ID
-		const assistantMsg = result.find((m) => m.role === "assistant") as AssistantMessage;
-		const toolCall = assistantMsg.content.find((b) => b.type === "toolCall") as ToolCall;
-		const normalizedId = toolCall.id;
-
-		// Verify it only has allowed characters and is <= 64 chars
-		expect(normalizedId).toMatch(/^[a-zA-Z0-9_-]+$/);
-		expect(normalizedId.length).toBeLessThanOrEqual(64);
-
-		// Verify tool result references the normalized ID
-		const toolResultMsg = result.find((m) => m.role === "toolResult");
-		expect(toolResultMsg).toBeDefined();
-		if (toolResultMsg && toolResultMsg.role === "toolResult") {
-			expect(toolResultMsg.toolCallId).toBe(normalizedId);
-		}
 	});
 
 	it("removes thoughtSignature from tool calls when migrating between models", () => {

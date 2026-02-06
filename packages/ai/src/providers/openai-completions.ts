@@ -508,10 +508,6 @@ export function convertMessages(
 		}
 
 		if (model.provider === "openai") return id.length > 40 ? id.slice(0, 40) : id;
-		// Copilot Claude models route to Claude backend which requires Anthropic ID format
-		if (model.provider === "github-copilot" && model.id.toLowerCase().includes("claude")) {
-			return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
-		}
 		return id;
 	};
 
