@@ -6,6 +6,7 @@
 
 - Fixed extra spacing between thinking-only assistant content and subsequent tool execution blocks when assistant messages contain no text
 - Fixed queued steering/follow-up/custom messages remaining stuck after threshold auto-compaction by resuming the agent loop when Agent-level queues still contain pending messages ([#1312](https://github.com/badlogic/pi-mono/pull/1312) by [@ferologics](https://github.com/ferologics))
+- Fixed `tool_result` extension handlers to chain result patches across handlers instead of last-handler-wins behavior ([#1280](https://github.com/badlogic/pi-mono/issues/1280))
 
 ## [0.52.6] - 2026-02-05
 

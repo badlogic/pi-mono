@@ -41,6 +41,7 @@ import type {
 	SessionBeforeTreeResult,
 	ToolCallEvent,
 	ToolCallEventResult,
+	ToolResultEvent,
 	ToolResultEventResult,
 	UserBashEvent,
 	UserBashEventResult,
@@ -98,7 +99,13 @@ interface BeforeAgentStartCombinedResult {
  */
 type RunnerEmitEvent = Exclude<
 	ExtensionEvent,
-	ToolCallEvent | UserBashEvent | ContextEvent | BeforeAgentStartEvent | ResourcesDiscoverEvent | InputEvent
+	| ToolCallEvent
+	| ToolResultEvent
+	| UserBashEvent
+	| ContextEvent
+	| BeforeAgentStartEvent
+	| ResourcesDiscoverEvent
+	| InputEvent
 >;
 
 export type ExtensionErrorListener = (error: ExtensionError) => void;
@@ -484,11 +491,9 @@ export class ExtensionRunner {
 		);
 	}
 
-	async emit(
-		event: RunnerEmitEvent,
-	): Promise<SessionBeforeCompactResult | SessionBeforeTreeResult | ToolResultEventResult | undefined> {
+	async emit(event: RunnerEmitEvent): Promise<SessionBeforeCompactResult | SessionBeforeTreeResult | undefined> {
 		const ctx = this.createContext();
-		let result: SessionBeforeCompactResult | SessionBeforeTreeResult | ToolResultEventResult | undefined;
+		let result: SessionBeforeCompactResult | SessionBeforeTreeResult | undefined;
 
 		for (const ext of this.extensions) {
 			const handlers = ext.handlers.get(event.type);
@@ -504,10 +509,6 @@ export class ExtensionRunner {
 							return result;
 						}
 					}
-
-					if (event.type === "tool_result" && handlerResult) {
-						result = handlerResult as ToolResultEventResult;
-					}
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
 					const stack = err instanceof Error ? err.stack : undefined;
@@ -522,6 +523,56 @@ export class ExtensionRunner {
 		}
 
 		return result;
+	}
+
+	async emitToolResult(event: ToolResultEvent): Promise<ToolResultEventResult | undefined> {
+		const ctx = this.createContext();
+		const currentEvent: ToolResultEvent = { ...event };
+		let modified = false;
+
+		for (const ext of this.extensions) {
+			const handlers = ext.handlers.get("tool_result");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					const handlerResult = (await handler(currentEvent, ctx)) as ToolResultEventResult | undefined;
+					if (!handlerResult) continue;
+
+					if (handlerResult.content !== undefined) {
+						currentEvent.content = handlerResult.content;
+						modified = true;
+					}
+					if (handlerResult.details !== undefined) {
+						currentEvent.details = handlerResult.details;
+						modified = true;
+					}
+					if (handlerResult.isError !== undefined) {
+						currentEvent.isError = handlerResult.isError;
+						modified = true;
+					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
+					this.emitError({
+						extensionPath: ext.path,
+						event: "tool_result",
+						error: message,
+						stack,
+					});
+				}
+			}
+		}
+
+		if (!modified) {
+			return undefined;
+		}
+
+		return {
+			content: currentEvent.content,
+			details: currentEvent.details,
+			isError: currentEvent.isError,
+		};
 	}
 
 	async emitToolCall(event: ToolCallEvent): Promise<ToolCallEventResult | undefined> {
