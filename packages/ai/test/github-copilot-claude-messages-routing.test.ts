@@ -28,7 +28,7 @@ describe("Copilot Claude model routing", () => {
 
 	it("does not have compat block on Claude models (completions-API-specific)", () => {
 		const sonnet = getModel("github-copilot", "claude-sonnet-4");
-		expect((sonnet as any).compat).toBeUndefined();
+		expect("compat" in sonnet).toBe(false);
 	});
 
 	it("preserves static Copilot headers on Claude models", () => {

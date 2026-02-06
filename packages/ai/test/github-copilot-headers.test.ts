@@ -75,6 +75,17 @@ describe("inferCopilotInitiator", () => {
 		];
 		expect(inferCopilotInitiator(messages)).toBe("agent");
 	});
+
+	it("returns 'agent' for any non-user role (e.g. 'tool' in OpenAI format)", () => {
+		const messages: unknown[] = [
+			{
+				role: "tool",
+				tool_call_id: "call_abc123",
+				content: "tool output",
+			},
+		];
+		expect(inferCopilotInitiator(messages)).toBe("agent");
+	});
 });
 
 describe("hasCopilotVisionInput", () => {

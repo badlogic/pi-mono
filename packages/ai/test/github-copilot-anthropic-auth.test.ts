@@ -40,7 +40,7 @@ describe("Anthropic Copilot auth config", () => {
 		});
 
 		expect(options.apiKey).toBeNull();
-		expect(options.defaultHeaders?.["Authorization"]).toBe(`Bearer ${token}`);
+		expect(options.defaultHeaders?.Authorization).toBe(`Bearer ${token}`);
 	});
 
 	it("includes Copilot static headers from model.headers", () => {
