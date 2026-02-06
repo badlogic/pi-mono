@@ -2225,11 +2225,19 @@ export class InteractiveMode {
 						summary: event.result.summary,
 						timestamp: Date.now(),
 					});
+					if (event.retryCanceledMessage) {
+						this.chatContainer.addChild(new Spacer(1));
+						this.chatContainer.addChild(new Text(theme.fg("error", event.retryCanceledMessage), 1, 0));
+					}
 					this.footer.invalidate();
 				} else if (event.errorMessage) {
 					// Compaction failed (e.g., quota exceeded, API error)
 					this.chatContainer.addChild(new Spacer(1));
 					this.chatContainer.addChild(new Text(theme.fg("error", event.errorMessage), 1, 0));
+				} else if (event.retryCanceledMessage) {
+					// Compaction succeeded but embedded retry was cancelled by a hook.
+					this.chatContainer.addChild(new Spacer(1));
+					this.chatContainer.addChild(new Text(theme.fg("error", event.retryCanceledMessage), 1, 0));
 				}
 				void this.flushCompactionQueue({ willRetry: event.willRetry });
 				this.ui.requestRender();
