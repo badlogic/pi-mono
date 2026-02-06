@@ -1,3 +1,6 @@
+export type { Static, TSchema } from "@sinclair/typebox";
+export { Type } from "@sinclair/typebox";
+
 export * from "./api-registry.js";
 export * from "./env-api-keys.js";
 export * from "./models.js";
