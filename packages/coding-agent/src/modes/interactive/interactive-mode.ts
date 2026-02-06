@@ -251,6 +251,9 @@ export class InteractiveMode {
 	// Cached session search items for autocomplete
 	private sessionSearchItems: SessionSearchItem[] = [];
 
+	// Track temp files for cleanup
+	private sessionTempFiles: string[] = [];
+
 	// Convenience accessors
 	private get agent() {
 		return this.session.agent;
@@ -372,8 +375,10 @@ export class InteractiveMode {
 				getItems(query: string) {
 					const results = searchSessions(cachedItems, query);
 					return results.map((item) => {
+						// Use session ID to avoid name collisions
+						const sessionId = item.sessionInfo.id;
 						return {
-							value: `@[s: "${item.cleanName}"]`,
+							value: `@[s:${sessionId}]`,
 							label: `[session] ${item.label}`,
 							// No description field at all - don't include it
 						};
@@ -2015,7 +2020,7 @@ export class InteractiveMode {
 			this.flushPendingBashComponents();
 
 			// Detect and process session references - extract as markdown and replace with @file references
-			const sessionRefPattern = /@\[s:\s+"([^"]+)"\]/g;
+			const sessionRefPattern = /@\[s:([a-f0-9-]+)\]/g;
 			const sessionRefs = [...text.matchAll(sessionRefPattern)];
 
 			if (sessionRefs.length > 0) {
@@ -2023,19 +2028,31 @@ export class InteractiveMode {
 
 				for (const match of sessionRefs) {
 					const fullMatch = match[0];
-					const sessionName = match[1]?.trim();
+					const sessionId = match[1]?.trim();
 
-					if (sessionName) {
-						// Find the session path by matching the clean name
-						const sessionItem = this.sessionSearchItems.find((item) => item.cleanName === sessionName);
+					if (sessionId) {
+						// Find the session by ID
+						const sessionItem = this.sessionSearchItems.find((item) => item.sessionInfo.id === sessionId);
 
 						if (sessionItem) {
-							// Extract conversation as markdown to temp file
-							const markdownPath = extractSessionAsMarkdown(sessionItem.sessionInfo.path);
+							try {
+								// Extract conversation as markdown to temp file
+								const markdownPath = extractSessionAsMarkdown(sessionItem.sessionInfo.path);
 
-							// Replace with @file reference to the markdown file
-							// This allows existing file attachment logic to handle it (truncation/chunking)
-							processedText = processedText.replace(fullMatch, `@${markdownPath}`);
+								// Track temp file for cleanup
+								this.sessionTempFiles.push(markdownPath);
+
+								// Replace with @file reference to the markdown file
+								// This allows existing file attachment logic to handle it (truncation/chunking)
+								processedText = processedText.replace(fullMatch, `@${markdownPath}`);
+							} catch (err) {
+								const message = err instanceof Error ? err.message : String(err);
+								this.showError(`Failed to extract session "${sessionItem.cleanName}": ${message}`);
+								return;
+							}
+						} else {
+							this.showError(`Session not found: ${sessionId}`);
+							return;
 						}
 					}
 				}
@@ -2240,6 +2257,9 @@ export class InteractiveMode {
 				}
 				this.pendingTools.clear();
 
+				// Clean up session temp files after agent finishes processing
+				this.cleanupSessionTempFiles();
+
 				await this.checkShutdownRequested();
 
 				this.ui.requestRender();
@@ -2398,8 +2418,19 @@ export class InteractiveMode {
 			// Rebuild autocomplete so session items are available
 			this.rebuildAutocomplete();
 		} catch {
-			// Non-critical - sessions just won't appear in @ menu
+			// Non-critical — sessions just won't appear in @ menu
 		}
+	}
+
+	private cleanupSessionTempFiles(): void {
+		for (const tempFile of this.sessionTempFiles) {
+			try {
+				fs.rmSync(tempFile, { force: true });
+			} catch {
+				// Ignore cleanup errors
+			}
+		}
+		this.sessionTempFiles = [];
 	}
 
 	private addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {

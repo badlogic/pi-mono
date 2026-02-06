@@ -311,8 +311,8 @@ export const MODELS = {
 			contextWindow: 200000,
 			maxTokens: 64000,
 		} satisfies Model<"bedrock-converse-stream">,
-		"anthropic.claude-opus-4-6-v1:0": {
-			id: "anthropic.claude-opus-4-6-v1:0",
+		"anthropic.claude-opus-4-6-v1": {
+			id: "anthropic.claude-opus-4-6-v1",
 			name: "Claude Opus 4.6",
 			api: "bedrock-converse-stream",
 			provider: "amazon-bedrock",
@@ -325,7 +325,7 @@ export const MODELS = {
 				cacheRead: 0.5,
 				cacheWrite: 6.25,
 			},
-			contextWindow: 200000,
+			contextWindow: 1000000,
 			maxTokens: 128000,
 		} satisfies Model<"bedrock-converse-stream">,
 		"anthropic.claude-sonnet-4-20250514-v1:0": {
@@ -458,14 +458,14 @@ export const MODELS = {
 			cost: {
 				input: 5,
 				output: 25,
-				cacheRead: 1.5,
-				cacheWrite: 18.75,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
 			},
 			contextWindow: 200000,
 			maxTokens: 64000,
 		} satisfies Model<"bedrock-converse-stream">,
-		"eu.anthropic.claude-opus-4-6-v1:0": {
-			id: "eu.anthropic.claude-opus-4-6-v1:0",
+		"eu.anthropic.claude-opus-4-6-v1": {
+			id: "eu.anthropic.claude-opus-4-6-v1",
 			name: "Claude Opus 4.6 (EU)",
 			api: "bedrock-converse-stream",
 			provider: "amazon-bedrock",
@@ -475,10 +475,10 @@ export const MODELS = {
 			cost: {
 				input: 5,
 				output: 25,
-				cacheRead: 1.5,
-				cacheWrite: 18.75,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
 			},
-			contextWindow: 200000,
+			contextWindow: 1000000,
 			maxTokens: 128000,
 		} satisfies Model<"bedrock-converse-stream">,
 		"eu.anthropic.claude-sonnet-4-20250514-v1:0": {
@@ -549,8 +549,8 @@ export const MODELS = {
 			contextWindow: 200000,
 			maxTokens: 64000,
 		} satisfies Model<"bedrock-converse-stream">,
-		"global.anthropic.claude-opus-4-6-v1:0": {
-			id: "global.anthropic.claude-opus-4-6-v1:0",
+		"global.anthropic.claude-opus-4-6-v1": {
+			id: "global.anthropic.claude-opus-4-6-v1",
 			name: "Claude Opus 4.6 (Global)",
 			api: "bedrock-converse-stream",
 			provider: "amazon-bedrock",
@@ -563,7 +563,7 @@ export const MODELS = {
 				cacheRead: 0.5,
 				cacheWrite: 6.25,
 			},
-			contextWindow: 200000,
+			contextWindow: 1000000,
 			maxTokens: 128000,
 		} satisfies Model<"bedrock-converse-stream">,
 		"global.anthropic.claude-sonnet-4-20250514-v1:0": {
@@ -1172,14 +1172,14 @@ export const MODELS = {
 			cost: {
 				input: 5,
 				output: 25,
-				cacheRead: 1.5,
-				cacheWrite: 18.75,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
 			},
 			contextWindow: 200000,
 			maxTokens: 64000,
 		} satisfies Model<"bedrock-converse-stream">,
-		"us.anthropic.claude-opus-4-6-v1:0": {
-			id: "us.anthropic.claude-opus-4-6-v1:0",
+		"us.anthropic.claude-opus-4-6-v1": {
+			id: "us.anthropic.claude-opus-4-6-v1",
 			name: "Claude Opus 4.6 (US)",
 			api: "bedrock-converse-stream",
 			provider: "amazon-bedrock",
@@ -1189,10 +1189,10 @@ export const MODELS = {
 			cost: {
 				input: 5,
 				output: 25,
-				cacheRead: 1.5,
-				cacheWrite: 18.75,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
 			},
-			contextWindow: 200000,
+			contextWindow: 1000000,
 			maxTokens: 128000,
 		} satisfies Model<"bedrock-converse-stream">,
 		"us.anthropic.claude-sonnet-4-20250514-v1:0": {
@@ -1535,23 +1535,6 @@ export const MODELS = {
 				cacheWrite: 6.25,
 			},
 			contextWindow: 1000000,
-			maxTokens: 128000,
-		} satisfies Model<"anthropic-messages">,
-		"claude-opus-4-6-20260205": {
-			id: "claude-opus-4-6-20260205",
-			name: "Claude Opus 4.6",
-			api: "anthropic-messages",
-			provider: "anthropic",
-			baseUrl: "https://api.anthropic.com",
-			reasoning: true,
-			input: ["text", "image"],
-			cost: {
-				input: 5,
-				output: 25,
-				cacheRead: 0.5,
-				cacheWrite: 6.25,
-			},
-			contextWindow: 200000,
 			maxTokens: 128000,
 		} satisfies Model<"anthropic-messages">,
 		"claude-sonnet-4-0": {
@@ -2329,7 +2312,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 128000,
-			maxTokens: 16000,
+			maxTokens: 64000,
 		} satisfies Model<"openai-completions">,
 		"claude-sonnet-4": {
 			id: "claude-sonnet-4",
@@ -5688,8 +5671,8 @@ export const MODELS = {
 			input: ["text"],
 			cost: {
 				input: 0.09,
-				output: 0.39999999999999997,
-				cacheRead: 0,
+				output: 0.44999999999999996,
+				cacheRead: 0.09,
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
@@ -6622,12 +6605,12 @@ export const MODELS = {
 			reasoning: false,
 			input: ["text"],
 			cost: {
-				input: 3.5,
-				output: 3.5,
+				input: 4,
+				output: 4,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
-			contextWindow: 10000,
+			contextWindow: 131000,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
 		"meta-llama/llama-3.1-70b-instruct": {
@@ -8398,6 +8381,23 @@ export const MODELS = {
 			contextWindow: 200000,
 			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
+		"openrouter/pony-alpha": {
+			id: "openrouter/pony-alpha",
+			name: "Pony Alpha",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 200000,
+			maxTokens: 131000,
+		} satisfies Model<"openai-completions">,
 		"prime-intellect/intellect-3": {
 			id: "prime-intellect/intellect-3",
 			name: "Prime Intellect: INTELLECT-3",
@@ -8812,7 +8812,7 @@ export const MODELS = {
 			api: "openai-completions",
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: true,
+			reasoning: false,
 			input: ["text"],
 			cost: {
 				input: 0.22,
@@ -9529,13 +9529,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.07,
+				input: 0.06,
 				output: 0.39999999999999997,
-				cacheRead: 0.01,
+				cacheRead: 0.0100000002,
 				cacheWrite: 0,
 			},
-			contextWindow: 200000,
-			maxTokens: 131072,
+			contextWindow: 202752,
+			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
 	},
 	"vercel-ai-gateway": {

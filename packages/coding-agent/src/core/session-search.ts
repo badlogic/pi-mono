@@ -6,6 +6,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { getAgentDir } from "../config.js";
 import { type SessionInfo, SessionManager } from "./session-manager.js";
+import { buildSessionTree, buildTreePrefix, flattenSessionTree } from "./session-tree.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -123,84 +124,6 @@ export async function discoverSessions(
 // ---------------------------------------------------------------------------
 // Search and build items for autocomplete
 // ---------------------------------------------------------------------------
-
-interface SessionTreeNode {
-	info: SessionInfo;
-	children: SessionTreeNode[];
-}
-
-interface FlatNode {
-	info: SessionInfo;
-	depth: number;
-	isLast: boolean;
-	ancestorContinues: boolean[];
-}
-
-function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
-	const byPath = new Map<string, SessionTreeNode>();
-
-	// Create nodes for all sessions
-	for (const info of sessions) {
-		byPath.set(info.path, { info, children: [] });
-	}
-
-	// Build parent-child relationships
-	const roots: SessionTreeNode[] = [];
-	for (const info of sessions) {
-		const node = byPath.get(info.path)!;
-		if (info.parentSessionPath) {
-			const parentNode = byPath.get(info.parentSessionPath);
-			if (parentNode) {
-				parentNode.children.push(node);
-			} else {
-				roots.push(node);
-			}
-		} else {
-			roots.push(node);
-		}
-	}
-
-	// Sort children and roots by modified date (descending)
-	const sortNodes = (nodes: SessionTreeNode[]) => {
-		nodes.sort((a, b) => b.info.modified.getTime() - a.info.modified.getTime());
-		for (const node of nodes) {
-			sortNodes(node.children);
-		}
-	};
-	sortNodes(roots);
-
-	return roots;
-}
-
-function flattenSessionTree(roots: SessionTreeNode[]): FlatNode[] {
-	const result: FlatNode[] = [];
-
-	const walk = (node: SessionTreeNode, depth: number, ancestorContinues: boolean[], isLast: boolean): void => {
-		result.push({ info: node.info, depth, isLast, ancestorContinues });
-
-		for (let i = 0; i < node.children.length; i++) {
-			const childIsLast = i === node.children.length - 1;
-			const continues = depth > 0 ? !isLast : false;
-			walk(node.children[i]!, depth + 1, [...ancestorContinues, continues], childIsLast);
-		}
-	};
-
-	for (let i = 0; i < roots.length; i++) {
-		walk(roots[i]!, 0, [], i === roots.length - 1);
-	}
-
-	return result;
-}
-
-function buildTreePrefix(node: FlatNode): string {
-	if (node.depth === 0) {
-		return "";
-	}
-
-	const parts = node.ancestorContinues.map((continues) => (continues ? "│  " : "   "));
-	const branch = node.isLast ? "└─ " : "├─ ";
-	return parts.join("") + branch;
-}
 
 export function buildSessionSearchItems(sessions: SessionInfo[]): SessionSearchItem[] {
 	const tree = buildSessionTree(sessions);
@@ -387,56 +310,62 @@ export async function summarizeSession(
 /**
  * Extract conversation as markdown and write to a temp file.
  * Returns the path to the temp file.
+ * @throws Error if session cannot be read or temp file cannot be written
  */
 export function extractSessionAsMarkdown(sessionPath: string): string {
-	const sm = SessionManager.open(sessionPath);
-	const context = sm.buildSessionContext();
+	try {
+		const sm = SessionManager.open(sessionPath);
+		const context = sm.buildSessionContext();
 
-	const lines: string[] = [];
+		const lines: string[] = [];
 
-	// Add session metadata as frontmatter
-	const sessionName = sm.getSessionName();
-	if (sessionName) {
-		lines.push(`# ${sessionName}`);
-		lines.push("");
-	}
+		// Add session metadata as frontmatter
+		const sessionName = sm.getSessionName();
+		if (sessionName) {
+			lines.push(`# ${sessionName}`);
+			lines.push("");
+		}
 
-	// Extract user and assistant messages only
-	for (const msg of context.messages) {
-		if (msg.role === "user" || msg.role === "assistant") {
-			const content = msg.content;
-			let text: string;
+		// Extract user and assistant messages only
+		for (const msg of context.messages) {
+			if (msg.role === "user" || msg.role === "assistant") {
+				const content = msg.content;
+				let text: string;
 
-			if (typeof content === "string") {
-				text = content;
-			} else if (Array.isArray(content)) {
-				text = content
-					.filter((block): block is { type: "text"; text: string } => block.type === "text")
-					.map((block) => block.text)
-					.join("\n");
-			} else {
-				continue;
-			}
+				if (typeof content === "string") {
+					text = content;
+				} else if (Array.isArray(content)) {
+					text = content
+						.filter((block): block is { type: "text"; text: string } => block.type === "text")
+						.map((block) => block.text)
+						.join("\n");
+				} else {
+					continue;
+				}
 
-			if (text.trim()) {
-				const role = msg.role === "user" ? "**User**" : "**Assistant**";
-				lines.push(`${role}:`);
-				lines.push("");
-				lines.push(text.trim());
-				lines.push("");
-				lines.push("---");
-				lines.push("");
+				if (text.trim()) {
+					const role = msg.role === "user" ? "**User**" : "**Assistant**";
+					lines.push(`${role}:`);
+					lines.push("");
+					lines.push(text.trim());
+					lines.push("");
+					lines.push("---");
+					lines.push("");
+				}
 			}
 		}
+
+		const markdown = lines.join("\n");
+
+		// Write to temp file
+		const tempDir = tmpdir();
+		const basename = sessionPath.split("/").pop()?.replace(".jsonl", ".md") || "session.md";
+		const tempPath = join(tempDir, `pi-session-${Date.now()}-${basename}`);
+		writeFileSync(tempPath, markdown, "utf-8");
+
+		return tempPath;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`Failed to extract session as markdown: ${message}`);
 	}
-
-	const markdown = lines.join("\n");
-
-	// Write to temp file
-	const tempDir = tmpdir();
-	const basename = sessionPath.split("/").pop()?.replace(".jsonl", ".md") || "session.md";
-	const tempPath = join(tempDir, `pi-session-${Date.now()}-${basename}`);
-	writeFileSync(tempPath, markdown, "utf-8");
-
-	return tempPath;
 }
