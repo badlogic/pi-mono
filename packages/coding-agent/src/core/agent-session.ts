@@ -146,6 +146,7 @@ export type AutoCompactionRetryHookContext = {
 
 export type AutoCompactionRetryHookResult =
 	| { action: "proceed" }
+	// If provided, this override is applied session-wide (no automatic restore).
 	| { action: "proceed"; systemPrompt: string }
 	| { action: "cancel"; errorMessage?: string };
 
@@ -1700,57 +1701,58 @@ export class AgentSession {
 				details,
 			};
 
-				// Give embedded consumers a chance to adjust or cancel the retry based on prompt sizing.
-				// This runs after the compacted context has been applied to agent state.
-				let retryCanceledMessage: string | undefined;
-				let restoreRetrySystemPrompt: { systemPrompt: string; baseSystemPrompt: string } | undefined;
-				if (willRetry) {
-					const model = this.model;
-					const contextWindow = model.contextWindow;
-					const reserveTokens = settings.reserveTokens;
+			// Give embedded consumers a chance to adjust or cancel the retry based on prompt sizing.
+			// This runs after the compacted context has been applied to agent state.
+			let retryCanceledMessage: string | undefined;
+			if (willRetry) {
+				const model = this.model;
+				const contextWindow = model.contextWindow;
+				const reserveTokens = settings.reserveTokens;
 
 				const systemPrompt = this.agent.state.systemPrompt;
 				const systemPromptTokens = Math.ceil(systemPrompt.length / 4);
 				const messageTokens = estimateContextTokens(this.agent.state.messages).tokens;
 				const totalTokens = systemPromptTokens + messageTokens;
 				const tokenBudget = Math.max(0, contextWindow - reserveTokens);
-					const overheadTokensEstimate = 512;
-					const hookTimeoutMs = settings.autoCompactionRetryHookTimeoutMs;
+				const overheadTokensEstimate = 512;
+				const hookTimeoutMs = settings.autoCompactionRetryHookTimeoutMs ?? 1000;
 
-					const runHookWithTimeout = async () => {
-						const hook = this._autoCompactionRetryHook;
-						if (!hook) return undefined;
-						return await new Promise<AutoCompactionRetryHookResult | undefined>((resolve, reject) => {
-							const timeout = setTimeout(() => resolve(undefined), Math.max(1, hookTimeoutMs));
-							Promise.resolve(
-								hook({
-									reason: "overflow",
-									compaction: result,
-									messages: this.agent.state.messages,
-									systemPrompt,
-								model,
-								contextWindow,
-								reserveTokens,
-								estimates: {
-									messageTokens,
-									systemPromptTokens,
-									totalTokens,
-									tokenBudget,
-									overheadTokensEstimate,
-									overBy: Math.max(0, totalTokens - tokenBudget),
-								},
+				const runHookWithTimeout = async () => {
+					const hook = this._autoCompactionRetryHook;
+					if (!hook) return undefined;
+
+					const hookPromise = Promise.resolve().then(() =>
+						hook({
+							reason: "overflow",
+							compaction: result,
+							messages: this.agent.state.messages,
+							systemPrompt,
+							model,
+							contextWindow,
+							reserveTokens,
+							estimates: {
+								messageTokens,
+								systemPromptTokens,
+								totalTokens,
+								tokenBudget,
+								overheadTokensEstimate,
+								overBy: Math.max(0, totalTokens - tokenBudget),
+							},
+						}),
+					);
+
+					const timeoutMs = Math.max(1, hookTimeoutMs);
+					let timeout: ReturnType<typeof setTimeout> | undefined;
+					try {
+						return await Promise.race([
+							hookPromise,
+							new Promise<undefined>((resolve) => {
+								timeout = setTimeout(() => resolve(undefined), timeoutMs);
 							}),
-						).then(
-							(value) => {
-								clearTimeout(timeout);
-								resolve(value);
-							},
-							(err) => {
-								clearTimeout(timeout);
-								reject(err);
-							},
-						);
-					});
+						]);
+					} finally {
+						if (timeout) clearTimeout(timeout);
+					}
 				};
 
 				try {
@@ -1762,10 +1764,6 @@ export class AgentSession {
 							decision.errorMessage ||
 							"Auto-compaction succeeded, but the overflow auto-retry was cancelled. Try a larger-context model or reduce injected context.";
 					} else if (decision && "systemPrompt" in decision && typeof decision.systemPrompt === "string") {
-						restoreRetrySystemPrompt = {
-							systemPrompt: this.agent.state.systemPrompt,
-							baseSystemPrompt: this._baseSystemPrompt || this.agent.state.systemPrompt,
-						};
 						this.agent.setSystemPrompt(decision.systemPrompt);
 						this._baseSystemPrompt = decision.systemPrompt;
 					}
@@ -1795,11 +1793,6 @@ export class AgentSession {
 							await this.agent.continue();
 						} catch {
 							// Retry failure is handled by subsequent agent_end logic.
-						} finally {
-								if (restoreRetrySystemPrompt) {
-									this.agent.setSystemPrompt(restoreRetrySystemPrompt.systemPrompt);
-									this._baseSystemPrompt = restoreRetrySystemPrompt.baseSystemPrompt;
-								}
 						}
 					})().catch(() => {});
 				}, 100);

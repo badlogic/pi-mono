@@ -166,8 +166,9 @@ describe("AgentSession auto-compaction retry hook", () => {
 
 		const endEvent = events.find((e) => e.type === "auto_compaction_end");
 		expect(endEvent && endEvent.type === "auto_compaction_end" && endEvent.willRetry).toBe(false);
-		expect(endEvent && endEvent.type === "auto_compaction_end" && endEvent.errorMessage).toBe(
+		expect(endEvent && endEvent.type === "auto_compaction_end" && endEvent.retryCanceledMessage).toBe(
 			"retry canceled by consumer",
 		);
+		expect(endEvent && endEvent.type === "auto_compaction_end" && endEvent.errorMessage).toBeUndefined();
 	});
 });
