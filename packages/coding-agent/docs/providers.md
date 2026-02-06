@@ -140,6 +140,20 @@ Also supports ECS task roles (`AWS_CONTAINER_CREDENTIALS_*`) and IRSA (`AWS_WEB_
 pi --provider amazon-bedrock --model us.anthropic.claude-sonnet-4-20250514-v1:0
 ```
 
+If you are connecting to a bedrock API proxy, the following environment variables can be used
+instead:
+
+```bash
+# Set the URL for the bedrock proxy
+export AWS_ENDPOINT_URL_BEDROCK_RUNTIME
+
+# Set if your proxy does not require authentication
+export AWS_BEDROCK_SKIP_AUTH=1
+
+# Set if your proxy only supports HTTP 1.1
+export AWS_BEDROCK_FORCE_HTTP1=1
+```
+
 ### Google Vertex AI
 
 Uses Application Default Credentials:
