@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed extra spacing between thinking-only assistant content and subsequent tool execution blocks when assistant messages contain no text
+
 ## [0.52.6] - 2026-02-05
 
 ### Breaking Changes
