@@ -9,6 +9,10 @@ function renderLastLine(container: Container, width = 120): string {
 	return last.render(width).join("\n");
 }
 
+function renderAll(container: Container, width = 120): string {
+	return container.children.flatMap((child) => child.render(width)).join("\n");
+}
+
 describe("InteractiveMode.showStatus", () => {
 	beforeAll(() => {
 		// showStatus uses the global theme instance
@@ -53,5 +57,80 @@ describe("InteractiveMode.showStatus", () => {
 		// adds spacer + text
 		expect(fakeThis.chatContainer.children).toHaveLength(5);
 		expect(renderLastLine(fakeThis.chatContainer)).toContain("STATUS_TWO");
+	});
+});
+
+describe("InteractiveMode.showLoadedResources", () => {
+	beforeAll(() => {
+		initTheme("dark");
+	});
+
+	function createShowLoadedResourcesThis(options: {
+		quietStartup: boolean;
+		verbose?: boolean;
+		skills?: Array<{ filePath: string }>;
+		skillDiagnostics?: Array<{ type: "warning" | "error" | "collision"; message: string }>;
+	}) {
+		const fakeThis: any = {
+			options: { verbose: options.verbose ?? false },
+			chatContainer: new Container(),
+			settingsManager: {
+				getQuietStartup: () => options.quietStartup,
+			},
+			session: {
+				promptTemplates: [],
+				extensionRunner: undefined,
+				resourceLoader: {
+					getPathMetadata: () => new Map(),
+					getAgentsFiles: () => ({ agentsFiles: [] }),
+					getSkills: () => ({
+						skills: options.skills ?? [],
+						diagnostics: options.skillDiagnostics ?? [],
+					}),
+					getPrompts: () => ({ prompts: [], diagnostics: [] }),
+					getExtensions: () => ({ errors: [] }),
+					getThemes: () => ({ themes: [], diagnostics: [] }),
+				},
+			},
+			formatDisplayPath: (p: string) => p,
+			buildScopeGroups: () => [],
+			formatScopeGroups: () => "resource-list",
+			getShortPath: (p: string) => p,
+			formatDiagnostics: () => "diagnostics",
+		};
+
+		return fakeThis;
+	}
+
+	test("does not show verbose listing on quiet startup during reload", () => {
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: true,
+			skills: [{ filePath: "/tmp/skill/SKILL.md" }],
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			extensionPaths: ["/tmp/ext/index.ts"],
+			force: false,
+			showDiagnosticsWhenQuiet: true,
+		});
+
+		expect(fakeThis.chatContainer.children).toHaveLength(0);
+	});
+
+	test("still shows diagnostics on quiet startup when requested", () => {
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: true,
+			skills: [{ filePath: "/tmp/skill/SKILL.md" }],
+			skillDiagnostics: [{ type: "warning", message: "duplicate skill name" }],
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+			showDiagnosticsWhenQuiet: true,
+		});
+
+		const output = renderAll(fakeThis.chatContainer);
+		expect(output).toContain("[Skill conflicts]");
+		expect(output).not.toContain("[Skills]");
 	});
 });

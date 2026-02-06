@@ -858,119 +858,137 @@ export class InteractiveMode {
 		return lines.join("\n");
 	}
 
-	private showLoadedResources(options?: { extensionPaths?: string[]; force?: boolean }): void {
-		const shouldShow = options?.force || this.options.verbose || !this.settingsManager.getQuietStartup();
-		if (!shouldShow) {
+	private showLoadedResources(options?: {
+		extensionPaths?: string[];
+		force?: boolean;
+		showDiagnosticsWhenQuiet?: boolean;
+	}): void {
+		const showListing = options?.force || this.options.verbose || !this.settingsManager.getQuietStartup();
+		const showDiagnostics = showListing || options?.showDiagnosticsWhenQuiet === true;
+		if (!showListing && !showDiagnostics) {
 			return;
 		}
 
 		const metadata = this.session.resourceLoader.getPathMetadata();
-
 		const sectionHeader = (name: string, color: ThemeColor = "mdHeading") => theme.fg(color, `[${name}]`);
 
-		const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
-		if (contextFiles.length > 0) {
-			this.chatContainer.addChild(new Spacer(1));
-			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`)).join("\n");
-			this.chatContainer.addChild(new Text(`${sectionHeader("Context")}\n${contextList}`, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+		const skillsResult = this.session.resourceLoader.getSkills();
+		const promptsResult = this.session.resourceLoader.getPrompts();
+		const themesResult = this.session.resourceLoader.getThemes();
 
-		const skills = this.session.resourceLoader.getSkills().skills;
-		if (skills.length > 0) {
-			const skillPaths = skills.map((s) => s.filePath);
-			const groups = this.buildScopeGroups(skillPaths, metadata);
-			const skillList = this.formatScopeGroups(groups, {
-				formatPath: (p) => this.formatDisplayPath(p),
-				formatPackagePath: (p, source) => this.getShortPath(p, source),
-			});
-			this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+		if (showListing) {
+			const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
+			if (contextFiles.length > 0) {
+				this.chatContainer.addChild(new Spacer(1));
+				const contextList = contextFiles
+					.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`))
+					.join("\n");
+				this.chatContainer.addChild(new Text(`${sectionHeader("Context")}\n${contextList}`, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 
-		const skillDiagnostics = this.session.resourceLoader.getSkills().diagnostics;
-		if (skillDiagnostics.length > 0) {
-			const warningLines = this.formatDiagnostics(skillDiagnostics, metadata);
-			this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Skill conflicts]")}\n${warningLines}`, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+			const skills = skillsResult.skills;
+			if (skills.length > 0) {
+				const skillPaths = skills.map((s) => s.filePath);
+				const groups = this.buildScopeGroups(skillPaths, metadata);
+				const skillList = this.formatScopeGroups(groups, {
+					formatPath: (p) => this.formatDisplayPath(p),
+					formatPackagePath: (p, source) => this.getShortPath(p, source),
+				});
+				this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 
-		const templates = this.session.promptTemplates;
-		if (templates.length > 0) {
-			const templatePaths = templates.map((t) => t.filePath);
-			const groups = this.buildScopeGroups(templatePaths, metadata);
-			const templateByPath = new Map(templates.map((t) => [t.filePath, t]));
-			const templateList = this.formatScopeGroups(groups, {
-				formatPath: (p) => {
-					const template = templateByPath.get(p);
-					return template ? `/${template.name}` : this.formatDisplayPath(p);
-				},
-				formatPackagePath: (p) => {
-					const template = templateByPath.get(p);
-					return template ? `/${template.name}` : this.formatDisplayPath(p);
-				},
-			});
-			this.chatContainer.addChild(new Text(`${sectionHeader("Prompts")}\n${templateList}`, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+			const templates = this.session.promptTemplates;
+			if (templates.length > 0) {
+				const templatePaths = templates.map((t) => t.filePath);
+				const groups = this.buildScopeGroups(templatePaths, metadata);
+				const templateByPath = new Map(templates.map((t) => [t.filePath, t]));
+				const templateList = this.formatScopeGroups(groups, {
+					formatPath: (p) => {
+						const template = templateByPath.get(p);
+						return template ? `/${template.name}` : this.formatDisplayPath(p);
+					},
+					formatPackagePath: (p) => {
+						const template = templateByPath.get(p);
+						return template ? `/${template.name}` : this.formatDisplayPath(p);
+					},
+				});
+				this.chatContainer.addChild(new Text(`${sectionHeader("Prompts")}\n${templateList}`, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 
-		const promptDiagnostics = this.session.resourceLoader.getPrompts().diagnostics;
-		if (promptDiagnostics.length > 0) {
-			const warningLines = this.formatDiagnostics(promptDiagnostics, metadata);
-			this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Prompt conflicts]")}\n${warningLines}`, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+			const extensionPaths = options?.extensionPaths ?? [];
+			if (extensionPaths.length > 0) {
+				const groups = this.buildScopeGroups(extensionPaths, metadata);
+				const extList = this.formatScopeGroups(groups, {
+					formatPath: (p) => this.formatDisplayPath(p),
+					formatPackagePath: (p, source) => this.getShortPath(p, source),
+				});
+				this.chatContainer.addChild(new Text(`${sectionHeader("Extensions", "mdHeading")}\n${extList}`, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 
-		const extensionPaths = options?.extensionPaths ?? [];
-		if (extensionPaths.length > 0) {
-			const groups = this.buildScopeGroups(extensionPaths, metadata);
-			const extList = this.formatScopeGroups(groups, {
-				formatPath: (p) => this.formatDisplayPath(p),
-				formatPackagePath: (p, source) => this.getShortPath(p, source),
-			});
-			this.chatContainer.addChild(new Text(`${sectionHeader("Extensions", "mdHeading")}\n${extList}`, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
-
-		const extensionDiagnostics: ResourceDiagnostic[] = [];
-		const extensionErrors = this.session.resourceLoader.getExtensions().errors;
-		if (extensionErrors.length > 0) {
-			for (const error of extensionErrors) {
-				extensionDiagnostics.push({ type: "error", message: error.error, path: error.path });
+			// Show loaded themes (excluding built-in)
+			const loadedThemes = themesResult.themes;
+			const customThemes = loadedThemes.filter((t) => t.sourcePath);
+			if (customThemes.length > 0) {
+				const themePaths = customThemes.map((t) => t.sourcePath!);
+				const groups = this.buildScopeGroups(themePaths, metadata);
+				const themeList = this.formatScopeGroups(groups, {
+					formatPath: (p) => this.formatDisplayPath(p),
+					formatPackagePath: (p, source) => this.getShortPath(p, source),
+				});
+				this.chatContainer.addChild(new Text(`${sectionHeader("Themes")}\n${themeList}`, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
 			}
 		}
 
-		const commandDiagnostics = this.session.extensionRunner?.getCommandDiagnostics() ?? [];
-		extensionDiagnostics.push(...commandDiagnostics);
+		if (showDiagnostics) {
+			const skillDiagnostics = skillsResult.diagnostics;
+			if (skillDiagnostics.length > 0) {
+				const warningLines = this.formatDiagnostics(skillDiagnostics, metadata);
+				this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Skill conflicts]")}\n${warningLines}`, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 
-		const shortcutDiagnostics = this.session.extensionRunner?.getShortcutDiagnostics() ?? [];
-		extensionDiagnostics.push(...shortcutDiagnostics);
+			const promptDiagnostics = promptsResult.diagnostics;
+			if (promptDiagnostics.length > 0) {
+				const warningLines = this.formatDiagnostics(promptDiagnostics, metadata);
+				this.chatContainer.addChild(
+					new Text(`${theme.fg("warning", "[Prompt conflicts]")}\n${warningLines}`, 0, 0),
+				);
+				this.chatContainer.addChild(new Spacer(1));
+			}
 
-		if (extensionDiagnostics.length > 0) {
-			const warningLines = this.formatDiagnostics(extensionDiagnostics, metadata);
-			this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Extension issues]")}\n${warningLines}`, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+			const extensionDiagnostics: ResourceDiagnostic[] = [];
+			const extensionErrors = this.session.resourceLoader.getExtensions().errors;
+			if (extensionErrors.length > 0) {
+				for (const error of extensionErrors) {
+					extensionDiagnostics.push({ type: "error", message: error.error, path: error.path });
+				}
+			}
 
-		// Show loaded themes (excluding built-in)
-		const loadedThemes = this.session.resourceLoader.getThemes().themes;
-		const customThemes = loadedThemes.filter((t) => t.sourcePath);
-		if (customThemes.length > 0) {
-			const themePaths = customThemes.map((t) => t.sourcePath!);
-			const groups = this.buildScopeGroups(themePaths, metadata);
-			const themeList = this.formatScopeGroups(groups, {
-				formatPath: (p) => this.formatDisplayPath(p),
-				formatPackagePath: (p, source) => this.getShortPath(p, source),
-			});
-			this.chatContainer.addChild(new Text(`${sectionHeader("Themes")}\n${themeList}`, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
-		}
+			const commandDiagnostics = this.session.extensionRunner?.getCommandDiagnostics() ?? [];
+			extensionDiagnostics.push(...commandDiagnostics);
 
-		const themeDiagnostics = this.session.resourceLoader.getThemes().diagnostics;
-		if (themeDiagnostics.length > 0) {
-			const warningLines = this.formatDiagnostics(themeDiagnostics, metadata);
-			this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Theme conflicts]")}\n${warningLines}`, 0, 0));
-			this.chatContainer.addChild(new Spacer(1));
+			const shortcutDiagnostics = this.session.extensionRunner?.getShortcutDiagnostics() ?? [];
+			extensionDiagnostics.push(...shortcutDiagnostics);
+
+			if (extensionDiagnostics.length > 0) {
+				const warningLines = this.formatDiagnostics(extensionDiagnostics, metadata);
+				this.chatContainer.addChild(
+					new Text(`${theme.fg("warning", "[Extension issues]")}\n${warningLines}`, 0, 0),
+				);
+				this.chatContainer.addChild(new Spacer(1));
+			}
+
+			const themeDiagnostics = themesResult.diagnostics;
+			if (themeDiagnostics.length > 0) {
+				const warningLines = this.formatDiagnostics(themeDiagnostics, metadata);
+				this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Theme conflicts]")}\n${warningLines}`, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
 		}
 	}
 
@@ -3728,7 +3746,11 @@ export class InteractiveMode {
 			}
 			this.rebuildChatFromMessages();
 			dismissLoader(this.editor as Component);
-			this.showLoadedResources({ extensionPaths: runner?.getExtensionPaths() ?? [], force: true });
+			this.showLoadedResources({
+				extensionPaths: runner?.getExtensionPaths() ?? [],
+				force: false,
+				showDiagnosticsWhenQuiet: true,
+			});
 			const modelsJsonError = this.session.modelRegistry.getError();
 			if (modelsJsonError) {
 				this.showError(`models.json error: ${modelsJsonError}`);
