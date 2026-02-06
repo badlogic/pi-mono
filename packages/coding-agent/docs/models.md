@@ -153,7 +153,7 @@ Route a built-in provider through a proxy without redefining models:
 
 All built-in Anthropic models remain available. Existing OAuth or API key auth continues to work.
 
-To fully replace a built-in provider with custom models, include the `models` array:
+To merge custom models into a built-in provider, include the `models` array:
 
 ```json
 {
@@ -167,6 +167,12 @@ To fully replace a built-in provider with custom models, include the `models` ar
   }
 }
 ```
+
+Merge semantics:
+- Built-in models are kept.
+- Custom models are upserted by `id` within the provider.
+- If a custom model `id` matches a built-in model `id`, the custom model replaces that built-in model.
+- If a custom model `id` is new, it is added alongside built-in models.
 
 ## Per-model Overrides
 
@@ -194,10 +200,10 @@ Use `modelOverrides` to customize specific built-in models without replacing the
 `modelOverrides` supports these fields per model: `name`, `reasoning`, `input`, `cost` (partial), `contextWindow`, `maxTokens`, `headers`, `compat`.
 
 Behavior notes:
-- Overrides are applied only to models that exist for that provider.
+- `modelOverrides` are applied to built-in provider models.
 - Unknown model IDs are ignored.
 - You can combine provider-level `baseUrl`/`headers` with `modelOverrides`.
-- If `models` is defined for a provider (full replacement), built-in models are removed first. `modelOverrides` entries that do not match the resulting provider model list are ignored.
+- If `models` is also defined for a provider, custom models are merged after built-in overrides. A custom model with the same `id` replaces the overridden built-in model entry.
 
 ## OpenAI Compatibility
 
