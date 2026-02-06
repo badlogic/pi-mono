@@ -92,6 +92,15 @@ interface BeforeAgentStartCombinedResult {
 	systemPrompt?: string;
 }
 
+/**
+ * Events handled by the generic emit() method.
+ * Events with dedicated emitXxx() methods are excluded for stronger type safety.
+ */
+type RunnerEmitEvent = Exclude<
+	ExtensionEvent,
+	ToolCallEvent | UserBashEvent | ContextEvent | BeforeAgentStartEvent | ResourcesDiscoverEvent | InputEvent
+>;
+
 export type ExtensionErrorListener = (error: ExtensionError) => void;
 
 export type NewSessionHandler = (options?: {
@@ -476,7 +485,7 @@ export class ExtensionRunner {
 	}
 
 	async emit(
-		event: ExtensionEvent,
+		event: RunnerEmitEvent,
 	): Promise<SessionBeforeCompactResult | SessionBeforeTreeResult | ToolResultEventResult | undefined> {
 		const ctx = this.createContext();
 		let result: SessionBeforeCompactResult | SessionBeforeTreeResult | ToolResultEventResult | undefined;
