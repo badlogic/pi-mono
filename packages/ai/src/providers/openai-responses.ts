@@ -270,5 +270,6 @@ function applyServiceTierPricing(usage: Usage, serviceTier: ResponseCreateParams
 	usage.cost.output *= multiplier;
 	usage.cost.cacheRead *= multiplier;
 	usage.cost.cacheWrite *= multiplier;
-	usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
+	usage.cost.total =
+		usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite + (usage.cost.webSearch ?? 0);
 }

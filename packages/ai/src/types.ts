@@ -137,11 +137,13 @@ export interface Usage {
 	cacheRead: number;
 	cacheWrite: number;
 	totalTokens: number;
+	webSearchCalls?: number;
 	cost: {
 		input: number;
 		output: number;
 		cacheRead: number;
 		cacheWrite: number;
+		webSearch?: number;
 		total: number;
 	};
 }
@@ -282,6 +284,7 @@ export interface Model<TApi extends Api> {
 		output: number; // $/million tokens
 		cacheRead: number; // $/million tokens
 		cacheWrite: number; // $/million tokens
+		webSearchPerCall?: number; // $/call for web search tool
 	};
 	contextWindow: number;
 	maxTokens: number;

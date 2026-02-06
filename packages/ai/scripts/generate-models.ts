@@ -1216,6 +1216,13 @@ async function generateModels() {
 		}
 	}
 
+	// Set web search per-call pricing for OpenAI Responses API models ($10/1000 calls = $0.01/call)
+	for (const model of allModels) {
+		if (model.provider === "openai" && model.api === "openai-responses") {
+			model.cost.webSearchPerCall = 0.01;
+		}
+	}
+
 	const azureOpenAiModels: Model<Api>[] = allModels
 		.filter((model) => model.provider === "openai" && model.api === "openai-responses")
 		.map((model) => ({
@@ -1279,6 +1286,9 @@ export const MODELS = {
 			output += `\t\t\t\toutput: ${model.cost.output},\n`;
 			output += `\t\t\t\tcacheRead: ${model.cost.cacheRead},\n`;
 			output += `\t\t\t\tcacheWrite: ${model.cost.cacheWrite},\n`;
+			if (model.cost.webSearchPerCall !== undefined) {
+				output += `\t\t\t\twebSearchPerCall: ${model.cost.webSearchPerCall},\n`;
+			}
 			output += `\t\t\t},\n`;
 			output += `\t\t\tcontextWindow: ${model.contextWindow},\n`;
 			output += `\t\t\tmaxTokens: ${model.maxTokens},\n`;

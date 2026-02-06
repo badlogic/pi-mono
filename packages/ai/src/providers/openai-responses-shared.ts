@@ -269,6 +269,7 @@ export async function processResponsesStream<TApi extends Api>(
 	let currentBlock: ThinkingContent | TextContent | (ToolCall & { partialJson: string }) | null = null;
 	const blocks = output.content;
 	const blockIndex = () => blocks.length - 1;
+	let webSearchCalls = 0;
 
 	for await (const event of openaiStream) {
 		if (event.type === "response.output_item.added") {
@@ -295,6 +296,12 @@ export async function processResponsesStream<TApi extends Api>(
 				output.content.push(currentBlock);
 				stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
 			}
+		} else if (
+			event.type === "response.web_search_call.in_progress" ||
+			event.type === "response.web_search_call.searching" ||
+			event.type === "response.web_search_call.completed"
+		) {
+			// Web search progress events — nothing to stream to the client
 		} else if (event.type === "response.reasoning_summary_part.added") {
 			if (currentItem && currentItem.type === "reasoning") {
 				currentItem.summary = currentItem.summary || [];
@@ -425,6 +432,8 @@ export async function processResponsesStream<TApi extends Api>(
 
 				currentBlock = null;
 				stream.push({ type: "toolcall_end", contentIndex: blockIndex(), toolCall, partial: output });
+			} else if (item.type === "web_search_call") {
+				webSearchCalls++;
 			}
 		} else if (event.type === "response.completed") {
 			const response = event.response;
@@ -437,7 +446,8 @@ export async function processResponsesStream<TApi extends Api>(
 					cacheRead: cachedTokens,
 					cacheWrite: 0,
 					totalTokens: response.usage.total_tokens || 0,
-					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					webSearchCalls,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, webSearch: 0, total: 0 },
 				};
 			}
 			calculateCost(model, output.usage);
