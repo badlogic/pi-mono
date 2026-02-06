@@ -2,15 +2,25 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Changed `models.json` provider `models` behavior from full replacement to merge-by-id with built-in models. Built-in models are now kept by default, and custom models upsert by `id`.
+
 ### Added
 
 - Added `modelOverrides` in `models.json` to customize individual built-in models per provider without full provider replacement ([#1332](https://github.com/badlogic/pi-mono/pull/1332) by [@charles-cooper](https://github.com/charles-cooper))
+- Added `AWS_BEDROCK_SKIP_AUTH` and `AWS_BEDROCK_FORCE_HTTP1` environment variables for connecting to unauthenticated Bedrock proxies ([#1320](https://github.com/badlogic/pi-mono/pull/1320) by [@virtuald](https://github.com/virtuald))
 
 ### Fixed
 
 - Fixed extra spacing between thinking-only assistant content and subsequent tool execution blocks when assistant messages contain no text
 - Fixed queued steering/follow-up/custom messages remaining stuck after threshold auto-compaction by resuming the agent loop when Agent-level queues still contain pending messages ([#1312](https://github.com/badlogic/pi-mono/pull/1312) by [@ferologics](https://github.com/ferologics))
 - Fixed `tool_result` extension handlers to chain result patches across handlers instead of last-handler-wins behavior ([#1280](https://github.com/badlogic/pi-mono/issues/1280))
+- Fixed compromised auth lock files being handled gracefully instead of crashing auth storage initialization ([#1322](https://github.com/badlogic/pi-mono/issues/1322))
+- Fixed Bedrock adaptive thinking handling for Claude Opus 4.6 with interleaved thinking beta responses ([#1323](https://github.com/badlogic/pi-mono/pull/1323) by [@markusylisiurunen](https://github.com/markusylisiurunen))
+- Fixed OpenAI Responses API requests to use `store: false` by default to avoid server-side history logging ([#1308](https://github.com/badlogic/pi-mono/issues/1308))
+- Fixed interactive mode startup by initializing autocomplete after resources are loaded ([#1328](https://github.com/badlogic/pi-mono/issues/1328))
+- Fixed `modelOverrides` merge behavior for nested objects and documented usage details ([#1062](https://github.com/badlogic/pi-mono/issues/1062))
 
 ## [0.52.6] - 2026-02-05
 
