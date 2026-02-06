@@ -38,6 +38,8 @@ import type {
 	ResourcesDiscoverEvent,
 	ResourcesDiscoverResult,
 	SessionBeforeCompactResult,
+	SessionBeforeForkResult,
+	SessionBeforeSwitchResult,
 	SessionBeforeTreeResult,
 	ToolCallEvent,
 	ToolCallEventResult,
@@ -107,6 +109,27 @@ type RunnerEmitEvent = Exclude<
 	| ResourcesDiscoverEvent
 	| InputEvent
 >;
+
+type SessionBeforeEvent = Extract<
+	RunnerEmitEvent,
+	{ type: "session_before_switch" | "session_before_fork" | "session_before_compact" | "session_before_tree" }
+>;
+
+type SessionBeforeEventResult =
+	| SessionBeforeSwitchResult
+	| SessionBeforeForkResult
+	| SessionBeforeCompactResult
+	| SessionBeforeTreeResult;
+
+type RunnerEmitResult<TEvent extends RunnerEmitEvent> = TEvent extends { type: "session_before_switch" }
+	? SessionBeforeSwitchResult | undefined
+	: TEvent extends { type: "session_before_fork" }
+		? SessionBeforeForkResult | undefined
+		: TEvent extends { type: "session_before_compact" }
+			? SessionBeforeCompactResult | undefined
+			: TEvent extends { type: "session_before_tree" }
+				? SessionBeforeTreeResult | undefined
+				: undefined;
 
 export type ExtensionErrorListener = (error: ExtensionError) => void;
 
@@ -480,20 +503,18 @@ export class ExtensionRunner {
 		};
 	}
 
-	private isSessionBeforeEvent(
-		type: string,
-	): type is "session_before_switch" | "session_before_fork" | "session_before_compact" | "session_before_tree" {
+	private isSessionBeforeEvent(event: RunnerEmitEvent): event is SessionBeforeEvent {
 		return (
-			type === "session_before_switch" ||
-			type === "session_before_fork" ||
-			type === "session_before_compact" ||
-			type === "session_before_tree"
+			event.type === "session_before_switch" ||
+			event.type === "session_before_fork" ||
+			event.type === "session_before_compact" ||
+			event.type === "session_before_tree"
 		);
 	}
 
-	async emit(event: RunnerEmitEvent): Promise<SessionBeforeCompactResult | SessionBeforeTreeResult | undefined> {
+	async emit<TEvent extends RunnerEmitEvent>(event: TEvent): Promise<RunnerEmitResult<TEvent>> {
 		const ctx = this.createContext();
-		let result: SessionBeforeCompactResult | SessionBeforeTreeResult | undefined;
+		let result: SessionBeforeEventResult | undefined;
 
 		for (const ext of this.extensions) {
 			const handlers = ext.handlers.get(event.type);
@@ -503,10 +524,10 @@ export class ExtensionRunner {
 				try {
 					const handlerResult = await handler(event, ctx);
 
-					if (this.isSessionBeforeEvent(event.type) && handlerResult) {
-						result = handlerResult as SessionBeforeCompactResult | SessionBeforeTreeResult;
+					if (this.isSessionBeforeEvent(event) && handlerResult) {
+						result = handlerResult as SessionBeforeEventResult;
 						if (result.cancel) {
-							return result;
+							return result as RunnerEmitResult<TEvent>;
 						}
 					}
 				} catch (err) {
@@ -522,7 +543,7 @@ export class ExtensionRunner {
 			}
 		}
 
-		return result;
+		return result as RunnerEmitResult<TEvent>;
 	}
 
 	async emitToolResult(event: ToolResultEvent): Promise<ToolResultEventResult | undefined> {
