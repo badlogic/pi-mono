@@ -49,6 +49,9 @@ export interface OAuthProviderInterface {
 
 	/** Optional: modify models for this provider (e.g., update baseUrl) */
 	modifyModels?(models: Model<Api>[], credentials: OAuthCredentials): Model<Api>[];
+
+	/** Optional: get API key from external CLI tool credentials */
+	getCliToken?(): string | undefined;
 }
 
 /** @deprecated Use OAuthProviderInterface instead */

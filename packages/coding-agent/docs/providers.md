@@ -66,6 +66,7 @@ pi
 | Kimi For Coding | `KIMI_API_KEY` |
 | MiniMax | `MINIMAX_API_KEY` |
 | MiniMax (China) | `MINIMAX_CN_API_KEY` |
+| Kiro | `KIRO_ACCESS_TOKEN` |
 
 ## Auth File
 
@@ -164,6 +165,16 @@ export GOOGLE_CLOUD_LOCATION=us-central1
 ```
 
 Or set `GOOGLE_APPLICATION_CREDENTIALS` to a service account key file.
+
+### Kiro
+
+Kiro is AWS's AI coding assistant. Authenticate via OAuth or access token:
+
+```bash
+export KIRO_ACCESS_TOKEN=your-access-token
+```
+
+Supports Claude models (claude-haiku-4-5, claude-sonnet-4-5, claude-sonnet-4-5-1m, claude-opus-4-5) with built-in thinking mode and automatic context management.
 
 ## Custom Providers
 

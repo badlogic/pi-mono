@@ -257,4 +257,16 @@ describe("AI Providers Abort Tests", () => {
 			await testAbortThenNewMessage(llm);
 		});
 	});
+
+	describe.skipIf(!process.env.KIRO_ACCESS_TOKEN)("Kiro Provider Abort", () => {
+		const llm = getModel("kiro", "claude-sonnet-4-5");
+
+		it("should abort mid-stream", { retry: 3 }, async () => {
+			await testAbortSignal(llm, { thinkingEnabled: true });
+		});
+
+		it("should handle immediate abort", { retry: 3 }, async () => {
+			await testImmediateAbort(llm);
+		});
+	});
 });
