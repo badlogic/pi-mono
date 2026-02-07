@@ -5,7 +5,6 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import ignore from "ignore";
 import { minimatch } from "minimatch";
-import { CONFIG_DIR_NAME } from "../config.js";
 import { type GitSource, parseGitUrl } from "../utils/git.js";
 import type { PackageSource, SettingsManager } from "./settings-manager.js";
 
@@ -701,7 +700,7 @@ export class DefaultPackageManager implements PackageManager {
 		await this.resolvePackageSources(packageSources, accumulator, onMissing);
 
 		const globalBaseDir = this.agentDir;
-		const projectBaseDir = join(this.cwd, CONFIG_DIR_NAME);
+		const projectBaseDir = this.settingsManager.getProjectConfigDir();
 
 		for (const resourceType of RESOURCE_TYPES) {
 			const target = this.getTargetMap(accumulator, resourceType);
@@ -1238,7 +1237,7 @@ export class DefaultPackageManager implements PackageManager {
 			return this.getTemporaryDir("npm");
 		}
 		if (scope === "project") {
-			return join(this.cwd, CONFIG_DIR_NAME, "npm");
+			return join(this.settingsManager.getProjectConfigDir(), "npm");
 		}
 		return join(this.getGlobalNpmRoot(), "..");
 	}
@@ -1257,7 +1256,7 @@ export class DefaultPackageManager implements PackageManager {
 			return join(this.getTemporaryDir("npm"), "node_modules", source.name);
 		}
 		if (scope === "project") {
-			return join(this.cwd, CONFIG_DIR_NAME, "npm", "node_modules", source.name);
+			return join(this.settingsManager.getProjectConfigDir(), "npm", "node_modules", source.name);
 		}
 		return join(this.getGlobalNpmRoot(), source.name);
 	}
@@ -1267,7 +1266,7 @@ export class DefaultPackageManager implements PackageManager {
 			return this.getTemporaryDir(`git-${source.host}`, source.path);
 		}
 		if (scope === "project") {
-			return join(this.cwd, CONFIG_DIR_NAME, "git", source.host, source.path);
+			return join(this.settingsManager.getProjectConfigDir(), "git", source.host, source.path);
 		}
 		return join(this.agentDir, "git", source.host, source.path);
 	}
@@ -1277,7 +1276,7 @@ export class DefaultPackageManager implements PackageManager {
 			return undefined;
 		}
 		if (scope === "project") {
-			return join(this.cwd, CONFIG_DIR_NAME, "git");
+			return join(this.settingsManager.getProjectConfigDir(), "git");
 		}
 		return join(this.agentDir, "git");
 	}
@@ -1292,7 +1291,7 @@ export class DefaultPackageManager implements PackageManager {
 
 	private getBaseDirForScope(scope: SourceScope): string {
 		if (scope === "project") {
-			return join(this.cwd, CONFIG_DIR_NAME);
+			return this.settingsManager.getProjectConfigDir();
 		}
 		if (scope === "user") {
 			return this.agentDir;

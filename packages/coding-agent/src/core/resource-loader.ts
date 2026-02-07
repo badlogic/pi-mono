@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import chalk from "chalk";
-import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
+import { getAgentDir } from "../config.js";
 import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";
 
@@ -597,7 +597,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const themes: Theme[] = [];
 		const diagnostics: ResourceDiagnostic[] = [];
 		if (includeDefaults) {
-			const defaultDirs = [join(this.agentDir, "themes"), join(this.cwd, CONFIG_DIR_NAME, "themes")];
+			const defaultDirs = [
+				join(this.agentDir, "themes"),
+				join(this.settingsManager.getProjectConfigDir(), "themes"),
+			];
 
 			for (const dir of defaultDirs) {
 				this.loadThemesFromDir(dir, themes, diagnostics);
@@ -743,7 +746,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	}
 
 	private discoverSystemPromptFile(): string | undefined {
-		const projectPath = join(this.cwd, CONFIG_DIR_NAME, "SYSTEM.md");
+		const projectPath = join(this.settingsManager.getProjectConfigDir(), "SYSTEM.md");
 		if (existsSync(projectPath)) {
 			return projectPath;
 		}
@@ -757,7 +760,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	}
 
 	private discoverAppendSystemPromptFile(): string | undefined {
-		const projectPath = join(this.cwd, CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
+		const projectPath = join(this.settingsManager.getProjectConfigDir(), "APPEND_SYSTEM.md");
 		if (existsSync(projectPath)) {
 			return projectPath;
 		}
@@ -786,11 +789,12 @@ export class DefaultResourceLoader implements ResourceLoader {
 			join(this.agentDir, "themes"),
 			join(this.agentDir, "extensions"),
 		];
+		const projectConfigDir = this.settingsManager.getProjectConfigDir();
 		const projectRoots = [
-			join(this.cwd, CONFIG_DIR_NAME, "skills"),
-			join(this.cwd, CONFIG_DIR_NAME, "prompts"),
-			join(this.cwd, CONFIG_DIR_NAME, "themes"),
-			join(this.cwd, CONFIG_DIR_NAME, "extensions"),
+			join(projectConfigDir, "skills"),
+			join(projectConfigDir, "prompts"),
+			join(projectConfigDir, "themes"),
+			join(projectConfigDir, "extensions"),
 		];
 
 		for (const root of agentRoots) {

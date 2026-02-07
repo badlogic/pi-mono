@@ -24,7 +24,7 @@ describe("DefaultPackageManager", () => {
 		agentDir = join(tempDir, "agent");
 		mkdirSync(agentDir, { recursive: true });
 
-		settingsManager = SettingsManager.inMemory();
+		settingsManager = SettingsManager.inMemory({}, tempDir);
 		packageManager = new DefaultPackageManager({
 			cwd: tempDir,
 			agentDir,

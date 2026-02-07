@@ -67,7 +67,7 @@ describe("DefaultPackageManager git update", () => {
 
 		mkdirSync(agentDir, { recursive: true });
 
-		settingsManager = SettingsManager.inMemory();
+		settingsManager = SettingsManager.inMemory({}, tempDir);
 		packageManager = new DefaultPackageManager({
 			cwd: tempDir,
 			agentDir,
