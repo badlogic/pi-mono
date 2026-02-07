@@ -77,6 +77,7 @@ Store credentials in `~/.pi/agent/auth.json`:
   "openai": { "type": "api_key", "key": "sk-..." },
   "google": { "type": "api_key", "key": "..." },
   "opencode": { "type": "api_key", "key": "..." }
+  "z-ai" { "type": "api_key", "key": "..." }
 }
 ```
 
