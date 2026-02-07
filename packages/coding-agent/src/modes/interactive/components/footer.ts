@@ -1,4 +1,3 @@
-import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { type Component, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import type { AgentSession } from "../../../core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
@@ -79,21 +78,13 @@ export class FooterComponent implements Component {
 			}
 		}
 
-		// Get last assistant message for context percentage calculation (skip aborted messages)
-		const lastAssistantMessage = state.messages
-			.slice()
-			.reverse()
-			.find((m) => m.role === "assistant" && m.stopReason !== "aborted") as AssistantMessage | undefined;
-
-		// Calculate context percentage from last message (input + output + cacheRead + cacheWrite)
-		const contextTokens = lastAssistantMessage
-			? lastAssistantMessage.usage.input +
-				lastAssistantMessage.usage.output +
-				lastAssistantMessage.usage.cacheRead +
-				lastAssistantMessage.usage.cacheWrite
-			: 0;
-		const contextWindow = state.model?.contextWindow || 0;
-		const contextPercentValue = contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0;
+		// Calculate context usage from current session context.
+		// This handles compaction correctly (last assistant usage can be stale after compaction).
+		const contextUsage = this.session.getContextUsage();
+		const contextTokens = contextUsage?.tokens ?? 0;
+		const contextWindow = contextUsage?.contextWindow ?? state.model?.contextWindow ?? 0;
+		const contextPercentValue =
+			contextUsage?.percent ?? (contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0);
 		const contextPercent = contextPercentValue.toFixed(1);
 
 		// Replace home directory with ~

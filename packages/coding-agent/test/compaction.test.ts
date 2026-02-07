@@ -9,6 +9,8 @@ import {
 	calculateContextTokens,
 	compact,
 	DEFAULT_COMPACTION_SETTINGS,
+	estimateContextTokens,
+	estimateTokens,
 	findCutPoint,
 	getLastAssistantUsage,
 	prepareCompaction,
@@ -146,6 +148,58 @@ describe("Token calculation", () => {
 	it("should handle zero values", () => {
 		const usage = createMockUsage(0, 0, 0, 0);
 		expect(calculateContextTokens(usage)).toBe(0);
+	});
+});
+
+describe("estimateContextTokens", () => {
+	it("should ignore stale assistant usage when a newer compaction summary exists", () => {
+		const staleAssistant: AssistantMessage = {
+			...createAssistantMessage("stale usage", createMockUsage(95000, 1000)),
+			timestamp: 1000,
+		};
+		const compactionSummary: AgentMessage = {
+			role: "compactionSummary",
+			summary: "Short summary",
+			tokensBefore: 120000,
+			timestamp: 2000,
+		};
+		const messages: AgentMessage[] = [compactionSummary, staleAssistant];
+
+		const estimate = estimateContextTokens(messages);
+		const heuristicTotal = estimateTokens(compactionSummary) + estimateTokens(staleAssistant);
+
+		expect(estimate.usageTokens).toBe(0);
+		expect(estimate.lastUsageIndex).toBeNull();
+		expect(estimate.trailingTokens).toBe(heuristicTotal);
+		expect(estimate.tokens).toBe(heuristicTotal);
+	});
+
+	it("should use assistant usage when it is newer than compaction summary", () => {
+		const usage = createMockUsage(4000, 600, 100, 50);
+		const freshAssistant: AssistantMessage = {
+			...createAssistantMessage("fresh usage", usage),
+			timestamp: 3000,
+		};
+		const compactionSummary: AgentMessage = {
+			role: "compactionSummary",
+			summary: "Previous summary",
+			tokensBefore: 120000,
+			timestamp: 2000,
+		};
+		const trailingUser: AgentMessage = {
+			...createUserMessage("A follow-up note after assistant usage"),
+			timestamp: 4000,
+		};
+		const messages: AgentMessage[] = [compactionSummary, freshAssistant, trailingUser];
+
+		const estimate = estimateContextTokens(messages);
+		const expectedUsageTokens = calculateContextTokens(usage);
+		const expectedTrailingTokens = estimateTokens(trailingUser);
+
+		expect(estimate.usageTokens).toBe(expectedUsageTokens);
+		expect(estimate.lastUsageIndex).toBe(1);
+		expect(estimate.trailingTokens).toBe(expectedTrailingTokens);
+		expect(estimate.tokens).toBe(expectedUsageTokens + expectedTrailingTokens);
 	});
 });
 
