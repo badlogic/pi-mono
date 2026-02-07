@@ -103,29 +103,12 @@ export class Input implements Component, Focusable {
 
 		// Deletion
 		if (kb.matches(data, "deleteCharBackward")) {
-			this.lastAction = null;
-			if (this.cursor > 0) {
-				this.pushUndo();
-				const beforeCursor = this.value.slice(0, this.cursor);
-				const graphemes = [...segmenter.segment(beforeCursor)];
-				const lastGrapheme = graphemes[graphemes.length - 1];
-				const graphemeLength = lastGrapheme ? lastGrapheme.segment.length : 1;
-				this.value = this.value.slice(0, this.cursor - graphemeLength) + this.value.slice(this.cursor);
-				this.cursor -= graphemeLength;
-			}
+			this.handleBackspace();
 			return;
 		}
 
 		if (kb.matches(data, "deleteCharForward")) {
-			this.lastAction = null;
-			if (this.cursor < this.value.length) {
-				this.pushUndo();
-				const afterCursor = this.value.slice(this.cursor);
-				const graphemes = [...segmenter.segment(afterCursor)];
-				const firstGrapheme = graphemes[0];
-				const graphemeLength = firstGrapheme ? firstGrapheme.segment.length : 1;
-				this.value = this.value.slice(0, this.cursor) + this.value.slice(this.cursor + graphemeLength);
-			}
+			this.handleForwardDelete();
 			return;
 		}
 
@@ -224,6 +207,31 @@ export class Input implements Component, Focusable {
 
 		this.value = this.value.slice(0, this.cursor) + char + this.value.slice(this.cursor);
 		this.cursor += char.length;
+	}
+
+	private handleBackspace(): void {
+		this.lastAction = null;
+		if (this.cursor > 0) {
+			this.pushUndo();
+			const beforeCursor = this.value.slice(0, this.cursor);
+			const graphemes = [...segmenter.segment(beforeCursor)];
+			const lastGrapheme = graphemes[graphemes.length - 1];
+			const graphemeLength = lastGrapheme ? lastGrapheme.segment.length : 1;
+			this.value = this.value.slice(0, this.cursor - graphemeLength) + this.value.slice(this.cursor);
+			this.cursor -= graphemeLength;
+		}
+	}
+
+	private handleForwardDelete(): void {
+		this.lastAction = null;
+		if (this.cursor < this.value.length) {
+			this.pushUndo();
+			const afterCursor = this.value.slice(this.cursor);
+			const graphemes = [...segmenter.segment(afterCursor)];
+			const firstGrapheme = graphemes[0];
+			const graphemeLength = firstGrapheme ? firstGrapheme.segment.length : 1;
+			this.value = this.value.slice(0, this.cursor) + this.value.slice(this.cursor + graphemeLength);
+		}
 	}
 
 	private deleteToLineStart(): void {
