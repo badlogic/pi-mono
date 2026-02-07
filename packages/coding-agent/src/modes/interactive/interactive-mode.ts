@@ -359,6 +359,9 @@ export class InteractiveMode {
 			fdPath,
 		);
 		this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
+		if (this.editor !== this.defaultEditor) {
+			this.editor.setAutocompleteProvider?.(this.autocompleteProvider);
+		}
 	}
 
 	async init(): Promise<void> {
@@ -1380,6 +1383,7 @@ export class InteractiveMode {
 			setHeader: (factory) => this.setExtensionHeader(factory),
 			setTitle: (title) => this.ui.terminal.setTitle(title),
 			custom: (factory, options) => this.showExtensionCustom(factory, options),
+			pasteToEditor: (text) => this.editor.handleInput(`\x1b[200~${text}\x1b[201~`),
 			setEditorText: (text) => this.editor.setText(text),
 			getEditorText: () => this.editor.getText(),
 			editor: (title, prefill) => this.showExtensionEditor(title, prefill),
@@ -1606,9 +1610,9 @@ export class InteractiveMode {
 			// Use duck typing since instanceof fails across jiti module boundaries
 			const customEditor = newEditor as unknown as Record<string, unknown>;
 			if ("actionHandlers" in customEditor && customEditor.actionHandlers instanceof Map) {
-				customEditor.onEscape = this.defaultEditor.onEscape;
-				customEditor.onCtrlD = this.defaultEditor.onCtrlD;
-				customEditor.onPasteImage = this.defaultEditor.onPasteImage;
+				customEditor.onEscape = () => this.defaultEditor.onEscape?.();
+				customEditor.onCtrlD = () => this.defaultEditor.onCtrlD?.();
+				customEditor.onPasteImage = () => this.defaultEditor.onPasteImage?.();
 				customEditor.onExtensionShortcut = (data: string) => this.defaultEditor.onExtensionShortcut?.(data);
 				// Copy action handlers (clear, suspend, model switching, etc.)
 				for (const [action, handler] of this.defaultEditor.actionHandlers) {

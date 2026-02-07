@@ -197,6 +197,11 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			return undefined as never;
 		},
 
+		pasteToEditor(text: string): void {
+			// Paste handling not supported in RPC mode - falls back to setEditorText
+			this.setEditorText(text);
+		},
+
 		setEditorText(text: string): void {
 			// Fire and forget - host can implement editor control
 			output({

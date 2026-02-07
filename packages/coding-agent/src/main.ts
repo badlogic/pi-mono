@@ -13,7 +13,7 @@ import { selectConfig } from "./cli/config-selector.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
-import { getAgentDir, getModelsPath, VERSION } from "./config.js";
+import { APP_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { DEFAULT_THINKING_LEVEL } from "./core/defaults.js";
 import { exportFromFile } from "./core/export-html/index.js";
@@ -61,6 +61,74 @@ interface PackageCommandOptions {
 	command: PackageCommand;
 	source?: string;
 	local: boolean;
+	help: boolean;
+	invalidOption?: string;
+}
+
+function getPackageCommandUsage(command: PackageCommand): string {
+	switch (command) {
+		case "install":
+			return `${APP_NAME} install <source> [-l]`;
+		case "remove":
+			return `${APP_NAME} remove <source> [-l]`;
+		case "update":
+			return `${APP_NAME} update [source]`;
+		case "list":
+			return `${APP_NAME} list`;
+	}
+}
+
+function printPackageCommandHelp(command: PackageCommand): void {
+	switch (command) {
+		case "install":
+			console.log(`${chalk.bold("Usage:")}
+  ${getPackageCommandUsage("install")}
+
+Install a package and add it to settings.
+
+Options:
+  -l, --local    Install project-locally (.pi/settings.json)
+
+Examples:
+  ${APP_NAME} install npm:@foo/bar
+  ${APP_NAME} install git:github.com/user/repo
+  ${APP_NAME} install https://github.com/user/repo
+  ${APP_NAME} install git@github.com:user/repo
+  ${APP_NAME} install ./local/path
+`);
+			return;
+
+		case "remove":
+			console.log(`${chalk.bold("Usage:")}
+  ${getPackageCommandUsage("remove")}
+
+Remove a package and its source from settings.
+
+Options:
+  -l, --local    Remove from project settings (.pi/settings.json)
+
+Example:
+  ${APP_NAME} remove npm:@foo/bar
+`);
+			return;
+
+		case "update":
+			console.log(`${chalk.bold("Usage:")}
+  ${getPackageCommandUsage("update")}
+
+Update installed packages.
+If <source> is provided, only that package is updated.
+`);
+			return;
+
+		case "list":
+			console.log(`${chalk.bold("Usage:")}
+  ${getPackageCommandUsage("list")}
+
+List installed packages from user and project settings.
+`);
+			return;
+	}
 }
 
 function parsePackageCommand(args: string[]): PackageCommandOptions | undefined {
@@ -70,16 +138,36 @@ function parsePackageCommand(args: string[]): PackageCommandOptions | undefined 
 	}
 
 	let local = false;
-	const sources: string[] = [];
+	let help = false;
+	let invalidOption: string | undefined;
+	let source: string | undefined;
+
 	for (const arg of rest) {
-		if (arg === "-l" || arg === "--local") {
-			local = true;
+		if (arg === "-h" || arg === "--help") {
+			help = true;
 			continue;
 		}
-		sources.push(arg);
+
+		if (arg === "-l" || arg === "--local") {
+			if (command === "install" || command === "remove") {
+				local = true;
+			} else {
+				invalidOption = invalidOption ?? arg;
+			}
+			continue;
+		}
+
+		if (arg.startsWith("-")) {
+			invalidOption = invalidOption ?? arg;
+			continue;
+		}
+
+		if (!source) {
+			source = arg;
+		}
 	}
 
-	return { command, source: sources[0], local };
+	return { command, source, local, help, invalidOption };
 }
 
 async function handlePackageCommand(args: string[]): Promise<boolean> {
@@ -88,94 +176,112 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 		return false;
 	}
 
+	if (options.help) {
+		printPackageCommandHelp(options.command);
+		return true;
+	}
+
+	if (options.invalidOption) {
+		console.error(chalk.red(`Unknown option ${options.invalidOption} for "${options.command}".`));
+		console.error(chalk.dim(`Use "${APP_NAME} --help" or "${getPackageCommandUsage(options.command)}".`));
+		process.exitCode = 1;
+		return true;
+	}
+
+	const source = options.source;
+	if ((options.command === "install" || options.command === "remove") && !source) {
+		console.error(chalk.red(`Missing ${options.command} source.`));
+		console.error(chalk.dim(`Usage: ${getPackageCommandUsage(options.command)}`));
+		process.exitCode = 1;
+		return true;
+	}
+
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
 	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
 
-	// Set up progress callback for CLI feedback
 	packageManager.setProgressCallback((event) => {
 		if (event.type === "start") {
 			process.stdout.write(chalk.dim(`${event.message}\n`));
-		} else if (event.type === "error") {
-			console.error(chalk.red(`Error: ${event.message}`));
 		}
 	});
 
-	if (options.command === "install") {
-		if (!options.source) {
-			console.error(chalk.red("Missing install source."));
-			process.exit(1);
+	try {
+		switch (options.command) {
+			case "install":
+				await packageManager.install(source!, { local: options.local });
+				packageManager.addSourceToSettings(source!, { local: options.local });
+				console.log(chalk.green(`Installed ${source}`));
+				return true;
+
+			case "remove": {
+				await packageManager.remove(source!, { local: options.local });
+				const removed = packageManager.removeSourceFromSettings(source!, { local: options.local });
+				if (!removed) {
+					console.error(chalk.red(`No matching package found for ${source}`));
+					process.exitCode = 1;
+					return true;
+				}
+				console.log(chalk.green(`Removed ${source}`));
+				return true;
+			}
+
+			case "list": {
+				const globalSettings = settingsManager.getGlobalSettings();
+				const projectSettings = settingsManager.getProjectSettings();
+				const globalPackages = globalSettings.packages ?? [];
+				const projectPackages = projectSettings.packages ?? [];
+
+				if (globalPackages.length === 0 && projectPackages.length === 0) {
+					console.log(chalk.dim("No packages installed."));
+					return true;
+				}
+
+				const formatPackage = (pkg: (typeof globalPackages)[number], scope: "user" | "project") => {
+					const source = typeof pkg === "string" ? pkg : pkg.source;
+					const filtered = typeof pkg === "object";
+					const display = filtered ? `${source} (filtered)` : source;
+					console.log(`  ${display}`);
+					const path = packageManager.getInstalledPath(source, scope);
+					if (path) {
+						console.log(chalk.dim(`    ${path}`));
+					}
+				};
+
+				if (globalPackages.length > 0) {
+					console.log(chalk.bold("User packages:"));
+					for (const pkg of globalPackages) {
+						formatPackage(pkg, "user");
+					}
+				}
+
+				if (projectPackages.length > 0) {
+					if (globalPackages.length > 0) console.log();
+					console.log(chalk.bold("Project packages:"));
+					for (const pkg of projectPackages) {
+						formatPackage(pkg, "project");
+					}
+				}
+
+				return true;
+			}
+
+			case "update":
+				await packageManager.update(source);
+				if (source) {
+					console.log(chalk.green(`Updated ${source}`));
+				} else {
+					console.log(chalk.green("Updated packages"));
+				}
+				return true;
 		}
-		await packageManager.install(options.source, { local: options.local });
-		packageManager.addSourceToSettings(options.source, { local: options.local });
-		console.log(chalk.green(`Installed ${options.source}`));
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : "Unknown package command error";
+		console.error(chalk.red(`Error: ${message}`));
+		process.exitCode = 1;
 		return true;
 	}
-
-	if (options.command === "remove") {
-		if (!options.source) {
-			console.error(chalk.red("Missing remove source."));
-			process.exit(1);
-		}
-		await packageManager.remove(options.source, { local: options.local });
-		const removed = packageManager.removeSourceFromSettings(options.source, { local: options.local });
-		if (!removed) {
-			console.error(chalk.red(`No matching package found for ${options.source}`));
-			process.exit(1);
-		}
-		console.log(chalk.green(`Removed ${options.source}`));
-		return true;
-	}
-
-	if (options.command === "list") {
-		const globalSettings = settingsManager.getGlobalSettings();
-		const projectSettings = settingsManager.getProjectSettings();
-		const globalPackages = globalSettings.packages ?? [];
-		const projectPackages = projectSettings.packages ?? [];
-
-		if (globalPackages.length === 0 && projectPackages.length === 0) {
-			console.log(chalk.dim("No packages installed."));
-			return true;
-		}
-
-		const formatPackage = (pkg: (typeof globalPackages)[number], scope: "user" | "project") => {
-			const source = typeof pkg === "string" ? pkg : pkg.source;
-			const filtered = typeof pkg === "object";
-			const display = filtered ? `${source} (filtered)` : source;
-			console.log(`  ${display}`);
-			// Show resolved path
-			const path = packageManager.getInstalledPath(source, scope);
-			if (path) {
-				console.log(chalk.dim(`    ${path}`));
-			}
-		};
-
-		if (globalPackages.length > 0) {
-			console.log(chalk.bold("User packages:"));
-			for (const pkg of globalPackages) {
-				formatPackage(pkg, "user");
-			}
-		}
-
-		if (projectPackages.length > 0) {
-			if (globalPackages.length > 0) console.log();
-			console.log(chalk.bold("Project packages:"));
-			for (const pkg of projectPackages) {
-				formatPackage(pkg, "project");
-			}
-		}
-
-		return true;
-	}
-
-	await packageManager.update(options.source);
-	if (options.source) {
-		console.log(chalk.green(`Updated ${options.source}`));
-	} else {
-		console.log(chalk.green("Updated packages"));
-	}
-	return true;
 }
 
 async function prepareInitialMessage(

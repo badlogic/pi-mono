@@ -860,11 +860,11 @@ async function generateModels() {
 		});
 	}
 
-	// Add missing OpenRouter model
-	if (!allModels.some(m => m.provider === "openrouter" && m.id === "openrouter/auto")) {
+	// Add "auto" alias for openrouter/auto
+	if (!allModels.some(m => m.provider === "openrouter" && m.id === "auto")) {
 		allModels.push({
-			id: "openrouter/auto",
-			name: "OpenRouter: Auto Router",
+			id: "auto",
+			name: "Auto",
 			api: "openai-completions",
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
@@ -1017,8 +1017,8 @@ async function generateModels() {
 			maxTokens: 64000,
 		},
 		{
-			id: "claude-opus-4-5-thinking",
-			name: "Claude Opus 4.5 Thinking (Antigravity)",
+			id: "claude-opus-4-6-thinking",
+			name: "Claude Opus 4.6 Thinking (Antigravity)",
 			api: "google-gemini-cli",
 			provider: "google-antigravity",
 			baseUrl: ANTIGRAVITY_ENDPOINT,
