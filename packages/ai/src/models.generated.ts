@@ -10415,13 +10415,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.28,
+				input: 0.3,
 				output: 1.2,
-				cacheRead: 0.14,
+				cacheRead: 0.15,
 				cacheWrite: 0,
 			},
-			contextWindow: 196608,
-			maxTokens: 196608,
+			contextWindow: 204800,
+			maxTokens: 131072,
 		} satisfies Model<"anthropic-messages">,
 		"minimax/minimax-m2.1-lightning": {
 			id: "minimax/minimax-m2.1-lightning",
