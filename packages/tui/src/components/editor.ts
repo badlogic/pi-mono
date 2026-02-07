@@ -1,7 +1,9 @@
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
 import { getEditorKeybindings } from "../keybindings.js";
 import { matchesKey } from "../keys.js";
+import { KillRing } from "../kill-ring.js";
 import { type Component, CURSOR_MARKER, type Focusable, type TUI } from "../tui.js";
+import { UndoStack } from "../undo-stack.js";
 import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
 import { SelectList, type SelectListTheme } from "./select-list.js";
 
@@ -192,8 +194,7 @@ export class Editor implements Component, Focusable {
 	private historyIndex: number = -1; // -1 = not browsing, 0 = most recent, 1 = older, etc.
 
 	// Kill ring for Emacs-style kill/yank operations
-	// Also tracks undo coalescing: "type-word" means we're mid-word (coalescing)
-	private killRing: string[] = [];
+	private killRing = new KillRing();
 	private lastAction: "kill" | "yank" | "type-word" | null = null;
 
 	// Character jump mode
@@ -203,7 +204,7 @@ export class Editor implements Component, Focusable {
 	private preferredVisualCol: number | null = null;
 
 	// Undo support
-	private undoStack: EditorState[] = [];
+	private undoStack = new UndoStack<EditorState>();
 
 	public onSubmit?: (text: string) => void;
 	public onChange?: (text: string) => void;
@@ -1081,7 +1082,7 @@ export class Editor implements Component, Focusable {
 		this.pasteCounter = 0;
 		this.historyIndex = -1;
 		this.scrollOffset = 0;
-		this.undoStack.length = 0;
+		this.undoStack.clear();
 		this.lastAction = null;
 
 		if (this.onChange) this.onChange("");
@@ -1268,7 +1269,7 @@ export class Editor implements Component, Focusable {
 
 			// Calculate text to be deleted and save to kill ring (backward deletion = prepend)
 			const deletedText = currentLine.slice(0, this.state.cursorCol);
-			this.addToKillRing(deletedText, true);
+			this.killRing.push(deletedText, { prepend: true, accumulate: this.lastAction === "kill" });
 			this.lastAction = "kill";
 
 			// Delete from start of line up to cursor
@@ -1278,7 +1279,7 @@ export class Editor implements Component, Focusable {
 			this.pushUndoSnapshot();
 
 			// At start of line - merge with previous line, treating newline as deleted text
-			this.addToKillRing("\n", true);
+			this.killRing.push("\n", { prepend: true, accumulate: this.lastAction === "kill" });
 			this.lastAction = "kill";
 
 			const previousLine = this.state.lines[this.state.cursorLine - 1] || "";
@@ -1303,7 +1304,7 @@ export class Editor implements Component, Focusable {
 
 			// Calculate text to be deleted and save to kill ring (forward deletion = append)
 			const deletedText = currentLine.slice(this.state.cursorCol);
-			this.addToKillRing(deletedText, false);
+			this.killRing.push(deletedText, { prepend: false, accumulate: this.lastAction === "kill" });
 			this.lastAction = "kill";
 
 			// Delete from cursor to end of line
@@ -1312,7 +1313,7 @@ export class Editor implements Component, Focusable {
 			this.pushUndoSnapshot();
 
 			// At end of line - merge with next line, treating newline as deleted text
-			this.addToKillRing("\n", false);
+			this.killRing.push("\n", { prepend: false, accumulate: this.lastAction === "kill" });
 			this.lastAction = "kill";
 
 			const nextLine = this.state.lines[this.state.cursorLine + 1] || "";
@@ -1336,7 +1337,7 @@ export class Editor implements Component, Focusable {
 				this.pushUndoSnapshot();
 
 				// Treat newline as deleted text (backward deletion = prepend)
-				this.addToKillRing("\n", true);
+				this.killRing.push("\n", { prepend: true, accumulate: this.lastAction === "kill" });
 				this.lastAction = "kill";
 
 				const previousLine = this.state.lines[this.state.cursorLine - 1] || "";
@@ -1356,10 +1357,8 @@ export class Editor implements Component, Focusable {
 			const deleteFrom = this.state.cursorCol;
 			this.setCursorCol(oldCursorCol);
 
-			// Restore kill state for accumulation check, then save to kill ring
-			this.lastAction = wasKill ? "kill" : null;
 			const deletedText = currentLine.slice(deleteFrom, this.state.cursorCol);
-			this.addToKillRing(deletedText, true);
+			this.killRing.push(deletedText, { prepend: true, accumulate: wasKill });
 			this.lastAction = "kill";
 
 			this.state.lines[this.state.cursorLine] =
@@ -1383,7 +1382,7 @@ export class Editor implements Component, Focusable {
 				this.pushUndoSnapshot();
 
 				// Treat newline as deleted text (forward deletion = append)
-				this.addToKillRing("\n", false);
+				this.killRing.push("\n", { prepend: false, accumulate: this.lastAction === "kill" });
 				this.lastAction = "kill";
 
 				const nextLine = this.state.lines[this.state.cursorLine + 1] || "";
@@ -1401,10 +1400,8 @@ export class Editor implements Component, Focusable {
 			const deleteTo = this.state.cursorCol;
 			this.setCursorCol(oldCursorCol);
 
-			// Restore kill state for accumulation check, then save to kill ring
-			this.lastAction = wasKill ? "kill" : null;
 			const deletedText = currentLine.slice(this.state.cursorCol, deleteTo);
-			this.addToKillRing(deletedText, false);
+			this.killRing.push(deletedText, { prepend: false, accumulate: wasKill });
 			this.lastAction = "kill";
 
 			this.state.lines[this.state.cursorLine] =
@@ -1644,7 +1641,7 @@ export class Editor implements Component, Focusable {
 
 		this.pushUndoSnapshot();
 
-		const text = this.killRing[this.killRing.length - 1] || "";
+		const text = this.killRing.peek()!;
 		this.insertYankedText(text);
 
 		this.lastAction = "yank";
@@ -1664,11 +1661,10 @@ export class Editor implements Component, Focusable {
 		this.deleteYankedText();
 
 		// Rotate the ring: move end to front
-		const lastEntry = this.killRing.pop()!;
-		this.killRing.unshift(lastEntry);
+		this.killRing.rotate();
 
 		// Insert the new most recent entry (now at end after rotation)
-		const text = this.killRing[this.killRing.length - 1];
+		const text = this.killRing.peek()!;
 		this.insertYankedText(text);
 
 		this.lastAction = "yank";
@@ -1721,7 +1717,7 @@ export class Editor implements Component, Focusable {
 	 * The yanked text is derived from killRing[end] since it hasn't been rotated yet.
 	 */
 	private deleteYankedText(): void {
-		const yankedText = this.killRing[this.killRing.length - 1] || "";
+		const yankedText = this.killRing.peek();
 		if (!yankedText) return;
 
 		const yankLines = yankedText.split("\n");
@@ -1758,46 +1754,15 @@ export class Editor implements Component, Focusable {
 		}
 	}
 
-	/**
-	 * Add text to the kill ring.
-	 * If lastAction is "kill", accumulates with the previous entry.
-	 * @param text - The text to add
-	 * @param prepend - If accumulating, prepend (true) or append (false) to existing entry
-	 */
-	private addToKillRing(text: string, prepend: boolean): void {
-		if (!text) return;
-
-		if (this.lastAction === "kill" && this.killRing.length > 0) {
-			// Accumulate with the most recent entry (at end of array)
-			const lastEntry = this.killRing.pop();
-			if (prepend) {
-				this.killRing.push(text + lastEntry);
-			} else {
-				this.killRing.push(lastEntry + text);
-			}
-		} else {
-			// Add new entry to end of ring
-			this.killRing.push(text);
-		}
-	}
-
-	private captureUndoSnapshot(): EditorState {
-		return structuredClone(this.state);
-	}
-
-	private restoreUndoSnapshot(snapshot: EditorState): void {
-		Object.assign(this.state, structuredClone(snapshot));
-	}
-
 	private pushUndoSnapshot(): void {
-		this.undoStack.push(this.captureUndoSnapshot());
+		this.undoStack.push(this.state);
 	}
 
 	private undo(): void {
 		this.historyIndex = -1; // Exit history browsing mode
-		if (this.undoStack.length === 0) return;
-		const snapshot = this.undoStack.pop()!;
-		this.restoreUndoSnapshot(snapshot);
+		const snapshot = this.undoStack.pop();
+		if (!snapshot) return;
+		Object.assign(this.state, snapshot);
 		this.lastAction = null;
 		this.preferredVisualCol = null;
 		if (this.onChange) {
