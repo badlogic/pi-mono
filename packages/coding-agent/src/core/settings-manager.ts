@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { dirname, join, resolve } from "path";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 
 export interface CompactionSettings {
@@ -88,6 +88,34 @@ export interface Settings {
 	markdown?: MarkdownSettings;
 }
 
+/**
+ * Find the nearest .pi/settings.json by walking up the directory tree from cwd.
+ * Returns the path if found, or null if not found.
+ * Similar to how git searches for .git directories.
+ */
+function findProjectSettings(cwd: string): string | null {
+	let currentDir = resolve(cwd);
+	const root = resolve("/");
+
+	while (true) {
+		const settingsPath = join(currentDir, CONFIG_DIR_NAME, "settings.json");
+		if (existsSync(settingsPath)) {
+			return settingsPath;
+		}
+
+		// Stop at root
+		if (currentDir === root) break;
+
+		const parentDir = resolve(currentDir, "..");
+		// Additional safety check for root
+		if (parentDir === currentDir) break;
+
+		currentDir = parentDir;
+	}
+
+	return null;
+}
+
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
 function deepMergeSettings(base: Settings, overrides: Settings): Settings {
 	const result: Settings = { ...base };
@@ -122,6 +150,7 @@ function deepMergeSettings(base: Settings, overrides: Settings): Settings {
 export class SettingsManager {
 	private settingsPath: string | null;
 	private projectSettingsPath: string | null;
+	private cwd: string; // Track the working directory for creating new project settings
 	private globalSettings: Settings;
 	private inMemoryProjectSettings: Settings; // For in-memory mode
 	private settings: Settings;
@@ -133,12 +162,14 @@ export class SettingsManager {
 	private constructor(
 		settingsPath: string | null,
 		projectSettingsPath: string | null,
+		cwd: string,
 		initialSettings: Settings,
 		persist: boolean,
 		loadError: Error | null = null,
 	) {
 		this.settingsPath = settingsPath;
 		this.projectSettingsPath = projectSettingsPath;
+		this.cwd = cwd;
 		this.persist = persist;
 		this.globalSettings = initialSettings;
 		this.inMemoryProjectSettings = {};
@@ -150,7 +181,8 @@ export class SettingsManager {
 	/** Create a SettingsManager that loads from files */
 	static create(cwd: string = process.cwd(), agentDir: string = getAgentDir()): SettingsManager {
 		const settingsPath = join(agentDir, "settings.json");
-		const projectSettingsPath = join(cwd, CONFIG_DIR_NAME, "settings.json");
+		// Walk up the directory tree to find the nearest .pi/settings.json
+		const projectSettingsPath = findProjectSettings(cwd);
 
 		let globalSettings: Settings = {};
 		let loadError: Error | null = null;
@@ -163,12 +195,12 @@ export class SettingsManager {
 			console.error(`Fix the syntax error to enable settings persistence.`);
 		}
 
-		return new SettingsManager(settingsPath, projectSettingsPath, globalSettings, true, loadError);
+		return new SettingsManager(settingsPath, projectSettingsPath, cwd, globalSettings, true, loadError);
 	}
 
 	/** Create an in-memory SettingsManager (no file I/O) */
 	static inMemory(settings: Partial<Settings> = {}): SettingsManager {
-		return new SettingsManager(null, null, settings, false);
+		return new SettingsManager(null, null, process.cwd(), settings, false);
 	}
 
 	private static loadFromFile(path: string): Settings {
@@ -341,15 +373,20 @@ export class SettingsManager {
 			return;
 		}
 
-		if (!this.projectSettingsPath) {
-			return;
-		}
+		// Determine the save path: use existing path if found during traversal,
+		// otherwise create in current directory
+		const savePath = this.projectSettingsPath ?? join(this.cwd, CONFIG_DIR_NAME, "settings.json");
+
 		try {
-			const dir = dirname(this.projectSettingsPath);
+			const dir = dirname(savePath);
 			if (!existsSync(dir)) {
 				mkdirSync(dir, { recursive: true });
 			}
-			writeFileSync(this.projectSettingsPath, JSON.stringify(settings, null, 2), "utf-8");
+			writeFileSync(savePath, JSON.stringify(settings, null, 2), "utf-8");
+			// Update the cached path if we just created it
+			if (!this.projectSettingsPath) {
+				this.projectSettingsPath = savePath;
+			}
 		} catch (error) {
 			console.error(`Warning: Could not save project settings file: ${error}`);
 		}
