@@ -19,6 +19,9 @@ export interface EditorComponent extends Component {
 	/** Set the text content */
 	setText(text: string): void;
 
+	/** Handle raw terminal input (key presses, paste sequences, etc.) */
+	handleInput(data: string): void;
+
 	// =========================================================================
 	// Callbacks (required)
 	// =========================================================================
