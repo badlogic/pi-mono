@@ -26,6 +26,8 @@ export {
 export { antigravityOAuthProvider, loginAntigravity, refreshAntigravityToken } from "./google-antigravity.js";
 // Google Gemini CLI
 export { geminiCliOAuthProvider, loginGeminiCli, refreshGoogleCloudToken } from "./google-gemini-cli.js";
+// Kiro (AWS Builder ID)
+export { kiroOAuthProvider, refreshKiroToken } from "./kiro.js";
 // OpenAI Codex (ChatGPT OAuth)
 export { loginOpenAICodex, openaiCodexOAuthProvider, refreshOpenAICodexToken } from "./openai-codex.js";
 
@@ -39,6 +41,7 @@ import { anthropicOAuthProvider } from "./anthropic.js";
 import { githubCopilotOAuthProvider } from "./github-copilot.js";
 import { antigravityOAuthProvider } from "./google-antigravity.js";
 import { geminiCliOAuthProvider } from "./google-gemini-cli.js";
+import { kiroOAuthProvider } from "./kiro.js";
 import { openaiCodexOAuthProvider } from "./openai-codex.js";
 import type { OAuthCredentials, OAuthProviderId, OAuthProviderInfo, OAuthProviderInterface } from "./types.js";
 
@@ -47,6 +50,7 @@ const oauthProviderRegistry = new Map<string, OAuthProviderInterface>([
 	[githubCopilotOAuthProvider.id, githubCopilotOAuthProvider],
 	[geminiCliOAuthProvider.id, geminiCliOAuthProvider],
 	[antigravityOAuthProvider.id, antigravityOAuthProvider],
+	[kiroOAuthProvider.id, kiroOAuthProvider],
 	[openaiCodexOAuthProvider.id, openaiCodexOAuthProvider],
 ]);
 

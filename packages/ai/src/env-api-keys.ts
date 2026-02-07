@@ -2,8 +2,6 @@
 let _existsSync: typeof import("node:fs").existsSync | null = null;
 let _homedir: typeof import("node:os").homedir | null = null;
 let _join: typeof import("node:path").join | null = null;
-
-// Eagerly load in Node.js/Bun environment only
 if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
 	import("node:fs").then((m) => {
 		_existsSync = m.existsSync;
@@ -108,6 +106,7 @@ export function getEnvApiKey(provider: any): string | undefined {
 		huggingface: "HF_TOKEN",
 		opencode: "OPENCODE_API_KEY",
 		"kimi-coding": "KIMI_API_KEY",
+		kiro: "KIRO_ACCESS_TOKEN",
 	};
 
 	const envVar = envMap[provider];

@@ -80,6 +80,8 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 		model: "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
 		label: "bedrock-claude-sonnet-4-5",
 	},
+	// Kiro
+	{ provider: "kiro", model: "claude-sonnet-4-5", label: "kiro-claude-sonnet-4-5" },
 	// xAI
 	{ provider: "xai", model: "grok-code-fast-1", label: "xai-grok-code-fast-1" },
 	// Cerebras

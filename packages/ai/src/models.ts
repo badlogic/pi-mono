@@ -51,6 +51,7 @@ export function calculateCost<TApi extends Api>(model: Model<TApi>, usage: Usage
  * Supported today:
  * - GPT-5.2 / GPT-5.3 model families
  * - Anthropic Messages API Opus 4.6 models (xhigh maps to adaptive effort "max")
+ * - Kiro Opus 4.6 models (xhigh maps to 50000 token budget)
  */
 export function supportsXhigh<TApi extends Api>(model: Model<TApi>): boolean {
 	if (model.id.includes("gpt-5.2") || model.id.includes("gpt-5.3")) {
@@ -58,6 +59,10 @@ export function supportsXhigh<TApi extends Api>(model: Model<TApi>): boolean {
 	}
 
 	if (model.api === "anthropic-messages") {
+		return model.id.includes("opus-4-6") || model.id.includes("opus-4.6");
+	}
+
+	if (model.api === "kiro") {
 		return model.id.includes("opus-4-6") || model.id.includes("opus-4.6");
 	}
 

@@ -315,6 +315,21 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
+	// Kiro
+	// =============================================================================
+
+	describe.skipIf(!process.env.KIRO_ACCESS_TOKEN)("Kiro", () => {
+		it("claude-sonnet-4-5 - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("kiro", "claude-sonnet-4-5");
+			const result = await testContextOverflow(model, process.env.KIRO_ACCESS_TOKEN!);
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
 	// xAI
 	// Expected pattern: "maximum prompt length is X but the request contains Y"
 	// =============================================================================

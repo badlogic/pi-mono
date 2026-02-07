@@ -141,6 +141,9 @@ export class AuthStorage {
 		if (this.runtimeOverrides.has(provider)) return true;
 		if (this.data[provider]) return true;
 		if (getEnvApiKey(provider)) return true;
+		// Check if provider has CLI token support
+		const oauthProvider = getOAuthProvider(provider);
+		if (oauthProvider?.getCliToken?.()) return true;
 		if (this.fallbackResolver?.(provider)) return true;
 		return false;
 	}
@@ -334,6 +337,13 @@ export class AuthStorage {
 		// Fall back to environment variable
 		const envKey = getEnvApiKey(providerId);
 		if (envKey) return envKey;
+
+		// Fall back to provider CLI token (e.g., kiro-cli)
+		const oauthProvider = getOAuthProvider(providerId);
+		if (oauthProvider?.getCliToken) {
+			const cliToken = oauthProvider.getCliToken();
+			if (cliToken) return cliToken;
+		}
 
 		// Fall back to custom resolver (e.g., models.json custom providers)
 		return this.fallbackResolver?.(providerId) ?? undefined;

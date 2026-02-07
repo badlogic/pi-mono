@@ -63,6 +63,7 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - **Google Gemini CLI** (requires OAuth, see below)
 - **Antigravity** (requires OAuth, see below)
 - **Amazon Bedrock**
+- **Kiro** (AWS AI assistant, uses AWS IAM auth or OAuth)
 - **Kimi For Coding** (Moonshot AI, uses Anthropic-compatible API)
 - **Any OpenAI-compatible API**: Ollama, vLLM, LM Studio, etc.
 
@@ -629,6 +630,7 @@ The library uses a registry of API implementations. Built-in APIs include:
 - **`openai-codex-responses`**: OpenAI Codex Responses API (`streamOpenAICodexResponses`, `OpenAICodexResponsesOptions`)
 - **`azure-openai-responses`**: Azure OpenAI Responses API (`streamAzureOpenAIResponses`, `AzureOpenAIResponsesOptions`)
 - **`bedrock-converse-stream`**: Amazon Bedrock Converse API (`streamBedrock`, `BedrockOptions`)
+- **`kiro`**: Kiro (AWS AI assistant) API (`streamKiro`, `KiroOptions`)
 
 ### Providers and Models
 
@@ -905,6 +907,7 @@ In Node.js environments, you can set environment variables to avoid passing API 
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` |
 | zAI | `ZAI_API_KEY` |
 | MiniMax | `MINIMAX_API_KEY` |
+| Kiro | `KIRO_ACCESS_TOKEN` |
 | Kimi For Coding | `KIMI_API_KEY` |
 | GitHub Copilot | `COPILOT_GITHUB_TOKEN` or `GH_TOKEN` or `GITHUB_TOKEN` |
 
@@ -1031,7 +1034,7 @@ import {
   getOAuthApiKey,      // (provider, credentialsMap) => { newCredentials, apiKey } | null
 
   // Types
-  type OAuthProvider,  // 'anthropic' | 'openai-codex' | 'github-copilot' | 'google-gemini-cli' | 'google-antigravity'
+  type OAuthProvider,  // 'anthropic' | 'openai-codex' | 'github-copilot' | 'google-gemini-cli' | 'google-antigravity' | 'kiro'
   type OAuthCredentials,
 } from '@mariozechner/pi-ai';
 ```
@@ -1093,6 +1096,8 @@ const response = await complete(model, {
 **GitHub Copilot**: If you get "The requested model is not supported" error, enable the model manually in VS Code: open Copilot Chat, click the model selector, select the model (warning icon), and click "Enable".
 
 **Google Gemini CLI / Antigravity**: These use Google Cloud OAuth. The `apiKey` returned by `getOAuthApiKey()` is a JSON string containing both the token and project ID, which the library handles automatically.
+
+**Kiro**: AWS's AI coding assistant. Uses AWS Builder ID via SSO OIDC device code flow (same as kiro-cli). Supports Claude models (claude-haiku-4-5, claude-sonnet-4-5, claude-sonnet-4-5-1m, claude-opus-4-5) with built-in thinking mode. For organization SSO (IAM Identity Center), users should login via kiro-cli and the library will automatically pick up credentials. Set `KIRO_ACCESS_TOKEN` environment variable or use OAuth via `kiroOAuthProvider.login()`.
 
 ## Development
 
