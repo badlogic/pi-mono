@@ -164,46 +164,22 @@ export interface ContextUsageEstimate {
 	lastUsageIndex: number | null;
 }
 
-function getLastAssistantUsageInfo(
-	messages: AgentMessage[],
-): { usage: Usage; index: number; timestamp: number } | undefined {
+function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; index: number } | undefined {
 	for (let i = messages.length - 1; i >= 0; i--) {
-		const message = messages[i];
-		const usage = getAssistantUsage(message);
-		if (!usage) continue;
-		return { usage, index: i, timestamp: message.timestamp };
+		const usage = getAssistantUsage(messages[i]);
+		if (usage) return { usage, index: i };
 	}
 	return undefined;
-}
-
-function getLatestCompactionSummaryTimestamp(messages: AgentMessage[]): number | undefined {
-	let latestTimestamp: number | undefined;
-	for (const message of messages) {
-		if (message.role !== "compactionSummary") continue;
-		if (latestTimestamp === undefined || message.timestamp > latestTimestamp) {
-			latestTimestamp = message.timestamp;
-		}
-	}
-	return latestTimestamp;
 }
 
 /**
  * Estimate context tokens from messages, using the last assistant usage when available.
  * If there are messages after the last usage, estimate their tokens with estimateTokens.
- *
- * If the latest assistant usage is older than a compaction summary in context,
- * the usage is stale (it was measured before compaction). In that case we fall back
- * to estimating from all current messages.
  */
 export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEstimate {
 	const usageInfo = getLastAssistantUsageInfo(messages);
-	const latestCompactionSummaryTimestamp = getLatestCompactionSummaryTimestamp(messages);
-	const hasStaleUsage =
-		usageInfo !== undefined &&
-		latestCompactionSummaryTimestamp !== undefined &&
-		usageInfo.timestamp < latestCompactionSummaryTimestamp;
 
-	if (!usageInfo || hasStaleUsage) {
+	if (!usageInfo) {
 		let estimated = 0;
 		for (const message of messages) {
 			estimated += estimateTokens(message);

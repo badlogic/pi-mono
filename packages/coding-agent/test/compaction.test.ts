@@ -152,21 +152,21 @@ describe("Token calculation", () => {
 });
 
 describe("estimateContextTokens", () => {
-	it("should ignore stale assistant usage when a newer compaction summary exists", () => {
-		const staleAssistant: AssistantMessage = {
-			...createAssistantMessage("stale usage", createMockUsage(95000, 1000)),
-			timestamp: 1000,
-		};
+	it("should estimate all messages when no assistant usage exists", () => {
 		const compactionSummary: AgentMessage = {
 			role: "compactionSummary",
 			summary: "Short summary",
 			tokensBefore: 120000,
 			timestamp: 2000,
 		};
-		const messages: AgentMessage[] = [compactionSummary, staleAssistant];
+		const user: AgentMessage = {
+			...createUserMessage("No assistant usage available"),
+			timestamp: 3000,
+		};
+		const messages: AgentMessage[] = [compactionSummary, user];
 
 		const estimate = estimateContextTokens(messages);
-		const heuristicTotal = estimateTokens(compactionSummary) + estimateTokens(staleAssistant);
+		const heuristicTotal = estimateTokens(compactionSummary) + estimateTokens(user);
 
 		expect(estimate.usageTokens).toBe(0);
 		expect(estimate.lastUsageIndex).toBeNull();
@@ -174,23 +174,17 @@ describe("estimateContextTokens", () => {
 		expect(estimate.tokens).toBe(heuristicTotal);
 	});
 
-	it("should use assistant usage when it is newer than compaction summary", () => {
+	it("should use last assistant usage and estimate trailing messages", () => {
 		const usage = createMockUsage(4000, 600, 100, 50);
-		const freshAssistant: AssistantMessage = {
+		const assistant: AssistantMessage = {
 			...createAssistantMessage("fresh usage", usage),
 			timestamp: 3000,
-		};
-		const compactionSummary: AgentMessage = {
-			role: "compactionSummary",
-			summary: "Previous summary",
-			tokensBefore: 120000,
-			timestamp: 2000,
 		};
 		const trailingUser: AgentMessage = {
 			...createUserMessage("A follow-up note after assistant usage"),
 			timestamp: 4000,
 		};
-		const messages: AgentMessage[] = [compactionSummary, freshAssistant, trailingUser];
+		const messages: AgentMessage[] = [createUserMessage("hello"), assistant, trailingUser];
 
 		const estimate = estimateContextTokens(messages);
 		const expectedUsageTokens = calculateContextTokens(usage);

@@ -35,7 +35,7 @@ import {
 	calculateContextTokens,
 	collectEntriesForBranchSummary,
 	compact,
-	estimateContextTokens,
+	estimateTokens,
 	generateBranchSummary,
 	prepareCompaction,
 	shouldCompact,
@@ -2688,6 +2688,63 @@ export class AgentSession {
 		};
 	}
 
+	private _findLastAssistantEntryAfterCompaction(): AssistantMessage | undefined {
+		const branchEntries = this.sessionManager.getBranch();
+		let latestCompactionIndex = -1;
+
+		for (let i = branchEntries.length - 1; i >= 0; i--) {
+			if (branchEntries[i].type === "compaction") {
+				latestCompactionIndex = i;
+				break;
+			}
+		}
+
+		for (let i = branchEntries.length - 1; i > latestCompactionIndex; i--) {
+			const entry = branchEntries[i];
+			if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+
+			const assistant = entry.message;
+			if (assistant.stopReason === "aborted" || assistant.stopReason === "error") continue;
+			return assistant;
+		}
+
+		return undefined;
+	}
+
+	private _findAssistantMessageIndex(messages: AgentMessage[], target: AssistantMessage): number {
+		const identityIndex = messages.lastIndexOf(target);
+		if (identityIndex !== -1) return identityIndex;
+
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const message = messages[i];
+			if (message.role !== "assistant") continue;
+			if (message.timestamp !== target.timestamp) continue;
+			if (message.provider !== target.provider || message.model !== target.model) continue;
+			return i;
+		}
+
+		return -1;
+	}
+
+	private _estimateContextFromMessages(messages: AgentMessage[]): {
+		tokens: number;
+		usageTokens: number;
+		trailingTokens: number;
+		lastUsageIndex: number | null;
+	} {
+		let estimatedTokens = 0;
+		for (const message of messages) {
+			estimatedTokens += estimateTokens(message);
+		}
+
+		return {
+			tokens: estimatedTokens,
+			usageTokens: 0,
+			trailingTokens: estimatedTokens,
+			lastUsageIndex: null,
+		};
+	}
+
 	getContextUsage(): ContextUsage | undefined {
 		const model = this.model;
 		if (!model) return undefined;
@@ -2695,7 +2752,29 @@ export class AgentSession {
 		const contextWindow = model.contextWindow ?? 0;
 		if (contextWindow <= 0) return undefined;
 
-		const estimate = estimateContextTokens(this.messages);
+		const messages = this.messages;
+		const lastAssistant = this._findLastAssistantEntryAfterCompaction();
+		let estimate = this._estimateContextFromMessages(messages);
+
+		if (lastAssistant) {
+			const usageTokens = calculateContextTokens(lastAssistant.usage);
+			const lastUsageIndex = this._findAssistantMessageIndex(messages, lastAssistant);
+
+			if (lastUsageIndex !== -1) {
+				let trailingTokens = 0;
+				for (let i = lastUsageIndex + 1; i < messages.length; i++) {
+					trailingTokens += estimateTokens(messages[i]);
+				}
+
+				estimate = {
+					tokens: usageTokens + trailingTokens,
+					usageTokens,
+					trailingTokens,
+					lastUsageIndex,
+				};
+			}
+		}
+
 		const percent = (estimate.tokens / contextWindow) * 100;
 
 		return {
