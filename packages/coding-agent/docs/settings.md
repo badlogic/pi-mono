@@ -118,6 +118,7 @@ When a provider requests a retry delay longer than `maxDelayMs` (e.g., Google's 
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
+| `rememberLastModel` | boolean | `true` | Persist last-used model as default across sessions |
 | `enabledModels` | string[] | - | Model patterns for Ctrl+P cycling (same format as `--models` CLI flag) |
 
 ```json
@@ -192,6 +193,7 @@ See [packages.md](packages.md) for package management details.
     "enabled": true,
     "maxRetries": 3
   },
+  "rememberLastModel": false,
   "enabledModels": ["claude-*", "gpt-4o"],
   "packages": ["pi-skills"]
 }

@@ -79,6 +79,7 @@ export interface Settings {
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
+	rememberLastModel?: boolean; // default: true - persist last-used model as default across sessions
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
 	doubleEscapeAction?: "fork" | "tree" | "none"; // Action for double-escape with empty editor (default: "tree")
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
@@ -383,6 +384,10 @@ export class SettingsManager {
 		this.globalSettings.defaultModel = modelId;
 		this.markModified("defaultModel");
 		this.save();
+	}
+
+	getRememberLastModel(): boolean {
+		return this.settings.rememberLastModel !== false;
 	}
 
 	setDefaultModelAndProvider(provider: string, modelId: string): void {

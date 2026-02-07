@@ -193,6 +193,65 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("rememberLastModel", () => {
+		it("should persist model changes by default", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					defaultProvider: "anthropic",
+					defaultModel: "claude-opus",
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setDefaultModelAndProvider("openai", "gpt-5");
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.defaultProvider).toBe("openai");
+			expect(savedSettings.defaultModel).toBe("gpt-5");
+		});
+
+		it("should not persist model changes when rememberLastModel is false", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					defaultProvider: "anthropic",
+					defaultModel: "claude-opus",
+					rememberLastModel: false,
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			// Callers should check getRememberLastModel() before calling setDefaultModelAndProvider()
+			if (manager.getRememberLastModel()) {
+				manager.setDefaultModelAndProvider("openai", "gpt-5");
+			}
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.defaultProvider).toBe("anthropic");
+			expect(savedSettings.defaultModel).toBe("claude-opus");
+		});
+
+		it("should return correct value from getRememberLastModel", () => {
+			const settingsPath = join(agentDir, "settings.json");
+
+			writeFileSync(settingsPath, JSON.stringify({}));
+			let manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getRememberLastModel()).toBe(true);
+
+			writeFileSync(settingsPath, JSON.stringify({ rememberLastModel: true }));
+			manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getRememberLastModel()).toBe(true);
+
+			writeFileSync(settingsPath, JSON.stringify({ rememberLastModel: false }));
+			manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getRememberLastModel()).toBe(false);
+		});
+	});
+
 	describe("shellCommandPrefix", () => {
 		it("should load shellCommandPrefix from settings", () => {
 			const settingsPath = join(agentDir, "settings.json");
