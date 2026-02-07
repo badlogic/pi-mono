@@ -87,6 +87,13 @@ export interface StreamOptions {
 	 * Default: 60000 (60 seconds). Set to 0 to disable the cap.
 	 */
 	maxRetryDelayMs?: number;
+	/**
+	 * Optional metadata to include in API requests.
+	 * For Anthropic, this maps directly to the `metadata` field
+	 * (e.g. `{ user_id: "..." }` for tracking/caching).
+	 * Ignored by providers that don't support it.
+	 */
+	metadata?: Record<string, string>;
 }
 
 export type ProviderStreamOptions = StreamOptions & Record<string, unknown>;

@@ -602,6 +602,10 @@ function buildParams(
 		}
 	}
 
+	if (options?.metadata) {
+		params.metadata = options.metadata;
+	}
+
 	return params;
 }
 
