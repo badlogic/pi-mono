@@ -3930,7 +3930,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 200000,
-			maxTokens: 16384,
+			maxTokens: 128000,
 		} satisfies Model<"kiro">,
 		"claude-haiku-4-5": {
 			id: "claude-haiku-4-5",
@@ -3947,7 +3947,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 200000,
-			maxTokens: 16384,
+			maxTokens: 8192,
 		} satisfies Model<"kiro">,
 		"claude-opus-4-5": {
 			id: "claude-opus-4-5",
@@ -3964,7 +3964,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 200000,
-			maxTokens: 16384,
+			maxTokens: 128000,
 		} satisfies Model<"kiro">,
 		"claude-opus-4-6": {
 			id: "claude-opus-4-6",
@@ -3981,7 +3981,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 200000,
-			maxTokens: 16384,
+			maxTokens: 128000,
 		} satisfies Model<"kiro">,
 		"claude-sonnet-4": {
 			id: "claude-sonnet-4",
@@ -3998,7 +3998,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 200000,
-			maxTokens: 16384,
+			maxTokens: 64000,
 		} satisfies Model<"kiro">,
 		"claude-sonnet-4-5": {
 			id: "claude-sonnet-4-5",
@@ -4015,7 +4015,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 200000,
-			maxTokens: 16384,
+			maxTokens: 64000,
 		} satisfies Model<"kiro">,
 		"claude-sonnet-4-5-1m": {
 			id: "claude-sonnet-4-5-1m",
@@ -4032,7 +4032,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 1000000,
-			maxTokens: 16384,
+			maxTokens: 64000,
 		} satisfies Model<"kiro">,
 		"qwen3-coder-480b": {
 			id: "qwen3-coder-480b",
@@ -4049,7 +4049,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
-			maxTokens: 16384,
+			maxTokens: 32768,
 		} satisfies Model<"kiro">,
 	},
 	"minimax": {
