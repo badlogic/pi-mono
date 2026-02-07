@@ -359,6 +359,9 @@ export class InteractiveMode {
 			fdPath,
 		);
 		this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
+		if (this.editor !== this.defaultEditor) {
+			this.editor.setAutocompleteProvider?.(this.autocompleteProvider);
+		}
 	}
 
 	async init(): Promise<void> {
