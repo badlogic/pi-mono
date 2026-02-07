@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `pasteToEditor` to `EditorComponent` API for programmatic paste support ([#1351](https://github.com/badlogic/pi-mono/pull/1351) by [@kaofelix](https://github.com/kaofelix))
+- Added kill ring (ctrl+k/ctrl+y/alt+y) and undo (ctrl+z) support to the Input component ([#1373](https://github.com/badlogic/pi-mono/pull/1373) by [@Perlence](https://github.com/Perlence))
+
 ## [0.52.7] - 2026-02-06
 
 ## [0.52.6] - 2026-02-05

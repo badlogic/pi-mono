@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added OpenRouter `auto` model alias for automatic model routing ([#1361](https://github.com/badlogic/pi-mono/pull/1361) by [@yogasanas](https://github.com/yogasanas))
+
+### Changed
+
+- Replaced Claude Opus 4.5 with Opus 4.6 in model definitions ([#1345](https://github.com/badlogic/pi-mono/pull/1345) by [@calvin-hpnet](https://github.com/calvin-hpnet))
+
 ## [0.52.7] - 2026-02-06
 
 ### Added
