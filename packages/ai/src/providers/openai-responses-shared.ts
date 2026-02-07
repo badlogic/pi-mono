@@ -18,6 +18,7 @@ import type {
 	Context,
 	ImageContent,
 	Model,
+	OpenAIResponsesCompat,
 	StopReason,
 	TextContent,
 	ThinkingContent,
@@ -98,7 +99,10 @@ export function convertResponsesMessages<TApi extends Api>(
 
 	const includeSystemPrompt = options?.includeSystemPrompt ?? true;
 	if (includeSystemPrompt && context.systemPrompt) {
-		const role = model.reasoning ? "developer" : "system";
+		const compat = (model as any).compat as OpenAIResponsesCompat | undefined;
+		const supportsDeveloperRole = compat?.supportsDeveloperRole;
+		const role = model.reasoning && supportsDeveloperRole !== false ? "developer" : "system";
+
 		messages.push({
 			role,
 			content: sanitizeSurrogates(context.systemPrompt),

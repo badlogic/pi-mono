@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenAI Responses: allow forcing systemPrompt to use `role: "system"` via `compat.supportsDeveloperRole=false`. Fixes Ollama ignoring `developer` role
+
 ## [0.52.8] - 2026-02-07
 
 ### Added

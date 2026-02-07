@@ -241,7 +241,8 @@ export interface OpenAICompletionsCompat {
 
 /** Compatibility settings for OpenAI Responses APIs. */
 export interface OpenAIResponsesCompat {
-	// Reserved for future use
+	/** Whether the provider supports the `developer` role. Default: matches `reasoning`. */
+	supportsDeveloperRole?: boolean;
 }
 
 /**
