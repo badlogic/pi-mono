@@ -157,8 +157,13 @@ export interface KiroOptions extends StreamOptions {
 }
 
 interface KiroCredentials {
-	accessToken: string;
-	region: "us-east-1" | "us-west-2";
+	refresh: string;
+	access: string;
+	expires: number;
+	clientId: string;
+	clientSecret: string;
+	region: string;
+	[key: string]: unknown;
 }
 
 let credentials: KiroCredentials | null = null;
@@ -810,7 +815,14 @@ export const streamKiro: StreamFunction<"kiro", KiroOptions> = (
 		};
 
 		try {
-			const accessToken = options?.apiKey ?? getEnvApiKey("kiro") ?? credentials?.accessToken;
+			// Refresh token if expired
+			if (credentials?.expires && Date.now() >= credentials.expires) {
+				const { refreshKiroToken } = await import("../utils/oauth/kiro.js");
+				credentials = await refreshKiroToken(credentials);
+				setKiroCredentials(credentials);
+			}
+
+			const accessToken = options?.apiKey ?? getEnvApiKey("kiro") ?? credentials?.access;
 			if (!accessToken) {
 				throw new Error("Kiro credentials not set. Set KIRO_ACCESS_TOKEN or call setKiroCredentials().");
 			}
