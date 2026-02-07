@@ -6052,6 +6052,23 @@ export const MODELS = {
 			contextWindow: 131072,
 			maxTokens: 64000,
 		} satisfies Model<"openai-completions">,
+		"auto": {
+			id: "auto",
+			name: "Auto",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 2000000,
+			maxTokens: 30000,
+		} satisfies Model<"openai-completions">,
 		"baidu/ernie-4.5-21b-a3b": {
 			id: "baidu/ernie-4.5-21b-a3b",
 			name: "Baidu: ERNIE 4.5 21B A3B",
@@ -6165,7 +6182,7 @@ export const MODELS = {
 			cost: {
 				input: 0.3,
 				output: 1.2,
-				cacheRead: 0,
+				cacheRead: 0.15,
 				cacheWrite: 0,
 			},
 			contextWindow: 163840,
@@ -6182,7 +6199,7 @@ export const MODELS = {
 			cost: {
 				input: 0.19,
 				output: 0.87,
-				cacheRead: 0,
+				cacheRead: 0.095,
 				cacheWrite: 0,
 			},
 			contextWindow: 163840,
@@ -6233,7 +6250,7 @@ export const MODELS = {
 			cost: {
 				input: 0.39999999999999997,
 				output: 1.75,
-				cacheRead: 0,
+				cacheRead: 0.19999999999999998,
 				cacheWrite: 0,
 			},
 			contextWindow: 163840,
@@ -6284,7 +6301,7 @@ export const MODELS = {
 			cost: {
 				input: 0.25,
 				output: 0.38,
-				cacheRead: 0,
+				cacheRead: 0.125,
 				cacheWrite: 0,
 			},
 			contextWindow: 163840,
@@ -6505,7 +6522,7 @@ export const MODELS = {
 			cost: {
 				input: 0.04,
 				output: 0.15,
-				cacheRead: 0,
+				cacheRead: 0.02,
 				cacheWrite: 0,
 			},
 			contextWindow: 128000,
@@ -6794,7 +6811,7 @@ export const MODELS = {
 			cost: {
 				input: 0.049999999999999996,
 				output: 0.22,
-				cacheRead: 0,
+				cacheRead: 0.024999999999999998,
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
@@ -7064,13 +7081,13 @@ export const MODELS = {
 			reasoning: false,
 			input: ["text"],
 			cost: {
-				input: 0.03,
-				output: 0.11,
+				input: 0.049999999999999996,
+				output: 0.08,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
 			contextWindow: 32768,
-			maxTokens: 32768,
+			maxTokens: 16384,
 		} satisfies Model<"openai-completions">,
 		"mistralai/mistral-small-3.1-24b-instruct": {
 			id: "mistralai/mistral-small-3.1-24b-instruct",
@@ -7083,7 +7100,7 @@ export const MODELS = {
 			cost: {
 				input: 0.03,
 				output: 0.11,
-				cacheRead: 0,
+				cacheRead: 0.015,
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
@@ -7117,7 +7134,7 @@ export const MODELS = {
 			cost: {
 				input: 0.06,
 				output: 0.18,
-				cacheRead: 0,
+				cacheRead: 0.03,
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
@@ -7270,7 +7287,7 @@ export const MODELS = {
 			cost: {
 				input: 0.39,
 				output: 1.9,
-				cacheRead: 0,
+				cacheRead: 0.195,
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
@@ -7304,7 +7321,7 @@ export const MODELS = {
 			cost: {
 				input: 0.39999999999999997,
 				output: 1.75,
-				cacheRead: 0,
+				cacheRead: 0.19999999999999998,
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
@@ -7320,12 +7337,12 @@ export const MODELS = {
 			input: ["text", "image"],
 			cost: {
 				input: 0.44999999999999996,
-				output: 2.5,
-				cacheRead: 0,
+				output: 2.25,
+				cacheRead: 0.075,
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
-			maxTokens: 65535,
+			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
 		"nex-agi/deepseek-v3.1-nex-n1": {
 			id: "nex-agi/deepseek-v3.1-nex-n1",
@@ -7355,7 +7372,7 @@ export const MODELS = {
 			cost: {
 				input: 0.02,
 				output: 0.09999999999999999,
-				cacheRead: 0,
+				cacheRead: 0.01,
 				cacheWrite: 0,
 			},
 			contextWindow: 32768,
@@ -7372,7 +7389,7 @@ export const MODELS = {
 			cost: {
 				input: 0.11,
 				output: 0.38,
-				cacheRead: 0,
+				cacheRead: 0.055,
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
@@ -8152,13 +8169,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.02,
-				output: 0.09999999999999999,
+				input: 0.03,
+				output: 0.14,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
-			maxTokens: 131072,
+			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
 		"openai/gpt-oss-20b:free": {
 			id: "openai/gpt-oss-20b:free",
@@ -8562,7 +8579,7 @@ export const MODELS = {
 			cost: {
 				input: 0.049999999999999996,
 				output: 0.22,
-				cacheRead: 0,
+				cacheRead: 0.024999999999999998,
 				cacheWrite: 0,
 			},
 			contextWindow: 40960,
@@ -8613,7 +8630,7 @@ export const MODELS = {
 			cost: {
 				input: 0.11,
 				output: 0.6,
-				cacheRead: 0,
+				cacheRead: 0.055,
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
@@ -8630,7 +8647,7 @@ export const MODELS = {
 			cost: {
 				input: 0.06,
 				output: 0.22,
-				cacheRead: 0,
+				cacheRead: 0.03,
 				cacheWrite: 0,
 			},
 			contextWindow: 40960,
@@ -8647,7 +8664,7 @@ export const MODELS = {
 			cost: {
 				input: 0.08,
 				output: 0.33,
-				cacheRead: 0,
+				cacheRead: 0.04,
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
@@ -8681,7 +8698,7 @@ export const MODELS = {
 			cost: {
 				input: 0.08,
 				output: 0.24,
-				cacheRead: 0,
+				cacheRead: 0.04,
 				cacheWrite: 0,
 			},
 			contextWindow: 40960,
@@ -8731,12 +8748,12 @@ export const MODELS = {
 			input: ["text"],
 			cost: {
 				input: 0.22,
-				output: 0.95,
-				cacheRead: 0,
+				output: 1,
+				cacheRead: 0.022,
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
-			maxTokens: 262144,
+			maxTokens: 4096,
 		} satisfies Model<"openai-completions">,
 		"qwen/qwen3-coder-30b-a3b-instruct": {
 			id: "qwen/qwen3-coder-30b-a3b-instruct",
@@ -8783,7 +8800,7 @@ export const MODELS = {
 			cost: {
 				input: 0.07,
 				output: 0.3,
-				cacheRead: 0,
+				cacheRead: 0.035,
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
@@ -9157,7 +9174,7 @@ export const MODELS = {
 			cost: {
 				input: 0.25,
 				output: 0.85,
-				cacheRead: 0,
+				cacheRead: 0.125,
 				cacheWrite: 0,
 			},
 			contextWindow: 163840,
@@ -9174,7 +9191,7 @@ export const MODELS = {
 			cost: {
 				input: 0.25,
 				output: 0.85,
-				cacheRead: 0,
+				cacheRead: 0.125,
 				cacheWrite: 0,
 			},
 			contextWindow: 163840,
@@ -9361,7 +9378,7 @@ export const MODELS = {
 			cost: {
 				input: 0.09,
 				output: 0.29,
-				cacheRead: 0,
+				cacheRead: 0.045,
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
@@ -9395,7 +9412,7 @@ export const MODELS = {
 			cost: {
 				input: 0.35,
 				output: 1.55,
-				cacheRead: 0,
+				cacheRead: 0.175,
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
@@ -9410,13 +9427,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.049999999999999996,
-				output: 0.22,
-				cacheRead: 0,
+				input: 0.13,
+				output: 0.85,
+				cacheRead: 0.024999999999999998,
 				cacheWrite: 0,
 			},
 			contextWindow: 131072,
-			maxTokens: 131072,
+			maxTokens: 98304,
 		} satisfies Model<"openai-completions">,
 		"z-ai/glm-4.5-air:free": {
 			id: "z-ai/glm-4.5-air:free",
@@ -9463,7 +9480,7 @@ export const MODELS = {
 			cost: {
 				input: 0.35,
 				output: 1.5,
-				cacheRead: 0,
+				cacheRead: 0.175,
 				cacheWrite: 0,
 			},
 			contextWindow: 202752,
@@ -9514,7 +9531,7 @@ export const MODELS = {
 			cost: {
 				input: 0.39999999999999997,
 				output: 1.5,
-				cacheRead: 0,
+				cacheRead: 0.19999999999999998,
 				cacheWrite: 0,
 			},
 			contextWindow: 202752,
@@ -9633,8 +9650,8 @@ export const MODELS = {
 			reasoning: false,
 			input: ["text"],
 			cost: {
-				input: 0.38,
-				output: 1.53,
+				input: 0.39999999999999997,
+				output: 1.5999999999999999,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},

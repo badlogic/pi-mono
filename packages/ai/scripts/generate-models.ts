@@ -860,11 +860,11 @@ async function generateModels() {
 		});
 	}
 
-	// Add missing OpenRouter model
-	if (!allModels.some(m => m.provider === "openrouter" && m.id === "openrouter/auto")) {
+	// Add "auto" alias for openrouter/auto
+	if (!allModels.some(m => m.provider === "openrouter" && m.id === "auto")) {
 		allModels.push({
-			id: "openrouter/auto",
-			name: "OpenRouter: Auto Router",
+			id: "auto",
+			name: "Auto",
 			api: "openai-completions",
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
