@@ -1609,9 +1609,9 @@ export class InteractiveMode {
 			// Use duck typing since instanceof fails across jiti module boundaries
 			const customEditor = newEditor as unknown as Record<string, unknown>;
 			if ("actionHandlers" in customEditor && customEditor.actionHandlers instanceof Map) {
-				customEditor.onEscape = this.defaultEditor.onEscape;
-				customEditor.onCtrlD = this.defaultEditor.onCtrlD;
-				customEditor.onPasteImage = this.defaultEditor.onPasteImage;
+				customEditor.onEscape = () => this.defaultEditor.onEscape?.();
+				customEditor.onCtrlD = () => this.defaultEditor.onCtrlD?.();
+				customEditor.onPasteImage = () => this.defaultEditor.onPasteImage?.();
 				customEditor.onExtensionShortcut = (data: string) => this.defaultEditor.onExtensionShortcut?.(data);
 				// Copy action handlers (clear, suspend, model switching, etc.)
 				for (const [action, handler] of this.defaultEditor.actionHandlers) {
