@@ -988,6 +988,34 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe("GitHub Copilot Provider (claude-sonnet-4 via Anthropic Messages)", () => {
+		const llm = getModel("github-copilot", "claude-sonnet-4");
+
+		it.skipIf(!githubCopilotToken)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm, { apiKey: githubCopilotToken });
+		});
+
+		it.skipIf(!githubCopilotToken)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm, { apiKey: githubCopilotToken });
+		});
+
+		it.skipIf(!githubCopilotToken)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm, { apiKey: githubCopilotToken });
+		});
+
+		it.skipIf(!githubCopilotToken)("should handle thinking", { retry: 2 }, async () => {
+			await handleThinking(llm, { apiKey: githubCopilotToken, thinkingEnabled: true });
+		});
+
+		it.skipIf(!githubCopilotToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { apiKey: githubCopilotToken, thinkingEnabled: true });
+		});
+
+		it.skipIf(!githubCopilotToken)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm, { apiKey: githubCopilotToken });
+		});
+	});
+
 	describe("Google Gemini CLI Provider (gemini-2.5-flash)", () => {
 		const llm = getModel("google-gemini-cli", "gemini-2.5-flash");
 
