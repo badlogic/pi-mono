@@ -2224,6 +2224,13 @@ export class InteractiveMode {
 				break;
 			}
 
+			case "entries_replaced": {
+				this.chatContainer.clear();
+				this.rebuildChatFromMessages();
+				this.ui.requestRender();
+				break;
+			}
+
 			case "auto_compaction_end": {
 				// Restore escape handler
 				if (this.autoCompactionEscapeHandler) {

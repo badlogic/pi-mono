@@ -113,7 +113,8 @@ export type AgentSessionEvent =
 			errorMessage?: string;
 	  }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
-	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
+	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
+	| { type: "entries_replaced"; deletedIds: string[]; newEntryId: string };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -1869,7 +1870,9 @@ export class AgentSession {
 					this.sessionManager.appendLabelChange(entryId, label);
 				},
 				replaceEntries: (deleteIds, newEntry) => {
-					return this.sessionManager.replaceEntries(deleteIds, newEntry);
+					const newEntryId = this.sessionManager.replaceEntries(deleteIds, newEntry);
+					this._emit({ type: "entries_replaced", deletedIds: deleteIds, newEntryId });
+					return newEntryId;
 				},
 				getActiveTools: () => this.getActiveToolNames(),
 				getAllTools: () => this.getAllTools(),
