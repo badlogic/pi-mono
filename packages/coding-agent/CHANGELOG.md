@@ -5,6 +5,9 @@
 ### New Features
 
 - Extensions can trigger a full runtime reload via `ctx.reload()`, useful for hot-reloading configuration or restarting the agent. See [docs/extensions.md](docs/extensions.md) and the [`reload-runtime` example](examples/extensions/reload-runtime.ts) ([#1371](https://github.com/badlogic/pi-mono/issues/1371))
+- Short CLI disable aliases: `-ne` (`--no-extensions`), `-ns` (`--no-skills`), and `-np` (`--no-prompt-templates`) for faster interactive usage and scripting.
+- `/export` HTML now includes collapsible tool input schemas (parameter names, types, and descriptions), improving session review and sharing workflows ([#1416](https://github.com/badlogic/pi-mono/pull/1416) by [@marchellodev](https://github.com/marchellodev)).
+- `pi.getAllTools()` now exposes tool parameters in addition to name and description, enabling richer extension integrations ([#1416](https://github.com/badlogic/pi-mono/pull/1416) by [@marchellodev](https://github.com/marchellodev)).
 
 ### Added
 
@@ -21,7 +24,10 @@
 - Fixed `rg` not available in bash tool by downloading it at startup alongside `fd` ([#1348](https://github.com/badlogic/pi-mono/issues/1348))
 - Fixed `custom-compaction` example to use `ModelRegistry` ([#1387](https://github.com/badlogic/pi-mono/issues/1387))
 - Google providers now support full JSON Schema in tool declarations (anyOf, oneOf, const, etc.) ([#1398](https://github.com/badlogic/pi-mono/issues/1398) by [@jarib](https://github.com/jarib))
+- Reverted incorrect Antigravity model change: `claude-opus-4-6-thinking` back to `claude-opus-4-5-thinking` (model does not exist on Antigravity endpoint)
+- Updated the Antigravity system instruction to a more compact version for Google Gemini CLI compatibility
 - Corrected opencode context windows for Claude Sonnet 4 and 4.5 ([#1383](https://github.com/badlogic/pi-mono/issues/1383))
+- Fixed subagent example unknown-agent errors to include available agent names ([#1414](https://github.com/badlogic/pi-mono/pull/1414) by [@dnouri](https://github.com/dnouri))
 
 ## [0.52.8] - 2026-02-07
 
