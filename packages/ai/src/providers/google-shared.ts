@@ -136,18 +136,27 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 						});
 					}
 				} else if (block.type === "toolCall") {
-					const thoughtSignature = resolveThoughtSignature(isSameProviderAndModel, block.thoughtSignature);
 					// Gemini 3 requires thoughtSignature on all function calls when thinking mode is enabled.
-					// When replaying history from providers without thought signatures (e.g. Claude via Antigravity),
-					// convert unsigned function calls to text to avoid API validation errors.
-					// We include a note telling the model this is historical context to prevent mimicry.
+					// However, in parallel tool call batches, Gemini may only sign the first one or two calls, leaving
+					// the rest unsigned. To avoid converting these valid unsigned calls into text (which can
+					// poison the model via in-context learning), we check for a signed sibling: if any tool
+					// call in the same turn has a valid signature, the whole batch is treated as legitimate.
+					// Only tool calls from providers that never produce signatures (e.g. Claude via Antigravity)
+					// are converted to text to avoid API validation errors.
 					const isGemini3 = model.id.toLowerCase().includes("gemini-3");
-					if (isGemini3 && !thoughtSignature) {
+					const hasSignedSibling = msg.content.some(
+						(b) =>
+							b.type === "toolCall" &&
+							resolveThoughtSignature(isSameProviderAndModel, b.thoughtSignature)
+					);
+
+					if (isGemini3 && !hasSignedSibling) {
 						const argsStr = JSON.stringify(block.arguments ?? {}, null, 2);
 						parts.push({
 							text: `[Historical context: a different model called tool "${block.name}" with arguments: ${argsStr}. Do not mimic this format - use proper function calling.]`,
 						});
 					} else {
+						const thoughtSignature = resolveThoughtSignature(isSameProviderAndModel, block.thoughtSignature);
 						const part: Part = {
 							functionCall: {
 								name: block.name,
