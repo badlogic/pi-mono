@@ -370,8 +370,10 @@ export class InteractiveMode {
 		// Load changelog (only show new entries, skip for resumed sessions)
 		this.changelogMarkdown = this.getChangelogForDisplay();
 
-		// Setup autocomplete with fd tool for file path completion
-		this.fdPath = await ensureTool("fd");
+		// Ensure fd and rg are available (downloads if missing, adds to PATH via getBinDir)
+		// Both are needed: fd for autocomplete, rg for grep tool and bash commands
+		const [fdPath] = await Promise.all([ensureTool("fd"), ensureTool("rg")]);
+		this.fdPath = fdPath;
 
 		// Add header container as first child
 		this.ui.addChild(this.headerContainer);
