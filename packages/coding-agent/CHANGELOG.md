@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Fixed extension source parsing so dot-prefixed local paths (for example `.pi/extensions/foo.ts`) are treated as local paths instead of git URLs
 - Fixed fd/rg download failing on Windows due to `unzip` not being available; now uses `tar` for both `.tar.gz` and `.zip` extraction, with proper error reporting ([#1348](https://github.com/badlogic/pi-mono/issues/1348))
 - Fixed RPC mode documentation incorrectly stating `ctx.hasUI` is `false`; it is `true` because dialog and fire-and-forget UI methods work via the RPC sub-protocol. Also documented missing unsupported/degraded methods (`pasteToEditor`, `getAllThemes`, `getTheme`, `setTheme`) ([#1411](https://github.com/badlogic/pi-mono/pull/1411) by [@aliou](https://github.com/aliou))
 - Fixed `rg` not available in bash tool by downloading it at startup alongside `fd` ([#1348](https://github.com/badlogic/pi-mono/issues/1348))
