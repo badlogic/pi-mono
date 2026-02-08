@@ -7,8 +7,17 @@ Extensions can register custom model providers via `pi.registerProvider()`. This
 - **OAuth/SSO** - Add authentication flows for enterprise providers
 - **Custom APIs** - Implement streaming for non-standard LLM APIs
 
+## Example Extensions
+
+See these complete provider examples:
+
+- [`examples/extensions/custom-provider-anthropic/`](../examples/extensions/custom-provider-anthropic/)
+- [`examples/extensions/custom-provider-gitlab-duo/`](../examples/extensions/custom-provider-gitlab-duo/)
+- [`examples/extensions/custom-provider-qwen-cli/`](../examples/extensions/custom-provider-qwen-cli/)
+
 ## Table of Contents
 
+- [Example Extensions](#example-extensions)
 - [Quick Reference](#quick-reference)
 - [Override Existing Provider](#override-existing-provider)
 - [Register New Provider](#register-new-provider)
