@@ -93,7 +93,7 @@ export interface StreamOptions {
 	 * (e.g. `{ user_id: "..." }` for tracking/caching).
 	 * Ignored by providers that don't support it.
 	 */
-	metadata?: Record<string, string>;
+	metadata?: { user_id?: string };
 }
 
 export type ProviderStreamOptions = StreamOptions & Record<string, unknown>;
