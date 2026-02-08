@@ -2,9 +2,20 @@
 
 ## [Unreleased]
 
+### New Features
+
+- Extensions can trigger a full runtime reload via `ctx.reload()`, useful for hot-reloading configuration or restarting the agent. See [docs/extensions.md](docs/extensions.md) and the [`reload-runtime` example](examples/extensions/reload-runtime.ts) ([#1371](https://github.com/badlogic/pi-mono/issues/1371))
+
+### Added
+
+- Added `ctx.reload()` to the extension API for programmatic runtime reload ([#1371](https://github.com/badlogic/pi-mono/issues/1371))
+
 ### Fixed
 
 - Fixed fd/rg download failing on Windows due to `unzip` not being available; now uses `tar` for both `.tar.gz` and `.zip` extraction, with proper error reporting ([#1348](https://github.com/badlogic/pi-mono/issues/1348))
+- Fixed `custom-compaction` example to use `ModelRegistry` ([#1387](https://github.com/badlogic/pi-mono/issues/1387))
+- Google providers now support full JSON Schema in tool declarations (anyOf, oneOf, const, etc.) ([#1398](https://github.com/badlogic/pi-mono/issues/1398) by [@jarib](https://github.com/jarib))
+- Corrected opencode context windows for Claude Sonnet 4 and 4.5 ([#1383](https://github.com/badlogic/pi-mono/issues/1383))
 
 ## [0.52.8] - 2026-02-07
 
