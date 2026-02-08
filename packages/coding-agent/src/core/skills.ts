@@ -66,6 +66,7 @@ function addIgnoreRules(ig: IgnoreMatcher, dir: string, rootDir: string): void {
 export interface SkillFrontmatter {
 	name?: string;
 	description?: string;
+	triggers?: string[];
 	"disable-model-invocation"?: boolean;
 	[key: string]: unknown;
 }
@@ -73,6 +74,7 @@ export interface SkillFrontmatter {
 export interface Skill {
 	name: string;
 	description: string;
+	triggers?: string[];
 	filePath: string;
 	baseDir: string;
 	source: string;
@@ -265,6 +267,7 @@ function loadSkillFromFile(
 			skill: {
 				name,
 				description: frontmatter.description,
+				triggers: Array.isArray(frontmatter.triggers) ? frontmatter.triggers : [],
 				filePath,
 				baseDir: skillDir,
 				source,
@@ -306,6 +309,9 @@ export function formatSkillsForPrompt(skills: Skill[]): string {
 		lines.push("  <skill>");
 		lines.push(`    <name>${escapeXml(skill.name)}</name>`);
 		lines.push(`    <description>${escapeXml(skill.description)}</description>`);
+		if (skill.triggers && skill.triggers.length > 0) {
+			lines.push(`    <triggers>${escapeXml(skill.triggers.join(", "))}</triggers>`);
+		}
 		lines.push(`    <location>${escapeXml(skill.filePath)}</location>`);
 		lines.push("  </skill>");
 	}

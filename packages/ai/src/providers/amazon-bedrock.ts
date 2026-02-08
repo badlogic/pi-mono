@@ -4,7 +4,6 @@ import {
 	StopReason as BedrockStopReason,
 	type Tool as BedrockTool,
 	CachePointType,
-	CacheTTL,
 	type ContentBlock,
 	type ContentBlockDeltaEvent,
 	type ContentBlockStartEvent,
@@ -19,6 +18,10 @@ import {
 	type ToolConfiguration,
 	ToolResultStatus,
 } from "@aws-sdk/client-bedrock-runtime";
+
+const CacheTTL = {
+	ONE_HOUR: 3600,
+};
 
 import { calculateCost } from "../models.js";
 import type {
