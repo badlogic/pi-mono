@@ -40,7 +40,7 @@ const calculatorSchema = Type.Object({
 });
 
 const calculatorTool: Tool<typeof calculatorSchema> = {
-	name: "calculator",
+	name: "math_operation",
 	description: "Perform basic arithmetic operations",
 	parameters: calculatorSchema,
 };
@@ -80,7 +80,7 @@ async function handleToolCall<TApi extends Api>(model: Model<TApi>, options?: St
 		messages: [
 			{
 				role: "user",
-				content: "Calculate 15 + 27 using the calculator tool.",
+				content: "Calculate 15 + 27 using the math_operation tool.",
 				timestamp: Date.now(),
 			},
 		],
@@ -100,7 +100,7 @@ async function handleToolCall<TApi extends Api>(model: Model<TApi>, options?: St
 			index = event.contentIndex;
 			expect(toolCall.type).toBe("toolCall");
 			if (toolCall.type === "toolCall") {
-				expect(toolCall.name).toBe("calculator");
+				expect(toolCall.name).toBe("math_operation");
 				expect(toolCall.id).toBeTruthy();
 			}
 		}
@@ -110,7 +110,7 @@ async function handleToolCall<TApi extends Api>(model: Model<TApi>, options?: St
 			expect(event.contentIndex).toBe(index);
 			expect(toolCall.type).toBe("toolCall");
 			if (toolCall.type === "toolCall") {
-				expect(toolCall.name).toBe("calculator");
+				expect(toolCall.name).toBe("math_operation");
 				accumulatedToolArgs += event.delta;
 				// Check that we have a parsed arguments object during streaming
 				expect(toolCall.arguments).toBeDefined();
@@ -126,7 +126,7 @@ async function handleToolCall<TApi extends Api>(model: Model<TApi>, options?: St
 			expect(event.contentIndex).toBe(index);
 			expect(toolCall.type).toBe("toolCall");
 			if (toolCall.type === "toolCall") {
-				expect(toolCall.name).toBe("calculator");
+				expect(toolCall.name).toBe("math_operation");
 				JSON.parse(accumulatedToolArgs);
 				expect(toolCall.arguments).not.toBeUndefined();
 				expect((toolCall.arguments as any).a).toBe(15);
@@ -145,7 +145,7 @@ async function handleToolCall<TApi extends Api>(model: Model<TApi>, options?: St
 	expect(response.content.some((b) => b.type === "toolCall")).toBeTruthy();
 	const toolCall = response.content.find((b) => b.type === "toolCall");
 	if (toolCall && toolCall.type === "toolCall") {
-		expect(toolCall.name).toBe("calculator");
+		expect(toolCall.name).toBe("math_operation");
 		expect(toolCall.id).toBeTruthy();
 	} else {
 		throw new Error("No tool call found in response");
@@ -272,7 +272,7 @@ async function multiTurn<TApi extends Api>(model: Model<TApi>, options?: StreamO
 		messages: [
 			{
 				role: "user",
-				content: "Think about this briefly, then calculate 42 * 17 and 453 + 434 using the calculator tool.",
+				content: "Think about this briefly, then calculate 42 * 17 and 453 + 434 using the math_operation tool.",
 				timestamp: Date.now(),
 			},
 		],
@@ -302,7 +302,7 @@ async function multiTurn<TApi extends Api>(model: Model<TApi>, options?: StreamO
 				hasSeenToolCalls = true;
 
 				// Process the tool call
-				expect(block.name).toBe("calculator");
+				expect(block.name).toBe("math_operation");
 				expect(block.id).toBeTruthy();
 				expect(block.arguments).toBeTruthy();
 
@@ -1028,8 +1028,8 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe("Google Antigravity Provider (gemini-3-flash)", () => {
-		const llm = getModel("google-antigravity", "gemini-3-flash");
+	describe("Google Antigravity Provider (gemini-3-pro-high)", () => {
+		const llm = getModel("google-antigravity", "gemini-3-pro-high");
 
 		it.skipIf(!antigravityToken)("should complete basic text generation", { retry: 3 }, async () => {
 			await basicTextGeneration(llm, { apiKey: antigravityToken });
@@ -1044,7 +1044,7 @@ describe("Generate E2E Tests", () => {
 		});
 
 		it.skipIf(!antigravityToken)("should handle thinking with thinkingLevel", { retry: 3 }, async () => {
-			// gemini-3-flash supports all four levels: MINIMAL, LOW, MEDIUM, HIGH
+			// gemini-3-pro only supports LOW/HIGH
 			await handleThinking(llm, {
 				apiKey: antigravityToken,
 				thinking: { enabled: true, level: "LOW" },
@@ -1052,7 +1052,7 @@ describe("Generate E2E Tests", () => {
 		});
 
 		it.skipIf(!antigravityToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			await multiTurn(llm, { apiKey: antigravityToken, thinking: { enabled: true, level: "MEDIUM" } });
+			await multiTurn(llm, { apiKey: antigravityToken, thinking: { enabled: true, level: "HIGH" } });
 		});
 
 		it.skipIf(!antigravityToken)("should handle image input", { retry: 3 }, async () => {
@@ -1202,7 +1202,7 @@ describe("Generate E2E Tests", () => {
 					messages: [
 						{
 							role: "user",
-							content: "Think first, then calculate 15 + 27 using the calculator tool.",
+							content: "Think first, then calculate 15 + 27 using the math_operation tool.",
 							timestamp: Date.now(),
 						},
 					],
