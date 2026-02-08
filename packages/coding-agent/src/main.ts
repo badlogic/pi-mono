@@ -7,6 +7,9 @@
 
 import { type ImageContent, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
+import { execSync } from "child_process";
+import { existsSync, mkdirSync } from "fs";
+import { join } from "path";
 import { createInterface } from "readline";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { selectConfig } from "./cli/config-selector.js";
@@ -363,17 +366,75 @@ async function promptConfirm(message: string): Promise<boolean> {
 	});
 }
 
-async function createSessionManager(parsed: Args, cwd: string): Promise<SessionManager | undefined> {
+/** Get current git branch name, or null if not in a git repo */
+function getGitBranch(cwd: string): string | null {
+	try {
+		const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+			cwd,
+			encoding: "utf8",
+			stdio: ["pipe", "pipe", "pipe"],
+		}).trim();
+		return branch || null;
+	} catch {
+		return null;
+	}
+}
+
+/** Sanitize branch name for use in filesystem paths */
+function sanitizeBranchName(branch: string): string {
+	return branch.replace(/[/:]/g, "-").replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+/**
+ * Compute branch-based session directory if enabled in settings.
+ * Returns undefined if branch sessions are disabled or not in a git repo.
+ *
+ * Session path format: <basePath>/sessions/--<encoded-cwd>--/--<branch>--/
+ * Uses the same cwd encoding as default session paths, with branch as subfolder.
+ */
+function computeBranchSessionDir(cwd: string, settingsManager: SettingsManager): string | undefined {
+	if (!settingsManager.getBranchSessionsEnabled()) {
+		return undefined;
+	}
+
+	const branch = getGitBranch(cwd);
+	if (!branch) {
+		return undefined;
+	}
+
+	const basePath = settingsManager.getBranchSessionsBasePath() || getAgentDir();
+	// Encode cwd the same way as default session dir (full path for uniqueness)
+	const safeCwd = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+	const safeBranch = `--${sanitizeBranchName(branch)}--`;
+	const sessionDir = join(basePath, "sessions", safeCwd, safeBranch);
+
+	// Ensure directory exists
+	if (!existsSync(sessionDir)) {
+		mkdirSync(sessionDir, { recursive: true });
+	}
+
+	return sessionDir;
+}
+
+async function createSessionManager(
+	parsed: Args,
+	cwd: string,
+	settingsManager: SettingsManager,
+): Promise<SessionManager | undefined> {
 	if (parsed.noSession) {
 		return SessionManager.inMemory();
 	}
+
+	// Compute effective session directory: CLI flag takes precedence, then branch sessions
+	const effectiveSessionDir = parsed.sessionDir || computeBranchSessionDir(cwd, settingsManager);
+
 	if (parsed.session) {
-		const resolved = await resolveSessionPath(parsed.session, cwd, parsed.sessionDir);
+		const resolved = await resolveSessionPath(parsed.session, cwd, effectiveSessionDir);
 
 		switch (resolved.type) {
 			case "path":
 			case "local":
-				return SessionManager.open(resolved.path, parsed.sessionDir);
+				return SessionManager.open(resolved.path, effectiveSessionDir);
 
 			case "global": {
 				// Session found in different project - ask user if they want to fork
@@ -383,7 +444,7 @@ async function createSessionManager(parsed: Args, cwd: string): Promise<SessionM
 					console.log(chalk.dim("Aborted."));
 					process.exit(0);
 				}
-				return SessionManager.forkFrom(resolved.path, cwd, parsed.sessionDir);
+				return SessionManager.forkFrom(resolved.path, cwd, effectiveSessionDir);
 			}
 
 			case "not_found":
@@ -392,12 +453,12 @@ async function createSessionManager(parsed: Args, cwd: string): Promise<SessionM
 		}
 	}
 	if (parsed.continue) {
-		return SessionManager.continueRecent(cwd, parsed.sessionDir);
+		return SessionManager.continueRecent(cwd, effectiveSessionDir);
 	}
 	// --resume is handled separately (needs picker UI)
-	// If --session-dir provided without --continue/--resume, create new session there
-	if (parsed.sessionDir) {
-		return SessionManager.create(cwd, parsed.sessionDir);
+	// If effective session dir is set, create new session there
+	if (effectiveSessionDir) {
+		return SessionManager.create(cwd, effectiveSessionDir);
 	}
 	// Default case (new session) returns undefined, SDK will create one
 	return undefined;
@@ -631,15 +692,18 @@ export async function main(args: string[]) {
 	}
 
 	// Create session manager based on CLI flags
-	let sessionManager = await createSessionManager(parsed, cwd);
+	let sessionManager = await createSessionManager(parsed, cwd, settingsManager);
 
 	// Handle --resume: show session picker
 	if (parsed.resume) {
 		// Initialize keybindings so session picker respects user config
 		KeybindingsManager.create();
 
+		// Compute effective session dir for resume (same logic as createSessionManager)
+		const effectiveSessionDir = parsed.sessionDir || computeBranchSessionDir(cwd, settingsManager);
+
 		const selectedPath = await selectSession(
-			(onProgress) => SessionManager.list(cwd, parsed.sessionDir, onProgress),
+			(onProgress) => SessionManager.list(cwd, effectiveSessionDir, onProgress),
 			SessionManager.listAll,
 		);
 		if (!selectedPath) {
@@ -647,7 +711,7 @@ export async function main(args: string[]) {
 			stopThemeWatcher();
 			process.exit(0);
 		}
-		sessionManager = SessionManager.open(selectedPath);
+		sessionManager = SessionManager.open(selectedPath, effectiveSessionDir);
 	}
 
 	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager, modelRegistry, settingsManager);

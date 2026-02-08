@@ -40,6 +40,11 @@ export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
+export interface BranchSessionsSettings {
+	enabled?: boolean; // default: false - when true, uses git branch for session directory
+	basePath?: string; // default: ~/.pi/agent/branch-sessions - base path for branch sessions
+}
+
 /**
  * Package source for npm/git packages.
  * - String form: load all resources from the package
@@ -86,6 +91,7 @@ export interface Settings {
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
+	branchSessions?: BranchSessionsSettings; // Git branch-based session directories
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -747,5 +753,31 @@ export class SettingsManager {
 
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
+	}
+
+	getBranchSessionsEnabled(): boolean {
+		return this.settings.branchSessions?.enabled ?? false;
+	}
+
+	setBranchSessionsEnabled(enabled: boolean): void {
+		if (!this.globalSettings.branchSessions) {
+			this.globalSettings.branchSessions = {};
+		}
+		this.globalSettings.branchSessions.enabled = enabled;
+		this.markModified("branchSessions", "enabled");
+		this.save();
+	}
+
+	getBranchSessionsBasePath(): string | undefined {
+		return this.settings.branchSessions?.basePath;
+	}
+
+	setBranchSessionsBasePath(basePath: string | undefined): void {
+		if (!this.globalSettings.branchSessions) {
+			this.globalSettings.branchSessions = {};
+		}
+		this.globalSettings.branchSessions.basePath = basePath;
+		this.markModified("branchSessions", "basePath");
+		this.save();
 	}
 }
