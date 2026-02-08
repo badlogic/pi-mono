@@ -980,8 +980,7 @@ export class DefaultPackageManager implements PackageManager {
 		const trimmed = source.trim();
 		const isWindowsAbsolutePath = /^[A-Za-z]:[\\/]|^\\\\/.test(trimmed);
 		const isLocalPathLike =
-			trimmed.startsWith("./") ||
-			trimmed.startsWith("../") ||
+			trimmed.startsWith(".") ||
 			trimmed.startsWith("/") ||
 			trimmed === "~" ||
 			trimmed.startsWith("~/") ||
