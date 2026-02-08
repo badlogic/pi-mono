@@ -235,14 +235,14 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
  */
 export function convertTools(
 	tools: Tool[],
-): { functionDeclarations: { name: string; description?: string; parameters: Schema }[] }[] | undefined {
+): { functionDeclarations: { name: string; description?: string; parametersJsonSchema: Schema }[] }[] | undefined {
 	if (tools.length === 0) return undefined;
 	return [
 		{
 			functionDeclarations: tools.map((tool) => ({
 				name: tool.name,
 				description: tool.description,
-				parameters: tool.parameters as Schema,
+				parametersJsonSchema: tool.parameters as Schema,
 			})),
 		},
 	];
