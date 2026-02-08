@@ -7,6 +7,7 @@ export { BranchSummaryMessageComponent } from "./branch-summary-message.js";
 export { CompactionSummaryMessageComponent } from "./compaction-summary-message.js";
 export { CustomEditor } from "./custom-editor.js";
 export { CustomMessageComponent } from "./custom-message.js";
+export { DaxnutsComponent } from "./daxnuts.js";
 export { type RenderDiffOptions, renderDiff } from "./diff.js";
 export { DynamicBorder } from "./dynamic-border.js";
 export { ExtensionEditorComponent } from "./extension-editor.js";
@@ -21,6 +22,7 @@ export { type ModelsCallbacks, type ModelsConfig, ScopedModelsSelectorComponent 
 export { SessionSelectorComponent } from "./session-selector.js";
 export { type SettingsCallbacks, type SettingsConfig, SettingsSelectorComponent } from "./settings-selector.js";
 export { ShowImagesSelectorComponent } from "./show-images-selector.js";
+export { SkillInvocationMessageComponent } from "./skill-invocation-message.js";
 export { ThemeSelectorComponent } from "./theme-selector.js";
 export { ThinkingSelectorComponent } from "./thinking-selector.js";
 export { ToolExecutionComponent, type ToolExecutionOptions } from "./tool-execution.js";

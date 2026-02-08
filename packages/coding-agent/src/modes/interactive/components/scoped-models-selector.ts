@@ -1,6 +1,7 @@
 import type { Model } from "@mariozechner/pi-ai";
 import {
 	Container,
+	type Focusable,
 	fuzzyFilter,
 	getEditorKeybindings,
 	Input,
@@ -92,13 +93,23 @@ export interface ModelsCallbacks {
  * Component for enabling/disabling models for Ctrl+P cycling.
  * Changes are session-only until explicitly persisted with Ctrl+S.
  */
-export class ScopedModelsSelectorComponent extends Container {
+export class ScopedModelsSelectorComponent extends Container implements Focusable {
 	private modelsById: Map<string, Model<any>> = new Map();
 	private allIds: string[] = [];
 	private enabledIds: EnabledIds = null;
 	private filteredItems: ModelItem[] = [];
 	private selectedIndex = 0;
 	private searchInput: Input;
+
+	// Focusable implementation - propagate to searchInput for IME cursor positioning
+	private _focused = false;
+	get focused(): boolean {
+		return this._focused;
+	}
+	set focused(value: boolean) {
+		this._focused = value;
+		this.searchInput.focused = value;
+	}
 	private listContainer: Container;
 	private footerText: Text;
 	private callbacks: ModelsCallbacks;
@@ -144,11 +155,14 @@ export class ScopedModelsSelectorComponent extends Container {
 	}
 
 	private buildItems(): ModelItem[] {
-		return getSortedIds(this.enabledIds, this.allIds).map((id) => ({
-			fullId: id,
-			model: this.modelsById.get(id)!,
-			enabled: isEnabled(this.enabledIds, id),
-		}));
+		// Filter out IDs that no longer have a corresponding model (e.g., after logout)
+		return getSortedIds(this.enabledIds, this.allIds)
+			.filter((id) => this.modelsById.has(id))
+			.map((id) => ({
+				fullId: id,
+				model: this.modelsById.get(id)!,
+				enabled: isEnabled(this.enabledIds, id),
+			}));
 	}
 
 	private getFooterText(): string {
@@ -200,6 +214,12 @@ export class ScopedModelsSelectorComponent extends Container {
 			this.listContainer.addChild(
 				new Text(theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredItems.length})`), 0, 0),
 			);
+		}
+
+		if (this.filteredItems.length > 0) {
+			const selected = this.filteredItems[this.selectedIndex];
+			this.listContainer.addChild(new Spacer(1));
+			this.listContainer.addChild(new Text(theme.fg("muted", `  Model Name: ${selected.model.name}`), 0, 0));
 		}
 	}
 

@@ -20,6 +20,8 @@ export interface ImageRenderOptions {
 	maxWidthCells?: number;
 	maxHeightCells?: number;
 	preserveAspectRatio?: boolean;
+	/** Kitty image ID. If provided, reuses/replaces existing image with this ID. */
+	imageId?: number;
 }
 
 let cachedCapabilities: TerminalCapabilities | null = null;
@@ -79,6 +81,28 @@ export function resetCapabilitiesCache(): void {
 	cachedCapabilities = null;
 }
 
+const KITTY_PREFIX = "\x1b_G";
+const ITERM2_PREFIX = "\x1b]1337;File=";
+
+export function isImageLine(line: string): boolean {
+	// Fast path: sequence at line start (single-row images)
+	if (line.startsWith(KITTY_PREFIX) || line.startsWith(ITERM2_PREFIX)) {
+		return true;
+	}
+	// Slow path: sequence elsewhere (multi-row images have cursor-up prefix)
+	return line.includes(KITTY_PREFIX) || line.includes(ITERM2_PREFIX);
+}
+
+/**
+ * Generate a random image ID for Kitty graphics protocol.
+ * Uses random IDs to avoid collisions between different module instances
+ * (e.g., main app vs extensions).
+ */
+export function allocateImageId(): number {
+	// Use random ID in range [1, 0xffffffff] to avoid collisions
+	return Math.floor(Math.random() * 0xfffffffe) + 1;
+}
+
 export function encodeKitty(
 	base64Data: string,
 	options: {
@@ -120,6 +144,22 @@ export function encodeKitty(
 	}
 
 	return chunks.join("");
+}
+
+/**
+ * Delete a Kitty graphics image by ID.
+ * Uses uppercase 'I' to also free the image data.
+ */
+export function deleteKittyImage(imageId: number): string {
+	return `\x1b_Ga=d,d=I,i=${imageId}\x1b\\`;
+}
+
+/**
+ * Delete all visible Kitty graphics images.
+ * Uses uppercase 'A' to also free the image data.
+ */
+export function deleteAllKittyImages(): string {
+	return `\x1b_Ga=d,d=A\x1b\\`;
 }
 
 export function encodeITerm2(
@@ -304,7 +344,7 @@ export function renderImage(
 	base64Data: string,
 	imageDimensions: ImageDimensions,
 	options: ImageRenderOptions = {},
-): { sequence: string; rows: number } | null {
+): { sequence: string; rows: number; imageId?: number } | null {
 	const caps = getCapabilities();
 
 	if (!caps.images) {
@@ -315,8 +355,9 @@ export function renderImage(
 	const rows = calculateImageRows(imageDimensions, maxWidth, getCellDimensions());
 
 	if (caps.images === "kitty") {
-		const sequence = encodeKitty(base64Data, { columns: maxWidth, rows });
-		return { sequence, rows };
+		// Only use imageId if explicitly provided - static images don't need IDs
+		const sequence = encodeKitty(base64Data, { columns: maxWidth, rows, imageId: options.imageId });
+		return { sequence, rows, imageId: options.imageId };
 	}
 
 	if (caps.images === "iterm2") {

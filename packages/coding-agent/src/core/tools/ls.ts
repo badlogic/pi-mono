@@ -1,5 +1,5 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { Type } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
 import { existsSync, readdirSync, statSync } from "fs";
 import nodePath from "path";
 import { resolveToCwd } from "./path-utils.js";
@@ -9,6 +9,8 @@ const lsSchema = Type.Object({
 	path: Type.Optional(Type.String({ description: "Directory to list (default: current directory)" })),
 	limit: Type.Optional(Type.Number({ description: "Maximum number of entries to return (default: 500)" })),
 });
+
+export type LsToolInput = Static<typeof lsSchema>;
 
 const DEFAULT_LIMIT = 500;
 

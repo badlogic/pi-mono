@@ -105,4 +105,123 @@ describe("SettingsManager", () => {
 			expect(savedSettings.defaultThinkingLevel).toBe("high");
 		});
 	});
+
+	describe("packages migration", () => {
+		it("should keep local-only extensions in extensions array", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					extensions: ["/local/ext.ts", "./relative/ext.ts"],
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getPackages()).toEqual([]);
+			expect(manager.getExtensionPaths()).toEqual(["/local/ext.ts", "./relative/ext.ts"]);
+		});
+
+		it("should handle packages with filtering objects", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					packages: [
+						"npm:simple-pkg",
+						{
+							source: "npm:shitty-extensions",
+							extensions: ["extensions/oracle.ts"],
+							skills: [],
+						},
+					],
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			const packages = manager.getPackages();
+			expect(packages).toHaveLength(2);
+			expect(packages[0]).toBe("npm:simple-pkg");
+			expect(packages[1]).toEqual({
+				source: "npm:shitty-extensions",
+				extensions: ["extensions/oracle.ts"],
+				skills: [],
+			});
+		});
+	});
+
+	describe("reload", () => {
+		it("should reload global settings from disk", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					theme: "dark",
+					extensions: ["/before.ts"],
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					theme: "light",
+					extensions: ["/after.ts"],
+					defaultModel: "claude-sonnet",
+				}),
+			);
+
+			manager.reload();
+
+			expect(manager.getTheme()).toBe("light");
+			expect(manager.getExtensionPaths()).toEqual(["/after.ts"]);
+			expect(manager.getDefaultModel()).toBe("claude-sonnet");
+		});
+
+		it("should keep previous settings when file is invalid", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			writeFileSync(settingsPath, "{ invalid json");
+			manager.reload();
+
+			expect(manager.getTheme()).toBe("dark");
+		});
+	});
+
+	describe("shellCommandPrefix", () => {
+		it("should load shellCommandPrefix from settings", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ shellCommandPrefix: "shopt -s expand_aliases" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getShellCommandPrefix()).toBe("shopt -s expand_aliases");
+		});
+
+		it("should return undefined when shellCommandPrefix is not set", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getShellCommandPrefix()).toBeUndefined();
+		});
+
+		it("should preserve shellCommandPrefix when saving unrelated settings", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ shellCommandPrefix: "shopt -s expand_aliases" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setTheme("light");
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.shellCommandPrefix).toBe("shopt -s expand_aliases");
+			expect(savedSettings.theme).toBe("light");
+		});
+	});
 });

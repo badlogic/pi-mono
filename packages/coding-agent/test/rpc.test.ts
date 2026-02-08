@@ -282,4 +282,40 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		text = await client.getLastAssistantText();
 		expect(text).toContain("test123");
 	}, 90000);
+
+	test("should set and get session name", async () => {
+		await client.start();
+
+		// Initially undefined
+		let state = await client.getState();
+		expect(state.sessionName).toBeUndefined();
+
+		// Send a prompt first - session files are only written after first assistant message
+		await client.promptAndWait("Reply with just 'ok'");
+
+		// Set name
+		await client.setSessionName("my-test-session");
+
+		// Verify via state
+		state = await client.getState();
+		expect(state.sessionName).toBe("my-test-session");
+
+		// Wait for file writes
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		// Verify session_info entry in session file
+		const sessionsPath = join(sessionDir, "sessions");
+		const sessionDirs = readdirSync(sessionsPath);
+		const cwdSessionDir = join(sessionsPath, sessionDirs[0]);
+		const sessionFiles = readdirSync(cwdSessionDir).filter((f) => f.endsWith(".jsonl"));
+		const sessionContent = readFileSync(join(cwdSessionDir, sessionFiles[0]), "utf8");
+		const entries = sessionContent
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+
+		const sessionInfoEntries = entries.filter((e: { type: string }) => e.type === "session_info");
+		expect(sessionInfoEntries.length).toBe(1);
+		expect(sessionInfoEntries[0].name).toBe("my-test-session");
+	}, 60000);
 });

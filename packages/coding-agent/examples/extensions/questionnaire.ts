@@ -81,7 +81,7 @@ export default function questionnaire(pi: ExtensionAPI) {
 			"Ask the user one or more questions. Use for clarifying requirements, getting preferences, or confirming decisions. For single questions, shows a simple option list. For multiple questions, shows a tab-based interface.",
 		parameters: QuestionnaireParams,
 
-		async execute(_toolCallId, params, _onUpdate, ctx, _signal) {
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			if (!ctx.hasUI) {
 				return errorResult("Error: UI not available (running in non-interactive mode)");
 			}

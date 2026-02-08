@@ -6,23 +6,17 @@
 
 import {
 	createAgentSession,
-	discoverPromptTemplates,
+	DefaultResourceLoader,
 	type PromptTemplate,
 	SessionManager,
 } from "@mariozechner/pi-coding-agent";
-
-// Discover templates from cwd/.pi/prompts/ and ~/.pi/agent/prompts/
-const discovered = discoverPromptTemplates();
-console.log("Discovered prompt templates:");
-for (const template of discovered) {
-	console.log(`  /${template.name}: ${template.description}`);
-}
 
 // Define custom templates
 const deployTemplate: PromptTemplate = {
 	name: "deploy",
 	description: "Deploy the application",
-	source: "(custom)",
+	source: "path",
+	filePath: "/virtual/prompts/deploy.md",
 	content: `# Deploy Instructions
 
 1. Build: npm run build
@@ -30,13 +24,24 @@ const deployTemplate: PromptTemplate = {
 3. Deploy: npm run deploy`,
 };
 
-// Use discovered + custom templates
+const loader = new DefaultResourceLoader({
+	promptsOverride: (current) => ({
+		prompts: [...current.prompts, deployTemplate],
+		diagnostics: current.diagnostics,
+	}),
+});
+await loader.reload();
+
+// Discover templates from cwd/.pi/prompts/ and ~/.pi/agent/prompts/
+const discovered = loader.getPrompts().prompts;
+console.log("Discovered prompt templates:");
+for (const template of discovered) {
+	console.log(`  /${template.name}: ${template.description}`);
+}
+
 await createAgentSession({
-	promptTemplates: [...discovered, deployTemplate],
+	resourceLoader: loader,
 	sessionManager: SessionManager.inMemory(),
 });
 
 console.log(`Session created with ${discovered.length + 1} prompt templates`);
-
-// Disable prompt templates:
-// promptTemplates: []

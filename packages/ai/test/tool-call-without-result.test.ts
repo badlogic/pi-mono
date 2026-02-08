@@ -2,7 +2,11 @@ import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete } from "../src/stream.js";
-import type { Api, Context, Model, OptionsForApi, Tool } from "../src/types.js";
+import type { Api, Context, Model, StreamOptions, Tool } from "../src/types.js";
+
+type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
+
+import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
@@ -27,10 +31,7 @@ const calculateTool: Tool = {
 	parameters: calculateSchema,
 };
 
-async function testToolCallWithoutResult<TApi extends Api>(
-	model: Model<TApi>,
-	options: OptionsForApi<TApi> = {} as OptionsForApi<TApi>,
-) {
+async function testToolCallWithoutResult<TApi extends Api>(model: Model<TApi>, options: StreamOptionsWithExtras = {}) {
 	// Step 1: Create context with the calculate tool
 	const context: Context = {
 		systemPrompt: "You are a helpful assistant. Use the calculate tool when asked to perform calculations.",
@@ -105,8 +106,10 @@ describe("Tool Call Without Result Tests", () => {
 	});
 
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider", () => {
+		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini")!;
+		void _compat;
 		const model: Model<"openai-completions"> = {
-			...getModel("openai", "gpt-4o-mini")!,
+			...baseModel,
 			api: "openai-completions",
 		};
 
@@ -120,6 +123,16 @@ describe("Tool Call Without Result Tests", () => {
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testToolCallWithoutResult(model);
+		});
+	});
+
+	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Responses Provider", () => {
+		const model = getModel("azure-openai-responses", "gpt-4o-mini");
+		const azureDeploymentName = resolveAzureDeploymentName(model.id);
+		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model, azureOptions);
 		});
 	});
 
@@ -155,6 +168,14 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.HF_TOKEN)("Hugging Face Provider", () => {
+		const model = getModel("huggingface", "moonshotai/Kimi-K2.5");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
 	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider", () => {
 		const model = getModel("zai", "glm-4.5-flash");
 
@@ -173,6 +194,14 @@ describe("Tool Call Without Result Tests", () => {
 
 	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider", () => {
 		const model = getModel("minimax", "MiniMax-M2.1");
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model);
+		});
+	});
+
+	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding Provider", () => {
+		const model = getModel("kimi-coding", "kimi-k2-thinking");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testToolCallWithoutResult(model);

@@ -14,7 +14,18 @@ import type {
 	AgentToolUpdateCallback,
 	ThinkingLevel,
 } from "@mariozechner/pi-agent-core";
-import type { ImageContent, Model, TextContent, ToolResultMessage } from "@mariozechner/pi-ai";
+import type {
+	Api,
+	AssistantMessageEventStream,
+	Context,
+	ImageContent,
+	Model,
+	OAuthCredentials,
+	OAuthLoginCallbacks,
+	SimpleStreamOptions,
+	TextContent,
+	ToolResultMessage,
+} from "@mariozechner/pi-ai";
 import type {
 	AutocompleteItem,
 	Component,
@@ -42,14 +53,22 @@ import type {
 	SessionEntry,
 	SessionManager,
 } from "../session-manager.js";
+import type { SlashCommandInfo } from "../slash-commands.js";
 import type { BashOperations } from "../tools/bash.js";
 import type { EditToolDetails } from "../tools/edit.js";
 import type {
 	BashToolDetails,
+	BashToolInput,
+	EditToolInput,
 	FindToolDetails,
+	FindToolInput,
 	GrepToolDetails,
+	GrepToolInput,
 	LsToolDetails,
+	LsToolInput,
 	ReadToolDetails,
+	ReadToolInput,
+	WriteToolInput,
 } from "../tools/index.js";
 
 export type { ExecOptions, ExecResult } from "../exec.js";
@@ -66,6 +85,15 @@ export interface ExtensionUIDialogOptions {
 	signal?: AbortSignal;
 	/** Timeout in milliseconds. Dialog auto-dismisses with live countdown display. */
 	timeout?: number;
+}
+
+/** Placement for extension widgets. */
+export type WidgetPlacement = "aboveEditor" | "belowEditor";
+
+/** Options for extension widgets. */
+export interface ExtensionWidgetOptions {
+	/** Where the widget is rendered. Defaults to "aboveEditor". */
+	placement?: WidgetPlacement;
 }
 
 /**
@@ -91,9 +119,13 @@ export interface ExtensionUIContext {
 	/** Set the working/loading message shown during streaming. Call with no argument to restore default. */
 	setWorkingMessage(message?: string): void;
 
-	/** Set a widget to display above the editor. Accepts string array or component factory. */
-	setWidget(key: string, content: string[] | undefined): void;
-	setWidget(key: string, content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
+	/** Set a widget to display above or below the editor. Accepts string array or component factory. */
+	setWidget(key: string, content: string[] | undefined, options?: ExtensionWidgetOptions): void;
+	setWidget(
+		key: string,
+		content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined,
+		options?: ExtensionWidgetOptions,
+	): void;
 
 	/** Set a custom footer component, or undefined to restore the built-in footer.
 	 *
@@ -129,6 +161,9 @@ export interface ExtensionUIContext {
 			onHandle?: (handle: OverlayHandle) => void;
 		},
 	): Promise<T>;
+
+	/** Paste text into the editor, triggering paste handling (collapse for large content). */
+	pasteToEditor(text: string): void;
 
 	/** Set the text in the core input editor. */
 	setEditorText(text: string): void;
@@ -187,11 +222,32 @@ export interface ExtensionUIContext {
 
 	/** Set the current theme by name or Theme object. */
 	setTheme(theme: string | Theme): { success: boolean; error?: string };
+
+	/** Get current tool output expansion state. */
+	getToolsExpanded(): boolean;
+
+	/** Set tool output expansion state. */
+	setToolsExpanded(expanded: boolean): void;
 }
 
 // ============================================================================
 // Extension Context
 // ============================================================================
+
+export interface ContextUsage {
+	tokens: number;
+	contextWindow: number;
+	percent: number;
+	usageTokens: number;
+	trailingTokens: number;
+	lastUsageIndex: number | null;
+}
+
+export interface CompactOptions {
+	customInstructions?: string;
+	onComplete?: (result: CompactionResult) => void;
+	onError?: (error: Error) => void;
+}
 
 /**
  * Context passed to extension event handlers.
@@ -217,6 +273,12 @@ export interface ExtensionContext {
 	hasPendingMessages(): boolean;
 	/** Gracefully shutdown pi and exit. Available in all contexts. */
 	shutdown(): void;
+	/** Get current context usage for the active model. */
+	getContextUsage(): ContextUsage | undefined;
+	/** Trigger compaction without awaiting completion. */
+	compact(options?: CompactOptions): void;
+	/** Get the current effective system prompt. */
+	getSystemPrompt(): string;
 }
 
 /**
@@ -237,7 +299,16 @@ export interface ExtensionCommandContext extends ExtensionContext {
 	fork(entryId: string): Promise<{ cancelled: boolean }>;
 
 	/** Navigate to a different point in the session tree. */
-	navigateTree(targetId: string, options?: { summarize?: boolean }): Promise<{ cancelled: boolean }>;
+	navigateTree(
+		targetId: string,
+		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
+	): Promise<{ cancelled: boolean }>;
+
+	/** Switch to a different session file. */
+	switchSession(sessionPath: string): Promise<{ cancelled: boolean }>;
+
+	/** Reload extensions, skills, prompts, and themes. */
+	reload(): Promise<void>;
 }
 
 // ============================================================================
@@ -269,9 +340,9 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	execute(
 		toolCallId: string,
 		params: Static<TParams>,
+		signal: AbortSignal | undefined,
 		onUpdate: AgentToolUpdateCallback<TDetails> | undefined,
 		ctx: ExtensionContext,
-		signal?: AbortSignal,
 	): Promise<AgentToolResult<TDetails>>;
 
 	/** Custom rendering for tool call display */
@@ -279,6 +350,24 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 
 	/** Custom rendering for tool result display */
 	renderResult?: (result: AgentToolResult<TDetails>, options: ToolRenderResultOptions, theme: Theme) => Component;
+}
+
+// ============================================================================
+// Resource Events
+// ============================================================================
+
+/** Fired after session_start to allow extensions to provide additional resource paths. */
+export interface ResourcesDiscoverEvent {
+	type: "resources_discover";
+	cwd: string;
+	reason: "startup" | "reload";
+}
+
+/** Result from resources_discover event handler */
+export interface ResourcesDiscoverResult {
+	skillPaths?: string[];
+	promptPaths?: string[];
+	themePaths?: string[];
 }
 
 // ============================================================================
@@ -344,6 +433,12 @@ export interface TreePreparation {
 	commonAncestorId: string | null;
 	entriesToSummarize: SessionEntry[];
 	userWantsSummary: boolean;
+	/** Custom instructions for summarization */
+	customInstructions?: string;
+	/** If true, customInstructions replaces the default prompt instead of being appended */
+	replaceInstructions?: boolean;
+	/** Label to attach to the branch summary entry */
+	label?: string;
 }
 
 /** Fired before navigating in the session tree (can be cancelled) */
@@ -475,13 +570,61 @@ export type InputEventResult =
 // Tool Events
 // ============================================================================
 
-/** Fired before a tool executes. Can block. */
-export interface ToolCallEvent {
+interface ToolCallEventBase {
 	type: "tool_call";
-	toolName: string;
 	toolCallId: string;
+}
+
+export interface BashToolCallEvent extends ToolCallEventBase {
+	toolName: "bash";
+	input: BashToolInput;
+}
+
+export interface ReadToolCallEvent extends ToolCallEventBase {
+	toolName: "read";
+	input: ReadToolInput;
+}
+
+export interface EditToolCallEvent extends ToolCallEventBase {
+	toolName: "edit";
+	input: EditToolInput;
+}
+
+export interface WriteToolCallEvent extends ToolCallEventBase {
+	toolName: "write";
+	input: WriteToolInput;
+}
+
+export interface GrepToolCallEvent extends ToolCallEventBase {
+	toolName: "grep";
+	input: GrepToolInput;
+}
+
+export interface FindToolCallEvent extends ToolCallEventBase {
+	toolName: "find";
+	input: FindToolInput;
+}
+
+export interface LsToolCallEvent extends ToolCallEventBase {
+	toolName: "ls";
+	input: LsToolInput;
+}
+
+export interface CustomToolCallEvent extends ToolCallEventBase {
+	toolName: string;
 	input: Record<string, unknown>;
 }
+
+/** Fired before a tool executes. Can block. */
+export type ToolCallEvent =
+	| BashToolCallEvent
+	| ReadToolCallEvent
+	| EditToolCallEvent
+	| WriteToolCallEvent
+	| GrepToolCallEvent
+	| FindToolCallEvent
+	| LsToolCallEvent
+	| CustomToolCallEvent;
 
 interface ToolResultEventBase {
 	type: "tool_result";
@@ -542,7 +685,7 @@ export type ToolResultEvent =
 	| LsToolResultEvent
 	| CustomToolResultEvent;
 
-// Type guards
+// Type guards for ToolResultEvent
 export function isBashToolResult(e: ToolResultEvent): e is BashToolResultEvent {
 	return e.toolName === "bash";
 }
@@ -565,8 +708,44 @@ export function isLsToolResult(e: ToolResultEvent): e is LsToolResultEvent {
 	return e.toolName === "ls";
 }
 
+/**
+ * Type guard for narrowing ToolCallEvent by tool name.
+ *
+ * Built-in tools narrow automatically (no type params needed):
+ * ```ts
+ * if (isToolCallEventType("bash", event)) {
+ *   event.input.command;  // string
+ * }
+ * ```
+ *
+ * Custom tools require explicit type parameters:
+ * ```ts
+ * if (isToolCallEventType<"my_tool", MyToolInput>("my_tool", event)) {
+ *   event.input.action;  // typed
+ * }
+ * ```
+ *
+ * Note: Direct narrowing via `event.toolName === "bash"` doesn't work because
+ * CustomToolCallEvent.toolName is `string` which overlaps with all literals.
+ */
+export function isToolCallEventType(toolName: "bash", event: ToolCallEvent): event is BashToolCallEvent;
+export function isToolCallEventType(toolName: "read", event: ToolCallEvent): event is ReadToolCallEvent;
+export function isToolCallEventType(toolName: "edit", event: ToolCallEvent): event is EditToolCallEvent;
+export function isToolCallEventType(toolName: "write", event: ToolCallEvent): event is WriteToolCallEvent;
+export function isToolCallEventType(toolName: "grep", event: ToolCallEvent): event is GrepToolCallEvent;
+export function isToolCallEventType(toolName: "find", event: ToolCallEvent): event is FindToolCallEvent;
+export function isToolCallEventType(toolName: "ls", event: ToolCallEvent): event is LsToolCallEvent;
+export function isToolCallEventType<TName extends string, TInput extends Record<string, unknown>>(
+	toolName: TName,
+	event: ToolCallEvent,
+): event is ToolCallEvent & { toolName: TName; input: TInput };
+export function isToolCallEventType(toolName: string, event: ToolCallEvent): boolean {
+	return event.toolName === toolName;
+}
+
 /** Union of all event types */
 export type ExtensionEvent =
+	| ResourcesDiscoverEvent
 	| SessionEvent
 	| ContextEvent
 	| BeforeAgentStartEvent
@@ -633,6 +812,12 @@ export interface SessionBeforeTreeResult {
 		summary: string;
 		details?: unknown;
 	};
+	/** Override custom instructions for summarization */
+	customInstructions?: string;
+	/** Override whether customInstructions replaces the default prompt */
+	replaceInstructions?: boolean;
+	/** Override label to attach to the branch summary entry */
+	label?: string;
 }
 
 // ============================================================================
@@ -676,6 +861,7 @@ export interface ExtensionAPI {
 	// Event Subscription
 	// =========================================================================
 
+	on(event: "resources_discover", handler: ExtensionHandler<ResourcesDiscoverEvent, ResourcesDiscoverResult>): void;
 	on(event: "session_start", handler: ExtensionHandler<SessionStartEvent>): void;
 	on(
 		event: "session_before_switch",
@@ -779,6 +965,9 @@ export interface ExtensionAPI {
 	/** Get the current session name, if set. */
 	getSessionName(): string | undefined;
 
+	/** Set or clear a label on an entry. Labels are user-defined markers for bookmarking/navigation. */
+	setLabel(entryId: string, label: string | undefined): void;
+
 	/** Execute a shell command. */
 	exec(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
 
@@ -790,6 +979,9 @@ export interface ExtensionAPI {
 
 	/** Set the active tools by name. */
 	setActiveTools(toolNames: string[]): void;
+
+	/** Get available slash commands in the current session. */
+	getCommands(): SlashCommandInfo[];
 
 	// =========================================================================
 	// Model and Thinking Level
@@ -804,8 +996,120 @@ export interface ExtensionAPI {
 	/** Set thinking level (clamped to model capabilities). */
 	setThinkingLevel(level: ThinkingLevel): void;
 
+	// =========================================================================
+	// Provider Registration
+	// =========================================================================
+
+	/**
+	 * Register or override a model provider.
+	 *
+	 * If `models` is provided: replaces all existing models for this provider.
+	 * If only `baseUrl` is provided: overrides the URL for existing models.
+	 * If `oauth` is provided: registers OAuth provider for /login support.
+	 * If `streamSimple` is provided: registers a custom API stream handler.
+	 *
+	 * @example
+	 * // Register a new provider with custom models
+	 * pi.registerProvider("my-proxy", {
+	 *   baseUrl: "https://proxy.example.com",
+	 *   apiKey: "PROXY_API_KEY",
+	 *   api: "anthropic-messages",
+	 *   models: [
+	 *     {
+	 *       id: "claude-sonnet-4-20250514",
+	 *       name: "Claude 4 Sonnet (proxy)",
+	 *       reasoning: false,
+	 *       input: ["text", "image"],
+	 *       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	 *       contextWindow: 200000,
+	 *       maxTokens: 16384
+	 *     }
+	 *   ]
+	 * });
+	 *
+	 * @example
+	 * // Override baseUrl for an existing provider
+	 * pi.registerProvider("anthropic", {
+	 *   baseUrl: "https://proxy.example.com"
+	 * });
+	 *
+	 * @example
+	 * // Register provider with OAuth support
+	 * pi.registerProvider("corporate-ai", {
+	 *   baseUrl: "https://ai.corp.com",
+	 *   api: "openai-responses",
+	 *   models: [...],
+	 *   oauth: {
+	 *     name: "Corporate AI (SSO)",
+	 *     async login(callbacks) { ... },
+	 *     async refreshToken(credentials) { ... },
+	 *     getApiKey(credentials) { return credentials.access; }
+	 *   }
+	 * });
+	 */
+	registerProvider(name: string, config: ProviderConfig): void;
+
 	/** Shared event bus for extension communication. */
 	events: EventBus;
+}
+
+// ============================================================================
+// Provider Registration Types
+// ============================================================================
+
+/** Configuration for registering a provider via pi.registerProvider(). */
+export interface ProviderConfig {
+	/** Base URL for the API endpoint. Required when defining models. */
+	baseUrl?: string;
+	/** API key or environment variable name. Required when defining models (unless oauth provided). */
+	apiKey?: string;
+	/** API type. Required at provider or model level when defining models. */
+	api?: Api;
+	/** Optional streamSimple handler for custom APIs. */
+	streamSimple?: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
+	/** Custom headers to include in requests. */
+	headers?: Record<string, string>;
+	/** If true, adds Authorization: Bearer header with the resolved API key. */
+	authHeader?: boolean;
+	/** Models to register. If provided, replaces all existing models for this provider. */
+	models?: ProviderModelConfig[];
+	/** OAuth provider for /login support. The `id` is set automatically from the provider name. */
+	oauth?: {
+		/** Display name for the provider in login UI. */
+		name: string;
+		/** Run the login flow, return credentials to persist. */
+		login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials>;
+		/** Refresh expired credentials, return updated credentials to persist. */
+		refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials>;
+		/** Convert credentials to API key string for the provider. */
+		getApiKey(credentials: OAuthCredentials): string;
+		/** Optional: modify models for this provider (e.g., update baseUrl based on credentials). */
+		modifyModels?(models: Model<Api>[], credentials: OAuthCredentials): Model<Api>[];
+	};
+}
+
+/** Configuration for a model within a provider. */
+export interface ProviderModelConfig {
+	/** Model ID (e.g., "claude-sonnet-4-20250514"). */
+	id: string;
+	/** Display name (e.g., "Claude 4 Sonnet"). */
+	name: string;
+	/** API type override for this model. */
+	api?: Api;
+	/** Whether the model supports extended thinking. */
+	reasoning: boolean;
+	/** Supported input types. */
+	input: ("text" | "image")[];
+	/** Cost per token (for tracking, can be 0). */
+	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	/** Maximum context window size in tokens. */
+	contextWindow: number;
+	/** Maximum output tokens. */
+	maxTokens: number;
+	/** Custom headers for this model. */
+	headers?: Record<string, string>;
+	/** OpenAI compatibility settings. */
+	compat?: Model<Api>["compat"];
 }
 
 /** Extension factory function type. Supports both sync and async initialization. */
@@ -860,6 +1164,8 @@ export type ToolInfo = Pick<ToolDefinition, "name" | "description">;
 
 export type GetAllToolsHandler = () => ToolInfo[];
 
+export type GetCommandsHandler = () => SlashCommandInfo[];
+
 export type SetActiveToolsHandler = (toolNames: string[]) => void;
 
 export type SetModelHandler = (model: Model<any>) => Promise<boolean>;
@@ -868,12 +1174,16 @@ export type GetThinkingLevelHandler = () => ThinkingLevel;
 
 export type SetThinkingLevelHandler = (level: ThinkingLevel) => void;
 
+export type SetLabelHandler = (entryId: string, label: string | undefined) => void;
+
 /**
  * Shared state created by loader, used during registration and runtime.
  * Contains flag values (defaults set during registration, CLI values set after).
  */
 export interface ExtensionRuntimeState {
 	flagValues: Map<string, boolean | string>;
+	/** Provider registrations queued during extension loading, processed when runner binds */
+	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig }>;
 }
 
 /**
@@ -886,9 +1196,11 @@ export interface ExtensionActions {
 	appendEntry: AppendEntryHandler;
 	setSessionName: SetSessionNameHandler;
 	getSessionName: GetSessionNameHandler;
+	setLabel: SetLabelHandler;
 	getActiveTools: GetActiveToolsHandler;
 	getAllTools: GetAllToolsHandler;
 	setActiveTools: SetActiveToolsHandler;
+	getCommands: GetCommandsHandler;
 	setModel: SetModelHandler;
 	getThinkingLevel: GetThinkingLevelHandler;
 	setThinkingLevel: SetThinkingLevelHandler;
@@ -904,6 +1216,9 @@ export interface ExtensionContextActions {
 	abort: () => void;
 	hasPendingMessages: () => boolean;
 	shutdown: () => void;
+	getContextUsage: () => ContextUsage | undefined;
+	compact: (options?: CompactOptions) => void;
+	getSystemPrompt: () => string;
 }
 
 /**
@@ -917,7 +1232,12 @@ export interface ExtensionCommandContextActions {
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 	}) => Promise<{ cancelled: boolean }>;
 	fork: (entryId: string) => Promise<{ cancelled: boolean }>;
-	navigateTree: (targetId: string, options?: { summarize?: boolean }) => Promise<{ cancelled: boolean }>;
+	navigateTree: (
+		targetId: string,
+		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
+	) => Promise<{ cancelled: boolean }>;
+	switchSession: (sessionPath: string) => Promise<{ cancelled: boolean }>;
+	reload: () => Promise<void>;
 }
 
 /**

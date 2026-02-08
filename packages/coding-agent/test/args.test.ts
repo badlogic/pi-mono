@@ -163,10 +163,67 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--skill flag", () => {
+		test("parses single --skill", () => {
+			const result = parseArgs(["--skill", "./skill-dir"]);
+			expect(result.skills).toEqual(["./skill-dir"]);
+		});
+
+		test("parses multiple --skill flags", () => {
+			const result = parseArgs(["--skill", "./skill-a", "--skill", "./skill-b"]);
+			expect(result.skills).toEqual(["./skill-a", "./skill-b"]);
+		});
+	});
+
+	describe("--prompt-template flag", () => {
+		test("parses single --prompt-template", () => {
+			const result = parseArgs(["--prompt-template", "./prompts"]);
+			expect(result.promptTemplates).toEqual(["./prompts"]);
+		});
+
+		test("parses multiple --prompt-template flags", () => {
+			const result = parseArgs(["--prompt-template", "./one", "--prompt-template", "./two"]);
+			expect(result.promptTemplates).toEqual(["./one", "./two"]);
+		});
+	});
+
+	describe("--theme flag", () => {
+		test("parses single --theme", () => {
+			const result = parseArgs(["--theme", "./theme.json"]);
+			expect(result.themes).toEqual(["./theme.json"]);
+		});
+
+		test("parses multiple --theme flags", () => {
+			const result = parseArgs(["--theme", "./dark.json", "--theme", "./light.json"]);
+			expect(result.themes).toEqual(["./dark.json", "./light.json"]);
+		});
+	});
+
 	describe("--no-skills flag", () => {
 		test("parses --no-skills flag", () => {
 			const result = parseArgs(["--no-skills"]);
 			expect(result.noSkills).toBe(true);
+		});
+	});
+
+	describe("--no-prompt-templates flag", () => {
+		test("parses --no-prompt-templates flag", () => {
+			const result = parseArgs(["--no-prompt-templates"]);
+			expect(result.noPromptTemplates).toBe(true);
+		});
+	});
+
+	describe("--no-themes flag", () => {
+		test("parses --no-themes flag", () => {
+			const result = parseArgs(["--no-themes"]);
+			expect(result.noThemes).toBe(true);
+		});
+	});
+
+	describe("--verbose flag", () => {
+		test("parses --verbose flag", () => {
+			const result = parseArgs(["--verbose"]);
+			expect(result.verbose).toBe(true);
 		});
 	});
 

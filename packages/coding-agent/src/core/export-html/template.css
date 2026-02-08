@@ -144,6 +144,15 @@
     }
 
     .tree-node.in-path {
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
+    }
+
+    .tree-node:not(.in-path) {
+      opacity: 0.5;
+    }
+
+    .tree-node:not(.in-path):hover {
+      opacity: 1;
     }
 
     .tree-prefix {
@@ -221,6 +230,25 @@
       font-size: 11px;
       color: var(--warning);
       margin-bottom: var(--line-height);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .download-json-btn {
+      font-size: 10px;
+      padding: 2px 8px;
+      background: var(--container-bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      color: var(--text);
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .download-json-btn:hover {
+      background: var(--hover);
+      border-color: var(--borderAccent);
     }
 
     /* Header */
@@ -475,6 +503,10 @@
       display: block;
     }
 
+    .ansi-line {
+      white-space: pre-wrap;
+    }
+
     .tool-images {
     }
 
@@ -660,6 +692,9 @@
     .error-text {
       color: var(--error);
       padding: 0 var(--line-height);
+    }
+    .tool-error {
+      color: var(--error);
     }
 
     /* Images */

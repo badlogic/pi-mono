@@ -3,9 +3,9 @@ import { createWriteStream, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { Type } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
-import { getShellConfig, killProcessTree } from "../../utils/shell.js";
+import { getShellConfig, getShellEnv, killProcessTree } from "../../utils/shell.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateTail } from "./truncate.js";
 
 /**
@@ -20,6 +20,8 @@ const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
 	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
 });
+
+export type BashToolInput = Static<typeof bashSchema>;
 
 export interface BashToolDetails {
 	truncation?: TruncationResult;
@@ -45,6 +47,7 @@ export interface BashOperations {
 			onData: (data: Buffer) => void;
 			signal?: AbortSignal;
 			timeout?: number;
+			env?: NodeJS.ProcessEnv;
 		},
 	) => Promise<{ exitCode: number | null }>;
 }
@@ -53,7 +56,7 @@ export interface BashOperations {
  * Default bash operations using local shell
  */
 const defaultBashOperations: BashOperations = {
-	exec: (command, cwd, { onData, signal, timeout }) => {
+	exec: (command, cwd, { onData, signal, timeout, env }) => {
 		return new Promise((resolve, reject) => {
 			const { shell, args } = getShellConfig();
 
@@ -65,6 +68,7 @@ const defaultBashOperations: BashOperations = {
 			const child = spawn(shell, [...args, command], {
 				cwd,
 				detached: true,
+				env: env ?? getShellEnv(),
 				stdio: ["ignore", "pipe", "pipe"],
 			});
 
@@ -132,13 +136,37 @@ const defaultBashOperations: BashOperations = {
 	},
 };
 
+export interface BashSpawnContext {
+	command: string;
+	cwd: string;
+	env: NodeJS.ProcessEnv;
+}
+
+export type BashSpawnHook = (context: BashSpawnContext) => BashSpawnContext;
+
+function resolveSpawnContext(command: string, cwd: string, spawnHook?: BashSpawnHook): BashSpawnContext {
+	const baseContext: BashSpawnContext = {
+		command,
+		cwd,
+		env: { ...getShellEnv() },
+	};
+
+	return spawnHook ? spawnHook(baseContext) : baseContext;
+}
+
 export interface BashToolOptions {
 	/** Custom operations for command execution. Default: local shell */
 	operations?: BashOperations;
+	/** Command prefix prepended to every command (e.g., "shopt -s expand_aliases" for alias support) */
+	commandPrefix?: string;
+	/** Hook to adjust command, cwd, or env before execution */
+	spawnHook?: BashSpawnHook;
 }
 
 export function createBashTool(cwd: string, options?: BashToolOptions): AgentTool<typeof bashSchema> {
 	const ops = options?.operations ?? defaultBashOperations;
+	const commandPrefix = options?.commandPrefix;
+	const spawnHook = options?.spawnHook;
 
 	return {
 		name: "bash",
@@ -151,6 +179,10 @@ export function createBashTool(cwd: string, options?: BashToolOptions): AgentToo
 			signal?: AbortSignal,
 			onUpdate?,
 		) => {
+			// Apply command prefix if configured (e.g., "shopt -s expand_aliases" for alias support)
+			const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
+			const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook);
+
 			return new Promise((resolve, reject) => {
 				// We'll stream to a temp file if output gets large
 				let tempFilePath: string | undefined;
@@ -206,7 +238,12 @@ export function createBashTool(cwd: string, options?: BashToolOptions): AgentToo
 					}
 				};
 
-				ops.exec(command, cwd, { onData: handleData, signal, timeout })
+				ops.exec(spawnContext.command, spawnContext.cwd, {
+					onData: handleData,
+					signal,
+					timeout,
+					env: spawnContext.env,
+				})
 					.then(({ exitCode }) => {
 						// Close temp file stream
 						if (tempFileStream) {

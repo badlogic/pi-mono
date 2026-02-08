@@ -13,12 +13,15 @@ export type EditorAction =
 	| "cursorWordRight"
 	| "cursorLineStart"
 	| "cursorLineEnd"
+	| "jumpForward"
+	| "jumpBackward"
 	| "pageUp"
 	| "pageDown"
 	// Deletion
 	| "deleteCharBackward"
 	| "deleteCharForward"
 	| "deleteWordBackward"
+	| "deleteWordForward"
 	| "deleteToLineStart"
 	| "deleteToLineEnd"
 	// Text input
@@ -34,8 +37,19 @@ export type EditorAction =
 	| "selectCancel"
 	// Clipboard
 	| "copy"
+	// Kill ring
+	| "yank"
+	| "yankPop"
+	// Undo
+	| "undo"
 	// Tool output
-	| "expandTools";
+	| "expandTools"
+	// Session
+	| "toggleSessionPath"
+	| "toggleSessionSort"
+	| "renameSession"
+	| "deleteSession"
+	| "deleteSessionNoninvasive";
 
 // Re-export KeyId from keys.ts
 export type { KeyId };
@@ -54,18 +68,21 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	// Cursor movement
 	cursorUp: "up",
 	cursorDown: "down",
-	cursorLeft: "left",
-	cursorRight: "right",
-	cursorWordLeft: ["alt+left", "ctrl+left"],
-	cursorWordRight: ["alt+right", "ctrl+right"],
+	cursorLeft: ["left", "ctrl+b"],
+	cursorRight: ["right", "ctrl+f"],
+	cursorWordLeft: ["alt+left", "ctrl+left", "alt+b"],
+	cursorWordRight: ["alt+right", "ctrl+right", "alt+f"],
 	cursorLineStart: ["home", "ctrl+a"],
 	cursorLineEnd: ["end", "ctrl+e"],
+	jumpForward: "ctrl+]",
+	jumpBackward: "ctrl+alt+]",
 	pageUp: "pageUp",
 	pageDown: "pageDown",
 	// Deletion
 	deleteCharBackward: "backspace",
-	deleteCharForward: "delete",
+	deleteCharForward: ["delete", "ctrl+d"],
 	deleteWordBackward: ["ctrl+w", "alt+backspace"],
+	deleteWordForward: ["alt+d", "alt+delete"],
 	deleteToLineStart: "ctrl+u",
 	deleteToLineEnd: "ctrl+k",
 	// Text input
@@ -81,8 +98,19 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	selectCancel: ["escape", "ctrl+c"],
 	// Clipboard
 	copy: "ctrl+c",
+	// Kill ring
+	yank: "ctrl+y",
+	yankPop: "alt+y",
+	// Undo
+	undo: "ctrl+-",
 	// Tool output
 	expandTools: "ctrl+o",
+	// Session
+	toggleSessionPath: "ctrl+p",
+	toggleSessionSort: "ctrl+s",
+	renameSession: "ctrl+r",
+	deleteSession: "ctrl+d",
+	deleteSessionNoninvasive: "ctrl+backspace",
 };
 
 /**

@@ -297,19 +297,6 @@ describe("extensions discovery", () => {
 		expect(result.extensions[0].path).toContain("my-ext.ts");
 	});
 
-	it("resolves 3rd party npm dependencies (chalk)", async () => {
-		// Load the real chalk-logger extension from examples
-		const chalkLoggerPath = path.resolve(__dirname, "../examples/extensions/chalk-logger.ts");
-
-		const result = await discoverAndLoadExtensions([chalkLoggerPath], tempDir, tempDir);
-
-		expect(result.errors).toHaveLength(0);
-		expect(result.extensions).toHaveLength(1);
-		expect(result.extensions[0].path).toContain("chalk-logger.ts");
-		// The extension registers event handlers, not commands/tools
-		expect(result.extensions[0].handlers.size).toBeGreaterThan(0);
-	});
-
 	it("resolves dependencies from extension's own node_modules", async () => {
 		// Load extension that has its own package.json and node_modules with 'ms' package
 		const extPath = path.resolve(__dirname, "../examples/extensions/with-deps");

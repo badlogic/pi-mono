@@ -136,6 +136,58 @@ interface Component {
 
 The TUI appends a full SGR reset and OSC 8 reset at the end of each rendered line. Styles do not carry across lines. If you emit multi-line text with styling, reapply styles per line or use `wrapTextWithAnsi()` so styles are preserved for each wrapped line.
 
+### Focusable Interface (IME Support)
+
+Components that display a text cursor and need IME (Input Method Editor) support should implement the `Focusable` interface:
+
+```typescript
+import { CURSOR_MARKER, type Component, type Focusable } from "@mariozechner/pi-tui";
+
+class MyInput implements Component, Focusable {
+  focused: boolean = false;  // Set by TUI when focus changes
+  
+  render(width: number): string[] {
+    const marker = this.focused ? CURSOR_MARKER : "";
+    // Emit marker right before the fake cursor
+    return [`> ${beforeCursor}${marker}\x1b[7m${atCursor}\x1b[27m${afterCursor}`];
+  }
+}
+```
+
+When a `Focusable` component has focus, TUI:
+1. Sets `focused = true` on the component
+2. Scans rendered output for `CURSOR_MARKER` (a zero-width APC escape sequence)
+3. Positions the hardware terminal cursor at that location
+4. Shows the hardware cursor
+
+This enables IME candidate windows to appear at the correct position for CJK input methods. The `Editor` and `Input` built-in components already implement this interface.
+
+**Container components with embedded inputs:** When a container component (dialog, selector, etc.) contains an `Input` or `Editor` child, the container must implement `Focusable` and propagate the focus state to the child:
+
+```typescript
+import { Container, type Focusable, Input } from "@mariozechner/pi-tui";
+
+class SearchDialog extends Container implements Focusable {
+  private searchInput: Input;
+
+  // Propagate focus to child input for IME cursor positioning
+  private _focused = false;
+  get focused(): boolean { return this._focused; }
+  set focused(value: boolean) {
+    this._focused = value;
+    this.searchInput.focused = value;
+  }
+
+  constructor() {
+    super();
+    this.searchInput = new Input();
+    this.addChild(this.searchInput);
+  }
+}
+```
+
+Without this propagation, typing with an IME (Chinese, Japanese, Korean, etc.) will show the candidate window in the wrong position.
+
 ## Built-in Components
 
 ### Container
@@ -220,12 +272,18 @@ interface EditorTheme {
   selectList: SelectListTheme;
 }
 
-const editor = new Editor(tui, theme);  // tui is required for height-aware scrolling
+interface EditorOptions {
+  paddingX?: number;  // Horizontal padding (default: 0)
+}
+
+const editor = new Editor(tui, theme, options?);  // tui is required for height-aware scrolling
 editor.onSubmit = (text) => console.log(text);
 editor.onChange = (text) => console.log("Changed:", text);
 editor.disableSubmit = true; // Disable submit temporarily
 editor.setAutocompleteProvider(provider);
 editor.borderColor = (s) => chalk.blue(s); // Change border dynamically
+editor.setPaddingX(1); // Update horizontal padding dynamically
+editor.getPaddingX();  // Get current padding
 ```
 
 **Features:**
@@ -240,8 +298,13 @@ editor.borderColor = (s) => chalk.blue(s); // Change border dynamically
 - `Enter` - Submit
 - `Shift+Enter`, `Ctrl+Enter`, or `Alt+Enter` - New line (terminal-dependent, Alt+Enter most reliable)
 - `Tab` - Autocomplete
-- `Ctrl+K` - Delete line
+- `Ctrl+K` - Delete to end of line
+- `Ctrl+U` - Delete to start of line
+- `Ctrl+W` or `Alt+Backspace` - Delete word backwards
+- `Alt+D` or `Alt+Delete` - Delete word forwards
 - `Ctrl+A` / `Ctrl+E` - Line start/end
+- `Ctrl+]` - Jump forward to character (awaits next keypress, then moves cursor to first occurrence)
+- `Ctrl+Alt+]` - Jump backward to character
 - Arrow keys, Backspace, Delete work as expected
 
 ### Markdown
@@ -687,4 +750,12 @@ npm run check
 
 # Run the demo
 npx tsx test/chat-simple.ts
+```
+
+### Debug logging
+
+Set `PI_TUI_WRITE_LOG` to capture the raw ANSI stream written to stdout.
+
+```bash
+PI_TUI_WRITE_LOG=/tmp/tui-ansi.log npx tsx test/chat-simple.ts
 ```

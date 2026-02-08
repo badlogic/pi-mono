@@ -36,6 +36,10 @@ export class VirtualTerminal implements Terminal {
 		this.xterm.write("\x1b[?2004h");
 	}
 
+	async drainInput(_maxMs?: number, _idleMs?: number): Promise<void> {
+		// No-op for virtual terminal - no stdin to drain
+	}
+
 	stop(): void {
 		// Disable bracketed paste mode
 		this.xterm.write("\x1b[?2004l");

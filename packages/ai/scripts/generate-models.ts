@@ -193,43 +193,12 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					continue;
 				}
 
-				if (id.startsWith("amazon.titan-text-express") ||
-				    id.startsWith("mistral.mistral-7b-instruct-v0")) {
+				if (id.startsWith("mistral.mistral-7b-instruct-v0")) {
 					// These models doesn't support system messages
 					continue;
 				}
 
-				// Some Amazon Bedrock models require cross-region inference profiles to work.
-				// To use cross-region inference, we need to add a region prefix to the models.
-				// See https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html#inference-profiles-support-system
-				// TODO: Remove Claude models once https://github.com/anomalyco/models.dev/pull/607 is merged, and follow-up with other models.
-
-				// Models with global cross-region inference profiles
-				if (id.startsWith("anthropic.claude-haiku-4-5") ||
-						id.startsWith("anthropic.claude-sonnet-4") ||
-						id.startsWith("anthropic.claude-opus-4-5") ||
-						id.startsWith("amazon.nova-2-lite") ||
-						id.startsWith("cohere.embed-v4") ||
-						id.startsWith("twelvelabs.pegasus-1-2")) {
-						id = "global." + id;
-				}
-
-				// Models with US cross-region inference profiles
-				if (id.startsWith("amazon.nova-lite") ||
-						id.startsWith("amazon.nova-micro") ||
-						id.startsWith("amazon.nova-premier") ||
-						id.startsWith("amazon.nova-pro") ||
-						id.startsWith("anthropic.claude-3-7-sonnet") ||
-						id.startsWith("anthropic.claude-opus-4-1") ||
-						id.startsWith("anthropic.claude-opus-4-20250514") ||
-						id.startsWith("deepseek.r1") ||
-						id.startsWith("meta.llama3-2") ||
-						id.startsWith("meta.llama3-3") ||
-						id.startsWith("meta.llama4")) {
-						id = "us." + id;
-				}
-
-				const bedrockModel = {
+				models.push({
 					id,
 					name: m.name || id,
 					api: "bedrock-converse-stream" as const,
@@ -245,19 +214,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					},
 					contextWindow: m.limit?.context || 4096,
 					maxTokens: m.limit?.output || 4096,
-				};
-				models.push(bedrockModel);
-
-				// Add EU cross-region inference variants for Claude models
-				if (modelId.startsWith("anthropic.claude-haiku-4-5") ||
-						modelId.startsWith("anthropic.claude-sonnet-4-5") ||
-						modelId.startsWith("anthropic.claude-opus-4-5")) {
-					models.push({
-						...bedrockModel,
-						id: "eu." + modelId,
-						name: (m.name || modelId) + " (EU)",
-					});
-				}
+				});
 			}
 		}
 
@@ -474,6 +431,35 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
+		// Process Hugging Face models
+		if (data.huggingface?.models) {
+			for (const [modelId, model] of Object.entries(data.huggingface.models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					api: "openai-completions",
+					provider: "huggingface",
+					baseUrl: "https://router.huggingface.co/v1",
+					reasoning: m.reasoning === true,
+					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					compat: {
+						supportsDeveloperRole: false,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+				});
+			}
+		}
+
 		// Process OpenCode Zen models
 		// API mapping based on provider.npm field:
 		// - @ai-sdk/openai → openai-responses
@@ -482,8 +468,9 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 		// - null/undefined/@ai-sdk/openai-compatible → openai-completions
 		if (data.opencode?.models) {
 			for (const [modelId, model] of Object.entries(data.opencode.models)) {
-				const m = model as ModelsDevModel;
+				const m = model as ModelsDevModel & { status?: string };
 				if (m.tool_call !== true) continue;
+				if (m.status === "deprecated") continue;
 
 				const npm = m.provider?.npm;
 				let api: Api;
@@ -600,6 +587,33 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
+		// Process Kimi For Coding models
+		if (data["kimi-for-coding"]?.models) {
+			for (const [modelId, model] of Object.entries(data["kimi-for-coding"].models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					api: "anthropic-messages",
+					provider: "kimi-coding",
+					// Kimi For Coding's Anthropic-compatible API - SDK appends /v1/messages
+					baseUrl: "https://api.kimi.com/coding",
+					reasoning: m.reasoning === true,
+					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+				});
+			}
+		}
+
 		console.log(`Loaded ${models.length} tool-capable models from models.dev`);
 		return models;
 	} catch (error) {
@@ -626,6 +640,64 @@ async function generateModels() {
 	if (opus45) {
 		opus45.cost.cacheRead = 0.5;
 		opus45.cost.cacheWrite = 6.25;
+	}
+
+	// Temporary overrides until upstream model metadata is corrected.
+	for (const candidate of allModels) {
+		if (candidate.provider === "amazon-bedrock" && candidate.id.includes("anthropic.claude-opus-4-6-v1")) {
+			candidate.cost.cacheRead = 0.5;
+			candidate.cost.cacheWrite = 6.25;
+			candidate.contextWindow = 200000;
+		}
+		if ((candidate.provider === "anthropic" || candidate.provider === "opencode") && candidate.id === "claude-opus-4-6") {
+			candidate.contextWindow = 200000;
+		}
+		// opencode lists Claude Sonnet 4/4.5 with 1M context, actual limit is 200K
+		if (candidate.provider === "opencode" && (candidate.id === "claude-sonnet-4-5" || candidate.id === "claude-sonnet-4")) {
+			candidate.contextWindow = 200000;
+		}
+	}
+
+	// Add missing EU Opus 4.6 profile
+	if (!allModels.some((m) => m.provider === "amazon-bedrock" && m.id === "eu.anthropic.claude-opus-4-6-v1")) {
+		allModels.push({
+			id: "eu.anthropic.claude-opus-4-6-v1",
+			name: "Claude Opus 4.6 (EU)",
+			api: "bedrock-converse-stream",
+			provider: "amazon-bedrock",
+			baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 5,
+				output: 25,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
+			},
+			contextWindow: 200000,
+			maxTokens: 128000,
+		});
+	}
+
+	// Add missing Claude Opus 4.6
+	if (!allModels.some(m => m.provider === "anthropic" && m.id === "claude-opus-4-6")) {
+		allModels.push({
+			id: "claude-opus-4-6",
+			name: "Claude Opus 4.6",
+			api: "anthropic-messages",
+			baseUrl: "https://api.anthropic.com",
+			provider: "anthropic",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 5,
+				output: 25,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
+			},
+			contextWindow: 200000,
+			maxTokens: 128000,
+		});
 	}
 
 	// Add missing gpt models
@@ -756,6 +828,18 @@ async function generateModels() {
 			contextWindow: CODEX_CONTEXT,
 			maxTokens: CODEX_MAX_TOKENS,
 		},
+		{
+			id: "gpt-5.3-codex",
+			name: "GPT-5.3 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: CODEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 },
+			contextWindow: CODEX_CONTEXT,
+			maxTokens: CODEX_MAX_TOKENS,
+		},
 	];
 	allModels.push(...codexModels);
 
@@ -780,11 +864,11 @@ async function generateModels() {
 		});
 	}
 
-	// Add missing OpenRouter model
-	if (!allModels.some(m => m.provider === "openrouter" && m.id === "openrouter/auto")) {
+	// Add "auto" alias for openrouter/auto
+	if (!allModels.some(m => m.provider === "openrouter" && m.id === "auto")) {
 		allModels.push({
-			id: "openrouter/auto",
-			name: "OpenRouter: Auto Router",
+			id: "auto",
+			name: "Auto",
 			api: "openai-completions",
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
@@ -1100,6 +1184,52 @@ async function generateModels() {
 	];
 	allModels.push(...vertexModels);
 
+	// Kimi For Coding models (Moonshot AI's Anthropic-compatible coding API)
+	// Static fallback in case models.dev doesn't have them yet
+	const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding";
+	const kimiCodingModels: Model<"anthropic-messages">[] = [
+		{
+			id: "kimi-k2-thinking",
+			name: "Kimi K2 Thinking",
+			api: "anthropic-messages",
+			provider: "kimi-coding",
+			baseUrl: KIMI_CODING_BASE_URL,
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 262144,
+			maxTokens: 32768,
+		},
+		{
+			id: "k2p5",
+			name: "Kimi K2.5",
+			api: "anthropic-messages",
+			provider: "kimi-coding",
+			baseUrl: KIMI_CODING_BASE_URL,
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 262144,
+			maxTokens: 32768,
+		},
+	];
+	// Only add if not already present from models.dev
+	for (const model of kimiCodingModels) {
+		if (!allModels.some(m => m.provider === "kimi-coding" && m.id === model.id)) {
+			allModels.push(model);
+		}
+	}
+
+	const azureOpenAiModels: Model<Api>[] = allModels
+		.filter((model) => model.provider === "openai" && model.api === "openai-responses")
+		.map((model) => ({
+			...model,
+			api: "azure-openai-responses",
+			provider: "azure-openai-responses",
+			baseUrl: "",
+		}));
+	allModels.push(...azureOpenAiModels);
+
 	// Group by provider and deduplicate by model ID
 	const providers: Record<string, Record<string, Model<any>>> = {};
 	for (const model of allModels) {
@@ -1136,7 +1266,7 @@ export const MODELS = {
 			output += `\t\t\tname: "${model.name}",\n`;
 			output += `\t\t\tapi: "${model.api}",\n`;
 			output += `\t\t\tprovider: "${model.provider}",\n`;
-			if (model.baseUrl) {
+			if (model.baseUrl !== undefined) {
 				output += `\t\t\tbaseUrl: "${model.baseUrl}",\n`;
 			}
 			if (model.headers) {

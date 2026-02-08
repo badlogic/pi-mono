@@ -2,6 +2,7 @@
  * Extension system for lifecycle events and custom tools.
  */
 
+export type { SlashCommandInfo, SlashCommandLocation, SlashCommandSource } from "../slash-commands.js";
 export {
 	createExtensionRuntime,
 	discoverAndLoadExtensions,
@@ -14,6 +15,7 @@ export type {
 	NavigateTreeHandler,
 	NewSessionHandler,
 	ShutdownHandler,
+	SwitchSessionHandler,
 } from "./runner.js";
 export { ExtensionRunner } from "./runner.js";
 export type {
@@ -25,14 +27,21 @@ export type {
 	// App keybindings (for custom editors)
 	AppAction,
 	AppendEntryHandler,
+	// Events - Tool (ToolCallEvent types)
+	BashToolCallEvent,
 	BashToolResultEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	// Context
+	CompactOptions,
 	// Events - Agent
 	ContextEvent,
 	// Event Results
 	ContextEventResult,
+	ContextUsage,
+	CustomToolCallEvent,
 	CustomToolResultEvent,
+	EditToolCallEvent,
 	EditToolResultEvent,
 	ExecOptions,
 	ExecResult,
@@ -42,7 +51,6 @@ export type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 	ExtensionCommandContextActions,
-	// Context
 	ExtensionContext,
 	ExtensionContextActions,
 	// Errors
@@ -56,10 +64,14 @@ export type {
 	ExtensionShortcut,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	ExtensionWidgetOptions,
+	FindToolCallEvent,
 	FindToolResultEvent,
 	GetActiveToolsHandler,
 	GetAllToolsHandler,
+	GetCommandsHandler,
 	GetThinkingLevelHandler,
+	GrepToolCallEvent,
 	GrepToolResultEvent,
 	// Events - Input
 	InputEvent,
@@ -67,16 +79,24 @@ export type {
 	InputSource,
 	KeybindingsManager,
 	LoadExtensionsResult,
+	LsToolCallEvent,
 	LsToolResultEvent,
 	// Message Rendering
 	MessageRenderer,
 	MessageRenderOptions,
 	ModelSelectEvent,
 	ModelSelectSource,
+	// Provider Registration
+	ProviderConfig,
+	ProviderModelConfig,
+	ReadToolCallEvent,
 	ReadToolResultEvent,
 	// Commands
 	RegisteredCommand,
 	RegisteredTool,
+	// Events - Resources
+	ResourcesDiscoverEvent,
+	ResourcesDiscoverResult,
 	SendMessageHandler,
 	SendUserMessageHandler,
 	SessionBeforeCompactEvent,
@@ -96,6 +116,7 @@ export type {
 	SessionSwitchEvent,
 	SessionTreeEvent,
 	SetActiveToolsHandler,
+	SetLabelHandler,
 	SetModelHandler,
 	SetThinkingLevelHandler,
 	// Events - Tool
@@ -113,6 +134,8 @@ export type {
 	// Events - User Bash
 	UserBashEvent,
 	UserBashEventResult,
+	WidgetPlacement,
+	WriteToolCallEvent,
 	WriteToolResultEvent,
 } from "./types.js";
 // Type guards
@@ -123,6 +146,7 @@ export {
 	isGrepToolResult,
 	isLsToolResult,
 	isReadToolResult,
+	isToolCallEventType,
 	isWriteToolResult,
 } from "./types.js";
 export {

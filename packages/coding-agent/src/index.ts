@@ -1,14 +1,16 @@
 // Core session management
 
 // Config paths
-export { getAgentDir } from "./config.js";
+export { getAgentDir, VERSION } from "./config.js";
 export {
 	AgentSession,
 	type AgentSessionConfig,
 	type AgentSessionEvent,
 	type AgentSessionEventListener,
 	type ModelCycleResult,
+	type ParsedSkillBlock,
 	type PromptOptions,
+	parseSkillBlock,
 	type SessionStats,
 } from "./core/agent-session.js";
 // Auth and model registry
@@ -44,8 +46,13 @@ export type {
 	AgentToolResult,
 	AgentToolUpdateCallback,
 	AppAction,
+	BashToolCallEvent,
 	BeforeAgentStartEvent,
+	CompactOptions,
 	ContextEvent,
+	ContextUsage,
+	CustomToolCallEvent,
+	EditToolCallEvent,
 	ExecOptions,
 	ExecResult,
 	Extension,
@@ -64,13 +71,20 @@ export type {
 	ExtensionShortcut,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	ExtensionWidgetOptions,
+	FindToolCallEvent,
+	GrepToolCallEvent,
 	InputEvent,
 	InputEventResult,
 	InputSource,
 	KeybindingsManager,
 	LoadExtensionsResult,
+	LsToolCallEvent,
 	MessageRenderer,
 	MessageRenderOptions,
+	ProviderConfig,
+	ProviderModelConfig,
+	ReadToolCallEvent,
 	RegisteredCommand,
 	RegisteredTool,
 	SessionBeforeCompactEvent,
@@ -83,6 +97,9 @@ export type {
 	SessionStartEvent,
 	SessionSwitchEvent,
 	SessionTreeEvent,
+	SlashCommandInfo,
+	SlashCommandLocation,
+	SlashCommandSource,
 	ToolCallEvent,
 	ToolDefinition,
 	ToolInfo,
@@ -92,8 +109,12 @@ export type {
 	TurnStartEvent,
 	UserBashEvent,
 	UserBashEventResult,
+	WidgetPlacement,
+	WriteToolCallEvent,
 } from "./core/extensions/index.js";
 export {
+	createExtensionRuntime,
+	discoverAndLoadExtensions,
 	ExtensionRunner,
 	isBashToolResult,
 	isEditToolResult,
@@ -101,6 +122,7 @@ export {
 	isGrepToolResult,
 	isLsToolResult,
 	isReadToolResult,
+	isToolCallEventType,
 	isWriteToolResult,
 	wrapRegisteredTool,
 	wrapRegisteredTools,
@@ -111,10 +133,19 @@ export {
 export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.js";
 export { convertToLlm } from "./core/messages.js";
 export { ModelRegistry } from "./core/model-registry.js";
+export type {
+	PackageManager,
+	PathMetadata,
+	ProgressCallback,
+	ProgressEvent,
+	ResolvedPaths,
+	ResolvedResource,
+} from "./core/package-manager.js";
+export { DefaultPackageManager } from "./core/package-manager.js";
+export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.js";
+export { DefaultResourceLoader } from "./core/resource-loader.js";
 // SDK for programmatic usage
 export {
-	type BuildSystemPromptOptions,
-	buildSystemPrompt,
 	type CreateAgentSessionOptions,
 	type CreateAgentSessionResult,
 	// Factory
@@ -129,14 +160,6 @@ export {
 	createReadOnlyTools,
 	createReadTool,
 	createWriteTool,
-	// Discovery
-	discoverAuthStorage,
-	discoverContextFiles,
-	discoverExtensions,
-	discoverModels,
-	discoverPromptTemplates,
-	discoverSkills,
-	loadSettings,
 	type PromptTemplate,
 	// Pre-built tools (use process.cwd())
 	readOnlyTools,
@@ -167,10 +190,9 @@ export {
 export {
 	type CompactionSettings,
 	type ImageSettings,
+	type PackageSource,
 	type RetrySettings,
-	type Settings,
 	SettingsManager,
-	type SkillsSettings,
 } from "./core/settings-manager.js";
 // Skills
 export {
@@ -181,12 +203,14 @@ export {
 	loadSkillsFromDir,
 	type Skill,
 	type SkillFrontmatter,
-	type SkillWarning,
 } from "./core/skills.js";
 // Tools
 export {
 	type BashOperations,
+	type BashSpawnContext,
+	type BashSpawnHook,
 	type BashToolDetails,
+	type BashToolInput,
 	type BashToolOptions,
 	bashTool,
 	codingTools,
@@ -194,23 +218,28 @@ export {
 	DEFAULT_MAX_LINES,
 	type EditOperations,
 	type EditToolDetails,
+	type EditToolInput,
 	type EditToolOptions,
 	editTool,
 	type FindOperations,
 	type FindToolDetails,
+	type FindToolInput,
 	type FindToolOptions,
 	findTool,
 	formatSize,
 	type GrepOperations,
 	type GrepToolDetails,
+	type GrepToolInput,
 	type GrepToolOptions,
 	grepTool,
 	type LsOperations,
 	type LsToolDetails,
+	type LsToolInput,
 	type LsToolOptions,
 	lsTool,
 	type ReadOperations,
 	type ReadToolDetails,
+	type ReadToolInput,
 	type ReadToolOptions,
 	readTool,
 	type ToolsOptions,
@@ -220,6 +249,7 @@ export {
 	truncateLine,
 	truncateTail,
 	type WriteOperations,
+	type WriteToolInput,
 	type WriteToolOptions,
 	writeTool,
 } from "./core/tools/index.js";
@@ -237,6 +267,8 @@ export {
 export {
 	ArminComponent,
 	AssistantMessageComponent,
+	appKey,
+	appKeyHint,
 	BashExecutionComponent,
 	BorderedLoader,
 	BranchSummaryMessageComponent,
@@ -247,17 +279,21 @@ export {
 	ExtensionEditorComponent,
 	ExtensionInputComponent,
 	ExtensionSelectorComponent,
+	editorKey,
 	FooterComponent,
+	keyHint,
 	LoginDialogComponent,
 	ModelSelectorComponent,
 	OAuthSelectorComponent,
 	type RenderDiffOptions,
+	rawKeyHint,
 	renderDiff,
 	SessionSelectorComponent,
 	type SettingsCallbacks,
 	type SettingsConfig,
 	SettingsSelectorComponent,
 	ShowImagesSelectorComponent,
+	SkillInvocationMessageComponent,
 	ThemeSelectorComponent,
 	ThinkingSelectorComponent,
 	ToolExecutionComponent,
@@ -279,6 +315,8 @@ export {
 	Theme,
 	type ThemeColor,
 } from "./modes/interactive/theme/theme.js";
+// Clipboard utilities
+export { copyToClipboard } from "./utils/clipboard.js";
 export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.js";
 // Shell utilities
 export { getShellConfig } from "./utils/shell.js";

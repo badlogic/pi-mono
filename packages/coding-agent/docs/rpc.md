@@ -38,7 +38,7 @@ Send a user prompt to the agent. Returns immediately; events stream asynchronous
 
 With images:
 ```json
-{"type": "prompt", "message": "What's in this image?", "images": [{"type": "image", "source": {"type": "base64", "mediaType": "image/png", "data": "..."}}]}
+{"type": "prompt", "message": "What's in this image?", "images": [{"type": "image", "data": "base64-encoded-data", "mimeType": "image/png"}]}
 ```
 
 **During streaming**: If the agent is already streaming, you must specify `streamingBehavior` to queue the message:
@@ -61,7 +61,7 @@ Response:
 {"id": "req-1", "type": "response", "command": "prompt", "success": true}
 ```
 
-The `images` field is optional. Each image uses `ImageContent` format with base64 or URL source.
+The `images` field is optional. Each image uses `ImageContent` format: `{"type": "image", "data": "base64-encoded-data", "mimeType": "image/png"}`.
 
 #### steer
 
@@ -70,6 +70,13 @@ Queue a steering message to interrupt the agent mid-run. Delivered after current
 ```json
 {"type": "steer", "message": "Stop and do this instead"}
 ```
+
+With images:
+```json
+{"type": "steer", "message": "Look at this instead", "images": [{"type": "image", "data": "base64-encoded-data", "mimeType": "image/png"}]}
+```
+
+The `images` field is optional. Each image uses `ImageContent` format (same as `prompt`).
 
 Response:
 ```json
@@ -85,6 +92,13 @@ Queue a follow-up message to be processed after the agent finishes. Delivered on
 ```json
 {"type": "follow_up", "message": "After you're done, also do this"}
 ```
+
+With images:
+```json
+{"type": "follow_up", "message": "Also check this image", "images": [{"type": "image", "data": "base64-encoded-data", "mimeType": "image/png"}]}
+```
+
+The `images` field is optional. Each image uses `ImageContent` format (same as `prompt`).
 
 Response:
 ```json
@@ -154,6 +168,7 @@ Response:
     "followUpMode": "one-at-a-time",
     "sessionFile": "/path/to/session.jsonl",
     "sessionId": "abc123",
+    "sessionName": "my-feature-work",
     "autoCompactionEnabled": true,
     "messageCount": 5,
     "pendingMessageCount": 0
@@ -161,7 +176,7 @@ Response:
 }
 ```
 
-The `model` field is a full [Model](#model) object or `null`.
+The `model` field is a full [Model](#model) object or `null`. The `sessionName` field is the display name set via `set_session_name`, or omitted if not set.
 
 #### get_messages
 
@@ -612,6 +627,66 @@ Response:
 
 Returns `{"text": null}` if no assistant messages exist.
 
+#### set_session_name
+
+Set a display name for the current session. The name appears in session listings and helps identify sessions.
+
+```json
+{"type": "set_session_name", "name": "my-feature-work"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "set_session_name",
+  "success": true
+}
+```
+
+The current session name is available via `get_state` in the `sessionName` field.
+
+### Commands
+
+#### get_commands
+
+Get available commands (extension commands, prompt templates, and skills). These can be invoked via the `prompt` command by prefixing with `/`.
+
+```json
+{"type": "get_commands"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "get_commands",
+  "success": true,
+  "data": {
+    "commands": [
+      {"name": "session-name", "description": "Set or clear session name", "source": "extension", "path": "/home/user/.pi/agent/extensions/session.ts"},
+      {"name": "fix-tests", "description": "Fix failing tests", "source": "prompt", "location": "project", "path": "/home/user/myproject/.pi/agent/prompts/fix-tests.md"},
+      {"name": "skill:brave-search", "description": "Web search via Brave API", "source": "skill", "location": "user", "path": "/home/user/.pi/agent/skills/brave-search/SKILL.md"}
+    ]
+  }
+}
+```
+
+Each command has:
+- `name`: Command name (invoke with `/name`)
+- `description`: Human-readable description (optional for extension commands)
+- `source`: What kind of command:
+  - `"extension"`: Registered via `pi.registerCommand()` in an extension
+  - `"prompt"`: Loaded from a prompt template `.md` file
+  - `"skill"`: Loaded from a skill directory (name is prefixed with `skill:`)
+- `location`: Where it was loaded from (optional, not present for extensions):
+  - `"user"`: User-level (`~/.pi/agent/`)
+  - `"project"`: Project-level (`./.pi/agent/`)
+  - `"path"`: Explicit path via CLI or settings
+- `path`: Absolute file path to the command source (optional)
+
+**Note**: Built-in TUI commands (`/settings`, `/hotkeys`, etc.) are not included. They are handled only in interactive mode and would not execute if sent via `prompt`.
+
 ## Events
 
 Events are streamed to stdout as JSON lines during agent operation. Events do NOT include an `id` field (only responses do).
@@ -795,6 +870,8 @@ If `reason` was `"overflow"` and compaction succeeds, `willRetry` is `true` and 
 
 If compaction was aborted, `result` is `null` and `aborted` is `true`.
 
+If compaction failed (e.g., API quota exceeded), `result` is `null`, `aborted` is `false`, and `errorMessage` contains the error description.
+
 ### auto_retry_start / auto_retry_end
 
 Emitted when automatic retry is triggered after a transient error (overloaded, rate limit, 5xx).
@@ -840,6 +917,192 @@ Emitted when an extension throws an error.
 }
 ```
 
+## Extension UI Protocol
+
+Extensions can request user interaction via `ctx.ui.select()`, `ctx.ui.confirm()`, etc. In RPC mode, these are translated into a request/response sub-protocol on top of the base command/event flow.
+
+There are two categories of extension UI methods:
+
+- **Dialog methods** (`select`, `confirm`, `input`, `editor`): emit an `extension_ui_request` on stdout and block until the client sends back an `extension_ui_response` on stdin with the matching `id`.
+- **Fire-and-forget methods** (`notify`, `setStatus`, `setWidget`, `setTitle`, `set_editor_text`): emit an `extension_ui_request` on stdout but do not expect a response. The client can display the information or ignore it.
+
+If a dialog method includes a `timeout` field, the agent-side will auto-resolve with a default value when the timeout expires. The client does not need to track timeouts.
+
+Some `ExtensionUIContext` methods are not supported in RPC mode because they require direct TUI access:
+- `custom()` returns `undefined`
+- `setWorkingMessage()`, `setFooter()`, `setHeader()`, `setEditorComponent()`, `setToolsExpanded()` are no-ops
+- `getEditorText()` returns `""`
+- `getToolsExpanded()` returns `false`
+
+### Extension UI Requests (stdout)
+
+All requests have `type: "extension_ui_request"`, a unique `id`, and a `method` field.
+
+#### select
+
+Prompt the user to choose from a list. Dialog methods with a `timeout` field include the timeout in milliseconds; the agent auto-resolves with `undefined` if the client doesn't respond in time.
+
+```json
+{
+  "type": "extension_ui_request",
+  "id": "uuid-1",
+  "method": "select",
+  "title": "Allow dangerous command?",
+  "options": ["Allow", "Block"],
+  "timeout": 10000
+}
+```
+
+Expected response: `extension_ui_response` with `value` (the selected option string) or `cancelled: true`.
+
+#### confirm
+
+Prompt the user for yes/no confirmation.
+
+```json
+{
+  "type": "extension_ui_request",
+  "id": "uuid-2",
+  "method": "confirm",
+  "title": "Clear session?",
+  "message": "All messages will be lost.",
+  "timeout": 5000
+}
+```
+
+Expected response: `extension_ui_response` with `confirmed: true/false` or `cancelled: true`.
+
+#### input
+
+Prompt the user for free-form text.
+
+```json
+{
+  "type": "extension_ui_request",
+  "id": "uuid-3",
+  "method": "input",
+  "title": "Enter a value",
+  "placeholder": "type something..."
+}
+```
+
+Expected response: `extension_ui_response` with `value` (the entered text) or `cancelled: true`.
+
+#### editor
+
+Open a multi-line text editor with optional prefilled content.
+
+```json
+{
+  "type": "extension_ui_request",
+  "id": "uuid-4",
+  "method": "editor",
+  "title": "Edit some text",
+  "prefill": "Line 1\nLine 2\nLine 3"
+}
+```
+
+Expected response: `extension_ui_response` with `value` (the edited text) or `cancelled: true`.
+
+#### notify
+
+Display a notification. Fire-and-forget, no response expected.
+
+```json
+{
+  "type": "extension_ui_request",
+  "id": "uuid-5",
+  "method": "notify",
+  "message": "Command blocked by user",
+  "notifyType": "warning"
+}
+```
+
+The `notifyType` field is `"info"`, `"warning"`, or `"error"`. Defaults to `"info"` if omitted.
+
+#### setStatus
+
+Set or clear a status entry in the footer/status bar. Fire-and-forget.
+
+```json
+{
+  "type": "extension_ui_request",
+  "id": "uuid-6",
+  "method": "setStatus",
+  "statusKey": "my-ext",
+  "statusText": "Turn 3 running..."
+}
+```
+
+Send `statusText: undefined` (or omit it) to clear the status entry for that key.
+
+#### setWidget
+
+Set or clear a widget (block of text lines) displayed above or below the editor. Fire-and-forget.
+
+```json
+{
+  "type": "extension_ui_request",
+  "id": "uuid-7",
+  "method": "setWidget",
+  "widgetKey": "my-ext",
+  "widgetLines": ["--- My Widget ---", "Line 1", "Line 2"],
+  "widgetPlacement": "aboveEditor"
+}
+```
+
+Send `widgetLines: undefined` (or omit it) to clear the widget. The `widgetPlacement` field is `"aboveEditor"` (default) or `"belowEditor"`. Only string arrays are supported in RPC mode; component factories are ignored.
+
+#### setTitle
+
+Set the terminal window/tab title. Fire-and-forget.
+
+```json
+{
+  "type": "extension_ui_request",
+  "id": "uuid-8",
+  "method": "setTitle",
+  "title": "pi - my project"
+}
+```
+
+#### set_editor_text
+
+Set the text in the input editor. Fire-and-forget.
+
+```json
+{
+  "type": "extension_ui_request",
+  "id": "uuid-9",
+  "method": "set_editor_text",
+  "text": "prefilled text for the user"
+}
+```
+
+### Extension UI Responses (stdin)
+
+Responses are sent for dialog methods only (`select`, `confirm`, `input`, `editor`). The `id` must match the request.
+
+#### Value response (select, input, editor)
+
+```json
+{"type": "extension_ui_response", "id": "uuid-1", "value": "Allow"}
+```
+
+#### Confirmation response (confirm)
+
+```json
+{"type": "extension_ui_response", "id": "uuid-2", "confirmed": true}
+```
+
+#### Cancellation response (any dialog)
+
+Dismiss any dialog method. The extension receives `undefined` (for select/input/editor) or `false` (for confirm).
+
+```json
+{"type": "extension_ui_response", "id": "uuid-3", "cancelled": true}
+```
+
 ## Error Handling
 
 Failed commands return a response with `success: false`:
@@ -870,7 +1133,7 @@ Source files:
 - [`packages/ai/src/types.ts`](../../ai/src/types.ts) - `Model`, `UserMessage`, `AssistantMessage`, `ToolResultMessage`
 - [`packages/agent/src/types.ts`](../../agent/src/types.ts) - `AgentMessage`, `AgentEvent`
 - [`src/core/messages.ts`](../src/core/messages.ts) - `BashExecutionMessage`
-- [`src/modes/rpc/rpc-types.ts`](../src/modes/rpc/rpc-types.ts) - RPC command/response types
+- [`src/modes/rpc/rpc-types.ts`](../src/modes/rpc/rpc-types.ts) - RPC command/response types, extension UI request/response types
 
 ### Model
 
@@ -1018,6 +1281,8 @@ for event in read_events():
 ## Example: Interactive Client (Node.js)
 
 See [`test/rpc-example.ts`](../test/rpc-example.ts) for a complete interactive example, or [`src/modes/rpc/rpc-client.ts`](../src/modes/rpc/rpc-client.ts) for a typed client implementation.
+
+For a complete example of handling the extension UI protocol, see [`examples/rpc-extension-ui.ts`](../examples/rpc-extension-ui.ts) which pairs with the [`examples/extensions/rpc-demo.ts`](../examples/extensions/rpc-demo.ts) extension.
 
 ```javascript
 const { spawn } = require("child_process");

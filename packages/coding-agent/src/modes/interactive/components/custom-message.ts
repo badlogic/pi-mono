@@ -1,6 +1,6 @@
 import type { TextContent } from "@mariozechner/pi-ai";
 import type { Component } from "@mariozechner/pi-tui";
-import { Box, Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@mariozechner/pi-tui";
 import type { MessageRenderer } from "../../../core/extensions/types.js";
 import type { CustomMessage } from "../../../core/messages.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
@@ -14,12 +14,18 @@ export class CustomMessageComponent extends Container {
 	private customRenderer?: MessageRenderer;
 	private box: Box;
 	private customComponent?: Component;
+	private markdownTheme: MarkdownTheme;
 	private _expanded = false;
 
-	constructor(message: CustomMessage<unknown>, customRenderer?: MessageRenderer) {
+	constructor(
+		message: CustomMessage<unknown>,
+		customRenderer?: MessageRenderer,
+		markdownTheme: MarkdownTheme = getMarkdownTheme(),
+	) {
 		super();
 		this.message = message;
 		this.customRenderer = customRenderer;
+		this.markdownTheme = markdownTheme;
 
 		this.addChild(new Spacer(1));
 
@@ -84,16 +90,8 @@ export class CustomMessageComponent extends Container {
 				.join("\n");
 		}
 
-		// Limit lines when collapsed
-		if (!this._expanded) {
-			const lines = text.split("\n");
-			if (lines.length > 5) {
-				text = `${lines.slice(0, 5).join("\n")}\n...`;
-			}
-		}
-
 		this.box.addChild(
-			new Markdown(text, 0, 0, getMarkdownTheme(), {
+			new Markdown(text, 0, 0, this.markdownTheme, {
 				color: (text: string) => theme.fg("customMessageText", text),
 			}),
 		);

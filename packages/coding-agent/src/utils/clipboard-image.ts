@@ -1,12 +1,14 @@
-import Clipboard from "@mariozechner/clipboard";
 import { spawnSync } from "child_process";
+
+import { clipboard } from "./clipboard-native.js";
+import { loadPhoton } from "./photon.js";
 
 export type ClipboardImage = {
 	bytes: Uint8Array;
 	mimeType: string;
 };
 
-const PREFERRED_IMAGE_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
+const SUPPORTED_IMAGE_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
 
 const DEFAULT_LIST_TIMEOUT_MS = 1000;
 const DEFAULT_READ_TIMEOUT_MS = 3000;
@@ -41,7 +43,7 @@ function selectPreferredImageMimeType(mimeTypes: string[]): string | null {
 		.filter(Boolean)
 		.map((t) => ({ raw: t, base: baseMimeType(t) }));
 
-	for (const preferred of PREFERRED_IMAGE_MIME_TYPES) {
+	for (const preferred of SUPPORTED_IMAGE_MIME_TYPES) {
 		const match = normalized.find((t) => t.base === preferred);
 		if (match) {
 			return match.raw;
@@ -50,6 +52,33 @@ function selectPreferredImageMimeType(mimeTypes: string[]): string | null {
 
 	const anyImage = normalized.find((t) => t.base.startsWith("image/"));
 	return anyImage?.raw ?? null;
+}
+
+function isSupportedImageMimeType(mimeType: string): boolean {
+	const base = baseMimeType(mimeType);
+	return SUPPORTED_IMAGE_MIME_TYPES.some((t) => t === base);
+}
+
+/**
+ * Convert unsupported image formats to PNG using Photon.
+ * Returns null if conversion is unavailable or fails.
+ */
+async function convertToPng(bytes: Uint8Array): Promise<Uint8Array | null> {
+	const photon = await loadPhoton();
+	if (!photon) {
+		return null;
+	}
+
+	try {
+		const image = photon.PhotonImage.new_from_byteslice(bytes);
+		try {
+			return image.get_bytes();
+		} finally {
+			image.free();
+		}
+	} catch {
+		return null;
+	}
 }
 
 function runCommand(
@@ -120,7 +149,7 @@ function readClipboardImageViaXclip(): ClipboardImage | null {
 	}
 
 	const preferred = candidateTypes.length > 0 ? selectPreferredImageMimeType(candidateTypes) : null;
-	const tryTypes = preferred ? [preferred, ...PREFERRED_IMAGE_MIME_TYPES] : [...PREFERRED_IMAGE_MIME_TYPES];
+	const tryTypes = preferred ? [preferred, ...SUPPORTED_IMAGE_MIME_TYPES] : [...SUPPORTED_IMAGE_MIME_TYPES];
 
 	for (const mimeType of tryTypes) {
 		const data = runCommand("xclip", ["-selection", "clipboard", "-t", mimeType, "-o"]);
@@ -139,19 +168,40 @@ export async function readClipboardImage(options?: {
 	const env = options?.env ?? process.env;
 	const platform = options?.platform ?? process.platform;
 
+	if (env.TERMUX_VERSION) {
+		return null;
+	}
+
+	let image: ClipboardImage | null = null;
+
 	if (platform === "linux" && isWaylandSession(env)) {
-		return readClipboardImageViaWlPaste() ?? readClipboardImageViaXclip();
+		image = readClipboardImageViaWlPaste() ?? readClipboardImageViaXclip();
+	} else {
+		if (!clipboard || !clipboard.hasImage()) {
+			return null;
+		}
+
+		const imageData = await clipboard.getImageBinary();
+		if (!imageData || imageData.length === 0) {
+			return null;
+		}
+
+		const bytes = imageData instanceof Uint8Array ? imageData : Uint8Array.from(imageData);
+		image = { bytes, mimeType: "image/png" };
 	}
 
-	if (!Clipboard.hasImage()) {
+	if (!image) {
 		return null;
 	}
 
-	const imageData = await Clipboard.getImageBinary();
-	if (!imageData || imageData.length === 0) {
-		return null;
+	// Convert unsupported formats (e.g., BMP from WSLg) to PNG
+	if (!isSupportedImageMimeType(image.mimeType)) {
+		const pngBytes = await convertToPng(image.bytes);
+		if (!pngBytes) {
+			return null;
+		}
+		return { bytes: pngBytes, mimeType: "image/png" };
 	}
 
-	const bytes = imageData instanceof Uint8Array ? imageData : Uint8Array.from(imageData);
-	return { bytes, mimeType: "image/png" };
+	return image;
 }

@@ -1,4 +1,4 @@
-import { getOAuthProviders, type OAuthProviderInfo } from "@mariozechner/pi-ai";
+import { getOAuthProviders, type OAuthProviderInterface } from "@mariozechner/pi-ai";
 import { Container, getEditorKeybindings, Spacer, TruncatedText } from "@mariozechner/pi-tui";
 import type { AuthStorage } from "../../../core/auth-storage.js";
 import { theme } from "../theme/theme.js";
@@ -9,7 +9,7 @@ import { DynamicBorder } from "./dynamic-border.js";
  */
 export class OAuthSelectorComponent extends Container {
 	private listContainer: Container;
-	private allProviders: OAuthProviderInfo[] = [];
+	private allProviders: OAuthProviderInterface[] = [];
 	private selectedIndex: number = 0;
 	private mode: "login" | "logout";
 	private authStorage: AuthStorage;
@@ -66,7 +66,6 @@ export class OAuthSelectorComponent extends Container {
 			if (!provider) continue;
 
 			const isSelected = i === this.selectedIndex;
-			const isAvailable = provider.available;
 
 			// Check if user is logged in for this provider
 			const credentials = this.authStorage.get(provider.id);
@@ -76,10 +75,10 @@ export class OAuthSelectorComponent extends Container {
 			let line = "";
 			if (isSelected) {
 				const prefix = theme.fg("accent", "→ ");
-				const text = isAvailable ? theme.fg("accent", provider.name) : theme.fg("dim", provider.name);
+				const text = theme.fg("accent", provider.name);
 				line = prefix + text + statusIndicator;
 			} else {
-				const text = isAvailable ? `  ${provider.name}` : theme.fg("dim", `  ${provider.name}`);
+				const text = `  ${provider.name}`;
 				line = text + statusIndicator;
 			}
 
@@ -109,7 +108,7 @@ export class OAuthSelectorComponent extends Container {
 		// Enter
 		else if (kb.matches(keyData, "selectConfirm")) {
 			const selectedProvider = this.allProviders[this.selectedIndex];
-			if (selectedProvider?.available) {
+			if (selectedProvider) {
 				this.onSelectCallback(selectedProvider.id);
 			}
 		}

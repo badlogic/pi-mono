@@ -21,6 +21,53 @@ export const isBunBinary =
 export const isBunRuntime = !!process.versions.bun;
 
 // =============================================================================
+// Install Method Detection
+// =============================================================================
+
+export type InstallMethod = "bun-binary" | "npm" | "pnpm" | "yarn" | "bun" | "unknown";
+
+export function detectInstallMethod(): InstallMethod {
+	if (isBunBinary) {
+		return "bun-binary";
+	}
+
+	const resolvedPath = `${__dirname}\0${process.execPath || ""}`.toLowerCase();
+
+	if (resolvedPath.includes("/pnpm/") || resolvedPath.includes("/.pnpm/") || resolvedPath.includes("\\pnpm\\")) {
+		return "pnpm";
+	}
+	if (resolvedPath.includes("/yarn/") || resolvedPath.includes("/.yarn/") || resolvedPath.includes("\\yarn\\")) {
+		return "yarn";
+	}
+	if (isBunRuntime) {
+		return "bun";
+	}
+	if (resolvedPath.includes("/npm/") || resolvedPath.includes("/node_modules/") || resolvedPath.includes("\\npm\\")) {
+		return "npm";
+	}
+
+	return "unknown";
+}
+
+export function getUpdateInstruction(packageName: string): string {
+	const method = detectInstallMethod();
+	switch (method) {
+		case "bun-binary":
+			return `Download from: https://github.com/badlogic/pi-mono/releases/latest`;
+		case "pnpm":
+			return `Run: pnpm install -g ${packageName}`;
+		case "yarn":
+			return `Run: yarn global add ${packageName}`;
+		case "bun":
+			return `Run: bun install -g ${packageName}`;
+		case "npm":
+			return `Run: npm install -g ${packageName}`;
+		default:
+			return `Run: npm install -g ${packageName}`;
+	}
+}
+
+// =============================================================================
 // Package Asset Paths (shipped with executable)
 // =============================================================================
 
@@ -31,6 +78,14 @@ export const isBunRuntime = !!process.versions.bun;
  * - For tsx (src/): returns parent directory (the package root)
  */
 export function getPackageDir(): string {
+	// Allow override via environment variable (useful for Nix/Guix where store paths tokenize poorly)
+	const envDir = process.env.PI_PACKAGE_DIR;
+	if (envDir) {
+		if (envDir === "~") return homedir();
+		if (envDir.startsWith("~/")) return homedir() + envDir.slice(1);
+		return envDir;
+	}
+
 	if (isBunBinary) {
 		// Bun binary: process.execPath points to the compiled executable
 		return dirname(process.execPath);
@@ -116,13 +171,28 @@ export const VERSION: string = pkg.version;
 // e.g., PI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
 
+const DEFAULT_SHARE_VIEWER_URL = "https://pi.dev/session/";
+
+/** Get the share viewer URL for a gist ID */
+export function getShareViewerUrl(gistId: string): string {
+	const baseUrl = process.env.PI_SHARE_VIEWER_URL || DEFAULT_SHARE_VIEWER_URL;
+	return `${baseUrl}#${gistId}`;
+}
+
 // =============================================================================
 // User Config Paths (~/.pi/agent/*)
 // =============================================================================
 
 /** Get the agent config directory (e.g., ~/.pi/agent/) */
 export function getAgentDir(): string {
-	return process.env[ENV_AGENT_DIR] || join(homedir(), CONFIG_DIR_NAME, "agent");
+	const envDir = process.env[ENV_AGENT_DIR];
+	if (envDir) {
+		// Expand tilde to home directory
+		if (envDir === "~") return homedir();
+		if (envDir.startsWith("~/")) return homedir() + envDir.slice(1);
+		return envDir;
+	}
+	return join(homedir(), CONFIG_DIR_NAME, "agent");
 }
 
 /** Get path to user's custom themes directory */

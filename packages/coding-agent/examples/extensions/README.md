@@ -33,7 +33,9 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `question.ts` | Demonstrates `ctx.ui.select()` for asking the user questions with custom UI |
 | `questionnaire.ts` | Multi-question input with tab bar navigation between questions |
 | `tool-override.ts` | Override built-in tools (e.g., add logging/access control to `read`) |
+| `minimal-mode.ts` | Override built-in tool rendering for minimal display (only tool calls, no output in collapsed mode) |
 | `truncated-tool.ts` | Wraps ripgrep with proper output truncation (50KB/2000 lines) |
+| `antigravity-image-gen.ts` | Generate images via Google Antigravity with optional save-to-disk modes |
 | `ssh.ts` | Delegate all tools to a remote machine via SSH using pluggable operations |
 | `subagent/` | Delegate tasks to specialized subagents with isolated context windows |
 
@@ -47,13 +49,16 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `handoff.ts` | Transfer context to a new focused session via `/handoff <goal>` |
 | `qna.ts` | Extracts questions from last response into editor via `ctx.ui.setEditorText()` |
 | `status-line.ts` | Shows turn progress in footer via `ctx.ui.setStatus()` with themed colors |
+| `widget-placement.ts` | Shows widgets above and below the editor via `ctx.ui.setWidget()` placement |
 | `model-status.ts` | Shows model changes in status bar via `model_select` hook |
 | `snake.ts` | Snake game with custom UI, keyboard handling, and session persistence |
 | `send-user-message.ts` | Demonstrates `pi.sendUserMessage()` for sending user messages from extensions |
 | `timed-confirm.ts` | Demonstrates AbortSignal for auto-dismissing `ctx.ui.confirm()` and `ctx.ui.select()` dialogs |
+| `rpc-demo.ts` | Exercises all RPC-supported extension UI methods; pair with [`examples/rpc-extension-ui.ts`](../rpc-extension-ui.ts) |
 | `modal-editor.ts` | Custom vim-like modal editor via `ctx.ui.setEditorComponent()` |
 | `rainbow-editor.ts` | Animated rainbow text effect via custom editor |
 | `notify.ts` | Desktop notifications via OSC 777 when agent finishes (Ghostty, iTerm2, WezTerm) |
+| `titlebar-spinner.ts` | Braille spinner animation in terminal title while the agent is working |
 | `summarize.ts` | Summarize conversation with GPT-5.2 and show in transient UI |
 | `custom-footer.ts` | Custom footer with git branch and token stats via `ctx.ui.setFooter()` |
 | `custom-header.ts` | Custom header via `ctx.ui.setHeader()` |
@@ -61,7 +66,9 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `overlay-qa-tests.ts` | Comprehensive overlay QA tests: anchors, margins, stacking, overflow, animation |
 | `doom-overlay/` | DOOM game running as an overlay at 35 FPS (demonstrates real-time game rendering) |
 | `shutdown-command.ts` | Adds `/quit` command demonstrating `ctx.shutdown()` |
+| `reload-runtime.ts` | Adds `/reload-runtime` and `reload_runtime` tool showing safe reload flow |
 | `interactive-shell.ts` | Run interactive commands (vim, htop) with full terminal via `user_bash` hook |
+| `inline-bash.ts` | Expands `!{command}` patterns in prompts via `input` event transformation |
 
 ### Git Integration
 
@@ -77,6 +84,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `pirate.ts` | Demonstrates `systemPromptAppend` to dynamically modify system prompt |
 | `claude-rules.ts` | Scans `.claude/rules/` folder and lists rules in system prompt |
 | `custom-compaction.ts` | Custom compaction that summarizes entire conversation |
+| `trigger-compact.ts` | Triggers compaction when context usage exceeds 100k tokens and adds `/trigger-compact` command |
 
 ### System Integration
 
@@ -84,12 +92,39 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 |-----------|-------------|
 | `mac-system-theme.ts` | Syncs pi theme with macOS dark/light mode |
 
+### Resources
+
+| Extension | Description |
+|-----------|-------------|
+| `dynamic-resources/` | Loads skills, prompts, and themes using `resources_discover` |
+
+### Messages & Communication
+
+| Extension | Description |
+|-----------|-------------|
+| `message-renderer.ts` | Custom message rendering with colors and expandable details via `registerMessageRenderer` |
+| `event-bus.ts` | Inter-extension communication via `pi.events` |
+
+### Session Metadata
+
+| Extension | Description |
+|-----------|-------------|
+| `session-name.ts` | Name sessions for the session selector via `setSessionName` |
+| `bookmark.ts` | Bookmark entries with labels for `/tree` navigation via `setLabel` |
+
+### Custom Providers
+
+| Extension | Description |
+|-----------|-------------|
+| `custom-provider-anthropic/` | Custom Anthropic provider with OAuth support and custom streaming implementation |
+| `custom-provider-gitlab-duo/` | GitLab Duo provider using pi-ai's built-in Anthropic/OpenAI streaming via proxy |
+| `custom-provider-qwen-cli/` | Qwen CLI provider with OAuth device flow and OpenAI-compatible models |
+
 ### External Dependencies
 
 | Extension | Description |
 |-----------|-------------|
-| `chalk-logger.ts` | Uses chalk from parent node_modules (demonstrates jiti module resolution) |
-| `with-deps/` | Extension with its own package.json and dependencies |
+| `with-deps/` | Extension with its own package.json and dependencies (demonstrates jiti module resolution) |
 | `file-trigger.ts` | Watches a trigger file and injects contents into conversation |
 
 ## Writing Extensions

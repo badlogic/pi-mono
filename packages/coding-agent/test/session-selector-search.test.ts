@@ -124,4 +124,72 @@ describe("session selector search", () => {
 		const result = filterAndSortSessions(sessions, "re:(", "recent");
 		expect(result).toEqual([]);
 	});
+
+	describe("name filter", () => {
+		const sessions: SessionInfo[] = [
+			makeSession({
+				id: "named1",
+				name: "My Project",
+				modified: new Date("2026-01-03T00:00:00.000Z"),
+				allMessagesText: "blueberry",
+			}),
+			makeSession({
+				id: "named2",
+				name: "Another Named",
+				modified: new Date("2026-01-02T00:00:00.000Z"),
+				allMessagesText: "blueberry",
+			}),
+			makeSession({
+				id: "other1",
+				modified: new Date("2026-01-04T00:00:00.000Z"),
+				allMessagesText: "blueberry",
+			}),
+			makeSession({
+				id: "other2",
+				modified: new Date("2026-01-01T00:00:00.000Z"),
+				allMessagesText: "blueberry",
+			}),
+		];
+
+		it("returns all sessions when nameFilter is 'all'", () => {
+			const result = filterAndSortSessions(sessions, "", "recent", "all");
+			expect(result.map((session) => session.id)).toEqual(["named1", "named2", "other1", "other2"]);
+		});
+
+		it("returns only named sessions when nameFilter is 'named'", () => {
+			const result = filterAndSortSessions(sessions, "", "recent", "named");
+			expect(result.map((session) => session.id)).toEqual(["named1", "named2"]);
+		});
+
+		it("applies name filter before search query", () => {
+			const result = filterAndSortSessions(sessions, "blueberry", "recent", "named");
+			expect(result.map((session) => session.id)).toEqual(["named1", "named2"]);
+		});
+
+		it("excludes whitespace-only names from named filter", () => {
+			const sessionsWithWhitespace: SessionInfo[] = [
+				makeSession({
+					id: "whitespace",
+					name: "   ",
+					modified: new Date("2026-01-01T00:00:00.000Z"),
+					allMessagesText: "test",
+				}),
+				makeSession({
+					id: "empty",
+					name: "",
+					modified: new Date("2026-01-02T00:00:00.000Z"),
+					allMessagesText: "test",
+				}),
+				makeSession({
+					id: "named",
+					name: "Real Name",
+					modified: new Date("2026-01-03T00:00:00.000Z"),
+					allMessagesText: "test",
+				}),
+			];
+
+			const result = filterAndSortSessions(sessionsWithWhitespace, "", "recent", "named");
+			expect(result.map((session) => session.id)).toEqual(["named"]);
+		});
+	});
 });

@@ -19,6 +19,9 @@ export interface EditorComponent extends Component {
 	/** Set the text content */
 	setText(text: string): void;
 
+	/** Handle raw terminal input (key presses, paste sequences, etc.) */
+	handleInput(data: string): void;
+
 	// =========================================================================
 	// Callbacks (required)
 	// =========================================================================
@@ -62,4 +65,10 @@ export interface EditorComponent extends Component {
 
 	/** Border color function */
 	borderColor?: (str: string) => string;
+
+	/** Set horizontal padding */
+	setPaddingX?(padding: number): void;
+
+	/** Set max visible items in autocomplete dropdown */
+	setAutocompleteMaxVisible?(maxVisible: number): void;
 }

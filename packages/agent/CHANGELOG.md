@@ -2,6 +2,74 @@
 
 ## [Unreleased]
 
+## [0.52.8] - 2026-02-07
+
+## [0.52.7] - 2026-02-06
+
+### Fixed
+
+- Fixed `continue()` to resume queued steering/follow-up messages when context currently ends in an assistant message, and preserved one-at-a-time steering ordering during assistant-tail resumes ([#1312](https://github.com/badlogic/pi-mono/pull/1312) by [@ferologics](https://github.com/ferologics))
+
+## [0.52.6] - 2026-02-05
+
+## [0.52.5] - 2026-02-05
+
+## [0.52.4] - 2026-02-05
+
+## [0.52.3] - 2026-02-05
+
+## [0.52.2] - 2026-02-05
+
+## [0.52.1] - 2026-02-05
+
+## [0.52.0] - 2026-02-05
+
+## [0.51.6] - 2026-02-04
+
+## [0.51.5] - 2026-02-04
+
+## [0.51.4] - 2026-02-03
+
+## [0.51.3] - 2026-02-03
+
+## [0.51.2] - 2026-02-03
+
+## [0.51.1] - 2026-02-02
+
+## [0.51.0] - 2026-02-01
+
+## [0.50.9] - 2026-02-01
+
+## [0.50.8] - 2026-02-01
+
+### Added
+
+- Added `maxRetryDelayMs` option to `AgentOptions` to cap server-requested retry delays. Passed through to the underlying stream function. ([#1123](https://github.com/badlogic/pi-mono/issues/1123))
+
+## [0.50.7] - 2026-01-31
+
+## [0.50.6] - 2026-01-30
+
+## [0.50.5] - 2026-01-30
+
+## [0.50.3] - 2026-01-29
+
+## [0.50.2] - 2026-01-29
+
+## [0.50.1] - 2026-01-26
+
+## [0.50.0] - 2026-01-26
+
+## [0.49.3] - 2026-01-22
+
+## [0.49.2] - 2026-01-19
+
+## [0.49.1] - 2026-01-18
+
+## [0.49.0] - 2026-01-17
+
+## [0.48.0] - 2026-01-16
+
 ## [0.47.0] - 2026-01-16
 
 ## [0.46.0] - 2026-01-15
@@ -135,7 +203,7 @@
 
 - **`UserMessageWithAttachments` and `Attachment` types removed**: Attachment handling is now the responsibility of the `convertToLlm` function.
 
-- **Agent loop moved from `@mariozechner/pi-ai`**: The `agentLoop`, `agentLoopContinue`, and related types have moved to this package. Import from `@mariozechner/pi-agent` instead.
+- **Agent loop moved from `@mariozechner/pi-ai`**: The `agentLoop`, `agentLoopContinue`, and related types have moved to this package. Import from `@mariozechner/pi-agent-core` instead.
 
 ### Added
 

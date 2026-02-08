@@ -2,7 +2,7 @@
 
 # TUI Components
 
-Hooks and custom tools can render custom TUI components for interactive user interfaces. This page covers the component system and available building blocks.
+Extensions and custom tools can render custom TUI components for interactive user interfaces. This page covers the component system and available building blocks.
 
 **Source:** [`@mariozechner/pi-tui`](https://github.com/badlogic/pi-mono/tree/main/packages/tui)
 
@@ -14,7 +14,8 @@ All components implement:
 interface Component {
   render(width: number): string[];
   handleInput?(data: string): void;
-  invalidate?(): void;
+  wantsKeyRelease?: boolean;
+  invalidate(): void;
 }
 ```
 
@@ -22,7 +23,8 @@ interface Component {
 |--------|-------------|
 | `render(width)` | Return array of strings (one per line). Each line **must not exceed `width`**. |
 | `handleInput?(data)` | Receive keyboard input when component has focus. |
-| `invalidate?()` | Clear cached render state. |
+| `wantsKeyRelease?` | If true, component receives key release events (Kitty protocol). Default: false. |
+| `invalidate()` | Clear cached render state. Called on theme changes. |
 
 The TUI appends a full SGR reset and OSC 8 reset at the end of each rendered line. Styles do not carry across lines. If you emit multi-line text with styling, reapply styles per line or use `wrapTextWithAnsi()` so styles are preserved for each wrapped line.
 
@@ -52,9 +54,39 @@ When a `Focusable` component has focus, TUI:
 
 This enables IME candidate windows to appear at the correct position for CJK input methods. The `Editor` and `Input` built-in components already implement this interface.
 
+### Container Components with Embedded Inputs
+
+When a container component (dialog, selector, etc.) contains an `Input` or `Editor` child, the container must implement `Focusable` and propagate the focus state to the child. Otherwise, the hardware cursor won't be positioned correctly for IME input.
+
+```typescript
+import { Container, type Focusable, Input } from "@mariozechner/pi-tui";
+
+class SearchDialog extends Container implements Focusable {
+  private searchInput: Input;
+
+  // Focusable implementation - propagate to child input for IME cursor positioning
+  private _focused = false;
+  get focused(): boolean {
+    return this._focused;
+  }
+  set focused(value: boolean) {
+    this._focused = value;
+    this.searchInput.focused = value;
+  }
+
+  constructor() {
+    super();
+    this.searchInput = new Input();
+    this.addChild(this.searchInput);
+  }
+}
+```
+
+Without this propagation, typing with an IME (Chinese, Japanese, Korean, etc.) will show the candidate window in the wrong position on screen.
+
 ## Using Components
 
-**In hooks** via `ctx.ui.custom()`:
+**In extensions** via `ctx.ui.custom()`:
 
 ```typescript
 pi.on("session_start", async (_event, ctx) => {
@@ -120,6 +152,27 @@ const result = await ctx.ui.custom<string | null>(
     },
   }
 );
+```
+
+### Overlay Lifecycle
+
+Overlay components are disposed when closed. Don't reuse references - create fresh instances:
+
+```typescript
+// Wrong - stale reference
+let menu: MenuComponent;
+await ctx.ui.custom((_, __, ___, done) => {
+  menu = new MenuComponent(done);
+  return menu;
+}, { overlay: true });
+setActiveComponent(menu);  // Disposed
+
+// Correct - re-call to re-show
+const showMenu = () => ctx.ui.custom((_, __, ___, done) => 
+  new MenuComponent(done), { overlay: true });
+
+await showMenu();  // First show
+await showMenu();  // "Back" = just call again
 ```
 
 See [overlay-qa-tests.ts](../examples/extensions/overlay-qa-tests.ts) for comprehensive examples covering anchors, margins, stacking, responsive visibility, and animation.
@@ -307,7 +360,7 @@ class MySelector {
 }
 ```
 
-Usage in a hook:
+Usage in an extension:
 
 ```typescript
 pi.registerCommand("pick", {
@@ -388,6 +441,14 @@ interface MyTheme {
   selected: (s: string) => string;
   normal: (s: string) => string;
 }
+```
+
+## Debug logging
+
+Set `PI_TUI_WRITE_LOG` to capture the raw ANSI stream written to stdout.
+
+```bash
+PI_TUI_WRITE_LOG=/tmp/tui-ansi.log npx tsx packages/tui/test/chat-simple.ts
 ```
 
 ## Performance
@@ -674,13 +735,16 @@ ctx.ui.setStatus("my-ext", undefined);
 
 **Examples:** [status-line.ts](../examples/extensions/status-line.ts), [plan-mode.ts](../examples/extensions/plan-mode.ts), [preset.ts](../examples/extensions/preset.ts)
 
-### Pattern 5: Widget Above Editor
+### Pattern 5: Widgets Above/Below Editor
 
-Show persistent content above the input editor. Good for todo lists, progress.
+Show persistent content above or below the input editor. Good for todo lists, progress.
 
 ```typescript
-// Simple string array
+// Simple string array (above editor by default)
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
+
+// Render below the editor
+ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"], { placement: "belowEditor" });
 
 // Or with theme
 ctx.ui.setWidget("my-widget", (_tui, theme) => {

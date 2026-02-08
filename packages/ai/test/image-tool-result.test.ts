@@ -4,7 +4,11 @@ import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import type { Api, Context, Model, Tool, ToolResultMessage } from "../src/index.js";
 import { complete, getModel } from "../src/index.js";
-import type { OptionsForApi } from "../src/types.js";
+import type { StreamOptions } from "../src/types.js";
+
+type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
+
+import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
@@ -25,7 +29,7 @@ const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken
  * 2. Providers correctly pass images from tool results to the LLM
  * 3. The LLM can see and describe images returned by tools
  */
-async function handleToolWithImageResult<TApi extends Api>(model: Model<TApi>, options?: OptionsForApi<TApi>) {
+async function handleToolWithImageResult<TApi extends Api>(model: Model<TApi>, options?: StreamOptionsWithExtras) {
 	// Check if the model supports images
 	if (!model.input.includes("image")) {
 		console.log(`Skipping tool image result test - model ${model.id} doesn't support images`);
@@ -113,7 +117,10 @@ async function handleToolWithImageResult<TApi extends Api>(model: Model<TApi>, o
  * 2. Providers correctly pass both text and images from tool results to the LLM
  * 3. The LLM can see both the text and images in tool results
  */
-async function handleToolWithTextAndImageResult<TApi extends Api>(model: Model<TApi>, options?: OptionsForApi<TApi>) {
+async function handleToolWithTextAndImageResult<TApi extends Api>(
+	model: Model<TApi>,
+	options?: StreamOptionsWithExtras,
+) {
 	// Check if the model supports images
 	if (!model.input.includes("image")) {
 		console.log(`Skipping tool text+image result test - model ${model.id} doesn't support images`);
@@ -215,7 +222,12 @@ describe("Tool Results with Images", () => {
 	});
 
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider (gpt-4o-mini)", () => {
-		const llm: Model<"openai-completions"> = { ...getModel("openai", "gpt-4o-mini"), api: "openai-completions" };
+		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini");
+		void _compat;
+		const llm: Model<"openai-completions"> = {
+			...baseModel,
+			api: "openai-completions",
+		};
 
 		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
 			await handleToolWithImageResult(llm);
@@ -235,6 +247,20 @@ describe("Tool Results with Images", () => {
 
 		it("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
 			await handleToolWithTextAndImageResult(llm);
+		});
+	});
+
+	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Responses Provider (gpt-4o-mini)", () => {
+		const llm = getModel("azure-openai-responses", "gpt-4o-mini");
+		const azureDeploymentName = resolveAzureDeploymentName(llm.id);
+		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
+
+		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithImageResult(llm, azureOptions);
+		});
+
+		it("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithTextAndImageResult(llm, azureOptions);
 		});
 	});
 
@@ -264,6 +290,18 @@ describe("Tool Results with Images", () => {
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider (pixtral-12b)", () => {
 		const llm = getModel("mistral", "pixtral-12b");
+
+		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithImageResult(llm);
+		});
+
+		it("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithTextAndImageResult(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding Provider (k2p5)", () => {
+		const llm = getModel("kimi-coding", "k2p5");
 
 		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
 			await handleToolWithImageResult(llm);

@@ -8,7 +8,12 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model, Usage } from "@mariozechner/pi-ai";
 import { completeSimple } from "@mariozechner/pi-ai";
-import { convertToLlm, createBranchSummaryMessage, createCustomMessage } from "../messages.js";
+import {
+	convertToLlm,
+	createBranchSummaryMessage,
+	createCompactionSummaryMessage,
+	createCustomMessage,
+} from "../messages.js";
 import type { CompactionEntry, SessionEntry } from "../session-manager.js";
 import {
 	computeFileLists,
@@ -81,6 +86,9 @@ function getMessageFromEntry(entry: SessionEntry): AgentMessage | undefined {
 	if (entry.type === "branch_summary") {
 		return createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp);
 	}
+	if (entry.type === "compaction") {
+		return createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp);
+	}
 	return undefined;
 }
 
@@ -147,6 +155,55 @@ export function getLastAssistantUsage(entries: SessionEntry[]): Usage | undefine
 		}
 	}
 	return undefined;
+}
+
+export interface ContextUsageEstimate {
+	tokens: number;
+	usageTokens: number;
+	trailingTokens: number;
+	lastUsageIndex: number | null;
+}
+
+function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; index: number } | undefined {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const usage = getAssistantUsage(messages[i]);
+		if (usage) return { usage, index: i };
+	}
+	return undefined;
+}
+
+/**
+ * Estimate context tokens from messages, using the last assistant usage when available.
+ * If there are messages after the last usage, estimate their tokens with estimateTokens.
+ */
+export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEstimate {
+	const usageInfo = getLastAssistantUsageInfo(messages);
+
+	if (!usageInfo) {
+		let estimated = 0;
+		for (const message of messages) {
+			estimated += estimateTokens(message);
+		}
+		return {
+			tokens: estimated,
+			usageTokens: 0,
+			trailingTokens: estimated,
+			lastUsageIndex: null,
+		};
+	}
+
+	const usageTokens = calculateContextTokens(usageInfo.usage);
+	let trailingTokens = 0;
+	for (let i = usageInfo.index + 1; i < messages.length; i++) {
+		trailingTokens += estimateTokens(messages[i]);
+	}
+
+	return {
+		tokens: usageTokens + trailingTokens,
+		usageTokens,
+		trailingTokens,
+		lastUsageIndex: usageInfo.index,
+	};
 }
 
 /**
@@ -555,8 +612,13 @@ export function prepareCompaction(
 	const boundaryStart = prevCompactionIndex + 1;
 	const boundaryEnd = pathEntries.length;
 
-	const lastUsage = getLastAssistantUsage(pathEntries);
-	const tokensBefore = lastUsage ? calculateContextTokens(lastUsage) : 0;
+	const usageStart = prevCompactionIndex >= 0 ? prevCompactionIndex : 0;
+	const usageMessages: AgentMessage[] = [];
+	for (let i = usageStart; i < boundaryEnd; i++) {
+		const msg = getMessageFromEntry(pathEntries[i]);
+		if (msg) usageMessages.push(msg);
+	}
+	const tokensBefore = estimateContextTokens(usageMessages).tokens;
 
 	const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
 

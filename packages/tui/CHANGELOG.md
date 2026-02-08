@@ -2,9 +2,217 @@
 
 ## [Unreleased]
 
+## [0.52.8] - 2026-02-07
+
 ### Added
 
-- `PI_NO_HARDWARE_CURSOR=1` environment variable to disable hardware cursor positioning for terminals with limited escape sequence support (e.g., IntelliJ IDEA's built-in terminal)
+- Added `pasteToEditor` to `EditorComponent` API for programmatic paste support ([#1351](https://github.com/badlogic/pi-mono/pull/1351) by [@kaofelix](https://github.com/kaofelix))
+- Added kill ring (ctrl+k/ctrl+y/alt+y) and undo (ctrl+z) support to the Input component ([#1373](https://github.com/badlogic/pi-mono/pull/1373) by [@Perlence](https://github.com/Perlence))
+
+## [0.52.7] - 2026-02-06
+
+## [0.52.6] - 2026-02-05
+
+## [0.52.5] - 2026-02-05
+
+## [0.52.4] - 2026-02-05
+
+## [0.52.3] - 2026-02-05
+
+## [0.52.2] - 2026-02-05
+
+## [0.52.1] - 2026-02-05
+
+## [0.52.0] - 2026-02-05
+
+## [0.51.6] - 2026-02-04
+
+### Changed
+
+- Slash command menu now triggers on the first line even when other lines have content, allowing commands to be prepended to existing text ([#1227](https://github.com/badlogic/pi-mono/pull/1227) by [@aliou](https://github.com/aliou))
+
+### Fixed
+
+- Fixed `/settings` crashing in narrow terminals by handling small widths in the settings list ([#1246](https://github.com/badlogic/pi-mono/pull/1246) by [@haoqixu](https://github.com/haoqixu))
+
+## [0.51.5] - 2026-02-04
+
+## [0.51.4] - 2026-02-03
+
+### Fixed
+
+- Fixed input scrolling to avoid splitting emoji sequences ([#1228](https://github.com/badlogic/pi-mono/pull/1228) by [@haoqixu](https://github.com/haoqixu))
+
+## [0.51.3] - 2026-02-03
+
+## [0.51.2] - 2026-02-03
+
+### Added
+
+- Added `Terminal.drainInput()` to drain stdin before exit (prevents Kitty key release events leaking over slow SSH)
+
+### Fixed
+
+- Fixed Kitty key release events leaking to parent shell over slow SSH connections by draining stdin for up to 1s ([#1204](https://github.com/badlogic/pi-mono/issues/1204))
+- Fixed legacy newline handling in the editor to preserve previous newline behavior
+- Fixed @ autocomplete to include hidden paths
+- Fixed submit fallback to honor configured keybindings
+
+## [0.51.1] - 2026-02-02
+
+### Added
+
+- Added `PI_DEBUG_REDRAW=1` env var for debugging full redraws (logs triggers to `~/.pi/agent/pi-debug.log`)
+
+### Changed
+
+- Terminal height changes no longer trigger full redraws, reducing flicker on resize
+- `clearOnShrink` now defaults to `false` (use `PI_CLEAR_ON_SHRINK=1` or `setClearOnShrink(true)` to enable)
+
+### Fixed
+
+- Fixed emoji cursor positioning in Input component ([#1183](https://github.com/badlogic/pi-mono/pull/1183) by [@haoqixu](https://github.com/haoqixu))
+
+- Fixed unnecessary full redraws when appending many lines after content had previously shrunk (viewport check now uses actual previous content size instead of stale maximum)
+- Fixed Ctrl+D exit closing the parent SSH session due to stdin buffer race condition ([#1185](https://github.com/badlogic/pi-mono/issues/1185))
+
+## [0.51.0] - 2026-02-01
+
+## [0.50.9] - 2026-02-01
+
+## [0.50.8] - 2026-02-01
+
+### Added
+
+- Added sticky column tracking for vertical cursor navigation so the editor restores the preferred column when moving across short lines. ([#1120](https://github.com/badlogic/pi-mono/pull/1120) by [@Perlence](https://github.com/Perlence))
+
+### Fixed
+
+- Fixed Kitty keyboard protocol base layout fallback so non-QWERTY layouts do not trigger wrong shortcuts ([#1096](https://github.com/badlogic/pi-mono/pull/1096) by [@rytswd](https://github.com/rytswd))
+
+## [0.50.7] - 2026-01-31
+
+## [0.50.6] - 2026-01-30
+
+### Changed
+
+- Optimized `isImageLine()` with `startsWith` short-circuit for faster image line detection
+
+### Fixed
+
+- Fixed empty rows appearing below footer when content shrinks (e.g., closing `/tree`, clearing multi-line editor) ([#1095](https://github.com/badlogic/pi-mono/pull/1095) by [@marckrenn](https://github.com/marckrenn))
+- Fixed terminal cursor remaining hidden after exiting TUI via `stop()` when a render was pending ([#1099](https://github.com/badlogic/pi-mono/pull/1099) by [@haoqixu](https://github.com/haoqixu))
+
+## [0.50.5] - 2026-01-30
+
+### Fixed
+
+- Fixed `isImageLine()` to check for image escape sequences anywhere in a line, not just at the start. This prevents TUI crashes when rendering lines containing image data. ([#1091](https://github.com/badlogic/pi-mono/pull/1091) by [@zedrdave](https://github.com/zedrdave))
+
+## [0.50.4] - 2026-01-30
+
+### Added
+
+- Added Ctrl+B and Ctrl+F as alternative keybindings for cursor word left/right navigation ([#1053](https://github.com/badlogic/pi-mono/pull/1053) by [@ninlds](https://github.com/ninlds))
+- Added character jump navigation: Ctrl+] jumps forward to next character, Ctrl+Alt+] jumps backward ([#1074](https://github.com/badlogic/pi-mono/pull/1074) by [@Perlence](https://github.com/Perlence))
+- Editor now jumps to line start when pressing Up at first visual line, and line end when pressing Down at last visual line ([#1050](https://github.com/badlogic/pi-mono/pull/1050) by [@4h9fbZ](https://github.com/4h9fbZ))
+
+### Changed
+
+- Optimized image line detection and box rendering cache for better performance ([#1084](https://github.com/badlogic/pi-mono/pull/1084) by [@can1357](https://github.com/can1357))
+
+### Fixed
+
+- Fixed autocomplete for paths with spaces by supporting quoted path tokens ([#1077](https://github.com/badlogic/pi-mono/issues/1077))
+- Fixed quoted path completions to avoid duplicating closing quotes during autocomplete ([#1077](https://github.com/badlogic/pi-mono/issues/1077))
+
+## [0.50.3] - 2026-01-29
+
+## [0.50.2] - 2026-01-29
+
+### Added
+
+- Added `autocompleteMaxVisible` option to `EditorOptions` with getter/setter methods for configurable autocomplete dropdown height ([#972](https://github.com/badlogic/pi-mono/pull/972) by [@masonc15](https://github.com/masonc15))
+- Added `alt+b` and `alt+f` as alternative keybindings for word navigation (`cursorWordLeft`, `cursorWordRight`) and `ctrl+d` for `deleteCharForward` ([#1043](https://github.com/badlogic/pi-mono/issues/1043) by [@jasonish](https://github.com/jasonish))
+- Editor auto-applies single suggestion when force file autocomplete triggers with exactly one match ([#993](https://github.com/badlogic/pi-mono/pull/993) by [@Perlence](https://github.com/Perlence))
+
+### Changed
+
+- Improved `extractCursorPosition` performance: scans lines in reverse order, early-outs when cursor is above viewport, and limits scan to bottom terminal height ([#1004](https://github.com/badlogic/pi-mono/pull/1004) by [@can1357](https://github.com/can1357))
+- Autocomplete improvements: better handling of partial matches and edge cases ([#1024](https://github.com/badlogic/pi-mono/pull/1024) by [@Perlence](https://github.com/Perlence))
+
+### Fixed
+
+- Fixed backslash input buffering causing delayed character display in editor and input components ([#1037](https://github.com/badlogic/pi-mono/pull/1037) by [@Perlence](https://github.com/Perlence))
+- Fixed markdown table rendering with proper row dividers and minimum column width ([#997](https://github.com/badlogic/pi-mono/pull/997) by [@tmustier](https://github.com/tmustier))
+
+## [0.50.1] - 2026-01-26
+
+## [0.50.0] - 2026-01-26
+
+### Added
+
+- Added `fullRedraws` readonly property to TUI class for tracking full screen redraws
+- Added `PI_TUI_WRITE_LOG` environment variable to capture raw ANSI output for debugging
+
+### Fixed
+
+- Fixed appended lines not being committed to scrollback, causing earlier content to be overwritten when viewport fills ([#954](https://github.com/badlogic/pi-mono/issues/954))
+- Slash command menu now only triggers when the editor input is otherwise empty ([#904](https://github.com/badlogic/pi-mono/issues/904))
+- Center-anchored overlays now stay vertically centered when resizing the terminal taller after a shrink ([#950](https://github.com/badlogic/pi-mono/pull/950) by [@nicobailon](https://github.com/nicobailon))
+- Fixed editor multi-line insertion handling and lastAction tracking ([#945](https://github.com/badlogic/pi-mono/pull/945) by [@Perlence](https://github.com/Perlence))
+- Fixed editor word wrapping to reserve a cursor column ([#934](https://github.com/badlogic/pi-mono/pull/934) by [@Perlence](https://github.com/Perlence))
+- Fixed editor word wrapping to use single-pass backtracking for whitespace handling ([#924](https://github.com/badlogic/pi-mono/pull/924) by [@Perlence](https://github.com/Perlence))
+- Fixed Kitty image ID allocation and cleanup to prevent image ID collisions between modules
+
+## [0.49.3] - 2026-01-22
+
+### Added
+
+- `codeBlockIndent` property on `MarkdownTheme` to customize code block content indentation (default: 2 spaces) ([#855](https://github.com/badlogic/pi-mono/pull/855) by [@terrorobe](https://github.com/terrorobe))
+- Added Alt+Delete as hotkey for delete word forwards ([#878](https://github.com/badlogic/pi-mono/pull/878) by [@Perlence](https://github.com/Perlence))
+
+### Changed
+
+- Fuzzy matching now scores consecutive matches higher and penalizes gaps more heavily for better relevance ([#860](https://github.com/badlogic/pi-mono/pull/860) by [@mitsuhiko](https://github.com/mitsuhiko))
+
+### Fixed
+
+- Autolinked emails no longer display redundant `(mailto:...)` suffix in markdown output ([#888](https://github.com/badlogic/pi-mono/pull/888) by [@terrorobe](https://github.com/terrorobe))
+- Fixed viewport tracking and cursor positioning for overlays and content shrink scenarios
+- Autocomplete now allows searches with `/` characters (e.g., `folder1/folder2`) ([#882](https://github.com/badlogic/pi-mono/pull/882) by [@richardgill](https://github.com/richardgill))
+- Directory completions for `@` file attachments no longer add trailing space, allowing continued autocomplete into subdirectories
+
+## [0.49.2] - 2026-01-19
+
+## [0.49.1] - 2026-01-18
+
+### Added
+
+- Added undo support to Editor with Ctrl+- hotkey. Undo coalesces consecutive word characters into one unit (fish-style). ([#831](https://github.com/badlogic/pi-mono/pull/831) by [@Perlence](https://github.com/Perlence))
+- Added legacy terminal support for Ctrl+symbol keys (Ctrl+\, Ctrl+], Ctrl+-) and their Ctrl+Alt variants. ([#831](https://github.com/badlogic/pi-mono/pull/831) by [@Perlence](https://github.com/Perlence))
+
+## [0.49.0] - 2026-01-17
+
+### Added
+
+- Added `showHardwareCursor` getter and setter to control cursor visibility while keeping IME positioning active. ([#800](https://github.com/badlogic/pi-mono/pull/800) by [@ghoulr](https://github.com/ghoulr))
+- Added Emacs-style kill ring editing with yank and yank-pop keybindings. ([#810](https://github.com/badlogic/pi-mono/pull/810) by [@Perlence](https://github.com/Perlence))
+- Added legacy Alt+letter handling and Alt+D delete word forward support in the editor keymap. ([#810](https://github.com/badlogic/pi-mono/pull/810) by [@Perlence](https://github.com/Perlence))
+
+## [0.48.0] - 2026-01-16
+
+### Added
+
+- `EditorOptions` with optional `paddingX` for horizontal content padding, plus `getPaddingX()`/`setPaddingX()` methods ([#791](https://github.com/badlogic/pi-mono/pull/791) by [@ferologics](https://github.com/ferologics))
+
+### Changed
+
+- Hardware cursor is now disabled by default for better terminal compatibility. Set `PI_HARDWARE_CURSOR=1` to enable (replaces `PI_NO_HARDWARE_CURSOR=1` which disabled it).
+
+### Fixed
+
+- Decode Kitty CSI-u printable sequences in the editor so shifted symbol keys (e.g., `@`, `?`) work in terminals that enable Kitty keyboard protocol ([#779](https://github.com/badlogic/pi-mono/pull/779) by [@iamd3vil](https://github.com/iamd3vil))
 
 ## [0.47.0] - 2026-01-16
 

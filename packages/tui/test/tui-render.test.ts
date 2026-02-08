@@ -22,6 +22,111 @@ function getCellItalic(terminal: VirtualTerminal, row: number, col: number): num
 	return cell.isItalic();
 }
 
+describe("TUI resize handling", () => {
+	it("triggers full re-render when terminal width changes", async () => {
+		const terminal = new VirtualTerminal(40, 10);
+		const tui = new TUI(terminal);
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		component.lines = ["Line 0", "Line 1", "Line 2"];
+		tui.start();
+		await terminal.flush();
+
+		const initialRedraws = tui.fullRedraws;
+
+		// Resize width
+		terminal.resize(60, 10);
+		await terminal.flush();
+
+		// Should have triggered a full redraw
+		assert.ok(tui.fullRedraws > initialRedraws, "Width change should trigger full redraw");
+
+		tui.stop();
+	});
+});
+
+describe("TUI content shrinkage", () => {
+	it("clears empty rows when content shrinks significantly", async () => {
+		const terminal = new VirtualTerminal(40, 10);
+		const tui = new TUI(terminal);
+		tui.setClearOnShrink(true); // Explicitly enable (may be disabled via env var)
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		// Start with many lines
+		component.lines = ["Line 0", "Line 1", "Line 2", "Line 3", "Line 4", "Line 5"];
+		tui.start();
+		await terminal.flush();
+
+		const initialRedraws = tui.fullRedraws;
+
+		// Shrink to fewer lines
+		component.lines = ["Line 0", "Line 1"];
+		tui.requestRender();
+		await terminal.flush();
+
+		// Should have triggered a full redraw to clear empty rows
+		assert.ok(tui.fullRedraws > initialRedraws, "Content shrinkage should trigger full redraw");
+
+		const viewport = terminal.getViewport();
+		assert.ok(viewport[0]?.includes("Line 0"), "First line preserved");
+		assert.ok(viewport[1]?.includes("Line 1"), "Second line preserved");
+		// Lines below should be empty (cleared)
+		assert.strictEqual(viewport[2]?.trim(), "", "Line 2 should be cleared");
+		assert.strictEqual(viewport[3]?.trim(), "", "Line 3 should be cleared");
+
+		tui.stop();
+	});
+
+	it("handles shrink to single line", async () => {
+		const terminal = new VirtualTerminal(40, 10);
+		const tui = new TUI(terminal);
+		tui.setClearOnShrink(true); // Explicitly enable (may be disabled via env var)
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		component.lines = ["Line 0", "Line 1", "Line 2", "Line 3"];
+		tui.start();
+		await terminal.flush();
+
+		// Shrink to single line
+		component.lines = ["Only line"];
+		tui.requestRender();
+		await terminal.flush();
+
+		const viewport = terminal.getViewport();
+		assert.ok(viewport[0]?.includes("Only line"), "Single line rendered");
+		assert.strictEqual(viewport[1]?.trim(), "", "Line 1 should be cleared");
+
+		tui.stop();
+	});
+
+	it("handles shrink to empty", async () => {
+		const terminal = new VirtualTerminal(40, 10);
+		const tui = new TUI(terminal);
+		tui.setClearOnShrink(true); // Explicitly enable (may be disabled via env var)
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		component.lines = ["Line 0", "Line 1", "Line 2"];
+		tui.start();
+		await terminal.flush();
+
+		// Shrink to empty
+		component.lines = [];
+		tui.requestRender();
+		await terminal.flush();
+
+		const viewport = terminal.getViewport();
+		// All lines should be empty
+		assert.strictEqual(viewport[0]?.trim(), "", "Line 0 should be cleared");
+		assert.strictEqual(viewport[1]?.trim(), "", "Line 1 should be cleared");
+
+		tui.stop();
+	});
+});
+
 describe("TUI differential rendering", () => {
 	it("tracks cursor correctly when content shrinks with unchanged remaining lines", async () => {
 		const terminal = new VirtualTerminal(40, 10);

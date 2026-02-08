@@ -4,12 +4,19 @@
  * Shows how to replace or modify the default system prompt.
  */
 
-import { createAgentSession, SessionManager } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader, SessionManager } from "@mariozechner/pi-coding-agent";
 
 // Option 1: Replace prompt entirely
-const { session: session1 } = await createAgentSession({
-	systemPrompt: `You are a helpful assistant that speaks like a pirate.
+const loader1 = new DefaultResourceLoader({
+	systemPromptOverride: () => `You are a helpful assistant that speaks like a pirate.
 Always end responses with "Arrr!"`,
+	// Needed to avoid DefaultResourceLoader appending APPEND_SYSTEM.md from ~/.pi/agent or <cwd>/.pi.
+	appendSystemPromptOverride: () => [],
+});
+await loader1.reload();
+
+const { session: session1 } = await createAgentSession({
+	resourceLoader: loader1,
 	sessionManager: SessionManager.inMemory(),
 });
 
@@ -23,13 +30,17 @@ console.log("=== Replace prompt ===");
 await session1.prompt("What is 2 + 2?");
 console.log("\n");
 
-// Option 2: Modify default prompt (receives default, returns modified)
-const { session: session2 } = await createAgentSession({
-	systemPrompt: (defaultPrompt) => `${defaultPrompt}
+// Option 2: Append instructions to the default prompt
+const loader2 = new DefaultResourceLoader({
+	appendSystemPromptOverride: (base) => [
+		...base,
+		"## Additional Instructions\n- Always be concise\n- Use bullet points when listing things",
+	],
+});
+await loader2.reload();
 
-## Additional Instructions
-- Always be concise
-- Use bullet points when listing things`,
+const { session: session2 } = await createAgentSession({
+	resourceLoader: loader2,
 	sessionManager: SessionManager.inMemory(),
 });
 

@@ -166,8 +166,12 @@ function detectColorMode(): ColorMode {
 		return "truecolor";
 	}
 	const term = process.env.TERM || "";
-	// Only fall back to 256color for truly limited terminals
+	// Fall back to 256color for truly limited terminals
 	if (term === "dumb" || term === "" || term === "linux") {
+		return "256color";
+	}
+	// Terminal.app also doesn't support truecolor
+	if (process.env.TERM_PROGRAM === "Apple_Terminal") {
 		return "256color";
 	}
 	// Assume truecolor for everything else - virtually all modern terminals support it
@@ -330,6 +334,8 @@ function resolveThemeColors<T extends Record<string, ColorValue>>(
 // ============================================================================
 
 export class Theme {
+	readonly name?: string;
+	readonly sourcePath?: string;
 	private fgColors: Map<ThemeColor, string>;
 	private bgColors: Map<ThemeBg, string>;
 	private mode: ColorMode;
@@ -338,7 +344,10 @@ export class Theme {
 		fgColors: Record<ThemeColor, string | number>,
 		bgColors: Record<ThemeBg, string | number>,
 		mode: ColorMode,
+		options: { name?: string; sourcePath?: string } = {},
 	) {
+		this.name = options.name;
+		this.sourcePath = options.sourcePath;
 		this.mode = mode;
 		this.fgColors = new Map();
 		for (const [key, value] of Object.entries(fgColors) as [ThemeColor, string | number][]) {
@@ -453,6 +462,9 @@ export function getAvailableThemes(): string[] {
 			}
 		}
 	}
+	for (const name of registeredThemes.keys()) {
+		themes.add(name);
+	}
 	return Array.from(themes).sort();
 }
 
@@ -483,26 +495,16 @@ export function getAvailableThemesWithPaths(): ThemeInfo[] {
 		}
 	}
 
+	for (const [name, theme] of registeredThemes.entries()) {
+		if (!result.some((t) => t.name === name)) {
+			result.push({ name, path: theme.sourcePath });
+		}
+	}
+
 	return result.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function loadThemeJson(name: string): ThemeJson {
-	const builtinThemes = getBuiltinThemes();
-	if (name in builtinThemes) {
-		return builtinThemes[name];
-	}
-	const customThemesDir = getCustomThemesDir();
-	const themePath = path.join(customThemesDir, `${name}.json`);
-	if (!fs.existsSync(themePath)) {
-		throw new Error(`Theme not found: ${name}`);
-	}
-	const content = fs.readFileSync(themePath, "utf-8");
-	let json: unknown;
-	try {
-		json = JSON.parse(content);
-	} catch (error) {
-		throw new Error(`Failed to parse theme ${name}: ${error}`);
-	}
+function parseThemeJson(label: string, json: unknown): ThemeJson {
 	if (!validateThemeJson.Check(json)) {
 		const errors = Array.from(validateThemeJson.Errors(json));
 		const missingColors: string[] = [];
@@ -518,12 +520,12 @@ function loadThemeJson(name: string): ThemeJson {
 			}
 		}
 
-		let errorMessage = `Invalid theme "${name}":\n`;
+		let errorMessage = `Invalid theme "${label}":\n`;
 		if (missingColors.length > 0) {
-			errorMessage += `\nMissing required color tokens:\n`;
+			errorMessage += "\nMissing required color tokens:\n";
 			errorMessage += missingColors.map((c) => `  - ${c}`).join("\n");
-			errorMessage += `\n\nPlease add these colors to your theme's "colors" object.`;
-			errorMessage += `\nSee the built-in themes (dark.json, light.json) for reference values.`;
+			errorMessage += '\n\nPlease add these colors to your theme\'s "colors" object.';
+			errorMessage += "\nSee the built-in themes (dark.json, light.json) for reference values.";
 		}
 		if (otherErrors.length > 0) {
 			errorMessage += `\n\nOther errors:\n${otherErrors.join("\n")}`;
@@ -531,10 +533,43 @@ function loadThemeJson(name: string): ThemeJson {
 
 		throw new Error(errorMessage);
 	}
+
 	return json as ThemeJson;
 }
 
-function createTheme(themeJson: ThemeJson, mode?: ColorMode): Theme {
+function parseThemeJsonContent(label: string, content: string): ThemeJson {
+	let json: unknown;
+	try {
+		json = JSON.parse(content);
+	} catch (error) {
+		throw new Error(`Failed to parse theme ${label}: ${error}`);
+	}
+	return parseThemeJson(label, json);
+}
+
+function loadThemeJson(name: string): ThemeJson {
+	const builtinThemes = getBuiltinThemes();
+	if (name in builtinThemes) {
+		return builtinThemes[name];
+	}
+	const registeredTheme = registeredThemes.get(name);
+	if (registeredTheme?.sourcePath) {
+		const content = fs.readFileSync(registeredTheme.sourcePath, "utf-8");
+		return parseThemeJsonContent(registeredTheme.sourcePath, content);
+	}
+	if (registeredTheme) {
+		throw new Error(`Theme "${name}" does not have a source path for export`);
+	}
+	const customThemesDir = getCustomThemesDir();
+	const themePath = path.join(customThemesDir, `${name}.json`);
+	if (!fs.existsSync(themePath)) {
+		throw new Error(`Theme not found: ${name}`);
+	}
+	const content = fs.readFileSync(themePath, "utf-8");
+	return parseThemeJsonContent(name, content);
+}
+
+function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string): Theme {
 	const colorMode = mode ?? detectColorMode();
 	const resolvedColors = resolveThemeColors(themeJson.colors, themeJson.vars);
 	const fgColors: Record<ThemeColor, string | number> = {} as Record<ThemeColor, string | number>;
@@ -554,10 +589,23 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode): Theme {
 			fgColors[key as ThemeColor] = value;
 		}
 	}
-	return new Theme(fgColors, bgColors, colorMode);
+	return new Theme(fgColors, bgColors, colorMode, {
+		name: themeJson.name,
+		sourcePath,
+	});
+}
+
+export function loadThemeFromPath(themePath: string, mode?: ColorMode): Theme {
+	const content = fs.readFileSync(themePath, "utf-8");
+	const themeJson = parseThemeJsonContent(themePath, content);
+	return createTheme(themeJson, mode, themePath);
 }
 
 function loadTheme(name: string, mode?: ColorMode): Theme {
+	const registeredTheme = registeredThemes.get(name);
+	if (registeredTheme) {
+		return registeredTheme;
+	}
 	const themeJson = loadThemeJson(name);
 	return createTheme(themeJson, mode);
 }
@@ -613,6 +661,16 @@ function setGlobalTheme(t: Theme): void {
 let currentThemeName: string | undefined;
 let themeWatcher: fs.FSWatcher | undefined;
 let onThemeChangeCallback: (() => void) | undefined;
+const registeredThemes = new Map<string, Theme>();
+
+export function setRegisteredThemes(themes: Theme[]): void {
+	registeredThemes.clear();
+	for (const theme of themes) {
+		if (theme.name) {
+			registeredThemes.set(theme.name, theme);
+		}
+	}
+}
 
 export function initTheme(themeName?: string, enableWatcher: boolean = false): void {
 	const name = themeName ?? getDefaultTheme();
@@ -786,7 +844,7 @@ function ansi256ToHex(index: number): string {
  * Used by HTML export to generate CSS custom properties.
  */
 export function getResolvedThemeColors(themeName?: string): Record<string, string> {
-	const name = themeName ?? getDefaultTheme();
+	const name = themeName ?? currentThemeName ?? getDefaultTheme();
 	const isLight = name === "light";
 	const themeJson = loadThemeJson(name);
 	const resolved = resolveThemeColors(themeJson.colors, themeJson.vars);
@@ -825,7 +883,7 @@ export function getThemeExportColors(themeName?: string): {
 	cardBg?: string;
 	infoBg?: string;
 } {
-	const name = themeName ?? getDefaultTheme();
+	const name = themeName ?? currentThemeName ?? getDefaultTheme();
 	try {
 		const themeJson = loadThemeJson(name);
 		const exportSection = themeJson.export;

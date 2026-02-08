@@ -127,7 +127,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerTool({
 		...localRead,
-		async execute(id, params, onUpdate, _ctx, signal) {
+		async execute(id, params, signal, onUpdate, _ctx) {
 			const ssh = getSsh();
 			if (ssh) {
 				const tool = createReadTool(localCwd, {
@@ -141,7 +141,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerTool({
 		...localWrite,
-		async execute(id, params, onUpdate, _ctx, signal) {
+		async execute(id, params, signal, onUpdate, _ctx) {
 			const ssh = getSsh();
 			if (ssh) {
 				const tool = createWriteTool(localCwd, {
@@ -155,7 +155,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerTool({
 		...localEdit,
-		async execute(id, params, onUpdate, _ctx, signal) {
+		async execute(id, params, signal, onUpdate, _ctx) {
 			const ssh = getSsh();
 			if (ssh) {
 				const tool = createEditTool(localCwd, {
@@ -169,7 +169,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerTool({
 		...localBash,
-		async execute(id, params, onUpdate, _ctx, signal) {
+		async execute(id, params, signal, onUpdate, _ctx) {
 			const ssh = getSsh();
 			if (ssh) {
 				const tool = createBashTool(localCwd, {

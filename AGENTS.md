@@ -17,11 +17,15 @@ read README.md, then ask which module(s) to work on. Based on the answer, read t
 - **NEVER use inline imports** - no `await import("./foo.js")`, no `import("pkg").Type` in type positions, no dynamic imports for types. Always use standard top-level imports.
 - NEVER remove or downgrade code to fix type errors from outdated dependencies; upgrade the dependency instead
 - Always ask before removing functionality or code that appears to be intentional
+- Never hardcode key checks with, eg. `matchesKey(keyData, "ctrl+x")`. All keybindings must be configurable. Add default to matching object (`DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS`)
 
 ## Commands
 - After code changes (not documentation changes): `npm run check` (get full output, no tail). Fix all errors, warnings, and infos before committing.
+- Note: `npm run check` does not run tests.
 - NEVER run: `npm run dev`, `npm run build`, `npm test`
-- Only run specific tests if user instructs: `npm test -- test/specific.test.ts`
+- Only run specific tests if user instructs: `npx tsx ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`
+- Run tests from the package root, not the repo root.
+- When writing tests, run them, identify issues in either the test or implementation, and iterate until fixed.
 - NEVER commit unless user asks
 
 ## GitHub Issues
@@ -49,7 +53,31 @@ When closing issues via commit:
 ## Tools
 - GitHub CLI for issues/PRs
 - Add package labels to issues/PRs: pkg:agent, pkg:ai, pkg:coding-agent, pkg:mom, pkg:pods, pkg:tui, pkg:web-ui
-- See pi-tmux-test skill if you need to test pi interactive mode
+
+## Testing pi Interactive Mode with tmux
+
+To test pi's TUI in a controlled terminal environment:
+
+```bash
+# Create tmux session with specific dimensions
+tmux new-session -d -s pi-test -x 80 -y 24
+
+# Start pi from source
+tmux send-keys -t pi-test "cd /Users/badlogic/workspaces/pi-mono && ./pi-test.sh" Enter
+
+# Wait for startup, then capture output
+sleep 3 && tmux capture-pane -t pi-test -p
+
+# Send input
+tmux send-keys -t pi-test "your prompt here" Enter
+
+# Send special keys
+tmux send-keys -t pi-test Escape
+tmux send-keys -t pi-test C-o  # ctrl+o
+
+# Cleanup
+tmux kill-session -t pi-test
+```
 
 ## Style
 - Keep answers short and concise
@@ -106,7 +134,9 @@ Create provider file exporting:
 - Map to standardized `Model` interface
 
 ### 5. Tests (`packages/ai/test/`)
-Add provider to: `stream.test.ts`, `tokens.test.ts`, `abort.test.ts`, `empty.test.ts`, `context-overflow.test.ts`, `image-limits.test.ts`, `unicode-surrogate.test.ts`, `tool-call-without-result.test.ts`, `image-tool-result.test.ts`, `total-tokens.test.ts`
+Add provider to: `stream.test.ts`, `tokens.test.ts`, `abort.test.ts`, `empty.test.ts`, `context-overflow.test.ts`, `image-limits.test.ts`, `unicode-surrogate.test.ts`, `tool-call-without-result.test.ts`, `image-tool-result.test.ts`, `total-tokens.test.ts`, `cross-provider-handoff.test.ts`.
+
+For `cross-provider-handoff.test.ts`, add at least one provider/model pair. If the provider exposes multiple model families (for example GPT and Claude), add at least one pair per family.
 
 For non-standard auth, create utility (e.g., `bedrock-utils.ts`) with credential detection.
 
@@ -142,3 +172,45 @@ The script handles: version bump, CHANGELOG finalization, commit, tag, publish, 
 ## **CRITICAL** Tool Usage Rules **CRITICAL**
 - NEVER use sed/cat to read a file or a range of a file. Always use the read tool (use offset + limit for ranged reads).
 - You MUST read every file you modify in full before editing.
+
+## **CRITICAL** Git Rules for Parallel Agents **CRITICAL**
+
+Multiple agents may work on different files in the same worktree simultaneously. You MUST follow these rules:
+
+### Committing
+- **ONLY commit files YOU changed in THIS session**
+- ALWAYS include `fixes #<number>` or `closes #<number>` in the commit message when there is a related issue or PR
+- NEVER use `git add -A` or `git add .` - these sweep up changes from other agents
+- ALWAYS use `git add <specific-file-paths>` listing only files you modified
+- Before committing, run `git status` and verify you are only staging YOUR files
+- Track which files you created/modified/deleted during the session
+
+### Forbidden Git Operations
+These commands can destroy other agents' work:
+- `git reset --hard` - destroys uncommitted changes
+- `git checkout .` - destroys uncommitted changes
+- `git clean -fd` - deletes untracked files
+- `git stash` - stashes ALL changes including other agents' work
+- `git add -A` / `git add .` - stages other agents' uncommitted work
+- `git commit --no-verify` - bypasses required checks and is never allowed
+
+### Safe Workflow
+```bash
+# 1. Check status first
+git status
+
+# 2. Add ONLY your specific files
+git add packages/ai/src/providers/transform-messages.ts
+git add packages/ai/CHANGELOG.md
+
+# 3. Commit
+git commit -m "fix(ai): description"
+
+# 4. Push (pull --rebase if needed, but NEVER reset/checkout)
+git pull --rebase && git push
+```
+
+### If Rebase Conflicts Occur
+- Resolve conflicts in YOUR files only
+- If conflict is in a file you didn't modify, abort and ask the user
+- NEVER force push

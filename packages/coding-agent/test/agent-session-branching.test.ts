@@ -19,7 +19,7 @@ import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { codingTools } from "../src/core/tools/index.js";
-import { API_KEY } from "./utilities.js";
+import { API_KEY, createTestResourceLoader } from "./utilities.js";
 
 describe.skipIf(!API_KEY)("AgentSession forking", () => {
 	let session: AgentSession;
@@ -61,7 +61,9 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 			agent,
 			sessionManager,
 			settingsManager,
+			cwd: tempDir,
 			modelRegistry,
+			resourceLoader: createTestResourceLoader(),
 		});
 
 		// Must subscribe to enable session persistence
@@ -90,9 +92,9 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 		// After forking, conversation should be empty (forked before the first message)
 		expect(session.messages.length).toBe(0);
 
-		// Session file should exist (new fork)
+		// Session file path should be set, but file is created lazily after first assistant message
 		expect(session.sessionFile).not.toBeNull();
-		expect(existsSync(session.sessionFile!)).toBe(true);
+		expect(existsSync(session.sessionFile!)).toBe(false);
 	});
 
 	it("should support in-memory forking in --no-session mode", async () => {

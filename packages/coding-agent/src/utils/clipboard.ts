@@ -3,6 +3,11 @@ import { platform } from "os";
 import { isWaylandSession } from "./clipboard-image.js";
 
 export function copyToClipboard(text: string): void {
+	// Always emit OSC 52 - works over SSH/mosh, harmless locally
+	const encoded = Buffer.from(text).toString("base64");
+	process.stdout.write(`\x1b]52;c;${encoded}\x07`);
+
+	// Also try native tools (best effort for local sessions)
 	const p = platform();
 	const options = { input: text, timeout: 5000 };
 
@@ -12,7 +17,16 @@ export function copyToClipboard(text: string): void {
 		} else if (p === "win32") {
 			execSync("clip", options);
 		} else {
-			// Linux - try wl-copy for Wayland, fall back to xclip/xsel for X11
+			// Linux. Try Termux, Wayland, or X11 clipboard tools.
+			if (process.env.TERMUX_VERSION) {
+				try {
+					execSync("termux-clipboard-set", options);
+					return;
+				} catch {
+					// Fall back to Wayland or X11 tools.
+				}
+			}
+
 			const isWayland = isWaylandSession();
 			if (isWayland) {
 				try {
@@ -42,12 +56,7 @@ export function copyToClipboard(text: string): void {
 				}
 			}
 		}
-	} catch (error) {
-		const msg = error instanceof Error ? error.message : String(error);
-		if (p === "linux") {
-			const tools = isWaylandSession() ? "wl-copy, xclip, or xsel" : "xclip or xsel";
-			throw new Error(`Failed to copy to clipboard. Install ${tools}: ${msg}`);
-		}
-		throw new Error(`Failed to copy to clipboard: ${msg}`);
+	} catch {
+		// Ignore - OSC 52 already emitted as fallback
 	}
 }

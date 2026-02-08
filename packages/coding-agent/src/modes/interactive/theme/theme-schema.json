@@ -78,7 +78,14 @@
 				"syntaxNumber",
 				"syntaxType",
 				"syntaxOperator",
-				"syntaxPunctuation"
+				"syntaxPunctuation",
+				"thinkingOff",
+				"thinkingMinimal",
+				"thinkingLow",
+				"thinkingMedium",
+				"thinkingHigh",
+				"thinkingXhigh",
+				"bashMode"
 			],
 			"properties": {
 				"accent": {

@@ -4,7 +4,7 @@
 
 import type { AgentTool, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
 import type { ExtensionRunner } from "./runner.js";
-import type { RegisteredTool, ToolCallEventResult, ToolResultEventResult } from "./types.js";
+import type { RegisteredTool, ToolCallEventResult } from "./types.js";
 
 /**
  * Wrap a RegisteredTool into an AgentTool.
@@ -18,7 +18,7 @@ export function wrapRegisteredTool(registeredTool: RegisteredTool, runner: Exten
 		description: definition.description,
 		parameters: definition.parameters,
 		execute: (toolCallId, params, signal, onUpdate) =>
-			definition.execute(toolCallId, params, onUpdate, runner.createContext(), signal),
+			definition.execute(toolCallId, params, signal, onUpdate, runner.createContext()),
 	};
 }
 
@@ -72,7 +72,7 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 
 				// Emit tool_result event - extensions can modify the result
 				if (runner.hasHandlers("tool_result")) {
-					const resultResult = (await runner.emit({
+					const resultResult = await runner.emitToolResult({
 						type: "tool_result",
 						toolName: tool.name,
 						toolCallId,
@@ -80,7 +80,7 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 						content: result.content,
 						details: result.details,
 						isError: false,
-					})) as ToolResultEventResult | undefined;
+					});
 
 					if (resultResult) {
 						return {
@@ -94,7 +94,7 @@ export function wrapToolWithExtensions<T>(tool: AgentTool<any, T>, runner: Exten
 			} catch (err) {
 				// Emit tool_result event for errors
 				if (runner.hasHandlers("tool_result")) {
-					await runner.emit({
+					await runner.emitToolResult({
 						type: "tool_result",
 						toolName: tool.name,
 						toolCallId,

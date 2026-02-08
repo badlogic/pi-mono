@@ -1,59 +1,23 @@
-/**
- * SDK for programmatic usage of AgentSession.
- *
- * Provides a factory function and discovery helpers that allow full control
- * over agent configuration, or sensible defaults that match CLI behavior.
- *
- * @example
- * ```typescript
- * // Minimal - everything auto-discovered
- * const session = await createAgentSession();
- *
- * // Full control
- * const session = await createAgentSession({
- *   model: myModel,
- *   getApiKey: async () => process.env.MY_KEY,
- *   tools: [readTool, bashTool],
- *   skills: [],
- *   sessionFile: false,
- * });
- * ```
- */
-
-import { Agent, type AgentMessage, type AgentTool, type ThinkingLevel } from "@mariozechner/pi-agent-core";
+import { join } from "node:path";
+import { Agent, type AgentMessage, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Message, Model } from "@mariozechner/pi-ai";
-import { join } from "path";
-import { getAgentDir } from "../config.js";
+import { getAgentDir, getDocsPath } from "../config.js";
 import { AgentSession } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
-import { createEventBus, type EventBus } from "./event-bus.js";
-import {
-	createExtensionRuntime,
-	discoverAndLoadExtensions,
-	type ExtensionFactory,
-	ExtensionRunner,
-	type LoadExtensionsResult,
-	loadExtensionFromFactory,
-	type ToolDefinition,
-	wrapRegisteredTools,
-	wrapToolsWithExtensions,
-} from "./extensions/index.js";
+import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
+import type { ExtensionRunner, LoadExtensionsResult, ToolDefinition } from "./extensions/index.js";
 import { convertToLlm } from "./messages.js";
 import { ModelRegistry } from "./model-registry.js";
-import { loadPromptTemplates as loadPromptTemplatesInternal, type PromptTemplate } from "./prompt-templates.js";
+import { findInitialModel } from "./model-resolver.js";
+import type { ResourceLoader } from "./resource-loader.js";
+import { DefaultResourceLoader } from "./resource-loader.js";
 import { SessionManager } from "./session-manager.js";
-import { type Settings, SettingsManager, type SkillsSettings } from "./settings-manager.js";
-import { loadSkills as loadSkillsInternal, type Skill, type SkillWarning } from "./skills.js";
-import {
-	buildSystemPrompt as buildSystemPromptInternal,
-	loadProjectContextFiles as loadContextFilesInternal,
-} from "./system-prompt.js";
+import { SettingsManager } from "./settings-manager.js";
 import { time } from "./timings.js";
 import {
 	allTools,
 	bashTool,
 	codingTools,
-	createAllTools,
 	createBashTool,
 	createCodingTools,
 	createEditTool,
@@ -74,52 +38,31 @@ import {
 	writeTool,
 } from "./tools/index.js";
 
-// Types
-
 export interface CreateAgentSessionOptions {
 	/** Working directory for project-local discovery. Default: process.cwd() */
 	cwd?: string;
 	/** Global config directory. Default: ~/.pi/agent */
 	agentDir?: string;
 
-	/** Auth storage for credentials. Default: discoverAuthStorage(agentDir) */
+	/** Auth storage for credentials. Default: new AuthStorage(agentDir/auth.json) */
 	authStorage?: AuthStorage;
-	/** Model registry. Default: discoverModels(authStorage, agentDir) */
+	/** Model registry. Default: new ModelRegistry(authStorage, agentDir/models.json) */
 	modelRegistry?: ModelRegistry;
 
 	/** Model to use. Default: from settings, else first available */
 	model?: Model<any>;
-	/** Thinking level. Default: from settings, else 'off' (clamped to model capabilities) */
+	/** Thinking level. Default: from settings, else 'medium' (clamped to model capabilities) */
 	thinkingLevel?: ThinkingLevel;
 	/** Models available for cycling (Ctrl+P in interactive mode) */
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>;
-
-	/** System prompt. String replaces default, function receives default and returns final. */
-	systemPrompt?: string | ((defaultPrompt: string) => string);
 
 	/** Built-in tools to use. Default: codingTools [read, bash, edit, write] */
 	tools?: Tool[];
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
-	/** Inline extensions. When provided (even if empty), skips file discovery. */
-	extensions?: ExtensionFactory[];
-	/** Additional extension paths to load (merged with discovery). */
-	additionalExtensionPaths?: string[];
-	/**
-	 * Pre-loaded extensions result (skips file discovery).
-	 * @internal Used by CLI when extensions are loaded early to parse custom flags.
-	 */
-	preloadedExtensions?: LoadExtensionsResult;
 
-	/** Shared event bus for tool/extension communication. Default: creates new bus. */
-	eventBus?: EventBus;
-
-	/** Skills. Default: discovered from multiple locations */
-	skills?: Skill[];
-	/** Context files (AGENTS.md content). Default: discovered walking up from cwd */
-	contextFiles?: Array<{ path: string; content: string }>;
-	/** Prompt templates. Default: discovered from cwd/.pi/prompts/ + agentDir/prompts/ */
-	promptTemplates?: PromptTemplate[];
+	/** Resource loader. When omitted, DefaultResourceLoader is used. */
+	resourceLoader?: ResourceLoader;
 
 	/** Session manager. Default: SessionManager.create(cwd) */
 	sessionManager?: SessionManager;
@@ -145,10 +88,12 @@ export type {
 	ExtensionCommandContext,
 	ExtensionContext,
 	ExtensionFactory,
+	SlashCommandInfo,
+	SlashCommandLocation,
+	SlashCommandSource,
 	ToolDefinition,
 } from "./extensions/index.js";
 export type { PromptTemplate } from "./prompt-templates.js";
-export type { Settings, SkillsSettings } from "./settings-manager.js";
 export type { Skill } from "./skills.js";
 export type { Tool } from "./tools/index.js";
 
@@ -182,133 +127,6 @@ function getDefaultAgentDir(): string {
 	return getAgentDir();
 }
 
-// Discovery Functions
-
-/**
- * Create an AuthStorage instance for the given agent directory.
- */
-export function discoverAuthStorage(agentDir: string = getDefaultAgentDir()): AuthStorage {
-	return new AuthStorage(join(agentDir, "auth.json"));
-}
-
-/**
- * Create a ModelRegistry for the given agent directory.
- */
-export function discoverModels(authStorage: AuthStorage, agentDir: string = getDefaultAgentDir()): ModelRegistry {
-	return new ModelRegistry(authStorage, join(agentDir, "models.json"));
-}
-
-/**
- * Discover extensions from cwd and agentDir.
- * @param eventBus - Shared event bus for extension communication. Pass to createAgentSession too.
- * @param cwd - Current working directory
- * @param agentDir - Agent configuration directory
- */
-export async function discoverExtensions(
-	eventBus: EventBus,
-	cwd?: string,
-	agentDir?: string,
-): Promise<LoadExtensionsResult> {
-	const resolvedCwd = cwd ?? process.cwd();
-	const resolvedAgentDir = agentDir ?? getDefaultAgentDir();
-
-	const result = await discoverAndLoadExtensions([], resolvedCwd, resolvedAgentDir, eventBus);
-
-	// Log errors but don't fail
-	for (const { path, error } of result.errors) {
-		console.error(`Failed to load extension "${path}": ${error}`);
-	}
-
-	return result;
-}
-
-/**
- * Discover skills from cwd and agentDir.
- */
-export function discoverSkills(
-	cwd?: string,
-	agentDir?: string,
-	settings?: SkillsSettings,
-): { skills: Skill[]; warnings: SkillWarning[] } {
-	return loadSkillsInternal({
-		...settings,
-		cwd: cwd ?? process.cwd(),
-		agentDir: agentDir ?? getDefaultAgentDir(),
-	});
-}
-
-/**
- * Discover context files (AGENTS.md) walking up from cwd.
- */
-export function discoverContextFiles(cwd?: string, agentDir?: string): Array<{ path: string; content: string }> {
-	return loadContextFilesInternal({
-		cwd: cwd ?? process.cwd(),
-		agentDir: agentDir ?? getDefaultAgentDir(),
-	});
-}
-
-/**
- * Discover prompt templates from cwd and agentDir.
- */
-export function discoverPromptTemplates(cwd?: string, agentDir?: string): PromptTemplate[] {
-	return loadPromptTemplatesInternal({
-		cwd: cwd ?? process.cwd(),
-		agentDir: agentDir ?? getDefaultAgentDir(),
-	});
-}
-
-// API Key Helpers
-
-// System Prompt
-
-export interface BuildSystemPromptOptions {
-	tools?: Tool[];
-	skills?: Skill[];
-	contextFiles?: Array<{ path: string; content: string }>;
-	cwd?: string;
-	appendPrompt?: string;
-}
-
-/**
- * Build the default system prompt.
- */
-export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): string {
-	return buildSystemPromptInternal({
-		cwd: options.cwd,
-		skills: options.skills,
-		contextFiles: options.contextFiles,
-		appendSystemPrompt: options.appendPrompt,
-	});
-}
-
-// Settings
-
-/**
- * Load settings from agentDir/settings.json merged with cwd/.pi/settings.json.
- */
-export function loadSettings(cwd?: string, agentDir?: string): Settings {
-	const manager = SettingsManager.create(cwd ?? process.cwd(), agentDir ?? getDefaultAgentDir());
-	return {
-		defaultProvider: manager.getDefaultProvider(),
-		defaultModel: manager.getDefaultModel(),
-		defaultThinkingLevel: manager.getDefaultThinkingLevel(),
-		steeringMode: manager.getSteeringMode(),
-		followUpMode: manager.getFollowUpMode(),
-		theme: manager.getTheme(),
-		compaction: manager.getCompactionSettings(),
-		retry: manager.getRetrySettings(),
-		hideThinkingBlock: manager.getHideThinkingBlock(),
-		shellPath: manager.getShellPath(),
-		collapseChangelog: manager.getCollapseChangelog(),
-		extensions: manager.getExtensionPaths(),
-		skills: manager.getSkillsSettings(),
-		terminal: { showImages: manager.getShowImages() },
-		images: { autoResize: manager.getImageAutoResize(), blockImages: manager.getBlockImages() },
-	};
-}
-
-// Factory
-
 /**
  * Create an AgentSession with the specified options.
  *
@@ -330,12 +148,16 @@ export function loadSettings(cwd?: string, agentDir?: string): Settings {
  * });
  *
  * // Full control
+ * const loader = new DefaultResourceLoader({
+ *   cwd: process.cwd(),
+ *   agentDir: getAgentDir(),
+ *   settingsManager: SettingsManager.create(),
+ * });
+ * await loader.reload();
  * const { session } = await createAgentSession({
  *   model: myModel,
- *   getApiKey: async () => process.env.MY_KEY,
- *   systemPrompt: 'You are helpful.',
  *   tools: [readTool, bashTool],
- *   skills: [],
+ *   resourceLoader: loader,
  *   sessionManager: SessionManager.inMemory(),
  * });
  * ```
@@ -343,22 +165,27 @@ export function loadSettings(cwd?: string, agentDir?: string): Settings {
 export async function createAgentSession(options: CreateAgentSessionOptions = {}): Promise<CreateAgentSessionResult> {
 	const cwd = options.cwd ?? process.cwd();
 	const agentDir = options.agentDir ?? getDefaultAgentDir();
-	const eventBus = options.eventBus ?? createEventBus();
+	let resourceLoader = options.resourceLoader;
 
 	// Use provided or create AuthStorage and ModelRegistry
-	const authStorage = options.authStorage ?? discoverAuthStorage(agentDir);
-	const modelRegistry = options.modelRegistry ?? discoverModels(authStorage, agentDir);
-	time("discoverModels");
+	const authPath = options.agentDir ? join(agentDir, "auth.json") : undefined;
+	const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
+	const authStorage = options.authStorage ?? new AuthStorage(authPath);
+	const modelRegistry = options.modelRegistry ?? new ModelRegistry(authStorage, modelsPath);
 
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
-	time("settingsManager");
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd);
-	time("sessionManager");
+
+	if (!resourceLoader) {
+		resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
+		await resourceLoader.reload();
+		time("resourceLoader.reload");
+	}
 
 	// Check if session has existing data to restore
 	const existingSession = sessionManager.buildSessionContext();
-	time("loadSession");
 	const hasExistingSession = existingSession.messages.length > 0;
+	const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
 
 	let model = options.model;
 	let modelFallbackMessage: string | undefined;
@@ -374,34 +201,21 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		}
 	}
 
-	// If still no model, try settings default
+	// If still no model, use findInitialModel (checks settings default, then provider defaults)
 	if (!model) {
-		const defaultProvider = settingsManager.getDefaultProvider();
-		const defaultModelId = settingsManager.getDefaultModel();
-		if (defaultProvider && defaultModelId) {
-			const settingsModel = modelRegistry.find(defaultProvider, defaultModelId);
-			if (settingsModel && (await modelRegistry.getApiKey(settingsModel))) {
-				model = settingsModel;
-			}
-		}
-	}
-
-	// Fall back to first available model with a valid API key
-	if (!model) {
-		for (const m of modelRegistry.getAll()) {
-			if (await modelRegistry.getApiKey(m)) {
-				model = m;
-				break;
-			}
-		}
-		time("findAvailableModel");
-		if (model) {
-			if (modelFallbackMessage) {
-				modelFallbackMessage += `. Using ${model.provider}/${model.id}`;
-			}
-		} else {
-			// No models available - set message so user knows to /login or configure keys
-			modelFallbackMessage = "No models available. Use /login or set an API key environment variable.";
+		const result = await findInitialModel({
+			scopedModels: [],
+			isContinuing: hasExistingSession,
+			defaultProvider: settingsManager.getDefaultProvider(),
+			defaultModelId: settingsManager.getDefaultModel(),
+			defaultThinkingLevel: settingsManager.getDefaultThinkingLevel(),
+			modelRegistry,
+		});
+		model = result.model;
+		if (!model) {
+			modelFallbackMessage = `No models available. Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}. Then use /model to select a model.`;
+		} else if (modelFallbackMessage) {
+			modelFallbackMessage += `. Using ${model.provider}/${model.id}`;
 		}
 	}
 
@@ -409,12 +223,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// If session has data, restore thinking level from it
 	if (thinkingLevel === undefined && hasExistingSession) {
-		thinkingLevel = existingSession.thinkingLevel as ThinkingLevel;
+		thinkingLevel = hasThinkingEntry
+			? (existingSession.thinkingLevel as ThinkingLevel)
+			: (settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL);
 	}
 
 	// Fall back to settings default
 	if (thinkingLevel === undefined) {
-		thinkingLevel = settingsManager.getDefaultThinkingLevel() ?? "off";
+		thinkingLevel = settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;
 	}
 
 	// Clamp to model capabilities
@@ -422,157 +238,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = "off";
 	}
 
-	let skills: Skill[];
-	let skillWarnings: SkillWarning[];
-	if (options.skills !== undefined) {
-		skills = options.skills;
-		skillWarnings = [];
-	} else {
-		const discovered = discoverSkills(cwd, agentDir, settingsManager.getSkillsSettings());
-		skills = discovered.skills;
-		skillWarnings = discovered.warnings;
-	}
-	time("discoverSkills");
-
-	const contextFiles = options.contextFiles ?? discoverContextFiles(cwd, agentDir);
-	time("discoverContextFiles");
-
-	const autoResizeImages = settingsManager.getImageAutoResize();
-	// Create ALL built-in tools for the registry (extensions can enable any of them)
-	const allBuiltInToolsMap = createAllTools(cwd, { read: { autoResizeImages } });
-	// Determine initially active built-in tools (default: read, bash, edit, write)
 	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
 	const initialActiveToolNames: ToolName[] = options.tools
-		? options.tools.map((t) => t.name).filter((n): n is ToolName => n in allBuiltInToolsMap)
+		? options.tools.map((t) => t.name).filter((n): n is ToolName => n in allTools)
 		: defaultActiveToolNames;
-	const initialActiveBuiltInTools = initialActiveToolNames.map((name) => allBuiltInToolsMap[name]);
-	time("createAllTools");
 
-	// Load extensions (discovers from standard locations + configured paths)
-	let extensionsResult: LoadExtensionsResult;
-	if (options.preloadedExtensions !== undefined) {
-		// Use pre-loaded extensions (from early CLI flag discovery)
-		extensionsResult = options.preloadedExtensions;
-	} else if (options.extensions !== undefined) {
-		// User explicitly provided extensions array (even if empty) - skip discovery
-		// Create runtime for inline extensions
-		const runtime = createExtensionRuntime();
-		extensionsResult = {
-			extensions: [],
-			errors: [],
-			runtime,
-		};
-	} else {
-		// Discover extensions, merging with additional paths
-		const configuredPaths = [...settingsManager.getExtensionPaths(), ...(options.additionalExtensionPaths ?? [])];
-		extensionsResult = await discoverAndLoadExtensions(configuredPaths, cwd, agentDir, eventBus);
-		time("discoverAndLoadExtensions");
-		for (const { path, error } of extensionsResult.errors) {
-			console.error(`Failed to load extension "${path}": ${error}`);
-		}
-	}
-
-	// Load inline extensions from factories
-	if (options.extensions && options.extensions.length > 0) {
-		for (let i = 0; i < options.extensions.length; i++) {
-			const factory = options.extensions[i];
-			const loaded = await loadExtensionFromFactory(
-				factory,
-				cwd,
-				eventBus,
-				extensionsResult.runtime,
-				`<inline-${i}>`,
-			);
-			extensionsResult.extensions.push(loaded);
-		}
-	}
-
-	// Create extension runner if we have extensions or SDK custom tools
-	// The runner provides consistent context for tool execution (shutdown, abort, etc.)
-	let extensionRunner: ExtensionRunner | undefined;
-	const hasExtensions = extensionsResult.extensions.length > 0;
-	const hasCustomTools = options.customTools && options.customTools.length > 0;
-	if (hasExtensions || hasCustomTools) {
-		extensionRunner = new ExtensionRunner(
-			extensionsResult.extensions,
-			extensionsResult.runtime,
-			cwd,
-			sessionManager,
-			modelRegistry,
-		);
-	}
-
-	// Wrap extension-registered tools and SDK-provided custom tools
-	// Tools use runner.createContext() for consistent context with event handlers
 	let agent: Agent;
-	const registeredTools = extensionRunner?.getAllRegisteredTools() ?? [];
-	// Combine extension-registered tools with SDK-provided custom tools
-	const allCustomTools = [
-		...registeredTools,
-		...(options.customTools?.map((def) => ({ definition: def, extensionPath: "<sdk>" })) ?? []),
-	];
-
-	// Wrap tools using runner's context (ensures shutdown, abort, etc. work correctly)
-	const wrappedExtensionTools = extensionRunner ? wrapRegisteredTools(allCustomTools, extensionRunner) : [];
-
-	// Create tool registry mapping name -> tool (for extension getTools/setTools)
-	// Registry contains ALL built-in tools so extensions can enable any of them
-	const toolRegistry = new Map<string, AgentTool>();
-	for (const [name, tool] of Object.entries(allBuiltInToolsMap)) {
-		toolRegistry.set(name, tool as AgentTool);
-	}
-	for (const tool of wrappedExtensionTools as AgentTool[]) {
-		toolRegistry.set(tool.name, tool);
-	}
-
-	// Initially active tools = active built-in + extension tools
-	// Extension tools can override built-in tools with the same name
-	const extensionToolNames = new Set(wrappedExtensionTools.map((t) => t.name));
-	const nonOverriddenBuiltInTools = initialActiveBuiltInTools.filter((t) => !extensionToolNames.has(t.name));
-	let activeToolsArray: Tool[] = [...nonOverriddenBuiltInTools, ...wrappedExtensionTools];
-	time("combineTools");
-
-	// Wrap tools with extensions if available
-	let wrappedToolRegistry: Map<string, AgentTool> | undefined;
-	if (extensionRunner) {
-		activeToolsArray = wrapToolsWithExtensions(activeToolsArray as AgentTool[], extensionRunner);
-		// Wrap ALL registry tools (not just active) so extensions can enable any
-		const allRegistryTools = Array.from(toolRegistry.values());
-		const wrappedAllTools = wrapToolsWithExtensions(allRegistryTools, extensionRunner);
-		wrappedToolRegistry = new Map<string, AgentTool>();
-		for (const tool of wrappedAllTools) {
-			wrappedToolRegistry.set(tool.name, tool);
-		}
-	}
-
-	// Function to rebuild system prompt when tools change
-	// Captures static options (cwd, agentDir, skills, contextFiles, customPrompt)
-	const rebuildSystemPrompt = (toolNames: string[]): string => {
-		// Filter to valid tool names
-		const validToolNames = toolNames.filter((n): n is ToolName => n in allBuiltInToolsMap);
-		const defaultPrompt = buildSystemPromptInternal({
-			cwd,
-			agentDir,
-			skills,
-			contextFiles,
-			selectedTools: validToolNames,
-		});
-
-		if (options.systemPrompt === undefined) {
-			return defaultPrompt;
-		} else if (typeof options.systemPrompt === "string") {
-			// String is a full replacement - use as-is without appending context/skills
-			return options.systemPrompt;
-		} else {
-			return options.systemPrompt(defaultPrompt);
-		}
-	};
-
-	const systemPrompt = rebuildSystemPrompt(initialActiveToolNames);
-	time("buildSystemPrompt");
-
-	const promptTemplates = options.promptTemplates ?? discoverPromptTemplates(cwd, agentDir);
-	time("discoverPromptTemplates");
 
 	// Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
 	const convertToLlmWithBlockImages = (messages: AgentMessage[]): Message[] => {
@@ -611,23 +282,26 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		});
 	};
 
+	const extensionRunnerRef: { current?: ExtensionRunner } = {};
+
 	agent = new Agent({
 		initialState: {
-			systemPrompt,
+			systemPrompt: "",
 			model,
 			thinkingLevel,
-			tools: activeToolsArray,
+			tools: [],
 		},
 		convertToLlm: convertToLlmWithBlockImages,
 		sessionId: sessionManager.getSessionId(),
-		transformContext: extensionRunner
-			? async (messages) => {
-					return extensionRunner.emitContext(messages);
-				}
-			: undefined,
+		transformContext: async (messages) => {
+			const runner = extensionRunnerRef.current;
+			if (!runner) return messages;
+			return runner.emitContext(messages);
+		},
 		steeringMode: settingsManager.getSteeringMode(),
 		followUpMode: settingsManager.getFollowUpMode(),
 		thinkingBudgets: settingsManager.getThinkingBudgets(),
+		maxRetryDelayMs: settingsManager.getRetrySettings().maxDelayMs,
 		getApiKey: async (provider) => {
 			// Use the provider argument from the in-flight request;
 			// agent.state.model may already be switched mid-turn.
@@ -637,16 +311,30 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			}
 			const key = await modelRegistry.getApiKeyForProvider(resolvedProvider);
 			if (!key) {
-				throw new Error(`No API key found for provider "${resolvedProvider}"`);
+				const model = agent.state.model;
+				const isOAuth = model && modelRegistry.isUsingOAuth(model);
+				if (isOAuth) {
+					throw new Error(
+						`Authentication failed for "${resolvedProvider}". ` +
+							`Credentials may have expired or network is unavailable. ` +
+							`Run '/login ${resolvedProvider}' to re-authenticate.`,
+					);
+				}
+				throw new Error(
+					`No API key found for "${resolvedProvider}". ` +
+						`Set an API key environment variable or run '/login ${resolvedProvider}'.`,
+				);
 			}
 			return key;
 		},
 	});
-	time("createAgent");
 
 	// Restore messages if session has existing data
 	if (hasExistingSession) {
 		agent.replaceMessages(existingSession.messages);
+		if (!hasThinkingEntry) {
+			sessionManager.appendThinkingLevelChange(thinkingLevel);
+		}
 	} else {
 		// Save initial model and thinking level for new sessions so they can be restored on resume
 		if (model) {
@@ -659,17 +347,15 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		agent,
 		sessionManager,
 		settingsManager,
+		cwd,
 		scopedModels: options.scopedModels,
-		promptTemplates: promptTemplates,
-		extensionRunner,
-		skills,
-		skillWarnings,
-		skillsSettings: settingsManager.getSkillsSettings(),
+		resourceLoader,
+		customTools: options.customTools,
 		modelRegistry,
-		toolRegistry: wrappedToolRegistry ?? toolRegistry,
-		rebuildSystemPrompt,
+		initialActiveToolNames,
+		extensionRunnerRef,
 	});
-	time("createAgentSession");
+	const extensionsResult = resourceLoader.getExtensions();
 
 	return {
 		session,

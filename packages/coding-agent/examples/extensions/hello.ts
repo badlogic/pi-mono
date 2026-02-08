@@ -2,8 +2,8 @@
  * Hello Tool - Minimal custom tool example
  */
 
+import { Type } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
 
 export default function (pi: ExtensionAPI) {
 	pi.registerTool({
@@ -14,7 +14,7 @@ export default function (pi: ExtensionAPI) {
 			name: Type.String({ description: "Name to greet" }),
 		}),
 
-		async execute(_toolCallId, params, _onUpdate, _ctx, _signal) {
+		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			const { name } = params as { name: string };
 			return {
 				content: [{ type: "text", text: `Hello, ${name}!` }],

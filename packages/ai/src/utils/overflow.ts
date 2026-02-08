@@ -18,8 +18,9 @@ import type { AssistantMessage } from "../types.js";
  * - LM Studio: "tokens to keep from the initial prompt is greater than the context length"
  * - GitHub Copilot: "prompt token count of X exceeds the limit of Y"
  * - MiniMax: "invalid params, context window exceeds limit"
- * - Cerebras: Returns "400 status code (no body)" - handled separately below
- * - Mistral: Returns "400 status code (no body)" - handled separately below
+ * - Kimi For Coding: "Your request exceeded model token limit: X (requested: Y)"
+ * - Cerebras: Returns "400/413 status code (no body)" - handled separately below
+ * - Mistral: Returns "400/413 status code (no body)" - handled separately below
  * - z.ai: Does NOT error, accepts overflow silently - handled via usage.input > contextWindow
  * - Ollama: Silently truncates input - not detectable via error message
  */
@@ -35,6 +36,7 @@ const OVERFLOW_PATTERNS = [
 	/exceeds the available context size/i, // llama.cpp server
 	/greater than the context length/i, // LM Studio
 	/context window exceeds limit/i, // MiniMax
+	/exceeded model token limit/i, // Kimi For Coding
 	/context[_ ]length[_ ]exceeded/i, // Generic fallback
 	/too many tokens/i, // Generic fallback
 	/token limit exceeded/i, // Generic fallback
@@ -57,11 +59,12 @@ const OVERFLOW_PATTERNS = [
  * - Google Gemini: "input token count exceeds the maximum"
  * - xAI (Grok): "maximum prompt length is X but request contains Y"
  * - Groq: "reduce the length of the messages"
- * - Cerebras: 400/413/429 status code (no body)
- * - Mistral: 400/413/429 status code (no body)
+ * - Cerebras: 400/413 status code (no body)
+ * - Mistral: 400/413 status code (no body)
  * - OpenRouter (all backends): "maximum context length is X tokens"
  * - llama.cpp: "exceeds the available context size"
  * - LM Studio: "greater than the context length"
+ * - Kimi For Coding: "exceeded model token limit: X (requested: Y)"
  *
  * **Unreliable detection:**
  * - z.ai: Sometimes accepts overflow silently (detectable via usage.input > contextWindow),
@@ -92,9 +95,9 @@ export function isContextOverflow(message: AssistantMessage, contextWindow?: num
 			return true;
 		}
 
-		// Cerebras and Mistral return 400/413/429 with no body - check for status code pattern
-		// 429 can indicate token-based rate limiting which correlates with context overflow
-		if (/^4(00|13|29)\s*(status code)?\s*\(no body\)/i.test(message.errorMessage)) {
+		// Cerebras and Mistral return 400/413 with no body for context overflow
+		// Note: 429 is rate limiting (requests/tokens per time), NOT context overflow
+		if (/^4(00|13)\s*(status code)?\s*\(no body\)/i.test(message.errorMessage)) {
 			return true;
 		}
 	}

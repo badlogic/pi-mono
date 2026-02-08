@@ -5,20 +5,7 @@
  * Discover, filter, merge, or replace them.
  */
 
-import { createAgentSession, discoverSkills, SessionManager, type Skill } from "@mariozechner/pi-coding-agent";
-
-// Discover all skills from cwd/.pi/skills, ~/.pi/agent/skills, etc.
-const { skills: allSkills, warnings } = discoverSkills();
-console.log(
-	"Discovered skills:",
-	allSkills.map((s) => s.name),
-);
-if (warnings.length > 0) {
-	console.log("Warnings:", warnings);
-}
-
-// Filter to specific skills
-const filteredSkills = allSkills.filter((s) => s.name.includes("browser") || s.name.includes("search"));
+import { createAgentSession, DefaultResourceLoader, SessionManager, type Skill } from "@mariozechner/pi-coding-agent";
 
 // Or define custom skills inline
 const customSkill: Skill = {
@@ -26,22 +13,34 @@ const customSkill: Skill = {
 	description: "Custom project instructions",
 	filePath: "/virtual/SKILL.md",
 	baseDir: "/virtual",
-	source: "custom",
+	source: "path",
+	disableModelInvocation: false,
 };
 
-// Use filtered + custom skills
+const loader = new DefaultResourceLoader({
+	skillsOverride: (current) => {
+		const filteredSkills = current.skills.filter((s) => s.name.includes("browser") || s.name.includes("search"));
+		return {
+			skills: [...filteredSkills, customSkill],
+			diagnostics: current.diagnostics,
+		};
+	},
+});
+await loader.reload();
+
+// Discover all skills from cwd/.pi/skills, ~/.pi/agent/skills, etc.
+const { skills: allSkills, diagnostics } = loader.getSkills();
+console.log(
+	"Discovered skills:",
+	allSkills.map((s) => s.name),
+);
+if (diagnostics.length > 0) {
+	console.log("Warnings:", diagnostics);
+}
+
 await createAgentSession({
-	skills: [...filteredSkills, customSkill],
+	resourceLoader: loader,
 	sessionManager: SessionManager.inMemory(),
 });
 
-console.log(`Session created with ${filteredSkills.length + 1} skills`);
-
-// To disable all skills:
-// skills: []
-
-// To use discovery with filtering via settings:
-// discoverSkills(process.cwd(), undefined, {
-//   ignoredSkills: ["browser-tools"],  // glob patterns to exclude
-//   includeSkills: ["brave-*"],        // glob patterns to include (empty = all)
-// })
+console.log("Session created with filtered skills");

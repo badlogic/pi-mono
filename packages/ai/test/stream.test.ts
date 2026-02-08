@@ -6,8 +6,12 @@ import { fileURLToPath } from "url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { complete, stream } from "../src/stream.js";
-import type { Api, Context, ImageContent, Model, OptionsForApi, Tool, ToolResultMessage } from "../src/types.js";
+import type { Api, Context, ImageContent, Model, StreamOptions, Tool, ToolResultMessage } from "../src/types.js";
+
+type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
+
 import { StringEnum } from "../src/utils/typebox-helpers.js";
+import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
@@ -41,7 +45,7 @@ const calculatorTool: Tool<typeof calculatorSchema> = {
 	parameters: calculatorSchema,
 };
 
-async function basicTextGeneration<TApi extends Api>(model: Model<TApi>, options?: OptionsForApi<TApi>) {
+async function basicTextGeneration<TApi extends Api>(model: Model<TApi>, options?: StreamOptionsWithExtras) {
 	const context: Context = {
 		systemPrompt: "You are a helpful assistant. Be concise.",
 		messages: [{ role: "user", content: "Reply with exactly: 'Hello test successful'", timestamp: Date.now() }],
@@ -70,7 +74,7 @@ async function basicTextGeneration<TApi extends Api>(model: Model<TApi>, options
 	);
 }
 
-async function handleToolCall<TApi extends Api>(model: Model<TApi>, options?: OptionsForApi<TApi>) {
+async function handleToolCall<TApi extends Api>(model: Model<TApi>, options?: StreamOptionsWithExtras) {
 	const context: Context = {
 		systemPrompt: "You are a helpful assistant that uses tools when asked.",
 		messages: [
@@ -148,13 +152,14 @@ async function handleToolCall<TApi extends Api>(model: Model<TApi>, options?: Op
 	}
 }
 
-async function handleStreaming<TApi extends Api>(model: Model<TApi>, options?: OptionsForApi<TApi>) {
+async function handleStreaming<TApi extends Api>(model: Model<TApi>, options?: StreamOptionsWithExtras) {
 	let textStarted = false;
 	let textChunks = "";
 	let textCompleted = false;
 
 	const context: Context = {
 		messages: [{ role: "user", content: "Count from 1 to 3", timestamp: Date.now() }],
+		systemPrompt: "You are a helpful assistant.",
 	};
 
 	const s = stream(model, context, options);
@@ -177,7 +182,7 @@ async function handleStreaming<TApi extends Api>(model: Model<TApi>, options?: O
 	expect(response.content.some((b) => b.type === "text")).toBeTruthy();
 }
 
-async function handleThinking<TApi extends Api>(model: Model<TApi>, options?: OptionsForApi<TApi>) {
+async function handleThinking<TApi extends Api>(model: Model<TApi>, options?: StreamOptionsWithExtras) {
 	let thinkingStarted = false;
 	let thinkingChunks = "";
 	let thinkingCompleted = false;
@@ -190,6 +195,7 @@ async function handleThinking<TApi extends Api>(model: Model<TApi>, options?: Op
 				timestamp: Date.now(),
 			},
 		],
+		systemPrompt: "You are a helpful assistant.",
 	};
 
 	const s = stream(model, context, options);
@@ -213,7 +219,7 @@ async function handleThinking<TApi extends Api>(model: Model<TApi>, options?: Op
 	expect(response.content.some((b) => b.type === "thinking")).toBeTruthy();
 }
 
-async function handleImage<TApi extends Api>(model: Model<TApi>, options?: OptionsForApi<TApi>) {
+async function handleImage<TApi extends Api>(model: Model<TApi>, options?: StreamOptionsWithExtras) {
 	// Check if the model supports images
 	if (!model.input.includes("image")) {
 		console.log(`Skipping image test - model ${model.id} doesn't support images`);
@@ -245,6 +251,7 @@ async function handleImage<TApi extends Api>(model: Model<TApi>, options?: Optio
 				timestamp: Date.now(),
 			},
 		],
+		systemPrompt: "You are a helpful assistant.",
 	};
 
 	const response = await complete(model, context, options);
@@ -259,7 +266,7 @@ async function handleImage<TApi extends Api>(model: Model<TApi>, options?: Optio
 	}
 }
 
-async function multiTurn<TApi extends Api>(model: Model<TApi>, options?: OptionsForApi<TApi>) {
+async function multiTurn<TApi extends Api>(model: Model<TApi>, options?: StreamOptionsWithExtras) {
 	const context: Context = {
 		systemPrompt: "You are a helpful assistant that can use tools to answer questions.",
 		messages: [
@@ -411,7 +418,12 @@ describe("Generate E2E Tests", () => {
 	});
 
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider (gpt-4o-mini)", () => {
-		const llm: Model<"openai-completions"> = { ...getModel("openai", "gpt-4o-mini"), api: "openai-completions" };
+		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini");
+		void _compat;
+		const llm: Model<"openai-completions"> = {
+			...baseModel,
+			api: "openai-completions",
+		};
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
 			await basicTextGeneration(llm);
@@ -498,6 +510,28 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Responses Provider (gpt-4o-mini)", () => {
+		const llm = getModel("azure-openai-responses", "gpt-4o-mini");
+		const azureDeploymentName = resolveAzureDeploymentName(llm.id);
+		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
+
+		it("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm, azureOptions);
+		});
+
+		it("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm, azureOptions);
+		});
+
+		it("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm, azureOptions);
+		});
+
+		it("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm, azureOptions);
+		});
+	});
+
 	describe.skipIf(!process.env.XAI_API_KEY)("xAI Provider (grok-code-fast-1 via OpenAI Completions)", () => {
 		const llm = getModel("xai", "grok-code-fast-1");
 
@@ -548,6 +582,30 @@ describe("Generate E2E Tests", () => {
 
 	describe.skipIf(!process.env.CEREBRAS_API_KEY)("Cerebras Provider (gpt-oss-120b via OpenAI Completions)", () => {
 		const llm = getModel("cerebras", "gpt-oss-120b");
+
+		it("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm);
+		});
+
+		it("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm);
+		});
+
+		it("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm);
+		});
+
+		it("should handle thinking mode", { retry: 3 }, async () => {
+			await handleThinking(llm, { reasoningEffort: "medium" });
+		});
+
+		it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { reasoningEffort: "medium" });
+		});
+	});
+
+	describe.skipIf(!process.env.HF_TOKEN)("Hugging Face Provider (Kimi-K2.5 via OpenAI Completions)", () => {
+		const llm = getModel("huggingface", "moonshotai/Kimi-K2.5");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
 			await basicTextGeneration(llm);
@@ -749,7 +807,7 @@ describe("Generate E2E Tests", () => {
 			});
 
 			it("should handle thinking mode", { retry: 3 }, async () => {
-				// FIXME Skip for now, getting a 422 stauts code, need to test with official SDK
+				// FIXME Skip for now, getting a 422 status code, need to test with official SDK
 				// const llm = getModel("mistral", "magistral-medium-latest");
 				// await handleThinking(llm, { reasoningEffort: "medium" });
 			});
@@ -804,6 +862,33 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.KIMI_API_KEY)(
+		"Kimi For Coding Provider (kimi-k2-thinking via Anthropic Messages)",
+		() => {
+			const llm = getModel("kimi-coding", "kimi-k2-thinking");
+
+			it("should complete basic text generation", { retry: 3 }, async () => {
+				await basicTextGeneration(llm);
+			});
+
+			it("should handle tool calling", { retry: 3 }, async () => {
+				await handleToolCall(llm);
+			});
+
+			it("should handle streaming", { retry: 3 }, async () => {
+				await handleStreaming(llm);
+			});
+
+			it("should handle thinking mode", { retry: 3 }, async () => {
+				await handleThinking(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+			});
+
+			it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+				await multiTurn(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+			});
+		},
+	);
+
 	// =========================================================================
 	// OAuth-based providers (credentials from ~/.pi/agent/oauth.json)
 	// Tokens are resolved at module level (see oauthTokens above)
@@ -831,6 +916,42 @@ describe("Generate E2E Tests", () => {
 		it.skipIf(!anthropicOAuthToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
 			await multiTurn(model, { apiKey: anthropicOAuthToken, thinkingEnabled: true });
 		});
+
+		it.skipIf(!anthropicOAuthToken)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(model, { apiKey: anthropicOAuthToken });
+		});
+	});
+
+	describe("Anthropic OAuth Provider (claude-opus-4-6 with adaptive thinking)", () => {
+		const model = getModel("anthropic", "claude-opus-4-6");
+
+		it.skipIf(!anthropicOAuthToken)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(model, { apiKey: anthropicOAuthToken });
+		});
+
+		it.skipIf(!anthropicOAuthToken)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(model, { apiKey: anthropicOAuthToken });
+		});
+
+		it.skipIf(!anthropicOAuthToken)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(model, { apiKey: anthropicOAuthToken });
+		});
+
+		it.skipIf(!anthropicOAuthToken)("should handle adaptive thinking with effort high", { retry: 3 }, async () => {
+			await handleThinking(model, { apiKey: anthropicOAuthToken, thinkingEnabled: true, effort: "high" });
+		});
+
+		it.skipIf(!anthropicOAuthToken)("should handle adaptive thinking with effort medium", { retry: 3 }, async () => {
+			await handleThinking(model, { apiKey: anthropicOAuthToken, thinkingEnabled: true, effort: "medium" });
+		});
+
+		it.skipIf(!anthropicOAuthToken)(
+			"should handle multi-turn with adaptive thinking and tools",
+			{ retry: 3 },
+			async () => {
+				await multiTurn(model, { apiKey: anthropicOAuthToken, thinkingEnabled: true, effort: "high" });
+			},
+		);
 
 		it.skipIf(!anthropicOAuthToken)("should handle image input", { retry: 3 }, async () => {
 			await handleImage(model, { apiKey: anthropicOAuthToken });
@@ -1013,6 +1134,34 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe("OpenAI Codex Provider (gpt-5.3-codex)", () => {
+		const llm = getModel("openai-codex", "gpt-5.3-codex");
+
+		it.skipIf(!openaiCodexToken)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm, { apiKey: openaiCodexToken });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle thinking with reasoningEffort high", { retry: 3 }, async () => {
+			await handleThinking(llm, { apiKey: openaiCodexToken, reasoningEffort: "high" });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { apiKey: openaiCodexToken, reasoningEffort: "high" });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm, { apiKey: openaiCodexToken });
+		});
+	});
+
 	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider (claude-sonnet-4-5)", () => {
 		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
 
@@ -1038,6 +1187,50 @@ describe("Generate E2E Tests", () => {
 
 		it("should handle image input", { retry: 3 }, async () => {
 			await handleImage(llm);
+		});
+	});
+
+	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider (claude-opus-4-6 interleaved thinking)", () => {
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-opus-4-6-v1");
+
+		it("should use adaptive thinking without anthropic_beta", { retry: 3 }, async () => {
+			let capturedPayload: unknown;
+			const response = await complete(
+				llm,
+				{
+					systemPrompt: "You are a helpful assistant that uses tools when asked.",
+					messages: [
+						{
+							role: "user",
+							content: "Think first, then calculate 15 + 27 using the calculator tool.",
+							timestamp: Date.now(),
+						},
+					],
+					tools: [calculatorTool],
+				},
+				{
+					reasoning: "xhigh",
+					interleavedThinking: true,
+					onPayload: (payload) => {
+						capturedPayload = payload;
+					},
+				},
+			);
+
+			expect(response.stopReason, `Error: ${response.errorMessage}`).not.toBe("error");
+			expect(capturedPayload).toBeTruthy();
+
+			const payload = capturedPayload as {
+				additionalModelRequestFields?: {
+					thinking?: { type?: string };
+					output_config?: { effort?: string };
+					anthropic_beta?: string[];
+				};
+			};
+
+			expect(payload.additionalModelRequestFields?.thinking).toEqual({ type: "adaptive" });
+			expect(payload.additionalModelRequestFields?.output_config).toEqual({ effort: "max" });
+			expect(payload.additionalModelRequestFields?.anthropic_beta).toBeUndefined();
 		});
 	});
 

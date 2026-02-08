@@ -1,18 +1,37 @@
 import { existsSync } from "node:fs";
+import { delimiter } from "node:path";
 import { spawn, spawnSync } from "child_process";
+import { getBinDir, getSettingsPath } from "../config.js";
 import { SettingsManager } from "../core/settings-manager.js";
 
 let cachedShellConfig: { shell: string; args: string[] } | null = null;
 
 /**
- * Find bash executable on PATH (Windows)
+ * Find bash executable on PATH (cross-platform)
  */
 function findBashOnPath(): string | null {
+	if (process.platform === "win32") {
+		// Windows: Use 'where' and verify file exists (where can return non-existent paths)
+		try {
+			const result = spawnSync("where", ["bash.exe"], { encoding: "utf-8", timeout: 5000 });
+			if (result.status === 0 && result.stdout) {
+				const firstMatch = result.stdout.trim().split(/\r?\n/)[0];
+				if (firstMatch && existsSync(firstMatch)) {
+					return firstMatch;
+				}
+			}
+		} catch {
+			// Ignore errors
+		}
+		return null;
+	}
+
+	// Unix: Use 'which' and trust its output (handles Termux and special filesystems)
 	try {
-		const result = spawnSync("where", ["bash.exe"], { encoding: "utf-8", timeout: 5000 });
+		const result = spawnSync("which", ["bash"], { encoding: "utf-8", timeout: 5000 });
 		if (result.status === 0 && result.stdout) {
 			const firstMatch = result.stdout.trim().split(/\r?\n/)[0];
-			if (firstMatch && existsSync(firstMatch)) {
+			if (firstMatch) {
 				return firstMatch;
 			}
 		}
@@ -27,8 +46,7 @@ function findBashOnPath(): string | null {
  * Resolution order:
  * 1. User-specified shellPath in settings.json
  * 2. On Windows: Git Bash in known locations, then bash on PATH
- * 3. On Unix: /bin/bash
- * 4. Fallback: sh
+ * 3. On Unix: /bin/bash, then bash on PATH, then fallback to sh
  */
 export function getShellConfig(): { shell: string; args: string[] } {
 	if (cachedShellConfig) {
@@ -45,7 +63,7 @@ export function getShellConfig(): { shell: string; args: string[] } {
 			return cachedShellConfig;
 		}
 		throw new Error(
-			`Custom shell path not found: ${customShellPath}\nPlease update shellPath in ~/.pi/agent/settings.json`,
+			`Custom shell path not found: ${customShellPath}\nPlease update shellPath in ${getSettingsPath()}`,
 		);
 	}
 
@@ -79,19 +97,39 @@ export function getShellConfig(): { shell: string; args: string[] } {
 			`No bash shell found. Options:\n` +
 				`  1. Install Git for Windows: https://git-scm.com/download/win\n` +
 				`  2. Add your bash to PATH (Cygwin, MSYS2, etc.)\n` +
-				`  3. Set shellPath in ~/.pi/agent/settings.json\n\n` +
+				`  3. Set shellPath in ${getSettingsPath()}\n\n` +
 				`Searched Git Bash in:\n${paths.map((p) => `  ${p}`).join("\n")}`,
 		);
 	}
 
-	// Unix: prefer bash over sh
+	// Unix: try /bin/bash, then bash on PATH, then fallback to sh
 	if (existsSync("/bin/bash")) {
 		cachedShellConfig = { shell: "/bin/bash", args: ["-c"] };
 		return cachedShellConfig;
 	}
 
+	const bashOnPath = findBashOnPath();
+	if (bashOnPath) {
+		cachedShellConfig = { shell: bashOnPath, args: ["-c"] };
+		return cachedShellConfig;
+	}
+
 	cachedShellConfig = { shell: "sh", args: ["-c"] };
 	return cachedShellConfig;
+}
+
+export function getShellEnv(): NodeJS.ProcessEnv {
+	const binDir = getBinDir();
+	const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+	const currentPath = process.env[pathKey] ?? "";
+	const pathEntries = currentPath.split(delimiter).filter(Boolean);
+	const hasBinDir = pathEntries.includes(binDir);
+	const updatedPath = hasBinDir ? currentPath : [binDir, currentPath].filter(Boolean).join(delimiter);
+
+	return {
+		...process.env,
+		[pathKey]: updatedPath,
+	};
 }
 
 /**

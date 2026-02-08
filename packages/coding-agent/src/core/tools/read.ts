@@ -1,11 +1,11 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
-import { Type } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
 import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
-import { PI_INTERNAL_SCHEME, resolveReadPath } from "./path-utils.js";
+import { resolveReadPath } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
 const readSchema = Type.Object({
@@ -13,6 +13,8 @@ const readSchema = Type.Object({
 	offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),
 	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
 });
+
+export type ReadToolInput = Static<typeof readSchema>;
 
 export interface ReadToolDetails {
 	truncation?: TruncationResult;
@@ -51,7 +53,7 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 	return {
 		name: "read",
 		label: "read",
-		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files.`,
+		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.`,
 		parameters: readSchema,
 		execute: async (
 			_toolCallId: string,
@@ -111,19 +113,13 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 									if (dimensionNote) {
 										textNote += `\n${dimensionNote}`;
 									}
-									if (path.startsWith(PI_INTERNAL_SCHEME)) {
-										textNote += `\n[${path} -> ${absolutePath}. Use filesystem paths for further reads.]`;
-									}
 
 									content = [
 										{ type: "text", text: textNote },
 										{ type: "image", data: resized.data, mimeType: resized.mimeType },
 									];
 								} else {
-									let textNote = `Read image file [${mimeType}]`;
-									if (path.startsWith(PI_INTERNAL_SCHEME)) {
-										textNote += `\n[${path} -> ${absolutePath}. Use filesystem paths for further reads.]`;
-									}
+									const textNote = `Read image file [${mimeType}]`;
 									content = [
 										{ type: "text", text: textNote },
 										{ type: "image", data: base64, mimeType },
@@ -174,9 +170,9 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 									outputText = truncation.content;
 
 									if (truncation.truncatedBy === "lines") {
-										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset} to continue]`;
+										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset} to continue.]`;
 									} else {
-										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset} to continue]`;
+										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset} to continue.]`;
 									}
 									details = { truncation };
 								} else if (userLimitedLines !== undefined && startLine + userLimitedLines < allLines.length) {
@@ -185,15 +181,10 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 									const nextOffset = startLine + userLimitedLines + 1;
 
 									outputText = truncation.content;
-									outputText += `\n\n[${remaining} more lines in file. Use offset=${nextOffset} to continue]`;
+									outputText += `\n\n[${remaining} more lines in file. Use offset=${nextOffset} to continue.]`;
 								} else {
 									// No truncation, no user limit exceeded
 									outputText = truncation.content;
-								}
-
-								// Add filesystem path hint for pi-internal:// paths
-								if (path.startsWith(PI_INTERNAL_SCHEME)) {
-									outputText += `\n\n[${path} -> ${absolutePath}. Use filesystem paths for further reads.]`;
 								}
 
 								content = [{ type: "text", text: outputText }];

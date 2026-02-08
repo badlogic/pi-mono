@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Mom Docker Sandbox Management Script
 # Usage:

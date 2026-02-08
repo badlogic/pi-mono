@@ -615,10 +615,24 @@ function matchesKittySequence(data: string, expectedCodepoint: number, expectedM
 	// Primary match: codepoint matches directly
 	if (parsed.codepoint === expectedCodepoint) return true;
 
-	// Alternate match: use base layout key for non-Latin keyboard layouts
+	// Alternate match: use base layout key for non-Latin keyboard layouts.
 	// This allows Ctrl+С (Cyrillic) to match Ctrl+c (Latin) when terminal reports
-	// the base layout key (the key in standard PC-101 layout)
-	if (parsed.baseLayoutKey !== undefined && parsed.baseLayoutKey === expectedCodepoint) return true;
+	// the base layout key (the key in standard PC-101 layout).
+	//
+	// Only fall back to base layout key when the codepoint is NOT already a
+	// recognized Latin letter (a-z) or symbol (e.g., /, -, [, ;, etc.).
+	// When the codepoint is a recognized key, it is authoritative regardless
+	// of physical key position. This prevents remapped layouts (Dvorak, Colemak,
+	// xremap, etc.) from causing false matches: both letters and symbols move
+	// to different physical positions, so Ctrl+K could falsely match Ctrl+V
+	// (letter remapping) and Ctrl+/ could falsely match Ctrl+[ (symbol remapping)
+	// if the base layout key were always considered.
+	if (parsed.baseLayoutKey !== undefined && parsed.baseLayoutKey === expectedCodepoint) {
+		const cp = parsed.codepoint;
+		const isLatinLetter = cp >= 97 && cp <= 122; // a-z
+		const isKnownSymbol = SYMBOL_KEYS.has(String.fromCharCode(cp));
+		if (!isLatinLetter && !isKnownSymbol) return true;
+	}
 
 	return false;
 }
@@ -642,9 +656,26 @@ function matchesModifyOtherKeys(data: string, expectedKeycode: number, expectedM
 // Generic Key Matching
 // =============================================================================
 
-function rawCtrlChar(letter: string): string {
-	const code = letter.toLowerCase().charCodeAt(0) - 96;
-	return String.fromCharCode(code);
+/**
+ * Get the control character for a key.
+ * Uses the universal formula: code & 0x1f (mask to lower 5 bits)
+ *
+ * Works for:
+ * - Letters a-z → 1-26
+ * - Symbols [\]_ → 27, 28, 29, 31
+ * - Also maps - to same as _ (same physical key on US keyboards)
+ */
+function rawCtrlChar(key: string): string | null {
+	const char = key.toLowerCase();
+	const code = char.charCodeAt(0);
+	if ((code >= 97 && code <= 122) || char === "[" || char === "\\" || char === "]" || char === "_") {
+		return String.fromCharCode(code & 0x1f);
+	}
+	// Handle - as _ (same physical key on US keyboards)
+	if (char === "-") {
+		return String.fromCharCode(31); // Same as Ctrl+_
+	}
+	return null;
 }
 
 function parseKeyId(keyId: string): { key: string; ctrl: boolean; shift: boolean; alt: boolean } | null {
@@ -966,15 +997,21 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 	// Handle single letter keys (a-z) and some symbols
 	if (key.length === 1 && ((key >= "a" && key <= "z") || SYMBOL_KEYS.has(key))) {
 		const codepoint = key.charCodeAt(0);
+		const rawCtrl = rawCtrlChar(key);
 
-		if (ctrl && alt && !shift && !_kittyProtocolActive && key >= "a" && key <= "z") {
-			return data === `\x1b${rawCtrlChar(key)}`;
+		if (ctrl && alt && !shift && !_kittyProtocolActive && rawCtrl) {
+			// Legacy: ctrl+alt+key is ESC followed by the control character
+			return data === `\x1b${rawCtrl}`;
+		}
+
+		if (alt && !ctrl && !shift && !_kittyProtocolActive && key >= "a" && key <= "z") {
+			// Legacy: alt+letter is ESC followed by the letter
+			if (data === `\x1b${key}`) return true;
 		}
 
 		if (ctrl && !shift && !alt) {
-			const raw = rawCtrlChar(key);
-			if (data === raw) return true;
-			if (data.length > 0 && data.charCodeAt(0) === raw.charCodeAt(0)) return true;
+			// Legacy: ctrl+key sends the control character
+			if (rawCtrl && data === rawCtrl) return true;
 			return matchesKittySequence(data, codepoint, MODIFIERS.ctrl);
 		}
 
@@ -1015,9 +1052,14 @@ export function parseKey(data: string): string | undefined {
 		if (effectiveMod & MODIFIERS.ctrl) mods.push("ctrl");
 		if (effectiveMod & MODIFIERS.alt) mods.push("alt");
 
-		// Prefer base layout key for consistent shortcut naming across keyboard layouts
-		// This ensures Ctrl+С (Cyrillic) is reported as "ctrl+c" (Latin)
-		const effectiveCodepoint = baseLayoutKey ?? codepoint;
+		// Use base layout key only when codepoint is not a recognized Latin
+		// letter (a-z) or symbol (/, -, [, ;, etc.). For those, the codepoint
+		// is authoritative regardless of physical key position. This prevents
+		// remapped layouts (Dvorak, Colemak, xremap, etc.) from reporting the
+		// wrong key name based on the QWERTY physical position.
+		const isLatinLetter = codepoint >= 97 && codepoint <= 122; // a-z
+		const isKnownSymbol = SYMBOL_KEYS.has(String.fromCharCode(codepoint));
+		const effectiveCodepoint = isLatinLetter || isKnownSymbol ? codepoint : (baseLayoutKey ?? codepoint);
 
 		let keyName: string | undefined;
 		if (effectiveCodepoint === CODEPOINTS.escape) keyName = "escape";
@@ -1057,6 +1099,13 @@ export function parseKey(data: string): string | undefined {
 
 	// Legacy sequences (used when Kitty protocol is not active, or for unambiguous sequences)
 	if (data === "\x1b") return "escape";
+	if (data === "\x1c") return "ctrl+\\";
+	if (data === "\x1d") return "ctrl+]";
+	if (data === "\x1f") return "ctrl+-";
+	if (data === "\x1b\x1b") return "ctrl+alt+[";
+	if (data === "\x1b\x1c") return "ctrl+alt+\\";
+	if (data === "\x1b\x1d") return "ctrl+alt+]";
+	if (data === "\x1b\x1f") return "ctrl+alt+-";
 	if (data === "\t") return "tab";
 	if (data === "\r" || (!_kittyProtocolActive && data === "\n") || data === "\x1bOM") return "enter";
 	if (data === "\x00") return "ctrl+space";
@@ -1072,6 +1121,10 @@ export function parseKey(data: string): string | undefined {
 		const code = data.charCodeAt(1);
 		if (code >= 1 && code <= 26) {
 			return `ctrl+alt+${String.fromCharCode(code + 96)}`;
+		}
+		// Legacy alt+letter (ESC followed by letter a-z)
+		if (code >= 97 && code <= 122) {
+			return `alt+${String.fromCharCode(code)}`;
 		}
 	}
 	if (data === "\x1b[A") return "up";

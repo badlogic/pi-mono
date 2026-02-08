@@ -168,6 +168,8 @@ export interface SessionInfo {
 	cwd: string;
 	/** User-defined display name from session_info entries. */
 	name?: string;
+	/** Path to the parent session (if this session was forked). */
+	parentSessionPath?: string;
 	created: Date;
 	modified: Date;
 	messageCount: number;
@@ -498,6 +500,44 @@ function extractTextContent(message: Message): string {
 		.join(" ");
 }
 
+function getLastActivityTime(entries: FileEntry[]): number | undefined {
+	let lastActivityTime: number | undefined;
+
+	for (const entry of entries) {
+		if (entry.type !== "message") continue;
+
+		const message = (entry as SessionMessageEntry).message;
+		if (!isMessageWithContent(message)) continue;
+		if (message.role !== "user" && message.role !== "assistant") continue;
+
+		const msgTimestamp = (message as { timestamp?: number }).timestamp;
+		if (typeof msgTimestamp === "number") {
+			lastActivityTime = Math.max(lastActivityTime ?? 0, msgTimestamp);
+			continue;
+		}
+
+		const entryTimestamp = (entry as SessionEntryBase).timestamp;
+		if (typeof entryTimestamp === "string") {
+			const t = new Date(entryTimestamp).getTime();
+			if (!Number.isNaN(t)) {
+				lastActivityTime = Math.max(lastActivityTime ?? 0, t);
+			}
+		}
+	}
+
+	return lastActivityTime;
+}
+
+function getSessionModifiedDate(entries: FileEntry[], header: SessionHeader, statsMtime: Date): Date {
+	const lastActivityTime = getLastActivityTime(entries);
+	if (typeof lastActivityTime === "number" && lastActivityTime > 0) {
+		return new Date(lastActivityTime);
+	}
+
+	const headerTime = typeof header.timestamp === "string" ? new Date(header.timestamp).getTime() : NaN;
+	return !Number.isNaN(headerTime) ? new Date(headerTime) : statsMtime;
+}
+
 async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 	try {
 		const content = await readFile(filePath, "utf8");
@@ -549,14 +589,18 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 		}
 
 		const cwd = typeof (header as SessionHeader).cwd === "string" ? (header as SessionHeader).cwd : "";
+		const parentSessionPath = (header as SessionHeader).parentSession;
+
+		const modified = getSessionModifiedDate(entries, header as SessionHeader, stats.mtime);
 
 		return {
 			path: filePath,
 			id: (header as SessionHeader).id,
 			cwd,
 			name,
+			parentSessionPath,
 			created: new Date((header as SessionHeader).timestamp),
-			modified: stats.mtime,
+			modified,
 			messageCount,
 			firstMessage: firstMessage || "(no messages)",
 			allMessagesText: allMessages.join(" "),
@@ -648,6 +692,18 @@ export class SessionManager {
 		this.sessionFile = resolve(sessionFile);
 		if (existsSync(this.sessionFile)) {
 			this.fileEntries = loadEntriesFromFile(this.sessionFile);
+
+			// If file was empty or corrupted (no valid header), truncate and start fresh
+			// to avoid appending messages without a session header (which breaks the session)
+			if (this.fileEntries.length === 0) {
+				const explicitPath = this.sessionFile;
+				this.newSession();
+				this.sessionFile = explicitPath;
+				this._rewriteFile();
+				this.flushed = true;
+				return;
+			}
+
 			const header = this.fileEntries.find((e) => e.type === "session") as SessionHeader | undefined;
 			this.sessionId = header?.id ?? randomUUID();
 
@@ -736,7 +792,11 @@ export class SessionManager {
 		if (!this.persist || !this.sessionFile) return;
 
 		const hasAssistant = this.fileEntries.some((e) => e.type === "message" && e.message.role === "assistant");
-		if (!hasAssistant) return;
+		if (!hasAssistant) {
+			// Mark as not flushed so when assistant arrives, all entries get written
+			this.flushed = false;
+			return;
+		}
 
 		if (!this.flushed) {
 			for (const e of this.fileEntries) {
@@ -1094,6 +1154,7 @@ export class SessionManager {
 	 * Returns the new session file path, or undefined if not persisting.
 	 */
 	createBranchedSession(leafId: string): string | undefined {
+		const previousSessionFile = this.sessionFile;
 		const path = this.getBranch(leafId);
 		if (path.length === 0) {
 			throw new Error(`Entry ${leafId} not found`);
@@ -1113,7 +1174,7 @@ export class SessionManager {
 			id: newSessionId,
 			timestamp,
 			cwd: this.cwd,
-			parentSession: this.persist ? this.sessionFile : undefined,
+			parentSession: this.persist ? previousSessionFile : undefined,
 		};
 
 		// Collect labels for entries in the path
@@ -1150,6 +1211,8 @@ export class SessionManager {
 			}
 			this.fileEntries = [header, ...pathWithoutLabels, ...labelEntries];
 			this.sessionId = newSessionId;
+			this.sessionFile = newSessionFile;
+			this.flushed = true;
 			this._buildIndex();
 			return newSessionFile;
 		}
@@ -1217,6 +1280,56 @@ export class SessionManager {
 	/** Create an in-memory session (no file persistence) */
 	static inMemory(cwd: string = process.cwd()): SessionManager {
 		return new SessionManager(cwd, "", undefined, false);
+	}
+
+	/**
+	 * Fork a session from another project directory into the current project.
+	 * Creates a new session in the target cwd with the full history from the source session.
+	 * @param sourcePath Path to the source session file
+	 * @param targetCwd Target working directory (where the new session will be stored)
+	 * @param sessionDir Optional session directory. If omitted, uses default for targetCwd.
+	 */
+	static forkFrom(sourcePath: string, targetCwd: string, sessionDir?: string): SessionManager {
+		const sourceEntries = loadEntriesFromFile(sourcePath);
+		if (sourceEntries.length === 0) {
+			throw new Error(`Cannot fork: source session file is empty or invalid: ${sourcePath}`);
+		}
+
+		const sourceHeader = sourceEntries.find((e) => e.type === "session") as SessionHeader | undefined;
+		if (!sourceHeader) {
+			throw new Error(`Cannot fork: source session has no header: ${sourcePath}`);
+		}
+
+		const dir = sessionDir ?? getDefaultSessionDir(targetCwd);
+		if (!existsSync(dir)) {
+			mkdirSync(dir, { recursive: true });
+		}
+
+		// Create new session file with new ID but forked content
+		const newSessionId = randomUUID();
+		const timestamp = new Date().toISOString();
+		const fileTimestamp = timestamp.replace(/[:.]/g, "-");
+		const newSessionFile = join(dir, `${fileTimestamp}_${newSessionId}.jsonl`);
+
+		// Write new header pointing to source as parent, with updated cwd
+		const newHeader: SessionHeader = {
+			type: "session",
+			version: CURRENT_SESSION_VERSION,
+			id: newSessionId,
+			timestamp,
+			cwd: targetCwd,
+			parentSession: sourcePath,
+		};
+		appendFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`);
+
+		// Copy all non-header entries from source
+		for (const entry of sourceEntries) {
+			if (entry.type !== "session") {
+				appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
+			}
+		}
+
+		return new SessionManager(targetCwd, dir, newSessionFile, true);
 	}
 
 	/**

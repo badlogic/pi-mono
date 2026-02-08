@@ -36,3 +36,5 @@ local/
 # Fork-specific local files (not for upstream)
 .pi/skills/
 restore_registry.sh
+packages/coding-agent/binaries/
+todo.md

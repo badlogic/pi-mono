@@ -1,7 +1,9 @@
 import { fuzzyMatch } from "@mariozechner/pi-tui";
 import type { SessionInfo } from "../../../core/session-manager.js";
 
-export type SortMode = "recent" | "relevance";
+export type SortMode = "threaded" | "recent" | "relevance";
+
+export type NameFilter = "all" | "named";
 
 export interface ParsedSearchQuery {
 	mode: "tokens" | "regex";
@@ -23,6 +25,15 @@ function normalizeWhitespaceLower(text: string): string {
 
 function getSessionSearchText(session: SessionInfo): string {
 	return `${session.id} ${session.name ?? ""} ${session.allMessagesText} ${session.cwd}`;
+}
+
+export function hasSessionName(session: SessionInfo): boolean {
+	return Boolean(session.name?.trim());
+}
+
+function matchesNameFilter(session: SessionInfo, filter: NameFilter): boolean {
+	if (filter === "all") return true;
+	return hasSessionName(session);
 }
 
 export function parseSearchQuery(query: string): ParsedSearchQuery {
@@ -142,9 +153,16 @@ export function matchSession(session: SessionInfo, parsed: ParsedSearchQuery): M
 	return { matches: true, score: totalScore };
 }
 
-export function filterAndSortSessions(sessions: SessionInfo[], query: string, sortMode: SortMode): SessionInfo[] {
+export function filterAndSortSessions(
+	sessions: SessionInfo[],
+	query: string,
+	sortMode: SortMode,
+	nameFilter: NameFilter = "all",
+): SessionInfo[] {
+	const nameFiltered =
+		nameFilter === "all" ? sessions : sessions.filter((session) => matchesNameFilter(session, nameFilter));
 	const trimmed = query.trim();
-	if (!trimmed) return sessions;
+	if (!trimmed) return nameFiltered;
 
 	const parsed = parseSearchQuery(query);
 	if (parsed.error) return [];
@@ -152,7 +170,7 @@ export function filterAndSortSessions(sessions: SessionInfo[], query: string, so
 	// Recent mode: filter only, keep incoming order.
 	if (sortMode === "recent") {
 		const filtered: SessionInfo[] = [];
-		for (const s of sessions) {
+		for (const s of nameFiltered) {
 			const res = matchSession(s, parsed);
 			if (res.matches) filtered.push(s);
 		}
@@ -161,7 +179,7 @@ export function filterAndSortSessions(sessions: SessionInfo[], query: string, so
 
 	// Relevance mode: sort by score, tie-break by modified desc.
 	const scored: { session: SessionInfo; score: number }[] = [];
-	for (const s of sessions) {
+	for (const s of nameFiltered) {
 		const res = matchSession(s, parsed);
 		if (!res.matches) continue;
 		scored.push({ session: s, score: res.score });

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Migrate sessions from ~/.pi/agent/*.jsonl to proper session directories.
 # This fixes sessions created by the bug in v0.30.0 where sessions were

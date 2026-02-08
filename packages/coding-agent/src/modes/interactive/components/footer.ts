@@ -109,10 +109,16 @@ export class FooterComponent implements Component {
 			pwd = `${pwd} (${branch})`;
 		}
 
+		// Add session name if set
+		const sessionName = this.session.sessionManager.getSessionName();
+		if (sessionName) {
+			pwd = `${pwd} • ${sessionName}`;
+		}
+
 		// Truncate path if too long to fit width
 		if (pwd.length > width) {
 			const half = Math.floor(width / 2) - 2;
-			if (half > 0) {
+			if (half > 1) {
 				const start = pwd.slice(0, half);
 				const end = pwd.slice(-(half - 1));
 				pwd = `${start}...${end}`;
@@ -153,17 +159,7 @@ export class FooterComponent implements Component {
 		// Add model name on the right side, plus thinking level if model supports it
 		const modelName = state.model?.id || "no-model";
 
-		// Add thinking level hint if model supports reasoning and thinking is enabled
-		let rightSide = modelName;
-		if (state.model?.reasoning) {
-			const thinkingLevel = state.thinkingLevel || "off";
-			if (thinkingLevel !== "off") {
-				rightSide = `${modelName} • ${thinkingLevel}`;
-			}
-		}
-
 		let statsLeftWidth = visibleWidth(statsLeft);
-		const rightSideWidth = visibleWidth(rightSide);
 
 		// If statsLeft is too wide, truncate it
 		if (statsLeftWidth > width) {
@@ -175,6 +171,26 @@ export class FooterComponent implements Component {
 
 		// Calculate available space for padding (minimum 2 spaces between stats and model)
 		const minPadding = 2;
+
+		// Add thinking level indicator if model supports reasoning
+		let rightSideWithoutProvider = modelName;
+		if (state.model?.reasoning) {
+			const thinkingLevel = state.thinkingLevel || "off";
+			rightSideWithoutProvider =
+				thinkingLevel === "off" ? `${modelName} • thinking off` : `${modelName} • ${thinkingLevel}`;
+		}
+
+		// Prepend the provider in parentheses if there are multiple providers and there's enough room
+		let rightSide = rightSideWithoutProvider;
+		if (this.footerData.getAvailableProviderCount() > 1 && state.model) {
+			rightSide = `(${state.model!.provider}) ${rightSideWithoutProvider}`;
+			if (statsLeftWidth + minPadding + visibleWidth(rightSide) > width) {
+				// Too wide, fall back
+				rightSide = rightSideWithoutProvider;
+			}
+		}
+
+		const rightSideWidth = visibleWidth(rightSide);
 		const totalNeeded = statsLeftWidth + minPadding + rightSideWidth;
 
 		let statsLine: string;

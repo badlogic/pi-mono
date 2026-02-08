@@ -1,18 +1,11 @@
-import type { BedrockOptions } from "./providers/amazon-bedrock.js";
-import type { AnthropicOptions } from "./providers/anthropic.js";
-import type { GoogleOptions } from "./providers/google.js";
-import type { GoogleGeminiCliOptions } from "./providers/google-gemini-cli.js";
-import type { GoogleVertexOptions } from "./providers/google-vertex.js";
-import type { OpenAICodexResponsesOptions } from "./providers/openai-codex-responses.js";
-import type { OpenAICompletionsOptions } from "./providers/openai-completions.js";
-import type { OpenAIResponsesOptions } from "./providers/openai-responses.js";
 import type { AssistantMessageEventStream } from "./utils/event-stream.js";
 
 export type { AssistantMessageEventStream } from "./utils/event-stream.js";
 
-export type Api =
+export type KnownApi =
 	| "openai-completions"
 	| "openai-responses"
+	| "azure-openai-responses"
 	| "openai-codex-responses"
 	| "anthropic-messages"
 	| "bedrock-converse-stream"
@@ -20,27 +13,7 @@ export type Api =
 	| "google-gemini-cli"
 	| "google-vertex";
 
-export interface ApiOptionsMap {
-	"anthropic-messages": AnthropicOptions;
-	"bedrock-converse-stream": BedrockOptions;
-	"openai-completions": OpenAICompletionsOptions;
-	"openai-responses": OpenAIResponsesOptions;
-	"openai-codex-responses": OpenAICodexResponsesOptions;
-	"google-generative-ai": GoogleOptions;
-	"google-gemini-cli": GoogleGeminiCliOptions;
-	"google-vertex": GoogleVertexOptions;
-}
-
-// Compile-time exhaustiveness check - this will fail if ApiOptionsMap doesn't have all KnownApi keys
-type _CheckExhaustive = ApiOptionsMap extends Record<Api, StreamOptions>
-	? Record<Api, StreamOptions> extends ApiOptionsMap
-		? true
-		: ["ApiOptionsMap is missing some KnownApi values", Exclude<Api, keyof ApiOptionsMap>]
-	: ["ApiOptionsMap doesn't extend Record<KnownApi, StreamOptions>"];
-const _exhaustive: _CheckExhaustive = true;
-
-// Helper type to get options for a specific API
-export type OptionsForApi<TApi extends Api> = ApiOptionsMap[TApi];
+export type Api = KnownApi | (string & {});
 
 export type KnownProvider =
 	| "amazon-bedrock"
@@ -50,6 +23,7 @@ export type KnownProvider =
 	| "google-antigravity"
 	| "google-vertex"
 	| "openai"
+	| "azure-openai-responses"
 	| "openai-codex"
 	| "github-copilot"
 	| "xai"
@@ -61,7 +35,9 @@ export type KnownProvider =
 	| "mistral"
 	| "minimax"
 	| "minimax-cn"
-	| "opencode";
+	| "huggingface"
+	| "opencode"
+	| "kimi-coding";
 export type Provider = KnownProvider | string;
 
 export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -75,18 +51,45 @@ export interface ThinkingBudgets {
 }
 
 // Base options all providers share
+export type CacheRetention = "none" | "short" | "long";
+
 export interface StreamOptions {
 	temperature?: number;
 	maxTokens?: number;
 	signal?: AbortSignal;
 	apiKey?: string;
 	/**
+	 * Prompt cache retention preference. Providers map this to their supported values.
+	 * Default: "short".
+	 */
+	cacheRetention?: CacheRetention;
+	/**
 	 * Optional session identifier for providers that support session-based caching.
 	 * Providers can use this to enable prompt caching, request routing, or other
 	 * session-aware features. Ignored by providers that don't support it.
 	 */
 	sessionId?: string;
+	/**
+	 * Optional callback for inspecting provider payloads before sending.
+	 */
+	onPayload?: (payload: unknown) => void;
+	/**
+	 * Optional custom HTTP headers to include in API requests.
+	 * Merged with provider defaults; can override default headers.
+	 * Not supported by all providers (e.g., AWS Bedrock uses SDK auth).
+	 */
+	headers?: Record<string, string>;
+	/**
+	 * Maximum delay in milliseconds to wait for a retry when the server requests a long wait.
+	 * If the server's requested delay exceeds this value, the request fails immediately
+	 * with an error containing the requested delay, allowing higher-level retry logic
+	 * to handle it with user visibility.
+	 * Default: 60000 (60 seconds). Set to 0 to disable the cap.
+	 */
+	maxRetryDelayMs?: number;
 }
+
+export type ProviderStreamOptions = StreamOptions & Record<string, unknown>;
 
 // Unified options with reasoning passed to streamSimple() and completeSimple()
 export interface SimpleStreamOptions extends StreamOptions {
@@ -96,10 +99,10 @@ export interface SimpleStreamOptions extends StreamOptions {
 }
 
 // Generic StreamFunction with typed options
-export type StreamFunction<TApi extends Api> = (
+export type StreamFunction<TApi extends Api = Api, TOptions extends StreamOptions = StreamOptions> = (
 	model: Model<TApi>,
 	context: Context,
-	options: OptionsForApi<TApi>,
+	options?: TOptions,
 ) => AssistantMessageEventStream;
 
 export interface TextContent {
@@ -204,10 +207,10 @@ export type AssistantMessageEvent =
 	| { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: AssistantMessage };
 
 /**
- * Compatibility settings for openai-completions API.
+ * Compatibility settings for OpenAI-compatible completions APIs.
  * Use this to override URL-based auto-detection for custom providers.
  */
-export interface OpenAICompat {
+export interface OpenAICompletionsCompat {
 	/** Whether the provider supports the `store` field. Default: auto-detected from URL. */
 	supportsStore?: boolean;
 	/** Whether the provider supports the `developer` role (vs `system`). Default: auto-detected from URL. */
@@ -226,8 +229,43 @@ export interface OpenAICompat {
 	requiresThinkingAsText?: boolean;
 	/** Whether tool call IDs must be normalized to Mistral format (exactly 9 alphanumeric chars). Default: auto-detected from URL. */
 	requiresMistralToolIds?: boolean;
-	/** Format for reasoning/thinking parameter. "openai" uses reasoning_effort, "zai" uses thinking: { type: "enabled" }. Default: "openai". */
-	thinkingFormat?: "openai" | "zai";
+	/** Format for reasoning/thinking parameter. "openai" uses reasoning_effort, "zai" uses thinking: { type: "enabled" }, "qwen" uses enable_thinking: boolean. Default: "openai". */
+	thinkingFormat?: "openai" | "zai" | "qwen";
+	/** OpenRouter-specific routing preferences. Only used when baseUrl points to OpenRouter. */
+	openRouterRouting?: OpenRouterRouting;
+	/** Vercel AI Gateway routing preferences. Only used when baseUrl points to Vercel AI Gateway. */
+	vercelGatewayRouting?: VercelGatewayRouting;
+	/** Whether the provider supports the `strict` field in tool definitions. Default: true. */
+	supportsStrictMode?: boolean;
+}
+
+/** Compatibility settings for OpenAI Responses APIs. */
+export interface OpenAIResponsesCompat {
+	// Reserved for future use
+}
+
+/**
+ * OpenRouter provider routing preferences.
+ * Controls which upstream providers OpenRouter routes requests to.
+ * @see https://openrouter.ai/docs/provider-routing
+ */
+export interface OpenRouterRouting {
+	/** List of provider slugs to exclusively use for this request (e.g., ["amazon-bedrock", "anthropic"]). */
+	only?: string[];
+	/** List of provider slugs to try in order (e.g., ["anthropic", "openai"]). */
+	order?: string[];
+}
+
+/**
+ * Vercel AI Gateway routing preferences.
+ * Controls which upstream providers the gateway routes requests to.
+ * @see https://vercel.com/docs/ai-gateway/models-and-providers/provider-options
+ */
+export interface VercelGatewayRouting {
+	/** List of provider slugs to exclusively use for this request (e.g., ["bedrock", "anthropic"]). */
+	only?: string[];
+	/** List of provider slugs to try in order (e.g., ["anthropic", "openai"]). */
+	order?: string[];
 }
 
 // Model interface for the unified model system
@@ -248,6 +286,10 @@ export interface Model<TApi extends Api> {
 	contextWindow: number;
 	maxTokens: number;
 	headers?: Record<string, string>;
-	/** Compatibility overrides for openai-completions API. If not set, auto-detected from baseUrl. */
-	compat?: TApi extends "openai-completions" ? OpenAICompat : never;
+	/** Compatibility overrides for OpenAI-compatible APIs. If not set, auto-detected from baseUrl. */
+	compat?: TApi extends "openai-completions"
+		? OpenAICompletionsCompat
+		: TApi extends "openai-responses"
+			? OpenAIResponsesCompat
+			: never;
 }

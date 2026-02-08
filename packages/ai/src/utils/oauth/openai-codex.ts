@@ -1,11 +1,24 @@
 /**
  * OpenAI Codex (ChatGPT OAuth) flow
+ *
+ * NOTE: This module uses Node.js crypto and http for the OAuth callback.
+ * It is only intended for CLI use, not browser environments.
  */
 
-import { randomBytes } from "node:crypto";
-import http from "node:http";
+// NEVER convert to top-level imports - breaks browser/Vite builds (web-ui)
+let _randomBytes: typeof import("node:crypto").randomBytes | null = null;
+let _http: typeof import("node:http") | null = null;
+if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
+	import("node:crypto").then((m) => {
+		_randomBytes = m.randomBytes;
+	});
+	import("node:http").then((m) => {
+		_http = m;
+	});
+}
+
 import { generatePKCE } from "./pkce.js";
-import type { OAuthCredentials, OAuthPrompt } from "./types.js";
+import type { OAuthCredentials, OAuthLoginCallbacks, OAuthPrompt, OAuthProviderInterface } from "./types.js";
 
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize";
@@ -38,7 +51,10 @@ type JwtPayload = {
 };
 
 function createState(): string {
-	return randomBytes(16).toString("hex");
+	if (!_randomBytes) {
+		throw new Error("OpenAI Codex OAuth is only available in Node.js environments");
+	}
+	return _randomBytes(16).toString("hex");
 }
 
 function parseAuthorizationInput(input: string): { code?: string; state?: string } {
@@ -76,7 +92,7 @@ function decodeJwt(token: string): JwtPayload | null {
 		const parts = token.split(".");
 		if (parts.length !== 3) return null;
 		const payload = parts[1] ?? "";
-		const decoded = Buffer.from(payload, "base64").toString("utf-8");
+		const decoded = atob(payload);
 		return JSON.parse(decoded) as JwtPayload;
 	} catch {
 		return null;
@@ -166,7 +182,9 @@ async function refreshAccessToken(refreshToken: string): Promise<TokenResult> {
 	}
 }
 
-async function createAuthorizationFlow(): Promise<{ verifier: string; state: string; url: string }> {
+async function createAuthorizationFlow(
+	originator: string = "pi",
+): Promise<{ verifier: string; state: string; url: string }> {
 	const { verifier, challenge } = await generatePKCE();
 	const state = createState();
 
@@ -180,7 +198,7 @@ async function createAuthorizationFlow(): Promise<{ verifier: string; state: str
 	url.searchParams.set("state", state);
 	url.searchParams.set("id_token_add_organizations", "true");
 	url.searchParams.set("codex_cli_simplified_flow", "true");
-	url.searchParams.set("originator", "pi");
+	url.searchParams.set("originator", originator);
 
 	return { verifier, state, url: url.toString() };
 }
@@ -192,9 +210,12 @@ type OAuthServerInfo = {
 };
 
 function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
+	if (!_http) {
+		throw new Error("OpenAI Codex OAuth is only available in Node.js environments");
+	}
 	let lastCode: string | null = null;
 	let cancelled = false;
-	const server = http.createServer((req, res) => {
+	const server = _http.createServer((req, res) => {
 		try {
 			const url = new URL(req.url || "", "http://localhost");
 			if (url.pathname !== "/auth/callback") {
@@ -279,14 +300,16 @@ function getAccountId(accessToken: string): string | null {
  * @param options.onManualCodeInput - Optional promise that resolves with user-pasted code.
  *                                    Races with browser callback - whichever completes first wins.
  *                                    Useful for showing paste input immediately alongside browser flow.
+ * @param options.originator - OAuth originator parameter (defaults to "pi")
  */
 export async function loginOpenAICodex(options: {
 	onAuth: (info: { url: string; instructions?: string }) => void;
 	onPrompt: (prompt: OAuthPrompt) => Promise<string>;
 	onProgress?: (message: string) => void;
 	onManualCodeInput?: () => Promise<string>;
+	originator?: string;
 }): Promise<OAuthCredentials> {
-	const { verifier, state, url } = await createAuthorizationFlow();
+	const { verifier, state, url } = await createAuthorizationFlow(options.originator);
 	const server = await startLocalOAuthServer(state);
 
 	options.onAuth({ url, instructions: "A browser window should open. Complete login to finish." });
@@ -407,3 +430,26 @@ export async function refreshOpenAICodexToken(refreshToken: string): Promise<OAu
 		accountId,
 	};
 }
+
+export const openaiCodexOAuthProvider: OAuthProviderInterface = {
+	id: "openai-codex",
+	name: "ChatGPT Plus/Pro (Codex Subscription)",
+	usesCallbackServer: true,
+
+	async login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+		return loginOpenAICodex({
+			onAuth: callbacks.onAuth,
+			onPrompt: callbacks.onPrompt,
+			onProgress: callbacks.onProgress,
+			onManualCodeInput: callbacks.onManualCodeInput,
+		});
+	},
+
+	async refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials> {
+		return refreshOpenAICodexToken(credentials.refresh);
+	},
+
+	getApiKey(credentials: OAuthCredentials): string {
+		return credentials.access;
+	},
+};

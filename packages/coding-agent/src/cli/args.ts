@@ -33,7 +33,12 @@ export interface Args {
 	export?: string;
 	noSkills?: boolean;
 	skills?: string[];
+	promptTemplates?: string[];
+	noPromptTemplates?: boolean;
+	themes?: string[];
+	noThemes?: boolean;
 	listModels?: string | true;
+	verbose?: boolean;
 	messages: string[];
 	fileArgs: string[];
 	/** Unknown flags (potentially extension flags) - map of flag name to value */
@@ -122,11 +127,21 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 			result.extensions.push(args[++i]);
 		} else if (arg === "--no-extensions") {
 			result.noExtensions = true;
+		} else if (arg === "--skill" && i + 1 < args.length) {
+			result.skills = result.skills ?? [];
+			result.skills.push(args[++i]);
+		} else if (arg === "--prompt-template" && i + 1 < args.length) {
+			result.promptTemplates = result.promptTemplates ?? [];
+			result.promptTemplates.push(args[++i]);
+		} else if (arg === "--theme" && i + 1 < args.length) {
+			result.themes = result.themes ?? [];
+			result.themes.push(args[++i]);
 		} else if (arg === "--no-skills") {
 			result.noSkills = true;
-		} else if (arg === "--skills" && i + 1 < args.length) {
-			// Comma-separated glob patterns for skill filtering
-			result.skills = args[++i].split(",").map((s) => s.trim());
+		} else if (arg === "--no-prompt-templates") {
+			result.noPromptTemplates = true;
+		} else if (arg === "--no-themes") {
+			result.noThemes = true;
 		} else if (arg === "--list-models") {
 			// Check if next arg is a search pattern (not a flag or file arg)
 			if (i + 1 < args.length && !args[i + 1].startsWith("-") && !args[i + 1].startsWith("@")) {
@@ -134,6 +149,8 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 			} else {
 				result.listModels = true;
 			}
+		} else if (arg === "--verbose") {
+			result.verbose = true;
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (arg.startsWith("--") && extensionFlags) {
@@ -162,6 +179,14 @@ export function printHelp(): void {
 ${chalk.bold("Usage:")}
   ${APP_NAME} [options] [@files...] [messages...]
 
+${chalk.bold("Commands:")}
+  ${APP_NAME} install <source> [-l]    Install extension source and add to settings
+  ${APP_NAME} remove <source> [-l]     Remove extension source from settings
+  ${APP_NAME} update [source]          Update installed extensions (skips pinned sources)
+  ${APP_NAME} list                     List installed extensions from settings
+  ${APP_NAME} config                   Open TUI to enable/disable package resources
+  ${APP_NAME} <command> --help         Show help for install/remove/update/list
+
 ${chalk.bold("Options:")}
   --provider <name>              Provider name (default: google)
   --model <id>                   Model ID (default: gemini-2.5-flash)
@@ -183,10 +208,15 @@ ${chalk.bold("Options:")}
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions                Disable extension discovery (explicit -e paths still work)
+  --skill <path>                 Load a skill file or directory (can be used multiple times)
   --no-skills                    Disable skills discovery and loading
-  --skills <patterns>            Comma-separated glob patterns to filter skills (e.g., git-*,docker)
+  --prompt-template <path>       Load a prompt template file or directory (can be used multiple times)
+  --no-prompt-templates          Disable prompt template discovery and loading
+  --theme <path>                 Load a theme file or directory (can be used multiple times)
+  --no-themes                    Disable theme discovery and loading
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
+  --verbose                      Force verbose startup (overrides quietStartup setting)
   --help, -h                     Show this help
   --version, -v                  Show version number
 
@@ -234,24 +264,33 @@ ${chalk.bold("Examples:")}
   ${APP_NAME} --export session.jsonl output.html
 
 ${chalk.bold("Environment Variables:")}
-  ANTHROPIC_API_KEY       - Anthropic Claude API key
-  ANTHROPIC_OAUTH_TOKEN   - Anthropic OAuth token (alternative to API key)
-  OPENAI_API_KEY          - OpenAI GPT API key
-  GEMINI_API_KEY          - Google Gemini API key
-  GROQ_API_KEY            - Groq API key
-  CEREBRAS_API_KEY        - Cerebras API key
-  XAI_API_KEY             - xAI Grok API key
-  OPENROUTER_API_KEY      - OpenRouter API key
-  AI_GATEWAY_API_KEY      - Vercel AI Gateway API key
-  ZAI_API_KEY             - ZAI API key
-  MISTRAL_API_KEY         - Mistral API key
-  MINIMAX_API_KEY         - MiniMax API key
-  AWS_PROFILE             - AWS profile for Amazon Bedrock
-  AWS_ACCESS_KEY_ID       - AWS access key for Amazon Bedrock
-  AWS_SECRET_ACCESS_KEY   - AWS secret key for Amazon Bedrock
-  AWS_BEARER_TOKEN_BEDROCK - Bedrock API key (bearer token)
-  AWS_REGION              - AWS region for Amazon Bedrock (e.g., us-east-1)
-  ${ENV_AGENT_DIR.padEnd(23)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
+  ANTHROPIC_API_KEY                - Anthropic Claude API key
+  ANTHROPIC_OAUTH_TOKEN            - Anthropic OAuth token (alternative to API key)
+  OPENAI_API_KEY                   - OpenAI GPT API key
+  AZURE_OPENAI_API_KEY             - Azure OpenAI API key
+  AZURE_OPENAI_BASE_URL            - Azure OpenAI base URL (https://{resource}.openai.azure.com/openai/v1)
+  AZURE_OPENAI_RESOURCE_NAME       - Azure OpenAI resource name (alternative to base URL)
+  AZURE_OPENAI_API_VERSION         - Azure OpenAI API version (default: v1)
+  AZURE_OPENAI_DEPLOYMENT_NAME_MAP - Azure OpenAI model=deployment map (comma-separated)
+  GEMINI_API_KEY                   - Google Gemini API key
+  GROQ_API_KEY                     - Groq API key
+  CEREBRAS_API_KEY                 - Cerebras API key
+  XAI_API_KEY                      - xAI Grok API key
+  OPENROUTER_API_KEY               - OpenRouter API key
+  AI_GATEWAY_API_KEY               - Vercel AI Gateway API key
+  ZAI_API_KEY                      - ZAI API key
+  MISTRAL_API_KEY                  - Mistral API key
+  MINIMAX_API_KEY                  - MiniMax API key
+  KIMI_API_KEY                     - Kimi For Coding API key
+  AWS_PROFILE                      - AWS profile for Amazon Bedrock
+  AWS_ACCESS_KEY_ID                - AWS access key for Amazon Bedrock
+  AWS_SECRET_ACCESS_KEY            - AWS secret key for Amazon Bedrock
+  AWS_BEARER_TOKEN_BEDROCK         - Bedrock API key (bearer token)
+  AWS_REGION                       - AWS region for Amazon Bedrock (e.g., us-east-1)
+  ${ENV_AGENT_DIR.padEnd(32)} - Session storage directory (default: ~/${CONFIG_DIR_NAME}/agent)
+  PI_PACKAGE_DIR                   - Override package directory (for Nix/Guix store paths)
+  PI_SHARE_VIEWER_URL              - Base URL for /share command (default: https://pi.dev/session/)
+  PI_AI_ANTIGRAVITY_VERSION        - Override Antigravity User-Agent version (e.g., 1.23.0)
 
 ${chalk.bold("Available Tools (default: read, bash, edit, write):")}
   read   - Read file contents

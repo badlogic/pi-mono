@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.js";
 import { stream } from "../src/stream.js";
-import type { Api, Context, Model, OptionsForApi } from "../src/types.js";
+import type { Api, Context, Model, StreamOptions } from "../src/types.js";
+
+type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
+
+import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
@@ -15,7 +19,7 @@ const oauthTokens = await Promise.all([
 ]);
 const [anthropicOAuthToken, githubCopilotToken, geminiCliToken, antigravityToken, openaiCodexToken] = oauthTokens;
 
-async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: OptionsForApi<TApi> = {}) {
+async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: StreamOptionsWithExtras = {}) {
 	const context: Context = {
 		messages: [
 			{
@@ -24,6 +28,7 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: Op
 				timestamp: Date.now(),
 			},
 		],
+		systemPrompt: "You are a helpful assistant.",
 	};
 
 	const controller = new AbortController();
@@ -51,6 +56,7 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: Op
 	if (
 		llm.api === "openai-completions" ||
 		llm.api === "openai-responses" ||
+		llm.api === "azure-openai-responses" ||
 		llm.api === "openai-codex-responses" ||
 		llm.provider === "google-gemini-cli" ||
 		llm.provider === "zai" ||
@@ -86,8 +92,10 @@ describe("Token Statistics on Abort", () => {
 	});
 
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider", () => {
+		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini")!;
+		void _compat;
 		const llm: Model<"openai-completions"> = {
-			...getModel("openai", "gpt-4o-mini")!,
+			...baseModel,
 			api: "openai-completions",
 		};
 
@@ -101,6 +109,16 @@ describe("Token Statistics on Abort", () => {
 
 		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
 			await testTokensOnAbort(llm);
+		});
+	});
+
+	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Responses Provider", () => {
+		const llm = getModel("azure-openai-responses", "gpt-4o-mini");
+		const azureDeploymentName = resolveAzureDeploymentName(llm.id);
+		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm, azureOptions);
 		});
 	});
 
@@ -136,6 +154,14 @@ describe("Token Statistics on Abort", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.HF_TOKEN)("Hugging Face Provider", () => {
+		const llm = getModel("huggingface", "moonshotai/Kimi-K2.5");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
+	});
+
 	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider", () => {
 		const llm = getModel("zai", "glm-4.5-flash");
 
@@ -154,6 +180,14 @@ describe("Token Statistics on Abort", () => {
 
 	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider", () => {
 		const llm = getModel("minimax", "MiniMax-M2.1");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding Provider", () => {
+		const llm = getModel("kimi-coding", "kimi-k2-thinking");
 
 		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
 			await testTokensOnAbort(llm);

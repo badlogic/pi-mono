@@ -7,23 +7,25 @@
 
 import { type ImageContent, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
-import { existsSync } from "fs";
-import { join } from "path";
+import { createInterface } from "readline";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
+import { selectConfig } from "./cli/config-selector.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
-import { CONFIG_DIR_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
-import { createEventBus } from "./core/event-bus.js";
+import { APP_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
+import { AuthStorage } from "./core/auth-storage.js";
+import { DEFAULT_THINKING_LEVEL } from "./core/defaults.js";
 import { exportFromFile } from "./core/export-html/index.js";
-import { discoverAndLoadExtensions, type LoadExtensionsResult, loadExtensions } from "./core/extensions/index.js";
+import type { LoadExtensionsResult } from "./core/extensions/index.js";
 import { KeybindingsManager } from "./core/keybindings.js";
-import type { ModelRegistry } from "./core/model-registry.js";
+import { ModelRegistry } from "./core/model-registry.js";
 import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
-import { type CreateAgentSessionOptions, createAgentSession, discoverAuthStorage, discoverModels } from "./core/sdk.js";
+import { DefaultPackageManager } from "./core/package-manager.js";
+import { DefaultResourceLoader } from "./core/resource-loader.js";
+import { type CreateAgentSessionOptions, createAgentSession } from "./core/sdk.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
-import { resolvePromptInput } from "./core/system-prompt.js";
 import { printTimings, time } from "./core/timings.js";
 import { allTools } from "./core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
@@ -53,6 +55,235 @@ async function readPipedStdin(): Promise<string | undefined> {
 	});
 }
 
+type PackageCommand = "install" | "remove" | "update" | "list";
+
+interface PackageCommandOptions {
+	command: PackageCommand;
+	source?: string;
+	local: boolean;
+	help: boolean;
+	invalidOption?: string;
+}
+
+function getPackageCommandUsage(command: PackageCommand): string {
+	switch (command) {
+		case "install":
+			return `${APP_NAME} install <source> [-l]`;
+		case "remove":
+			return `${APP_NAME} remove <source> [-l]`;
+		case "update":
+			return `${APP_NAME} update [source]`;
+		case "list":
+			return `${APP_NAME} list`;
+	}
+}
+
+function printPackageCommandHelp(command: PackageCommand): void {
+	switch (command) {
+		case "install":
+			console.log(`${chalk.bold("Usage:")}
+  ${getPackageCommandUsage("install")}
+
+Install a package and add it to settings.
+
+Options:
+  -l, --local    Install project-locally (.pi/settings.json)
+
+Examples:
+  ${APP_NAME} install npm:@foo/bar
+  ${APP_NAME} install git:github.com/user/repo
+  ${APP_NAME} install https://github.com/user/repo
+  ${APP_NAME} install git@github.com:user/repo
+  ${APP_NAME} install ./local/path
+`);
+			return;
+
+		case "remove":
+			console.log(`${chalk.bold("Usage:")}
+  ${getPackageCommandUsage("remove")}
+
+Remove a package and its source from settings.
+
+Options:
+  -l, --local    Remove from project settings (.pi/settings.json)
+
+Example:
+  ${APP_NAME} remove npm:@foo/bar
+`);
+			return;
+
+		case "update":
+			console.log(`${chalk.bold("Usage:")}
+  ${getPackageCommandUsage("update")}
+
+Update installed packages.
+If <source> is provided, only that package is updated.
+`);
+			return;
+
+		case "list":
+			console.log(`${chalk.bold("Usage:")}
+  ${getPackageCommandUsage("list")}
+
+List installed packages from user and project settings.
+`);
+			return;
+	}
+}
+
+function parsePackageCommand(args: string[]): PackageCommandOptions | undefined {
+	const [command, ...rest] = args;
+	if (command !== "install" && command !== "remove" && command !== "update" && command !== "list") {
+		return undefined;
+	}
+
+	let local = false;
+	let help = false;
+	let invalidOption: string | undefined;
+	let source: string | undefined;
+
+	for (const arg of rest) {
+		if (arg === "-h" || arg === "--help") {
+			help = true;
+			continue;
+		}
+
+		if (arg === "-l" || arg === "--local") {
+			if (command === "install" || command === "remove") {
+				local = true;
+			} else {
+				invalidOption = invalidOption ?? arg;
+			}
+			continue;
+		}
+
+		if (arg.startsWith("-")) {
+			invalidOption = invalidOption ?? arg;
+			continue;
+		}
+
+		if (!source) {
+			source = arg;
+		}
+	}
+
+	return { command, source, local, help, invalidOption };
+}
+
+async function handlePackageCommand(args: string[]): Promise<boolean> {
+	const options = parsePackageCommand(args);
+	if (!options) {
+		return false;
+	}
+
+	if (options.help) {
+		printPackageCommandHelp(options.command);
+		return true;
+	}
+
+	if (options.invalidOption) {
+		console.error(chalk.red(`Unknown option ${options.invalidOption} for "${options.command}".`));
+		console.error(chalk.dim(`Use "${APP_NAME} --help" or "${getPackageCommandUsage(options.command)}".`));
+		process.exitCode = 1;
+		return true;
+	}
+
+	const source = options.source;
+	if ((options.command === "install" || options.command === "remove") && !source) {
+		console.error(chalk.red(`Missing ${options.command} source.`));
+		console.error(chalk.dim(`Usage: ${getPackageCommandUsage(options.command)}`));
+		process.exitCode = 1;
+		return true;
+	}
+
+	const cwd = process.cwd();
+	const agentDir = getAgentDir();
+	const settingsManager = SettingsManager.create(cwd, agentDir);
+	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+
+	packageManager.setProgressCallback((event) => {
+		if (event.type === "start") {
+			process.stdout.write(chalk.dim(`${event.message}\n`));
+		}
+	});
+
+	try {
+		switch (options.command) {
+			case "install":
+				await packageManager.install(source!, { local: options.local });
+				packageManager.addSourceToSettings(source!, { local: options.local });
+				console.log(chalk.green(`Installed ${source}`));
+				return true;
+
+			case "remove": {
+				await packageManager.remove(source!, { local: options.local });
+				const removed = packageManager.removeSourceFromSettings(source!, { local: options.local });
+				if (!removed) {
+					console.error(chalk.red(`No matching package found for ${source}`));
+					process.exitCode = 1;
+					return true;
+				}
+				console.log(chalk.green(`Removed ${source}`));
+				return true;
+			}
+
+			case "list": {
+				const globalSettings = settingsManager.getGlobalSettings();
+				const projectSettings = settingsManager.getProjectSettings();
+				const globalPackages = globalSettings.packages ?? [];
+				const projectPackages = projectSettings.packages ?? [];
+
+				if (globalPackages.length === 0 && projectPackages.length === 0) {
+					console.log(chalk.dim("No packages installed."));
+					return true;
+				}
+
+				const formatPackage = (pkg: (typeof globalPackages)[number], scope: "user" | "project") => {
+					const source = typeof pkg === "string" ? pkg : pkg.source;
+					const filtered = typeof pkg === "object";
+					const display = filtered ? `${source} (filtered)` : source;
+					console.log(`  ${display}`);
+					const path = packageManager.getInstalledPath(source, scope);
+					if (path) {
+						console.log(chalk.dim(`    ${path}`));
+					}
+				};
+
+				if (globalPackages.length > 0) {
+					console.log(chalk.bold("User packages:"));
+					for (const pkg of globalPackages) {
+						formatPackage(pkg, "user");
+					}
+				}
+
+				if (projectPackages.length > 0) {
+					if (globalPackages.length > 0) console.log();
+					console.log(chalk.bold("Project packages:"));
+					for (const pkg of projectPackages) {
+						formatPackage(pkg, "project");
+					}
+				}
+
+				return true;
+			}
+
+			case "update":
+				await packageManager.update(source);
+				if (source) {
+					console.log(chalk.green(`Updated ${source}`));
+				} else {
+					console.log(chalk.green("Updated packages"));
+				}
+				return true;
+		}
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : "Unknown package command error";
+		console.error(chalk.red(`Error: ${message}`));
+		process.exitCode = 1;
+		return true;
+	}
+}
+
 async function prepareInitialMessage(
 	parsed: Args,
 	autoResizeImages: boolean,
@@ -80,26 +311,56 @@ async function prepareInitialMessage(
 	};
 }
 
+/** Result from resolving a session argument */
+type ResolvedSession =
+	| { type: "path"; path: string } // Direct file path
+	| { type: "local"; path: string } // Found in current project
+	| { type: "global"; path: string; cwd: string } // Found in different project
+	| { type: "not_found"; arg: string }; // Not found anywhere
+
 /**
  * Resolve a session argument to a file path.
  * If it looks like a path, use as-is. Otherwise try to match as session ID prefix.
  */
-async function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: string): Promise<string> {
+async function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: string): Promise<ResolvedSession> {
 	// If it looks like a file path, use as-is
 	if (sessionArg.includes("/") || sessionArg.includes("\\") || sessionArg.endsWith(".jsonl")) {
-		return sessionArg;
+		return { type: "path", path: sessionArg };
 	}
 
-	// Try to match as session ID (full or partial UUID)
-	const sessions = await SessionManager.list(cwd, sessionDir);
-	const matches = sessions.filter((s) => s.id.startsWith(sessionArg));
+	// Try to match as session ID in current project first
+	const localSessions = await SessionManager.list(cwd, sessionDir);
+	const localMatches = localSessions.filter((s) => s.id.startsWith(sessionArg));
 
-	if (matches.length >= 1) {
-		return matches[0].path; // Already sorted by modified time (most recent first)
+	if (localMatches.length >= 1) {
+		return { type: "local", path: localMatches[0].path };
 	}
 
-	// No match - return original (will create new session)
-	return sessionArg;
+	// Try global search across all projects
+	const allSessions = await SessionManager.listAll();
+	const globalMatches = allSessions.filter((s) => s.id.startsWith(sessionArg));
+
+	if (globalMatches.length >= 1) {
+		const match = globalMatches[0];
+		return { type: "global", path: match.path, cwd: match.cwd };
+	}
+
+	// Not found anywhere
+	return { type: "not_found", arg: sessionArg };
+}
+
+/** Prompt user for yes/no confirmation */
+async function promptConfirm(message: string): Promise<boolean> {
+	return new Promise((resolve) => {
+		const rl = createInterface({
+			input: process.stdin,
+			output: process.stdout,
+		});
+		rl.question(`${message} [y/N] `, (answer) => {
+			rl.close();
+			resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
+		});
+	});
 }
 
 async function createSessionManager(parsed: Args, cwd: string): Promise<SessionManager | undefined> {
@@ -107,8 +368,28 @@ async function createSessionManager(parsed: Args, cwd: string): Promise<SessionM
 		return SessionManager.inMemory();
 	}
 	if (parsed.session) {
-		const resolvedPath = await resolveSessionPath(parsed.session, cwd, parsed.sessionDir);
-		return SessionManager.open(resolvedPath, parsed.sessionDir);
+		const resolved = await resolveSessionPath(parsed.session, cwd, parsed.sessionDir);
+
+		switch (resolved.type) {
+			case "path":
+			case "local":
+				return SessionManager.open(resolved.path, parsed.sessionDir);
+
+			case "global": {
+				// Session found in different project - ask user if they want to fork
+				console.log(chalk.yellow(`Session found in different project: ${resolved.cwd}`));
+				const shouldFork = await promptConfirm("Fork this session into current directory?");
+				if (!shouldFork) {
+					console.log(chalk.dim("Aborted."));
+					process.exit(0);
+				}
+				return SessionManager.forkFrom(resolved.path, cwd, parsed.sessionDir);
+			}
+
+			case "not_found":
+				console.error(chalk.red(`No session found matching '${resolved.arg}'`));
+				process.exit(1);
+		}
 	}
 	if (parsed.continue) {
 		return SessionManager.continueRecent(cwd, parsed.sessionDir);
@@ -122,57 +403,14 @@ async function createSessionManager(parsed: Args, cwd: string): Promise<SessionM
 	return undefined;
 }
 
-/** Discover SYSTEM.md file if no CLI system prompt was provided */
-function discoverSystemPromptFile(): string | undefined {
-	// Check project-local first: .pi/SYSTEM.md
-	const projectPath = join(process.cwd(), CONFIG_DIR_NAME, "SYSTEM.md");
-	if (existsSync(projectPath)) {
-		return projectPath;
-	}
-
-	// Fall back to global: ~/.pi/agent/SYSTEM.md
-	const globalPath = join(getAgentDir(), "SYSTEM.md");
-	if (existsSync(globalPath)) {
-		return globalPath;
-	}
-
-	return undefined;
-}
-
-/** Discover APPEND_SYSTEM.md file if no CLI append system prompt was provided */
-function discoverAppendSystemPromptFile(): string | undefined {
-	// Check project-local first: .pi/APPEND_SYSTEM.md
-	const projectPath = join(process.cwd(), CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
-	if (existsSync(projectPath)) {
-		return projectPath;
-	}
-
-	// Fall back to global: ~/.pi/agent/APPEND_SYSTEM.md
-	const globalPath = join(getAgentDir(), "APPEND_SYSTEM.md");
-	if (existsSync(globalPath)) {
-		return globalPath;
-	}
-
-	return undefined;
-}
-
 function buildSessionOptions(
 	parsed: Args,
 	scopedModels: ScopedModel[],
 	sessionManager: SessionManager | undefined,
 	modelRegistry: ModelRegistry,
 	settingsManager: SettingsManager,
-	extensionsResult?: LoadExtensionsResult,
 ): CreateAgentSessionOptions {
 	const options: CreateAgentSessionOptions = {};
-
-	// Auto-discover SYSTEM.md if no CLI system prompt provided
-	const systemPromptSource = parsed.systemPrompt ?? discoverSystemPromptFile();
-	// Auto-discover APPEND_SYSTEM.md if no CLI append system prompt provided
-	const appendSystemPromptSource = parsed.appendSystemPrompt ?? discoverAppendSystemPromptFile();
-
-	const resolvedSystemPrompt = resolvePromptInput(systemPromptSource, "system prompt");
-	const resolvedAppendPrompt = resolvePromptInput(appendSystemPromptSource, "append system prompt");
 
 	if (sessionManager) {
 		options.sessionManager = sessionManager;
@@ -215,7 +453,7 @@ function buildSessionOptions(
 
 	// Scoped models for Ctrl+P cycling - fill in default thinking level for models without explicit level
 	if (scopedModels.length > 0) {
-		const defaultThinkingLevel = settingsManager.getDefaultThinkingLevel() ?? "off";
+		const defaultThinkingLevel = settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;
 		options.scopedModels = scopedModels.map((sm) => ({
 			model: sm.model,
 			thinkingLevel: sm.thinkingLevel ?? defaultThinkingLevel,
@@ -224,15 +462,6 @@ function buildSessionOptions(
 
 	// API key from CLI - set in authStorage
 	// (handled by caller before createAgentSession)
-
-	// System prompt
-	if (resolvedSystemPrompt && resolvedAppendPrompt) {
-		options.systemPrompt = `${resolvedSystemPrompt}\n\n${resolvedAppendPrompt}`;
-	} else if (resolvedSystemPrompt) {
-		options.systemPrompt = resolvedSystemPrompt;
-	} else if (resolvedAppendPrompt) {
-		options.systemPrompt = (defaultPrompt) => `${defaultPrompt}\n\n${resolvedAppendPrompt}`;
-	}
 
 	// Tools
 	if (parsed.noTools) {
@@ -247,60 +476,83 @@ function buildSessionOptions(
 		options.tools = parsed.tools.map((name) => allTools[name]);
 	}
 
-	// Skills
-	if (parsed.noSkills) {
-		options.skills = [];
-	}
-
-	// Pre-loaded extensions (from early CLI flag discovery)
-	if (extensionsResult && extensionsResult.extensions.length > 0) {
-		options.preloadedExtensions = extensionsResult;
-	}
-
 	return options;
 }
 
+async function handleConfigCommand(args: string[]): Promise<boolean> {
+	if (args[0] !== "config") {
+		return false;
+	}
+
+	const cwd = process.cwd();
+	const agentDir = getAgentDir();
+	const settingsManager = SettingsManager.create(cwd, agentDir);
+	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+
+	const resolvedPaths = await packageManager.resolve();
+
+	await selectConfig({
+		resolvedPaths,
+		settingsManager,
+		cwd,
+		agentDir,
+	});
+
+	process.exit(0);
+}
+
 export async function main(args: string[]) {
-	time("start");
+	if (await handlePackageCommand(args)) {
+		return;
+	}
+
+	if (await handleConfigCommand(args)) {
+		return;
+	}
 
 	// Run migrations (pass cwd for project-local migrations)
 	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(process.cwd());
 
-	// Create AuthStorage and ModelRegistry upfront
-	const authStorage = discoverAuthStorage();
-	const modelRegistry = discoverModels(authStorage);
-	time("discoverModels");
-
 	// First pass: parse args to get --extension paths
 	const firstPass = parseArgs(args);
-	time("parseArgs-firstPass");
 
-	// Early load extensions to discover their CLI flags (unless --no-extensions)
+	// Early load extensions to discover their CLI flags
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
-	const eventBus = createEventBus();
-	const settingsManager = SettingsManager.create(cwd);
-	time("SettingsManager.create");
+	const settingsManager = SettingsManager.create(cwd, agentDir);
+	const authStorage = new AuthStorage();
+	const modelRegistry = new ModelRegistry(authStorage, getModelsPath());
 
-	let extensionsResult: LoadExtensionsResult;
-	if (firstPass.noExtensions) {
-		// --no-extensions disables discovery, but explicit -e flags still work
-		const explicitPaths = firstPass.extensions ?? [];
-		extensionsResult = await loadExtensions(explicitPaths, cwd, eventBus);
-		time("loadExtensions");
-	} else {
-		// Merge CLI --extension args with settings.json extensions
-		const extensionPaths = [...settingsManager.getExtensionPaths(), ...(firstPass.extensions ?? [])];
-		extensionsResult = await discoverAndLoadExtensions(extensionPaths, cwd, agentDir, eventBus);
-		time("discoverExtensionFlags");
-	}
+	const resourceLoader = new DefaultResourceLoader({
+		cwd,
+		agentDir,
+		settingsManager,
+		additionalExtensionPaths: firstPass.extensions,
+		additionalSkillPaths: firstPass.skills,
+		additionalPromptTemplatePaths: firstPass.promptTemplates,
+		additionalThemePaths: firstPass.themes,
+		noExtensions: firstPass.noExtensions,
+		noSkills: firstPass.noSkills,
+		noPromptTemplates: firstPass.noPromptTemplates,
+		noThemes: firstPass.noThemes,
+		systemPrompt: firstPass.systemPrompt,
+		appendSystemPrompt: firstPass.appendSystemPrompt,
+	});
+	await resourceLoader.reload();
+	time("resourceLoader.reload");
 
-	// Log extension loading errors
+	const extensionsResult: LoadExtensionsResult = resourceLoader.getExtensions();
 	for (const { path, error } of extensionsResult.errors) {
 		console.error(chalk.red(`Failed to load extension "${path}": ${error}`));
 	}
 
-	// Collect all extension flags
+	// Apply pending provider registrations from extensions immediately
+	// so they're available for model resolution before AgentSession is created
+	for (const { name, config } of extensionsResult.runtime.pendingProviderRegistrations) {
+		modelRegistry.registerProvider(name, config);
+	}
+	extensionsResult.runtime.pendingProviderRegistrations = [];
+
 	const extensionFlags = new Map<string, { type: "boolean" | "string" }>();
 	for (const ext of extensionsResult.extensions) {
 		for (const [name, flag] of ext.flags) {
@@ -310,7 +562,6 @@ export async function main(args: string[]) {
 
 	// Second pass: parse args with extension flags
 	const parsed = parseArgs(args, extensionFlags);
-	time("parseArgs");
 
 	// Pass flag values to extensions via runtime
 	for (const [name, value] of parsed.unknownFlags) {
@@ -319,18 +570,18 @@ export async function main(args: string[]) {
 
 	if (parsed.version) {
 		console.log(VERSION);
-		return;
+		process.exit(0);
 	}
 
 	if (parsed.help) {
 		printHelp();
-		return;
+		process.exit(0);
 	}
 
 	if (parsed.listModels !== undefined) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
 		await listModels(modelRegistry, searchPattern);
-		return;
+		process.exit(0);
 	}
 
 	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
@@ -342,20 +593,20 @@ export async function main(args: string[]) {
 			// Prepend stdin content to messages
 			parsed.messages.unshift(stdinContent);
 		}
-		time("readPipedStdin");
 	}
 
 	if (parsed.export) {
+		let result: string;
 		try {
 			const outputPath = parsed.messages.length > 0 ? parsed.messages[0] : undefined;
-			const result = await exportFromFile(parsed.export, outputPath);
-			console.log(`Exported to: ${result}`);
-			return;
+			result = await exportFromFile(parsed.export, outputPath);
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : "Failed to export session";
 			console.error(chalk.red(`Error: ${message}`));
 			process.exit(1);
 		}
+		console.log(`Exported to: ${result}`);
+		process.exit(0);
 	}
 
 	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
@@ -364,11 +615,9 @@ export async function main(args: string[]) {
 	}
 
 	const { initialMessage, initialImages } = await prepareInitialMessage(parsed, settingsManager.getImageAutoResize());
-	time("prepareInitialMessage");
 	const isInteractive = !parsed.print && parsed.mode === undefined;
 	const mode = parsed.mode || "text";
 	initTheme(settingsManager.getTheme(), isInteractive);
-	time("initTheme");
 
 	// Show deprecation warnings in interactive mode
 	if (isInteractive && deprecationWarnings.length > 0) {
@@ -379,12 +628,10 @@ export async function main(args: string[]) {
 	const modelPatterns = parsed.models ?? settingsManager.getEnabledModels();
 	if (modelPatterns && modelPatterns.length > 0) {
 		scopedModels = await resolveModelScope(modelPatterns, modelRegistry);
-		time("resolveModelScope");
 	}
 
 	// Create session manager based on CLI flags
 	let sessionManager = await createSessionManager(parsed, cwd);
-	time("createSessionManager");
 
 	// Handle --resume: show session picker
 	if (parsed.resume) {
@@ -395,25 +642,18 @@ export async function main(args: string[]) {
 			(onProgress) => SessionManager.list(cwd, parsed.sessionDir, onProgress),
 			SessionManager.listAll,
 		);
-		time("selectSession");
 		if (!selectedPath) {
 			console.log(chalk.dim("No session selected"));
-			return;
+			stopThemeWatcher();
+			process.exit(0);
 		}
 		sessionManager = SessionManager.open(selectedPath);
 	}
 
-	const sessionOptions = buildSessionOptions(
-		parsed,
-		scopedModels,
-		sessionManager,
-		modelRegistry,
-		settingsManager,
-		extensionsResult,
-	);
+	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager, modelRegistry, settingsManager);
 	sessionOptions.authStorage = authStorage;
 	sessionOptions.modelRegistry = modelRegistry;
-	sessionOptions.eventBus = eventBus;
+	sessionOptions.resourceLoader = resourceLoader;
 
 	// Handle CLI --api-key as runtime override (not persisted)
 	if (parsed.apiKey) {
@@ -424,9 +664,7 @@ export async function main(args: string[]) {
 		authStorage.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey);
 	}
 
-	time("buildSessionOptions");
 	const { session, modelFallbackMessage } = await createAgentSession(sessionOptions);
-	time("createAgentSession");
 
 	if (!isInteractive && !session.model) {
 		console.error(chalk.red("No models available."));
@@ -452,7 +690,7 @@ export async function main(args: string[]) {
 	if (mode === "rpc") {
 		await runRpcMode(session);
 	} else if (isInteractive) {
-		if (scopedModels.length > 0) {
+		if (scopedModels.length > 0 && (parsed.verbose || !settingsManager.getQuietStartup())) {
 			const modelList = scopedModels
 				.map((sm) => {
 					const thinkingStr = sm.thinkingLevel ? `:${sm.thinkingLevel}` : "";
@@ -469,6 +707,7 @@ export async function main(args: string[]) {
 			initialMessage,
 			initialImages,
 			initialMessages: parsed.messages,
+			verbose: parsed.verbose,
 		});
 		await mode.run();
 	} else {

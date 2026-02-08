@@ -16,6 +16,7 @@ Example extensions demonstrating:
 - Git integration (checkpoints, auto-commit)
 - System prompt modifications and custom compaction
 - External integrations (SSH, file watchers, system theme sync)
+- Custom providers (Anthropic with custom streaming, GitLab Duo)
 
 ## Documentation
 

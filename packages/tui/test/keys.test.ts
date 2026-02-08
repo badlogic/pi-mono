@@ -83,6 +83,24 @@ describe("matchesKey", () => {
 			setKittyProtocolActive(false);
 		});
 
+		it("should prefer codepoint for Latin letters even when base layout differs", () => {
+			setKittyProtocolActive(true);
+			// Dvorak Ctrl+K reports codepoint 'k' (107) and base layout 'v' (118)
+			const dvorakCtrlK = "\x1b[107::118;5u";
+			assert.strictEqual(matchesKey(dvorakCtrlK, "ctrl+k"), true);
+			assert.strictEqual(matchesKey(dvorakCtrlK, "ctrl+v"), false);
+			setKittyProtocolActive(false);
+		});
+
+		it("should prefer codepoint for symbol keys even when base layout differs", () => {
+			setKittyProtocolActive(true);
+			// Dvorak Ctrl+/ reports codepoint '/' (47) and base layout '[' (91)
+			const dvorakCtrlSlash = "\x1b[47::91;5u";
+			assert.strictEqual(matchesKey(dvorakCtrlSlash, "ctrl+/"), true);
+			assert.strictEqual(matchesKey(dvorakCtrlSlash, "ctrl+["), false);
+			setKittyProtocolActive(false);
+		});
+
 		it("should not match wrong key even with base layout", () => {
 			setKittyProtocolActive(true);
 			// Cyrillic ctrl+с with base 'c' should NOT match ctrl+d
@@ -137,6 +155,39 @@ describe("matchesKey", () => {
 			assert.strictEqual(parseKey("\x00"), "ctrl+space");
 		});
 
+		it("should match legacy Ctrl+symbol", () => {
+			setKittyProtocolActive(false);
+			// Ctrl+\ sends ASCII 28 (File Separator) in legacy terminals
+			assert.strictEqual(matchesKey("\x1c", "ctrl+\\"), true);
+			assert.strictEqual(parseKey("\x1c"), "ctrl+\\");
+			// Ctrl+] sends ASCII 29 (Group Separator) in legacy terminals
+			assert.strictEqual(matchesKey("\x1d", "ctrl+]"), true);
+			assert.strictEqual(parseKey("\x1d"), "ctrl+]");
+			// Ctrl+_ sends ASCII 31 (Unit Separator) in legacy terminals
+			// Ctrl+- is on the same physical key on US keyboards
+			assert.strictEqual(matchesKey("\x1f", "ctrl+_"), true);
+			assert.strictEqual(matchesKey("\x1f", "ctrl+-"), true);
+			assert.strictEqual(parseKey("\x1f"), "ctrl+-");
+		});
+
+		it("should match legacy Ctrl+Alt+symbol", () => {
+			setKittyProtocolActive(false);
+			// Ctrl+Alt+[ sends ESC followed by ESC (Ctrl+[ = ESC)
+			assert.strictEqual(matchesKey("\x1b\x1b", "ctrl+alt+["), true);
+			assert.strictEqual(parseKey("\x1b\x1b"), "ctrl+alt+[");
+			// Ctrl+Alt+\ sends ESC followed by ASCII 28
+			assert.strictEqual(matchesKey("\x1b\x1c", "ctrl+alt+\\"), true);
+			assert.strictEqual(parseKey("\x1b\x1c"), "ctrl+alt+\\");
+			// Ctrl+Alt+] sends ESC followed by ASCII 29
+			assert.strictEqual(matchesKey("\x1b\x1d", "ctrl+alt+]"), true);
+			assert.strictEqual(parseKey("\x1b\x1d"), "ctrl+alt+]");
+			// Ctrl+_ sends ASCII 31 (Unit Separator) in legacy terminals
+			// Ctrl+- is on the same physical key on US keyboards
+			assert.strictEqual(matchesKey("\x1b\x1f", "ctrl+alt+_"), true);
+			assert.strictEqual(matchesKey("\x1b\x1f", "ctrl+alt+-"), true);
+			assert.strictEqual(parseKey("\x1b\x1f"), "ctrl+alt+-");
+		});
+
 		it("should parse legacy alt-prefixed sequences when kitty inactive", () => {
 			setKittyProtocolActive(false);
 			assert.strictEqual(matchesKey("\x1b ", "alt+space"), true);
@@ -149,6 +200,12 @@ describe("matchesKey", () => {
 			assert.strictEqual(parseKey("\x1bB"), "alt+left");
 			assert.strictEqual(matchesKey("\x1bF", "alt+right"), true);
 			assert.strictEqual(parseKey("\x1bF"), "alt+right");
+			assert.strictEqual(matchesKey("\x1ba", "alt+a"), true);
+			assert.strictEqual(parseKey("\x1ba"), "alt+a");
+			assert.strictEqual(matchesKey("\x1by", "alt+y"), true);
+			assert.strictEqual(parseKey("\x1by"), "alt+y");
+			assert.strictEqual(matchesKey("\x1bz", "alt+z"), true);
+			assert.strictEqual(parseKey("\x1bz"), "alt+z");
 
 			setKittyProtocolActive(true);
 			assert.strictEqual(matchesKey("\x1b ", "alt+space"), false);
@@ -161,6 +218,10 @@ describe("matchesKey", () => {
 			assert.strictEqual(parseKey("\x1bB"), undefined);
 			assert.strictEqual(matchesKey("\x1bF", "alt+right"), false);
 			assert.strictEqual(parseKey("\x1bF"), undefined);
+			assert.strictEqual(matchesKey("\x1ba", "alt+a"), false);
+			assert.strictEqual(parseKey("\x1ba"), undefined);
+			assert.strictEqual(matchesKey("\x1by", "alt+y"), false);
+			assert.strictEqual(parseKey("\x1by"), undefined);
 			setKittyProtocolActive(false);
 		});
 
@@ -208,6 +269,22 @@ describe("parseKey", () => {
 			// Cyrillic ctrl+с with base layout 'c'
 			const cyrillicCtrlC = "\x1b[1089::99;5u";
 			assert.strictEqual(parseKey(cyrillicCtrlC), "ctrl+c");
+			setKittyProtocolActive(false);
+		});
+
+		it("should prefer codepoint for Latin letters when base layout differs", () => {
+			setKittyProtocolActive(true);
+			// Dvorak Ctrl+K reports codepoint 'k' (107) and base layout 'v' (118)
+			const dvorakCtrlK = "\x1b[107::118;5u";
+			assert.strictEqual(parseKey(dvorakCtrlK), "ctrl+k");
+			setKittyProtocolActive(false);
+		});
+
+		it("should prefer codepoint for symbol keys when base layout differs", () => {
+			setKittyProtocolActive(true);
+			// Dvorak Ctrl+/ reports codepoint '/' (47) and base layout '[' (91)
+			const dvorakCtrlSlash = "\x1b[47::91;5u";
+			assert.strictEqual(parseKey(dvorakCtrlSlash), "ctrl+/");
 			setKittyProtocolActive(false);
 		});
 

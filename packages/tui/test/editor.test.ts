@@ -1,7 +1,8 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
-import { Editor } from "../src/components/editor.js";
+import type { AutocompleteProvider } from "../src/autocomplete.js";
+import { Editor, wordWrapLine } from "../src/components/editor.js";
 import { TUI } from "../src/tui.js";
 import { visibleWidth } from "../src/utils.js";
 import { defaultEditorTheme } from "./test-themes.js";
@@ -10,6 +11,26 @@ import { VirtualTerminal } from "./virtual-terminal.js";
 /** Create a TUI with a virtual terminal for testing */
 function createTestTUI(cols = 80, rows = 24): TUI {
 	return new TUI(new VirtualTerminal(cols, rows));
+}
+
+/** Standard applyCompletion that replaces prefix with item.value */
+function applyCompletion(
+	lines: string[],
+	cursorLine: number,
+	cursorCol: number,
+	item: { value: string },
+	prefix: string,
+): { lines: string[]; cursorLine: number; cursorCol: number } {
+	const line = lines[cursorLine] || "";
+	const before = line.slice(0, cursorCol - prefix.length);
+	const after = line.slice(cursorCol);
+	const newLines = [...lines];
+	newLines[cursorLine] = before + item.value + after;
+	return {
+		lines: newLines,
+		cursorLine,
+		cursorCol: cursorCol - prefix.length + item.value.length,
+	};
 }
 
 describe("Editor component", () => {
@@ -282,8 +303,17 @@ describe("Editor component", () => {
 		});
 	});
 
-	describe("Shift+Enter handling", () => {
-		it("treats split VS Code Shift+Enter as a newline", () => {
+	describe("Backslash+Enter newline workaround", () => {
+		it("inserts backslash immediately (no buffering)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("\\");
+
+			// Backslash should be visible immediately, not buffered
+			assert.strictEqual(editor.getText(), "\\");
+		});
+
+		it("converts standalone backslash to newline on Enter", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("\\");
@@ -292,13 +322,42 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.getText(), "\n");
 		});
 
-		it("inserts a literal backslash when not followed by Enter", () => {
+		it("inserts backslash normally when followed by other characters", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.handleInput("\\");
 			editor.handleInput("x");
 
 			assert.strictEqual(editor.getText(), "\\x");
+		});
+
+		it("does not trigger newline when backslash is not immediately before cursor", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			let submitted = false;
+
+			editor.onSubmit = () => {
+				submitted = true;
+			};
+
+			editor.handleInput("\\");
+			editor.handleInput("x");
+			editor.handleInput("\r");
+
+			// Should submit, not insert newline (backslash not at cursor)
+			assert.strictEqual(submitted, true);
+		});
+
+		it("only removes one backslash when multiple are present", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("\\");
+			editor.handleInput("\\");
+			editor.handleInput("\\");
+			assert.strictEqual(editor.getText(), "\\\\\\");
+
+			editor.handleInput("\r");
+			// Only the last backslash is removed, newline inserted
+			assert.strictEqual(editor.getText(), "\\\\\n");
 		});
 	});
 
@@ -538,7 +597,7 @@ describe("Editor component", () => {
 
 		it("wraps CJK characters correctly (each is 2 columns wide)", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
-			const width = 10;
+			const width = 10 + 1; // +1 col reserved for cursor
 
 			// Each CJK char is 2 columns. "日本語テスト" = 6 chars = 12 columns
 			editor.setText("日本語テスト");
@@ -558,9 +617,9 @@ describe("Editor component", () => {
 
 		it("handles mixed ASCII and wide characters in wrapping", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
-			const width = 15;
+			const width = 15 + 1; // +1 col reserved for cursor
 
-			// "Test ✅ OK 日本" = 4 + 1 + 2 + 1 + 2 + 1 + 4 = 15 columns (fits exactly)
+			// "Test ✅ OK 日本" = 4 + 1 + 2 + 1 + 2 + 1 + 4 = 15 columns (fits in width-1=15)
 			editor.setText("Test ✅ OK 日本");
 			const lines = editor.render(width);
 
@@ -600,6 +659,26 @@ describe("Editor component", () => {
 			for (let i = 1; i < lines.length - 1; i++) {
 				const lineWidth = visibleWidth(lines[i]!);
 				assert.ok(lineWidth <= width, `Line ${i} has width ${lineWidth}, exceeds max ${width}`);
+			}
+		});
+
+		it("shows cursor at end of line before wrap, wraps on next char", () => {
+			const width = 10;
+			for (const paddingX of [0, 1]) {
+				const editor = new Editor(createTestTUI(width + paddingX), defaultEditorTheme, { paddingX });
+
+				// Type 9 chars → fills layoutWidth exactly, cursor at end on same line
+				for (const ch of "aaaaaaaaa") editor.handleInput(ch);
+				let lines = editor.render(width + paddingX);
+				let contentLines = lines.slice(1, -1);
+				assert.strictEqual(contentLines.length, 1, "Should be 1 content line before wrap");
+				assert.ok(contentLines[0]!.endsWith("\x1b[7m \x1b[0m"), "Cursor should be at end of line");
+
+				// Type 1 more → text wraps to second line
+				editor.handleInput("a");
+				lines = editor.render(width + paddingX);
+				contentLines = lines.slice(1, -1);
+				assert.strictEqual(contentLines.length, 2, "Should wrap to 2 content lines");
 			}
 		});
 	});
@@ -687,7 +766,7 @@ describe("Editor component", () => {
 
 		it("handles single word that fits exactly", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
-			const width = 10;
+			const width = 10 + 1; // +1 col reserved for cursor
 
 			editor.setText("1234567890");
 			const lines = editor.render(width);
@@ -696,6 +775,1854 @@ describe("Editor component", () => {
 			assert.strictEqual(lines.length, 3);
 			const contentLine = stripVTControlCharacters(lines[1]!);
 			assert.ok(contentLine.includes("1234567890"), "Content should contain the word");
+		});
+
+		it("wraps word to next line when it ends exactly at terminal width", () => {
+			// "hello " (6) + "world" (5) = 11, but "world" is non-whitespace ending at width.
+			// Thus, wrap it to next line. The trailing space stays with "hello" on line 1
+			const chunks = wordWrapLine("hello world test", 11);
+
+			assert.strictEqual(chunks.length, 2);
+			assert.strictEqual(chunks[0]!.text, "hello ");
+			assert.strictEqual(chunks[1]!.text, "world test");
+		});
+
+		it("keeps whitespace at terminal width boundary on same line", () => {
+			// "hello world " is exactly 12 chars (including trailing space)
+			// The space at position 12 should stay on the first line
+			const chunks = wordWrapLine("hello world test", 12);
+
+			assert.strictEqual(chunks.length, 2);
+			assert.strictEqual(chunks[0]!.text, "hello world ");
+			assert.strictEqual(chunks[1]!.text, "test");
+		});
+
+		it("handles unbreakable word filling width exactly followed by space", () => {
+			const chunks = wordWrapLine("aaaaaaaaaaaa aaaa", 12);
+
+			assert.strictEqual(chunks.length, 2);
+			assert.strictEqual(chunks[0]!.text, "aaaaaaaaaaaa");
+			assert.strictEqual(chunks[1]!.text, " aaaa");
+		});
+
+		it("wraps word to next line when it fits width but not remaining space", () => {
+			const chunks = wordWrapLine("      aaaaaaaaaaaa", 12);
+
+			assert.strictEqual(chunks.length, 2);
+			assert.strictEqual(chunks[0]!.text, "      ");
+			assert.strictEqual(chunks[1]!.text, "aaaaaaaaaaaa");
+		});
+
+		it("keeps word with multi-space and following word together when they fit", () => {
+			const chunks = wordWrapLine("Lorem ipsum dolor sit amet,    consectetur", 30);
+
+			assert.strictEqual(chunks.length, 2);
+			assert.strictEqual(chunks[0]!.text, "Lorem ipsum dolor sit ");
+			assert.strictEqual(chunks[1]!.text, "amet,    consectetur");
+		});
+
+		it("keeps word with multi-space and following word when they fill width exactly", () => {
+			const chunks = wordWrapLine("Lorem ipsum dolor sit amet,              consectetur", 30);
+
+			assert.strictEqual(chunks.length, 2);
+			assert.strictEqual(chunks[0]!.text, "Lorem ipsum dolor sit ");
+			assert.strictEqual(chunks[1]!.text, "amet,              consectetur");
+		});
+
+		it("splits when word plus multi-space plus word exceeds width", () => {
+			const chunks = wordWrapLine("Lorem ipsum dolor sit amet,               consectetur", 30);
+
+			assert.strictEqual(chunks.length, 3);
+			assert.strictEqual(chunks[0]!.text, "Lorem ipsum dolor sit ");
+			assert.strictEqual(chunks[1]!.text, "amet,               ");
+			assert.strictEqual(chunks[2]!.text, "consectetur");
+		});
+
+		it("breaks long whitespace at line boundary", () => {
+			const chunks = wordWrapLine("Lorem ipsum dolor sit amet,                         consectetur", 30);
+
+			assert.strictEqual(chunks.length, 3);
+			assert.strictEqual(chunks[0]!.text, "Lorem ipsum dolor sit ");
+			assert.strictEqual(chunks[1]!.text, "amet,                         ");
+			assert.strictEqual(chunks[2]!.text, "consectetur");
+		});
+
+		it("breaks long whitespace at line boundary 2", () => {
+			const chunks = wordWrapLine("Lorem ipsum dolor sit amet,                          consectetur", 30);
+
+			assert.strictEqual(chunks.length, 3);
+			assert.strictEqual(chunks[0]!.text, "Lorem ipsum dolor sit ");
+			assert.strictEqual(chunks[1]!.text, "amet,                         ");
+			assert.strictEqual(chunks[2]!.text, " consectetur");
+		});
+
+		it("breaks whitespace spanning full lines", () => {
+			const chunks = wordWrapLine("Lorem ipsum dolor sit amet,                                     consectetur", 30);
+
+			assert.strictEqual(chunks.length, 3);
+			assert.strictEqual(chunks[0]!.text, "Lorem ipsum dolor sit ");
+			assert.strictEqual(chunks[1]!.text, "amet,                         ");
+			assert.strictEqual(chunks[2]!.text, "            consectetur");
+		});
+	});
+
+	describe("Kill ring", () => {
+		it("Ctrl+W saves deleted text to kill ring and Ctrl+Y yanks it", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("foo bar baz");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "baz"
+			assert.strictEqual(editor.getText(), "foo bar ");
+
+			// Move to beginning and yank
+			editor.handleInput("\x01"); // Ctrl+A
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "bazfoo bar ");
+		});
+
+		it("Ctrl+U saves deleted text to kill ring", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			// Move cursor to middle
+			editor.handleInput("\x01"); // Ctrl+A (start)
+			editor.handleInput("\x1b[C"); // Right 5 times
+			editor.handleInput("\x1b[C");
+			editor.handleInput("\x1b[C");
+			editor.handleInput("\x1b[C");
+			editor.handleInput("\x1b[C");
+			editor.handleInput("\x1b[C"); // After "hello "
+
+			editor.handleInput("\x15"); // Ctrl+U - deletes "hello "
+			assert.strictEqual(editor.getText(), "world");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("Ctrl+K saves deleted text to kill ring", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A (start)
+			editor.handleInput("\x0b"); // Ctrl+K - deletes "hello world"
+
+			assert.strictEqual(editor.getText(), "");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("Ctrl+Y does nothing when kill ring is empty", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("test");
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "test");
+		});
+
+		it("Alt+Y cycles through kill ring after Ctrl+Y", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create kill ring with multiple entries
+			editor.setText("first");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "first"
+			editor.setText("second");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "second"
+			editor.setText("third");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "third"
+
+			// Kill ring now has: [first, second, third]
+			assert.strictEqual(editor.getText(), "");
+
+			editor.handleInput("\x19"); // Ctrl+Y - yanks "third" (most recent)
+			assert.strictEqual(editor.getText(), "third");
+
+			editor.handleInput("\x1by"); // Alt+Y - cycles to "second"
+			assert.strictEqual(editor.getText(), "second");
+
+			editor.handleInput("\x1by"); // Alt+Y - cycles to "first"
+			assert.strictEqual(editor.getText(), "first");
+
+			editor.handleInput("\x1by"); // Alt+Y - cycles back to "third"
+			assert.strictEqual(editor.getText(), "third");
+		});
+
+		it("Alt+Y does nothing if not preceded by yank", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("test");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "test"
+			editor.setText("other");
+
+			// Type something to break the yank chain
+			editor.handleInput("x");
+			assert.strictEqual(editor.getText(), "otherx");
+
+			// Alt+Y should do nothing
+			editor.handleInput("\x1by"); // Alt+Y
+			assert.strictEqual(editor.getText(), "otherx");
+		});
+
+		it("Alt+Y does nothing if kill ring has ≤1 entry", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("only");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "only"
+
+			editor.handleInput("\x19"); // Ctrl+Y - yanks "only"
+			assert.strictEqual(editor.getText(), "only");
+
+			editor.handleInput("\x1by"); // Alt+Y - should do nothing (only 1 entry)
+			assert.strictEqual(editor.getText(), "only");
+		});
+
+		it("consecutive Ctrl+W accumulates into one kill ring entry", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("one two three");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "three"
+			editor.handleInput("\x17"); // Ctrl+W - deletes "two " (prepended)
+			editor.handleInput("\x17"); // Ctrl+W - deletes "one " (prepended)
+
+			assert.strictEqual(editor.getText(), "");
+
+			// Should be one combined entry
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "one two three");
+		});
+
+		it("Ctrl+U accumulates multiline deletes including newlines", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Start with multiline text, cursor at end
+			editor.setText("line1\nline2\nline3");
+			// Cursor is at end of line3 (line 2, col 5)
+
+			// Delete "line3"
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "line1\nline2\n");
+
+			// Delete newline (at start of empty line 2, merges with line1)
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "line1\nline2");
+
+			// Delete "line2"
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "line1\n");
+
+			// Delete newline
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "line1");
+
+			// Delete "line1"
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "");
+
+			// All deletions accumulated into one entry: "line1\nline2\nline3"
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "line1\nline2\nline3");
+		});
+
+		it("backward deletions prepend, forward deletions append during accumulation", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("prefix|suffix");
+			// Position cursor at |
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C"); // Move right 6 times
+
+			editor.handleInput("\x0b"); // Ctrl+K - deletes "suffix" (forward)
+			editor.handleInput("\x0b"); // Ctrl+K - deletes "|" (forward, appended)
+			assert.strictEqual(editor.getText(), "prefix");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "prefix|suffix");
+		});
+
+		it("non-delete actions break kill accumulation", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Delete "baz", then type "x" to break accumulation, then delete "x"
+			editor.setText("foo bar baz");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "baz"
+			assert.strictEqual(editor.getText(), "foo bar ");
+
+			editor.handleInput("x"); // Typing breaks accumulation
+			assert.strictEqual(editor.getText(), "foo bar x");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes "x" (separate entry, not accumulated)
+			assert.strictEqual(editor.getText(), "foo bar ");
+
+			// Yank most recent - should be "x", not "xbaz"
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "foo bar x");
+
+			// Cycle to previous - should be "baz" (separate entry)
+			editor.handleInput("\x1by"); // Alt+Y
+			assert.strictEqual(editor.getText(), "foo bar baz");
+		});
+
+		it("non-yank actions break Alt+Y chain", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("first");
+			editor.handleInput("\x17"); // Ctrl+W
+			editor.setText("second");
+			editor.handleInput("\x17"); // Ctrl+W
+			editor.setText("");
+
+			editor.handleInput("\x19"); // Ctrl+Y - yanks "second"
+			assert.strictEqual(editor.getText(), "second");
+
+			editor.handleInput("x"); // Type breaks yank chain
+			assert.strictEqual(editor.getText(), "secondx");
+
+			editor.handleInput("\x1by"); // Alt+Y - should do nothing
+			assert.strictEqual(editor.getText(), "secondx");
+		});
+
+		it("kill ring rotation persists after cycling", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("first");
+			editor.handleInput("\x17"); // deletes "first"
+			editor.setText("second");
+			editor.handleInput("\x17"); // deletes "second"
+			editor.setText("third");
+			editor.handleInput("\x17"); // deletes "third"
+			editor.setText("");
+
+			// Ring: [first, second, third]
+
+			editor.handleInput("\x19"); // Ctrl+Y - yanks "third"
+			editor.handleInput("\x1by"); // Alt+Y - cycles to "second", ring rotates
+
+			// Now ring is: [third, first, second]
+			assert.strictEqual(editor.getText(), "second");
+
+			// Do something else
+			editor.handleInput("x");
+			editor.setText("");
+
+			// New yank should get "second" (now at end after rotation)
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "second");
+		});
+
+		it("consecutive deletions across lines coalesce into one entry", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// "1\n2\n3" with cursor at end, delete everything with Ctrl+W
+			editor.setText("1\n2\n3");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "3"
+			assert.strictEqual(editor.getText(), "1\n2\n");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes newline (merge with prev line)
+			assert.strictEqual(editor.getText(), "1\n2");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes "2"
+			assert.strictEqual(editor.getText(), "1\n");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes newline
+			assert.strictEqual(editor.getText(), "1");
+
+			editor.handleInput("\x17"); // Ctrl+W - deletes "1"
+			assert.strictEqual(editor.getText(), "");
+
+			// All deletions should have accumulated into one entry
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "1\n2\n3");
+		});
+
+		it("Ctrl+K at line end deletes newline and coalesces", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// "ab" on line 1, "cd" on line 2, cursor at end of line 1
+			editor.setText("");
+			editor.handleInput("a");
+			editor.handleInput("b");
+			editor.handleInput("\n");
+			editor.handleInput("c");
+			editor.handleInput("d");
+			// Move to end of first line
+			editor.handleInput("\x1b[A"); // Up arrow
+			editor.handleInput("\x05"); // Ctrl+E - end of line
+
+			// Now at end of "ab", Ctrl+K should delete newline (merge with "cd")
+			editor.handleInput("\x0b"); // Ctrl+K - deletes newline
+			assert.strictEqual(editor.getText(), "abcd");
+
+			// Continue deleting
+			editor.handleInput("\x0b"); // Ctrl+K - deletes "cd"
+			assert.strictEqual(editor.getText(), "ab");
+
+			// Both deletions should accumulate
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "ab\ncd");
+		});
+
+		it("handles yank in middle of text", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("word");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "word"
+			editor.setText("hello world");
+
+			// Move to middle (after "hello ")
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello wordworld");
+		});
+
+		it("handles yank-pop in middle of text", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create two kill ring entries
+			editor.setText("FIRST");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "FIRST"
+			editor.setText("SECOND");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "SECOND"
+
+			// Ring: ["FIRST", "SECOND"]
+
+			// Set up "hello world" and position cursor after "hello "
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start of line
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C"); // Move right 6
+
+			// Yank "SECOND" in the middle
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello SECONDworld");
+
+			// Yank-pop replaces "SECOND" with "FIRST"
+			editor.handleInput("\x1by"); // Alt+Y
+			assert.strictEqual(editor.getText(), "hello FIRSTworld");
+		});
+
+		it("multiline yank and yank-pop in middle of text", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create single-line entry
+			editor.setText("SINGLE");
+			editor.handleInput("\x17"); // Ctrl+W - deletes "SINGLE"
+
+			// Create multiline entry via consecutive Ctrl+U
+			editor.setText("A\nB");
+			editor.handleInput("\x15"); // Ctrl+U - deletes "B"
+			editor.handleInput("\x15"); // Ctrl+U - deletes newline
+			editor.handleInput("\x15"); // Ctrl+U - deletes "A"
+			// Ring: ["SINGLE", "A\nB"]
+
+			// Insert in middle of "hello world"
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C");
+
+			// Yank multiline "A\nB"
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello A\nBworld");
+
+			// Yank-pop replaces with "SINGLE"
+			editor.handleInput("\x1by"); // Alt+Y
+			assert.strictEqual(editor.getText(), "hello SINGLEworld");
+		});
+
+		it("Alt+D deletes word forward and saves to kill ring", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world test");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+
+			editor.handleInput("\x1bd"); // Alt+D - deletes "hello"
+			assert.strictEqual(editor.getText(), " world test");
+
+			editor.handleInput("\x1bd"); // Alt+D - deletes " world" (skips whitespace, then word)
+			assert.strictEqual(editor.getText(), " test");
+
+			// Yank should get accumulated text
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "hello world test");
+		});
+
+		it("Alt+D at end of line deletes newline", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("line1\nline2");
+			// Move to start of document, then to end of first line
+			editor.handleInput("\x1b[A"); // Up arrow - go to first line
+			editor.handleInput("\x05"); // Ctrl+E - end of line
+
+			editor.handleInput("\x1bd"); // Alt+D - deletes newline (merges lines)
+			assert.strictEqual(editor.getText(), "line1line2");
+
+			editor.handleInput("\x19"); // Ctrl+Y
+			assert.strictEqual(editor.getText(), "line1\nline2");
+		});
+	});
+
+	describe("Undo", () => {
+		it("does nothing when undo stack is empty", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "");
+		});
+
+		it("coalesces consecutive word characters into one undo unit", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			assert.strictEqual(editor.getText(), "hello world");
+
+			// Undo removes " world" (space captured state before it, so we restore to "hello")
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello");
+
+			// Undo removes "hello"
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "");
+		});
+
+		it("undoes spaces one at a time", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput(" ");
+			assert.strictEqual(editor.getText(), "hello  ");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo) - removes second " "
+			assert.strictEqual(editor.getText(), "hello ");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo) - removes first " "
+			assert.strictEqual(editor.getText(), "hello");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo) - removes "hello"
+			assert.strictEqual(editor.getText(), "");
+		});
+
+		it("undoes newlines and signals next word to capture state", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput("\n");
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			assert.strictEqual(editor.getText(), "hello\nworld");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello\n");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "");
+		});
+
+		it("undoes backspace", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput("\x7f"); // Backspace
+			assert.strictEqual(editor.getText(), "hell");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello");
+		});
+
+		it("undoes forward delete", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			editor.handleInput("\x1b[C"); // Right arrow
+			editor.handleInput("\x1b[3~"); // Delete key
+			assert.strictEqual(editor.getText(), "hllo");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello");
+		});
+
+		it("undoes Ctrl+W (delete word backward)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			assert.strictEqual(editor.getText(), "hello world");
+
+			editor.handleInput("\x17"); // Ctrl+W
+			assert.strictEqual(editor.getText(), "hello ");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("undoes Ctrl+K (delete to line end)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C"); // Move right 6 times
+
+			editor.handleInput("\x0b"); // Ctrl+K
+			assert.strictEqual(editor.getText(), "hello ");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+
+			editor.handleInput("|");
+			assert.strictEqual(editor.getText(), "hello |world");
+		});
+
+		it("undoes Ctrl+U (delete to line start)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C"); // Move right 6 times
+
+			editor.handleInput("\x15"); // Ctrl+U
+			assert.strictEqual(editor.getText(), "world");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("undoes yank", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput("\x17"); // Ctrl+W - delete "hello "
+			editor.handleInput("\x19"); // Ctrl+Y - yank
+			assert.strictEqual(editor.getText(), "hello ");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "");
+		});
+
+		it("undoes single-line paste atomically", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[C"); // Move right 5 (after "hello", before space)
+
+			// Simulate bracketed paste of "beep boop"
+			editor.handleInput("\x1b[200~beep boop\x1b[201~");
+			assert.strictEqual(editor.getText(), "hellobeep boop world");
+
+			// Single undo should restore entire pre-paste state
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+
+			editor.handleInput("|");
+			assert.strictEqual(editor.getText(), "hello| world");
+		});
+
+		it("undoes multi-line paste atomically", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[C"); // Move right 5 (after "hello", before space)
+
+			// Simulate bracketed paste of multi-line text
+			editor.handleInput("\x1b[200~line1\nline2\nline3\x1b[201~");
+			assert.strictEqual(editor.getText(), "helloline1\nline2\nline3 world");
+
+			// Single undo should restore entire pre-paste state
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+
+			editor.handleInput("|");
+			assert.strictEqual(editor.getText(), "hello| world");
+		});
+
+		it("undoes insertTextAtCursor atomically", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[C"); // Move right 5 (after "hello", before space)
+
+			// Programmatic insertion (e.g., clipboard image path)
+			editor.insertTextAtCursor("/tmp/image.png");
+			assert.strictEqual(editor.getText(), "hello/tmp/image.png world");
+
+			// Single undo should restore entire pre-insert state
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+
+			editor.handleInput("|");
+			assert.strictEqual(editor.getText(), "hello| world");
+		});
+
+		it("insertTextAtCursor handles multiline text", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[C"); // Move right 5 (after "hello", before space)
+
+			// Insert multiline text
+			editor.insertTextAtCursor("line1\nline2\nline3");
+			assert.strictEqual(editor.getText(), "helloline1\nline2\nline3 world");
+
+			// Cursor should be at end of inserted text (after "line3", before " world")
+			const cursor = editor.getCursor();
+			assert.strictEqual(cursor.line, 2);
+			assert.strictEqual(cursor.col, 5); // "line3".length
+
+			// Single undo should restore entire pre-insert state
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("insertTextAtCursor normalizes CRLF and CR line endings", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("");
+
+			// Insert text with CRLF
+			editor.insertTextAtCursor("a\r\nb\r\nc");
+			assert.strictEqual(editor.getText(), "a\nb\nc");
+
+			editor.handleInput("\x1b[45;5u"); // Undo
+			assert.strictEqual(editor.getText(), "");
+
+			// Insert text with CR only
+			editor.insertTextAtCursor("x\ry\rz");
+			assert.strictEqual(editor.getText(), "x\ny\nz");
+		});
+
+		it("undoes setText to empty string", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			assert.strictEqual(editor.getText(), "hello world");
+
+			editor.setText("");
+			assert.strictEqual(editor.getText(), "");
+
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("clears undo stack on submit", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			let submitted = "";
+			editor.onSubmit = (text) => {
+				submitted = text;
+			};
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput("\r"); // Enter - submit
+
+			assert.strictEqual(submitted, "hello");
+			assert.strictEqual(editor.getText(), "");
+
+			// Undo should do nothing - stack was cleared
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "");
+		});
+
+		it("exits history browsing mode on undo", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Add "hello" to history
+			editor.addToHistory("hello");
+			assert.strictEqual(editor.getText(), "");
+
+			// Type "world"
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			assert.strictEqual(editor.getText(), "world");
+
+			// Ctrl+W - delete word
+			editor.handleInput("\x17"); // Ctrl+W
+			assert.strictEqual(editor.getText(), "");
+
+			// Press Up - enter history browsing, shows "hello"
+			editor.handleInput("\x1b[A"); // Up arrow
+			assert.strictEqual(editor.getText(), "hello");
+
+			// Undo should restore to "" (state before entering history browsing)
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "");
+
+			// Undo again should restore to "world" (state before Ctrl+W)
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "world");
+		});
+
+		it("undo restores to pre-history state even after multiple history navigations", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Add history entries
+			editor.addToHistory("first");
+			editor.addToHistory("second");
+			editor.addToHistory("third");
+
+			// Type something
+			editor.handleInput("c");
+			editor.handleInput("u");
+			editor.handleInput("r");
+			editor.handleInput("r");
+			editor.handleInput("e");
+			editor.handleInput("n");
+			editor.handleInput("t");
+			assert.strictEqual(editor.getText(), "current");
+
+			// Clear editor
+			editor.handleInput("\x17"); // Ctrl+W
+			assert.strictEqual(editor.getText(), "");
+
+			// Navigate through history multiple times
+			editor.handleInput("\x1b[A"); // Up - "third"
+			assert.strictEqual(editor.getText(), "third");
+			editor.handleInput("\x1b[A"); // Up - "second"
+			assert.strictEqual(editor.getText(), "second");
+			editor.handleInput("\x1b[A"); // Up - "first"
+			assert.strictEqual(editor.getText(), "first");
+
+			// Undo should go back to "" (state before we started browsing), not intermediate states
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "");
+
+			// Another undo goes back to "current"
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "current");
+		});
+
+		it("cursor movement starts new undo unit", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput(" ");
+			editor.handleInput("w");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("l");
+			editor.handleInput("d");
+			assert.strictEqual(editor.getText(), "hello world");
+
+			// Move cursor left 5 (to after "hello ")
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[D");
+
+			// Type "lol" in the middle
+			editor.handleInput("l");
+			editor.handleInput("o");
+			editor.handleInput("l");
+			assert.strictEqual(editor.getText(), "hello lolworld");
+
+			// Undo should restore to "hello world" (before inserting "lol")
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello world");
+
+			editor.handleInput("|");
+			assert.strictEqual(editor.getText(), "hello |world");
+		});
+
+		it("no-op delete operations do not push undo snapshots", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			assert.strictEqual(editor.getText(), "hello");
+
+			// Delete word on empty - multiple times (should be no-ops)
+			editor.handleInput("\x17"); // Ctrl+W - deletes "hello"
+			assert.strictEqual(editor.getText(), "");
+			editor.handleInput("\x17"); // Ctrl+W - no-op (nothing to delete)
+			editor.handleInput("\x17"); // Ctrl+W - no-op
+
+			// Single undo should restore "hello"
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "hello");
+		});
+
+		it("undoes autocomplete", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create a mock autocomplete provider
+			const mockProvider: AutocompleteProvider = {
+				getSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const prefix = text.slice(0, cursorCol);
+					if (prefix === "di") {
+						return {
+							items: [{ value: "dist/", label: "dist/" }],
+							prefix: "di",
+						};
+					}
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Type "di"
+			editor.handleInput("d");
+			editor.handleInput("i");
+			assert.strictEqual(editor.getText(), "di");
+
+			// Press Tab to trigger autocomplete
+			editor.handleInput("\t");
+			// Autocomplete should be showing with "dist/" suggestion
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Press Tab again to accept the suggestion
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "dist/");
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+
+			// Undo should restore to "di"
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "di");
+		});
+	});
+
+	describe("Autocomplete", () => {
+		it("auto-applies single force-file suggestion without showing menu", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create a mock provider with getForceFileSuggestions that returns single item
+			const mockProvider: AutocompleteProvider & {
+				getForceFileSuggestions: AutocompleteProvider["getSuggestions"];
+			} = {
+				getSuggestions: () => null,
+				getForceFileSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const prefix = text.slice(0, cursorCol);
+					if (prefix === "Work") {
+						return {
+							items: [{ value: "Workspace/", label: "Workspace/" }],
+							prefix: "Work",
+						};
+					}
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Type "Work"
+			editor.handleInput("W");
+			editor.handleInput("o");
+			editor.handleInput("r");
+			editor.handleInput("k");
+			assert.strictEqual(editor.getText(), "Work");
+
+			// Press Tab - should auto-apply without showing menu
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "Workspace/");
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+
+			// Undo should restore to "Work"
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "Work");
+		});
+
+		it("shows menu when force-file has multiple suggestions", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Create a mock provider with getForceFileSuggestions that returns multiple items
+			const mockProvider: AutocompleteProvider & {
+				getForceFileSuggestions: AutocompleteProvider["getSuggestions"];
+			} = {
+				getSuggestions: () => null,
+				getForceFileSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const prefix = text.slice(0, cursorCol);
+					if (prefix === "src") {
+						return {
+							items: [
+								{ value: "src/", label: "src/" },
+								{ value: "src.txt", label: "src.txt" },
+							],
+							prefix: "src",
+						};
+					}
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Type "src"
+			editor.handleInput("s");
+			editor.handleInput("r");
+			editor.handleInput("c");
+			assert.strictEqual(editor.getText(), "src");
+
+			// Press Tab - should show menu because there are multiple suggestions
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "src"); // Text unchanged
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Press Tab again to accept first suggestion
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "src/");
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+		});
+
+		it("keeps suggestions open when typing in force mode (Tab-triggered)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Mock provider with both getSuggestions and getForceFileSuggestions
+			// getSuggestions only returns results for path-like patterns
+			// getForceFileSuggestions always extracts prefix and filters
+			const allFiles = [
+				{ value: "readme.md", label: "readme.md" },
+				{ value: "package.json", label: "package.json" },
+				{ value: "src/", label: "src/" },
+				{ value: "dist/", label: "dist/" },
+			];
+
+			const mockProvider: AutocompleteProvider & {
+				getForceFileSuggestions: (
+					lines: string[],
+					cursorLine: number,
+					cursorCol: number,
+				) => { items: { value: string; label: string }[]; prefix: string } | null;
+			} = {
+				getSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const prefix = text.slice(0, cursorCol);
+					// Only return suggestions for path-like patterns (contains / or starts with .)
+					if (prefix.includes("/") || prefix.startsWith(".")) {
+						const filtered = allFiles.filter((f) => f.value.toLowerCase().startsWith(prefix.toLowerCase()));
+						if (filtered.length > 0) {
+							return { items: filtered, prefix };
+						}
+					}
+					return null;
+				},
+				getForceFileSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const prefix = text.slice(0, cursorCol);
+					// Always filter files by prefix
+					const filtered = allFiles.filter((f) => f.value.toLowerCase().startsWith(prefix.toLowerCase()));
+					if (filtered.length > 0) {
+						return { items: filtered, prefix };
+					}
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Press Tab on empty prompt - should show all files (force mode)
+			editor.handleInput("\t");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Type "r" - should narrow to "readme.md" (force mode keeps suggestions open)
+			editor.handleInput("r");
+			assert.strictEqual(editor.getText(), "r");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Type "e" - should still show "readme.md"
+			editor.handleInput("e");
+			assert.strictEqual(editor.getText(), "re");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Accept with Tab
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "readme.md");
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+		});
+
+		it("hides autocomplete when backspacing slash command to empty", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Mock provider with slash commands
+			const mockProvider: AutocompleteProvider = {
+				getSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const prefix = text.slice(0, cursorCol);
+					// Only return slash command suggestions when line starts with /
+					if (prefix.startsWith("/")) {
+						const commands = [
+							{ value: "/model", label: "model", description: "Change model" },
+							{ value: "/help", label: "help", description: "Show help" },
+						];
+						const query = prefix.slice(1); // Remove leading /
+						const filtered = commands.filter((c) => c.value.startsWith(query));
+						if (filtered.length > 0) {
+							return { items: filtered, prefix };
+						}
+					}
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Type "/" - should show slash command suggestions
+			editor.handleInput("/");
+			assert.strictEqual(editor.getText(), "/");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Backspace to delete "/" - should hide autocomplete completely
+			editor.handleInput("\x7f"); // Backspace
+			assert.strictEqual(editor.getText(), "");
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+		});
+	});
+
+	describe("Character jump (Ctrl+])", () => {
+		it("jumps forward to first occurrence of character on same line", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+
+			editor.handleInput("\x1d"); // Ctrl+] (legacy sequence for ctrl+])
+			editor.handleInput("o"); // Jump to first 'o'
+
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 4 }); // 'o' in "hello"
+		});
+
+		it("jumps forward to next occurrence after cursor", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			// Move cursor to the 'o' in "hello" (col 4)
+			for (let i = 0; i < 4; i++) editor.handleInput("\x1b[C");
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 4 });
+
+			editor.handleInput("\x1d"); // Ctrl+]
+			editor.handleInput("o"); // Jump to next 'o' (in "world")
+
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 7 }); // 'o' in "world"
+		});
+
+		it("jumps forward across multiple lines", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("abc\ndef\nghi");
+			// Cursor is at end (line 2, col 3). Move to line 0 via up arrows, then Ctrl+A
+			editor.handleInput("\x1b[A"); // Up
+			editor.handleInput("\x1b[A"); // Up - now on line 0
+			editor.handleInput("\x01"); // Ctrl+A - go to start of line
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+
+			editor.handleInput("\x1d"); // Ctrl+]
+			editor.handleInput("g"); // Jump to 'g' on line 3
+
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 0 });
+		});
+
+		it("jumps backward to first occurrence before cursor on same line", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			// Cursor at end (col 11)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 11 });
+
+			editor.handleInput("\x1b\x1d"); // Ctrl+Alt+] (ESC followed by Ctrl+])
+			editor.handleInput("o"); // Jump to last 'o' before cursor
+
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 7 }); // 'o' in "world"
+		});
+
+		it("jumps backward across multiple lines", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("abc\ndef\nghi");
+			// Cursor at end of line 3
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 3 });
+
+			editor.handleInput("\x1b\x1d"); // Ctrl+Alt+]
+			editor.handleInput("a"); // Jump to 'a' on line 1
+
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+		});
+
+		it("does nothing when character is not found (forward)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+
+			editor.handleInput("\x1d"); // Ctrl+]
+			editor.handleInput("z"); // 'z' doesn't exist
+
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 }); // Cursor unchanged
+		});
+
+		it("does nothing when character is not found (backward)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			// Cursor at end
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 11 });
+
+			editor.handleInput("\x1b\x1d"); // Ctrl+Alt+]
+			editor.handleInput("z"); // 'z' doesn't exist
+
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 11 }); // Cursor unchanged
+		});
+
+		it("is case-sensitive", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("Hello World");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+
+			// Search for lowercase 'h' - should not find it (only 'H' exists)
+			editor.handleInput("\x1d"); // Ctrl+]
+			editor.handleInput("h");
+
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 }); // Cursor unchanged
+
+			// Search for uppercase 'W' - should find it
+			editor.handleInput("\x1d"); // Ctrl+]
+			editor.handleInput("W");
+
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 6 }); // 'W' in "World"
+		});
+
+		it("cancels jump mode when Ctrl+] is pressed again", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+
+			editor.handleInput("\x1d"); // Ctrl+] - enter jump mode
+			editor.handleInput("\x1d"); // Ctrl+] again - cancel
+
+			// Type 'o' normally - should insert, not jump
+			editor.handleInput("o");
+			assert.strictEqual(editor.getText(), "ohello world");
+		});
+
+		it("cancels jump mode on Escape and processes the Escape", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+
+			editor.handleInput("\x1d"); // Ctrl+] - enter jump mode
+			editor.handleInput("\x1b"); // Escape - cancel jump mode
+
+			// Cursor should be unchanged (Escape itself doesn't move cursor in editor)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+
+			// Type 'o' normally - should insert, not jump
+			editor.handleInput("o");
+			assert.strictEqual(editor.getText(), "ohello world");
+		});
+
+		it("cancels backward jump mode when Ctrl+Alt+] is pressed again", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			// Cursor at end
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 11 });
+
+			editor.handleInput("\x1b\x1d"); // Ctrl+Alt+] - enter backward jump mode
+			editor.handleInput("\x1b\x1d"); // Ctrl+Alt+] again - cancel
+
+			// Type 'o' normally - should insert, not jump
+			editor.handleInput("o");
+			assert.strictEqual(editor.getText(), "hello worldo");
+		});
+
+		it("searches for special characters", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("foo(bar) = baz;");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+
+			// Jump to '('
+			editor.handleInput("\x1d"); // Ctrl+]
+			editor.handleInput("(");
+
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 3 });
+
+			// Jump to '='
+			editor.handleInput("\x1d"); // Ctrl+]
+			editor.handleInput("=");
+
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 9 });
+		});
+
+		it("handles empty text gracefully", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("");
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+
+			editor.handleInput("\x1d"); // Ctrl+]
+			editor.handleInput("x");
+
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 }); // Cursor unchanged
+		});
+
+		it("resets lastAction when jumping", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world");
+			editor.handleInput("\x01"); // Ctrl+A - go to start
+
+			// Type to set lastAction to "type-word"
+			editor.handleInput("x");
+			assert.strictEqual(editor.getText(), "xhello world");
+
+			// Jump forward
+			editor.handleInput("\x1d"); // Ctrl+]
+			editor.handleInput("o");
+
+			// Type more - should start a new undo unit (lastAction was reset)
+			editor.handleInput("Y");
+			assert.strictEqual(editor.getText(), "xhellYo world");
+
+			// Undo should only undo "Y", not "x" as well
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "xhello world");
+		});
+	});
+
+	describe("Sticky column", () => {
+		it("preserves target column when moving up through a shorter line", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Line 0: "2222222222x222" (x at col 10)
+			// Line 1: "" (empty)
+			// Line 2: "1111111111_111111111111" (_ at col 10)
+			editor.setText("2222222222x222\n\n1111111111_111111111111");
+
+			// Position cursor on _ (line 2, col 10)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 23 }); // At end
+			editor.handleInput("\x01"); // Ctrl+A - go to start of line
+			for (let i = 0; i < 10; i++) editor.handleInput("\x1b[C"); // Move right to col 10
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 10 });
+
+			// Press Up - should move to empty line (col clamped to 0)
+			editor.handleInput("\x1b[A"); // Up arrow
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 0 });
+
+			// Press Up again - should move to line 0 at col 10 (on 'x')
+			editor.handleInput("\x1b[A"); // Up arrow
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 10 });
+		});
+
+		it("preserves target column when moving down through a shorter line", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1111111111_111\n\n2222222222x222222222222");
+
+			// Position cursor on _ (line 0, col 10)
+			editor.handleInput("\x1b[A"); // Up to line 1
+			editor.handleInput("\x1b[A"); // Up to line 0
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 10; i++) editor.handleInput("\x1b[C");
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 10 });
+
+			// Press Down - should move to empty line (col clamped to 0)
+			editor.handleInput("\x1b[B"); // Down arrow
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 0 });
+
+			// Press Down again - should move to line 2 at col 10 (on 'x')
+			editor.handleInput("\x1b[B"); // Down arrow
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 10 });
+		});
+
+		it("resets sticky column on horizontal movement (left arrow)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\n\n1234567890");
+
+			// Start at line 2, col 5
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[C");
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 5 });
+
+			// Move up through empty line
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 5 (sticky)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 });
+
+			// Move left - resets sticky column
+			editor.handleInput("\x1b[D"); // Left
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 4 });
+
+			// Move down twice
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 4 (new sticky from col 4)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 4 });
+		});
+
+		it("resets sticky column on horizontal movement (right arrow)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\n\n1234567890");
+
+			// Start at line 0, col 5
+			editor.handleInput("\x1b[A"); // Up to line 1
+			editor.handleInput("\x1b[A"); // Up to line 0
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[C");
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 });
+
+			// Move down through empty line
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 5 (sticky)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 5 });
+
+			// Move right - resets sticky column
+			editor.handleInput("\x1b[C"); // Right
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 6 });
+
+			// Move up twice
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 6 (new sticky from col 6)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 6 });
+		});
+
+		it("resets sticky column on typing", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\n\n1234567890");
+
+			// Start at line 2, col 8
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 8; i++) editor.handleInput("\x1b[C");
+
+			// Move up through empty line
+			editor.handleInput("\x1b[A"); // Up
+			editor.handleInput("\x1b[A"); // Up - line 0, col 8
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 8 });
+
+			// Type a character - resets sticky column
+			editor.handleInput("X");
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 9 });
+
+			// Move down twice
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 9 (new sticky from col 9)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 9 });
+		});
+
+		it("resets sticky column on backspace", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\n\n1234567890");
+
+			// Start at line 2, col 8
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 8; i++) editor.handleInput("\x1b[C");
+
+			// Move up through empty line
+			editor.handleInput("\x1b[A"); // Up
+			editor.handleInput("\x1b[A"); // Up - line 0, col 8
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 8 });
+
+			// Backspace - resets sticky column
+			editor.handleInput("\x7f"); // Backspace
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 7 });
+
+			// Move down twice
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 7 (new sticky from col 7)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 7 });
+		});
+
+		it("resets sticky column on Ctrl+A (move to line start)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\n\n1234567890");
+
+			// Start at line 2, col 8
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 8; i++) editor.handleInput("\x1b[C");
+
+			// Move up - establishes sticky col 8
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+
+			// Ctrl+A - resets sticky column to 0
+			editor.handleInput("\x01"); // Ctrl+A
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 0 });
+
+			// Move up
+			editor.handleInput("\x1b[A"); // Up - line 0, col 0 (new sticky from col 0)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+		});
+
+		it("resets sticky column on Ctrl+E (move to line end)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("12345\n\n1234567890");
+
+			// Start at line 2, col 3
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 3; i++) editor.handleInput("\x1b[C");
+
+			// Move up through empty line - establishes sticky col 3
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 3
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 3 });
+
+			// Ctrl+E - resets sticky column to end
+			editor.handleInput("\x05"); // Ctrl+E
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 });
+
+			// Move down twice
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 5 (new sticky from col 5)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 5 });
+		});
+
+		it("resets sticky column on word movement (Ctrl+Left)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world\n\nhello world");
+
+			// Start at end of line 2 (col 11)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 11 });
+
+			// Move up through empty line - establishes sticky col 11
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 11
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 11 });
+
+			// Ctrl+Left - word movement resets sticky column
+			editor.handleInput("\x1b[1;5D"); // Ctrl+Left
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 6 }); // Before "world"
+
+			// Move down twice
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 6 (new sticky from col 6)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 6 });
+		});
+
+		it("resets sticky column on word movement (Ctrl+Right)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("hello world\n\nhello world");
+
+			// Start at line 0, col 0
+			editor.handleInput("\x1b[A"); // Up
+			editor.handleInput("\x1b[A"); // Up
+			editor.handleInput("\x01"); // Ctrl+A
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+
+			// Move down through empty line - establishes sticky col 0
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 0
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 0 });
+
+			// Ctrl+Right - word movement resets sticky column
+			editor.handleInput("\x1b[1;5C"); // Ctrl+Right
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 5 }); // After "hello"
+
+			// Move up twice
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 5 (new sticky from col 5)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 });
+		});
+
+		it("resets sticky column on undo", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\n\n1234567890");
+
+			// Go to line 0, col 8
+			editor.handleInput("\x1b[A"); // Up to line 1
+			editor.handleInput("\x1b[A"); // Up to line 0
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 8; i++) editor.handleInput("\x1b[C");
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 8 });
+
+			// Move down through empty line - establishes sticky col 8
+			editor.handleInput("\x1b[B"); // Down - line 1, col 0
+			editor.handleInput("\x1b[B"); // Down - line 2, col 8 (sticky)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 8 });
+
+			// Type something to create undo state - this clears sticky and sets col to 9
+			editor.handleInput("X");
+			assert.strictEqual(editor.getText(), "1234567890\n\n12345678X90");
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 9 });
+
+			// Move up - establishes new sticky col 9
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 9
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 9 });
+
+			// Undo - resets sticky column and restores cursor to line 2, col 8
+			editor.handleInput("\x1b[45;5u"); // Ctrl+- (undo)
+			assert.strictEqual(editor.getText(), "1234567890\n\n1234567890");
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 8 });
+
+			// Move up - should capture new sticky from restored col 8, not old col 9
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 8 (new sticky from restored position)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 8 });
+		});
+
+		it("handles multiple consecutive up/down movements", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\nab\ncd\nef\n1234567890");
+
+			// Start at line 4, col 7
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 7; i++) editor.handleInput("\x1b[C");
+			assert.deepStrictEqual(editor.getCursor(), { line: 4, col: 7 });
+
+			// Move up multiple times through short lines
+			editor.handleInput("\x1b[A"); // Up - line 3, col 2 (clamped)
+			editor.handleInput("\x1b[A"); // Up - line 2, col 2 (clamped)
+			editor.handleInput("\x1b[A"); // Up - line 1, col 2 (clamped)
+			editor.handleInput("\x1b[A"); // Up - line 0, col 7 (restored)
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 7 });
+
+			// Move down multiple times - sticky should still be 7
+			editor.handleInput("\x1b[B"); // Down - line 1, col 2
+			editor.handleInput("\x1b[B"); // Down - line 2, col 2
+			editor.handleInput("\x1b[B"); // Down - line 3, col 2
+			editor.handleInput("\x1b[B"); // Down - line 4, col 7 (restored)
+			assert.deepStrictEqual(editor.getCursor(), { line: 4, col: 7 });
+		});
+
+		it("moves correctly through wrapped visual lines without getting stuck", () => {
+			const tui = createTestTUI(15, 24); // Narrow terminal
+			const editor = new Editor(tui, defaultEditorTheme);
+
+			// Line 0: short
+			// Line 1: 30 chars = wraps to 3 visual lines at width 10 (after padding)
+			editor.setText("short\n123456789012345678901234567890");
+			editor.render(15); // This gives 14 layout width
+
+			// Position at end of line 1 (col 30)
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 30 });
+
+			// Move up repeatedly - should traverse all visual lines of the wrapped text
+			// and eventually reach line 0
+			editor.handleInput("\x1b[A"); // Up - to previous visual line within line 1
+			assert.strictEqual(editor.getCursor().line, 1);
+
+			editor.handleInput("\x1b[A"); // Up - another visual line
+			assert.strictEqual(editor.getCursor().line, 1);
+
+			editor.handleInput("\x1b[A"); // Up - should reach line 0
+			assert.strictEqual(editor.getCursor().line, 0);
+		});
+
+		it("handles setText resetting sticky column", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.setText("1234567890\n\n1234567890");
+
+			// Establish sticky column
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 8; i++) editor.handleInput("\x1b[C");
+			editor.handleInput("\x1b[A"); // Up
+
+			// setText should reset sticky column
+			editor.setText("abcdefghij\n\nabcdefghij");
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 10 }); // At end
+
+			// Move up - should capture new sticky from current position (10)
+			editor.handleInput("\x1b[A"); // Up - line 1, col 0
+			editor.handleInput("\x1b[A"); // Up - line 0, col 10
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 10 });
+		});
+
+		it("sets preferredVisualCol when pressing right at end of prompt (last line)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Line 0: 20 chars with 'x' at col 10
+			// Line 1: empty
+			// Line 2: 10 chars ending with '_'
+			editor.setText("111111111x1111111111\n\n333333333_");
+
+			// Go to line 0, press Ctrl+E (end of line) - col 20
+			editor.handleInput("\x1b[A"); // Up to line 1
+			editor.handleInput("\x1b[A"); // Up to line 0
+			editor.handleInput("\x05"); // Ctrl+E - move to end of line
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 20 });
+
+			// Move down to line 2 - cursor clamped to col 10 (end of line)
+			editor.handleInput("\x1b[B"); // Down to line 1, col 0
+			editor.handleInput("\x1b[B"); // Down to line 2, col 10 (clamped)
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 10 });
+
+			// Press Right at end of prompt - nothing visible happens, but sets preferredVisualCol to 10
+			editor.handleInput("\x1b[C"); // Right - can't move, but sets preferredVisualCol
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 10 }); // Still at same position
+
+			// Move up twice to line 0 - should use preferredVisualCol (10) to land on 'x'
+			editor.handleInput("\x1b[A"); // Up to line 1, col 0
+			editor.handleInput("\x1b[A"); // Up to line 0, col 10 (on 'x')
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 10 });
+		});
+
+		it("handles editor resizes when preferredVisualCol is on the same line", () => {
+			// Create editor with wider terminal
+			const tui = createTestTUI(80, 24);
+			const editor = new Editor(tui, defaultEditorTheme);
+
+			editor.setText("12345678901234567890\n\n12345678901234567890");
+
+			// Start at line 2, col 15
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 15; i++) editor.handleInput("\x1b[C");
+
+			// Move up through empty line - establishes sticky col 15
+			editor.handleInput("\x1b[A"); // Up
+			editor.handleInput("\x1b[A"); // Up - line 0, col 15
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 15 });
+
+			// Render with narrower width to simulate resize
+			editor.render(12); // Width 12
+
+			// Move down - sticky should be clamped to new width
+			editor.handleInput("\x1b[B"); // Down - line 1
+			editor.handleInput("\x1b[B"); // Down - line 2, col should be clamped
+			assert.equal(editor.getCursor().col, 4);
+		});
+
+		it("handles editor resizes when preferredVisualCol is on a different line", () => {
+			const tui = createTestTUI(80, 24);
+			const editor = new Editor(tui, defaultEditorTheme);
+
+			// Create a line that wraps into multiple visual lines at width 10
+			// "12345678901234567890" = 20 chars, wraps to 2 visual lines at width 10
+			editor.setText("short\n12345678901234567890");
+
+			// Go to line 1, col 15
+			editor.handleInput("\x01"); // Ctrl+A
+			for (let i = 0; i < 15; i++) editor.handleInput("\x1b[C");
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 15 });
+
+			// Move up to establish sticky col 15
+			editor.handleInput("\x1b[A"); // Up to line 0
+			// Line 0 has only 5 chars, so cursor at col 5
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 });
+
+			// Narrow the editor
+			editor.render(10);
+
+			// Move down - preferredVisualCol was 15, but width is 10
+			// Should land on line 1, clamped to width (visual col 9, which is logical col 9)
+			editor.handleInput("\x1b[B"); // Down to line 1
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 8 });
+
+			// Move up
+			editor.handleInput("\x1b[A"); // Up - should go to line 0
+			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 5 }); // Line 0 only has 5 chars
+
+			// Restore the original width
+			editor.render(80);
+
+			// Move down - preferredVisualCol was kept at 15
+			editor.handleInput("\x1b[B"); // Down to line 1
+			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 15 });
 		});
 	});
 });

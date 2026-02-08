@@ -3,7 +3,7 @@
  */
 
 import { generatePKCE } from "./pkce.js";
-import type { OAuthCredentials } from "./types.js";
+import type { OAuthCredentials, OAuthLoginCallbacks, OAuthProviderInterface } from "./types.js";
 
 const decode = (s: string) => atob(s);
 const CLIENT_ID = decode("OWQxYzI1MGEtZTYxYi00NGQ5LTg4ZWQtNTk0NGQxOTYyZjVl");
@@ -116,3 +116,23 @@ export async function refreshAnthropicToken(refreshToken: string): Promise<OAuth
 		expires: Date.now() + data.expires_in * 1000 - 5 * 60 * 1000,
 	};
 }
+
+export const anthropicOAuthProvider: OAuthProviderInterface = {
+	id: "anthropic",
+	name: "Anthropic (Claude Pro/Max)",
+
+	async login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+		return loginAnthropic(
+			(url) => callbacks.onAuth({ url }),
+			() => callbacks.onPrompt({ message: "Paste the authorization code:" }),
+		);
+	},
+
+	async refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials> {
+		return refreshAnthropicToken(credentials.refresh);
+	},
+
+	getApiKey(credentials: OAuthCredentials): string {
+		return credentials.access;
+	},
+};

@@ -7,7 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { isKeyRelease, matchesKey } from "./keys.js";
 import type { Terminal } from "./terminal.js";
-import { getCapabilities, setCellDimensions } from "./terminal-image.js";
+import { getCapabilities, isImageLine, setCellDimensions } from "./terminal-image.js";
 import { extractSegments, sliceByColumn, sliceWithWidth, visibleWidth } from "./utils.js";
 
 /**
@@ -208,6 +208,12 @@ export class TUI extends Container {
 	private hardwareCursorRow = 0; // Actual terminal cursor row (may differ due to IME positioning)
 	private inputBuffer = ""; // Buffer for parsing terminal responses
 	private cellSizeQueryPending = false;
+	private showHardwareCursor = process.env.PI_HARDWARE_CURSOR === "1";
+	private clearOnShrink = process.env.PI_CLEAR_ON_SHRINK === "1"; // Clear empty rows when content shrinks (default: off)
+	private maxLinesRendered = 0; // Track terminal's working area (max lines ever rendered)
+	private previousViewportTop = 0; // Track previous viewport top for resize-aware cursor moves
+	private fullRedrawCount = 0;
+	private stopped = false;
 
 	// Overlay stack for modal components rendered on top of base content
 	private overlayStack: {
@@ -217,9 +223,42 @@ export class TUI extends Container {
 		hidden: boolean;
 	}[] = [];
 
-	constructor(terminal: Terminal) {
+	constructor(terminal: Terminal, showHardwareCursor?: boolean) {
 		super();
 		this.terminal = terminal;
+		if (showHardwareCursor !== undefined) {
+			this.showHardwareCursor = showHardwareCursor;
+		}
+	}
+
+	get fullRedraws(): number {
+		return this.fullRedrawCount;
+	}
+
+	getShowHardwareCursor(): boolean {
+		return this.showHardwareCursor;
+	}
+
+	setShowHardwareCursor(enabled: boolean): void {
+		if (this.showHardwareCursor === enabled) return;
+		this.showHardwareCursor = enabled;
+		if (!enabled) {
+			this.terminal.hideCursor();
+		}
+		this.requestRender();
+	}
+
+	getClearOnShrink(): boolean {
+		return this.clearOnShrink;
+	}
+
+	/**
+	 * Set whether to trigger full re-render when content shrinks.
+	 * When true (default), empty rows are cleared when content shrinks.
+	 * When false, empty rows remain (reduces redraws on slower terminals).
+	 */
+	setClearOnShrink(enabled: boolean): void {
+		this.clearOnShrink = enabled;
 	}
 
 	setFocus(component: Component | null): void {
@@ -328,6 +367,7 @@ export class TUI extends Container {
 	}
 
 	start(): void {
+		this.stopped = false;
 		this.terminal.start(
 			(data) => this.handleInput(data),
 			() => this.requestRender(),
@@ -349,6 +389,7 @@ export class TUI extends Container {
 	}
 
 	stop(): void {
+		this.stopped = true;
 		// Move cursor to the end of the content to prevent overwriting/artifacts on exit
 		if (this.previousLines.length > 0) {
 			const targetRow = this.previousLines.length; // Line after the last content
@@ -371,6 +412,8 @@ export class TUI extends Container {
 			this.previousWidth = -1; // -1 triggers widthChanged, forcing a full clear
 			this.cursorRow = 0;
 			this.hardwareCursorRow = 0;
+			this.maxLinesRendered = 0;
+			this.previousViewportTop = 0;
 		}
 		if (this.renderRequested) return;
 		this.renderRequested = true;
@@ -461,10 +504,6 @@ export class TUI extends Container {
 		this.inputBuffer = "";
 		this.cellSizeQueryPending = false; // Give up waiting
 		return result;
-	}
-
-	private containsImage(line: string): boolean {
-		return line.includes("\x1b_G") || line.includes("\x1b]1337;File=");
 	}
 
 	/**
@@ -639,12 +678,16 @@ export class TUI extends Container {
 			minLinesNeeded = Math.max(minLinesNeeded, row + overlayLines.length);
 		}
 
-		// Extend result with empty lines if content is too short for overlay placement
-		while (result.length < minLinesNeeded) {
+		// Ensure result covers the terminal working area to keep overlay positioning stable across resizes.
+		// maxLinesRendered can exceed current content length after a shrink; pad to keep viewportStart consistent.
+		const workingHeight = Math.max(this.maxLinesRendered, minLinesNeeded);
+
+		// Extend result with empty lines if content is too short for overlay placement or working area
+		while (result.length < workingHeight) {
 			result.push("");
 		}
 
-		const viewportStart = Math.max(0, result.length - termHeight);
+		const viewportStart = Math.max(0, workingHeight - termHeight);
 
 		// Track which lines were modified for final verification
 		const modifiedLines = new Set<number>();
@@ -682,7 +725,13 @@ export class TUI extends Container {
 
 	private applyLineResets(lines: string[]): string[] {
 		const reset = TUI.SEGMENT_RESET;
-		return lines.map((line) => (this.containsImage(line) ? line : line + reset));
+		for (let i = 0; i < lines.length; i++) {
+			const line = lines[i];
+			if (!isImageLine(line)) {
+				lines[i] = line + reset;
+			}
+		}
+		return lines;
 	}
 
 	/** Splice overlay content into a base line at a specific column. Single-pass optimized. */
@@ -693,7 +742,7 @@ export class TUI extends Container {
 		overlayWidth: number,
 		totalWidth: number,
 	): string {
-		if (this.containsImage(baseLine)) return baseLine;
+		if (isImageLine(baseLine)) return baseLine;
 
 		// Single pass through baseLine extracts both before and after segments
 		const afterStart = startCol + overlayWidth;
@@ -739,10 +788,15 @@ export class TUI extends Container {
 	/**
 	 * Find and extract cursor position from rendered lines.
 	 * Searches for CURSOR_MARKER, calculates its position, and strips it from the output.
+	 * Only scans the bottom terminal height lines (visible viewport).
+	 * @param lines - Rendered lines to search
+	 * @param height - Terminal height (visible viewport size)
 	 * @returns Cursor position { row, col } or null if no marker found
 	 */
-	private extractCursorPosition(lines: string[]): { row: number; col: number } | null {
-		for (let row = 0; row < lines.length; row++) {
+	private extractCursorPosition(lines: string[], height: number): { row: number; col: number } | null {
+		// Only scan the bottom `height` lines (visible viewport)
+		const viewportTop = Math.max(0, lines.length - height);
+		for (let row = lines.length - 1; row >= viewportTop; row--) {
 			const line = lines[row];
 			const markerIndex = line.indexOf(CURSOR_MARKER);
 			if (markerIndex !== -1) {
@@ -760,8 +814,17 @@ export class TUI extends Container {
 	}
 
 	private doRender(): void {
+		if (this.stopped) return;
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
+		let viewportTop = Math.max(0, this.maxLinesRendered - height);
+		let prevViewportTop = this.previousViewportTop;
+		let hardwareCursorRow = this.hardwareCursorRow;
+		const computeLineDiff = (targetRow: number): number => {
+			const currentScreenRow = hardwareCursorRow - prevViewportTop;
+			const targetScreenRow = targetRow - viewportTop;
+			return targetScreenRow - currentScreenRow;
+		};
 
 		// Render all components to get new lines
 		let newLines = this.render(width);
@@ -772,46 +835,66 @@ export class TUI extends Container {
 		}
 
 		// Extract cursor position before applying line resets (marker must be found first)
-		const cursorPos = this.extractCursorPosition(newLines);
+		const cursorPos = this.extractCursorPosition(newLines, height);
 
 		newLines = this.applyLineResets(newLines);
 
-		// Width changed - need full re-render
+		// Width changed - need full re-render (line wrapping changes)
 		const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;
+
+		// Helper to clear scrollback and viewport and render all new lines
+		const fullRender = (clear: boolean): void => {
+			this.fullRedrawCount += 1;
+			let buffer = "\x1b[?2026h"; // Begin synchronized output
+			if (clear) buffer += "\x1b[3J\x1b[2J\x1b[H"; // Clear scrollback, screen, and home
+			for (let i = 0; i < newLines.length; i++) {
+				if (i > 0) buffer += "\r\n";
+				buffer += newLines[i];
+			}
+			buffer += "\x1b[?2026l"; // End synchronized output
+			this.terminal.write(buffer);
+			this.cursorRow = Math.max(0, newLines.length - 1);
+			this.hardwareCursorRow = this.cursorRow;
+			// Reset max lines when clearing, otherwise track growth
+			if (clear) {
+				this.maxLinesRendered = newLines.length;
+			} else {
+				this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
+			}
+			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+			this.positionHardwareCursor(cursorPos, newLines.length);
+			this.previousLines = newLines;
+			this.previousWidth = width;
+		};
+
+		const debugRedraw = process.env.PI_DEBUG_REDRAW === "1";
+		const logRedraw = (reason: string): void => {
+			if (!debugRedraw) return;
+			const logPath = path.join(os.homedir(), ".pi", "agent", "pi-debug.log");
+			const msg = `[${new Date().toISOString()}] fullRender: ${reason} (prev=${this.previousLines.length}, new=${newLines.length}, height=${height})\n`;
+			fs.appendFileSync(logPath, msg);
+		};
 
 		// First render - just output everything without clearing (assumes clean screen)
 		if (this.previousLines.length === 0 && !widthChanged) {
-			let buffer = "\x1b[?2026h"; // Begin synchronized output
-			for (let i = 0; i < newLines.length; i++) {
-				if (i > 0) buffer += "\r\n";
-				buffer += newLines[i];
-			}
-			buffer += "\x1b[?2026l"; // End synchronized output
-			this.terminal.write(buffer);
-			// After rendering N lines, cursor is at end of last line (clamp to 0 for empty)
-			this.cursorRow = Math.max(0, newLines.length - 1);
-			this.hardwareCursorRow = this.cursorRow;
-			this.positionHardwareCursor(cursorPos, newLines.length);
-			this.previousLines = newLines;
-			this.previousWidth = width;
+			logRedraw("first render");
+			fullRender(false);
 			return;
 		}
 
-		// Width changed - full re-render
+		// Width changed - full re-render (line wrapping changes)
 		if (widthChanged) {
-			let buffer = "\x1b[?2026h"; // Begin synchronized output
-			buffer += "\x1b[3J\x1b[2J\x1b[H"; // Clear scrollback, screen, and home
-			for (let i = 0; i < newLines.length; i++) {
-				if (i > 0) buffer += "\r\n";
-				buffer += newLines[i];
-			}
-			buffer += "\x1b[?2026l"; // End synchronized output
-			this.terminal.write(buffer);
-			this.cursorRow = Math.max(0, newLines.length - 1);
-			this.hardwareCursorRow = this.cursorRow;
-			this.positionHardwareCursor(cursorPos, newLines.length);
-			this.previousLines = newLines;
-			this.previousWidth = width;
+			logRedraw(`width changed (${this.previousWidth} -> ${width})`);
+			fullRender(true);
+			return;
+		}
+
+		// Content shrunk below the working area and no overlays - re-render to clear empty rows
+		// (overlays need the padding, so only do this when no overlays are active)
+		// Configurable via setClearOnShrink() or PI_CLEAR_ON_SHRINK=0 env var
+		if (this.clearOnShrink && newLines.length < this.maxLinesRendered && this.overlayStack.length === 0) {
+			logRedraw(`clearOnShrink (maxLinesRendered=${this.maxLinesRendered})`);
+			fullRender(true);
 			return;
 		}
 
@@ -830,10 +913,19 @@ export class TUI extends Container {
 				lastChanged = i;
 			}
 		}
+		const appendedLines = newLines.length > this.previousLines.length;
+		if (appendedLines) {
+			if (firstChanged === -1) {
+				firstChanged = this.previousLines.length;
+			}
+			lastChanged = newLines.length - 1;
+		}
+		const appendStart = appendedLines && firstChanged === this.previousLines.length && firstChanged > 0;
 
 		// No changes - but still need to update hardware cursor position if it moved
 		if (firstChanged === -1) {
 			this.positionHardwareCursor(cursorPos, newLines.length);
+			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
 			return;
 		}
 
@@ -843,16 +935,27 @@ export class TUI extends Container {
 				let buffer = "\x1b[?2026h";
 				// Move to end of new content (clamp to 0 for empty content)
 				const targetRow = Math.max(0, newLines.length - 1);
-				const lineDiff = targetRow - this.hardwareCursorRow;
+				const lineDiff = computeLineDiff(targetRow);
 				if (lineDiff > 0) buffer += `\x1b[${lineDiff}B`;
 				else if (lineDiff < 0) buffer += `\x1b[${-lineDiff}A`;
 				buffer += "\r";
-				// Clear extra lines
+				// Clear extra lines without scrolling
 				const extraLines = this.previousLines.length - newLines.length;
-				for (let i = 0; i < extraLines; i++) {
-					buffer += "\r\n\x1b[2K";
+				if (extraLines > height) {
+					logRedraw(`extraLines > height (${extraLines} > ${height})`);
+					fullRender(true);
+					return;
 				}
-				buffer += `\x1b[${extraLines}A`;
+				if (extraLines > 0) {
+					buffer += "\x1b[1B";
+				}
+				for (let i = 0; i < extraLines; i++) {
+					buffer += "\r\x1b[2K";
+					if (i < extraLines - 1) buffer += "\x1b[1B";
+				}
+				if (extraLines > 0) {
+					buffer += `\x1b[${extraLines}A`;
+				}
 				buffer += "\x1b[?2026l";
 				this.terminal.write(buffer);
 				this.cursorRow = targetRow;
@@ -861,45 +964,47 @@ export class TUI extends Container {
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
 			this.previousWidth = width;
+			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
 			return;
 		}
 
-		// Check if firstChanged is outside the viewport
-		// cursorRow is the line where cursor is (0-indexed)
-		// Viewport shows lines from (cursorRow - height + 1) to cursorRow
-		// If firstChanged < viewportTop, we need full re-render
-		const viewportTop = this.cursorRow - height + 1;
-		if (firstChanged < viewportTop) {
-			// First change is above viewport - need full re-render
-			let buffer = "\x1b[?2026h"; // Begin synchronized output
-			buffer += "\x1b[3J\x1b[2J\x1b[H"; // Clear scrollback, screen, and home
-			for (let i = 0; i < newLines.length; i++) {
-				if (i > 0) buffer += "\r\n";
-				buffer += newLines[i];
-			}
-			buffer += "\x1b[?2026l"; // End synchronized output
-			this.terminal.write(buffer);
-			this.cursorRow = Math.max(0, newLines.length - 1);
-			this.hardwareCursorRow = this.cursorRow;
-			this.positionHardwareCursor(cursorPos, newLines.length);
-			this.previousLines = newLines;
-			this.previousWidth = width;
+		// Check if firstChanged is above what was previously visible
+		// Use previousLines.length (not maxLinesRendered) to avoid false positives after content shrinks
+		const previousContentViewportTop = Math.max(0, this.previousLines.length - height);
+		if (firstChanged < previousContentViewportTop) {
+			// First change is above previous viewport - need full re-render
+			logRedraw(`firstChanged < viewportTop (${firstChanged} < ${previousContentViewportTop})`);
+			fullRender(true);
 			return;
 		}
 
 		// Render from first changed line to end
 		// Build buffer with all updates wrapped in synchronized output
 		let buffer = "\x1b[?2026h"; // Begin synchronized output
+		const prevViewportBottom = prevViewportTop + height - 1;
+		const moveTargetRow = appendStart ? firstChanged - 1 : firstChanged;
+		if (moveTargetRow > prevViewportBottom) {
+			const currentScreenRow = Math.max(0, Math.min(height - 1, hardwareCursorRow - prevViewportTop));
+			const moveToBottom = height - 1 - currentScreenRow;
+			if (moveToBottom > 0) {
+				buffer += `\x1b[${moveToBottom}B`;
+			}
+			const scroll = moveTargetRow - prevViewportBottom;
+			buffer += "\r\n".repeat(scroll);
+			prevViewportTop += scroll;
+			viewportTop += scroll;
+			hardwareCursorRow = moveTargetRow;
+		}
 
 		// Move cursor to first changed line (use hardwareCursorRow for actual position)
-		const lineDiff = firstChanged - this.hardwareCursorRow;
+		const lineDiff = computeLineDiff(moveTargetRow);
 		if (lineDiff > 0) {
 			buffer += `\x1b[${lineDiff}B`; // Move down
 		} else if (lineDiff < 0) {
 			buffer += `\x1b[${-lineDiff}A`; // Move up
 		}
 
-		buffer += "\r"; // Move to column 0
+		buffer += appendStart ? "\r\n" : "\r"; // Move to column 0
 
 		// Only render changed lines (firstChanged to lastChanged), not all lines to end
 		// This reduces flicker when only a single line changes (e.g., spinner animation)
@@ -908,8 +1013,8 @@ export class TUI extends Container {
 			if (i > firstChanged) buffer += "\r\n";
 			buffer += "\x1b[2K"; // Clear current line
 			const line = newLines[i];
-			const isImageLine = this.containsImage(line);
-			if (!isImageLine && visibleWidth(line) > width) {
+			const isImage = isImageLine(line);
+			if (!isImage && visibleWidth(line) > width) {
 				// Log all lines to crash file for debugging
 				const crashLogPath = path.join(os.homedir(), ".pi", "agent", "pi-crash.log");
 				const crashData = [
@@ -961,12 +1066,46 @@ export class TUI extends Container {
 
 		buffer += "\x1b[?2026l"; // End synchronized output
 
+		if (process.env.PI_TUI_DEBUG === "1") {
+			const debugDir = "/tmp/tui";
+			fs.mkdirSync(debugDir, { recursive: true });
+			const debugPath = path.join(debugDir, `render-${Date.now()}-${Math.random().toString(36).slice(2)}.log`);
+			const debugData = [
+				`firstChanged: ${firstChanged}`,
+				`viewportTop: ${viewportTop}`,
+				`cursorRow: ${this.cursorRow}`,
+				`height: ${height}`,
+				`lineDiff: ${lineDiff}`,
+				`hardwareCursorRow: ${hardwareCursorRow}`,
+				`renderEnd: ${renderEnd}`,
+				`finalCursorRow: ${finalCursorRow}`,
+				`cursorPos: ${JSON.stringify(cursorPos)}`,
+				`newLines.length: ${newLines.length}`,
+				`previousLines.length: ${this.previousLines.length}`,
+				"",
+				"=== newLines ===",
+				JSON.stringify(newLines, null, 2),
+				"",
+				"=== previousLines ===",
+				JSON.stringify(this.previousLines, null, 2),
+				"",
+				"=== buffer ===",
+				JSON.stringify(buffer),
+			].join("\n");
+			fs.writeFileSync(debugPath, debugData);
+		}
+
 		// Write entire buffer at once
 		this.terminal.write(buffer);
 
 		// Track cursor position for next render
-		this.cursorRow = finalCursorRow;
+		// cursorRow tracks end of content (for viewport calculation)
+		// hardwareCursorRow tracks actual terminal cursor position (for movement)
+		this.cursorRow = Math.max(0, newLines.length - 1);
 		this.hardwareCursorRow = finalCursorRow;
+		// Track terminal's working area (grows but doesn't shrink unless cleared)
+		this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
+		this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
 
 		// Position hardware cursor for IME
 		this.positionHardwareCursor(cursorPos, newLines.length);
@@ -981,12 +1120,6 @@ export class TUI extends Container {
 	 * @param totalLines Total number of rendered lines
 	 */
 	private positionHardwareCursor(cursorPos: { row: number; col: number } | null, totalLines: number): void {
-		// PI_NO_HARDWARE_CURSOR=1 disables hardware cursor for terminals that don't handle it well
-		if (process.env.PI_NO_HARDWARE_CURSOR === "1") {
-			this.terminal.hideCursor();
-			return;
-		}
-
 		if (!cursorPos || totalLines <= 0) {
 			this.terminal.hideCursor();
 			return;
@@ -1012,6 +1145,10 @@ export class TUI extends Container {
 		}
 
 		this.hardwareCursorRow = targetRow;
-		this.terminal.showCursor();
+		if (this.showHardwareCursor) {
+			this.terminal.showCursor();
+		} else {
+			this.terminal.hideCursor();
+		}
 	}
 }

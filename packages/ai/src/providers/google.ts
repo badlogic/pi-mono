@@ -4,17 +4,20 @@ import {
 	GoogleGenAI,
 	type ThinkingConfig,
 } from "@google/genai";
+import { getEnvApiKey } from "../env-api-keys.js";
 import { calculateCost } from "../models.js";
-import { getEnvApiKey } from "../stream.js";
 import type {
 	Api,
 	AssistantMessage,
 	Context,
 	Model,
+	SimpleStreamOptions,
 	StreamFunction,
 	StreamOptions,
 	TextContent,
+	ThinkingBudgets,
 	ThinkingContent,
+	ThinkingLevel,
 	ToolCall,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
@@ -28,6 +31,7 @@ import {
 	mapToolChoice,
 	retainThoughtSignature,
 } from "./google-shared.js";
+import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 
 export interface GoogleOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
@@ -41,7 +45,7 @@ export interface GoogleOptions extends StreamOptions {
 // Counter for generating unique tool call IDs
 let toolCallCounter = 0;
 
-export const streamGoogle: StreamFunction<"google-generative-ai"> = (
+export const streamGoogle: StreamFunction<"google-generative-ai", GoogleOptions> = (
 	model: Model<"google-generative-ai">,
 	context: Context,
 	options?: GoogleOptions,
@@ -69,8 +73,9 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 
 		try {
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
-			const client = createClient(model, apiKey);
+			const client = createClient(model, apiKey, options?.headers);
 			const params = buildParams(model, context, options);
+			options?.onPayload?.(params);
 			const googleStream = await client.models.generateContentStream(params);
 
 			stream.push({ type: "start", partial: output });
@@ -174,7 +179,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 								type: "toolCall",
 								id: toolCallId,
 								name: part.functionCall.name || "",
-								arguments: part.functionCall.args as Record<string, any>,
+								arguments: (part.functionCall.args as Record<string, any>) ?? {},
 								...(part.thoughtSignature && { thoughtSignature: part.thoughtSignature }),
 							};
 
@@ -241,7 +246,7 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 			}
 
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error("An unkown error ocurred");
+				throw new Error("An unknown error occurred");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -263,14 +268,55 @@ export const streamGoogle: StreamFunction<"google-generative-ai"> = (
 	return stream;
 };
 
-function createClient(model: Model<"google-generative-ai">, apiKey?: string): GoogleGenAI {
+export const streamSimpleGoogle: StreamFunction<"google-generative-ai", SimpleStreamOptions> = (
+	model: Model<"google-generative-ai">,
+	context: Context,
+	options?: SimpleStreamOptions,
+): AssistantMessageEventStream => {
+	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+	if (!apiKey) {
+		throw new Error(`No API key for provider: ${model.provider}`);
+	}
+
+	const base = buildBaseOptions(model, options, apiKey);
+	if (!options?.reasoning) {
+		return streamGoogle(model, context, { ...base, thinking: { enabled: false } } satisfies GoogleOptions);
+	}
+
+	const effort = clampReasoning(options.reasoning)!;
+	const googleModel = model as Model<"google-generative-ai">;
+
+	if (isGemini3ProModel(googleModel) || isGemini3FlashModel(googleModel)) {
+		return streamGoogle(model, context, {
+			...base,
+			thinking: {
+				enabled: true,
+				level: getGemini3ThinkingLevel(effort, googleModel),
+			},
+		} satisfies GoogleOptions);
+	}
+
+	return streamGoogle(model, context, {
+		...base,
+		thinking: {
+			enabled: true,
+			budgetTokens: getGoogleBudget(googleModel, effort, options.thinkingBudgets),
+		},
+	} satisfies GoogleOptions);
+};
+
+function createClient(
+	model: Model<"google-generative-ai">,
+	apiKey?: string,
+	optionsHeaders?: Record<string, string>,
+): GoogleGenAI {
 	const httpOptions: { baseUrl?: string; apiVersion?: string; headers?: Record<string, string> } = {};
 	if (model.baseUrl) {
 		httpOptions.baseUrl = model.baseUrl;
 		httpOptions.apiVersion = ""; // baseUrl already includes version path, don't append
 	}
-	if (model.headers) {
-		httpOptions.headers = model.headers;
+	if (model.headers || optionsHeaders) {
+		httpOptions.headers = { ...model.headers, ...optionsHeaders };
 	}
 
 	return new GoogleGenAI({
@@ -335,4 +381,72 @@ function buildParams(
 	};
 
 	return params;
+}
+
+type ClampedThinkingLevel = Exclude<ThinkingLevel, "xhigh">;
+
+function isGemini3ProModel(model: Model<"google-generative-ai">): boolean {
+	return model.id.includes("3-pro");
+}
+
+function isGemini3FlashModel(model: Model<"google-generative-ai">): boolean {
+	return model.id.includes("3-flash");
+}
+
+function getGemini3ThinkingLevel(
+	effort: ClampedThinkingLevel,
+	model: Model<"google-generative-ai">,
+): GoogleThinkingLevel {
+	if (isGemini3ProModel(model)) {
+		switch (effort) {
+			case "minimal":
+			case "low":
+				return "LOW";
+			case "medium":
+			case "high":
+				return "HIGH";
+		}
+	}
+	switch (effort) {
+		case "minimal":
+			return "MINIMAL";
+		case "low":
+			return "LOW";
+		case "medium":
+			return "MEDIUM";
+		case "high":
+			return "HIGH";
+	}
+}
+
+function getGoogleBudget(
+	model: Model<"google-generative-ai">,
+	effort: ClampedThinkingLevel,
+	customBudgets?: ThinkingBudgets,
+): number {
+	if (customBudgets?.[effort] !== undefined) {
+		return customBudgets[effort]!;
+	}
+
+	if (model.id.includes("2.5-pro")) {
+		const budgets: Record<ClampedThinkingLevel, number> = {
+			minimal: 128,
+			low: 2048,
+			medium: 8192,
+			high: 32768,
+		};
+		return budgets[effort];
+	}
+
+	if (model.id.includes("2.5-flash")) {
+		const budgets: Record<ClampedThinkingLevel, number> = {
+			minimal: 128,
+			low: 2048,
+			medium: 8192,
+			high: 24576,
+		};
+		return budgets[effort];
+	}
+
+	return -1;
 }
