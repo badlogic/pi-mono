@@ -13,6 +13,7 @@
 ### Fixed
 
 - Fixed fd/rg download failing on Windows due to `unzip` not being available; now uses `tar` for both `.tar.gz` and `.zip` extraction, with proper error reporting ([#1348](https://github.com/badlogic/pi-mono/issues/1348))
+- Fixed `rg` not available in bash tool by downloading it at startup alongside `fd` ([#1348](https://github.com/badlogic/pi-mono/issues/1348))
 - Fixed `custom-compaction` example to use `ModelRegistry` ([#1387](https://github.com/badlogic/pi-mono/issues/1387))
 - Google providers now support full JSON Schema in tool declarations (anyOf, oneOf, const, etc.) ([#1398](https://github.com/badlogic/pi-mono/issues/1398) by [@jarib](https://github.com/jarib))
 - Corrected opencode context windows for Claude Sonnet 4 and 4.5 ([#1383](https://github.com/badlogic/pi-mono/issues/1383))
