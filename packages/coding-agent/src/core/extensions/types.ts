@@ -1159,8 +1159,8 @@ export type GetSessionNameHandler = () => string | undefined;
 
 export type GetActiveToolsHandler = () => string[];
 
-/** Tool info with name and description */
-export type ToolInfo = Pick<ToolDefinition, "name" | "description">;
+/** Tool info with name, description, and parameter schema */
+export type ToolInfo = Pick<ToolDefinition, "name" | "description" | "parameters">;
 
 export type GetAllToolsHandler = () => ToolInfo[];
 

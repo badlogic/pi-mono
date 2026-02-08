@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/export` HTML now includes tool input schema (parameter names, types, descriptions) in a collapsible section under each tool
+- `pi.getAllTools()` now returns tool parameters in addition to name and description
+
 ### Fixed
 
 - Fixed fd/rg download failing on Windows due to `unzip` not being available; now uses `tar` for both `.tar.gz` and `.zip` extraction, with proper error reporting ([#1348](https://github.com/badlogic/pi-mono/issues/1348))
