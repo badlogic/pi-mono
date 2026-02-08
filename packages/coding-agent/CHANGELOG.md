@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed fd/rg download failing on Windows due to `unzip` not being available; now uses `tar` for both `.tar.gz` and `.zip` extraction, with proper error reporting ([#1348](https://github.com/badlogic/pi-mono/issues/1348))
+
 ## [0.52.8] - 2026-02-07
 
 ### New Features
