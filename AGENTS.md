@@ -5,7 +5,7 @@ If the user did not give you a concrete task in their first message,
 read README.md, then ask which module(s) to work on. Based on the answer, read the relevant README.md files in parallel.
 - packages/ai/README.md
 - packages/tui/README.md
-- packages/agent/README.md
+- packages/agent-core/README.md
 - packages/coding-agent/README.md
 - packages/mom/README.md
 - packages/pods/README.md
