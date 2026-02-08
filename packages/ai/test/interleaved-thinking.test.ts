@@ -1,8 +1,9 @@
 import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
+import { getEnvApiKey } from "../src/env-api-keys.js";
 import { getModel } from "../src/models.js";
-import { complete } from "../src/stream.js";
-import type { Context, StopReason, Tool, ToolCall, ToolResultMessage } from "../src/types.js";
+import { completeSimple } from "../src/stream.js";
+import type { Api, Context, Model, StopReason, Tool, ToolCall, ToolResultMessage } from "../src/types.js";
 import { StringEnum } from "../src/utils/typebox-helpers.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 
@@ -60,15 +61,10 @@ function evaluateCalculatorCall(toolCall: ToolCall): number {
 	}
 }
 
-type BedrockInterleavedModelId =
-	| "global.anthropic.claude-opus-4-5-20251101-v1:0"
-	| "global.anthropic.claude-opus-4-6-v1";
-
-async function assertSecondToolCallWithInterleavedThinking(
-	modelId: BedrockInterleavedModelId,
+async function assertSecondToolCallWithInterleavedThinking<TApi extends Api>(
+	llm: Model<TApi>,
 	reasoning: "high" | "xhigh",
 ) {
-	const llm = getModel("amazon-bedrock", modelId);
 	const context: Context = {
 		systemPrompt: [
 			"You are a helpful assistant that must use tools for arithmetic.",
@@ -82,6 +78,7 @@ async function assertSecondToolCallWithInterleavedThinking(
 					"Use calculator to calculate 328 * 29.",
 					"You must call the calculator tool exactly once.",
 					"Provide the final answer based on the best guess given the tool result, even if it seems unreliable.",
+					"Start by thinking about the steps you will take to solve the problem.",
 				].join(" "),
 				timestamp: Date.now(),
 			},
@@ -89,10 +86,7 @@ async function assertSecondToolCallWithInterleavedThinking(
 		tools: [calculatorTool],
 	};
 
-	const firstResponse = await complete(llm, context, {
-		reasoning,
-		interleavedThinking: true,
-	});
+	const firstResponse = await completeSimple(llm, context, { reasoning });
 
 	expect(firstResponse.stopReason, `Error: ${firstResponse.errorMessage}`).toBe("toolUse" satisfies StopReason);
 	expect(firstResponse.content.some((block) => block.type === "thinking")).toBe(true);
@@ -117,22 +111,35 @@ async function assertSecondToolCallWithInterleavedThinking(
 	};
 	context.messages.push(firstToolResult);
 
-	const secondResponse = await complete(llm, context, {
-		reasoning,
-		interleavedThinking: true,
-	});
+	const secondResponse = await completeSimple(llm, context, { reasoning });
 
 	expect(secondResponse.stopReason, `Error: ${secondResponse.errorMessage}`).toBe("stop" satisfies StopReason);
 	expect(secondResponse.content.some((block) => block.type === "thinking")).toBe(true);
 	expect(secondResponse.content.some((block) => block.type === "text")).toBe(true);
 }
 
+const hasAnthropicCredentials = !!getEnvApiKey("anthropic");
+
 describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock interleaved thinking", () => {
 	it("should do interleaved thinking on Claude Opus 4.5", { retry: 3 }, async () => {
-		await assertSecondToolCallWithInterleavedThinking("global.anthropic.claude-opus-4-5-20251101-v1:0", "high");
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-opus-4-5-20251101-v1:0");
+		await assertSecondToolCallWithInterleavedThinking(llm, "high");
 	});
 
 	it("should do interleaved thinking on Claude Opus 4.6", { retry: 3 }, async () => {
-		await assertSecondToolCallWithInterleavedThinking("global.anthropic.claude-opus-4-6-v1", "xhigh");
+		const llm = getModel("amazon-bedrock", "global.anthropic.claude-opus-4-6-v1");
+		await assertSecondToolCallWithInterleavedThinking(llm, "high");
+	});
+});
+
+describe.skipIf(!hasAnthropicCredentials)("Anthropic interleaved thinking", () => {
+	it("should do interleaved thinking on Claude Opus 4.5", { retry: 3 }, async () => {
+		const llm = getModel("anthropic", "claude-opus-4-5");
+		await assertSecondToolCallWithInterleavedThinking(llm, "high");
+	});
+
+	it("should do interleaved thinking on Claude Opus 4.6", { retry: 3 }, async () => {
+		const llm = getModel("anthropic", "claude-opus-4-6");
+		await assertSecondToolCallWithInterleavedThinking(llm, "high");
 	});
 });
