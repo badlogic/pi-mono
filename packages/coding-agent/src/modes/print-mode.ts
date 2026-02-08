@@ -63,6 +63,9 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 				const success = await session.switchSession(sessionPath);
 				return { cancelled: !success };
 			},
+			reload: async () => {
+				await session.reload();
+			},
 		},
 		onError: (err) => {
 			console.error(`Extension error (${err.extensionPath}): ${err.error}`);

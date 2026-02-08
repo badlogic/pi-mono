@@ -1068,6 +1068,9 @@ export class InteractiveMode {
 					await this.handleResumeSession(sessionPath);
 					return { cancelled: false };
 				},
+				reload: async () => {
+					await this.handleReloadCommand();
+				},
 			},
 			shutdownHandler: () => {
 				this.shutdownRequested = true;
