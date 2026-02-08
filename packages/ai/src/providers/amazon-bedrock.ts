@@ -664,7 +664,7 @@ function buildAdditionalModelRequestFields(
 		return undefined;
 	}
 
-	if (model.id.includes("anthropic.claude")) {
+	if (model.id.includes("anthropic.claude") || model.id.includes("anthropic/claude")) {
 		const result: Record<string, any> = supportsAdaptiveThinking(model.id)
 			? {
 					thinking: { type: "adaptive" },
@@ -691,7 +691,7 @@ function buildAdditionalModelRequestFields(
 					};
 				})();
 
-		if (options.interleavedThinking && !supportsAdaptiveThinking(model.id)) {
+		if (!supportsAdaptiveThinking(model.id) && (options.interleavedThinking ?? true)) {
 			result.anthropic_beta = ["interleaved-thinking-2025-05-14"];
 		}
 

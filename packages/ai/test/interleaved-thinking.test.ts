@@ -2,7 +2,7 @@ import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import { getEnvApiKey } from "../src/env-api-keys.js";
 import { getModel } from "../src/models.js";
-import { complete } from "../src/stream.js";
+import { completeSimple } from "../src/stream.js";
 import type { Api, Context, Model, StopReason, Tool, ToolCall, ToolResultMessage } from "../src/types.js";
 import { StringEnum } from "../src/utils/typebox-helpers.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
@@ -86,10 +86,7 @@ async function assertSecondToolCallWithInterleavedThinking<TApi extends Api>(
 		tools: [calculatorTool],
 	};
 
-	const firstResponse = await complete(llm, context, {
-		reasoning,
-		interleavedThinking: true,
-	});
+	const firstResponse = await completeSimple(llm, context, { reasoning });
 
 	expect(firstResponse.stopReason, `Error: ${firstResponse.errorMessage}`).toBe("toolUse" satisfies StopReason);
 	expect(firstResponse.content.some((block) => block.type === "thinking")).toBe(true);
@@ -114,10 +111,7 @@ async function assertSecondToolCallWithInterleavedThinking<TApi extends Api>(
 	};
 	context.messages.push(firstToolResult);
 
-	const secondResponse = await complete(llm, context, {
-		reasoning,
-		interleavedThinking: true,
-	});
+	const secondResponse = await completeSimple(llm, context, { reasoning });
 
 	expect(secondResponse.stopReason, `Error: ${secondResponse.errorMessage}`).toBe("stop" satisfies StopReason);
 	expect(secondResponse.content.some((block) => block.type === "thinking")).toBe(true);
