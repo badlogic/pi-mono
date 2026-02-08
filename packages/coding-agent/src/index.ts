@@ -100,6 +100,7 @@ export type {
 	SlashCommandInfo,
 	SlashCommandLocation,
 	SlashCommandSource,
+	TerminalInputHandler,
 	ToolCallEvent,
 	ToolDefinition,
 	ToolInfo,

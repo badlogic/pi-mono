@@ -39,6 +39,9 @@ export interface Component {
 	invalidate(): void;
 }
 
+type InputListenerResult = { consume?: boolean; data?: string } | undefined;
+type InputListener = (data: string) => InputListenerResult;
+
 /**
  * Interface for components that can receive focus and display a hardware cursor.
  * When focused, the component should emit CURSOR_MARKER at the cursor position
@@ -200,6 +203,7 @@ export class TUI extends Container {
 	private previousLines: string[] = [];
 	private previousWidth = 0;
 	private focusedComponent: Component | null = null;
+	private inputListeners = new Set<InputListener>();
 
 	/** Global callback for debug key (Shift+Ctrl+D). Called before input is forwarded to focused component. */
 	public onDebug?: () => void;
@@ -377,6 +381,17 @@ export class TUI extends Container {
 		this.requestRender();
 	}
 
+	addInputListener(listener: InputListener): () => void {
+		this.inputListeners.add(listener);
+		return () => {
+			this.inputListeners.delete(listener);
+		};
+	}
+
+	removeInputListener(listener: InputListener): void {
+		this.inputListeners.delete(listener);
+	}
+
 	private queryCellSize(): void {
 		// Only query if terminal supports images (cell size is only used for image rendering)
 		if (!getCapabilities().images) {
@@ -424,6 +439,23 @@ export class TUI extends Container {
 	}
 
 	private handleInput(data: string): void {
+		if (this.inputListeners.size > 0) {
+			let current = data;
+			for (const listener of this.inputListeners) {
+				const result = listener(current);
+				if (result?.consume) {
+					return;
+				}
+				if (result?.data !== undefined) {
+					current = result.data;
+				}
+			}
+			if (current.length === 0) {
+				return;
+			}
+			data = current;
+		}
+
 		// If we're waiting for cell size response, buffer input and parse
 		if (this.cellSizeQueryPending) {
 			this.inputBuffer += data;

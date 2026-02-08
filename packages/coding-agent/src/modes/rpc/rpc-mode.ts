@@ -144,6 +144,11 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			} as RpcExtensionUIRequest);
 		},
 
+		onTerminalInput(): () => void {
+			// Raw terminal input not supported in RPC mode
+			return () => {};
+		},
+
 		setStatus(key: string, text: string | undefined): void {
 			// Fire and forget - no response needed
 			output({
