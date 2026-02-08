@@ -109,33 +109,24 @@ async function runLoop(
 	stream: EventStream<AgentEvent, AgentMessage[]>,
 	streamFn?: StreamFn,
 ): Promise<void> {
-	let firstTurn = true;
 	// Check for steering messages at start (user may have typed while waiting)
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
 	// Outer loop: continues when queued follow-up messages arrive after agent would stop
 	while (true) {
-		let hasMoreToolCalls = true;
+		let hasMoreToolCalls: boolean;
 		let steeringAfterTools: AgentMessage[] | null = null;
 
 		// Inner loop: process tool calls and steering messages
-		while (hasMoreToolCalls || pendingMessages.length > 0) {
-			if (!firstTurn) {
-				stream.push({ type: "turn_start" });
-			} else {
-				firstTurn = false;
-			}
-
+		do {
 			// Process pending messages (inject before next assistant response)
-			if (pendingMessages.length > 0) {
-				for (const message of pendingMessages) {
-					stream.push({ type: "message_start", message });
-					stream.push({ type: "message_end", message });
-					currentContext.messages.push(message);
-					newMessages.push(message);
-				}
-				pendingMessages = [];
+			for (const message of pendingMessages) {
+				stream.push({ type: "message_start", message });
+				stream.push({ type: "message_end", message });
+				currentContext.messages.push(message);
+				newMessages.push(message);
 			}
+			pendingMessages = [];
 
 			// Stream assistant response
 			const message = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);
@@ -149,8 +140,7 @@ async function runLoop(
 			}
 
 			// Check for tool calls
-			const toolCalls = message.content.filter((c) => c.type === "toolCall");
-			hasMoreToolCalls = toolCalls.length > 0;
+			hasMoreToolCalls = message.content.some(c => c.type === "toolCall");
 
 			const toolResults: ToolResultMessage[] = [];
 			if (hasMoreToolCalls) {
@@ -179,18 +169,18 @@ async function runLoop(
 			} else {
 				pendingMessages = (await config.getSteeringMessages?.()) || [];
 			}
-		}
+		} while (hasMoreToolCalls || pendingMessages.length > 0);
 
 		// Agent would stop here. Check for follow-up messages.
 		const followUpMessages = (await config.getFollowUpMessages?.()) || [];
-		if (followUpMessages.length > 0) {
-			// Set as pending so inner loop processes them
-			pendingMessages = followUpMessages;
-			continue;
+		if (followUpMessages.length === 0) {
+			// No more messages, exit
+			break;
 		}
 
-		// No more messages, exit
-		break;
+		// Set as pending so inner loop processes them
+		pendingMessages = followUpMessages;
+		stream.push({ type: "turn_start" });
 	}
 
 	stream.push({ type: "agent_end", messages: newMessages });
