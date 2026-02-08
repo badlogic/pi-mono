@@ -20,7 +20,7 @@ import { exportFromFile } from "./core/export-html/index.js";
 import type { LoadExtensionsResult } from "./core/extensions/index.js";
 import { KeybindingsManager } from "./core/keybindings.js";
 import { ModelRegistry } from "./core/model-registry.js";
-import { resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
+import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { DefaultPackageManager } from "./core/package-manager.js";
 import { DefaultResourceLoader } from "./core/resource-loader.js";
 import { type CreateAgentSessionOptions, createAgentSession } from "./core/sdk.js";
@@ -403,28 +403,48 @@ async function createSessionManager(parsed: Args, cwd: string): Promise<SessionM
 	return undefined;
 }
 
-function buildSessionOptions(
+async function buildSessionOptions(
 	parsed: Args,
 	scopedModels: ScopedModel[],
 	sessionManager: SessionManager | undefined,
 	modelRegistry: ModelRegistry,
 	settingsManager: SettingsManager,
-): CreateAgentSessionOptions {
+): Promise<{ options: CreateAgentSessionOptions; cliThinkingFromModel: boolean }> {
 	const options: CreateAgentSessionOptions = {};
+	let cliThinkingFromModel = false;
 
 	if (sessionManager) {
 		options.sessionManager = sessionManager;
 	}
 
 	// Model from CLI
-	if (parsed.provider && parsed.model) {
-		const model = modelRegistry.find(parsed.provider, parsed.model);
-		if (!model) {
-			console.error(chalk.red(`Model ${parsed.provider}/${parsed.model} not found`));
+	// - supports --provider <name> --model <pattern>
+	// - supports --model <provider>/<pattern>
+	if (parsed.model) {
+		const resolved = await resolveCliModel({
+			cliProvider: parsed.provider,
+			cliModel: parsed.model,
+			modelRegistry,
+		});
+		if (resolved.warning) {
+			console.warn(chalk.yellow(`Warning: ${resolved.warning}`));
+		}
+		if (resolved.error) {
+			console.error(chalk.red(resolved.error));
 			process.exit(1);
 		}
-		options.model = model;
-	} else if (scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
+		if (resolved.model) {
+			options.model = resolved.model;
+			// Allow "--model <pattern>:<thinking>" as a shorthand.
+			// Explicit --thinking still takes precedence (applied later).
+			if (!parsed.thinking && resolved.thinkingLevel) {
+				options.thinkingLevel = resolved.thinkingLevel;
+				cliThinkingFromModel = true;
+			}
+		}
+	}
+
+	if (!options.model && scopedModels.length > 0 && !parsed.continue && !parsed.resume) {
 		// Check if saved default is in scoped models - use it if so, otherwise first scoped model
 		const savedProvider = settingsManager.getDefaultProvider();
 		const savedModelId = settingsManager.getDefaultModel();
@@ -476,7 +496,7 @@ function buildSessionOptions(
 		options.tools = parsed.tools.map((name) => allTools[name]);
 	}
 
-	return options;
+	return { options, cliThinkingFromModel };
 }
 
 async function handleConfigCommand(args: string[]): Promise<boolean> {
@@ -650,7 +670,13 @@ export async function main(args: string[]) {
 		sessionManager = SessionManager.open(selectedPath);
 	}
 
-	const sessionOptions = buildSessionOptions(parsed, scopedModels, sessionManager, modelRegistry, settingsManager);
+	const { options: sessionOptions, cliThinkingFromModel } = await buildSessionOptions(
+		parsed,
+		scopedModels,
+		sessionManager,
+		modelRegistry,
+		settingsManager,
+	);
 	sessionOptions.authStorage = authStorage;
 	sessionOptions.modelRegistry = modelRegistry;
 	sessionOptions.resourceLoader = resourceLoader;
@@ -658,7 +684,9 @@ export async function main(args: string[]) {
 	// Handle CLI --api-key as runtime override (not persisted)
 	if (parsed.apiKey) {
 		if (!sessionOptions.model) {
-			console.error(chalk.red("--api-key requires a model to be specified via --provider/--model or -m/--models"));
+			console.error(
+				chalk.red("--api-key requires a model to be specified via --model, --provider/--model, or --models"),
+			);
 			process.exit(1);
 		}
 		authStorage.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey);
@@ -674,9 +702,11 @@ export async function main(args: string[]) {
 		process.exit(1);
 	}
 
-	// Clamp thinking level to model capabilities (for CLI override case)
-	if (session.model && parsed.thinking) {
-		let effectiveThinking = parsed.thinking;
+	// Clamp thinking level to model capabilities for CLI-provided thinking levels.
+	// This covers both --thinking <level> and --model <pattern>:<thinking>.
+	const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
+	if (session.model && cliThinkingOverride) {
+		let effectiveThinking = session.thinkingLevel;
 		if (!session.model.reasoning) {
 			effectiveThinking = "off";
 		} else if (effectiveThinking === "xhigh" && !supportsXhigh(session.model)) {
