@@ -34,17 +34,13 @@ function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention 
 }
 
 /**
- * Get prompt cache retention based on cacheRetention and base URL.
- * Only applies to direct OpenAI API calls (api.openai.com).
+ * Get prompt cache retention based on cacheRetention.
  */
-function getPromptCacheRetention(baseUrl: string, cacheRetention: CacheRetention): "24h" | undefined {
+function getPromptCacheRetention(cacheRetention: CacheRetention): "24h" | undefined {
 	if (cacheRetention !== "long") {
 		return undefined;
 	}
-	if (baseUrl.includes("api.openai.com")) {
-		return "24h";
-	}
-	return undefined;
+	return "24h";
 }
 
 // OpenAI Responses-specific options
@@ -205,7 +201,7 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		input: messages,
 		stream: true,
 		prompt_cache_key: cacheRetention === "none" ? undefined : options?.sessionId,
-		prompt_cache_retention: getPromptCacheRetention(model.baseUrl, cacheRetention),
+		prompt_cache_retention: getPromptCacheRetention(cacheRetention),
 		store: false,
 	};
 

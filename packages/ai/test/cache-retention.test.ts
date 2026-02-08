@@ -70,7 +70,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 			expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 		});
 
-		it("should not add ttl when baseUrl is not api.anthropic.com", async () => {
+		it("should add 1h ttl for proxy baseUrl when cacheRetention is long", async () => {
 			process.env.PI_CACHE_RETENTION = "long";
 
 			// Create a model with a different baseUrl (simulating a proxy)
@@ -82,12 +82,6 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 
 			let capturedPayload: any = null;
 
-			// We can't actually make the request (no proxy), but we can verify the payload
-			// by using a mock or checking the logic directly
-			// For this test, we'll import the helper directly
-
-			// Since we can't easily test this without mocking, we'll skip the actual API call
-			// and just verify the helper logic works correctly
 			const { streamAnthropic } = await import("../src/providers/anthropic.js");
 
 			try {
@@ -106,11 +100,9 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 				// Expected to fail
 			}
 
-			// The payload should have been captured before the error
-			if (capturedPayload) {
-				// System prompt should have cache_control WITHOUT ttl (proxy URL)
-				expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral" });
-			}
+			expect(capturedPayload).not.toBeNull();
+			expect(capturedPayload.system).toBeDefined();
+			expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 		});
 
 		it("should omit cache_control when cacheRetention is none", async () => {
@@ -240,7 +232,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 			},
 		);
 
-		it("should not set prompt_cache_retention when baseUrl is not api.openai.com", async () => {
+		it("should set prompt_cache_retention for proxy baseUrl when cacheRetention is long", async () => {
 			process.env.PI_CACHE_RETENTION = "long";
 
 			// Create a model with a different baseUrl (simulating a proxy)
@@ -270,10 +262,8 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 				// Expected to fail
 			}
 
-			// The payload should have been captured before the error
-			if (capturedPayload) {
-				expect(capturedPayload.prompt_cache_retention).toBeUndefined();
-			}
+			expect(capturedPayload).not.toBeNull();
+			expect(capturedPayload.prompt_cache_retention).toBe("24h");
 		});
 
 		it("should omit prompt_cache_key when cacheRetention is none", async () => {

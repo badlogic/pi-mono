@@ -45,15 +45,15 @@ function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention 
 	return "short";
 }
 
-function getCacheControl(
-	baseUrl: string,
-	cacheRetention?: CacheRetention,
-): { retention: CacheRetention; cacheControl?: { type: "ephemeral"; ttl?: "1h" } } {
+function getCacheControl(cacheRetention?: CacheRetention): {
+	retention: CacheRetention;
+	cacheControl?: { type: "ephemeral"; ttl?: "1h" };
+} {
 	const retention = resolveCacheRetention(cacheRetention);
 	if (retention === "none") {
 		return { retention };
 	}
-	const ttl = retention === "long" && baseUrl.includes("api.anthropic.com") ? "1h" : undefined;
+	const ttl = retention === "long" ? "1h" : undefined;
 	return {
 		retention,
 		cacheControl: { type: "ephemeral", ...(ttl && { ttl }) },
@@ -534,7 +534,7 @@ function buildParams(
 	isOAuthToken: boolean,
 	options?: AnthropicOptions,
 ): MessageCreateParamsStreaming {
-	const { cacheControl } = getCacheControl(model.baseUrl, options?.cacheRetention);
+	const { cacheControl } = getCacheControl(options?.cacheRetention);
 	const params: MessageCreateParamsStreaming = {
 		model: model.id,
 		messages: convertMessages(context.messages, model, isOAuthToken, cacheControl),
