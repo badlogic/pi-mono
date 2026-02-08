@@ -1,7 +1,15 @@
 import { marked, type Token } from "marked";
+import {
+	createTerminalHyperlink,
+	type FileReference,
+	lineMayContainFileReference,
+	parseFileReference,
+} from "../file-links.js";
 import { isImageLine } from "../terminal-image.js";
 import type { Component } from "../tui.js";
 import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.js";
+
+export type { FileReference } from "../file-links.js";
 
 /**
  * Default text styling for markdown content.
@@ -44,6 +52,8 @@ export interface MarkdownTheme {
 	highlightCode?: (code: string, lang?: string) => string[];
 	/** Prefix applied to each rendered code block line (default: "  ") */
 	codeBlockIndent?: string;
+	/** Resolve local file references (e.g. src/main.ts:42) to hyperlink URLs */
+	resolveFileLink?: (reference: FileReference) => string | undefined;
 }
 
 interface InlineStyleContext {
@@ -386,11 +396,7 @@ export class Markdown implements Component {
 	private renderInlineTokens(tokens: Token[], styleContext?: InlineStyleContext): string {
 		let result = "";
 		const resolvedStyleContext = styleContext ?? this.getDefaultInlineStyleContext();
-		const { applyText, stylePrefix } = resolvedStyleContext;
-		const applyTextWithNewlines = (text: string): string => {
-			const segments: string[] = text.split("\n");
-			return segments.map((segment: string) => applyText(segment)).join("\n");
-		};
+		const { stylePrefix } = resolvedStyleContext;
 
 		for (const token of tokens) {
 			switch (token.type) {
@@ -399,7 +405,7 @@ export class Markdown implements Component {
 					if (token.tokens && token.tokens.length > 0) {
 						result += this.renderInlineTokens(token.tokens, resolvedStyleContext);
 					} else {
-						result += applyTextWithNewlines(token.text);
+						result += this.applyTextWithFileLinks(token.text, resolvedStyleContext);
 					}
 					break;
 
@@ -421,7 +427,7 @@ export class Markdown implements Component {
 				}
 
 				case "codespan":
-					result += this.theme.code(token.text) + stylePrefix;
+					result += this.applyHyperlinkIfFileReference(token.text, this.theme.code(token.text)) + stylePrefix;
 					break;
 
 				case "link": {
@@ -455,19 +461,101 @@ export class Markdown implements Component {
 				case "html":
 					// Render inline HTML as plain text
 					if ("raw" in token && typeof token.raw === "string") {
-						result += applyTextWithNewlines(token.raw);
+						result += this.applyTextWithFileLinks(token.raw, resolvedStyleContext);
 					}
 					break;
 
 				default:
 					// Handle any other inline token types as plain text
 					if ("text" in token && typeof token.text === "string") {
-						result += applyTextWithNewlines(token.text);
+						result += this.applyTextWithFileLinks(token.text, resolvedStyleContext);
 					}
 			}
 		}
 
 		return result;
+	}
+
+	private applyTextWithFileLinks(text: string, styleContext: InlineStyleContext): string {
+		const lines = text.split("\n");
+		return lines.map((line) => this.applyFileLinksToLine(line, styleContext)).join("\n");
+	}
+
+	private applyFileLinksToLine(line: string, styleContext: InlineStyleContext): string {
+		const resolver = this.theme.resolveFileLink;
+		if (!resolver || !lineMayContainFileReference(line)) {
+			return styleContext.applyText(line);
+		}
+
+		const parts = line.split(/(\s+)/);
+		let result = "";
+
+		for (const part of parts) {
+			if (part.length === 0) continue;
+
+			if (part.trim().length === 0) {
+				result += styleContext.applyText(part);
+				continue;
+			}
+
+			const linkedPart = this.applyFileLinkToToken(part, styleContext, resolver);
+			result += linkedPart;
+		}
+
+		return result;
+	}
+
+	private applyFileLinkToToken(
+		token: string,
+		styleContext: InlineStyleContext,
+		resolver: (reference: FileReference) => string | undefined,
+	): string {
+		const leadingPunctuationMatch = token.match(/^[([{<"'`]+/);
+		const trailingPunctuationMatch = token.match(/[\])}>",.;!?'`]+$/);
+
+		const leadingLength = leadingPunctuationMatch ? leadingPunctuationMatch[0].length : 0;
+		const trailingLength = trailingPunctuationMatch ? trailingPunctuationMatch[0].length : 0;
+		const coreEnd = token.length - trailingLength;
+
+		if (coreEnd <= leadingLength) {
+			return styleContext.applyText(token);
+		}
+
+		const leading = token.slice(0, leadingLength);
+		const core = token.slice(leadingLength, coreEnd);
+		const trailing = token.slice(coreEnd);
+		const reference = parseFileReference(core);
+
+		if (!reference) {
+			return styleContext.applyText(token);
+		}
+
+		const href = resolver(reference);
+		if (!href) {
+			return styleContext.applyText(token);
+		}
+
+		const linkedCore = createTerminalHyperlink(styleContext.applyText(core), href);
+		return styleContext.applyText(leading) + linkedCore + styleContext.applyText(trailing);
+	}
+
+	private applyHyperlinkIfFileReference(rawText: string, styledText: string): string {
+		const resolver = this.theme.resolveFileLink;
+		if (!resolver) {
+			return styledText;
+		}
+
+		const reference = parseFileReference(rawText);
+		if (!reference) {
+			return styledText;
+		}
+
+		const href = resolver(reference);
+		if (!href) {
+			return styledText;
+		}
+
+		return createTerminalHyperlink(styledText, href);
 	}
 
 	/**

@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { Terminal as XtermTerminalType } from "@xterm/headless";
 import { Chalk } from "chalk";
 import { Markdown } from "../src/components/markdown.js";
+import { buildEditorFileUrl } from "../src/file-links.js";
 import { type Component, TUI } from "../src/tui.js";
 import { defaultMarkdownTheme } from "./test-themes.js";
 import { VirtualTerminal } from "./virtual-terminal.js";
@@ -892,6 +893,166 @@ bar`,
 			// Should show both link text and mailto URL
 			assert.ok(joinedPlain.includes("Email me"), "Should contain link text");
 			assert.ok(joinedPlain.includes("(mailto:test@example.com)"), "Should show mailto URL in parentheses");
+		});
+
+		it("should auto-link local file references when resolveFileLink is provided", () => {
+			const markdown = new Markdown("File: src/api/route.ts:42", 0, 0, {
+				...defaultMarkdownTheme,
+				resolveFileLink: (reference) => buildEditorFileUrl(reference),
+			});
+
+			const lines = markdown.render(80);
+			const joined = lines.join("\n");
+			const expectedHref = buildEditorFileUrl({ path: "src/api/route.ts", line: 42 });
+
+			assert.ok(joined.includes(`\x1b]8;;${expectedHref}\x07`), "Should include OSC 8 hyperlink start sequence");
+			assert.ok(joined.includes("\x1b]8;;\x07"), "Should include OSC 8 hyperlink end sequence");
+		});
+
+		it("should auto-link file references with line ranges using the start line", () => {
+			const resolvedReferences: Array<{ path: string; line?: number; column?: number }> = [];
+			const markdown = new Markdown("Run read src/api/route.ts:12-40", 0, 0, {
+				...defaultMarkdownTheme,
+				resolveFileLink: (reference) => {
+					resolvedReferences.push(reference);
+					return buildEditorFileUrl(reference);
+				},
+			});
+
+			const lines = markdown.render(80);
+			const joined = lines.join("\n");
+			const expectedHref = buildEditorFileUrl({ path: "src/api/route.ts", line: 12 });
+
+			assert.ok(joined.includes(`\x1b]8;;${expectedHref}\x07`), "Should link to the first line in the range");
+			assert.strictEqual(resolvedReferences.length, 1, "Expected one resolved file reference");
+			assert.strictEqual(resolvedReferences[0]?.path, "src/api/route.ts");
+			assert.strictEqual(resolvedReferences[0]?.line, 12);
+		});
+
+		it("should keep trailing punctuation outside auto-linked file references", () => {
+			const markdown = new Markdown("See src/api/route.ts:42, then continue.", 0, 0, {
+				...defaultMarkdownTheme,
+				resolveFileLink: (reference) => buildEditorFileUrl(reference),
+			});
+
+			const lines = markdown.render(80);
+			const joined = lines.join("\n");
+			const expectedHref = buildEditorFileUrl({ path: "src/api/route.ts", line: 42 });
+
+			assert.ok(joined.includes(`\x1b]8;;${expectedHref}\x07`), "Should link the file path without punctuation");
+
+			const plain = joined
+				.replace(/\x1b\]8;;[^\x07]*\x07/g, "")
+				.replace(/\x1b\[[0-9;]*m/g, "")
+				.trim();
+			assert.ok(plain.includes("src/api/route.ts:42,"), "Trailing comma should remain visible after the link");
+		});
+
+		it("should not auto-link wildcard directories or bare filenames without explicit path", () => {
+			const markdown = new Markdown(
+				`### Source (packages/tui/src)
+
+- components/* - built-in UI components
+  - text.ts, markdown.ts`,
+				0,
+				0,
+				{
+					...defaultMarkdownTheme,
+					resolveFileLink: (reference) => buildEditorFileUrl(reference),
+				},
+			);
+
+			const lines = markdown.render(100);
+			const joined = lines.join("\n");
+			const wildcardHref = buildEditorFileUrl({ path: "packages/tui/src/components" });
+			const textHref = buildEditorFileUrl({ path: "packages/tui/src/components/text.ts" });
+			const markdownHref = buildEditorFileUrl({ path: "packages/tui/src/components/markdown.ts" });
+			assert.ok(wildcardHref && textHref && markdownHref, "Expected hrefs for path checks");
+
+			assert.ok(
+				!joined.includes(`\x1b]8;;${wildcardHref}\x07`),
+				"Should not link wildcard directory without an explicit path",
+			);
+			assert.ok(!joined.includes(`\x1b]8;;${textHref}\x07`), "Should not link bare filename without explicit path");
+			assert.ok(
+				!joined.includes(`\x1b]8;;${markdownHref}\x07`),
+				"Should not link comma-separated bare filenames without explicit paths",
+			);
+
+			const plain = joined.replace(/\x1b\]8;;[^\x07]*\x07/g, "").replace(/\x1b\[[0-9;]*m/g, "");
+			assert.ok(plain.includes("components/*"), "Wildcard text should remain visible");
+		});
+
+		it("should auto-link home-relative file paths", () => {
+			const markdown = new Markdown("Path: ~/.pi/agent/skills/github/SKILL.md", 0, 0, {
+				...defaultMarkdownTheme,
+				resolveFileLink: (reference) => buildEditorFileUrl(reference),
+			});
+
+			const lines = markdown.render(80);
+			const joined = lines.join("\n");
+			const expectedHref = buildEditorFileUrl({ path: "~/.pi/agent/skills/github/SKILL.md" });
+
+			assert.ok(joined.includes(`\x1b]8;;${expectedHref}\x07`), "Should link home-relative paths");
+		});
+
+		it("should not auto-link bare filenames after section labels", () => {
+			const markdown = new Markdown(
+				`### Components (packages/tui/src/components)
+
+- box.ts
+
+### Fallbacks (Terminal/renderer + fallbacks)
+
+- text.ts`,
+				0,
+				0,
+				{
+					...defaultMarkdownTheme,
+					resolveFileLink: (reference) => buildEditorFileUrl(reference),
+				},
+			);
+
+			const lines = markdown.render(100);
+			const joined = lines.join("\n");
+			const textHref = buildEditorFileUrl({ path: "packages/tui/src/components/text.ts" });
+			assert.ok(textHref, "Expected href for explicit path check");
+
+			assert.ok(!joined.includes(`\x1b]8;;${textHref}\x07`), "Should not link text.ts without explicit path");
+			assert.ok(
+				!joined.includes("Terminal/renderer + fallbacks/text.ts"),
+				"Should not use non-path parenthesized labels as file base path",
+			);
+		});
+
+		it("should not auto-link bare filenames from mixed parenthesized labels", () => {
+			const markdown = new Markdown(
+				`### Components (packages/tui/src/components, Terminal/renderer + fallbacks)
+
+- box.ts`,
+				0,
+				0,
+				{
+					...defaultMarkdownTheme,
+					resolveFileLink: (reference) => buildEditorFileUrl(reference),
+				},
+			);
+
+			const lines = markdown.render(100);
+			const joined = lines.join("\n");
+			const componentBoxHref = buildEditorFileUrl({ path: "packages/tui/src/components/box.ts" });
+			const bareBoxHref = buildEditorFileUrl({ path: "box.ts" });
+			assert.ok(componentBoxHref && bareBoxHref, "Expected hrefs for mixed label checks");
+
+			assert.ok(!joined.includes(`\x1b]8;;${componentBoxHref}\x07`), "Should not link box.ts without explicit path");
+			assert.ok(
+				!joined.includes(`\x1b]8;;${bareBoxHref}\x07`),
+				"Should not fall back to repo root for bare filename",
+			);
+			assert.ok(
+				!joined.includes("Terminal/renderer + fallbacks/box.ts"),
+				"Should not use label text as file base path",
+			);
 		});
 	});
 

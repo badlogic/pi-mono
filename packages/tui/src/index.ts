@@ -22,6 +22,15 @@ export { Text } from "./components/text.js";
 export { TruncatedText } from "./components/truncated-text.js";
 // Editor component interface (for custom editors)
 export type { EditorComponent } from "./editor-component.js";
+// File link detection/resolution utilities
+export {
+	buildEditorFileUrl,
+	createTerminalHyperlink,
+	type EditorFileUrlOptions,
+	type EditorLinkScheme,
+	type FileReference,
+	linkFileDisplayText,
+} from "./file-links.js";
 // Fuzzy matching
 export { type FuzzyMatch, fuzzyFilter, fuzzyMatch } from "./fuzzy.js";
 // Keybindings

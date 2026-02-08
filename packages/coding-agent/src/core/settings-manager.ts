@@ -36,6 +36,10 @@ export interface ThinkingBudgetsSettings {
 	high?: number;
 }
 
+export interface EditorLinkSettings {
+	scheme?: "file" | "vscode" | "cursor" | "windsurf"; // default: "file"
+}
+
 export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
@@ -86,6 +90,7 @@ export interface Settings {
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
+	editorLink?: EditorLinkSettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -747,5 +752,9 @@ export class SettingsManager {
 
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
+	}
+
+	getEditorLinkScheme(): "file" | "vscode" | "cursor" | "windsurf" {
+		return this.settings.editorLink?.scheme ?? "file";
 	}
 }

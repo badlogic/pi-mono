@@ -28,11 +28,14 @@ import type {
 	SlashCommand,
 } from "@mariozechner/pi-tui";
 import {
+	buildEditorFileUrl,
 	CombinedAutocompleteProvider,
 	type Component,
 	Container,
+	type EditorLinkScheme,
 	fuzzyFilter,
 	Loader,
+	linkFileDisplayText,
 	Markdown,
 	matchesKey,
 	ProcessTerminal,
@@ -617,11 +620,27 @@ export class InteractiveMode {
 		return undefined;
 	}
 
+	private getEditorLinkScheme(): EditorLinkScheme {
+		return this.settingsManager.getEditorLinkScheme();
+	}
+
+	private getEditorLinkOptions(): { cwd: string; scheme: EditorLinkScheme } {
+		return {
+			cwd: process.cwd(),
+			scheme: this.getEditorLinkScheme(),
+		};
+	}
+
 	private getMarkdownThemeWithSettings(): MarkdownTheme {
 		return {
 			...getMarkdownTheme(),
 			codeBlockIndent: this.settingsManager.getCodeBlockIndent(),
+			resolveFileLink: (reference) => buildEditorFileUrl(reference, this.getEditorLinkOptions()),
 		};
+	}
+
+	private linkFilePath(filePath: string, displayText?: string): string {
+		return linkFileDisplayText(displayText ?? filePath, { path: filePath }, this.getEditorLinkOptions());
 	}
 
 	// =========================================================================
@@ -796,9 +815,9 @@ export class InteractiveMode {
 			const shortPath = this.getShortPath(p, meta.source);
 			const { label, scopeLabel } = this.getDisplaySourceInfo(meta.source, meta.scope);
 			const labelText = scopeLabel ? `${label} (${scopeLabel})` : label;
-			return `${labelText} ${shortPath}`;
+			return `${labelText} ${this.linkFilePath(p, shortPath)}`;
 		}
-		return this.formatDisplayPath(p);
+		return this.linkFilePath(p, this.formatDisplayPath(p));
 	}
 
 	/**
@@ -884,7 +903,7 @@ export class InteractiveMode {
 			if (contextFiles.length > 0) {
 				this.chatContainer.addChild(new Spacer(1));
 				const contextList = contextFiles
-					.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`))
+					.map((f) => theme.fg("dim", `  ${this.linkFilePath(f.path, this.formatDisplayPath(f.path))}`))
 					.join("\n");
 				this.chatContainer.addChild(new Text(`${sectionHeader("Context")}\n${contextList}`, 0, 0));
 				this.chatContainer.addChild(new Spacer(1));
@@ -895,8 +914,8 @@ export class InteractiveMode {
 				const skillPaths = skills.map((s) => s.filePath);
 				const groups = this.buildScopeGroups(skillPaths, metadata);
 				const skillList = this.formatScopeGroups(groups, {
-					formatPath: (p) => this.formatDisplayPath(p),
-					formatPackagePath: (p, source) => this.getShortPath(p, source),
+					formatPath: (p) => this.linkFilePath(p, this.formatDisplayPath(p)),
+					formatPackagePath: (p, source) => this.linkFilePath(p, this.getShortPath(p, source)),
 				});
 				this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
 				this.chatContainer.addChild(new Spacer(1));
@@ -925,8 +944,8 @@ export class InteractiveMode {
 			if (extensionPaths.length > 0) {
 				const groups = this.buildScopeGroups(extensionPaths, metadata);
 				const extList = this.formatScopeGroups(groups, {
-					formatPath: (p) => this.formatDisplayPath(p),
-					formatPackagePath: (p, source) => this.getShortPath(p, source),
+					formatPath: (p) => this.linkFilePath(p, this.formatDisplayPath(p)),
+					formatPackagePath: (p, source) => this.linkFilePath(p, this.getShortPath(p, source)),
 				});
 				this.chatContainer.addChild(new Text(`${sectionHeader("Extensions", "mdHeading")}\n${extList}`, 0, 0));
 				this.chatContainer.addChild(new Spacer(1));
@@ -939,8 +958,8 @@ export class InteractiveMode {
 				const themePaths = customThemes.map((t) => t.sourcePath!);
 				const groups = this.buildScopeGroups(themePaths, metadata);
 				const themeList = this.formatScopeGroups(groups, {
-					formatPath: (p) => this.formatDisplayPath(p),
-					formatPackagePath: (p, source) => this.getShortPath(p, source),
+					formatPath: (p) => this.linkFilePath(p, this.formatDisplayPath(p)),
+					formatPackagePath: (p, source) => this.linkFilePath(p, this.getShortPath(p, source)),
 				});
 				this.chatContainer.addChild(new Text(`${sectionHeader("Themes")}\n${themeList}`, 0, 0));
 				this.chatContainer.addChild(new Spacer(1));
@@ -2084,6 +2103,7 @@ export class InteractiveMode {
 									content.arguments,
 									{
 										showImages: this.settingsManager.getShowImages(),
+										editorLinkOptions: this.getEditorLinkOptions(),
 									},
 									this.getRegisteredToolDefinition(content.name),
 									this.ui,
@@ -2149,6 +2169,7 @@ export class InteractiveMode {
 						event.args,
 						{
 							showImages: this.settingsManager.getShowImages(),
+							editorLinkOptions: this.getEditorLinkOptions(),
 						},
 						this.getRegisteredToolDefinition(event.toolName),
 						this.ui,
@@ -2450,7 +2471,10 @@ export class InteractiveMode {
 						const component = new ToolExecutionComponent(
 							content.name,
 							content.arguments,
-							{ showImages: this.settingsManager.getShowImages() },
+							{
+								showImages: this.settingsManager.getShowImages(),
+								editorLinkOptions: this.getEditorLinkOptions(),
+							},
 							this.getRegisteredToolDefinition(content.name),
 							this.ui,
 						);

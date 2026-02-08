@@ -132,6 +132,30 @@ When a provider requests a retry delay longer than `maxDelayMs` (e.g., Google's 
 |---------|------|---------|-------------|
 | `markdown.codeBlockIndent` | string | `"  "` | Indentation for code blocks |
 
+### Editor Links
+
+Controls how file references in tool output and markdown are turned into clickable hyperlinks.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `editorLink.scheme` | string | `"file"` | URL scheme for file hyperlinks |
+
+Supported values for `editorLink.scheme`:
+
+- `"file"` — plain `file://` URL (default, opens in OS default app)
+- `"vscode"` — `vscode://file/<path>:<line>:<col>` (opens in VS Code at line/column)
+- `"cursor"` — same format for Cursor editor
+- `"windsurf"` — same format for Windsurf editor
+Example:
+
+```json
+{
+  "editorLink": {
+    "scheme": "vscode"
+  }
+}
+```
+
 ### Resources
 
 These settings define where to load extensions, skills, prompts, and themes from.

@@ -2,10 +2,12 @@ import * as os from "node:os";
 import {
 	Box,
 	Container,
+	type EditorFileUrlOptions,
 	getCapabilities,
 	getImageDimensions,
 	Image,
 	imageFallback,
+	linkFileDisplayText,
 	Spacer,
 	Text,
 	type TUI,
@@ -54,6 +56,7 @@ function str(value: unknown): string | null {
 
 export interface ToolExecutionOptions {
 	showImages?: boolean; // default: true (only used if terminal supports images)
+	editorLinkOptions?: EditorFileUrlOptions;
 }
 
 /**
@@ -72,6 +75,7 @@ export class ToolExecutionComponent extends Container {
 	private toolDefinition?: ToolDefinition;
 	private ui: TUI;
 	private cwd: string;
+	private editorLinkOptions: EditorFileUrlOptions;
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 		isError: boolean;
@@ -95,6 +99,7 @@ export class ToolExecutionComponent extends Container {
 		this.toolName = toolName;
 		this.args = args;
 		this.showImages = options.showImages ?? true;
+		this.editorLinkOptions = options.editorLinkOptions ?? { cwd };
 		this.toolDefinition = toolDefinition;
 		this.ui = ui;
 		this.cwd = cwd;
@@ -454,6 +459,10 @@ export class ToolExecutionComponent extends Container {
 		return output;
 	}
 
+	private linkFileDisplay(displayText: string, filePath: string, line?: number, column?: number): string {
+		return linkFileDisplayText(displayText, { path: filePath, line, column }, this.editorLinkOptions);
+	}
+
 	private formatToolExecution(): string {
 		let text = "";
 		const invalidArg = theme.fg("error", "[invalid arg]");
@@ -464,11 +473,14 @@ export class ToolExecutionComponent extends Container {
 			const offset = this.args?.offset;
 			const limit = this.args?.limit;
 
-			let pathDisplay = path === null ? invalidArg : path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
-			if (offset !== undefined || limit !== undefined) {
-				const startLine = offset ?? 1;
-				const endLine = limit !== undefined ? startLine + limit - 1 : "";
-				pathDisplay += theme.fg("warning", `:${startLine}${endLine ? `-${endLine}` : ""}`);
+			let pathDisplay = path === null ? invalidArg : theme.fg("toolOutput", "...");
+			if (path) {
+				const startLine = offset ?? (limit !== undefined ? 1 : undefined);
+				const endLine = startLine !== undefined && limit !== undefined ? startLine + limit - 1 : undefined;
+				const lineSuffix =
+					startLine === undefined ? "" : `:${startLine}${endLine !== undefined ? `-${endLine}` : ""}`;
+				const styledDisplay = theme.fg("accent", path) + (lineSuffix ? theme.fg("warning", lineSuffix) : "");
+				pathDisplay = this.linkFileDisplay(styledDisplay, rawPath!, startLine);
 			}
 
 			text = `${theme.fg("toolTitle", theme.bold("read"))} ${pathDisplay}`;
@@ -522,11 +534,12 @@ export class ToolExecutionComponent extends Container {
 			const rawPath = str(this.args?.file_path ?? this.args?.path);
 			const fileContent = str(this.args?.content);
 			const path = rawPath !== null ? shortenPath(rawPath) : null;
+			const linkedPathDisplay = path ? this.linkFileDisplay(theme.fg("accent", path), rawPath!) : "";
 
 			text =
 				theme.fg("toolTitle", theme.bold("write")) +
 				" " +
-				(path === null ? invalidArg : path ? theme.fg("accent", path) : theme.fg("toolOutput", "..."));
+				(path === null ? invalidArg : path ? linkedPathDisplay : theme.fg("toolOutput", "..."));
 
 			if (fileContent === null) {
 				text += `\n\n${theme.fg("error", "[invalid content arg - expected string]")}`;
@@ -570,6 +583,9 @@ export class ToolExecutionComponent extends Container {
 				(this.result && !this.result.isError ? this.result.details?.firstChangedLine : undefined);
 			if (firstChangedLine) {
 				pathDisplay += theme.fg("warning", `:${firstChangedLine}`);
+			}
+			if (path) {
+				pathDisplay = this.linkFileDisplay(pathDisplay, rawPath!, firstChangedLine);
 			}
 
 			text = `${theme.fg("toolTitle", theme.bold("edit"))} ${pathDisplay}`;
