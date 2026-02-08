@@ -481,6 +481,9 @@ function createClient(
 	if (interleavedThinking) {
 		betaFeatures.push("interleaved-thinking-2025-05-14");
 	}
+	if (model.contextWindow > 200000) {
+		betaFeatures.push("context-1m-2025-08-07");
+	}
 
 	const oauthToken = isOAuthToken(apiKey);
 	if (oauthToken) {
