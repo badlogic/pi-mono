@@ -444,6 +444,8 @@ export class AgentSession {
 			};
 			await this._extensionRunner.emit(extensionEvent);
 			this._turnIndex++;
+		} else if (event.type === "message_end") {
+			await this._extensionRunner.emit({ type: "message_end", message: event.message });
 		}
 	}
 

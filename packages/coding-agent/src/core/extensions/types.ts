@@ -505,6 +505,12 @@ export interface TurnStartEvent {
 	timestamp: number;
 }
 
+/** Fired when a message (user, assistant, or toolResult) has been finalized and appended to the session. */
+export interface MessageEndEvent {
+	type: "message_end";
+	message: AgentMessage;
+}
+
 /** Fired at the end of each turn */
 export interface TurnEndEvent {
 	type: "turn_end";
@@ -753,6 +759,7 @@ export type ExtensionEvent =
 	| AgentEndEvent
 	| TurnStartEvent
 	| TurnEndEvent
+	| MessageEndEvent
 	| ModelSelectEvent
 	| UserBashEvent
 	| InputEvent
@@ -884,6 +891,7 @@ export interface ExtensionAPI {
 	on(event: "agent_end", handler: ExtensionHandler<AgentEndEvent>): void;
 	on(event: "turn_start", handler: ExtensionHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: ExtensionHandler<TurnEndEvent>): void;
+	on(event: "message_end", handler: ExtensionHandler<MessageEndEvent>): void;
 	on(event: "model_select", handler: ExtensionHandler<ModelSelectEvent>): void;
 	on(event: "tool_call", handler: ExtensionHandler<ToolCallEvent, ToolCallEventResult>): void;
 	on(event: "tool_result", handler: ExtensionHandler<ToolResultEvent, ToolResultEventResult>): void;
