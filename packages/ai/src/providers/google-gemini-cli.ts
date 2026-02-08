@@ -953,7 +953,10 @@ export function buildRequest(
 	}
 
 	if (context.tools && context.tools.length > 0) {
-		request.tools = convertTools(context.tools);
+		// Claude models on Cloud Code Assist need the legacy `parameters` field;
+		// the API translates it into Anthropic's `input_schema`.
+		const useParameters = model.id.startsWith("claude-");
+		request.tools = convertTools(context.tools, useParameters);
 		if (options.toolChoice) {
 			request.toolConfig = {
 				functionCallingConfig: {

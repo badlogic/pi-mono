@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Use `parametersJsonSchema` for Google provider tool declarations to support full JSON Schema (anyOf, oneOf, const, etc.) ([#1398](https://github.com/badlogic/pi-mono/issues/1398) by [@jarib](https://github.com/jarib))
+- Reverted incorrect Antigravity model change: `claude-opus-4-6-thinking` back to `claude-opus-4-5-thinking` (model doesn't exist on Antigravity endpoint)
+
 ## [0.52.8] - 2026-02-07
 
 ### Added

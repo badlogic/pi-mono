@@ -2971,9 +2971,9 @@ export const MODELS = {
 		} satisfies Model<"google-generative-ai">,
 	},
 	"google-antigravity": {
-		"claude-opus-4-6-thinking": {
-			id: "claude-opus-4-6-thinking",
-			name: "Claude Opus 4.6 Thinking (Antigravity)",
+		"claude-opus-4-5-thinking": {
+			id: "claude-opus-4-5-thinking",
+			name: "Claude Opus 4.5 Thinking (Antigravity)",
 			api: "google-gemini-cli",
 			provider: "google-antigravity",
 			baseUrl: "https://daily-cloudcode-pa.sandbox.googleapis.com",

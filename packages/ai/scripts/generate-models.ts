@@ -1021,8 +1021,8 @@ async function generateModels() {
 			maxTokens: 64000,
 		},
 		{
-			id: "claude-opus-4-6-thinking",
-			name: "Claude Opus 4.6 Thinking (Antigravity)",
+			id: "claude-opus-4-5-thinking",
+			name: "Claude Opus 4.5 Thinking (Antigravity)",
 			api: "google-gemini-cli",
 			provider: "google-antigravity",
 			baseUrl: ANTIGRAVITY_ENDPOINT,
