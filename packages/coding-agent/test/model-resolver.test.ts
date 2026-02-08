@@ -1,6 +1,11 @@
 import type { Model } from "@mariozechner/pi-ai";
 import { describe, expect, test } from "vitest";
-import { defaultModelPerProvider, findInitialModel, parseModelPattern } from "../src/core/model-resolver.js";
+import {
+	defaultModelPerProvider,
+	findInitialModel,
+	parseModelPattern,
+	resolveModelScope,
+} from "../src/core/model-resolver.js";
 
 // Mock models for testing
 const mockModels: Model<"anthropic-messages">[] = [
@@ -27,6 +32,34 @@ const mockModels: Model<"anthropic-messages">[] = [
 		cost: { input: 5, output: 15, cacheRead: 0.5, cacheWrite: 5 },
 		contextWindow: 128000,
 		maxTokens: 4096,
+	},
+];
+
+// Mock models with ambiguous IDs across providers
+const mockAmbiguousProviderModels: Model<"anthropic-messages">[] = [
+	{
+		id: "gpt-5.3-codex",
+		name: "GPT-5.3 Codex (OpenAI)",
+		api: "anthropic-messages",
+		provider: "openai",
+		baseUrl: "https://api.openai.com",
+		reasoning: true,
+		input: ["text"],
+		cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 8192,
+	},
+	{
+		id: "gpt-5.3-codex",
+		name: "GPT-5.3 Codex (OpenAI Codex)",
+		api: "anthropic-messages",
+		provider: "openai-codex",
+		baseUrl: "https://api.openai.com",
+		reasoning: true,
+		input: ["text"],
+		cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 8192,
 	},
 ];
 
@@ -80,6 +113,22 @@ describe("parseModelPattern", () => {
 			const result = parseModelPattern("nonexistent", allModels);
 			expect(result.model).toBeUndefined();
 			expect(result.thinkingLevel).toBeUndefined();
+			expect(result.warning).toBeUndefined();
+		});
+	});
+
+	describe("ambiguous exact IDs across providers", () => {
+		test("uses first exact match when no preferred provider is given", () => {
+			const result = parseModelPattern("gpt-5.3-codex", mockAmbiguousProviderModels);
+			expect(result.model?.provider).toBe("openai");
+			expect(result.model?.id).toBe("gpt-5.3-codex");
+			expect(result.warning).toBeUndefined();
+		});
+
+		test("uses preferred provider when exact ID exists across multiple providers", () => {
+			const result = parseModelPattern("gpt-5.3-codex", mockAmbiguousProviderModels, "openai-codex");
+			expect(result.model?.provider).toBe("openai-codex");
+			expect(result.model?.id).toBe("gpt-5.3-codex");
 			expect(result.warning).toBeUndefined();
 		});
 	});
@@ -198,6 +247,22 @@ describe("parseModelPattern", () => {
 			expect(result.model?.id).toBe("claude-sonnet-4-5");
 			expect(result.warning).toContain("Invalid thinking level");
 		});
+	});
+});
+
+describe("resolveModelScope", () => {
+	test("uses preferred provider for ambiguous exact IDs", async () => {
+		const registry = {
+			getAvailable: async () => mockAmbiguousProviderModels,
+		} as unknown as Parameters<typeof resolveModelScope>[1];
+
+		const scopedModels = await resolveModelScope(["gpt-5.3-codex"], registry, {
+			preferredProvider: "openai-codex",
+		});
+
+		expect(scopedModels).toHaveLength(1);
+		expect(scopedModels[0].model.provider).toBe("openai-codex");
+		expect(scopedModels[0].model.id).toBe("gpt-5.3-codex");
 	});
 });
 

@@ -627,7 +627,9 @@ export async function main(args: string[]) {
 	let scopedModels: ScopedModel[] = [];
 	const modelPatterns = parsed.models ?? settingsManager.getEnabledModels();
 	if (modelPatterns && modelPatterns.length > 0) {
-		scopedModels = await resolveModelScope(modelPatterns, modelRegistry);
+		scopedModels = await resolveModelScope(modelPatterns, modelRegistry, {
+			preferredProvider: settingsManager.getDefaultProvider(),
+		});
 	}
 
 	// Create session manager based on CLI flags

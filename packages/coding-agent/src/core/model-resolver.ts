@@ -59,7 +59,11 @@ function isAlias(id: string): boolean {
  * Try to match a pattern to a model from the available models list.
  * Returns the matched model or undefined if no match found.
  */
-function tryMatchModel(modelPattern: string, availableModels: Model<Api>[]): Model<Api> | undefined {
+function tryMatchModel(
+	modelPattern: string,
+	availableModels: Model<Api>[],
+	preferredProvider?: string,
+): Model<Api> | undefined {
 	// Check for provider/modelId format (provider is everything before the first /)
 	const slashIndex = modelPattern.indexOf("/");
 	if (slashIndex !== -1) {
@@ -75,9 +79,15 @@ function tryMatchModel(modelPattern: string, availableModels: Model<Api>[]): Mod
 	}
 
 	// Check for exact ID match (case-insensitive)
-	const exactMatch = availableModels.find((m) => m.id.toLowerCase() === modelPattern.toLowerCase());
-	if (exactMatch) {
-		return exactMatch;
+	const exactMatches = availableModels.filter((m) => m.id.toLowerCase() === modelPattern.toLowerCase());
+	if (exactMatches.length > 0) {
+		if (preferredProvider) {
+			const preferredMatch = exactMatches.find((m) => m.provider.toLowerCase() === preferredProvider.toLowerCase());
+			if (preferredMatch) {
+				return preferredMatch;
+			}
+		}
+		return exactMatches[0];
 	}
 
 	// No exact match - fall back to partial matching
@@ -126,9 +136,13 @@ export interface ParsedModelResult {
  *
  * @internal Exported for testing
  */
-export function parseModelPattern(pattern: string, availableModels: Model<Api>[]): ParsedModelResult {
+export function parseModelPattern(
+	pattern: string,
+	availableModels: Model<Api>[],
+	preferredProvider?: string,
+): ParsedModelResult {
 	// Try exact match first
-	const exactMatch = tryMatchModel(pattern, availableModels);
+	const exactMatch = tryMatchModel(pattern, availableModels, preferredProvider);
 	if (exactMatch) {
 		return { model: exactMatch, thinkingLevel: undefined, warning: undefined };
 	}
@@ -145,7 +159,7 @@ export function parseModelPattern(pattern: string, availableModels: Model<Api>[]
 
 	if (isValidThinkingLevel(suffix)) {
 		// Valid thinking level - recurse on prefix and use this level
-		const result = parseModelPattern(prefix, availableModels);
+		const result = parseModelPattern(prefix, availableModels, preferredProvider);
 		if (result.model) {
 			// Only use this thinking level if no warning from inner recursion
 			return {
@@ -157,7 +171,7 @@ export function parseModelPattern(pattern: string, availableModels: Model<Api>[]
 		return result;
 	} else {
 		// Invalid suffix - recurse on prefix and warn
-		const result = parseModelPattern(prefix, availableModels);
+		const result = parseModelPattern(prefix, availableModels, preferredProvider);
 		if (result.model) {
 			return {
 				model: result.model,
@@ -180,7 +194,15 @@ export function parseModelPattern(pattern: string, availableModels: Model<Api>[]
  * The algorithm tries to match the full pattern first, then progressively
  * strips colon-suffixes to find a match.
  */
-export async function resolveModelScope(patterns: string[], modelRegistry: ModelRegistry): Promise<ScopedModel[]> {
+export interface ResolveModelScopeOptions {
+	preferredProvider?: string;
+}
+
+export async function resolveModelScope(
+	patterns: string[],
+	modelRegistry: ModelRegistry,
+	options: ResolveModelScopeOptions = {},
+): Promise<ScopedModel[]> {
 	const availableModels = await modelRegistry.getAvailable();
 	const scopedModels: ScopedModel[] = [];
 
@@ -220,7 +242,7 @@ export async function resolveModelScope(patterns: string[], modelRegistry: Model
 			continue;
 		}
 
-		const { model, thinkingLevel, warning } = parseModelPattern(pattern, availableModels);
+		const { model, thinkingLevel, warning } = parseModelPattern(pattern, availableModels, options.preferredProvider);
 
 		if (warning) {
 			console.warn(chalk.yellow(`Warning: ${warning}`));

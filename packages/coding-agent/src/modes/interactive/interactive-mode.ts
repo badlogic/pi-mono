@@ -3255,7 +3255,9 @@ export class InteractiveMode {
 			const patterns = this.settingsManager.getEnabledModels();
 			if (patterns !== undefined && patterns.length > 0) {
 				hasFilter = true;
-				const scopedModels = await resolveModelScope(patterns, this.session.modelRegistry);
+				const scopedModels = await resolveModelScope(patterns, this.session.modelRegistry, {
+					preferredProvider: this.settingsManager.getDefaultProvider(),
+				});
 				for (const sm of scopedModels) {
 					enabledModelIds.add(`${sm.model.provider}/${sm.model.id}`);
 				}
