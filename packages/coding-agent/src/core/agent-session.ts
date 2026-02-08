@@ -56,6 +56,7 @@ import {
 	type SessionBeforeTreeResult,
 	type ShutdownHandler,
 	type ToolDefinition,
+	type ToolInfo,
 	type TreePreparation,
 	type TurnEndEvent,
 	type TurnStartEvent,
@@ -537,10 +538,11 @@ export class AgentSession {
 	/**
 	 * Get all configured tools with name and description.
 	 */
-	getAllTools(): Array<{ name: string; description: string }> {
+	getAllTools(): ToolInfo[] {
 		return Array.from(this._toolRegistry.values()).map((t) => ({
 			name: t.name,
 			description: t.description,
+			parameters: t.parameters,
 		}));
 	}
 

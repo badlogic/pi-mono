@@ -663,6 +663,65 @@
       color: var(--dim);
     }
 
+    .tool-params-hint {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .tool-item:has(.tool-params-hint) {
+      cursor: pointer;
+    }
+
+    .tool-params-hint::after {
+      content: '[click to show parameters]';
+    }
+
+    .tool-item.params-expanded .tool-params-hint::after {
+      content: '[hide parameters]';
+    }
+
+    .tool-params-content {
+      display: none;
+      margin-top: 4px;
+      margin-left: 12px;
+      padding-left: 8px;
+      border-left: 1px solid var(--dim);
+    }
+
+    .tool-item.params-expanded .tool-params-content {
+      display: block;
+    }
+
+    .tool-param {
+      margin-bottom: 4px;
+      font-size: 11px;
+    }
+
+    .tool-param-name {
+      font-weight: bold;
+      color: var(--text);
+    }
+
+    .tool-param-type {
+      color: var(--dim);
+      font-style: italic;
+    }
+
+    .tool-param-required {
+      color: var(--warning, #e8a838);
+      font-size: 10px;
+    }
+
+    .tool-param-optional {
+      color: var(--dim);
+      font-size: 10px;
+    }
+
+    .tool-param-desc {
+      color: var(--dim);
+      margin-left: 8px;
+    }
+
     /* Hook/custom messages */
     .hook-message {
       background: var(--customMessageBg);
