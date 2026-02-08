@@ -67,6 +67,7 @@ import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.js";
 import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.js";
+import { getLatestCompactionEntry } from "./session-manager.js";
 import type { SettingsManager } from "./settings-manager.js";
 import { BUILTIN_SLASH_COMMANDS, type SlashCommandInfo, type SlashCommandLocation } from "./slash-commands.js";
 import { buildSystemPrompt } from "./system-prompt.js";
@@ -1529,9 +1530,9 @@ export class AgentSession {
 		// The error shouldn't trigger another compaction since we already compacted.
 		// Example: opus fails → switch to codex → compact → switch back to opus → opus error
 		// is still in context but shouldn't trigger compaction again.
-		const compactionEntry = this.sessionManager.getBranch().find((e) => e.type === "compaction");
+		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getBranch());
 		const errorIsFromBeforeCompaction =
-			compactionEntry && assistantMessage.timestamp < new Date(compactionEntry.timestamp).getTime();
+			compactionEntry !== null && assistantMessage.timestamp < new Date(compactionEntry.timestamp).getTime();
 
 		// Case 1: Overflow - LLM returned context overflow error
 		if (sameModel && !errorIsFromBeforeCompaction && isContextOverflow(assistantMessage, contextWindow)) {
@@ -2711,15 +2712,41 @@ export class AgentSession {
 		return undefined;
 	}
 
+	private _shouldUseAssistantUsageForContext(assistant: AssistantMessage): boolean {
+		const model = this.model;
+		if (!model) return false;
+		if (assistant.provider !== model.provider || assistant.model !== model.id) return false;
+
+		const usageTokens = calculateContextTokens(assistant.usage);
+		return usageTokens > 0;
+	}
+
 	private _findAssistantMessageIndex(messages: AgentMessage[], target: AssistantMessage): number {
 		const identityIndex = messages.lastIndexOf(target);
 		if (identityIndex !== -1) return identityIndex;
 
+		const targetContentSignature = JSON.stringify(target.content);
+
 		for (let i = messages.length - 1; i >= 0; i--) {
 			const message = messages[i];
 			if (message.role !== "assistant") continue;
-			if (message.timestamp !== target.timestamp) continue;
-			if (message.provider !== target.provider || message.model !== target.model) continue;
+
+			const assistant = message as AssistantMessage;
+			if (assistant.timestamp !== target.timestamp) continue;
+			if (assistant.provider !== target.provider || assistant.model !== target.model) continue;
+			if (assistant.api !== target.api) continue;
+			if (assistant.stopReason !== target.stopReason) continue;
+			if (assistant.errorMessage !== target.errorMessage) continue;
+
+			const usageMatches =
+				assistant.usage.input === target.usage.input &&
+				assistant.usage.output === target.usage.output &&
+				assistant.usage.cacheRead === target.usage.cacheRead &&
+				assistant.usage.cacheWrite === target.usage.cacheWrite &&
+				assistant.usage.totalTokens === target.usage.totalTokens;
+			if (!usageMatches) continue;
+
+			if (JSON.stringify(assistant.content) !== targetContentSignature) continue;
 			return i;
 		}
 
@@ -2754,9 +2781,17 @@ export class AgentSession {
 
 		const messages = this.messages;
 		const lastAssistant = this._findLastAssistantEntryAfterCompaction();
-		let estimate = this._estimateContextFromMessages(messages);
 
-		if (lastAssistant) {
+		let estimate:
+			| {
+					tokens: number;
+					usageTokens: number;
+					trailingTokens: number;
+					lastUsageIndex: number | null;
+			  }
+			| undefined;
+
+		if (lastAssistant && this._shouldUseAssistantUsageForContext(lastAssistant)) {
 			const usageTokens = calculateContextTokens(lastAssistant.usage);
 			const lastUsageIndex = this._findAssistantMessageIndex(messages, lastAssistant);
 
@@ -2773,6 +2808,10 @@ export class AgentSession {
 					lastUsageIndex,
 				};
 			}
+		}
+
+		if (!estimate) {
+			estimate = this._estimateContextFromMessages(messages);
 		}
 
 		const percent = (estimate.tokens / contextWindow) * 100;
