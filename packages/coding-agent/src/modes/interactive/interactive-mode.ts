@@ -993,6 +993,16 @@ export class InteractiveMode {
 				this.chatContainer.addChild(new Spacer(1));
 			}
 		}
+
+		// Show branch session info if enabled (path only, branch mismatch shown in footer)
+		if (showListing && this.settingsManager.getBranchSessionsEnabled()) {
+			const sessionDir = this.session.sessionManager?.getSessionDir();
+			if (sessionDir) {
+				const branchInfo = `${theme.fg("dim", "[Branch sessions]")} ${theme.fg("dim", sessionDir)}`;
+				this.chatContainer.addChild(new Text(branchInfo, 0, 0));
+				this.chatContainer.addChild(new Spacer(1));
+			}
+		}
 	}
 
 	/**
