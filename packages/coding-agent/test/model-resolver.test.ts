@@ -1,10 +1,11 @@
 import type { Model } from "@mariozechner/pi-ai";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
 	defaultModelPerProvider,
 	findInitialModel,
 	parseModelPattern,
 	resolveModelScope,
+	restoreModelFromSession,
 } from "../src/core/model-resolver.js";
 
 // Mock models for testing
@@ -254,6 +255,73 @@ describe("resolveModelScope", () => {
 		expect(scoped).toHaveLength(2);
 		expect(scoped.every((entry) => entry.model.provider === "google-antigravity")).toBe(true);
 		expect(scoped.every((entry) => entry.thinkingLevel === "high")).toBe(true);
+	});
+});
+
+describe("restoreModelFromSession", () => {
+	const dynamicAntigravityModel: Model<"anthropic-messages"> = {
+		id: "claude-sonnet-4-5",
+		name: "Claude Sonnet 4.5",
+		api: "anthropic-messages",
+		provider: "google-antigravity",
+		baseUrl: "https://daily-cloudcode-pa.sandbox.googleapis.com",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+		contextWindow: 200000,
+		maxTokens: 8192,
+	};
+
+	test("restores dynamic antigravity model when model and auth are available", async () => {
+		const registry = {
+			find: vi.fn().mockReturnValue(dynamicAntigravityModel),
+			getApiKey: vi.fn().mockResolvedValue("oauth-token"),
+			getAvailable: vi.fn().mockResolvedValue([dynamicAntigravityModel]),
+		} as unknown as Parameters<typeof restoreModelFromSession>[4];
+
+		const result = await restoreModelFromSession(
+			"google-antigravity",
+			"claude-sonnet-4-5",
+			undefined,
+			false,
+			registry,
+		);
+
+		expect(result.model).toEqual(dynamicAntigravityModel);
+		expect(result.fallbackMessage).toBeUndefined();
+	});
+
+	test("falls back to current model when restored dynamic model no longer exists", async () => {
+		const fallbackModel: Model<"anthropic-messages"> = {
+			id: "claude-opus-4-6",
+			name: "Claude Opus 4.6",
+			api: "anthropic-messages",
+			provider: "anthropic",
+			baseUrl: "https://api.anthropic.com",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+			contextWindow: 200000,
+			maxTokens: 8192,
+		};
+
+		const registry = {
+			find: vi.fn().mockReturnValue(undefined),
+			getApiKey: vi.fn().mockResolvedValue(undefined),
+			getAvailable: vi.fn().mockResolvedValue([fallbackModel]),
+		} as unknown as Parameters<typeof restoreModelFromSession>[4];
+
+		const result = await restoreModelFromSession(
+			"google-antigravity",
+			"gemini-3-pro-high",
+			fallbackModel,
+			false,
+			registry,
+		);
+
+		expect(result.model).toEqual(fallbackModel);
+		expect(result.fallbackMessage).toContain("model no longer exists");
+		expect(result.fallbackMessage).toContain("anthropic/claude-opus-4-6");
 	});
 });
 
