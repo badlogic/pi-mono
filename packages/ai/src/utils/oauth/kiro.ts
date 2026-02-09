@@ -196,15 +196,15 @@ export async function refreshKiroToken(credentials: KiroCredentials): Promise<Ki
 }
 
 /**
- * Get Kiro access token from kiro-cli's SQLite database.
+ * Get full Kiro credentials from kiro-cli's SQLite database.
  * This provides automatic credential sharing for users who have kiro-cli installed.
  *
  * Searches the database buffer directly without converting to string to avoid
  * ERR_STRING_TOO_LONG on large databases (600MB+).
  *
- * Returns undefined if token is expired (with 2 minute buffer).
+ * Returns full credentials including refresh token for auto-refresh support.
  */
-function getKiroCliToken(): string | undefined {
+function getKiroCliCredentials(): KiroCredentials | undefined {
 	try {
 		const p = platform();
 		let dbPath: string;
@@ -220,43 +220,98 @@ function getKiroCliToken(): string | undefined {
 
 		// Read database as buffer and search for token without converting entire file to string
 		const db = readFileSync(dbPath);
-		const searchKey = "kirocli:odic:token";
-		const keyBuffer = Buffer.from(searchKey, "utf-8");
 
-		// Find the key in the database
-		const keyIndex = db.indexOf(keyBuffer);
-		if (keyIndex === -1) return undefined;
+		// Search for both token and device registration
+		const tokenKey = "kirocli:odic:token";
+		const tokenKeyBuffer = Buffer.from(tokenKey, "utf-8");
+		const tokenKeyIndex = db.indexOf(tokenKeyBuffer);
+		if (tokenKeyIndex === -1) return undefined;
 
-		// Extract a reasonable chunk after the key to find the JSON value
-		// SQLite stores key-value pairs with some metadata, so we search forward
-		const chunkStart = keyIndex;
-		const chunkSize = 2048; // Enough for the token JSON
-		const chunk = db.subarray(chunkStart, Math.min(chunkStart + chunkSize, db.length));
-		const chunkStr = chunk.toString("utf-8");
+		// Extract token data
+		const tokenChunkStart = tokenKeyIndex;
+		const tokenChunkSize = 2048;
+		const tokenChunk = db.subarray(tokenChunkStart, Math.min(tokenChunkStart + tokenChunkSize, db.length));
+		const tokenChunkStr = tokenChunk.toString("utf-8");
 
-		// Look for JSON object after the key
-		// Format: kirocli:odic:token -> {"access_token":"...","refresh_token":"...","expires_at":"..."}
-		const jsonMatch = chunkStr.match(/\{[^}]+\}/);
-		if (jsonMatch) {
-			const data = JSON.parse(jsonMatch[0]);
-			if (data.access_token) {
-				// Check if token is expired (with 2 minute buffer)
-				if (data.expires_at) {
-					const expiresAt = new Date(data.expires_at).getTime();
-					const now = Date.now();
-					const bufferMs = 2 * 60 * 1000; // 2 minutes
-					if (now >= expiresAt - bufferMs) {
-						// Token is expired or about to expire
-						return undefined;
-					}
-				}
-				return data.access_token;
-			}
+		// Format: kirocli:odic:token -> {"access_token":"...","refresh_token":"...","expires_at":"...","region":"..."}
+		const tokenJsonMatch = tokenChunkStr.match(/\{[^}]+\}/);
+		if (!tokenJsonMatch) return undefined;
+
+		const tokenData = JSON.parse(tokenJsonMatch[0]);
+		if (!tokenData.access_token || !tokenData.refresh_token) return undefined;
+
+		// Parse expiry
+		let expiresAt = Date.now() + 3600000; // Default 1 hour
+		if (tokenData.expires_at) {
+			expiresAt = new Date(tokenData.expires_at).getTime();
 		}
+
+		const region = tokenData.region || "us-east-1";
+
+		// Try to find device registration for client credentials
+		const deviceRegKey = "device-registration";
+		const deviceRegKeyBuffer = Buffer.from(deviceRegKey, "utf-8");
+		const deviceRegKeyIndex = db.indexOf(deviceRegKeyBuffer);
+
+		let clientId = "";
+		let clientSecret = "";
+
+		if (deviceRegKeyIndex !== -1) {
+			const deviceRegChunkStart = deviceRegKeyIndex;
+			const deviceRegChunkSize = 4096;
+			const deviceRegChunk = db.subarray(
+				deviceRegChunkStart,
+				Math.min(deviceRegChunkStart + deviceRegChunkSize, db.length),
+			);
+			const deviceRegChunkStr = deviceRegChunk.toString("utf-8");
+
+			// Look for clientId and clientSecret in the device registration data
+			const clientIdMatch = deviceRegChunkStr.match(/"clientId"\s*:\s*"([^"]+)"/);
+			const clientSecretMatch = deviceRegChunkStr.match(/"clientSecret"\s*:\s*"([^"]+)"/);
+
+			if (clientIdMatch) clientId = clientIdMatch[1];
+			if (clientSecretMatch) clientSecret = clientSecretMatch[1];
+		}
+
+		// Build refresh token in pi format: refreshToken|clientId|clientSecret|idc
+		const refresh = `${tokenData.refresh_token}|${clientId}|${clientSecret}|idc`;
+
+		return {
+			refresh,
+			access: tokenData.access_token,
+			expires: expiresAt,
+			clientId,
+			clientSecret,
+			region,
+		};
 	} catch {
 		// Database not available, locked, or malformed
 	}
 	return undefined;
+}
+
+/**
+ * Get Kiro access token from kiro-cli's SQLite database.
+ * This provides automatic credential sharing for users who have kiro-cli installed.
+ *
+ * Searches the database buffer directly without converting to string to avoid
+ * ERR_STRING_TOO_LONG on large databases (600MB+).
+ *
+ * Returns undefined if token is expired (with 2 minute buffer).
+ */
+function getKiroCliToken(): string | undefined {
+	const creds = getKiroCliCredentials();
+	if (!creds) return undefined;
+
+	// Check if token is expired (with 2 minute buffer)
+	const now = Date.now();
+	const bufferMs = 2 * 60 * 1000; // 2 minutes
+	if (now >= creds.expires - bufferMs) {
+		// Token is expired or about to expire
+		return undefined;
+	}
+
+	return creds.access;
 }
 
 export const kiroOAuthProvider: OAuthProviderInterface = {
@@ -277,5 +332,9 @@ export const kiroOAuthProvider: OAuthProviderInterface = {
 
 	getCliToken(): string | undefined {
 		return getKiroCliToken();
+	},
+
+	getCliCredentials(): OAuthCredentials | undefined {
+		return getKiroCliCredentials();
 	},
 };

@@ -1019,8 +1019,11 @@ export const streamKiro: StreamFunction<"kiro", KiroOptions> = (
 
 				if (!response.ok) {
 					const errorText = await response.text().catch(() => "");
-					const isRetryable =
-						response.status === 413 || (response.status === 400 && errorText.includes("Improperly formed"));
+					const isContentTooLong =
+						errorText.includes("CONTENT_LENGTH_EXCEEDS_THRESHOLD") ||
+						errorText.includes("Input is too long") ||
+						errorText.includes("Improperly formed");
+					const isRetryable = response.status === 413 || (response.status === 400 && isContentTooLong);
 					if (isRetryable && retryCount < maxRetries) {
 						retryCount++;
 						reductionFactor *= 0.7;

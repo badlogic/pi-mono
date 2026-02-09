@@ -52,6 +52,9 @@ export interface OAuthProviderInterface {
 
 	/** Optional: get API key from external CLI tool credentials */
 	getCliToken?(): string | undefined;
+
+	/** Optional: get full credentials from external CLI tool (for auto-refresh support) */
+	getCliCredentials?(): OAuthCredentials | undefined;
 }
 
 /** @deprecated Use OAuthProviderInterface instead */
