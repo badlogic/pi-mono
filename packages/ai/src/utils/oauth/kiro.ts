@@ -201,6 +201,8 @@ export async function refreshKiroToken(credentials: KiroCredentials): Promise<Ki
  *
  * Searches the database buffer directly without converting to string to avoid
  * ERR_STRING_TOO_LONG on large databases (600MB+).
+ *
+ * Returns undefined if token is expired (with 2 minute buffer).
  */
 function getKiroCliToken(): string | undefined {
 	try {
@@ -233,11 +235,21 @@ function getKiroCliToken(): string | undefined {
 		const chunkStr = chunk.toString("utf-8");
 
 		// Look for JSON object after the key
-		// Format: kirocli:odic:token -> {"access_token":"...","refresh_token":"..."}
+		// Format: kirocli:odic:token -> {"access_token":"...","refresh_token":"...","expires_at":"..."}
 		const jsonMatch = chunkStr.match(/\{[^}]+\}/);
 		if (jsonMatch) {
 			const data = JSON.parse(jsonMatch[0]);
 			if (data.access_token) {
+				// Check if token is expired (with 2 minute buffer)
+				if (data.expires_at) {
+					const expiresAt = new Date(data.expires_at).getTime();
+					const now = Date.now();
+					const bufferMs = 2 * 60 * 1000; // 2 minutes
+					if (now >= expiresAt - bufferMs) {
+						// Token is expired or about to expire
+						return undefined;
+					}
+				}
 				return data.access_token;
 			}
 		}
