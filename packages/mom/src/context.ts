@@ -157,12 +157,18 @@ export interface MomRetrySettings {
 	baseDelayMs: number;
 }
 
+export interface MomImageSettings {
+	autoResize?: boolean;
+	blockImages?: boolean;
+}
+
 export interface MomSettings {
 	defaultProvider?: string;
 	defaultModel?: string;
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high";
 	compaction?: Partial<MomCompactionSettings>;
 	retry?: Partial<MomRetrySettings>;
+	images?: MomImageSettings;
 }
 
 const DEFAULT_COMPACTION: MomCompactionSettings = {
@@ -293,5 +299,13 @@ export class MomSettingsManager {
 
 	getHookTimeout(): number {
 		return 30000;
+	}
+
+	getImageAutoResize(): boolean {
+		return this.settings.images?.autoResize ?? true;
+	}
+
+	getBlockImages(): boolean {
+		return this.settings.images?.blockImages ?? false;
 	}
 }
