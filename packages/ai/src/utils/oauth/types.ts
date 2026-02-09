@@ -49,6 +49,9 @@ export interface OAuthProviderInterface {
 
 	/** Optional: modify models for this provider (e.g., update baseUrl) */
 	modifyModels?(models: Model<Api>[], credentials: OAuthCredentials): Model<Api>[];
+
+	/** Optional: fetch dynamic models available to the authenticated user */
+	getDynamicModels?(credentials: OAuthCredentials): Promise<Model<Api>[]>;
 }
 
 /** @deprecated Use OAuthProviderInterface instead */
