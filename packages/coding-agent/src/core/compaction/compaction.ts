@@ -219,6 +219,21 @@ export function shouldCompact(contextTokens: number, contextWindow: number, sett
 // ============================================================================
 
 /**
+ * Estimate character count for an image based on its base64 data length.
+ *
+ * Anthropic's vision API tokenizes images based on their dimensions after resizing,
+ * not raw base64 size. A typical image costs 1000-1600 tokens. However, when images
+ * are stored inline as base64 in the message content, the raw base64 string is what
+ * gets sent in the API request and counts against the context window.
+ *
+ * We use the base64 data length directly since that represents the actual payload
+ * size in the API request.
+ */
+function estimateImageChars(base64Length: number): number {
+	return base64Length || 4800;
+}
+
+/**
  * Estimate token count for a message using chars/4 heuristic.
  * This is conservative (overestimates tokens).
  */
@@ -227,13 +242,15 @@ export function estimateTokens(message: AgentMessage): number {
 
 	switch (message.role) {
 		case "user": {
-			const content = (message as { content: string | Array<{ type: string; text?: string }> }).content;
+			const content = (message as { content: string | Array<{ type: string; text?: string; data?: string }> }).content;
 			if (typeof content === "string") {
 				chars = content.length;
 			} else if (Array.isArray(content)) {
 				for (const block of content) {
 					if (block.type === "text" && block.text) {
 						chars += block.text.length;
+					} else if (block.type === "image" && block.data) {
+						chars += estimateImageChars(block.data.length);
 					}
 				}
 			}
@@ -262,7 +279,8 @@ export function estimateTokens(message: AgentMessage): number {
 						chars += block.text.length;
 					}
 					if (block.type === "image") {
-						chars += 4800; // Estimate images as 4000 chars, or 1200 tokens
+						const imgBlock = block as { data?: string };
+						chars += imgBlock.data ? estimateImageChars(imgBlock.data.length) : 4800;
 					}
 				}
 			}
