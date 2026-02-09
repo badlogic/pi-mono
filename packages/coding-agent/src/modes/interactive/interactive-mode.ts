@@ -216,6 +216,7 @@ export class InteractiveMode {
 
 	// Shutdown state
 	private shutdownRequested = false;
+	private shownDynamicModelWarnings = new Set<string>();
 
 	// Extension UI state
 	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
@@ -3177,14 +3178,25 @@ export class InteractiveMode {
 		return exactMatches.length === 1 ? exactMatches[0] : undefined;
 	}
 
+	private showDynamicModelWarnings(): void {
+		for (const warning of this.session.modelRegistry.getDynamicModelWarnings()) {
+			if (this.shownDynamicModelWarnings.has(warning)) {
+				continue;
+			}
+			this.shownDynamicModelWarnings.add(warning);
+			this.showWarning(warning);
+		}
+	}
+
 	private async getModelCandidates(): Promise<Model<any>[]> {
 		if (this.session.scopedModels.length > 0) {
 			return this.session.scopedModels.map((scoped) => scoped.model);
 		}
 
-		this.session.modelRegistry.refresh();
+		await this.session.modelRegistry.refreshWithDynamicModels();
+		this.showDynamicModelWarnings();
 		try {
-			return await this.session.modelRegistry.getAvailable();
+			return this.session.modelRegistry.getAvailable();
 		} catch {
 			return [];
 		}
@@ -3230,7 +3242,8 @@ export class InteractiveMode {
 
 	private async showModelsSelector(): Promise<void> {
 		// Get all available models
-		this.session.modelRegistry.refresh();
+		await this.session.modelRegistry.refreshWithDynamicModels();
+		this.showDynamicModelWarnings();
 		const allModels = this.session.modelRegistry.getAvailable();
 
 		if (allModels.length === 0) {
@@ -3593,7 +3606,8 @@ export class InteractiveMode {
 
 						try {
 							this.session.modelRegistry.authStorage.logout(providerId);
-							this.session.modelRegistry.refresh();
+							await this.session.modelRegistry.refreshWithDynamicModels();
+							this.showDynamicModelWarnings();
 							await this.updateAvailableProviderCount();
 							this.showStatus(`Logged out of ${providerName}`);
 						} catch (error: unknown) {
@@ -3687,7 +3701,8 @@ export class InteractiveMode {
 
 			// Success
 			restoreEditor();
-			this.session.modelRegistry.refresh();
+			await this.session.modelRegistry.refreshWithDynamicModels();
+			this.showDynamicModelWarnings();
 			await this.updateAvailableProviderCount();
 			this.showStatus(`Logged in to ${providerName}. Credentials saved to ${getAuthPath()}`);
 		} catch (error: unknown) {

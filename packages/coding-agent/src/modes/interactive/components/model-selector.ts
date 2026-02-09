@@ -137,18 +137,21 @@ export class ModelSelectorComponent extends Container implements Focusable {
 	private async loadModels(): Promise<void> {
 		let models: ModelItem[];
 
-		// Refresh to pick up any changes to models.json
-		this.modelRegistry.refresh();
+		// Refresh to pick up any changes to models.json and OAuth dynamic models
+		await this.modelRegistry.refreshWithDynamicModels();
 
-		// Check for models.json errors
+		// Check for models.json errors and dynamic hydration warnings
 		const loadError = this.modelRegistry.getError();
+		const dynamicWarnings = this.modelRegistry.getDynamicModelWarnings();
 		if (loadError) {
 			this.errorMessage = loadError;
+		} else if (dynamicWarnings.length > 0) {
+			this.errorMessage = dynamicWarnings.join("\n");
 		}
 
 		// Load available models (built-in models still work even if models.json failed)
 		try {
-			const availableModels = await this.modelRegistry.getAvailable();
+			const availableModels = this.modelRegistry.getAvailable();
 			models = availableModels.map((model: Model<any>) => ({
 				provider: model.provider,
 				id: model.id,
