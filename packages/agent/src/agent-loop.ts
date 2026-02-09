@@ -149,8 +149,7 @@ async function runLoop(
 			}
 
 			// Check for tool calls
-			const toolCalls = message.content.filter((c) => c.type === "toolCall");
-			hasMoreToolCalls = toolCalls.length > 0;
+			hasMoreToolCalls = message.content.some(c => c.type === "toolCall");
 
 			const toolResults: ToolResultMessage[] = [];
 			if (hasMoreToolCalls) {
