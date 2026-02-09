@@ -2,7 +2,7 @@
  * Shared utilities for Google Generative AI and Google Cloud Code Assist providers.
  */
 
-import { type Content, FinishReason, FunctionCallingConfigMode, type Part, type Schema } from "@google/genai";
+import { type Content, FinishReason, FunctionCallingConfigMode, type Part } from "@google/genai";
 import type { Context, ImageContent, Model, StopReason, TextContent, Tool } from "../types.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { transformMessages } from "./transform-messages.js";
@@ -232,17 +232,23 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 
 /**
  * Convert tools to Gemini function declarations format.
+ *
+ * By default uses `parametersJsonSchema` which supports full JSON Schema (including
+ * anyOf, oneOf, const, etc.). Set `useParameters` to true to use the legacy `parameters`
+ * field instead (OpenAPI 3.03 Schema). This is needed for Cloud Code Assist with Claude
+ * models, where the API translates `parameters` into Anthropic's `input_schema`.
  */
 export function convertTools(
 	tools: Tool[],
-): { functionDeclarations: { name: string; description?: string; parameters: Schema }[] }[] | undefined {
+	useParameters = false,
+): { functionDeclarations: Record<string, unknown>[] }[] | undefined {
 	if (tools.length === 0) return undefined;
 	return [
 		{
 			functionDeclarations: tools.map((tool) => ({
 				name: tool.name,
 				description: tool.description,
-				parameters: tool.parameters as Schema,
+				...(useParameters ? { parameters: tool.parameters } : { parametersJsonSchema: tool.parameters }),
 			})),
 		},
 	];

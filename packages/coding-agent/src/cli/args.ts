@@ -125,7 +125,7 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 		} else if ((arg === "--extension" || arg === "-e") && i + 1 < args.length) {
 			result.extensions = result.extensions ?? [];
 			result.extensions.push(args[++i]);
-		} else if (arg === "--no-extensions") {
+		} else if (arg === "--no-extensions" || arg === "-ne") {
 			result.noExtensions = true;
 		} else if (arg === "--skill" && i + 1 < args.length) {
 			result.skills = result.skills ?? [];
@@ -136,9 +136,9 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 		} else if (arg === "--theme" && i + 1 < args.length) {
 			result.themes = result.themes ?? [];
 			result.themes.push(args[++i]);
-		} else if (arg === "--no-skills") {
+		} else if (arg === "--no-skills" || arg === "-ns") {
 			result.noSkills = true;
-		} else if (arg === "--no-prompt-templates") {
+		} else if (arg === "--no-prompt-templates" || arg === "-np") {
 			result.noPromptTemplates = true;
 		} else if (arg === "--no-themes") {
 			result.noThemes = true;
@@ -207,11 +207,11 @@ ${chalk.bold("Options:")}
                                  Available: read, bash, edit, write, grep, find, ls
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
-  --no-extensions                Disable extension discovery (explicit -e paths still work)
+  --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
   --skill <path>                 Load a skill file or directory (can be used multiple times)
-  --no-skills                    Disable skills discovery and loading
+  --no-skills, -ns               Disable skills discovery and loading
   --prompt-template <path>       Load a prompt template file or directory (can be used multiple times)
-  --no-prompt-templates          Disable prompt template discovery and loading
+  --no-prompt-templates, -np     Disable prompt template discovery and loading
   --theme <path>                 Load a theme file or directory (can be used multiple times)
   --no-themes                    Disable theme discovery and loading
   --export <file>                Export session file to HTML and exit

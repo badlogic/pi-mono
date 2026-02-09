@@ -295,6 +295,9 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				const success = await session.switchSession(sessionPath);
 				return { cancelled: !success };
 			},
+			reload: async () => {
+				await session.reload();
+			},
 		},
 		shutdownHandler: () => {
 			shutdownRequested = true;

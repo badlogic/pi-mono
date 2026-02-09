@@ -153,10 +153,18 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 	mkdirSync(extractDir, { recursive: true });
 
 	try {
-		if (assetName.endsWith(".tar.gz")) {
-			spawnSync("tar", ["xzf", archivePath, "-C", extractDir], { stdio: "pipe" });
-		} else if (assetName.endsWith(".zip")) {
-			spawnSync("unzip", ["-o", archivePath, "-d", extractDir], { stdio: "pipe" });
+		// Use tar for both .tar.gz and .zip extraction. Windows 10+ ships bsdtar
+		// which handles both formats, avoiding the need for `unzip` (not available
+		// on Windows by default).
+		const extractResult = assetName.endsWith(".tar.gz")
+			? spawnSync("tar", ["xzf", archivePath, "-C", extractDir], { stdio: "pipe" })
+			: assetName.endsWith(".zip")
+				? spawnSync("tar", ["xf", archivePath, "-C", extractDir], { stdio: "pipe" })
+				: null;
+
+		if (!extractResult || extractResult.error || extractResult.status !== 0) {
+			const errMsg = extractResult?.error?.message ?? extractResult?.stderr?.toString().trim() ?? "unknown error";
+			throw new Error(`Failed to extract ${assetName}: ${errMsg}`);
 		}
 
 		// Find the binary in extracted files

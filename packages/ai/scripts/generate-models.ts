@@ -642,7 +642,7 @@ async function generateModels() {
 		opus45.cost.cacheWrite = 6.25;
 	}
 
-	// Temporary Opus 4.6 overrides until upstream model metadata is corrected.
+	// Temporary overrides until upstream model metadata is corrected.
 	for (const candidate of allModels) {
 		if (candidate.provider === "amazon-bedrock" && candidate.id.includes("anthropic.claude-opus-4-6-v1")) {
 			candidate.cost.cacheRead = 0.5;
@@ -650,6 +650,10 @@ async function generateModels() {
 			candidate.contextWindow = 200000;
 		}
 		if ((candidate.provider === "anthropic" || candidate.provider === "opencode") && candidate.id === "claude-opus-4-6") {
+			candidate.contextWindow = 200000;
+		}
+		// opencode lists Claude Sonnet 4/4.5 with 1M context, actual limit is 200K
+		if (candidate.provider === "opencode" && (candidate.id === "claude-sonnet-4-5" || candidate.id === "claude-sonnet-4")) {
 			candidate.contextWindow = 200000;
 		}
 	}
@@ -1017,8 +1021,8 @@ async function generateModels() {
 			maxTokens: 64000,
 		},
 		{
-			id: "claude-opus-4-6-thinking",
-			name: "Claude Opus 4.6 Thinking (Antigravity)",
+			id: "claude-opus-4-5-thinking",
+			name: "Claude Opus 4.5 Thinking (Antigravity)",
 			api: "google-gemini-cli",
 			provider: "google-antigravity",
 			baseUrl: ANTIGRAVITY_ENDPOINT,

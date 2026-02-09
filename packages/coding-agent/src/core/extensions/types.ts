@@ -306,6 +306,9 @@ export interface ExtensionCommandContext extends ExtensionContext {
 
 	/** Switch to a different session file. */
 	switchSession(sessionPath: string): Promise<{ cancelled: boolean }>;
+
+	/** Reload extensions, skills, prompts, and themes. */
+	reload(): Promise<void>;
 }
 
 // ============================================================================
@@ -1156,8 +1159,8 @@ export type GetSessionNameHandler = () => string | undefined;
 
 export type GetActiveToolsHandler = () => string[];
 
-/** Tool info with name and description */
-export type ToolInfo = Pick<ToolDefinition, "name" | "description">;
+/** Tool info with name, description, and parameter schema */
+export type ToolInfo = Pick<ToolDefinition, "name" | "description" | "parameters">;
 
 export type GetAllToolsHandler = () => ToolInfo[];
 
@@ -1234,6 +1237,7 @@ export interface ExtensionCommandContextActions {
 		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
 	) => Promise<{ cancelled: boolean }>;
 	switchSession: (sessionPath: string) => Promise<{ cancelled: boolean }>;
+	reload: () => Promise<void>;
 }
 
 /**
