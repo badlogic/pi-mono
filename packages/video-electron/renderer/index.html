@@ -192,10 +192,10 @@
 				width: 4px;
 			}
 
-			.transcript-status {
-				padding: 12px 20px;
-				border-top: 1px solid var(--border);
-				flex-shrink: 0;
+				.transcript-status {
+					padding: 12px 20px;
+					border-top: 1px solid var(--border);
+					flex-shrink: 0;
 				display: flex;
 				align-items: center;
 				justify-content: space-between;
@@ -208,9 +208,86 @@
 				color: var(--fg-dim);
 			}
 
-			.transcript-status .deleted-count {
-				color: var(--danger);
-			}
+				.transcript-status .deleted-count {
+					color: var(--danger);
+				}
+
+				.io-panel {
+					border-top: 1px solid var(--border);
+					padding: 10px 12px;
+					background: var(--bg-panel);
+					display: flex;
+					flex-direction: column;
+					gap: 8px;
+					flex-shrink: 0;
+				}
+
+				.io-panel-title {
+					font-family: var(--font-mono);
+					font-size: 10px;
+					letter-spacing: 0.06em;
+					text-transform: uppercase;
+					color: var(--fg-dim);
+				}
+
+				.io-grid {
+					display: grid;
+					grid-template-columns: 1fr 1fr;
+					gap: 8px;
+				}
+
+				.io-col {
+					border: 1px solid var(--border);
+					border-radius: var(--radius-sm);
+					padding: 8px;
+					background: rgba(255, 255, 255, 0.01);
+					min-height: 86px;
+					display: flex;
+					flex-direction: column;
+					gap: 6px;
+				}
+
+				.io-col-title {
+					font-family: var(--font-mono);
+					font-size: 9px;
+					color: var(--fg-muted);
+					letter-spacing: 0.05em;
+					text-transform: uppercase;
+				}
+
+				.io-kind {
+					display: flex;
+					flex-direction: column;
+					gap: 3px;
+				}
+
+				.io-kind-label {
+					font-size: 10px;
+					color: var(--fg-dim);
+				}
+
+				.io-list {
+					list-style: none;
+					display: flex;
+					flex-direction: column;
+					gap: 2px;
+					max-height: 42px;
+					overflow-y: auto;
+				}
+
+				.io-item {
+					font-family: var(--font-mono);
+					font-size: 9px;
+					color: var(--fg);
+					white-space: nowrap;
+					text-overflow: ellipsis;
+					overflow: hidden;
+				}
+
+				.io-empty {
+					font-size: 9px;
+					color: var(--fg-muted);
+				}
 
 			/* ---- Video Area (Right / Main) ---- */
 			.video-area {
@@ -396,13 +473,20 @@
 				box-shadow: var(--shadow-glow);
 			}
 
-			.video-bar {
-				display: flex;
-				align-items: center;
-				justify-content: space-between;
-				padding: 0 20px 16px;
-				flex-shrink: 0;
-			}
+				.video-bar {
+					display: flex;
+					flex-direction: column;
+					gap: 8px;
+					padding: 0 20px 16px;
+					flex-shrink: 0;
+				}
+
+				.video-bar-header {
+					width: 100%;
+					display: flex;
+					align-items: center;
+					justify-content: space-between;
+				}
 
 			.video-bar .file-label {
 				font-family: var(--font-mono);
@@ -428,9 +512,84 @@
 				gap: 4px;
 			}
 
-			.video-bar .metrics .label {
-				color: var(--fg-muted);
-			}
+				.video-bar .metrics .label {
+					color: var(--fg-muted);
+				}
+
+				.timeline-panel {
+					width: 100%;
+					display: flex;
+					flex-direction: column;
+					gap: 6px;
+					padding: 8px 10px;
+					border: 1px solid var(--border);
+					border-radius: var(--radius-md);
+					background: rgba(255, 255, 255, 0.01);
+				}
+
+				.timeline-lane {
+					display: grid;
+					grid-template-columns: 42px 1fr;
+					gap: 8px;
+					align-items: center;
+				}
+
+				.timeline-lane-label {
+					font-family: var(--font-mono);
+					font-size: 9px;
+					letter-spacing: 0.05em;
+					text-transform: uppercase;
+					color: var(--fg-dim);
+				}
+
+				.timeline-track {
+					position: relative;
+					height: 18px;
+					border-radius: var(--radius-sm);
+					overflow: hidden;
+					border: 1px solid var(--border);
+				}
+
+				.timeline-track.video {
+					background: linear-gradient(90deg, rgba(110, 231, 183, 0.17), rgba(96, 165, 250, 0.2));
+				}
+
+				.timeline-track.audio {
+					background:
+						repeating-linear-gradient(
+							90deg,
+							rgba(248, 250, 252, 0.1) 0,
+							rgba(248, 250, 252, 0.1) 1px,
+							transparent 1px,
+							transparent 6px
+						),
+						linear-gradient(90deg, rgba(196, 181, 253, 0.18), rgba(251, 191, 36, 0.16));
+				}
+
+				.timeline-deletes {
+					position: absolute;
+					inset: 0;
+					pointer-events: none;
+				}
+
+				.timeline-delete-segment {
+					position: absolute;
+					top: 0;
+					height: 100%;
+					background: rgba(248, 113, 113, 0.26);
+					border-left: 1px solid rgba(248, 113, 113, 0.55);
+					border-right: 1px solid rgba(248, 113, 113, 0.55);
+				}
+
+				.timeline-playhead {
+					position: absolute;
+					top: 0;
+					height: 100%;
+					width: 2px;
+					background: var(--fg);
+					box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+					transform: translateX(-1px);
+				}
 
 			/* ---- Floating Prompt Bubble ---- */
 			.bubble {
@@ -737,17 +896,44 @@
 						<button id="clearDeletesBtn" class="danger">Reset</button>
 					</div>
 				</div>
-				<div class="transcript-body" id="transcriptBody">
-					<div class="transcript-empty" id="transcriptEmpty">
-						<div class="transcript-empty-icon">T</div>
-						<p>Load a video and transcribe it to see words here. Click words to mark them for removal.</p>
+					<div class="transcript-body" id="transcriptBody">
+						<div class="transcript-empty" id="transcriptEmpty">
+							<div class="transcript-empty-icon">T</div>
+							<p>Load a video and transcribe it to see words here. Click words to mark them for removal.</p>
+						</div>
 					</div>
-				</div>
-				<div class="transcript-status">
-					<span>Words: <span class="count" id="wordCount">0</span></span>
-					<span>Deleted: <span class="deleted-count" id="deletedCount">0</span></span>
-				</div>
-			</aside>
+					<div class="io-panel">
+						<div class="io-panel-title">Media I/O</div>
+						<div class="io-grid">
+							<div class="io-col">
+								<div class="io-col-title">Inputs</div>
+								<div class="io-kind">
+									<div class="io-kind-label">Video</div>
+									<ul class="io-list" id="videoInputsList"></ul>
+								</div>
+								<div class="io-kind">
+									<div class="io-kind-label">Audio</div>
+									<ul class="io-list" id="audioInputsList"></ul>
+								</div>
+							</div>
+							<div class="io-col">
+								<div class="io-col-title">Outputs</div>
+								<div class="io-kind">
+									<div class="io-kind-label">Video</div>
+									<ul class="io-list" id="videoOutputsList"></ul>
+								</div>
+								<div class="io-kind">
+									<div class="io-kind-label">Audio</div>
+									<ul class="io-list" id="audioOutputsList"></ul>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="transcript-status">
+						<span>Words: <span class="count" id="wordCount">0</span></span>
+						<span>Deleted: <span class="deleted-count" id="deletedCount">0</span></span>
+					</div>
+				</aside>
 
 			<!-- RIGHT: Video Area -->
 			<div class="video-area">
@@ -773,10 +959,28 @@
                                         <video id="videoPreview" controls style="display:none"></video>
                                 </div>
 				<div class="video-bar">
-					<div class="file-label" id="videoSourceLabel">No video loaded</div>
-					<div class="metrics">
-						<span><span class="label">Time</span> <span id="currentTimeOut">0:00</span></span>
-						<span><span class="label">Duration</span> <span id="durationOut">0:00</span></span>
+					<div class="video-bar-header">
+						<div class="file-label" id="videoSourceLabel">No video loaded</div>
+						<div class="metrics">
+							<span><span class="label">Time</span> <span id="currentTimeOut">0:00</span></span>
+							<span><span class="label">Duration</span> <span id="durationOut">0:00</span></span>
+						</div>
+					</div>
+					<div class="timeline-panel">
+						<div class="timeline-lane">
+							<div class="timeline-lane-label">Video</div>
+							<div class="timeline-track video">
+								<div class="timeline-deletes" id="videoTimelineDeletes"></div>
+								<div class="timeline-playhead" id="videoTimelinePlayhead"></div>
+							</div>
+						</div>
+						<div class="timeline-lane">
+							<div class="timeline-lane-label">Audio</div>
+							<div class="timeline-track audio">
+								<div class="timeline-deletes" id="audioTimelineDeletes"></div>
+								<div class="timeline-playhead" id="audioTimelinePlayhead"></div>
+							</div>
+						</div>
 					</div>
 				</div>
 			</div>

@@ -14,11 +14,19 @@ const applyEditsBtn = document.getElementById("applyEditsBtn");
 const clearDeletesBtn = document.getElementById("clearDeletesBtn");
 const wordCountEl = document.getElementById("wordCount");
 const deletedCountEl = document.getElementById("deletedCount");
+const videoInputsList = document.getElementById("videoInputsList");
+const audioInputsList = document.getElementById("audioInputsList");
+const videoOutputsList = document.getElementById("videoOutputsList");
+const audioOutputsList = document.getElementById("audioOutputsList");
 const processingOverlay = document.getElementById("processingOverlay");
 const processingStatus = document.getElementById("processingStatus");
 const processingPhase = document.getElementById("processingPhase");
 const processingElapsed = document.getElementById("processingElapsed");
 const processingTasks = document.getElementById("processingTasks");
+const videoTimelineDeletes = document.getElementById("videoTimelineDeletes");
+const audioTimelineDeletes = document.getElementById("audioTimelineDeletes");
+const videoTimelinePlayhead = document.getElementById("videoTimelinePlayhead");
+const audioTimelinePlayhead = document.getElementById("audioTimelinePlayhead");
 const bubble = document.getElementById("bubble");
 const bubbleTrigger = document.getElementById("bubbleTrigger");
 const bubbleDrag = document.getElementById("bubbleDrag");
@@ -37,6 +45,16 @@ let pendingProcessingOutputPath = null;
 let processingStartedAt = 0;
 let processingTimerId = null;
 let processingTaskLog = [];
+const mediaRegistry = {
+	video: {
+		input: new Set(),
+		output: new Set(),
+	},
+	audio: {
+		input: new Set(),
+		output: new Set(),
+	},
+};
 
 // ---- Init ----
 if (window.videoAgent) {
@@ -72,6 +90,7 @@ async function openVideo() {
 
 	activeVideoPath = selection.videoPath;
 	activeProjectRoot = selection.projectRoot;
+	addMediaPath("video", "input", selection.videoPath);
 	showVideoPreview(selection.videoPath);
 
 	if (window.videoAgent?.sendCommand) {
@@ -96,6 +115,7 @@ function showVideoPreview(videoPath) {
         deletedIndices = new Set();
         pendingProcessingOutputPath = null;
         renderTranscript();
+	updateTimelinePlayheads();
 }
 
 // ---- Video metrics ----
@@ -108,6 +128,7 @@ function updateMetrics() {
 	if (!(videoPreview instanceof HTMLVideoElement)) return;
 	currentTimeOut.textContent = formatTime(videoPreview.currentTime);
 	durationOut.textContent = formatTime(videoPreview.duration);
+	updateTimelinePlayheads();
 }
 
 function formatTime(sec) {
@@ -200,6 +221,7 @@ function renderTranscript() {
 		transcriptEmpty.style.display = "flex";
 		const existingWords = transcriptBody.querySelectorAll(".word, .word-space");
 		existingWords.forEach((el) => el.remove());
+		renderTimelineDeletedSegments();
 		return;
 	}
 
@@ -225,6 +247,7 @@ function renderTranscript() {
 		}
 	}
 	transcriptBody.appendChild(frag);
+	renderTimelineDeletedSegments();
 }
 
 function toggleWord(index) {
@@ -238,6 +261,7 @@ function toggleWord(index) {
 		wordEl.classList.toggle("selected", deletedIndices.has(index));
 	}
 	deletedCountEl.textContent = String(deletedIndices.size);
+	renderTimelineDeletedSegments();
 }
 
 clearDeletesBtn?.addEventListener("click", () => {
@@ -466,9 +490,11 @@ function buildProcessingLabel(toolName) {
 }
 
 function noteProcessingOutputPath(args) {
-        if (!args || pendingEditOutputPath) return;
+	if (!args) return;
         const invocation = resolveInvocation(args);
         if (!invocation) return;
+	trackInvocationMedia(invocation);
+	if (pendingEditOutputPath) return;
         const derivedPath = deriveOutputPathForInvocation(invocation);
         if (derivedPath) {
                 pendingProcessingOutputPath = derivedPath;
@@ -658,12 +684,192 @@ async function checkAndLoadEditedVideo(outputPath) {
 	});
 
 	if (response.ok && response.data.type === "fs/exists" && response.data.exists) {
+		const outputKind = detectMediaKindFromPath(outputPath);
+		if (outputKind === "audio") {
+			addMediaPath("audio", "output", outputPath);
+			addBubbleMessage("agent", "Audio output ready.");
+			return;
+		}
+		addMediaPath("video", "output", outputPath);
 		addBubbleMessage("agent", "Edit complete. Reloading video...");
 		activeVideoPath = outputPath;
 		showVideoPreview(outputPath);
 	} else {
 		addBubbleMessage("agent", "Edit finished but output file not found.");
 	}
+}
+
+function trackInvocationMedia(invocation) {
+	if (!invocation || typeof invocation !== "object") return;
+	const command = typeof invocation.command === "string" ? invocation.command : "";
+	const inputPath = typeof invocation.input === "string" ? invocation.input : null;
+	const explicitOutput = typeof invocation.output === "string" ? invocation.output : null;
+	const derivedOutput = explicitOutput || deriveOutputPathForInvocation(invocation);
+
+	if (inputPath) {
+		const inputKind = inferMediaKind(inputPath, command, "input");
+		if (inputKind) {
+			addMediaPath(inputKind, "input", inputPath);
+		}
+	}
+
+	if (derivedOutput) {
+		const outputKind = inferMediaKind(derivedOutput, command, "output");
+		if (outputKind) {
+			addMediaPath(outputKind, "output", derivedOutput);
+		}
+	}
+}
+
+function inferMediaKind(path, command, direction) {
+	if (direction === "output") {
+		if (command === "extract-audio") return "audio";
+		if (command === "remove-silence" || command === "crop-bars") return "video";
+	}
+	if (direction === "input") {
+		if (command === "extract-audio") return "video";
+	}
+	return detectMediaKindFromPath(path);
+}
+
+function detectMediaKindFromPath(path) {
+	if (!path || typeof path !== "string") return null;
+	const normalized = path.toLowerCase();
+	const extIndex = normalized.lastIndexOf(".");
+	if (extIndex === -1) return null;
+	const ext = normalized.slice(extIndex);
+	if (VIDEO_EXTENSIONS.has(ext)) return "video";
+	if (AUDIO_EXTENSIONS.has(ext)) return "audio";
+	return null;
+}
+
+function addMediaPath(kind, direction, path) {
+	if (!kind || !direction || !path || typeof path !== "string") return;
+	const bucket = mediaRegistry[kind]?.[direction];
+	if (!bucket) return;
+	if (bucket.has(path)) return;
+	bucket.add(path);
+	renderMediaRegistry();
+}
+
+function renderMediaRegistry() {
+	renderMediaList(videoInputsList, mediaRegistry.video.input);
+	renderMediaList(audioInputsList, mediaRegistry.audio.input);
+	renderMediaList(videoOutputsList, mediaRegistry.video.output);
+	renderMediaList(audioOutputsList, mediaRegistry.audio.output);
+}
+
+function renderMediaList(container, values) {
+	if (!container) return;
+	container.textContent = "";
+	const entries = Array.from(values);
+	if (entries.length === 0) {
+		const empty = document.createElement("li");
+		empty.className = "io-empty";
+		empty.textContent = "none";
+		container.appendChild(empty);
+		return;
+	}
+	for (const entry of entries.slice().reverse()) {
+		const item = document.createElement("li");
+		item.className = "io-item";
+		item.textContent = basenameFromPath(entry);
+		item.title = entry;
+		container.appendChild(item);
+	}
+}
+
+function basenameFromPath(path) {
+	const normalized = path.replace(/\\/g, "/");
+	const segments = normalized.split("/");
+	return segments[segments.length - 1] || normalized;
+}
+
+function renderTimelineDeletedSegments() {
+	const durationSec = getActiveDurationSeconds();
+	const deletedRanges = buildDeletedRanges();
+	renderDeletedSegmentsForTrack(videoTimelineDeletes, deletedRanges, durationSec);
+	renderDeletedSegmentsForTrack(audioTimelineDeletes, deletedRanges, durationSec);
+	updateTimelinePlayheads();
+}
+
+function buildDeletedRanges() {
+	if (deletedIndices.size === 0) return [];
+	const sortedIndices = Array.from(deletedIndices).sort((a, b) => a - b);
+	const ranges = [];
+	let activeRange = null;
+
+	for (const index of sortedIndices) {
+		const word = transcriptWords[index];
+		if (!word) continue;
+		if (!activeRange) {
+			activeRange = { start: word.start, end: word.end };
+			continue;
+		}
+		if (word.start - activeRange.end <= 0.15) {
+			activeRange.end = Math.max(activeRange.end, word.end);
+			continue;
+		}
+		ranges.push(activeRange);
+		activeRange = { start: word.start, end: word.end };
+	}
+
+	if (activeRange) ranges.push(activeRange);
+	return ranges;
+}
+
+function renderDeletedSegmentsForTrack(container, ranges, durationSec) {
+	if (!container) return;
+	container.textContent = "";
+	if (!durationSec || ranges.length === 0) return;
+
+	for (const range of ranges) {
+		const leftPct = Math.max(0, Math.min(100, (range.start / durationSec) * 100));
+		const rightPct = Math.max(0, Math.min(100, (range.end / durationSec) * 100));
+		const widthPct = Math.max(0.2, rightPct - leftPct);
+		const seg = document.createElement("div");
+		seg.className = "timeline-delete-segment";
+		seg.style.left = `${leftPct}%`;
+		seg.style.width = `${widthPct}%`;
+		container.appendChild(seg);
+	}
+}
+
+function updateTimelinePlayheads() {
+	const durationSec = getActiveDurationSeconds();
+	const currentTimeSec = getCurrentTimeSeconds();
+	let pct = 0;
+	if (durationSec > 0) {
+		pct = Math.max(0, Math.min(100, (currentTimeSec / durationSec) * 100));
+	}
+	setPlayheadPosition(videoTimelinePlayhead, pct);
+	setPlayheadPosition(audioTimelinePlayhead, pct);
+}
+
+function setPlayheadPosition(playhead, pct) {
+	if (!playhead) return;
+	playhead.style.left = `${pct}%`;
+}
+
+function getCurrentTimeSeconds() {
+	if (videoPreview instanceof HTMLVideoElement && Number.isFinite(videoPreview.currentTime)) {
+		return videoPreview.currentTime;
+	}
+	return 0;
+}
+
+function getActiveDurationSeconds() {
+	if (videoPreview instanceof HTMLVideoElement && Number.isFinite(videoPreview.duration) && videoPreview.duration > 0) {
+		return videoPreview.duration;
+	}
+	if (transcriptWords.length === 0) return 0;
+	let maxEnd = 0;
+	for (const word of transcriptWords) {
+		if (Number.isFinite(word.end)) {
+			maxEnd = Math.max(maxEnd, word.end);
+		}
+	}
+	return maxEnd;
 }
 
 // ---- Bubble drag ----
@@ -808,4 +1014,9 @@ function deriveEditedPath(inputPath) {
 	return `${dir}${baseName}.edited${extension}`;
 }
 
+const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".mpg", ".mpeg"]);
+const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".aac", ".m4a", ".flac", ".ogg", ".opus", ".wma"]);
+
 window.__setTranscriptData = setTranscriptData;
+renderMediaRegistry();
+renderTimelineDeletedSegments();
