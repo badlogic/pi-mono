@@ -1,0 +1,18 @@
+[project]
+name = "train-convo-steering"
+version = "0.1.0"
+description = "Voice-first runtime steering + nightly deep analysis to learn per-user conversation priors."
+readme = "SKILL.md"
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.9.0",
+    "loguru>=0.7.0",
+    "httpx>=0.25.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+train-convo-steering = "train_convo_steering.cli:app"
+
+[tool.uv]
+package = true
