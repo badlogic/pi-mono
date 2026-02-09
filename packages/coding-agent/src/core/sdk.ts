@@ -182,6 +182,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		time("resourceLoader.reload");
 	}
 
+	await modelRegistry.refreshWithDynamicModels();
+
 	// Check if session has existing data to restore
 	const existingSession = sessionManager.buildSessionContext();
 	const hasExistingSession = existingSession.messages.length > 0;

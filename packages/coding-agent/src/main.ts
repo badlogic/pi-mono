@@ -501,6 +501,13 @@ async function handleConfigCommand(args: string[]): Promise<boolean> {
 	process.exit(0);
 }
 
+async function hydrateDynamicModels(modelRegistry: ModelRegistry): Promise<void> {
+	await modelRegistry.refreshWithDynamicModels();
+	for (const warning of modelRegistry.getDynamicModelWarnings()) {
+		console.error(chalk.yellow(`Warning: ${warning}`));
+	}
+}
+
 export async function main(args: string[]) {
 	if (await handlePackageCommand(args)) {
 		return;
@@ -577,6 +584,8 @@ export async function main(args: string[]) {
 		printHelp();
 		process.exit(0);
 	}
+
+	await hydrateDynamicModels(modelRegistry);
 
 	if (parsed.listModels !== undefined) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
