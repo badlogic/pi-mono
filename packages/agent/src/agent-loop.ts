@@ -9,6 +9,7 @@ import {
 	EventStream,
 	streamSimple,
 	type ToolResultMessage,
+	type UserMessage,
 	validateToolArguments,
 } from "@mariozechner/pi-ai";
 import type {
@@ -99,6 +100,24 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 }
 
 /**
+ * Determines if a streaming error is recoverable and worth retrying.
+ * JSON parse errors from malformed model output are transient and the model
+ * can self-correct on retry.
+ */
+function isRecoverableStreamingError(errorMessage: string): boolean {
+	const recoverable = [
+		"JSON Parse error",
+		"JSON.parse",
+		"Unexpected token",
+		"Unexpected end of JSON",
+		"Expected property name",
+		"Expected ':' before value",
+		"Unterminated string in JSON",
+	];
+	return recoverable.some((pattern) => errorMessage.includes(pattern));
+}
+
+/**
  * Main loop logic shared by agentLoop and agentLoopContinue.
  */
 async function runLoop(
@@ -110,6 +129,8 @@ async function runLoop(
 	streamFn?: StreamFn,
 ): Promise<void> {
 	let firstTurn = true;
+	const MAX_STREAMING_ERROR_RETRIES = 3;
+	let streamingErrorRetries = 0;
 	// Check for steering messages at start (user may have typed while waiting)
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
@@ -141,12 +162,56 @@ async function runLoop(
 			const message = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);
 			newMessages.push(message);
 
-			if (message.stopReason === "error" || message.stopReason === "aborted") {
+			if (message.stopReason === "aborted") {
 				stream.push({ type: "turn_end", message, toolResults: [] });
 				stream.push({ type: "agent_end", messages: newMessages });
 				stream.end(newMessages);
 				return;
 			}
+
+			if (message.stopReason === "error") {
+				const errorMsg = message.errorMessage || "Unknown error";
+				const isRecoverable = isRecoverableStreamingError(errorMsg);
+
+				if (isRecoverable && streamingErrorRetries < MAX_STREAMING_ERROR_RETRIES) {
+					streamingErrorRetries++;
+
+					// Remove the failed assistant message from context
+					const failedIdx = currentContext.messages.indexOf(message);
+					if (failedIdx !== -1) {
+						currentContext.messages.splice(failedIdx, 1);
+					}
+					const newIdx = newMessages.indexOf(message);
+					if (newIdx !== -1) {
+						newMessages.splice(newIdx, 1);
+					}
+
+					// Inject error feedback so the model can self-correct
+					const retryMsg: UserMessage = {
+						role: "user",
+						content: `Your previous response could not be processed due to an error: ${errorMsg}. Please try again.`,
+						timestamp: Date.now(),
+					};
+					currentContext.messages.push(retryMsg);
+					newMessages.push(retryMsg);
+					stream.push({ type: "message_start", message: retryMsg });
+					stream.push({ type: "message_end", message: retryMsg });
+					stream.push({ type: "turn_end", message, toolResults: [] });
+
+					// Continue the inner loop to get a new assistant response
+					hasMoreToolCalls = true;
+					continue;
+				}
+
+				// Non-recoverable or retries exhausted — exit
+				stream.push({ type: "turn_end", message, toolResults: [] });
+				stream.push({ type: "agent_end", messages: newMessages });
+				stream.end(newMessages);
+				return;
+			}
+
+			// Reset retry counter on successful response
+			streamingErrorRetries = 0;
 
 			// Check for tool calls
 			const toolCalls = message.content.filter((c) => c.type === "toolCall");

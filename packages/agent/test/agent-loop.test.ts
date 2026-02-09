@@ -533,3 +533,250 @@ describe("agentLoopContinue with AgentMessage", () => {
 		expect(messages[0].role).toBe("assistant");
 	});
 });
+
+describe("recoverable streaming error retry", () => {
+	it("should retry on recoverable JSON parse error and succeed", async () => {
+		const context: AgentContext = {
+			systemPrompt: "You are helpful.",
+			messages: [],
+			tools: [],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("Hello");
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		let callIndex = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					// First call: return a recoverable error
+					const message = createAssistantMessage([], "error");
+					(message as any).errorMessage = "JSON Parse error: Expected ':' before value";
+					stream.push({ type: "error", reason: "error", error: message });
+				} else {
+					// Second call: succeed
+					const message = createAssistantMessage([{ type: "text", text: "Recovered!" }]);
+					stream.push({ type: "done", reason: "stop", message });
+				}
+				callIndex++;
+			});
+			return stream;
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
+
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		const messages = await stream.result();
+
+		// Should have: user prompt, retry user message, and successful assistant response
+		expect(callIndex).toBe(2);
+		const assistantMessages = messages.filter((m) => m.role === "assistant");
+		expect(assistantMessages.length).toBe(1);
+		expect((assistantMessages[0] as AssistantMessage).stopReason).toBe("stop");
+
+		// Retry message should be in the messages
+		const retryMsg = messages.find(
+			(m) => m.role === "user" && typeof m.content === "string" && m.content.includes("error"),
+		);
+		expect(retryMsg).toBeDefined();
+
+		// Should end with agent_end
+		expect(events[events.length - 1].type).toBe("agent_end");
+	});
+
+	it("should exit after exhausting retries on persistent recoverable errors", async () => {
+		const context: AgentContext = {
+			systemPrompt: "You are helpful.",
+			messages: [],
+			tools: [],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("Hello");
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		let callIndex = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				// Always return a recoverable error
+				const message = createAssistantMessage([], "error");
+				(message as any).errorMessage = "Unexpected token < in JSON";
+				stream.push({ type: "error", reason: "error", error: message });
+				callIndex++;
+			});
+			return stream;
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
+
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		// Should have tried 1 initial + 3 retries = 4 total calls
+		expect(callIndex).toBe(4);
+
+		// Should end with agent_end (fatal exit after retries exhausted)
+		expect(events[events.length - 1].type).toBe("agent_end");
+	});
+
+	it("should not retry non-recoverable errors", async () => {
+		const context: AgentContext = {
+			systemPrompt: "You are helpful.",
+			messages: [],
+			tools: [],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("Hello");
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		let callIndex = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				const message = createAssistantMessage([], "error");
+				(message as any).errorMessage = "Rate limit exceeded";
+				stream.push({ type: "error", reason: "error", error: message });
+				callIndex++;
+			});
+			return stream;
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
+
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		// Should exit immediately without retrying
+		expect(callIndex).toBe(1);
+		expect(events[events.length - 1].type).toBe("agent_end");
+	});
+
+	it("should still exit immediately on aborted", async () => {
+		const context: AgentContext = {
+			systemPrompt: "You are helpful.",
+			messages: [],
+			tools: [],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("Hello");
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		let callIndex = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				const message = createAssistantMessage([], "aborted");
+				stream.push({ type: "done", reason: "stop", message });
+				callIndex++;
+			});
+			return stream;
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
+
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		// Should exit immediately without retrying
+		expect(callIndex).toBe(1);
+		expect(events[events.length - 1].type).toBe("agent_end");
+	});
+
+	it("should reset retry counter after successful response", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("go");
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		let callIndex = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					// First call: recoverable error
+					const message = createAssistantMessage([], "error");
+					(message as any).errorMessage = "JSON Parse error: bad token";
+					stream.push({ type: "error", reason: "error", error: message });
+				} else if (callIndex === 1) {
+					// Second call: succeed with tool call
+					const message = createAssistantMessage(
+						[{ type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "hi" } }],
+						"toolUse",
+					);
+					stream.push({ type: "done", reason: "toolUse", message });
+				} else if (callIndex === 2) {
+					// Third call: another recoverable error (retry counter should have reset)
+					const message = createAssistantMessage([], "error");
+					(message as any).errorMessage = "Unexpected end of JSON input";
+					stream.push({ type: "error", reason: "error", error: message });
+				} else {
+					// Fourth call: final success
+					const message = createAssistantMessage([{ type: "text", text: "all done" }]);
+					stream.push({ type: "done", reason: "stop", message });
+				}
+				callIndex++;
+			});
+			return stream;
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
+
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		// Should have made 4 calls: error, success+tool, error, success
+		expect(callIndex).toBe(4);
+		expect(events[events.length - 1].type).toBe("agent_end");
+	});
+});
