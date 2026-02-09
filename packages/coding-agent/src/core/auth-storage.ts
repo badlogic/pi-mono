@@ -280,9 +280,10 @@ export class AuthStorage {
 	 * Priority:
 	 * 1. Runtime override (CLI --api-key)
 	 * 2. API key from auth.json
-	 * 3. OAuth token from auth.json (auto-refreshed with locking)
+	 * 3. OAuth token from auth.json (auto-refreshed with locking, falls back to CLI token on refresh failure)
 	 * 4. Environment variable
-	 * 5. Fallback resolver (models.json custom providers)
+	 * 5. Provider CLI token (e.g., kiro-cli)
+	 * 6. Fallback resolver (models.json custom providers)
 	 */
 	async getApiKey(providerId: string): Promise<string | undefined> {
 		// Runtime override takes highest priority
@@ -324,7 +325,18 @@ export class AuthStorage {
 						return provider.getApiKey(updatedCred);
 					}
 
-					// Refresh truly failed - return undefined so model discovery skips this provider
+					// Refresh truly failed - try to recover from CLI token (e.g., kiro-cli)
+					if (provider.getCliToken) {
+						const cliToken = provider.getCliToken();
+						if (cliToken) {
+							// Successfully recovered from CLI, return token
+							// Note: We don't update auth.json here to avoid complexity
+							// The token will be used for this request, and refresh will be retried next time
+							return cliToken;
+						}
+					}
+
+					// No recovery possible - return undefined so model discovery skips this provider
 					// User can /login to re-authenticate (credentials preserved for retry)
 					return undefined;
 				}
