@@ -216,6 +216,8 @@ export const clearApiKeyCache = clearConfigValueCache;
  */
 export class ModelRegistry {
 	private models: Model<Api>[] = [];
+	private dynamicModelsByProvider: Map<string, Model<Api>[]> = new Map();
+	private dynamicModelErrors: Map<string, string> = new Map();
 	private customProviderApiKeys: Map<string, string> = new Map();
 	private registeredProviders: Map<string, ProviderConfigInput> = new Map();
 	private loadError: string | undefined = undefined;
@@ -242,6 +244,8 @@ export class ModelRegistry {
 	 */
 	refresh(): void {
 		this.customProviderApiKeys.clear();
+		this.dynamicModelsByProvider.clear();
+		this.dynamicModelErrors.clear();
 		this.loadError = undefined;
 		this.loadModels();
 
@@ -255,6 +259,45 @@ export class ModelRegistry {
 	 */
 	getError(): string | undefined {
 		return this.loadError;
+	}
+
+	getDynamicModelWarnings(): string[] {
+		return Array.from(this.dynamicModelErrors.entries()).map(([provider, error]) => {
+			return `[${provider}] Failed to refresh dynamic models: ${error}. Using static fallback models.`;
+		});
+	}
+
+	async refreshWithDynamicModels(): Promise<void> {
+		this.refresh();
+
+		for (const oauthProvider of this.authStorage.getOAuthProviders()) {
+			if (!oauthProvider.getDynamicModels) {
+				continue;
+			}
+
+			const credential = this.authStorage.get(oauthProvider.id);
+			if (credential?.type !== "oauth") {
+				continue;
+			}
+
+			try {
+				// Refresh token if needed before fetching dynamic models.
+				await this.authStorage.getApiKey(oauthProvider.id);
+				const refreshedCredential = this.authStorage.get(oauthProvider.id);
+				if (refreshedCredential?.type !== "oauth") {
+					continue;
+				}
+
+				let dynamicModels = await oauthProvider.getDynamicModels(refreshedCredential);
+				if (oauthProvider.modifyModels) {
+					dynamicModels = oauthProvider.modifyModels(dynamicModels, refreshedCredential);
+				}
+				this.dynamicModelsByProvider.set(oauthProvider.id, dynamicModels);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				this.dynamicModelErrors.set(oauthProvider.id, message);
+			}
+		}
 	}
 
 	private loadModels(): void {
@@ -483,12 +526,43 @@ export class ModelRegistry {
 		return models;
 	}
 
+	private getEffectiveModels(): Model<Api>[] {
+		if (this.dynamicModelsByProvider.size === 0) {
+			return this.models;
+		}
+
+		const effectiveModels: Model<Api>[] = [];
+		const injectedProviders = new Set<string>();
+		for (const model of this.models) {
+			const dynamicModels = this.dynamicModelsByProvider.get(model.provider);
+			if (!dynamicModels) {
+				effectiveModels.push(model);
+				continue;
+			}
+
+			if (injectedProviders.has(model.provider)) {
+				continue;
+			}
+
+			effectiveModels.push(...dynamicModels);
+			injectedProviders.add(model.provider);
+		}
+
+		for (const [provider, dynamicModels] of this.dynamicModelsByProvider.entries()) {
+			if (!injectedProviders.has(provider)) {
+				effectiveModels.push(...dynamicModels);
+			}
+		}
+
+		return effectiveModels;
+	}
+
 	/**
 	 * Get all models (built-in + custom).
 	 * If models.json had errors, returns only built-in models.
 	 */
 	getAll(): Model<Api>[] {
-		return this.models;
+		return this.getEffectiveModels();
 	}
 
 	/**
@@ -496,14 +570,14 @@ export class ModelRegistry {
 	 * This is a fast check that doesn't refresh OAuth tokens.
 	 */
 	getAvailable(): Model<Api>[] {
-		return this.models.filter((m) => this.authStorage.hasAuth(m.provider));
+		return this.getEffectiveModels().filter((m) => this.authStorage.hasAuth(m.provider));
 	}
 
 	/**
 	 * Find a model by provider and ID.
 	 */
 	find(provider: string, modelId: string): Model<Api> | undefined {
-		return this.models.find((m) => m.provider === provider && m.id === modelId);
+		return this.getEffectiveModels().find((m) => m.provider === provider && m.id === modelId);
 	}
 
 	/**
