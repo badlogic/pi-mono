@@ -738,20 +738,68 @@ export function convertMessages(
 	return params;
 }
 
+/**
+ * Deep-normalize a JSON Schema object for strict mode.
+ * - Adds `additionalProperties: false` to every object (required by xAI strict mode).
+ * - Preserves existing `required` arrays — does NOT force all properties to be required.
+ */
+function normalizeSchemaForStrict(schema: Record<string, unknown>): Record<string, unknown> {
+	if (typeof schema !== "object" || schema === null || Array.isArray(schema)) {
+		return schema;
+	}
+
+	const result = { ...schema };
+
+	// Recurse into composite keywords
+	for (const keyword of ["anyOf", "oneOf", "allOf"]) {
+		if (Array.isArray(result[keyword])) {
+			result[keyword] = (result[keyword] as Record<string, unknown>[]).map((s) => normalizeSchemaForStrict(s));
+		}
+	}
+
+	// Recurse into items (array schemas)
+	if (result.items && typeof result.items === "object" && !Array.isArray(result.items)) {
+		result.items = normalizeSchemaForStrict(result.items as Record<string, unknown>);
+	}
+
+	if (result.type !== "object" || !result.properties) {
+		return result;
+	}
+
+	const properties = result.properties as Record<string, Record<string, unknown>>;
+
+	// Normalize each property recursively
+	const normalizedProps: Record<string, Record<string, unknown>> = {};
+	for (const key of Object.keys(properties)) {
+		normalizedProps[key] = normalizeSchemaForStrict(properties[key]);
+	}
+
+	result.properties = normalizedProps;
+	result.additionalProperties = false;
+
+	return result;
+}
+
 function convertTools(
 	tools: Tool[],
 	compat: Required<OpenAICompletionsCompat>,
 ): OpenAI.Chat.Completions.ChatCompletionTool[] {
-	return tools.map((tool) => ({
-		type: "function",
-		function: {
-			name: tool.name,
-			description: tool.description,
-			parameters: tool.parameters as any, // TypeBox already generates JSON Schema
-			// Only include strict if provider supports it. Some reject unknown fields.
-			...(compat.supportsStrictMode !== false && { strict: false }),
-		},
-	}));
+	return tools.map((tool) => {
+		const useStrict = compat.defaultStrict === true;
+		const parameters = useStrict
+			? normalizeSchemaForStrict(tool.parameters as Record<string, unknown>)
+			: tool.parameters;
+		return {
+			type: "function",
+			function: {
+				name: tool.name,
+				description: tool.description,
+				parameters: parameters as any, // TypeBox already generates JSON Schema
+				// Only include strict if provider supports it. Some reject unknown fields.
+				...(compat.supportsStrictMode !== false && { strict: useStrict }),
+			},
+		};
+	});
 }
 
 function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): StopReason {
@@ -817,6 +865,7 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		openRouterRouting: {},
 		vercelGatewayRouting: {},
 		supportsStrictMode: true,
+		defaultStrict: isGrok,
 	};
 }
 
@@ -843,5 +892,6 @@ function getCompat(model: Model<"openai-completions">): Required<OpenAICompletio
 		openRouterRouting: model.compat.openRouterRouting ?? {},
 		vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
 		supportsStrictMode: model.compat.supportsStrictMode ?? detected.supportsStrictMode,
+		defaultStrict: model.compat.defaultStrict ?? detected.defaultStrict,
 	};
 }

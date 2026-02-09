@@ -237,6 +237,9 @@ export interface OpenAICompletionsCompat {
 	vercelGatewayRouting?: VercelGatewayRouting;
 	/** Whether the provider supports the `strict` field in tool definitions. Default: true. */
 	supportsStrictMode?: boolean;
+	/** Whether to default tool schemas to strict mode. When true, schemas are normalized
+	 *  (additionalProperties: false added, all properties required). Default: false. */
+	defaultStrict?: boolean;
 }
 
 /** Compatibility settings for OpenAI Responses APIs. */

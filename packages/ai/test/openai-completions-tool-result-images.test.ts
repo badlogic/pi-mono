@@ -33,6 +33,7 @@ const compat: Required<OpenAICompletionsCompat> = {
 	openRouterRouting: {},
 	vercelGatewayRouting: {},
 	supportsStrictMode: true,
+	defaultStrict: false,
 };
 
 function buildToolResult(toolCallId: string, timestamp: number): ToolResultMessage {
