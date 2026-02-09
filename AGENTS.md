@@ -23,36 +23,10 @@ read README.md, then ask which module(s) to work on. Based on the answer, read t
 - After code changes (not documentation changes): `npm run check` (get full output, no tail). Fix all errors, warnings, and infos before committing.
 - Note: `npm run check` does not run tests.
 - NEVER run: `npm run dev`, `npm run build`, `npm test`
-- Only run specific tests if user instructs: `npx tsx ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`
+- Only run specific tests if user instructs: `cd packages/<name> && npm test -- test/specific.test.ts` (vitest) or `npm test -- test/specific.test.ts` (node test)
 - Run tests from the package root, not the repo root.
 - When writing tests, run them, identify issues in either the test or implementation, and iterate until fixed.
 - NEVER commit unless user asks
-
-## GitHub Issues
-When reading issues:
-- Always read all comments on the issue
-- Use this command to get everything in one call:
-  ```bash
-  gh issue view <number> --json title,body,comments,labels,state
-  ```
-
-When creating issues:
-- Add `pkg:*` labels to indicate which package(s) the issue affects
-  - Available labels: `pkg:agent`, `pkg:ai`, `pkg:coding-agent`, `pkg:mom`, `pkg:pods`, `pkg:tui`, `pkg:web-ui`
-- If an issue spans multiple packages, add all relevant labels
-
-When closing issues via commit:
-- Include `fixes #<number>` or `closes #<number>` in the commit message
-- This automatically closes the issue when the commit is merged
-
-## PR Workflow
-- Analyze PRs without pulling locally first
-- If the user approves: create a feature branch, pull PR, rebase on main, apply adjustments, commit, merge into main, push, close PR, and leave a comment in the user's tone
-- You never open PRs yourself. We work in feature branches until everything is according to the user's requirements, then merge into main, and push.
-
-## Tools
-- GitHub CLI for issues/PRs
-- Add package labels to issues/PRs: pkg:agent, pkg:ai, pkg:coding-agent, pkg:mom, pkg:pods, pkg:tui, pkg:web-ui
 
 ## Testing pi Interactive Mode with tmux
 
@@ -63,7 +37,7 @@ To test pi's TUI in a controlled terminal environment:
 tmux new-session -d -s pi-test -x 80 -y 24
 
 # Start pi from source
-tmux send-keys -t pi-test "cd /Users/badlogic/workspaces/pi-mono && ./pi-test.sh" Enter
+tmux send-keys -t pi-test "cd /home/igorw/Work/howcode/pi-mono && ./pi-test.sh" Enter
 
 # Wait for startup, then capture output
 sleep 3 && tmux capture-pane -t pi-test -p
@@ -78,12 +52,6 @@ tmux send-keys -t pi-test C-o  # ctrl+o
 # Cleanup
 tmux kill-session -t pi-test
 ```
-
-## Style
-- Keep answers short and concise
-- No emojis in commits, issues, PR comments, or code
-- No fluff or cheerful filler text
-- Technical prose only, be kind but direct (e.g., "Thanks @user" not "Thanks so much @user!")
 
 ## Changelog
 Location: `packages/*/CHANGELOG.md` (each package has its own)
@@ -102,10 +70,6 @@ Use these sections under `## [Unreleased]`:
 - Append to existing subsections (e.g., `### Fixed`), do not create duplicates
 - NEVER modify already-released version sections (e.g., `## [0.12.2]`)
 - Each version section is immutable once released
-
-### Attribution
-- **Internal changes (from issues)**: `Fixed foo bar ([#123](https://github.com/badlogic/pi-mono/issues/123))`
-- **External contributions**: `Added feature X ([#456](https://github.com/badlogic/pi-mono/pull/456) by [@username](https://github.com/username))`
 
 ## Adding a New LLM Provider (packages/ai)
 
@@ -175,11 +139,10 @@ The script handles: version bump, CHANGELOG finalization, commit, tag, publish, 
 
 ## **CRITICAL** Git Rules for Parallel Agents **CRITICAL**
 
-Multiple agents may work on different files in the same worktree simultaneously. You MUST follow these rules:
+Multiple agents MAY work on different files in the same worktree simultaneously. You MUST follow these rules:
 
 ### Committing
 - **ONLY commit files YOU changed in THIS session**
-- ALWAYS include `fixes #<number>` or `closes #<number>` in the commit message when there is a related issue or PR
 - NEVER use `git add -A` or `git add .` - these sweep up changes from other agents
 - ALWAYS use `git add <specific-file-paths>` listing only files you modified
 - Before committing, run `git status` and verify you are only staging YOUR files
