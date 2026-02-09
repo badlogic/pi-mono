@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- LSP diagnostic feedback loop: after `edit` and `write` tool executions, pi now automatically checks the modified file (and the project) for errors via the Language Server Protocol and appends any diagnostics to the tool result. Supports TypeScript, Go, Rust, Python, C/C++, Ruby, Elixir, Zig, and 10+ more languages out of the box.
+- Extension tools can opt into LSP diagnostics by declaring `getModifiedFilePath` on their `ToolDefinition`, enabling any custom file-modifying tool to get the same automatic error feedback.
+
 ## [0.52.9] - 2026-02-08
 
 ### New Features

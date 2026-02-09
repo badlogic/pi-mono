@@ -63,6 +63,7 @@ import {
 	wrapRegisteredTools,
 	wrapToolsWithExtensions,
 } from "./extensions/index.js";
+import { LspManager } from "./lsp/index.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
@@ -258,6 +259,9 @@ export class AgentSession {
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
 
+	// LSP diagnostic manager
+	private _lspManager: LspManager;
+
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
 
@@ -276,6 +280,7 @@ export class AgentSession {
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._baseToolsOverride = config.baseToolsOverride;
+		this._lspManager = new LspManager(config.cwd);
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -491,6 +496,7 @@ export class AgentSession {
 	dispose(): void {
 		this._disconnectFromAgent();
 		this._eventListeners = [];
+		void this._lspManager.dispose();
 	}
 
 	// =========================================================================
@@ -1981,11 +1987,17 @@ export class AgentSession {
 		const activeExtensionTools = wrappedExtensionTools.filter((tool) => activeToolNameSet.has(tool.name));
 		const activeToolsArray: AgentTool[] = [...activeBaseTools, ...activeExtensionTools];
 
+		const lspOptions = { lspManager: this._lspManager, cwd: this._cwd };
+
 		if (this._extensionRunner) {
-			const wrappedActiveTools = wrapToolsWithExtensions(activeToolsArray, this._extensionRunner);
+			const wrappedActiveTools = wrapToolsWithExtensions(activeToolsArray, this._extensionRunner, lspOptions);
 			this.agent.setTools(wrappedActiveTools as AgentTool[]);
 
-			const wrappedAllTools = wrapToolsWithExtensions(Array.from(toolRegistry.values()), this._extensionRunner);
+			const wrappedAllTools = wrapToolsWithExtensions(
+				Array.from(toolRegistry.values()),
+				this._extensionRunner,
+				lspOptions,
+			);
 			this._toolRegistry = new Map(wrappedAllTools.map((tool) => [tool.name, tool]));
 		} else {
 			this.agent.setTools(activeToolsArray);

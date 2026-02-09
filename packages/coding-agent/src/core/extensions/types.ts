@@ -345,6 +345,27 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 		ctx: ExtensionContext,
 	): Promise<AgentToolResult<TDetails>>;
 
+	/**
+	 * Extract the modified file path from tool parameters for LSP diagnostics.
+	 *
+	 * If defined, this tool is treated as file-modifying: after successful execution,
+	 * the LSP manager will check the returned file for errors and project-wide regressions,
+	 * appending any diagnostics to the tool result.
+	 *
+	 * Return the file path (relative or absolute) that the tool modified, or undefined
+	 * if the particular invocation didn't modify a file.
+	 *
+	 * @example
+	 * ```ts
+	 * pi.registerTool({
+	 *   name: "patch",
+	 *   // ...
+	 *   getModifiedFilePath: (params) => params.file,
+	 * });
+	 * ```
+	 */
+	getModifiedFilePath?: (params: Static<TParams>) => string | undefined;
+
 	/** Custom rendering for tool call display */
 	renderCall?: (args: Static<TParams>, theme: Theme) => Component;
 
