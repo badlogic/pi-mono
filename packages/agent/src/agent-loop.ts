@@ -149,7 +149,8 @@ async function runLoop(
 			}
 
 			// Check for tool calls
-			const toolCalls = message.content.filter((c) => c.type === "toolCall");
+			const contentArr = Array.isArray(message.content) ? message.content : [];
+			const toolCalls = contentArr.filter((c) => c.type === "toolCall");
 			hasMoreToolCalls = toolCalls.length > 0;
 
 			const toolResults: ToolResultMessage[] = [];
@@ -298,7 +299,8 @@ async function executeToolCalls(
 	stream: EventStream<AgentEvent, AgentMessage[]>,
 	getSteeringMessages?: AgentLoopConfig["getSteeringMessages"],
 ): Promise<{ toolResults: ToolResultMessage[]; steeringMessages?: AgentMessage[] }> {
-	const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
+	const contentArr = Array.isArray(assistantMessage.content) ? assistantMessage.content : [];
+	const toolCalls = contentArr.filter((c) => c.type === "toolCall");
 	const results: ToolResultMessage[] = [];
 	let steeringMessages: AgentMessage[] | undefined;
 
