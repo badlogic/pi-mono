@@ -30,6 +30,7 @@ Tools for building AI agents and managing LLM deployments.
 | **[@mariozechner/pi-tui](packages/tui)** | Terminal UI library with differential rendering |
 | **[@mariozechner/pi-web-ui](packages/web-ui)** | Web components for AI chat interfaces |
 | **[@mariozechner/pi-pods](packages/pods)** | CLI for managing vLLM deployments on GPU pods |
+| **[@mariozechner/pi-video-electron](packages/video-electron)** | Electron wrapper and runtime for a VotGO-backed video editing agent |
 
 ## Contributing
 
@@ -43,6 +44,7 @@ npm run build        # Build all packages
 npm run check        # Lint, format, and type check
 ./test.sh            # Run tests (skips LLM-dependent tests without API keys)
 ./pi-test.sh         # Run pi from sources (must be run from repo root)
+make video-agent     # Build VotGO + video-electron and launch the video agent UI
 ```
 
 > **Note:** `npm run check` requires `npm run build` to be run first. The web-ui package uses `tsc` which needs compiled `.d.ts` files from dependencies.

@@ -10,6 +10,7 @@ packages/*/dist-firefox/
 
 # Environment
 .env
+.env.local
 
 # Editor files
 .vscode/

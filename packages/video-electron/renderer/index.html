@@ -1,0 +1,817 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Pi Video Agent</title>
+		<style>
+			@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap');
+
+			:root {
+				--bg-deep: #08090c;
+				--bg-surface: #0f1115;
+				--bg-elevated: #161920;
+				--bg-panel: #12141a;
+				--border: rgba(255, 255, 255, 0.06);
+				--border-hover: rgba(255, 255, 255, 0.12);
+				--fg: #cdd4e0;
+				--fg-dim: #6b7280;
+				--fg-muted: #3d4350;
+				--accent: #6ee7b7;
+				--accent-dim: rgba(110, 231, 183, 0.12);
+				--accent-glow: rgba(110, 231, 183, 0.06);
+				--danger: #f87171;
+				--danger-dim: rgba(248, 113, 113, 0.15);
+				--word-hover: rgba(110, 231, 183, 0.08);
+				--word-selected: rgba(248, 113, 113, 0.12);
+				--radius-sm: 6px;
+				--radius-md: 10px;
+				--radius-lg: 16px;
+				--radius-full: 9999px;
+				--font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+				--font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+				--shadow-soft: 0 4px 24px rgba(0, 0, 0, 0.4);
+				--shadow-glow: 0 0 40px rgba(110, 231, 183, 0.08);
+				--transcript-width: 320px;
+			}
+
+			* { box-sizing: border-box; margin: 0; padding: 0; }
+
+			html, body {
+				height: 100%;
+				overflow: hidden;
+				font-family: var(--font-body);
+				background: var(--bg-deep);
+				color: var(--fg);
+				-webkit-font-smoothing: antialiased;
+			}
+
+			/* ---- Layout Shell ---- */
+			.app {
+				display: grid;
+				grid-template-columns: var(--transcript-width) 1fr;
+				height: 100vh;
+				position: relative;
+			}
+
+			/* ---- Transcript Panel (Left) ---- */
+			.transcript-panel {
+				background: var(--bg-surface);
+				border-right: 1px solid var(--border);
+				display: flex;
+				flex-direction: column;
+				overflow: hidden;
+				position: relative;
+			}
+
+			.transcript-header {
+				padding: 20px 20px 16px;
+				border-bottom: 1px solid var(--border);
+				flex-shrink: 0;
+			}
+
+			.transcript-header h2 {
+				font-family: var(--font-mono);
+				font-size: 11px;
+				font-weight: 500;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+				color: var(--fg-dim);
+				margin-bottom: 12px;
+			}
+
+			.transcript-actions {
+				display: flex;
+				gap: 8px;
+			}
+
+			.transcript-actions button {
+				flex: 1;
+				padding: 7px 0;
+				font-family: var(--font-mono);
+				font-size: 10px;
+				font-weight: 500;
+				letter-spacing: 0.04em;
+				text-transform: uppercase;
+				border: 1px solid var(--border);
+				border-radius: var(--radius-sm);
+				background: transparent;
+				color: var(--fg-dim);
+				cursor: pointer;
+				transition: all 0.15s ease;
+			}
+
+			.transcript-actions button:hover {
+				border-color: var(--accent);
+				color: var(--accent);
+				background: var(--accent-dim);
+			}
+
+			.transcript-actions button.danger:hover {
+				border-color: var(--danger);
+				color: var(--danger);
+				background: var(--danger-dim);
+			}
+
+			.transcript-body {
+				flex: 1;
+				overflow-y: auto;
+				padding: 16px 20px;
+				line-height: 1.75;
+				scrollbar-width: thin;
+				scrollbar-color: var(--bg-elevated) transparent;
+			}
+
+			.transcript-body::-webkit-scrollbar { width: 4px; }
+			.transcript-body::-webkit-scrollbar-track { background: transparent; }
+			.transcript-body::-webkit-scrollbar-thumb {
+				background: var(--fg-muted);
+				border-radius: 2px;
+			}
+
+			.transcript-empty {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				height: 100%;
+				text-align: center;
+				color: var(--fg-muted);
+				padding: 40px;
+			}
+
+			.transcript-empty-icon {
+				width: 48px;
+				height: 48px;
+				border: 2px dashed var(--fg-muted);
+				border-radius: var(--radius-md);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				margin-bottom: 16px;
+				font-size: 18px;
+				opacity: 0.5;
+			}
+
+			.transcript-empty p {
+				font-size: 12px;
+				line-height: 1.6;
+			}
+
+			.word {
+				display: inline;
+				font-family: var(--font-body);
+				font-size: 13.5px;
+				color: var(--fg);
+				padding: 1px 2px;
+				border-radius: 3px;
+				cursor: pointer;
+				transition: all 0.1s ease;
+				position: relative;
+			}
+
+			.word:hover {
+				background: var(--word-hover);
+				color: var(--accent);
+			}
+
+			.word.selected {
+				background: var(--word-selected);
+				color: var(--danger);
+				text-decoration: line-through;
+				text-decoration-color: var(--danger);
+				opacity: 0.6;
+			}
+
+			.word.selected:hover {
+				opacity: 0.8;
+			}
+
+			.word-space {
+				display: inline;
+				width: 4px;
+			}
+
+			.transcript-status {
+				padding: 12px 20px;
+				border-top: 1px solid var(--border);
+				flex-shrink: 0;
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				font-family: var(--font-mono);
+				font-size: 10px;
+				color: var(--fg-muted);
+			}
+
+			.transcript-status .count {
+				color: var(--fg-dim);
+			}
+
+			.transcript-status .deleted-count {
+				color: var(--danger);
+			}
+
+			/* ---- Video Area (Right / Main) ---- */
+			.video-area {
+				background: var(--bg-deep);
+				display: flex;
+				flex-direction: column;
+				position: relative;
+				overflow: hidden;
+			}
+
+                        .video-container {
+                                flex: 1;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                padding: 20px;
+                                position: relative;
+                                min-height: 0;
+                        }
+
+                        .processing-overlay {
+                                position: absolute;
+                                inset: 20px;
+                                border-radius: var(--radius-lg);
+                                background: rgba(8, 9, 12, 0.7);
+                                border: 1px solid var(--border);
+                                display: none;
+                                flex-direction: column;
+                                align-items: center;
+                                justify-content: center;
+                                gap: 12px;
+                                text-align: center;
+                                color: var(--fg);
+                                font-family: var(--font-mono);
+                                font-size: 11px;
+                                z-index: 2;
+                                backdrop-filter: blur(6px);
+                        }
+
+                        .processing-overlay.active {
+                                display: flex;
+                        }
+
+                        .processing-spinner {
+                                width: 36px;
+                                height: 36px;
+                                border-radius: 50%;
+                                border: 2px solid transparent;
+                                border-top-color: var(--accent);
+                                border-right-color: rgba(110, 231, 183, 0.4);
+                                animation: spin 1s linear infinite;
+                        }
+
+                        .processing-status {
+                                max-width: 70%;
+                                color: var(--fg-dim);
+                        }
+
+                        .processing-meta {
+                                width: min(520px, 88%);
+                                background: rgba(18, 20, 26, 0.78);
+                                border: 1px solid var(--border);
+                                border-radius: var(--radius-md);
+                                padding: 10px 12px;
+                                text-align: left;
+                                display: flex;
+                                flex-direction: column;
+                                gap: 6px;
+                        }
+
+                        .processing-phase {
+                                font-size: 11px;
+                                color: var(--fg);
+                        }
+
+                        .processing-elapsed {
+                                font-size: 10px;
+                                color: var(--fg-muted);
+                        }
+
+                        .processing-tasks {
+                                display: flex;
+                                flex-direction: column;
+                                gap: 4px;
+                                max-height: 108px;
+                                overflow-y: auto;
+                        }
+
+                        .processing-task {
+                                font-size: 10px;
+                                font-family: var(--font-mono);
+                                color: var(--fg-dim);
+                                white-space: nowrap;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                        }
+
+                        .processing-task.running {
+                                color: var(--accent);
+                        }
+
+                        .processing-task.done {
+                                color: var(--fg-dim);
+                        }
+
+                        .processing-task.failed {
+                                color: var(--danger);
+                        }
+
+			#videoPreview {
+				width: 100%;
+				height: 100%;
+				max-width: 100%;
+				max-height: 100%;
+				object-fit: contain;
+				background: #000;
+				border-radius: var(--radius-lg);
+				border: 1px solid var(--border);
+				box-shadow: var(--shadow-soft);
+			}
+
+			.video-empty {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				gap: 20px;
+				color: var(--fg-muted);
+				text-align: center;
+			}
+
+			.video-empty-ring {
+				width: 80px;
+				height: 80px;
+				border: 2px solid var(--border);
+				border-radius: 50%;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				position: relative;
+			}
+
+			.video-empty-ring::before {
+				content: '';
+				position: absolute;
+				inset: -1px;
+				border-radius: 50%;
+				border: 1px solid transparent;
+				border-top-color: var(--accent);
+				opacity: 0.3;
+			}
+
+			.video-empty-ring svg {
+				width: 28px;
+				height: 28px;
+				opacity: 0.3;
+			}
+
+			.video-empty p {
+				font-size: 13px;
+				max-width: 220px;
+				line-height: 1.5;
+			}
+
+			.video-empty button {
+				padding: 10px 28px;
+				font-family: var(--font-mono);
+				font-size: 11px;
+				font-weight: 500;
+				letter-spacing: 0.06em;
+				text-transform: uppercase;
+				background: var(--accent-dim);
+				color: var(--accent);
+				border: 1px solid rgba(110, 231, 183, 0.2);
+				border-radius: var(--radius-full);
+				cursor: pointer;
+				transition: all 0.2s ease;
+			}
+
+			.video-empty button:hover {
+				background: rgba(110, 231, 183, 0.18);
+				border-color: rgba(110, 231, 183, 0.35);
+				box-shadow: var(--shadow-glow);
+			}
+
+			.video-bar {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				padding: 0 20px 16px;
+				flex-shrink: 0;
+			}
+
+			.video-bar .file-label {
+				font-family: var(--font-mono);
+				font-size: 10px;
+				color: var(--fg-muted);
+				max-width: 50%;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+
+			.video-bar .metrics {
+				font-family: var(--font-mono);
+				font-size: 10px;
+				color: var(--fg-dim);
+				display: flex;
+				gap: 16px;
+			}
+
+			.video-bar .metrics span {
+				display: flex;
+				align-items: center;
+				gap: 4px;
+			}
+
+			.video-bar .metrics .label {
+				color: var(--fg-muted);
+			}
+
+			/* ---- Floating Prompt Bubble ---- */
+			.bubble {
+				position: fixed;
+				bottom: 32px;
+				right: 32px;
+				z-index: 1000;
+				user-select: none;
+			}
+
+			.bubble-trigger {
+				width: 52px;
+				height: 52px;
+				border-radius: 50%;
+				background: var(--bg-elevated);
+				border: 1px solid var(--border);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				cursor: pointer;
+				transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+				box-shadow: var(--shadow-soft);
+				position: relative;
+			}
+
+			.bubble-trigger:hover {
+				border-color: var(--accent);
+				box-shadow: var(--shadow-soft), var(--shadow-glow);
+				transform: scale(1.05);
+			}
+
+			.bubble-trigger svg {
+				width: 20px;
+				height: 20px;
+				color: var(--accent);
+				transition: transform 0.2s ease;
+			}
+
+			.bubble.expanded .bubble-trigger svg {
+				transform: rotate(45deg);
+			}
+
+			.bubble-processing {
+				position: absolute;
+				inset: -3px;
+				border-radius: 50%;
+				border: 2px solid transparent;
+				border-top-color: var(--accent);
+				animation: spin 1s linear infinite;
+				display: none;
+			}
+
+			.bubble.processing .bubble-processing {
+				display: block;
+			}
+
+			@keyframes spin {
+				to { transform: rotate(360deg); }
+			}
+
+			.bubble-panel {
+				position: absolute;
+				bottom: 64px;
+				right: 0;
+				width: 380px;
+				min-width: 260px;
+				min-height: 160px;
+				background: var(--bg-surface);
+				border: 1px solid var(--border);
+				border-radius: var(--radius-lg);
+				box-shadow: var(--shadow-soft);
+				overflow: hidden;
+				display: none;
+				flex-direction: column;
+			}
+
+			.bubble.expanded .bubble-panel {
+				display: flex;
+				animation: bubbleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+			}
+
+			@keyframes bubbleIn {
+				from {
+					opacity: 0;
+					transform: translateY(8px) scale(0.96);
+				}
+				to {
+					opacity: 1;
+					transform: translateY(0) scale(1);
+				}
+			}
+
+			.bubble-panel-header {
+				padding: 14px 16px 10px;
+				border-bottom: 1px solid var(--border);
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+			}
+
+			.bubble-panel-header span {
+				font-family: var(--font-mono);
+				font-size: 10px;
+				font-weight: 500;
+				letter-spacing: 0.06em;
+				text-transform: uppercase;
+				color: var(--fg-dim);
+			}
+
+			.bubble-panel-header .status-dot {
+				width: 6px;
+				height: 6px;
+				border-radius: 50%;
+				background: var(--fg-muted);
+			}
+
+			.bubble.processing .bubble-panel-header .status-dot {
+				background: var(--accent);
+				box-shadow: 0 0 8px var(--accent);
+				animation: pulse 1.5s ease-in-out infinite;
+			}
+
+			@keyframes pulse {
+				0%, 100% { opacity: 1; }
+				50% { opacity: 0.4; }
+			}
+
+			.bubble-messages {
+				flex: 1;
+				min-height: 60px;
+				overflow-y: auto;
+				padding: 12px 16px;
+				scrollbar-width: thin;
+				scrollbar-color: var(--bg-elevated) transparent;
+			}
+
+			.bubble-messages::-webkit-scrollbar { width: 3px; }
+			.bubble-messages::-webkit-scrollbar-track { background: transparent; }
+			.bubble-messages::-webkit-scrollbar-thumb {
+				background: var(--fg-muted);
+				border-radius: 2px;
+			}
+
+			.bubble-messages:empty::after {
+				content: 'Ask the agent to edit your video...';
+				font-size: 12px;
+				color: var(--fg-muted);
+				font-style: italic;
+			}
+
+			.bubble-msg {
+				font-size: 12px;
+				line-height: 1.5;
+				padding: 6px 0;
+				color: var(--fg-dim);
+				border-bottom: 1px solid var(--border);
+			}
+
+			.bubble-msg:last-child {
+				border-bottom: none;
+			}
+
+			.bubble-msg.user {
+				color: var(--fg);
+			}
+
+			.bubble-msg.agent {
+				color: var(--accent);
+				font-family: var(--font-mono);
+				font-size: 11px;
+			}
+
+			.bubble-input-row {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 12px 16px;
+				border-top: 1px solid var(--border);
+				background: var(--bg-panel);
+			}
+
+			.bubble-input-row input {
+				flex: 1;
+				background: transparent;
+				border: none;
+				outline: none;
+				color: var(--fg);
+				font-family: var(--font-body);
+				font-size: 13px;
+				padding: 4px 0;
+			}
+
+			.bubble-input-row input::placeholder {
+				color: var(--fg-muted);
+			}
+
+			.bubble-send {
+				width: 32px;
+				height: 32px;
+				border-radius: 50%;
+				background: var(--accent-dim);
+				border: 1px solid rgba(110, 231, 183, 0.15);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				cursor: pointer;
+				flex-shrink: 0;
+				transition: all 0.15s ease;
+			}
+
+			.bubble-send:hover {
+				background: rgba(110, 231, 183, 0.2);
+				border-color: var(--accent);
+			}
+
+			.bubble-send svg {
+				width: 14px;
+				height: 14px;
+				color: var(--accent);
+			}
+
+			/* ---- Resize handle on bubble panel ---- */
+		.bubble-resize {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 16px;
+			height: 16px;
+			cursor: nw-resize;
+			z-index: 2;
+			opacity: 0;
+			transition: opacity 0.15s ease;
+		}
+
+		.bubble-resize::after {
+			content: '';
+			position: absolute;
+			top: 4px;
+			left: 4px;
+			width: 7px;
+			height: 7px;
+			border-top: 2px solid var(--fg-muted);
+			border-left: 2px solid var(--fg-muted);
+			border-radius: 2px 0 0 0;
+		}
+
+		.bubble-panel:hover .bubble-resize {
+			opacity: 0.6;
+		}
+
+		.bubble-resize:hover::after {
+			border-color: var(--accent);
+		}
+
+		/* ---- Drag handle on bubble ---- */
+			.bubble-drag {
+				position: absolute;
+				top: -6px;
+				left: 50%;
+				transform: translateX(-50%);
+				width: 24px;
+				height: 4px;
+				border-radius: 2px;
+				background: var(--fg-muted);
+				cursor: grab;
+				opacity: 0;
+				transition: opacity 0.15s ease;
+			}
+
+			.bubble:hover .bubble-drag {
+				opacity: 0.6;
+			}
+
+			.bubble-drag:active {
+				cursor: grabbing;
+			}
+
+			/* ---- Noise texture overlay ---- */
+			.noise {
+				position: fixed;
+				inset: 0;
+				pointer-events: none;
+				z-index: 9999;
+				opacity: 0.025;
+				background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+				background-repeat: repeat;
+				background-size: 128px 128px;
+			}
+
+			/* ---- Hidden file input ---- */
+			#videoPicker { display: none; }
+		</style>
+	</head>
+	<body>
+		<div class="noise"></div>
+		<div class="app">
+			<!-- LEFT: Transcript Panel -->
+			<aside class="transcript-panel">
+				<div class="transcript-header">
+					<h2>Transcript</h2>
+					<div class="transcript-actions">
+						<button id="transcribeBtn">Transcribe</button>
+						<button id="applyEditsBtn">Apply Edits</button>
+						<button id="clearDeletesBtn" class="danger">Reset</button>
+					</div>
+				</div>
+				<div class="transcript-body" id="transcriptBody">
+					<div class="transcript-empty" id="transcriptEmpty">
+						<div class="transcript-empty-icon">T</div>
+						<p>Load a video and transcribe it to see words here. Click words to mark them for removal.</p>
+					</div>
+				</div>
+				<div class="transcript-status">
+					<span>Words: <span class="count" id="wordCount">0</span></span>
+					<span>Deleted: <span class="deleted-count" id="deletedCount">0</span></span>
+				</div>
+			</aside>
+
+			<!-- RIGHT: Video Area -->
+			<div class="video-area">
+                                <div class="video-container" id="videoContainer">
+                                        <div class="video-empty" id="videoEmpty">
+						<div class="video-empty-ring">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+								<polygon points="5 3 19 12 5 21 5 3" />
+							</svg>
+						</div>
+						<p>Select a video file to begin editing</p>
+						<button id="openProject">Select Video</button>
+                                        </div>
+                                        <div class="processing-overlay" id="processingOverlay">
+                                                <div class="processing-spinner"></div>
+                                                <div class="processing-status" id="processingStatus">Processing...</div>
+                                                <div class="processing-meta">
+                                                        <div class="processing-phase" id="processingPhase">Waiting for task...</div>
+                                                        <div class="processing-elapsed" id="processingElapsed">Elapsed: 0s</div>
+                                                        <div class="processing-tasks" id="processingTasks"></div>
+                                                </div>
+                                        </div>
+                                        <video id="videoPreview" controls style="display:none"></video>
+                                </div>
+				<div class="video-bar">
+					<div class="file-label" id="videoSourceLabel">No video loaded</div>
+					<div class="metrics">
+						<span><span class="label">Time</span> <span id="currentTimeOut">0:00</span></span>
+						<span><span class="label">Duration</span> <span id="durationOut">0:00</span></span>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Floating Agent Bubble -->
+		<div class="bubble" id="bubble">
+			<div class="bubble-drag" id="bubbleDrag"></div>
+			<div class="bubble-panel">
+				<div class="bubble-resize" id="bubbleResize"></div>
+				<div class="bubble-panel-header">
+					<span>Agent</span>
+					<div class="status-dot"></div>
+				</div>
+				<div class="bubble-messages" id="bubbleMessages"></div>
+				<div class="bubble-input-row">
+					<input type="text" id="promptInput" placeholder="Describe your edit..." />
+					<button class="bubble-send" id="sendPrompt">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<line x1="22" y1="2" x2="11" y2="13" />
+							<polygon points="22 2 15 22 11 13 2 9 22 2" />
+						</svg>
+					</button>
+				</div>
+			</div>
+			<div class="bubble-trigger" id="bubbleTrigger">
+				<div class="bubble-processing"></div>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<line x1="12" y1="5" x2="12" y2="19" />
+					<line x1="5" y1="12" x2="19" y2="12" />
+				</svg>
+			</div>
+		</div>
+
+		<input id="videoPicker" type="file" accept=".mp4,.mov,.mkv,.avi,.webm,.m4v,.mpg,.mpeg,video/*" />
+		<script type="module" src="./index.js"></script>
+	</body>
+</html>

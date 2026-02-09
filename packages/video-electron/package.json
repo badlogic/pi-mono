@@ -1,0 +1,41 @@
+{
+	"name": "@mariozechner/pi-video-electron",
+	"version": "0.52.8",
+	"description": "Electron wrapper and video-agent runtime for pi, backed by VotGO CLI tools",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"files": [
+		"dist",
+		"renderer",
+		"README.md",
+		"CHANGELOG.md"
+	],
+	"scripts": {
+		"clean": "rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json && mkdir -p dist/renderer && cp -r renderer/. dist/renderer/ && cp src/preload.cjs dist/preload.cjs",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"@mariozechner/pi-ai": "^0.52.8",
+		"@mariozechner/pi-coding-agent": "^0.52.8",
+		"@sinclair/typebox": "^0.34.48"
+	},
+	"keywords": [
+		"electron",
+		"video",
+		"agent",
+		"ffmpeg",
+		"votgo"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/badlogic/pi-mono.git",
+		"directory": "packages/video-electron"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	}
+}
