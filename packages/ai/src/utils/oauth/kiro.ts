@@ -198,6 +198,9 @@ export async function refreshKiroToken(credentials: KiroCredentials): Promise<Ki
 /**
  * Get Kiro access token from kiro-cli's SQLite database.
  * This provides automatic credential sharing for users who have kiro-cli installed.
+ *
+ * Searches the database buffer directly without converting to string to avoid
+ * ERR_STRING_TOO_LONG on large databases (600MB+).
  */
 function getKiroCliToken(): string | undefined {
 	try {
@@ -213,15 +216,27 @@ function getKiroCliToken(): string | undefined {
 
 		if (!existsSync(dbPath)) return undefined;
 
-		// Read SQLite database directly instead of shelling out
+		// Read database as buffer and search for token without converting entire file to string
 		const db = readFileSync(dbPath);
-		const dbStr = db.toString("utf-8");
+		const searchKey = "kirocli:odic:token";
+		const keyBuffer = Buffer.from(searchKey, "utf-8");
 
-		// Look for the token in the database
+		// Find the key in the database
+		const keyIndex = db.indexOf(keyBuffer);
+		if (keyIndex === -1) return undefined;
+
+		// Extract a reasonable chunk after the key to find the JSON value
+		// SQLite stores key-value pairs with some metadata, so we search forward
+		const chunkStart = keyIndex;
+		const chunkSize = 2048; // Enough for the token JSON
+		const chunk = db.subarray(chunkStart, Math.min(chunkStart + chunkSize, db.length));
+		const chunkStr = chunk.toString("utf-8");
+
+		// Look for JSON object after the key
 		// Format: kirocli:odic:token -> {"access_token":"...","refresh_token":"..."}
-		const tokenMatch = dbStr.match(/kirocli:odic:token[^{]*(\{[^}]+\})/);
-		if (tokenMatch?.[1]) {
-			const data = JSON.parse(tokenMatch[1]);
+		const jsonMatch = chunkStr.match(/\{[^}]+\}/);
+		if (jsonMatch) {
+			const data = JSON.parse(jsonMatch[0]);
 			if (data.access_token) {
 				return data.access_token;
 			}

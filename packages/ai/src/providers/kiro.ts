@@ -203,6 +203,8 @@ class ThinkingTagParser {
 		this.textBuffer += chunk;
 
 		while (this.textBuffer.length > 0) {
+			const prevLength = this.textBuffer.length;
+
 			if (!this.inThinking && !this.thinkingExtracted) {
 				this.processBeforeThinking();
 				if (this.textBuffer.length === 0) break;
@@ -217,6 +219,9 @@ class ThinkingTagParser {
 				this.processAfterThinking();
 				break;
 			}
+
+			// No progress — buffer too short to determine tag boundary, wait for more data
+			if (this.textBuffer.length >= prevLength) break;
 		}
 	}
 
@@ -1042,17 +1047,30 @@ export const streamKiro: StreamFunction<"kiro", KiroOptions> = (
 				const toolCalls: KiroToolCall[] = [];
 				let currentToolCall: KiroToolCall | null = null;
 
+				// Idle timeout: cancel reader if no data arrives for 30s after first chunk.
+				// Handles HTTP/2 connections that stay open after the API finishes streaming.
+				const IDLE_TIMEOUT_MS = 30_000;
+				let idleTimer: ReturnType<typeof setTimeout> | null = null;
+				const resetIdleTimer = () => {
+					if (idleTimer) clearTimeout(idleTimer);
+					idleTimer = setTimeout(() => reader.cancel(), IDLE_TIMEOUT_MS);
+				};
+
 				while (true) {
 					const { done, value } = await reader.read();
 					if (done) break;
+
+					resetIdleTimer();
 
 					buffer += decoder.decode(value, { stream: true });
 					const { events, remaining } = parseKiroEvents(buffer);
 					buffer = remaining;
 
+					let streamComplete = false;
 					for (const event of events) {
 						if (event.type === "contextUsage") {
 							contextUsagePercentage = event.data.contextUsagePercentage;
+							streamComplete = true;
 						} else if (event.type === "content") {
 							totalContent += event.data;
 
@@ -1098,7 +1116,12 @@ export const streamKiro: StreamFunction<"kiro", KiroOptions> = (
 							}
 						}
 					}
+
+					// contextUsage is always the last event from the API
+					if (streamComplete) break;
 				}
+
+				if (idleTimer) clearTimeout(idleTimer);
 
 				// Finalize any remaining content
 				if (currentToolCall) {
