@@ -70,6 +70,11 @@ export function requiresToolCallId(modelId: string): boolean {
  */
 export function convertMessages<T extends GoogleApiType>(model: Model<T>, context: Context): Content[] {
 	const contents: Content[] = [];
+	// Track tool call IDs that were degraded from functionCall to text (cross-provider only)
+	// so their corresponding toolResult is also degraded to text instead of functionResponse.
+	// Without this, Gemini sees orphaned functionResponse parts with no positional match,
+	// which corrupts its interpretation of conversation history.
+	const degradedToolCallIds = new Set<string>();
 	const normalizeToolCallId = (id: string): string => {
 		if (!requiresToolCallId(model.id)) return id;
 		return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
@@ -138,15 +143,22 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 				} else if (block.type === "toolCall") {
 					const thoughtSignature = resolveThoughtSignature(isSameProviderAndModel, block.thoughtSignature);
 					// Gemini 3 requires thoughtSignature on all function calls when thinking mode is enabled.
-					// When replaying history from providers without thought signatures (e.g. Claude via Antigravity),
-					// convert unsigned function calls to text to avoid API validation errors.
-					// We include a note telling the model this is historical context to prevent mimicry.
+					// Only degrade cross-provider tool calls (e.g. Claude history replayed to Gemini).
+					// Same-provider calls are kept as functionCall even without thoughtSignature,
+					// because Gemini 3 only signs the first function call in a multi-call turn —
+					// subsequent calls lack signatures but are still valid for replay.
+					// Degrading same-provider calls creates orphaned functionResponse parts
+					// (the corresponding toolResult stays as functionResponse), which breaks
+					// Gemini's positional matching and causes tool result misattribution.
 					const isGemini3 = model.id.toLowerCase().includes("gemini-3");
-					if (isGemini3 && !thoughtSignature) {
+					if (isGemini3 && !thoughtSignature && !isSameProviderAndModel) {
 						const argsStr = JSON.stringify(block.arguments ?? {}, null, 2);
 						parts.push({
 							text: `[Historical context: a different model called tool "${block.name}" with arguments: ${argsStr}. Do not mimic this format - use proper function calling.]`,
 						});
+						if (block.id) {
+							degradedToolCallIds.add(block.id);
+						}
 					} else {
 						const part: Part = {
 							functionCall: {
@@ -169,6 +181,28 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 				parts,
 			});
 		} else if (msg.role === "toolResult") {
+			// If the corresponding toolCall was degraded to text (cross-provider, missing
+			// thoughtSignature), degrade this result to text as well.  This keeps the
+			// functionCall / functionResponse counts symmetric and prevents Gemini from
+			// seeing orphaned functionResponse parts that break positional matching.
+			if (msg.toolCallId && degradedToolCallIds.has(msg.toolCallId)) {
+				degradedToolCallIds.delete(msg.toolCallId);
+				const textContent = msg.content.filter((c): c is TextContent => c.type === "text");
+				const textResult = textContent.map((c) => c.text).join("\n");
+				const responseValue = textResult ? sanitizeSurrogates(textResult) : "(no output)";
+				const label = msg.isError ? "error" : "result";
+				const degradedText = `[Historical context: tool "${msg.toolName ?? "unknown"}" ${label}: ${responseValue}. Do not repeat or reference this text in your response.]`;
+				const lastContent = contents[contents.length - 1];
+				if (lastContent?.role === "user") {
+					lastContent.parts.push({ text: degradedText });
+				} else {
+					contents.push({
+						role: "user",
+						parts: [{ text: degradedText }],
+					});
+				}
+				continue;
+			}
 			// Extract text and image content
 			const textContent = msg.content.filter((c): c is TextContent => c.type === "text");
 			const textResult = textContent.map((c) => c.text).join("\n");
