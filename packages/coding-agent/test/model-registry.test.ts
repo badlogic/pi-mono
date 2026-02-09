@@ -1,7 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { OpenAICompletionsCompat } from "@mariozechner/pi-ai";
+import type {
+	Api,
+	Model,
+	OAuthCredentials,
+	OAuthProviderInterface,
+	OpenAICompletionsCompat,
+} from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { clearApiKeyCache, ModelRegistry } from "../src/core/model-registry.js";
@@ -524,6 +530,142 @@ describe("ModelRegistry", () => {
 				(m) => m.id === "anthropic/claude-sonnet-4",
 			)?.name;
 			expect(restoredName).not.toBe("Custom Name");
+		});
+	});
+
+	describe("dynamic OAuth model hydration", () => {
+		function createDynamicOAuthProvider(
+			getDynamicModels: (credentials: OAuthCredentials) => Promise<Model<Api>[]>,
+		): Omit<OAuthProviderInterface, "id"> {
+			return {
+				name: "Test Dynamic OAuth",
+				login: async () => {
+					throw new Error("not implemented");
+				},
+				refreshToken: async (credentials) => credentials,
+				getApiKey: (credentials) => credentials.access,
+				getDynamicModels,
+			};
+		}
+
+		function registerDynamicProvider(
+			registry: ModelRegistry,
+			getDynamicModels: (credentials: OAuthCredentials) => Promise<Model<Api>[]>,
+		) {
+			registry.registerProvider("test-dynamic", {
+				baseUrl: "https://static.example.com/v1",
+				api: "anthropic-messages",
+				oauth: createDynamicOAuthProvider(getDynamicModels),
+				models: [
+					{
+						id: "static-model",
+						name: "Static Model",
+						reasoning: false,
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 32000,
+						maxTokens: 4096,
+					},
+				],
+			});
+		}
+
+		test("refreshWithDynamicModels replaces provider models with dynamic models", async () => {
+			authStorage.set("test-dynamic", {
+				type: "oauth",
+				refresh: "refresh-token",
+				access: "access-token",
+				expires: Date.now() + 60_000,
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			registerDynamicProvider(registry, async () => [
+				{
+					id: "dynamic-model",
+					name: "Dynamic Model",
+					api: "anthropic-messages",
+					provider: "test-dynamic",
+					baseUrl: "https://dynamic.example.com/v1",
+					reasoning: true,
+					input: ["text", "image"],
+					cost: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 0.2 },
+					contextWindow: 200000,
+					maxTokens: 32000,
+				},
+			]);
+
+			await registry.refreshWithDynamicModels();
+
+			const models = registry.getAll().filter((m) => m.provider === "test-dynamic");
+			expect(models).toHaveLength(1);
+			expect(models[0]?.id).toBe("dynamic-model");
+			expect(registry.find("test-dynamic", "dynamic-model")).toBeDefined();
+			expect(registry.find("test-dynamic", "static-model")).toBeUndefined();
+		});
+
+		test("dynamic fetch failure keeps static models and exposes warning", async () => {
+			authStorage.set("test-dynamic", {
+				type: "oauth",
+				refresh: "refresh-token",
+				access: "access-token",
+				expires: Date.now() + 60_000,
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			registerDynamicProvider(registry, async () => {
+				throw new Error("dynamic fetch failed");
+			});
+
+			await registry.refreshWithDynamicModels();
+
+			const models = registry.getAll().filter((m) => m.provider === "test-dynamic");
+			expect(models).toHaveLength(1);
+			expect(models[0]?.id).toBe("static-model");
+			expect(registry.getDynamicModelWarnings()).toEqual([
+				"[test-dynamic] Failed to refresh dynamic models: dynamic fetch failed. Using static fallback models.",
+			]);
+		});
+
+		test("dynamic fetch retries on next refreshWithDynamicModels call", async () => {
+			authStorage.set("test-dynamic", {
+				type: "oauth",
+				refresh: "refresh-token",
+				access: "access-token",
+				expires: Date.now() + 60_000,
+			});
+
+			let shouldFail = true;
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			registerDynamicProvider(registry, async () => {
+				if (shouldFail) {
+					throw new Error("temporary failure");
+				}
+				return [
+					{
+						id: "dynamic-model",
+						name: "Dynamic Model",
+						api: "anthropic-messages",
+						provider: "test-dynamic",
+						baseUrl: "https://dynamic.example.com/v1",
+						reasoning: true,
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 100000,
+						maxTokens: 8192,
+					},
+				];
+			});
+
+			await registry.refreshWithDynamicModels();
+			expect(registry.find("test-dynamic", "static-model")).toBeDefined();
+			expect(registry.find("test-dynamic", "dynamic-model")).toBeUndefined();
+			expect(registry.getDynamicModelWarnings()).toHaveLength(1);
+
+			shouldFail = false;
+			await registry.refreshWithDynamicModels();
+			expect(registry.find("test-dynamic", "dynamic-model")).toBeDefined();
+			expect(registry.find("test-dynamic", "static-model")).toBeUndefined();
+			expect(registry.getDynamicModelWarnings()).toHaveLength(0);
 		});
 	});
 
