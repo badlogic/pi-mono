@@ -1,3 +1,0 @@
-{"payload":"Completed history and tool result truncation for Kiro provider","topic":"task.done","ts":"2026-02-04T22:37:04.106299+00:00"}
-{"payload":"task-1770244507-cde2 blocked: retry logic requires significant refactoring of stream function structure. Saved implementation notes to mem-1770244838-905b","topic":"task.blocked","ts":"2026-02-04T22:40:52.640394+00:00"}
-{"payload":"Completed placeholder tools implementation - tests pass, lint pass","topic":"task.done","ts":"2026-02-04T22:47:16.633546+00:00"}
