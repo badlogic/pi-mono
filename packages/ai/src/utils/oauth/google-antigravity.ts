@@ -7,6 +7,8 @@
  */
 
 import type { Server } from "node:http";
+import type { Api, Model } from "../../types.js";
+import { getAntigravityHeaders } from "../antigravity-headers.js";
 import { generatePKCE } from "./pkce.js";
 import type { OAuthCredentials, OAuthLoginCallbacks, OAuthProviderInterface } from "./types.js";
 
@@ -44,6 +46,18 @@ const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 // Fallback project ID when discovery fails
 const DEFAULT_PROJECT_ID = "rising-fact-p41fc";
+const ANTIGRAVITY_ENDPOINT = "https://daily-cloudcode-pa.sandbox.googleapis.com";
+
+export interface AntigravityModelInfo {
+	id: string;
+	displayName: string;
+	provider?: string;
+	supportsThinking: boolean;
+	supportsImages: boolean;
+	maxTokens?: number;
+	maxOutputTokens?: number;
+	quotaInfo?: unknown;
+}
 
 type CallbackServerInfo = {
 	server: Server;
@@ -149,6 +163,106 @@ interface LoadCodeAssistPayload {
 	cloudaicompanionProject?: string | { id?: string };
 	currentTier?: { id?: string };
 	allowedTiers?: Array<{ id?: string; isDefault?: boolean }>;
+}
+
+interface FetchAvailableModelsPayload {
+	models?: Array<{
+		id?: string;
+		model?: string;
+		modelId?: string;
+		name?: string;
+		displayName?: string;
+		provider?: string;
+		supportsThinking?: boolean;
+		supportsImages?: boolean;
+		maxTokens?: number;
+		maxOutputTokens?: number;
+		quotaInfo?: unknown;
+	}>;
+}
+
+function resolveModelId(model: NonNullable<FetchAvailableModelsPayload["models"]>[number]): string | undefined {
+	const id = model.id ?? model.modelId ?? model.model ?? model.name;
+	if (!id) {
+		return undefined;
+	}
+	return id.startsWith("models/") ? id.slice("models/".length) : id;
+}
+
+function parseAntigravityModelInfo(
+	model: NonNullable<FetchAvailableModelsPayload["models"]>[number],
+): AntigravityModelInfo | undefined {
+	const id = resolveModelId(model);
+	if (!id) {
+		return undefined;
+	}
+
+	return {
+		id,
+		displayName: model.displayName ?? model.name ?? id,
+		provider: model.provider,
+		supportsThinking: model.supportsThinking ?? false,
+		supportsImages: model.supportsImages ?? false,
+		maxTokens: model.maxTokens,
+		maxOutputTokens: model.maxOutputTokens,
+		quotaInfo: model.quotaInfo,
+	};
+}
+
+function estimateCost(provider?: string): Model<Api>["cost"] {
+	switch (provider?.toLowerCase()) {
+		case "anthropic":
+			return { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
+		case "openai":
+			return { input: 2, output: 8, cacheRead: 0.2, cacheWrite: 2 };
+		default:
+			return { input: 1.25, output: 5, cacheRead: 0.125, cacheWrite: 1.25 };
+	}
+}
+
+export function createAntigravityModel(model: AntigravityModelInfo): Model<"google-gemini-cli"> {
+	return {
+		id: model.id,
+		name: model.displayName,
+		api: "google-gemini-cli",
+		provider: "google-antigravity",
+		baseUrl: ANTIGRAVITY_ENDPOINT,
+		reasoning: model.supportsThinking,
+		input: model.supportsImages ? ["text", "image"] : ["text"],
+		cost: estimateCost(model.provider),
+		contextWindow: model.maxTokens ?? 1_048_576,
+		maxTokens: model.maxOutputTokens ?? 65_536,
+	};
+}
+
+export async function fetchAvailableModels(accessToken: string): Promise<AntigravityModelInfo[]> {
+	const response = await fetch(`${ANTIGRAVITY_ENDPOINT}/v1internal:fetchAvailableModels`, {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${accessToken}`,
+			"Content-Type": "application/json",
+			...getAntigravityHeaders(),
+		},
+		body: JSON.stringify({
+			metadata: {
+				ideType: "IDE_UNSPECIFIED",
+				platform: "PLATFORM_UNSPECIFIED",
+				pluginType: "GEMINI",
+			},
+		}),
+	});
+
+	if (!response.ok) {
+		const error = await response.text();
+		throw new Error(`Failed to fetch Antigravity models (${response.status}): ${error}`);
+	}
+
+	const payload = (await response.json()) as FetchAvailableModelsPayload;
+	const parsedModels = (payload.models ?? [])
+		.map(parseAntigravityModelInfo)
+		.filter((model): model is AntigravityModelInfo => model !== undefined);
+	const uniqueModels = new Map(parsedModels.map((model) => [model.id, model]));
+	return Array.from(uniqueModels.values());
 }
 
 /**
@@ -453,5 +567,11 @@ export const antigravityOAuthProvider: OAuthProviderInterface = {
 	getApiKey(credentials: OAuthCredentials): string {
 		const creds = credentials as AntigravityCredentials;
 		return JSON.stringify({ token: creds.access, projectId: creds.projectId });
+	},
+
+	async getDynamicModels(credentials: OAuthCredentials): Promise<Model<Api>[]> {
+		const models = await fetchAvailableModels(credentials.access);
+		// TODO: expose model quotaInfo in coding-agent UI once quota UX is defined.
+		return models.map((model) => createAntigravityModel(model));
 	},
 };

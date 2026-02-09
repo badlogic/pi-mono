@@ -20,6 +20,7 @@ import type {
 	ThinkingLevel,
 	ToolCall,
 } from "../types.js";
+import { getAntigravityHeaders } from "../utils/antigravity-headers.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import {
@@ -70,22 +71,6 @@ const GEMINI_CLI_HEADERS = {
 		pluginType: "GEMINI",
 	}),
 };
-
-// Headers for Antigravity (sandbox endpoint) - requires specific User-Agent
-const DEFAULT_ANTIGRAVITY_VERSION = "1.15.8";
-
-function getAntigravityHeaders() {
-	const version = process.env.PI_AI_ANTIGRAVITY_VERSION || DEFAULT_ANTIGRAVITY_VERSION;
-	return {
-		"User-Agent": `antigravity/${version} darwin/arm64`,
-		"X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-		"Client-Metadata": JSON.stringify({
-			ideType: "IDE_UNSPECIFIED",
-			platform: "PLATFORM_UNSPECIFIED",
-			pluginType: "GEMINI",
-		}),
-	};
-}
 
 // Antigravity system instruction (compact version from CLIProxyAPI).
 const ANTIGRAVITY_SYSTEM_INSTRUCTION =
