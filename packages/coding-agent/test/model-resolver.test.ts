@@ -1,6 +1,11 @@
 import type { Model } from "@mariozechner/pi-ai";
 import { describe, expect, test } from "vitest";
-import { defaultModelPerProvider, findInitialModel, parseModelPattern } from "../src/core/model-resolver.js";
+import {
+	defaultModelPerProvider,
+	findInitialModel,
+	parseModelPattern,
+	resolveModelScope,
+} from "../src/core/model-resolver.js";
 
 // Mock models for testing
 const mockModels: Model<"anthropic-messages">[] = [
@@ -198,6 +203,57 @@ describe("parseModelPattern", () => {
 			expect(result.model?.id).toBe("claude-sonnet-4-5");
 			expect(result.warning).toContain("Invalid thinking level");
 		});
+	});
+});
+
+describe("resolveModelScope", () => {
+	const dynamicAntigravityModels: Model<"anthropic-messages">[] = [
+		{
+			id: "claude-sonnet-4-5",
+			name: "Claude Sonnet 4.5",
+			api: "anthropic-messages",
+			provider: "google-antigravity",
+			baseUrl: "https://daily-cloudcode-pa.sandbox.googleapis.com",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+			contextWindow: 200000,
+			maxTokens: 8192,
+		},
+		{
+			id: "gemini-3-flash",
+			name: "Gemini 3 Flash",
+			api: "anthropic-messages",
+			provider: "google-antigravity",
+			baseUrl: "https://daily-cloudcode-pa.sandbox.googleapis.com",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 1.25, output: 5, cacheRead: 0.125, cacheWrite: 1.25 },
+			contextWindow: 1000000,
+			maxTokens: 65536,
+		},
+	];
+
+	test("resolves provider/model pattern for dynamic antigravity IDs", async () => {
+		const registry = {
+			getAvailable: () => dynamicAntigravityModels,
+		} as unknown as Parameters<typeof resolveModelScope>[1];
+
+		const scoped = await resolveModelScope(["google-antigravity/claude-sonnet-4-5"], registry);
+		expect(scoped).toHaveLength(1);
+		expect(scoped[0]?.model.provider).toBe("google-antigravity");
+		expect(scoped[0]?.model.id).toBe("claude-sonnet-4-5");
+	});
+
+	test("resolves glob-scoped dynamic antigravity models with thinking level", async () => {
+		const registry = {
+			getAvailable: () => dynamicAntigravityModels,
+		} as unknown as Parameters<typeof resolveModelScope>[1];
+
+		const scoped = await resolveModelScope(["google-antigravity/*:high"], registry);
+		expect(scoped).toHaveLength(2);
+		expect(scoped.every((entry) => entry.model.provider === "google-antigravity")).toBe(true);
+		expect(scoped.every((entry) => entry.thinkingLevel === "high")).toBe(true);
 	});
 });
 
