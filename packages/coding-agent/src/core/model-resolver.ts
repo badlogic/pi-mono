@@ -32,6 +32,8 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	minimax: "MiniMax-M2.1",
 	"minimax-cn": "MiniMax-M2.1",
 	huggingface: "moonshotai/Kimi-K2.5",
+	deepseek: "deepseek-chat",
+	moonshot: "kimi-k2.5",
 	opencode: "claude-opus-4-6",
 	"kimi-coding": "kimi-k2-thinking",
 };

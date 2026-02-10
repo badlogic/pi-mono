@@ -66,6 +66,8 @@ pi
 | ZAI | `ZAI_API_KEY` | `zai` |
 | OpenCode Zen | `OPENCODE_API_KEY` | `opencode` |
 | Hugging Face | `HF_TOKEN` | `huggingface` |
+| DeepSeek | `DEEPSEEK_API_KEY` | `deepseek` |
+| Moonshot AI | `MOONSHOT_API_KEY` | `moonshot` |
 | Kimi For Coding | `KIMI_API_KEY` | `kimi-coding` |
 | MiniMax | `MINIMAX_API_KEY` | `minimax` |
 | MiniMax (China) | `MINIMAX_CN_API_KEY` | `minimax-cn` |
