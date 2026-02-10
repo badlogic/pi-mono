@@ -95,6 +95,9 @@ export function transformMessages<TApi extends Api>(
 	const result: Message[] = [];
 	let pendingToolCalls: ToolCall[] = [];
 	let existingToolResultIds = new Set<string>();
+	// Track tool call IDs from skipped (errored/aborted) assistant messages
+	// so we can drop orphaned toolResults that reference them
+	const skippedToolCallIds = new Set<string>();
 
 	for (let i = 0; i < transformed.length; i++) {
 		const msg = transformed[i];
@@ -125,6 +128,13 @@ export function transformMessages<TApi extends Api>(
 			// - The model should retry from the last valid state
 			const assistantMsg = msg as AssistantMessage;
 			if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
+				// Track tool call IDs from this skipped message so we can drop their orphaned results
+				const content = Array.isArray(assistantMsg.content) ? assistantMsg.content : [];
+				for (const block of content) {
+					if (block?.type === "toolCall" && (block as ToolCall).id) {
+						skippedToolCallIds.add((block as ToolCall).id);
+					}
+				}
 				continue;
 			}
 
@@ -137,6 +147,11 @@ export function transformMessages<TApi extends Api>(
 
 			result.push(msg);
 		} else if (msg.role === "toolResult") {
+			// Drop orphaned toolResults that reference skipped (errored/aborted) assistant messages
+			// These would cause API 400 errors: "unexpected tool_use_id found in tool_result blocks"
+			if (skippedToolCallIds.has(msg.toolCallId)) {
+				continue;
+			}
 			existingToolResultIds.add(msg.toolCallId);
 			result.push(msg);
 		} else if (msg.role === "user") {
