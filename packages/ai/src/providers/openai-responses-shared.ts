@@ -453,7 +453,9 @@ export async function processResponsesStream<TApi extends Api>(
 		} else if (event.type === "error") {
 			throw new Error(`Error Code ${event.code}: ${event.message}` || "Unknown error");
 		} else if (event.type === "response.failed") {
-			throw new Error("Unknown error");
+			const error = event.response?.error;
+			const message = error ? `${error.code}: ${error.message}` : "Unknown error";
+			throw new Error(message);
 		}
 	}
 }
