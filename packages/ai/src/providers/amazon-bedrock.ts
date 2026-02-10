@@ -159,7 +159,7 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 				} else if (item.contentBlockStart) {
 					handleContentBlockStart(item.contentBlockStart, blocks, output, stream);
 				} else if (item.contentBlockDelta) {
-					handleContentBlockDelta(item.contentBlockDelta, blocks, output, stream);
+					handleContentBlockDelta(item.contentBlockDelta, blocks, output, stream, model);
 				} else if (item.contentBlockStop) {
 					handleContentBlockStop(item.contentBlockStop, blocks, output, stream);
 				} else if (item.messageStop) {
@@ -276,6 +276,7 @@ function handleContentBlockDelta(
 	blocks: Block[],
 	output: AssistantMessage,
 	stream: AssistantMessageEventStream,
+	model: Model,
 ): void {
 	const contentBlockIndex = event.contentBlockIndex!;
 	const delta = event.delta;
@@ -300,6 +301,7 @@ function handleContentBlockDelta(
 		block.arguments = parseStreamingJson(block.partialJson);
 		stream.push({ type: "toolcall_delta", contentIndex: index, delta: delta.toolUse.input || "", partial: output });
 	} else if (delta?.reasoningContent) {
+		if (!model.reasoning) return;
 		let thinkingBlock = block;
 		let thinkingIndex = index;
 
