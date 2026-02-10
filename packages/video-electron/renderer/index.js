@@ -33,6 +33,17 @@ const videoTimelineDeletes = document.getElementById("videoTimelineDeletes");
 const audioTimelineDeletes = document.getElementById("audioTimelineDeletes");
 const videoTimelinePlayhead = document.getElementById("videoTimelinePlayhead");
 const audioTimelinePlayhead = document.getElementById("audioTimelinePlayhead");
+const transcriptResize = document.getElementById("transcriptResize");
+const transcriptCollapseBtn = document.getElementById("transcriptCollapseBtn");
+const transcriptPanel = document.querySelector(".transcript-panel");
+const appEl = document.querySelector(".app");
+const timelineRulerMarks = document.getElementById("timelineRulerMarks");
+const audioWaveform = document.getElementById("audioWaveform");
+const timelineScrubber = document.getElementById("timelineScrubber");
+const timelineScrubberThumb = document.getElementById("timelineScrubberThumb");
+const timelineAddPinBtn = document.getElementById("timelineAddPinBtn");
+const timelinePinsLayer = document.getElementById("timelinePinsLayer");
+const timelinePinsRulerLayer = document.getElementById("timelinePinsRulerLayer");
 const bubble = document.getElementById("bubble");
 const bubbleTrigger = document.getElementById("bubbleTrigger");
 const bubbleDrag = document.getElementById("bubbleDrag");
@@ -63,6 +74,13 @@ const mediaRegistry = {
 };
 let timelineSplitSecs = [];
 let selectedPreviewEntry = null;
+let isTranscriptCollapsed = false;
+let isResizingTranscript = false;
+let isScrubbing = false;
+let timelinePins = [];
+let waveformAmplitudes = null;
+let resizeTranscriptStartX = 0;
+let resizeTranscriptStartWidth = 0;
 const undoStack = [];
 const redoStack = [];
 let isApplyingHistorySnapshot = false;
@@ -124,18 +142,25 @@ async function openVideo() {
 function showVideoPreview(videoPath) {
         videoEmpty.style.display = "none";
         videoPreview.style.display = "block";
-        videoPreview.src = toFileUrl(videoPath);
+        const fileUrl = toFileUrl(videoPath);
+        videoPreview.src = fileUrl;
         videoPreview.load();
         videoSourceLabel.textContent = videoPath.split("/").pop() || videoPath;
         transcriptWords = [];
         deletedIndices = new Set();
 	timelineSplitSecs = [];
+	timelinePins = [];
+	waveformAmplitudes = null;
 	undoStack.length = 0;
 	redoStack.length = 0;
         pendingProcessingOutputPath = null;
         renderTranscript();
 	renderTimelineSplitSegments();
 	updateTimelinePlayheads();
+	generateWaveform();
+	renderTimelineRuler();
+	renderTimelinePins();
+	decodeAudioWaveform(fileUrl);
 }
 
 // ---- Video metrics ----
@@ -150,6 +175,7 @@ function updateMetrics() {
 	durationOut.textContent = formatTime(videoPreview.duration);
 	renderTimelineSplitSegments();
 	updateTimelinePlayheads();
+	renderTimelineRuler();
 }
 
 function formatTime(sec) {
@@ -436,6 +462,12 @@ function handleAgentEvent(event) {
 	                                setProcessingPhaseLabel(`Failed on ${event.toolName}`);
 	                        } else {
 	                                setProcessingPhaseLabel(`Completed ${event.toolName}`);
+	                                if (event.toolName === "run_votgo" && !pendingEditOutputPath) {
+	                                        const actualPath = parseActualOutputPath(event.result);
+	                                        if (actualPath) {
+	                                                pendingProcessingOutputPath = actualPath;
+	                                        }
+	                                }
 	                        }
 	                        break;
                 case "turn_end":
@@ -692,6 +724,16 @@ function formatToolError(result) {
                 .filter(Boolean)
                 .join(" ");
         return text;
+}
+
+function parseActualOutputPath(result) {
+        const text = extractTextFromToolResult(result);
+        if (!text) return null;
+        const arrowMatch = text.match(/(?:Cropped|Done|Converted|Extracted audio):\s*.+?\s*→\s*(.+?)(?:\s*\(|$)/m);
+        if (arrowMatch) return arrowMatch[1].trim();
+        const savedMatch = text.match(/Transcript saved:\s*(.+)/m);
+        if (savedMatch) return savedMatch[1].trim();
+        return null;
 }
 
 async function checkAndLoadEditedVideo(outputPath) {
@@ -1026,6 +1068,7 @@ function createEditorSnapshot() {
 	return {
 		deletedIndices: Array.from(deletedIndices).sort((a, b) => a - b),
 		timelineSplitSecs: [...timelineSplitSecs],
+		timelinePins: timelinePins.map((p) => ({ ...p })),
 	};
 }
 
@@ -1033,8 +1076,10 @@ function applyEditorSnapshot(snapshot) {
 	isApplyingHistorySnapshot = true;
 	deletedIndices = new Set(snapshot.deletedIndices);
 	timelineSplitSecs = [...snapshot.timelineSplitSecs].sort((a, b) => a - b);
+	timelinePins = (snapshot.timelinePins || []).map((p) => ({ ...p }));
 	renderTranscript();
 	renderTimelineSplitSegments();
+	renderTimelinePins();
 	isApplyingHistorySnapshot = false;
 }
 
@@ -1223,6 +1268,265 @@ function deriveEditedPath(inputPath) {
 
 const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".mpg", ".mpeg"]);
 const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".aac", ".m4a", ".flac", ".ogg", ".opus", ".wma"]);
+
+// ---- Transcript Sidebar Resize ----
+transcriptResize?.addEventListener("mousedown", (e) => {
+	isResizingTranscript = true;
+	resizeTranscriptStartX = e.clientX;
+	resizeTranscriptStartWidth = transcriptPanel?.offsetWidth ?? 320;
+	transcriptResize.classList.add("active");
+	document.body.style.cursor = "col-resize";
+	document.body.style.userSelect = "none";
+	e.preventDefault();
+});
+
+document.addEventListener("mousemove", (e) => {
+	if (!isResizingTranscript) return;
+	const delta = e.clientX - resizeTranscriptStartX;
+	const newWidth = Math.max(200, Math.min(600, resizeTranscriptStartWidth + delta));
+	appEl?.style.setProperty("--transcript-width", `${newWidth}px`);
+});
+
+document.addEventListener("mouseup", () => {
+	if (isResizingTranscript) {
+		isResizingTranscript = false;
+		transcriptResize?.classList.remove("active");
+		document.body.style.cursor = "";
+		document.body.style.userSelect = "";
+	}
+});
+
+// ---- Transcript Sidebar Collapse ----
+transcriptCollapseBtn?.addEventListener("click", () => {
+	isTranscriptCollapsed = !isTranscriptCollapsed;
+	appEl?.classList.toggle("transcript-collapsed", isTranscriptCollapsed);
+	if (transcriptCollapseBtn) {
+		transcriptCollapseBtn.textContent = isTranscriptCollapsed ? "\u00BB" : "\u00AB";
+		transcriptCollapseBtn.title = isTranscriptCollapsed ? "Expand sidebar" : "Collapse sidebar";
+	}
+});
+
+// ---- Audio Waveform Visualization ----
+function generateWaveform() {
+	if (!audioWaveform) return;
+	if (waveformAmplitudes) {
+		renderWaveformFromAmplitudes(waveformAmplitudes);
+		return;
+	}
+	audioWaveform.textContent = "";
+}
+
+async function decodeAudioWaveform(videoUrl) {
+	waveformAmplitudes = null;
+	if (!audioWaveform) return;
+	audioWaveform.textContent = "";
+
+	try {
+		const response = await fetch(videoUrl);
+		const arrayBuffer = await response.arrayBuffer();
+		const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+		const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+		const channelData = audioBuffer.getChannelData(0);
+
+		const bucketCount = 2000;
+		const bucketSize = Math.floor(channelData.length / bucketCount);
+		const amplitudes = new Float32Array(bucketCount);
+
+		for (let i = 0; i < bucketCount; i++) {
+			const start = i * bucketSize;
+			const end = Math.min(start + bucketSize, channelData.length);
+			let sum = 0;
+			for (let j = start; j < end; j++) {
+				sum += Math.abs(channelData[j]);
+			}
+			amplitudes[i] = sum / (end - start);
+		}
+
+		let maxAmp = 0;
+		for (let i = 0; i < amplitudes.length; i++) {
+			if (amplitudes[i] > maxAmp) maxAmp = amplitudes[i];
+		}
+		if (maxAmp > 0) {
+			for (let i = 0; i < amplitudes.length; i++) {
+				amplitudes[i] /= maxAmp;
+			}
+		}
+
+		waveformAmplitudes = amplitudes;
+		audioCtx.close();
+		renderWaveformFromAmplitudes(amplitudes);
+	} catch {
+		waveformAmplitudes = null;
+	}
+}
+
+function renderWaveformFromAmplitudes(amplitudes) {
+	if (!audioWaveform) return;
+	audioWaveform.textContent = "";
+	const containerWidth = audioWaveform.parentElement?.offsetWidth ?? 600;
+	const barWidth = 2;
+	const gap = 1;
+	const barCount = Math.floor(containerWidth / (barWidth + gap));
+	const maxHeight = 42;
+
+	for (let i = 0; i < barCount; i++) {
+		const ampIndex = Math.floor((i / barCount) * amplitudes.length);
+		const amp = amplitudes[Math.min(ampIndex, amplitudes.length - 1)];
+		const bar = document.createElement("div");
+		bar.className = "timeline-waveform-bar";
+		bar.style.height = `${Math.max(1, amp * maxHeight)}px`;
+		audioWaveform.appendChild(bar);
+	}
+}
+
+// ---- Timecode Ruler ----
+function renderTimelineRuler() {
+	if (!timelineRulerMarks) return;
+	timelineRulerMarks.textContent = "";
+	const durationSec = getActiveDurationSeconds();
+	if (!(durationSec > 0)) return;
+
+	let majorInterval;
+	if (durationSec <= 30) majorInterval = 5;
+	else if (durationSec <= 120) majorInterval = 15;
+	else if (durationSec <= 600) majorInterval = 30;
+	else majorInterval = 60;
+
+	const minorInterval = majorInterval / 5;
+
+	for (let t = 0; t <= durationSec; t += minorInterval) {
+		const pct = (t / durationSec) * 100;
+		const isMajor = Math.abs(t % majorInterval) < 0.01 || Math.abs(t % majorInterval - majorInterval) < 0.01;
+		const mark = document.createElement("div");
+		mark.className = `timeline-ruler-mark${isMajor ? " major" : ""}`;
+		mark.style.left = `${pct}%`;
+
+		const line = document.createElement("div");
+		line.className = "timeline-ruler-mark-line";
+		mark.appendChild(line);
+
+		if (isMajor) {
+			const label = document.createElement("div");
+			label.className = "timeline-ruler-mark-label";
+			label.textContent = formatTimecode(t);
+			mark.appendChild(label);
+		}
+
+		timelineRulerMarks.appendChild(mark);
+	}
+}
+
+function formatTimecode(sec) {
+	const m = Math.floor(sec / 60);
+	const s = Math.floor(sec % 60);
+	return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// ---- Timeline Scrubber (click/drag ruler to seek) ----
+function scrubToPosition(clientX) {
+	if (!timelineScrubber || !(videoPreview instanceof HTMLVideoElement)) return;
+	const rect = timelineScrubber.getBoundingClientRect();
+	if (rect.width <= 0) return;
+	const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+	const durationSec = getActiveDurationSeconds();
+	if (!(durationSec > 0)) return;
+	videoPreview.currentTime = pct * durationSec;
+	if (timelineScrubberThumb) {
+		timelineScrubberThumb.style.left = `${pct * 100}%`;
+	}
+}
+
+timelineScrubber?.addEventListener("mousedown", (e) => {
+	isScrubbing = true;
+	timelineScrubber.classList.add("active");
+	scrubToPosition(e.clientX);
+	e.preventDefault();
+});
+
+document.addEventListener("mousemove", (e) => {
+	if (!isScrubbing) return;
+	scrubToPosition(e.clientX);
+});
+
+document.addEventListener("mouseup", () => {
+	if (isScrubbing) {
+		isScrubbing = false;
+		timelineScrubber?.classList.remove("active");
+	}
+});
+
+timelineScrubber?.addEventListener("mousemove", (e) => {
+	if (isScrubbing) return;
+	if (!timelineScrubberThumb || !timelineScrubber) return;
+	const rect = timelineScrubber.getBoundingClientRect();
+	if (rect.width <= 0) return;
+	const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+	timelineScrubberThumb.style.left = `${pct * 100}%`;
+});
+
+// ---- Timeline Pins ----
+timelineAddPinBtn?.addEventListener("click", () => {
+	const currentSec = getCurrentTimeSeconds();
+	const durationSec = getActiveDurationSeconds();
+	if (!(durationSec > 0)) return;
+	if (timelinePins.some((p) => Math.abs(p.time - currentSec) < 0.05)) return;
+	timelinePins.push({ time: currentSec });
+	timelinePins.sort((a, b) => a.time - b.time);
+	renderTimelinePins();
+	addBubbleMessage("agent", `Pin added at ${formatTimecode(currentSec)}`);
+});
+
+function renderTimelinePins() {
+	if (!timelinePinsLayer || !timelinePinsRulerLayer) return;
+	timelinePinsLayer.textContent = "";
+	timelinePinsRulerLayer.textContent = "";
+	const durationSec = getActiveDurationSeconds();
+	if (!(durationSec > 0)) return;
+
+	for (let i = 0; i < timelinePins.length; i++) {
+		const pin = timelinePins[i];
+		const pct = (pin.time / durationSec) * 100;
+
+		const trackLine = document.createElement("div");
+		trackLine.className = "timeline-pin";
+		trackLine.style.left = `${pct}%`;
+		trackLine.title = `Pin at ${formatTimecode(pin.time)} (click to seek, right-click to remove)`;
+		trackLine.addEventListener("click", () => {
+			if (videoPreview instanceof HTMLVideoElement) {
+				videoPreview.currentTime = pin.time;
+			}
+		});
+		trackLine.addEventListener("contextmenu", (e) => {
+			e.preventDefault();
+			timelinePins.splice(i, 1);
+			renderTimelinePins();
+			addBubbleMessage("agent", `Pin removed at ${formatTimecode(pin.time)}`);
+		});
+		timelinePinsLayer.appendChild(trackLine);
+
+		const rulerMark = document.createElement("div");
+		rulerMark.className = "timeline-pin-ruler";
+		rulerMark.style.left = `${pct}%`;
+		rulerMark.title = `Pin at ${formatTimecode(pin.time)}`;
+		rulerMark.addEventListener("click", () => {
+			if (videoPreview instanceof HTMLVideoElement) {
+				videoPreview.currentTime = pin.time;
+			}
+		});
+		rulerMark.addEventListener("contextmenu", (e) => {
+			e.preventDefault();
+			timelinePins.splice(i, 1);
+			renderTimelinePins();
+		});
+		timelinePinsRulerLayer.appendChild(rulerMark);
+	}
+}
+
+// ---- Window resize ----
+window.addEventListener("resize", () => {
+	generateWaveform();
+	renderTimelineRuler();
+});
 
 window.__setTranscriptData = setTranscriptData;
 renderMediaRegistry();
