@@ -18,11 +18,17 @@ const videoInputsList = document.getElementById("videoInputsList");
 const audioInputsList = document.getElementById("audioInputsList");
 const videoOutputsList = document.getElementById("videoOutputsList");
 const audioOutputsList = document.getElementById("audioOutputsList");
+const inputFolderCount = document.getElementById("inputFolderCount");
+const outputFolderCount = document.getElementById("outputFolderCount");
+const ioPreviewTitle = document.getElementById("ioPreviewTitle");
+const ioPreviewContent = document.getElementById("ioPreviewContent");
 const processingOverlay = document.getElementById("processingOverlay");
 const processingStatus = document.getElementById("processingStatus");
 const processingPhase = document.getElementById("processingPhase");
 const processingElapsed = document.getElementById("processingElapsed");
 const processingTasks = document.getElementById("processingTasks");
+const videoTimelineSegments = document.getElementById("videoTimelineSegments");
+const audioTimelineSegments = document.getElementById("audioTimelineSegments");
 const videoTimelineDeletes = document.getElementById("videoTimelineDeletes");
 const audioTimelineDeletes = document.getElementById("audioTimelineDeletes");
 const videoTimelinePlayhead = document.getElementById("videoTimelinePlayhead");
@@ -55,6 +61,12 @@ const mediaRegistry = {
 		output: new Set(),
 	},
 };
+let timelineSplitSecs = [];
+let selectedPreviewEntry = null;
+const undoStack = [];
+const redoStack = [];
+let isApplyingHistorySnapshot = false;
+const HISTORY_LIMIT = 200;
 
 // ---- Init ----
 if (window.videoAgent) {
@@ -64,6 +76,10 @@ if (window.videoAgent) {
 		}
 	});
 }
+
+videoTimelineSegments?.parentElement?.addEventListener("dblclick", handleTimelineSplitDblClick);
+audioTimelineSegments?.parentElement?.addEventListener("dblclick", handleTimelineSplitDblClick);
+document.addEventListener("keydown", handleGlobalUndoRedoShortcut);
 
 // ---- Set model to GLM-4.7 on startup ----
 async function initModel() {
@@ -113,8 +129,12 @@ function showVideoPreview(videoPath) {
         videoSourceLabel.textContent = videoPath.split("/").pop() || videoPath;
         transcriptWords = [];
         deletedIndices = new Set();
+	timelineSplitSecs = [];
+	undoStack.length = 0;
+	redoStack.length = 0;
         pendingProcessingOutputPath = null;
         renderTranscript();
+	renderTimelineSplitSegments();
 	updateTimelinePlayheads();
 }
 
@@ -128,6 +148,7 @@ function updateMetrics() {
 	if (!(videoPreview instanceof HTMLVideoElement)) return;
 	currentTimeOut.textContent = formatTime(videoPreview.currentTime);
 	durationOut.textContent = formatTime(videoPreview.duration);
+	renderTimelineSplitSegments();
 	updateTimelinePlayheads();
 }
 
@@ -251,20 +272,18 @@ function renderTranscript() {
 }
 
 function toggleWord(index) {
+	recordUndoSnapshot();
 	if (deletedIndices.has(index)) {
 		deletedIndices.delete(index);
 	} else {
 		deletedIndices.add(index);
 	}
-	const wordEl = transcriptBody.querySelector(`[data-index="${index}"]`);
-	if (wordEl) {
-		wordEl.classList.toggle("selected", deletedIndices.has(index));
-	}
-	deletedCountEl.textContent = String(deletedIndices.size);
-	renderTimelineDeletedSegments();
+	renderTranscript();
 }
 
 clearDeletesBtn?.addEventListener("click", () => {
+	if (deletedIndices.size === 0) return;
+	recordUndoSnapshot();
 	deletedIndices = new Set();
 	renderTranscript();
 });
@@ -749,17 +768,22 @@ function addMediaPath(kind, direction, path) {
 	if (!bucket) return;
 	if (bucket.has(path)) return;
 	bucket.add(path);
+	if (!selectedPreviewEntry || direction === "output") {
+		selectedPreviewEntry = { path, kind, direction };
+	}
 	renderMediaRegistry();
 }
 
 function renderMediaRegistry() {
-	renderMediaList(videoInputsList, mediaRegistry.video.input);
-	renderMediaList(audioInputsList, mediaRegistry.audio.input);
-	renderMediaList(videoOutputsList, mediaRegistry.video.output);
-	renderMediaList(audioOutputsList, mediaRegistry.audio.output);
+	renderMediaList(videoInputsList, mediaRegistry.video.input, "video", "input");
+	renderMediaList(audioInputsList, mediaRegistry.audio.input, "audio", "input");
+	renderMediaList(videoOutputsList, mediaRegistry.video.output, "video", "output");
+	renderMediaList(audioOutputsList, mediaRegistry.audio.output, "audio", "output");
+	updateFolderCounts();
+	renderSelectedPreview();
 }
 
-function renderMediaList(container, values) {
+function renderMediaList(container, values, kind, direction) {
 	if (!container) return;
 	container.textContent = "";
 	const entries = Array.from(values);
@@ -773,10 +797,78 @@ function renderMediaList(container, values) {
 	for (const entry of entries.slice().reverse()) {
 		const item = document.createElement("li");
 		item.className = "io-item";
-		item.textContent = basenameFromPath(entry);
-		item.title = entry;
+		const button = document.createElement("button");
+		button.className = "io-item-btn";
+		button.type = "button";
+		button.textContent = basenameFromPath(entry);
+		button.title = entry;
+		if (
+			selectedPreviewEntry &&
+			selectedPreviewEntry.path === entry &&
+			selectedPreviewEntry.kind === kind &&
+			selectedPreviewEntry.direction === direction
+		) {
+			button.classList.add("selected");
+		}
+		button.addEventListener("click", () => {
+			selectedPreviewEntry = { path: entry, kind, direction };
+			renderMediaRegistry();
+		});
+		item.appendChild(button);
 		container.appendChild(item);
 	}
+}
+
+function updateFolderCounts() {
+	const inputCount = mediaRegistry.video.input.size + mediaRegistry.audio.input.size;
+	const outputCount = mediaRegistry.video.output.size + mediaRegistry.audio.output.size;
+	if (inputFolderCount) inputFolderCount.textContent = String(inputCount);
+	if (outputFolderCount) outputFolderCount.textContent = String(outputCount);
+}
+
+function renderSelectedPreview() {
+	if (!ioPreviewTitle || !ioPreviewContent) return;
+	ioPreviewContent.textContent = "";
+	if (!selectedPreviewEntry) {
+		ioPreviewTitle.textContent = "Preview";
+		const empty = document.createElement("div");
+		empty.className = "io-preview-empty";
+		empty.textContent = "Choose a file from Inputs or Outputs.";
+		ioPreviewContent.appendChild(empty);
+		return;
+	}
+
+	ioPreviewTitle.textContent = `${selectedPreviewEntry.direction.toUpperCase()} / ${selectedPreviewEntry.kind.toUpperCase()}`;
+
+	const meta = document.createElement("div");
+	meta.className = "io-preview-meta";
+	meta.textContent = selectedPreviewEntry.path;
+	ioPreviewContent.appendChild(meta);
+
+	if (selectedPreviewEntry.kind === "video") {
+		const preview = document.createElement("video");
+		preview.className = "io-preview-video";
+		preview.controls = true;
+		preview.preload = "metadata";
+		preview.src = toFileUrl(selectedPreviewEntry.path);
+		ioPreviewContent.appendChild(preview);
+		return;
+	}
+
+	if (selectedPreviewEntry.kind === "audio") {
+		const preview = document.createElement("audio");
+		preview.className = "io-preview-audio";
+		preview.controls = true;
+		preview.preload = "metadata";
+		preview.src = toFileUrl(selectedPreviewEntry.path);
+		ioPreviewContent.appendChild(preview);
+		return;
+	}
+
+	const fallback = document.createElement("div");
+	fallback.className = "io-preview-empty";
+	fallback.textContent = "Preview unavailable for this file type.";
+	ioPreviewContent.appendChild(fallback);
 }
 
 function basenameFromPath(path) {
@@ -870,6 +962,121 @@ function getActiveDurationSeconds() {
 		}
 	}
 	return maxEnd;
+}
+
+function handleTimelineSplitDblClick(event) {
+	const currentTarget = event.currentTarget;
+	if (!(currentTarget instanceof HTMLElement)) return;
+	const durationSec = getActiveDurationSeconds();
+	if (!(durationSec > 0)) return;
+	const rect = currentTarget.getBoundingClientRect();
+	if (rect.width <= 0) return;
+	const clickPct = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+	const splitSec = Number((clickPct * durationSec).toFixed(3));
+	const edgePaddingSec = 0.05;
+	if (splitSec <= edgePaddingSec || splitSec >= durationSec - edgePaddingSec) {
+		return;
+	}
+	if (timelineSplitSecs.some((value) => Math.abs(value - splitSec) < 0.01)) {
+		return;
+	}
+	recordUndoSnapshot();
+	timelineSplitSecs.push(splitSec);
+	timelineSplitSecs.sort((a, b) => a - b);
+	renderTimelineSplitSegments();
+	addBubbleMessage("agent", `Split added at ${splitSec.toFixed(2)}s`);
+}
+
+function renderTimelineSplitSegments() {
+	const durationSec = getActiveDurationSeconds();
+	renderTimelineSegmentsForTrack(videoTimelineSegments, "video", durationSec);
+	renderTimelineSegmentsForTrack(audioTimelineSegments, "audio", durationSec);
+}
+
+function renderTimelineSegmentsForTrack(container, kind, durationSec) {
+	if (!container) return;
+	container.textContent = "";
+	if (!(durationSec > 0)) return;
+	const orderedSplits = timelineSplitSecs
+		.filter((value) => value > 0 && value < durationSec)
+		.sort((a, b) => a - b);
+	const boundaries = [0, ...orderedSplits, durationSec];
+	for (let i = 0; i < boundaries.length - 1; i++) {
+		const start = boundaries[i];
+		const end = boundaries[i + 1];
+		if (!(end > start)) continue;
+		const leftPct = (start / durationSec) * 100;
+		const widthPct = ((end - start) / durationSec) * 100;
+		const segment = document.createElement("div");
+		segment.className = `timeline-segment ${kind}`;
+		segment.style.left = `${leftPct}%`;
+		segment.style.width = `${widthPct}%`;
+		container.appendChild(segment);
+	}
+}
+
+function recordUndoSnapshot() {
+	if (isApplyingHistorySnapshot) return;
+	undoStack.push(createEditorSnapshot());
+	if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+	redoStack.length = 0;
+}
+
+function createEditorSnapshot() {
+	return {
+		deletedIndices: Array.from(deletedIndices).sort((a, b) => a - b),
+		timelineSplitSecs: [...timelineSplitSecs],
+	};
+}
+
+function applyEditorSnapshot(snapshot) {
+	isApplyingHistorySnapshot = true;
+	deletedIndices = new Set(snapshot.deletedIndices);
+	timelineSplitSecs = [...snapshot.timelineSplitSecs].sort((a, b) => a - b);
+	renderTranscript();
+	renderTimelineSplitSegments();
+	isApplyingHistorySnapshot = false;
+}
+
+function undoEditorChange() {
+	if (undoStack.length === 0) return;
+	redoStack.push(createEditorSnapshot());
+	const previous = undoStack.pop();
+	if (!previous) return;
+	applyEditorSnapshot(previous);
+}
+
+function redoEditorChange() {
+	if (redoStack.length === 0) return;
+	undoStack.push(createEditorSnapshot());
+	const next = redoStack.pop();
+	if (!next) return;
+	applyEditorSnapshot(next);
+}
+
+function handleGlobalUndoRedoShortcut(event) {
+	if (!(event.metaKey || event.ctrlKey)) return;
+	if (shouldBypassGlobalShortcut(event.target)) return;
+
+	const key = event.key.toLowerCase();
+	if (key === "z" && !event.shiftKey) {
+		event.preventDefault();
+		undoEditorChange();
+		return;
+	}
+
+	const isRedo = key === "y" || (key === "z" && event.shiftKey);
+	if (isRedo) {
+		event.preventDefault();
+		redoEditorChange();
+	}
+}
+
+function shouldBypassGlobalShortcut(target) {
+	if (!(target instanceof HTMLElement)) return false;
+	if (target.isContentEditable) return true;
+	const tag = target.tagName.toLowerCase();
+	return tag === "input" || tag === "textarea" || tag === "select";
 }
 
 // ---- Bubble drag ----

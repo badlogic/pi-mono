@@ -17,3 +17,4 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 ### Changed
 - Improved the renderer processing overlay with explicit phase labels, elapsed-time tracking, and a live tool task list so users can see when the agent is still running.
 - Added a bottom transcript-sidebar media I/O panel (video/audio inputs and outputs) and synchronized video/audio timeline lanes in the preview footer.
+- Added timeline double-click split markers, global undo/redo shortcuts (`Cmd/Ctrl+Z`, `Cmd/Ctrl+Y`, `Cmd/Ctrl+Shift+Z`), and folder-style media I/O entries with clickable audio/video file previews.

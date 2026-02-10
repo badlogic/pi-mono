@@ -255,6 +255,19 @@
 					text-transform: uppercase;
 				}
 
+				.io-col-title-row {
+					display: flex;
+					align-items: center;
+					justify-content: space-between;
+					gap: 8px;
+				}
+
+				.io-col-count {
+					font-family: var(--font-mono);
+					font-size: 9px;
+					color: var(--fg-muted);
+				}
+
 				.io-kind {
 					display: flex;
 					flex-direction: column;
@@ -284,9 +297,85 @@
 					overflow: hidden;
 				}
 
+				.io-item-btn {
+					width: 100%;
+					border: 1px solid transparent;
+					border-radius: 4px;
+					background: transparent;
+					color: inherit;
+					text-align: left;
+					font-family: inherit;
+					font-size: inherit;
+					padding: 3px 4px;
+					cursor: pointer;
+					white-space: nowrap;
+					text-overflow: ellipsis;
+					overflow: hidden;
+				}
+
+				.io-item-btn:hover {
+					border-color: var(--border-hover);
+					background: rgba(255, 255, 255, 0.04);
+				}
+
+				.io-item-btn.selected {
+					border-color: rgba(110, 231, 183, 0.45);
+					background: rgba(110, 231, 183, 0.12);
+					color: var(--accent);
+				}
+
 				.io-empty {
 					font-size: 9px;
 					color: var(--fg-muted);
+				}
+
+				.io-preview {
+					border: 1px solid var(--border);
+					border-radius: var(--radius-sm);
+					padding: 8px;
+					background: rgba(255, 255, 255, 0.01);
+					display: flex;
+					flex-direction: column;
+					gap: 6px;
+				}
+
+				.io-preview-title {
+					font-family: var(--font-mono);
+					font-size: 9px;
+					color: var(--fg-muted);
+					letter-spacing: 0.05em;
+					text-transform: uppercase;
+				}
+
+				.io-preview-body {
+					min-height: 62px;
+					display: flex;
+					flex-direction: column;
+					gap: 6px;
+				}
+
+				.io-preview-empty {
+					font-size: 10px;
+					color: var(--fg-muted);
+				}
+
+				.io-preview-meta {
+					font-family: var(--font-mono);
+					font-size: 9px;
+					color: var(--fg-dim);
+					word-break: break-all;
+				}
+
+				.io-preview-video {
+					width: 100%;
+					max-height: 120px;
+					border: 1px solid var(--border);
+					border-radius: 6px;
+					background: #000;
+				}
+
+				.io-preview-audio {
+					width: 100%;
 				}
 
 			/* ---- Video Area (Right / Main) ---- */
@@ -548,6 +637,7 @@
 					border-radius: var(--radius-sm);
 					overflow: hidden;
 					border: 1px solid var(--border);
+					cursor: col-resize;
 				}
 
 				.timeline-track.video {
@@ -572,6 +662,27 @@
 					pointer-events: none;
 				}
 
+				.timeline-segments {
+					position: absolute;
+					inset: 0;
+					pointer-events: none;
+				}
+
+				.timeline-segment {
+					position: absolute;
+					top: 0;
+					height: 100%;
+					border-right: 1px solid rgba(255, 255, 255, 0.28);
+				}
+
+				.timeline-segment.video {
+					background: rgba(110, 231, 183, 0.16);
+				}
+
+				.timeline-segment.audio {
+					background: rgba(196, 181, 253, 0.18);
+				}
+
 				.timeline-delete-segment {
 					position: absolute;
 					top: 0;
@@ -589,6 +700,12 @@
 					background: var(--fg);
 					box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
 					transform: translateX(-1px);
+				}
+
+				.timeline-hint {
+					font-size: 9px;
+					color: var(--fg-muted);
+					font-family: var(--font-mono);
 				}
 
 			/* ---- Floating Prompt Bubble ---- */
@@ -905,28 +1022,38 @@
 					<div class="io-panel">
 						<div class="io-panel-title">Media I/O</div>
 						<div class="io-grid">
-							<div class="io-col">
-								<div class="io-col-title">Inputs</div>
-								<div class="io-kind">
-									<div class="io-kind-label">Video</div>
-									<ul class="io-list" id="videoInputsList"></ul>
-								</div>
+								<div class="io-col">
+									<div class="io-col-title-row">
+										<div class="io-col-title">Inputs</div>
+										<div class="io-col-count" id="inputFolderCount">0</div>
+									</div>
+									<div class="io-kind">
+										<div class="io-kind-label">Video</div>
+										<ul class="io-list" id="videoInputsList"></ul>
+									</div>
 								<div class="io-kind">
 									<div class="io-kind-label">Audio</div>
 									<ul class="io-list" id="audioInputsList"></ul>
 								</div>
 							</div>
-							<div class="io-col">
-								<div class="io-col-title">Outputs</div>
-								<div class="io-kind">
-									<div class="io-kind-label">Video</div>
-									<ul class="io-list" id="videoOutputsList"></ul>
+								<div class="io-col">
+									<div class="io-col-title-row">
+										<div class="io-col-title">Outputs</div>
+										<div class="io-col-count" id="outputFolderCount">0</div>
+									</div>
+									<div class="io-kind">
+										<div class="io-kind-label">Video</div>
+										<ul class="io-list" id="videoOutputsList"></ul>
 								</div>
 								<div class="io-kind">
 									<div class="io-kind-label">Audio</div>
 									<ul class="io-list" id="audioOutputsList"></ul>
 								</div>
 							</div>
+						</div>
+						<div class="io-preview">
+							<div class="io-preview-title" id="ioPreviewTitle">Preview</div>
+							<div class="io-preview-body" id="ioPreviewContent"></div>
 						</div>
 					</div>
 					<div class="transcript-status">
@@ -966,23 +1093,26 @@
 							<span><span class="label">Duration</span> <span id="durationOut">0:00</span></span>
 						</div>
 					</div>
-					<div class="timeline-panel">
-						<div class="timeline-lane">
-							<div class="timeline-lane-label">Video</div>
-							<div class="timeline-track video">
-								<div class="timeline-deletes" id="videoTimelineDeletes"></div>
-								<div class="timeline-playhead" id="videoTimelinePlayhead"></div>
+						<div class="timeline-panel">
+							<div class="timeline-lane">
+								<div class="timeline-lane-label">Video</div>
+								<div class="timeline-track video">
+									<div class="timeline-segments" id="videoTimelineSegments"></div>
+									<div class="timeline-deletes" id="videoTimelineDeletes"></div>
+									<div class="timeline-playhead" id="videoTimelinePlayhead"></div>
+								</div>
 							</div>
-						</div>
-						<div class="timeline-lane">
-							<div class="timeline-lane-label">Audio</div>
-							<div class="timeline-track audio">
-								<div class="timeline-deletes" id="audioTimelineDeletes"></div>
-								<div class="timeline-playhead" id="audioTimelinePlayhead"></div>
+							<div class="timeline-lane">
+								<div class="timeline-lane-label">Audio</div>
+								<div class="timeline-track audio">
+									<div class="timeline-segments" id="audioTimelineSegments"></div>
+									<div class="timeline-deletes" id="audioTimelineDeletes"></div>
+									<div class="timeline-playhead" id="audioTimelinePlayhead"></div>
+								</div>
 							</div>
+							<div class="timeline-hint">Double-click timeline to split. Undo: Cmd/Ctrl+Z, Redo: Cmd/Ctrl+Y.</div>
 						</div>
 					</div>
-				</div>
 			</div>
 		</div>
 
