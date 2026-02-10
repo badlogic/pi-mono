@@ -53,8 +53,8 @@ describe("google-gemini-cli Claude thinking header", () => {
 		global.fetch = fetchMock as typeof fetch;
 
 		const model: Model<"google-gemini-cli"> = {
-			id: "claude-opus-4-5-thinking",
-			name: "Claude Opus 4.5 Thinking",
+			id: "claude-opus-4-6-thinking",
+			name: "Claude Opus 4.6 Thinking",
 			api: "google-gemini-cli",
 			provider: "google-antigravity",
 			baseUrl: "https://cloudcode-pa.googleapis.com",

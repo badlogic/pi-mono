@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- Updated Antigravity `claude-opus-4-5-thinking` to `claude-opus-4-6-thinking` as it is now available on the endpoint.
+
 ## [0.52.9] - 2026-02-08
 
 ### Changed
