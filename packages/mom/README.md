@@ -30,7 +30,7 @@ npm install @mariozechner/pi-mom
 
 1. Create a new Slack app at https://api.slack.com/apps
 2. Enable **Socket Mode** (Settings → Socket Mode → Enable)
-3. Generate an **App-Level Token** with `connections:write` scope. This is `MOM_SLACK_APP_TOKEN`
+3. Generate an **App-Level Token** (Settings → Basic Information) with `connections:write` scope. This is `MOM_SLACK_APP_TOKEN`
 4. Add **Bot Token Scopes** (OAuth & Permissions):
    - `app_mentions:read`
    - `channels:history`
