@@ -5025,7 +5025,7 @@ export const MODELS = {
 				cacheRead: 0.125,
 				cacheWrite: 0,
 			},
-			contextWindow: 272000,
+			contextWindow: 400000,
 			maxTokens: 128000,
 		} satisfies Model<"openai-codex-responses">,
 		"gpt-5.1-codex-max": {
@@ -5042,7 +5042,7 @@ export const MODELS = {
 				cacheRead: 0.125,
 				cacheWrite: 0,
 			},
-			contextWindow: 272000,
+			contextWindow: 400000,
 			maxTokens: 128000,
 		} satisfies Model<"openai-codex-responses">,
 		"gpt-5.1-codex-mini": {
@@ -5059,7 +5059,7 @@ export const MODELS = {
 				cacheRead: 0.025,
 				cacheWrite: 0,
 			},
-			contextWindow: 272000,
+			contextWindow: 400000,
 			maxTokens: 128000,
 		} satisfies Model<"openai-codex-responses">,
 		"gpt-5.2": {
@@ -5076,7 +5076,7 @@ export const MODELS = {
 				cacheRead: 0.175,
 				cacheWrite: 0,
 			},
-			contextWindow: 272000,
+			contextWindow: 400000,
 			maxTokens: 128000,
 		} satisfies Model<"openai-codex-responses">,
 		"gpt-5.2-codex": {
@@ -5093,7 +5093,7 @@ export const MODELS = {
 				cacheRead: 0.175,
 				cacheWrite: 0,
 			},
-			contextWindow: 272000,
+			contextWindow: 400000,
 			maxTokens: 128000,
 		} satisfies Model<"openai-codex-responses">,
 		"gpt-5.3-codex": {
@@ -5110,7 +5110,7 @@ export const MODELS = {
 				cacheRead: 0.175,
 				cacheWrite: 0,
 			},
-			contextWindow: 272000,
+			contextWindow: 400000,
 			maxTokens: 128000,
 		} satisfies Model<"openai-codex-responses">,
 	},
