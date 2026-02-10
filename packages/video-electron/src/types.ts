@@ -126,6 +126,7 @@ export interface VotgoRunResult {
 export interface VideoClipMeta {
 	id: string;
 	path: string;
+	source?: "input" | "output";
 	durationSec: number;
 	width: number;
 	height: number;
@@ -139,10 +140,21 @@ export interface VideoProjectManifestV1 {
 	version: 1;
 	projectId: string;
 	rootPath: string;
+	inputsPath?: string;
+	outputsPath?: string;
+	changeLogPath?: string;
 	createdAt: string;
 	updatedAt: string;
 	clips: VideoClipMeta[];
 	activeTimelineId?: string;
+}
+
+export interface ProjectChangeLogEntryV1 {
+	version: 1;
+	eventId: string;
+	timestamp: string;
+	eventType: string;
+	details: Record<string, unknown>;
 }
 
 export interface TimelineSegment {

@@ -609,18 +609,71 @@
 					width: 100%;
 					display: flex;
 					flex-direction: column;
-					gap: 6px;
-					padding: 8px 10px;
+					gap: 0;
+					padding: 0;
 					border: 1px solid var(--border);
 					border-radius: var(--radius-md);
-					background: rgba(255, 255, 255, 0.01);
+					background: var(--bg-surface);
+					overflow: hidden;
+					position: relative;
+				}
+
+				.timeline-ruler {
+					height: 22px;
+					background: var(--bg-elevated);
+					border-bottom: 1px solid var(--border);
+					position: relative;
+					display: flex;
+					align-items: flex-end;
+					padding: 0 42px 0 50px;
+					overflow: hidden;
+				}
+
+				.timeline-ruler-marks {
+					position: relative;
+					width: 100%;
+					height: 100%;
+				}
+
+				.timeline-ruler-mark {
+					position: absolute;
+					bottom: 0;
+					display: flex;
+					flex-direction: column;
+					align-items: center;
+				}
+
+				.timeline-ruler-mark-line {
+					width: 1px;
+					height: 6px;
+					background: var(--fg-muted);
+				}
+
+				.timeline-ruler-mark.major .timeline-ruler-mark-line {
+					height: 10px;
+					background: var(--fg-dim);
+				}
+
+				.timeline-ruler-mark-label {
+					font-family: var(--font-mono);
+					font-size: 8px;
+					color: var(--fg-muted);
+					position: absolute;
+					bottom: 10px;
+					white-space: nowrap;
+					transform: translateX(-50%);
 				}
 
 				.timeline-lane {
 					display: grid;
-					grid-template-columns: 42px 1fr;
-					gap: 8px;
-					align-items: center;
+					grid-template-columns: 50px 1fr;
+					gap: 0;
+					align-items: stretch;
+					border-bottom: 1px solid var(--border);
+				}
+
+				.timeline-lane:last-of-type {
+					border-bottom: none;
 				}
 
 				.timeline-lane-label {
@@ -629,31 +682,48 @@
 					letter-spacing: 0.05em;
 					text-transform: uppercase;
 					color: var(--fg-dim);
+					padding: 0 8px;
+					display: flex;
+					align-items: center;
+					background: var(--bg-elevated);
+					border-right: 1px solid var(--border);
 				}
 
 				.timeline-track {
 					position: relative;
-					height: 18px;
-					border-radius: var(--radius-sm);
 					overflow: hidden;
-					border: 1px solid var(--border);
 					cursor: col-resize;
+					border: none;
+					border-radius: 0;
 				}
 
 				.timeline-track.video {
-					background: linear-gradient(90deg, rgba(110, 231, 183, 0.17), rgba(96, 165, 250, 0.2));
+					height: 40px;
+					background: var(--bg-panel);
 				}
 
 				.timeline-track.audio {
-					background:
-						repeating-linear-gradient(
-							90deg,
-							rgba(248, 250, 252, 0.1) 0,
-							rgba(248, 250, 252, 0.1) 1px,
-							transparent 1px,
-							transparent 6px
-						),
-						linear-gradient(90deg, rgba(196, 181, 253, 0.18), rgba(251, 191, 36, 0.16));
+					height: 50px;
+					background: var(--bg-panel);
+				}
+
+				.timeline-waveform {
+					position: absolute;
+					inset: 0;
+					display: flex;
+					align-items: center;
+					gap: 1px;
+					padding: 4px 0;
+					pointer-events: none;
+					opacity: 0.5;
+				}
+
+				.timeline-waveform-bar {
+					flex-shrink: 0;
+					width: 2px;
+					background: rgba(196, 181, 253, 0.5);
+					border-radius: 1px;
+					min-height: 2px;
 				}
 
 				.timeline-deletes {
@@ -670,26 +740,30 @@
 
 				.timeline-segment {
 					position: absolute;
-					top: 0;
-					height: 100%;
-					border-right: 1px solid rgba(255, 255, 255, 0.28);
+					top: 2px;
+					height: calc(100% - 4px);
+					border-radius: 4px;
+					border-right: none;
 				}
 
 				.timeline-segment.video {
-					background: rgba(110, 231, 183, 0.16);
+					background: linear-gradient(180deg, rgba(110, 231, 183, 0.3) 0%, rgba(110, 231, 183, 0.15) 100%);
+					border: 1px solid rgba(110, 231, 183, 0.25);
 				}
 
 				.timeline-segment.audio {
-					background: rgba(196, 181, 253, 0.18);
+					background: linear-gradient(180deg, rgba(196, 181, 253, 0.3) 0%, rgba(196, 181, 253, 0.15) 100%);
+					border: 1px solid rgba(196, 181, 253, 0.25);
 				}
 
 				.timeline-delete-segment {
 					position: absolute;
 					top: 0;
 					height: 100%;
-					background: rgba(248, 113, 113, 0.26);
-					border-left: 1px solid rgba(248, 113, 113, 0.55);
-					border-right: 1px solid rgba(248, 113, 113, 0.55);
+					background: rgba(248, 113, 113, 0.2);
+					border-left: 1px solid rgba(248, 113, 113, 0.5);
+					border-right: 1px solid rgba(248, 113, 113, 0.5);
+					z-index: 3;
 				}
 
 				.timeline-playhead {
@@ -697,15 +771,32 @@
 					top: 0;
 					height: 100%;
 					width: 2px;
-					background: var(--fg);
-					box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+					background: #fff;
+					box-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
+					z-index: 5;
 					transform: translateX(-1px);
+				}
+
+				.timeline-playhead::before {
+					content: '';
+					position: absolute;
+					top: -4px;
+					left: 50%;
+					transform: translateX(-50%);
+					width: 0;
+					height: 0;
+					border-left: 5px solid transparent;
+					border-right: 5px solid transparent;
+					border-top: 5px solid #fff;
 				}
 
 				.timeline-hint {
 					font-size: 9px;
 					color: var(--fg-muted);
 					font-family: var(--font-mono);
+					padding: 4px 8px;
+					background: var(--bg-elevated);
+					border-top: 1px solid var(--border);
 				}
 
 			/* ---- Floating Prompt Bubble ---- */
@@ -996,6 +1087,238 @@
 				background-size: 128px 128px;
 			}
 
+			/* ---- Transcript Resize Handle ---- */
+			.transcript-resize {
+				position: absolute;
+				top: 0;
+				right: -4px;
+				width: 8px;
+				height: 100%;
+				cursor: col-resize;
+				z-index: 10;
+				transition: background 0.15s ease;
+			}
+
+			.transcript-resize:hover,
+			.transcript-resize.active {
+				background: var(--accent);
+				opacity: 0.4;
+			}
+
+			/* ---- Timeline Scrubber ---- */
+			.timeline-scrubber {
+				position: absolute;
+				top: 0;
+				left: 50px;
+				right: 0;
+				height: 22px;
+				cursor: pointer;
+				z-index: 6;
+			}
+
+			.timeline-scrubber:hover {
+				background: rgba(255, 255, 255, 0.03);
+			}
+
+			.timeline-scrubber-thumb {
+				position: absolute;
+				top: 0;
+				width: 2px;
+				height: 100%;
+				background: #fff;
+				pointer-events: none;
+				display: none;
+			}
+
+			.timeline-scrubber-thumb::after {
+				content: '';
+				position: absolute;
+				bottom: -2px;
+				left: 50%;
+				transform: translateX(-50%);
+				width: 0;
+				height: 0;
+				border-left: 4px solid transparent;
+				border-right: 4px solid transparent;
+				border-top: 4px solid #fff;
+			}
+
+			.timeline-scrubber.active .timeline-scrubber-thumb,
+			.timeline-scrubber:hover .timeline-scrubber-thumb {
+				display: block;
+			}
+
+			/* ---- Timeline Pins ---- */
+			.timeline-pin {
+				position: absolute;
+				top: 0;
+				width: 2px;
+				height: 100%;
+				background: #facc15;
+				z-index: 7;
+				transform: translateX(-1px);
+				pointer-events: auto;
+				cursor: pointer;
+			}
+
+			.timeline-pin::before {
+				content: '';
+				position: absolute;
+				top: -3px;
+				left: 50%;
+				transform: translateX(-50%);
+				width: 8px;
+				height: 8px;
+				background: #facc15;
+				border-radius: 50% 50% 50% 0;
+				transform: translateX(-50%) rotate(-45deg);
+			}
+
+			.timeline-pin:hover {
+				background: #fde047;
+			}
+
+			.timeline-pin:hover::before {
+				background: #fde047;
+			}
+
+			.timeline-pin-label {
+				position: absolute;
+				top: -16px;
+				left: 50%;
+				transform: translateX(-50%);
+				font-family: var(--font-mono);
+				font-size: 8px;
+				color: #facc15;
+				white-space: nowrap;
+				pointer-events: none;
+			}
+
+			.timeline-pins-layer {
+				position: absolute;
+				top: 22px;
+				left: 50px;
+				right: 0;
+				bottom: 0;
+				pointer-events: none;
+				z-index: 7;
+			}
+
+			.timeline-pins-ruler-layer {
+				position: absolute;
+				top: 0;
+				left: 50px;
+				right: 0;
+				height: 22px;
+				pointer-events: none;
+				z-index: 8;
+			}
+
+			.timeline-pin-ruler {
+				position: absolute;
+				top: 2px;
+				width: 2px;
+				height: calc(100% - 2px);
+				background: rgba(250, 204, 21, 0.6);
+				pointer-events: auto;
+				cursor: pointer;
+				transform: translateX(-1px);
+			}
+
+			.timeline-pin-ruler::before {
+				content: '';
+				position: absolute;
+				top: -1px;
+				left: 50%;
+				transform: translateX(-50%) rotate(-45deg);
+				width: 6px;
+				height: 6px;
+				background: #facc15;
+				border-radius: 50% 50% 50% 0;
+			}
+
+			.timeline-add-pin-btn {
+				position: absolute;
+				top: 0;
+				right: 0;
+				width: 22px;
+				height: 22px;
+				background: var(--bg-elevated);
+				border: none;
+				border-left: 1px solid var(--border);
+				color: #facc15;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				font-size: 14px;
+				font-family: var(--font-mono);
+				z-index: 10;
+				transition: all 0.15s ease;
+			}
+
+			.timeline-add-pin-btn:hover {
+				background: rgba(250, 204, 21, 0.15);
+			}
+
+			.timeline-add-pin-btn svg {
+				width: 12px;
+				height: 12px;
+			}
+
+			/* ---- Transcript Collapse ---- */
+			.transcript-collapse-btn {
+				width: 28px;
+				height: 28px;
+				border: 1px solid var(--border);
+				border-radius: var(--radius-sm);
+				background: transparent;
+				color: var(--fg-dim);
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				font-size: 14px;
+				font-family: var(--font-mono);
+				transition: all 0.15s ease;
+				flex-shrink: 0;
+			}
+
+			.transcript-collapse-btn:hover {
+				border-color: var(--accent);
+				color: var(--accent);
+				background: var(--accent-dim);
+			}
+
+			.app.transcript-collapsed .transcript-panel {
+				width: 36px;
+				min-width: 36px;
+			}
+
+			.app.transcript-collapsed {
+				grid-template-columns: 36px 1fr;
+			}
+
+			.app.transcript-collapsed .transcript-header h2,
+			.app.transcript-collapsed .transcript-actions,
+			.app.transcript-collapsed .transcript-body,
+			.app.transcript-collapsed .io-panel,
+			.app.transcript-collapsed .transcript-status {
+				display: none;
+			}
+
+			.app.transcript-collapsed .transcript-header {
+				padding: 8px 4px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				border-bottom: none;
+			}
+
+			.app.transcript-collapsed .transcript-resize {
+				display: none;
+			}
+
 			/* ---- Hidden file input ---- */
 			#videoPicker { display: none; }
 		</style>
@@ -1005,13 +1328,14 @@
 		<div class="app">
 			<!-- LEFT: Transcript Panel -->
 			<aside class="transcript-panel">
-				<div class="transcript-header">
-					<h2>Transcript</h2>
-					<div class="transcript-actions">
+				<div class="transcript-header" style="display:flex;align-items:flex-start;gap:8px;">
+					<button class="transcript-collapse-btn" id="transcriptCollapseBtn" title="Collapse sidebar">&laquo;</button>
+					<h2 style="margin-bottom:12px;">Transcript</h2>
+				</div>
+				<div class="transcript-actions">
 						<button id="transcribeBtn">Transcribe</button>
 						<button id="applyEditsBtn">Apply Edits</button>
 						<button id="clearDeletesBtn" class="danger">Reset</button>
-					</div>
 				</div>
 					<div class="transcript-body" id="transcriptBody">
 						<div class="transcript-empty" id="transcriptEmpty">
@@ -1060,6 +1384,7 @@
 						<span>Words: <span class="count" id="wordCount">0</span></span>
 						<span>Deleted: <span class="deleted-count" id="deletedCount">0</span></span>
 					</div>
+					<div class="transcript-resize" id="transcriptResize"></div>
 				</aside>
 
 			<!-- RIGHT: Video Area -->
@@ -1094,6 +1419,19 @@
 						</div>
 					</div>
 						<div class="timeline-panel">
+							<div class="timeline-ruler">
+								<div class="timeline-ruler-marks" id="timelineRulerMarks"></div>
+							</div>
+							<div class="timeline-scrubber" id="timelineScrubber">
+								<div class="timeline-scrubber-thumb" id="timelineScrubberThumb"></div>
+							</div>
+							<button class="timeline-add-pin-btn" id="timelineAddPinBtn" title="Add pin at current time">
+								<svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+									<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z"/>
+								</svg>
+							</button>
+							<div class="timeline-pins-ruler-layer" id="timelinePinsRulerLayer"></div>
+							<div class="timeline-pins-layer" id="timelinePinsLayer"></div>
 							<div class="timeline-lane">
 								<div class="timeline-lane-label">Video</div>
 								<div class="timeline-track video">
@@ -1105,12 +1443,13 @@
 							<div class="timeline-lane">
 								<div class="timeline-lane-label">Audio</div>
 								<div class="timeline-track audio">
+									<div class="timeline-waveform" id="audioWaveform"></div>
 									<div class="timeline-segments" id="audioTimelineSegments"></div>
 									<div class="timeline-deletes" id="audioTimelineDeletes"></div>
 									<div class="timeline-playhead" id="audioTimelinePlayhead"></div>
 								</div>
 							</div>
-							<div class="timeline-hint">Double-click timeline to split. Undo: Cmd/Ctrl+Z, Redo: Cmd/Ctrl+Y.</div>
+							<div class="timeline-hint">Double-click timeline to split. Click ruler to seek. Pin icon to mark.</div>
 						</div>
 					</div>
 			</div>

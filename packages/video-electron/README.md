@@ -6,6 +6,7 @@ This package is designed to:
 - Run `@mariozechner/pi-coding-agent` in Electron main process
 - Delegate video operations to an external VotGO binary
 - Persist project metadata and artifacts in `.pi-video/` inside each project
+- Keep project media organized in dedicated `inputs/` and `outputs/` folders
 
 ## VotGO Location
 
@@ -33,3 +34,11 @@ The package resolves a binary in this order:
 ```bash
 npm run build
 ```
+
+## Agent Edit Safety
+
+- Mutating VotGO commands (for example `remove-silence`, `crop-bars`, `convert`, `extract-audio`, `agent-run`) are approval-gated by default in the Electron app.
+- Transcript edit prompts like "cut repetitions and keep the last take" run as suggestion-first:
+  - the app analyzes the transcript,
+  - highlights suggested removals in the transcript UI,
+  - then asks whether to apply immediately or keep suggestions only.

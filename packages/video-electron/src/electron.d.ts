@@ -47,6 +47,10 @@ declare module "electron" {
 		filePaths: string[];
 	}
 
+	export interface MessageBoxReturnValue {
+		response: number;
+	}
+
 	export interface OpenDialogOptions {
 		title?: string;
 		properties?: ("openFile" | "openDirectory" | "createDirectory")[];
@@ -54,6 +58,18 @@ declare module "electron" {
 			name: string;
 			extensions: string[];
 		}>;
+	}
+
+	export interface MessageBoxOptions {
+		type?: "none" | "info" | "error" | "question" | "warning";
+		title?: string;
+		message: string;
+		detail?: string;
+		buttons?: string[];
+		defaultId?: number;
+		cancelId?: number;
+		noLink?: boolean;
+		normalizeAccessKeys?: boolean;
 	}
 
 	export const ipcMain: {
@@ -65,6 +81,7 @@ declare module "electron" {
 
 	export const dialog: {
 		showOpenDialog(options: OpenDialogOptions): Promise<OpenDialogReturnValue>;
+		showMessageBox(browserWindow: BrowserWindow, options: MessageBoxOptions): Promise<MessageBoxReturnValue>;
 	};
 
 	export interface IpcRendererEvent {
@@ -79,5 +96,9 @@ declare module "electron" {
 
 	export const contextBridge: {
 		exposeInMainWorld(apiKey: string, api: unknown): void;
+	};
+
+	export const webUtils: {
+		getPathForFile(file: unknown): string;
 	};
 }

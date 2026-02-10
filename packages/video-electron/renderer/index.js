@@ -44,6 +44,7 @@ const timelineScrubberThumb = document.getElementById("timelineScrubberThumb");
 const timelineAddPinBtn = document.getElementById("timelineAddPinBtn");
 const timelinePinsLayer = document.getElementById("timelinePinsLayer");
 const timelinePinsRulerLayer = document.getElementById("timelinePinsRulerLayer");
+const timelinePanel = document.querySelector(".timeline-panel");
 const bubble = document.getElementById("bubble");
 const bubbleTrigger = document.getElementById("bubbleTrigger");
 const bubbleDrag = document.getElementById("bubbleDrag");
@@ -54,6 +55,8 @@ const sendPromptBtn = document.getElementById("sendPrompt");
 // ---- State ----
 let activeVideoPath = null;
 let activeProjectRoot = null;
+let activeProjectManifest = null;
+let activeTranscriptPath = null;
 let transcriptWords = [];
 let deletedIndices = new Set();
 let isAgentProcessing = false;
@@ -78,6 +81,7 @@ let isTranscriptCollapsed = false;
 let isResizingTranscript = false;
 let isScrubbing = false;
 let timelinePins = [];
+let timelineDropDepth = 0;
 let waveformAmplitudes = null;
 let resizeTranscriptStartX = 0;
 let resizeTranscriptStartWidth = 0;
@@ -91,6 +95,12 @@ if (window.videoAgent) {
 	window.videoAgent.onEvent((event) => {
 		if (event?.type === "agent_event") {
 			handleAgentEvent(event.event);
+			return;
+		}
+		if (event?.type === "project_index_complete") {
+			activeProjectManifest = event.manifest;
+			activeProjectRoot = event.manifest?.rootPath ?? activeProjectRoot;
+			hydrateMediaRegistryFromManifest(event.manifest);
 		}
 	});
 }
@@ -98,6 +108,7 @@ if (window.videoAgent) {
 videoTimelineSegments?.parentElement?.addEventListener("dblclick", handleTimelineSplitDblClick);
 audioTimelineSegments?.parentElement?.addEventListener("dblclick", handleTimelineSplitDblClick);
 document.addEventListener("keydown", handleGlobalUndoRedoShortcut);
+setupTimelineDropHandlers();
 
 // ---- Set model to GLM-4.7 on startup ----
 async function initModel() {
@@ -120,23 +131,128 @@ openProjectButton?.addEventListener("click", openVideo);
 async function openVideo() {
 	const bridgeSelection = await pickVideoSelectionFromBridge();
 	const selection = bridgeSelection ?? (await pickVideoSelectionFromInput());
-	if (!selection) return;
+	if (!selection?.videoPath) return;
+	const projectRoot = selection.projectRoot || dirnameFromPath(selection.videoPath);
+	await importAndOpenProjectVideo(selection.videoPath, projectRoot, "picker");
+}
 
-	activeVideoPath = selection.videoPath;
-	activeProjectRoot = selection.projectRoot;
-	addMediaPath("video", "input", selection.videoPath);
-	showVideoPreview(selection.videoPath);
+async function importAndOpenProjectVideo(videoPath, projectRoot, source) {
+	if (!window.videoAgent?.sendCommand) return;
+	const response = await window.videoAgent.sendCommand({
+		type: "project/import_media",
+		projectRoot,
+		sourcePath: videoPath,
+		destination: "input",
+	});
+	if (!response.ok || response.data.type !== "project/import_media") {
+		const errorMessage = response.ok ? "Could not import media into project." : response.error;
+		addBubbleMessage("agent", `Failed to open video: ${errorMessage}`);
+		return;
+	}
 
-	if (window.videoAgent?.sendCommand) {
-		const response = await window.videoAgent.sendCommand({
-			type: "project/open",
-			projectRoot: selection.projectRoot,
-		});
-		if (response.ok && response.data.type === "project/open") {
-			addBubbleMessage("agent", `Project opened: ${response.data.manifest.clips.length} clip(s)`);
-			await initModel();
+	const { manifest, importedPath } = response.data;
+	activeProjectManifest = manifest;
+	activeProjectRoot = manifest.rootPath;
+	hydrateMediaRegistryFromManifest(manifest);
+	activeVideoPath = importedPath;
+	addMediaPath("video", "input", importedPath);
+	showVideoPreview(importedPath);
+	addBubbleMessage(
+		"agent",
+		`Loaded ${source === "drop" ? "dropped" : "selected"} video (${manifest.clips.length} clip${manifest.clips.length === 1 ? "" : "s"})`,
+	);
+	await initModel();
+}
+
+function setupTimelineDropHandlers() {
+	if (!(timelinePanel instanceof HTMLElement)) return;
+
+	timelinePanel.addEventListener("dragenter", (event) => {
+		if (!isFileDrag(event.dataTransfer)) return;
+		event.preventDefault();
+		timelineDropDepth += 1;
+		setTimelineDropActive(true);
+	});
+
+	timelinePanel.addEventListener("dragover", (event) => {
+		if (!isFileDrag(event.dataTransfer)) return;
+		event.preventDefault();
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = "copy";
+		}
+		setTimelineDropActive(true);
+	});
+
+	timelinePanel.addEventListener("dragleave", (event) => {
+		event.preventDefault();
+		timelineDropDepth = Math.max(0, timelineDropDepth - 1);
+		if (timelineDropDepth === 0) {
+			setTimelineDropActive(false);
+		}
+	});
+
+	timelinePanel.addEventListener("drop", async (event) => {
+		if (!isFileDrag(event.dataTransfer)) return;
+		event.preventDefault();
+		timelineDropDepth = 0;
+		setTimelineDropActive(false);
+		const file = event.dataTransfer?.files?.[0] ?? null;
+		if (!file) {
+			addBubbleMessage("agent", "No file found in drop payload.");
+			return;
+		}
+		if (!isSupportedVideoFile(file.name)) {
+			addBubbleMessage("agent", "Dropped file is not a supported video format.");
+			return;
+		}
+		const droppedPath = await getPathForDroppedFile(file);
+		if (!droppedPath) {
+			addBubbleMessage("agent", "Could not resolve dropped file path.");
+			return;
+		}
+		await importAndOpenProjectVideo(droppedPath, dirnameFromPath(droppedPath), "drop");
+	});
+}
+
+function isFileDrag(dataTransfer) {
+	const types = dataTransfer?.types;
+	if (!types) {
+		return false;
+	}
+	return Array.from(types).includes("Files");
+}
+
+function isSupportedVideoFile(fileName) {
+	const extension = extensionFromPath(fileName).toLowerCase();
+	return VIDEO_EXTENSIONS.has(extension);
+}
+
+function setTimelineDropActive(active) {
+	if (!(timelinePanel instanceof HTMLElement)) return;
+	if (active) {
+		timelinePanel.style.outline = "2px dashed rgba(34, 197, 94, 0.9)";
+		timelinePanel.style.outlineOffset = "-2px";
+		timelinePanel.style.boxShadow = "0 0 0 2px rgba(34, 197, 94, 0.2) inset";
+		return;
+	}
+	timelinePanel.style.outline = "";
+	timelinePanel.style.outlineOffset = "";
+	timelinePanel.style.boxShadow = "";
+}
+
+async function getPathForDroppedFile(file) {
+	const bridge = window.videoAgent;
+	if (bridge && typeof bridge.getPathForFile === "function") {
+		const resolvedPath = bridge.getPathForFile(file);
+		if (typeof resolvedPath === "string" && resolvedPath.length > 0) {
+			return resolvedPath;
 		}
 	}
+	const fallbackPath = typeof file.path === "string" ? file.path : "";
+	if (!fallbackPath || fallbackPath.includes("fakepath")) {
+		return null;
+	}
+	return fallbackPath;
 }
 
 function showVideoPreview(videoPath) {
@@ -146,6 +262,7 @@ function showVideoPreview(videoPath) {
         videoPreview.src = fileUrl;
         videoPreview.load();
         videoSourceLabel.textContent = videoPath.split("/").pop() || videoPath;
+        activeTranscriptPath = null;
         transcriptWords = [];
         deletedIndices = new Set();
 	timelineSplitSecs = [];
@@ -187,46 +304,51 @@ function formatTime(sec) {
 
 // ---- Transcript ----
 transcribeBtn?.addEventListener("click", async () => {
-	if (!activeVideoPath) return;
-	if (!window.videoAgent?.sendCommand) return;
+	await runTranscriptionForActiveVideo();
+});
+
+async function runTranscriptionForActiveVideo() {
+	if (!activeVideoPath || !window.videoAgent?.sendCommand) return false;
 
 	addBubbleMessage("agent", "Transcribing video...");
 	setProcessing(true);
 	setProcessingPhaseLabel("Calling VotGO transcribe...");
 	pushProcessingTask("run_votgo", { invocation: { command: "transcribe" } });
+	const transcriptOutputPath = deriveTranscriptPath(activeVideoPath);
 
 	const response = await window.videoAgent.sendCommand({
 		type: "tools/votgo/run",
 		invocation: {
 			command: "transcribe",
 			input: activeVideoPath,
+			output: transcriptOutputPath,
 			global: { yes: true },
 		},
 	});
 
-	        if (!response.ok || response.data.type !== "tools/votgo/run") {
-	                finishProcessingTask("run_votgo", "failed");
-	                setProcessing(false);
-	                const errorMessage = response.ok ? "Transcription failed." : response.error;
-	                addBubbleMessage("agent", `Transcription failed: ${errorMessage}`);
-	                return;
-	        }
+	if (!response.ok || response.data.type !== "tools/votgo/run") {
+		finishProcessingTask("run_votgo", "failed");
+		setProcessing(false);
+		const errorMessage = response.ok ? "Transcription failed." : response.error;
+		addBubbleMessage("agent", `Transcription failed: ${errorMessage}`);
+		return false;
+	}
 
 	if (response.data.result.exitCode !== 0) {
 		finishProcessingTask("run_votgo", "failed");
 		setProcessing(false);
 		addBubbleMessage("agent", `Transcription error: ${response.data.result.stderr.slice(0, 200)}`);
-		return;
+		return false;
 	}
 
 	const stdout = response.data.result.stdout;
 	const savedMatch = stdout.match(/Transcript saved:\s*(.+)/);
-	const transcriptPath = savedMatch ? savedMatch[1].trim() : deriveTranscriptPath(activeVideoPath);
-
+	const transcriptPath = savedMatch ? savedMatch[1].trim() : transcriptOutputPath;
 	await loadTranscriptFile(transcriptPath);
 	finishProcessingTask("run_votgo", "done");
 	setProcessing(false);
-});
+	return true;
+}
 
 async function loadTranscriptFile(path) {
 	if (!window.videoAgent?.sendCommand) return;
@@ -243,6 +365,7 @@ async function loadTranscriptFile(path) {
 
 	try {
 		const data = JSON.parse(response.data.content);
+		activeTranscriptPath = path;
 		setTranscriptData(data);
 	} catch {
 		addBubbleMessage("agent", "Failed to parse transcript JSON.");
@@ -316,11 +439,15 @@ clearDeletesBtn?.addEventListener("click", () => {
 
 // ---- Apply edits (build keep-ranges, trigger agent cut) ----
 applyEditsBtn?.addEventListener("click", async () => {
-	if (transcriptWords.length === 0 || deletedIndices.size === 0) return;
-	if (!activeVideoPath || !window.videoAgent?.sendCommand) return;
+	await applyTranscriptEditsWithAgent();
+});
+
+async function applyTranscriptEditsWithAgent() {
+	if (transcriptWords.length === 0 || deletedIndices.size === 0) return false;
+	if (!activeVideoPath || !window.videoAgent?.sendCommand) return false;
 
 	const keepRanges = buildKeepRanges();
-	if (keepRanges.length === 0) return;
+	if (keepRanges.length === 0) return false;
 
 	setProcessing(true);
 	addBubbleMessage("user", `Applying edits: removing ${deletedIndices.size} word(s)...`);
@@ -332,14 +459,15 @@ applyEditsBtn?.addEventListener("click", async () => {
 		`Cut the video at "${activeVideoPath}" to keep only these time ranges:`,
 		...keepRanges.map((r, i) => `  ${i + 1}. ${r.start.toFixed(3)}s - ${r.end.toFixed(3)}s`),
 		`Save the result to "${outputPath}".`,
-		`Use the run_votgo tool or ffmpeg commands to concatenate these segments.`,
+		`Use the run_votgo tool or timeline artifacts to concatenate these segments.`,
 	].join("\n");
 
 	await window.videoAgent.sendCommand({
 		type: "agent/prompt",
 		message: prompt,
 	});
-});
+	return true;
+}
 
 function buildKeepRanges() {
 	const PAD = 0.02;
@@ -400,11 +528,17 @@ async function sendBubblePrompt() {
         if (!message) return;
         if (!window.videoAgent?.sendCommand) return;
 
-	        addBubbleMessage("user", message);
-	        promptInput.value = "";
-	        setProcessing(true);
-	        setProcessingPhaseLabel("Waiting for model response...");
-	        pendingProcessingOutputPath = null;
+	addBubbleMessage("user", message);
+	promptInput.value = "";
+	pendingProcessingOutputPath = null;
+
+	if (isLikelyEditInstruction(message)) {
+		await runAgenticEditSuggestions(message);
+		return;
+	}
+
+	setProcessing(true);
+	setProcessingPhaseLabel("Waiting for model response...");
 
 	const response = await window.videoAgent.sendCommand({
 		type: "agent/prompt",
@@ -415,6 +549,235 @@ async function sendBubblePrompt() {
 		addBubbleMessage("agent", `Error: ${response.error}`);
 		setProcessing(false);
 	}
+}
+
+async function runAgenticEditSuggestions(promptText) {
+	const transcriptReady = await ensureTranscriptForAnalysis();
+	if (!transcriptReady) {
+		return;
+	}
+	if (!activeTranscriptPath || !window.videoAgent?.sendCommand) {
+		addBubbleMessage("agent", "Transcript path is missing. Please transcribe the video first.");
+		return;
+	}
+
+	setProcessing(true);
+	setProcessingPhaseLabel("Analyzing transcript for edit suggestions...");
+	pushProcessingTask("run_votgo", { invocation: { command: "analyze" } });
+
+	const analysisOutputPath = deriveAnalysisPath(activeTranscriptPath);
+	const response = await window.videoAgent.sendCommand({
+		type: "tools/votgo/run",
+		invocation: {
+			command: "analyze",
+			input: activeTranscriptPath,
+			output: analysisOutputPath,
+			prompt: promptText,
+			global: { yes: true },
+		},
+	});
+
+	if (!response.ok || response.data.type !== "tools/votgo/run") {
+		finishProcessingTask("run_votgo", "failed");
+		setProcessing(false);
+		const errorMessage = response.ok ? "Analysis failed." : response.error;
+		addBubbleMessage("agent", `Suggestion analysis failed: ${errorMessage}`);
+		return;
+	}
+
+	if (response.data.result.exitCode !== 0) {
+		finishProcessingTask("run_votgo", "failed");
+		setProcessing(false);
+		addBubbleMessage("agent", `Suggestion analysis error: ${response.data.result.stderr.slice(0, 200)}`);
+		return;
+	}
+
+	const analysisPath = parseSavedAnalysisPath(response.data.result.stdout) ?? analysisOutputPath;
+	const fileResponse = await window.videoAgent.sendCommand({
+		type: "fs/read_text",
+		path: analysisPath,
+	});
+	if (!fileResponse.ok || fileResponse.data.type !== "fs/read_text") {
+		finishProcessingTask("run_votgo", "failed");
+		setProcessing(false);
+		addBubbleMessage("agent", `Could not read analysis output: ${analysisPath}`);
+		return;
+	}
+
+	const suggestions = extractEditSuggestions(fileResponse.data.content);
+	if (suggestions.length === 0) {
+		finishProcessingTask("run_votgo", "done");
+		setProcessing(false);
+		addBubbleMessage("agent", "No confident cut suggestions found.");
+		return;
+	}
+
+	const suggestedIndices = mapSuggestionsToWordIndices(suggestions);
+	if (suggestedIndices.size === 0) {
+		finishProcessingTask("run_votgo", "done");
+		setProcessing(false);
+		addBubbleMessage("agent", "Suggestions were generated, but none mapped cleanly to transcript words.");
+		return;
+	}
+
+	recordUndoSnapshot();
+	deletedIndices = suggestedIndices;
+	renderTranscript();
+	finishProcessingTask("run_votgo", "done");
+	setProcessing(false);
+	addBubbleMessage(
+		"agent",
+		`Suggested ${suggestions.length} cut range(s). Highlighted ${suggestedIndices.size} words in the transcript.`,
+	);
+
+	const shouldApplyNow = window.confirm(
+		"Suggestions are now highlighted in the transcript.\n\nClick OK to let the agent apply the cut now (you will still approve each mutating command).\nClick Cancel to keep suggestions only.",
+	);
+	if (!shouldApplyNow) {
+		return;
+	}
+	await applyTranscriptEditsWithAgent();
+}
+
+async function ensureTranscriptForAnalysis() {
+	if (!window.videoAgent?.sendCommand) return false;
+	if (activeTranscriptPath) {
+		const exists = await window.videoAgent.sendCommand({
+			type: "fs/exists",
+			path: activeTranscriptPath,
+		});
+		if (exists.ok && exists.data.type === "fs/exists" && exists.data.exists) {
+			return true;
+		}
+		activeTranscriptPath = null;
+	}
+	return await runTranscriptionForActiveVideo();
+}
+
+function isLikelyEditInstruction(message) {
+	if (!message || typeof message !== "string") return false;
+	const normalized = message.toLowerCase();
+	const hasCutVerb = /(cut|trim|remove|delete|splice|edit)/.test(normalized);
+	if (!hasCutVerb) return false;
+	return /(repeat|repetition|retake|last take|keep the last|filler|false start)/.test(normalized);
+}
+
+function parseSavedAnalysisPath(stdout) {
+	if (typeof stdout !== "string") return null;
+	const match = stdout.match(/Analysis saved:\s*(.+)/);
+	return match ? match[1].trim() : null;
+}
+
+function deriveAnalysisPath(transcriptPath) {
+	return deriveOutputPath(transcriptPath, ".analysis", "md");
+}
+
+function extractEditSuggestions(content) {
+	if (typeof content !== "string" || content.trim().length === 0) return [];
+	const candidates = [];
+	const fencedMatches = content.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi);
+	for (const match of fencedMatches) {
+		if (match[1]) {
+			candidates.push(match[1]);
+		}
+	}
+	const inlineArray = extractFirstJsonArray(content);
+	if (inlineArray) {
+		candidates.push(inlineArray);
+	}
+	for (const candidate of candidates) {
+		const parsed = parseSuggestionArray(candidate);
+		if (parsed.length > 0) {
+			return parsed;
+		}
+	}
+	return [];
+}
+
+function extractFirstJsonArray(text) {
+	let depth = 0;
+	let startIndex = -1;
+	let inString = false;
+	let isEscaped = false;
+
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i];
+		if (inString) {
+			if (isEscaped) {
+				isEscaped = false;
+				continue;
+			}
+			if (ch === "\\") {
+				isEscaped = true;
+				continue;
+			}
+			if (ch === '"') {
+				inString = false;
+			}
+			continue;
+		}
+		if (ch === '"') {
+			inString = true;
+			continue;
+		}
+		if (ch === "[") {
+			if (depth === 0) {
+				startIndex = i;
+			}
+			depth += 1;
+			continue;
+		}
+		if (ch === "]") {
+			if (depth === 0) continue;
+			depth -= 1;
+			if (depth === 0 && startIndex >= 0) {
+				return text.slice(startIndex, i + 1);
+			}
+		}
+	}
+	return null;
+}
+
+function parseSuggestionArray(candidate) {
+	try {
+		const parsed = JSON.parse(candidate);
+		if (!Array.isArray(parsed)) return [];
+		const normalized = [];
+		for (const entry of parsed) {
+			if (!entry || typeof entry !== "object") continue;
+			const start = Number(entry.start);
+			const end = Number(entry.end);
+			if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+				continue;
+			}
+			normalized.push({ start, end });
+		}
+		return normalized;
+	} catch {
+		return [];
+	}
+}
+
+function mapSuggestionsToWordIndices(suggestions) {
+	const indices = new Set();
+	for (const suggestion of suggestions) {
+		for (let i = 0; i < transcriptWords.length; i++) {
+			const word = transcriptWords[i];
+			if (!word) continue;
+			if (!intervalsOverlap(word.start, word.end, suggestion.start, suggestion.end)) {
+				continue;
+			}
+			indices.add(i);
+		}
+	}
+	return indices;
+}
+
+function intervalsOverlap(aStart, aEnd, bStart, bEnd) {
+	if (!Number.isFinite(aStart) || !Number.isFinite(aEnd) || !Number.isFinite(bStart) || !Number.isFinite(bEnd)) {
+		return false;
+	}
+	return aStart < bEnd && bStart < aEnd;
 }
 
 function addBubbleMessage(role, text) {
@@ -594,20 +957,19 @@ function deriveOutputPathForInvocation(invocation) {
                 const format = typeof invocation.format === "string" ? invocation.format : "";
                 return deriveOutputPath(invocation.input, "", format);
         }
-        if (invocation.command === "extract-audio") {
-                return deriveOutputPath(invocation.input, ".audio");
-        }
+	if (invocation.command === "extract-audio") {
+	        return deriveOutputPath(invocation.input, ".audio", "wav");
+	}
         return null;
 }
 
 function deriveOutputPath(inputPath, suffix, formatOverride) {
-        const splitIndex = Math.max(inputPath.lastIndexOf("/"), inputPath.lastIndexOf("\\"));
-        const dir = splitIndex >= 0 ? inputPath.slice(0, splitIndex + 1) : "";
-        const fileName = splitIndex >= 0 ? inputPath.slice(splitIndex + 1) : inputPath;
-        const dotIndex = fileName.lastIndexOf(".");
-        const baseName = dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName;
-        const extension = resolveExtension(formatOverride, fileName, dotIndex);
-        return `${dir}${baseName}${suffix}${extension}`;
+	const fileName = basenameFromPath(inputPath);
+	const dotIndex = fileName.lastIndexOf(".");
+	const baseName = dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName;
+	const extension = resolveExtension(formatOverride, fileName, dotIndex);
+	const outputDir = resolveProjectOutputDirectory(inputPath);
+	return joinPath(outputDir, `${baseName}${suffix}${extension}`);
 }
 
 function resolveExtension(formatOverride, fileName, dotIndex) {
@@ -804,7 +1166,53 @@ function detectMediaKindFromPath(path) {
 	return null;
 }
 
-function addMediaPath(kind, direction, path) {
+function hydrateMediaRegistryFromManifest(manifest) {
+	clearMediaRegistry();
+	if (!manifest || !Array.isArray(manifest.clips)) {
+		renderMediaRegistry();
+		return;
+	}
+	for (const clip of manifest.clips) {
+		if (!clip || typeof clip.path !== "string") continue;
+		const absolutePath = resolveClipAbsolutePath(manifest, clip.path);
+		const kind = detectMediaKindFromPath(absolutePath);
+		if (!kind) continue;
+		const direction = inferClipDirection(clip, absolutePath, manifest);
+		addMediaPath(kind, direction, absolutePath, false);
+	}
+	renderMediaRegistry();
+}
+
+function clearMediaRegistry() {
+	mediaRegistry.video.input.clear();
+	mediaRegistry.video.output.clear();
+	mediaRegistry.audio.input.clear();
+	mediaRegistry.audio.output.clear();
+	selectedPreviewEntry = null;
+}
+
+function resolveClipAbsolutePath(manifest, clipPath) {
+	if (isAbsolutePath(clipPath)) return clipPath;
+	if (!manifest?.rootPath) return clipPath;
+	return joinPath(manifest.rootPath, clipPath);
+}
+
+function inferClipDirection(clip, absolutePath, manifest) {
+	if (clip?.source === "output") return "output";
+	if (clip?.source === "input") return "input";
+	const normalizedAbsolute = normalizePathForCompare(absolutePath);
+	const normalizedOutputs = normalizePathForCompare(manifest?.outputsPath);
+	if (normalizedOutputs && normalizedAbsolute.startsWith(`${normalizedOutputs}/`)) {
+		return "output";
+	}
+	const normalizedInputs = normalizePathForCompare(manifest?.inputsPath);
+	if (normalizedInputs && normalizedAbsolute.startsWith(`${normalizedInputs}/`)) {
+		return "input";
+	}
+	return "input";
+}
+
+function addMediaPath(kind, direction, path, shouldRender = true) {
 	if (!kind || !direction || !path || typeof path !== "string") return;
 	const bucket = mediaRegistry[kind]?.[direction];
 	if (!bucket) return;
@@ -813,7 +1221,9 @@ function addMediaPath(kind, direction, path) {
 	if (!selectedPreviewEntry || direction === "output") {
 		selectedPreviewEntry = { path, kind, direction };
 	}
-	renderMediaRegistry();
+	if (shouldRender) {
+		renderMediaRegistry();
+	}
 }
 
 function renderMediaRegistry() {
@@ -1223,7 +1633,7 @@ async function pickVideoSelectionFromInput() {
 	});
 
 	if (!file) return null;
-	const candidatePath = typeof file.path === "string" ? file.path : "";
+	const candidatePath = (await getPathForDroppedFile(file)) ?? "";
 	if (!candidatePath || candidatePath.includes("fakepath")) {
 		return null;
 	}
@@ -1250,20 +1660,46 @@ function dirnameFromPath(path) {
 	return dirname;
 }
 
+function extensionFromPath(path) {
+	const fileName = basenameFromPath(path);
+	const dotIndex = fileName.lastIndexOf(".");
+	return dotIndex > 0 ? fileName.slice(dotIndex) : "";
+}
+
+function resolveProjectOutputDirectory(fallbackPath) {
+	if (activeProjectManifest?.outputsPath) {
+		return activeProjectManifest.outputsPath;
+	}
+	if (activeProjectRoot) {
+		return joinPath(activeProjectRoot, "outputs");
+	}
+	return dirnameFromPath(fallbackPath);
+}
+
+function joinPath(dir, fileName) {
+	if (!dir) return fileName;
+	const separator = dir.includes("\\") ? "\\" : "/";
+	const trimmed = dir.replace(/[\\/]+$/, "");
+	return `${trimmed}${separator}${fileName}`;
+}
+
+function isAbsolutePath(path) {
+	if (typeof path !== "string" || path.length === 0) return false;
+	if (path.startsWith("/")) return true;
+	return /^[a-zA-Z]:[\\/]/.test(path);
+}
+
+function normalizePathForCompare(path) {
+	if (typeof path !== "string" || path.length === 0) return "";
+	return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
 function deriveTranscriptPath(inputPath) {
-	const dotIndex = inputPath.lastIndexOf(".");
-	const base = dotIndex > 0 ? inputPath.slice(0, dotIndex) : inputPath;
-	return `${base}.transcript.json`;
+	return deriveOutputPath(inputPath, ".transcript", "json");
 }
 
 function deriveEditedPath(inputPath) {
-	const splitIndex = Math.max(inputPath.lastIndexOf("/"), inputPath.lastIndexOf("\\"));
-	const dir = splitIndex >= 0 ? inputPath.slice(0, splitIndex + 1) : "";
-	const fileName = splitIndex >= 0 ? inputPath.slice(splitIndex + 1) : inputPath;
-	const dotIndex = fileName.lastIndexOf(".");
-	const baseName = dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName;
-	const extension = dotIndex > 0 ? fileName.slice(dotIndex) : ".mp4";
-	return `${dir}${baseName}.edited${extension}`;
+	return deriveOutputPath(inputPath, ".edited");
 }
 
 const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".mpg", ".mpeg"]);

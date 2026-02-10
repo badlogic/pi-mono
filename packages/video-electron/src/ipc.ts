@@ -10,6 +10,12 @@ import type {
 
 export type RendererCommand =
 	| { type: "project/open"; projectRoot: string }
+	| {
+			type: "project/import_media";
+			projectRoot: string;
+			sourcePath: string;
+			destination?: "input" | "output";
+	  }
 	| { type: "project/get_manifest" }
 	| { type: "agent/prompt"; message: string }
 	| { type: "agent/abort" }
@@ -24,6 +30,7 @@ export type RendererCommand =
 
 export type RendererCommandData =
 	| { type: "project/open"; manifest: VideoProjectManifestV1 }
+	| { type: "project/import_media"; manifest: VideoProjectManifestV1; importedPath: string }
 	| { type: "project/get_manifest"; manifest: VideoProjectManifestV1 | null }
 	| { type: "agent/prompt"; queued: true }
 	| { type: "agent/abort"; aborted: true }

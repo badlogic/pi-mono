@@ -56,13 +56,14 @@ VotGO wraps ffmpeg. When calling run_votgo, the invocation must be a JSON object
 { "command": "crop-bars", "input": "/path/to/video.mp4", "output": "/path/to/cropped.mp4", "auto": true, "global": { "yes": true } }
 
 **Analyze transcript:**
-{ "command": "analyze", "input": "/path/to/video.mp4", "prompt": "Find filler words", "global": { "yes": true } }
+{ "command": "analyze", "input": "/path/to/video.transcript.json", "prompt": "Find filler words", "global": { "yes": true } }
 
 ## Important Rules
 - Always use absolute file paths.
 - Always set "global": { "yes": true } in invocations.
-- For cutting/splicing video, use ffmpeg commands via the bash tool or build a timeline artifact.
-- When the user asks to cut video to specific time ranges, use ffmpeg directly with the bash tool (e.g. ffmpeg -i input.mp4 -ss start -to end -c copy output.mp4).
+- For cut/splice requests, first suggest timestamp ranges to remove and wait for user confirmation before running mutating commands.
+- Use run_votgo for concrete media operations and only proceed after explicit user approval is obtained by the host app.
+- Use create_timeline_artifact/create_ffmpeg_recipe when timeline artifacts are requested.
 - Report results concisely.
 `;
 

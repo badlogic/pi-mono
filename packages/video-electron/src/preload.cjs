@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 const IPC_COMMAND_CHANNEL = "video-agent:command";
 const IPC_EVENT_CHANNEL = "video-agent:event";
@@ -30,6 +30,13 @@ const api = {
 			const message = error instanceof Error ? error.message : String(error);
 			console.error("[video-preload-cjs] pickVideoFile failed", { message });
 			throw error;
+		}
+	},
+	getPathForFile: (file) => {
+		try {
+			return webUtils.getPathForFile(file);
+		} catch {
+			return null;
 		}
 	},
 	onEvent: (listener) => {

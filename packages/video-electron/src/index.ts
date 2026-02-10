@@ -26,11 +26,15 @@ export type {
 } from "./ipc.js";
 export type { VideoAgentPreloadApi } from "./preload.js";
 export {
+	appendProjectChangeLog,
 	ensureProjectLayout,
 	getProjectLayoutPaths,
 	getRecipeFilename,
 	getTimelineFilename,
+	type ImportMediaIntoProjectOptions,
+	type ImportMediaIntoProjectResult,
 	type IndexProjectOptions,
+	importMediaIntoProject,
 	loadProjectManifest,
 	openOrCreateVideoProject,
 	type ProjectLayoutPaths,
@@ -45,6 +49,7 @@ export type {
 	CropBarsInvocation,
 	ExtractAudioInvocation,
 	FfmpegRecipeV1,
+	ProjectChangeLogEntryV1,
 	RemoveSilenceInvocation,
 	TimelineSegment,
 	TimelineTrack,

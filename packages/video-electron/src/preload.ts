@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { CommandResult, RendererCommand, RendererEvent } from "./ipc.js";
 
 const IPC_COMMAND_CHANNEL = "video-agent:command";
@@ -15,6 +15,7 @@ export interface VideoFileSelection {
 export interface VideoAgentPreloadApi {
 	sendCommand(command: RendererCommand): Promise<CommandResult>;
 	pickVideoFile(): Promise<VideoFileSelection | null>;
+	getPathForFile(file: unknown): string | null;
 	onEvent(listener: (event: RendererEvent) => void): () => void;
 }
 
@@ -41,6 +42,13 @@ const api: VideoAgentPreloadApi = {
 			const message = error instanceof Error ? error.message : String(error);
 			console.error("[video-preload] pickVideoFile failed", { message });
 			throw error;
+		}
+	},
+	getPathForFile: (file) => {
+		try {
+			return webUtils.getPathForFile(file);
+		} catch {
+			return null;
 		}
 	},
 	onEvent: (listener) => {

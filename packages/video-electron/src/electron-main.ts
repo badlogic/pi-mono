@@ -21,7 +21,6 @@ export interface VideoElectronApp {
 }
 
 export async function createVideoElectronApp(options: CreateVideoElectronAppOptions = {}): Promise<VideoElectronApp> {
-	const controller = new VideoAgentController(options.controllerOptions);
 	const preloadPath = resolve(options.preloadPath ?? defaultPreloadPath());
 	const indexFile = resolve(options.indexFile ?? defaultIndexFilePath());
 	console.info("[video-main] boot", { preloadPath, indexFile, hasIndexUrl: Boolean(options.indexUrl) });
@@ -43,6 +42,7 @@ export async function createVideoElectronApp(options: CreateVideoElectronAppOpti
 		},
 	});
 
+	const controller = new VideoAgentController(buildControllerOptions(window, options.controllerOptions));
 	registerIpc(window, controller);
 	registerDiagnostics(window);
 	window.once("ready-to-show", () => window.show());
@@ -68,6 +68,52 @@ export async function createVideoElectronApp(options: CreateVideoElectronAppOpti
 	});
 
 	return { controller };
+}
+
+function buildControllerOptions(
+	window: BrowserWindow,
+	options: VideoAgentControllerOptions | undefined,
+): VideoAgentControllerOptions {
+	const settings = {
+		...(options?.settings ?? {}),
+	};
+	if (settings.requireApproval === undefined) {
+		settings.requireApproval = true;
+	}
+	return {
+		...options,
+		settings,
+		approvalHandler: options?.approvalHandler ?? createDialogApprovalHandler(window),
+	};
+}
+
+function createDialogApprovalHandler(
+	window: BrowserWindow,
+): NonNullable<VideoAgentControllerOptions["approvalHandler"]> {
+	return async (request) => {
+		const detailLines = [`Reason: ${request.reason}`, `Command: ${request.invocation.command}`];
+		if (typeof request.invocation.input === "string" && request.invocation.input.length > 0) {
+			detailLines.push(`Input: ${request.invocation.input}`);
+		}
+		if (typeof request.invocation.output === "string" && request.invocation.output.length > 0) {
+			detailLines.push(`Output: ${request.invocation.output}`);
+		}
+		const result = await dialog.showMessageBox(window, {
+			type: "warning",
+			title: "Approve Video Edit Action",
+			message: "The agent requested a command that can modify media files.",
+			detail: detailLines.join("\n"),
+			buttons: ["Approve", "Deny"],
+			defaultId: 1,
+			cancelId: 1,
+			noLink: true,
+			normalizeAccessKeys: true,
+		});
+		if (result.response === 0) {
+			return { approved: true };
+		}
+		return { approved: false, reason: "User denied approval" };
+	};
 }
 
 function registerDiagnostics(window: BrowserWindow): void {
