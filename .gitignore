@@ -33,3 +33,7 @@ pi-*.html
 out.html
 packages/coding-agent/binaries/
 todo.md
+
+# Rust
+/target/
+Cargo.lock

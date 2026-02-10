@@ -1,0 +1,34 @@
+[package]
+name = "todo-scan"
+version = "1.0.0"
+edition = "2021"
+authors = ["Pi Mono Contributors"]
+description = "A high-performance CLI utility to scan text files for TODO/FIXME lines"
+license = "MIT"
+repository = "https://github.com/badlogic/pi-mono"
+keywords = ["cli", "todo", "scanner", "rust"]
+categories = ["command-line-utilities", "development-tools"]
+rust-version = "1.75"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+ignore = "0.4"
+regex = "1.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "fs", "io-util"] }
+colored = "2.1"
+walkdir = "2.4"
+
+[dev-dependencies]
+tempfile = "3.9"
+tokio-test = "0.4"
+
+[[bin]]
+name = "todo-scan"
+path = "src/main.rs"
+
+[lib]
+name = "todo_scan"
+path = "src/lib.rs"
