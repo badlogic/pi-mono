@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Z.AI GLM-5 model
+
 ## [0.52.9] - 2026-02-08
 
 ### Changed
