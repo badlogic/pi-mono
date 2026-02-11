@@ -54,6 +54,11 @@ export interface OpenAIResponsesStreamOptions {
 		usage: Usage,
 		serviceTier: ResponseCreateParamsStreaming["service_tier"] | undefined,
 	) => void;
+	/**
+	 * Optional hook called when parsing tool call JSON arguments.
+	 * Allows extensions to intercept and fix malformed JSON.
+	 */
+	onToolCallParse?: (rawArgs: string, toolName: string) => Promise<unknown>;
 }
 
 export interface ConvertResponsesMessagesOptions {
@@ -412,10 +417,27 @@ export async function processResponsesStream<TApi extends Api>(
 				});
 				currentBlock = null;
 			} else if (item.type === "function_call") {
-				const args =
+				// Use hook if provided, otherwise fall back to parseStreamingJson
+				let args: Record<string, unknown>;
+				const rawArgs =
 					currentBlock?.type === "toolCall" && currentBlock.partialJson
-						? JSON.parse(currentBlock.partialJson)
-						: JSON.parse(item.arguments);
+						? currentBlock.partialJson
+						: item.arguments;
+
+				if (options?.onToolCallParse) {
+					try {
+						args = (await options.onToolCallParse(rawArgs, item.name || "")) as Record<
+							string,
+							unknown
+						>;
+					} catch {
+						// Hook failed, fall back to parseStreamingJson
+						args = parseStreamingJson(rawArgs);
+					}
+				} else {
+					args = parseStreamingJson(rawArgs);
+				}
+
 				const toolCall: ToolCall = {
 					type: "toolCall",
 					id: `${item.call_id}|${item.id}`,

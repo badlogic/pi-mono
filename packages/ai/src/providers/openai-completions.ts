@@ -111,7 +111,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 			let currentBlock: TextContent | ThinkingContent | (ToolCall & { partialArgs?: string }) | null = null;
 			const blocks = output.content;
 			const blockIndex = () => blocks.length - 1;
-			const finishCurrentBlock = (block?: typeof currentBlock) => {
+			const finishCurrentBlock = async (block?: typeof currentBlock) => {
 				if (block) {
 					if (block.type === "text") {
 						stream.push({
@@ -128,7 +128,20 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 							partial: output,
 						});
 					} else if (block.type === "toolCall") {
-						block.arguments = JSON.parse(block.partialArgs || "{}");
+						// Use hook if provided, otherwise fall back to parseStreamingJson
+						if (options?.onToolCallParse) {
+							try {
+								block.arguments = (await options.onToolCallParse(
+									block.partialArgs || "{}",
+									block.name,
+								)) as Record<string, unknown>;
+							} catch {
+								// Hook failed, fall back to parseStreamingJson
+								block.arguments = parseStreamingJson(block.partialArgs);
+							}
+						} else {
+							block.arguments = parseStreamingJson(block.partialArgs);
+						}
 						delete block.partialArgs;
 						stream.push({
 							type: "toolcall_end",
@@ -180,7 +193,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 						choice.delta.content.length > 0
 					) {
 						if (!currentBlock || currentBlock.type !== "text") {
-							finishCurrentBlock(currentBlock);
+							await finishCurrentBlock(currentBlock);
 							currentBlock = { type: "text", text: "" };
 							output.content.push(currentBlock);
 							stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
@@ -218,7 +231,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 
 					if (foundReasoningField) {
 						if (!currentBlock || currentBlock.type !== "thinking") {
-							finishCurrentBlock(currentBlock);
+							await finishCurrentBlock(currentBlock);
 							currentBlock = {
 								type: "thinking",
 								thinking: "",
@@ -247,7 +260,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 								currentBlock.type !== "toolCall" ||
 								(toolCall.id && currentBlock.id !== toolCall.id)
 							) {
-								finishCurrentBlock(currentBlock);
+								await finishCurrentBlock(currentBlock);
 								currentBlock = {
 									type: "toolCall",
 									id: toolCall.id || "",
@@ -294,7 +307,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 				}
 			}
 
-			finishCurrentBlock(currentBlock);
+			await finishCurrentBlock(currentBlock);
 
 			if (options?.signal?.aborted) {
 				throw new Error("Request was aborted");

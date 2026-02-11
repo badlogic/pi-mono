@@ -87,6 +87,20 @@ export interface StreamOptions {
 	 * Default: 60000 (60 seconds). Set to 0 to disable the cap.
 	 */
 	maxRetryDelayMs?: number;
+
+	/**
+	 * Optional hook called when parsing tool call JSON arguments.
+	 * Allows extensions to intercept and fix malformed JSON before it's used.
+	 *
+	 * If the hook is provided and returns successfully, the provider uses the returned args.
+	 * If the hook throws or returns invalid data, the provider falls back to default parsing.
+	 *
+	 * @param rawArgs - The raw JSON string from the model
+	 * @param toolName - The name of the tool being called
+	 * @returns Parsed arguments object
+	 * @throws Error if parsing fails (will be caught by provider)
+	 */
+	onToolCallParse?: (rawArgs: string, toolName: string) => Promise<unknown>;
 }
 
 export type ProviderStreamOptions = StreamOptions & Record<string, unknown>;
