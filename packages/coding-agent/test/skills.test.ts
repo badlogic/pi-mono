@@ -1,3 +1,4 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join, resolve } from "path";
 import { describe, expect, it } from "vitest";
@@ -164,10 +165,10 @@ describe("skills", () => {
 			expect(skills[0].name).toBe("valid-skill");
 		});
 
-		it("should parse disable-model-invocation frontmatter field", () => {
-			const { skills, diagnostics } = loadSkillsFromDir({
-				dir: join(fixturesDir, "disable-model-invocation"),
-				source: "test",
+			it("should parse disable-model-invocation frontmatter field", () => {
+				const { skills, diagnostics } = loadSkillsFromDir({
+					dir: join(fixturesDir, "disable-model-invocation"),
+					source: "test",
 			});
 
 			expect(skills).toHaveLength(1);
@@ -185,10 +186,40 @@ describe("skills", () => {
 				source: "test",
 			});
 
-			expect(skills).toHaveLength(1);
-			expect(skills[0].disableModelInvocation).toBe(false);
+				expect(skills).toHaveLength(1);
+				expect(skills[0].disableModelInvocation).toBe(false);
+			});
+
+			it("should skip embedded fixture SKILL.md files under worktrees test fixtures", () => {
+				const root = mkdtempSync(join(homedir(), ".pi-skills-fixture-"));
+				const validDir = join(root, "valid-live-skill");
+				mkdirSync(validDir, { recursive: true });
+				writeFileSync(
+					join(validDir, "SKILL.md"),
+					"---\nname: valid-live-skill\ndescription: Valid production skill.\n---\nSkill body.\n",
+				);
+
+				const fixtureDir = join(
+					root,
+					"battle/worktrees/battle_20260205_113118/arena/packages/coding-agent/test/fixtures/skills/no-frontmatter",
+				);
+				mkdirSync(fixtureDir, { recursive: true });
+				writeFileSync(join(fixtureDir, "SKILL.md"), "Fixture without frontmatter.\n");
+
+				const { skills, diagnostics } = loadSkillsFromDir({
+					dir: root,
+					source: "test",
+				});
+
+				expect(skills.some((s) => s.name === "valid-live-skill")).toBe(true);
+				expect(
+					diagnostics.some(
+						(d: ResourceDiagnostic) =>
+							d.path.includes("/worktrees/") && d.path.includes("/test/fixtures/skills/"),
+					),
+				).toBe(false);
+			});
 		});
-	});
 
 	describe("formatSkillsForPrompt", () => {
 		it("should return empty string for no skills", () => {

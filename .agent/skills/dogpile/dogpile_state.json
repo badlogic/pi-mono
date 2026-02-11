@@ -1,0 +1,40 @@
+{
+  "providers": {
+    "llm": "FAILED",
+    "discord": "ERROR",
+    "codex": "DONE",
+    "arxiv": "DONE",
+    "brave": "RATE_LIMITED",
+    "readarr": "DONE",
+    "github": "DONE",
+    "youtube": "DONE",
+    "perplexity": "DONE",
+    "openai": "SKIP",
+    "anthropic": "SKIP",
+    "gemini": "RUNNING",
+    "claude": "TIMEOUT",
+    "synthesis": "DONE"
+  },
+  "last_msg": "Codex Synthesis finished.",
+  "last_updated": "2026-02-11 06:55:33",
+  "errors": [
+    {
+      "provider": "discord",
+      "status": "ERROR",
+      "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+      "error_type": null,
+      "http_status": null,
+      "retry_after": null,
+      "timestamp": "2026-02-11 06:50:20"
+    },
+    {
+      "provider": "brave",
+      "status": "RATE_LIMITED",
+      "message": "Brave rate limited, backing off...",
+      "error_type": null,
+      "http_status": null,
+      "retry_after": null,
+      "timestamp": "2026-02-11 06:50:21"
+    }
+  ]
+}

@@ -20,6 +20,11 @@ function toPosixPath(p: string): string {
 	return p.split(sep).join("/");
 }
 
+function isEmbeddedSkillFixturePath(relPath: string): boolean {
+	const normalized = `/${toPosixPath(relPath)}/`;
+	return normalized.includes("/worktrees/") && normalized.includes("/test/fixtures/skills/");
+}
+
 function prefixIgnorePattern(line: string, prefix: string): string | null {
 	const trimmed = line.trim();
 	if (!trimmed) return null;
@@ -197,10 +202,13 @@ function loadSkillsFromDirInternal(
 				}
 			}
 
-			const relPath = toPosixPath(relative(root, fullPath));
-			const ignorePath = isDirectory ? `${relPath}/` : relPath;
-			if (ig.ignores(ignorePath)) {
-				continue;
+				const relPath = toPosixPath(relative(root, fullPath));
+				if (isEmbeddedSkillFixturePath(relPath)) {
+					continue;
+				}
+				const ignorePath = isDirectory ? `${relPath}/` : relPath;
+				if (ig.ignores(ignorePath)) {
+					continue;
 			}
 
 			if (isDirectory) {

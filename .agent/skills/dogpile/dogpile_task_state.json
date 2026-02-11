@@ -1,0 +1,30 @@
+{
+  "completed": 7,
+  "total": 16,
+  "description": "Dogpile: RVC retrieval based voice conversion training best practices",
+  "current_item": "completed",
+  "stats": {
+    "providers_done": 0,
+    "providers_total": 9,
+    "errors": 0,
+    "rate_limits": 0
+  },
+  "provider_status": {
+    "brave": "pending",
+    "perplexity": "pending",
+    "github": "pending",
+    "arxiv": "pending",
+    "youtube": "pending",
+    "readarr": "pending",
+    "wayback": "pending",
+    "codex": "pending",
+    "discord": "pending"
+  },
+  "provider_times": {},
+  "errors": [],
+  "rate_limits": {},
+  "elapsed_seconds": 319.9,
+  "progress_pct": 43.8,
+  "last_updated": "2026-02-11 06:55:33",
+  "status": "completed"
+}

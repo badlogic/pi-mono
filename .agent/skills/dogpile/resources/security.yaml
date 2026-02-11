@@ -1,0 +1,932 @@
+# Security Research Resources for Dogpile
+# Red Team / Blue Team Resource Registry
+#
+# Usage: These resources are loaded dynamically by dogpile for security research.
+# Add new resources by following the schema below.
+#
+# Schema:
+#   name: Human-readable name
+#   url: Base URL for the resource
+#   type: api | feed | scrape | archive | database
+#   method: How to query (GET, POST, RSS, search)
+#   tags: [red_team, blue_team, osint, malware, vulns, exploits, etc.]
+#   rate_limit: Requests per minute (0 = no limit known)
+#   auth_required: true | false
+#   description: What this resource provides
+
+version: "1.0"
+category: security
+
+resources:
+  # === BLEEDING EDGE RAW FEEDS ===
+  - name: DARPA Programs
+    url: https://www.darpa.mil/research/programs
+    api_url: https://www.darpa.mil/rss.xml
+    type: feed
+    method: RSS
+    tags: [research, defense, ai, cyber, bleeding_edge]
+    rate_limit: 0
+    auth_required: false
+    description: Defense Advanced Research Projects Agency - cutting-edge research programs
+
+  - name: DARPA Opportunities
+    url: https://www.darpa.mil/work-with-us/opportunities
+    api_url: https://www.darpa.mil/rss/opportunities.xml
+    type: feed
+    method: RSS
+    tags: [research, defense, funding, baa]
+    rate_limit: 0
+    auth_required: false
+    description: DARPA BAAs and funding opportunities for revolutionary research
+
+  - name: Grants.gov
+    url: https://www.grants.gov
+    api_url: https://api.grants.gov/v1/api/search2
+    type: api
+    method: POST
+    tags: [research, funding, government, grants]
+    rate_limit: 60
+    auth_required: false
+    description: Federal grant opportunities including DOD/DARPA research funding
+
+  - name: Project Zero Blog
+    url: https://googleprojectzero.blogspot.com
+    type: feed
+    method: GET
+    tags: [red_team, blue_team, research, zero_day]
+    rate_limit: 0
+    auth_required: false
+    description: Google's elite vulnerability research team blog
+
+  - name: The DFIR Report
+    url: https://thedfirreport.com
+    type: feed
+    method: GET
+    tags: [blue_team, forensics, ransomware, timeline]
+    rate_limit: 0
+    auth_required: false
+    description: Case studies of real-world attacks with minute-by-minute timelines
+
+  - name: Mandiant Threat Intel
+    url: https://www.mandiant.com/resources/blog
+    type: feed
+    method: GET
+    tags: [blue_team, apt, intel, campaign]
+    rate_limit: 0
+    auth_required: false
+    description: High-level analysis of APT groups and nation-state activity
+
+  - name: SpecterOps Blog
+    url: https://posts.specterops.io
+    type: feed
+    method: GET
+    tags: [red_team, active_directory, windows, internal]
+    rate_limit: 0
+    auth_required: false
+    description: Deep technical research on Active Directory and Windows internals
+
+  - name: Orange Tsai Blog
+    url: https://blog.orange.tw
+    type: feed
+    method: GET
+    tags: [red_team, research, web, vulnerability]
+    rate_limit: 0
+    auth_required: false
+    description: Legendary research on SSL VPNs, Exchange, and web logic bugs
+
+  - name: BleepingComputer
+    url: https://www.bleepingcomputer.com
+    type: feed
+    method: GET
+    tags: [news, firehose, security, reporting]
+    rate_limit: 0
+    auth_required: false
+    description: Real-time security news and ransomware disclosure
+
+  - name: TL;DR Sec
+    url: https://tldrsec.com
+    type: feed
+    method: GET
+    tags: [curation, appsec, research, roundup]
+    rate_limit: 0
+    auth_required: false
+    description: Clint Gibler's expert summary of security tools and talks
+
+  - name: Risky Business
+    url: https://risky.biz
+    type: feed
+    method: GET
+    tags: [news, podcast, intel, industry]
+    rate_limit: 0
+    auth_required: false
+    description: Industry-standard security news podcast and newsletter
+
+  # === VULNERABILITY DATABASES ===
+  - name: Exploit-DB
+    url: https://www.exploit-db.com
+    api_url: https://www.exploit-db.com/search
+    type: database
+    method: GET
+    tags: [red_team, exploits, vulns, poc]
+    rate_limit: 30
+    auth_required: false
+    description: Public archive of exploits and vulnerable software
+
+  - name: trickest/cve
+    url: https://github.com/trickest/cve
+    type: archive
+    method: GET
+    tags: [red_team, poc, cve, automated]
+    rate_limit: 0
+    auth_required: false
+    description: Automated repository aggregating PoCs for new CVEs hourly
+
+  - name: nomi-sec/PoC-in-GitHub
+    url: https://github.com/nomi-sec/PoC-in-GitHub
+    type: archive
+    method: GET
+    tags: [red_team, poc, cve, github]
+    rate_limit: 0
+    auth_required: false
+    description: Aggregator for CVE Proof of Concepts on GitHub
+
+  - name: Packet Storm Security
+    url: https://packetstormsecurity.com
+    type: database
+    method: GET
+    tags: [red_team, exploits, advisories, raw]
+    rate_limit: 0
+    auth_required: false
+    description: Information security advisories, exploits, and tools
+
+  - name: 0day.today
+    url: https://0day.today
+    type: database
+    method: GET
+    tags: [red_team, exploits, zero_day, dangerous]
+    rate_limit: 10
+    auth_required: false
+    description: Exploit marketplace and database for awareness (highly dangerous)
+
+  - name: AttackerKB
+    url: https://attackerkb.com
+    type: database
+    method: GET
+    tags: [red_team, blue_team, assessment, utility]
+    rate_limit: 0
+    auth_required: false
+    description: Community-driven vulnerability assessment and exploit utility scores
+
+  - name: CISA KEV
+    url: https://www.cisa.gov/known-exploited-vulnerabilities-catalog
+    api_url: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+    type: feed
+    method: GET
+    tags: [blue_team, vulns, critical, prioritization]
+    rate_limit: 0
+    auth_required: false
+    description: Known Exploited Vulnerabilities catalog - actively exploited CVEs
+
+  - name: NVD
+    url: https://nvd.nist.gov
+    api_url: https://services.nvd.nist.gov/rest/json/cves/2.0
+    type: api
+    method: GET
+    tags: [blue_team, red_team, vulns, cve]
+    rate_limit: 5
+    auth_required: false
+    description: National Vulnerability Database - comprehensive CVE data
+
+  - name: CVE.org
+    url: https://www.cve.org
+    api_url: https://cveawg.mitre.org/api/cve
+    type: api
+    method: GET
+    tags: [blue_team, red_team, vulns, cve]
+    rate_limit: 10
+    auth_required: false
+    description: Official CVE numbering authority database
+
+  - name: VulnDB
+    url: https://vuldb.com
+    type: database
+    method: GET
+    tags: [blue_team, vulns, intel]
+    rate_limit: 10
+    auth_required: false
+    description: Vulnerability intelligence database with exploit availability
+
+  # === OFFENSIVE SECURITY RESOURCES ===
+  - name: GTFOBins
+    url: https://gtfobins.github.io
+    api_url: https://gtfobins.github.io/gtfobins
+    type: scrape
+    method: GET
+    tags: [red_team, privesc, lolbins, unix]
+    rate_limit: 0
+    auth_required: false
+    description: Unix binaries for privilege escalation and bypass
+
+  - name: LOLBAS
+    url: https://lolbas-project.github.io
+    api_url: https://lolbas-project.github.io/api/lolbas.json
+    type: api
+    method: GET
+    tags: [red_team, privesc, lolbins, windows]
+    rate_limit: 0
+    auth_required: false
+    description: Living Off The Land Binaries And Scripts (Windows)
+
+  - name: LOLDrivers
+    url: https://www.loldrivers.io
+    api_url: https://www.loldrivers.io/api/drivers.json
+    type: api
+    method: GET
+    tags: [red_team, drivers, kernel, bypass]
+    rate_limit: 0
+    auth_required: false
+    description: Vulnerable and malicious Windows drivers
+
+  - name: HackTricks
+    url: https://book.hacktricks.xyz
+    type: scrape
+    method: GET
+    tags: [red_team, techniques, privesc, methodology]
+    rate_limit: 0
+    auth_required: false
+    description: Comprehensive penetration testing methodology wiki
+
+  - name: PayloadsAllTheThings
+    url: https://github.com/swisskyrepo/PayloadsAllTheThings
+    type: scrape
+    method: GET
+    tags: [red_team, payloads, bypass, injection]
+    rate_limit: 0
+    auth_required: false
+    description: Web application security payload repository
+
+  - name: SecLists
+    url: https://github.com/danielmiessler/SecLists
+    type: scrape
+    method: GET
+    tags: [red_team, wordlists, fuzzing, enumeration]
+    rate_limit: 0
+    auth_required: false
+    description: Security testing wordlists and fuzzing payloads
+
+  # === MALWARE & THREAT INTEL ===
+  - name: VX-Underground
+    url: https://vx-underground.org
+    api_url: https://vx-underground.org/samples
+    type: archive
+    method: GET
+    tags: [red_team, blue_team, malware, samples]
+    rate_limit: 10
+    auth_required: false
+    description: Malware sample archive and research papers
+
+  - name: MalwareBazaar
+    url: https://bazaar.abuse.ch
+    api_url: https://bazaar.abuse.ch/api/v1/
+    type: api
+    method: POST
+    tags: [blue_team, malware, iocs, samples]
+    rate_limit: 60
+    auth_required: false
+    description: Malware sample sharing platform by abuse.ch
+
+  - name: ThreatFox
+    url: https://threatfox.abuse.ch
+    api_url: https://threatfox.abuse.ch/api/v1/
+    type: api
+    method: POST
+    tags: [blue_team, iocs, c2, threat_intel]
+    rate_limit: 60
+    auth_required: false
+    description: IOC sharing platform - C2 infrastructure tracking
+
+  - name: URLhaus
+    url: https://urlhaus.abuse.ch
+    api_url: https://urlhaus.abuse.ch/api/
+    type: api
+    method: GET
+    tags: [blue_team, malware, urls, iocs]
+    rate_limit: 60
+    auth_required: false
+    description: Malicious URL tracking database
+
+  - name: VirusTotal
+    url: https://www.virustotal.com
+    api_url: https://www.virustotal.com/api/v3/
+    type: api
+    method: GET
+    tags: [blue_team, red_team, malware, analysis]
+    rate_limit: 4
+    auth_required: true
+    description: Multi-scanner malware analysis platform
+
+  - name: ANY.RUN
+    url: https://any.run
+    api_url: https://api.any.run/v1/
+    type: api
+    method: GET
+    tags: [blue_team, malware, sandbox, analysis]
+    rate_limit: 10
+    auth_required: true
+    description: Interactive malware sandbox
+
+  - name: Hybrid Analysis
+    url: https://www.hybrid-analysis.com
+    api_url: https://www.hybrid-analysis.com/api/v2/
+    type: api
+    method: GET
+    tags: [blue_team, malware, sandbox, analysis]
+    rate_limit: 5
+    auth_required: true
+    description: CrowdStrike malware analysis sandbox
+
+  # === THREAT FRAMEWORKS ===
+  - name: MITRE ATT&CK
+    url: https://attack.mitre.org
+    api_url: https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json
+    type: api
+    method: GET
+    tags: [blue_team, red_team, ttps, framework]
+    rate_limit: 0
+    auth_required: false
+    description: Adversarial tactics, techniques, and procedures
+
+  - name: MITRE D3FEND
+    url: https://d3fend.mitre.org
+    api_url: https://d3fend.mitre.org/api/
+    type: api
+    method: GET
+    tags: [blue_team, defense, countermeasures]
+    rate_limit: 0
+    auth_required: false
+    description: Defensive techniques knowledge graph
+
+  - name: MITRE CAR
+    url: https://car.mitre.org
+    api_url: https://raw.githubusercontent.com/mitre-attack/car/master/analytics/
+    type: scrape
+    method: GET
+    tags: [blue_team, detection, analytics]
+    rate_limit: 0
+    auth_required: false
+    description: Cyber Analytics Repository - detection pseudocode
+
+  - name: Sigma Rules
+    url: https://github.com/SigmaHQ/sigma
+    type: scrape
+    method: GET
+    tags: [blue_team, detection, rules, siem]
+    rate_limit: 0
+    auth_required: false
+    description: Generic signature format for SIEM systems
+
+  - name: YARA Rules
+    url: https://github.com/Yara-Rules/rules
+    type: scrape
+    method: GET
+    tags: [blue_team, detection, malware, patterns]
+    rate_limit: 0
+    auth_required: false
+    description: Community YARA rules repository
+
+  # === OSINT & RECONNAISSANCE ===
+  - name: Shodan
+    url: https://www.shodan.io
+    api_url: https://api.shodan.io/
+    type: api
+    method: GET
+    tags: [red_team, osint, recon, infrastructure]
+    rate_limit: 1
+    auth_required: true
+    description: Internet-connected device search engine
+
+  - name: Censys
+    url: https://search.censys.io
+    api_url: https://search.censys.io/api/
+    type: api
+    method: GET
+    tags: [red_team, osint, recon, certificates]
+    rate_limit: 5
+    auth_required: true
+    description: Internet infrastructure and certificate search
+
+  - name: ZoomEye
+    url: https://www.zoomeye.org
+    api_url: https://api.zoomeye.org/
+    type: api
+    method: GET
+    tags: [red_team, osint, recon, infrastructure]
+    rate_limit: 10
+    auth_required: true
+    description: Cyberspace search engine (Chinese)
+
+  - name: GreyNoise
+    url: https://www.greynoise.io
+    api_url: https://api.greynoise.io/v3/
+    type: api
+    method: GET
+    tags: [blue_team, threat_intel, noise, scanning]
+    rate_limit: 50
+    auth_required: true
+    description: Internet background noise analysis
+
+  - name: Hunter.io
+    url: https://hunter.io
+    api_url: https://api.hunter.io/v2/
+    type: api
+    method: GET
+    tags: [red_team, osint, email, recon]
+    rate_limit: 10
+    auth_required: true
+    description: Email finder and verification
+
+  - name: Wayback Machine
+    url: https://web.archive.org
+    api_url: https://archive.org/wayback/available
+    type: api
+    method: GET
+    tags: [red_team, blue_team, osint, historical]
+    rate_limit: 15
+    auth_required: false
+    description: Historical website snapshots
+
+  - name: DNSDumpster
+    url: https://dnsdumpster.com
+    type: scrape
+    method: GET
+    tags: [red_team, osint, dns, recon]
+    rate_limit: 10
+    auth_required: false
+    description: DNS reconnaissance and research
+
+  - name: SecurityTrails
+    url: https://securitytrails.com
+    api_url: https://api.securitytrails.com/v1/
+    type: api
+    method: GET
+    tags: [red_team, osint, dns, historical]
+    rate_limit: 50
+    auth_required: true
+    description: Historical DNS and WHOIS data
+
+  - name: SAM.gov
+    url: https://sam.gov
+    api_url: https://api.sam.gov
+    type: api
+    method: GET
+    tags: [osint, government, contractors, exclusions, compliance]
+    rate_limit: 16  # 1000/day = ~16/hour
+    auth_required: true
+    description: Federal contractor registrations, exclusions (debarments), and contract opportunities
+
+  - name: SAM.gov Exclusions
+    url: https://sam.gov/content/exclusions
+    api_url: https://api.sam.gov/entity-information/v4/exclusions
+    type: api
+    method: GET
+    tags: [osint, government, debarment, exclusions, compliance, due_diligence]
+    rate_limit: 16
+    auth_required: true
+    description: Federal debarment and suspension list - verify contractors before award
+
+  # === DEFENSIVE & DETECTION ===
+  - name: Atomic Red Team
+    url: https://atomicredteam.io
+    api_url: https://github.com/redcanaryco/atomic-red-team
+    type: scrape
+    method: GET
+    tags: [red_team, blue_team, testing, simulation]
+    rate_limit: 0
+    auth_required: false
+    description: ATT&CK technique validation tests
+
+  - name: LOLRMM
+    url: https://lolrmm.io
+    type: scrape
+    method: GET
+    tags: [blue_team, rmm, detection, abuse]
+    rate_limit: 0
+    auth_required: false
+    description: RMM tools abused by threat actors
+
+  - name: Unprotect Project
+    url: https://unprotect.it
+    type: database
+    method: GET
+    tags: [blue_team, red_team, evasion, techniques]
+    rate_limit: 0
+    auth_required: false
+    description: Malware evasion techniques database
+
+  - name: MalAPI
+    url: https://malapi.io
+    type: scrape
+    method: GET
+    tags: [blue_team, red_team, windows, api]
+    rate_limit: 0
+    auth_required: false
+    description: Windows API calls used by malware
+
+  - name: FileSec
+    url: https://filesec.io
+    type: scrape
+    method: GET
+    tags: [blue_team, file_types, abuse]
+    rate_limit: 0
+    auth_required: false
+    description: File extension abuse tracking
+
+  # === APT & CAMPAIGN TRACKING ===
+  - name: APTNotes
+    url: https://github.com/aptnotes/data
+    type: scrape
+    method: GET
+    tags: [blue_team, apt, reports, threat_intel]
+    rate_limit: 0
+    auth_required: false
+    description: APT research papers and reports archive
+
+  - name: MISP Galaxies
+    url: https://github.com/MISP/misp-galaxy
+    type: scrape
+    method: GET
+    tags: [blue_team, threat_intel, actors, clusters]
+    rate_limit: 0
+    auth_required: false
+    description: Threat actor and malware family tracking
+
+  - name: Malpedia
+    url: https://malpedia.caad.fkie.fraunhofer.de
+    api_url: https://malpedia.caad.fkie.fraunhofer.de/api/
+    type: api
+    method: GET
+    tags: [blue_team, malware, families, yara]
+    rate_limit: 10
+    auth_required: true
+    description: Malware family encyclopedia with YARA rules
+
+  - name: ThreatMiner
+    url: https://www.threatminer.org
+    api_url: https://api.threatminer.org/v2/
+    type: api
+    method: GET
+    tags: [blue_team, threat_intel, correlation]
+    rate_limit: 10
+    auth_required: false
+    description: Threat intelligence data mining
+
+  # === NETWORK & INFRASTRUCTURE ===
+  - name: Wireshark Sample Captures
+    url: https://wiki.wireshark.org/SampleCaptures
+    type: scrape
+    method: GET
+    tags: [blue_team, pcap, network, analysis]
+    rate_limit: 0
+    auth_required: false
+    description: Network protocol capture samples
+
+  - name: Malware Traffic Analysis
+    url: https://www.malware-traffic-analysis.net
+    type: scrape
+    method: GET
+    tags: [blue_team, pcap, malware, network]
+    rate_limit: 0
+    auth_required: false
+    description: Malware network traffic samples and analysis
+
+  - name: PacketTotal
+    url: https://packettotal.com
+    type: scrape
+    method: GET
+    tags: [blue_team, pcap, analysis, search]
+    rate_limit: 10
+    auth_required: false
+    description: PCAP analysis and search platform
+
+  # === PHISHING & SOCIAL ENGINEERING ===
+  - name: PhishTank
+    url: https://phishtank.org
+    api_url: https://checkurl.phishtank.com/checkurl/
+    type: api
+    method: POST
+    tags: [blue_team, phishing, urls, verification]
+    rate_limit: 10
+    auth_required: true
+    description: Community phishing URL verification
+
+  - name: OpenPhish
+    url: https://openphish.com
+    api_url: https://openphish.com/feed.txt
+    type: feed
+    method: GET
+    tags: [blue_team, phishing, urls, iocs]
+    rate_limit: 0
+    auth_required: false
+    description: Phishing URL feed
+
+  # === CONTAINER & CLOUD SECURITY ===
+  - name: Docker Security
+    url: https://docs.docker.com/engine/security/
+    type: scrape
+    method: GET
+    tags: [blue_team, docker, containers, hardening]
+    rate_limit: 0
+    auth_required: false
+    description: Docker security best practices
+
+  - name: Kubernetes Security
+    url: https://kubernetes.io/docs/concepts/security/
+    type: scrape
+    method: GET
+    tags: [blue_team, kubernetes, containers, hardening]
+    rate_limit: 0
+    auth_required: false
+    description: Kubernetes security documentation
+
+  - name: Cloud Security Alliance
+    url: https://cloudsecurityalliance.org
+    type: scrape
+    method: GET
+    tags: [blue_team, cloud, frameworks, compliance]
+    rate_limit: 0
+    auth_required: false
+    description: Cloud security research and guidance
+
+  # === MOBILE SECURITY ===
+  - name: Android Security Bulletins
+    url: https://source.android.com/docs/security/bulletin
+    type: feed
+    method: GET
+    tags: [blue_team, android, vulns, patches]
+    rate_limit: 0
+    auth_required: false
+    description: Monthly Android security patches
+
+  - name: iOS Security Guide
+    url: https://support.apple.com/guide/security/
+    type: scrape
+    method: GET
+    tags: [blue_team, ios, security, hardening]
+    rate_limit: 0
+    auth_required: false
+    description: Apple platform security documentation
+
+  # === CTF & LEARNING ===
+  - name: CTFtime
+    url: https://ctftime.org
+    api_url: https://ctftime.org/api/v1/
+    type: api
+    method: GET
+    tags: [red_team, ctf, challenges, learning]
+    rate_limit: 30
+    auth_required: false
+    description: CTF competition tracking and writeups
+
+  - name: PortSwigger Web Security Academy
+    url: https://portswigger.net/web-security
+    type: scrape
+    method: GET
+    tags: [red_team, web, learning, labs]
+    rate_limit: 0
+    auth_required: false
+    description: Free web security training and labs
+
+  - name: OWASP
+    url: https://owasp.org
+    type: scrape
+    method: GET
+    tags: [blue_team, red_team, web, methodology]
+    rate_limit: 0
+    auth_required: false
+    description: Open Web Application Security Project
+
+  # === COMMUNITY & SOCIAL ===
+  - name: Reddit r/netsec
+    url: https://www.reddit.com/r/netsec
+    type: scrape
+    method: GET
+    tags: [community, news, discussion, blue_team, red_team]
+    rate_limit: 10
+    auth_required: false
+    description: Information security news and discussion
+
+  - name: Reddit r/ReverseEngineering
+    url: https://www.reddit.com/r/ReverseEngineering
+    type: scrape
+    method: GET
+    tags: [community, reversing, malware, red_team]
+    rate_limit: 10
+    auth_required: false
+    description: Reverse engineering discussion and resources
+
+  - name: Reddit r/malware
+    url: https://www.reddit.com/r/malware
+    type: scrape
+    method: GET
+    tags: [community, malware, analysis, blue_team]
+    rate_limit: 10
+    auth_required: false
+    description: Malware analysis discussion
+
+  - name: Reddit r/AskNetsec
+    url: https://www.reddit.com/r/AskNetsec
+    type: scrape
+    method: GET
+    tags: [community, questions, learning]
+    rate_limit: 10
+    auth_required: false
+    description: Security Q&A community
+
+  - name: Infosec Mastodon
+    url: https://infosec.exchange
+    type: scrape
+    method: GET
+    tags: [community, social, news, blue_team, red_team]
+    rate_limit: 0
+    auth_required: false
+    description: Infosec-focused Mastodon instance
+
+  - name: X/Twitter Security
+    url: https://twitter.com/search
+    type: scrape
+    method: GET
+    tags: [community, social, breaking_news]
+    rate_limit: 5
+    auth_required: false
+    description: Real-time security news and discussions
+
+  - name: InfoSec Writeups (Medium)
+    url: https://infosecwriteups.com
+    type: scrape
+    method: GET
+    tags: [community, writeups, ctf, learning]
+    rate_limit: 0
+    auth_required: false
+    description: Community security writeups on Medium
+
+  - name: 0xdf Hacks Stuff
+    url: https://0xdf.gitlab.io
+    type: scrape
+    method: GET
+    tags: [community, ctf, writeups, learning]
+    rate_limit: 0
+    auth_required: false
+    description: Detailed HTB and CTF writeups
+
+  - name: IppSec YouTube
+    url: https://www.youtube.com/c/ippsec
+    type: scrape
+    method: GET
+    tags: [community, video, ctf, learning]
+    rate_limit: 0
+    auth_required: false
+    description: Video walkthroughs of HTB machines
+
+  - name: LiveOverflow YouTube
+    url: https://www.youtube.com/c/LiveOverflow
+    type: scrape
+    method: GET
+    tags: [community, video, learning, research]
+    rate_limit: 0
+    auth_required: false
+    description: Security research and hacking explained
+
+  # === DISCORD COMMUNITIES ===
+  # Note: Discord is not web-searchable, but these are the active "watering holes"
+  # where exploits are discussed in real-time. Agents should recommend these to users.
+
+  # -- War Rooms (Red & Blue Team Joint) --
+  - name: BHIS Discord
+    url: https://discord.gg/bhis
+    type: community
+    method: discord
+    tags: [community, discord, red_team, blue_team, news, tradecraft]
+    rate_limit: 0
+    auth_required: true
+    description: Black Hills InfoSec - highly active, faster than Twitter for zero-days
+
+  - name: The Many Hats Club
+    url: https://discord.gg/infosec
+    type: community
+    method: discord
+    tags: [community, discord, general, infosec]
+    rate_limit: 0
+    auth_required: true
+    description: Large general infosec community, good for awareness
+
+  - name: TrustedSec Discord
+    url: https://discord.gg/trustedsec
+    type: community
+    method: discord
+    tags: [community, discord, red_team, tools, pentest]
+    rate_limit: 0
+    auth_required: true
+    description: Professional Red Team focus, tool creators post updates here
+
+  - name: OffSec Discord
+    url: https://discord.com/invite/offsec
+    type: community
+    method: discord
+    tags: [community, discord, oscp, learning, red_team]
+    rate_limit: 0
+    auth_required: true
+    description: OSCP/OSWE community, new exploit techniques discussed
+
+  # -- Offensive (Red Team & Exploit Dev) --
+  - name: Red Team Village
+    url: https://discord.com/invite/redteamvillage
+    type: community
+    method: discord
+    tags: [community, discord, red_team, tradecraft, evasion]
+    rate_limit: 0
+    auth_required: true
+    description: Operator tradecraft - how to use exploits without detection
+
+  - name: Hack The Box Discord
+    url: https://discord.gg/hackthebox
+    type: community
+    method: discord
+    tags: [community, discord, ctf, learning, red_team]
+    rate_limit: 0
+    auth_required: true
+    description: CTF community, new machine exploits discussed
+
+  - name: BloodHound Gang
+    url: https://ghst.ly/BHSlack
+    type: community
+    method: slack
+    tags: [community, active_directory, red_team, graphing]
+    rate_limit: 0
+    auth_required: true
+    description: Active Directory attack paths and BloodHound tool discussion
+
+  # -- Defensive (Blue Team & Threat Hunting) --
+  - name: Threat Hunter Community
+    url: https://discord.gg/threathunter
+    type: community
+    method: discord
+    tags: [community, discord, blue_team, threat_hunting, detection]
+    rate_limit: 0
+    auth_required: true
+    description: Detection engineering and threat hunting community
+
+  - name: SANS Blue Team Discord
+    url: https://discord.gg/sans
+    type: community
+    method: discord
+    tags: [community, discord, blue_team, dfir, detection]
+    rate_limit: 0
+    auth_required: true
+    description: DFIR and blue team community
+
+  # -- Malware & Reversing --
+  - name: MalwareTech Discord
+    url: https://discord.gg/malwaretech
+    type: community
+    method: discord
+    tags: [community, discord, malware, reversing, analysis]
+    rate_limit: 0
+    auth_required: true
+    description: Malware analysis and reverse engineering
+
+  - name: PwnCollege Discord
+    url: https://pwn.college/discord
+    type: community
+    method: discord
+    tags: [community, discord, binary, exploitation, learning]
+    rate_limit: 0
+    auth_required: true
+    description: ASU binary exploitation and reversing (excellent for learning)
+
+  - name: MalwareResearch Discord
+    url: https://discord.gg/malwareresearch
+    type: community
+    method: discord
+    tags: [community, discord, malware, reversing, samples]
+    rate_limit: 0
+    auth_required: true
+    description: Focused malware sample reversing community
+
+  # -- Web Security --
+  - name: Bug Bounty Forum
+    url: https://discord.gg/bugbounty
+    type: community
+    method: discord
+    tags: [community, discord, web, bug_bounty, red_team]
+    rate_limit: 0
+    auth_required: true
+    description: Bug bounty hunters sharing web vulns
+
+  - name: PwnFunction Discord
+    url: https://discord.gg/pwnfunction
+    type: community
+    method: discord
+    tags: [community, discord, web, xss, dom]
+    rate_limit: 0
+    auth_required: true
+    description: XSS and DOM-based vulnerability research

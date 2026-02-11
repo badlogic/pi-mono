@@ -1,0 +1,163 @@
+# Default Research Resources for Dogpile
+# Core sources that are always available
+#
+# These are the standard dogpile search backends that are enabled by default.
+
+version: "1.0"
+category: default
+
+resources:
+  # === SEARCH ENGINES ===
+  - name: Brave Search
+    url: https://search.brave.com
+    api_url: https://api.search.brave.com/res/v1/web/search
+    type: api
+    method: GET
+    tags: [general, web, search, free]
+    rate_limit: 15
+    auth_required: true
+    description: Privacy-focused web search with API access
+
+  - name: Perplexity
+    url: https://www.perplexity.ai
+    api_url: https://api.perplexity.ai/chat/completions
+    type: api
+    method: POST
+    tags: [ai, reasoning, synthesis, paid]
+    rate_limit: 50
+    auth_required: true
+    description: AI-powered deep reasoning and synthesis
+
+  # === CODE & DEVELOPER ===
+  - name: GitHub
+    url: https://github.com
+    api_url: https://api.github.com
+    type: api
+    method: GET
+    tags: [code, repos, issues, developers]
+    rate_limit: 30
+    auth_required: false
+    description: Code repository search and exploration
+
+  - name: GitHub Gist
+    url: https://gist.github.com
+    api_url: https://api.github.com/gists
+    type: api
+    method: GET
+    tags: [code, snippets, examples]
+    rate_limit: 30
+    auth_required: false
+    description: Code snippet and example search
+
+  - name: Stack Overflow
+    url: https://stackoverflow.com
+    api_url: https://api.stackexchange.com/2.3/search
+    type: api
+    method: GET
+    tags: [code, qa, developers, solutions]
+    rate_limit: 30
+    auth_required: false
+    description: Programming Q&A community
+
+  # === ACADEMIC & RESEARCH ===
+  - name: ArXiv
+    url: https://arxiv.org
+    api_url: https://export.arxiv.org/api/query
+    type: api
+    method: GET
+    tags: [academic, papers, research, preprints]
+    rate_limit: 3
+    auth_required: false
+    description: Open access preprint repository
+
+  - name: Semantic Scholar
+    url: https://www.semanticscholar.org
+    api_url: https://api.semanticscholar.org/graph/v1
+    type: api
+    method: GET
+    tags: [academic, papers, citations]
+    rate_limit: 100
+    auth_required: false
+    description: AI-powered academic paper search
+
+  - name: Google Scholar
+    url: https://scholar.google.com
+    type: scrape
+    method: GET
+    tags: [academic, papers, citations]
+    rate_limit: 5
+    auth_required: false
+    description: Academic paper search (limited API)
+
+  # === MEDIA & TUTORIALS ===
+  - name: YouTube
+    url: https://www.youtube.com
+    api_url: https://www.googleapis.com/youtube/v3/search
+    type: api
+    method: GET
+    tags: [video, tutorials, talks, learning]
+    rate_limit: 100
+    auth_required: true
+    description: Video content and tutorial search
+
+  # === DOCUMENTATION ===
+  - name: Context7
+    url: https://context7.com
+    api_url: https://api.context7.com/v1
+    type: api
+    method: GET
+    tags: [docs, libraries, api, reference]
+    rate_limit: 60
+    auth_required: true
+    description: Library documentation chunks for LLM context
+
+  - name: DevDocs
+    url: https://devdocs.io
+    type: scrape
+    method: GET
+    tags: [docs, api, reference, offline]
+    rate_limit: 0
+    auth_required: false
+    description: Combined API documentation browser
+
+  # === ARCHIVES ===
+  - name: Wayback Machine
+    url: https://web.archive.org
+    api_url: https://archive.org/wayback/available
+    type: api
+    method: GET
+    tags: [archive, historical, snapshots]
+    rate_limit: 15
+    auth_required: false
+    description: Historical website snapshots
+
+  - name: Internet Archive
+    url: https://archive.org
+    api_url: https://archive.org/advancedsearch.php
+    type: api
+    method: GET
+    tags: [archive, books, media, historical]
+    rate_limit: 15
+    auth_required: false
+    description: Digital library of books, movies, and media
+
+  # === NEWS & AGGREGATION ===
+  - name: Hacker News
+    url: https://news.ycombinator.com
+    api_url: https://hn.algolia.com/api/v1/search
+    type: api
+    method: GET
+    tags: [tech, news, discussion, startups]
+    rate_limit: 0
+    auth_required: false
+    description: Tech news and discussion aggregator
+
+  - name: Reddit
+    url: https://www.reddit.com
+    api_url: https://www.reddit.com/search.json
+    type: api
+    method: GET
+    tags: [discussion, community, topics]
+    rate_limit: 10
+    auth_required: false
+    description: Community discussion and topic search

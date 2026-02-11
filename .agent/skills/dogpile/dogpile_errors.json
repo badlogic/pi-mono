@@ -1,0 +1,3614 @@
+{
+  "last_updated": "2026-02-10T19:03:58.900002",
+  "sessions": [
+    {
+      "session_id": "dogpile_1770310283",
+      "query": "Robert Sapolsky",
+      "started_at": "2026-02-05T11:51:23.185526",
+      "ended_at": "2026-02-05T11:55:00.511735",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "llm",
+        "codex",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T11:51:29.084962",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {}
+    },
+    {
+      "session_id": "dogpile_1770310620",
+      "query": "neuroscience stress",
+      "started_at": "2026-02-05T11:57:00.737196",
+      "ended_at": "2026-02-05T11:57:16.001886",
+      "status": "failed",
+      "providers_succeeded": [
+        "claude"
+      ],
+      "providers_failed": [],
+      "errors": [],
+      "rate_limits_hit": {}
+    },
+    {
+      "session_id": "dogpile_1770310656",
+      "query": "what is stress response",
+      "started_at": "2026-02-05T11:57:36.510577",
+      "ended_at": "2026-02-05T11:58:18.663507",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "codex",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T11:57:43.142150",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {}
+    },
+    {
+      "session_id": "dogpile_1770311056",
+      "query": "Robert Sapolsky",
+      "started_at": "2026-02-05T12:04:16.575011",
+      "ended_at": "2026-02-05T12:05:21.281456",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "perplexity",
+        "brave",
+        "github",
+        "youtube",
+        "codex",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T12:04:22.246314",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:05:05.419809",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 63
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:05:05.420385",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 64
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770311485",
+      "query": "What does Robert Sapolsky say about free will?",
+      "started_at": "2026-02-05T12:11:25.636294",
+      "ended_at": "2026-02-05T12:14:54.205486",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T12:11:32.212846",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:11:34.308677",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 65
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:11:34.309256",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 66
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:14:37.297464",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 67
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:14:37.298023",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 68
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 4
+      }
+    },
+    {
+      "session_id": "dogpile_1770312170",
+      "query": "What does Robert Sapolsky say about free will?",
+      "started_at": "2026-02-05T12:22:50.368923",
+      "ended_at": "2026-02-05T12:26:13.702349",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T12:22:56.222449",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:22:58.367518",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 69
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:22:58.368289",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 70
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:26:00.471546",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 71
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:26:00.472083",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 72
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 4
+      }
+    },
+    {
+      "session_id": "dogpile_1770312679",
+      "query": "What does Robert Sapolsky say about free will?",
+      "started_at": "2026-02-05T12:31:19.059160",
+      "ended_at": "2026-02-05T12:34:43.329721",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T12:31:25.182719",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:31:27.608660",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 73
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:31:27.609492",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 74
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:34:30.020633",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 75
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:34:30.021322",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 76
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 4
+      }
+    },
+    {
+      "session_id": "dogpile_1770313046",
+      "query": "What does Robert Sapolsky say about free will?",
+      "started_at": "2026-02-05T12:37:26.647665",
+      "ended_at": "2026-02-05T12:39:17.259747",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T12:37:33.686979",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:38:44.311620",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 77
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:38:44.312408",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 78
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770313872",
+      "query": "What does Robert Sapolsky say about free will?",
+      "started_at": "2026-02-05T12:51:12.323162",
+      "ended_at": "2026-02-05T12:54:39.624429",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T12:51:18.555614",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:51:21.136866",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 79
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:51:21.138114",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 80
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:54:22.798050",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 81
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T12:54:22.798644",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 82
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 4
+      }
+    },
+    {
+      "session_id": "dogpile_1770321906",
+      "query": "Do you prefer the Dune book series or the Game of Thrones book series? Which has better character development?",
+      "started_at": "2026-02-05T15:05:06.017676",
+      "ended_at": "2026-02-05T15:05:42.599247",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "github",
+        "brave",
+        "youtube",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T15:05:13.573398",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:05:17.035664",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 83
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:05:17.036367",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 84
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770323014",
+      "query": "What does Isaac Asimov say about psychohistory in the Foundation series?",
+      "started_at": "2026-02-05T15:23:34.031581",
+      "ended_at": "2026-02-05T15:26:46.326460",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "github",
+        "brave",
+        "youtube",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T15:23:40.904234",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:23:43.507358",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 85
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:23:43.508169",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 86
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:26:26.444114",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 87
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:26:26.444590",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 88
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 4
+      }
+    },
+    {
+      "session_id": "dogpile_1770323620",
+      "query": "Horus, do you prefer the Dune book series or the Game of Thrones book series? Are there certain sections in the books that you like and don't like?",
+      "started_at": "2026-02-05T15:33:40.969285",
+      "ended_at": "2026-02-05T15:34:25.865538",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "perplexity",
+        "brave",
+        "github",
+        "youtube",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T15:33:47.021834",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:34:08.593394",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 89
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:34:08.594203",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 90
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770324553",
+      "query": "Horus, do you prefer the Dune book series or the Game of Thrones book series?",
+      "started_at": "2026-02-05T15:49:13.765347",
+      "ended_at": "2026-02-05T15:50:18.126252",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "llm",
+        "pi",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex",
+        "claude"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T15:49:19.224856",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:49:22.064950",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 91
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:49:22.065453",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 92
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:49:55.374885",
+          "provider": "claude",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 1
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:49:55.375699",
+          "provider": "claude",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 2
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2,
+        "claude": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770325065",
+      "query": "What is the main theme of Dune?",
+      "started_at": "2026-02-05T15:57:45.525108",
+      "ended_at": "2026-02-05T15:58:39.472544",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "pi",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex",
+        "claude"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T15:57:52.279836",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:57:54.221127",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 93
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:57:54.221597",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 94
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:58:20.048168",
+          "provider": "claude",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 3
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T15:58:20.048849",
+          "provider": "claude",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 4
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2,
+        "claude": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770325307",
+      "query": "What is the main theme of Dune?",
+      "started_at": "2026-02-05T16:01:47.669024",
+      "ended_at": "2026-02-05T16:02:31.671467",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T16:01:54.168990",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T16:01:56.031802",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 95
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T16:01:56.032325",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 96
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770325719",
+      "query": "Tell me about Dune by Frank Herbert",
+      "started_at": "2026-02-05T16:08:39.584332",
+      "ended_at": "2026-02-05T16:09:32.980735",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T16:08:57.730108",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T16:09:00.301417",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 97
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T16:09:00.301967",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 98
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770338366",
+      "query": "Dune by Frank Herbert",
+      "started_at": "2026-02-05T19:39:26.871235",
+      "ended_at": "2026-02-05T19:39:59.835275",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "github",
+        "brave",
+        "youtube",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T19:39:32.871806",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T19:39:35.748535",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 99
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T19:39:35.749285",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 100
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770338789",
+      "query": "Horus, do you prefer the Dune book series or the Game of Thrones book series?",
+      "started_at": "2026-02-05T19:46:29.774507",
+      "ended_at": "2026-02-05T19:47:19.162506",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "perplexity",
+        "brave",
+        "github",
+        "youtube",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T19:46:39.700944",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T19:46:42.411871",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 101
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T19:46:42.412659",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 102
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770340004",
+      "query": "Horus, do you prefer the Dune book series or the Game of Thrones book series?",
+      "started_at": "2026-02-05T20:06:44.350914",
+      "ended_at": "2026-02-05T20:07:29.157607",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T20:06:52.524860",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T20:06:54.866712",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 103
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T20:06:54.867409",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 104
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770341326",
+      "query": "Gladiator movie themes",
+      "started_at": "2026-02-05T20:28:46.668077",
+      "ended_at": "2026-02-05T20:32:12.566316",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "github",
+        "brave",
+        "youtube",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T20:28:52.968255",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T20:28:56.072196",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 105
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T20:28:56.072891",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 106
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770345293",
+      "query": "Horus, do you like Bulgarian State Choir (Le Myst\u00e8re des Voix Bulgares) and Oathbreaker's song Origin? Why or why not?",
+      "started_at": "2026-02-05T21:34:53.086428",
+      "ended_at": "2026-02-05T21:35:39.092272",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-05T21:35:00.258516",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T21:35:04.022366",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 107
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-05T21:35:04.022938",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 108
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770395781",
+      "query": "Robert Sapolsky",
+      "started_at": "2026-02-06T11:36:21.986296",
+      "ended_at": "2026-02-06T11:37:39.522125",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "perplexity",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-06T11:36:33.473795",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-06T11:36:35.677581",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 109
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-06T11:36:35.678160",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 110
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770469405",
+      "query": "Simone Weil",
+      "started_at": "2026-02-07T08:03:25.840420",
+      "ended_at": "2026-02-07T08:04:07.333583",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "llm",
+        "perplexity",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T08:03:31.681890",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:03:34.568461",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 115
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:03:34.568985",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 116
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770469881",
+      "query": "\"Ren Klyce\" philosophy worldview beliefs \"in my view\" \"I believe\" interview",
+      "started_at": "2026-02-07T08:11:21.325937",
+      "ended_at": "2026-02-07T08:12:22.706852",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T08:11:29.551720",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:11:32.472797",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 117
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:11:32.473459",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 118
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770469946",
+      "query": "\"Ren Klyce\" philosophy worldview beliefs \"in my view\" \"I believe\" interview",
+      "started_at": "2026-02-07T08:12:26.272735",
+      "ended_at": "2026-02-07T08:13:22.005845",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T08:12:32.612204",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:12:34.202780",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 119
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:12:34.203490",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 120
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770470102",
+      "query": "\"Ren Klyce\" philosophy worldview beliefs \"in my view\" \"I believe\" interview",
+      "started_at": "2026-02-07T08:15:02.657782",
+      "ended_at": "2026-02-07T08:16:12.372917",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T08:15:16.003925",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:15:17.677396",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 121
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:15:17.677982",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 122
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770470232",
+      "query": "Kyle MacLachlan philosophy approach methodology interview reasoning creative process",
+      "started_at": "2026-02-07T08:17:12.182381",
+      "ended_at": "2026-02-07T08:19:59.201749",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "github",
+        "brave",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T08:17:19.308963",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:17:22.127554",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 123
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:17:22.128147",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 124
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:19:32.211179",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 125
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:19:32.211641",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 126
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 4
+      }
+    },
+    {
+      "session_id": "dogpile_1770470408",
+      "query": "Keith David philosophy approach methodology interview reasoning creative process",
+      "started_at": "2026-02-07T08:20:08.103329",
+      "ended_at": "2026-02-07T08:21:35.225396",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T08:20:17.795999",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:20:19.491411",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 127
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:20:19.492001",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 128
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770470525",
+      "query": "Karl Marx philosophy approach methodology interview reasoning creative process",
+      "started_at": "2026-02-07T08:22:05.791530",
+      "ended_at": "2026-02-07T08:23:57.432941",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T08:22:13.830461",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:22:15.487464",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 129
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:22:15.488073",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 130
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770470669",
+      "query": "Aaron Sorkin philosophy approach methodology interview reasoning creative process",
+      "started_at": "2026-02-07T08:24:29.876992",
+      "ended_at": "2026-02-07T08:27:01.048329",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T08:24:38.755770",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:24:41.672931",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 131
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:24:41.673410",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 132
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770470852",
+      "query": "Laura Dern philosophy approach methodology interview reasoning creative process",
+      "started_at": "2026-02-07T08:27:32.164771",
+      "ended_at": "2026-02-07T08:30:47.505545",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T08:27:39.526470",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:27:41.335239",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 133
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:27:41.335956",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 134
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:30:05.389464",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 135
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:30:05.390183",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 136
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 4
+      }
+    },
+    {
+      "session_id": "dogpile_1770471067",
+      "query": "Thelma Schoonmaker philosophy approach methodology interview reasoning creative process",
+      "started_at": "2026-02-07T08:31:07.094869",
+      "ended_at": "2026-02-07T08:32:37.994799",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T08:31:15.505047",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:31:17.643373",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 137
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:31:17.643941",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 138
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770471177",
+      "query": "Isao Takahata philosophy approach methodology interview reasoning creative process",
+      "started_at": "2026-02-07T08:32:57.509571",
+      "ended_at": "2026-02-07T08:36:45.279607",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T08:33:04.768674",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:33:06.733525",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 139
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:33:06.734070",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 140
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:35:56.915760",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 141
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:35:56.916301",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 142
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 4
+      }
+    },
+    {
+      "session_id": "dogpile_1770471415",
+      "query": "Julius Caesar philosophy approach methodology interview reasoning creative process",
+      "started_at": "2026-02-07T08:36:55.111487",
+      "ended_at": "2026-02-07T08:38:28.103277",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T08:37:02.354189",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:37:05.297886",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 143
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:37:05.298550",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 144
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770471933",
+      "query": "Simone Weil",
+      "started_at": "2026-02-07T08:45:33.067913",
+      "ended_at": "2026-02-07T08:46:15.749199",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T08:45:38.788465",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:45:40.806930",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 145
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:45:40.807381",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 146
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770472532",
+      "query": "Simone Weil",
+      "started_at": "2026-02-07T08:55:32.716698",
+      "ended_at": "2026-02-07T08:56:28.652729",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T08:55:40.948114",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:55:46.503003",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 147
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T08:55:46.503572",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 148
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770473948",
+      "query": "\"Ren Klyce\" philosophy worldview beliefs \"in my view\" \"I believe\" interview",
+      "started_at": "2026-02-07T09:19:08.828836",
+      "ended_at": "2026-02-07T09:21:12.247769",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T09:19:15.681257",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T09:19:18.528526",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 149
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T09:19:18.529120",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 150
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770474075",
+      "query": "\"Ren Klyce\" philosophy worldview beliefs \"in my view\" \"I believe\" interview",
+      "started_at": "2026-02-07T09:21:15.962522",
+      "ended_at": "2026-02-07T09:22:24.887008",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T09:21:26.707600",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T09:21:28.317418",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 151
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T09:21:28.317892",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 152
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770476241",
+      "query": "Ren Klyce sound design philosophy",
+      "started_at": "2026-02-07T09:57:21.303625",
+      "ended_at": "2026-02-07T10:00:24.999654",
+      "status": "failed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-07T09:57:29.859903",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T09:57:33.202399",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 153
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T09:57:33.203025",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 154
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T09:59:54.291512",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 155
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-07T09:59:54.292219",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 156
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 4
+      }
+    },
+    {
+      "session_id": "dogpile_1770564936",
+      "query": "audio restoration denoising speech enhancement old recordings archives vintage audio AI models 2024 2025 2026",
+      "started_at": "2026-02-08T10:35:36.001243",
+      "ended_at": "2026-02-08T10:35:37.749523",
+      "status": "failed",
+      "providers_succeeded": [],
+      "providers_failed": [],
+      "errors": [],
+      "rate_limits_hit": {}
+    },
+    {
+      "session_id": "dogpile_1770564938",
+      "query": "voice cloning from noisy degraded audio low quality historical recordings batch voice training TTS PersonaPlex Qwen-TTS RVC",
+      "started_at": "2026-02-08T10:35:38.195325",
+      "ended_at": "2026-02-08T10:39:14.357641",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-08T10:35:45.881288",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-08T10:35:48.988166",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 157
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-08T10:35:48.988604",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 158
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-08T10:38:51.275356",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 159
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-08T10:38:51.275826",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 160
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 4
+      }
+    },
+    {
+      "session_id": "dogpile_1770578048",
+      "query": "Shared LoRA Subspaces vs Independent LoRAs for 200+ personas efficiency benchmark ArXiv",
+      "started_at": "2026-02-08T14:14:08.715850",
+      "ended_at": "2026-02-08T14:17:49.909617",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-08T14:14:18.745575",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-08T14:14:21.890488",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 163
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-08T14:14:21.891566",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 164
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-08T14:17:23.763922",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 165
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-08T14:17:23.765147",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 166
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 4
+      }
+    },
+    {
+      "session_id": "dogpile_1770578261",
+      "query": "github Prakhar Kaushik Share Shared LoRA Subspaces",
+      "started_at": "2026-02-08T14:17:41.649058",
+      "ended_at": "2026-02-08T14:18:11.749189",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex",
+        "synthesis"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-08T14:17:49.463403",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-08T14:17:51.351033",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 167
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-08T14:17:51.351703",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 168
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-08T14:18:11.730882",
+          "provider": "synthesis",
+          "error_type": "api_error",
+          "severity": "error",
+          "message": "Codex Synthesis failed.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770589229",
+      "query": "autonomous multi-agent bug fixing loop patterns python supervisor",
+      "started_at": "2026-02-08T17:20:29.365327",
+      "ended_at": "2026-02-08T17:22:42.921101",
+      "status": "completed",
+      "providers_succeeded": [
+        "arxiv",
+        "readarr",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "gemini",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "codex"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-08T17:21:33.116441",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-08T17:21:36.399962",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (waiting 60s)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 169
+          },
+          "retry_after_seconds": 60,
+          "http_status": 429,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-08T17:21:36.400556",
+          "provider": "codex",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 170
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "codex": 2
+      }
+    },
+    {
+      "session_id": "dogpile_1770729399",
+      "query": "filetype:pdf site:ti.com datasheet",
+      "started_at": "2026-02-10T08:16:39.787393",
+      "ended_at": "2026-02-10T08:17:42.676295",
+      "status": "completed",
+      "providers_succeeded": [
+        "arxiv",
+        "brave",
+        "youtube",
+        "github",
+        "perplexity",
+        "codex",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-10T08:16:55.979796",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {}
+    },
+    {
+      "session_id": "dogpile_1770734666",
+      "query": "AI agent memory",
+      "started_at": "2026-02-10T09:44:26.542164",
+      "ended_at": "2026-02-10T09:46:18.049698",
+      "status": "completed",
+      "providers_succeeded": [
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "codex",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "brave"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-10T09:45:16.730768",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-10T09:45:17.106642",
+          "provider": "brave",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 2
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "brave": 1
+      }
+    },
+    {
+      "session_id": "dogpile_1770745314",
+      "query": "best text classifier backbone for structural_elements document extraction with class imbalance and layout features, compare against bert-base-uncased",
+      "started_at": "2026-02-10T12:41:54.849631",
+      "ended_at": "2026-02-10T12:44:07.889498",
+      "status": "completed",
+      "providers_succeeded": [
+        "github",
+        "arxiv",
+        "brave",
+        "youtube",
+        "perplexity",
+        "codex",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "brave"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-10T12:41:54.920427",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-10T12:41:55.269545",
+          "provider": "brave",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 3
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "brave": 1
+      }
+    },
+    {
+      "session_id": "dogpile_1770745495",
+      "query": "best text classifier backbone for structural_elements document extraction with class imbalance and layout features, compare against bert-base-uncased",
+      "started_at": "2026-02-10T12:44:55.040272",
+      "ended_at": "2026-02-10T12:46:27.557504",
+      "status": "completed",
+      "providers_succeeded": [
+        "github",
+        "arxiv",
+        "brave",
+        "youtube",
+        "perplexity",
+        "codex",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "brave"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-10T12:44:55.124131",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-10T12:44:55.493355",
+          "provider": "brave",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 4
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "brave": 1
+      }
+    },
+    {
+      "session_id": "dogpile_1770765672",
+      "query": "persona knowledge graph multi-hop reasoning question answering LLM agents QRA",
+      "started_at": "2026-02-10T18:21:12.790444",
+      "ended_at": "2026-02-10T18:24:05.472124",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "youtube",
+        "github",
+        "perplexity",
+        "codex",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "brave"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-10T18:22:03.226501",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-10T18:22:03.608116",
+          "provider": "brave",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 5
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "brave": 1
+      }
+    },
+    {
+      "session_id": "dogpile_1770768057",
+      "query": "Paula Scher graphic design typography",
+      "started_at": "2026-02-10T19:00:57.410735",
+      "ended_at": "2026-02-10T19:03:58.899408",
+      "status": "completed",
+      "providers_succeeded": [
+        "claude",
+        "arxiv",
+        "brave",
+        "github",
+        "youtube",
+        "perplexity",
+        "codex",
+        "llm",
+        "synthesis"
+      ],
+      "providers_failed": [
+        "discord",
+        "brave"
+      ],
+      "errors": [
+        {
+          "timestamp": "2026-02-10T19:02:16.478034",
+          "provider": "discord",
+          "error_type": "unknown",
+          "severity": "error",
+          "message": "Discord error: No Discord guilds configured. Add guild IDs to SECURITY_GUILDS.",
+          "details": null,
+          "retry_after_seconds": null,
+          "http_status": null,
+          "traceback": null
+        },
+        {
+          "timestamp": "2026-02-10T19:02:16.834598",
+          "provider": "brave",
+          "error_type": "rate_limit",
+          "severity": "warning",
+          "message": "Rate limited (backoff active)",
+          "details": {
+            "remaining": 0,
+            "limit": -1,
+            "reset_at": null,
+            "total_hits": 6
+          },
+          "retry_after_seconds": null,
+          "http_status": 429,
+          "traceback": null
+        }
+      ],
+      "rate_limits_hit": {
+        "brave": 1
+      }
+    }
+  ],
+  "rate_limits": {
+    "codex": {
+      "provider": "codex",
+      "remaining": 0,
+      "limit": -1,
+      "reset_at": 1770589356.4005451,
+      "last_hit": "2026-02-08T17:21:36.400546",
+      "total_hits": 170,
+      "backoff_multiplier": 1.0
+    },
+    "brave": {
+      "provider": "brave",
+      "remaining": 0,
+      "limit": -1,
+      "reset_at": 1770768196.8345726,
+      "last_hit": "2026-02-10T19:02:16.834574",
+      "total_hits": 6,
+      "backoff_multiplier": 1.5
+    },
+    "claude": {
+      "provider": "claude",
+      "remaining": 0,
+      "limit": -1,
+      "reset_at": 1770325160.0488384,
+      "last_hit": "2026-02-05T15:58:20.048839",
+      "total_hits": 4,
+      "backoff_multiplier": 1.0
+    }
+  }
+}

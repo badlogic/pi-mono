@@ -1,0 +1,29 @@
+{
+  "codex": {
+    "provider": "codex",
+    "remaining": 0,
+    "limit": -1,
+    "reset_at": 1770637799.5504344,
+    "last_hit": "2026-02-09T06:48:59.550434",
+    "total_hits": 174,
+    "backoff_multiplier": 10.0
+  },
+  "brave": {
+    "provider": "brave",
+    "remaining": 0,
+    "limit": -1,
+    "reset_at": 1770810681.0858486,
+    "last_hit": "2026-02-11T06:50:21.085850",
+    "total_hits": 2,
+    "backoff_multiplier": 1.5
+  },
+  "claude": {
+    "provider": "claude",
+    "remaining": 0,
+    "limit": -1,
+    "reset_at": 1770325160.0488384,
+    "last_hit": "2026-02-05T15:58:20.048839",
+    "total_hits": 4,
+    "backoff_multiplier": 1.0
+  }
+}
