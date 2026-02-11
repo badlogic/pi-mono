@@ -58,6 +58,18 @@ describe("fuzzyMatch", () => {
 		const result = fuzzyMatch("codex52", "gpt-5.2-codex");
 		assert.strictEqual(result.matches, true);
 	});
+
+	it("exact match scores better than prefix match", () => {
+		const exact = fuzzyMatch("gs", "gs");
+		const prefix = fuzzyMatch("gs", "gsh");
+
+		assert.strictEqual(exact.matches, true);
+		assert.strictEqual(prefix.matches, true);
+		assert.ok(
+			exact.score < prefix.score,
+			`exact (${exact.score}) should score lower (better) than prefix (${prefix.score})`,
+		);
+	});
 });
 
 describe("fuzzyFilter", () => {
@@ -81,6 +93,13 @@ describe("fuzzyFilter", () => {
 
 		// "app" should be first (exact consecutive match at start)
 		assert.strictEqual(result[0], "app");
+	});
+
+	it("exact match ranks above prefix match", () => {
+		const items = ["gsh", "gs", "gsp", "gsa"];
+		const result = fuzzyFilter(items, "gs", (x: string) => x);
+
+		assert.strictEqual(result[0], "gs", `expected "gs" first, got "${result[0]}"`);
 	});
 
 	it("works with custom getText function", () => {

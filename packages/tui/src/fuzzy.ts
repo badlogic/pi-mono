@@ -60,6 +60,9 @@ export function fuzzyMatch(query: string, text: string): FuzzyMatch {
 			return { matches: false, score: 0 };
 		}
 
+		// Penalize excess length so exact matches rank above prefix matches
+		score += (textLower.length - normalizedQuery.length) * 0.5;
+
 		return { matches: true, score };
 	};
 
