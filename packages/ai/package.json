@@ -13,7 +13,7 @@
 		"README.md"
 	],
 	"scripts": {
-		"clean": "rm -rf dist",
+		"clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
 		"generate-models": "npx tsx scripts/generate-models.ts",
 		"build": "npm run generate-models && tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",

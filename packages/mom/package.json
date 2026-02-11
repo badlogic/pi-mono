@@ -13,8 +13,8 @@
 		"CHANGELOG.md"
 	],
 	"scripts": {
-		"clean": "rm -rf dist",
-		"build": "tsgo -p tsconfig.build.json && chmod +x dist/main.js",
+		"clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+		"build": "tsgo -p tsconfig.build.json && node -e \"if (process.platform !== 'win32') require('node:fs').chmodSync('dist/main.js', 0o755)\"",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"prepublishOnly": "npm run clean && npm run build"
 	},

@@ -14,7 +14,7 @@ npm run build
 Run from source:
 
 ```bash
-./pi-test.sh
+npm run pi:test
 ```
 
 ## Forking / Rebranding
@@ -53,7 +53,7 @@ Never use `__dirname` directly for package assets.
 ## Testing
 
 ```bash
-./test.sh                         # Run non-LLM tests (no API keys needed)
+npm run test:no-env               # Run non-LLM tests (no API keys needed)
 npm test                          # Run all tests
 npm test -- test/specific.test.ts # Run specific test
 ```

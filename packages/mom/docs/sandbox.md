@@ -19,6 +19,8 @@ The Docker sandbox isolates mom's tools to a container where she can only access
 # 1. Create and start the container
 cd packages/mom
 ./docker.sh create ./data
+# PowerShell on Windows:
+./docker.ps1 create ./data
 
 # 2. Run mom with Docker sandbox
 mom --sandbox=docker:mom-sandbox ./data
@@ -53,6 +55,7 @@ Use the provided script:
 
 ```bash
 ./docker.sh create <data-dir>   # Create and start container
+./docker.ps1 create <data-dir>  # Same command on Windows PowerShell
 ./docker.sh start               # Start existing container
 ./docker.sh stop                # Stop container
 ./docker.sh remove              # Remove container
@@ -99,7 +102,7 @@ The container persists across:
 
 Installed tools and configs remain until you `docker rm` the container.
 
-To start fresh: `./docker.sh remove && ./docker.sh create ./data`
+To start fresh: `./docker.sh remove && ./docker.sh create ./data` (PowerShell: `./docker.ps1 remove; ./docker.ps1 create ./data`)
 
 ## CLI Options
 
@@ -138,12 +141,18 @@ mom --sandbox=host ./data
 ```bash
 ./docker.sh status  # Check status
 ./docker.sh start   # Start it
+# Windows PowerShell:
+./docker.ps1 status
+./docker.ps1 start
 ```
 
 ### Reset container
 ```bash
 ./docker.sh remove
 ./docker.sh create ./data
+# Windows PowerShell:
+./docker.ps1 remove
+./docker.ps1 create ./data
 ```
 
 ### Missing tools

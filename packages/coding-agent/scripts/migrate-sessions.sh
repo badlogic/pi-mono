@@ -5,6 +5,7 @@
 # saved to ~/.pi/agent/ instead of ~/.pi/agent/sessions/<encoded-cwd>/.
 #
 # Usage: ./migrate-sessions.sh [--dry-run]
+#        ./migrate-sessions.ps1 [-DryRun]   (Windows PowerShell)
 #
 
 set -e

@@ -5,6 +5,7 @@
 #
 # Usage:
 #   ./scripts/build-binaries.sh [--skip-deps] [--platform <platform>]
+#   ./scripts/build-binaries.ps1 [-SkipDeps] [-Platform <platform>]  (Windows PowerShell)
 #
 # Options:
 #   --skip-deps         Skip installing cross-platform dependencies

@@ -41,7 +41,7 @@ export async function validateSandbox(config: SandboxConfig): Promise<void> {
 		}
 	} catch {
 		console.error(`Error: Container '${config.container}' does not exist.`);
-		console.error("Create it with: ./docker.sh create <data-dir>");
+		console.error("Create it with: ./docker.sh create <data-dir> (or ./docker.ps1 create <data-dir> on Windows)");
 		process.exit(1);
 	}
 

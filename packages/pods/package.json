@@ -7,8 +7,8 @@
 		"pi-pods": "dist/cli.js"
 	},
 	"scripts": {
-		"clean": "rm -rf dist",
-		"build": "tsgo -p tsconfig.build.json && chmod +x dist/cli.js && cp src/models.json dist/ && cp -r scripts dist/",
+		"clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+		"build": "tsgo -p tsconfig.build.json && node scripts/postbuild.mjs",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"files": [

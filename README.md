@@ -49,9 +49,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [AGENTS.m
 npm install          # Install all dependencies
 npm run build        # Build all packages
 npm run check        # Lint, format, and type check
-./test.sh            # Run tests (skips LLM-dependent tests without API keys)
-./pi-test.sh         # Run pi from sources (must be run from repo root)
+npm run test:no-env  # Run tests (skips LLM-dependent tests without API keys)
+npm run pi:test      # Run pi from sources (must be run from repo root)
 ```
+
+Alternative script entrypoints:
+- Bash: `./test.sh` and `./pi-test.sh`
+- Windows CMD/PowerShell: `test.cmd` and `pi-test.cmd`
 
 > **Note:** `npm run check` requires `npm run build` to be run first. The web-ui package uses `tsc` which needs compiled `.d.ts` files from dependencies.
 
