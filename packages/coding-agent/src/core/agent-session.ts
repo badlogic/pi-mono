@@ -357,19 +357,6 @@ export class AgentSession {
 			// Track assistant message for auto-compaction (checked on agent_end)
 			if (event.message.role === "assistant") {
 				this._lastAssistantMessage = event.message;
-
-				// Reset retry counter immediately on successful assistant response
-				// This prevents accumulation across multiple LLM calls within a turn
-				const assistantMsg = event.message as AssistantMessage;
-				if (assistantMsg.stopReason !== "error" && this._retryAttempt > 0) {
-					this._emit({
-						type: "auto_retry_end",
-						success: true,
-						attempt: this._retryAttempt,
-					});
-					this._retryAttempt = 0;
-					this._resolveRetry();
-				}
 			}
 		}
 
@@ -377,6 +364,24 @@ export class AgentSession {
 		if (event.type === "agent_end" && this._lastAssistantMessage) {
 			const msg = this._lastAssistantMessage;
 			this._lastAssistantMessage = undefined;
+
+			// Resolve retry promise on agent_end (not message_end) so that
+			// waitForRetry() only resolves after the full agent loop —
+			// including tool execution — has completed. Resolving earlier
+			// (on message_end) caused consumers to proceed with cleanup
+			// while tools were still in flight, leading to lost tool results.
+			const assistantMsg = msg as AssistantMessage;
+			if (assistantMsg.stopReason !== "error" && this._retryAttempt > 0) {
+				this._emit({
+					type: "auto_retry_end",
+					success: true,
+					attempt: this._retryAttempt,
+				});
+				this._retryAttempt = 0;
+				this._resolveRetry();
+				await this._checkCompaction(msg);
+				return;
+			}
 
 			// Check for retryable errors first (overloaded, rate limit, server errors)
 			if (this._isRetryableError(msg)) {
