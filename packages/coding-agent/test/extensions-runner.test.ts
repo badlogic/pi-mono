@@ -280,7 +280,7 @@ describe("ExtensionRunner", () => {
 			expect(missing).toBeUndefined();
 		});
 
-		it("filters out commands conflict with reseved", async () => {
+		it("filters out commands conflict with reserved", async () => {
 			const cmdCode = (name: string) => `
 				export default function(pi) {
 					pi.registerCommand("${name}", {

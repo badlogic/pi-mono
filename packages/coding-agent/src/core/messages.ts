@@ -141,7 +141,7 @@ export function createCustomMessage(
  * Transform AgentMessages (including custom types) to LLM-compatible Messages.
  *
  * This is used by:
- * - Agent's transormToLlm option (for prompt calls and queued messages)
+ * - Agent's transformToLlm option (for prompt calls and queued messages)
  * - Compaction's generateSummary (for summarization)
  * - Custom extensions and tools
  */
