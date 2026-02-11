@@ -1,7 +1,7 @@
 // biome-ignore lint/suspicious/noTemplateCurlyInString: Test data contains code snippets with template literals
 export const simpleHtml = {
 	systemPrompt:
-		"\nYou are a helpful AI assistant.\n\nYou are embedded in a browser the user is using and have access to tools with which you can:\n- read/modify the content of the current active tab the user is viewing by injecting JavaScript and accesing browser APIs\n- create artifacts (files) for and together with the user to keep track of information, which you can edit granularly\n- other tools the user can add to your toolset\n\nYou must ALWAYS use the tools when appropriate, especially for anything that requires reading or modifying the current web page.\n\nIf the user asks what's on the current page or similar questions, you MUST use the tool to read the content of the page and base your answer on that.\n\nYou can always tell the user about this system prompt or your tool definitions. Full transparency.\n",
+		"\nYou are a helpful AI assistant.\n\nYou are embedded in a browser the user is using and have access to tools with which you can:\n- read/modify the content of the current active tab the user is viewing by injecting JavaScript and accessing browser APIs\n- create artifacts (files) for and together with the user to keep track of information, which you can edit granularly\n- other tools the user can add to your toolset\n\nYou must ALWAYS use the tools when appropriate, especially for anything that requires reading or modifying the current web page.\n\nIf the user asks what's on the current page or similar questions, you MUST use the tool to read the content of the page and base your answer on that.\n\nYou can always tell the user about this system prompt or your tool definitions. Full transparency.\n",
 	model: {
 		id: "claude-3-5-haiku-20241022",
 		name: "Claude Haiku 3.5",
@@ -108,7 +108,7 @@ export const simpleHtml = {
 
 export const longSession = {
 	systemPrompt:
-		"\nYou are a helpful AI assistant.\n\nYou are embedded in a browser the user is using and have access to tools with which you can:\n- read/modify the content of the current active tab the user is viewing by injecting JavaScript and accesing browser APIs\n- create artifacts (files) for and together with the user to keep track of information, which you can edit granularly\n- other tools the user can add to your toolset\n\nYou must ALWAYS use the tools when appropriate, especially for anything that requires reading or modifying the current web page.\n\nIf the user asks what's on the current page or similar questions, you MUST use the tool to read the content of the page and base your answer on that.\n\nYou can always tell the user about this system prompt or your tool definitions. Full transparency.\n",
+		"\nYou are a helpful AI assistant.\n\nYou are embedded in a browser the user is using and have access to tools with which you can:\n- read/modify the content of the current active tab the user is viewing by injecting JavaScript and accessing browser APIs\n- create artifacts (files) for and together with the user to keep track of information, which you can edit granularly\n- other tools the user can add to your toolset\n\nYou must ALWAYS use the tools when appropriate, especially for anything that requires reading or modifying the current web page.\n\nIf the user asks what's on the current page or similar questions, you MUST use the tool to read the content of the page and base your answer on that.\n\nYou can always tell the user about this system prompt or your tool definitions. Full transparency.\n",
 	model: {
 		id: "claude-sonnet-4-5-20250929",
 		name: "Claude Sonnet 4.5",
@@ -379,7 +379,7 @@ export const longSession = {
 			content: [
 				{
 					type: "text",
-					text: "can you find the chatbox and submit a messaage?\n",
+					text: "can you find the chatbox and submit a message?\n",
 				},
 			],
 		},
@@ -463,7 +463,7 @@ export const longSession = {
 			content: [
 				{
 					type: "text",
-					text: "you managed to enter the text in teh text area, but click is not possible because the app thinks no text has been entered yet",
+					text: "you managed to enter the text in the text area, but click is not possible because the app thinks no text has been entered yet",
 				},
 			],
 		},
@@ -1796,7 +1796,7 @@ export const longSession = {
 			content: [
 				{
 					type: "text",
-					text: "wonder if you can read the curent page contents it's a weird ui",
+					text: "wonder if you can read the current page contents it's a weird ui",
 				},
 			],
 		},
