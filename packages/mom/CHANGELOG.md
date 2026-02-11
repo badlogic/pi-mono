@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Support HTTPS_PROXY/HTTP_PROXY for Slack Socket Mode WebSocket connection
+
 ## [0.52.9] - 2026-02-08
 
 ## [0.52.8] - 2026-02-07

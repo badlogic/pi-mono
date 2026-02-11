@@ -1,5 +1,6 @@
 import { SocketModeClient } from "@slack/socket-mode";
 import { WebClient } from "@slack/web-api";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "fs";
 import { basename, join } from "path";
 import * as log from "./log.js";
@@ -142,7 +143,12 @@ export class SlackBot {
 		this.handler = handler;
 		this.workingDir = config.workingDir;
 		this.store = config.store;
-		this.socketClient = new SocketModeClient({ appToken: config.appToken });
+		const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+		const agent = proxy ? new HttpsProxyAgent(proxy) : undefined;
+		this.socketClient = new SocketModeClient({
+			appToken: config.appToken,
+			clientOptions: agent ? { agent } : {},
+		});
 		this.webClient = new WebClient(config.botToken);
 	}
 
