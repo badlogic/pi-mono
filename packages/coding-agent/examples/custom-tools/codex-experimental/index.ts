@@ -16,9 +16,27 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { StringEnum } from "@mariozechner/pi-ai";
-import type { CustomAgentTool, CustomToolFactory } from "@mariozechner/pi-coding-agent";
+import type { AgentToolResult, AgentToolUpdateCallback } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
+
+// Local type definitions for the custom tool interface
+// These types are used by the extension system but not yet exported from the package
+type CustomToolFactory = (pi: { cwd: string }) => CustomAgentTool<any, any>;
+interface CustomAgentTool<TSchema = any, TDetails = any> {
+	name: string;
+	label: string;
+	description: string;
+	parameters: TSchema;
+	execute(
+		toolCallId: string,
+		params: any,
+		signal?: AbortSignal,
+		onUpdate?: AgentToolUpdateCallback<TDetails>,
+	): Promise<AgentToolResult<TDetails>>;
+	renderCall?(args: any, theme: ThemeInterface): any;
+	renderResult?(result: any, options: any, theme: ThemeInterface): any;
+}
 
 // Minimal theme interface for the methods we use
 // (Avoids depending on internal Theme class or using `any`)

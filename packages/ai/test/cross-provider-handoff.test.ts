@@ -441,14 +441,25 @@ describe.skipIf(!hasAnyApiKey())("Cross-Provider Handoff", () => {
 			const failures = results.filter((r) => !r.success);
 
 			console.log(`Passed: ${successes.length}/${results.length}`);
-			if (failures.length > 0) {
+
+			// Separate true failures from transient rate limits (429)
+			const rateLimited = failures.filter((f) => f.error?.includes("429"));
+			const realFailures = failures.filter((f) => !f.error?.includes("429"));
+
+			if (rateLimited.length > 0) {
+				console.log("\nRate-limited (ignored):");
+				for (const f of rateLimited) {
+					console.log(`  - ${f.target}: ${f.error}`);
+				}
+			}
+			if (realFailures.length > 0) {
 				console.log("\nFailures:");
-				for (const f of failures) {
+				for (const f of realFailures) {
 					console.log(`  - ${f.target}: ${f.error}`);
 				}
 			}
 
-			expect(failures.length).toBe(0);
+			expect(realFailures.length).toBe(0);
 		},
 		600000,
 	);

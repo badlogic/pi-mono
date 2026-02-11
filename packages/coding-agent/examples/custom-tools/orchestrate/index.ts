@@ -3094,9 +3094,9 @@ const factory: ExtensionFactory = (pi: ExtensionAPI) => {
 		async execute(
 			_toolCallId: string,
 			params: OrchestrateParamsType,
+			signal: AbortSignal | undefined,
 			onUpdate: AgentToolUpdateCallback<OrchestrateDetails> | undefined,
-			_ctx: ExtensionContext,
-			signal?: AbortSignal,
+			_ctx?: ExtensionContext,
 		): Promise<AgentToolResult<OrchestrateDetails>> {
 			const {
 				taskFile,

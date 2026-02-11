@@ -142,7 +142,7 @@ function connect(name: string): void {
 		ws.on("open", () => {
 			isConnecting = false;
 			reconnectDelay = INITIAL_RECONNECT_DELAY; // Reset on successful connection
-			console.log(`[Communicator] Connected to Switchboard as "${name}"`);
+			// Silent - connection status is internal detail
 		});
 
 		ws.on("message", (data) => {
@@ -151,7 +151,7 @@ function connect(name: string): void {
 
 				switch (event.type) {
 					case "connected":
-						console.log(`[Communicator] Registered with ${event.pendingMessages || 0} pending messages`);
+						// Silent - registration is internal detail
 						break;
 
 					case "message":
@@ -161,49 +161,45 @@ function connect(name: string): void {
 						break;
 
 					case "ack":
-						// Another agent acknowledged our message
-						console.log(`[Communicator] Message ${event.id} was acknowledged`);
+						// Silent - ack confirmations are internal
 						break;
 
 					case "emitted":
-						console.log(`[Communicator] Message sent: ${event.id}`);
+						// Silent - send confirmations are internal
 						break;
 
 					case "acked":
-						console.log(`[Communicator] Acknowledged: ${event.id}`);
+						// Silent - ack confirmations are internal
 						break;
 				}
-			} catch (e) {
-				console.error("[Communicator] Failed to parse WebSocket message:", e);
+			} catch (_e) {
+				// Silent - parse errors are internal
 			}
 		});
 
-		ws.on("close", (code, reason) => {
+		ws.on("close", (_code, _reason) => {
 			isConnecting = false;
 			ws = null;
-			console.log(`[Communicator] Disconnected (${code}: ${reason || "unknown"})`);
+			// Silent - disconnection is internal, will auto-reconnect
 
 			// Schedule reconnection
 			if (reconnectTimer) clearTimeout(reconnectTimer);
 			reconnectTimer = setTimeout(() => {
 				if (agentName) {
-					console.log(`[Communicator] Reconnecting in ${reconnectDelay}ms...`);
+					// Silent reconnection
 					connect(agentName);
 					reconnectDelay = Math.min(reconnectDelay * RECONNECT_MULTIPLIER, MAX_RECONNECT_DELAY);
 				}
 			}, reconnectDelay);
 		});
 
-		ws.on("error", (err) => {
+		ws.on("error", (_err) => {
 			isConnecting = false;
-			// Error will trigger close event, which handles reconnection
-			if ((err as any).code !== "ECONNREFUSED") {
-				console.error("[Communicator] WebSocket error:", err.message);
-			}
+			// Silent - error will trigger close event, which handles reconnection
 		});
-	} catch (e) {
+	} catch (_e) {
 		isConnecting = false;
-		console.error("[Communicator] Failed to create WebSocket:", e);
+		// Silent - WebSocket creation failure, will retry via reconnect logic
 	}
 }
 
