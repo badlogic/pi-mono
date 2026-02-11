@@ -1917,7 +1917,7 @@ export class Editor implements Component, Focusable {
 	/*
 https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/559322883
 17 this job fails with https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19
-536643416/job/55932288317 havea  look at .gi
+536643416/job/55932288317 have a look at .gi
 	 */
 	private forceFileAutocomplete(explicitTab: boolean = false): void {
 		if (!this.autocompleteProvider) return;
