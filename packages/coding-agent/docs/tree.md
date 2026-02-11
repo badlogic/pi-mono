@@ -33,6 +33,8 @@ Sessions are stored as trees where each entry has an `id` and `parentId`. The "l
 | Key | Action |
 |-----|--------|
 | ↑/↓ | Navigate (depth-first order) |
+| ←/→ | Page up/down |
+| Ctrl+←/Ctrl+→ | Fold/unfold and jump between branch segments |
 | Enter | Select node |
 | Escape/Ctrl+C | Cancel |
 | Ctrl+U | Toggle: user messages only |
