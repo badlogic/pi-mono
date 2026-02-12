@@ -192,7 +192,7 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 
 // Termux package names for tools
 const TERMUX_PACKAGES: Record<string, string> = {
-	fd: "fd-find",
+	fd: "fd",
 	rg: "ripgrep",
 };
 
