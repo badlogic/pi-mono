@@ -86,7 +86,8 @@ function parseGenericGitUrl(url: string): GitSource | null {
 	} else if (
 		repoWithoutRef.startsWith("https://") ||
 		repoWithoutRef.startsWith("http://") ||
-		repoWithoutRef.startsWith("ssh://")
+		repoWithoutRef.startsWith("ssh://") ||
+		repoWithoutRef.startsWith("git://")
 	) {
 		try {
 			const parsed = new URL(repoWithoutRef);
@@ -124,10 +125,21 @@ function parseGenericGitUrl(url: string): GitSource | null {
 }
 
 /**
- * Parse any git URL (SSH or HTTPS) into a GitSource.
+ * Parse git source into a GitSource.
+ *
+ * Rules:
+ * - With git: prefix, accept all historical shorthand forms.
+ * - Without git: prefix, only accept explicit protocol URLs.
  */
 export function parseGitUrl(source: string): GitSource | null {
-	const url = source.startsWith("git:") ? source.slice(4).trim() : source;
+	const trimmed = source.trim();
+	const hasGitPrefix = trimmed.startsWith("git:");
+	const url = hasGitPrefix ? trimmed.slice(4).trim() : trimmed;
+
+	if (!hasGitPrefix && !/^(https?|ssh|git):\/\//i.test(url)) {
+		return null;
+	}
+
 	const split = splitRef(url);
 
 	const hostedCandidates = [split.ref ? `${split.repo}#${split.ref}` : undefined, url].filter(
@@ -143,6 +155,7 @@ export function parseGitUrl(source: string): GitSource | null {
 				!split.repo.startsWith("http://") &&
 				!split.repo.startsWith("https://") &&
 				!split.repo.startsWith("ssh://") &&
+				!split.repo.startsWith("git://") &&
 				!split.repo.startsWith("git@");
 			return {
 				type: "git",
