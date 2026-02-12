@@ -6,6 +6,10 @@
 
 - `ContextUsage.tokens` and `ContextUsage.percent` are now `number | null`. After compaction, context token count is unknown until the next LLM response, so these fields return `null`. Extensions that read `ContextUsage` must handle the `null` case. Removed `usageTokens`, `trailingTokens`, and `lastUsageIndex` fields from `ContextUsage` (implementation details that should not have been public) ([#1382](https://github.com/badlogic/pi-mono/pull/1382) by [@ferologics](https://github.com/ferologics))
 
+### Added
+
+- Added extension event forwarding for message and tool execution lifecycles (`message_start`, `message_update`, `message_end`, `tool_execution_start`, `tool_execution_update`, `tool_execution_end`) ([#1375](https://github.com/badlogic/pi-mono/pull/1375) by [@sumeet](https://github.com/sumeet))
+
 ### Fixed
 
 - Fixed context usage percentage in footer showing stale pre-compaction values. After compaction the footer now shows `?/200k` until the next LLM response provides accurate usage ([#1382](https://github.com/badlogic/pi-mono/pull/1382) by [@ferologics](https://github.com/ferologics))
