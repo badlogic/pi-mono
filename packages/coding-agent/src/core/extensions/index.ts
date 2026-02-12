@@ -81,9 +81,13 @@ export type {
 	LoadExtensionsResult,
 	LsToolCallEvent,
 	LsToolResultEvent,
+	// Events - Message
+	MessageEndEvent,
 	// Message Rendering
 	MessageRenderer,
 	MessageRenderOptions,
+	MessageStartEvent,
+	MessageUpdateEvent,
 	ModelSelectEvent,
 	ModelSelectSource,
 	// Provider Registration
@@ -124,6 +128,10 @@ export type {
 	ToolCallEventResult,
 	// Tools
 	ToolDefinition,
+	// Events - Tool Execution
+	ToolExecutionEndEvent,
+	ToolExecutionStartEvent,
+	ToolExecutionUpdateEvent,
 	ToolInfo,
 	ToolRenderResultOptions,
 	ToolResultEvent,

@@ -16,6 +16,7 @@ import type {
 } from "@mariozechner/pi-agent-core";
 import type {
 	Api,
+	AssistantMessageEvent,
 	AssistantMessageEventStream,
 	Context,
 	ImageContent,
@@ -512,6 +513,51 @@ export interface TurnEndEvent {
 	toolResults: ToolResultMessage[];
 }
 
+/** Fired when a message starts (user, assistant, or toolResult) */
+export interface MessageStartEvent {
+	type: "message_start";
+	message: AgentMessage;
+}
+
+/** Fired during assistant message streaming with token-by-token updates */
+export interface MessageUpdateEvent {
+	type: "message_update";
+	message: AgentMessage;
+	assistantMessageEvent: AssistantMessageEvent;
+}
+
+/** Fired when a message ends */
+export interface MessageEndEvent {
+	type: "message_end";
+	message: AgentMessage;
+}
+
+/** Fired when a tool starts executing */
+export interface ToolExecutionStartEvent {
+	type: "tool_execution_start";
+	toolCallId: string;
+	toolName: string;
+	args: any;
+}
+
+/** Fired during tool execution with partial/streaming output */
+export interface ToolExecutionUpdateEvent {
+	type: "tool_execution_update";
+	toolCallId: string;
+	toolName: string;
+	args: any;
+	partialResult: any;
+}
+
+/** Fired when a tool finishes executing */
+export interface ToolExecutionEndEvent {
+	type: "tool_execution_end";
+	toolCallId: string;
+	toolName: string;
+	result: any;
+	isError: boolean;
+}
+
 // ============================================================================
 // Model Events
 // ============================================================================
@@ -752,6 +798,12 @@ export type ExtensionEvent =
 	| AgentEndEvent
 	| TurnStartEvent
 	| TurnEndEvent
+	| MessageStartEvent
+	| MessageUpdateEvent
+	| MessageEndEvent
+	| ToolExecutionStartEvent
+	| ToolExecutionUpdateEvent
+	| ToolExecutionEndEvent
 	| ModelSelectEvent
 	| UserBashEvent
 	| InputEvent
@@ -883,6 +935,12 @@ export interface ExtensionAPI {
 	on(event: "agent_end", handler: ExtensionHandler<AgentEndEvent>): void;
 	on(event: "turn_start", handler: ExtensionHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: ExtensionHandler<TurnEndEvent>): void;
+	on(event: "message_start", handler: ExtensionHandler<MessageStartEvent>): void;
+	on(event: "message_update", handler: ExtensionHandler<MessageUpdateEvent>): void;
+	on(event: "message_end", handler: ExtensionHandler<MessageEndEvent>): void;
+	on(event: "tool_execution_start", handler: ExtensionHandler<ToolExecutionStartEvent>): void;
+	on(event: "tool_execution_update", handler: ExtensionHandler<ToolExecutionUpdateEvent>): void;
+	on(event: "tool_execution_end", handler: ExtensionHandler<ToolExecutionEndEvent>): void;
 	on(event: "model_select", handler: ExtensionHandler<ModelSelectEvent>): void;
 	on(event: "tool_call", handler: ExtensionHandler<ToolCallEvent, ToolCallEventResult>): void;
 	on(event: "tool_result", handler: ExtensionHandler<ToolResultEvent, ToolResultEventResult>): void;
