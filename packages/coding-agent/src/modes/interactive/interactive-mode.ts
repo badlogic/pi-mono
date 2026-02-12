@@ -221,6 +221,7 @@ export class InteractiveMode {
 	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
 	private extensionInput: ExtensionInputComponent | undefined = undefined;
 	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
+	private extensionTerminalInputUnsubscribers = new Set<() => void>();
 
 	// Extension widgets (components rendered above/below the editor)
 	private extensionWidgetsAbove = new Map<string, Component & { dispose?(): void }>();
@@ -1237,6 +1238,7 @@ export class InteractiveMode {
 			this.hideExtensionEditor();
 		}
 		this.ui.hideOverlay();
+		this.clearExtensionTerminalInputListeners();
 		this.setExtensionFooter(undefined);
 		this.setExtensionHeader(undefined);
 		this.clearExtensionWidgets();
@@ -1359,6 +1361,24 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	private addExtensionTerminalInputListener(
+		handler: (data: string) => { consume?: boolean; data?: string } | undefined,
+	): () => void {
+		const unsubscribe = this.ui.addInputListener(handler);
+		this.extensionTerminalInputUnsubscribers.add(unsubscribe);
+		return () => {
+			unsubscribe();
+			this.extensionTerminalInputUnsubscribers.delete(unsubscribe);
+		};
+	}
+
+	private clearExtensionTerminalInputListeners(): void {
+		for (const unsubscribe of this.extensionTerminalInputUnsubscribers) {
+			unsubscribe();
+		}
+		this.extensionTerminalInputUnsubscribers.clear();
+	}
+
 	/**
 	 * Create the ExtensionUIContext for extensions.
 	 */
@@ -1368,7 +1388,7 @@ export class InteractiveMode {
 			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts),
 			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts),
 			notify: (message, type) => this.showExtensionNotify(message, type),
-			onTerminalInput: (handler) => this.ui.addInputListener(handler),
+			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
 			setWorkingMessage: (message) => {
 				if (this.loadingAnimation) {
@@ -4352,6 +4372,7 @@ export class InteractiveMode {
 			this.loadingAnimation.stop();
 			this.loadingAnimation = undefined;
 		}
+		this.clearExtensionTerminalInputListeners();
 		this.footer.dispose();
 		this.footerDataProvider.dispose();
 		if (this.unsubscribe) {
