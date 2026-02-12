@@ -1,3 +1,11 @@
+# 🏖️ OSS Vacation
+
+**Issue tracker and PRs reopen February 16, 2026.**
+
+All PRs will be auto-closed until then. Approved contributors can submit PRs after vacation without reapproval. For support, join [Discord](https://discord.com/invite/3cU7Bz4UPx).
+
+---
+
 <p align="center">
   <a href="https://shittycodingagent.ai">
     <img src="https://shittycodingagent.ai/logo.svg" alt="pi logo" width="128">
@@ -444,7 +452,7 @@ pi config                   # Enable/disable package resources
 | Option | Description |
 |--------|-------------|
 | `--provider <name>` | Provider (anthropic, openai, google, etc.) |
-| `--model <id>` | Model ID |
+| `--model <pattern>` | Model pattern or ID (supports `provider/id` and optional `:<thinking>`) |
 | `--api-key <key>` | API key (overrides env vars) |
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
 | `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling |
@@ -515,6 +523,12 @@ pi -p "Summarize this codebase"
 
 # Different model
 pi --provider openai --model gpt-4o "Help me refactor"
+
+# Model with provider prefix (no --provider needed)
+pi --model openai/gpt-4o "Help me refactor"
+
+# Model with thinking level shorthand
+pi --model sonnet:high "Solve this complex problem"
 
 # Limit model cycling
 pi --models "claude-*,gpt-4o"

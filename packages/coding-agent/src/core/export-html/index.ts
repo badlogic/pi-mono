@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir } from "../../config.js";
 import { getResolvedThemeColors, getThemeExportColors } from "../../modes/interactive/theme/theme.js";
+import type { ToolInfo } from "../extensions/types.js";
 import type { SessionEntry } from "../session-manager.js";
 import { SessionManager } from "../session-manager.js";
 
@@ -128,7 +129,7 @@ interface SessionData {
 	entries: ReturnType<SessionManager["getEntries"]>;
 	leafId: string | null;
 	systemPrompt?: string;
-	tools?: { name: string; description: string }[];
+	tools?: ToolInfo[];
 	/** Pre-rendered HTML for custom tool calls/results, keyed by tool call ID */
 	renderedTools?: Record<string, RenderedToolHtml>;
 }
@@ -253,7 +254,7 @@ export async function exportSessionToHtml(
 		entries,
 		leafId: sm.getLeafId(),
 		systemPrompt: state?.systemPrompt,
-		tools: state?.tools?.map((t) => ({ name: t.name, description: t.description })),
+		tools: state?.tools?.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
 		renderedTools,
 	};
 

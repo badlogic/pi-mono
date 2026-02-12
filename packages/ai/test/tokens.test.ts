@@ -74,8 +74,8 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: St
 		expect(msg.usage.input).toBeGreaterThan(0);
 		expect(msg.usage.output).toBeGreaterThan(0);
 
-		// Antigravity Gemini and Claude models report token usage, but no cost
-		if (llm.provider !== "google-antigravity") {
+		// Some providers (Antigravity, Copilot) have zero cost rates
+		if (llm.cost.input > 0) {
 			expect(msg.usage.cost.input).toBeGreaterThan(0);
 			expect(msg.usage.cost.total).toBeGreaterThan(0);
 		}

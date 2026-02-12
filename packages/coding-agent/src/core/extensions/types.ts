@@ -163,6 +163,9 @@ export interface ExtensionUIContext {
 		},
 	): Promise<T>;
 
+	/** Paste text into the editor, triggering paste handling (collapse for large content). */
+	pasteToEditor(text: string): void;
+
 	/** Set the text in the core input editor. */
 	setEditorText(text: string): void;
 
@@ -233,12 +236,11 @@ export interface ExtensionUIContext {
 // ============================================================================
 
 export interface ContextUsage {
-	tokens: number;
+	/** Estimated context tokens, or null if unknown (e.g. right after compaction, before next LLM response). */
+	tokens: number | null;
 	contextWindow: number;
-	percent: number;
-	usageTokens: number;
-	trailingTokens: number;
-	lastUsageIndex: number | null;
+	/** Context usage as percentage of context window, or null if tokens is unknown. */
+	percent: number | null;
 }
 
 export interface CompactOptions {
@@ -304,6 +306,9 @@ export interface ExtensionCommandContext extends ExtensionContext {
 
 	/** Switch to a different session file. */
 	switchSession(sessionPath: string): Promise<{ cancelled: boolean }>;
+
+	/** Reload extensions, skills, prompts, and themes. */
+	reload(): Promise<void>;
 }
 
 // ============================================================================
@@ -1211,8 +1216,8 @@ export type GetSessionNameHandler = () => string | undefined;
 
 export type GetActiveToolsHandler = () => string[];
 
-/** Tool info with name and description */
-export type ToolInfo = Pick<ToolDefinition, "name" | "description">;
+/** Tool info with name, description, and parameter schema */
+export type ToolInfo = Pick<ToolDefinition, "name" | "description" | "parameters">;
 
 export type GetAllToolsHandler = () => ToolInfo[];
 
@@ -1289,6 +1294,7 @@ export interface ExtensionCommandContextActions {
 		options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string },
 	) => Promise<{ cancelled: boolean }>;
 	switchSession: (sessionPath: string) => Promise<{ cancelled: boolean }>;
+	reload: () => Promise<void>;
 }
 
 /**

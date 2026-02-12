@@ -147,6 +147,8 @@ export type NavigateTreeHandler = (
 
 export type SwitchSessionHandler = (sessionPath: string) => Promise<{ cancelled: boolean }>;
 
+export type ReloadHandler = () => Promise<void>;
+
 export type ShutdownHandler = () => void;
 
 /**
@@ -175,6 +177,7 @@ const noOpUIContext: ExtensionUIContext = {
 	setHeader: () => {},
 	setTitle: () => {},
 	custom: async () => undefined as never,
+	pasteToEditor: () => {},
 	setEditorText: () => {},
 	getEditorText: () => "",
 	editor: async () => undefined,
@@ -209,6 +212,7 @@ export class ExtensionRunner {
 	private forkHandler: ForkHandler = async () => ({ cancelled: false });
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
 	private switchSessionHandler: SwitchSessionHandler = async () => ({ cancelled: false });
+	private reloadHandler: ReloadHandler = async () => {};
 	private shutdownHandler: ShutdownHandler = () => {};
 	private shortcutDiagnostics: ResourceDiagnostic[] = [];
 	private commandDiagnostics: ResourceDiagnostic[] = [];
@@ -268,6 +272,7 @@ export class ExtensionRunner {
 			this.forkHandler = actions.fork;
 			this.navigateTreeHandler = actions.navigateTree;
 			this.switchSessionHandler = actions.switchSession;
+			this.reloadHandler = actions.reload;
 			return;
 		}
 
@@ -276,6 +281,7 @@ export class ExtensionRunner {
 		this.forkHandler = async () => ({ cancelled: false });
 		this.navigateTreeHandler = async () => ({ cancelled: false });
 		this.switchSessionHandler = async () => ({ cancelled: false });
+		this.reloadHandler = async () => {};
 	}
 
 	setUIContext(uiContext?: ExtensionUIContext): void {
@@ -500,6 +506,7 @@ export class ExtensionRunner {
 			fork: (entryId) => this.forkHandler(entryId),
 			navigateTree: (targetId, options) => this.navigateTreeHandler(targetId, options),
 			switchSession: (sessionPath) => this.switchSessionHandler(sessionPath),
+			reload: () => this.reloadHandler(),
 		};
 	}
 

@@ -1,4 +1,3 @@
-import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { type Component, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import type { AgentSession } from "../../../core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
@@ -79,22 +78,12 @@ export class FooterComponent implements Component {
 			}
 		}
 
-		// Get last assistant message for context percentage calculation (skip aborted messages)
-		const lastAssistantMessage = state.messages
-			.slice()
-			.reverse()
-			.find((m) => m.role === "assistant" && m.stopReason !== "aborted") as AssistantMessage | undefined;
-
-		// Calculate context percentage from last message (input + output + cacheRead + cacheWrite)
-		const contextTokens = lastAssistantMessage
-			? lastAssistantMessage.usage.input +
-				lastAssistantMessage.usage.output +
-				lastAssistantMessage.usage.cacheRead +
-				lastAssistantMessage.usage.cacheWrite
-			: 0;
-		const contextWindow = state.model?.contextWindow || 0;
-		const contextPercentValue = contextWindow > 0 ? (contextTokens / contextWindow) * 100 : 0;
-		const contextPercent = contextPercentValue.toFixed(1);
+		// Calculate context usage from session (handles compaction correctly).
+		// After compaction, tokens are unknown until the next LLM response.
+		const contextUsage = this.session.getContextUsage();
+		const contextWindow = contextUsage?.contextWindow ?? state.model?.contextWindow ?? 0;
+		const contextPercentValue = contextUsage?.percent ?? 0;
+		const contextPercent = contextUsage?.percent !== null ? contextPercentValue.toFixed(1) : "?";
 
 		// Replace home directory with ~
 		let pwd = process.cwd();
@@ -144,7 +133,10 @@ export class FooterComponent implements Component {
 		// Colorize context percentage based on usage
 		let contextPercentStr: string;
 		const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
-		const contextPercentDisplay = `${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
+		const contextPercentDisplay =
+			contextPercent === "?"
+				? `?/${formatTokens(contextWindow)}${autoIndicator}`
+				: `${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
 		if (contextPercentValue > 90) {
 			contextPercentStr = theme.fg("error", contextPercentDisplay);
 		} else if (contextPercentValue > 70) {

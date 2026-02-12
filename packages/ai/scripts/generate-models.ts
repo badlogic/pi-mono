@@ -519,13 +519,21 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				if (m.tool_call !== true) continue;
 				if (m.status === "deprecated") continue;
 
+				// Claude 4.x models route to Anthropic Messages API
+				const isCopilotClaude4 = /^claude-(haiku|sonnet|opus)-4([.\-]|$)/.test(modelId);
 				// gpt-5 models require responses API, others use completions
 				const needsResponsesApi = modelId.startsWith("gpt-5") || modelId.startsWith("oswe");
+
+				const api: Api = isCopilotClaude4
+					? "anthropic-messages"
+					: needsResponsesApi
+						? "openai-responses"
+						: "openai-completions";
 
 				const copilotModel: Model<any> = {
 					id: modelId,
 					name: m.name || modelId,
-					api: needsResponsesApi ? "openai-responses" : "openai-completions",
+					api,
 					provider: "github-copilot",
 					baseUrl: "https://api.individual.githubcopilot.com",
 					reasoning: m.reasoning === true,
@@ -540,13 +548,13 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					maxTokens: m.limit?.output || 8192,
 					headers: { ...COPILOT_STATIC_HEADERS },
 					// compat only applies to openai-completions
-					...(needsResponsesApi ? {} : {
+					...(api === "openai-completions" ? {
 						compat: {
 							supportsStore: false,
 							supportsDeveloperRole: false,
 							supportsReasoningEffort: false,
 						},
-					}),
+					} : {}),
 				};
 
 				models.push(copilotModel);
@@ -642,7 +650,7 @@ async function generateModels() {
 		opus45.cost.cacheWrite = 6.25;
 	}
 
-	// Temporary Opus 4.6 overrides until upstream model metadata is corrected.
+	// Temporary overrides until upstream model metadata is corrected.
 	for (const candidate of allModels) {
 		if (candidate.provider === "amazon-bedrock" && candidate.id.includes("anthropic.claude-opus-4-6-v1")) {
 			candidate.cost.cacheRead = 0.5;
@@ -650,6 +658,10 @@ async function generateModels() {
 			candidate.contextWindow = 200000;
 		}
 		if ((candidate.provider === "anthropic" || candidate.provider === "opencode") && candidate.id === "claude-opus-4-6") {
+			candidate.contextWindow = 200000;
+		}
+		// opencode lists Claude Sonnet 4/4.5 with 1M context, actual limit is 200K
+		if (candidate.provider === "opencode" && (candidate.id === "claude-sonnet-4-5" || candidate.id === "claude-sonnet-4")) {
 			candidate.contextWindow = 200000;
 		}
 	}
@@ -860,11 +872,11 @@ async function generateModels() {
 		});
 	}
 
-	// Add missing OpenRouter model
-	if (!allModels.some(m => m.provider === "openrouter" && m.id === "openrouter/auto")) {
+	// Add "auto" alias for openrouter/auto
+	if (!allModels.some(m => m.provider === "openrouter" && m.id === "auto")) {
 		allModels.push({
-			id: "openrouter/auto",
-			name: "OpenRouter: Auto Router",
+			id: "auto",
+			name: "Auto",
 			api: "openai-completions",
 			provider: "openrouter",
 			baseUrl: "https://openrouter.ai/api/v1",
