@@ -594,6 +594,13 @@ function buildParams(
 		}
 	}
 
+	if (options?.metadata) {
+		const userId = options.metadata.user_id;
+		if (typeof userId === "string") {
+			params.metadata = { user_id: userId };
+		}
+	}
+
 	if (options?.toolChoice) {
 		if (typeof options.toolChoice === "string") {
 			params.tool_choice = { type: options.toolChoice };
