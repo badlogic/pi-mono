@@ -26,6 +26,7 @@ All PRs will be auto-closed until then. Approved contributors can submit PRs aft
 > **Looking for the pi coding agent?** See **[packages/coding-agent](packages/coding-agent)** for installation and usage.
 
 Tools for building AI agents and managing LLM deployments.
+Pi Mono provides reusable runtime/tooling packages; it is not a channel-integrated personal-assistant product by itself.
 
 ## Packages
 
