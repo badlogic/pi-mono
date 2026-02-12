@@ -6,6 +6,10 @@
 
 - Added optional `metadata` field to `StreamOptions` for passing provider-specific metadata (e.g. Anthropic `user_id` for abuse tracking/rate limiting) ([#1384](https://github.com/badlogic/pi-mono/pull/1384) by [@7Sageer](https://github.com/7Sageer))
 
+### Changed
+
+- Routed GitHub Copilot Claude 4.x models through Anthropic Messages API, centralized Copilot dynamic header handling, and added Copilot Claude Anthropic stream coverage ([#1353](https://github.com/badlogic/pi-mono/pull/1353) by [@NateSmyth](https://github.com/NateSmyth))
+
 ## [0.52.9] - 2026-02-08
 
 ### Changed
