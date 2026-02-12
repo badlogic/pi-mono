@@ -414,8 +414,8 @@ export async function processResponsesStream<TApi extends Api>(
 			} else if (item.type === "function_call") {
 				const args =
 					currentBlock?.type === "toolCall" && currentBlock.partialJson
-						? JSON.parse(currentBlock.partialJson)
-						: JSON.parse(item.arguments);
+						? parseStreamingJson(currentBlock.partialJson)
+						: parseStreamingJson(item.arguments || "{}");
 				const toolCall: ToolCall = {
 					type: "toolCall",
 					id: `${item.call_id}|${item.id}`,

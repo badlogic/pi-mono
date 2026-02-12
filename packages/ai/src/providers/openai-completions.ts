@@ -129,7 +129,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 							partial: output,
 						});
 					} else if (block.type === "toolCall") {
-						block.arguments = JSON.parse(block.partialArgs || "{}");
+						block.arguments = parseStreamingJson(block.partialArgs);
 						delete block.partialArgs;
 						stream.push({
 							type: "toolcall_end",
