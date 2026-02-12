@@ -447,6 +447,42 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		return path;
 	}
 
+	private resolveScopedFuzzyQuery(rawQuery: string): { baseDir: string; query: string; displayBase: string } | null {
+		const slashIndex = rawQuery.lastIndexOf("/");
+		if (slashIndex === -1) {
+			return null;
+		}
+
+		const displayBase = rawQuery.slice(0, slashIndex + 1);
+		const query = rawQuery.slice(slashIndex + 1);
+
+		let baseDir: string;
+		if (displayBase.startsWith("~/")) {
+			baseDir = this.expandHomePath(displayBase);
+		} else if (displayBase.startsWith("/")) {
+			baseDir = displayBase;
+		} else {
+			baseDir = join(this.basePath, displayBase);
+		}
+
+		try {
+			if (!statSync(baseDir).isDirectory()) {
+				return null;
+			}
+		} catch {
+			return null;
+		}
+
+		return { baseDir, query, displayBase };
+	}
+
+	private scopedPathForDisplay(displayBase: string, relativePath: string): string {
+		if (displayBase === "/") {
+			return `/${relativePath}`;
+		}
+		return `${displayBase}${relativePath}`;
+	}
+
 	// Get file/directory suggestions for a given path prefix
 	private getFileSuggestions(prefix: string): AutocompleteItem[] {
 		try {
@@ -610,13 +646,16 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		}
 
 		try {
-			const entries = walkDirectoryWithFd(this.basePath, this.fdPath, query, 100);
+			const scopedQuery = this.resolveScopedFuzzyQuery(query);
+			const fdBaseDir = scopedQuery?.baseDir ?? this.basePath;
+			const fdQuery = scopedQuery?.query ?? query;
+			const entries = walkDirectoryWithFd(fdBaseDir, this.fdPath, fdQuery, 100);
 
 			// Score entries
 			const scoredEntries = entries
 				.map((entry) => ({
 					...entry,
-					score: query ? this.scoreEntry(entry.path, query, entry.isDirectory) : 1,
+					score: fdQuery ? this.scoreEntry(entry.path, fdQuery, entry.isDirectory) : 1,
 				}))
 				.filter((entry) => entry.score > 0);
 
@@ -629,8 +668,12 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			for (const { path: entryPath, isDirectory } of topEntries) {
 				// fd already includes trailing / for directories
 				const pathWithoutSlash = isDirectory ? entryPath.slice(0, -1) : entryPath;
+				const displayPath = scopedQuery
+					? this.scopedPathForDisplay(scopedQuery.displayBase, pathWithoutSlash)
+					: pathWithoutSlash;
 				const entryName = basename(pathWithoutSlash);
-				const value = buildCompletionValue(entryPath, {
+				const completionPath = isDirectory ? `${displayPath}/` : displayPath;
+				const value = buildCompletionValue(completionPath, {
 					isDirectory,
 					isAtPrefix: true,
 					isQuotedPrefix: options.isQuotedPrefix,
@@ -639,7 +682,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				suggestions.push({
 					value,
 					label: entryName + (isDirectory ? "/" : ""),
-					description: pathWithoutSlash,
+					description: displayPath,
 				});
 			}
 

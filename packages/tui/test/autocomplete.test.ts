@@ -107,14 +107,20 @@ describe("CombinedAutocompleteProvider", () => {
 	});
 
 	describe("fd @ file suggestions", { skip: !isFdInstalled }, () => {
+		let rootDir = "";
 		let baseDir = "";
+		let outsideDir = "";
 
 		beforeEach(() => {
-			baseDir = mkdtempSync(join(tmpdir(), "pi-autocomplete-"));
+			rootDir = mkdtempSync(join(tmpdir(), "pi-autocomplete-root-"));
+			baseDir = join(rootDir, "cwd");
+			outsideDir = join(rootDir, "outside");
+			mkdirSync(baseDir, { recursive: true });
+			mkdirSync(outsideDir, { recursive: true });
 		});
 
 		afterEach(() => {
-			rmSync(baseDir, { recursive: true, force: true });
+			rmSync(rootDir, { recursive: true, force: true });
 		});
 
 		test("returns all files and folders for empty @ query", () => {
@@ -229,6 +235,25 @@ describe("CombinedAutocompleteProvider", () => {
 			const values = result?.items.map((item) => item.value);
 			assert.ok(values?.includes("@src/components/Button.tsx"));
 			assert.ok(!values?.includes("@src/utils/helpers.ts"));
+		});
+
+		test("scopes fuzzy search to relative directories and searches recursively", () => {
+			setupFolder(outsideDir, {
+				files: {
+					"nested/alpha.ts": "export {};",
+					"nested/deeper/also-alpha.ts": "export {};",
+					"nested/deeper/zzz.ts": "export {};",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@../outside/a";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			const values = result?.items.map((item) => item.value);
+			assert.ok(values?.includes("@../outside/nested/alpha.ts"));
+			assert.ok(values?.includes("@../outside/nested/deeper/also-alpha.ts"));
+			assert.ok(!values?.includes("@../outside/nested/deeper/zzz.ts"));
 		});
 
 		test("quotes paths with spaces for @ suggestions", () => {
