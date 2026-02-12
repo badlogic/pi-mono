@@ -63,10 +63,10 @@ export function transformMessages<TApi extends Api>(
 					const toolCall = block as ToolCall;
 					let normalizedToolCall: ToolCall = toolCall;
 
-					if (!isSameModel && toolCall.thoughtSignature) {
-						normalizedToolCall = { ...toolCall };
-						delete (normalizedToolCall as { thoughtSignature?: string }).thoughtSignature;
-					}
+					// Do NOT delete thoughtSignature here — Google APIs require valid
+					// signatures on function calls for Gemini 3 regardless of which
+					// model produced them. The downstream convertMessages() decides
+					// whether to keep or discard signatures per-provider.
 
 					if (!isSameModel && normalizeToolCallId) {
 						const normalizedId = normalizeToolCallId(toolCall.id, model, assistantMsg);

@@ -136,7 +136,13 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 						});
 					}
 				} else if (block.type === "toolCall") {
-					const thoughtSignature = resolveThoughtSignature(isSameProviderAndModel, block.thoughtSignature);
+					// Preserve any valid base64 thoughtSignature regardless of whether
+					// the message is from the same model. Google APIs require signatures
+					// on Gemini 3 function calls — they work cross-model as long as
+					// the format is valid base64.
+					const thoughtSignature = isValidThoughtSignature(block.thoughtSignature)
+						? block.thoughtSignature
+						: resolveThoughtSignature(isSameProviderAndModel, block.thoughtSignature);
 					// Gemini 3 requires thoughtSignature on all function calls when thinking mode is enabled.
 					// When replaying history from providers without thought signatures (e.g. Claude via Antigravity),
 					// convert unsigned function calls to text to avoid API validation errors.
