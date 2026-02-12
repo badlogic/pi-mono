@@ -207,12 +207,12 @@ describe("parseModelPattern", () => {
 });
 
 describe("resolveCliModel", () => {
-	test("resolves --model provider/id without --provider", async () => {
+	test("resolves --model provider/id without --provider", () => {
 		const registry = {
 			getAll: () => allModels,
 		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
 
-		const result = await resolveCliModel({
+		const result = resolveCliModel({
 			cliModel: "openai/gpt-4o",
 			modelRegistry: registry,
 		});
@@ -222,12 +222,12 @@ describe("resolveCliModel", () => {
 		expect(result.model?.id).toBe("gpt-4o");
 	});
 
-	test("resolves fuzzy patterns within an explicit provider", async () => {
+	test("resolves fuzzy patterns within an explicit provider", () => {
 		const registry = {
 			getAll: () => allModels,
 		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
 
-		const result = await resolveCliModel({
+		const result = resolveCliModel({
 			cliProvider: "openai",
 			cliModel: "4o",
 			modelRegistry: registry,
@@ -238,12 +238,12 @@ describe("resolveCliModel", () => {
 		expect(result.model?.id).toBe("gpt-4o");
 	});
 
-	test("supports --model <pattern>:<thinking> (without explicit --thinking)", async () => {
+	test("supports --model <pattern>:<thinking> (without explicit --thinking)", () => {
 		const registry = {
 			getAll: () => allModels,
 		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
 
-		const result = await resolveCliModel({
+		const result = resolveCliModel({
 			cliModel: "sonnet:high",
 			modelRegistry: registry,
 		});
@@ -253,12 +253,12 @@ describe("resolveCliModel", () => {
 		expect(result.thinkingLevel).toBe("high");
 	});
 
-	test("prefers exact model id match over provider inference (OpenRouter-style ids)", async () => {
+	test("prefers exact model id match over provider inference (OpenRouter-style ids)", () => {
 		const registry = {
 			getAll: () => allModels,
 		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
 
-		const result = await resolveCliModel({
+		const result = resolveCliModel({
 			cliModel: "openai/gpt-4o:extended",
 			modelRegistry: registry,
 		});
@@ -268,12 +268,12 @@ describe("resolveCliModel", () => {
 		expect(result.model?.id).toBe("openai/gpt-4o:extended");
 	});
 
-	test("does not strip invalid :suffix as thinking level in --model (fail fast)", async () => {
+	test("does not strip invalid :suffix as thinking level in --model (fail fast)", () => {
 		const registry = {
 			getAll: () => allModels,
 		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
 
-		const result = await resolveCliModel({
+		const result = resolveCliModel({
 			cliProvider: "openai",
 			cliModel: "gpt-4o:extended",
 			modelRegistry: registry,
@@ -283,12 +283,12 @@ describe("resolveCliModel", () => {
 		expect(result.error).toContain("not found");
 	});
 
-	test("returns a clear error when there are no models", async () => {
+	test("returns a clear error when there are no models", () => {
 		const registry = {
 			getAll: () => [],
 		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
 
-		const result = await resolveCliModel({
+		const result = resolveCliModel({
 			cliProvider: "openai",
 			cliModel: "gpt-4o",
 			modelRegistry: registry,
@@ -298,12 +298,12 @@ describe("resolveCliModel", () => {
 		expect(result.error).toContain("No models available");
 	});
 
-	test("resolves provider-prefixed fuzzy patterns (openrouter/qwen -> openrouter model)", async () => {
+	test("resolves provider-prefixed fuzzy patterns (openrouter/qwen -> openrouter model)", () => {
 		const registry = {
 			getAll: () => allModels,
 		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
 
-		const result = await resolveCliModel({
+		const result = resolveCliModel({
 			cliModel: "openrouter/qwen",
 			modelRegistry: registry,
 		});

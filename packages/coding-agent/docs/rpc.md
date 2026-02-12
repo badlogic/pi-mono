@@ -12,7 +12,7 @@ pi --mode rpc [options]
 
 Common options:
 - `--provider <name>`: Set the LLM provider (anthropic, openai, google, etc.)
-- `--model <id>`: Set the model ID
+- `--model <pattern>`: Model pattern or ID (supports `provider/id` and optional `:<thinking>`)
 - `--no-session`: Disable session persistence
 - `--session-dir <path>`: Custom session storage directory
 

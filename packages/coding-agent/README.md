@@ -452,7 +452,7 @@ pi config                   # Enable/disable package resources
 | Option | Description |
 |--------|-------------|
 | `--provider <name>` | Provider (anthropic, openai, google, etc.) |
-| `--model <id>` | Model ID |
+| `--model <pattern>` | Model pattern or ID (supports `provider/id` and optional `:<thinking>`) |
 | `--api-key <key>` | API key (overrides env vars) |
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
 | `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling |
@@ -523,6 +523,12 @@ pi -p "Summarize this codebase"
 
 # Different model
 pi --provider openai --model gpt-4o "Help me refactor"
+
+# Model with provider prefix (no --provider needed)
+pi --model openai/gpt-4o "Help me refactor"
+
+# Model with thinking level shorthand
+pi --model sonnet:high "Solve this complex problem"
 
 # Limit model cycling
 pi --models "claude-*,gpt-4o"

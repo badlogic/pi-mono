@@ -244,6 +244,12 @@ ${chalk.bold("Examples:")}
   # Use different model
   ${APP_NAME} --provider openai --model gpt-4o-mini "Help me refactor this code"
 
+  # Use model with provider prefix (no --provider needed)
+  ${APP_NAME} --model openai/gpt-4o "Help me refactor this code"
+
+  # Use model with thinking level shorthand
+  ${APP_NAME} --model sonnet:high "Solve this complex problem"
+
   # Limit model cycling to specific models
   ${APP_NAME} --models claude-sonnet,claude-haiku,gpt-4o
 

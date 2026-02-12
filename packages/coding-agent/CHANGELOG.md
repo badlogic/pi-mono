@@ -10,6 +10,7 @@
 
 - Fixed context usage percentage in footer showing stale pre-compaction values. After compaction the footer now shows `?/200k` until the next LLM response provides accurate usage ([#1382](https://github.com/badlogic/pi-mono/pull/1382) by [@ferologics](https://github.com/ferologics))
 - Fixed `_checkCompaction()` using the first compaction entry instead of the latest, which could cause incorrect overflow detection with multiple compactions ([#1382](https://github.com/badlogic/pi-mono/pull/1382) by [@ferologics](https://github.com/ferologics))
+- `--model` now works without `--provider`, supports `provider/id` syntax, fuzzy matching, and `:<thinking>` suffix (e.g., `--model sonnet:high`, `--model openai/gpt-4o`) ([#1350](https://github.com/badlogic/pi-mono/pull/1350) by [@mitsuhiko](https://github.com/mitsuhiko))
 
 ## [0.52.9] - 2026-02-08
 

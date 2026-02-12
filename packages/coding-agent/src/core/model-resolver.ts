@@ -274,11 +274,11 @@ export interface ResolveCliModelResult {
  * Note: This does not apply the thinking level by itself, but it may *parse* and
  * return a thinking level from "<pattern>:<thinking>" so the caller can apply it.
  */
-export async function resolveCliModel(options: {
+export function resolveCliModel(options: {
 	cliProvider?: string;
 	cliModel?: string;
 	modelRegistry: ModelRegistry;
-}): Promise<ResolveCliModelResult> {
+}): ResolveCliModelResult {
 	const { cliProvider, cliModel, modelRegistry } = options;
 
 	if (!cliModel) {
