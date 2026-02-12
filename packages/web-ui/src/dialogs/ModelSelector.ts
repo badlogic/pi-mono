@@ -179,7 +179,10 @@ export class ModelSelector extends DialogBase {
 		// Apply search filter
 		if (this.searchQuery) {
 			filteredModels = filteredModels.filter(({ provider, id, model }) => {
-				const searchTokens = this.searchQuery.split(/\s+/).filter((t) => t);
+				const searchTokens = this.searchQuery
+					.toLowerCase()
+					.split(/\s+/)
+					.filter((t) => t);
 				const searchText = `${provider} ${id} ${model.name}`.toLowerCase();
 				return searchTokens.every((token) => searchText.includes(token));
 			});
