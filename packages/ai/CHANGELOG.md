@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added MiniMax M2.5 model entries for `minimax`, `minimax-cn`, `openrouter`, and `vercel-ai-gateway` providers, plus `minimax-m2.5-free` for `opencode`.
+
 ## [0.52.10] - 2026-02-12
 
 ### Added
