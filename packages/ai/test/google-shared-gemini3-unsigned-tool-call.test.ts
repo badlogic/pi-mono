@@ -3,7 +3,7 @@ import { convertMessages } from "../src/providers/google-shared.js";
 import type { Context, Model } from "../src/types.js";
 
 describe("google-shared convertMessages", () => {
-	it("converts unsigned tool calls to text for Gemini 3", () => {
+	it("uses dummy thought signature for unsigned tool calls on Gemini 3", () => {
 		const model: Model<"google-generative-ai"> = {
 			id: "gemini-3-pro-preview",
 			name: "Gemini 3 Pro Preview",
@@ -51,22 +51,25 @@ describe("google-shared convertMessages", () => {
 
 		const contents = convertMessages(model, context);
 
-		let toolTurn: (typeof contents)[number] | undefined;
-		for (let i = contents.length - 1; i >= 0; i -= 1) {
-			if (contents[i]?.role === "model") {
-				toolTurn = contents[i];
-				break;
-			}
-		}
+		// Find the model turn containing the tool call.
+		const toolTurn = contents.find((c) => c.role === "model" && c.parts?.some((p) => p.functionCall !== undefined));
 
 		expect(toolTurn).toBeTruthy();
-		expect(toolTurn?.parts?.some((p) => p.functionCall !== undefined)).toBe(false);
 
-		const text = toolTurn?.parts?.map((p) => p.text ?? "").join("\n");
-		// Should contain historical context note to prevent mimicry
-		expect(text).toContain("Historical context");
-		expect(text).toContain("bash");
-		expect(text).toContain("ls -la");
-		expect(text).toContain("Do not mimic this format");
+		const fcPart = toolTurn!.parts!.find((p) => p.functionCall !== undefined)!;
+
+		// Tool call is preserved as a native functionCall (NOT downgraded to text).
+		expect(fcPart.functionCall).toBeTruthy();
+		expect(fcPart.functionCall!.name).toBe("bash");
+		expect(fcPart.functionCall!.args).toEqual({ command: "ls -la" });
+
+		// Dummy signature applied so Gemini 3 accepts it.
+		expect(fcPart.thoughtSignature).toBe("skip_thought_signature_validator");
+
+		// No text downgrade artifacts.
+		const hasHistoricalText = toolTurn!.parts!.some(
+			(p) => typeof p.text === "string" && p.text.includes("Historical context"),
+		);
+		expect(hasHistoricalText).toBe(false);
 	});
 });

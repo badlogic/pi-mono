@@ -138,28 +138,24 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 				} else if (block.type === "toolCall") {
 					const thoughtSignature = resolveThoughtSignature(isSameProviderAndModel, block.thoughtSignature);
 					// Gemini 3 requires thoughtSignature on all function calls when thinking mode is enabled.
-					// When replaying history from providers without thought signatures (e.g. Claude via Antigravity),
-					// convert unsigned function calls to text to avoid API validation errors.
-					// We include a note telling the model this is historical context to prevent mimicry.
+					// When replaying history from a different model (e.g. Sonnet switching to Flash,
+					// or Flash to Pro), use the official dummy signature to bypass validation while
+					// keeping tool calls as native functionCall parts.
+					// See: https://ai.google.dev/gemini-api/docs/thought-signatures
 					const isGemini3 = model.id.toLowerCase().includes("gemini-3");
-					if (isGemini3 && !thoughtSignature) {
-						const argsStr = JSON.stringify(block.arguments ?? {}, null, 2);
-						parts.push({
-							text: `[Historical context: a different model called tool "${block.name}" with arguments: ${argsStr}. Do not mimic this format - use proper function calling.]`,
-						});
-					} else {
-						const part: Part = {
-							functionCall: {
-								name: block.name,
-								args: block.arguments ?? {},
-								...(requiresToolCallId(model.id) ? { id: block.id } : {}),
-							},
-						};
-						if (thoughtSignature) {
-							part.thoughtSignature = thoughtSignature;
-						}
-						parts.push(part);
+					const effectiveSignature =
+						thoughtSignature ?? (isGemini3 ? "skip_thought_signature_validator" : undefined);
+					const part: Part = {
+						functionCall: {
+							name: block.name,
+							args: block.arguments ?? {},
+							...(requiresToolCallId(model.id) ? { id: block.id } : {}),
+						},
+					};
+					if (effectiveSignature) {
+						part.thoughtSignature = effectiveSignature;
 					}
+					parts.push(part);
 				}
 			}
 
