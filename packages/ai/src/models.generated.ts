@@ -9346,23 +9346,6 @@ export const MODELS = {
 			contextWindow: 163840,
 			maxTokens: 65536,
 		} satisfies Model<"openai-completions">,
-		"tngtech/tng-r1t-chimera:free": {
-			id: "tngtech/tng-r1t-chimera:free",
-			name: "TNG: R1T Chimera (free)",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: true,
-			input: ["text"],
-			cost: {
-				input: 0,
-				output: 0,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 163840,
-			maxTokens: 65536,
-		} satisfies Model<"openai-completions">,
 		"upstage/solar-pro-3:free": {
 			id: "upstage/solar-pro-3:free",
 			name: "Upstage: Solar Pro 3 (free)",
