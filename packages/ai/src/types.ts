@@ -53,11 +53,18 @@ export interface ThinkingBudgets {
 // Base options all providers share
 export type CacheRetention = "none" | "short" | "long";
 
+export type Transport = "sse" | "websocket" | "auto";
+
 export interface StreamOptions {
 	temperature?: number;
 	maxTokens?: number;
 	signal?: AbortSignal;
 	apiKey?: string;
+	/**
+	 * Preferred transport for providers that support multiple transports.
+	 * Providers that do not support this option ignore it.
+	 */
+	transport?: Transport;
 	/**
 	 * Prompt cache retention preference. Providers map this to their supported values.
 	 * Default: "short".

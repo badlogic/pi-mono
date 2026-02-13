@@ -1190,6 +1190,35 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe("OpenAI Codex Provider (gpt-5.3-codex via WebSocket)", () => {
+		const llm = getModel("openai-codex", "gpt-5.3-codex");
+		const wsOptions = { apiKey: openaiCodexToken, transport: "websocket" as const };
+
+		it.skipIf(!openaiCodexToken)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm, wsOptions);
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm, wsOptions);
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm, wsOptions);
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle thinking with reasoningEffort high", { retry: 3 }, async () => {
+			await handleThinking(llm, { ...wsOptions, reasoningEffort: "high" });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { ...wsOptions, reasoningEffort: "high" });
+		});
+
+		it.skipIf(!openaiCodexToken)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm, wsOptions);
+		});
+	});
+
 	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider (claude-sonnet-4-5)", () => {
 		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
 

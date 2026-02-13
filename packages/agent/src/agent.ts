@@ -11,6 +11,7 @@ import {
 	streamSimple,
 	type TextContent,
 	type ThinkingBudgets,
+	type Transport,
 } from "@mariozechner/pi-ai";
 import { agentLoop, agentLoopContinue } from "./agent-loop.js";
 import type {
@@ -79,6 +80,11 @@ export interface AgentOptions {
 	thinkingBudgets?: ThinkingBudgets;
 
 	/**
+	 * Preferred transport for providers that support multiple transports.
+	 */
+	transport?: Transport;
+
+	/**
 	 * Maximum delay in milliseconds to wait for a retry when the server requests a long wait.
 	 * If the server's requested delay exceeds this value, the request fails immediately,
 	 * allowing higher-level retry logic to handle it with user visibility.
@@ -114,6 +120,7 @@ export class Agent {
 	private runningPrompt?: Promise<void>;
 	private resolveRunningPrompt?: () => void;
 	private _thinkingBudgets?: ThinkingBudgets;
+	private _transport: Transport;
 	private _maxRetryDelayMs?: number;
 
 	constructor(opts: AgentOptions = {}) {
@@ -126,6 +133,7 @@ export class Agent {
 		this._sessionId = opts.sessionId;
 		this.getApiKey = opts.getApiKey;
 		this._thinkingBudgets = opts.thinkingBudgets;
+		this._transport = opts.transport ?? "sse";
 		this._maxRetryDelayMs = opts.maxRetryDelayMs;
 	}
 
@@ -156,6 +164,20 @@ export class Agent {
 	 */
 	set thinkingBudgets(value: ThinkingBudgets | undefined) {
 		this._thinkingBudgets = value;
+	}
+
+	/**
+	 * Get the current preferred transport.
+	 */
+	get transport(): Transport {
+		return this._transport;
+	}
+
+	/**
+	 * Set the preferred transport.
+	 */
+	setTransport(value: Transport) {
+		this._transport = value;
 	}
 
 	/**
@@ -407,6 +429,7 @@ export class Agent {
 			model,
 			reasoning,
 			sessionId: this._sessionId,
+			transport: this._transport,
 			thinkingBudgets: this._thinkingBudgets,
 			maxRetryDelayMs: this._maxRetryDelayMs,
 			convertToLlm: this.convertToLlm,

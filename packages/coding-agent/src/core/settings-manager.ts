@@ -1,3 +1,4 @@
+import type { Transport } from "@mariozechner/pi-ai";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
@@ -40,6 +41,8 @@ export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
+export type TransportSetting = Transport;
+
 /**
  * Package source for npm/git packages.
  * - String form: load all resources from the package
@@ -60,6 +63,7 @@ export interface Settings {
 	defaultProvider?: string;
 	defaultModel?: string;
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+	transport?: TransportSetting; // default: "sse"
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
 	theme?: string;
@@ -186,6 +190,12 @@ export class SettingsManager {
 		if ("queueMode" in settings && !("steeringMode" in settings)) {
 			settings.steeringMode = settings.queueMode;
 			delete settings.queueMode;
+		}
+
+		// Migrate legacy websockets boolean -> transport enum
+		if (!("transport" in settings) && typeof settings.websockets === "boolean") {
+			settings.transport = settings.websockets ? "websocket" : "sse";
+			delete settings.websockets;
 		}
 
 		// Migrate old skills object format to new array format
@@ -430,6 +440,16 @@ export class SettingsManager {
 	setDefaultThinkingLevel(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh"): void {
 		this.globalSettings.defaultThinkingLevel = level;
 		this.markModified("defaultThinkingLevel");
+		this.save();
+	}
+
+	getTransport(): TransportSetting {
+		return this.settings.transport ?? "sse";
+	}
+
+	setTransport(transport: TransportSetting): void {
+		this.globalSettings.transport = transport;
+		this.markModified("transport");
 		this.save();
 	}
 

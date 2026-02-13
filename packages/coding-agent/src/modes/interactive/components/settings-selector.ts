@@ -1,4 +1,5 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { Transport } from "@mariozechner/pi-ai";
 import {
 	Container,
 	getCapabilities,
@@ -29,6 +30,7 @@ export interface SettingsConfig {
 	enableSkillCommands: boolean;
 	steeringMode: "all" | "one-at-a-time";
 	followUpMode: "all" | "one-at-a-time";
+	transport: Transport;
 	thinkingLevel: ThinkingLevel;
 	availableThinkingLevels: ThinkingLevel[];
 	currentTheme: string;
@@ -51,6 +53,7 @@ export interface SettingsCallbacks {
 	onEnableSkillCommandsChange: (enabled: boolean) => void;
 	onSteeringModeChange: (mode: "all" | "one-at-a-time") => void;
 	onFollowUpModeChange: (mode: "all" | "one-at-a-time") => void;
+	onTransportChange: (transport: Transport) => void;
 	onThinkingLevelChange: (level: ThinkingLevel) => void;
 	onThemeChange: (theme: string) => void;
 	onThemePreview?: (theme: string) => void;
@@ -161,6 +164,13 @@ export class SettingsSelectorComponent extends Container {
 					"Alt+Enter queues follow-up messages until agent stops. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once.",
 				currentValue: config.followUpMode,
 				values: ["one-at-a-time", "all"],
+			},
+			{
+				id: "transport",
+				label: "Transport",
+				description: "Preferred transport for providers that support multiple transports",
+				currentValue: config.transport,
+				values: ["sse", "websocket", "auto"],
 			},
 			{
 				id: "hide-thinking",
@@ -353,6 +363,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "follow-up-mode":
 						callbacks.onFollowUpModeChange(newValue as "all" | "one-at-a-time");
+						break;
+					case "transport":
+						callbacks.onTransportChange(newValue as Transport);
 						break;
 					case "hide-thinking":
 						callbacks.onHideThinkingBlockChange(newValue === "true");
