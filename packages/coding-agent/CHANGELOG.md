@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Updated default model for `minimax` and `minimax-cn` providers to `MiniMax-M2.5`
+
 ## [0.52.10] - 2026-02-12
 
 ### New Features

@@ -838,8 +838,8 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider (MiniMax-M2.1 via Anthropic Messages)", () => {
-		const llm = getModel("minimax", "MiniMax-M2.1");
+	describe.skipIf(!process.env.MINIMAX_API_KEY)("MiniMax Provider (MiniMax-M2.5 via Anthropic Messages)", () => {
+		const llm = getModel("minimax", "MiniMax-M2.5");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
 			await basicTextGeneration(llm);
