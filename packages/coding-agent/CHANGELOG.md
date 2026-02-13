@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed local package paths being stored without `./` prefix, which could cause ambiguity with git repository names (e.g., `packages/foo` vs `user/repo`)
+
 ## [0.52.10] - 2026-02-12
 
 ### New Features

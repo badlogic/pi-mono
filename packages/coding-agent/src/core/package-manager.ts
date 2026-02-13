@@ -962,7 +962,14 @@ export class DefaultPackageManager implements PackageManager {
 		const baseDir = this.getBaseDirForScope(scope);
 		const resolved = this.resolvePath(parsed.path);
 		const rel = relative(baseDir, resolved);
-		return rel || ".";
+		if (!rel || rel === ".") {
+			return ".";
+		}
+		// Ensure relative paths start with "./" to avoid ambiguity with git URLs (e.g., "user/repo")
+		if (!rel.startsWith(".") && !rel.startsWith("/")) {
+			return `./${rel}`;
+		}
+		return rel;
 	}
 
 	private parseSource(source: string): ParsedSource {
