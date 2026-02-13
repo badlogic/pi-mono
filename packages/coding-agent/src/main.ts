@@ -599,6 +599,21 @@ export async function main(args: string[]) {
 		process.exit(0);
 	}
 
+	// Auto-discover local LLM servers (Ollama, vLLM, LM Studio, llama.cpp)
+	if (settingsManager.getLocalDiscoveryEnabled()) {
+		const customProviders = settingsManager.getLocalDiscoveryProviders();
+		const providers = customProviders?.map((p) => ({
+			type: p.type,
+			baseUrl: p.baseUrl,
+			name: p.type === "llama.cpp" ? "llamacpp" : p.type,
+		}));
+		try {
+			await modelRegistry.discoverLocal({ timeout: 2000, providers });
+		} catch {
+			// Discovery failed silently – continue with configured models
+		}
+	}
+
 	if (parsed.listModels !== undefined) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
 		await listModels(modelRegistry, searchPattern);

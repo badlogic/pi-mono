@@ -40,6 +40,15 @@ export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
+export interface LocalDiscoverySettings {
+	enabled?: boolean; // default: true — probe localhost for local LLM servers on startup
+	providers?: Array<{
+		type: "ollama" | "vllm" | "lmstudio" | "llama.cpp";
+		baseUrl: string;
+	}>;
+	autoSelect?: boolean; // default: true — auto-select best local model when no cloud API keys are configured
+}
+
 /**
  * Package source for npm/git packages.
  * - String form: load all resources from the package
@@ -86,6 +95,7 @@ export interface Settings {
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
+	localDiscovery?: LocalDiscoverySettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -747,5 +757,28 @@ export class SettingsManager {
 
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
+	}
+
+	getLocalDiscoveryEnabled(): boolean {
+		return this.settings.localDiscovery?.enabled ?? true;
+	}
+
+	setLocalDiscoveryEnabled(enabled: boolean): void {
+		if (!this.globalSettings.localDiscovery) {
+			this.globalSettings.localDiscovery = {};
+		}
+		this.globalSettings.localDiscovery.enabled = enabled;
+		this.markModified("localDiscovery", "enabled");
+		this.save();
+	}
+
+	getLocalDiscoveryAutoSelect(): boolean {
+		return this.settings.localDiscovery?.autoSelect ?? true;
+	}
+
+	getLocalDiscoveryProviders():
+		| Array<{ type: "ollama" | "vllm" | "lmstudio" | "llama.cpp"; baseUrl: string }>
+		| undefined {
+		return this.settings.localDiscovery?.providers;
 	}
 }

@@ -23,6 +23,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { getAgentDir } from "../config.js";
 import type { AuthStorage } from "./auth-storage.js";
+import type { DiscoveredModel, LocalProviderConfig } from "./local-discovery.js";
 import { clearConfigValueCache, resolveConfigValue, resolveHeaders } from "./resolve-config-value.js";
 
 const Ajv = (AjvModule as any).default || AjvModule;
@@ -526,6 +527,42 @@ export class ModelRegistry {
 	isUsingOAuth(model: Model<Api>): boolean {
 		const cred = this.authStorage.get(model.provider);
 		return cred?.type === "oauth";
+	}
+
+	/**
+	 * Discover local LLM servers (Ollama, vLLM, LM Studio, llama.cpp) and register
+	 * any models found.  Providers that already have models registered (e.g. from
+	 * models.json or extensions) are skipped so user configuration is respected.
+	 *
+	 * @returns The list of newly discovered models.
+	 */
+	async discoverLocal(options?: {
+		timeout?: number;
+		providers?: LocalProviderConfig[];
+	}): Promise<DiscoveredModel[]> {
+		const { discoverLocalModels, groupDiscoveredByProvider, LOCAL_API_KEY } = await import(
+			"./local-discovery.js"
+		);
+
+		const discovered = await discoverLocalModels(options?.providers, options?.timeout);
+		if (discovered.length === 0) return [];
+
+		const byProvider = groupDiscoveredByProvider(discovered);
+
+		for (const [providerName, entry] of byProvider) {
+			// Don't override providers that were already configured
+			const existing = this.models.filter((m) => m.provider === providerName);
+			if (existing.length > 0) continue;
+
+			this.registerProvider(providerName, {
+				baseUrl: entry.baseUrl,
+				apiKey: LOCAL_API_KEY,
+				api: "openai-completions" as Api,
+				models: entry.models,
+			});
+		}
+
+		return discovered;
 	}
 
 	/**

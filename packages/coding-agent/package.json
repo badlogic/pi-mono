@@ -53,6 +53,7 @@
 		"ignore": "^7.0.5",
 		"marked": "^15.0.12",
 		"minimatch": "^10.1.1",
+		"ollama": "^0.6.0",
 		"proper-lockfile": "^4.1.2",
 		"yaml": "^2.8.2"
 	},
