@@ -1603,7 +1603,13 @@ export class AgentSession {
 		// Skip if this was an error (non-overflow errors don't have usage data)
 		if (assistantMessage.stopReason === "error") return;
 
-		const contextTokens = calculateContextTokens(assistantMessage.usage);
+		let contextTokens = calculateContextTokens(assistantMessage.usage);
+		// Fallback: if provider didn't return usage data (e.g. z.ai),
+		// estimate context tokens from message content using chars/4 heuristic
+		if (contextTokens === 0 && this.agent.state.messages.length > 0) {
+			const estimated = estimateContextTokens(this.agent.state.messages);
+			contextTokens = estimated.tokens;
+		}
 		if (shouldCompact(contextTokens, contextWindow, settings)) {
 			await this._runAutoCompaction("threshold", false);
 		}
