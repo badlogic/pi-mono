@@ -223,6 +223,8 @@ export class ModelRegistry {
 	constructor(
 		readonly authStorage: AuthStorage,
 		private modelsJsonPath: string | undefined = join(getAgentDir(), "models.json"),
+		private disabledProviders?: string[],
+		private enabledProviders?: string[],
 	) {
 		// Set up fallback resolver for custom provider API keys
 		this.authStorage.setFallbackResolver((provider) => {
@@ -248,6 +250,37 @@ export class ModelRegistry {
 		for (const [providerName, config] of this.registeredProviders.entries()) {
 			this.applyProviderConfig(providerName, config);
 		}
+	}
+
+	/**
+	 * Update provider filters at runtime.
+	 */
+	setProviderFilters(disabledProviders?: string[], enabledProviders?: string[]): void {
+		this.disabledProviders = disabledProviders;
+		this.enabledProviders = enabledProviders;
+	}
+
+	/**
+	 * Filter models based on disabledProviders/enabledProviders settings.
+	 * disabledProviders takes precedence over enabledProviders.
+	 */
+	private filterByProviderSettings(models: Model<Api>[]): Model<Api>[] {
+		return models.filter((m) => {
+			const provider = m.provider;
+
+			// 1. disabledProviders always takes priority - if listed, provider is disabled
+			if (this.disabledProviders?.includes(provider)) {
+				return false;
+			}
+
+			// 2. If enabledProviders is set and non-empty, only those providers are allowed
+			if (this.enabledProviders && this.enabledProviders.length > 0) {
+				return this.enabledProviders.includes(provider);
+			}
+
+			// 3. Otherwise, all providers are allowed
+			return true;
+		});
 	}
 
 	/**
@@ -488,7 +521,7 @@ export class ModelRegistry {
 	 * If models.json had errors, returns only built-in models.
 	 */
 	getAll(): Model<Api>[] {
-		return this.models;
+		return this.filterByProviderSettings(this.models);
 	}
 
 	/**
@@ -496,7 +529,8 @@ export class ModelRegistry {
 	 * This is a fast check that doesn't refresh OAuth tokens.
 	 */
 	getAvailable(): Model<Api>[] {
-		return this.models.filter((m) => this.authStorage.hasAuth(m.provider));
+		const modelsWithAuth = this.models.filter((m) => this.authStorage.hasAuth(m.provider));
+		return this.filterByProviderSettings(modelsWithAuth);
 	}
 
 	/**

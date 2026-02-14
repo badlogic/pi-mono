@@ -542,7 +542,12 @@ export async function main(args: string[]) {
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
 	const authStorage = new AuthStorage();
-	const modelRegistry = new ModelRegistry(authStorage, getModelsPath());
+	const modelRegistry = new ModelRegistry(
+		authStorage,
+		getModelsPath(),
+		settingsManager.getDisabledProviders(),
+		settingsManager.getEnabledProviders(),
+	);
 
 	const resourceLoader = new DefaultResourceLoader({
 		cwd,

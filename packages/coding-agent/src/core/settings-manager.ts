@@ -90,6 +90,8 @@ export interface Settings {
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
+	disabledProviders?: string[]; // Providers to disable (takes precedence over enabledProviders)
+	enabledProviders?: string[]; // Providers to enable (whitelist, only applies if disabledProviders not set for that provider)
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -767,5 +769,25 @@ export class SettingsManager {
 
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
+	}
+
+	getDisabledProviders(): string[] | undefined {
+		return this.settings.disabledProviders;
+	}
+
+	setDisabledProviders(providers: string[] | undefined): void {
+		this.globalSettings.disabledProviders = providers;
+		this.markModified("disabledProviders");
+		this.save();
+	}
+
+	getEnabledProviders(): string[] | undefined {
+		return this.settings.enabledProviders;
+	}
+
+	setEnabledProviders(providers: string[] | undefined): void {
+		this.globalSettings.enabledProviders = providers;
+		this.markModified("enabledProviders");
+		this.save();
 	}
 }
