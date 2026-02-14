@@ -77,7 +77,13 @@ import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./sess
 import { getLatestCompactionEntry } from "./session-manager.js";
 import type { SettingsManager } from "./settings-manager.js";
 import { BUILTIN_SLASH_COMMANDS, type SlashCommandInfo, type SlashCommandLocation } from "./slash-commands.js";
-import { buildSystemPrompt } from "./system-prompt.js";
+import {
+	BUILTIN_TOOL_ORDER,
+	BUILTIN_TOOL_SHORT_DESCRIPTIONS,
+	type BuiltinToolName,
+	buildSystemPrompt,
+	type SystemPromptToolInfo,
+} from "./system-prompt.js";
 import type { BashOperations } from "./tools/bash.js";
 import { createAllTools } from "./tools/index.js";
 
@@ -267,6 +273,7 @@ export class AgentSession {
 
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
+	private _systemPromptToolInfo: Map<string, SystemPromptToolInfo> = new Map();
 
 	// Base system prompt (without extension appends) - used to apply fresh appends each turn
 	private _baseSystemPrompt = "";
@@ -672,7 +679,7 @@ export class AgentSession {
 	}
 
 	private _rebuildSystemPrompt(toolNames: string[]): string {
-		const validToolNames = toolNames.filter((name) => this._baseToolRegistry.has(name));
+		const systemPromptTools = this._buildSystemPromptTools(toolNames);
 		const loaderSystemPrompt = this._resourceLoader.getSystemPrompt();
 		const loaderAppendSystemPrompt = this._resourceLoader.getAppendSystemPrompt();
 		const appendSystemPrompt =
@@ -686,8 +693,24 @@ export class AgentSession {
 			contextFiles: loadedContextFiles,
 			customPrompt: loaderSystemPrompt,
 			appendSystemPrompt,
-			selectedTools: validToolNames,
+			tools: systemPromptTools,
 		});
+	}
+
+	private _buildSystemPromptTools(toolNames: string[]): SystemPromptToolInfo[] {
+		const orderedNames = this._orderSystemPromptTools(toolNames);
+		return orderedNames.flatMap((name) => {
+			const toolInfo = this._systemPromptToolInfo.get(name);
+			return toolInfo ? [toolInfo] : [];
+		});
+	}
+
+	private _orderSystemPromptTools(toolNames: string[]): string[] {
+		const uniqueNames = Array.from(new Set(toolNames));
+		const builtinNames = new Set<string>(BUILTIN_TOOL_ORDER);
+		const orderedBuiltin = BUILTIN_TOOL_ORDER.filter((name) => uniqueNames.includes(name));
+		const customNames = uniqueNames.filter((name) => !builtinNames.has(name)).sort();
+		return [...orderedBuiltin, ...customNames];
 	}
 
 	// =========================================================================
@@ -2015,6 +2038,21 @@ export class AgentSession {
 			toolRegistry.set(tool.name, tool);
 		}
 
+		const systemPromptToolInfo = new Map<string, SystemPromptToolInfo>();
+		for (const [name, tool] of Object.entries(baseTools)) {
+			const shortDescription = BUILTIN_TOOL_SHORT_DESCRIPTIONS[name as BuiltinToolName] ?? tool.description;
+			systemPromptToolInfo.set(name, { name, shortDescription });
+		}
+		for (const customTool of allCustomTools) {
+			const { definition } = customTool;
+			systemPromptToolInfo.set(definition.name, {
+				name: definition.name,
+				shortDescription: definition.shortDescription,
+				systemGuidelines: definition.systemGuidelines,
+			});
+		}
+		this._systemPromptToolInfo = systemPromptToolInfo;
+
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
 			: ["read", "bash", "edit", "write"];
@@ -2044,7 +2082,7 @@ export class AgentSession {
 			this._toolRegistry = toolRegistry;
 		}
 
-		const systemPromptToolNames = Array.from(activeToolNameSet).filter((name) => this._baseToolRegistry.has(name));
+		const systemPromptToolNames = Array.from(activeToolNameSet);
 		this._baseSystemPrompt = this._rebuildSystemPrompt(systemPromptToolNames);
 		this.agent.setSystemPrompt(this._baseSystemPrompt);
 	}
