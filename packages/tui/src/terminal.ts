@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import koffi from "koffi";
 import { setKittyProtocolActive } from "./keys.js";
 import { StdinBuffer } from "./stdin-buffer.js";
 
@@ -86,6 +87,12 @@ export class ProcessTerminal implements Terminal {
 			process.kill(process.pid, "SIGWINCH");
 		}
 
+		// On Windows, enable ENABLE_VIRTUAL_TERMINAL_INPUT so the console sends
+		// VT escape sequences (e.g. \x1b[Z for Shift+Tab) instead of raw console
+		// events that lose modifier information. Must run AFTER setRawMode(true)
+		// since that resets console mode flags.
+		this.enableWindowsVTInput();
+
 		// Query and enable Kitty keyboard protocol
 		// The query handler intercepts input temporarily, then installs the user's handler
 		// See: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
@@ -156,6 +163,31 @@ export class ProcessTerminal implements Terminal {
 		this.setupStdinBuffer();
 		process.stdin.on("data", this.stdinDataHandler!);
 		process.stdout.write("\x1b[?u");
+	}
+
+	/**
+	 * On Windows, add ENABLE_VIRTUAL_TERMINAL_INPUT (0x0200) to the stdin
+	 * console handle so the terminal sends VT sequences for modified keys
+	 * (e.g. \x1b[Z for Shift+Tab). Without this, libuv's ReadConsoleInputW
+	 * discards modifier state and Shift+Tab arrives as plain \t.
+	 */
+	private enableWindowsVTInput(): void {
+		if (process.platform !== "win32") return;
+		try {
+			const k32 = koffi.load("kernel32.dll");
+			const GetStdHandle = k32.func("void* __stdcall GetStdHandle(int)");
+			const GetConsoleMode = k32.func("bool __stdcall GetConsoleMode(void*, _Out_ uint32_t*)");
+			const SetConsoleMode = k32.func("bool __stdcall SetConsoleMode(void*, uint32_t)");
+
+			const STD_INPUT_HANDLE = -10;
+			const ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200;
+			const handle = GetStdHandle(STD_INPUT_HANDLE);
+			const mode = new Uint32Array(1);
+			GetConsoleMode(handle, mode);
+			SetConsoleMode(handle, mode[0]! | ENABLE_VIRTUAL_TERMINAL_INPUT);
+		} catch {
+			// koffi not available — Shift+Tab won't be distinguishable from Tab
+		}
 	}
 
 	async drainInput(maxMs = 1000, idleMs = 50): Promise<void> {
