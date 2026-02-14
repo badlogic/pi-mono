@@ -20,6 +20,8 @@ Edit directly or use `/settings` for common options.
 | `defaultThinkingLevel` | string | - | `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"` |
 | `hideThinkingBlock` | boolean | `false` | Hide thinking blocks in output |
 | `thinkingBudgets` | object | - | Custom token budgets per thinking level |
+| `disabledProviders` | string[] | - | Providers to disable (takes precedence over `enabledProviders`) |
+| `enabledProviders` | string[] | - | Providers to enable (whitelist, only applies if provider not in `disabledProviders`) |
 
 #### thinkingBudgets
 
@@ -33,6 +35,30 @@ Edit directly or use `/settings` for common options.
   }
 }
 ```
+
+#### disabledProviders / enabledProviders
+
+Use these to restrict which providers are available. `disabledProviders` takes precedence if a provider appears in both.
+
+```json
+{
+  "disabledProviders": ["openrouter"]
+}
+```
+
+```json
+{
+  "enabledProviders": ["anthropic", "openai"]
+}
+```
+
+```json
+{
+  "enabledProviders": ["anthropic", "openai"],
+  "disabledProviders": ["anthropic"]
+}
+```
+→ In this case, anthropic is disabled (disabledProviders wins)
 
 ### UI & Display
 
