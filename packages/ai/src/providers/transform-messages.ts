@@ -95,6 +95,7 @@ export function transformMessages<TApi extends Api>(
 	const result: Message[] = [];
 	let pendingToolCalls: ToolCall[] = [];
 	let existingToolResultIds = new Set<string>();
+	const skippedToolCallIds = new Set<string>();
 
 	for (let i = 0; i < transformed.length; i++) {
 		const msg = transformed[i];
@@ -125,6 +126,9 @@ export function transformMessages<TApi extends Api>(
 			// - The model should retry from the last valid state
 			const assistantMsg = msg as AssistantMessage;
 			if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
+				for (const block of assistantMsg.content) {
+					if (block.type === "toolCall") skippedToolCallIds.add((block as ToolCall).id);
+				}
 				continue;
 			}
 
@@ -137,6 +141,7 @@ export function transformMessages<TApi extends Api>(
 
 			result.push(msg);
 		} else if (msg.role === "toolResult") {
+			if (skippedToolCallIds.has(msg.toolCallId)) continue;
 			existingToolResultIds.add(msg.toolCallId);
 			result.push(msg);
 		} else if (msg.role === "user") {
