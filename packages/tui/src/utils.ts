@@ -60,6 +60,13 @@ function graphemeWidth(segment: string): number {
 		return 0;
 	}
 
+	// Regional indicator symbols (U+1F1E6..U+1F1FF) are often rendered as
+	// full-width emoji in terminals, even when isolated during streaming.
+	// Keep width conservative (2) to avoid terminal auto-wrap drift artifacts.
+	if (cp >= 0x1f1e6 && cp <= 0x1f1ff) {
+		return 2;
+	}
+
 	let width = eastAsianWidth(cp);
 
 	// Trailing halfwidth/fullwidth forms
