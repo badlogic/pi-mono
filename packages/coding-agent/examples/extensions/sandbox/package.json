@@ -1,19 +1,22 @@
 {
-	"name": "pi-extension-sandbox",
-	"private": true,
-	"version": "1.0.0",
-	"type": "module",
-	"scripts": {
-		"clean": "echo 'nothing to clean'",
-		"build": "echo 'nothing to build'",
-		"check": "echo 'nothing to check'"
-	},
-	"pi": {
-		"extensions": [
-			"./index.ts"
-		]
-	},
-	"dependencies": {
-		"@anthropic-ai/sandbox-runtime": "^0.0.26"
-	}
+    "name": "pi-extension-sandbox",
+    "private": true,
+    "version": "1.1.0",
+    "type": "module",
+    "scripts": {
+        "clean": "echo 'nothing to clean'",
+        "build": "echo 'nothing to build'",
+        "check": "echo 'nothing to check'",
+        "test": "npx vitest run test_paths.test.ts",
+        "test:watch": "npx vitest watch test_paths.test.ts"
+    },
+    "pi": {
+        "extensions": [
+            "./index.ts"
+        ]
+    },
+    "dependencies": {
+    "@anthropic-ai/sandbox-runtime": "^0.0.37",
+        "minimatch": "^10.1.1"
+    }
 }

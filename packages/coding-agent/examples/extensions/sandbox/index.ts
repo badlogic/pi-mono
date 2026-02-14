@@ -15,7 +15,8 @@
  *   "enabled": true,
  *   "network": {
  *     "allowedDomains": ["github.com", "*.github.com"],
- *     "deniedDomains": []
+ *     "deniedDomains": [],
+ * 	   "allowUnixSockets": ['/tmp/tmux-1000/pi']
  *   },
  *   "filesystem": {
  *     "denyRead": ["~/.ssh", "~/.aws"],
@@ -40,16 +41,17 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import { SandboxManager, type SandboxRuntimeConfig } from "@anthropic-ai/sandbox-runtime";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { type BashOperations, createBashTool } from "@mariozechner/pi-coding-agent";
+import { minimatch } from "minimatch";
 
 interface SandboxConfig extends SandboxRuntimeConfig {
 	enabled?: boolean;
 }
 
-const DEFAULT_CONFIG: SandboxConfig = {
+export const DEFAULT_CONFIG: SandboxConfig = {
 	enabled: true,
 	network: {
 		allowedDomains: [
@@ -72,6 +74,130 @@ const DEFAULT_CONFIG: SandboxConfig = {
 		denyWrite: [".env", ".env.*", "*.pem", "*.key"],
 	},
 };
+
+/**
+ * Expand ~ to home directory
+ */
+export function expandPath(filePath: string): string {
+	if (filePath.startsWith("~")) {
+		return join(homedir(), filePath.slice(1));
+	}
+	return filePath;
+}
+
+/**
+ * Resolve path into an absolute path
+ */
+export function resolvePath(filePath: string, cwd: string): string {
+	const expanded = expandPath(filePath);
+	if (isAbsolute(expanded)) {
+		return resolve(expanded);
+	}
+	return resolve(cwd, expanded);
+}
+
+/**
+ * Check if a path matches any of the given glob patterns
+ * Uses platform-appropriate matching:
+ * - macOS: git-style glob patterns (*, **, ?, [abc])
+ * - Linux: exact literal path or prefix matching only
+ */
+export function matchesAnyPattern(
+	path: string,
+	patterns: string[],
+	cwd: string,
+	platform: string,
+): { matched: boolean; pattern: string } {
+	const resolvedPath = resolvePath(path, cwd);
+	const _resolvedCwd = resolvePath(cwd, cwd);
+
+	for (const pattern of patterns) {
+		// Expand ~ in pattern and resolve against CWD
+		const resolvedPattern = resolvePath(pattern, cwd);
+
+		if (platform === "darwin") {
+			// macOS: Use minimatch with git-style glob patterns
+			// minimatch with ** matches any characters including /
+			if (minimatch(resolvedPath, resolvedPattern, { dot: true, nocase: true })) {
+				return { matched: true, pattern };
+			}
+		} else {
+			// Linux: Behave like sandbox-runtime - literal path matching only (no glob support)
+			// Check if path starts with the pattern (for directory prefixes)
+			// or exact match
+			if (resolvedPath === resolvedPattern || resolvedPath.startsWith(resolvedPattern + sep)) {
+				return { matched: true, pattern };
+			}
+		}
+	}
+
+	return { matched: false, pattern: "" };
+}
+
+/**
+ * Check if path is allowed for read operations
+ *
+ * DENY-ONLY pattern: By default, read access is allowed everywhere.
+ * You can deny specific paths. An empty deny list means full read access.
+ */
+export function isReadAllowed(
+	path: string,
+	cwd: string,
+	config: SandboxConfig,
+	platform: string,
+): { allowed: boolean; reason?: string } {
+	const denyRead = config.filesystem?.denyRead ?? [];
+
+	// Empty denyRead = full read access (default allow)
+	if (denyRead.length === 0) {
+		return { allowed: true };
+	}
+
+	// If denyRead is non-empty, check if path matches any deny pattern
+	const denyReadMatch = matchesAnyPattern(path, denyRead, cwd, platform);
+	if (denyReadMatch.matched) {
+		return { allowed: false, reason: `Path matches denyRead pattern: ${denyReadMatch.pattern}` };
+	}
+
+	// Path doesn't match any deny pattern = allowed
+	return { allowed: true };
+}
+
+/**
+ * Check if path is allowed for write operations
+ *
+ * ALLOW-ONLY pattern: By default, write access is denied everywhere.
+ * You must explicitly allow paths. An empty allow list means no write access.
+ * denyWrite creates exceptions within allowed paths (takes precedence over allowWrite).
+ */
+export function isWriteAllowed(
+	path: string,
+	cwd: string,
+	config: SandboxConfig,
+	platform: string,
+): { allowed: boolean; reason?: string } {
+	const allowWrite = config.filesystem?.allowWrite ?? [];
+	const denyWrite = config.filesystem?.denyWrite ?? [];
+
+	// Empty allowWrite = no write access (default deny)
+	if (allowWrite.length === 0) {
+		return { allowed: false, reason: `Write access not allowed (allowWrite is empty)` };
+	}
+
+	// Check denyWrite patterns (takes precedence over allowWrite)
+	const denyWriteMatch = matchesAnyPattern(path, denyWrite, cwd, platform);
+	if (denyWrite.length > 0 && denyWriteMatch.matched) {
+		return { allowed: false, reason: `Path matches denyWrite pattern: ${denyWriteMatch.pattern}` };
+	}
+
+	// Path MUST match one of the allowWrite patterns
+	const allowWriteMatch = matchesAnyPattern(path, allowWrite, cwd, platform);
+	if (!allowWriteMatch.matched) {
+		return { allowed: false, reason: `Path does not match any allowWrite pattern` };
+	}
+
+	return { allowed: true };
+}
 
 function loadConfig(cwd: string): SandboxConfig {
 	const projectConfigPath = join(cwd, ".pi", "sandbox.json");
@@ -195,6 +321,64 @@ function createSandboxedBashOps(): BashOperations {
 	};
 }
 
+/**
+ * Handle tool_call events for path-based restrictions
+ */
+function handleToolCallEvent(
+	event: any,
+	ctx: ExtensionContext,
+	config: SandboxConfig,
+): { block: boolean; reason: string } | undefined {
+	// Skip bash tool - it's handled at OS level by sandbox-runtime
+	if (event.toolName === "bash") {
+		return;
+	}
+
+	// Get the path to check
+	const path = event?.input?.path;
+	if (!path) {
+		return;
+	}
+
+	// Determine the CWD to use (from context or event)
+	const cwd = ctx.cwd;
+
+	// Check read operations
+	if (event.toolName === "read" || event.toolName === "ls") {
+		const result = isReadAllowed(path, cwd, config, process.platform);
+		if (!result.allowed) {
+			return {
+				block: true,
+				reason: `Read access denied: ${result.reason}`,
+			};
+		}
+	}
+
+	// Check write/edit operations
+	if (event.toolName === "write" || event.toolName === "edit") {
+		const result = isWriteAllowed(path, cwd, config, process.platform);
+		if (!result.allowed) {
+			return {
+				block: true,
+				reason: `Write access denied: ${result.reason}`,
+			};
+		}
+	}
+
+	// Check find/grep - these read file contents
+	if (event.toolName === "find" || event.toolName === "grep") {
+		const result = isReadAllowed(path, cwd, config, process.platform);
+		if (!result.allowed) {
+			return {
+				block: true,
+				reason: `Access denied: ${result.reason}`,
+			};
+		}
+	}
+
+	return;
+}
+
 export default function (pi: ExtensionAPI) {
 	pi.registerFlag("no-sandbox", {
 		description: "Disable OS-level sandboxing for bash commands",
@@ -226,6 +410,13 @@ export default function (pi: ExtensionAPI) {
 	pi.on("user_bash", () => {
 		if (!sandboxEnabled || !sandboxInitialized) return;
 		return { operations: createSandboxedBashOps() };
+	});
+
+	// Register tool_call handler for path-based restrictions
+	pi.on("tool_call", (event, ctx) => {
+		if (!sandboxEnabled || !sandboxInitialized) return;
+		const config = loadConfig(ctx.cwd);
+		return handleToolCallEvent(event, ctx, config);
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
