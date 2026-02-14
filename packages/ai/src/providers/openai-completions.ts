@@ -220,10 +220,15 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 					if (foundReasoningField) {
 						if (!currentBlock || currentBlock.type !== "thinking") {
 							finishCurrentBlock(currentBlock);
+							// For providers that send reasoning_opaque (e.g. github-copilot proxying
+							// Anthropic Claude models), capture it as the round-trip signature.
+							// Otherwise fall back to the reasoning field name for other providers
+							// (e.g. llama.cpp uses "reasoning_content", gpt-oss uses "reasoning").
+							const opaqueSignature = (choice.delta as any).reasoning_opaque;
 							currentBlock = {
 								type: "thinking",
 								thinking: "",
-								thinkingSignature: foundReasoningField,
+								thinkingSignature: opaqueSignature ?? foundReasoningField,
 							};
 							output.content.push(currentBlock);
 							stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
@@ -238,6 +243,13 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 								delta,
 								partial: output,
 							});
+							// Accumulate reasoning_opaque across deltas if the provider
+							// sends it after the first chunk (some proxies send it on
+							// every delta, some only on the first).
+							const opaque = (choice.delta as any).reasoning_opaque;
+							if (opaque && typeof opaque === "string") {
+								currentBlock.thinkingSignature = opaque;
+							}
 						}
 					}
 
@@ -600,10 +612,23 @@ export function convertMessages(
 						assistantMsg.content = [{ type: "text", text: thinkingText }];
 					}
 				} else {
-					// Use the signature from the first thinking block if available (for llama.cpp server + gpt-oss)
 					const signature = nonEmptyThinkingBlocks[0].thinkingSignature;
 					if (signature && signature.length > 0) {
-						(assistantMsg as any)[signature] = nonEmptyThinkingBlocks.map((b) => b.thinking).join("\n");
+						const thinkingText = nonEmptyThinkingBlocks.map((b) => b.thinking).join("\n");
+						const REASONING_FIELD_NAMES = ["reasoning_text", "reasoning_content", "reasoning"];
+						if (REASONING_FIELD_NAMES.includes(signature)) {
+							// Bare field-name artifact — the original reasoning_opaque was not captured.
+							// Send as the detected reasoning field (e.g. reasoning_text) without an
+							// opaque signature.  The proxy will treat it as a new thinking turn.
+							(assistantMsg as any)[signature] = thinkingText;
+						} else {
+							// Opaque signature from a provider like github-copilot.
+							// Send both reasoning_text (thinking content) and reasoning_opaque
+							// (opaque round-trip blob) so the proxy can reconstruct valid
+							// Anthropic thinking blocks with proper signatures.
+							(assistantMsg as any).reasoning_text = thinkingText;
+							(assistantMsg as any).reasoning_opaque = signature;
+						}
 					}
 				}
 			}
