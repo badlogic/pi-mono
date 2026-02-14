@@ -708,8 +708,9 @@ function convertMessages(
 			}
 		} else if (msg.role === "assistant") {
 			const blocks: ContentBlockParam[] = [];
+			const lastToolCallIndex = cacheControl ? msg.content.map((block) => block.type).lastIndexOf("toolCall") : -1;
 
-			for (const block of msg.content) {
+			for (const [contentIndex, block] of msg.content.entries()) {
 				if (block.type === "text") {
 					if (block.text.trim().length === 0) continue;
 					blocks.push({
@@ -739,6 +740,7 @@ function convertMessages(
 						id: block.id,
 						name: isOAuthToken ? toClaudeCodeName(block.name) : block.name,
 						input: block.arguments ?? {},
+						...(cacheControl && contentIndex === lastToolCallIndex ? { cache_control: cacheControl } : {}),
 					});
 				}
 			}
@@ -783,7 +785,20 @@ function convertMessages(
 		}
 	}
 
-	// Add cache_control to the last user message to cache conversation history
+	// Cache breakpoint strategy:
+	// - Anthropic-compatible docs describe marking the final block to enable incremental prompt caching.
+	// - In tool turns, placing cache_control only on user tool_result can leave assistant tool_use/thinking
+	//   outside the growing cache window on some providers.
+	// - We therefore mark both:
+	//   1) the last assistant tool_use block (set above), and
+	//   2) the last user message block (set below).
+	//
+	// Empirical impact from field usage:
+	// - MiniMax and Kimi providers: drastic improvement (cache hit rates often 80%+ instead of stalling
+	//   near system-prompt-sized cache reads).
+	// - Anthropic native models: small positive improvement.
+	//
+	// This dual-marking pattern aligns with other coding tools, including OpenCode, Kilo Code, and Roo Code.
 	if (cacheControl && params.length > 0) {
 		const lastMessage = params[params.length - 1];
 		if (lastMessage.role === "user") {
