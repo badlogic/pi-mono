@@ -428,6 +428,11 @@ export async function processResponsesStream<TApi extends Api>(
 			}
 		} else if (event.type === "response.completed") {
 			const response = event.response;
+			// Update the model name if the API resolved to a different model
+			// (e.g. OpenRouter's openrouter/auto returns the actual model used)
+			if (response?.model && response.model !== model.id) {
+				output.model = response.model;
+			}
 			if (response?.usage) {
 				const cachedTokens = response.usage.input_tokens_details?.cached_tokens || 0;
 				output.usage = {
