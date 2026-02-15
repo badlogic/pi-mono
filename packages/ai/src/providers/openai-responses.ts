@@ -53,6 +53,13 @@ export interface OpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
 	serviceTier?: ResponseCreateParamsStreaming["service_tier"];
+	/**
+	 * Whether to persist responses server-side for multi-turn conversation chaining
+	 * via `previous_response_id`. When `false`, reasoning items (`rs_*` IDs) are not
+	 * persisted and subsequent turns referencing them will fail with HTTP 404.
+	 * Default: `true`.
+	 */
+	store?: boolean;
 }
 
 /**
@@ -191,7 +198,7 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		stream: true,
 		prompt_cache_key: cacheRetention === "none" ? undefined : options?.sessionId,
 		prompt_cache_retention: getPromptCacheRetention(model.baseUrl, cacheRetention),
-		store: false,
+		store: options?.store ?? true,
 	};
 
 	if (options?.maxTokens) {

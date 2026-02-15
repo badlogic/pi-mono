@@ -49,6 +49,11 @@ export interface OpenAICodexResponsesOptions extends StreamOptions {
 	reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 	reasoningSummary?: "auto" | "concise" | "detailed" | "off" | "on" | null;
 	textVerbosity?: "low" | "medium" | "high";
+	/**
+	 * Whether to persist responses server-side for multi-turn conversation chaining.
+	 * Default: `true`.
+	 */
+	store?: boolean;
 }
 
 type CodexResponseStatus = "completed" | "incomplete" | "failed" | "cancelled" | "queued" | "in_progress";
@@ -285,7 +290,7 @@ function buildRequestBody(
 
 	const body: RequestBody = {
 		model: model.id,
-		store: false,
+		store: options?.store ?? true,
 		stream: true,
 		instructions: context.systemPrompt,
 		input: messages,
