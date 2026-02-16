@@ -63,8 +63,11 @@ interface PackageManagerOptions {
 
 type SourceScope = "user" | "project" | "temporary";
 
+type NpmManager = "npm" | "pnpm";
+
 type NpmSource = {
 	type: "npm";
+	manager: NpmManager;
 	spec: string;
 	name: string;
 	pinned: boolean;
@@ -593,7 +596,7 @@ export class DefaultPackageManager implements PackageManager {
 	private cwd: string;
 	private agentDir: string;
 	private settingsManager: SettingsManager;
-	private globalNpmRoot: string | undefined;
+	private globalNpmRoots = new Map<NpmManager, string>();
 	private progressCallback: ProgressCallback | undefined;
 
 	constructor(options: PackageManagerOptions) {
@@ -641,6 +644,24 @@ export class DefaultPackageManager implements PackageManager {
 			this.settingsManager.setPackages(nextPackages);
 		}
 		return true;
+	}
+
+	findConflictingManagerSource(source: string, options?: { local?: boolean }): string | undefined {
+		const parsed = this.parseSource(source);
+		if (parsed.type !== "npm") return undefined;
+		const altManager: NpmManager = parsed.manager === "npm" ? "pnpm" : "npm";
+		const altSource = `${altManager}:${parsed.name}`;
+		const scope: SourceScope = options?.local ? "project" : "user";
+		const globalSettings = this.settingsManager.getGlobalSettings();
+		const projectSettings = this.settingsManager.getProjectSettings();
+		const allPackages = [...(globalSettings.packages ?? []), ...(projectSettings.packages ?? [])];
+		for (const pkg of allPackages) {
+			const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
+			if (this.packageSourcesMatch(pkg, altSource, scope)) {
+				return sourceStr;
+			}
+		}
+		return undefined;
 	}
 
 	getInstalledPath(source: string, scope: "user" | "project"): string | undefined {
@@ -928,7 +949,7 @@ export class DefaultPackageManager implements PackageManager {
 	private getSourceMatchKeyForInput(source: string): string {
 		const parsed = this.parseSource(source);
 		if (parsed.type === "npm") {
-			return `npm:${parsed.name}`;
+			return `${parsed.manager}:${parsed.name}`;
 		}
 		if (parsed.type === "git") {
 			return `git:${parsed.host}/${parsed.path}`;
@@ -939,7 +960,7 @@ export class DefaultPackageManager implements PackageManager {
 	private getSourceMatchKeyForSettings(source: string, scope: SourceScope): string {
 		const parsed = this.parseSource(source);
 		if (parsed.type === "npm") {
-			return `npm:${parsed.name}`;
+			return `${parsed.manager}:${parsed.name}`;
 		}
 		if (parsed.type === "git") {
 			return `git:${parsed.host}/${parsed.path}`;
@@ -971,6 +992,19 @@ export class DefaultPackageManager implements PackageManager {
 			const { name, version } = this.parseNpmSpec(spec);
 			return {
 				type: "npm",
+				manager: "npm",
+				spec,
+				name,
+				pinned: Boolean(version),
+			};
+		}
+
+		if (source.startsWith("pnpm:")) {
+			const spec = source.slice("pnpm:".length).trim();
+			const { name, version } = this.parseNpmSpec(spec);
+			return {
+				type: "npm",
+				manager: "pnpm",
 				spec,
 				name,
 				pinned: Boolean(version),
@@ -1051,7 +1085,7 @@ export class DefaultPackageManager implements PackageManager {
 	private getPackageIdentity(source: string, scope?: SourceScope): string {
 		const parsed = this.parseSource(source);
 		if (parsed.type === "npm") {
-			return `npm:${parsed.name}`;
+			return `${parsed.manager}:${parsed.name}`;
 		}
 		if (parsed.type === "git") {
 			// Use host/path for identity to normalize SSH and HTTPS
@@ -1102,25 +1136,29 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async installNpm(source: NpmSource, scope: SourceScope, temporary: boolean): Promise<void> {
+		const cli = source.manager;
 		if (scope === "user" && !temporary) {
-			await this.runCommand("npm", ["install", "-g", source.spec]);
+			await this.runCommand(cli, [cli === "pnpm" ? "add" : "install", "-g", source.spec]);
 			return;
 		}
-		const installRoot = this.getNpmInstallRoot(scope, temporary);
+		const installRoot = this.getNpmInstallRoot(source.manager, scope, temporary);
 		this.ensureNpmProject(installRoot);
-		await this.runCommand("npm", ["install", source.spec, "--prefix", installRoot]);
+		const dirFlag = cli === "pnpm" ? "--dir" : "--prefix";
+		await this.runCommand(cli, [cli === "pnpm" ? "add" : "install", source.spec, dirFlag, installRoot]);
 	}
 
 	private async uninstallNpm(source: NpmSource, scope: SourceScope): Promise<void> {
+		const cli = source.manager;
 		if (scope === "user") {
-			await this.runCommand("npm", ["uninstall", "-g", source.name]);
+			await this.runCommand(cli, [cli === "pnpm" ? "remove" : "uninstall", "-g", source.name]);
 			return;
 		}
-		const installRoot = this.getNpmInstallRoot(scope, false);
+		const installRoot = this.getNpmInstallRoot(source.manager, scope, false);
 		if (!existsSync(installRoot)) {
 			return;
 		}
-		await this.runCommand("npm", ["uninstall", source.name, "--prefix", installRoot]);
+		const dirFlag = cli === "pnpm" ? "--dir" : "--prefix";
+		await this.runCommand(cli, [cli === "pnpm" ? "remove" : "uninstall", source.name, dirFlag, installRoot]);
 	}
 
 	private async installGit(source: GitSource, scope: SourceScope): Promise<void> {
@@ -1232,33 +1270,35 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	private getNpmInstallRoot(scope: SourceScope, temporary: boolean): string {
+	private getNpmInstallRoot(manager: NpmManager, scope: SourceScope, temporary: boolean): string {
 		if (temporary) {
-			return this.getTemporaryDir("npm");
+			return this.getTemporaryDir(manager);
 		}
 		if (scope === "project") {
-			return join(this.cwd, CONFIG_DIR_NAME, "npm");
+			return join(this.cwd, CONFIG_DIR_NAME, manager);
 		}
-		return join(this.getGlobalNpmRoot(), "..");
+		return join(this.getGlobalNpmRoot(manager), "..");
 	}
 
-	private getGlobalNpmRoot(): string {
-		if (this.globalNpmRoot) {
-			return this.globalNpmRoot;
+	private getGlobalNpmRoot(manager: NpmManager): string {
+		const cached = this.globalNpmRoots.get(manager);
+		if (cached) {
+			return cached;
 		}
-		const result = this.runCommandSync("npm", ["root", "-g"]);
-		this.globalNpmRoot = result.trim();
-		return this.globalNpmRoot;
+		const result = this.runCommandSync(manager, ["root", "-g"]);
+		const root = result.trim();
+		this.globalNpmRoots.set(manager, root);
+		return root;
 	}
 
 	private getNpmInstallPath(source: NpmSource, scope: SourceScope): string {
 		if (scope === "temporary") {
-			return join(this.getTemporaryDir("npm"), "node_modules", source.name);
+			return join(this.getTemporaryDir(source.manager), "node_modules", source.name);
 		}
 		if (scope === "project") {
-			return join(this.cwd, CONFIG_DIR_NAME, "npm", "node_modules", source.name);
+			return join(this.cwd, CONFIG_DIR_NAME, source.manager, "node_modules", source.name);
 		}
-		return join(this.getGlobalNpmRoot(), source.name);
+		return join(this.getGlobalNpmRoot(source.manager), source.name);
 	}
 
 	private getGitInstallPath(source: GitSource, scope: SourceScope): string {

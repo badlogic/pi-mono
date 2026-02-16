@@ -647,9 +647,9 @@ export class InteractiveMode {
 	 * Get a short path relative to the package root for display.
 	 */
 	private getShortPath(fullPath: string, source: string): string {
-		// For npm packages, show path relative to node_modules/pkg/
+		// For npm/pnpm packages, show path relative to node_modules/pkg/
 		const npmMatch = fullPath.match(/node_modules\/(@?[^/]+(?:\/[^/]+)?)\/(.*)/);
-		if (npmMatch && source.startsWith("npm:")) {
+		if (npmMatch && (source.startsWith("npm:") || source.startsWith("pnpm:"))) {
 			return npmMatch[2];
 		}
 
@@ -697,7 +697,7 @@ export class InteractiveMode {
 	}
 
 	private isPackageSource(source: string): boolean {
-		return source.startsWith("npm:") || source.startsWith("git:");
+		return source.startsWith("npm:") || source.startsWith("pnpm:") || source.startsWith("git:");
 	}
 
 	private buildScopeGroups(

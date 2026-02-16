@@ -91,6 +91,7 @@ Options:
 
 Examples:
   ${APP_NAME} install npm:@foo/bar
+  ${APP_NAME} install pnpm:@foo/bar
   ${APP_NAME} install git:github.com/user/repo
   ${APP_NAME} install git:git@github.com:user/repo
   ${APP_NAME} install https://github.com/user/repo
@@ -108,8 +109,9 @@ Remove a package and its source from settings.
 Options:
   -l, --local    Remove from project settings (.pi/settings.json)
 
-Example:
+Examples:
   ${APP_NAME} remove npm:@foo/bar
+  ${APP_NAME} remove pnpm:@foo/bar
 `);
 			return;
 
@@ -210,11 +212,28 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 
 	try {
 		switch (options.command) {
-			case "install":
+			case "install": {
+				const conflict = packageManager.findConflictingManagerSource(source!, { local: options.local });
+				if (conflict) {
+					const parsed = source!.match(/^(npm|pnpm):(.+)/);
+					const name = parsed ? parsed[2] : source!;
+					console.log(chalk.yellow(`Package "${name}" is already installed via ${conflict}`));
+					const choice = await promptChoice("What would you like to do?", [
+						"Install duplicate (keep both)",
+						"Remove existing and install new",
+						"Abort",
+					]);
+					if (choice === 2 || choice === -1) return true;
+					if (choice === 1) {
+						await packageManager.remove(conflict, { local: options.local });
+						packageManager.removeSourceFromSettings(conflict, { local: options.local });
+					}
+				}
 				await packageManager.install(source!, { local: options.local });
 				packageManager.addSourceToSettings(source!, { local: options.local });
 				console.log(chalk.green(`Installed ${source}`));
 				return true;
+			}
 
 			case "remove": {
 				await packageManager.remove(source!, { local: options.local });
@@ -360,6 +379,29 @@ async function promptConfirm(message: string): Promise<boolean> {
 		rl.question(`${message} [y/N] `, (answer) => {
 			rl.close();
 			resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
+		});
+	});
+}
+
+/** Prompt user for a numbered choice. Returns 0-based index, or -1 for invalid input. */
+async function promptChoice(message: string, choices: string[]): Promise<number> {
+	return new Promise((resolve) => {
+		const rl = createInterface({
+			input: process.stdin,
+			output: process.stdout,
+		});
+		const lines = [`${message}\n`];
+		for (let i = 0; i < choices.length; i++) {
+			lines.push(`  ${i + 1}) ${choices[i]}\n`);
+		}
+		rl.question(lines.join(""), (answer) => {
+			rl.close();
+			const num = Number.parseInt(answer.trim(), 10);
+			if (Number.isNaN(num) || num < 1 || num > choices.length) {
+				resolve(-1);
+			} else {
+				resolve(num - 1);
+			}
 		});
 	});
 }

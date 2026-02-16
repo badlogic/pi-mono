@@ -1097,4 +1097,92 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			expect(result.extensions.filter((r) => r.enabled).length).toBe(1);
 		});
 	});
+
+	describe("pnpm support", () => {
+		it("should parse pnpm: prefix as type npm with manager pnpm", () => {
+			const parsed = (packageManager as any).parseSource("pnpm:chalk");
+			expect(parsed.type).toBe("npm");
+			expect(parsed.manager).toBe("pnpm");
+			expect(parsed.name).toBe("chalk");
+			expect(parsed.pinned).toBe(false);
+		});
+
+		it("should parse pnpm: with scoped package", () => {
+			const parsed = (packageManager as any).parseSource("pnpm:@scope/pkg@1.2.3");
+			expect(parsed.type).toBe("npm");
+			expect(parsed.manager).toBe("pnpm");
+			expect(parsed.name).toBe("@scope/pkg");
+			expect(parsed.spec).toBe("@scope/pkg@1.2.3");
+			expect(parsed.pinned).toBe(true);
+		});
+
+		it("should parse npm: prefix with manager npm", () => {
+			const parsed = (packageManager as any).parseSource("npm:chalk");
+			expect(parsed.type).toBe("npm");
+			expect(parsed.manager).toBe("npm");
+			expect(parsed.name).toBe("chalk");
+		});
+
+		it("should produce different identity keys for npm:foo and pnpm:foo", () => {
+			const npmIdentity = (packageManager as any).getPackageIdentity("npm:chalk");
+			const pnpmIdentity = (packageManager as any).getPackageIdentity("pnpm:chalk");
+			expect(npmIdentity).toBe("npm:chalk");
+			expect(pnpmIdentity).toBe("pnpm:chalk");
+			expect(npmIdentity).not.toBe(pnpmIdentity);
+		});
+
+		it("should produce different install paths for npm vs pnpm (project scope)", () => {
+			const npmParsed = (packageManager as any).parseSource("npm:chalk");
+			const pnpmParsed = (packageManager as any).parseSource("pnpm:chalk");
+
+			const npmPath = (packageManager as any).getNpmInstallPath(npmParsed, "project");
+			const pnpmPath = (packageManager as any).getNpmInstallPath(pnpmParsed, "project");
+
+			expect(npmPath).toContain("/npm/node_modules/chalk");
+			expect(pnpmPath).toContain("/pnpm/node_modules/chalk");
+			expect(npmPath).not.toBe(pnpmPath);
+		});
+
+		it("should detect conflicting manager source", () => {
+			settingsManager.setPackages(["npm:chalk"]);
+
+			const conflict = packageManager.findConflictingManagerSource("pnpm:chalk");
+			expect(conflict).toBe("npm:chalk");
+		});
+
+		it("should detect conflicting manager source in reverse", () => {
+			settingsManager.setPackages(["pnpm:chalk"]);
+
+			const conflict = packageManager.findConflictingManagerSource("npm:chalk");
+			expect(conflict).toBe("pnpm:chalk");
+		});
+
+		it("should return undefined when no conflict exists", () => {
+			settingsManager.setPackages(["npm:chalk"]);
+
+			const conflict = packageManager.findConflictingManagerSource("pnpm:lodash");
+			expect(conflict).toBeUndefined();
+		});
+
+		it("should return undefined for non-npm sources", () => {
+			const conflict = packageManager.findConflictingManagerSource("./local/path");
+			expect(conflict).toBeUndefined();
+		});
+
+		it("should detect conflict in project settings", () => {
+			settingsManager.setProjectPackages(["npm:chalk"]);
+
+			const conflict = packageManager.findConflictingManagerSource("pnpm:chalk", { local: true });
+			expect(conflict).toBe("npm:chalk");
+		});
+
+		it("should produce different source match keys for npm and pnpm", () => {
+			const npmKey = (packageManager as any).getSourceMatchKeyForInput("npm:chalk");
+			const pnpmKey = (packageManager as any).getSourceMatchKeyForInput("pnpm:chalk");
+
+			expect(npmKey).toBe("npm:chalk");
+			expect(pnpmKey).toBe("pnpm:chalk");
+			expect(npmKey).not.toBe(pnpmKey);
+		});
+	});
 });
