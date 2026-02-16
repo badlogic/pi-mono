@@ -5,8 +5,28 @@ import { fileURLToPath } from "node:url";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { RpcClient } from "../src/modes/rpc/rpc-client.js";
+import type { RpcTreeNode } from "../src/modes/rpc/rpc-types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+type RpcMessageNode = Extract<RpcTreeNode, { type: "message" }>;
+
+/** Recursively find the first tree node matching a predicate. */
+function findNode(nodes: RpcTreeNode[], predicate: (node: RpcTreeNode) => boolean): RpcTreeNode | undefined {
+	for (const node of nodes) {
+		if (predicate(node)) return node;
+		const found = findNode(node.children, predicate);
+		if (found) return found;
+	}
+	return undefined;
+}
+
+/** Find the first message node with the given role. */
+function findMessageNode(nodes: RpcTreeNode[], role: string): RpcMessageNode | undefined {
+	return findNode(nodes, (n) => n.type === "message" && (n as RpcMessageNode).role === role) as
+		| RpcMessageNode
+		| undefined;
+}
 
 /**
  * RPC mode tests.
@@ -283,6 +303,121 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		expect(text).toContain("test123");
 	}, 90000);
 
+	test("should list sessions for current project", async () => {
+		await client.start();
+
+		// Send a prompt to create a session
+		await client.promptAndWait("Say hello");
+
+		// List sessions without search text
+		const sessions = await client.listSessions();
+		expect(sessions.length).toBeGreaterThanOrEqual(1);
+
+		const session = sessions[0];
+		expect(session.path).toBeDefined();
+		expect(session.id).toBeDefined();
+		expect(typeof session.cwd).toBe("string");
+		expect(typeof session.created).toBe("string");
+		expect(typeof session.modified).toBe("string");
+		// Dates should be valid ISO strings
+		expect(Number.isNaN(new Date(session.created).getTime())).toBe(false);
+		expect(Number.isNaN(new Date(session.modified).getTime())).toBe(false);
+		expect(session.messageCount).toBeGreaterThanOrEqual(2);
+		expect(session.firstMessage).toBeDefined();
+		// allMessagesText should NOT be present by default
+		expect(session.allMessagesText).toBeUndefined();
+
+		// List with includeSearchText
+		const sessionsWithText = await client.listSessions("current", true);
+		expect(sessionsWithText.length).toBeGreaterThanOrEqual(1);
+		expect(sessionsWithText[0].allMessagesText).toBeDefined();
+		expect(typeof sessionsWithText[0].allMessagesText).toBe("string");
+		expect(sessionsWithText[0].allMessagesText!.length).toBeGreaterThan(0);
+	}, 90000);
+
+	test("should get enriched fork messages", async () => {
+		await client.start();
+
+		// Send two prompts to create fork-able messages
+		await client.promptAndWait("First message");
+		await client.promptAndWait("Second message");
+
+		const messages = await client.getForkMessages();
+
+		// Should have exactly 2 user messages
+		expect(messages.length).toBe(2);
+
+		for (let i = 0; i < messages.length; i++) {
+			const msg = messages[i];
+			// Original fields still present
+			expect(msg.entryId).toBeDefined();
+			expect(msg.text).toBeDefined();
+			expect(typeof msg.timestamp).toBe("string");
+			expect(new Date(msg.timestamp).toISOString()).toBe(msg.timestamp);
+		}
+	}, 90000);
+
+	test("should get tree structure with and without content", async () => {
+		await client.start();
+		await client.promptAndWait("First message");
+		await client.promptAndWait("Second message");
+
+		// Without content
+		const { tree, leafId } = await client.getTree();
+		expect(tree.length).toBeGreaterThanOrEqual(1);
+		expect(leafId).toBeDefined();
+		expect(leafId).not.toBeNull();
+
+		const userNode = findMessageNode(tree, "user");
+		expect(userNode).toBeDefined();
+		expect(userNode!.preview).toBeDefined();
+		expect(userNode!.content).toBeUndefined();
+
+		// With content
+		const { tree: treeWithContent } = await client.getTree(true);
+		const userNodeFull = findMessageNode(treeWithContent, "user");
+		expect(userNodeFull).toBeDefined();
+		expect(userNodeFull!.content).toBeDefined();
+		expect(userNodeFull!.preview).toBeDefined();
+	}, 120000);
+
+	test("should set and clear labels on tree nodes", async () => {
+		await client.start();
+		await client.promptAndWait("Label test message");
+
+		const { tree } = await client.getTree();
+		const userNode = findMessageNode(tree, "user");
+		expect(userNode).toBeDefined();
+
+		// Set label
+		await client.setLabel(userNode!.id, "checkpoint");
+		const { tree: treeAfterLabel } = await client.getTree();
+		const labeledNode = findNode(treeAfterLabel, (n) => n.id === userNode!.id);
+		expect(labeledNode?.label).toBe("checkpoint");
+
+		// Clear label
+		await client.setLabel(userNode!.id);
+		const { tree: treeAfterClear } = await client.getTree();
+		const clearedNode = findNode(treeAfterClear, (n) => n.id === userNode!.id);
+		expect(clearedNode?.label).toBeUndefined();
+	}, 120000);
+
+	test("should navigate tree and change leaf", async () => {
+		await client.start();
+		await client.promptAndWait("Navigate test message");
+
+		const { tree, leafId } = await client.getTree();
+		const userNode = findMessageNode(tree, "user");
+		expect(userNode).toBeDefined();
+
+		const navResult = await client.navigateTree(userNode!.id);
+		expect(navResult.cancelled).toBe(false);
+		expect(navResult.editorText).toBeDefined();
+
+		const { leafId: newLeafId } = await client.getTree();
+		expect(newLeafId).not.toBe(leafId);
+	}, 120000);
+
 	test("should set and get session name", async () => {
 		await client.start();
 
@@ -318,4 +453,32 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		expect(sessionInfoEntries.length).toBe(1);
 		expect(sessionInfoEntries[0].name).toBe("my-test-session");
 	}, 60000);
+
+	test("unknown command returns error with correlated id", async () => {
+		await client.start();
+
+		// Write an unknown command directly to stdin with a specific id
+		const requestId = "test-unknown-cmd-123";
+		const unknownCmd = JSON.stringify({ id: requestId, type: "nonexistent_command" });
+
+		// Collect the response by listening for all lines
+		const responsePromise = new Promise<Record<string, unknown>>((resolve, reject) => {
+			const timeout = setTimeout(() => reject(new Error("Timeout waiting for unknown command response")), 5000);
+			client.onEvent((event: unknown) => {
+				const data = event as Record<string, unknown>;
+				if (data.type === "response" && data.command === "nonexistent_command") {
+					clearTimeout(timeout);
+					resolve(data);
+				}
+			});
+		});
+
+		client.sendRaw(unknownCmd);
+
+		const response = await responsePromise;
+		expect(response.success).toBe(false);
+		expect(response.id).toBe(requestId);
+		expect(response.command).toBe("nonexistent_command");
+		expect(response.error).toContain("Unknown command");
+	}, 30000);
 });

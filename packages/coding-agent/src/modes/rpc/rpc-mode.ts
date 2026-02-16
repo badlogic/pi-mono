@@ -12,6 +12,7 @@
  */
 
 import * as crypto from "node:crypto";
+import { dirname } from "node:path";
 import * as readline from "readline";
 import type { AgentSession } from "../../core/agent-session.js";
 import type {
@@ -19,12 +20,17 @@ import type {
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
 } from "../../core/extensions/index.js";
+import { SessionManager } from "../../core/session-manager.js";
 import { type Theme, theme } from "../interactive/theme/theme.js";
+import { deleteSessionByPath, renameSessionByPath } from "./rpc-session-mutation.js";
+import { buildToolCallMap, projectTree } from "./rpc-tree-projection.js";
 import type {
 	RpcCommand,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
+	RpcForkMessage,
 	RpcResponse,
+	RpcSessionListItem,
 	RpcSessionState,
 	RpcSlashCommand,
 } from "./rpc-types.js";
@@ -35,7 +41,9 @@ export type {
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
 	RpcResponse,
+	RpcSessionListItem,
 	RpcSessionState,
+	RpcTreeNode,
 } from "./rpc-types.js";
 
 /**
@@ -145,7 +153,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		},
 
 		onTerminalInput(): () => void {
-			// Raw terminal input not supported in RPC mode
+			// Raw terminal input not supported in RPC mode - requires direct TTY access
 			return () => {};
 		},
 
@@ -160,8 +168,14 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			} as RpcExtensionUIRequest);
 		},
 
-		setWorkingMessage(_message?: string): void {
-			// Working message not supported in RPC mode - requires TUI loader access
+		setWorkingMessage(message?: string): void {
+			// Fire and forget - no response needed
+			output({
+				type: "extension_ui_request",
+				id: crypto.randomUUID(),
+				method: "setWorkingMessage",
+				message,
+			} as RpcExtensionUIRequest);
 		},
 
 		setWidget(key: string, content: unknown, options?: ExtensionWidgetOptions): void {
@@ -351,6 +365,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			case "abort": {
+				session.abortBranchSummary();
 				await session.abort();
 				return success(id, "abort");
 			}
@@ -508,7 +523,15 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			case "get_fork_messages": {
-				const messages = session.getUserMessagesForForking();
+				const raw = session.getUserMessagesForForking();
+				const messages: RpcForkMessage[] = [];
+				for (const msg of raw) {
+					const entry = session.sessionManager.getEntry(msg.entryId);
+					if (!entry) {
+						return error(id, "get_fork_messages", `Entry ${msg.entryId} not found`);
+					}
+					messages.push({ ...msg, timestamp: entry.timestamp });
+				}
 				return success(id, "get_fork_messages", { messages });
 			}
 
@@ -524,6 +547,20 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				}
 				session.setSessionName(name);
 				return success(id, "set_session_name");
+			}
+
+			// =================================================================
+			// Session Mutation (arbitrary session paths)
+			// =================================================================
+
+			case "rename_session": {
+				renameSessionByPath(command.sessionPath, command.name);
+				return success(id, "rename_session");
+			}
+
+			case "delete_session": {
+				await deleteSessionByPath(command.sessionPath, session.sessionManager.getSessionFile());
+				return success(id, "delete_session");
 			}
 
 			// =================================================================
@@ -576,9 +613,93 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				return success(id, "get_commands", { commands });
 			}
 
+			// =================================================================
+			// Session listing
+			// =================================================================
+
+			case "list_sessions": {
+				const scope = command.scope ?? "current";
+
+				let cwd: string;
+				let sessionDir: string | undefined;
+				if (scope === "all") {
+					cwd = session.sessionManager.getCwd();
+					sessionDir = undefined;
+				} else {
+					// After switch_session, the core SessionManager's cwd/sessionDir remain
+					// startup-bound. Use the active session header instead, so listing
+					// follows the switched-to project.
+					const headerCwd = session.sessionManager.getHeader()?.cwd;
+					const sessionFile = session.sessionFile;
+					if (headerCwd && sessionFile) {
+						cwd = headerCwd;
+						sessionDir = dirname(sessionFile);
+					} else {
+						cwd = session.sessionManager.getCwd();
+						sessionDir = session.sessionManager.getSessionDir();
+					}
+				}
+
+				const raw = scope === "all" ? await SessionManager.listAll() : await SessionManager.list(cwd, sessionDir);
+
+				const sessions: RpcSessionListItem[] = raw.map((s) => ({
+					path: s.path,
+					id: s.id,
+					cwd: s.cwd,
+					name: s.name,
+					parentSessionPath: s.parentSessionPath,
+					created: s.created.toISOString(),
+					modified: s.modified.toISOString(),
+					messageCount: s.messageCount,
+					firstMessage: s.firstMessage,
+					...(command.includeSearchText ? { allMessagesText: s.allMessagesText } : {}),
+				}));
+				return success(id, "list_sessions", { sessions });
+			}
+
+			// =================================================================
+			// Tree
+			// =================================================================
+
+			case "get_tree": {
+				const rawTree = session.sessionManager.getTree();
+				const toolCallMap = buildToolCallMap(rawTree);
+				const tree = projectTree(rawTree, toolCallMap, command.includeContent ?? false);
+				const leafId = session.sessionManager.getLeafId();
+				return success(id, "get_tree", { tree, leafId });
+			}
+
+			case "set_label": {
+				// Trim and treat empty/whitespace-only labels as "clear" (consistent with rename_session)
+				const label = command.label?.trim() || undefined;
+				session.sessionManager.appendLabelChange(command.entryId, label);
+				return success(id, "set_label");
+			}
+
+			case "navigate_tree": {
+				const result = await session.navigateTree(command.targetId, {
+					summarize: command.summarize,
+					customInstructions: command.customInstructions,
+					replaceInstructions: command.replaceInstructions,
+					label: command.label,
+				});
+				return success(id, "navigate_tree", {
+					cancelled: result.cancelled,
+					aborted: result.aborted,
+					editorText: result.editorText,
+					summaryEntry: result.summaryEntry
+						? {
+								id: result.summaryEntry.id,
+								summary: result.summaryEntry.summary,
+								fromExtension: result.summaryEntry.fromHook === true,
+							}
+						: undefined,
+				});
+			}
+
 			default: {
-				const unknownCommand = command as { type: string };
-				return error(undefined, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);
+				const unknownCommand = command as { id?: string; type: string };
+				return error(unknownCommand.id, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);
 			}
 		}
 	};
@@ -624,13 +745,17 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 
 			// Handle regular commands
 			const command = parsed as RpcCommand;
-			const response = await handleCommand(command);
-			output(response);
+			try {
+				const response = await handleCommand(command);
+				output(response);
+			} catch (e: unknown) {
+				output(error(command.id, command.type, e instanceof Error ? e.message : String(e)));
+			}
 
 			// Check for deferred shutdown request (idle between commands)
 			await checkShutdownRequested();
-		} catch (e: any) {
-			output(error(undefined, "parse", `Failed to parse command: ${e.message}`));
+		} catch (e: unknown) {
+			output(error(undefined, "parse", `Failed to parse command: ${e instanceof Error ? e.message : String(e)}`));
 		}
 	});
 

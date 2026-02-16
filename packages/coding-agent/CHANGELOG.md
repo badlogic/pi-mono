@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- New RPC command `list_sessions` with `scope` (`"current"` or `"all"`) and optional `includeSearchText` for client-side session search
+- New RPC command `get_tree` returns lightweight session tree projection with per-node previews, optional full content, and resolved tool call info
+- New RPC command `navigate_tree` with branch summarization and abort support
+- New RPC command `set_label` for setting/clearing labels on tree entries
+- New RPC command `rename_session` for renaming any session by file path (not just the active session)
+- New RPC command `delete_session` for deleting sessions by file path with trash-first safety
+- Enriched `get_fork_messages` response with `timestamp`, `index`, and `totalUserMessages` per message
+
+### Fixed
+
+- Fixed `setWorkingMessage()` being silently dropped in RPC mode; extensions calling `ctx.ui.setWorkingMessage()` now emit a fire-and-forget `extension_ui_request` event to RPC clients, matching the behavior of `setStatus`, `notify`, and other fire-and-forget methods
+- Fixed RPC handler error attribution: errors now report the correct command type and request id instead of misattributing to `"parse"`
+- Fixed `get_tree` previews: whitespace normalized for single-line display, meaningful fallbacks for aborted/errored/empty assistant messages, `bashExecution` commands shown as `[bash]: <command>`
+- Fixed `get_tree` parent linkage: projected `parentId` now correctly references the structural parent after metadata node filtering
+- Fixed `list_sessions` with `scope: "current"` to follow the active session after `switch_session`
+- Fixed `navigate_tree` response: empty `editorText` preserved, `summaryEntry.summary` returned in full
+- Fixed `get_fork_messages` timestamp contract: throws on missing entry instead of emitting invalid empty string
+- Fixed unknown-command RPC responses to echo request `id` instead of returning `undefined`
+
 ## [0.52.12] - 2026-02-13
 
 ### Added

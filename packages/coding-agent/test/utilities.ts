@@ -122,16 +122,26 @@ export function getRealAuthStorage(): AuthStorage {
 	return new AuthStorage(AUTH_PATH);
 }
 
-/**
- * Create a minimal user message for testing.
- */
+// ============================================================================
+// Message factories for tests
+// ============================================================================
+
+/** Reusable zero-cost usage object for test message factories. */
+export const DEFAULT_TEST_USAGE = {
+	input: 1,
+	output: 1,
+	cacheRead: 0,
+	cacheWrite: 0,
+	totalTokens: 2,
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+} as const;
+
+/** Create a minimal user message for testing. */
 export function userMsg(text: string) {
 	return { role: "user" as const, content: text, timestamp: Date.now() };
 }
 
-/**
- * Create a minimal assistant message for testing.
- */
+/** Create a minimal assistant message for testing. */
 export function assistantMsg(text: string) {
 	return {
 		role: "assistant" as const,
@@ -139,15 +149,76 @@ export function assistantMsg(text: string) {
 		api: "anthropic-messages" as const,
 		provider: "anthropic",
 		model: "test",
-		usage: {
-			input: 1,
-			output: 1,
-			cacheRead: 0,
-			cacheWrite: 0,
-			totalTokens: 2,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-		},
+		usage: DEFAULT_TEST_USAGE,
 		stopReason: "stop" as const,
+		timestamp: Date.now(),
+	};
+}
+
+/** Create an assistant message with a tool call content block. */
+export function assistantToolCallMsg(toolCallId: string, toolName: string, toolArgs: Record<string, unknown>) {
+	return {
+		role: "assistant" as const,
+		content: [{ type: "toolCall" as const, id: toolCallId, name: toolName, arguments: toolArgs }],
+		api: "anthropic-messages" as const,
+		provider: "anthropic",
+		model: "test",
+		usage: DEFAULT_TEST_USAGE,
+		stopReason: "toolUse" as const,
+		timestamp: Date.now(),
+	};
+}
+
+/** Create a tool result message. */
+export function toolResultMsg(toolCallId: string, toolName = "unknown") {
+	return {
+		role: "toolResult" as const,
+		toolCallId,
+		toolName,
+		content: [{ type: "text" as const, text: "tool output here" }],
+		isError: false,
+		timestamp: Date.now(),
+	};
+}
+
+/** Create an aborted assistant message (no text content). */
+export function abortedAssistantMsg() {
+	return {
+		role: "assistant" as const,
+		content: [] as { type: "text"; text: string }[],
+		api: "anthropic-messages" as const,
+		provider: "anthropic",
+		model: "test",
+		usage: DEFAULT_TEST_USAGE,
+		stopReason: "aborted" as const,
+		timestamp: Date.now(),
+	};
+}
+
+/** Create an assistant message with an error. */
+export function errorAssistantMsg(errorMessage: string) {
+	return {
+		role: "assistant" as const,
+		content: [] as { type: "text"; text: string }[],
+		api: "anthropic-messages" as const,
+		provider: "anthropic",
+		model: "test",
+		usage: DEFAULT_TEST_USAGE,
+		stopReason: "error" as const,
+		errorMessage,
+		timestamp: Date.now(),
+	};
+}
+
+/** Create a bashExecution message. */
+export function bashExecMsg(command: string) {
+	return {
+		role: "bashExecution" as const,
+		command,
+		output: "some output",
+		exitCode: 0,
+		cancelled: false,
+		truncated: false,
 		timestamp: Date.now(),
 	};
 }
@@ -162,6 +233,10 @@ export interface TestSessionOptions {
 	systemPrompt?: string;
 	/** Custom settings overrides */
 	settingsOverrides?: Record<string, unknown>;
+	/** Pre-created SessionManager. Overrides inMemory when set. */
+	sessionManager?: SessionManager;
+	/** Custom working directory. Defaults to auto-created tempDir. */
+	cwd?: string;
 }
 
 /**
@@ -207,8 +282,10 @@ export function createTestSession(options: TestSessionOptions = {}): TestSession
 		},
 	});
 
-	const sessionManager = options.inMemory ? SessionManager.inMemory() : SessionManager.create(tempDir);
-	const settingsManager = SettingsManager.create(tempDir, tempDir);
+	const cwd = options.cwd ?? tempDir;
+	const sessionManager =
+		options.sessionManager ?? (options.inMemory ? SessionManager.inMemory() : SessionManager.create(cwd));
+	const settingsManager = SettingsManager.create(cwd, tempDir);
 
 	if (options.settingsOverrides) {
 		settingsManager.applyOverrides(options.settingsOverrides);
@@ -221,7 +298,7 @@ export function createTestSession(options: TestSessionOptions = {}): TestSession
 		agent,
 		sessionManager,
 		settingsManager,
-		cwd: tempDir,
+		cwd,
 		modelRegistry,
 		resourceLoader: createTestResourceLoader(),
 	});
@@ -237,41 +314,4 @@ export function createTestSession(options: TestSessionOptions = {}): TestSession
 	};
 
 	return { session, sessionManager, tempDir, cleanup };
-}
-
-/**
- * Build a session tree for testing using SessionManager.
- * Returns the IDs of all created entries.
- *
- * Example tree structure:
- * ```
- * u1 -> a1 -> u2 -> a2
- *          -> u3 -> a3  (branch from a1)
- * u4 -> a4              (another root)
- * ```
- */
-export function buildTestTree(
-	session: SessionManager,
-	structure: {
-		messages: Array<{ role: "user" | "assistant"; text: string; branchFrom?: string }>;
-	},
-): Map<string, string> {
-	const ids = new Map<string, string>();
-
-	for (const msg of structure.messages) {
-		if (msg.branchFrom) {
-			const branchFromId = ids.get(msg.branchFrom);
-			if (!branchFromId) {
-				throw new Error(`Cannot branch from unknown entry: ${msg.branchFrom}`);
-			}
-			session.branch(branchFromId);
-		}
-
-		const id =
-			msg.role === "user" ? session.appendMessage(userMsg(msg.text)) : session.appendMessage(assistantMsg(msg.text));
-
-		ids.set(msg.text, id);
-	}
-
-	return ids;
 }

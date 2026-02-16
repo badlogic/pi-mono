@@ -16,6 +16,8 @@ Sessions can be removed by deleting their `.jsonl` files under `~/.pi/agent/sess
 
 Pi also supports deleting sessions interactively from `/resume` (select a session and press `Ctrl+D`, then confirm). When available, pi uses the `trash` CLI to avoid permanent deletion.
 
+**RPC clients**: Use the [`delete_session`](rpc.md#delete_session) command instead of removing files directly. It handles trash-first safety and prevents deleting the active session.
+
 ## Session Version
 
 Sessions have a version field in the header:

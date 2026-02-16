@@ -41,6 +41,7 @@ export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
+/** @deprecated Use `Transport` from `@mariozechner/pi-ai` directly. */
 export type TransportSetting = Transport;
 
 /**
@@ -63,7 +64,7 @@ export interface Settings {
 	defaultProvider?: string;
 	defaultModel?: string;
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-	transport?: TransportSetting; // default: "sse"
+	transport?: Transport; // default: "sse"
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
 	theme?: string;
@@ -443,11 +444,11 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getTransport(): TransportSetting {
+	getTransport(): Transport {
 		return this.settings.transport ?? "sse";
 	}
 
-	setTransport(transport: TransportSetting): void {
+	setTransport(transport: Transport): void {
 		this.globalSettings.transport = transport;
 		this.markModified("transport");
 		this.save();

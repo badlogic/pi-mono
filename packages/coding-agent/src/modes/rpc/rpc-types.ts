@@ -64,7 +64,27 @@ export type RpcCommand =
 	| { id?: string; type: "get_messages" }
 
 	// Commands (available for invocation via prompt)
-	| { id?: string; type: "get_commands" };
+	| { id?: string; type: "get_commands" }
+
+	// Session listing
+	| { id?: string; type: "list_sessions"; scope?: "current" | "all"; includeSearchText?: boolean }
+
+	// Session mutation
+	| { id?: string; type: "rename_session"; sessionPath: string; name: string }
+	| { id?: string; type: "delete_session"; sessionPath: string }
+
+	// Tree
+	| { id?: string; type: "get_tree"; includeContent?: boolean }
+	| {
+			id?: string;
+			type: "navigate_tree";
+			targetId: string;
+			summarize?: boolean;
+			customInstructions?: string;
+			replaceInstructions?: boolean;
+			label?: string;
+	  }
+	| { id?: string; type: "set_label"; entryId: string; label?: string };
 
 // ============================================================================
 // RPC Slash Command (for get_commands response)
@@ -101,6 +121,82 @@ export interface RpcSessionState {
 	autoCompactionEnabled: boolean;
 	messageCount: number;
 	pendingMessageCount: number;
+}
+
+// ============================================================================
+// RPC Tree (for get_tree response)
+// ============================================================================
+
+/** Shared fields for all tree node types (variant `type` is defined per union member) */
+export interface RpcTreeNodeBase {
+	id: string;
+	parentId: string | null;
+	timestamp: string;
+	label?: string;
+	children: RpcTreeNode[];
+}
+
+/**
+ * Lightweight projection of SessionTreeNode for RPC transport.
+ *
+ * Metadata entries (label, session_info, custom) are filtered out.
+ * Their children are promoted to the filtered node's parent, so `parentId`
+ * may reference a grandparent in the original tree.
+ */
+export type RpcTreeNode =
+	| (RpcTreeNodeBase & {
+			type: "message";
+			role: "user" | "assistant" | "bashExecution" | "custom" | "branchSummary" | "compactionSummary";
+			preview: string;
+			content?: string;
+			stopReason?: string;
+			errorMessage?: string;
+	  })
+	| (RpcTreeNodeBase & {
+			type: "tool_result";
+			toolName?: string;
+			toolArgs?: Record<string, unknown>;
+			formattedToolCall?: string;
+			preview: string;
+			content?: string;
+	  })
+	| (RpcTreeNodeBase & { type: "compaction"; tokensBefore: number })
+	| (RpcTreeNodeBase & { type: "model_change"; provider: string; modelId: string })
+	| (RpcTreeNodeBase & { type: "thinking_level_change"; thinkingLevel: string })
+	| (RpcTreeNodeBase & { type: "branch_summary"; summary: string })
+	| (RpcTreeNodeBase & { type: "custom_message"; customType: string; preview: string; content?: string });
+
+// ============================================================================
+// RPC Session List Item (for list_sessions response)
+// ============================================================================
+
+/** A session entry as returned by list_sessions. Dates are ISO 8601 strings. */
+export interface RpcSessionListItem {
+	path: string;
+	id: string;
+	cwd: string;
+	name?: string;
+	parentSessionPath?: string;
+	/** ISO 8601 */
+	created: string;
+	/** ISO 8601 */
+	modified: string;
+	messageCount: number;
+	firstMessage: string;
+	/** Present only when includeSearchText is true */
+	allMessagesText?: string;
+}
+
+// ============================================================================
+// RPC Fork Message (shared between command response and client)
+// ============================================================================
+
+/** A user message available for forking. */
+export interface RpcForkMessage {
+	entryId: string;
+	text: string;
+	/** ISO 8601 timestamp of the original user message */
+	timestamp: string;
 }
 
 // ============================================================================
@@ -178,7 +274,7 @@ export type RpcResponse =
 			type: "response";
 			command: "get_fork_messages";
 			success: true;
-			data: { messages: Array<{ entryId: string; text: string }> };
+			data: { messages: RpcForkMessage[] };
 	  }
 	| {
 			id?: string;
@@ -188,6 +284,10 @@ export type RpcResponse =
 			data: { text: string | null };
 	  }
 	| { id?: string; type: "response"; command: "set_session_name"; success: true }
+
+	// Session mutation
+	| { id?: string; type: "response"; command: "rename_session"; success: true }
+	| { id?: string; type: "response"; command: "delete_session"; success: true }
 
 	// Messages
 	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
@@ -200,6 +300,42 @@ export type RpcResponse =
 			success: true;
 			data: { commands: RpcSlashCommand[] };
 	  }
+
+	// Session listing
+	| {
+			id?: string;
+			type: "response";
+			command: "list_sessions";
+			success: true;
+			data: { sessions: RpcSessionListItem[] };
+	  }
+
+	// Tree
+	| {
+			id?: string;
+			type: "response";
+			command: "get_tree";
+			success: true;
+			data: { tree: RpcTreeNode[]; leafId: string | null };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "navigate_tree";
+			success: true;
+			data: {
+				cancelled: boolean;
+				aborted?: boolean;
+				editorText?: string;
+				summaryEntry?: {
+					id: string;
+					summary: string;
+					/** True if summary was generated by an extension hook, false if pi-generated */
+					fromExtension: boolean;
+				};
+			};
+	  }
+	| { id?: string; type: "response"; command: "set_label"; success: true }
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };
@@ -244,7 +380,9 @@ export type RpcExtensionUIRequest =
 			widgetPlacement?: "aboveEditor" | "belowEditor";
 	  }
 	| { type: "extension_ui_request"; id: string; method: "setTitle"; title: string }
-	| { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string };
+	// TODO: rename to "setEditorText" for consistency with other camelCase methods
+	| { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string }
+	| { type: "extension_ui_request"; id: string; method: "setWorkingMessage"; message?: string };
 
 // ============================================================================
 // Extension UI Commands (stdin)

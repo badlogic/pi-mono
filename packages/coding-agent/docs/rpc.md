@@ -586,7 +586,8 @@ If an extension cancelled the fork:
 
 #### get_fork_messages
 
-Get user messages available for forking.
+Get user messages available for forking. Each message includes a timestamp
+and position metadata.
 
 ```json
 {"type": "get_fork_messages"}
@@ -600,12 +601,14 @@ Response:
   "success": true,
   "data": {
     "messages": [
-      {"entryId": "abc123", "text": "First prompt..."},
-      {"entryId": "def456", "text": "Second prompt..."}
+      {"entryId": "abc123", "text": "First prompt...", "timestamp": "2025-01-15T10:30:00.000Z", "index": 0, "totalUserMessages": 2},
+      {"entryId": "def456", "text": "Second prompt...", "timestamp": "2025-01-15T10:31:00.000Z", "index": 1, "totalUserMessages": 2}
     ]
   }
 }
 ```
+
+`timestamp` is ISO 8601.
 
 #### get_last_assistant_text
 
@@ -645,6 +648,297 @@ Response:
 ```
 
 The current session name is available via `get_state` in the `sessionName` field.
+
+#### rename_session
+
+Rename any session by its file path. Unlike `set_session_name` (which operates
+on the active session), this works on arbitrary session files — useful for
+session browser UIs. `sessionPath` must be an absolute filesystem path (as returned by `list_sessions`).
+
+```json
+{"type": "rename_session", "sessionPath": "/path/to/session.jsonl", "name": "my-feature"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "rename_session",
+  "success": true
+}
+```
+
+Error cases:
+- Empty name (after trimming): `"Session name cannot be empty"`
+- Non-existent path: `"Session file not found: /path/to/session.jsonl"`
+
+#### delete_session
+
+Delete a session file by its path. Prefers `trash` (recoverable) over permanent
+`unlink`. Cannot delete the currently active session. `sessionPath` must be an absolute filesystem path (as returned by `list_sessions`).
+
+```json
+{"type": "delete_session", "sessionPath": "/path/to/session.jsonl"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "delete_session",
+  "success": true,
+  "data": {
+    "method": "trash"
+  }
+}
+```
+
+The `method` field indicates how the file was removed:
+- `"trash"`: moved to system trash (recoverable)
+- `"unlink"`: permanently deleted (trash not available)
+
+Error cases:
+- Active session: `"Cannot delete the currently active session"`
+- Non-existent path: `"Session file not found: /path/to/session.jsonl"`
+
+#### list_sessions
+
+List sessions for the current project or across all projects. Replaces
+client-side filesystem parsing with a single RPC call.
+
+```json
+{"type": "list_sessions"}
+```
+
+With options:
+```json
+{"type": "list_sessions", "scope": "all", "includeSearchText": true}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "list_sessions",
+  "success": true,
+  "data": {
+    "sessions": [
+      {
+        "path": "/home/user/.pi/agent/sessions/abc123/2025-01-15_session.jsonl",
+        "id": "a1b2c3d4",
+        "cwd": "/home/user/project",
+        "name": "my-feature-work",
+        "parentSessionPath": null,
+        "created": "2025-01-15T10:00:00.000Z",
+        "modified": "2025-01-15T11:30:00.000Z",
+        "messageCount": 12,
+        "firstMessage": "Help me refactor the auth module"
+      }
+    ]
+  }
+}
+```
+
+`scope` defaults to `"current"`, which lists sessions for the active
+session's project. After `switch_session`, `"current"` reflects the
+switched-to project's sessions. `"all"` lists sessions across all projects.
+
+`includeSearchText` defaults to `false`. When `true`, each session includes
+`allMessagesText` — a concatenated string of all message text, suitable for
+client-side search and filtering. Omitted by default to keep response size
+manageable.
+
+`created` and `modified` are ISO 8601 strings. Sessions are sorted by
+`modified` descending (most recent first). `name` and `parentSessionPath`
+are optional. `path` is the absolute filesystem path accepted by
+`switch_session`.
+
+### Tree
+
+#### get_tree
+
+Get the session tree as a lightweight projection. Each node carries a
+`type` discriminator for variant-specific fields.
+
+```json
+{"type": "get_tree"}
+```
+
+With full content:
+```json
+{"type": "get_tree", "includeContent": true}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "get_tree",
+  "success": true,
+  "data": {
+    "leafId": "abc123",
+    "tree": [
+      {
+        "id": "node1", "parentId": null, "timestamp": "2025-01-15T10:00:00.000Z",
+        "type": "message", "role": "user", "preview": "Hello world",
+        "children": [
+          {
+            "id": "node2", "parentId": "node1", "timestamp": "2025-01-15T10:00:01.000Z",
+            "type": "message", "role": "assistant", "preview": "Hi there!", "stopReason": "stop",
+            "children": [
+              {
+                "id": "node3", "parentId": "node2", "timestamp": "2025-01-15T10:00:02.000Z",
+                "type": "tool_result", "toolName": "read", "toolArgs": {"path": "/tmp/test.ts"},
+                "formattedToolCall": "[read: /tmp/test.ts]", "preview": "[read: /tmp/test.ts]",
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+All nodes share: `id`, `parentId`, `timestamp`, `type`, optional `label`,
+and `children`. The `type` field determines which additional fields are
+present:
+
+- **`message`**: `role`, `preview`, optional `content`, `stopReason`,
+  `errorMessage`. Covers user, assistant, and bashExecution messages.
+- **`tool_result`**: `toolName`, `toolArgs`, `formattedToolCall`, `preview`,
+  optional `content`. Tool call info is resolved server-side from the
+  assistant's toolCall block — clients get display-ready
+  `formattedToolCall` (e.g., `"[read: ~/path.ts]"`) and raw
+  `toolName`/`toolArgs` for programmatic access.
+- **`compaction`**: `tokensBefore`.
+  ```json
+  {"id": "n4", "parentId": "n3", "timestamp": "...", "type": "compaction", "tokensBefore": 150000, "children": []}
+  ```
+- **`model_change`**: `provider`, `modelId`.
+  ```json
+  {"id": "n5", "parentId": "n4", "timestamp": "...", "type": "model_change", "provider": "openai", "modelId": "gpt-4o", "children": []}
+  ```
+- **`thinking_level_change`**: `thinkingLevel`.
+  ```json
+  {"id": "n6", "parentId": "n5", "timestamp": "...", "type": "thinking_level_change", "thinkingLevel": "high", "children": []}
+  ```
+- **`branch_summary`**: `summary`.
+  ```json
+  {"id": "n7", "parentId": "n1", "timestamp": "...", "type": "branch_summary", "summary": "Branch explored auth refactoring...", "children": []}
+  ```
+- **`custom_message`**: `customType`, `preview`, optional `content`.
+  ```json
+  {"id": "n8", "parentId": "n7", "timestamp": "...", "type": "custom_message", "customType": "my-extension", "preview": "Injected context...", "children": []}
+  ```
+
+`preview` is always present on message-like nodes, normalized for
+single-line display (newlines and tabs replaced with spaces, trimmed,
+truncated to 200 chars). When `includeContent` is `true`, `content` is
+also present with the full unmodified text. `leafId` is the current
+position in the tree (or `null` for empty sessions).
+
+Preview fallback behavior for assistant messages: if the message has text
+content, the preview is that text (normalized). If no text content is
+present, the preview falls back to `"(aborted)"` when `stopReason` is
+`"aborted"`, the error message when `errorMessage` is set, or
+`"(no content)"` otherwise. For bashExecution messages, the preview is
+`"[bash]: <command>"` with the command normalized.
+
+Label, session_info, and custom entries are filtered from the tree
+(internal metadata not rendered in the TUI). Labels are resolved onto
+their target nodes via the `label` field.
+
+#### set_label
+
+Set or clear a label (bookmark) on a tree entry.
+
+```json
+{"type": "set_label", "entryId": "abc123", "label": "checkpoint"}
+```
+
+Clear a label:
+```json
+{"type": "set_label", "entryId": "abc123"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "set_label",
+  "success": true
+}
+```
+
+Omit `label` or pass an empty string to clear. Returns an error if
+`entryId` does not exist:
+```json
+{"type": "response", "command": "set_label", "success": false, "error": "Entry abc123 not found"}
+```
+
+#### navigate_tree
+
+Navigate to a different point in the session tree. When the target is a
+user message, its text is returned in `editorText` for re-editing.
+
+```json
+{"type": "navigate_tree", "targetId": "abc123"}
+```
+
+With summarization:
+```json
+{"type": "navigate_tree", "targetId": "abc123", "summarize": true, "label": "before-refactor"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "navigate_tree",
+  "success": true,
+  "data": {
+    "cancelled": false,
+    "editorText": "Original user message text"
+  }
+}
+```
+
+When `summarize` is `true` and there are entries to summarize, the agent
+generates a branch summary before switching. This can take 10–30 seconds.
+Use `abort` to cancel in-progress summarization. The `summaryEntry` field
+is present when a summary was created:
+
+```json
+{
+  "data": {
+    "cancelled": false,
+    "summaryEntry": {"id": "sum1", "summary": "Branch discussed auth refactoring...", "fromExtension": false}
+  }
+}
+```
+
+`summaryEntry.summary` is returned in full (no server-side truncation).
+
+Parameters:
+- `targetId` (string, required): Entry ID to navigate to.
+- `summarize` (boolean, default `false`): Generate a branch summary before switching.
+- `customInstructions` (string, optional): Additional instructions appended to the default summary prompt. Use this to steer what the summary focuses on.
+- `replaceInstructions` (boolean, default `false`): When `true`, `customInstructions` replaces the default summary prompt entirely instead of being appended.
+- `label` (string, optional): Bookmark the target entry (or the summary entry, if one was created).
+
+If cancelled by an extension, returns `{"cancelled": true}`. If aborted
+during summarization, returns `{"cancelled": true, "aborted": true}`.
+
+**`editorText` presence rules:**
+
+| Scenario | `editorText` |
+|----------|-------------|
+| Target is a user message | Present (the message text, may be `""`) |
+| Target is a non-user node (assistant, tool_result, etc.) | Omitted |
+| Navigating to the current leaf (no-op) | Omitted |
+| Navigation cancelled or aborted | Omitted |
 
 ### Commands
 
@@ -924,13 +1218,13 @@ Extensions can request user interaction via `ctx.ui.select()`, `ctx.ui.confirm()
 There are two categories of extension UI methods:
 
 - **Dialog methods** (`select`, `confirm`, `input`, `editor`): emit an `extension_ui_request` on stdout and block until the client sends back an `extension_ui_response` on stdin with the matching `id`.
-- **Fire-and-forget methods** (`notify`, `setStatus`, `setWidget`, `setTitle`, `set_editor_text`): emit an `extension_ui_request` on stdout but do not expect a response. The client can display the information or ignore it.
+- **Fire-and-forget methods** (`notify`, `setStatus`, `setWorkingMessage`, `setWidget`, `setTitle`, `set_editor_text`): emit an `extension_ui_request` on stdout but do not expect a response. The client can display the information or ignore it.
 
 If a dialog method includes a `timeout` field, the agent-side will auto-resolve with a default value when the timeout expires. The client does not need to track timeouts.
 
 Some `ExtensionUIContext` methods are not supported or degraded in RPC mode because they require direct TUI access:
 - `custom()` returns `undefined`
-- `setWorkingMessage()`, `setFooter()`, `setHeader()`, `setEditorComponent()`, `setToolsExpanded()` are no-ops
+- `setFooter()`, `setHeader()`, `setEditorComponent()`, `setToolsExpanded()` are no-ops
 - `getEditorText()` returns `""`
 - `getToolsExpanded()` returns `false`
 - `pasteToEditor()` delegates to `setEditorText()` (no paste/collapse handling)
@@ -1084,6 +1378,21 @@ Set the text in the input editor. Fire-and-forget.
   "text": "prefilled text for the user"
 }
 ```
+
+#### setWorkingMessage
+
+Set the working/loading message shown during agent activity. Fire-and-forget.
+
+```json
+{
+  "type": "extension_ui_request",
+  "id": "uuid-10",
+  "method": "setWorkingMessage",
+  "message": "thinking hard..."
+}
+```
+
+**Restore default**: When `message` is omitted or `undefined`, the client should restore its default working indicator (e.g., a spinner or "Thinking...") rather than showing a blank state. This is how extensions signal "I'm done overriding the message — go back to normal."
 
 ### Extension UI Responses (stdin)
 

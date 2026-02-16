@@ -1,4 +1,4 @@
-import * as os from "node:os";
+import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
 import {
 	Box,
 	Container,
@@ -13,6 +13,7 @@ import {
 } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
 import type { ToolDefinition } from "../../../core/extensions/types.js";
+import { shortenPath as shortenPathStr } from "../../../core/format-tool-call.js";
 import { computeEditDiff, type EditDiffError, type EditDiffResult } from "../../../core/tools/edit-diff.js";
 import { allTools } from "../../../core/tools/index.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
@@ -26,16 +27,9 @@ import { truncateToVisualLines } from "./visual-truncate.js";
 // Preview line limit for bash when not expanded
 const BASH_PREVIEW_LINES = 5;
 
-/**
- * Convert absolute path to tilde notation if it's in home directory
- */
 function shortenPath(path: unknown): string {
 	if (typeof path !== "string") return "";
-	const home = os.homedir();
-	if (path.startsWith(home)) {
-		return `~${path.slice(home.length)}`;
-	}
-	return path;
+	return shortenPathStr(path);
 }
 
 /**
@@ -65,7 +59,7 @@ export class ToolExecutionComponent extends Container {
 	private imageComponents: Image[] = [];
 	private imageSpacers: Spacer[] = [];
 	private toolName: string;
-	private args: any;
+	private args: Record<string, unknown>;
 	private expanded = false;
 	private showImages: boolean;
 	private isPartial = true;
@@ -73,8 +67,10 @@ export class ToolExecutionComponent extends Container {
 	private ui: TUI;
 	private cwd: string;
 	private result?: {
-		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+		content: (TextContent | ImageContent)[];
 		isError: boolean;
+		// Tool-specific details (BashToolDetails, EditToolDetails, etc.) with varied shapes.
+		// Kept as `any` because deep optional chaining (e.g. details?.truncation?.truncated) requires it.
 		details?: any;
 	};
 	// Cached edit diff preview (computed when args arrive, before tool executes)
@@ -85,7 +81,7 @@ export class ToolExecutionComponent extends Container {
 
 	constructor(
 		toolName: string,
-		args: any,
+		args: Record<string, unknown>,
 		options: ToolExecutionOptions = {},
 		toolDefinition: ToolDefinition | undefined,
 		ui: TUI,
@@ -127,7 +123,7 @@ export class ToolExecutionComponent extends Container {
 		return isBuiltInName && !hasCustomRenderers;
 	}
 
-	updateArgs(args: any): void {
+	updateArgs(args: Record<string, unknown>): void {
 		this.args = args;
 		this.updateDisplay();
 	}
@@ -151,8 +147,8 @@ export class ToolExecutionComponent extends Container {
 		const oldText = this.args?.oldText;
 		const newText = this.args?.newText;
 
-		// Need all three params to compute diff
-		if (!path || oldText === undefined || newText === undefined) return;
+		// Need all three params as strings to compute diff
+		if (typeof path !== "string" || typeof oldText !== "string" || typeof newText !== "string") return;
 
 		// Create a key to track which args this computation is for
 		const argsKey = JSON.stringify({ path, oldText, newText });
@@ -162,20 +158,22 @@ export class ToolExecutionComponent extends Container {
 
 		this.editDiffArgsKey = argsKey;
 
-		// Compute diff async
-		computeEditDiff(path, oldText, newText, this.cwd).then((result) => {
-			// Only update if args haven't changed since we started
-			if (this.editDiffArgsKey === argsKey) {
-				this.editDiffPreview = result;
-				this.updateDisplay();
-				this.ui.requestRender();
-			}
-		});
+		// Compute diff async (best-effort, catch to prevent unhandled rejection)
+		computeEditDiff(path, oldText, newText, this.cwd)
+			.then((result) => {
+				// Only update if args haven't changed since we started
+				if (this.editDiffArgsKey === argsKey) {
+					this.editDiffPreview = result;
+					this.updateDisplay();
+					this.ui.requestRender();
+				}
+			})
+			.catch(() => {});
 	}
 
 	updateResult(
 		result: {
-			content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+			content: (TextContent | ImageContent)[];
 			details?: any;
 			isError: boolean;
 		},
@@ -198,24 +196,25 @@ export class ToolExecutionComponent extends Container {
 		if (caps.images !== "kitty") return;
 		if (!this.result) return;
 
-		const imageBlocks = this.result.content?.filter((c: any) => c.type === "image") || [];
+		const imageBlocks = this.result.content?.filter((c): c is ImageContent => c.type === "image") || [];
 
 		for (let i = 0; i < imageBlocks.length; i++) {
 			const img = imageBlocks[i];
-			if (!img.data || !img.mimeType) continue;
 			// Skip if already PNG or already converted
 			if (img.mimeType === "image/png") continue;
 			if (this.convertedImages.has(i)) continue;
 
-			// Convert async
+			// Convert async (best-effort, catch to prevent unhandled rejection)
 			const index = i;
-			convertToPng(img.data, img.mimeType).then((converted) => {
-				if (converted) {
-					this.convertedImages.set(index, converted);
-					this.updateDisplay();
-					this.ui.requestRender();
-				}
-			});
+			convertToPng(img.data, img.mimeType)
+				.then((converted) => {
+					if (converted) {
+						this.convertedImages.set(index, converted);
+						this.updateDisplay();
+						this.ui.requestRender();
+					}
+				})
+				.catch(() => {});
 		}
 	}
 
@@ -279,7 +278,7 @@ export class ToolExecutionComponent extends Container {
 			if (this.result && this.toolDefinition.renderResult) {
 				try {
 					const resultComponent = this.toolDefinition.renderResult(
-						{ content: this.result.content as any, details: this.result.details },
+						{ content: this.result.content, details: this.result.details },
 						{ expanded: this.expanded, isPartial: this.isPartial },
 						theme,
 					);
@@ -313,7 +312,7 @@ export class ToolExecutionComponent extends Container {
 		this.imageSpacers = [];
 
 		if (this.result) {
-			const imageBlocks = this.result.content?.filter((c: any) => c.type === "image") || [];
+			const imageBlocks = this.result.content?.filter((c): c is ImageContent => c.type === "image") || [];
 			const caps = getCapabilities();
 
 			for (let i = 0; i < imageBlocks.length; i++) {
@@ -430,11 +429,11 @@ export class ToolExecutionComponent extends Container {
 	private getTextOutput(): string {
 		if (!this.result) return "";
 
-		const textBlocks = this.result.content?.filter((c: any) => c.type === "text") || [];
-		const imageBlocks = this.result.content?.filter((c: any) => c.type === "image") || [];
+		const textBlocks = this.result.content?.filter((c): c is TextContent => c.type === "text") || [];
+		const imageBlocks = this.result.content?.filter((c): c is ImageContent => c.type === "image") || [];
 
 		let output = textBlocks
-			.map((c: any) => {
+			.map((c) => {
 				// Use sanitizeBinaryOutput to handle binary data that crashes string-width
 				return sanitizeBinaryOutput(stripAnsi(c.text || "")).replace(/\r/g, "");
 			})
@@ -443,8 +442,8 @@ export class ToolExecutionComponent extends Container {
 		const caps = getCapabilities();
 		if (imageBlocks.length > 0 && (!caps.images || !this.showImages)) {
 			const imageIndicators = imageBlocks
-				.map((img: any) => {
-					const dims = img.data ? (getImageDimensions(img.data, img.mimeType) ?? undefined) : undefined;
+				.map((img) => {
+					const dims = getImageDimensions(img.data, img.mimeType) ?? undefined;
 					return imageFallback(img.mimeType, dims);
 				})
 				.join("\n");
@@ -461,8 +460,8 @@ export class ToolExecutionComponent extends Container {
 		if (this.toolName === "read") {
 			const rawPath = str(this.args?.file_path ?? this.args?.path);
 			const path = rawPath !== null ? shortenPath(rawPath) : null;
-			const offset = this.args?.offset;
-			const limit = this.args?.limit;
+			const offset = this.args?.offset as number | undefined;
+			const limit = this.args?.limit as number | undefined;
 
 			let pathDisplay = path === null ? invalidArg : path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
 			if (offset !== undefined || limit !== undefined) {

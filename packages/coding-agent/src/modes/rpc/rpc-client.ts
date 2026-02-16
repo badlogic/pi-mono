@@ -11,7 +11,15 @@ import type { ImageContent } from "@mariozechner/pi-ai";
 import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
-import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.js";
+import type {
+	RpcCommand,
+	RpcForkMessage,
+	RpcResponse,
+	RpcSessionListItem,
+	RpcSessionState,
+	RpcSlashCommand,
+	RpcTreeNode,
+} from "./rpc-types.js";
 
 // ============================================================================
 // Types
@@ -348,10 +356,11 @@ export class RpcClient {
 
 	/**
 	 * Get messages available for forking.
+	 * Each message includes its entry ID, text, and timestamp.
 	 */
-	async getForkMessages(): Promise<Array<{ entryId: string; text: string }>> {
+	async getForkMessages(): Promise<RpcForkMessage[]> {
 		const response = await this.send({ type: "get_fork_messages" });
-		return this.getData<{ messages: Array<{ entryId: string; text: string }> }>(response).messages;
+		return this.getData<{ messages: RpcForkMessage[] }>(response).messages;
 	}
 
 	/**
@@ -375,6 +384,56 @@ export class RpcClient {
 	async getMessages(): Promise<AgentMessage[]> {
 		const response = await this.send({ type: "get_messages" });
 		return this.getData<{ messages: AgentMessage[] }>(response).messages;
+	}
+
+	/**
+	 * Get the session tree with lightweight projected nodes.
+	 * @param includeContent When true, includes full text content alongside preview.
+	 */
+	async getTree(includeContent?: boolean): Promise<{ tree: RpcTreeNode[]; leafId: string | null }> {
+		const response = await this.send({ type: "get_tree", includeContent });
+		return this.getData(response);
+	}
+
+	/**
+	 * Set or clear a label on a tree entry.
+	 * @param entryId Entry to label.
+	 * @param label Label text, or omit/empty to clear.
+	 */
+	async setLabel(entryId: string, label?: string): Promise<void> {
+		await this.send({ type: "set_label", entryId, label });
+	}
+
+	/**
+	 * Navigate to a different point in the session tree.
+	 * @param targetId Entry ID to navigate to.
+	 * @param options Navigation options (summarize, customInstructions, replaceInstructions, label).
+	 */
+	async navigateTree(
+		targetId: string,
+		options?: Omit<Extract<RpcCommand, { type: "navigate_tree" }>, "id" | "type" | "targetId">,
+	): Promise<{
+		cancelled: boolean;
+		aborted?: boolean;
+		editorText?: string;
+		summaryEntry?: { id: string; summary: string; fromExtension: boolean };
+	}> {
+		const response = await this.send({
+			type: "navigate_tree",
+			targetId,
+			...options,
+		});
+		return this.getData(response);
+	}
+
+	/**
+	 * List sessions for the current project or all projects.
+	 * @param scope "current" (default) lists the active project's sessions; "all" lists cross-project.
+	 * @param includeSearchText When true, includes allMessagesText for client-side search.
+	 */
+	async listSessions(scope?: "current" | "all", includeSearchText?: boolean): Promise<RpcSessionListItem[]> {
+		const response = await this.send({ type: "list_sessions", scope, includeSearchText });
+		return this.getData<{ sessions: RpcSessionListItem[] }>(response).sessions;
 	}
 
 	/**
@@ -439,6 +498,18 @@ export class RpcClient {
 		const eventsPromise = this.collectEvents(timeout);
 		await this.prompt(message, images);
 		return eventsPromise;
+	}
+
+	/**
+	 * Write a raw JSON string to the process stdin.
+	 * Bypasses typed command validation — use for testing edge cases
+	 * like unknown commands that cannot be expressed via the typed API.
+	 */
+	sendRaw(json: string): void {
+		if (!this.process?.stdin) {
+			throw new Error("Client not started");
+		}
+		this.process.stdin.write(`${json.replace(/\n+$/, "")}\n`);
 	}
 
 	// =========================================================================
