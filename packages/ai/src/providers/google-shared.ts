@@ -125,11 +125,20 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 					// Otherwise convert to plain text (no tags to avoid model mimicking them)
 					if (isSameProviderAndModel) {
 						const thoughtSignature = resolveThoughtSignature(isSameProviderAndModel, block.thinkingSignature);
-						parts.push({
-							thought: true,
-							text: sanitizeSurrogates(block.thinking),
-							...(thoughtSignature && { thoughtSignature }),
-						});
+						if (thoughtSignature) {
+							parts.push({
+								thought: true,
+								text: sanitizeSurrogates(block.thinking),
+								thoughtSignature,
+							});
+						} else {
+							// No valid signature — convert to plain text to avoid
+							// "thinking.signature: Field required" rejection from downstream APIs
+							// (e.g. Anthropic via Cloud Code Assist / Antigravity)
+							parts.push({
+								text: sanitizeSurrogates(block.thinking),
+							});
+						}
 					} else {
 						parts.push({
 							text: sanitizeSurrogates(block.thinking),
