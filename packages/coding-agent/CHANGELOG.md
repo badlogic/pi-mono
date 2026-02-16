@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `session_directory` extension event that fires before session manager creation, allowing extensions to customize the session directory path based on cwd and other factors. CLI `--session-dir` flag takes precedence over extension-provided paths.
+
 ## [0.52.12] - 2026-02-13
 
 ### Added

@@ -364,17 +364,75 @@ async function promptConfirm(message: string): Promise<boolean> {
 	});
 }
 
-async function createSessionManager(parsed: Args, cwd: string): Promise<SessionManager | undefined> {
+/** Helper to call session_directory handlers from extensions before runner is fully initialized */
+async function callSessionDirectoryHook(
+	extensions: LoadExtensionsResult,
+	cwd: string,
+	cliSessionDir: string | undefined,
+): Promise<string | undefined> {
+	let customSessionDir: string | undefined;
+
+	// Minimal context for this early event - most context actions will throw if called
+	const ctx = {
+		ui: { notify: () => {}, setStatus: () => {}, setWorkingMessage: () => {} } as any,
+		hasUI: false,
+		cwd,
+		sessionManager: undefined as any,
+		modelRegistry: undefined as any,
+		model: undefined,
+		isIdle: () => true,
+		abort: () => {},
+		hasPendingMessages: () => false,
+		shutdown: () => process.exit(0),
+		getContextUsage: () => undefined,
+		compact: () => {},
+		getSystemPrompt: () => "",
+	};
+
+	for (const ext of extensions.extensions) {
+		const handlers = ext.handlers.get("session_directory");
+		if (!handlers || handlers.length === 0) continue;
+
+		for (const handler of handlers) {
+			try {
+				const event = { type: "session_directory" as const, cwd, cliSessionDir };
+				const result = (await handler(event, ctx)) as { sessionDir?: string } | undefined;
+
+				if (result?.sessionDir) {
+					customSessionDir = result.sessionDir;
+				}
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				console.error(chalk.red(`Extension "${ext.path}" session_directory handler failed: ${message}`));
+			}
+		}
+	}
+
+	return customSessionDir;
+}
+
+async function createSessionManager(
+	parsed: Args,
+	cwd: string,
+	extensions: LoadExtensionsResult,
+): Promise<SessionManager | undefined> {
 	if (parsed.noSession) {
 		return SessionManager.inMemory();
 	}
+
+	// CLI flag takes precedence, otherwise ask extensions for custom session directory
+	let effectiveSessionDir = parsed.sessionDir;
+	if (!effectiveSessionDir) {
+		effectiveSessionDir = await callSessionDirectoryHook(extensions, cwd, parsed.sessionDir);
+	}
+
 	if (parsed.session) {
-		const resolved = await resolveSessionPath(parsed.session, cwd, parsed.sessionDir);
+		const resolved = await resolveSessionPath(parsed.session, cwd, effectiveSessionDir);
 
 		switch (resolved.type) {
 			case "path":
 			case "local":
-				return SessionManager.open(resolved.path, parsed.sessionDir);
+				return SessionManager.open(resolved.path, effectiveSessionDir);
 
 			case "global": {
 				// Session found in different project - ask user if they want to fork
@@ -384,7 +442,7 @@ async function createSessionManager(parsed: Args, cwd: string): Promise<SessionM
 					console.log(chalk.dim("Aborted."));
 					process.exit(0);
 				}
-				return SessionManager.forkFrom(resolved.path, cwd, parsed.sessionDir);
+				return SessionManager.forkFrom(resolved.path, cwd, effectiveSessionDir);
 			}
 
 			case "not_found":
@@ -393,12 +451,12 @@ async function createSessionManager(parsed: Args, cwd: string): Promise<SessionM
 		}
 	}
 	if (parsed.continue) {
-		return SessionManager.continueRecent(cwd, parsed.sessionDir);
+		return SessionManager.continueRecent(cwd, effectiveSessionDir);
 	}
 	// --resume is handled separately (needs picker UI)
-	// If --session-dir provided without --continue/--resume, create new session there
-	if (parsed.sessionDir) {
-		return SessionManager.create(cwd, parsed.sessionDir);
+	// If effective session dir is set, create new session there
+	if (effectiveSessionDir) {
+		return SessionManager.create(cwd, effectiveSessionDir);
 	}
 	// Default case (new session) returns undefined, SDK will create one
 	return undefined;
@@ -652,15 +710,19 @@ export async function main(args: string[]) {
 	}
 
 	// Create session manager based on CLI flags
-	let sessionManager = await createSessionManager(parsed, cwd);
+	let sessionManager = await createSessionManager(parsed, cwd, extensionsResult);
 
 	// Handle --resume: show session picker
 	if (parsed.resume) {
 		// Initialize keybindings so session picker respects user config
 		KeybindingsManager.create();
 
+		// Compute effective session dir for resume (same logic as createSessionManager)
+		const effectiveSessionDir =
+			parsed.sessionDir || (await callSessionDirectoryHook(extensionsResult, cwd, parsed.sessionDir));
+
 		const selectedPath = await selectSession(
-			(onProgress) => SessionManager.list(cwd, parsed.sessionDir, onProgress),
+			(onProgress) => SessionManager.list(cwd, effectiveSessionDir, onProgress),
 			SessionManager.listAll,
 		);
 		if (!selectedPath) {
@@ -668,7 +730,7 @@ export async function main(args: string[]) {
 			stopThemeWatcher();
 			process.exit(0);
 		}
-		sessionManager = SessionManager.open(selectedPath);
+		sessionManager = SessionManager.open(selectedPath, effectiveSessionDir);
 	}
 
 	const { options: sessionOptions, cliThinkingFromModel } = buildSessionOptions(

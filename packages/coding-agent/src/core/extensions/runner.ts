@@ -793,6 +793,40 @@ export class ExtensionRunner {
 		return { skillPaths, promptPaths, themePaths };
 	}
 
+	/** Emit session_directory event. Returns custom session directory from extensions (last one wins). */
+	async emitSessionDirectory(cwd: string, cliSessionDir: string | undefined): Promise<string | undefined> {
+		const ctx = this.createContext();
+		let customSessionDir: string | undefined;
+
+		for (const ext of this.extensions) {
+			const handlers = ext.handlers.get("session_directory");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					const event = { type: "session_directory" as const, cwd, cliSessionDir };
+					const handlerResult = await handler(event, ctx);
+					const result = handlerResult as { sessionDir?: string } | undefined;
+
+					if (result?.sessionDir) {
+						customSessionDir = result.sessionDir;
+					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
+					this.emitError({
+						extensionPath: ext.path,
+						event: "session_directory",
+						error: message,
+						stack,
+					});
+				}
+			}
+		}
+
+		return customSessionDir;
+	}
+
 	/** Emit input event. Transforms chain, "handled" short-circuits. */
 	async emitInput(text: string, images: ImageContent[] | undefined, source: InputSource): Promise<InputEventResult> {
 		const ctx = this.createContext();
