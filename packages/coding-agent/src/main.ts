@@ -55,6 +55,16 @@ async function readPipedStdin(): Promise<string | undefined> {
 	});
 }
 
+function reportSettingsErrors(settingsManager: SettingsManager, context: string): void {
+	const errors = settingsManager.drainErrors();
+	for (const { scope, error } of errors) {
+		console.error(chalk.yellow(`Warning (${context}, ${scope} settings): ${error.message}`));
+		if (error.stack) {
+			console.error(chalk.dim(error.stack));
+		}
+	}
+}
+
 type PackageCommand = "install" | "remove" | "update" | "list";
 
 interface PackageCommandOptions {
@@ -200,6 +210,7 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
+	reportSettingsErrors(settingsManager, "package command");
 	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
 
 	packageManager.setProgressCallback((event) => {
@@ -508,6 +519,7 @@ async function handleConfigCommand(args: string[]): Promise<boolean> {
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
+	reportSettingsErrors(settingsManager, "config command");
 	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
 
 	const resolvedPaths = await packageManager.resolve();
@@ -541,6 +553,7 @@ export async function main(args: string[]) {
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
+	reportSettingsErrors(settingsManager, "startup");
 	const authStorage = new AuthStorage();
 	const modelRegistry = new ModelRegistry(authStorage, getModelsPath());
 

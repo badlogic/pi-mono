@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `SettingsManager` persistence semantics changed for SDK consumers. Setters now update in-memory state immediately and queue disk writes. Code that requires durable on-disk settings must call `await settingsManager.flush()`.
+
+### Added
+
+- Added `SettingsManager.drainErrors()` for caller-controlled settings I/O error handling without manager-side console output.
+
+### Changed
+
+- `SettingsManager` now uses scoped storage abstraction with per-scope locked read/merge/write persistence for global and project settings.
+
+### Fixed
+
+- Fixed project settings persistence to preserve unrelated external edits via merge-on-write, while still applying in-memory changes for modified keys.
+
 ## [0.52.12] - 2026-02-13
 
 ### Added
