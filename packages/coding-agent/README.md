@@ -1,6 +1,6 @@
 # 🏖️ OSS Vacation
 
-**Issue tracker and PRs reopen February 16, 2026.**
+**Issue tracker and PRs reopen February 23, 2026.**
 
 All PRs will be auto-closed until then. Approved contributors can submit PRs after vacation without reapproval. For support, join [Discord](https://discord.com/invite/3cU7Bz4UPx).
 
