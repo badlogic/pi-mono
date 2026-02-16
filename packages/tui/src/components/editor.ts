@@ -180,6 +180,9 @@ export class Editor implements Component, Focusable {
 	private autocompleteState: "regular" | "force" | null = null;
 	private autocompletePrefix: string = "";
 	private autocompleteMaxVisible: number = 5;
+	private autocompleteDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	private autocompleteResultsUnsubscribe: (() => void) | null = null;
+	private readonly AUTOCOMPLETE_DEBOUNCE_MS = 150;
 
 	// Paste tracking for large pastes
 	private pastes: Map<number, string> = new Map();
@@ -245,7 +248,23 @@ export class Editor implements Component, Focusable {
 	}
 
 	setAutocompleteProvider(provider: AutocompleteProvider): void {
+		if (this.autocompleteResultsUnsubscribe) {
+			this.autocompleteResultsUnsubscribe();
+			this.autocompleteResultsUnsubscribe = null;
+		}
+
 		this.autocompleteProvider = provider;
+
+		if (provider.onResultsReady) {
+			this.autocompleteResultsUnsubscribe = provider.onResultsReady(() => {
+				if (!this.autocompleteState || this.autocompleteProvider !== provider) {
+					return;
+				}
+
+				this.doUpdateAutocomplete();
+				this.tui.requestRender();
+			});
+		}
 	}
 
 	/**
@@ -1887,7 +1906,7 @@ export class Editor implements Component, Focusable {
 			this.state.cursorCol,
 		);
 
-		if (suggestions && suggestions.items.length > 0) {
+		if (suggestions) {
 			this.autocompletePrefix = suggestions.prefix;
 			this.autocompleteList = new SelectList(suggestions.items, this.autocompleteMaxVisible, this.theme.selectList);
 			this.autocompleteState = "regular";
@@ -1966,6 +1985,10 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 	}
 
 	private cancelAutocomplete(): void {
+		if (this.autocompleteDebounceTimer) {
+			clearTimeout(this.autocompleteDebounceTimer);
+			this.autocompleteDebounceTimer = null;
+		}
 		this.autocompleteState = null;
 		this.autocompleteList = undefined;
 		this.autocompletePrefix = "";
@@ -1978,6 +2001,19 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 	private updateAutocomplete(): void {
 		if (!this.autocompleteState || !this.autocompleteProvider) return;
 
+		// Debounce autocomplete updates to avoid spawning fd on every keystroke
+		if (this.autocompleteDebounceTimer) {
+			clearTimeout(this.autocompleteDebounceTimer);
+		}
+
+		this.autocompleteDebounceTimer = setTimeout(() => {
+			this.doUpdateAutocomplete();
+		}, this.AUTOCOMPLETE_DEBOUNCE_MS);
+	}
+
+	private doUpdateAutocomplete(): void {
+		if (!this.autocompleteState || !this.autocompleteProvider) return;
+
 		if (this.autocompleteState === "force") {
 			this.forceFileAutocomplete();
 			return;
@@ -1988,7 +2024,7 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 			this.state.cursorLine,
 			this.state.cursorCol,
 		);
-		if (suggestions && suggestions.items.length > 0) {
+		if (suggestions) {
 			this.autocompletePrefix = suggestions.prefix;
 			// Always create new SelectList to ensure update
 			this.autocompleteList = new SelectList(suggestions.items, this.autocompleteMaxVisible, this.theme.selectList);

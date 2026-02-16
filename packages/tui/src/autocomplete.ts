@@ -1,10 +1,16 @@
-import { spawnSync } from "child_process";
+import { spawn } from "child_process";
 import { readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join } from "path";
 import { fuzzyFilter } from "./fuzzy.js";
 
 const PATH_DELIMITERS = new Set([" ", "\t", '"', "'", "="]);
+const FD_CACHE_TTL_MS = 30_000;
+
+type FdEntry = {
+	path: string;
+	isDirectory: boolean;
+};
 
 function findLastDelimiter(text: string): number {
 	for (let i = text.length - 1; i >= 0; i -= 1) {
@@ -84,13 +90,7 @@ function buildCompletionValue(
 	return `${openQuote}${path}${closeQuote}`;
 }
 
-// Use fd to walk directory tree (fast, respects .gitignore)
-function walkDirectoryWithFd(
-	baseDir: string,
-	fdPath: string,
-	query: string,
-	maxResults: number,
-): Array<{ path: string; isDirectory: boolean }> {
+function buildFdArgs(baseDir: string, query: string, maxResults: number): string[] {
 	const args = [
 		"--base-directory",
 		baseDir,
@@ -110,23 +110,19 @@ function walkDirectoryWithFd(
 		".git/**",
 	];
 
-	// Add query as pattern if provided
 	if (query) {
 		args.push(query);
 	}
 
-	const result = spawnSync(fdPath, args, {
-		encoding: "utf-8",
-		stdio: ["pipe", "pipe", "pipe"],
-		maxBuffer: 10 * 1024 * 1024,
-	});
+	return args;
+}
 
-	if (result.status !== 0 || !result.stdout) {
-		return [];
-	}
+function parseFdOutput(output: string): FdEntry[] {
+	const trimmed = output.trim();
+	if (!trimmed) return [];
 
-	const lines = result.stdout.trim().split("\n").filter(Boolean);
-	const results: Array<{ path: string; isDirectory: boolean }> = [];
+	const lines = trimmed.split("\n").filter(Boolean);
+	const results: FdEntry[] = [];
 
 	for (const line of lines) {
 		const normalizedPath = line.endsWith("/") ? line.slice(0, -1) : line;
@@ -134,7 +130,6 @@ function walkDirectoryWithFd(
 			continue;
 		}
 
-		// fd outputs directories with trailing /
 		const isDirectory = line.endsWith("/");
 		results.push({
 			path: line,
@@ -184,6 +179,9 @@ export interface AutocompleteProvider {
 		cursorLine: number;
 		cursorCol: number;
 	};
+
+	onResultsReady?(callback: () => void): () => void;
+	hasPendingQueries?(): boolean;
 }
 
 // Combined provider that handles both slash commands and file paths
@@ -191,6 +189,9 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	private commands: (SlashCommand | AutocompleteItem)[];
 	private basePath: string;
 	private fdPath: string | null;
+	private fdCache = new Map<string, { timestamp: number; results: FdEntry[] }>();
+	private fdPendingQueries = new Set<string>();
+	private resultsReadyListeners = new Set<() => void>();
 
 	constructor(
 		commands: (SlashCommand | AutocompleteItem)[] = [],
@@ -200,6 +201,66 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		this.commands = commands;
 		this.basePath = basePath;
 		this.fdPath = fdPath;
+	}
+
+	onResultsReady(callback: () => void): () => void {
+		this.resultsReadyListeners.add(callback);
+		return () => {
+			this.resultsReadyListeners.delete(callback);
+		};
+	}
+
+	hasPendingQueries(): boolean {
+		return this.fdPendingQueries.size > 0;
+	}
+
+	private notifyResultsReady(): void {
+		for (const listener of this.resultsReadyListeners) {
+			listener();
+		}
+	}
+
+	private queueFdQuery(cacheKey: string, baseDir: string, query: string): void {
+		if (!this.fdPath) return;
+		if (this.fdPendingQueries.has(cacheKey)) return;
+
+		this.fdPendingQueries.add(cacheKey);
+
+		const args = buildFdArgs(baseDir, query, 100);
+		const child = spawn(this.fdPath, args, { stdio: ["ignore", "pipe", "pipe"] });
+
+		let stdout = "";
+
+		if (child.stdout) {
+			child.stdout.setEncoding("utf-8");
+			child.stdout.on("data", (chunk) => {
+				stdout += typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+			});
+		}
+
+		if (child.stderr) {
+			child.stderr.setEncoding("utf-8");
+			child.stderr.on("data", () => {});
+		}
+
+		const finalize = (results: FdEntry[]): void => {
+			this.fdCache.set(cacheKey, { timestamp: Date.now(), results });
+			this.fdPendingQueries.delete(cacheKey);
+			this.notifyResultsReady();
+		};
+
+		child.on("error", () => {
+			finalize([]);
+		});
+
+		child.on("close", (code) => {
+			if (code !== 0 || !stdout) {
+				finalize([]);
+				return;
+			}
+
+			finalize(parseFdOutput(stdout));
+		});
 	}
 
 	getSuggestions(
@@ -214,11 +275,11 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		const atPrefix = this.extractAtPrefix(textBeforeCursor);
 		if (atPrefix) {
 			const { rawPrefix, isQuotedPrefix } = parsePathPrefix(atPrefix);
-			const suggestions = this.getFuzzyFileSuggestions(rawPrefix, { isQuotedPrefix: isQuotedPrefix });
-			if (suggestions.length === 0) return null;
+			const { items, pending } = this.getFuzzyFileSuggestions(rawPrefix, { isQuotedPrefix: isQuotedPrefix });
+			if (items.length === 0 && !pending) return null;
 
 			return {
-				items: suggestions,
+				items,
 				prefix: atPrefix,
 			};
 		}
@@ -639,17 +700,29 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	}
 
 	// Fuzzy file search using fd (fast, respects .gitignore)
-	private getFuzzyFileSuggestions(query: string, options: { isQuotedPrefix: boolean }): AutocompleteItem[] {
+	private getFuzzyFileSuggestions(
+		query: string,
+		options: { isQuotedPrefix: boolean },
+	): { items: AutocompleteItem[]; pending: boolean } {
 		if (!this.fdPath) {
-			// fd not available, return empty results
-			return [];
+			return { items: [], pending: false };
 		}
 
 		try {
 			const scopedQuery = this.resolveScopedFuzzyQuery(query);
 			const fdBaseDir = scopedQuery?.baseDir ?? this.basePath;
 			const fdQuery = scopedQuery?.query ?? query;
-			const entries = walkDirectoryWithFd(fdBaseDir, this.fdPath, fdQuery, 100);
+			const cacheKey = `${fdBaseDir}::${fdQuery}`;
+			const now = Date.now();
+			const cached = this.fdCache.get(cacheKey);
+			const isExpired = cached ? now - cached.timestamp > FD_CACHE_TTL_MS : true;
+
+			if (isExpired) {
+				this.queueFdQuery(cacheKey, fdBaseDir, fdQuery);
+			}
+
+			const pending = this.fdPendingQueries.has(cacheKey);
+			const entries = cached ? cached.results : [];
 
 			// Score entries
 			const scoredEntries = entries
@@ -686,9 +759,9 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				});
 			}
 
-			return suggestions;
+			return { items: suggestions, pending };
 		} catch {
-			return [];
+			return { items: [], pending: false };
 		}
 	}
 
