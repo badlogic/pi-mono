@@ -75,6 +75,10 @@ export interface OpenAICompletionsOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 }
 
+interface OpenAICompletionsInternalOptions extends OpenAICompletionsOptions {
+	reasoningOff?: boolean;
+}
+
 export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenAICompletionsOptions> = (
 	model: Model<"openai-completions">,
 	context: Context,
@@ -334,13 +338,20 @@ export const streamSimpleOpenAICompletions: StreamFunction<"openai-completions",
 
 	const base = buildBaseOptions(model, options, apiKey);
 	const reasoningEffort = supportsXhigh(model) ? options?.reasoning : clampReasoning(options?.reasoning);
+	const reasoningOff =
+		model.provider === "openrouter" &&
+		options !== undefined &&
+		Object.hasOwn(options, "reasoning") &&
+		options.reasoning === undefined;
 	const toolChoice = (options as OpenAICompletionsOptions | undefined)?.toolChoice;
-
-	return streamOpenAICompletions(model, context, {
+	const internalOptions: OpenAICompletionsInternalOptions = {
 		...base,
 		reasoningEffort,
+		reasoningOff,
 		toolChoice,
-	} satisfies OpenAICompletionsOptions);
+	};
+
+	return streamOpenAICompletions(model, context, internalOptions);
 };
 
 function createClient(
@@ -382,6 +393,7 @@ function createClient(
 }
 
 function buildParams(model: Model<"openai-completions">, context: Context, options?: OpenAICompletionsOptions) {
+	const internalOptions = options as OpenAICompletionsInternalOptions | undefined;
 	const compat = getCompat(model);
 	const messages = convertMessages(model, context, compat);
 	maybeAddOpenRouterAnthropicCacheControl(model, messages);
@@ -433,6 +445,10 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 	} else if (options?.reasoningEffort && model.reasoning && compat.supportsReasoningEffort) {
 		// OpenAI-style reasoning_effort
 		params.reasoning_effort = options.reasoningEffort;
+	} else if (internalOptions?.reasoningOff && model.reasoning && model.provider === "openrouter") {
+		// OpenRouter supports disabling reasoning via effort: "none"
+		// https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
+		(params as any).reasoning = { effort: "none" };
 	}
 
 	// OpenRouter provider routing preferences

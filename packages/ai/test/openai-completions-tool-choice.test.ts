@@ -75,6 +75,75 @@ describe("openai-completions tool_choice", () => {
 		expect(params.tools?.length ?? 0).toBeGreaterThan(0);
 	});
 
+	it("sends OpenRouter reasoning effort none when reasoning is explicitly undefined", async () => {
+		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini")!;
+		const model = {
+			...baseModel,
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: true,
+		} as const;
+		let payload: unknown;
+
+		await streamSimple(
+			model,
+			{
+				messages: [
+					{
+						role: "user",
+						content: "Hello",
+						timestamp: Date.now(),
+					},
+				],
+			},
+			{
+				apiKey: "test",
+				reasoning: undefined,
+				onPayload: (params: unknown) => {
+					payload = params;
+				},
+			},
+		).result();
+
+		const params = (payload ?? mockState.lastParams) as { reasoning?: { effort?: string } };
+		expect(params.reasoning).toEqual({ effort: "none" });
+	});
+
+	it("does not send OpenRouter reasoning effort none when reasoning is omitted", async () => {
+		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini")!;
+		const model = {
+			...baseModel,
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: true,
+		} as const;
+		let payload: unknown;
+
+		await streamSimple(
+			model,
+			{
+				messages: [
+					{
+						role: "user",
+						content: "Hello",
+						timestamp: Date.now(),
+					},
+				],
+			},
+			{
+				apiKey: "test",
+				onPayload: (params: unknown) => {
+					payload = params;
+				},
+			},
+		).result();
+
+		const params = (payload ?? mockState.lastParams) as { reasoning?: { effort?: string } };
+		expect(params.reasoning).toBeUndefined();
+	});
+
 	it("omits strict when compat disables strict mode", async () => {
 		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini")!;
 		const model = {
