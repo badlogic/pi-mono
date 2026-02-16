@@ -1,4 +1,5 @@
-// Core session management
+// Core types from pi-agent-core
+export type { AgentEvent } from "@mariozechner/pi-agent-core";
 
 // Config paths
 export { getAgentDir, VERSION } from "./config.js";
