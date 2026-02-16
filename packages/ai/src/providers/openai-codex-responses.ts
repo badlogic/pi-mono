@@ -285,7 +285,7 @@ function buildRequestBody(
 
 	const body: RequestBody = {
 		model: model.id,
-		store: false,
+		store: true,
 		stream: true,
 		instructions: context.systemPrompt,
 		input: messages,
