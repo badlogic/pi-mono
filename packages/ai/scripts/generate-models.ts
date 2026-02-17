@@ -708,6 +708,27 @@ async function generateModels() {
 		});
 	}
 
+	// Add missing Claude Sonnet 4.6
+	if (!allModels.some(m => m.provider === "anthropic" && m.id === "claude-sonnet-4-6")) {
+		allModels.push({
+			id: "claude-sonnet-4-6",
+			name: "Claude Sonnet 4.6",
+			api: "anthropic-messages",
+			baseUrl: "https://api.anthropic.com",
+			provider: "anthropic",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 3,
+				output: 15,
+				cacheRead: 0.3,
+				cacheWrite: 3.75,
+			},
+			contextWindow: 200000,
+			maxTokens: 64000,
+		});
+	}
+
 	// Add missing gpt models
 	if (!allModels.some(m => m.provider === "openai" && m.id === "gpt-5-chat-latest")) {
 		allModels.push({
