@@ -400,6 +400,22 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 			stream.end();
 		} catch (error) {
 			for (const block of output.content) delete (block as any).index;
+
+			// undici throws Error("terminated") when the server closes the connection
+			// before Node finishes draining the response body. If we already received
+			// streamed content, the response was delivered — treat as success.
+			if (
+				error instanceof Error &&
+				error.message === "terminated" &&
+				!options?.signal?.aborted &&
+				output.content.length > 0
+			) {
+				if (!output.stopReason) output.stopReason = "stop";
+				stream.push({ type: "done", reason: output.stopReason as "stop" | "length" | "toolUse", message: output });
+				stream.end();
+				return;
+			}
+
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
 			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
 			stream.push({ type: "error", reason: output.stopReason, error: output });
@@ -844,6 +860,8 @@ function mapStopReason(reason: Anthropic.Messages.StopReason | string): StopReas
 			return "stop"; // We don't supply stop sequences, so this should never happen
 		case "sensitive": // Content flagged by safety filters (not yet in SDK types)
 			return "error";
+		case "terminated": // API-side termination — accept partial response
+			return "stop";
 		default:
 			// Handle unknown stop reasons gracefully (API may add new values)
 			throw new Error(`Unhandled stop reason: ${reason}`);
