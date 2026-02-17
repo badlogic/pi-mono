@@ -2021,8 +2021,14 @@ export class AgentSession {
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		const activeToolNameSet = new Set<string>(baseActiveToolNames);
 		if (options.includeAllExtensionTools) {
+			// When tools were explicitly specified (e.g. --tools read,bash), only
+			// include extension tools that appear in that list. When no explicit
+			// list was given (using defaults), include all extension tools.
+			const hasExplicitToolList = options.activeToolNames !== undefined;
 			for (const tool of wrappedExtensionTools as AgentTool[]) {
-				activeToolNameSet.add(tool.name);
+				if (!hasExplicitToolList || activeToolNameSet.has(tool.name)) {
+					activeToolNameSet.add(tool.name);
+				}
 			}
 		}
 
