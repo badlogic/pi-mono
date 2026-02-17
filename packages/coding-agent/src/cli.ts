@@ -6,6 +6,7 @@
  * Test with: npx tsx src/cli-new.ts [args...]
  */
 process.title = "pi";
+process.env.PI_CODING_AGENT = "true";
 
 import { main } from "./main.js";
 
