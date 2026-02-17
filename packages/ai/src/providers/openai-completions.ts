@@ -773,16 +773,17 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		provider === "mistral" ||
 		baseUrl.includes("mistral.ai") ||
 		baseUrl.includes("chutes.ai") ||
+            baseUrl.includes("integrate.api.nvidia.com") ||
 		baseUrl.includes("deepseek.com") ||
 		isZai ||
 		provider === "opencode" ||
 		baseUrl.includes("opencode.ai");
 
-	const useMaxTokens = provider === "mistral" || baseUrl.includes("mistral.ai") || baseUrl.includes("chutes.ai");
+	const useMaxTokens = provider === "mistral" || baseUrl.includes("mistral.ai") || baseUrl.includes("chutes.ai") || baseUrl.includes("integrate.api.nvidia.com");
 
 	const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
 
-	const isMistral = provider === "mistral" || baseUrl.includes("mistral.ai");
+	const isMistral = provider === "mistral" || baseUrl.includes("mistral.ai") || baseUrl.includes("integrate.api.nvidia.com");
 
 	return {
 		supportsStore: !isNonStandard,
