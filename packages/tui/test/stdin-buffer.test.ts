@@ -399,6 +399,123 @@ describe("StdinBuffer", () => {
 		});
 	});
 
+	describe("Heuristic Paste Detection (Windows/ConPTY)", () => {
+		let emittedPaste: string[] = [];
+
+		beforeEach(() => {
+			buffer = new StdinBuffer({ timeout: 10 });
+
+			emittedSequences = [];
+			buffer.on("data", (sequence) => {
+				emittedSequences.push(sequence);
+			});
+
+			emittedPaste = [];
+			buffer.on("paste", (data) => {
+				emittedPaste.push(data);
+			});
+		});
+
+		it("should detect large plain text with newlines as paste", async () => {
+			const text = "Line 1: Hello world\nLine 2: This is a test\nLine 3: End\n";
+			processInput(text);
+
+			// Wait for heuristic timeout
+			await wait(100);
+
+			assert.deepStrictEqual(emittedPaste, [text]);
+			assert.deepStrictEqual(emittedSequences, []);
+		});
+
+		it("should accumulate multi-chunk paste into single event", async () => {
+			processInput("Line 1: Hello world\nLine 2: This is a test\nLine 3: Multiple lines\n");
+			await wait(10);
+			processInput("Line 4: Second chunk\nLine 5: More data\n");
+			await wait(10);
+			processInput("Line 6: Final chunk\nLine 7: End\n");
+
+			// Wait for heuristic timeout
+			await wait(100);
+
+			assert.strictEqual(emittedPaste.length, 1);
+			assert.ok(emittedPaste[0]!.includes("Line 1"));
+			assert.ok(emittedPaste[0]!.includes("Line 7"));
+			assert.deepStrictEqual(emittedSequences, []);
+		});
+
+		it("should NOT trigger for single characters", async () => {
+			processInput("a");
+			await wait(100);
+
+			assert.deepStrictEqual(emittedPaste, []);
+			assert.deepStrictEqual(emittedSequences, ["a"]);
+		});
+
+		it("should NOT trigger for short multi-char input without newlines", async () => {
+			processInput("hello");
+			await wait(100);
+
+			assert.deepStrictEqual(emittedPaste, []);
+			assert.deepStrictEqual(emittedSequences, ["h", "e", "l", "l", "o"]);
+		});
+
+		it("should NOT trigger for short multi-line input under 20 chars", async () => {
+			processInput("ab\ncd");
+			await wait(100);
+
+			assert.deepStrictEqual(emittedPaste, []);
+			assert.ok(emittedSequences.length > 0);
+		});
+
+		it("should NOT trigger for enter key alone", async () => {
+			processInput("\n");
+			await wait(100);
+
+			assert.deepStrictEqual(emittedPaste, []);
+			assert.deepStrictEqual(emittedSequences, ["\n"]);
+		});
+
+		it("should NOT trigger for input containing escape sequences", async () => {
+			processInput("\x1b[AHello world newline\nMore text here for testing\n");
+			await wait(100);
+
+			assert.deepStrictEqual(emittedPaste, []);
+			assert.ok(emittedSequences.length > 0);
+		});
+
+		it("should flush heuristic paste when escape sequence arrives", async () => {
+			// Start with a paste-like chunk
+			processInput("Line 1: Hello world\nLine 2: This is a test\nLine 3: End\n");
+			await wait(10);
+			// Then an escape sequence arrives
+			processInput("\x1b[A");
+
+			// The paste should be flushed immediately, and escape handled as data
+			await wait(100);
+
+			assert.strictEqual(emittedPaste.length, 1);
+			assert.ok(emittedPaste[0]!.includes("Line 1"));
+			assert.ok(emittedSequences.includes("\x1b[A"));
+		});
+
+		it("should still handle bracketed paste when available", async () => {
+			processInput("\x1b[200~Hello\nWorld\x1b[201~");
+			await wait(100);
+
+			assert.deepStrictEqual(emittedPaste, ["Hello\nWorld"]);
+			assert.deepStrictEqual(emittedSequences, []);
+		});
+
+		it("should handle paste with carriage returns (Windows line endings)", async () => {
+			const text = "Line 1: Hello world\r\nLine 2: Test\r\nLine 3: End here now\r\n";
+			processInput(text);
+			await wait(100);
+
+			assert.deepStrictEqual(emittedPaste, [text]);
+			assert.deepStrictEqual(emittedSequences, []);
+		});
+	});
+
 	describe("Destroy", () => {
 		it("should clear buffer on destroy", () => {
 			processInput("\x1b[<35");

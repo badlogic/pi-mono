@@ -247,6 +247,18 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 	private pasteMode: boolean = false;
 	private pasteBuffer: string = "";
 
+	// Heuristic paste detection for Windows.
+	// ConPTY does not support bracketed paste mode, so paste markers (\x1b[200~ / \x1b[201~)
+	// are never sent. Large pastes may also arrive split across multiple stdin data events.
+	// We detect paste heuristically: a large chunk of plain text (no escape sequences, contains
+	// newlines, ≥20 chars) triggers accumulation mode. Subsequent chunks arriving within a short
+	// time window are appended. Once the window expires with no new data, the accumulated
+	// content is emitted as a single "paste" event.
+	private heuristicPasteMode: boolean = false;
+	private heuristicPasteBuffer: string = "";
+	private heuristicPasteTimeout: ReturnType<typeof setTimeout> | null = null;
+	private readonly heuristicPasteTimeoutMs: number = 50;
+
 	constructor(options: StdinBufferOptions = {}) {
 		super();
 		this.timeoutMs = options.timeout ?? 10;
@@ -279,6 +291,45 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 		}
 
 		this.buffer += str;
+
+		// Heuristic paste accumulation for Windows (ConPTY doesn't send bracketed paste markers).
+		// If we're already accumulating a heuristic paste, keep appending non-escape chunks.
+		if (this.heuristicPasteMode) {
+			if (!str.includes(ESC)) {
+				this.heuristicPasteBuffer += str;
+				this.buffer = "";
+				if (this.heuristicPasteTimeout) {
+					clearTimeout(this.heuristicPasteTimeout);
+				}
+				this.heuristicPasteTimeout = setTimeout(() => {
+					this.flushHeuristicPaste();
+				}, this.heuristicPasteTimeoutMs);
+				return;
+			} else {
+				// Got an escape sequence while accumulating — flush what we have and process normally
+				this.flushHeuristicPaste();
+			}
+		}
+
+		// Detect start of a heuristic paste: a large chunk of plain text with newlines,
+		// no escape sequences, and no pending buffer from a previous process() call.
+		if (
+			!this.pasteMode &&
+			!this.heuristicPasteMode &&
+			this.buffer === str &&
+			str.length > 1 &&
+			!str.includes(ESC) &&
+			(str.includes("\n") || str.includes("\r")) &&
+			str.length >= 20
+		) {
+			this.heuristicPasteMode = true;
+			this.heuristicPasteBuffer = str;
+			this.buffer = "";
+			this.heuristicPasteTimeout = setTimeout(() => {
+				this.flushHeuristicPaste();
+			}, this.heuristicPasteTimeoutMs);
+			return;
+		}
 
 		if (this.pasteMode) {
 			this.pasteBuffer += this.buffer;
@@ -366,14 +417,35 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 		return sequences;
 	}
 
+	private flushHeuristicPaste(): void {
+		if (this.heuristicPasteTimeout) {
+			clearTimeout(this.heuristicPasteTimeout);
+			this.heuristicPasteTimeout = null;
+		}
+		if (this.heuristicPasteBuffer.length > 0) {
+			const content = this.heuristicPasteBuffer;
+			this.heuristicPasteBuffer = "";
+			this.heuristicPasteMode = false;
+			this.emit("paste", content);
+		} else {
+			this.heuristicPasteMode = false;
+		}
+	}
+
 	clear(): void {
 		if (this.timeout) {
 			clearTimeout(this.timeout);
 			this.timeout = null;
 		}
+		if (this.heuristicPasteTimeout) {
+			clearTimeout(this.heuristicPasteTimeout);
+			this.heuristicPasteTimeout = null;
+		}
 		this.buffer = "";
 		this.pasteMode = false;
 		this.pasteBuffer = "";
+		this.heuristicPasteMode = false;
+		this.heuristicPasteBuffer = "";
 	}
 
 	getBuffer(): string {
