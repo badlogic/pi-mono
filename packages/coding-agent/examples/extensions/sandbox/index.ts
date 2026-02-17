@@ -100,30 +100,18 @@ function loadConfig(cwd: string): SandboxConfig {
 }
 
 function deepMerge(base: SandboxConfig, overrides: Partial<SandboxConfig>): SandboxConfig {
-	const result: SandboxConfig = { ...base };
-
-	if (overrides.enabled !== undefined) result.enabled = overrides.enabled;
-	if (overrides.network) {
-		result.network = { ...base.network, ...overrides.network };
-	}
-	if (overrides.filesystem) {
-		result.filesystem = { ...base.filesystem, ...overrides.filesystem };
-	}
-
-	const extOverrides = overrides as {
-		ignoreViolations?: Record<string, string[]>;
-		enableWeakerNestedSandbox?: boolean;
+	return {
+		...base,
+		...overrides,
+		network: {
+			...base.network,
+			...(overrides.network ?? {}),
+		},
+		filesystem: {
+			...base.filesystem,
+			...(overrides.filesystem ?? {}),
+		},
 	};
-	const extResult = result as { ignoreViolations?: Record<string, string[]>; enableWeakerNestedSandbox?: boolean };
-
-	if (extOverrides.ignoreViolations) {
-		extResult.ignoreViolations = extOverrides.ignoreViolations;
-	}
-	if (extOverrides.enableWeakerNestedSandbox !== undefined) {
-		extResult.enableWeakerNestedSandbox = extOverrides.enableWeakerNestedSandbox;
-	}
-
-	return result;
 }
 
 function createSandboxedBashOps(): BashOperations {
@@ -253,17 +241,8 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		try {
-			const configExt = config as unknown as {
-				ignoreViolations?: Record<string, string[]>;
-				enableWeakerNestedSandbox?: boolean;
-			};
-
-			await SandboxManager.initialize({
-				network: config.network,
-				filesystem: config.filesystem,
-				ignoreViolations: configExt.ignoreViolations,
-				enableWeakerNestedSandbox: configExt.enableWeakerNestedSandbox,
-			});
+			const { enabled: _enabled, ...runtimeConfig } = config;
+			await SandboxManager.initialize(runtimeConfig as SandboxRuntimeConfig);
 
 			sandboxEnabled = true;
 			sandboxInitialized = true;
