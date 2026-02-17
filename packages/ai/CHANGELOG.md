@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Anthropic `claude-sonnet-4-6` fallback model entry to generated model definitions.
+
 ## [0.52.12] - 2026-02-13
 
 ### Added
