@@ -51,6 +51,13 @@ export function transformMessages<TApi extends Api>(
 					};
 				}
 
+				if (block.type === "redacted_thinking") {
+					// Opaque encrypted block — preserve for same-model replay, drop otherwise
+					// (cannot be decoded or adapted for a different model/provider)
+					if (isSameModel) return block;
+					return [];
+				}
+
 				if (block.type === "text") {
 					if (isSameModel) return block;
 					return {

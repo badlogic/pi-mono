@@ -14,6 +14,7 @@ import type {
 	ImageContent,
 	Message,
 	Model,
+	RedactedThinkingContent,
 	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
@@ -240,7 +241,9 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 			const anthropicStream = client.messages.stream({ ...params, stream: true }, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
 
-			type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string })) & { index: number };
+			type Block = (ThinkingContent | RedactedThinkingContent | TextContent | (ToolCall & { partialJson: string })) & {
+				index: number;
+			};
 			const blocks = output.content as Block[];
 
 			for await (const event of anthropicStream) {
@@ -273,6 +276,15 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 						};
 						output.content.push(block);
 						stream.push({ type: "thinking_start", contentIndex: output.content.length - 1, partial: output });
+					} else if (event.content_block.type === "redacted_thinking") {
+						// Opaque encrypted block from adaptive thinking (Opus 4.6+).
+						// The data field is complete at content_block_start; no delta events follow.
+						const block: Block = {
+							type: "redacted_thinking",
+							data: event.content_block.data,
+							index: event.index,
+						};
+						output.content.push(block);
 					} else if (event.content_block.type === "tool_use") {
 						const block: Block = {
 							type: "toolCall",
@@ -733,6 +745,12 @@ function convertMessages(
 							signature: block.thinkingSignature,
 						});
 					}
+				} else if (block.type === "redacted_thinking") {
+					// Preserve opaque block exactly as received; API rejects any modification
+					blocks.push({
+						type: "redacted_thinking",
+						data: block.data,
+					});
 				} else if (block.type === "toolCall") {
 					blocks.push({
 						type: "tool_use",

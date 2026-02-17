@@ -130,6 +130,13 @@ export interface ThinkingContent {
 	thinkingSignature?: string; // e.g., for OpenAI responses, the reasoning item ID
 }
 
+export interface RedactedThinkingContent {
+	type: "redacted_thinking";
+	/** Opaque encrypted thinking content from Anthropic's adaptive thinking API (Opus 4.6+).
+	 *  Must be sent back to the API completely unchanged in subsequent requests. */
+	data: string;
+}
+
 export interface ImageContent {
 	type: "image";
 	data: string; // base64 encoded image data
@@ -169,7 +176,7 @@ export interface UserMessage {
 
 export interface AssistantMessage {
 	role: "assistant";
-	content: (TextContent | ThinkingContent | ToolCall)[];
+	content: (TextContent | ThinkingContent | RedactedThinkingContent | ToolCall)[];
 	api: Api;
 	provider: Provider;
 	model: string;
