@@ -11,6 +11,7 @@
 
 - Added `SettingsManager.drainErrors()` for caller-controlled settings I/O error handling without manager-side console output.
 - Added auth storage backends (`FileAuthStorageBackend`, `InMemoryAuthStorageBackend`) and `AuthStorage.fromStorage(...)` for storage-first auth persistence wiring.
+- Added Anthropic `claude-sonnet-4-6` model fallback entry to generated model definitions.
 
 ### Changed
 
