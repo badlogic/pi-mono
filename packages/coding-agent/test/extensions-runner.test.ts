@@ -24,7 +24,7 @@ describe("ExtensionRunner", () => {
 		extensionsDir = path.join(tempDir, "extensions");
 		fs.mkdirSync(extensionsDir);
 		sessionManager = SessionManager.inMemory();
-		const authStorage = new AuthStorage(path.join(tempDir, "auth.json"));
+		const authStorage = AuthStorage.create(path.join(tempDir, "auth.json"));
 		modelRegistry = new ModelRegistry(authStorage);
 	});
 

@@ -428,7 +428,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 
 	// Create AuthStorage and ModelRegistry
 	// Auth stored outside workspace so agent can't access it
-	const authStorage = new AuthStorage(join(homedir(), ".pi", "mom", "auth.json"));
+	const authStorage = AuthStorage.create(join(homedir(), ".pi", "mom", "auth.json"));
 	const modelRegistry = new ModelRegistry(authStorage);
 
 	// Create agent

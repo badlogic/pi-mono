@@ -554,7 +554,7 @@ export async function main(args: string[]) {
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
 	reportSettingsErrors(settingsManager, "startup");
-	const authStorage = new AuthStorage();
+	const authStorage = AuthStorage.create();
 	const modelRegistry = new ModelRegistry(authStorage, getModelsPath());
 
 	const resourceLoader = new DefaultResourceLoader({

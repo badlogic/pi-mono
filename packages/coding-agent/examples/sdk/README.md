@@ -43,7 +43,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 
 // Auth and models setup
-const authStorage = new AuthStorage();
+const authStorage = AuthStorage.create();
 const modelRegistry = new ModelRegistry(authStorage);
 
 // Minimal
@@ -71,7 +71,7 @@ const { session } = await createAgentSession({
 });
 
 // Full control
-const customAuth = new AuthStorage("/my/app/auth.json");
+const customAuth = AuthStorage.create("/my/app/auth.json");
 customAuth.setRuntimeApiKey("anthropic", process.env.MY_KEY!);
 const customRegistry = new ModelRegistry(customAuth);
 
@@ -108,7 +108,7 @@ await session.prompt("Hello");
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `authStorage` | `new AuthStorage()` | Credential storage |
+| `authStorage` | `AuthStorage.create()` | Credential storage |
 | `modelRegistry` | `new ModelRegistry(authStorage)` | Model registry |
 | `cwd` | `process.cwd()` | Working directory |
 | `agentDir` | `~/.pi/agent` | Config directory |
