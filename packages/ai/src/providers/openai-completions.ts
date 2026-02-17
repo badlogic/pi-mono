@@ -412,9 +412,9 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		params.temperature = options.temperature;
 	}
 
-	if (context.tools) {
+	if (context.tools && !compat.disableTools) {
 		params.tools = convertTools(context.tools, compat);
-	} else if (hasToolHistory(context.messages)) {
+	} else if (hasToolHistory(context.messages) && !compat.disableTools) {
 		// Anthropic (via LiteLLM/proxy) requires tools param when conversation has tool_calls/tool_results
 		params.tools = [];
 	}
@@ -560,7 +560,14 @@ export function convertMessages(
 				if (filteredContent.length === 0) continue;
 				params.push({
 					role: "user",
-					content: filteredContent,
+					// Mistral/NVIDIA NIM requires content as a plain string, not an array
+					content:
+						compat.requiresMistralToolIds && !filteredContent.some((c) => c.type === "image_url")
+							? filteredContent
+									.filter((c) => c.type === "text")
+									.map((c) => (c as any).text)
+									.join("\n\n")
+							: filteredContent,
 				});
 			}
 		} else if (msg.role === "assistant") {
@@ -773,28 +780,34 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		provider === "mistral" ||
 		baseUrl.includes("mistral.ai") ||
 		baseUrl.includes("chutes.ai") ||
-            baseUrl.includes("integrate.api.nvidia.com") ||
+		baseUrl.includes("integrate.api.nvidia.com") ||
 		baseUrl.includes("deepseek.com") ||
 		isZai ||
 		provider === "opencode" ||
 		baseUrl.includes("opencode.ai");
 
-	const useMaxTokens = provider === "mistral" || baseUrl.includes("mistral.ai") || baseUrl.includes("chutes.ai") || baseUrl.includes("integrate.api.nvidia.com");
+	const useMaxTokens =
+		provider === "mistral" ||
+		baseUrl.includes("mistral.ai") ||
+		baseUrl.includes("chutes.ai") ||
+		baseUrl.includes("integrate.api.nvidia.com");
 
 	const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
 
-	const isMistral = provider === "mistral" || baseUrl.includes("mistral.ai") || baseUrl.includes("integrate.api.nvidia.com");
+	const isMistral =
+		provider === "mistral" || baseUrl.includes("mistral.ai") || baseUrl.includes("integrate.api.nvidia.com");
 
 	return {
 		supportsStore: !isNonStandard,
 		supportsDeveloperRole: !isNonStandard,
 		supportsReasoningEffort: !isGrok && !isZai,
-		supportsUsageInStreaming: true,
 		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
 		requiresToolResultName: isMistral,
 		requiresAssistantAfterToolResult: false, // Mistral no longer requires this as of Dec 2024
 		requiresThinkingAsText: isMistral,
 		requiresMistralToolIds: isMistral,
+		disableTools: baseUrl.includes("integrate.api.nvidia.com"),
+		supportsUsageInStreaming: !baseUrl.includes("integrate.api.nvidia.com"),
 		thinkingFormat: isZai ? "zai" : "openai",
 		openRouterRouting: {},
 		vercelGatewayRouting: {},
@@ -821,6 +834,7 @@ function getCompat(model: Model<"openai-completions">): Required<OpenAICompletio
 			model.compat.requiresAssistantAfterToolResult ?? detected.requiresAssistantAfterToolResult,
 		requiresThinkingAsText: model.compat.requiresThinkingAsText ?? detected.requiresThinkingAsText,
 		requiresMistralToolIds: model.compat.requiresMistralToolIds ?? detected.requiresMistralToolIds,
+		disableTools: model.compat.disableTools ?? detected.disableTools,
 		thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
 		openRouterRouting: model.compat.openRouterRouting ?? {},
 		vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,

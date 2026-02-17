@@ -242,6 +242,8 @@ export interface OpenAICompletionsCompat {
 	requiresThinkingAsText?: boolean;
 	/** Whether tool call IDs must be normalized to Mistral format (exactly 9 alphanumeric chars). Default: auto-detected from URL. */
 	requiresMistralToolIds?: boolean;
+	/** Whether to disable sending tools to this provider (e.g. NVIDIA NIM Mistral endpoints). Default: false. */
+	disableTools?: boolean;
 	/** Format for reasoning/thinking parameter. "openai" uses reasoning_effort, "zai" uses thinking: { type: "enabled" }, "qwen" uses enable_thinking: boolean. Default: "openai". */
 	thinkingFormat?: "openai" | "zai" | "qwen";
 	/** OpenRouter-specific routing preferences. Only used when baseUrl points to OpenRouter. */
