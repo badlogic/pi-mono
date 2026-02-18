@@ -10,7 +10,7 @@ import type {
 	ToolResultMessage,
 } from "@mariozechner/pi-ai";
 import type { Static, TSchema } from "@sinclair/typebox";
-import type { RuntimePolicy } from "./policy/types.js";
+import type { EnergyBudget, RuntimePolicy } from "./policy/types.js";
 
 /** Stream function - can return sync or Promise for async config lookup */
 export type StreamFn = (
@@ -102,6 +102,12 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * and observe usage data after each call. Used for energy-aware budgeting.
 	 */
 	policy?: RuntimePolicy;
+
+	/** Models available for policy-driven model routing, sorted by cost.output ascending. */
+	availableModels?: Model<any>[];
+
+	/** Energy/time budget for policy-driven budget enforcement. */
+	budget?: EnergyBudget;
 }
 
 /**

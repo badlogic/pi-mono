@@ -164,8 +164,8 @@ async function runLoop(
 				const policyCtx: PolicyContext = {
 					turnNumber: policyState.turnNumber,
 					model: config.model,
-					availableModels: [],
-					budget: {},
+					availableModels: config.availableModels ?? [],
+					budget: config.budget ?? {},
 					consumedEnergy: policyState.consumedEnergy,
 					consumedTime: policyState.consumedTime,
 					messageCount: currentContext.messages.length,
@@ -235,8 +235,8 @@ async function runLoop(
 					const policyCtx: PolicyContext = {
 						turnNumber: policyState.turnNumber,
 						model: config.model,
-						availableModels: [],
-						budget: {},
+						availableModels: config.availableModels ?? [],
+						budget: config.budget ?? {},
 						consumedEnergy: policyState.consumedEnergy,
 						consumedTime: policyState.consumedTime,
 						messageCount: currentContext.messages.length,

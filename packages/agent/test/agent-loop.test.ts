@@ -9,6 +9,7 @@ import {
 import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import { agentLoop, agentLoopContinue } from "../src/agent-loop.js";
+import type { PolicyContext, PolicyDecision, RuntimePolicy, UsageWithEnergy } from "../src/policy/types.js";
 import type { AgentContext, AgentEvent, AgentLoopConfig, AgentMessage, AgentTool } from "../src/types.js";
 
 // Mock stream for testing - mimics MockAssistantStream
@@ -411,6 +412,136 @@ describe("agentLoop with AgentMessage", () => {
 
 		// Interrupt message should be in context when second LLM call is made
 		expect(sawInterruptInContext).toBe(true);
+	});
+});
+
+describe("agentLoop policy context passthrough", () => {
+	it("should pass availableModels and budget from config to policy", async () => {
+		const capturedContexts: PolicyContext[] = [];
+
+		const spyPolicy: RuntimePolicy = {
+			name: "spy",
+			beforeModelCall(ctx: PolicyContext): PolicyDecision {
+				capturedContexts.push({ ...ctx });
+				return {};
+			},
+			afterModelCall(_ctx: PolicyContext, _usage: UsageWithEnergy): void {},
+		};
+
+		const cheapModel: Model<"openai-responses"> = {
+			...createModel(),
+			id: "cheap",
+			cost: { input: 0, output: 0.3, cacheRead: 0, cacheWrite: 0 },
+		};
+
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [],
+		};
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			policy: spyPolicy,
+			availableModels: [cheapModel, createModel()],
+			budget: { energy_budget_joules: 10, time_budget_ms: 5000 },
+		};
+
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				const message = createAssistantMessage([{ type: "text", text: "ok" }]);
+				stream.push({ type: "done", reason: "stop", message });
+			});
+			return stream;
+		};
+
+		const agentStream = agentLoop([createUserMessage("hi")], context, config, undefined, streamFn);
+		for await (const _ of agentStream) {
+			// consume
+		}
+
+		expect(capturedContexts.length).toBeGreaterThanOrEqual(1);
+		const ctx = capturedContexts[0];
+		expect(ctx.availableModels).toHaveLength(2);
+		expect(ctx.availableModels[0].id).toBe("cheap");
+		expect(ctx.budget.energy_budget_joules).toBe(10);
+		expect(ctx.budget.time_budget_ms).toBe(5000);
+	});
+
+	it("should accumulate consumedEnergy across turns", async () => {
+		const capturedContexts: PolicyContext[] = [];
+
+		const spyPolicy: RuntimePolicy = {
+			name: "spy",
+			beforeModelCall(ctx: PolicyContext): PolicyDecision {
+				capturedContexts.push({ ...ctx });
+				return {};
+			},
+			afterModelCall(_ctx: PolicyContext, _usage: UsageWithEnergy): void {},
+		};
+
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [],
+		};
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			policy: spyPolicy,
+			budget: { energy_budget_joules: 100 },
+		};
+
+		let callIndex = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					const message = createAssistantMessage(
+						[{ type: "toolCall", id: "t1", name: "noop", arguments: {} }],
+						"toolUse",
+					);
+					// Add energy data to simulate real usage
+					(message as any).energy = { energy_joules: 2.5, energy_kwh: 2.5 / 3_600_000 };
+					stream.push({ type: "done", reason: "toolUse", message });
+				} else {
+					const message = createAssistantMessage([{ type: "text", text: "done" }]);
+					(message as any).energy = { energy_joules: 1.0, energy_kwh: 1.0 / 3_600_000 };
+					stream.push({ type: "done", reason: "stop", message });
+				}
+				callIndex++;
+			});
+			return stream;
+		};
+
+		const tool: AgentTool = {
+			name: "noop",
+			label: "Noop",
+			description: "Does nothing",
+			parameters: Type.Object({}),
+			async execute() {
+				return { content: [{ type: "text", text: "ok" }], details: {} };
+			},
+		};
+
+		const agentStream = agentLoop(
+			[createUserMessage("go")],
+			{ ...context, tools: [tool] },
+			config,
+			undefined,
+			streamFn,
+		);
+		for await (const _ of agentStream) {
+			// consume
+		}
+
+		// Second beforeModelCall should see accumulated energy from first turn
+		expect(capturedContexts.length).toBe(2);
+		expect(capturedContexts[0].consumedEnergy).toBe(0);
+		expect(capturedContexts[1].consumedEnergy).toBe(2.5);
 	});
 });
 
