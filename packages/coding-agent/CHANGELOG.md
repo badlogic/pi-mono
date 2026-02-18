@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `paddingX` setting to control horizontal padding for the entire chat UI (0-8, default: 0)
+
 ## [0.53.0] - 2026-02-17
 
 ### Breaking Changes

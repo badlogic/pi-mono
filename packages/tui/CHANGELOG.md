@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added configurable `paddingX` on `Container` and `TUI` for horizontal content inset
+
 ## [0.53.0] - 2026-02-17
 
 ## [0.52.12] - 2026-02-13

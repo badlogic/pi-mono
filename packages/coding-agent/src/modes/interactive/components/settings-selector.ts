@@ -39,6 +39,7 @@ export interface SettingsConfig {
 	collapseChangelog: boolean;
 	doubleEscapeAction: "fork" | "tree" | "none";
 	showHardwareCursor: boolean;
+	paddingX: number;
 	editorPaddingX: number;
 	autocompleteMaxVisible: number;
 	quietStartup: boolean;
@@ -61,6 +62,7 @@ export interface SettingsCallbacks {
 	onCollapseChangelogChange: (collapsed: boolean) => void;
 	onDoubleEscapeActionChange: (action: "fork" | "tree" | "none") => void;
 	onShowHardwareCursorChange: (enabled: boolean) => void;
+	onPaddingXChange: (padding: number) => void;
 	onEditorPaddingXChange: (padding: number) => void;
 	onAutocompleteMaxVisibleChange: (maxVisible: number) => void;
 	onQuietStartupChange: (enabled: boolean) => void;
@@ -304,9 +306,19 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
-		// Editor padding toggle (insert after show-hardware-cursor)
+		// UI padding toggle (insert after show-hardware-cursor)
 		const hardwareCursorIndex = items.findIndex((item) => item.id === "show-hardware-cursor");
 		items.splice(hardwareCursorIndex + 1, 0, {
+			id: "padding",
+			label: "UI padding",
+			description: "Horizontal padding for the entire chat UI (0-8)",
+			currentValue: String(config.paddingX),
+			values: ["0", "1", "2", "3", "4", "5", "6", "7", "8"],
+		});
+
+		// Editor padding toggle (insert after padding)
+		const paddingIndex = items.findIndex((item) => item.id === "padding");
+		items.splice(paddingIndex + 1, 0, {
 			id: "editor-padding",
 			label: "Editor padding",
 			description: "Horizontal padding for input editor (0-3)",
@@ -381,6 +393,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "show-hardware-cursor":
 						callbacks.onShowHardwareCursorChange(newValue === "true");
+						break;
+					case "padding":
+						callbacks.onPaddingXChange(parseInt(newValue, 10));
 						break;
 					case "editor-padding":
 						callbacks.onEditorPaddingXChange(parseInt(newValue, 10));

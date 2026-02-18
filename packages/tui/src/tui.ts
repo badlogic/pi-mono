@@ -160,10 +160,20 @@ export interface OverlayHandle {
 }
 
 /**
- * Container - a component that contains other components
+ * Container - a component that contains other components.
+ * Supports optional left/right padding that insets all child content.
  */
 export class Container implements Component {
 	children: Component[] = [];
+	private paddingX: number;
+
+	constructor(paddingX?: number) {
+		this.paddingX = paddingX ?? 0;
+	}
+
+	setPaddingX(paddingX: number): void {
+		this.paddingX = paddingX;
+	}
 
 	addChild(component: Component): void {
 		this.children.push(component);
@@ -187,9 +197,18 @@ export class Container implements Component {
 	}
 
 	render(width: number): string[] {
+		const contentWidth = Math.max(1, width - this.paddingX * 2);
+		const pad = this.paddingX > 0 ? " ".repeat(this.paddingX) : "";
 		const lines: string[] = [];
 		for (const child of this.children) {
-			lines.push(...child.render(width));
+			const childLines = child.render(contentWidth);
+			if (this.paddingX > 0) {
+				for (const line of childLines) {
+					lines.push(pad + line);
+				}
+			} else {
+				lines.push(...childLines);
+			}
 		}
 		return lines;
 	}

@@ -87,6 +87,7 @@ export interface Settings {
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
 	doubleEscapeAction?: "fork" | "tree" | "none"; // Action for double-escape with empty editor (default: "tree")
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
+	paddingX?: number; // Horizontal padding for the entire chat UI (default: 0)
 	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
@@ -859,6 +860,16 @@ export class SettingsManager {
 	setShowHardwareCursor(enabled: boolean): void {
 		this.globalSettings.showHardwareCursor = enabled;
 		this.markModified("showHardwareCursor");
+		this.save();
+	}
+
+	getPaddingX(): number {
+		return this.settings.paddingX ?? 0;
+	}
+
+	setPaddingX(padding: number): void {
+		this.globalSettings.paddingX = Math.max(0, Math.min(8, Math.floor(padding)));
+		this.markModified("paddingX");
 		this.save();
 	}
 

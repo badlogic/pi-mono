@@ -259,6 +259,7 @@ export class InteractiveMode {
 		this.session = session;
 		this.version = VERSION;
 		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
+		this.ui.setPaddingX(this.settingsManager.getPaddingX());
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
 		this.headerContainer = new Container();
 		this.chatContainer = new Container();
@@ -3043,6 +3044,7 @@ export class InteractiveMode {
 					collapseChangelog: this.settingsManager.getCollapseChangelog(),
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
 					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
+					paddingX: this.settingsManager.getPaddingX(),
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 					autocompleteMaxVisible: this.settingsManager.getAutocompleteMaxVisible(),
 					quietStartup: this.settingsManager.getQuietStartup(),
@@ -3124,6 +3126,10 @@ export class InteractiveMode {
 					onShowHardwareCursorChange: (enabled) => {
 						this.settingsManager.setShowHardwareCursor(enabled);
 						this.ui.setShowHardwareCursor(enabled);
+					},
+					onPaddingXChange: (padding) => {
+						this.settingsManager.setPaddingX(padding);
+						this.ui.setPaddingX(padding);
 					},
 					onEditorPaddingXChange: (padding) => {
 						this.settingsManager.setEditorPaddingX(padding);
@@ -3775,6 +3781,7 @@ export class InteractiveMode {
 				this.editor.setPaddingX?.(editorPaddingX);
 				this.editor.setAutocompleteMaxVisible?.(autocompleteMaxVisible);
 			}
+			this.ui.setPaddingX(this.settingsManager.getPaddingX());
 			this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
 			this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
 			this.setupAutocomplete(this.fdPath);
