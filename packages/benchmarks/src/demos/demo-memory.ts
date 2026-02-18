@@ -23,6 +23,18 @@ export interface HNMemory {
 	lastUpdated: string;
 }
 
+/** Per-phase discriminator routing history. Key is phase name, e.g. "build-1". */
+export interface PhaseRoutingStats {
+	/** Times discriminator classified phase as "complex" → Kimi K2.5. */
+	complexCount: number;
+	/** Times discriminator classified phase as "simple" → GPT-OSS-20B. */
+	simpleCount: number;
+	/** Complex-routing runs that ultimately passed acceptance tests. */
+	complexPassCount: number;
+	/** Simple-routing runs that ultimately passed acceptance tests. */
+	simplePassCount: number;
+}
+
 export interface CodingMemory {
 	runs: number;
 	/** Runs where the baseline agent passed acceptance tests. */
@@ -37,6 +49,8 @@ export interface CodingMemory {
 	lastUpdated: string;
 	/** Test names that required fix turns across runs, mapped to occurrence count. */
 	failedTestCounts?: Record<string, number>;
+	/** Per-phase discriminator routing history. */
+	phaseRouting?: Record<string, PhaseRoutingStats>;
 }
 
 export interface DemoMemory {
@@ -118,6 +132,51 @@ export function codingMemoryHints(key: string, m: DemoMemory): string | null {
 		lines.join("\n") +
 		"\nEnsure your implementation satisfies these requirements exactly before finishing.\n\n"
 	);
+}
+
+/**
+ * Returns a context string for the discriminator prompt based on historical
+ * routing outcomes for a specific phase. Empty string if no history yet.
+ */
+export function buildDiscriminatorContext(phase: string, key: string, m: DemoMemory): string {
+	const stats = m.coding[key]?.phaseRouting?.[phase];
+	if (!stats) return "";
+	const total = stats.complexCount + stats.simpleCount;
+	if (total === 0) return "";
+	const parts: string[] = [];
+	if (stats.complexCount > 0) {
+		const rate = Math.round((stats.complexPassCount / stats.complexCount) * 100);
+		parts.push(`complex→Kimi: ${stats.complexCount} time${stats.complexCount !== 1 ? "s" : ""} (${rate}% pass rate)`);
+	}
+	if (stats.simpleCount > 0) {
+		const rate = Math.round((stats.simplePassCount / stats.simpleCount) * 100);
+		parts.push(`simple→GPT-OSS: ${stats.simpleCount} time${stats.simpleCount !== 1 ? "s" : ""} (${rate}% pass rate)`);
+	}
+	return `Previous runs for "${phase}": ${parts.join(", ")}`;
+}
+
+/**
+ * Returns a one-line phase routing summary, e.g.
+ * "  Routing:  build-1=simple(2/2)  consolidate=complex(3/3)"
+ * Returns null if no routing history exists.
+ */
+export function formatPhaseRouting(key: string, m: DemoMemory): string | null {
+	const phaseRouting = m.coding[key]?.phaseRouting;
+	if (!phaseRouting || Object.keys(phaseRouting).length === 0) return null;
+	const parts = Object.entries(phaseRouting)
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([phase, stats]) => {
+			const total = stats.complexCount + stats.simpleCount;
+			if (total === 0) return null;
+			const dominant =
+				stats.complexCount >= stats.simpleCount
+					? `complex(${stats.complexCount}/${total})`
+					: `simple(${stats.simpleCount}/${total})`;
+			return `${phase}=${dominant}`;
+		})
+		.filter((p): p is string => p !== null);
+	if (parts.length === 0) return null;
+	return `  Routing:  ${parts.join("  ")}`;
 }
 
 /**

@@ -1,25 +1,24 @@
 /**
  * Demo 1: Coding Agent Energy Challenge
  *
- * Runs a coding task under BaselinePolicy and EnergyAwarePolicy to completion —
- * BOTH runs finish the task; the comparison shows energy/cost/turns differences.
+ * Generates a fresh TypeScript coding challenge via LLM each run to defeat
+ * server-side KV caching — every demo uses a different task.
  *
- * Structure (3 phases):
- *   Phase 1: Incremental build turns (configurable, default: 4 rate-limiter turns)
- *   Phase 2: Consolidate into a single impl.ts file
- *   Phase 3: Acceptance-test loop — run tests, request corrections, repeat until PASS
- *
- * Budget is informational and drives policy interventions (routing, token limits)
- * but never aborts the run. Both modes always reach a verdict.
+ * Architecture:
+ *   Baseline:      Every turn uses Kimi K2.5 (powerful, 0.482 tokens/J)
+ *   Energy-aware:  A lightweight discriminator (GPT-OSS-20B, 1.371 tokens/J)
+ *                  classifies each prompt as "complex" (→ Kimi K2.5) or
+ *                  "simple" (→ GPT-OSS-20B) before each turn.
+ *                  Memory accumulates per-phase discriminator accuracy across runs.
  *
  * Energy benchmarks from portal.neuralwatt.com:
- *   Devstral-Small: 0.809 tokens/J  ($0.12/$0.12 per 1M)
- *   GPT-OSS-20B:    1.371 tokens/J  ($0.10/$0.10 per 1M)  <- 1.7x more efficient
+ *   Kimi K2.5:    0.482 tokens/J  ($1.327/$1.327 per 1M)  ← default/baseline
+ *   GPT-OSS-20B:  1.371 tokens/J  ($0.10/$0.10 per 1M)    ← 2.8x more efficient
  *
  * Usage:
- *   npx tsx src/demos/coding-agent.ts
- *   npx tsx src/demos/coding-agent.ts --budget 15000
- *   npx tsx src/demos/coding-agent.ts --task "implement X" --acceptance ./my-test.ts
+ *   npx tsx src/demos/coding-agent.ts                    (generate new challenge)
+ *   npx tsx src/demos/coding-agent.ts --static           (use hardcoded rate-limiter)
+ *   npx tsx src/demos/coding-agent.ts --budget 25000
  *   npx tsx src/demos/coding-agent.ts --clear-memory
  *
  * Requires NEURALWATT_API_KEY in the environment.
@@ -31,8 +30,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import type { EnergyBudget, PolicyContext, RuntimePolicy, UsageWithEnergy } from "@mariozechner/pi-agent-core";
-import { BaselinePolicy, EnergyAwarePolicy } from "@mariozechner/pi-agent-core";
 import {
 	type AssistantMessage,
 	completeSimple,
@@ -41,11 +38,14 @@ import {
 	registerBuiltInApiProviders,
 } from "@mariozechner/pi-ai";
 import {
+	buildDiscriminatorContext,
 	type CodingMemory,
 	clearMemory,
 	codingMemoryHints,
 	formatCodingMemory,
+	formatPhaseRouting,
 	loadMemory,
+	type PhaseRoutingStats,
 	saveMemory,
 } from "./demo-memory.js";
 
@@ -59,53 +59,50 @@ const TOKENS_PER_JOULE: Record<string, number> = {
 	"Qwen/Qwen3-Coder-480B-A35B-Instruct": 0.314,
 };
 
-const NEURALWATT_MODELS: Model<"openai-completions">[] = [
-	{
-		// Most energy-efficient: 1.371 tokens/J, cheapest at $0.10/$0.10/1M
-		id: "openai/gpt-oss-20b",
-		name: "GPT-OSS 20B",
-		api: "openai-completions",
-		provider: "neuralwatt",
-		baseUrl: "https://api.neuralwatt.com/v1",
-		reasoning: false,
-		input: ["text"],
-		cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 16_384,
-		maxTokens: 4_096,
-	},
-	{
-		// Default: 0.809 tokens/J, $0.12/$0.12/1M
-		id: "mistralai/Devstral-Small-2-24B-Instruct-2512",
-		name: "Devstral Small 24B",
-		api: "openai-completions",
-		provider: "neuralwatt",
-		baseUrl: "https://api.neuralwatt.com/v1",
-		reasoning: false,
-		input: ["text"],
-		cost: { input: 0.12, output: 0.12, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 262_144,
-		maxTokens: 8_192,
-	},
-];
+const KIMI_MODEL: Model<"openai-completions"> = {
+	// Default: 0.482 tokens/J, $1.327/$1.327/1M — flagship 262K-context model
+	id: "moonshotai/Kimi-K2.5",
+	name: "Kimi K2.5",
+	api: "openai-completions",
+	provider: "neuralwatt",
+	baseUrl: "https://api.neuralwatt.com/v1",
+	reasoning: false,
+	input: ["text"],
+	cost: { input: 1.327, output: 1.327, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 262_144,
+	maxTokens: 16_384,
+};
 
-/** Cheapest/most-efficient model — used when over budget but continuing anyway. */
-const CHEAPEST_MODEL = NEURALWATT_MODELS[0];
-const DEFAULT_MODEL = NEURALWATT_MODELS[1]; // Devstral-Small
+const GPT_OSS_MODEL: Model<"openai-completions"> = {
+	// Discriminator + cheap routing target: 1.371 tokens/J, $0.10/$0.10/1M
+	id: "openai/gpt-oss-20b",
+	name: "GPT-OSS 20B",
+	api: "openai-completions",
+	provider: "neuralwatt",
+	baseUrl: "https://api.neuralwatt.com/v1",
+	reasoning: false,
+	input: ["text"],
+	cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 16_384,
+	maxTokens: 4_096,
+};
+
+/** Default model for baseline and EA complex turns. */
+const DEFAULT_MODEL = KIMI_MODEL;
+/** Used as discriminator and for EA simple turns. */
+const DISCRIMINATOR_MODEL = GPT_OSS_MODEL;
 
 /**
- * Budget calibrated from observed run data:
- *   Build turns 1-4 use ~3350J total on Devstral (~840J/turn avg).
- *   At 50% of 4000J = 2000J → token limits fire mid-build (turn 3).
- *   At 70% of 4000J = 2800J → routing fires before turn 4/consolidation.
- *   Consolidation + fix turns then run on GPT-OSS-20B (1.7x more efficient),
- *   making the energy savings visible in the scorecard.
+ * Budget sized for Kimi K2.5 (~3100J/turn).
+ * 5 turns (4 build + consolidate) ≈ 15500J on baseline.
+ * EA with discriminator routing simple turns to GPT-OSS should land ~6-10kJ.
  */
-const DEFAULT_BUDGET_JOULES = 4_000;
+const DEFAULT_BUDGET_JOULES = 25_000;
 
 /** Memory key for this routing pair. */
-const MEMORY_KEY = "devstral→gpt-oss-20b";
+const MEMORY_KEY = "kimi-k2.5→gpt-oss-discriminator";
 
-// -- Task definition ----------------------------------------------------------
+// -- Task definition (fallback when generation is unavailable) ----------------
 
 const SYSTEM_PROMPT =
 	"You are an expert TypeScript engineer. " +
@@ -114,7 +111,6 @@ const SYSTEM_PROMPT =
 	"Each response should be tightly focused — implement only what is asked. " +
 	"No preamble, no prose explanations, just the code.";
 
-/** Phase 1 prompts for the default rate-limiter task. */
 const DEFAULT_BUILD_TURNS = [
 	"Design a TypeScript interface for a rate limiter: RateLimiterOptions (windowMs, maxRequests, keyFn) and RateLimiterState (map of key to {count, resetAt}). Keep it concise.",
 	"Implement a RateLimiter class using those interfaces. Include: constructor(options), isAllowed(key): boolean method that enforces the sliding window. Add JSDoc.",
@@ -122,11 +118,6 @@ const DEFAULT_BUILD_TURNS = [
 	"Add input validation to the RateLimiter constructor: throw descriptive errors for invalid windowMs (must be > 0), invalid maxRequests (must be > 0 integer), and missing keyFn.",
 ];
 
-/**
- * Phase 2 consolidation prompt for the default rate-limiter task.
- * Highly prescriptive about middleware wiring so the LLM generates testable
- * code on the first attempt without needing fix turns.
- */
 const DEFAULT_CONSOLIDATE_PROMPT =
 	"Write the final complete TypeScript implementation combining everything built so far.\n\n" +
 	"Required exports:\n" +
@@ -143,14 +134,6 @@ const DEFAULT_CONSOLIDATE_PROMPT =
 	"No imports except standard TypeScript — do not import Express or any npm package.\n" +
 	"Output raw TypeScript only — no markdown fences, no explanations.";
 
-/** Generic consolidation prompt for user-supplied tasks. */
-const GENERIC_CONSOLIDATE_PROMPT =
-	"Write the final complete implementation as a single TypeScript file named impl.ts, " +
-	"incorporating everything built so far. " +
-	"Export all public types and functions. " +
-	"No external imports. Output raw TypeScript only — no markdown fences.";
-
-/** Fix prompt suffix for the default rate-limiter task. */
 const DEFAULT_FIX_EXTRA =
 	"Critical requirements for this task:\n" +
 	"  - createRateLimitMiddleware must be SYNCHRONOUS (not async)\n" +
@@ -158,11 +141,6 @@ const DEFAULT_FIX_EXTRA =
 	"  - If allowed: call (res as any).set('X-RateLimit-Remaining', String(remaining)) then call next()\n" +
 	"  - If not allowed: call (res as any).status(429).json({ error: 'Too Many Requests' })\n";
 
-/**
- * Default acceptance tests for the rate-limiter task.
- * Uses top-level await + async test runner so async middleware is handled.
- * Provides a resilient mock res accepting set/setHeader/header interchangeably.
- */
 const DEFAULT_ACCEPTANCE_TEST = `
 import assert from 'node:assert/strict';
 import { RateLimiter, createRateLimitMiddleware } from './impl.js';
@@ -235,6 +213,153 @@ await test('middleware sets headers and calls next()', async () => {
 if (failed > 0) process.exit(1);
 `.trimStart();
 
+// -- Challenge generation -----------------------------------------------------
+
+/**
+ * Prompt for generating a fresh coding challenge with a self-contained
+ * acceptance test. Embedded template ensures the test harness is correct.
+ */
+const CHALLENGE_GENERATOR_PROMPT =
+	"Generate a TypeScript coding challenge. Reply with ONLY a JSON object — no prose, no markdown fences.\n\n" +
+	'{"taskLabel":"<50-char description>","buildTurns":["turn1","turn2","turn3"],"consolidatePrompt":"...","acceptanceTest":"...TypeScript source..."}\n\n' +
+	"buildTurns must have exactly 3 prompts that build incrementally:\n" +
+	"  1. Define the TypeScript interfaces/types for the data structure\n" +
+	"  2. Implement the core class or function\n" +
+	"  3. Add input validation and edge-case handling\n\n" +
+	"consolidatePrompt must:\n" +
+	"  - Ask for a single impl.ts combining everything\n" +
+	"  - List EXACT exports with their TypeScript signatures, e.g.: export class Foo {...} export function bar(...) {...}\n" +
+	"  - End with: No imports except node standard lib. Output raw TypeScript only — no markdown fences.\n\n" +
+	"acceptanceTest must be valid TypeScript that:\n" +
+	"  - Starts with: import assert from 'node:assert/strict';\n" +
+	"  - Imports the named exports from './impl.js'\n" +
+	"  - Uses this EXACT test harness (copy verbatim):\n" +
+	"      let failed = 0;\n" +
+	"      async function test(name: string, fn: () => void | Promise<void>): Promise<void> {\n" +
+	"        try { await fn(); console.log('PASS: ' + name); }\n" +
+	"        catch (e) { const msg = e instanceof Error ? e.message : String(e); console.log('FAIL: ' + name + ': ' + msg); failed++; }\n" +
+	"      }\n" +
+	"  - Has 4-5 test cases covering: happy path, boundary conditions, error cases\n" +
+	"  - Ends with: if (failed > 0) process.exit(1);\n" +
+	"  - Uses only top-level await and node:assert (no timeouts, no randomness)\n\n" +
+	"AVOID: rate limiting, express middleware, HTTP servers, auth systems.\n" +
+	"GOOD topics: LRU cache, debounce/throttle, event emitter, retry utility, " +
+	"promise queue, memoize with TTL, circular buffer, priority queue, observable, pipe operator.\n\n" +
+	"Output ONLY the JSON object.";
+
+interface GeneratedChallenge {
+	taskLabel: string;
+	buildTurns: string[];
+	consolidatePrompt: string;
+	acceptanceTest: string;
+}
+
+async function generateChallenge(apiKey: string): Promise<GeneratedChallenge | null> {
+	process.stdout.write("  Generating challenge via Kimi K2.5...");
+	try {
+		const msg = await completeSimple(
+			KIMI_MODEL,
+			{
+				systemPrompt: "You are a technical challenge designer. Output only valid JSON.",
+				messages: [{ role: "user", content: CHALLENGE_GENERATOR_PROMPT, timestamp: Date.now() }],
+			},
+			{ apiKey, maxTokens: 3_000 },
+		);
+		const text = msg.content
+			.filter((c) => c.type === "text")
+			.map((c) => (c as { type: "text"; text: string }).text)
+			.join("");
+
+		let parsed: unknown = null;
+		try {
+			parsed = JSON.parse(text);
+		} catch {
+			const m = text.match(/\{[\s\S]*\}/);
+			if (m) {
+				try {
+					parsed = JSON.parse(m[0]);
+				} catch {
+					// fall through to null
+				}
+			}
+		}
+
+		if (!parsed || typeof parsed !== "object") {
+			console.log(" ✗ (invalid JSON, using default task)");
+			return null;
+		}
+
+		const c = parsed as Record<string, unknown>;
+		if (
+			typeof c.taskLabel !== "string" ||
+			!Array.isArray(c.buildTurns) ||
+			c.buildTurns.length < 2 ||
+			!c.buildTurns.every((t) => typeof t === "string") ||
+			typeof c.consolidatePrompt !== "string" ||
+			typeof c.acceptanceTest !== "string"
+		) {
+			console.log(" ✗ (schema mismatch, using default task)");
+			return null;
+		}
+
+		const label = c.taskLabel.slice(0, 55);
+		console.log(` ✓ "${label}"`);
+		return {
+			taskLabel: label,
+			buildTurns: c.buildTurns as string[],
+			consolidatePrompt: c.consolidatePrompt as string,
+			acceptanceTest: c.acceptanceTest as string,
+		};
+	} catch (e) {
+		console.log(` ✗ (${(e as Error).message?.slice(0, 50) ?? "error"}, using default task)`);
+		return null;
+	}
+}
+
+// -- Discriminator ------------------------------------------------------------
+
+const DISCRIMINATOR_SYSTEM_PROMPT =
+	"You are a routing classifier for a two-tier coding AI.\n" +
+	"Decide whether a coding task needs a large capable model or a small efficient one.\n" +
+	'"complex" → large model (Kimi K2.5): architecture decisions, tricky specs, debugging, deep reasoning.\n' +
+	'"simple"  → small model (GPT-OSS-20B): straightforward implementation, clear spec, formulaic/boilerplate.\n' +
+	"Reply with exactly one word: complex OR simple";
+
+/**
+ * Calls the discriminator model to classify a prompt for routing.
+ * Falls back to "complex" (safe default) on any error.
+ */
+async function discriminatePrompt(
+	phase: string,
+	prompt: string,
+	memContext: string,
+	apiKey: string,
+): Promise<{ decision: "complex" | "simple"; energyJ: number }> {
+	const input = (memContext ? `${memContext}\n\n` : "") + `Classify (phase: ${phase}):\n${prompt.slice(0, 450)}`;
+	try {
+		const msg = await completeSimple(
+			DISCRIMINATOR_MODEL,
+			{
+				systemPrompt: DISCRIMINATOR_SYSTEM_PROMPT,
+				messages: [{ role: "user", content: input, timestamp: Date.now() }],
+			},
+			{ apiKey, maxTokens: 5 },
+		);
+		const raw = msg.content
+			.filter((c) => c.type === "text")
+			.map((c) => (c as { type: "text"; text: string }).text)
+			.join("")
+			.trim()
+			.toLowerCase();
+		const decision = raw.startsWith("simple") ? "simple" : "complex";
+		const tokensPerJoule = TOKENS_PER_JOULE[DISCRIMINATOR_MODEL.id] ?? 1.0;
+		const energyJ = msg.usage.totalTokens / tokensPerJoule;
+		return { decision, energyJ };
+	} catch {
+		return { decision: "complex", energyJ: 0 };
+	}
+}
+
 // -- Run configuration --------------------------------------------------------
 
 interface RunConfig {
@@ -254,6 +379,8 @@ interface RunConfig {
 	 * Use for task-specific requirements the LLM must satisfy.
 	 */
 	fixPromptExtra: string;
+	/** True when the challenge was generated via LLM (suppresses static-task memory hints). */
+	generated: boolean;
 }
 
 // tsx binary: prefer the one from the monorepo root node_modules
@@ -348,7 +475,6 @@ function extractText(message: AssistantMessage): string {
 
 function printTurnHeader(
 	mode: string,
-	_turnNum: number,
 	phase: string,
 	modelId: string,
 	decisionLabel: string,
@@ -378,13 +504,28 @@ function printTestResults(result: TestResult): void {
 
 // -- Run ----------------------------------------------------------------------
 
+/** Simplified phase key used as memory key, e.g. "Turn 2  [build 2/3]" → "build-2". */
+function simplifyPhase(phaseLabel: string): string {
+	const buildMatch = phaseLabel.match(/\[build (\d+)/);
+	if (buildMatch) return `build-${buildMatch[1]}`;
+	if (phaseLabel.includes("[consolidate]")) return "consolidate";
+	const fixMatch = phaseLabel.match(/\[fix #(\d+)\]/);
+	if (fixMatch) return `fix-${fixMatch[1]}`;
+	return phaseLabel.trim();
+}
+
 interface TurnResult {
 	turn: number;
+	phase: string;
 	model: string;
 	energy: number;
 	tokens: number;
+	/** Human-readable decision label shown in scorecard. */
 	decision: string;
-	overBudget: boolean;
+	/** EA mode: discriminator classification for this turn. */
+	discriminatorDecision?: "complex" | "simple";
+	/** EA mode: energy cost of the discriminator call itself. */
+	discriminatorEnergyJ: number;
 }
 
 interface RunStats {
@@ -398,23 +539,16 @@ interface RunStats {
 	turnsToPass?: number;
 	/** Test names that required fix turns this run (de-duplicated). */
 	failedTestNames: string[];
-}
-
-async function callModel(
-	model: Model<"openai-completions">,
-	messages: Message[],
-	apiKey: string,
-	maxTokens?: number,
-): Promise<AssistantMessage> {
-	return completeSimple(model, { systemPrompt: SYSTEM_PROMPT, messages }, { apiKey, maxTokens });
+	/** Total energy spent on discriminator calls (EA mode only). */
+	totalDiscriminatorEnergyJ: number;
 }
 
 async function runCodingAgent(
 	mode: "baseline" | "energy-aware",
-	policy: RuntimePolicy,
-	budget: EnergyBudget,
-	apiKey: string,
 	config: RunConfig,
+	mem: ReturnType<typeof loadMemory>,
+	apiKey: string,
+	budgetJ: number,
 ): Promise<RunStats> {
 	const stats: RunStats = {
 		mode,
@@ -424,75 +558,59 @@ async function runCodingAgent(
 		startTime: Date.now(),
 		endTime: 0,
 		failedTestNames: [],
+		totalDiscriminatorEnergyJ: 0,
 	};
 
 	const messages: Message[] = [];
-	const budgetJ = budget.energy_budget_joules ?? DEFAULT_BUDGET_JOULES;
 
 	console.log(`\n${"═".repeat(70)}`);
-	console.log(`  Running: ${mode.toUpperCase()} mode  |  Budget: ${budgetJ}J (informational, drives routing)`);
+	console.log(`  Running: ${mode.toUpperCase()} mode  |  Budget: ${budgetJ}J (display only)`);
+	if (mode === "energy-aware") {
+		console.log("  Routing: discriminator (GPT-OSS-20B) classifies each prompt → Kimi or GPT-OSS");
+	}
 	console.log(`${"═".repeat(70)}`);
 
 	/**
-	 * Execute one turn. Never aborts due to budget — over-budget turns route to
-	 * the cheapest model and are flagged in the turn record.
+	 * Execute one turn. In EA mode, calls the discriminator first to select model.
 	 */
 	async function runTurn(prompt: string, phaseLabel: string): Promise<void> {
 		const turnNum = stats.turns.length + 1;
-
-		const ctx: PolicyContext = {
-			turnNumber: turnNum,
-			model: DEFAULT_MODEL,
-			availableModels: NEURALWATT_MODELS,
-			budget,
-			consumedEnergy: stats.totalEnergy,
-			consumedTime: Date.now() - stats.startTime,
-			messageCount: messages.length,
-			estimatedInputTokens: messages.reduce((sum, m) => {
-				if (m.role === "user" && typeof m.content === "string") return sum + Math.round(m.content.length / 4);
-				if (m.role === "assistant") {
-					return (
-						sum +
-						m.content
-							.filter((c) => c.type === "text")
-							.reduce((s, c) => s + Math.round((c as { type: "text"; text: string }).text.length / 4), 0)
-					);
-				}
-				return sum;
-			}, 0),
-		};
-
-		const decision = policy.beforeModelCall(ctx);
+		const phase = simplifyPhase(phaseLabel);
 
 		let effectiveModel: Model<"openai-completions">;
 		let decisionLabel: string;
-		let overBudget = false;
+		let discriminatorDecision: "complex" | "simple" | undefined;
+		let discriminatorEnergyJ = 0;
 
-		if (decision.abort) {
-			// Over budget but continuing — force cheapest model to minimise further spend
-			overBudget = true;
-			effectiveModel = CHEAPEST_MODEL;
-			decisionLabel = `→ over budget (${decision.reason ?? "pressure >= 100%"}) — using ${CHEAPEST_MODEL.name}`;
+		if (mode === "energy-aware") {
+			const memCtx = buildDiscriminatorContext(phase, MEMORY_KEY, mem);
+			const result = await discriminatePrompt(phase, prompt, memCtx, apiKey);
+			discriminatorDecision = result.decision;
+			discriminatorEnergyJ = result.energyJ;
+			stats.totalDiscriminatorEnergyJ += discriminatorEnergyJ;
+
+			effectiveModel = discriminatorDecision === "complex" ? KIMI_MODEL : GPT_OSS_MODEL;
+			const modelLabel = discriminatorDecision === "complex" ? "Kimi K2.5" : "GPT-OSS 20B (2.8x more efficient)";
+			const memLabel = memCtx ? " \x1b[2m[memory-informed]\x1b[0m" : "";
+			decisionLabel = `↳ discriminated: ${discriminatorDecision} → ${modelLabel}${memLabel}  (${discriminatorEnergyJ.toFixed(1)}J overhead)`;
 		} else {
-			effectiveModel = (decision.model as Model<"openai-completions">) ?? DEFAULT_MODEL;
-			decisionLabel = decision.model
-				? `→ routed to ${decision.model.name ?? decision.model.id} (1.7x more energy-efficient)`
-				: decision.maxTokens
-					? `→ token limit reduced to ${decision.maxTokens} (budget pressure >= 50%)`
-					: "";
+			effectiveModel = DEFAULT_MODEL;
+			decisionLabel = "";
 		}
 
-		printTurnHeader(mode, turnNum, phaseLabel, effectiveModel.id, decisionLabel, stats.totalEnergy, budgetJ);
+		printTurnHeader(
+			mode,
+			`Turn ${turnNum}  ${phaseLabel}`,
+			effectiveModel.id,
+			decisionLabel,
+			stats.totalEnergy,
+			budgetJ,
+		);
 		console.log(`  \x1b[2m${prompt.slice(0, 90)}${prompt.length > 90 ? "…" : ""}\x1b[0m`);
 
 		messages.push({ role: "user", content: prompt, timestamp: Date.now() });
 
-		const assistantMsg = await callModel(
-			effectiveModel,
-			messages,
-			apiKey,
-			overBudget ? CHEAPEST_MODEL.maxTokens : decision.maxTokens,
-		);
+		const assistantMsg = await completeSimple(effectiveModel, { systemPrompt: SYSTEM_PROMPT, messages }, { apiKey });
 		messages.push(assistantMsg);
 
 		const energy = getEnergy(assistantMsg, effectiveModel.id);
@@ -503,49 +621,38 @@ async function runCodingAgent(
 		const energySource =
 			assistantMsg.energy?.energy_joules != null && assistantMsg.energy.energy_joules > 0 ? "api" : "est";
 		console.log(
-			`  \x1b[2m${tokens} tokens | ${energy.toFixed(3)}J [${energySource}] | input:${assistantMsg.usage.input} output:${assistantMsg.usage.output}\x1b[0m`,
+			`  \x1b[2m${tokens} tokens | ${energy.toFixed(1)}J [${energySource}] | input:${assistantMsg.usage.input} output:${assistantMsg.usage.output}\x1b[0m`,
 		);
 
 		const responseText = extractText(assistantMsg);
 		console.log(truncateCode(responseText, 10));
 
-		const usageWithEnergy: UsageWithEnergy = {
-			input: assistantMsg.usage.input,
-			output: assistantMsg.usage.output,
-			totalTokens: tokens,
-			cost: { total: assistantMsg.usage.cost.total },
-			energy_joules: energy,
-			energy_kwh: energy / 3_600_000,
-		};
-		policy.afterModelCall(ctx, usageWithEnergy);
-
 		stats.turns.push({
 			turn: turnNum,
+			phase,
 			model: effectiveModel.id,
 			energy,
 			tokens,
 			decision: decisionLabel,
-			overBudget,
+			discriminatorDecision,
+			discriminatorEnergyJ,
 		});
 	}
 
 	// -- Phase 1: Build --------------------------------------------------------
 	for (let i = 0; i < config.buildTurns.length; i++) {
-		await runTurn(
-			config.buildTurns[i],
-			`Turn ${stats.turns.length + 1}  [build ${i + 1}/${config.buildTurns.length}]`,
-		);
+		await runTurn(config.buildTurns[i], `[build ${i + 1}/${config.buildTurns.length}]`);
 	}
 
 	// -- Phase 2: Consolidate --------------------------------------------------
-	await runTurn(config.consolidatePrompt, `Turn ${stats.turns.length + 1}  [consolidate]`);
+	await runTurn(config.consolidatePrompt, "[consolidate]");
 
-	// If no acceptance test, we're done after consolidation
+	// If no acceptance test, done after consolidation
 	if (!config.acceptanceTest) {
 		stats.endTime = Date.now();
 		const elapsed = ((stats.endTime - stats.startTime) / 1000).toFixed(1);
 		console.log(
-			`\n  \x1b[1mDone: ${stats.turns.length} turns | ${stats.totalEnergy.toFixed(2)}J | ${stats.totalTokens} tokens | ${elapsed}s\x1b[0m`,
+			`\n  \x1b[1mDone: ${stats.turns.length} turns | ${stats.totalEnergy.toFixed(0)}J | ${stats.totalTokens} tokens | ${elapsed}s\x1b[0m`,
 		);
 		return stats;
 	}
@@ -570,7 +677,7 @@ async function runCodingAgent(
 		let fixAttempt = 0;
 		while (!testResult.passed) {
 			fixAttempt++;
-			const fixTurnLabel = `Turn ${stats.turns.length + 1}  [fix #${fixAttempt}]`;
+			const fixTurnLabel = `[fix #${fixAttempt}]`;
 			const failureSummary = testResult.failedTests.map((f) => `  - ${f}`).join("\n");
 			const fixPrompt =
 				`The acceptance tests failed:\n${failureSummary}\n\n` +
@@ -592,7 +699,7 @@ async function runCodingAgent(
 					`\n  \x1b[32m✓ All acceptance tests passed on turn ${stats.turns.length} (+${fixAttempt} fix${fixAttempt !== 1 ? "es" : ""})\x1b[0m`,
 				);
 			} else {
-				// Record any newly-failing tests during fix iterations
+				// Track any newly-failing tests during fix iterations
 				for (const f of testResult.failedTests) {
 					const name = f.includes(": ") ? f.slice(0, f.indexOf(": ")) : f;
 					if (!stats.failedTestNames.includes(name)) stats.failedTestNames.push(name);
@@ -607,7 +714,7 @@ async function runCodingAgent(
 	stats.endTime = Date.now();
 	const elapsed = ((stats.endTime - stats.startTime) / 1000).toFixed(1);
 	console.log(
-		`\n  \x1b[1mDone: ${stats.turns.length} turns | ${stats.totalEnergy.toFixed(2)}J | ${stats.totalTokens} tokens | ${elapsed}s\x1b[0m`,
+		`\n  \x1b[1mDone: ${stats.turns.length} turns | ${stats.totalEnergy.toFixed(0)}J | ${stats.totalTokens} tokens | ${elapsed}s\x1b[0m`,
 	);
 	return stats;
 }
@@ -621,11 +728,11 @@ function printScorecard(baseline: RunStats, energyAware: RunStats, config: RunCo
 		baseline.totalEnergy > 0 ? ((baseline.totalEnergy - energyAware.totalEnergy) / baseline.totalEnergy) * 100 : 0;
 	const timeDelta = baseTime > 0 ? ((eaTime - baseTime) / baseTime) * 100 : 0;
 
-	const devstralPrice = 0.12 / 1_000_000;
+	const kimiPrice = 1.327 / 1_000_000;
 	const gptPrice = 0.1 / 1_000_000;
-	const baseCost = baseline.turns.reduce((sum, t) => sum + t.tokens * devstralPrice, 0);
+	const baseCost = baseline.turns.reduce((sum, t) => sum + t.tokens * kimiPrice, 0);
 	const eaCost = energyAware.turns.reduce(
-		(sum, t) => sum + t.tokens * (t.model.includes("gpt-oss") ? gptPrice : devstralPrice),
+		(sum, t) => sum + t.tokens * (t.model.includes("gpt-oss") ? gptPrice : kimiPrice),
 		0,
 	);
 	const costSaved = baseCost > 0 ? ((baseCost - eaCost) / baseCost) * 100 : 0;
@@ -643,21 +750,33 @@ function printScorecard(baseline: RunStats, energyAware: RunStats, config: RunCo
 		return "✗ FAILED             ";
 	};
 
-	const eaOverBudgetTurns = energyAware.turns.filter((t) => t.overBudget).length;
+	// Model distribution for EA mode
+	const eaKimiTurns = energyAware.turns.filter((t) => t.model === KIMI_MODEL.id).length;
+	const eaGptTurns = energyAware.turns.filter((t) => t.model === GPT_OSS_MODEL.id).length;
+	const eaModelLabel = `Kimi: ${eaKimiTurns}, GPT-OSS: ${eaGptTurns} (discriminator)`;
 
 	console.log(`\n${"═".repeat(70)}`);
 	console.log("  FINAL SCORECARD — Coding Agent Energy Challenge");
 	console.log(`${"═".repeat(70)}`);
-	console.log(`  Budget: ${budget}J (informational)  |  Devstral -> GPT-OSS-20B at >70% pressure`);
+	console.log(`  Task:   ${config.taskLabel}`);
+	console.log(
+		`  Budget: ${budget}J (display)  |  ${config.generated ? "LLM-generated challenge" : "hardcoded rate-limiter"}`,
+	);
 	console.log("  +-----------------+-------------------+---------------------------+");
 	console.log("  |                 | Baseline          | Energy-Aware              |");
 	console.log("  +-----------------+-------------------+---------------------------+");
+	console.log(`  | Model(s)        | ${"Kimi K2.5 (all)".padEnd(17)} | ${eaModelLabel.padEnd(25)} |`);
 	console.log(
 		`  | Turns           | ${String(baseline.turns.length).padEnd(17)} | ${String(energyAware.turns.length).padEnd(25)} |`,
 	);
 	console.log(
 		`  | Energy used     | ${`${baseline.totalEnergy.toFixed(0)} J`.padEnd(17)} | ${`${energyAware.totalEnergy.toFixed(0)} J  (${fmtDelta(-energySaved, "-")} saved)`.padEnd(25)} |`,
 	);
+	if (energyAware.totalDiscriminatorEnergyJ > 0) {
+		console.log(
+			`  | Discriminator   | ${"n/a".padEnd(17)} | ${`${energyAware.totalDiscriminatorEnergyJ.toFixed(1)}J overhead (${energyAware.turns.length} calls)`.padEnd(25)} |`,
+		);
+	}
 	console.log(
 		`  | Est. cost       | ${`$${baseCost.toFixed(4)}`.padEnd(17)} | ${`$${eaCost.toFixed(4)}  (${fmtDelta(-costSaved, "-")} saved)`.padEnd(25)} |`,
 	);
@@ -672,18 +791,14 @@ function printScorecard(baseline: RunStats, energyAware: RunStats, config: RunCo
 	}
 	console.log("  +-----------------+-------------------+---------------------------+");
 
-	if (eaOverBudgetTurns > 0) {
-		console.log(
-			`\n  Note: energy-aware ran ${eaOverBudgetTurns} turn${eaOverBudgetTurns !== 1 ? "s" : ""} over budget (continued on ${CHEAPEST_MODEL.name})`,
-		);
-	}
-
-	const eaDecisions = energyAware.turns.filter((t) => t.decision);
+	// Per-turn routing decisions for EA
+	const eaDecisions = energyAware.turns.filter((t) => t.discriminatorDecision);
 	if (eaDecisions.length > 0) {
-		console.log("\n  POLICY DECISIONS (energy-aware):");
+		console.log("\n  DISCRIMINATOR DECISIONS (energy-aware):");
 		for (const t of eaDecisions) {
-			const overLabel = t.overBudget ? " \x1b[31m[over budget]\x1b[0m" : "";
-			console.log(`    Turn ${t.turn}: ${t.decision}${overLabel}`);
+			const icon = t.discriminatorDecision === "complex" ? "\x1b[33m▲ complex\x1b[0m" : "\x1b[32m▼ simple \x1b[0m";
+			const model = t.discriminatorDecision === "complex" ? "Kimi K2.5   " : "GPT-OSS 20B";
+			console.log(`    ${t.phase.padEnd(14)} ${icon} → ${model}  ${t.energy.toFixed(0)}J`);
 		}
 	}
 
@@ -728,10 +843,30 @@ function updateCodingMemory(mem: ReturnType<typeof loadMemory>, baseStats: RunSt
 		baseStats.totalEnergy > 0 ? ((baseStats.totalEnergy - eaStats.totalEnergy) / baseStats.totalEnergy) * 100 : 0;
 	const avgEnergySavingsPct = (prev.avgEnergySavingsPct * prev.runs + energySavedPct) / runs;
 
-	// Merge failed test names from both runs into cumulative counts
+	// Merge failed test names from both runs
 	const failedTestCounts: Record<string, number> = { ...(prev.failedTestCounts ?? {}) };
 	for (const name of [...baseStats.failedTestNames, ...eaStats.failedTestNames]) {
 		failedTestCounts[name] = (failedTestCounts[name] ?? 0) + 1;
+	}
+
+	// Update per-phase discriminator routing stats (EA mode only)
+	const phaseRouting: Record<string, PhaseRoutingStats> = { ...(prev.phaseRouting ?? {}) };
+	for (const turn of eaStats.turns) {
+		if (!turn.discriminatorDecision) continue;
+		const existing: PhaseRoutingStats = phaseRouting[turn.phase] ?? {
+			complexCount: 0,
+			simpleCount: 0,
+			complexPassCount: 0,
+			simplePassCount: 0,
+		};
+		if (turn.discriminatorDecision === "complex") {
+			existing.complexCount++;
+			if (eaStats.testPassed) existing.complexPassCount++;
+		} else {
+			existing.simpleCount++;
+			if (eaStats.testPassed) existing.simplePassCount++;
+		}
+		phaseRouting[turn.phase] = existing;
 	}
 
 	mem.coding[MEMORY_KEY] = {
@@ -742,6 +877,7 @@ function updateCodingMemory(mem: ReturnType<typeof loadMemory>, baseStats: RunSt
 		avgTurnsEA,
 		avgEnergySavingsPct,
 		failedTestCounts,
+		phaseRouting,
 		lastUpdated: new Date().toISOString(),
 	};
 }
@@ -754,6 +890,7 @@ async function main(): Promise<void> {
 			budget: { type: "string", default: String(DEFAULT_BUDGET_JOULES) },
 			task: { type: "string" },
 			acceptance: { type: "string" }, // path to a custom acceptance test .ts file
+			static: { type: "boolean", default: false }, // use hardcoded rate-limiter task
 			"clear-memory": { type: "boolean", default: false },
 		},
 		allowPositionals: true,
@@ -769,13 +906,19 @@ async function main(): Promise<void> {
 		console.log("Memory cleared.");
 	}
 
+	registerBuiltInApiProviders();
+
 	const apiKey = process.env.NEURALWATT_API_KEY;
 	const budgetJ = Number(values.budget);
 
-	// Build RunConfig from CLI args
+	// Load memory before building config so we can inject hints for static task
+	const mem = loadMemory();
+
+	// -- Build RunConfig -------------------------------------------------------
 	let config: RunConfig;
+
 	if (values.task) {
-		// Custom single-turn task
+		// Custom single-turn task from CLI
 		let acceptanceTest: string | null = null;
 		if (values.acceptance) {
 			acceptanceTest = readFileSync(values.acceptance, "utf8");
@@ -783,40 +926,64 @@ async function main(): Promise<void> {
 		config = {
 			taskLabel: values.task.slice(0, 60),
 			buildTurns: [values.task],
-			consolidatePrompt: GENERIC_CONSOLIDATE_PROMPT,
+			consolidatePrompt:
+				"Write the final complete implementation as a single TypeScript file named impl.ts, " +
+				"incorporating everything built so far. " +
+				"Export all public types and functions. " +
+				"No external imports. Output raw TypeScript only — no markdown fences.",
 			acceptanceTest,
 			fixPromptExtra: "",
+			generated: false,
 		};
-	} else {
-		// Default rate-limiter task
+	} else if (values.static) {
+		// Hardcoded rate-limiter task — inject memory hints if available
+		const memHints = codingMemoryHints(MEMORY_KEY, mem);
+		const consolidatePrompt = memHints ? memHints + DEFAULT_CONSOLIDATE_PROMPT : DEFAULT_CONSOLIDATE_PROMPT;
 		config = {
 			taskLabel: "TypeScript rate-limiting middleware with acceptance tests",
 			buildTurns: DEFAULT_BUILD_TURNS,
-			consolidatePrompt: DEFAULT_CONSOLIDATE_PROMPT,
+			consolidatePrompt,
 			acceptanceTest: DEFAULT_ACCEPTANCE_TEST,
 			fixPromptExtra: DEFAULT_FIX_EXTRA,
+			generated: false,
 		};
+	} else {
+		// Default: generate a fresh challenge via LLM (defeats KV caching)
+		const generated = await generateChallenge(apiKey);
+		if (generated) {
+			config = {
+				taskLabel: generated.taskLabel,
+				buildTurns: generated.buildTurns,
+				consolidatePrompt: generated.consolidatePrompt,
+				acceptanceTest: generated.acceptanceTest,
+				fixPromptExtra:
+					"Re-implement the complete solution satisfying all exports specified in the consolidation prompt.",
+				generated: true,
+			};
+		} else {
+			// Fallback: hardcoded task
+			config = {
+				taskLabel: "TypeScript rate-limiting middleware with acceptance tests",
+				buildTurns: DEFAULT_BUILD_TURNS,
+				consolidatePrompt: DEFAULT_CONSOLIDATE_PROMPT,
+				acceptanceTest: DEFAULT_ACCEPTANCE_TEST,
+				fixPromptExtra: DEFAULT_FIX_EXTRA,
+				generated: false,
+			};
+		}
 	}
 
-	registerBuiltInApiProviders();
-
-	// Load and display memory (only for default task — key is task-specific)
-	const mem = loadMemory();
-	const memSummary = values.task ? null : formatCodingMemory(MEMORY_KEY, mem);
-	const memHints = values.task ? null : codingMemoryHints(MEMORY_KEY, mem);
-
-	// Inject learned constraints into consolidation prompt so second+ runs avoid known failures
-	if (memHints) {
-		config.consolidatePrompt = memHints + config.consolidatePrompt;
-	}
+	// Display memory summary
+	const memSummary = formatCodingMemory(MEMORY_KEY, mem);
+	const phaseRoutingSummary = formatPhaseRouting(MEMORY_KEY, mem);
+	const memHintsInjected = !config.generated && !!codingMemoryHints(MEMORY_KEY, mem);
+	const numHints = Object.keys(mem.coding[MEMORY_KEY]?.failedTestCounts ?? {}).length;
 
 	console.log("╔══════════════════════════════════════════════════════════════════════╗");
 	console.log("║               Coding Agent Energy Challenge                         ║");
 	console.log(`║  Task:   ${config.taskLabel.padEnd(60)}║`);
-	console.log(`║  Model:  ${DEFAULT_MODEL.id.padEnd(60)}║`);
-	console.log(
-		`║  Budget: ${`${budgetJ}J — token limits at >50% (~${Math.round(budgetJ * 0.5)}J), routing at >70% (~${Math.round(budgetJ * 0.7)}J)`.padEnd(60)}║`,
-	);
+	console.log(`║  Model:  ${`Kimi K2.5 (baseline) + GPT-OSS-20B (discriminator/simple)`.padEnd(60)}║`);
+	console.log(`║  Budget: ${`${budgetJ}J (display)`.padEnd(60)}║`);
 	console.log(
 		`║  Phases: build (${config.buildTurns.length}) + consolidate (1) + acceptance-test loop (no turn limit) ║`,
 	);
@@ -825,38 +992,30 @@ async function main(): Promise<void> {
 	}
 	console.log("╠══════════════════════════════════════════════════════════════════════╣");
 	console.log("║  Flags:  --budget N  --task '...'  --acceptance file.ts             ║");
-	console.log("║          --clear-memory  (wipe learned routing stats)               ║");
+	console.log("║          --static  (hardcoded task)  --clear-memory                 ║");
 	console.log("╚══════════════════════════════════════════════════════════════════════╝");
 
 	if (memSummary) {
 		console.log(memSummary);
-		if (memHints) {
-			const numHints = Object.keys(mem.coding[MEMORY_KEY]?.failedTestCounts ?? {}).length;
+		if (phaseRoutingSummary) console.log(phaseRoutingSummary);
+		if (memHintsInjected) {
 			console.log(
-				`  Hints:  ${numHints} learned constraint${numHints !== 1 ? "s" : ""} injected into consolidation prompt`,
+				`  Hints:  ${numHints} learned constraint${numHints !== 1 ? "s" : ""} injected into consolidation prompt (--static mode)`,
 			);
 		}
-	} else if (!values.task) {
+	} else {
 		console.log("  Memory: No previous runs recorded.");
 	}
 
-	const baselineStats = await runCodingAgent("baseline", new BaselinePolicy(), {}, apiKey, config);
-	const energyAwareStats = await runCodingAgent(
-		"energy-aware",
-		new EnergyAwarePolicy(),
-		{ energy_budget_joules: budgetJ },
-		apiKey,
-		config,
-	);
+	const baselineStats = await runCodingAgent("baseline", config, mem, apiKey, budgetJ);
+	const energyAwareStats = await runCodingAgent("energy-aware", config, mem, apiKey, budgetJ);
 
 	printScorecard(baselineStats, energyAwareStats, config, budgetJ);
 
-	// Persist memory for default task only
-	if (!values.task) {
-		updateCodingMemory(mem, baselineStats, energyAwareStats);
-		saveMemory(mem);
-		console.log(`\n  Memory saved to ~/.energy-demo-memory.json`);
-	}
+	// Persist memory (always — discriminator routing is task-independent)
+	updateCodingMemory(mem, baselineStats, energyAwareStats);
+	saveMemory(mem);
+	console.log(`\n  Memory saved to ~/.energy-demo-memory.json`);
 }
 
 main().catch((err) => {
