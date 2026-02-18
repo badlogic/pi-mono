@@ -2,12 +2,14 @@
  * Demo 2: HackerNews Energy-Aware Watcher
  *
  * Polls real HackerNews top stories and uses a Neuralwatt LLM to score each
- * title's relevance against AI-focused keywords. Runs baseline and energy-aware
+ * title's relevance against configurable keywords. Runs baseline and energy-aware
  * policies side by side — energy savings compound as the budget tightens,
- * triggering routing from neuralwatt-standard down to neuralwatt-mini.
+ * triggering routing from Kimi K2.5 down to GPT-OSS-20B (13x cheaper, 2.8x
+ * more energy-efficient).
  *
  * Usage:
  *   npx tsx src/demos/hn-watcher.ts [--duration <seconds>] [--budget <joules>]
+ *     [--keywords "AI,LLM,GPU,RAG"]
  *
  * Requires NEURALWATT_API_KEY in the environment.
  */
@@ -34,7 +36,7 @@ import {
 const HN_TOP_URL = "https://hacker-news.firebaseio.com/v0/topstories.json";
 const HN_ITEM_URL = "https://hacker-news.firebaseio.com/v0/item";
 
-const SEED_KEYWORDS = [
+const DEFAULT_KEYWORDS = [
 	"AI agents",
 	"LLM inference",
 	"energy efficiency",
@@ -74,33 +76,33 @@ const NEURALWATT_MODELS: Model<"openai-completions">[] = [
 		maxTokens: 4_096,
 	},
 	{
-		// Default: 0.809 tokens/J, $0.12/$0.12/1M — strong multilingual text model
-		id: "mistralai/Devstral-Small-2-24B-Instruct-2512",
-		name: "Devstral Small 24B",
+		// Default: 0.482 tokens/J, $1.327/$1.327/1M — flagship 262K-context model
+		id: "moonshotai/Kimi-K2.5",
+		name: "Kimi K2.5",
 		api: "openai-completions",
 		provider: "neuralwatt",
 		baseUrl: "https://api.neuralwatt.com/v1",
 		reasoning: false,
 		input: ["text"],
-		cost: { input: 0.12, output: 0.12, cacheRead: 0, cacheWrite: 0 },
+		cost: { input: 1.327, output: 1.327, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: 262_144,
-		maxTokens: 8_192,
+		maxTokens: 16_384,
 	},
 ];
 
 /**
- * Start on Devstral-Small (0.809 tokens/J) — policy will route to
- * GPT-OSS-20B (1.371 tokens/J, 1.7x more efficient) at >70% budget pressure.
+ * Start on Kimi K2.5 (0.482 tokens/J) — policy will route to
+ * GPT-OSS-20B (1.371 tokens/J, 2.8x more efficient, 13x cheaper) at >70% budget pressure.
  */
 const SCORING_MODEL = NEURALWATT_MODELS[1];
 
 const DEFAULT_DURATION_S = 120;
 /**
- * Budget sized so routing kicks in after ~7 stories.
- * Devstral-Small at 0.809 tokens/J with ~250 tokens per scoring call ≈ 309J each.
- * Budget 2000J: routing fires at story 7 (2100J / 2000J = 70%+ pressure).
+ * Budget sized so routing kicks in after ~5 stories.
+ * Kimi K2.5 at 0.482 tokens/J with ~250 tokens per scoring call ≈ 519J each.
+ * Budget 3500J: routing fires at story 5 (2595J / 3500J = 74%+ pressure).
  */
-const DEFAULT_BUDGET_JOULES = 2_000;
+const DEFAULT_BUDGET_JOULES = 3_500;
 
 // -- Types --------------------------------------------------------------------
 
@@ -164,6 +166,7 @@ async function fetchStory(id: number): Promise<HNStory | null> {
 
 async function scoreStoryLLM(
 	title: string,
+	keywords: string[],
 	model: Model<"openai-completions">,
 	apiKey: string,
 	maxTokens?: number,
@@ -174,7 +177,7 @@ async function scoreStoryLLM(
 
 	const userPrompt =
 		`Score the relevance of this HackerNews story to AI/ML research topics.\n\n` +
-		`Topics of interest: ${SEED_KEYWORDS.join(", ")}.\n\n` +
+		`Topics of interest: ${keywords.join(", ")}.\n\n` +
 		`Scoring guide:\n` +
 		`  0.9-1.0 — Directly about AI models, training, inference, or AI companies\n` +
 		`  0.6-0.9 — Broadly about AI tools, AI applications, or AI-adjacent compute\n` +
@@ -203,6 +206,7 @@ async function scoreStoryLLM(
 
 async function scoreWithPolicy(
 	title: string,
+	keywords: string[],
 	storyIndex: number,
 	policy: RuntimePolicy,
 	budget: EnergyBudget,
@@ -240,7 +244,7 @@ async function scoreWithPolicy(
 	}
 
 	const effectiveModel = (decision.model as Model<"openai-completions">) ?? SCORING_MODEL;
-	const { score, message } = await scoreStoryLLM(title, effectiveModel, apiKey, decision.maxTokens);
+	const { score, message } = await scoreStoryLLM(title, keywords, effectiveModel, apiKey, decision.maxTokens);
 	const energy = getEnergy(message, effectiveModel.id);
 	const tokens = message.usage.totalTokens;
 
@@ -288,12 +292,28 @@ function truncate(s: string, maxLen: number): string {
 	return s.length <= maxLen ? s : `${s.slice(0, maxLen - 1)}…`;
 }
 
-function energyBar(consumed: number, budget: number, width = 24): string {
-	const pct = budget > 0 ? Math.min(1, consumed / budget) : 0;
+function energyBar(consumed: number, budget: number, width = 22): string {
+	const pct = Math.min(1, consumed / budget);
 	const filled = Math.round(pct * width);
+	const color = pct >= 0.9 ? "\x1b[31m" : pct >= 0.7 ? "\x1b[33m" : "\x1b[32m";
 	const bar = "█".repeat(filled) + "░".repeat(width - filled);
-	return `[${bar}] ${consumed.toFixed(2)}J / ${budget}J (${Math.round(pct * 100)}%)`;
+	return `${color}[${bar}]\x1b[0m ${consumed.toFixed(0)}J / ${budget}J (${Math.round(pct * 100)}%)`;
 }
+
+function baselineBar(consumed: number, width = 22): string {
+	// Baseline has no budget — show a purely informational climbing bar
+	const bar = "▓".repeat(width);
+	return `\x1b[2m[${bar}]\x1b[0m ${consumed.toFixed(0)}J (no limit)`;
+}
+
+const modelShort = (id: string): string => {
+	if (id.includes("gpt-oss")) return "gpt-oss-20b";
+	if (id.includes("Devstral")) return "devstral-24b";
+	if (id.includes("deepseek")) return "deepseek-33b";
+	if (id.includes("Kimi")) return "kimi-k2.5";
+	if (id.includes("Qwen")) return "qwen3-480b";
+	return id.split("/").pop()?.slice(0, 12) ?? id.slice(0, 12);
+};
 
 function renderDisplay(
 	elapsed: number,
@@ -313,36 +333,53 @@ function renderDisplay(
 	const ss = remaining % 60;
 	const timeStr = `${mm}m ${String(ss).padStart(2, "0")}s`;
 
-	const totalEnergy = baseStats.totalEnergy + eaStats.totalEnergy;
+	// Compute savings vs equivalent baseline stories
+	const eaStoryCount = eaStats.storiesScored;
+	const baselineEnergyForSameStories =
+		eaStoryCount > 0 && baseStats.storiesScored >= eaStoryCount
+			? (baseStats.totalEnergy / baseStats.storiesScored) * eaStoryCount
+			: baseStats.totalEnergy;
+	const saved =
+		baselineEnergyForSameStories > 0
+			? ((baselineEnergyForSameStories - eaStats.totalEnergy) / baselineEnergyForSameStories) * 100
+			: 0;
 
 	console.log("╔══════════════════════════════════════════════════════════════════════╗");
 	console.log("║              HackerNews Energy-Aware Watcher                        ║");
 	console.log("╚══════════════════════════════════════════════════════════════════════╝");
-	console.log(`  Time remaining: ${timeStr}   Budget: ${energyBar(totalEnergy, budget * 2)}`);
+	console.log(`  Time remaining: ${timeStr}`);
+	console.log(
+		`  [baseline  ] ${baselineBar(baseStats.totalEnergy)}  ${baseStats.storiesScored} stories, still running…`,
+	);
 
-	if (lastDecision) {
-		console.log(`  [policy] ${lastDecision}`);
+	if (eaStats.aborted) {
+		const savingsStr = saved > 0 ? `  \x1b[32m— used ${saved.toFixed(0)}% less energy than baseline\x1b[0m` : "";
+		console.log(
+			`  [energy-▼  ] ${energyBar(eaStats.totalEnergy, budget)}  ${eaStats.storiesScored} stories \x1b[32m✓ DONE\x1b[0m${savingsStr}`,
+		);
 	} else {
-		console.log("");
+		console.log(`  [energy-▼  ] ${energyBar(eaStats.totalEnergy, budget)}  ${eaStats.storiesScored} stories`);
+		if (lastDecision) {
+			console.log(`               \x1b[33m[policy] ${lastDecision}\x1b[0m`);
+		}
 	}
 
 	console.log("");
-	console.log(`  ─── NOW SCORING ───────────────────────────────────────────────────`);
-	console.log(`  → "${truncate(currentTitle || "Fetching stories…", 68)}"`);
+
+	if (eaStats.aborted) {
+		// After budget exhaustion: show baseline still scoring, ea results frozen
+		console.log(`  ─── BASELINE (still scoring) ──────────────────────────────────────`);
+		console.log(`  → "${truncate(currentTitle || "Fetching stories…", 68)}"`);
+	} else {
+		console.log(`  ─── NOW SCORING ───────────────────────────────────────────────────`);
+		console.log(`  → "${truncate(currentTitle || "Fetching stories…", 68)}"`);
+	}
 	console.log("");
 
-	// Side-by-side results
-	console.log(`  ${"[baseline  / devstral-24b]".padEnd(COL + 4)}  [energy-aware / policy-driven]`);
+	// Side-by-side results header
+	const eaHeader = eaStats.aborted ? "[energy-aware / ✓ BUDGET REACHED]" : "[energy-aware / policy-driven]";
+	console.log(`  ${"[baseline  / kimi-k2.5]".padEnd(COL + 4)}  ${eaHeader}`);
 	console.log(`  ${"─".repeat(COL + 4)}  ${"─".repeat(COL)}`);
-
-	const modelShort = (id: string): string => {
-		if (id.includes("gpt-oss")) return "gpt-oss-20b";
-		if (id.includes("Devstral")) return "devstral-24b";
-		if (id.includes("deepseek")) return "deepseek-33b";
-		if (id.includes("Kimi")) return "kimi-k2.5";
-		if (id.includes("Qwen")) return "qwen3-480b";
-		return id.split("/").pop()?.slice(0, 12) ?? id.slice(0, 12);
-	};
 
 	const rows = Math.max(recentBase.length, recentEa.length);
 	for (let i = rows - 1; i >= 0; i--) {
@@ -354,7 +391,7 @@ function renderDisplay(
 		const eCol = e
 			? `${stars(e.score)} ${e.score.toFixed(2)} ${e.energy_joules.toFixed(0)}J [${modelShort(e.model)}] ${e.decision}`
 			: eaStats.aborted
-				? "(budget exhausted)"
+				? "\x1b[2m(energy-aware complete)\x1b[0m"
 				: "";
 		console.log(`  ${pad(bCol, COL + 4)}  ${eCol}`);
 		const bTitle = b ? truncate(b.title, COL + 2) : "";
@@ -375,19 +412,8 @@ function renderDisplay(
 		}
 	}
 
-	console.log("");
-	console.log("  ─── TOTALS ─────────────────────────────────────────────────────────");
-
-	const saved =
-		baseStats.totalEnergy > 0 ? ((baseStats.totalEnergy - eaStats.totalEnergy) / baseStats.totalEnergy) * 100 : 0;
-	console.log(
-		`  Baseline:     ${String(baseStats.storiesScored).padStart(3)} stories | ${baseStats.totalEnergy.toFixed(2)}J | ${baseStats.highRelevance.length} high-relevance`,
-	);
-	console.log(
-		`  Energy-aware: ${String(eaStats.storiesScored).padStart(3)} stories | ${eaStats.totalEnergy.toFixed(2)}J | ${eaStats.highRelevance.length} high-relevance${saved > 0 ? `  \x1b[32m(saved ${saved.toFixed(0)}%)\x1b[0m` : ""}`,
-	);
-
-	if (eaStats.policyDecisions.length > 0) {
+	// Policy decisions
+	if (!eaStats.aborted && eaStats.policyDecisions.length > 0) {
 		console.log("");
 		const recent = eaStats.policyDecisions.slice(-3);
 		for (const d of recent) {
@@ -410,7 +436,7 @@ function printFinalSummary(baseStats: WatcherStats, eaStats: WatcherStats, elaps
 	console.log("  +-----------------+---------------+---------------------------+");
 	console.log("  |                 | Baseline      | Energy-Aware              |");
 	console.log("  +-----------------+---------------+---------------------------+");
-	console.log(`  | Model           | ${pad("devstral-24b", 13)} | ${pad("devstral → gpt-oss (routed)", 25)} |`);
+	console.log(`  | Model           | ${pad("kimi-k2.5", 13)} | ${pad("kimi → gpt-oss (routed)", 25)} |`);
 	console.log(
 		`  | Stories scored  | ${pad(String(baseStats.storiesScored), 13)} | ${pad(String(eaStats.storiesScored), 25)} |`,
 	);
@@ -453,6 +479,7 @@ async function main(): Promise<void> {
 		options: {
 			duration: { type: "string", default: String(DEFAULT_DURATION_S) },
 			budget: { type: "string", default: String(DEFAULT_BUDGET_JOULES) },
+			keywords: { type: "string" }, // Comma-separated list, e.g. "AI,LLM,GPU"
 		},
 		allowPositionals: true,
 	});
@@ -465,10 +492,19 @@ async function main(): Promise<void> {
 	const apiKey = process.env.NEURALWATT_API_KEY;
 	const durationS = Number(values.duration);
 	const budgetJ = Number(values.budget);
+	const keywords = values.keywords
+		? values.keywords
+				.split(",")
+				.map((k) => k.trim())
+				.filter(Boolean)
+		: DEFAULT_KEYWORDS;
 
 	registerBuiltInApiProviders();
 
 	console.log("Fetching HackerNews top stories…");
+	if (values.keywords) {
+		console.log(`Keywords: ${keywords.join(", ")}`);
+	}
 	const topIds = await fetchTopStoryIds();
 	console.log(`Found ${topIds.length} stories. Running for ${durationS}s with ${budgetJ}J budget per run.\n`);
 
@@ -521,6 +557,7 @@ async function main(): Promise<void> {
 		const [baseResult, eaResult] = await Promise.all([
 			scoreWithPolicy(
 				story.title,
+				keywords,
 				baseStats.storiesScored,
 				baselinePolicy,
 				baseBudget,
@@ -532,6 +569,7 @@ async function main(): Promise<void> {
 				? Promise.resolve(null)
 				: scoreWithPolicy(
 						story.title,
+						keywords,
 						eaStats.storiesScored,
 						energyAwarePolicy,
 						eaBudget,

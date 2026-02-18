@@ -10,15 +10,15 @@
  *
  * Baseline: uses Devstral-Small throughout (full quality, full energy).
  * Energy-aware: starts on Devstral-Small, routes to GPT-OSS-20B at >70%
- * budget pressure, reduces token limits at >50% — saving energy while
- * completing the task.
+ * budget pressure (1.2x cost reduction, 1.7x more energy-efficient) — saving
+ * energy while completing the task.
  *
  * Energy benchmarks from portal.neuralwatt.com:
- *   Devstral-Small-2-24B: 0.809 tokens/J  ($0.12/$0.12 per 1M)
- *   GPT-OSS-20B:          1.371 tokens/J  ($0.10/$0.10 per 1M)  ← 1.7x more efficient
+ *   Devstral-Small: 0.809 tokens/J  ($0.12/$0.12 per 1M)
+ *   GPT-OSS-20B:    1.371 tokens/J  ($0.10/$0.10 per 1M)  ← 1.7x more efficient
  *
  * Usage:
- *   npx tsx src/demos/coding-agent.ts [--budget <joules>]
+ *   npx tsx src/demos/coding-agent.ts [--budget <joules>] [--task "custom task"]
  *
  * Requires NEURALWATT_API_KEY in the environment.
  */
@@ -63,7 +63,7 @@ const NEURALWATT_MODELS: Model<"openai-completions">[] = [
 		maxTokens: 4_096,
 	},
 	{
-		// Default: 0.809 tokens/J, $0.12/$0.12/1M — good coding model
+		// Default: 0.809 tokens/J, $0.12/$0.12/1M — reliable coding model with predictable output
 		id: "mistralai/Devstral-Small-2-24B-Instruct-2512",
 		name: "Devstral Small 24B",
 		api: "openai-completions",
@@ -80,9 +80,10 @@ const NEURALWATT_MODELS: Model<"openai-completions">[] = [
 const DEFAULT_MODEL = NEURALWATT_MODELS[1]; // Devstral-Small — routes to GPT-OSS at >70%
 
 /**
- * Budget sized so routing kicks in around turn 4 of 6.
- * Devstral-Small at 0.809 tokens/J: each turn costs ~600-3000J as context grows.
- * At ~6000J total budget, routing fires around turn 4 when context grows large.
+ * Budget calibrated to show the full 5-strategy policy cascade:
+ * Devstral-Small cumulative after 4 turns ≈ 3400J → ~56% of 6000J → token reduction fires.
+ * After turn 5 ≈ 5300J → ~88% of 6000J → routing fires for turn 6.
+ * Both interventions visible in sequence, all 6 turns complete.
  */
 const DEFAULT_BUDGET_JOULES = 6_000;
 
@@ -91,11 +92,12 @@ const DEFAULT_BUDGET_JOULES = 6_000;
 const SYSTEM_PROMPT =
 	"You are an expert TypeScript engineer. " +
 	"Implement code concisely and correctly. " +
-	"Include TypeScript types, JSDoc for public APIs, and production-quality error handling. " +
-	"Each response should be focused — implement only what is asked in the current turn.";
+	"Include TypeScript types and JSDoc for public APIs. " +
+	"Each response should be tightly focused — implement only what is asked. " +
+	"No preamble, no prose explanations, just the code.";
 
-/** Ordered turns for the coding task. */
-const TURNS = [
+/** Default multi-turn task: TypeScript rate-limiting middleware (6 turns). */
+const DEFAULT_TURNS = [
 	"Design a TypeScript interface for a rate limiter: RateLimiterOptions (windowMs, maxRequests, keyFn) and RateLimiterState (map of key → {count, resetAt}). Keep it concise.",
 	"Implement a RateLimiter class using those interfaces. Include: constructor(options), isAllowed(key): boolean method that enforces the sliding window. Add JSDoc.",
 	"Write an Express-style middleware factory: createRateLimitMiddleware(options: RateLimiterOptions): (req, res, next) => void. It should set X-RateLimit-Remaining and X-RateLimit-Reset headers, and return 429 with a JSON error when the limit is exceeded.",
@@ -182,6 +184,7 @@ async function runCodingAgent(
 	policy: RuntimePolicy,
 	budget: EnergyBudget,
 	apiKey: string,
+	turns: string[],
 ): Promise<RunStats> {
 	const stats: RunStats = {
 		mode,
@@ -199,9 +202,9 @@ async function runCodingAgent(
 	console.log(`  Running: ${mode.toUpperCase()} mode  |  Budget: ${budgetJ}J  |  Model: ${DEFAULT_MODEL.id}`);
 	console.log(`${"═".repeat(70)}`);
 
-	for (let i = 0; i < TURNS.length; i++) {
+	for (let i = 0; i < turns.length; i++) {
 		const turnNum = i + 1;
-		const prompt = TURNS[i];
+		const prompt = turns[i];
 
 		const ctx: PolicyContext = {
 			turnNumber: turnNum,
@@ -236,14 +239,14 @@ async function runCodingAgent(
 		}
 
 		const decisionLabel = decision.model
-			? `→ routing to ${decision.model.id} (budget pressure ≥ 70%)`
+			? `→ routed to ${decision.model.name ?? decision.model.id} (1.7x more energy-efficient)`
 			: decision.maxTokens
-				? `→ token limit: ${decision.maxTokens} (budget pressure ≥ 50%)`
+				? `→ token limit reduced to ${decision.maxTokens} (budget pressure ≥ 50%)`
 				: "";
 
 		const effectiveModel = (decision.model as Model<"openai-completions">) ?? DEFAULT_MODEL;
 
-		printTurnHeader(mode, turnNum, TURNS.length, effectiveModel.id, decisionLabel, stats.totalEnergy, budgetJ);
+		printTurnHeader(mode, turnNum, turns.length, effectiveModel.id, decisionLabel, stats.totalEnergy, budgetJ);
 		console.log(`  \x1b[2m${prompt.slice(0, 90)}${prompt.length > 90 ? "…" : ""}\x1b[0m`);
 
 		// Add user message and call the API
@@ -296,18 +299,29 @@ async function runCodingAgent(
 
 // -- Scorecard ----------------------------------------------------------------
 
-function printScorecard(baseline: RunStats, energyAware: RunStats, _budget: number): void {
+function printScorecard(baseline: RunStats, energyAware: RunStats, budget: number): void {
 	const baseTime = (baseline.endTime - baseline.startTime) / 1000;
 	const eaTime = (energyAware.endTime - energyAware.startTime) / 1000;
 	const energySaved =
 		baseline.totalEnergy > 0 ? ((baseline.totalEnergy - energyAware.totalEnergy) / baseline.totalEnergy) * 100 : 0;
 	const timeDelta = baseTime > 0 ? ((eaTime - baseTime) / baseTime) * 100 : 0;
 
+	// Rough cost estimate: tokens × price/1M
+	const devstralPrice = 0.12 / 1_000_000;
+	const gptPrice = 0.1 / 1_000_000;
+	const baseCost = baseline.turns.reduce((sum, t) => sum + t.tokens * devstralPrice, 0);
+	const eaCost = energyAware.turns.reduce(
+		(sum, t) => sum + t.tokens * (t.model.includes("gpt-oss") ? gptPrice : devstralPrice),
+		0,
+	);
+	const costSaved = baseCost > 0 ? ((baseCost - eaCost) / baseCost) * 100 : 0;
+
 	const fmtDelta = (val: number, positive = "+"): string => `${val >= 0 ? positive : ""}${val.toFixed(0)}%`;
 
 	console.log(`\n${"═".repeat(70)}`);
 	console.log("  FINAL SCORECARD — Coding Agent Energy Challenge");
 	console.log(`${"═".repeat(70)}`);
+	console.log(`  Budget: ${budget}J  |  Devstral-Small ($0.12/M) → GPT-OSS-20B ($0.10/M), 1.7x more efficient`);
 	console.log("  +-----------------+-------------------+---------------------------+");
 	console.log("  |                 | Baseline          | Energy-Aware              |");
 	console.log("  +-----------------+-------------------+---------------------------+");
@@ -315,7 +329,10 @@ function printScorecard(baseline: RunStats, energyAware: RunStats, _budget: numb
 		`  | Turns           | ${String(baseline.turns.length).padEnd(17)} | ${String(energyAware.turns.length + (energyAware.abortedAt ? " (aborted)" : " (complete)")).padEnd(25)} |`,
 	);
 	console.log(
-		`  | Energy used     | ${`${baseline.totalEnergy.toFixed(2)} J`.padEnd(17)} | ${`${energyAware.totalEnergy.toFixed(2)} J  (${fmtDelta(-energySaved, "-")} saved)`.padEnd(25)} |`,
+		`  | Energy used     | ${`${baseline.totalEnergy.toFixed(0)} J`.padEnd(17)} | ${`${energyAware.totalEnergy.toFixed(0)} J  (${fmtDelta(-energySaved, "-")} saved)`.padEnd(25)} |`,
+	);
+	console.log(
+		`  | Est. cost       | ${`$${baseCost.toFixed(4)}`.padEnd(17)} | ${`$${eaCost.toFixed(4)}  (${fmtDelta(-costSaved, "-")} saved)`.padEnd(25)} |`,
 	);
 	console.log(
 		`  | Tokens used     | ${String(baseline.totalTokens).padEnd(17)} | ${String(energyAware.totalTokens).padEnd(25)} |`,
@@ -336,10 +353,10 @@ function printScorecard(baseline: RunStats, energyAware: RunStats, _budget: numb
 	console.log("");
 	if (energySaved > 0) {
 		console.log(
-			`  \x1b[32m✓ Energy-aware mode saved ${energySaved.toFixed(0)}% energy${energyAware.abortedAt ? ` (stopped at turn ${energyAware.abortedAt})` : ""}\x1b[0m`,
+			`  \x1b[32m✓ Energy-aware: ${energySaved.toFixed(0)}% less energy, ${costSaved.toFixed(0)}% lower cost${energyAware.abortedAt ? ` (stopped at turn ${energyAware.abortedAt})` : ""}\x1b[0m`,
 		);
 	} else {
-		console.log("  Budget was not exhausted — increase --budget to see routing in action.");
+		console.log("  Budget was not exhausted — reduce --budget to see routing in action.");
 	}
 }
 
@@ -349,6 +366,7 @@ async function main(): Promise<void> {
 	const { values } = parseArgs({
 		options: {
 			budget: { type: "string", default: String(DEFAULT_BUDGET_JOULES) },
+			task: { type: "string" }, // Custom single-turn task prompt
 		},
 		allowPositionals: true,
 	});
@@ -360,23 +378,28 @@ async function main(): Promise<void> {
 
 	const apiKey = process.env.NEURALWATT_API_KEY;
 	const budgetJ = Number(values.budget);
+	const turns = values.task ? [values.task] : DEFAULT_TURNS;
+	const taskLabel = values.task
+		? values.task.slice(0, 54)
+		: "TypeScript rate-limiting middleware with types and tests";
 
 	registerBuiltInApiProviders();
 
 	console.log("╔══════════════════════════════════════════════════════════════════════╗");
 	console.log("║               Coding Agent Energy Challenge                         ║");
-	console.log("║  Task: TypeScript rate-limiting middleware with types and tests      ║");
+	console.log(`║  Task: ${taskLabel.padEnd(62)}║`);
 	console.log(`║  Model: ${DEFAULT_MODEL.id.padEnd(61)}║`);
-	console.log(`║  Budget: ${`${budgetJ}J (energy-aware only)`.padEnd(60)}║`);
-	console.log(`║  Turns: ${`${TURNS.length} (plan → implement → types → validate → test → integrate)`.padEnd(61)}║`);
+	console.log(`║  Budget: ${`${budgetJ}J for energy-aware run (no limit for baseline)`.padEnd(60)}║`);
+	console.log(`║  Turns: ${String(turns.length).padEnd(61)}║`);
 	console.log("╚══════════════════════════════════════════════════════════════════════╝");
 
-	const baselineStats = await runCodingAgent("baseline", new BaselinePolicy(), {}, apiKey);
+	const baselineStats = await runCodingAgent("baseline", new BaselinePolicy(), {}, apiKey, turns);
 	const energyAwareStats = await runCodingAgent(
 		"energy-aware",
 		new EnergyAwarePolicy(),
 		{ energy_budget_joules: budgetJ },
 		apiKey,
+		turns,
 	);
 
 	printScorecard(baselineStats, energyAwareStats, budgetJ);
