@@ -277,6 +277,18 @@ async function scoreWithPolicy(
 
 const COL = 40;
 
+/** Condense verbose policy decision reasons into human-readable summaries. */
+function fmtDecision(reason: string): string {
+	// "budget exhausted: pressure 103%" → "Budget exhausted (103%)"
+	const exhausted = reason.match(/budget exhausted.*?(\d+)%/i);
+	if (exhausted) return `Budget exhausted at ${exhausted[1]}% pressure`;
+	// "model: Kimi-K2.5 -> openai/gpt-oss-20b ... pressure 84%" → "→ GPT-OSS-20B (84% pressure)"
+	const route = reason.match(/model:.*?->\s*(\S+).*?pressure\s+(\d+)%/i);
+	if (route) return `→ Routed to ${modelShort(route[1])} at ${route[2]}% budget pressure`;
+	// Fallback: first clause only
+	return reason.split(";")[0].trim();
+}
+
 function stars(score: number): string {
 	if (score >= 0.9) return "★★★";
 	if (score >= 0.7) return "★★ ";
@@ -360,7 +372,7 @@ function renderDisplay(
 	} else {
 		console.log(`  [energy-▼  ] ${energyBar(eaStats.totalEnergy, budget)}  ${eaStats.storiesScored} stories`);
 		if (lastDecision) {
-			console.log(`               \x1b[33m[policy] ${lastDecision}\x1b[0m`);
+			console.log(`               \x1b[33m[policy] ${fmtDecision(lastDecision)}\x1b[0m`);
 		}
 	}
 
@@ -417,7 +429,7 @@ function renderDisplay(
 		console.log("");
 		const recent = eaStats.policyDecisions.slice(-3);
 		for (const d of recent) {
-			console.log(`  \x1b[33m[policy #${d.story}]\x1b[0m ${d.reason}`);
+			console.log(`  \x1b[33m[policy #${d.story}]\x1b[0m ${fmtDecision(d.reason)}`);
 		}
 	}
 }
@@ -467,7 +479,7 @@ function printFinalSummary(baseStats: WatcherStats, eaStats: WatcherStats, elaps
 		console.log("");
 		console.log("  POLICY DECISIONS (energy-aware):");
 		for (const d of eaStats.policyDecisions) {
-			console.log(`    Story #${String(d.story).padStart(2)}: ${d.reason}`);
+			console.log(`    Story #${String(d.story).padStart(2)}: ${fmtDecision(d.reason)}`);
 		}
 	}
 }
