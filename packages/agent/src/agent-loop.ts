@@ -224,8 +224,8 @@ async function runLoop(
 						output: usage.output,
 						totalTokens: usage.totalTokens,
 						cost: { total: usage.cost.total },
-						energy_joules: (assistantMsg as any).energy?.energy_joules,
-						energy_kwh: (assistantMsg as any).energy?.energy_kwh,
+						energy_joules: assistantMsg.energy?.energy_joules,
+						energy_kwh: assistantMsg.energy?.energy_kwh,
 					};
 					if (usageWithEnergy.energy_joules != null) {
 						policyState.consumedEnergy += usageWithEnergy.energy_joules;

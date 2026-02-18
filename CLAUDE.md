@@ -55,6 +55,11 @@ Agents own the listed shared files for their specific additions only. If a share
 6. Merge to main: `git checkout main && git pull --rebase && git merge <branch> && git push`
 7. If rebase conflicts occur in files you didn't modify, stop and notify lead
 
+**Critical: keep the working tree type-safe at all times.** The pre-commit hook runs `npm run check` across the entire repo. If your in-progress files have type errors, you block every other agent's commits. Rules:
+- Never leave a file with type errors in the working tree — use `// @ts-expect-error` with a comment as a temporary marker if you must, but fix it before leaving the file
+- If you reference a type that doesn't exist yet, define a stub for it immediately in types.ts
+- Run `npm run check` frequently while working, not just before committing
+
 ### Testing Requirements
 - All new code must have unit tests
 - API-dependent tests use mocked HTTP responses (no real API calls in CI)

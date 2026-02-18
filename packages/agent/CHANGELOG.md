@@ -9,6 +9,7 @@
 - Added `policy` field to `AgentLoopConfig` for optional runtime policy injection
 - Integrated policy hooks into agent loop: model/options overrides, abort support, energy tracking
 - Added `BaselinePolicy` — no-op policy for benchmarking that logs telemetry without intervention
+- Added `EnergyAwarePolicy` — budget-aware policy with 5-strategy chain: reasoning reduction, token limit reduction, model routing, context compaction, and budget exhaustion abort
 
 ## [0.53.0] - 2026-02-17
 
