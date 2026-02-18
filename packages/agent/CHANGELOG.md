@@ -8,6 +8,7 @@
 - Added policy types: `PolicyContext`, `PolicyDecision`, `EnergyBudget`, `UsageWithEnergy`
 - Added `policy` field to `AgentLoopConfig` for optional runtime policy injection
 - Integrated policy hooks into agent loop: model/options overrides, abort support, energy tracking
+- Added `BaselinePolicy` — no-op policy for benchmarking that logs telemetry without intervention
 
 ## [0.53.0] - 2026-02-17
 
