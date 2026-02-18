@@ -177,6 +177,8 @@ export interface AssistantMessage {
 	stopReason: StopReason;
 	errorMessage?: string;
 	timestamp: number; // Unix timestamp in milliseconds
+	/** The thinking level that was active when this message was generated. */
+	thinkingLevel?: ThinkingLevel | "off";
 }
 
 export interface ToolResultMessage<TDetails = any> {

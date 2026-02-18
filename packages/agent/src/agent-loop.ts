@@ -271,6 +271,8 @@ async function streamAssistantResponse(
 			case "done":
 			case "error": {
 				const finalMessage = await response.result();
+				// Stamp the thinking level that was active for this request
+				finalMessage.thinkingLevel = config.reasoning ?? "off";
 				if (addedPartial) {
 					context.messages[context.messages.length - 1] = finalMessage;
 				} else {
