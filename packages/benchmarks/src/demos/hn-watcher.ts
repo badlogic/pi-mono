@@ -7,9 +7,12 @@
  * triggering routing from Kimi K2.5 down to GPT-OSS-20B (13x cheaper, 2.8x
  * more energy-efficient).
  *
+ * Learned memory: persists score agreement observations across runs so each
+ * startup displays routing quality confidence from previous sessions.
+ *
  * Usage:
  *   npx tsx src/demos/hn-watcher.ts [--duration <seconds>] [--budget <joules>]
- *     [--keywords "AI,LLM,GPU,RAG"]
+ *     [--keywords "AI,LLM,GPU,RAG"] [--clear-memory]
  *
  * Requires NEURALWATT_API_KEY in the environment.
  */
@@ -30,6 +33,14 @@ import {
 	type Model,
 	registerBuiltInApiProviders,
 } from "@mariozechner/pi-ai";
+import {
+	clearMemory,
+	formatHNMemory,
+	type HNMemory,
+	hnRoutingConfidence,
+	loadMemory,
+	saveMemory,
+} from "./demo-memory.js";
 
 // -- Constants ----------------------------------------------------------------
 
@@ -99,10 +110,13 @@ const SCORING_MODEL = NEURALWATT_MODELS[1];
 const DEFAULT_DURATION_S = 120;
 /**
  * Budget sized so routing kicks in after ~5 stories.
- * Kimi K2.5 at 0.482 tokens/J with ~250 tokens per scoring call ≈ 519J each.
+ * Kimi K2.5 at 0.482 tokens/J with ~250 tokens per scoring call ~= 519J each.
  * Budget 3500J: routing fires at story 5 (2595J / 3500J = 74%+ pressure).
  */
 const DEFAULT_BUDGET_JOULES = 3_500;
+
+/** Memory key for this routing pair. */
+const MEMORY_KEY = "kimi-k2.5→gpt-oss-20b";
 
 // -- Types --------------------------------------------------------------------
 
@@ -128,18 +142,19 @@ interface HNStory {
 	title: string;
 }
 
+/** Per-story score pair for tracking EA vs baseline agreement. */
+interface ScorePair {
+	base: number;
+	ea: number;
+}
+
 // -- Energy tracking ----------------------------------------------------------
 
-/**
- * Energy estimate using measured tokens/J from portal.neuralwatt.com.
- * Falls back to 1.0 tokens/J for unknown models.
- */
 function estimateEnergy(message: AssistantMessage, modelId: string): number {
 	const tokensPerJoule = TOKENS_PER_JOULE[modelId] ?? 1.0;
 	return message.usage.totalTokens / tokensPerJoule;
 }
 
-/** Use real API energy if > 0, otherwise fall back to per-model estimate. */
 function getEnergy(message: AssistantMessage, modelId: string): number {
 	const fromApi = message.energy?.energy_joules;
 	if (fromApi != null && fromApi > 0) return fromApi;
@@ -213,6 +228,7 @@ async function scoreWithPolicy(
 	consumedEnergy: number,
 	consumedTimeMs: number,
 	apiKey: string,
+	memoryConfidence: string,
 ): Promise<{
 	storyScore: StoryScore;
 	decision: PolicyDecision;
@@ -258,11 +274,14 @@ async function scoreWithPolicy(
 	};
 	policy.afterModelCall(ctx, usageWithEnergy);
 
-	const decisionLabel = decision.model
-		? `↓ routed to ${decision.model.id}`
-		: decision.maxTokens
-			? "↓ token limit"
-			: "";
+	// Build decision label — annotate routing decisions with learned confidence
+	let decisionLabel = "";
+	if (decision.model) {
+		const conf = memoryConfidence ? ` ${memoryConfidence}` : "";
+		decisionLabel = `↓ routed to ${decision.model.id}${conf}`;
+	} else if (decision.maxTokens) {
+		decisionLabel = "↓ token limit";
+	}
 
 	return {
 		storyScore: { title, score, energy_joules: energy, model: effectiveModel.id, decision: decisionLabel },
@@ -277,15 +296,11 @@ async function scoreWithPolicy(
 
 const COL = 40;
 
-/** Condense verbose policy decision reasons into human-readable summaries. */
 function fmtDecision(reason: string): string {
-	// "budget exhausted: pressure 103%" → "Budget exhausted (103%)"
 	const exhausted = reason.match(/budget exhausted.*?(\d+)%/i);
 	if (exhausted) return `Budget exhausted at ${exhausted[1]}% pressure`;
-	// "model: Kimi-K2.5 -> openai/gpt-oss-20b ... pressure 84%" → "→ GPT-OSS-20B (84% pressure)"
 	const route = reason.match(/model:.*?->\s*(\S+).*?pressure\s+(\d+)%/i);
 	if (route) return `→ Routed to ${modelShort(route[1])} at ${route[2]}% budget pressure`;
-	// Fallback: first clause only
 	return reason.split(";")[0].trim();
 }
 
@@ -313,7 +328,6 @@ function energyBar(consumed: number, budget: number, width = 22): string {
 }
 
 function baselineBar(consumed: number, width = 22): string {
-	// Baseline has no budget — show a purely informational climbing bar
 	const bar = "▓".repeat(width);
 	return `\x1b[2m[${bar}]\x1b[0m ${consumed.toFixed(0)}J (no limit)`;
 }
@@ -345,7 +359,6 @@ function renderDisplay(
 	const ss = remaining % 60;
 	const timeStr = `${mm}m ${String(ss).padStart(2, "0")}s`;
 
-	// Compute savings vs equivalent baseline stories
 	const eaStoryCount = eaStats.storiesScored;
 	const baselineEnergyForSameStories =
 		eaStoryCount > 0 && baseStats.storiesScored >= eaStoryCount
@@ -379,7 +392,6 @@ function renderDisplay(
 	console.log("");
 
 	if (eaStats.aborted) {
-		// After budget exhaustion: show baseline still scoring, ea results frozen
 		console.log(`  ─── BASELINE (still scoring) ──────────────────────────────────────`);
 		console.log(`  → "${truncate(currentTitle || "Fetching stories…", 68)}"`);
 	} else {
@@ -388,7 +400,6 @@ function renderDisplay(
 	}
 	console.log("");
 
-	// Side-by-side results header
 	const eaHeader = eaStats.aborted ? "[energy-aware / ✓ BUDGET REACHED]" : "[energy-aware / policy-driven]";
 	console.log(`  ${"[baseline  / kimi-k2.5]".padEnd(COL + 4)}  ${eaHeader}`);
 	console.log(`  ${"─".repeat(COL + 4)}  ${"─".repeat(COL)}`);
@@ -410,7 +421,6 @@ function renderDisplay(
 		console.log(`  \x1b[2m${pad(bTitle, COL + 4)}\x1b[0m`);
 	}
 
-	// High relevance leaderboard
 	const allHigh = [...baseStats.highRelevance, ...eaStats.highRelevance]
 		.filter((s, i, arr) => arr.findIndex((x) => x.title === s.title) === i)
 		.sort((a, b) => b.score - a.score)
@@ -424,7 +434,6 @@ function renderDisplay(
 		}
 	}
 
-	// Policy decisions
 	if (!eaStats.aborted && eaStats.policyDecisions.length > 0) {
 		console.log("");
 		const recent = eaStats.policyDecisions.slice(-3);
@@ -434,11 +443,21 @@ function renderDisplay(
 	}
 }
 
-function printFinalSummary(baseStats: WatcherStats, eaStats: WatcherStats, elapsed: number, budget: number): void {
+function printFinalSummary(
+	baseStats: WatcherStats,
+	eaStats: WatcherStats,
+	elapsed: number,
+	budget: number,
+	scorePairs: ScorePair[],
+): void {
 	process.stdout.write("\x1b[2J\x1b[H");
 
 	const energySaved =
 		baseStats.totalEnergy > 0 ? ((baseStats.totalEnergy - eaStats.totalEnergy) / baseStats.totalEnergy) * 100 : 0;
+
+	// Score agreement stats
+	const matches = scorePairs.filter((p) => Math.abs(p.base - p.ea) <= 0.15).length;
+	const agreementPct = scorePairs.length > 0 ? ((matches / scorePairs.length) * 100).toFixed(0) : "n/a";
 
 	console.log("╔══════════════════════════════════════════════════════════════════════╗");
 	console.log("║            HackerNews Energy-Aware Watcher  — Final Report          ║");
@@ -460,6 +479,9 @@ function printFinalSummary(baseStats: WatcherStats, eaStats: WatcherStats, elaps
 	);
 	console.log(
 		`  | High-relevance  | ${pad(String(baseStats.highRelevance.length), 13)} | ${pad(String(eaStats.highRelevance.length), 25)} |`,
+	);
+	console.log(
+		`  | Score agreement | ${pad("(baseline)", 13)} | ${pad(`${agreementPct}% within 0.15 (n=${scorePairs.length})`, 25)} |`,
 	);
 	console.log("  +-----------------+---------------+---------------------------+");
 
@@ -484,6 +506,40 @@ function printFinalSummary(baseStats: WatcherStats, eaStats: WatcherStats, elaps
 	}
 }
 
+// -- Memory helpers -----------------------------------------------------------
+
+function updateHNMemory(
+	mem: ReturnType<typeof loadMemory>,
+	baseStats: WatcherStats,
+	eaStats: WatcherStats,
+	scorePairs: ScorePair[],
+): void {
+	const prev: HNMemory = mem.hn[MEMORY_KEY] ?? {
+		totalStories: 0,
+		scoreMatches: 0,
+		runs: 0,
+		avgEnergySavingsPct: 0,
+		lastUpdated: "",
+	};
+
+	const runs = prev.runs + 1;
+	const totalStories = prev.totalStories + scorePairs.length;
+	const newMatches = scorePairs.filter((p) => Math.abs(p.base - p.ea) <= 0.15).length;
+	const scoreMatches = prev.scoreMatches + newMatches;
+
+	const energySavedPct =
+		baseStats.totalEnergy > 0 ? ((baseStats.totalEnergy - eaStats.totalEnergy) / baseStats.totalEnergy) * 100 : 0;
+	const avgEnergySavingsPct = (prev.avgEnergySavingsPct * prev.runs + energySavedPct) / runs;
+
+	mem.hn[MEMORY_KEY] = {
+		totalStories,
+		scoreMatches,
+		runs,
+		avgEnergySavingsPct,
+		lastUpdated: new Date().toISOString(),
+	};
+}
+
 // -- Main loop ----------------------------------------------------------------
 
 async function main(): Promise<void> {
@@ -491,7 +547,8 @@ async function main(): Promise<void> {
 		options: {
 			duration: { type: "string", default: String(DEFAULT_DURATION_S) },
 			budget: { type: "string", default: String(DEFAULT_BUDGET_JOULES) },
-			keywords: { type: "string" }, // Comma-separated list, e.g. "AI,LLM,GPU"
+			keywords: { type: "string" },
+			"clear-memory": { type: "boolean", default: false },
 		},
 		allowPositionals: true,
 	});
@@ -499,6 +556,12 @@ async function main(): Promise<void> {
 	if (!process.env.NEURALWATT_API_KEY) {
 		console.error("NEURALWATT_API_KEY required");
 		process.exit(1);
+	}
+
+	// Handle --clear-memory before anything else
+	if (values["clear-memory"]) {
+		clearMemory();
+		console.log("Memory cleared.");
 	}
 
 	const apiKey = process.env.NEURALWATT_API_KEY;
@@ -513,10 +576,21 @@ async function main(): Promise<void> {
 
 	registerBuiltInApiProviders();
 
+	// Load and display memory
+	const mem = loadMemory();
+	const memSummary = formatHNMemory(MEMORY_KEY, mem);
+
 	console.log("Fetching HackerNews top stories…");
 	if (values.keywords) {
 		console.log(`Keywords: ${keywords.join(", ")}`);
 	}
+
+	if (memSummary) {
+		console.log(memSummary);
+	} else {
+		console.log("  Memory: No previous runs recorded.");
+	}
+
 	const topIds = await fetchTopStoryIds();
 	console.log(`Found ${topIds.length} stories. Running for ${durationS}s with ${budgetJ}J budget per run.\n`);
 
@@ -540,14 +614,16 @@ async function main(): Promise<void> {
 		aborted: false,
 	};
 
-	// Each run has its own budget; baseline has no budget so it always runs full
 	const baseBudget: EnergyBudget = {};
 	const eaBudget: EnergyBudget = { energy_budget_joules: budgetJ };
 
 	const recentBase: StoryScore[] = [];
 	const recentEa: StoryScore[] = [];
+	const scorePairs: ScorePair[] = [];
 	let lastDecision: string | null = null;
 	let currentTitle = "";
+	// Track current memory confidence for routing labels (re-derived from in-memory state)
+	let memoryConfidence = hnRoutingConfidence(MEMORY_KEY, mem);
 	const startTime = Date.now();
 	let storyIdx = 0;
 
@@ -556,7 +632,7 @@ async function main(): Promise<void> {
 		if (elapsedS >= durationS) break;
 
 		if (storyIdx >= topIds.length) {
-			storyIdx = 0; // wrap around
+			storyIdx = 0;
 		}
 
 		const story = await fetchStory(topIds[storyIdx++]);
@@ -564,7 +640,6 @@ async function main(): Promise<void> {
 
 		currentTitle = story.title;
 
-		// Score baseline and energy-aware concurrently for this story
 		const nowS = (Date.now() - startTime) / 1000;
 		const [baseResult, eaResult] = await Promise.all([
 			scoreWithPolicy(
@@ -576,6 +651,7 @@ async function main(): Promise<void> {
 				baseStats.totalEnergy,
 				nowS * 1000,
 				apiKey,
+				"",
 			).catch(() => null),
 			eaStats.aborted
 				? Promise.resolve(null)
@@ -588,6 +664,7 @@ async function main(): Promise<void> {
 						eaStats.totalEnergy,
 						nowS * 1000,
 						apiKey,
+						memoryConfidence,
 					).catch(() => null),
 		]);
 
@@ -620,6 +697,11 @@ async function main(): Promise<void> {
 			}
 		}
 
+		// Record score pair when both runs returned results for this story
+		if (baseResult && !baseResult.aborted && eaResult && !eaResult.aborted) {
+			scorePairs.push({ base: baseResult.storyScore.score, ea: eaResult.storyScore.score });
+		}
+
 		renderDisplay(
 			(Date.now() - startTime) / 1000,
 			durationS,
@@ -634,7 +716,20 @@ async function main(): Promise<void> {
 	}
 
 	const totalElapsed = Math.round((Date.now() - startTime) / 1000);
-	printFinalSummary(baseStats, eaStats, totalElapsed, budgetJ);
+	printFinalSummary(baseStats, eaStats, totalElapsed, budgetJ, scorePairs);
+
+	// Update and persist memory
+	updateHNMemory(mem, baseStats, eaStats, scorePairs);
+	saveMemory(mem);
+
+	// Update confidence for display on next run
+	memoryConfidence = hnRoutingConfidence(MEMORY_KEY, mem);
+	console.log(`\n  Memory saved to ~/.energy-demo-memory.json`);
+	if (scorePairs.length > 0) {
+		const matches = scorePairs.filter((p) => Math.abs(p.base - p.ea) <= 0.15).length;
+		const pct = ((matches / scorePairs.length) * 100).toFixed(0);
+		console.log(`  Score agreement this run: ${pct}% within 0.15 (${matches}/${scorePairs.length} stories)`);
+	}
 }
 
 main().catch((err) => {

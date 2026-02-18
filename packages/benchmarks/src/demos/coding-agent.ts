@@ -6,7 +6,11 @@
  * energy consumption, live code output, and policy interventions.
  *
  * Task: implement a TypeScript rate-limiting middleware with types, JSDoc,
- * validation, and unit tests — across 6 focused turns.
+ * validation, and unit tests — across 3 phases:
+ *
+ *   Phase 1 (turns 1-4): Incremental build — interfaces → class → middleware → validation
+ *   Phase 2 (turn 5):    Consolidate into a single impl.ts file
+ *   Phase 3 (turns 6-N): Acceptance-test loop — run tests, request corrections until pass
  *
  * Baseline: uses Devstral-Small throughout (full quality, full energy).
  * Energy-aware: starts on Devstral-Small, routes to GPT-OSS-20B at >70%
@@ -15,14 +19,20 @@
  *
  * Energy benchmarks from portal.neuralwatt.com:
  *   Devstral-Small: 0.809 tokens/J  ($0.12/$0.12 per 1M)
- *   GPT-OSS-20B:    1.371 tokens/J  ($0.10/$0.10 per 1M)  ← 1.7x more efficient
+ *   GPT-OSS-20B:    1.371 tokens/J  ($0.10/$0.10 per 1M)  <- 1.7x more efficient
  *
  * Usage:
  *   npx tsx src/demos/coding-agent.ts [--budget <joules>] [--task "custom task"]
+ *   npx tsx src/demos/coding-agent.ts --clear-memory
  *
  * Requires NEURALWATT_API_KEY in the environment.
  */
 
+import { execSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import type { EnergyBudget, PolicyContext, RuntimePolicy, UsageWithEnergy } from "@mariozechner/pi-agent-core";
 import { BaselinePolicy, EnergyAwarePolicy } from "@mariozechner/pi-agent-core";
@@ -33,13 +43,10 @@ import {
 	type Model,
 	registerBuiltInApiProviders,
 } from "@mariozechner/pi-ai";
+import { type CodingMemory, clearMemory, formatCodingMemory, loadMemory, saveMemory } from "./demo-memory.js";
 
 // -- Models -------------------------------------------------------------------
 
-/**
- * Energy efficiency benchmarks from portal.neuralwatt.com (tokens per joule).
- * Used to estimate energy when the API does not return real energy_joules.
- */
 const TOKENS_PER_JOULE: Record<string, number> = {
 	"openai/gpt-oss-20b": 1.371,
 	"mistralai/Devstral-Small-2-24B-Instruct-2512": 0.809,
@@ -81,11 +88,17 @@ const DEFAULT_MODEL = NEURALWATT_MODELS[1]; // Devstral-Small — routes to GPT-
 
 /**
  * Budget calibrated to show the full 5-strategy policy cascade:
- * Devstral-Small cumulative after 4 turns ≈ 3400J → ~56% of 6000J → token reduction fires.
- * After turn 5 ≈ 5300J → ~88% of 6000J → routing fires for turn 6.
- * Both interventions visible in sequence, all 6 turns complete.
+ * Devstral-Small cumulative after 4 turns ~= 3400J -> ~56% of 6000J -> token reduction fires.
+ * After turn 5 ~= 5300J -> ~88% of 6000J -> routing fires for turn 6.
+ * Both interventions visible in sequence, all turns complete.
  */
 const DEFAULT_BUDGET_JOULES = 6_000;
+
+/** Memory key for this routing pair. */
+const MEMORY_KEY = "devstral→gpt-oss-20b";
+
+/** Maximum turns in the verify+fix phase (Phase 3). */
+const MAX_FIX_TURNS = 5;
 
 // -- Task definition ----------------------------------------------------------
 
@@ -96,15 +109,88 @@ const SYSTEM_PROMPT =
 	"Each response should be tightly focused — implement only what is asked. " +
 	"No preamble, no prose explanations, just the code.";
 
-/** Default multi-turn task: TypeScript rate-limiting middleware (6 turns). */
-const DEFAULT_TURNS = [
-	"Design a TypeScript interface for a rate limiter: RateLimiterOptions (windowMs, maxRequests, keyFn) and RateLimiterState (map of key → {count, resetAt}). Keep it concise.",
+/** Phase 1: Incremental build turns (turns 1-4). */
+const BUILD_TURNS = [
+	"Design a TypeScript interface for a rate limiter: RateLimiterOptions (windowMs, maxRequests, keyFn) and RateLimiterState (map of key to {count, resetAt}). Keep it concise.",
 	"Implement a RateLimiter class using those interfaces. Include: constructor(options), isAllowed(key): boolean method that enforces the sliding window. Add JSDoc.",
 	"Write an Express-style middleware factory: createRateLimitMiddleware(options: RateLimiterOptions): (req, res, next) => void. It should set X-RateLimit-Remaining and X-RateLimit-Reset headers, and return 429 with a JSON error when the limit is exceeded.",
 	"Add input validation to the RateLimiter constructor: throw descriptive errors for invalid windowMs (must be > 0), invalid maxRequests (must be > 0 integer), and missing keyFn.",
-	"Write 4 focused Vitest unit tests for the RateLimiter class: (1) allows requests within limit, (2) blocks requests over limit, (3) resets after window expires, (4) throws on invalid options.",
-	"Write a brief integration test for the Express middleware using a mock req/res. Test: (1) sets correct headers, (2) calls next() when allowed, (3) sends 429 when limited.",
 ];
+
+/**
+ * Phase 2: Consolidation prompt — requests a complete, self-contained impl.ts.
+ * The model must not use external imports so the file can run in a temp dir
+ * without any node_modules.
+ */
+const CONSOLIDATE_PROMPT =
+	"Write the final complete implementation as a single TypeScript file. " +
+	"Export: RateLimiterOptions interface, RateLimiterState interface, RateLimiter class (constructor + isAllowed), createRateLimitMiddleware factory. " +
+	"Include all validation. " +
+	"Do not import Express — define Request/Response/NextFunction types inline as simple interfaces. " +
+	"Output raw TypeScript only — no markdown fences, no explanations.";
+
+/**
+ * Acceptance tests run against impl.ts in a temp dir.
+ * Tests use PASS:/FAIL: prefixes for easy parsing.
+ * Never shown to the LLM — it only sees error output on failure.
+ */
+const ACCEPTANCE_TEST = `
+import assert from 'node:assert/strict';
+import { RateLimiter, createRateLimitMiddleware } from './impl.js';
+
+type Req = { ip?: string; [key: string]: unknown };
+type Res = { set: (k: string, v: string) => void; status: (code: number) => Res; json: (body: unknown) => void };
+type Next = () => void;
+
+function test(name: string, fn: () => void): void {
+   try {
+      fn();
+      console.log('PASS: ' + name);
+   } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.log('FAIL: ' + name + ': ' + msg);
+   }
+}
+
+test('allows requests within limit', () => {
+   const rl = new RateLimiter({ windowMs: 1000, maxRequests: 3, keyFn: () => 'test' });
+   assert.equal(rl.isAllowed('test'), true);
+   assert.equal(rl.isAllowed('test'), true);
+   assert.equal(rl.isAllowed('test'), true);
+});
+
+test('blocks requests over limit', () => {
+   const rl = new RateLimiter({ windowMs: 60000, maxRequests: 2, keyFn: () => 'test' });
+   rl.isAllowed('test');
+   rl.isAllowed('test');
+   assert.equal(rl.isAllowed('test'), false);
+});
+
+test('throws on invalid windowMs', () => {
+   assert.throws(() => new RateLimiter({ windowMs: -1, maxRequests: 5, keyFn: () => 'k' }));
+});
+
+test('throws on invalid maxRequests', () => {
+   assert.throws(() => new RateLimiter({ windowMs: 1000, maxRequests: 0, keyFn: () => 'k' }));
+});
+
+test('middleware sets headers and calls next()', () => {
+   const mw = createRateLimitMiddleware({ windowMs: 60000, maxRequests: 10, keyFn: (req: Req) => String(req.ip ?? 'x') });
+   let nextCalled = false;
+   const headers: Record<string, string> = {};
+   const req: Req = { ip: '127.0.0.1' };
+   const res: Res = { set: (k, v) => { headers[k] = v; }, status: () => res, json: () => {} };
+   (mw as unknown as (req: Req, res: Res, next: Next) => void)(req, res, () => { nextCalled = true; });
+   assert.equal(nextCalled, true);
+   assert.ok('X-RateLimit-Remaining' in headers);
+});
+
+const lines = [];
+`.trimStart();
+
+// tsx binary: prefer the one from the monorepo root node_modules
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const REPO_TSX = join(__dirname, "../../../../node_modules/.bin/tsx");
 
 // -- Energy tracking ----------------------------------------------------------
 
@@ -117,6 +203,52 @@ function getEnergy(message: AssistantMessage, modelId: string): number {
 	const fromApi = message.energy?.energy_joules;
 	if (fromApi != null && fromApi > 0) return fromApi;
 	return estimateEnergy(message, modelId);
+}
+
+// -- Acceptance tests ---------------------------------------------------------
+
+function extractCode(text: string): string {
+	const m = text.match(/```(?:typescript|ts)?\n([\s\S]*?)```/);
+	return m ? m[1] : text;
+}
+
+interface TestResult {
+	passed: boolean;
+	output: string;
+	passedTests: string[];
+	failedTests: string[];
+}
+
+function runAcceptanceTest(code: string): TestResult {
+	const tmpDir = mkdtempSync(join(tmpdir(), "coding-agent-"));
+	try {
+		writeFileSync(join(tmpDir, "impl.ts"), code, "utf8");
+		writeFileSync(join(tmpDir, "acceptance.ts"), ACCEPTANCE_TEST, "utf8");
+
+		let output = "";
+		try {
+			output = execSync(`"${REPO_TSX}" acceptance.ts`, {
+				cwd: tmpDir,
+				encoding: "utf8",
+				timeout: 30_000,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
+		} catch (e) {
+			const err = e as { stdout?: string; stderr?: string; message?: string };
+			output = [err.stdout ?? "", err.stderr ?? ""].filter(Boolean).join("\n");
+			if (!output) output = (e as Error).message ?? "Unknown error";
+		}
+
+		const passedTests: string[] = [];
+		const failedTests: string[] = [];
+		for (const line of output.split("\n")) {
+			if (line.startsWith("PASS: ")) passedTests.push(line.slice(6).trim());
+			else if (line.startsWith("FAIL: ")) failedTests.push(line.slice(6).trim());
+		}
+		return { passed: failedTests.length === 0 && passedTests.length > 0, output, passedTests, failedTests };
+	} finally {
+		rmSync(tmpDir, { recursive: true, force: true });
+	}
 }
 
 // -- Display ------------------------------------------------------------------
@@ -144,18 +276,32 @@ function extractText(message: AssistantMessage): string {
 
 function printTurnHeader(
 	mode: string,
-	turnNum: number,
-	totalTurns: number,
+	_turnNum: number,
+	phase: string,
 	modelId: string,
 	decisionLabel: string,
 	energy: number,
 	budget: number,
 ): void {
 	const tag = mode === "baseline" ? "\x1b[36m[baseline ]\x1b[0m" : "\x1b[35m[energy-▼ ]\x1b[0m";
-	const modelShort = modelId.replace("neuralwatt-", "");
-	console.log(`\n${tag} Turn ${turnNum}/${totalTurns}  model: ${modelShort}  ${energyBar(energy, budget)}`);
+	console.log(`\n${tag} ${phase}  model: ${modelId}  ${energyBar(energy, budget)}`);
 	if (decisionLabel) {
 		console.log(`           \x1b[33m${decisionLabel}\x1b[0m`);
+	}
+}
+
+function printTestResults(result: TestResult): void {
+	console.log("  \x1b[1m[acceptance test]\x1b[0m");
+	for (const t of result.passedTests) {
+		console.log(`    \x1b[32m✓ ${t}\x1b[0m`);
+	}
+	for (const t of result.failedTests) {
+		console.log(`    \x1b[31m✗ ${t}\x1b[0m`);
+	}
+	if (result.passedTests.length === 0 && result.failedTests.length === 0) {
+		// No structured output — show raw output for debugging
+		const snippet = result.output.split("\n").slice(0, 6).join("\n");
+		console.log(`    \x1b[31m${snippet}\x1b[0m`);
 	}
 }
 
@@ -177,6 +323,17 @@ interface RunStats {
 	abortedAt?: number;
 	startTime: number;
 	endTime: number;
+	testPassed?: boolean;
+	turnsToPass?: number;
+}
+
+async function callModel(
+	model: Model<"openai-completions">,
+	messages: Message[],
+	apiKey: string,
+	maxTokens?: number,
+): Promise<AssistantMessage> {
+	return completeSimple(model, { systemPrompt: SYSTEM_PROMPT, messages }, { apiKey, maxTokens });
 }
 
 async function runCodingAgent(
@@ -184,7 +341,6 @@ async function runCodingAgent(
 	policy: RuntimePolicy,
 	budget: EnergyBudget,
 	apiKey: string,
-	turns: string[],
 ): Promise<RunStats> {
 	const stats: RunStats = {
 		mode,
@@ -202,9 +358,9 @@ async function runCodingAgent(
 	console.log(`  Running: ${mode.toUpperCase()} mode  |  Budget: ${budgetJ}J  |  Model: ${DEFAULT_MODEL.id}`);
 	console.log(`${"═".repeat(70)}`);
 
-	for (let i = 0; i < turns.length; i++) {
-		const turnNum = i + 1;
-		const prompt = turns[i];
+	// Helper: call policy + model for one turn. Returns false if aborted.
+	async function runTurn(prompt: string, phaseLabel: string): Promise<boolean> {
+		const turnNum = stats.turns.length + 1;
 
 		const ctx: PolicyContext = {
 			turnNumber: turnNum,
@@ -233,32 +389,25 @@ async function runCodingAgent(
 		if (decision.abort) {
 			stats.abortedAt = turnNum;
 			console.log(
-				`\n\x1b[31m[${mode}] ✗ Budget exhausted at turn ${turnNum} — ${decision.reason ?? "aborting"}\x1b[0m`,
+				`\n\x1b[31m[${mode}] Budget exhausted at turn ${turnNum} — ${decision.reason ?? "aborting"}\x1b[0m`,
 			);
-			break;
+			return false;
 		}
 
 		const decisionLabel = decision.model
 			? `→ routed to ${decision.model.name ?? decision.model.id} (1.7x more energy-efficient)`
 			: decision.maxTokens
-				? `→ token limit reduced to ${decision.maxTokens} (budget pressure ≥ 50%)`
+				? `→ token limit reduced to ${decision.maxTokens} (budget pressure >= 50%)`
 				: "";
 
 		const effectiveModel = (decision.model as Model<"openai-completions">) ?? DEFAULT_MODEL;
 
-		printTurnHeader(mode, turnNum, turns.length, effectiveModel.id, decisionLabel, stats.totalEnergy, budgetJ);
+		printTurnHeader(mode, turnNum, phaseLabel, effectiveModel.id, decisionLabel, stats.totalEnergy, budgetJ);
 		console.log(`  \x1b[2m${prompt.slice(0, 90)}${prompt.length > 90 ? "…" : ""}\x1b[0m`);
 
-		// Add user message and call the API
-		const userMsg: Message = { role: "user", content: prompt, timestamp: Date.now() };
-		messages.push(userMsg);
+		messages.push({ role: "user", content: prompt, timestamp: Date.now() });
 
-		const assistantMsg = await completeSimple(
-			effectiveModel,
-			{ systemPrompt: SYSTEM_PROMPT, messages },
-			{ apiKey, maxTokens: decision.maxTokens },
-		);
-
+		const assistantMsg = await callModel(effectiveModel, messages, apiKey, decision.maxTokens);
 		messages.push(assistantMsg);
 
 		const energy = getEnergy(assistantMsg, effectiveModel.id);
@@ -272,7 +421,6 @@ async function runCodingAgent(
 			`  \x1b[2m${tokens} tokens | ${energy.toFixed(3)}J [${energySource}] | input:${assistantMsg.usage.input} output:${assistantMsg.usage.output}\x1b[0m`,
 		);
 
-		// Show a snippet of the generated code
 		const responseText = extractText(assistantMsg);
 		console.log(truncateCode(responseText, 10));
 
@@ -287,6 +435,82 @@ async function runCodingAgent(
 		policy.afterModelCall(ctx, usageWithEnergy);
 
 		stats.turns.push({ turn: turnNum, model: effectiveModel.id, energy, tokens, decision: decisionLabel });
+		return true;
+	}
+
+	// -- Phase 1: Incremental build (turns 1-4) --------------------------------
+	for (let i = 0; i < BUILD_TURNS.length; i++) {
+		const ok = await runTurn(BUILD_TURNS[i], `Turn ${i + 1}/${BUILD_TURNS.length + 1 + MAX_FIX_TURNS}  [build]`);
+		if (!ok) {
+			stats.endTime = Date.now();
+			return stats;
+		}
+	}
+
+	// -- Phase 2: Consolidate into impl.ts (turn 5) ----------------------------
+	const consolidatePhaseLabel = `Turn ${BUILD_TURNS.length + 1}  [consolidate]`;
+	const ok = await runTurn(CONSOLIDATE_PROMPT, consolidatePhaseLabel);
+	if (!ok) {
+		stats.endTime = Date.now();
+		return stats;
+	}
+
+	// Extract code from the last assistant message
+	const lastMsg = messages[messages.length - 1] as AssistantMessage;
+	const lastText = extractText(lastMsg);
+	let code = extractCode(lastText);
+
+	// -- Phase 3: Acceptance-test loop (turns 6-N) -----------------------------
+	let testResult = runAcceptanceTest(code);
+	printTestResults(testResult);
+
+	if (testResult.passed) {
+		stats.testPassed = true;
+		stats.turnsToPass = stats.turns.length;
+		console.log(`\n  \x1b[32m✓ All acceptance tests passed on turn ${stats.turns.length}\x1b[0m`);
+	} else {
+		let fixAttempt = 0;
+		while (!testResult.passed && fixAttempt < MAX_FIX_TURNS) {
+			fixAttempt++;
+			const fixTurnLabel = `Turn ${BUILD_TURNS.length + 1 + fixAttempt}  [fix #${fixAttempt}]`;
+			const failureSummary = testResult.failedTests.map((f) => `  - ${f}`).join("\n");
+			const fixPrompt =
+				`The acceptance tests failed:\n${failureSummary}\n\n` +
+				"Write the complete corrected implementation as a single TypeScript file. " +
+				"Do not import Express — define Request/Response/NextFunction types inline. " +
+				"Output raw TypeScript only — no markdown fences.";
+
+			const fixOk = await runTurn(fixPrompt, fixTurnLabel);
+			if (!fixOk) {
+				stats.endTime = Date.now();
+				return stats;
+			}
+
+			const fixMsg = messages[messages.length - 1] as AssistantMessage;
+			code = extractCode(extractText(fixMsg));
+			testResult = runAcceptanceTest(code);
+			printTestResults(testResult);
+
+			if (testResult.passed) {
+				stats.testPassed = true;
+				stats.turnsToPass = stats.turns.length;
+				console.log(
+					`\n  \x1b[32m✓ All acceptance tests passed on turn ${stats.turns.length} (+${fixAttempt} fix${fixAttempt !== 1 ? "es" : ""})\x1b[0m`,
+				);
+				break;
+			} else {
+				console.log(
+					`  → ${testResult.failedTests.length} test${testResult.failedTests.length !== 1 ? "s" : ""} failed — requesting correction (turn ${stats.turns.length + 1})`,
+				);
+			}
+		}
+
+		if (!testResult.passed) {
+			stats.testPassed = false;
+			console.log(
+				`\n  \x1b[31m✗ Tests still failing after ${fixAttempt} fix attempt${fixAttempt !== 1 ? "s" : ""}\x1b[0m`,
+			);
+		}
 	}
 
 	stats.endTime = Date.now();
@@ -306,7 +530,7 @@ function printScorecard(baseline: RunStats, energyAware: RunStats, budget: numbe
 		baseline.totalEnergy > 0 ? ((baseline.totalEnergy - energyAware.totalEnergy) / baseline.totalEnergy) * 100 : 0;
 	const timeDelta = baseTime > 0 ? ((eaTime - baseTime) / baseTime) * 100 : 0;
 
-	// Rough cost estimate: tokens × price/1M
+	// Rough cost estimate: tokens x price/1M
 	const devstralPrice = 0.12 / 1_000_000;
 	const gptPrice = 0.1 / 1_000_000;
 	const baseCost = baseline.turns.reduce((sum, t) => sum + t.tokens * devstralPrice, 0);
@@ -318,10 +542,21 @@ function printScorecard(baseline: RunStats, energyAware: RunStats, budget: numbe
 
 	const fmtDelta = (val: number, positive = "+"): string => `${val >= 0 ? positive : ""}${val.toFixed(0)}%`;
 
+	// Quality row values
+	const fmtQuality = (s: RunStats): string => {
+		if (s.testPassed === undefined) return "n/a (no tests run)  ";
+		if (s.testPassed) {
+			const fixCount = s.turnsToPass != null ? s.turnsToPass - (BUILD_TURNS.length + 1) : 0;
+			const fixes = fixCount > 0 ? `, +${fixCount} fix${fixCount !== 1 ? "es" : ""}` : ", +0 fixes";
+			return `✓ PASSED (turn ${s.turnsToPass}${fixes})`;
+		}
+		return s.abortedAt != null ? `✗ FAILED (budget at turn ${s.abortedAt})` : "✗ FAILED (max turns)";
+	};
+
 	console.log(`\n${"═".repeat(70)}`);
 	console.log("  FINAL SCORECARD — Coding Agent Energy Challenge");
 	console.log(`${"═".repeat(70)}`);
-	console.log(`  Budget: ${budget}J  |  Devstral-Small ($0.12/M) → GPT-OSS-20B ($0.10/M), 1.7x more efficient`);
+	console.log(`  Budget: ${budget}J  |  Devstral-Small ($0.12/M) -> GPT-OSS-20B ($0.10/M), 1.7x more efficient`);
 	console.log("  +-----------------+-------------------+---------------------------+");
 	console.log("  |                 | Baseline          | Energy-Aware              |");
 	console.log("  +-----------------+-------------------+---------------------------+");
@@ -340,6 +575,7 @@ function printScorecard(baseline: RunStats, energyAware: RunStats, budget: numbe
 	console.log(
 		`  | Wall time       | ${`${baseTime.toFixed(1)} s`.padEnd(17)} | ${`${eaTime.toFixed(1)} s  (${fmtDelta(timeDelta)})`.padEnd(25)} |`,
 	);
+	console.log(`  | Quality         | ${fmtQuality(baseline).padEnd(17)} | ${fmtQuality(energyAware).padEnd(25)} |`);
 	console.log("  +-----------------+-------------------+---------------------------+");
 
 	const eaDecisions = energyAware.turns.filter((t) => t.decision);
@@ -360,13 +596,58 @@ function printScorecard(baseline: RunStats, energyAware: RunStats, budget: numbe
 	}
 }
 
+// -- Memory helpers -----------------------------------------------------------
+
+function updateCodingMemory(mem: ReturnType<typeof loadMemory>, baseStats: RunStats, eaStats: RunStats): void {
+	const prev: CodingMemory = mem.coding[MEMORY_KEY] ?? {
+		runs: 0,
+		baselinePassCount: 0,
+		eaPassCount: 0,
+		avgTurnsBaseline: 0,
+		avgTurnsEA: 0,
+		avgEnergySavingsPct: 0,
+		lastUpdated: "",
+	};
+
+	const runs = prev.runs + 1;
+
+	const baselinePassCount = prev.baselinePassCount + (baseStats.testPassed ? 1 : 0);
+	const eaPassCount = prev.eaPassCount + (eaStats.testPassed ? 1 : 0);
+
+	// Rolling average for turns-to-pass (only from passing runs)
+	const avgTurnsBaseline =
+		baseStats.testPassed && baseStats.turnsToPass != null
+			? (prev.avgTurnsBaseline * prev.baselinePassCount + baseStats.turnsToPass) / (prev.baselinePassCount + 1)
+			: prev.avgTurnsBaseline;
+
+	const avgTurnsEA =
+		eaStats.testPassed && eaStats.turnsToPass != null
+			? (prev.avgTurnsEA * prev.eaPassCount + eaStats.turnsToPass) / (prev.eaPassCount + 1)
+			: prev.avgTurnsEA;
+
+	const energySavedPct =
+		baseStats.totalEnergy > 0 ? ((baseStats.totalEnergy - eaStats.totalEnergy) / baseStats.totalEnergy) * 100 : 0;
+	const avgEnergySavingsPct = (prev.avgEnergySavingsPct * prev.runs + energySavedPct) / runs;
+
+	mem.coding[MEMORY_KEY] = {
+		runs,
+		baselinePassCount,
+		eaPassCount,
+		avgTurnsBaseline,
+		avgTurnsEA,
+		avgEnergySavingsPct,
+		lastUpdated: new Date().toISOString(),
+	};
+}
+
 // -- Main ---------------------------------------------------------------------
 
 async function main(): Promise<void> {
 	const { values } = parseArgs({
 		options: {
 			budget: { type: "string", default: String(DEFAULT_BUDGET_JOULES) },
-			task: { type: "string" }, // Custom single-turn task prompt
+			task: { type: "string" },
+			"clear-memory": { type: "boolean", default: false },
 		},
 		allowPositionals: true,
 	});
@@ -376,33 +657,50 @@ async function main(): Promise<void> {
 		process.exit(1);
 	}
 
+	// Handle --clear-memory before anything else
+	if (values["clear-memory"]) {
+		clearMemory();
+		console.log("Memory cleared.");
+	}
+
 	const apiKey = process.env.NEURALWATT_API_KEY;
 	const budgetJ = Number(values.budget);
-	const turns = values.task ? [values.task] : DEFAULT_TURNS;
-	const taskLabel = values.task
-		? values.task.slice(0, 54)
-		: "TypeScript rate-limiting middleware with types and tests";
+	const taskLabel = "TypeScript rate-limiting middleware with acceptance tests";
 
 	registerBuiltInApiProviders();
+
+	// Load and display memory
+	const mem = loadMemory();
+	const memSummary = formatCodingMemory(MEMORY_KEY, mem);
 
 	console.log("╔══════════════════════════════════════════════════════════════════════╗");
 	console.log("║               Coding Agent Energy Challenge                         ║");
 	console.log(`║  Task: ${taskLabel.padEnd(62)}║`);
 	console.log(`║  Model: ${DEFAULT_MODEL.id.padEnd(61)}║`);
 	console.log(`║  Budget: ${`${budgetJ}J for energy-aware run (no limit for baseline)`.padEnd(60)}║`);
-	console.log(`║  Turns: ${String(turns.length).padEnd(61)}║`);
+	console.log(`║  Phases: build (4) + consolidate (1) + acceptance-test loop (max ${MAX_FIX_TURNS}) ║`);
 	console.log("╚══════════════════════════════════════════════════════════════════════╝");
 
-	const baselineStats = await runCodingAgent("baseline", new BaselinePolicy(), {}, apiKey, turns);
+	if (memSummary) {
+		console.log(memSummary);
+	} else {
+		console.log("  Memory: No previous runs recorded.");
+	}
+
+	const baselineStats = await runCodingAgent("baseline", new BaselinePolicy(), {}, apiKey);
 	const energyAwareStats = await runCodingAgent(
 		"energy-aware",
 		new EnergyAwarePolicy(),
 		{ energy_budget_joules: budgetJ },
 		apiKey,
-		turns,
 	);
 
 	printScorecard(baselineStats, energyAwareStats, budgetJ);
+
+	// Update and persist memory
+	updateCodingMemory(mem, baselineStats, energyAwareStats);
+	saveMemory(mem);
+	console.log(`\n  Memory saved to ~/.energy-demo-memory.json`);
 }
 
 main().catch((err) => {
