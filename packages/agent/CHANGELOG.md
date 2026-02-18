@@ -10,6 +10,11 @@
 - Integrated policy hooks into agent loop: model/options overrides, abort support, energy tracking
 - Added `BaselinePolicy` — no-op policy for benchmarking that logs telemetry without intervention
 - Added `EnergyAwarePolicy` — budget-aware policy with 5-strategy chain: reasoning reduction, token limit reduction, model routing, context compaction, and budget exhaustion abort
+- Added `availableModels` and `budget` fields to `AgentLoopConfig` for policy-driven model routing and budget enforcement
+
+### Fixed
+
+- Fixed `AgentLoopConfig` fields `availableModels` and `budget` not being passed through to `PolicyContext` in the agent loop — previously both were hardcoded as empty, preventing `EnergyAwarePolicy` from triggering model routing or budget pressure in real runs
 
 ## [0.53.0] - 2026-02-17
 
