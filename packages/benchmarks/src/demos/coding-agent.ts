@@ -85,8 +85,15 @@ const NEURALWATT_MODELS: Model<"openai-completions">[] = [
 const CHEAPEST_MODEL = NEURALWATT_MODELS[0];
 const DEFAULT_MODEL = NEURALWATT_MODELS[1]; // Devstral-Small
 
-/** Routing fires at >70% (~10500J), token limits at >50% (~7500J). */
-const DEFAULT_BUDGET_JOULES = 15_000;
+/**
+ * Budget calibrated from observed run data:
+ *   Build turns 1-4 use ~3350J total on Devstral (~840J/turn avg).
+ *   At 50% of 4000J = 2000J → token limits fire mid-build (turn 3).
+ *   At 70% of 4000J = 2800J → routing fires before turn 4/consolidation.
+ *   Consolidation + fix turns then run on GPT-OSS-20B (1.7x more efficient),
+ *   making the energy savings visible in the scorecard.
+ */
+const DEFAULT_BUDGET_JOULES = 4_000;
 
 /** Memory key for this routing pair. */
 const MEMORY_KEY = "devstral→gpt-oss-20b";
@@ -773,7 +780,9 @@ async function main(): Promise<void> {
 	console.log("║               Coding Agent Energy Challenge                         ║");
 	console.log(`║  Task:   ${config.taskLabel.padEnd(60)}║`);
 	console.log(`║  Model:  ${DEFAULT_MODEL.id.padEnd(60)}║`);
-	console.log(`║  Budget: ${`${budgetJ}J (informational — routes at >70%, token limits at >50%)`.padEnd(60)}║`);
+	console.log(
+		`║  Budget: ${`${budgetJ}J — token limits at >50% (~${Math.round(budgetJ * 0.5)}J), routing at >70% (~${Math.round(budgetJ * 0.7)}J)`.padEnd(60)}║`,
+	);
 	console.log(
 		`║  Phases: build (${config.buildTurns.length}) + consolidate (1) + acceptance-test loop (no turn limit) ║`,
 	);
