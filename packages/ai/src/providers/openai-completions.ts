@@ -165,6 +165,20 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 						},
 					};
 					calculateCost(model, output.usage);
+
+					// Parse energy telemetry from Neuralwatt (or other providers that include it)
+					const usageAny = chunk.usage as unknown as Record<string, unknown>;
+					const energyJoules = typeof usageAny.energy_joules === "number" ? usageAny.energy_joules : undefined;
+					const energyKwh = typeof usageAny.energy_kwh === "number" ? usageAny.energy_kwh : undefined;
+					const durationSeconds =
+						typeof usageAny.duration_seconds === "number" ? usageAny.duration_seconds : undefined;
+					if (energyJoules !== undefined || energyKwh !== undefined) {
+						output.energy = {
+							energy_joules: energyJoules ?? (energyKwh !== undefined ? energyKwh * 3_600_000 : 0),
+							energy_kwh: energyKwh ?? (energyJoules !== undefined ? energyJoules / 3_600_000 : 0),
+							duration_seconds: durationSeconds ?? 0,
+						};
+					}
 				}
 
 				const choice = chunk.choices[0];

@@ -7,6 +7,9 @@
 - Added Neuralwatt as a new provider (`"neuralwatt"`) using OpenAI-compatible completions API with base URL `https://api.neuralwatt.com/v1`.
 - Added `neuralwatt-large` and `neuralwatt-small` model entries for the Neuralwatt provider.
 - Added `NEURALWATT_API_KEY` environment variable detection for Neuralwatt provider authentication.
+- Added `EnergyUsage` interface (`energy_joules`, `energy_kwh`, `duration_seconds`) to types.
+- Added `energy?: EnergyUsage` field to `AssistantMessage` for per-request energy telemetry.
+- Added automatic energy metric parsing from OpenAI-compatible streaming responses (Neuralwatt and any provider including energy fields in usage).
 
 ## [0.53.0] - 2026-02-17
 

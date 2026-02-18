@@ -160,6 +160,12 @@ export interface Usage {
 	};
 }
 
+export interface EnergyUsage {
+	energy_joules: number;
+	energy_kwh: number;
+	duration_seconds: number;
+}
+
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
 
 export interface UserMessage {
@@ -175,6 +181,7 @@ export interface AssistantMessage {
 	provider: Provider;
 	model: string;
 	usage: Usage;
+	energy?: EnergyUsage;
 	stopReason: StopReason;
 	errorMessage?: string;
 	timestamp: number; // Unix timestamp in milliseconds
