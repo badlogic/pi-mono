@@ -35,6 +35,8 @@ export interface CodingMemory {
 	avgTurnsEA: number;
 	avgEnergySavingsPct: number;
 	lastUpdated: string;
+	/** Test names that required fix turns across runs, mapped to occurrence count. */
+	failedTestCounts?: Record<string, number>;
 }
 
 export interface DemoMemory {
@@ -97,6 +99,24 @@ export function formatCodingMemory(key: string, m: DemoMemory): string | null {
 	return (
 		`  Memory (${runsLabel}): EA passed tests in avg ${eaTurns} turns (baseline: ${baseTurns})\n` +
 		`                             GPT-OSS routing saves ${c.avgEnergySavingsPct.toFixed(0)}% energy`
+	);
+}
+
+/**
+ * Returns hint text to prepend to the consolidation prompt based on tests that
+ * have required fix turns in previous runs. Returns null if no failures recorded.
+ */
+export function codingMemoryHints(key: string, m: DemoMemory): string | null {
+	const c = m.coding[key];
+	if (!c || !c.failedTestCounts || Object.keys(c.failedTestCounts).length === 0) return null;
+	const sorted = Object.entries(c.failedTestCounts)
+		.sort(([, a], [, b]) => b - a)
+		.slice(0, 3);
+	const lines = sorted.map(([name, count]) => `  - "${name}" (failed ${count} time${count !== 1 ? "s" : ""})`);
+	return (
+		"IMPORTANT — learned from previous runs, these tests required fix turns:\n" +
+		lines.join("\n") +
+		"\nEnsure your implementation satisfies these requirements exactly before finishing.\n\n"
 	);
 }
 

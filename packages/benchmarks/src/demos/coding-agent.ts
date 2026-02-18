@@ -40,7 +40,14 @@ import {
 	type Model,
 	registerBuiltInApiProviders,
 } from "@mariozechner/pi-ai";
-import { type CodingMemory, clearMemory, formatCodingMemory, loadMemory, saveMemory } from "./demo-memory.js";
+import {
+	type CodingMemory,
+	clearMemory,
+	codingMemoryHints,
+	formatCodingMemory,
+	loadMemory,
+	saveMemory,
+} from "./demo-memory.js";
 
 // -- Models -------------------------------------------------------------------
 
@@ -389,6 +396,8 @@ interface RunStats {
 	endTime: number;
 	testPassed?: boolean;
 	turnsToPass?: number;
+	/** Test names that required fix turns this run (de-duplicated). */
+	failedTestNames: string[];
 }
 
 async function callModel(
@@ -414,6 +423,7 @@ async function runCodingAgent(
 		turns: [],
 		startTime: Date.now(),
 		endTime: 0,
+		failedTestNames: [],
 	};
 
 	const messages: Message[] = [];
@@ -551,6 +561,12 @@ async function runCodingAgent(
 		stats.turnsToPass = stats.turns.length;
 		console.log(`\n  \x1b[32m✓ All acceptance tests passed on turn ${stats.turns.length}\x1b[0m`);
 	} else {
+		// Record tests that needed fixing (initial failure)
+		for (const f of testResult.failedTests) {
+			const name = f.includes(": ") ? f.slice(0, f.indexOf(": ")) : f;
+			if (!stats.failedTestNames.includes(name)) stats.failedTestNames.push(name);
+		}
+
 		let fixAttempt = 0;
 		while (!testResult.passed) {
 			fixAttempt++;
@@ -576,6 +592,11 @@ async function runCodingAgent(
 					`\n  \x1b[32m✓ All acceptance tests passed on turn ${stats.turns.length} (+${fixAttempt} fix${fixAttempt !== 1 ? "es" : ""})\x1b[0m`,
 				);
 			} else {
+				// Record any newly-failing tests during fix iterations
+				for (const f of testResult.failedTests) {
+					const name = f.includes(": ") ? f.slice(0, f.indexOf(": ")) : f;
+					if (!stats.failedTestNames.includes(name)) stats.failedTestNames.push(name);
+				}
 				console.log(
 					`  → ${testResult.failedTests.length} test${testResult.failedTests.length !== 1 ? "s" : ""} failed — requesting correction`,
 				);
@@ -707,6 +728,12 @@ function updateCodingMemory(mem: ReturnType<typeof loadMemory>, baseStats: RunSt
 		baseStats.totalEnergy > 0 ? ((baseStats.totalEnergy - eaStats.totalEnergy) / baseStats.totalEnergy) * 100 : 0;
 	const avgEnergySavingsPct = (prev.avgEnergySavingsPct * prev.runs + energySavedPct) / runs;
 
+	// Merge failed test names from both runs into cumulative counts
+	const failedTestCounts: Record<string, number> = { ...(prev.failedTestCounts ?? {}) };
+	for (const name of [...baseStats.failedTestNames, ...eaStats.failedTestNames]) {
+		failedTestCounts[name] = (failedTestCounts[name] ?? 0) + 1;
+	}
+
 	mem.coding[MEMORY_KEY] = {
 		runs,
 		baselinePassCount,
@@ -714,6 +741,7 @@ function updateCodingMemory(mem: ReturnType<typeof loadMemory>, baseStats: RunSt
 		avgTurnsBaseline,
 		avgTurnsEA,
 		avgEnergySavingsPct,
+		failedTestCounts,
 		lastUpdated: new Date().toISOString(),
 	};
 }
@@ -775,6 +803,12 @@ async function main(): Promise<void> {
 	// Load and display memory (only for default task — key is task-specific)
 	const mem = loadMemory();
 	const memSummary = values.task ? null : formatCodingMemory(MEMORY_KEY, mem);
+	const memHints = values.task ? null : codingMemoryHints(MEMORY_KEY, mem);
+
+	// Inject learned constraints into consolidation prompt so second+ runs avoid known failures
+	if (memHints) {
+		config.consolidatePrompt = memHints + config.consolidatePrompt;
+	}
 
 	console.log("╔══════════════════════════════════════════════════════════════════════╗");
 	console.log("║               Coding Agent Energy Challenge                         ║");
@@ -796,6 +830,12 @@ async function main(): Promise<void> {
 
 	if (memSummary) {
 		console.log(memSummary);
+		if (memHints) {
+			const numHints = Object.keys(mem.coding[MEMORY_KEY]?.failedTestCounts ?? {}).length;
+			console.log(
+				`  Hints:  ${numHints} learned constraint${numHints !== 1 ? "s" : ""} injected into consolidation prompt`,
+			);
+		}
 	} else if (!values.task) {
 		console.log("  Memory: No previous runs recorded.");
 	}
