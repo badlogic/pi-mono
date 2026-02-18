@@ -10,6 +10,7 @@
 - Added `EnergyUsage` interface (`energy_joules`, `energy_kwh`, `duration_seconds`) to types.
 - Added `energy?: EnergyUsage` field to `AssistantMessage` for per-request energy telemetry.
 - Added automatic energy metric parsing from OpenAI-compatible streaming responses (Neuralwatt and any provider including energy fields in usage).
+- Added `TelemetryRecord` interface and JSONL serialization/parsing utilities in `energy-types.ts` for structured telemetry logging.
 
 ## [0.53.0] - 2026-02-17
 
