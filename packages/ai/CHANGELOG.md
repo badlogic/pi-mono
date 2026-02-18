@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Neuralwatt as a new provider (`"neuralwatt"`) using OpenAI-compatible completions API with base URL `https://api.neuralwatt.com/v1`.
+- Added `neuralwatt-large` and `neuralwatt-small` model entries for the Neuralwatt provider.
+- Added `NEURALWATT_API_KEY` environment variable detection for Neuralwatt provider authentication.
+
 ## [0.53.0] - 2026-02-17
 
 ### Added

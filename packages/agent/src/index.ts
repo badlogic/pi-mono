@@ -2,6 +2,8 @@
 export * from "./agent.js";
 // Loop functions
 export * from "./agent-loop.js";
+// Policy
+export * from "./policy/index.js";
 // Proxy utilities
 export * from "./proxy.js";
 // Types

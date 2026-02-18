@@ -11,6 +11,7 @@ import {
 	type ToolResultMessage,
 	validateToolArguments,
 } from "@mariozechner/pi-ai";
+import type { PolicyContext, PolicyDecision, UsageWithEnergy } from "./policy/types.js";
 import type {
 	AgentContext,
 	AgentEvent,
@@ -98,6 +99,15 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 	);
 }
 
+/** Mutable state tracked across the agent loop for policy context. */
+interface PolicyState {
+	turnNumber: number;
+	consumedEnergy: number;
+	consumedTime: number;
+	estimatedInputTokens: number;
+	startTime: number;
+}
+
 /**
  * Main loop logic shared by agentLoop and agentLoopContinue.
  */
@@ -112,6 +122,14 @@ async function runLoop(
 	let firstTurn = true;
 	// Check for steering messages at start (user may have typed while waiting)
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
+
+	const policyState: PolicyState = {
+		turnNumber: 0,
+		consumedEnergy: 0,
+		consumedTime: 0,
+		estimatedInputTokens: 0,
+		startTime: Date.now(),
+	};
 
 	// Outer loop: continues when queued follow-up messages arrive after agent would stop
 	while (true) {
@@ -137,9 +155,96 @@ async function runLoop(
 				pendingMessages = [];
 			}
 
+			// Apply policy before model call
+			policyState.turnNumber++;
+			policyState.consumedTime = Date.now() - policyState.startTime;
+			let policyDecision: PolicyDecision | undefined;
+
+			if (config.policy) {
+				const policyCtx: PolicyContext = {
+					turnNumber: policyState.turnNumber,
+					model: config.model,
+					availableModels: [],
+					budget: {},
+					consumedEnergy: policyState.consumedEnergy,
+					consumedTime: policyState.consumedTime,
+					messageCount: currentContext.messages.length,
+					estimatedInputTokens: policyState.estimatedInputTokens,
+				};
+				policyDecision = config.policy.beforeModelCall(policyCtx);
+
+				if (policyDecision.abort) {
+					const abortMessage: AssistantMessage = {
+						role: "assistant",
+						content: [{ type: "text", text: policyDecision.reason || "Budget exhausted — aborting." }],
+						api: config.model.api,
+						provider: config.model.provider,
+						model: config.model.id,
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
+						stopReason: "aborted",
+						timestamp: Date.now(),
+					};
+					currentContext.messages.push(abortMessage);
+					newMessages.push(abortMessage);
+					stream.push({ type: "message_start", message: abortMessage });
+					stream.push({ type: "message_end", message: abortMessage });
+					stream.push({ type: "turn_end", message: abortMessage, toolResults: [] });
+					stream.push({ type: "agent_end", messages: newMessages });
+					stream.end(newMessages);
+					return;
+				}
+			}
+
 			// Stream assistant response
-			const message = await streamAssistantResponse(currentContext, config, signal, stream, streamFn);
+			const message = await streamAssistantResponse(
+				currentContext,
+				config,
+				signal,
+				stream,
+				streamFn,
+				policyDecision,
+			);
 			newMessages.push(message);
+
+			// Notify policy after model call
+			if (config.policy) {
+				const assistantMsg = message as AssistantMessage;
+				const usage = assistantMsg.usage;
+				if (usage) {
+					policyState.estimatedInputTokens = usage.totalTokens;
+					const usageWithEnergy: UsageWithEnergy = {
+						input: usage.input,
+						output: usage.output,
+						totalTokens: usage.totalTokens,
+						cost: { total: usage.cost.total },
+						energy_joules: (assistantMsg as any).energy?.energy_joules,
+						energy_kwh: (assistantMsg as any).energy?.energy_kwh,
+					};
+					if (usageWithEnergy.energy_joules != null) {
+						policyState.consumedEnergy += usageWithEnergy.energy_joules;
+					}
+					policyState.consumedTime = Date.now() - policyState.startTime;
+
+					const policyCtx: PolicyContext = {
+						turnNumber: policyState.turnNumber,
+						model: config.model,
+						availableModels: [],
+						budget: {},
+						consumedEnergy: policyState.consumedEnergy,
+						consumedTime: policyState.consumedTime,
+						messageCount: currentContext.messages.length,
+						estimatedInputTokens: policyState.estimatedInputTokens,
+					};
+					config.policy.afterModelCall(policyCtx, usageWithEnergy);
+				}
+			}
 
 			if (message.stopReason === "error" || message.stopReason === "aborted") {
 				stream.push({ type: "turn_end", message, toolResults: [] });
@@ -207,6 +312,7 @@ async function streamAssistantResponse(
 	signal: AbortSignal | undefined,
 	stream: EventStream<AgentEvent, AgentMessage[]>,
 	streamFn?: StreamFn,
+	policyDecision?: PolicyDecision,
 ): Promise<AssistantMessage> {
 	// Apply context transform if configured (AgentMessage[] → AgentMessage[])
 	let messages = context.messages;
@@ -226,15 +332,22 @@ async function streamAssistantResponse(
 
 	const streamFunction = streamFn || streamSimple;
 
+	// Apply policy overrides to model and options
+	const effectiveModel = policyDecision?.model || config.model;
+
 	// Resolve API key (important for expiring tokens)
 	const resolvedApiKey =
-		(config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
+		(config.getApiKey ? await config.getApiKey(effectiveModel.provider) : undefined) || config.apiKey;
 
-	const response = await streamFunction(config.model, llmContext, {
+	const streamOptions = {
 		...config,
 		apiKey: resolvedApiKey,
 		signal,
-	});
+		...(policyDecision?.maxTokens != null ? { maxTokens: policyDecision.maxTokens } : {}),
+		...(policyDecision?.reasoning != null ? { reasoning: policyDecision.reasoning } : {}),
+	};
+
+	const response = await streamFunction(effectiveModel, llmContext, streamOptions);
 
 	let partialMessage: AssistantMessage | null = null;
 	let addedPartial = false;

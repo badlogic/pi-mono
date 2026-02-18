@@ -1,0 +1,35 @@
+{
+	"name": "@mariozechner/pi-benchmarks",
+	"version": "0.53.0",
+	"description": "Energy-aware benchmark harness for pi-mono",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"scripts": {
+		"clean": "rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json",
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"test": "vitest --run",
+		"demo:coding": "npx tsx src/demos/coding-agent.ts",
+		"demo:hn": "npx tsx src/demos/hn-watcher.ts"
+	},
+	"dependencies": {
+		"@mariozechner/pi-agent-core": "*",
+		"@mariozechner/pi-ai": "*"
+	},
+	"keywords": [
+		"benchmark",
+		"energy",
+		"ai",
+		"neuralwatt"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"devDependencies": {
+		"@types/node": "^24.3.0",
+		"vitest": "^3.2.4"
+	}
+}

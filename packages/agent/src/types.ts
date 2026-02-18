@@ -10,6 +10,7 @@ import type {
 	ToolResultMessage,
 } from "@mariozechner/pi-ai";
 import type { Static, TSchema } from "@sinclair/typebox";
+import type { RuntimePolicy } from "./policy/types.js";
 
 /** Stream function - can return sync or Promise for async config lookup */
 export type StreamFn = (
@@ -95,6 +96,12 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * Use this for follow-up messages that should wait until the agent finishes.
 	 */
 	getFollowUpMessages?: () => Promise<AgentMessage[]>;
+
+	/**
+	 * Optional runtime policy that can modify model parameters before each LLM call
+	 * and observe usage data after each call. Used for energy-aware budgeting.
+	 */
+	policy?: RuntimePolicy;
 }
 
 /**
