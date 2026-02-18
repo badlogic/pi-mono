@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import type { BenchmarkReport, TaskComparison, TaskResult } from "./types.js";
 
 /**
@@ -56,15 +56,11 @@ export function buildReport(baselineResults: TaskResult[], energyAwareResults: T
 }
 
 /**
- * Generate a full report from a results.jsonl file.
- * Each line is a JSON-encoded TaskResult with a "mode" field.
- * Returns the BenchmarkReport, summary CSV string, and Markdown string.
+ * Generate a full report from a results.jsonl file and write output files.
+ * Each line in results.jsonl is a JSON-encoded TaskResult with a "mode" field.
+ * Writes summary.csv and report.md to the output directory.
  */
-export function generateReport(resultsPath: string): {
-	report: BenchmarkReport;
-	csv: string;
-	markdown: string;
-} {
+export function generateReport(resultsPath: string, outputDir: string): BenchmarkReport {
 	const content = readFileSync(resultsPath, "utf-8");
 	const lines = content.split("\n").filter((line) => line.trim().length > 0);
 	const results: TaskResult[] = lines.map((line) => JSON.parse(line) as TaskResult);
@@ -73,10 +69,12 @@ export function generateReport(resultsPath: string): {
 	const energyAware = results.filter((r) => r.mode === "energy-aware");
 
 	const report = buildReport(baseline, energyAware);
-	const csv = generateCsv(results);
-	const markdown = generateMarkdownReport(report);
 
-	return { report, csv, markdown };
+	mkdirSync(outputDir, { recursive: true });
+	writeFileSync(join(outputDir, "summary.csv"), `${generateCsv(results)}\n`, "utf-8");
+	writeFileSync(join(outputDir, "report.md"), generateMarkdownReport(report), "utf-8");
+
+	return report;
 }
 
 /**

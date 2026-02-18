@@ -1,5 +1,7 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildReport, generateCsv, generateMarkdownReport, generateReport } from "../src/report.js";
 import type { TaskResult } from "../src/types.js";
 
@@ -141,12 +143,22 @@ describe("report", () => {
 		});
 	});
 
-	describe("generateReport (from JSONL)", () => {
-		it("reads results.jsonl and produces report, CSV, and markdown", () => {
-			const resultsPath = join(FIXTURES_DIR, "results.jsonl");
-			const { report, csv, markdown } = generateReport(resultsPath);
+	describe("generateReport (from JSONL to files)", () => {
+		let tmpDir: string;
 
-			// 3 tasks matched (qa-factual, code-fizzbuzz, reason-math)
+		beforeEach(() => {
+			tmpDir = mkdtempSync(join(tmpdir(), "bench-report-"));
+		});
+
+		afterEach(() => {
+			rmSync(tmpDir, { recursive: true, force: true });
+		});
+
+		it("reads results.jsonl and writes summary.csv and report.md", () => {
+			const resultsPath = join(FIXTURES_DIR, "results.jsonl");
+			const report = generateReport(resultsPath, tmpDir);
+
+			// Verify report data
 			expect(report.tasks).toHaveLength(3);
 			expect(report.baseline_run_id).toBe("run-baseline-1");
 			expect(report.energy_aware_run_id).toBe("run-ea-1");
@@ -169,16 +181,20 @@ describe("report", () => {
 			// All tasks pass in both modes
 			expect(report.aggregate.baseline_success_rate).toBe(100);
 			expect(report.aggregate.energy_aware_success_rate).toBe(100);
-
-			// Mean energy savings > 0
 			expect(report.aggregate.mean_energy_savings_pct).toBeGreaterThan(0);
 
-			// CSV has correct number of rows (header + 6 results)
-			const csvLines = csv.split("\n");
+			// Verify summary.csv was written
+			const csvPath = join(tmpDir, "summary.csv");
+			expect(existsSync(csvPath)).toBe(true);
+			const csv = readFileSync(csvPath, "utf-8");
+			const csvLines = csv.trim().split("\n");
 			expect(csvLines[0]).toBe("task_id,mode,time_ms,energy_joules,tokens_total,success,score");
 			expect(csvLines).toHaveLength(7); // header + 6 data rows
 
-			// Markdown contains all sections
+			// Verify report.md was written
+			const mdPath = join(tmpDir, "report.md");
+			expect(existsSync(mdPath)).toBe(true);
+			const markdown = readFileSync(mdPath, "utf-8");
 			expect(markdown).toContain("# Energy-Aware Benchmark Report");
 			expect(markdown).toContain("## Per-Task Results");
 			expect(markdown).toContain("## Aggregate");
