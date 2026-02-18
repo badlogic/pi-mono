@@ -1,25 +1,44 @@
 /**
  * Core types for the energy-aware benchmark harness.
- * TelemetryRecord is a contract shared with packages/ai — update in coordination with the provider agent.
  */
 
-/** Telemetry record produced per model call. Written as JSONL to results files. */
-export interface TelemetryRecord {
-	task_id: string;
-	run_id: string;
-	step_id: string;
+import type { AgentTool, EnergyBudget, RuntimePolicy } from "@mariozechner/pi-agent-core";
+import type { Api, Model, TelemetryRecord as ProviderTelemetryRecord } from "@mariozechner/pi-ai";
+
+/** Re-export the provider TelemetryRecord as the canonical schema. */
+export type { TelemetryRecord } from "@mariozechner/pi-ai";
+
+/** Extends TelemetryRecord with benchmark-specific mode field. */
+export interface BenchmarkTelemetryRecord extends ProviderTelemetryRecord {
 	mode: "baseline" | "energy-aware";
-	model: string;
-	provider: string;
-	tokens: {
-		input: number;
-		output: number;
-		total: number;
-	};
-	latency_ms: number;
-	energy_joules: number;
-	energy_kwh: number;
-	timestamp: number;
+}
+
+/** Simulated per-turn usage data for mocked benchmark runs. */
+export interface MockTurnUsage {
+	input: number;
+	output: number;
+	totalTokens: number;
+	cost: { total: number };
+	energy_joules?: number;
+	energy_kwh?: number;
+	latency_ms?: number;
+}
+
+/** Definition of a single benchmark task. Supports mocked responses for CI. */
+export interface BenchmarkTask {
+	id: string;
+	name: string;
+	description: string;
+	prompt: string;
+	tools?: AgentTool[];
+	maxTurns: number;
+	/** Mock usage data per turn. If shorter than maxTurns, defaults are used. */
+	mockTurnUsage?: MockTurnUsage[];
+	/** Validator receives telemetry records and policy decisions from the run. */
+	validator: (
+		records: ProviderTelemetryRecord[],
+		decisions: PolicyDecisionLog[],
+	) => { passed: boolean; score: number; reason: string };
 }
 
 /** Aggregated result for a single task run. */
@@ -66,4 +85,22 @@ export interface TaskComparison {
 	energy_aware: TaskResult;
 	energy_savings_pct: number;
 	time_delta_pct: number;
+}
+
+/** Runner configuration with resolved model/policy references. */
+export interface RunConfig {
+	runId?: string;
+	mode: "baseline" | "energy-aware";
+	model: Model<Api>;
+	availableModels: Model<Api>[];
+	budget: EnergyBudget;
+	policy?: RuntimePolicy;
+}
+
+/** Result of running a complete benchmark suite. */
+export interface RunResult {
+	runId: string;
+	mode: "baseline" | "energy-aware";
+	results: TaskResult[];
+	records: ProviderTelemetryRecord[];
 }
