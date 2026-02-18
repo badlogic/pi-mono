@@ -335,7 +335,7 @@ async function discriminatePrompt(
 	memContext: string,
 	apiKey: string,
 ): Promise<{ decision: "complex" | "simple"; energyJ: number }> {
-	const input = (memContext ? `${memContext}\n\n` : "") + `Classify (phase: ${phase}):\n${prompt.slice(0, 450)}`;
+	const input = `${memContext ? `${memContext}\n\n` : ""}Classify (phase: ${phase}):\n${prompt.slice(0, 450)}`;
 	try {
 		const msg = await completeSimple(
 			DISCRIMINATOR_MODEL,
@@ -520,6 +520,7 @@ interface TurnResult {
 	model: string;
 	energy: number;
 	tokens: number;
+	cacheRead: number;
 	/** Human-readable decision label shown in scorecard. */
 	decision: string;
 	/** EA mode: discriminator classification for this turn. */
@@ -532,6 +533,7 @@ interface RunStats {
 	mode: string;
 	totalEnergy: number;
 	totalTokens: number;
+	totalCacheRead: number;
 	turns: TurnResult[];
 	startTime: number;
 	endTime: number;
@@ -554,6 +556,7 @@ async function runCodingAgent(
 		mode,
 		totalEnergy: 0,
 		totalTokens: 0,
+		totalCacheRead: 0,
 		turns: [],
 		startTime: Date.now(),
 		endTime: 0,
@@ -615,13 +618,16 @@ async function runCodingAgent(
 
 		const energy = getEnergy(assistantMsg, effectiveModel.id);
 		const tokens = assistantMsg.usage.totalTokens;
+		const cacheRead = assistantMsg.usage.cacheRead;
 		stats.totalEnergy += energy;
 		stats.totalTokens += tokens;
+		stats.totalCacheRead += cacheRead;
 
 		const energySource =
 			assistantMsg.energy?.energy_joules != null && assistantMsg.energy.energy_joules > 0 ? "api" : "est";
+		const cacheLabel = cacheRead > 0 ? ` \x1b[33m(${cacheRead}c cached)\x1b[0m` : "";
 		console.log(
-			`  \x1b[2m${tokens} tokens | ${energy.toFixed(1)}J [${energySource}] | input:${assistantMsg.usage.input} output:${assistantMsg.usage.output}\x1b[0m`,
+			`  \x1b[2m${tokens} tokens | ${energy.toFixed(1)}J [${energySource}] | input:${assistantMsg.usage.input}${cacheRead > 0 ? "" : ""} output:${assistantMsg.usage.output}\x1b[0m${cacheLabel}`,
 		);
 
 		const responseText = extractText(assistantMsg);
@@ -633,6 +639,7 @@ async function runCodingAgent(
 			model: effectiveModel.id,
 			energy,
 			tokens,
+			cacheRead,
 			decision: decisionLabel,
 			discriminatorDecision,
 			discriminatorEnergyJ,
@@ -721,7 +728,13 @@ async function runCodingAgent(
 
 // -- Scorecard ----------------------------------------------------------------
 
-function printScorecard(baseline: RunStats, energyAware: RunStats, config: RunConfig, budget: number): void {
+function printScorecard(
+	baseline: RunStats,
+	energyAware: RunStats,
+	config: RunConfig,
+	budget: number,
+	runLabel = "",
+): void {
 	const baseTime = (baseline.endTime - baseline.startTime) / 1000;
 	const eaTime = (energyAware.endTime - energyAware.startTime) / 1000;
 	const energySaved =
@@ -755,8 +768,11 @@ function printScorecard(baseline: RunStats, energyAware: RunStats, config: RunCo
 	const eaGptTurns = energyAware.turns.filter((t) => t.model === GPT_OSS_MODEL.id).length;
 	const eaModelLabel = `Kimi: ${eaKimiTurns}, GPT-OSS: ${eaGptTurns} (discriminator)`;
 
+	const header = runLabel
+		? `SCORECARD ${runLabel} — Coding Agent Energy Challenge`
+		: "FINAL SCORECARD — Coding Agent Energy Challenge";
 	console.log(`\n${"═".repeat(70)}`);
-	console.log("  FINAL SCORECARD — Coding Agent Energy Challenge");
+	console.log(`  ${header}`);
 	console.log(`${"═".repeat(70)}`);
 	console.log(`  Task:   ${config.taskLabel}`);
 	console.log(
@@ -776,6 +792,14 @@ function printScorecard(baseline: RunStats, energyAware: RunStats, config: RunCo
 		console.log(
 			`  | Discriminator   | ${"n/a".padEnd(17)} | ${`${energyAware.totalDiscriminatorEnergyJ.toFixed(1)}J overhead (${energyAware.turns.length} calls)`.padEnd(25)} |`,
 		);
+	}
+	const totalCacheRead = baseline.totalCacheRead + energyAware.totalCacheRead;
+	if (totalCacheRead > 0) {
+		const baseCacheLabel =
+			baseline.totalCacheRead > 0 ? `${baseline.totalCacheRead} tok \x1b[33m[cached!]\x1b[0m` : "0 tok";
+		const eaCacheLabel =
+			energyAware.totalCacheRead > 0 ? `${energyAware.totalCacheRead} tok \x1b[33m[cached!]\x1b[0m` : "0 tok";
+		console.log(`  | Cache reads     | ${baseCacheLabel.padEnd(17)} | ${eaCacheLabel.padEnd(25)} |`);
 	}
 	console.log(
 		`  | Est. cost       | ${`$${baseCost.toFixed(4)}`.padEnd(17)} | ${`$${eaCost.toFixed(4)}  (${fmtDelta(-costSaved, "-")} saved)`.padEnd(25)} |`,
@@ -882,6 +906,162 @@ function updateCodingMemory(mem: ReturnType<typeof loadMemory>, baseStats: RunSt
 	};
 }
 
+// -- Multi-run ----------------------------------------------------------------
+
+interface RunPair {
+	runIndex: number;
+	order: "baseline-first" | "ea-first";
+	config: RunConfig;
+	baseline: RunStats;
+	ea: RunStats;
+}
+
+/**
+ * Builds a RunConfig for one iteration. For generated mode, calls the LLM each
+ * time so each run gets a fresh task (defeats cross-run KV caching).
+ */
+async function buildRunConfig(
+	isStatic: boolean,
+	taskStr: string | undefined,
+	acceptancePath: string | undefined,
+	apiKey: string,
+	mem: ReturnType<typeof loadMemory>,
+): Promise<RunConfig> {
+	if (taskStr) {
+		const acceptanceTest = acceptancePath ? readFileSync(acceptancePath, "utf8") : null;
+		return {
+			taskLabel: taskStr.slice(0, 60),
+			buildTurns: [taskStr],
+			consolidatePrompt:
+				"Write the final complete implementation as a single TypeScript file named impl.ts, " +
+				"incorporating everything built so far. " +
+				"Export all public types and functions. " +
+				"No external imports. Output raw TypeScript only — no markdown fences.",
+			acceptanceTest,
+			fixPromptExtra: "",
+			generated: false,
+		};
+	}
+
+	if (isStatic) {
+		const memHints = codingMemoryHints(MEMORY_KEY, mem);
+		const consolidatePrompt = memHints ? memHints + DEFAULT_CONSOLIDATE_PROMPT : DEFAULT_CONSOLIDATE_PROMPT;
+		return {
+			taskLabel: "TypeScript rate-limiting middleware with acceptance tests",
+			buildTurns: DEFAULT_BUILD_TURNS,
+			consolidatePrompt,
+			acceptanceTest: DEFAULT_ACCEPTANCE_TEST,
+			fixPromptExtra: DEFAULT_FIX_EXTRA,
+			generated: false,
+		};
+	}
+
+	// Generated: fresh challenge each call
+	const gen = await generateChallenge(apiKey);
+	if (gen) {
+		return {
+			taskLabel: gen.taskLabel,
+			buildTurns: gen.buildTurns,
+			consolidatePrompt: gen.consolidatePrompt,
+			acceptanceTest: gen.acceptanceTest,
+			fixPromptExtra:
+				"Re-implement the complete solution satisfying all exports specified in the consolidation prompt.",
+			generated: true,
+		};
+	}
+	// Fallback
+	return {
+		taskLabel: "TypeScript rate-limiting middleware with acceptance tests",
+		buildTurns: DEFAULT_BUILD_TURNS,
+		consolidatePrompt: DEFAULT_CONSOLIDATE_PROMPT,
+		acceptanceTest: DEFAULT_ACCEPTANCE_TEST,
+		fixPromptExtra: DEFAULT_FIX_EXTRA,
+		generated: false,
+	};
+}
+
+function printAggregateScorecard(pairs: RunPair[]): void {
+	const baselineFirstCount = pairs.filter((p) => p.order === "baseline-first").length;
+	const eaFirstCount = pairs.filter((p) => p.order === "ea-first").length;
+
+	const avgBaseEnergy = pairs.reduce((s, p) => s + p.baseline.totalEnergy, 0) / pairs.length;
+	const avgEaEnergy = pairs.reduce((s, p) => s + p.ea.totalEnergy, 0) / pairs.length;
+	const avgSavedPct =
+		pairs.reduce((s, p) => {
+			const saved =
+				p.baseline.totalEnergy > 0
+					? ((p.baseline.totalEnergy - p.ea.totalEnergy) / p.baseline.totalEnergy) * 100
+					: 0;
+			return s + saved;
+		}, 0) / pairs.length;
+
+	const basePassed = pairs.filter((p) => p.baseline.testPassed).length;
+	const eaPassed = pairs.filter((p) => p.ea.testPassed).length;
+	const totalCacheBase = pairs.reduce((s, p) => s + p.baseline.totalCacheRead, 0);
+	const totalCacheEa = pairs.reduce((s, p) => s + p.ea.totalCacheRead, 0);
+
+	const kimiPrice = 1.327 / 1_000_000;
+	const gptPrice = 0.1 / 1_000_000;
+	const avgBaseCost =
+		pairs.reduce((s, p) => s + p.baseline.turns.reduce((ts, t) => ts + t.tokens * kimiPrice, 0), 0) / pairs.length;
+	const avgEaCost =
+		pairs.reduce(
+			(s, p) =>
+				s + p.ea.turns.reduce((ts, t) => ts + t.tokens * (t.model.includes("gpt-oss") ? gptPrice : kimiPrice), 0),
+			0,
+		) / pairs.length;
+	const avgCostSavedPct = avgBaseCost > 0 ? ((avgBaseCost - avgEaCost) / avgBaseCost) * 100 : 0;
+
+	const taskCol = 32;
+	const pad = (s: string, n: number) => s.slice(0, n).padEnd(n);
+
+	console.log(`\n${"═".repeat(80)}`);
+	console.log(
+		`  AGGREGATE — ${pairs.length} run${pairs.length !== 1 ? "s" : ""}  (${baselineFirstCount} baseline-first, ${eaFirstCount} ea-first)`,
+	);
+	console.log(`${"═".repeat(80)}`);
+	console.log(
+		`  ${"#  Task".padEnd(taskCol)}  ${"Order".padEnd(10)}  ${"Baseline".padEnd(10)}  ${"EA".padEnd(10)}  ${"Saved".padEnd(6)}  Quality`,
+	);
+	console.log(
+		`  ${"─".repeat(taskCol)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(6)}  ───────`,
+	);
+
+	for (const p of pairs) {
+		const orderLabel = p.order === "baseline-first" ? "base→ea" : "ea→base";
+		const savedPct =
+			p.baseline.totalEnergy > 0 ? ((p.baseline.totalEnergy - p.ea.totalEnergy) / p.baseline.totalEnergy) * 100 : 0;
+		const qualLabel = `${p.baseline.testPassed ? "✓" : "✗"}/${p.ea.testPassed ? "✓" : "✗"}`;
+		const taskStr = `${p.runIndex + 1}  ${p.config.taskLabel}`;
+		const cacheFlag = p.baseline.totalCacheRead + p.ea.totalCacheRead > 0 ? " \x1b[33m[C]\x1b[0m" : "";
+		console.log(
+			`  ${pad(taskStr, taskCol)}  ${orderLabel.padEnd(10)}  ${`${p.baseline.totalEnergy.toFixed(0)}J`.padEnd(10)}  ${`${p.ea.totalEnergy.toFixed(0)}J`.padEnd(10)}  ${`${savedPct.toFixed(0)}%`.padEnd(6)}  ${qualLabel}${cacheFlag}`,
+		);
+	}
+
+	console.log(
+		`  ${"─".repeat(taskCol)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(6)}  ───────`,
+	);
+	console.log(
+		`  ${"avg".padEnd(taskCol)}  ${"".padEnd(10)}  ${`${avgBaseEnergy.toFixed(0)}J`.padEnd(10)}  ${`${avgEaEnergy.toFixed(0)}J`.padEnd(10)}  ${`${avgSavedPct.toFixed(0)}%`.padEnd(6)}  ${basePassed}/${pairs.length} / ${eaPassed}/${pairs.length}`,
+	);
+	console.log(
+		`  ${"est. cost".padEnd(taskCol)}  ${"".padEnd(10)}  ${`$${avgBaseCost.toFixed(4)}`.padEnd(10)}  ${`$${avgEaCost.toFixed(4)}`.padEnd(10)}  ${`${avgCostSavedPct.toFixed(0)}%`.padEnd(6)}`,
+	);
+
+	if (totalCacheBase + totalCacheEa > 0) {
+		console.log(`\n  \x1b[33m[C] = cache reads detected — results for those runs may be skewed\x1b[0m`);
+		console.log(`  Cache reads: baseline=${totalCacheBase} tok, ea=${totalCacheEa} tok across all runs`);
+	}
+	console.log(`${"═".repeat(80)}`);
+
+	if (avgSavedPct > 0) {
+		console.log(
+			`\n  \x1b[32m✓ Average energy savings: ${avgSavedPct.toFixed(0)}%, average cost savings: ${avgCostSavedPct.toFixed(0)}%\x1b[0m`,
+		);
+	}
+}
+
 // -- Main ---------------------------------------------------------------------
 
 async function main(): Promise<void> {
@@ -889,8 +1069,10 @@ async function main(): Promise<void> {
 		options: {
 			budget: { type: "string", default: String(DEFAULT_BUDGET_JOULES) },
 			task: { type: "string" },
-			acceptance: { type: "string" }, // path to a custom acceptance test .ts file
-			static: { type: "boolean", default: false }, // use hardcoded rate-limiter task
+			acceptance: { type: "string" },
+			static: { type: "boolean", default: false },
+			reverse: { type: "boolean", default: false }, // run EA first in every pair
+			runs: { type: "string", default: "1" }, // number of run pairs
 			"clear-memory": { type: "boolean", default: false },
 		},
 		allowPositionals: true,
@@ -910,111 +1092,92 @@ async function main(): Promise<void> {
 
 	const apiKey = process.env.NEURALWATT_API_KEY;
 	const budgetJ = Number(values.budget);
+	const numRuns = Math.max(1, parseInt(values.runs ?? "1", 10));
+	const startEaFirst = values.reverse ?? false;
 
-	// Load memory before building config so we can inject hints for static task
 	const mem = loadMemory();
 
-	// -- Build RunConfig -------------------------------------------------------
-	let config: RunConfig;
-
-	if (values.task) {
-		// Custom single-turn task from CLI
-		let acceptanceTest: string | null = null;
-		if (values.acceptance) {
-			acceptanceTest = readFileSync(values.acceptance, "utf8");
-		}
-		config = {
-			taskLabel: values.task.slice(0, 60),
-			buildTurns: [values.task],
-			consolidatePrompt:
-				"Write the final complete implementation as a single TypeScript file named impl.ts, " +
-				"incorporating everything built so far. " +
-				"Export all public types and functions. " +
-				"No external imports. Output raw TypeScript only — no markdown fences.",
-			acceptanceTest,
-			fixPromptExtra: "",
-			generated: false,
-		};
-	} else if (values.static) {
-		// Hardcoded rate-limiter task — inject memory hints if available
-		const memHints = codingMemoryHints(MEMORY_KEY, mem);
-		const consolidatePrompt = memHints ? memHints + DEFAULT_CONSOLIDATE_PROMPT : DEFAULT_CONSOLIDATE_PROMPT;
-		config = {
-			taskLabel: "TypeScript rate-limiting middleware with acceptance tests",
-			buildTurns: DEFAULT_BUILD_TURNS,
-			consolidatePrompt,
-			acceptanceTest: DEFAULT_ACCEPTANCE_TEST,
-			fixPromptExtra: DEFAULT_FIX_EXTRA,
-			generated: false,
-		};
-	} else {
-		// Default: generate a fresh challenge via LLM (defeats KV caching)
-		const generated = await generateChallenge(apiKey);
-		if (generated) {
-			config = {
-				taskLabel: generated.taskLabel,
-				buildTurns: generated.buildTurns,
-				consolidatePrompt: generated.consolidatePrompt,
-				acceptanceTest: generated.acceptanceTest,
-				fixPromptExtra:
-					"Re-implement the complete solution satisfying all exports specified in the consolidation prompt.",
-				generated: true,
-			};
-		} else {
-			// Fallback: hardcoded task
-			config = {
-				taskLabel: "TypeScript rate-limiting middleware with acceptance tests",
-				buildTurns: DEFAULT_BUILD_TURNS,
-				consolidatePrompt: DEFAULT_CONSOLIDATE_PROMPT,
-				acceptanceTest: DEFAULT_ACCEPTANCE_TEST,
-				fixPromptExtra: DEFAULT_FIX_EXTRA,
-				generated: false,
-			};
-		}
-	}
-
-	// Display memory summary
+	// -- Startup banner -------------------------------------------------------
 	const memSummary = formatCodingMemory(MEMORY_KEY, mem);
 	const phaseRoutingSummary = formatPhaseRouting(MEMORY_KEY, mem);
-	const memHintsInjected = !config.generated && !!codingMemoryHints(MEMORY_KEY, mem);
-	const numHints = Object.keys(mem.coding[MEMORY_KEY]?.failedTestCounts ?? {}).length;
+
+	const orderDesc =
+		numRuns === 1
+			? startEaFirst
+				? "ea → baseline"
+				: "baseline → ea"
+			: startEaFirst
+				? "alternating (ea-first)"
+				: "alternating (baseline-first)";
 
 	console.log("╔══════════════════════════════════════════════════════════════════════╗");
 	console.log("║               Coding Agent Energy Challenge                         ║");
-	console.log(`║  Task:   ${config.taskLabel.padEnd(60)}║`);
-	console.log(`║  Model:  ${`Kimi K2.5 (baseline) + GPT-OSS-20B (discriminator/simple)`.padEnd(60)}║`);
+	console.log(`║  Model:  ${"Kimi K2.5 (baseline) + GPT-OSS-20B (discriminator)".padEnd(60)}║`);
 	console.log(`║  Budget: ${`${budgetJ}J (display)`.padEnd(60)}║`);
-	console.log(
-		`║  Phases: build (${config.buildTurns.length}) + consolidate (1) + acceptance-test loop (no turn limit) ║`,
-	);
-	if (config.acceptanceTest) {
-		console.log("║  Mode:   ACCEPTANCE-TEST-DRIVEN — both runs complete to pass/fail    ║");
+	console.log(`║  Runs:   ${`${numRuns}  order: ${orderDesc}`.padEnd(60)}║`);
+	if (values.task) {
+		console.log(`║  Task:   ${(values.task as string).slice(0, 60).padEnd(60)}║`);
+	} else if (values.static) {
+		console.log(`║  Task:   ${"hardcoded rate-limiter (--static)".padEnd(60)}║`);
+	} else {
+		console.log(`║  Task:   ${"LLM-generated per run (fresh challenge each time)".padEnd(60)}║`);
 	}
 	console.log("╠══════════════════════════════════════════════════════════════════════╣");
-	console.log("║  Flags:  --budget N  --task '...'  --acceptance file.ts             ║");
-	console.log("║          --static  (hardcoded task)  --clear-memory                 ║");
+	console.log("║  Flags:  --runs N  --reverse  --budget N  --static  --clear-memory  ║");
 	console.log("╚══════════════════════════════════════════════════════════════════════╝");
 
 	if (memSummary) {
 		console.log(memSummary);
 		if (phaseRoutingSummary) console.log(phaseRoutingSummary);
-		if (memHintsInjected) {
+		const numHints = Object.keys(mem.coding[MEMORY_KEY]?.failedTestCounts ?? {}).length;
+		if (numHints > 0 && values.static) {
 			console.log(
-				`  Hints:  ${numHints} learned constraint${numHints !== 1 ? "s" : ""} injected into consolidation prompt (--static mode)`,
+				`  Hints:  ${numHints} learned constraint${numHints !== 1 ? "s" : ""} injected into consolidation prompt`,
 			);
 		}
 	} else {
 		console.log("  Memory: No previous runs recorded.");
 	}
 
-	const baselineStats = await runCodingAgent("baseline", config, mem, apiKey, budgetJ);
-	const energyAwareStats = await runCodingAgent("energy-aware", config, mem, apiKey, budgetJ);
+	// -- Run loop -------------------------------------------------------------
+	const pairs: RunPair[] = [];
 
-	printScorecard(baselineStats, energyAwareStats, config, budgetJ);
+	for (let i = 0; i < numRuns; i++) {
+		const order: "baseline-first" | "ea-first" = (i % 2 === 0) !== startEaFirst ? "baseline-first" : "ea-first";
+		const orderArrow = order === "baseline-first" ? "baseline → ea-aware" : "ea-aware → baseline";
 
-	// Persist memory (always — discriminator routing is task-independent)
-	updateCodingMemory(mem, baselineStats, energyAwareStats);
-	saveMemory(mem);
+		if (numRuns > 1) {
+			console.log(`\n${"─".repeat(70)}`);
+			console.log(`  Run ${i + 1}/${numRuns}  (${orderArrow})`);
+			console.log(`${"─".repeat(70)}`);
+		}
+
+		const config = await buildRunConfig(values.static ?? false, values.task, values.acceptance, apiKey, mem);
+
+		let baselineStats: RunStats;
+		let eaStats: RunStats;
+
+		if (order === "baseline-first") {
+			baselineStats = await runCodingAgent("baseline", config, mem, apiKey, budgetJ);
+			eaStats = await runCodingAgent("energy-aware", config, mem, apiKey, budgetJ);
+		} else {
+			eaStats = await runCodingAgent("energy-aware", config, mem, apiKey, budgetJ);
+			baselineStats = await runCodingAgent("baseline", config, mem, apiKey, budgetJ);
+		}
+
+		const runLabel = numRuns > 1 ? `(Run ${i + 1}/${numRuns})` : "";
+		printScorecard(baselineStats, eaStats, config, budgetJ, runLabel);
+
+		updateCodingMemory(mem, baselineStats, eaStats);
+		saveMemory(mem);
+
+		pairs.push({ runIndex: i, order, config, baseline: baselineStats, ea: eaStats });
+	}
+
+	if (numRuns > 1) {
+		printAggregateScorecard(pairs);
+	}
+
 	console.log(`\n  Memory saved to ~/.energy-demo-memory.json`);
 }
 
