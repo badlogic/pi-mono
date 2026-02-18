@@ -614,34 +614,9 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		}
 	}
 
-	// Score an entry against the query (higher = better match)
-	// isDirectory adds bonus to prioritize folders
-	private scoreEntry(filePath: string, query: string, isDirectory: boolean): number {
-		const fileName = basename(filePath);
-		const lowerFileName = fileName.toLowerCase();
-		const lowerQuery = query.toLowerCase();
-
-		let score = 0;
-
-		// Exact filename match (highest)
-		if (lowerFileName === lowerQuery) score = 100;
-		// Filename starts with query
-		else if (lowerFileName.startsWith(lowerQuery)) score = 80;
-		// Substring match in filename
-		else if (lowerFileName.includes(lowerQuery)) score = 50;
-		// Substring match in full path
-		else if (filePath.toLowerCase().includes(lowerQuery)) score = 30;
-
-		// Directories get a bonus to appear first
-		if (isDirectory && score > 0) score += 10;
-
-		return score;
-	}
-
 	// Fuzzy file search using fd (fast, respects .gitignore)
 	private getFuzzyFileSuggestions(query: string, options: { isQuotedPrefix: boolean }): AutocompleteItem[] {
 		if (!this.fdPath) {
-			// fd not available, return empty results
 			return [];
 		}
 
@@ -649,19 +624,17 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			const scopedQuery = this.resolveScopedFuzzyQuery(query);
 			const fdBaseDir = scopedQuery?.baseDir ?? this.basePath;
 			const fdQuery = scopedQuery?.query ?? query;
-			const entries = walkDirectoryWithFd(fdBaseDir, this.fdPath, fdQuery, 100);
 
-			// Score entries
-			const scoredEntries = entries
-				.map((entry) => ({
-					...entry,
-					score: fdQuery ? this.scoreEntry(entry.path, fdQuery, entry.isDirectory) : 1,
-				}))
-				.filter((entry) => entry.score > 0);
+			// List all files without query filter, then fuzzy match client-side
+			const entries = walkDirectoryWithFd(fdBaseDir, this.fdPath, "", 5000);
 
-			// Sort by score (descending) and take top 20
-			scoredEntries.sort((a, b) => b.score - a.score);
-			const topEntries = scoredEntries.slice(0, 20);
+			// Use fuzzyFilter for proper character-by-character fuzzy matching
+			let topEntries: Array<{ path: string; isDirectory: boolean }>;
+			if (fdQuery) {
+				topEntries = fuzzyFilter(entries, fdQuery, (entry) => entry.path).slice(0, 20);
+			} else {
+				topEntries = entries.slice(0, 20);
+			}
 
 			// Build suggestions
 			const suggestions: AutocompleteItem[] = [];
