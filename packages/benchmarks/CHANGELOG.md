@@ -12,3 +12,4 @@
 - getTasksByGlob for task filtering by ID pattern
 - Task suite tests validating structure, categories, and validators
 - Demo 1: Coding Agent Energy Challenge (`demo:coding` script) — simulates a multi-step coding task under BaselinePolicy and EnergyAwarePolicy with live energy meter and ASCII scorecard
+- Report generator: `generateReport(resultsPath)` reads results.jsonl and produces BenchmarkReport, summary CSV, and Markdown comparison report with per-task table, aggregate stats, and verdict
