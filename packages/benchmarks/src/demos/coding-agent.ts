@@ -18,7 +18,7 @@
  *
  * Usage:
  *   npx tsx src/demos/coding-agent.ts
- *   npx tsx src/demos/coding-agent.ts --budget 15000 --max-turns 15
+ *   npx tsx src/demos/coding-agent.ts --budget 15000
  *   npx tsx src/demos/coding-agent.ts --task "implement X" --acceptance ./my-test.ts
  *   npx tsx src/demos/coding-agent.ts --clear-memory
  *
@@ -240,8 +240,6 @@ interface RunConfig {
 	 * Use for task-specific requirements the LLM must satisfy.
 	 */
 	fixPromptExtra: string;
-	/** Maximum total turns (all phases combined). Exceeded → run ends with FAILED. */
-	maxTotalTurns: number;
 }
 
 // tsx binary: prefer the one from the monorepo root node_modules
@@ -279,6 +277,8 @@ function runAcceptanceTest(code: string, testSource: string): TestResult {
 	const tmpDir = mkdtempSync(join(tmpdir(), "coding-agent-"));
 	try {
 		writeFileSync(join(tmpDir, "impl.ts"), code, "utf8");
+		// package.json with "type":"module" enables top-level await in tsx
+		writeFileSync(join(tmpDir, "package.json"), JSON.stringify({ type: "module" }), "utf8");
 		writeFileSync(join(tmpDir, "acceptance.ts"), testSource, "utf8");
 
 		let output = "";
@@ -378,8 +378,6 @@ interface RunStats {
 	totalEnergy: number;
 	totalTokens: number;
 	turns: TurnResult[];
-	/** Set to the turn number if maxTotalTurns was reached before tests passed. */
-	timedOutAt?: number;
 	startTime: number;
 	endTime: number;
 	testPassed?: boolean;
@@ -415,9 +413,7 @@ async function runCodingAgent(
 	const budgetJ = budget.energy_budget_joules ?? DEFAULT_BUDGET_JOULES;
 
 	console.log(`\n${"═".repeat(70)}`);
-	console.log(
-		`  Running: ${mode.toUpperCase()} mode  |  Budget: ${budgetJ}J (informational)  |  Max turns: ${config.maxTotalTurns}`,
-	);
+	console.log(`  Running: ${mode.toUpperCase()} mode  |  Budget: ${budgetJ}J (informational, drives routing)`);
 	console.log(`${"═".repeat(70)}`);
 
 	/**
@@ -518,23 +514,14 @@ async function runCodingAgent(
 
 	// -- Phase 1: Build --------------------------------------------------------
 	for (let i = 0; i < config.buildTurns.length; i++) {
-		if (stats.turns.length >= config.maxTotalTurns) break;
 		await runTurn(
 			config.buildTurns[i],
-			`Turn ${stats.turns.length + 1}/${config.maxTotalTurns}  [build ${i + 1}/${config.buildTurns.length}]`,
+			`Turn ${stats.turns.length + 1}  [build ${i + 1}/${config.buildTurns.length}]`,
 		);
 	}
 
-	if (stats.turns.length >= config.maxTotalTurns) {
-		stats.timedOutAt = stats.turns.length;
-		stats.testPassed = false;
-		stats.endTime = Date.now();
-		console.log(`\n  \x1b[31m✗ Turn limit (${config.maxTotalTurns}) reached in build phase\x1b[0m`);
-		return stats;
-	}
-
 	// -- Phase 2: Consolidate --------------------------------------------------
-	await runTurn(config.consolidatePrompt, `Turn ${stats.turns.length + 1}/${config.maxTotalTurns}  [consolidate]`);
+	await runTurn(config.consolidatePrompt, `Turn ${stats.turns.length + 1}  [consolidate]`);
 
 	// If no acceptance test, we're done after consolidation
 	if (!config.acceptanceTest) {
@@ -546,7 +533,7 @@ async function runCodingAgent(
 		return stats;
 	}
 
-	// -- Phase 3: Acceptance-test loop -----------------------------------------
+	// -- Phase 3: Acceptance-test loop (runs until all tests pass) -------------
 	const lastMsg = messages[messages.length - 1] as AssistantMessage;
 	let code = extractCode(extractText(lastMsg));
 	let testResult = runAcceptanceTest(code, config.acceptanceTest);
@@ -559,15 +546,8 @@ async function runCodingAgent(
 	} else {
 		let fixAttempt = 0;
 		while (!testResult.passed) {
-			if (stats.turns.length >= config.maxTotalTurns) {
-				stats.timedOutAt = stats.turns.length;
-				stats.testPassed = false;
-				console.log(`\n  \x1b[31m✗ Turn limit (${config.maxTotalTurns}) reached — tests still failing\x1b[0m`);
-				break;
-			}
-
 			fixAttempt++;
-			const fixTurnLabel = `Turn ${stats.turns.length + 1}/${config.maxTotalTurns}  [fix #${fixAttempt}]`;
+			const fixTurnLabel = `Turn ${stats.turns.length + 1}  [fix #${fixAttempt}]`;
 			const failureSummary = testResult.failedTests.map((f) => `  - ${f}`).join("\n");
 			const fixPrompt =
 				`The acceptance tests failed:\n${failureSummary}\n\n` +
@@ -589,10 +569,8 @@ async function runCodingAgent(
 					`\n  \x1b[32m✓ All acceptance tests passed on turn ${stats.turns.length} (+${fixAttempt} fix${fixAttempt !== 1 ? "es" : ""})\x1b[0m`,
 				);
 			} else {
-				const remaining = config.maxTotalTurns - stats.turns.length;
 				console.log(
-					`  → ${testResult.failedTests.length} test${testResult.failedTests.length !== 1 ? "s" : ""} failed` +
-						` — requesting correction (${remaining} turn${remaining !== 1 ? "s" : ""} remaining)`,
+					`  → ${testResult.failedTests.length} test${testResult.failedTests.length !== 1 ? "s" : ""} failed — requesting correction`,
 				);
 			}
 		}
@@ -628,13 +606,13 @@ function printScorecard(baseline: RunStats, energyAware: RunStats, config: RunCo
 
 	const consolidateTurnOffset = config.buildTurns.length + 1;
 	const fmtQuality = (s: RunStats): string => {
+		if (!config.acceptanceTest) return "n/a (no tests)       ";
 		if (s.testPassed === true) {
 			const fixCount = s.turnsToPass != null ? Math.max(0, s.turnsToPass - consolidateTurnOffset) : 0;
 			const fixes = fixCount > 0 ? `, +${fixCount} fix${fixCount !== 1 ? "es" : ""}` : ", +0 fixes";
 			return `✓ PASSED (turn ${s.turnsToPass}${fixes})`;
 		}
-		if (!config.acceptanceTest) return "n/a (no tests)       ";
-		return s.timedOutAt != null ? `✗ FAILED (turn limit ${s.timedOutAt})` : "✗ FAILED             ";
+		return "✗ FAILED             ";
 	};
 
 	const eaOverBudgetTurns = energyAware.turns.filter((t) => t.overBudget).length;
@@ -741,7 +719,6 @@ async function main(): Promise<void> {
 			budget: { type: "string", default: String(DEFAULT_BUDGET_JOULES) },
 			task: { type: "string" },
 			acceptance: { type: "string" }, // path to a custom acceptance test .ts file
-			"max-turns": { type: "string", default: "15" },
 			"clear-memory": { type: "boolean", default: false },
 		},
 		allowPositionals: true,
@@ -759,7 +736,6 @@ async function main(): Promise<void> {
 
 	const apiKey = process.env.NEURALWATT_API_KEY;
 	const budgetJ = Number(values.budget);
-	const maxTurns = Number(values["max-turns"]);
 
 	// Build RunConfig from CLI args
 	let config: RunConfig;
@@ -775,7 +751,6 @@ async function main(): Promise<void> {
 			consolidatePrompt: GENERIC_CONSOLIDATE_PROMPT,
 			acceptanceTest,
 			fixPromptExtra: "",
-			maxTotalTurns: maxTurns,
 		};
 	} else {
 		// Default rate-limiter task
@@ -785,7 +760,6 @@ async function main(): Promise<void> {
 			consolidatePrompt: DEFAULT_CONSOLIDATE_PROMPT,
 			acceptanceTest: DEFAULT_ACCEPTANCE_TEST,
 			fixPromptExtra: DEFAULT_FIX_EXTRA,
-			maxTotalTurns: maxTurns,
 		};
 	}
 
@@ -801,11 +775,14 @@ async function main(): Promise<void> {
 	console.log(`║  Model:  ${DEFAULT_MODEL.id.padEnd(60)}║`);
 	console.log(`║  Budget: ${`${budgetJ}J (informational — routes at >70%, token limits at >50%)`.padEnd(60)}║`);
 	console.log(
-		`║  Phases: build (${config.buildTurns.length}) + consolidate (1) + fix loop  |  max ${maxTurns} turns total   ║`,
+		`║  Phases: build (${config.buildTurns.length}) + consolidate (1) + acceptance-test loop (no turn limit) ║`,
 	);
 	if (config.acceptanceTest) {
 		console.log("║  Mode:   ACCEPTANCE-TEST-DRIVEN — both runs complete to pass/fail    ║");
 	}
+	console.log("╠══════════════════════════════════════════════════════════════════════╣");
+	console.log("║  Flags:  --budget N  --task '...'  --acceptance file.ts             ║");
+	console.log("║          --clear-memory  (wipe learned routing stats)               ║");
 	console.log("╚══════════════════════════════════════════════════════════════════════╝");
 
 	if (memSummary) {
