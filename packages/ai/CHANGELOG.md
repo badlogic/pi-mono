@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Enabled adaptive thinking detection for Claude Sonnet 4.6 in Anthropic and Bedrock providers, and clamp `xhigh` effort to `high` for Sonnet 4.6 while keeping `xhigh -> max` for Opus 4.6.
+
 ## [0.53.0] - 2026-02-17
 
 ### Added

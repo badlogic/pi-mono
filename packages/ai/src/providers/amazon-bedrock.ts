@@ -371,13 +371,21 @@ function handleContentBlockStop(
 }
 
 /**
- * Check if the model supports adaptive thinking (Opus 4.6+).
+ * Check if the model supports adaptive thinking (Opus 4.6 and Sonnet 4.6).
  */
 function supportsAdaptiveThinking(modelId: string): boolean {
-	return modelId.includes("opus-4-6") || modelId.includes("opus-4.6");
+	return (
+		modelId.includes("opus-4-6") ||
+		modelId.includes("opus-4.6") ||
+		modelId.includes("sonnet-4-6") ||
+		modelId.includes("sonnet-4.6")
+	);
 }
 
-function mapThinkingLevelToEffort(level: SimpleStreamOptions["reasoning"]): "low" | "medium" | "high" | "max" {
+function mapThinkingLevelToEffort(
+	level: SimpleStreamOptions["reasoning"],
+	modelId: string,
+): "low" | "medium" | "high" | "max" {
 	switch (level) {
 		case "minimal":
 		case "low":
@@ -387,7 +395,7 @@ function mapThinkingLevelToEffort(level: SimpleStreamOptions["reasoning"]): "low
 		case "high":
 			return "high";
 		case "xhigh":
-			return "max";
+			return modelId.includes("opus-4-6") || modelId.includes("opus-4.6") ? "max" : "high";
 		default:
 			return "high";
 	}
@@ -668,7 +676,7 @@ function buildAdditionalModelRequestFields(
 		const result: Record<string, any> = supportsAdaptiveThinking(model.id)
 			? {
 					thinking: { type: "adaptive" },
-					output_config: { effort: mapThinkingLevelToEffort(options.reasoning) },
+					output_config: { effort: mapThinkingLevelToEffort(options.reasoning, model.id) },
 				}
 			: (() => {
 					const defaultBudgets: Record<ThinkingLevel, number> = {

@@ -157,19 +157,19 @@ export type AnthropicEffort = "low" | "medium" | "high" | "max";
 export interface AnthropicOptions extends StreamOptions {
 	/**
 	 * Enable extended thinking.
-	 * For Opus 4.6+: uses adaptive thinking (Claude decides when/how much to think).
+	 * For Opus 4.6 and Sonnet 4.6: uses adaptive thinking (model decides when/how much to think).
 	 * For older models: uses budget-based thinking with thinkingBudgetTokens.
 	 */
 	thinkingEnabled?: boolean;
 	/**
 	 * Token budget for extended thinking (older models only).
-	 * Ignored for Opus 4.6+ which uses adaptive thinking.
+	 * Ignored for Opus 4.6 and Sonnet 4.6, which use adaptive thinking.
 	 */
 	thinkingBudgetTokens?: number;
 	/**
-	 * Effort level for adaptive thinking (Opus 4.6+ only).
+	 * Effort level for adaptive thinking (Opus 4.6 and Sonnet 4.6).
 	 * Controls how much thinking Claude allocates:
-	 * - "max": Always thinks with no constraints
+	 * - "max": Always thinks with no constraints (Opus 4.6 only)
 	 * - "high": Always thinks, deep reasoning (default)
 	 * - "medium": Moderate thinking, may skip for simple queries
 	 * - "low": Minimal thinking, skips for simple tasks
@@ -411,17 +411,23 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 };
 
 /**
- * Check if a model supports adaptive thinking (Opus 4.6+)
+ * Check if a model supports adaptive thinking (Opus 4.6 and Sonnet 4.6)
  */
 function supportsAdaptiveThinking(modelId: string): boolean {
-	// Opus 4.6 model IDs (with or without date suffix)
-	return modelId.includes("opus-4-6") || modelId.includes("opus-4.6");
+	// Opus 4.6 and Sonnet 4.6 model IDs (with or without date suffix)
+	return (
+		modelId.includes("opus-4-6") ||
+		modelId.includes("opus-4.6") ||
+		modelId.includes("sonnet-4-6") ||
+		modelId.includes("sonnet-4.6")
+	);
 }
 
 /**
- * Map ThinkingLevel to Anthropic effort levels for adaptive thinking
+ * Map ThinkingLevel to Anthropic effort levels for adaptive thinking.
+ * Note: effort "max" is only valid on Opus 4.6.
  */
-function mapThinkingLevelToEffort(level: SimpleStreamOptions["reasoning"]): AnthropicEffort {
+function mapThinkingLevelToEffort(level: SimpleStreamOptions["reasoning"], modelId: string): AnthropicEffort {
 	switch (level) {
 		case "minimal":
 			return "low";
@@ -432,7 +438,7 @@ function mapThinkingLevelToEffort(level: SimpleStreamOptions["reasoning"]): Anth
 		case "high":
 			return "high";
 		case "xhigh":
-			return "max";
+			return modelId.includes("opus-4-6") || modelId.includes("opus-4.6") ? "max" : "high";
 		default:
 			return "high";
 	}
@@ -453,10 +459,10 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 		return streamAnthropic(model, context, { ...base, thinkingEnabled: false } satisfies AnthropicOptions);
 	}
 
-	// For Opus 4.6+: use adaptive thinking with effort level
+	// For Opus 4.6 and Sonnet 4.6: use adaptive thinking with effort level
 	// For older models: use budget-based thinking
 	if (supportsAdaptiveThinking(model.id)) {
-		const effort = mapThinkingLevelToEffort(options.reasoning);
+		const effort = mapThinkingLevelToEffort(options.reasoning, model.id);
 		return streamAnthropic(model, context, {
 			...base,
 			thinkingEnabled: true,
@@ -613,7 +619,7 @@ function buildParams(
 		params.tools = convertTools(context.tools, isOAuthToken);
 	}
 
-	// Configure thinking mode: adaptive (Opus 4.6+) or budget-based (older models)
+	// Configure thinking mode: adaptive (Opus 4.6 and Sonnet 4.6) or budget-based (older models)
 	if (options?.thinkingEnabled && model.reasoning) {
 		if (supportsAdaptiveThinking(model.id)) {
 			// Adaptive thinking: Claude decides when and how much to think
