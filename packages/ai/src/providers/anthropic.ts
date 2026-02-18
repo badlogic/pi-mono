@@ -14,6 +14,7 @@ import type {
 	ImageContent,
 	Message,
 	Model,
+	NativeWebSearchOptions,
 	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
@@ -609,8 +610,16 @@ function buildParams(
 		params.temperature = options.temperature;
 	}
 
-	if (context.tools) {
-		params.tools = convertTools(context.tools, isOAuthToken);
+	const tools: Anthropic.Messages.ToolUnion[] = [];
+	if (context.tools?.length) {
+		tools.push(...convertTools(context.tools, isOAuthToken));
+	}
+	const nativeWebSearchTool = convertAnthropicWebSearchTool(options?.nativeTools?.webSearch);
+	if (nativeWebSearchTool) {
+		tools.push(nativeWebSearchTool);
+	}
+	if (tools.length > 0) {
+		params.tools = tools;
 	}
 
 	// Configure thinking mode: adaptive (Opus 4.6+) or budget-based (older models)
@@ -826,6 +835,42 @@ function convertTools(tools: Tool[], isOAuthToken: boolean): Anthropic.Messages.
 			},
 		};
 	});
+}
+
+function normalizeNativeWebSearch(
+	webSearch: boolean | NativeWebSearchOptions | undefined,
+): NativeWebSearchOptions | undefined {
+	if (!webSearch) return undefined;
+	if (webSearch === true) return {};
+	return webSearch;
+}
+
+function convertAnthropicWebSearchTool(
+	webSearch: boolean | NativeWebSearchOptions | undefined,
+): Anthropic.Messages.WebSearchTool20250305 | undefined {
+	const config = normalizeNativeWebSearch(webSearch);
+	if (!config) return undefined;
+
+	if (config.allowedDomains?.length && config.blockedDomains?.length) {
+		throw new Error("Anthropic web search supports allowedDomains or blockedDomains, not both.");
+	}
+
+	return {
+		name: "web_search",
+		type: "web_search_20250305",
+		allowed_domains: config.allowedDomains,
+		blocked_domains: config.blockedDomains,
+		max_uses: config.maxUses,
+		user_location: config.userLocation
+			? {
+					type: config.userLocation.type ?? "approximate",
+					city: config.userLocation.city,
+					country: config.userLocation.country,
+					region: config.userLocation.region,
+					timezone: config.userLocation.timezone,
+				}
+			: undefined,
+	};
 }
 
 function mapStopReason(reason: Anthropic.Messages.StopReason | string): StopReason {

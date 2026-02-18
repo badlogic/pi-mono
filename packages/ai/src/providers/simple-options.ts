@@ -12,6 +12,7 @@ export function buildBaseOptions(model: Model<Api>, options?: SimpleStreamOption
 		onPayload: options?.onPayload,
 		maxRetryDelayMs: options?.maxRetryDelayMs,
 		metadata: options?.metadata,
+		nativeTools: options?.nativeTools,
 	};
 }
 

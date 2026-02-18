@@ -209,6 +209,8 @@ function buildParams(
 	deploymentName: string,
 ) {
 	const messages = convertResponsesMessages(model, context, AZURE_TOOL_CALL_PROVIDERS);
+	type ResponseInclude = NonNullable<ResponseCreateParamsStreaming["include"]>[number];
+	const include = new Set<ResponseInclude>();
 
 	const params: ResponseCreateParamsStreaming = {
 		model: deploymentName,
@@ -225,8 +227,15 @@ function buildParams(
 		params.temperature = options?.temperature;
 	}
 
-	if (context.tools) {
-		params.tools = convertResponsesTools(context.tools);
+	const convertedTools = convertResponsesTools(context.tools, {
+		nativeWebSearch: options?.nativeTools?.webSearch,
+	});
+	if (convertedTools.length > 0) {
+		params.tools = convertedTools;
+	}
+	if (options?.nativeTools?.webSearch) {
+		include.add("web_search_call.action.sources");
+		include.add("web_search_call.results");
 	}
 
 	if (model.reasoning) {
@@ -235,7 +244,7 @@ function buildParams(
 				effort: options?.reasoningEffort || "medium",
 				summary: options?.reasoningSummary || "auto",
 			};
-			params.include = ["reasoning.encrypted_content"];
+			include.add("reasoning.encrypted_content");
 		} else {
 			if (model.name.toLowerCase().startsWith("gpt-5")) {
 				// Jesus Christ, see https://community.openai.com/t/need-reasoning-false-option-for-gpt-5/1351588/7
@@ -250,6 +259,10 @@ function buildParams(
 				});
 			}
 		}
+	}
+
+	if (include.size > 0) {
+		params.include = [...include];
 	}
 
 	return params;

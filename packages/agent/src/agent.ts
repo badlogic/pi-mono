@@ -8,6 +8,7 @@ import {
 	type ImageContent,
 	type Message,
 	type Model,
+	type NativeToolsOptions,
 	streamSimple,
 	type TextContent,
 	type ThinkingBudgets,
@@ -91,6 +92,11 @@ export interface AgentOptions {
 	 * Default: 60000 (60 seconds). Set to 0 to disable the cap.
 	 */
 	maxRetryDelayMs?: number;
+
+	/**
+	 * Provider-native built-in tools (for example hosted web search).
+	 */
+	nativeTools?: NativeToolsOptions;
 }
 
 export class Agent {
@@ -122,6 +128,7 @@ export class Agent {
 	private _thinkingBudgets?: ThinkingBudgets;
 	private _transport: Transport;
 	private _maxRetryDelayMs?: number;
+	private _nativeTools?: NativeToolsOptions;
 
 	constructor(opts: AgentOptions = {}) {
 		this._state = { ...this._state, ...opts.initialState };
@@ -135,6 +142,7 @@ export class Agent {
 		this._thinkingBudgets = opts.thinkingBudgets;
 		this._transport = opts.transport ?? "sse";
 		this._maxRetryDelayMs = opts.maxRetryDelayMs;
+		this._nativeTools = opts.nativeTools;
 	}
 
 	/**
@@ -193,6 +201,14 @@ export class Agent {
 	 */
 	set maxRetryDelayMs(value: number | undefined) {
 		this._maxRetryDelayMs = value;
+	}
+
+	get nativeTools(): NativeToolsOptions | undefined {
+		return this._nativeTools;
+	}
+
+	set nativeTools(value: NativeToolsOptions | undefined) {
+		this._nativeTools = value;
 	}
 
 	get state(): AgentState {
@@ -432,6 +448,7 @@ export class Agent {
 			transport: this._transport,
 			thinkingBudgets: this._thinkingBudgets,
 			maxRetryDelayMs: this._maxRetryDelayMs,
+			nativeTools: this._nativeTools,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,
