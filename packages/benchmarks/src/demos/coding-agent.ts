@@ -87,12 +87,13 @@ const NEURALWATT_MODELS: Model<"openai-completions">[] = [
 const DEFAULT_MODEL = NEURALWATT_MODELS[1]; // Devstral-Small — routes to GPT-OSS at >70%
 
 /**
- * Budget calibrated to show the full 5-strategy policy cascade:
- * Devstral-Small cumulative after 4 turns ~= 3400J -> ~56% of 6000J -> token reduction fires.
- * After turn 5 ~= 5300J -> ~88% of 6000J -> routing fires for turn 6.
- * Both interventions visible in sequence, all turns complete.
+ * Budget calibrated for the 3-phase acceptance-test loop:
+ * Devstral-Small ~3500J/turn unconstrained; token limits fire at >50% (~7500J).
+ * Routing to GPT-OSS-20B (1.7x efficient) fires at >70% (~10500J).
+ * After routing, fix turns cost ~1000J each — all 10 possible turns complete
+ * within budget while still showing both policy interventions.
  */
-const DEFAULT_BUDGET_JOULES = 6_000;
+const DEFAULT_BUDGET_JOULES = 15_000;
 
 /** Memory key for this routing pair. */
 const MEMORY_KEY = "devstral→gpt-oss-20b";
@@ -119,18 +120,29 @@ const BUILD_TURNS = [
 
 /**
  * Phase 2: Consolidation prompt — requests a complete, self-contained impl.ts.
- * The model must not use external imports so the file can run in a temp dir
- * without any node_modules.
+ * Highly prescriptive so the model generates testable code on the first attempt.
+ * No external imports — must run in a temp dir without node_modules.
  */
 const CONSOLIDATE_PROMPT =
-	"Write the final complete implementation as a single TypeScript file. " +
-	"Export: RateLimiterOptions interface, RateLimiterState interface, RateLimiter class (constructor + isAllowed), createRateLimitMiddleware factory. " +
-	"Include all validation. " +
-	"Do not import Express — define Request/Response/NextFunction types inline as simple interfaces. " +
+	"Write the final complete TypeScript implementation combining everything built so far.\n\n" +
+	"Required exports:\n" +
+	"  export interface RateLimiterOptions { windowMs: number; maxRequests: number; keyFn: (req: unknown) => string }\n" +
+	"  export interface RateLimiterState { count: number; resetAt: number }\n" +
+	"  export class RateLimiter { constructor(options: RateLimiterOptions); isAllowed(key: string): boolean }\n" +
+	"  export function createRateLimitMiddleware(options: RateLimiterOptions): (req: unknown, res: unknown, next: () => void) => void\n\n" +
+	"Middleware requirements (synchronous, not async):\n" +
+	"  1. Create a RateLimiter internally with the provided options\n" +
+	"  2. In each request: derive key via options.keyFn(req)\n" +
+	"  3. If limiter.isAllowed(key): call (res as any).set('X-RateLimit-Remaining', String(remaining)) then call next()\n" +
+	"  4. If not allowed: call (res as any).status(429).json({ error: 'Too Many Requests' })\n\n" +
+	"Validation in RateLimiter constructor: throw if windowMs <= 0, maxRequests <= 0, or keyFn missing.\n" +
+	"No imports except standard TypeScript — do not import Express or any npm package.\n" +
 	"Output raw TypeScript only — no markdown fences, no explanations.";
 
 /**
  * Acceptance tests run against impl.ts in a temp dir.
+ * Uses top-level await so async middlewares are handled correctly.
+ * Provides a resilient mock res that handles set/setHeader/header variants.
  * Tests use PASS:/FAIL: prefixes for easy parsing.
  * Never shown to the LLM — it only sees error output on failure.
  */
@@ -138,54 +150,73 @@ const ACCEPTANCE_TEST = `
 import assert from 'node:assert/strict';
 import { RateLimiter, createRateLimitMiddleware } from './impl.js';
 
-type Req = { ip?: string; [key: string]: unknown };
-type Res = { set: (k: string, v: string) => void; status: (code: number) => Res; json: (body: unknown) => void };
-type Next = () => void;
+let failed = 0;
 
-function test(name: string, fn: () => void): void {
+async function test(name: string, fn: () => void | Promise<void>): Promise<void> {
    try {
-      fn();
+      await fn();
       console.log('PASS: ' + name);
    } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.log('FAIL: ' + name + ': ' + msg);
+      failed++;
    }
 }
 
-test('allows requests within limit', () => {
+/** Build a mock res that accepts set/setHeader/header interchangeably. */
+function mockRes(): { headers: Record<string, string>; res: Record<string, unknown> } {
+   const headers: Record<string, string> = {};
+   const res: Record<string, unknown> = {};
+   const setH = (k: string, v: unknown) => { headers[String(k).toLowerCase()] = String(v); return res; };
+   res['set'] = setH;
+   res['setHeader'] = setH;
+   res['header'] = setH;
+   res['status'] = () => res;
+   res['json'] = () => {};
+   res['send'] = () => res;
+   return { headers, res };
+}
+
+await test('allows requests within limit', () => {
    const rl = new RateLimiter({ windowMs: 1000, maxRequests: 3, keyFn: () => 'test' });
-   assert.equal(rl.isAllowed('test'), true);
-   assert.equal(rl.isAllowed('test'), true);
-   assert.equal(rl.isAllowed('test'), true);
+   assert.equal(rl.isAllowed('test'), true, 'first request should be allowed');
+   assert.equal(rl.isAllowed('test'), true, 'second request should be allowed');
+   assert.equal(rl.isAllowed('test'), true, 'third request should be allowed');
 });
 
-test('blocks requests over limit', () => {
+await test('blocks requests over limit', () => {
    const rl = new RateLimiter({ windowMs: 60000, maxRequests: 2, keyFn: () => 'test' });
    rl.isAllowed('test');
    rl.isAllowed('test');
-   assert.equal(rl.isAllowed('test'), false);
+   assert.equal(rl.isAllowed('test'), false, 'third request should be blocked');
 });
 
-test('throws on invalid windowMs', () => {
-   assert.throws(() => new RateLimiter({ windowMs: -1, maxRequests: 5, keyFn: () => 'k' }));
+await test('throws on invalid windowMs', () => {
+   assert.throws(() => new RateLimiter({ windowMs: -1, maxRequests: 5, keyFn: () => 'k' }), 'should throw for windowMs <= 0');
 });
 
-test('throws on invalid maxRequests', () => {
-   assert.throws(() => new RateLimiter({ windowMs: 1000, maxRequests: 0, keyFn: () => 'k' }));
+await test('throws on invalid maxRequests', () => {
+   assert.throws(() => new RateLimiter({ windowMs: 1000, maxRequests: 0, keyFn: () => 'k' }), 'should throw for maxRequests <= 0');
 });
 
-test('middleware sets headers and calls next()', () => {
-   const mw = createRateLimitMiddleware({ windowMs: 60000, maxRequests: 10, keyFn: (req: Req) => String(req.ip ?? 'x') });
+await test('middleware sets headers and calls next()', async () => {
+   const mw = createRateLimitMiddleware({ windowMs: 60000, maxRequests: 10, keyFn: (req: unknown) => {
+      const r = req as { ip?: string };
+      return r.ip ?? 'anon';
+   }});
    let nextCalled = false;
-   const headers: Record<string, string> = {};
-   const req: Req = { ip: '127.0.0.1' };
-   const res: Res = { set: (k, v) => { headers[k] = v; }, status: () => res, json: () => {} };
-   (mw as unknown as (req: Req, res: Res, next: Next) => void)(req, res, () => { nextCalled = true; });
-   assert.equal(nextCalled, true);
-   assert.ok('X-RateLimit-Remaining' in headers);
+   const { headers, res } = mockRes();
+   const req = { ip: '127.0.0.1' };
+   // Await in case the middleware is async; cast to any to avoid type friction
+   await (mw as (req: unknown, res: unknown, next: () => void) => void | Promise<void>)(
+      req, res, () => { nextCalled = true; }
+   );
+   assert.equal(nextCalled, true, 'middleware must call next() when request is within limit');
+   const hasRemainingHeader = 'x-ratelimit-remaining' in headers || 'x-ratelimit-reset' in headers;
+   assert.ok(hasRemainingHeader, 'middleware must set X-RateLimit-Remaining or X-RateLimit-Reset header');
 });
 
-const lines = [];
+if (failed > 0) process.exit(1);
 `.trimStart();
 
 // tsx binary: prefer the one from the monorepo root node_modules
@@ -476,12 +507,16 @@ async function runCodingAgent(
 			const failureSummary = testResult.failedTests.map((f) => `  - ${f}`).join("\n");
 			const fixPrompt =
 				`The acceptance tests failed:\n${failureSummary}\n\n` +
-				"Write the complete corrected implementation as a single TypeScript file. " +
-				"Do not import Express — define Request/Response/NextFunction types inline. " +
-				"Output raw TypeScript only — no markdown fences.";
+				"Write the complete corrected implementation. Critical requirements:\n" +
+				"  - createRateLimitMiddleware must be SYNCHRONOUS (not async)\n" +
+				"  - Middleware must call options.keyFn(req) to get the key, then call limiter.isAllowed(key)\n" +
+				"  - If allowed: call (res as any).set('X-RateLimit-Remaining', String(remaining)) then call next()\n" +
+				"  - If not allowed: call (res as any).status(429).json({ error: 'Too Many Requests' })\n" +
+				"No imports except standard TypeScript. Output raw TypeScript only — no markdown fences.";
 
 			const fixOk = await runTurn(fixPrompt, fixTurnLabel);
 			if (!fixOk) {
+				stats.testPassed = false;
 				stats.endTime = Date.now();
 				return stats;
 			}
@@ -544,13 +579,17 @@ function printScorecard(baseline: RunStats, energyAware: RunStats, budget: numbe
 
 	// Quality row values
 	const fmtQuality = (s: RunStats): string => {
-		if (s.testPassed === undefined) return "n/a (no tests run)  ";
+		// testPassed=undefined can mean: never reached Phase 2 (budget abort in build phase)
+		// or budget aborted during fix phase (also sets testPassed=false now, but guard both)
+		if (s.testPassed === undefined) {
+			return s.abortedAt != null ? `✗ FAILED (budget, turn ${s.abortedAt})` : "n/a (no tests run)  ";
+		}
 		if (s.testPassed) {
 			const fixCount = s.turnsToPass != null ? s.turnsToPass - (BUILD_TURNS.length + 1) : 0;
 			const fixes = fixCount > 0 ? `, +${fixCount} fix${fixCount !== 1 ? "es" : ""}` : ", +0 fixes";
 			return `✓ PASSED (turn ${s.turnsToPass}${fixes})`;
 		}
-		return s.abortedAt != null ? `✗ FAILED (budget at turn ${s.abortedAt})` : "✗ FAILED (max turns)";
+		return s.abortedAt != null ? `✗ FAILED (budget, turn ${s.abortedAt})` : "✗ FAILED (max turns)";
 	};
 
 	console.log(`\n${"═".repeat(70)}`);
