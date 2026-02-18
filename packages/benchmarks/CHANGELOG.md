@@ -14,4 +14,4 @@
 - Demo 1: Coding Agent Energy Challenge (`demo:coding` script) — simulates a multi-step coding task under BaselinePolicy and EnergyAwarePolicy with live energy meter and ASCII scorecard
 - Report generator: `generateReport(resultsPath)` reads results.jsonl and produces BenchmarkReport, summary CSV, and Markdown comparison report with per-task table, aggregate stats, and verdict
 - CI smoke benchmark: 12 tests running 3 tasks (qa-factual, code-fizzbuzz, reason-math) through baseline and energy-aware modes with budget enforcement validation
-- Demo 2: HackerNews Energy-Aware Watcher (`demo:hn` script) — simulates scoring 20 HN stories against AI keywords, side-by-side baseline vs energy-aware with policy routing and final scorecard
+- Demo 2: HackerNews Energy-Aware Watcher (`demo:hn` script) — polls real HN top stories, scores relevance via LLM (completeSimple), runs baseline and energy-aware concurrently with live two-column display, shared energy budget meter, and final summary with high-relevance stories. Supports --duration and --budget flags.

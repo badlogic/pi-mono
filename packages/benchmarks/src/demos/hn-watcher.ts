@@ -1,21 +1,45 @@
 /**
  * Demo 2: HackerNews Energy-Aware Watcher
  *
- * Simulates a long-running HN monitor that scores stories against AI keywords.
- * Runs baseline and energy-aware modes side-by-side, showing how energy savings
- * compound over sustained operation.
+ * A long-running agentic monitor that polls real HackerNews top stories, uses
+ * an LLM to score relevance against seed keywords, and compares baseline vs
+ * energy-aware modes side-by-side. Energy savings compound over sustained
+ * operation.
  *
- * Uses simulated story data and policy-driven turn usage to demonstrate
- * real EnergyAwarePolicy strategy escalation without requiring API access.
+ * Usage:
+ *   npx tsx src/demos/hn-watcher.ts [--duration <seconds>] [--budget <joules>]
  *
- * Set NEURALWATT_API_KEY to enable (guarded).
+ * Requires NEURALWATT_API_KEY in the environment.
  */
 
-import type { EnergyBudget, PolicyContext, RuntimePolicy, UsageWithEnergy } from "@mariozechner/pi-agent-core";
+import { parseArgs } from "node:util";
+import type {
+	EnergyBudget,
+	PolicyContext,
+	PolicyDecision,
+	RuntimePolicy,
+	UsageWithEnergy,
+} from "@mariozechner/pi-agent-core";
 import { BaselinePolicy, EnergyAwarePolicy } from "@mariozechner/pi-agent-core";
-import type { Model } from "@mariozechner/pi-ai";
+import { type AssistantMessage, completeSimple, type Model, registerBuiltInApiProviders } from "@mariozechner/pi-ai";
 
 // -- Constants ----------------------------------------------------------------
+
+const HN_TOP_URL = "https://hacker-news.firebaseio.com/v0/topstories.json";
+const HN_ITEM_URL = "https://hacker-news.firebaseio.com/v0/item";
+
+const SEED_KEYWORDS = [
+	"AI agents",
+	"LLM",
+	"energy efficiency",
+	"open source AI",
+	"Claude",
+	"Anthropic",
+	"inference",
+	"GPU",
+	"sustainable computing",
+	"model routing",
+];
 
 const NEURALWATT_MODELS: Model<"openai-completions">[] = [
 	{
@@ -56,258 +80,468 @@ const NEURALWATT_MODELS: Model<"openai-completions">[] = [
 	},
 ];
 
-const DEFAULT_MODEL = NEURALWATT_MODELS[NEURALWATT_MODELS.length - 1];
+/** Use neuralwatt-mini for scoring -- it is a simple classification task. */
+const SCORING_MODEL = NEURALWATT_MODELS[0];
 
-const KEYWORDS = [
-	"AI agents",
-	"LLM",
-	"energy efficiency",
-	"open source AI",
-	"Claude",
-	"Anthropic",
-	"inference",
-	"GPU",
-	"sustainable computing",
-	"model routing",
-];
-
-const ENERGY_BUDGET_JOULES = 20.0;
-
-/** Simulated HN stories with pre-computed relevance scores. */
-const MOCK_STORIES: Array<{ title: string; score: number; complexity: "low" | "medium" | "high" }> = [
-	{ title: "Show HN: Open source LLM routing achieves GPT-4 parity", score: 0.95, complexity: "high" },
-	{ title: "React 20 released with server components", score: 0.1, complexity: "low" },
-	{ title: "Anthropic releases new inference pricing tiers", score: 0.92, complexity: "high" },
-	{ title: "PostgreSQL 18 performance benchmarks", score: 0.05, complexity: "low" },
-	{ title: "GPU shortages ease as new fabs come online", score: 0.78, complexity: "medium" },
-	{ title: "How we built an energy-efficient AI pipeline", score: 0.88, complexity: "high" },
-	{ title: "Rust 2.0 edition announced", score: 0.03, complexity: "low" },
-	{ title: "Claude Code: building agents with sustainable computing", score: 0.91, complexity: "high" },
-	{ title: "AI agents now handle 40% of customer support calls", score: 0.85, complexity: "medium" },
-	{ title: "The state of JavaScript in 2026", score: 0.08, complexity: "low" },
-	{ title: "New paper: model routing reduces inference cost by 60%", score: 0.93, complexity: "high" },
-	{ title: "Kubernetes 1.33 released", score: 0.02, complexity: "low" },
-	{ title: "LLM inference on edge devices: a practical guide", score: 0.82, complexity: "medium" },
-	{ title: "Startup uses AI to optimize data center energy usage", score: 0.87, complexity: "high" },
-	{ title: "CSS container queries gain browser support", score: 0.01, complexity: "low" },
-	{ title: "Open source AI models surpass proprietary in benchmarks", score: 0.89, complexity: "high" },
-	{ title: "Python 3.15 type system improvements", score: 0.12, complexity: "low" },
-	{ title: "GPU-less inference: running LLMs on CPUs efficiently", score: 0.84, complexity: "medium" },
-	{ title: "How Anthropic trains Claude with energy-aware scheduling", score: 0.94, complexity: "high" },
-	{ title: "WebAssembly 3.0 proposal advances", score: 0.04, complexity: "low" },
-];
-
-/** Per-story simulated usage — varies by story complexity. */
-const USAGE_BY_COMPLEXITY = {
-	low: { input: 300, output: 100, totalTokens: 400, energy_joules: 0.4, latency_ms: 800 },
-	medium: { input: 600, output: 300, totalTokens: 900, energy_joules: 0.8, latency_ms: 1500 },
-	high: { input: 1000, output: 600, totalTokens: 1600, energy_joules: 1.2, latency_ms: 2500 },
-};
+const DEFAULT_DURATION_S = 180;
+const DEFAULT_BUDGET_JOULES = 20.0;
+const POLL_INTERVAL_MS = 15_000;
+const STORIES_PER_BATCH = 5;
 
 // -- Types --------------------------------------------------------------------
 
-interface StoryResult {
+interface StoryScore {
 	title: string;
 	score: number;
-	energy: number;
+	energy_joules: number;
 	model: string;
-	decision?: string;
 }
 
 interface WatcherStats {
-	stories: StoryResult[];
+	storiesScored: number;
 	totalEnergy: number;
 	totalTokens: number;
-	startTime: number;
-	endTime: number;
-	highRelevance: StoryResult[];
+	highRelevance: StoryScore[];
+	decisions: Array<{ story: number; reason: string }>;
+	aborted: boolean;
 }
 
-// -- Display helpers ----------------------------------------------------------
+interface HNStory {
+	id: number;
+	title: string;
+}
+
+// -- HN API -------------------------------------------------------------------
+
+async function fetchTopStoryIds(): Promise<number[]> {
+	const res = await fetch(HN_TOP_URL);
+	if (!res.ok) throw new Error(`HN API error: ${res.status}`);
+	return (await res.json()) as number[];
+}
+
+async function fetchStory(id: number): Promise<HNStory | null> {
+	const res = await fetch(`${HN_ITEM_URL}/${id}.json`);
+	if (!res.ok) return null;
+	const data = (await res.json()) as Record<string, unknown>;
+	if (!data || typeof data.title !== "string") return null;
+	return { id: data.id as number, title: data.title };
+}
+
+// -- LLM scoring --------------------------------------------------------------
+
+async function scoreStoryLLM(
+	title: string,
+	model: Model<"openai-completions">,
+	apiKey: string,
+): Promise<{ score: number; message: AssistantMessage }> {
+	const prompt =
+		`Rate the relevance of this HN story title to the following topics on a scale 0.0-1.0. ` +
+		`Topics: ${SEED_KEYWORDS.join(", ")}. ` +
+		`Title: "${title}". Respond with only a decimal number.`;
+
+	const message = await completeSimple(
+		model,
+		{
+			systemPrompt: "You are a relevance scoring system. Respond only with a decimal number between 0.0 and 1.0.",
+			messages: [{ role: "user", content: prompt, timestamp: Date.now() }],
+		},
+		{ apiKey, maxTokens: 16 },
+	);
+
+	const text = message.content
+		.filter((c) => c.type === "text")
+		.map((c) => (c as { type: "text"; text: string }).text)
+		.join("")
+		.trim();
+
+	const parsed = Number.parseFloat(text);
+	const score = Number.isNaN(parsed) ? 0 : Math.max(0, Math.min(1, parsed));
+
+	return { score, message };
+}
+
+/**
+ * Estimate energy from model cost when real energy telemetry is unavailable.
+ */
+function estimateEnergy(model: Model<"openai-completions">, message: AssistantMessage): number {
+	const tokenCost = model.cost.input * message.usage.input + model.cost.output * message.usage.output;
+	return tokenCost * 0.0001;
+}
+
+// -- Policy-driven scoring ----------------------------------------------------
+
+async function scoreWithPolicy(
+	title: string,
+	storyIndex: number,
+	policy: RuntimePolicy,
+	budget: EnergyBudget,
+	consumedEnergy: number,
+	consumedTimeMs: number,
+	apiKey: string,
+): Promise<{
+	storyScore: StoryScore;
+	decision: PolicyDecision;
+	energy: number;
+	tokens: number;
+	aborted: boolean;
+}> {
+	const ctx: PolicyContext = {
+		turnNumber: storyIndex + 1,
+		model: SCORING_MODEL,
+		availableModels: NEURALWATT_MODELS,
+		budget,
+		consumedEnergy,
+		consumedTime: consumedTimeMs,
+		messageCount: storyIndex + 1,
+		estimatedInputTokens: 100,
+	};
+
+	const decision = policy.beforeModelCall(ctx);
+
+	if (decision.abort) {
+		return {
+			storyScore: { title, score: 0, energy_joules: 0, model: SCORING_MODEL.id },
+			decision,
+			energy: 0,
+			tokens: 0,
+			aborted: true,
+		};
+	}
+
+	const effectiveModel = (decision.model as Model<"openai-completions">) ?? SCORING_MODEL;
+	const { score, message } = await scoreStoryLLM(title, effectiveModel, apiKey);
+	const energy = message.energy?.energy_joules ?? estimateEnergy(effectiveModel, message);
+	const tokens = message.usage.totalTokens;
+
+	const usageWithEnergy: UsageWithEnergy = {
+		input: message.usage.input,
+		output: message.usage.output,
+		totalTokens: tokens,
+		cost: { total: message.usage.cost.total },
+		energy_joules: energy,
+		energy_kwh: energy / 3_600_000,
+	};
+	policy.afterModelCall(ctx, usageWithEnergy);
+
+	return {
+		storyScore: { title, score, energy_joules: energy, model: effectiveModel.id },
+		decision,
+		energy,
+		tokens,
+		aborted: false,
+	};
+}
+
+// -- Display ------------------------------------------------------------------
 
 function pad(s: string, len: number): string {
-	if (s.length >= len) return s.substring(0, len);
-	return s + " ".repeat(len - s.length);
+	return s.length >= len ? s.slice(0, len) : s + " ".repeat(len - s.length);
 }
 
 function truncate(s: string, maxLen: number): string {
-	if (s.length <= maxLen) return s;
-	return `${s.substring(0, maxLen - 3)}...`;
+	return s.length <= maxLen ? s : `${s.slice(0, maxLen - 3)}...`;
 }
 
-function printHeader(): void {
-	console.log(`Monitoring HackerNews | Keywords: ${KEYWORDS.slice(0, 4).join(", ")} ...`);
-	console.log(`Budget: ${ENERGY_BUDGET_JOULES}J total\n`);
-	console.log(`${pad("[baseline]", 30)}  ${pad("[energy-aware]", 30)}  Policy`);
-	console.log("-".repeat(85));
+function clearScreen(): void {
+	process.stdout.write("\x1b[2J\x1b[H");
 }
 
-function printStoryRow(storyNum: number, baseResult: StoryResult, eaResult: StoryResult): void {
-	const baseCol = `Story #${storyNum}: ${baseResult.energy.toFixed(1)}J`;
-	const eaCol = `Story #${storyNum}: ${eaResult.energy.toFixed(1)}J`;
-	const policyCol = eaResult.decision ?? "no change";
-	console.log(`${pad(baseCol, 30)}  ${pad(eaCol, 30)}  ${policyCol}`);
+function renderDisplay(
+	elapsed: number,
+	duration: number,
+	budget: number,
+	baseStats: WatcherStats,
+	eaStats: WatcherStats,
+	recentBase: StoryScore[],
+	recentEa: StoryScore[],
+	lastDecision: string | null,
+): void {
+	clearScreen();
+
+	const remaining = Math.max(0, Math.round(duration - elapsed));
+	const totalEnergy = baseStats.totalEnergy + eaStats.totalEnergy;
+	const budgetPct = budget > 0 ? (totalEnergy / budget) * 100 : 0;
+	const barLen = 30;
+	const filled = Math.min(barLen, Math.round((budgetPct / 100) * barLen));
+	const bar = "=".repeat(filled) + " ".repeat(barLen - filled);
+
+	console.log("=== HackerNews Energy-Aware Watcher ===");
+	console.log(`Keywords: ${SEED_KEYWORDS.slice(0, 5).join(", ")}...`);
+	console.log(
+		`Time remaining: ${remaining}s | Shared budget: [${bar}] ${totalEnergy.toFixed(1)}J / ${budget}J (${budgetPct.toFixed(0)}%)`,
+	);
+	console.log("");
+
+	const colW = 38;
+	console.log(`${pad("[baseline]", colW)}  ${pad("[energy-aware]", colW)}  Policy`);
+	console.log("-".repeat(colW * 2 + 10));
+
+	// Show recent stories side-by-side
+	const maxRows = Math.max(recentBase.length, recentEa.length);
+	for (let i = 0; i < maxRows; i++) {
+		const b = recentBase[i];
+		const e = recentEa[i];
+		const bCol = b ? `${b.score.toFixed(2)} | ${b.energy_joules.toFixed(3)}J` : "";
+		const eCol = e
+			? `${e.score.toFixed(2)} | ${e.energy_joules.toFixed(3)}J`
+			: eaStats.aborted
+				? "(budget exhausted)"
+				: "";
+		console.log(`${pad(bCol, colW)}  ${pad(eCol, colW)}`);
+		const bTitle = b ? truncate(b.title, colW) : "";
+		const eTitle = e ? truncate(e.title, colW) : "";
+		console.log(`${pad(bTitle, colW)}  ${pad(eTitle, colW)}`);
+	}
+
+	if (lastDecision) {
+		console.log(`${pad("", colW)}  [policy] ${lastDecision}`);
+	}
+
+	console.log("");
+	console.log(
+		`Baseline: ${baseStats.storiesScored} stories, ${baseStats.totalEnergy.toFixed(2)}J`.padEnd(colW + 2) +
+			`Energy-aware: ${eaStats.storiesScored} stories, ${eaStats.totalEnergy.toFixed(2)}J`,
+	);
+
+	if (eaStats.aborted) {
+		console.log("\n[energy-aware] Budget exhausted -- stopped scoring.");
+	}
 }
 
-function printSummary(baseStats: WatcherStats, eaStats: WatcherStats): void {
-	const baseTime = baseStats.endTime - baseStats.startTime;
+function printFinalSummary(baseStats: WatcherStats, eaStats: WatcherStats, elapsed: number, budget: number): void {
+	clearScreen();
+
 	const energyDelta =
-		baseStats.totalEnergy > 0 ? ((baseStats.totalEnergy - eaStats.totalEnergy) / baseStats.totalEnergy) * 100 : 0;
+		baseStats.totalEnergy > 0 ? ((eaStats.totalEnergy - baseStats.totalEnergy) / baseStats.totalEnergy) * 100 : 0;
+	const fmtDelta = (val: number): string => `${val <= 0 ? "" : "+"}${val.toFixed(0)}%`;
 
+	console.log("=== HackerNews Energy-Aware Watcher -- Final Summary ===");
+	console.log(`Elapsed: ${elapsed}s | Budget: ${budget}J`);
+	console.log("");
+	console.log("+----------------------------------------------+");
+	console.log("|     HackerNews Watcher Energy Comparison      |");
+	console.log("+--------------+-----------+-------------------+");
+	console.log("|              | Baseline  | Energy-Aware      |");
+	console.log("+--------------+-----------+-------------------+");
 	console.log(
-		`\nElapsed: ${(baseTime / 1000).toFixed(0)}s | Baseline: ${baseStats.totalEnergy.toFixed(1)}J | Energy-aware: ${eaStats.totalEnergy.toFixed(1)}J (-${energyDelta.toFixed(0)}%)`,
+		`| Stories      | ${pad(String(baseStats.storiesScored), 9)} | ${pad(String(eaStats.storiesScored), 17)} |`,
 	);
+	console.log(
+		`| Energy       | ${pad(`${baseStats.totalEnergy.toFixed(2)} J`, 9)} | ${pad(`${eaStats.totalEnergy.toFixed(2)} J (${fmtDelta(energyDelta)})`, 17)} |`,
+	);
+	console.log(`| Tokens       | ${pad(String(baseStats.totalTokens), 9)} | ${pad(String(eaStats.totalTokens), 17)} |`);
+	console.log(
+		`| High-rel     | ${pad(String(baseStats.highRelevance.length), 9)} | ${pad(String(eaStats.highRelevance.length), 17)} |`,
+	);
+	console.log("+--------------+-----------+-------------------+");
 
-	if (eaStats.highRelevance.length > 0) {
-		console.log("\nHIGH RELEVANCE (energy-aware found these too):");
-		for (const story of eaStats.highRelevance) {
-			console.log(`  - "${truncate(story.title, 60)}" (score: ${story.score.toFixed(2)})`);
+	// Merge high-relevance stories
+	const allHigh = new Map<string, { baseline: number; energyAware: number }>();
+	for (const s of baseStats.highRelevance) {
+		allHigh.set(s.title, { baseline: s.score, energyAware: 0 });
+	}
+	for (const s of eaStats.highRelevance) {
+		const existing = allHigh.get(s.title);
+		if (existing) {
+			existing.energyAware = s.score;
+		} else {
+			allHigh.set(s.title, { baseline: 0, energyAware: s.score });
 		}
 	}
 
-	// Final scorecard
-	console.log("\n+---------------------------------------------------+");
-	console.log("|       HackerNews Energy-Aware Watcher Results      |");
-	console.log("+------------------+-----------+---------------------+");
-	console.log("|                  | Baseline  | Energy-Aware        |");
-	console.log("+------------------+-----------+---------------------+");
-	console.log(
-		`| Stories scored    | ${pad(String(baseStats.stories.length), 9)} | ${pad(String(eaStats.stories.length), 19)} |`,
-	);
-	console.log(
-		`| Total energy     | ${pad(`${baseStats.totalEnergy.toFixed(1)} J`, 9)} | ${pad(`${eaStats.totalEnergy.toFixed(1)} J  (-${energyDelta.toFixed(0)}%)`, 19)} |`,
-	);
-	console.log(
-		`| High relevance   | ${pad(String(baseStats.highRelevance.length), 9)} | ${pad(String(eaStats.highRelevance.length), 19)} |`,
-	);
-	console.log("+------------------+-----------+---------------------+");
-}
-
-// -- Simulation ---------------------------------------------------------------
-
-function simulateWatcher(
-	_mode: "baseline" | "energy-aware",
-	policy: RuntimePolicy,
-	budget: EnergyBudget,
-): WatcherStats {
-	const stats: WatcherStats = {
-		stories: [],
-		totalEnergy: 0,
-		totalTokens: 0,
-		startTime: Date.now(),
-		endTime: 0,
-		highRelevance: [],
-	};
-
-	let consumedEnergy = 0;
-	let estimatedInputTokens = 0;
-
-	for (let i = 0; i < MOCK_STORIES.length; i++) {
-		const story = MOCK_STORIES[i];
-		const usage = USAGE_BY_COMPLEXITY[story.complexity];
-
-		const ctx: PolicyContext = {
-			turnNumber: i + 1,
-			model: DEFAULT_MODEL,
-			availableModels: NEURALWATT_MODELS,
-			budget,
-			consumedEnergy,
-			consumedTime: Date.now() - stats.startTime,
-			messageCount: i + 1,
-			estimatedInputTokens,
-		};
-
-		const decision = policy.beforeModelCall(ctx);
-
-		if (decision.abort) {
-			break;
-		}
-
-		// Apply model routing
-		const effectiveModel = decision.model ?? DEFAULT_MODEL;
-		const energyScale = decision.model ? decision.model.cost.output / DEFAULT_MODEL.cost.output : 1;
-		const adjustedEnergy = usage.energy_joules * energyScale;
-
-		consumedEnergy += adjustedEnergy;
-		estimatedInputTokens = usage.totalTokens;
-		stats.totalTokens += usage.totalTokens;
-
-		// Build decision description
-		let decisionStr: string | undefined;
-		if (decision.model && decision.model.id !== DEFAULT_MODEL.id) {
-			decisionStr = `routing: large->${decision.model.id.replace("neuralwatt-", "")}`;
-		} else if (decision.reason) {
-			decisionStr = decision.reason;
-		}
-
-		const result: StoryResult = {
-			title: story.title,
-			score: story.score,
-			energy: adjustedEnergy,
-			model: effectiveModel.id,
-			decision: decisionStr,
-		};
-		stats.stories.push(result);
-
-		if (story.score >= 0.8) {
-			stats.highRelevance.push(result);
-		}
-
-		// Notify policy
-		const usageWithEnergy: UsageWithEnergy = {
-			input: usage.input,
-			output: usage.output,
-			totalTokens: usage.totalTokens,
-			cost: { total: 0.001 },
-			energy_joules: adjustedEnergy,
-			energy_kwh: adjustedEnergy / 3_600_000,
-		};
-		policy.afterModelCall(ctx, usageWithEnergy);
-
-		stats.totalEnergy = consumedEnergy;
-
-		// Simulate processing latency (capped for demo speed)
-		const sleepMs = Math.min(usage.latency_ms / 20, 100);
-		const end = Date.now() + sleepMs;
-		while (Date.now() < end) {
-			// busy-wait
+	if (allHigh.size > 0) {
+		console.log("");
+		console.log("HIGH RELEVANCE (score > 0.8):");
+		for (const [title, scores] of allHigh) {
+			const bStr = scores.baseline > 0 ? scores.baseline.toFixed(2) : "---";
+			const eStr = scores.energyAware > 0 ? scores.energyAware.toFixed(2) : "---";
+			console.log(`  - "${truncate(title, 55)}" (base: ${bStr}, ea: ${eStr})`);
 		}
 	}
 
-	stats.endTime = Date.now();
-	return stats;
+	if (eaStats.decisions.length > 0) {
+		console.log("");
+		console.log("Policy decisions (energy-aware):");
+		const shown = eaStats.decisions.slice(-10);
+		for (const d of shown) {
+			console.log(`  Story #${d.story}: ${d.reason}`);
+		}
+		if (eaStats.decisions.length > 10) {
+			console.log(`  ... and ${eaStats.decisions.length - 10} more`);
+		}
+	}
 }
 
-// -- Main ---------------------------------------------------------------------
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-function main(): void {
+// -- Main loop ----------------------------------------------------------------
+
+async function main(): Promise<void> {
+	const { values } = parseArgs({
+		options: {
+			duration: { type: "string", default: String(DEFAULT_DURATION_S) },
+			budget: { type: "string", default: String(DEFAULT_BUDGET_JOULES) },
+		},
+		allowPositionals: true,
+	});
+
 	if (!process.env.NEURALWATT_API_KEY) {
 		console.error("NEURALWATT_API_KEY required");
 		process.exit(1);
 	}
 
-	console.log("=== HackerNews Energy-Aware Watcher ===\n");
+	const apiKey = process.env.NEURALWATT_API_KEY;
+	const durationS = Number(values.duration);
+	const budgetJ = Number(values.budget);
 
-	printHeader();
+	registerBuiltInApiProviders();
 
-	// Run both modes
+	console.log("Fetching HackerNews top stories...");
+	const topIds = await fetchTopStoryIds();
+	console.log(`Found ${topIds.length} stories. Starting watchers for ${durationS}s.\n`);
+
 	const baselinePolicy = new BaselinePolicy();
-	const baselineStats = simulateWatcher("baseline", baselinePolicy, {});
-
 	const energyAwarePolicy = new EnergyAwarePolicy();
-	const eaStats = simulateWatcher("energy-aware", energyAwarePolicy, {
-		energy_budget_joules: ENERGY_BUDGET_JOULES,
-	});
 
-	// Print side-by-side results
-	const maxStories = Math.max(baselineStats.stories.length, eaStats.stories.length);
-	for (let i = 0; i < maxStories; i++) {
-		const base = baselineStats.stories[i] ?? { title: "-", score: 0, energy: 0, model: "-" };
-		const ea = eaStats.stories[i] ?? { title: "-", score: 0, energy: 0, model: "-" };
-		printStoryRow(i + 1, base, ea);
+	const baseStats: WatcherStats = {
+		storiesScored: 0,
+		totalEnergy: 0,
+		totalTokens: 0,
+		highRelevance: [],
+		decisions: [],
+		aborted: false,
+	};
+	const eaStats: WatcherStats = {
+		storiesScored: 0,
+		totalEnergy: 0,
+		totalTokens: 0,
+		highRelevance: [],
+		decisions: [],
+		aborted: false,
+	};
+
+	const baseBudget: EnergyBudget = {};
+	const eaBudget: EnergyBudget = { energy_budget_joules: budgetJ };
+
+	const startTime = Date.now();
+	let storyIdx = 0;
+	const recentBase: StoryScore[] = [];
+	const recentEa: StoryScore[] = [];
+	let lastDecision: string | null = null;
+
+	while (true) {
+		const elapsedS = (Date.now() - startTime) / 1000;
+		if (elapsedS >= durationS) break;
+
+		// Get next batch of story IDs
+		const batchIds = topIds.slice(storyIdx, storyIdx + STORIES_PER_BATCH);
+		if (batchIds.length === 0) {
+			storyIdx = 0;
+			continue;
+		}
+
+		// Fetch stories
+		const stories = await Promise.all(batchIds.map(fetchStory));
+		const validStories = stories.filter((s): s is HNStory => s !== null);
+
+		for (const story of validStories) {
+			const nowS = (Date.now() - startTime) / 1000;
+			if (nowS >= durationS) break;
+
+			// Score with both policies concurrently
+			const basePromise = scoreWithPolicy(
+				story.title,
+				baseStats.storiesScored,
+				baselinePolicy,
+				baseBudget,
+				baseStats.totalEnergy,
+				nowS * 1000,
+				apiKey,
+			).catch(() => null);
+
+			const eaPromise = eaStats.aborted
+				? Promise.resolve(null)
+				: scoreWithPolicy(
+						story.title,
+						eaStats.storiesScored,
+						energyAwarePolicy,
+						eaBudget,
+						eaStats.totalEnergy,
+						nowS * 1000,
+						apiKey,
+					).catch(() => null);
+
+			const [baseResult, eaResult] = await Promise.all([basePromise, eaPromise]);
+
+			// Process baseline result
+			if (baseResult && !baseResult.aborted) {
+				baseStats.totalEnergy += baseResult.energy;
+				baseStats.totalTokens += baseResult.tokens;
+				baseStats.storiesScored++;
+				const bScore = baseResult.storyScore;
+				recentBase.push(bScore);
+				if (recentBase.length > STORIES_PER_BATCH) recentBase.shift();
+				if (bScore.score > 0.8) baseStats.highRelevance.push(bScore);
+			}
+
+			// Process energy-aware result
+			if (eaResult) {
+				if (eaResult.aborted) {
+					eaStats.aborted = true;
+					eaStats.decisions.push({
+						story: eaStats.storiesScored + 1,
+						reason: eaResult.decision.reason ?? "budget exhausted",
+					});
+					lastDecision = eaResult.decision.reason ?? "budget exhausted";
+				} else {
+					eaStats.totalEnergy += eaResult.energy;
+					eaStats.totalTokens += eaResult.tokens;
+					eaStats.storiesScored++;
+					const eScore = eaResult.storyScore;
+					recentEa.push(eScore);
+					if (recentEa.length > STORIES_PER_BATCH) recentEa.shift();
+					if (eScore.score > 0.8) eaStats.highRelevance.push(eScore);
+
+					if (eaResult.decision.reason) {
+						eaStats.decisions.push({ story: eaStats.storiesScored, reason: eaResult.decision.reason });
+						lastDecision = eaResult.decision.reason;
+					} else {
+						lastDecision = null;
+					}
+				}
+			}
+
+			// Update live display
+			renderDisplay(
+				(Date.now() - startTime) / 1000,
+				durationS,
+				budgetJ,
+				baseStats,
+				eaStats,
+				recentBase,
+				recentEa,
+				lastDecision,
+			);
+		}
+
+		storyIdx += STORIES_PER_BATCH;
+
+		// Wait before next poll
+		const elapsedAfter = (Date.now() - startTime) / 1000;
+		if (elapsedAfter < durationS) {
+			const waitMs = Math.min(POLL_INTERVAL_MS, (durationS - elapsedAfter) * 1000);
+			await sleep(waitMs);
+		}
 	}
 
-	printSummary(baselineStats, eaStats);
+	// Final summary
+	const totalElapsed = Math.round((Date.now() - startTime) / 1000);
+	printFinalSummary(baseStats, eaStats, totalElapsed, budgetJ);
 }
 
-main();
+main().catch((err) => {
+	console.error("Demo failed:", err);
+	process.exit(1);
+});
