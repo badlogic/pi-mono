@@ -531,8 +531,10 @@ interface TurnResult {
 
 interface RunStats {
 	mode: string;
+	/** Total energy including discriminator overhead for EA mode. */
 	totalEnergy: number;
 	totalTokens: number;
+	totalInputTokens: number;
 	totalCacheRead: number;
 	turns: TurnResult[];
 	startTime: number;
@@ -541,7 +543,7 @@ interface RunStats {
 	turnsToPass?: number;
 	/** Test names that required fix turns this run (de-duplicated). */
 	failedTestNames: string[];
-	/** Total energy spent on discriminator calls (EA mode only). */
+	/** Energy spent on discriminator calls — already included in totalEnergy. */
 	totalDiscriminatorEnergyJ: number;
 }
 
@@ -556,6 +558,7 @@ async function runCodingAgent(
 		mode,
 		totalEnergy: 0,
 		totalTokens: 0,
+		totalInputTokens: 0,
 		totalCacheRead: 0,
 		turns: [],
 		startTime: Date.now(),
@@ -591,6 +594,9 @@ async function runCodingAgent(
 			discriminatorDecision = result.decision;
 			discriminatorEnergyJ = result.energyJ;
 			stats.totalDiscriminatorEnergyJ += discriminatorEnergyJ;
+			// Include discriminator overhead in the running total so totalEnergy
+			// reflects true cost of the EA run (not just model call energy).
+			stats.totalEnergy += discriminatorEnergyJ;
 
 			effectiveModel = discriminatorDecision === "complex" ? KIMI_MODEL : GPT_OSS_MODEL;
 			const modelLabel = discriminatorDecision === "complex" ? "Kimi K2.5" : "GPT-OSS 20B (2.8x more efficient)";
@@ -618,16 +624,19 @@ async function runCodingAgent(
 
 		const energy = getEnergy(assistantMsg, effectiveModel.id);
 		const tokens = assistantMsg.usage.totalTokens;
+		const inputTokens = assistantMsg.usage.input;
 		const cacheRead = assistantMsg.usage.cacheRead;
 		stats.totalEnergy += energy;
 		stats.totalTokens += tokens;
+		stats.totalInputTokens += inputTokens;
 		stats.totalCacheRead += cacheRead;
 
 		const energySource =
 			assistantMsg.energy?.energy_joules != null && assistantMsg.energy.energy_joules > 0 ? "api" : "est";
-		const cacheLabel = cacheRead > 0 ? ` \x1b[33m(${cacheRead}c cached)\x1b[0m` : "";
+		const cachePct = inputTokens > 0 && cacheRead > 0 ? Math.round((cacheRead / inputTokens) * 100) : 0;
+		const cacheLabel = cacheRead > 0 ? ` \x1b[33m(${cacheRead} cached = ${cachePct}% of input)\x1b[0m` : "";
 		console.log(
-			`  \x1b[2m${tokens} tokens | ${energy.toFixed(1)}J [${energySource}] | input:${assistantMsg.usage.input}${cacheRead > 0 ? "" : ""} output:${assistantMsg.usage.output}\x1b[0m${cacheLabel}`,
+			`  \x1b[2m${tokens} tokens | ${energy.toFixed(1)}J [${energySource}] | input:${inputTokens} output:${assistantMsg.usage.output}\x1b[0m${cacheLabel}`,
 		);
 
 		const responseText = extractText(assistantMsg);
@@ -790,16 +799,19 @@ function printScorecard(
 	);
 	if (energyAware.totalDiscriminatorEnergyJ > 0) {
 		console.log(
-			`  | Discriminator   | ${"n/a".padEnd(17)} | ${`${energyAware.totalDiscriminatorEnergyJ.toFixed(1)}J overhead (${energyAware.turns.length} calls)`.padEnd(25)} |`,
+			`  | Discriminator   | ${"n/a".padEnd(17)} | ${`${energyAware.totalDiscriminatorEnergyJ.toFixed(1)}J (incl. in energy ↑)`.padEnd(25)} |`,
 		);
 	}
 	const totalCacheRead = baseline.totalCacheRead + energyAware.totalCacheRead;
 	if (totalCacheRead > 0) {
-		const baseCacheLabel =
-			baseline.totalCacheRead > 0 ? `${baseline.totalCacheRead} tok \x1b[33m[cached!]\x1b[0m` : "0 tok";
-		const eaCacheLabel =
-			energyAware.totalCacheRead > 0 ? `${energyAware.totalCacheRead} tok \x1b[33m[cached!]\x1b[0m` : "0 tok";
-		console.log(`  | Cache reads     | ${baseCacheLabel.padEnd(17)} | ${eaCacheLabel.padEnd(25)} |`);
+		const fmtCache = (cr: number, inp: number) => {
+			if (cr === 0) return "none";
+			const pct = inp > 0 ? Math.round((cr / inp) * 100) : 0;
+			return `\x1b[33m${cr} tok (${pct}% of input)\x1b[0m`;
+		};
+		console.log(
+			`  | Cache reads     | ${fmtCache(baseline.totalCacheRead, baseline.totalInputTokens).padEnd(17)} | ${fmtCache(energyAware.totalCacheRead, energyAware.totalInputTokens).padEnd(25)} |`,
+		);
 	}
 	console.log(
 		`  | Est. cost       | ${`$${baseCost.toFixed(4)}`.padEnd(17)} | ${`$${eaCost.toFixed(4)}  (${fmtDelta(-costSaved, "-")} saved)`.padEnd(25)} |`,
