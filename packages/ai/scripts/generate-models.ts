@@ -666,6 +666,33 @@ async function generateModels() {
 		}
 	}
 
+	// Add missing Nova 2 Lite cross-region inference profiles
+	const nova2LiteProfiles = [
+		{ id: "us.amazon.nova-2-lite-v1:0", name: "Nova 2 Lite (US)" },
+		{ id: "global.amazon.nova-2-lite-v1:0", name: "Nova 2 Lite (Global)" },
+	];
+	for (const profile of nova2LiteProfiles) {
+		if (!allModels.some((m) => m.provider === "amazon-bedrock" && m.id === profile.id)) {
+			allModels.push({
+				id: profile.id,
+				name: profile.name,
+				api: "bedrock-converse-stream",
+				provider: "amazon-bedrock",
+				baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+				reasoning: false,
+				input: ["text", "image"],
+				cost: {
+					input: 0.33,
+					output: 2.75,
+					cacheRead: 0,
+					cacheWrite: 0,
+				},
+				contextWindow: 128000,
+				maxTokens: 4096,
+			});
+		}
+	}
+
 	// Add missing EU Opus 4.6 profile
 	if (!allModels.some((m) => m.provider === "amazon-bedrock" && m.id === "eu.anthropic.claude-opus-4-6-v1")) {
 		allModels.push({
