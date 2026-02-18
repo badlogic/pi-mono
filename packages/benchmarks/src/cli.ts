@@ -2,7 +2,8 @@ import { parseArgs } from "node:util";
 import { BaselinePolicy } from "@mariozechner/pi-agent-core";
 import type { Model } from "@mariozechner/pi-ai";
 import { runSuite } from "./runner.js";
-import type { BenchmarkTask, RunConfig } from "./types.js";
+import { getTasksByGlob } from "./tasks.js";
+import type { RunConfig } from "./types.js";
 
 /**
  * Hard-coded Neuralwatt model definitions for initial benchmarking.
@@ -83,21 +84,7 @@ async function main(): Promise<void> {
 	const budgetMs = values["budget-ms"] ? Number(values["budget-ms"]) : undefined;
 	const defaultModel = NEURALWATT_MODELS[NEURALWATT_MODELS.length - 1];
 
-	// Placeholder task suite — replaced by T3.2
-	const tasks: BenchmarkTask[] = [
-		{
-			id: "smoke-1",
-			name: "Smoke Test",
-			description: "A minimal smoke test task",
-			prompt: "What is 2 + 2?",
-			maxTurns: 3,
-			validator: (records, _decisions) => ({
-				passed: records.length > 0,
-				score: records.length > 0 ? 1 : 0,
-				reason: records.length > 0 ? "produced telemetry" : "no telemetry produced",
-			}),
-		},
-	];
+	const tasks = getTasksByGlob(values.tasks as string | undefined);
 
 	const baseConfig: RunConfig = {
 		mode: "baseline",
