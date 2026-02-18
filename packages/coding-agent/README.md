@@ -114,6 +114,17 @@ See [docs/providers.md](docs/providers.md) for detailed setup instructions.
 
 **Custom providers & models:** Add providers via `~/.pi/agent/models.json` if they speak a supported API (OpenAI, Anthropic, Google). For custom APIs or OAuth, use extensions. See [docs/models.md](docs/models.md) and [docs/custom-provider.md](docs/custom-provider.md).
 
+**x402 provider (extension example):** Load the bundled x402 extension and start pi with the x402 model.
+
+```bash
+X402_PRIVATE_KEY=0x... \
+X402_ROUTER_URL=http://localhost:8080 \
+X402_PAYMENT_SIGNATURE=<base64-x402-payload> \
+pi -e ./examples/extensions/custom-provider-x402 --provider x402 --model x402/gpt-4.1-mini
+```
+
+`X402_PRIVATE_KEY` is required. `X402_ROUTER_URL` and `X402_PAYMENT_SIGNATURE` are optional depending on your router/payment flow.
+
 ---
 
 ## Interactive Mode
