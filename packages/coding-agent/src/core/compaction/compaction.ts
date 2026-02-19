@@ -208,10 +208,25 @@ export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEst
 
 /**
  * Check if compaction should trigger based on context usage.
+ *
+ * The reserveTokens value is capped to 30% of the context window.
+ * This prevents premature compaction when falling back from a large-context
+ * model (e.g., 1M tokens) to a smaller-context model (e.g., 200k tokens),
+ * where a static reserveTokens set for the larger model would consume
+ * an excessive portion of the smaller model's context.
+ *
+ * Example: reserveTokens=120000 set for 1M context (12%) would be 60% of
+ * a 200k fallback model's context. The 30% cap ensures at least 70% of
+ * the context window remains usable regardless of fallback model size.
  */
 export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
 	if (!settings.enabled) return false;
-	return contextTokens > contextWindow - settings.reserveTokens;
+
+	// Cap reserveTokens to 30% of context window to handle fallback scenarios
+	const MAX_RESERVE_SHARE = 0.3;
+	const effectiveReserve = Math.min(settings.reserveTokens, Math.floor(contextWindow * MAX_RESERVE_SHARE));
+
+	return contextTokens > contextWindow - effectiveReserve;
 }
 
 // ============================================================================

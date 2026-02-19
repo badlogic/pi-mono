@@ -208,6 +208,51 @@ describe("shouldCompact", () => {
 
 		expect(shouldCompact(95000, 100000, settings)).toBe(false);
 	});
+
+	it("should cap reserveTokens to 30% of context window", () => {
+		// reserveTokens = 120000 set for 1M context (12%)
+		// When fallback to 200k context, should cap to 30% = 60000
+		// Effective threshold = 200000 - 60000 = 140000
+		const settings: CompactionSettings = {
+			enabled: true,
+			reserveTokens: 120000, // Would be 60% of 200k context without cap
+			keepRecentTokens: 20000,
+		};
+
+		// 200k context, 30% cap = 60k reserve, threshold = 140k
+		expect(shouldCompact(150000, 200000, settings)).toBe(true); // 150k > 140k
+		expect(shouldCompact(130000, 200000, settings)).toBe(false); // 130k < 140k
+	});
+
+	it("should use original reserveTokens when below 30% cap", () => {
+		// reserveTokens = 10000 is only 10% of 100k context
+		// Should not be capped since it's below 30%
+		const settings: CompactionSettings = {
+			enabled: true,
+			reserveTokens: 10000, // 10% of 100k
+			keepRecentTokens: 20000,
+		};
+
+		// 100k context, no cap applied, threshold = 90k
+		expect(shouldCompact(95000, 100000, settings)).toBe(true);
+		expect(shouldCompact(89000, 100000, settings)).toBe(false);
+	});
+
+	it("should handle fallback from 1M to 200k context", () => {
+		// Real-world scenario: Gemini 1M fallback to MiniMax 200k
+		// reserveTokens = 120000 (12% of 1M) should cap to 60000 (30% of 200k)
+		const settings: CompactionSettings = {
+			enabled: true,
+			reserveTokens: 120000,
+			keepRecentTokens: 20000,
+		};
+
+		// 200k context with capped reserve (60k), threshold = 140k
+		// Session at 158k tokens should trigger compaction
+		expect(shouldCompact(158000, 200000, settings)).toBe(true);
+		// Session at 130k tokens should NOT trigger compaction
+		expect(shouldCompact(130000, 200000, settings)).toBe(false);
+	});
 });
 
 describe("findCutPoint", () => {

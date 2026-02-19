@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed premature compaction when falling back from large-context models (e.g., 1M tokens) to smaller-context models (e.g., 200k tokens). The `reserveTokens` setting is now capped at 30% of the context window to ensure at least 70% remains usable regardless of fallback model size.
+
 ## [0.53.0] - 2026-02-17
 
 ### Breaking Changes
