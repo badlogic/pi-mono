@@ -292,6 +292,25 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 							}
 						}
 					}
+
+					// Gemini: capture thought_signature from tool_calls extra_content
+					if (choice?.delta?.tool_calls) {
+						for (const tc of choice.delta.tool_calls as any[]) {
+							const sig = (tc as any)?.extra_content?.google?.thought_signature;
+							if (sig && tc.id) {
+								const matchingBlock = output.content.find((b) => b.type === "toolCall" && b.id === tc.id) as
+									| ToolCall
+									| undefined;
+								if (matchingBlock) {
+									matchingBlock.thoughtSignature = JSON.stringify({
+										type: "google_thought_signature",
+										id: tc.id,
+										signature: sig,
+									});
+								}
+							}
+						}
+					}
 				}
 			}
 
@@ -610,14 +629,28 @@ export function convertMessages(
 
 			const toolCalls = msg.content.filter((b) => b.type === "toolCall") as ToolCall[];
 			if (toolCalls.length > 0) {
-				assistantMsg.tool_calls = toolCalls.map((tc) => ({
-					id: tc.id,
-					type: "function" as const,
-					function: {
-						name: tc.name,
-						arguments: JSON.stringify(tc.arguments),
-					},
-				}));
+				assistantMsg.tool_calls = toolCalls.map((tc) => {
+					const call = {
+						id: tc.id,
+						type: "function" as const,
+						function: {
+							name: tc.name,
+							arguments: JSON.stringify(tc.arguments),
+						},
+					} as any;
+					// Gemini: echo back thought_signature in extra_content
+					if (tc.thoughtSignature) {
+						try {
+							const parsed = JSON.parse(tc.thoughtSignature);
+							if (parsed.type === "google_thought_signature" && parsed.signature) {
+								call.extra_content = { google: { thought_signature: parsed.signature } };
+							}
+						} catch {
+							// ignore malformed signature
+						}
+					}
+					return call;
+				});
 				const reasoningDetails = toolCalls
 					.filter((tc) => tc.thoughtSignature)
 					.map((tc) => {
@@ -747,10 +780,8 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): Sto
 			return "toolUse";
 		case "content_filter":
 			return "error";
-		default: {
-			const _exhaustive: never = reason;
-			throw new Error(`Unhandled stop reason: ${_exhaustive}`);
-		}
+		default:
+			return "error";
 	}
 }
 
@@ -764,6 +795,7 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 	const baseUrl = model.baseUrl;
 
 	const isZai = provider === "zai" || baseUrl.includes("api.z.ai");
+	const isGoogle = provider === "google" || baseUrl.includes("generativelanguage.googleapis.com");
 
 	const isNonStandard =
 		provider === "cerebras" ||
@@ -775,6 +807,7 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		baseUrl.includes("chutes.ai") ||
 		baseUrl.includes("deepseek.com") ||
 		isZai ||
+		isGoogle ||
 		provider === "opencode" ||
 		baseUrl.includes("opencode.ai");
 
