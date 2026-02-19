@@ -311,19 +311,8 @@ export function resolveCliModel(options: {
 		};
 	}
 
-	// If no explicit --provider, first try exact matches without any provider inference.
-	// This avoids misinterpreting model IDs that themselves contain slashes (e.g. OpenRouter-style IDs).
-	if (!provider) {
-		const lower = cliModel.toLowerCase();
-		const exact = availableModels.find(
-			(m) => m.id.toLowerCase() === lower || `${m.provider}/${m.id}`.toLowerCase() === lower,
-		);
-		if (exact) {
-			return { model: exact, warning: undefined, thinkingLevel: undefined, error: undefined };
-		}
-	}
-
 	let pattern = cliModel;
+	let providerFromSlash = false;
 
 	// If no explicit --provider, allow --model provider/<pattern>
 	if (!provider) {
@@ -334,6 +323,7 @@ export function resolveCliModel(options: {
 			if (canonical) {
 				provider = canonical;
 				pattern = cliModel.substring(slashIndex + 1);
+				providerFromSlash = true;
 			}
 		}
 	} else {
@@ -348,6 +338,19 @@ export function resolveCliModel(options: {
 	const { model, thinkingLevel, warning } = parseModelPattern(pattern, candidates, {
 		allowInvalidThinkingLevelFallback: false,
 	});
+
+	// If no model found and provider was inferred from slash (not explicitly given),
+	// fall back to treating the full pattern as a literal model ID across all providers.
+	// This handles cases like "openai/gpt-4o:extended" where the provider part is known
+	// but no model exists under that provider, yet a model with that exact ID exists elsewhere (e.g., Vercel AI Gateway).
+	if (!model && providerFromSlash) {
+		const lower = cliModel.toLowerCase();
+		const literalMatch = availableModels.find((m) => m.id.toLowerCase() === lower);
+		if (literalMatch) {
+			return { model: literalMatch, thinkingLevel: undefined, warning: undefined, error: undefined };
+		}
+		// If fallback also fails, continue to error below
+	}
 
 	if (!model) {
 		const display = provider ? `${provider}/${pattern}` : cliModel;

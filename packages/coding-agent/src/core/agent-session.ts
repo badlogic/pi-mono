@@ -779,9 +779,21 @@ export class AgentSession {
 						`Run '/login ${this.model.provider}' to re-authenticate.`,
 				);
 			}
+
+			// Provide hint for vercel-ai-gateway routed models if direct provider alternative exists
+			let hint = '';
+			if (this.model.provider === 'vercel-ai-gateway' && this.model.id.includes('/')) {
+				const [providerPart, modelId] = this.model.id.split('/', 2);
+				const alternativeModel = this._modelRegistry.find(providerPart, modelId);
+				if (alternativeModel) {
+					hint = `\n\nHint: The model "${this.model.id}" is routed through vercel-ai-gateway. ` +
+					       `If you have a direct ${providerPart} API key, use: --provider ${providerPart} --model ${modelId}`;
+				}
+			}
+
 			throw new Error(
 				`No API key found for ${this.model.provider}.\n\n` +
-					`Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}`,
+				`Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}${hint}`,
 			);
 		}
 
