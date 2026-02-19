@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Updated bundled model catalog to add Gemini 3.1 Pro Preview for Google Vertex and keep Google Gemini CLI and Antigravity Gemini catalogs aligned with currently exposed models.
+- Added Claude Opus 4.6 Thinking to the Google Antigravity model catalog.
+
 ## [0.53.0] - 2026-02-17
 
 ### Breaking Changes
