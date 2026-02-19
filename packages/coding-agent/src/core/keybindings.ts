@@ -9,7 +9,7 @@ import {
 } from "@mariozechner/pi-tui";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { getAgentDir } from "../config.js";
+import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 
 /**
  * Application-level actions (coding agent specific).
@@ -121,11 +121,16 @@ export class KeybindingsManager {
 	}
 
 	/**
-	 * Create from config file and set up editor keybindings.
+	 * Create from config files and set up editor keybindings.
+	 * Loads global (~/.pi/agent/keybindings.json) then merges project-level
+	 * (.pi/agent/keybindings.json in cwd) on top, so project settings win.
 	 */
 	static create(agentDir: string = getAgentDir()): KeybindingsManager {
-		const configPath = join(agentDir, "keybindings.json");
-		const config = KeybindingsManager.loadFromFile(configPath);
+		const globalPath = join(agentDir, "keybindings.json");
+		const globalConfig = KeybindingsManager.loadFromFile(globalPath);
+		const projectPath = join(process.cwd(), CONFIG_DIR_NAME, "agent", "keybindings.json");
+		const projectConfig = KeybindingsManager.loadFromFile(projectPath);
+		const config: KeybindingsConfig = { ...globalConfig, ...projectConfig };
 		const manager = new KeybindingsManager(config);
 
 		// Set up editor keybindings globally
