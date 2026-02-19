@@ -38,6 +38,12 @@ import {
 	registerBuiltInApiProviders,
 } from "@mariozechner/pi-ai";
 import {
+	type DiscriminatorConfig,
+	type DiscriminatorTier,
+	discriminate,
+	type RoutingDecision,
+} from "./demo-discriminator.js";
+import {
 	buildDiscriminatorContext,
 	type CodingMemory,
 	clearMemory,
@@ -51,16 +57,20 @@ import {
 
 // -- Models -------------------------------------------------------------------
 
+/**
+ * Energy efficiency (tokens per joule) from portal.neuralwatt.com.
+ * Used as fallback when the API does not return energy_joules.
+ */
 const TOKENS_PER_JOULE: Record<string, number> = {
 	"openai/gpt-oss-20b": 1.371,
 	"mistralai/Devstral-Small-2-24B-Instruct-2512": 0.809,
-	"deepseek-ai/deepseek-coder-33b-instruct": 0.092,
 	"moonshotai/Kimi-K2.5": 0.482,
 	"Qwen/Qwen3-Coder-480B-A35B-Instruct": 0.314,
+	"deepseek-ai/deepseek-coder-33b-instruct": 0.092,
 };
 
 const KIMI_MODEL: Model<"openai-completions"> = {
-	// Default: 0.482 tokens/J, $1.327/$1.327/1M — flagship 262K-context model
+	// thinking tier: 0.482 tok/J, $1.327/1M — best CoT reasoning, 262K context
 	id: "moonshotai/Kimi-K2.5",
 	name: "Kimi K2.5",
 	api: "openai-completions",
@@ -73,8 +83,36 @@ const KIMI_MODEL: Model<"openai-completions"> = {
 	maxTokens: 16_384,
 };
 
+const QWEN_MODEL: Model<"openai-completions"> = {
+	// complex tier: 0.314 tok/J, $0.10/1M — 480B MoE, high quality, no CoT overhead
+	id: "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+	name: "Qwen3-Coder 480B",
+	api: "openai-completions",
+	provider: "neuralwatt",
+	baseUrl: "https://api.neuralwatt.com/v1",
+	reasoning: false,
+	input: ["text"],
+	cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 262_144,
+	maxTokens: 8_192,
+};
+
+const DEVSTRAL_MODEL: Model<"openai-completions"> = {
+	// medium tier: 0.809 tok/J, $0.12/1M — 1.7x more efficient than Kimi, 262K context
+	id: "mistralai/Devstral-Small-2-24B-Instruct-2512",
+	name: "Devstral 24B",
+	api: "openai-completions",
+	provider: "neuralwatt",
+	baseUrl: "https://api.neuralwatt.com/v1",
+	reasoning: false,
+	input: ["text"],
+	cost: { input: 0.12, output: 0.12, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 262_144,
+	maxTokens: 8_192,
+};
+
 const GPT_OSS_MODEL: Model<"openai-completions"> = {
-	// Discriminator + cheap routing target: 1.371 tokens/J, $0.10/$0.10/1M
+	// simple tier + discriminator: 1.371 tok/J, $0.10/1M — most energy-efficient
 	id: "openai/gpt-oss-20b",
 	name: "GPT-OSS 20B",
 	api: "openai-completions",
@@ -89,8 +127,6 @@ const GPT_OSS_MODEL: Model<"openai-completions"> = {
 
 /** Default model for baseline and EA complex turns. */
 const DEFAULT_MODEL = KIMI_MODEL;
-/** Used as discriminator and for EA simple turns. */
-const DISCRIMINATOR_MODEL = GPT_OSS_MODEL;
 
 /**
  * Budget sized for Kimi K2.5 (~3100J/turn).
@@ -101,6 +137,25 @@ const DEFAULT_BUDGET_JOULES = 25_000;
 
 /** Memory key for this routing pair. */
 const MEMORY_KEY = "kimi-k2.5→gpt-oss-discriminator";
+
+/** Discriminator config for the coding demo — four tiers. */
+const DISCRIMINATOR_CONFIG: DiscriminatorConfig = {
+	classifierModel: GPT_OSS_MODEL,
+	thinking: { model: KIMI_MODEL },
+	complex: { model: QWEN_MODEL },
+	medium: { model: DEVSTRAL_MODEL, briefMaxTokens: 4_096 },
+	simple: { model: GPT_OSS_MODEL, briefMaxTokens: 2_048 },
+	tokensPerJoule: TOKENS_PER_JOULE,
+	systemPrompt:
+		"You are a routing classifier for a four-tier coding AI system.\n" +
+		"Choose the tier that best matches the coding task:\n" +
+		'  "thinking" → Kimi K2.5: needs chain-of-thought reasoning — debugging, tricky edge cases, ambiguous specs, logic puzzles.\n' +
+		'  "complex"  → Qwen 480B: high-quality implementation without reasoning — clear architecture, feature implementation.\n' +
+		'  "medium"   → Devstral 24B: moderate complexity — clear spec, standard patterns, non-trivial but routine.\n' +
+		'  "simple"   → GPT-OSS 20B: boilerplate, interface/type definitions, trivial wrappers, obvious code.\n' +
+		'Also classify response length: "full" for complete implementations, "brief" for short focused answers.\n' +
+		'Reply with ONLY valid JSON: {"tier":"medium","length":"full","reason":"<=10 words"}',
+};
 
 // -- Task definition (fallback when generation is unavailable) ----------------
 
@@ -316,50 +371,6 @@ async function generateChallenge(apiKey: string): Promise<GeneratedChallenge | n
 	}
 }
 
-// -- Discriminator ------------------------------------------------------------
-
-const DISCRIMINATOR_SYSTEM_PROMPT =
-	"You are a routing classifier for a two-tier coding AI.\n" +
-	"Decide whether a coding task needs a large capable model or a small efficient one.\n" +
-	'"complex" → large model (Kimi K2.5): architecture decisions, tricky specs, debugging, deep reasoning.\n' +
-	'"simple"  → small model (GPT-OSS-20B): straightforward implementation, clear spec, formulaic/boilerplate.\n' +
-	"Reply with exactly one word: complex OR simple";
-
-/**
- * Calls the discriminator model to classify a prompt for routing.
- * Falls back to "complex" (safe default) on any error.
- */
-async function discriminatePrompt(
-	phase: string,
-	prompt: string,
-	memContext: string,
-	apiKey: string,
-): Promise<{ decision: "complex" | "simple"; energyJ: number }> {
-	const input = `${memContext ? `${memContext}\n\n` : ""}Classify (phase: ${phase}):\n${prompt.slice(0, 450)}`;
-	try {
-		const msg = await completeSimple(
-			DISCRIMINATOR_MODEL,
-			{
-				systemPrompt: DISCRIMINATOR_SYSTEM_PROMPT,
-				messages: [{ role: "user", content: input, timestamp: Date.now() }],
-			},
-			{ apiKey, maxTokens: 5 },
-		);
-		const raw = msg.content
-			.filter((c) => c.type === "text")
-			.map((c) => (c as { type: "text"; text: string }).text)
-			.join("")
-			.trim()
-			.toLowerCase();
-		const decision = raw.startsWith("simple") ? "simple" : "complex";
-		const tokensPerJoule = TOKENS_PER_JOULE[DISCRIMINATOR_MODEL.id] ?? 1.0;
-		const energyJ = msg.usage.totalTokens / tokensPerJoule;
-		return { decision, energyJ };
-	} catch {
-		return { decision: "complex", energyJ: 0 };
-	}
-}
-
 // -- Run configuration --------------------------------------------------------
 
 interface RunConfig {
@@ -389,15 +400,11 @@ const REPO_TSX = join(__dirname, "../../../../node_modules/.bin/tsx");
 
 // -- Energy tracking ----------------------------------------------------------
 
-function estimateEnergy(message: AssistantMessage, modelId: string): number {
+function getEnergy(message: AssistantMessage, modelId: string): { joules: number; fromApi: boolean } {
+	const api = message.energy?.energy_joules;
+	if (api != null && api > 0) return { joules: api, fromApi: true };
 	const tokensPerJoule = TOKENS_PER_JOULE[modelId] ?? 1.0;
-	return message.usage.totalTokens / tokensPerJoule;
-}
-
-function getEnergy(message: AssistantMessage, modelId: string): number {
-	const fromApi = message.energy?.energy_joules;
-	if (fromApi != null && fromApi > 0) return fromApi;
-	return estimateEnergy(message, modelId);
+	return { joules: message.usage.totalTokens / tokensPerJoule, fromApi: false };
 }
 
 // -- Acceptance tests ---------------------------------------------------------
@@ -523,8 +530,10 @@ interface TurnResult {
 	cacheRead: number;
 	/** Human-readable decision label shown in scorecard. */
 	decision: string;
-	/** EA mode: discriminator classification for this turn. */
-	discriminatorDecision?: "complex" | "simple";
+	/** EA mode: discriminator tier for this turn. */
+	discriminatorDecision?: DiscriminatorTier;
+	/** EA mode: discriminator reason string (≤80 chars). */
+	discriminatorReason?: string;
 	/** EA mode: energy cost of the discriminator call itself. */
 	discriminatorEnergyJ: number;
 }
@@ -585,23 +594,35 @@ async function runCodingAgent(
 
 		let effectiveModel: Model<"openai-completions">;
 		let decisionLabel: string;
-		let discriminatorDecision: "complex" | "simple" | undefined;
+		let discriminatorDecision: DiscriminatorTier | undefined;
+		let discriminatorReason: string | undefined;
 		let discriminatorEnergyJ = 0;
+		let turnMaxTokens: number | undefined;
 
 		if (mode === "energy-aware") {
 			const memCtx = buildDiscriminatorContext(phase, MEMORY_KEY, mem);
-			const result = await discriminatePrompt(phase, prompt, memCtx, apiKey);
-			discriminatorDecision = result.decision;
-			discriminatorEnergyJ = result.energyJ;
+			const disc: RoutingDecision = await discriminate(phase, prompt, DISCRIMINATOR_CONFIG, memCtx, apiKey);
+			discriminatorDecision = disc.tier;
+			discriminatorReason = disc.reason;
+			discriminatorEnergyJ = disc.energyJ;
+			turnMaxTokens = disc.maxTokens;
 			stats.totalDiscriminatorEnergyJ += discriminatorEnergyJ;
 			// Include discriminator overhead in the running total so totalEnergy
 			// reflects true cost of the EA run (not just model call energy).
 			stats.totalEnergy += discriminatorEnergyJ;
 
-			effectiveModel = discriminatorDecision === "complex" ? KIMI_MODEL : GPT_OSS_MODEL;
-			const modelLabel = discriminatorDecision === "complex" ? "Kimi K2.5" : "GPT-OSS 20B (2.8x more efficient)";
+			effectiveModel = disc.model;
+			const modelLabel =
+				discriminatorDecision === "thinking"
+					? "Kimi K2.5 (thinking)"
+					: discriminatorDecision === "complex"
+						? "Qwen3-480B"
+						: discriminatorDecision === "medium"
+							? "Devstral-24B"
+							: "GPT-OSS-20B (most efficient)";
 			const memLabel = memCtx ? " \x1b[2m[memory-informed]\x1b[0m" : "";
-			decisionLabel = `↳ discriminated: ${discriminatorDecision} → ${modelLabel}${memLabel}  (${discriminatorEnergyJ.toFixed(1)}J overhead)`;
+			const briefLabel = turnMaxTokens ? ` \x1b[2m[brief: max ${turnMaxTokens} tok]\x1b[0m` : "";
+			decisionLabel = `↳ discriminated: ${discriminatorDecision} → ${modelLabel}${memLabel}${briefLabel}  (${discriminatorEnergyJ.toFixed(1)}J)  reason: ${disc.reason}`;
 		} else {
 			effectiveModel = DEFAULT_MODEL;
 			decisionLabel = "";
@@ -619,10 +640,14 @@ async function runCodingAgent(
 
 		messages.push({ role: "user", content: prompt, timestamp: Date.now() });
 
-		const assistantMsg = await completeSimple(effectiveModel, { systemPrompt: SYSTEM_PROMPT, messages }, { apiKey });
+		const assistantMsg = await completeSimple(
+			effectiveModel,
+			{ systemPrompt: SYSTEM_PROMPT, messages },
+			{ apiKey, ...(turnMaxTokens ? { maxTokens: turnMaxTokens } : {}) },
+		);
 		messages.push(assistantMsg);
 
-		const energy = getEnergy(assistantMsg, effectiveModel.id);
+		const { joules: energy, fromApi } = getEnergy(assistantMsg, effectiveModel.id);
 		const tokens = assistantMsg.usage.totalTokens;
 		const inputTokens = assistantMsg.usage.input;
 		const cacheRead = assistantMsg.usage.cacheRead;
@@ -631,12 +656,11 @@ async function runCodingAgent(
 		stats.totalInputTokens += inputTokens;
 		stats.totalCacheRead += cacheRead;
 
-		const energySource =
-			assistantMsg.energy?.energy_joules != null && assistantMsg.energy.energy_joules > 0 ? "api" : "est";
+		const energyLabel = fromApi ? "api" : "est";
 		const cachePct = inputTokens > 0 && cacheRead > 0 ? Math.round((cacheRead / inputTokens) * 100) : 0;
 		const cacheLabel = cacheRead > 0 ? ` \x1b[33m(${cacheRead} cached = ${cachePct}% of input)\x1b[0m` : "";
 		console.log(
-			`  \x1b[2m${tokens} tokens | ${energy.toFixed(1)}J [${energySource}] | input:${inputTokens} output:${assistantMsg.usage.output}\x1b[0m${cacheLabel}`,
+			`  \x1b[2m${tokens} tokens | ${energy.toFixed(1)}J [${energyLabel}] | input:${inputTokens} output:${assistantMsg.usage.output}\x1b[0m${cacheLabel}`,
 		);
 
 		const responseText = extractText(assistantMsg);
@@ -651,6 +675,7 @@ async function runCodingAgent(
 			cacheRead,
 			decision: decisionLabel,
 			discriminatorDecision,
+			discriminatorReason,
 			discriminatorEnergyJ,
 		});
 	}
@@ -750,13 +775,14 @@ function printScorecard(
 		baseline.totalEnergy > 0 ? ((baseline.totalEnergy - energyAware.totalEnergy) / baseline.totalEnergy) * 100 : 0;
 	const timeDelta = baseTime > 0 ? ((eaTime - baseTime) / baseTime) * 100 : 0;
 
-	const kimiPrice = 1.327 / 1_000_000;
-	const gptPrice = 0.1 / 1_000_000;
-	const baseCost = baseline.turns.reduce((sum, t) => sum + t.tokens * kimiPrice, 0);
-	const eaCost = energyAware.turns.reduce(
-		(sum, t) => sum + t.tokens * (t.model.includes("gpt-oss") ? gptPrice : kimiPrice),
-		0,
-	);
+	const modelPrice = (modelId: string): number => {
+		if (modelId.includes("gpt-oss")) return 0.1 / 1_000_000;
+		if (modelId.includes("Devstral")) return 0.12 / 1_000_000;
+		if (modelId.includes("Qwen")) return 0.1 / 1_000_000;
+		return 1.327 / 1_000_000; // Kimi default
+	};
+	const baseCost = baseline.turns.reduce((sum, t) => sum + t.tokens * modelPrice(t.model), 0);
+	const eaCost = energyAware.turns.reduce((sum, t) => sum + t.tokens * modelPrice(t.model), 0);
 	const costSaved = baseCost > 0 ? ((baseCost - eaCost) / baseCost) * 100 : 0;
 
 	const fmtDelta = (val: number, positive = "+"): string => `${val >= 0 ? positive : ""}${val.toFixed(0)}%`;
@@ -773,9 +799,14 @@ function printScorecard(
 	};
 
 	// Model distribution for EA mode
-	const eaKimiTurns = energyAware.turns.filter((t) => t.model === KIMI_MODEL.id).length;
-	const eaGptTurns = energyAware.turns.filter((t) => t.model === GPT_OSS_MODEL.id).length;
-	const eaModelLabel = `Kimi: ${eaKimiTurns}, GPT-OSS: ${eaGptTurns} (discriminator)`;
+	const countTurns = (id: string) => energyAware.turns.filter((t) => t.model === id).length;
+	const eaModelParts = [
+		countTurns(KIMI_MODEL.id) > 0 ? `Kimi:${countTurns(KIMI_MODEL.id)}` : null,
+		countTurns(QWEN_MODEL.id) > 0 ? `Qwen:${countTurns(QWEN_MODEL.id)}` : null,
+		countTurns(DEVSTRAL_MODEL.id) > 0 ? `Devstral:${countTurns(DEVSTRAL_MODEL.id)}` : null,
+		countTurns(GPT_OSS_MODEL.id) > 0 ? `GPT-OSS:${countTurns(GPT_OSS_MODEL.id)}` : null,
+	].filter((p): p is string => p !== null);
+	const eaModelLabel = `${eaModelParts.join(", ")} (discriminator)`;
 
 	const header = runLabel
 		? `SCORECARD ${runLabel} — Coding Agent Energy Challenge`
@@ -832,9 +863,25 @@ function printScorecard(
 	if (eaDecisions.length > 0) {
 		console.log("\n  DISCRIMINATOR DECISIONS (energy-aware):");
 		for (const t of eaDecisions) {
-			const icon = t.discriminatorDecision === "complex" ? "\x1b[33m▲ complex\x1b[0m" : "\x1b[32m▼ simple \x1b[0m";
-			const model = t.discriminatorDecision === "complex" ? "Kimi K2.5   " : "GPT-OSS 20B";
-			console.log(`    ${t.phase.padEnd(14)} ${icon} → ${model}  ${t.energy.toFixed(0)}J`);
+			const tier = t.discriminatorDecision;
+			const icon =
+				tier === "thinking"
+					? "\x1b[35m◆ thinking\x1b[0m"
+					: tier === "complex"
+						? "\x1b[33m▲ complex\x1b[0m"
+						: tier === "medium"
+							? "\x1b[36m● medium  \x1b[0m"
+							: "\x1b[32m▼ simple  \x1b[0m";
+			const model =
+				tier === "thinking"
+					? "Kimi K2.5  "
+					: tier === "complex"
+						? "Qwen3-480B "
+						: tier === "medium"
+							? "Devstral-24B"
+							: "GPT-OSS-20B ";
+			const reason = t.discriminatorReason ? `  \x1b[2m"${t.discriminatorReason}"\x1b[0m` : "";
+			console.log(`    ${t.phase.padEnd(14)} ${icon} → ${model}  ${t.energy.toFixed(0)}J${reason}`);
 		}
 	}
 
@@ -895,7 +942,8 @@ function updateCodingMemory(mem: ReturnType<typeof loadMemory>, baseStats: RunSt
 			complexPassCount: 0,
 			simplePassCount: 0,
 		};
-		if (turn.discriminatorDecision === "complex") {
+		// thinking + complex → "complex" bucket; medium + simple → "simple" bucket
+		if (turn.discriminatorDecision === "thinking" || turn.discriminatorDecision === "complex") {
 			existing.complexCount++;
 			if (eaStats.testPassed) existing.complexPassCount++;
 		} else {

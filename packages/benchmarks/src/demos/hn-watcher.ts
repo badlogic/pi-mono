@@ -33,6 +33,7 @@ import {
 	type Model,
 	registerBuiltInApiProviders,
 } from "@mariozechner/pi-ai";
+import { type DiscriminatorConfig, discriminate } from "./demo-discriminator.js";
 import {
 	clearMemory,
 	formatHNMemory,
@@ -60,52 +61,56 @@ const DEFAULT_KEYWORDS = [
 	"model routing",
 ];
 
-/**
- * Energy efficiency benchmarks from portal.neuralwatt.com (tokens per joule).
- * Used to estimate energy when the API does not return real energy_joules.
- */
-const TOKENS_PER_JOULE: Record<string, number> = {
-	"openai/gpt-oss-20b": 1.371,
-	"mistralai/Devstral-Small-2-24B-Instruct-2512": 0.809,
-	"deepseek-ai/deepseek-coder-33b-instruct": 0.092,
-	"moonshotai/Kimi-K2.5": 0.482,
-	"Qwen/Qwen3-Coder-480B-A35B-Instruct": 0.314,
+const GPT_OSS_MODEL: Model<"openai-completions"> = {
+	// Most energy-efficient: 1.371 tokens/J, $0.10/$0.10/1M
+	id: "openai/gpt-oss-20b",
+	name: "GPT-OSS 20B",
+	api: "openai-completions",
+	provider: "neuralwatt",
+	baseUrl: "https://api.neuralwatt.com/v1",
+	reasoning: false,
+	input: ["text"],
+	cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 16_384,
+	maxTokens: 4_096,
 };
 
-const NEURALWATT_MODELS: Model<"openai-completions">[] = [
-	{
-		// Most energy-efficient: 1.371 tokens/J, cheapest at $0.10/$0.10/1M
-		id: "openai/gpt-oss-20b",
-		name: "GPT-OSS 20B",
-		api: "openai-completions",
-		provider: "neuralwatt",
-		baseUrl: "https://api.neuralwatt.com/v1",
-		reasoning: false,
-		input: ["text"],
-		cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 16_384,
-		maxTokens: 4_096,
-	},
-	{
-		// Default: 0.482 tokens/J, $1.327/$1.327/1M — flagship 262K-context model
-		id: "moonshotai/Kimi-K2.5",
-		name: "Kimi K2.5",
-		api: "openai-completions",
-		provider: "neuralwatt",
-		baseUrl: "https://api.neuralwatt.com/v1",
-		reasoning: false,
-		input: ["text"],
-		cost: { input: 1.327, output: 1.327, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 262_144,
-		maxTokens: 16_384,
-	},
-];
+const DEVSTRAL_MODEL: Model<"openai-completions"> = {
+	// Middle tier: 0.809 tokens/J, $0.12/$0.12/1M, 262K context
+	id: "mistralai/Devstral-Small-2-24B-Instruct-2512",
+	name: "Devstral-24B",
+	api: "openai-completions",
+	provider: "neuralwatt",
+	baseUrl: "https://api.neuralwatt.com/v1",
+	reasoning: false,
+	input: ["text"],
+	cost: { input: 0.12, output: 0.12, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 262_144,
+	maxTokens: 8_192,
+};
+
+const KIMI_MODEL: Model<"openai-completions"> = {
+	// Flagship: 0.482 tokens/J, $1.327/$1.327/1M, 262K context — CoT/thinking
+	id: "moonshotai/Kimi-K2.5",
+	name: "Kimi K2.5",
+	api: "openai-completions",
+	provider: "neuralwatt",
+	baseUrl: "https://api.neuralwatt.com/v1",
+	reasoning: false,
+	input: ["text"],
+	cost: { input: 1.327, output: 1.327, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 262_144,
+	maxTokens: 16_384,
+};
+
+/** Models available for EnergyAwarePolicy routing (cheapest-first order). */
+const NEURALWATT_MODELS: Model<"openai-completions">[] = [GPT_OSS_MODEL, DEVSTRAL_MODEL, KIMI_MODEL];
 
 /**
  * Start on Kimi K2.5 (0.482 tokens/J) — policy will route to
  * GPT-OSS-20B (1.371 tokens/J, 2.8x more efficient, 13x cheaper) at >70% budget pressure.
  */
-const SCORING_MODEL = NEURALWATT_MODELS[1];
+const SCORING_MODEL = KIMI_MODEL;
 
 const DEFAULT_DURATION_S = 120;
 /**
@@ -117,6 +122,39 @@ const DEFAULT_BUDGET_JOULES = 3_500;
 
 /** Memory key for this routing pair. */
 const MEMORY_KEY = "kimi-k2.5→gpt-oss-20b";
+
+/** Energy efficiency (tokens per joule) from portal.neuralwatt.com. */
+const TOKENS_PER_JOULE: Record<string, number> = {
+	"openai/gpt-oss-20b": 1.371,
+	"mistralai/Devstral-Small-2-24B-Instruct-2512": 0.809,
+	"deepseek-ai/deepseek-coder-33b-instruct": 0.092,
+	"moonshotai/Kimi-K2.5": 0.482,
+	"Qwen/Qwen3-Coder-480B-A35B-Instruct": 0.314,
+};
+
+/**
+ * Discriminator config for the HN watcher.
+ * Three tiers for story scoring:
+ *   complex → Kimi K2.5: ambiguous title, niche topic, nuanced reasoning needed
+ *   medium  → Devstral-24B: moderately clear title, some judgment required
+ *   simple  → GPT-OSS-20B: clear title, obvious relevance or irrelevance
+ * No "thinking" tier — scoring tasks don't require chain-of-thought.
+ */
+const HN_DISCRIMINATOR_CONFIG: DiscriminatorConfig = {
+	classifierModel: GPT_OSS_MODEL,
+	complex: { model: KIMI_MODEL },
+	medium: { model: DEVSTRAL_MODEL, briefMaxTokens: 8 },
+	simple: { model: GPT_OSS_MODEL, briefMaxTokens: 8 }, // just a number 0.0–1.0
+	tokensPerJoule: TOKENS_PER_JOULE,
+	systemPrompt:
+		"You are a routing classifier for a relevance-scoring pipeline.\n" +
+		"Classify whether scoring a HackerNews story title requires a capable, moderate, or efficient model.\n" +
+		'"complex" → Kimi K2.5: ambiguous title, specialized niche topic, nuanced judgment required.\n' +
+		'"medium"  → Devstral-24B: moderately clear but needs some domain knowledge.\n' +
+		'"simple"  → GPT-OSS-20B: clear title, obviously relevant or irrelevant to AI/ML.\n' +
+		'Response length: "brief" for a quick numeric score, "full" if reasoning is needed.\n' +
+		'Reply with ONLY valid JSON: {"tier":"simple","length":"brief","reason":"<=10 words"}',
+};
 
 // -- Types --------------------------------------------------------------------
 
@@ -131,9 +169,14 @@ interface StoryScore {
 interface WatcherStats {
 	storiesScored: number;
 	totalEnergy: number;
+	totalCost: number;
 	totalTokens: number;
+	/** Energy spent on discriminator calls — already included in totalEnergy. */
+	totalDiscriminatorEnergyJ: number;
 	highRelevance: StoryScore[];
 	policyDecisions: Array<{ story: number; reason: string }>;
+	/** EA only: per-story discriminator decisions for the final summary. */
+	discriminatorDecisions: Array<{ story: number; tier: string; reason: string; model: string }>;
 	aborted: boolean;
 }
 
@@ -150,15 +193,11 @@ interface ScorePair {
 
 // -- Energy tracking ----------------------------------------------------------
 
-function estimateEnergy(message: AssistantMessage, modelId: string): number {
+function getEnergy(message: AssistantMessage, modelId: string): number {
+	const api = message.energy?.energy_joules;
+	if (api != null && api > 0) return api;
 	const tokensPerJoule = TOKENS_PER_JOULE[modelId] ?? 1.0;
 	return message.usage.totalTokens / tokensPerJoule;
-}
-
-function getEnergy(message: AssistantMessage, modelId: string): number {
-	const fromApi = message.energy?.energy_joules;
-	if (fromApi != null && fromApi > 0) return fromApi;
-	return estimateEnergy(message, modelId);
 }
 
 // -- HN API -------------------------------------------------------------------
@@ -229,11 +268,15 @@ async function scoreWithPolicy(
 	consumedTimeMs: number,
 	apiKey: string,
 	memoryConfidence: string,
+	/** When set, overrides the policy's model selection (discriminator wins). */
+	discriminatorModelOverride?: Model<"openai-completions">,
+	discriminatorMaxTokens?: number,
 ): Promise<{
 	storyScore: StoryScore;
 	decision: PolicyDecision;
 	energy: number;
 	tokens: number;
+	cost: number;
 	aborted: boolean;
 }> {
 	const ctx: PolicyContext = {
@@ -255,12 +298,18 @@ async function scoreWithPolicy(
 			decision,
 			energy: 0,
 			tokens: 0,
+			cost: 0,
 			aborted: true,
 		};
 	}
 
-	const effectiveModel = (decision.model as Model<"openai-completions">) ?? SCORING_MODEL;
-	const { score, message } = await scoreStoryLLM(title, keywords, effectiveModel, apiKey, decision.maxTokens);
+	// Discriminator model override takes priority over policy's model selection.
+	// Policy still handles budget pressure (abort, maxTokens from token-limit strategy).
+	// For token limits: use discriminator's briefMaxTokens if set, otherwise policy's limit.
+	const effectiveModel =
+		discriminatorModelOverride ?? (decision.model as Model<"openai-completions">) ?? SCORING_MODEL;
+	const effectiveMaxTokens = discriminatorMaxTokens ?? decision.maxTokens;
+	const { score, message } = await scoreStoryLLM(title, keywords, effectiveModel, apiKey, effectiveMaxTokens);
 	const energy = getEnergy(message, effectiveModel.id);
 	const tokens = message.usage.totalTokens;
 
@@ -276,9 +325,11 @@ async function scoreWithPolicy(
 
 	// Build decision label — annotate routing decisions with learned confidence
 	let decisionLabel = "";
-	if (decision.model) {
+	if (discriminatorModelOverride) {
+		decisionLabel = `↓ disc → ${modelShort(discriminatorModelOverride.id)}`;
+	} else if (decision.model) {
 		const conf = memoryConfidence ? ` ${memoryConfidence}` : "";
-		decisionLabel = `↓ routed to ${decision.model.id}${conf}`;
+		decisionLabel = `↓ policy → ${modelShort(decision.model.id)}${conf}`;
 	} else if (decision.maxTokens) {
 		decisionLabel = "↓ token limit";
 	}
@@ -288,6 +339,7 @@ async function scoreWithPolicy(
 		decision,
 		energy,
 		tokens,
+		cost: message.usage.cost.total,
 		aborted: false,
 	};
 }
@@ -471,8 +523,20 @@ function printFinalSummary(
 	console.log(
 		`  | Stories scored  | ${pad(String(baseStats.storiesScored), 13)} | ${pad(String(eaStats.storiesScored), 25)} |`,
 	);
+	const costSaved =
+		baseStats.totalCost > 0 ? ((baseStats.totalCost - eaStats.totalCost) / baseStats.totalCost) * 100 : 0;
+	const fmtCost = (c: number) => `$${c.toFixed(5)}`;
+
 	console.log(
 		`  | Energy used     | ${pad(`${baseStats.totalEnergy.toFixed(2)} J`, 13)} | ${pad(`${eaStats.totalEnergy.toFixed(2)} J  (${energySaved >= 0 ? "-" : "+"}${Math.abs(energySaved).toFixed(0)}%)`, 25)} |`,
+	);
+	if (eaStats.totalDiscriminatorEnergyJ > 0) {
+		console.log(
+			`  | Discriminator   | ${pad("n/a", 13)} | ${pad(`${eaStats.totalDiscriminatorEnergyJ.toFixed(1)}J (incl. in energy ↑)`, 25)} |`,
+		);
+	}
+	console.log(
+		`  | Est. cost       | ${pad(fmtCost(baseStats.totalCost), 13)} | ${pad(`${fmtCost(eaStats.totalCost)}  (${costSaved >= 0 ? "-" : "+"}${Math.abs(costSaved).toFixed(0)}%)`, 25)} |`,
 	);
 	console.log(
 		`  | Tokens used     | ${pad(String(baseStats.totalTokens), 13)} | ${pad(String(eaStats.totalTokens), 25)} |`,
@@ -485,6 +549,21 @@ function printFinalSummary(
 	);
 	console.log("  +-----------------+---------------+---------------------------+");
 
+	// Verdict
+	console.log("");
+	const qualityOk = scorePairs.length === 0 || Number(agreementPct) >= 80;
+	if (qualityOk && energySaved > 0 && costSaved > 0) {
+		console.log(
+			`  \x1b[32m✓ Energy-aware wins: ${energySaved.toFixed(0)}% less energy, ${costSaved.toFixed(0)}% lower cost — same scoring quality\x1b[0m`,
+		);
+	} else if (!qualityOk) {
+		console.log(
+			`  \x1b[31m✗ Energy-aware quality degraded: only ${agreementPct}% score agreement (threshold: 80%)\x1b[0m`,
+		);
+	} else if (energySaved <= 0) {
+		console.log(`  \x1b[33m~ Energy-aware used more energy this run (budget may be too high for story count)\x1b[0m`);
+	}
+
 	const allHigh = [...baseStats.highRelevance, ...eaStats.highRelevance]
 		.filter((s, i, arr) => arr.findIndex((x) => x.title === s.title) === i)
 		.sort((a, b) => b.score - a.score);
@@ -494,6 +573,28 @@ function printFinalSummary(
 		console.log("  HIGH RELEVANCE STORIES (score > 0.8):");
 		for (const s of allHigh.slice(0, 8)) {
 			console.log(`    ${stars(s.score)} ${s.score.toFixed(2)}  "${truncate(s.title, 62)}"`);
+		}
+	}
+
+	if (eaStats.discriminatorDecisions.length > 0) {
+		const simpleCount = eaStats.discriminatorDecisions.filter((d) => d.tier === "simple").length;
+		const mediumCount = eaStats.discriminatorDecisions.filter((d) => d.tier === "medium").length;
+		const complexCount = eaStats.discriminatorDecisions.filter((d) => d.tier === "complex").length;
+		const total = eaStats.discriminatorDecisions.length;
+		console.log("");
+		console.log(
+			`  DISCRIMINATOR SUMMARY (${total} stories): ${simpleCount} simple→GPT-OSS | ${mediumCount} medium→Devstral | ${complexCount} complex→Kimi`,
+		);
+		// Show a sample of decisions (last 5)
+		const sample = eaStats.discriminatorDecisions.slice(-5);
+		for (const d of sample) {
+			const icon =
+				d.tier === "complex"
+					? "\x1b[33m▲ complex\x1b[0m"
+					: d.tier === "medium"
+						? "\x1b[36m● medium \x1b[0m"
+						: "\x1b[32m▼ simple \x1b[0m";
+			console.log(`    Story #${String(d.story).padStart(2)}: ${icon}  "${d.reason}"`);
 		}
 	}
 
@@ -600,17 +701,23 @@ async function main(): Promise<void> {
 	const baseStats: WatcherStats = {
 		storiesScored: 0,
 		totalEnergy: 0,
+		totalCost: 0,
 		totalTokens: 0,
+		totalDiscriminatorEnergyJ: 0,
 		highRelevance: [],
 		policyDecisions: [],
+		discriminatorDecisions: [],
 		aborted: false,
 	};
 	const eaStats: WatcherStats = {
 		storiesScored: 0,
 		totalEnergy: 0,
+		totalCost: 0,
 		totalTokens: 0,
+		totalDiscriminatorEnergyJ: 0,
 		highRelevance: [],
 		policyDecisions: [],
+		discriminatorDecisions: [],
 		aborted: false,
 	};
 
@@ -641,7 +748,10 @@ async function main(): Promise<void> {
 		currentTitle = story.title;
 
 		const nowS = (Date.now() - startTime) / 1000;
-		const [baseResult, eaResult] = await Promise.all([
+
+		// Run baseline and discriminator concurrently to avoid adding latency.
+		// Then use the discriminator result to drive the EA scoring call.
+		const [baseResult, discResult] = await Promise.all([
 			scoreWithPolicy(
 				story.title,
 				keywords,
@@ -655,21 +765,42 @@ async function main(): Promise<void> {
 			).catch(() => null),
 			eaStats.aborted
 				? Promise.resolve(null)
-				: scoreWithPolicy(
-						story.title,
-						keywords,
-						eaStats.storiesScored,
-						energyAwarePolicy,
-						eaBudget,
-						eaStats.totalEnergy,
-						nowS * 1000,
-						apiKey,
-						memoryConfidence,
-					).catch(() => null),
+				: discriminate("score", story.title, HN_DISCRIMINATOR_CONFIG, "", apiKey).catch(() => null),
 		]);
+
+		// Account for discriminator energy before the EA scoring call so the
+		// consumed-energy value passed to EnergyAwarePolicy is accurate.
+		if (!eaStats.aborted && discResult) {
+			eaStats.totalDiscriminatorEnergyJ += discResult.energyJ;
+			eaStats.totalEnergy += discResult.energyJ;
+			eaStats.discriminatorDecisions.push({
+				story: eaStats.storiesScored + 1,
+				tier: discResult.tier,
+				reason: discResult.reason,
+				model: discResult.model.id,
+			});
+		}
+
+		const eaResult = eaStats.aborted
+			? null
+			: await scoreWithPolicy(
+					story.title,
+					keywords,
+					eaStats.storiesScored,
+					energyAwarePolicy,
+					eaBudget,
+					eaStats.totalEnergy,
+					nowS * 1000,
+					apiKey,
+					memoryConfidence,
+					// Override model for simple/medium — complex defers to EnergyAwarePolicy
+					discResult && discResult.tier !== "complex" ? discResult.model : undefined,
+					discResult?.maxTokens,
+				).catch(() => null);
 
 		if (baseResult && !baseResult.aborted) {
 			baseStats.totalEnergy += baseResult.energy;
+			baseStats.totalCost += baseResult.cost;
 			baseStats.totalTokens += baseResult.tokens;
 			baseStats.storiesScored++;
 			recentBase.push(baseResult.storyScore);
@@ -685,6 +816,7 @@ async function main(): Promise<void> {
 				lastDecision = reason;
 			} else {
 				eaStats.totalEnergy += eaResult.energy;
+				eaStats.totalCost += eaResult.cost;
 				eaStats.totalTokens += eaResult.tokens;
 				eaStats.storiesScored++;
 				recentEa.push(eaResult.storyScore);
