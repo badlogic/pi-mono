@@ -147,6 +147,62 @@ Content`,
 		});
 	});
 
+	describe(".agents/skills auto-discovery", () => {
+		it("should scan .agents/skills from cwd up to git repo root", async () => {
+			const repoRoot = join(tempDir, "repo");
+			const nestedCwd = join(repoRoot, "packages", "feature");
+			mkdirSync(nestedCwd, { recursive: true });
+			mkdirSync(join(repoRoot, ".git"), { recursive: true });
+
+			const aboveRepoSkill = join(tempDir, ".agents", "skills", "above-repo", "SKILL.md");
+			mkdirSync(join(tempDir, ".agents", "skills", "above-repo"), { recursive: true });
+			writeFileSync(aboveRepoSkill, "---\nname: above-repo\ndescription: above\n---\n");
+
+			const repoRootSkill = join(repoRoot, ".agents", "skills", "repo-root", "SKILL.md");
+			mkdirSync(join(repoRoot, ".agents", "skills", "repo-root"), { recursive: true });
+			writeFileSync(repoRootSkill, "---\nname: repo-root\ndescription: repo\n---\n");
+
+			const nestedSkill = join(repoRoot, "packages", ".agents", "skills", "nested", "SKILL.md");
+			mkdirSync(join(repoRoot, "packages", ".agents", "skills", "nested"), { recursive: true });
+			writeFileSync(nestedSkill, "---\nname: nested\ndescription: nested\n---\n");
+
+			const pm = new DefaultPackageManager({
+				cwd: nestedCwd,
+				agentDir,
+				settingsManager,
+			});
+
+			const result = await pm.resolve();
+			expect(result.skills.some((r) => r.path === repoRootSkill && r.enabled)).toBe(true);
+			expect(result.skills.some((r) => r.path === nestedSkill && r.enabled)).toBe(true);
+			expect(result.skills.some((r) => r.path === aboveRepoSkill)).toBe(false);
+		});
+
+		it("should scan .agents/skills up to filesystem root when not in a git repo", async () => {
+			const nonRepoRoot = join(tempDir, "non-repo");
+			const nestedCwd = join(nonRepoRoot, "a", "b");
+			mkdirSync(nestedCwd, { recursive: true });
+
+			const rootSkill = join(nonRepoRoot, ".agents", "skills", "root", "SKILL.md");
+			mkdirSync(join(nonRepoRoot, ".agents", "skills", "root"), { recursive: true });
+			writeFileSync(rootSkill, "---\nname: root\ndescription: root\n---\n");
+
+			const middleSkill = join(nonRepoRoot, "a", ".agents", "skills", "middle", "SKILL.md");
+			mkdirSync(join(nonRepoRoot, "a", ".agents", "skills", "middle"), { recursive: true });
+			writeFileSync(middleSkill, "---\nname: middle\ndescription: middle\n---\n");
+
+			const pm = new DefaultPackageManager({
+				cwd: nestedCwd,
+				agentDir,
+				settingsManager,
+			});
+
+			const result = await pm.resolve();
+			expect(result.skills.some((r) => r.path === rootSkill && r.enabled)).toBe(true);
+			expect(result.skills.some((r) => r.path === middleSkill && r.enabled)).toBe(true);
+		});
+	});
+
 	describe("ignore files", () => {
 		it("should respect .gitignore in skill directories", async () => {
 			const skillsDir = join(agentDir, "skills");

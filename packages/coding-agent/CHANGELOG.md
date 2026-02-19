@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added default skill auto-discovery for `.agents/skills` locations. Pi now discovers project skills from `.agents/skills` in `cwd` and ancestor directories (up to git repo root, or filesystem root when not in a repo), and global skills from `~/.agents/skills`, in addition to existing `.pi` skill paths.
+
 ## [0.53.1] - 2026-02-19
 
 ### Changed

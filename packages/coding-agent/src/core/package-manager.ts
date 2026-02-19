@@ -286,6 +286,41 @@ function collectAutoSkillEntries(dir: string, includeRootFiles = true): string[]
 	return collectSkillEntries(dir, includeRootFiles);
 }
 
+function findGitRepoRoot(startDir: string): string | null {
+	let dir = resolve(startDir);
+	while (true) {
+		if (existsSync(join(dir, ".git"))) {
+			return dir;
+		}
+		const parent = dirname(dir);
+		if (parent === dir) {
+			return null;
+		}
+		dir = parent;
+	}
+}
+
+function collectAncestorAgentsSkillDirs(startDir: string): string[] {
+	const skillDirs: string[] = [];
+	const resolvedStartDir = resolve(startDir);
+	const gitRepoRoot = findGitRepoRoot(resolvedStartDir);
+
+	let dir = resolvedStartDir;
+	while (true) {
+		skillDirs.push(join(dir, ".agents", "skills"));
+		if (gitRepoRoot && dir === gitRepoRoot) {
+			break;
+		}
+		const parent = dirname(dir);
+		if (parent === dir) {
+			break;
+		}
+		dir = parent;
+	}
+
+	return skillDirs;
+}
+
 function collectAutoPromptEntries(dir: string): string[] {
 	const entries: string[] = [];
 	if (!existsSync(dir)) return entries;
@@ -1548,6 +1583,8 @@ export class DefaultPackageManager implements PackageManager {
 			prompts: join(projectBaseDir, "prompts"),
 			themes: join(projectBaseDir, "themes"),
 		};
+		const userAgentsSkillsDir = join(homedir(), ".agents", "skills");
+		const projectAgentsSkillDirs = collectAncestorAgentsSkillDirs(this.cwd);
 
 		const addResources = (
 			resourceType: ResourceType,
@@ -1572,7 +1609,7 @@ export class DefaultPackageManager implements PackageManager {
 		);
 		addResources(
 			"skills",
-			collectAutoSkillEntries(userDirs.skills),
+			[...collectAutoSkillEntries(userDirs.skills), ...collectAutoSkillEntries(userAgentsSkillsDir)],
 			userMetadata,
 			userOverrides.skills,
 			globalBaseDir,
@@ -1601,7 +1638,10 @@ export class DefaultPackageManager implements PackageManager {
 		);
 		addResources(
 			"skills",
-			collectAutoSkillEntries(projectDirs.skills),
+			[
+				...collectAutoSkillEntries(projectDirs.skills),
+				...projectAgentsSkillDirs.flatMap((dir) => collectAutoSkillEntries(dir)),
+			],
 			projectMetadata,
 			projectOverrides.skills,
 			projectBaseDir,
