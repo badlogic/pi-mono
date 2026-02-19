@@ -2,51 +2,116 @@
 
 A fork of [badlogic/pi-mono](https://github.com/badlogic/pi-mono) that adds **Energy-Aware Mode** — a runtime policy layer that reduces energy consumption and cost for LLM workloads without degrading output quality.
 
-Built on [Neuralwatt](https://neuralwatt.com) endpoints, which expose per-request energy telemetry (`energy_joules`, `energy_kwh`) alongside standard token usage.
+Built on [Neuralwatt](https://neuralwatt.com) endpoints, which expose per-request energy telemetry (`energy_joules`, `energy_kwh`) alongside standard token usage. Both baseline and energy-aware modes use the **same Neuralwatt endpoint** (`https://api.neuralwatt.com/v1`) — the only difference is the active runtime policy.
 
 ---
 
-## What this adds to pi-mono
+## Core Idea
 
-### Energy-Aware Runtime Policy (`packages/agent`)
+LLM inference consumes measurable energy, and not every task needs the most capable (and most expensive) model. A simple prompt classifier running on GPT-OSS-20B costs ~$0.00001 and completes in milliseconds. Routing that prompt to Kimi K2.5 instead costs 13x more energy and 13x more money for equivalent output quality.
 
-A policy hook system that wraps the agent loop and intervenes at model call boundaries:
+This project makes that tradeoff explicit and automated:
 
-- `BaselinePolicy` — no intervention, mirrors default pi-mono behavior
-- `EnergyAwarePolicy` — budget-aware policy that fires a cascade of interventions as budget pressure rises:
-  1. **>30% pressure** — reduces reasoning budget
-  2. **>50% pressure** — caps output token limits
-  3. **>70% pressure** — routes to a cheaper, more energy-efficient model
-  4. **>50% pressure + large context** — triggers context compaction
-  5. **100% pressure** — aborts to prevent overrun
+1. **Energy telemetry** — Neuralwatt returns `energy_joules` per request. The policy layer tracks cumulative consumption against a budget.
+2. **Budget pressure** — as the agent burns through its energy budget, the policy escalates interventions: reduce reasoning, cap tokens, route to a cheaper model, compact context, abort.
+3. **Discriminator routing** — a lightweight classifier evaluates each prompt before the main model call and selects the most appropriate tier. Tasks that need chain-of-thought go to Kimi K2.5; boilerplate tasks go to GPT-OSS-20B.
+4. **Learned memory** — routing quality observations persist across runs. On subsequent runs the discriminator prompt is informed by historical pass rates per phase.
 
-Budget pressure = `consumedEnergy / energy_budget_joules`. Falls back to time-based pressure if no energy budget is set.
+The result: the same task suite completes with 40–70% less energy, at lower cost, with no measurable quality loss.
+
+---
+
+## Architecture
+
+### Energy Telemetry (`packages/ai`)
+
+Neuralwatt returns energy data in the final streaming chunk's `usage` object. The `openai-completions` provider parses this into `AssistantMessage.energy`:
+
+```typescript
+interface EnergyUsage {
+  energy_joules: number;    // energy consumed for this request
+  energy_kwh: number;       // same value in kWh
+  duration_seconds: number; // server-side processing time
+}
+```
+
+When the API does not return energy data for a model (some models lack metering), the system falls back to a token-based estimate using known `tokens/joule` rates. Per-turn output labels `[api]` or `[est]` so it is always clear which source was used.
+
+### Policy Hooks (`packages/agent`)
+
+The agent loop calls `beforeModelCall` before each LLM call and `afterModelCall` after it completes. Policies implement:
+
+```typescript
+interface RuntimePolicy {
+  name: string;
+  beforeModelCall(ctx: PolicyContext): PolicyDecision;
+  afterModelCall(ctx: PolicyContext, usage: UsageWithEnergy): void;
+}
+```
+
+`PolicyContext` carries the current model, available models for routing, budget configuration, energy consumed so far, elapsed time, and estimated input token count. `PolicyDecision` can override model selection, cap `maxTokens`, adjust reasoning level, trigger context compaction, or abort.
+
+### BaselinePolicy
+
+No-op policy. `beforeModelCall` returns an empty decision — no overrides. Used to establish a fair baseline measurement with the same endpoint.
+
+### EnergyAwarePolicy
+
+Adaptive policy with a five-stage strategy chain, triggered in priority order as budget pressure rises:
+
+| Stage | Trigger | Action |
+|-------|---------|--------|
+| 1. Reasoning reduction | pressure > 30% | Reduce reasoning level: high → medium → low → off |
+| 2. Token reduction | pressure > 50% | Reduce `maxTokens` by up to 40% |
+| 3. Model routing | pressure > 70% | Switch to cheapest available model that supports required capabilities |
+| 4. Context compaction | pressure > 50% AND tokens > 60% of context window | Trigger context compaction |
+| 5. Budget exhaustion | pressure ≥ 100% | Abort with reason message |
+
+**Budget pressure** = `consumedEnergy / energy_budget_joules`
+
+Falls back to time-based pressure (`consumedTime / time_budget_ms`) if no energy budget is set. Returns 0 (no intervention) if neither budget is set. Every decision includes a human-readable `reason` string for observability.
+
+Model routing selects the cheapest model from `availableModels` (sorted by `cost.output` ascending) that meets capability requirements (tool calling, image input, reasoning). If energy telemetry is missing, the policy degrades gracefully to baseline behavior — it never crashes on missing data.
 
 ### Four-Tier Discriminator (`packages/benchmarks/src/demos/demo-discriminator.ts`)
 
 A lightweight classifier (GPT-OSS-20B) evaluates each prompt before the main model call and routes to one of four tiers based on task complexity and whether chain-of-thought reasoning is needed:
 
-| Tier | Model | Tokens/J | Cost/1M tokens | Use case |
-|------|-------|----------|----------------|----------|
+| Tier | Model | Tokens/J | Cost/1M | Use case |
+|------|-------|----------|---------|----------|
 | thinking | Kimi K2.5 | 0.482 | $1.327 | CoT reasoning, debugging, step-by-step |
-| complex | Qwen3-Coder-480B | 0.314 | $0.10 | High quality, direct answer, no CoT |
+| complex | Qwen3-Coder-480B | 0.314 | $0.10 | High quality, direct answer, no CoT overhead |
 | medium | Devstral-24B | 0.809 | $0.12 | Moderate complexity, clear spec |
 | simple | GPT-OSS-20B | 1.371 | $0.10 | Boilerplate, obvious tasks, trivial answers |
 
-Optional tiers fall back gracefully: `thinking` → `complex`, `medium` → `simple`.
+The classifier returns `{"tier":"medium","length":"full","reason":"..."}`. Optional tiers fall back gracefully: `thinking` → `complex`, `medium` → `simple`. A `length=brief` response caps downstream `maxTokens` to avoid over-generating short answers.
 
-The classifier also returns a `length` field (`full` / `brief`) that can cap downstream `maxTokens` to avoid over-generating short answers.
+EnergyAwarePolicy handles budget pressure (aggregate abort/token-limit strategies); the discriminator handles per-task model selection. Both apply simultaneously — the discriminator selects the model and the policy enforces the budget envelope.
 
 ### Persistent Cross-Run Memory (`packages/benchmarks/src/demos/demo-memory.ts`)
 
-Stored at `~/.energy-demo-memory.json`. Records routing quality observations across runs so each startup can display learned confidence:
+Stored at `~/.energy-demo-memory.json`. Records routing quality observations across runs:
+
+- **HN Watcher**: tracks per-story score agreement between baseline and energy-aware runs
+- **Coding Agent**: tracks pass/fail per routing decision per phase, average turns-to-pass, energy savings
+
+On startup, each demo displays learned confidence from previous runs:
 
 ```
 Memory (5 previous runs): GPT-OSS scores agree with Kimi within 0.15 in 94% of stories (n=47)
                            Routes at ~74% pressure — saves 69% energy with no quality loss
 ```
 
-Memory informs the discriminator prompt on subsequent runs — phases that historically routed to complex and failed are weighted toward higher tiers.
+The discriminator prompt is enriched with historical routing outcomes for each phase. Phases that historically failed when routed to lightweight models are weighted toward higher tiers on subsequent runs.
+
+---
+
+## Acceptance Criteria
+
+Energy-aware mode must:
+- Achieve **≥20% energy reduction** compared to baseline across the benchmark task suite
+- Maintain **≤5% success rate degradation** compared to baseline
+- Never crash when energy telemetry is missing (graceful fallback to baseline behavior)
 
 ---
 
@@ -76,12 +141,15 @@ DeepSeek-33B is the least energy-efficient and is excluded from discriminator ro
 | Energy telemetry parsing (`energy_joules` from streaming chunks) | Done |
 | `BaselinePolicy` + `EnergyAwarePolicy` (`packages/agent`) | Done |
 | Policy integration in agent loop | Done |
+| Unit tests for policy layer | Done |
 | Four-tier discriminator (shared module) | Done |
 | Persistent cross-run memory | Done |
 | HN Watcher demo | Done |
 | Coding Agent demo (acceptance-test-driven) | Done |
-| Unit tests for policy layer | Done |
-| Benchmark runner / report generator | Planned |
+| `--energy-aware` CLI flag for the pi coding agent | Planned |
+| Benchmark runner CLI (`bench run --compare`) | Planned |
+| Benchmark task suite (10 tasks with validators) | Planned |
+| JSONL telemetry + `report.md` generator | Planned |
 
 ---
 
@@ -113,7 +181,7 @@ npx tsx src/demos/hn-watcher.ts --keywords "AI,LLM,GPU,CUDA,transformer"
 npx tsx src/demos/hn-watcher.ts --clear-memory
 ```
 
-The watcher displays a live two-column feed (baseline vs energy-aware) and prints a final report showing energy used, cost, score agreement percentage, and a verdict:
+The watcher displays a live two-column feed (baseline vs energy-aware) and prints a final report showing energy used, cost, score agreement, and a verdict:
 
 ```
   ✓ Energy-aware wins: 68% less energy, 71% lower cost — same scoring quality
@@ -134,11 +202,65 @@ npx tsx src/demos/coding-agent.ts --clear-memory
 ```
 
 The agent runs in three phases:
+
 1. **Build** (4 turns) — incremental implementation: interfaces, class, middleware, validation
 2. **Consolidate** (1 turn) — emit final `impl.ts` as a single file
-3. **Verify + fix loop** — run acceptance tests, request corrections until all pass or budget is exhausted
+3. **Verify + fix loop** — run acceptance tests; request corrections until all pass or budget is exhausted
 
-Final scorecard shows per-turn model routing, energy used, cost, and test pass/fail with turn count.
+The discriminator classifies each prompt before every turn and routes to the appropriate model tier. Final scorecard shows per-turn model routing, energy and cost per turn, acceptance test results, and a side-by-side comparison:
+
+```
+  | Energy used    | 14.3 J              | 4.9 J  (-66%)             |
+  | Est. cost      | $0.00142            | $0.00038  (-73%)           |
+  | Quality        | ✓ PASSED (turn 5)   | ✓ PASSED (turn 6, +1 fix)  |
+```
+
+---
+
+## Error Handling
+
+- **Neuralwatt API down** — fails with a clear error message; never silently switches providers
+- **Energy telemetry missing** — logs a warning, continues as baseline; policy returns empty `PolicyDecision`
+- **Budget exhausted mid-task** — policy sets `abort: true` with reason; agent loop returns partial results
+- **Unknown model in routing** — skips model routing strategy and moves to the next in the chain
+- **Discriminator classifier error** — falls back to `complex` tier (safest default)
+
+---
+
+## Benchmark Harness (Planned)
+
+The `packages/benchmarks` package will add a formal benchmark CLI:
+
+```bash
+cd packages/benchmarks
+
+# Run baseline only
+npx tsx src/cli.ts run --mode baseline
+
+# Run energy-aware only
+npx tsx src/cli.ts run --mode energy-aware
+
+# Run both back-to-back and generate comparison report
+npx tsx src/cli.ts run --compare --budget-joules 50
+```
+
+Output:
+- `results.jsonl` — per-call telemetry records (`task_id`, `model`, `energy_joules`, `tokens`, `latency_ms`, ...)
+- `summary.csv` — per-task aggregated results (`time_ms`, `energy_joules`, `tokens_total`, `success`, `score`)
+- `report.md` — human-readable comparison with verdict: "Energy-aware mode saved X% energy with Y% success rate impact"
+
+The task format includes a deterministic validator so results are reproducible:
+
+```typescript
+interface BenchmarkTask {
+  id: string;
+  name: string;
+  prompt: string;
+  tools?: AgentTool[];
+  validator: (result: AgentMessage[]) => { passed: boolean; score: number; reason: string };
+  maxTurns: number;
+}
+```
 
 ---
 
