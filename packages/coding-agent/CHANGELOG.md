@@ -6,8 +6,8 @@
 
 ### Changed
 
-- Updated bundled model catalog to add Gemini 3.1 Pro Preview for Google Vertex and keep Google Gemini CLI and Antigravity Gemini catalogs aligned with currently exposed models.
-- Added Claude Opus 4.6 Thinking to the Google Antigravity model catalog.
+- Added Gemini 3.1 model catalog entries for all built-in providers that currently expose it: `google`, `google-vertex`, `opencode`, `openrouter`, and `vercel-ai-gateway`.
+- Added Claude Opus 4.6 Thinking to the `google-antigravity` model catalog.
 
 ## [0.53.0] - 2026-02-17
 
