@@ -177,6 +177,8 @@ export interface AssistantMessage {
 	stopReason: StopReason;
 	errorMessage?: string;
 	timestamp: number; // Unix timestamp in milliseconds
+	/** Provider response ID (Responses API). Enables `previous_response_id` conversation chaining. */
+	responseId?: string;
 }
 
 export interface ToolResultMessage<TDetails = any> {
