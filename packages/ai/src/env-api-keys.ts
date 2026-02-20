@@ -49,7 +49,7 @@ function hasVertexAdcCredentials(): boolean {
  */
 export function getEnvApiKey(provider: KnownProvider): string | undefined;
 export function getEnvApiKey(provider: string): string | undefined;
-export function getEnvApiKey(provider: any): string | undefined {
+export function getEnvApiKey(provider: string): string | undefined {
 	// Fall back to environment variables
 	if (provider === "github-copilot") {
 		return process.env.COPILOT_GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN;

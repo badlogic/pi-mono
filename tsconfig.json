@@ -20,9 +20,7 @@
 			"@mariozechner/pi-tui": ["./packages/tui/src/index.ts"],
 			"@mariozechner/pi-tui/*": ["./packages/tui/src/*"],
 			"@mariozechner/pi-web-ui": ["./packages/web-ui/src/index.ts"],
-			"@mariozechner/pi-web-ui/*": ["./packages/web-ui/src/*"],
-			"@mariozechner/pi-agent-old": ["./packages/agent-old/src/index.ts"],
-			"@mariozechner/pi-agent-old/*": ["./packages/agent-old/src/*"]
+			"@mariozechner/pi-web-ui/*": ["./packages/web-ui/src/*"]
 		}
 	},
 	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],
