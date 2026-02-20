@@ -557,7 +557,7 @@ export async function generateSummary(
 	const response = await completeSimple(
 		model,
 		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
-		{ maxTokens, signal, apiKey, reasoning: "high" },
+		{ maxTokens, signal, apiKey },
 	);
 
 	if (response.stopReason === "error") {
