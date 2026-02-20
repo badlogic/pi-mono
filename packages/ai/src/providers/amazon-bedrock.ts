@@ -437,6 +437,19 @@ function supportsThinkingSignature(model: Model<"bedrock-converse-stream">): boo
 	return id.includes("anthropic.claude") || id.includes("anthropic/claude");
 }
 
+/**
+ * Check if the model supports extended (1-hour) cache TTL.
+ * Only Claude 4.5+ models (Opus 4.5, Sonnet 4.5, Haiku 4.5) support ttl: "1h".
+ * Older Claude models (Opus 4.0/4.1, Sonnet 4.0, 3.7 Sonnet, 3.5 Haiku/Sonnet)
+ * only support the default 5-minute TTL and reject ONE_HOUR with API errors.
+ */
+function supportsExtendedTTL(model: Model<"bedrock-converse-stream">): boolean {
+	const id = model.id.toLowerCase();
+	if (!id.includes("anthropic") || !id.includes("claude")) return false;
+	const m = id.match(/claude-(?:opus|sonnet|haiku)-4-(\d{1,2})(?:-\d{8}|-v)/);
+	return m ? parseInt(m[1], 10) >= 5 : false;
+}
+
 function buildSystemPrompt(
 	systemPrompt: string | undefined,
 	model: Model<"bedrock-converse-stream">,
@@ -449,7 +462,7 @@ function buildSystemPrompt(
 	// Add cache point for supported Claude models when caching is enabled
 	if (cacheRetention !== "none" && supportsPromptCaching(model)) {
 		blocks.push({
-			cachePoint: { type: CachePointType.DEFAULT, ...(cacheRetention === "long" ? { ttl: CacheTTL.ONE_HOUR } : {}) },
+			cachePoint: { type: CachePointType.DEFAULT, ...(cacheRetention === "long" && supportsExtendedTTL(model) ? { ttl: CacheTTL.ONE_HOUR } : {}) },
 		});
 	}
 
@@ -601,7 +614,7 @@ function convertMessages(
 			(lastMessage.content as ContentBlock[]).push({
 				cachePoint: {
 					type: CachePointType.DEFAULT,
-					...(cacheRetention === "long" ? { ttl: CacheTTL.ONE_HOUR } : {}),
+					...(cacheRetention === "long" && supportsExtendedTTL(model) ? { ttl: CacheTTL.ONE_HOUR } : {}),
 				},
 			});
 		}
