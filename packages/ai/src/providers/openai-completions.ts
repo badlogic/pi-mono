@@ -175,7 +175,18 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 				}
 
 				if (choice.delta) {
+					// NVIDIA NIM (Nemotron and similar) emits the raw tool-call XML
+					// (e.g. "<TOOLCALL>…</TOOLCALL>") as text content in the same stream
+					// chunk that also carries the structured tool_calls object. Passing
+					// this through to the UI causes the raw XML to appear as a visible
+					// message above the actual response. Skip it here; the structured
+					// tool_calls path below handles the call correctly.
+					const isNimToolCallLeakage =
+						model.provider === "nim" &&
+						choice.delta.content != null &&
+						choice.delta.content.includes("<TOOLCALL");
 					if (
+						!isNimToolCallLeakage &&
 						choice.delta.content !== null &&
 						choice.delta.content !== undefined &&
 						choice.delta.content.length > 0
@@ -576,7 +587,10 @@ export function convertMessages(
 			if (nonEmptyTextBlocks.length > 0) {
 				// GitHub Copilot requires assistant content as a string, not an array.
 				// Sending as array causes Claude models to re-answer all previous prompts.
-				if (model.provider === "github-copilot") {
+				// NVIDIA NIM (vLLM) has the same requirement: it rejects array content
+				// for assistant messages with "Message content as a list is only
+				// supported for user messages."
+				if (model.provider === "github-copilot" || model.provider === "nim") {
 					assistantMsg.content = nonEmptyTextBlocks.map((b) => sanitizeSurrogates(b.text)).join("");
 				} else {
 					assistantMsg.content = nonEmptyTextBlocks.map((b) => {
