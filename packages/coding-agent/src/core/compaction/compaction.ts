@@ -609,6 +609,25 @@ export function prepareCompaction(
 			break;
 		}
 	}
+
+	// Previous round's keptMessages are between firstKeptEntryId and the
+	// compaction entry. They were kept for raw detail during recent turns
+	// but must now be summarized — otherwise they fall in a dead zone
+	// that no future compaction round will ever process.
+	const prevKeptMessages: AgentMessage[] = [];
+	if (prevCompactionIndex >= 0) {
+		const prevCompaction = pathEntries[prevCompactionIndex] as CompactionEntry;
+		if (prevCompaction.firstKeptEntryId) {
+			const keptIdx = pathEntries.findIndex((e) => e.id === prevCompaction.firstKeptEntryId);
+			if (keptIdx >= 0 && keptIdx < prevCompactionIndex) {
+				for (let i = keptIdx; i < prevCompactionIndex; i++) {
+					const msg = getMessageFromEntry(pathEntries[i]);
+					if (msg) prevKeptMessages.push(msg);
+				}
+			}
+		}
+	}
+
 	const boundaryStart = prevCompactionIndex + 1;
 	const boundaryEnd = pathEntries.length;
 
@@ -632,11 +651,12 @@ export function prepareCompaction(
 	const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
 
 	// Messages to summarize (will be discarded after summary)
-	const messagesToSummarize: AgentMessage[] = [];
+	const newMessagesToSummarize: AgentMessage[] = [];
 	for (let i = boundaryStart; i < historyEnd; i++) {
 		const msg = getMessageFromEntry(pathEntries[i]);
-		if (msg) messagesToSummarize.push(msg);
+		if (msg) newMessagesToSummarize.push(msg);
 	}
+	const messagesToSummarize = [...prevKeptMessages, ...newMessagesToSummarize];
 
 	// Messages for turn prefix summary (if splitting a turn)
 	const turnPrefixMessages: AgentMessage[] = [];

@@ -394,6 +394,143 @@ describe("Large session fixture", () => {
 // LLM integration tests (skipped without API key)
 // ============================================================================
 
+// ============================================================================
+// Iterative compaction bug: keptMessages lost + infinite loop
+// ============================================================================
+
+function bigUserMessage(targetTokens: number): AgentMessage {
+	return { role: "user", content: "X".repeat(targetTokens * 4), timestamp: Date.now() };
+}
+
+describe("prepareCompaction iterative keptMessages", () => {
+	it("should include previous keptMessages in next round messagesToSummarize", () => {
+		resetEntryCounter();
+		const entries: SessionEntry[] = [];
+
+		// 5 small Q&A pairs
+		for (let i = 0; i < 5; i++) {
+			entries.push(createMessageEntry(createUserMessage(`Q${i}: ${"q".repeat(400)}`)));
+			entries.push(createMessageEntry(createAssistantMessage(`A${i}: ${"a".repeat(600)}`)));
+		}
+
+		// One huge user message (~37K tokens) + short reply
+		const bigEntry = createMessageEntry(bigUserMessage(37000));
+		entries.push(bigEntry);
+		const replyEntry = createMessageEntry(createAssistantMessage("Short reply."));
+		entries.push(replyEntry);
+
+		// Round 1 compaction
+		const prep1 = prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS);
+		expect(prep1).toBeDefined();
+		expect(prep1!.firstKeptEntryId).toBe(bigEntry.id);
+		expect(prep1!.messagesToSummarize.length).toBe(10);
+
+		// Append compaction entry
+		entries.push(createCompactionEntry("Summary of 5 Q&A pairs.", bigEntry.id));
+
+		// 7 small pairs after compaction
+		for (let i = 0; i < 7; i++) {
+			entries.push(createMessageEntry(createUserMessage(`Follow-up ${i}`)));
+			entries.push(createMessageEntry(createAssistantMessage(`Reply ${i}`)));
+		}
+
+		// Round 2 compaction
+		const prep2 = prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS);
+		expect(prep2).toBeDefined();
+
+		// The big message and its reply must be in messagesToSummarize
+		const hasBigContent = prep2!.messagesToSummarize.some((msg) => {
+			const text = "content" in msg && typeof msg.content === "string" ? msg.content : "";
+			return text.length > 100000;
+		});
+		expect(hasBigContent).toBe(true);
+
+		expect(prep2!.previousSummary).toBe("Summary of 5 Q&A pairs.");
+	});
+
+	it("should not loop infinitely when a kept message exceeds keepRecentTokens", () => {
+		resetEntryCounter();
+		const entries: SessionEntry[] = [];
+
+		// 3 small pairs
+		for (let i = 0; i < 3; i++) {
+			entries.push(createMessageEntry(createUserMessage(`Q${i}: ${"q".repeat(200)}`)));
+			entries.push(createMessageEntry(createAssistantMessage(`A${i}: ${"a".repeat(200)}`)));
+		}
+
+		// Big message (37K tokens)
+		const bigEntry = createMessageEntry(bigUserMessage(37000));
+		entries.push(bigEntry);
+		entries.push(createMessageEntry(createAssistantMessage("ok")));
+
+		// Round 1 compaction
+		const prep1 = prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS);
+		expect(prep1).toBeDefined();
+		entries.push(createCompactionEntry("Summary.", bigEntry.id));
+
+		// Rounds 2-5: add one small exchange per round, compact, verify
+		for (let round = 2; round <= 5; round++) {
+			entries.push(createMessageEntry(createUserMessage(`msg-${round}`)));
+			entries.push(createMessageEntry(createAssistantMessage(`reply-${round}`)));
+
+			const prep = prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS);
+			expect(prep).toBeDefined();
+
+			// The big message MUST appear in messagesToSummarize at round 2
+			// (first iterative compaction after the big message was kept).
+			// After that, subsequent compactions should not see it again
+			// because it was consumed by the round-2 summary.
+			if (round === 2) {
+				const hasBig = prep!.messagesToSummarize.some((msg) => {
+					const text = "content" in msg && typeof msg.content === "string" ? msg.content : "";
+					return text.length > 100000;
+				});
+				expect(hasBig).toBe(true);
+			}
+
+			entries.push(createCompactionEntry(`Summary round ${round}.`, prep!.firstKeptEntryId));
+		}
+	});
+
+	it("buildSessionContext sees keptMessages that prepareCompaction also processes", () => {
+		resetEntryCounter();
+		const entries: SessionEntry[] = [];
+
+		for (let i = 0; i < 3; i++) {
+			entries.push(createMessageEntry(createUserMessage(`Q${i}: ${"q".repeat(200)}`)));
+			entries.push(createMessageEntry(createAssistantMessage(`A${i}: ${"a".repeat(200)}`)));
+		}
+
+		const factMsg = createMessageEntry(
+			createUserMessage(`IMPORTANT_FACT: deadline is March 15. ${"x".repeat(79000)}`),
+		);
+		entries.push(factMsg);
+		entries.push(createMessageEntry(createAssistantMessage("Noted.")));
+
+		entries.push(createCompactionEntry("Summary of early Q&A.", factMsg.id));
+
+		entries.push(createMessageEntry(createUserMessage("What's the deadline?")));
+		entries.push(createMessageEntry(createAssistantMessage("March 15th.")));
+
+		// Context rebuild sees the fact
+		const context = buildSessionContext(entries);
+		const contextHasFact = context.messages.some((msg) => {
+			const text = "content" in msg && typeof msg.content === "string" ? msg.content : "";
+			return text.includes("IMPORTANT_FACT");
+		});
+		expect(contextHasFact).toBe(true);
+
+		// prepareCompaction must also include it
+		const prep = prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS);
+		expect(prep).toBeDefined();
+		const summarizeHasFact = prep!.messagesToSummarize.some((msg) => {
+			const text = "content" in msg && typeof msg.content === "string" ? msg.content : "";
+			return text.includes("IMPORTANT_FACT");
+		});
+		expect(summarizeHasFact).toBe(true);
+	});
+});
+
 describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("LLM summarization", () => {
 	it("should generate a compaction result for the large session", async () => {
 		const entries = loadLargeSessionEntries();
