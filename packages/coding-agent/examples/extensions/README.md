@@ -85,6 +85,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `claude-rules.ts` | Scans `.claude/rules/` folder and lists rules in system prompt |
 | `custom-compaction.ts` | Custom compaction that summarizes entire conversation |
 | `trigger-compact.ts` | Triggers compaction when context usage exceeds 100k tokens and adds `/trigger-compact` command |
+| `idle-compact.ts` | Compacts during idle periods (no turns for 5 min) when context exceeds 40% — saves tokens in long-running sessions |
 
 ### System Integration
 
