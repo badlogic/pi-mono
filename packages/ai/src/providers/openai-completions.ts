@@ -778,6 +778,9 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		provider === "opencode" ||
 		baseUrl.includes("opencode.ai");
 
+	// DeepInfra does not support the "developer" role (returns 422)
+	const isDeepInfra = provider === "deepinfra" || baseUrl.includes("api.deepinfra.com");
+
 	const useMaxTokens = provider === "mistral" || baseUrl.includes("mistral.ai") || baseUrl.includes("chutes.ai");
 
 	const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
@@ -786,7 +789,7 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 
 	return {
 		supportsStore: !isNonStandard,
-		supportsDeveloperRole: !isNonStandard,
+		supportsDeveloperRole: !isNonStandard && !isDeepInfra,
 		supportsReasoningEffort: !isGrok && !isZai,
 		supportsUsageInStreaming: true,
 		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
