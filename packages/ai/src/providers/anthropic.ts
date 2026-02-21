@@ -630,6 +630,13 @@ function buildParams(
 		}
 	}
 
+	if (options?.outputFormat) {
+		params.output_config = {
+			...(params.output_config || {}),
+			format: options.outputFormat,
+		};
+	}
+
 	if (options?.metadata) {
 		const userId = options.metadata.user_id;
 		if (typeof userId === "string") {

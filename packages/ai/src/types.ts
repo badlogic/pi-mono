@@ -100,6 +100,9 @@ export interface StreamOptions {
 	 * For example, Anthropic uses `user_id` for abuse tracking and rate limiting.
 	 */
 	metadata?: Record<string, unknown>;
+
+	/** Output format for structured responses. Anthropic maps this to output_config.format. */
+	outputFormat?: { type: string; schema?: Record<string, unknown> };
 }
 
 export type ProviderStreamOptions = StreamOptions & Record<string, unknown>;
