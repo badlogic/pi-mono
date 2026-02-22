@@ -6101,7 +6101,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
-			maxTokens: 262144,
+			maxTokens: 65536,
 		} satisfies Model<"openai-completions">,
 		"minimax-m2.1": {
 			id: "minimax-m2.1",
@@ -7814,13 +7814,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
-				input: 0.22999999999999998,
-				output: 3,
-				cacheRead: 0,
+				input: 0.44999999999999996,
+				output: 2.2,
+				cacheRead: 0.22499999999999998,
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
-			maxTokens: 262144,
+			maxTokens: 65535,
 		} satisfies Model<"openai-completions">,
 		"nex-agi/deepseek-v3.1-nex-n1": {
 			id: "nex-agi/deepseek-v3.1-nex-n1",
@@ -9299,7 +9299,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
-			maxTokens: 65536,
+			maxTokens: 32768,
 		} satisfies Model<"openai-completions">,
 		"qwen/qwen3-max-thinking": {
 			id: "qwen/qwen3-max-thinking",
@@ -9316,7 +9316,7 @@ export const MODELS = {
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
-			maxTokens: 65536,
+			maxTokens: 32768,
 		} satisfies Model<"openai-completions">,
 		"qwen/qwen3-next-80b-a3b-instruct": {
 			id: "qwen/qwen3-next-80b-a3b-instruct",
@@ -10024,7 +10024,7 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.3,
+				input: 0.95,
 				output: 2.5500000000000003,
 				cacheRead: 0,
 				cacheWrite: 0,
