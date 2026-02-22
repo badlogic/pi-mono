@@ -610,6 +610,33 @@ function loadTheme(name: string, mode?: ColorMode): Theme {
 	return createTheme(themeJson, mode);
 }
 
+function reloadThemeFromSource(name: string): Theme {
+	const registeredTheme = registeredThemes.get(name);
+	if (registeredTheme?.sourcePath) {
+		const reloaded = loadThemeFromPath(registeredTheme.sourcePath);
+		registeredThemes.set(name, reloaded);
+		return reloaded;
+	}
+	return loadTheme(name);
+}
+
+function isBuiltinTheme(name: string): boolean {
+	return name in getBuiltinThemes();
+}
+
+function resolveThemeSourcePath(name: string): string | undefined {
+	const registeredTheme = registeredThemes.get(name);
+	if (registeredTheme?.sourcePath) {
+		return registeredTheme.sourcePath;
+	}
+	if (isBuiltinTheme(name)) {
+		return undefined;
+	}
+	const customThemesDir = getCustomThemesDir();
+	const themePath = path.join(customThemesDir, `${name}.json`);
+	return fs.existsSync(themePath) ? themePath : undefined;
+}
+
 export function getThemeByName(name: string): Theme | undefined {
 	try {
 		return loadTheme(name);
@@ -732,47 +759,52 @@ function startThemeWatcher(): void {
 	}
 
 	// Only watch if it's a custom theme (not built-in)
-	if (!currentThemeName || currentThemeName === "dark" || currentThemeName === "light") {
+	if (!currentThemeName || isBuiltinTheme(currentThemeName)) {
 		return;
 	}
 
-	const customThemesDir = getCustomThemesDir();
-	const themeFile = path.join(customThemesDir, `${currentThemeName}.json`);
-
+	const themeFile = resolveThemeSourcePath(currentThemeName);
 	// Only watch if the file exists
-	if (!fs.existsSync(themeFile)) {
+	if (!themeFile) {
 		return;
 	}
+
+	const reloadTheme = () => {
+		try {
+			if (!currentThemeName) {
+				return;
+			}
+			setGlobalTheme(reloadThemeFromSource(currentThemeName));
+			if (onThemeChangeCallback) {
+				onThemeChangeCallback();
+			}
+		} catch (_error) {
+			// Ignore errors (file might be in invalid state while being edited)
+		}
+	};
 
 	try {
 		themeWatcher = fs.watch(themeFile, (eventType) => {
 			if (eventType === "change") {
 				// Debounce rapid changes
-				setTimeout(() => {
-					try {
-						// Reload the theme
-						setGlobalTheme(loadTheme(currentThemeName!));
-						// Notify callback (to invalidate UI)
-						if (onThemeChangeCallback) {
-							onThemeChangeCallback();
-						}
-					} catch (_error) {
-						// Ignore errors (file might be in invalid state while being edited)
-					}
-				}, 100);
+				setTimeout(reloadTheme, 100);
 			} else if (eventType === "rename") {
-				// File was deleted or renamed - fall back to default theme
 				setTimeout(() => {
-					if (!fs.existsSync(themeFile)) {
-						currentThemeName = "dark";
-						setGlobalTheme(loadTheme("dark"));
-						if (themeWatcher) {
-							themeWatcher.close();
-							themeWatcher = undefined;
-						}
-						if (onThemeChangeCallback) {
-							onThemeChangeCallback();
-						}
+					if (fs.existsSync(themeFile)) {
+						// File may have been atomically replaced
+						startThemeWatcher();
+						reloadTheme();
+						return;
+					}
+					// File was deleted - fall back to default theme
+					currentThemeName = "dark";
+					setGlobalTheme(loadTheme("dark"));
+					if (themeWatcher) {
+						themeWatcher.close();
+						themeWatcher = undefined;
+					}
+					if (onThemeChangeCallback) {
+						onThemeChangeCallback();
 					}
 				}, 100);
 			}
