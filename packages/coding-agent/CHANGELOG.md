@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `.pi` folder being created unnecessarily when only reading settings. The folder is now only created when writing project-specific settings.
+
 ## [0.54.1] - 2026-02-22
 
 ### Fixed

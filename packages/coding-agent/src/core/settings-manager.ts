@@ -147,16 +147,24 @@ export class FileSettingsStorage implements SettingsStorage {
 	withLock(scope: SettingsScope, fn: (current: string | undefined) => string | undefined): void {
 		const path = scope === "global" ? this.globalSettingsPath : this.projectSettingsPath;
 		const dir = dirname(path);
-		if (!existsSync(dir)) {
-			mkdirSync(dir, { recursive: true });
-		}
 
 		let release: (() => void) | undefined;
 		try {
-			release = lockfile.lockSync(path, { realpath: false });
-			const current = existsSync(path) ? readFileSync(path, "utf-8") : undefined;
+			// Only create directory and lock if file exists or we need to write
+			const fileExists = existsSync(path);
+			if (fileExists) {
+				release = lockfile.lockSync(path, { realpath: false });
+			}
+			const current = fileExists ? readFileSync(path, "utf-8") : undefined;
 			const next = fn(current);
 			if (next !== undefined) {
+				// Only create directory when we actually need to write
+				if (!existsSync(dir)) {
+					mkdirSync(dir, { recursive: true });
+				}
+				if (!release) {
+					release = lockfile.lockSync(path, { realpath: false });
+				}
 				writeFileSync(path, next, "utf-8");
 			}
 		} finally {

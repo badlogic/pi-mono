@@ -212,6 +212,50 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("project settings directory creation", () => {
+		it("should not create .pi folder when only reading project settings", () => {
+			// Create agent dir with global settings, but NO .pi folder in project
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+
+			// Delete the .pi folder that beforeEach created
+			rmSync(join(projectDir, ".pi"), { recursive: true });
+
+			// Create SettingsManager (reads both global and project settings)
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			// .pi folder should NOT have been created just from reading
+			expect(existsSync(join(projectDir, ".pi"))).toBe(false);
+
+			// Settings should still be loaded from global
+			expect(manager.getTheme()).toBe("dark");
+		});
+
+		it("should create .pi folder when writing project settings", async () => {
+			// Create agent dir with global settings, but NO .pi folder in project
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+
+			// Delete the .pi folder that beforeEach created
+			rmSync(join(projectDir, ".pi"), { recursive: true });
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			// .pi folder should NOT exist yet
+			expect(existsSync(join(projectDir, ".pi"))).toBe(false);
+
+			// Write a project-specific setting
+			manager.setProjectPackages([{ source: "npm:test-pkg" }]);
+			await manager.flush();
+
+			// Now .pi folder should exist
+			expect(existsSync(join(projectDir, ".pi"))).toBe(true);
+
+			// And settings file should be created
+			expect(existsSync(join(projectDir, ".pi", "settings.json"))).toBe(true);
+		});
+	});
+
 	describe("shellCommandPrefix", () => {
 		it("should load shellCommandPrefix from settings", () => {
 			const settingsPath = join(agentDir, "settings.json");
