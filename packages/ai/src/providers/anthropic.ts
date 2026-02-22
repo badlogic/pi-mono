@@ -286,6 +286,43 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 						};
 						output.content.push(block);
 						stream.push({ type: "toolcall_start", contentIndex: output.content.length - 1, partial: output });
+					} else if ((event.content_block as any).type === "server_tool_use") {
+						// Server-managed tool calls (e.g. tool_search results) — map to ToolCall
+						const cb = event.content_block as any;
+						const block: Block = {
+							type: "toolCall",
+							id: cb.id,
+							name: cb.name,
+							arguments: cb.input ?? {},
+							partialJson: "",
+							index: event.index,
+						};
+						output.content.push(block);
+						stream.push({ type: "toolcall_start", contentIndex: output.content.length - 1, partial: output });
+					} else if ((event.content_block as any).type === "code_execution_tool_use") {
+						// PTC code execution — map to ToolCall with code as argument
+						const cb = event.content_block as any;
+						const block: Block = {
+							type: "toolCall",
+							id: cb.id,
+							name: "code_execution",
+							arguments: { code: cb.code ?? "" },
+							partialJson: "",
+							index: event.index,
+						};
+						output.content.push(block);
+						stream.push({ type: "toolcall_start", contentIndex: output.content.length - 1, partial: output });
+					} else if ((event.content_block as any).type === "code_execution_tool_result") {
+						// PTC code execution result — emit as text content
+						const cb = event.content_block as any;
+						const resultText = `[Code execution result (rc=${cb.return_code ?? 0})]\n${cb.output ?? ""}`;
+						const block: Block = {
+							type: "text",
+							text: resultText,
+							index: event.index,
+						};
+						output.content.push(block);
+						stream.push({ type: "text_start", contentIndex: output.content.length - 1, partial: output });
 					}
 				} else if (event.type === "content_block_delta") {
 					if (event.delta.type === "text_delta") {
@@ -813,18 +850,36 @@ function convertMessages(
 function convertTools(tools: Tool[], isOAuthToken: boolean): Anthropic.Messages.Tool[] {
 	if (!tools) return [];
 
-	return tools.map((tool) => {
+	return tools.map((tool): any => {
 		const jsonSchema = tool.parameters as any; // TypeBox already generates JSON Schema
 
-		return {
+		const converted: Record<string, any> = {
 			name: isOAuthToken ? toClaudeCodeName(tool.name) : tool.name,
 			description: tool.description,
-			input_schema: {
+		};
+
+		// Server-managed tools (e.g. tool_search) use type instead of input_schema
+		if (tool.type) {
+			converted.type = tool.type;
+		} else {
+			converted.input_schema = {
 				type: "object" as const,
 				properties: jsonSchema.properties || {},
 				required: jsonSchema.required || [],
-			},
-		};
+			};
+		}
+
+		if (tool.input_examples) {
+			converted.input_examples = tool.input_examples;
+		}
+		if (tool.allowed_callers) {
+			converted.allowed_callers = tool.allowed_callers;
+		}
+		if (tool.defer_loading) {
+			converted.defer_loading = tool.defer_loading;
+		}
+
+		return converted;
 	});
 }
 

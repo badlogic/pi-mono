@@ -197,6 +197,14 @@ export interface Tool<TParameters extends TSchema = TSchema> {
 	name: string;
 	description: string;
 	parameters: TParameters;
+	/** Anthropic Tool Use Examples: example inputs to guide the model */
+	input_examples?: any[];
+	/** Anthropic PTC: restrict which tools can call this tool */
+	allowed_callers?: string[];
+	/** Anthropic server-managed tool type (e.g. "tool_search") */
+	type?: string;
+	/** Anthropic Tool Search: defer loading this tool's schema */
+	defer_loading?: boolean;
 }
 
 export interface Context {
