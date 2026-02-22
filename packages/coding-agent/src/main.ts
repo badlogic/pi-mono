@@ -13,7 +13,7 @@ import { selectConfig } from "./cli/config-selector.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
-import { APP_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
+import { APP_NAME, getAgentDir, getAuthPath, getModelsPath, VERSION } from "./config.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { DEFAULT_THINKING_LEVEL } from "./core/defaults.js";
 import { exportFromFile } from "./core/export-html/index.js";
@@ -62,6 +62,14 @@ function reportSettingsErrors(settingsManager: SettingsManager, context: string)
 		if (error.stack) {
 			console.error(chalk.dim(error.stack));
 		}
+	}
+}
+
+function reportAuthErrors(authStorage: AuthStorage, context: string): void {
+	const errors = authStorage.drainErrors();
+	for (const error of errors) {
+		console.error(chalk.yellow(`Warning (${context}, auth): ${error.message}`));
+		console.error(chalk.yellow(`Fix ${getAuthPath()} to restore OAuth/API key credentials.`));
 	}
 }
 
@@ -555,6 +563,7 @@ export async function main(args: string[]) {
 	const settingsManager = SettingsManager.create(cwd, agentDir);
 	reportSettingsErrors(settingsManager, "startup");
 	const authStorage = AuthStorage.create();
+	reportAuthErrors(authStorage, "startup");
 	const modelRegistry = new ModelRegistry(authStorage, getModelsPath());
 
 	const resourceLoader = new DefaultResourceLoader({
