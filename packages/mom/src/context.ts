@@ -163,6 +163,10 @@ export interface MomSettings {
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high";
 	compaction?: Partial<MomCompactionSettings>;
 	retry?: Partial<MomRetrySettings>;
+	images?: {
+		autoResize?: boolean;
+		blockImages?: boolean;
+	};
 }
 
 const DEFAULT_COMPACTION: MomCompactionSettings = {
@@ -179,14 +183,25 @@ const DEFAULT_RETRY: MomRetrySettings = {
 
 /**
  * Settings manager for mom.
- * Stores settings in the workspace root directory.
+ * Stores settings in the .mom directory. Checks multiple locations:
+ * 1. <workspace>/.mom/settings.json
+ * 2. <workspace>/../.mom/settings.json (parent directory)
+ * 3. <cwd>/.mom/settings.json (where mom was started)
  */
 export class MomSettingsManager {
 	private settingsPath: string;
 	private settings: MomSettings;
 
 	constructor(workspaceDir: string) {
-		this.settingsPath = join(workspaceDir, "settings.json");
+		// Try multiple locations for settings.json
+		const candidates = [
+			join(workspaceDir, ".mom", "settings.json"),
+			join(workspaceDir, "..", ".mom", "settings.json"),
+			join(process.cwd(), ".mom", "settings.json"),
+		];
+
+		// Use first existing file, or default to workspace location
+		this.settingsPath = candidates.find((p) => existsSync(p)) || candidates[0];
 		this.settings = this.load();
 	}
 
@@ -279,7 +294,7 @@ export class MomSettingsManager {
 		// No-op for mom
 	}
 
-	getFollowUpMode(): "all" | "one-at-a-time" {
+	givetFollowUpMode(): "all" | "one-at-a-time" {
 		return "one-at-a-time"; // Mom processes one message at a time
 	}
 
@@ -293,5 +308,34 @@ export class MomSettingsManager {
 
 	getHookTimeout(): number {
 		return 30000;
+	}
+
+	// Additional methods needed for AgentSession compatibility
+	getImageAutoResize(): boolean {
+		return this.settings.images?.autoResize ?? true;
+	}
+
+	getBlockImages(): boolean {
+		return false;
+	}
+
+	getShellCommandPrefix(): string | undefined {
+		return undefined;
+	}
+
+	getBranchSummarySettings(): Record<string, unknown> | undefined {
+		return undefined;
+	}
+
+	getTheme(): string | undefined {
+		return undefined;
+	}
+
+	getThinkingBudgets(): Record<string, number> | undefined {
+		return undefined;
+	}
+
+	markModified(): void {
+		// No-op for mom
 	}
 }
