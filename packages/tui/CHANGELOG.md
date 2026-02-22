@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Changed koffi import from top-level to dynamic require in `enableWindowsVTInput()` to prevent bun from embedding all 18 platform `.node` files (~74MB) into every compiled binary. Koffi is only needed on Windows.
+
 ## [0.54.0] - 2026-02-19
 
 ## [0.53.1] - 2026-02-19
