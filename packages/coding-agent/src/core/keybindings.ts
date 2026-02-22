@@ -65,7 +65,7 @@ export const DEFAULT_APP_KEYBINDINGS: Record<AppAction, KeyId | KeyId[]> = {
 	externalEditor: "ctrl+g",
 	followUp: "alt+enter",
 	dequeue: "alt+up",
-	pasteImage: "ctrl+v",
+	pasteImage: process.platform === "win32" ? "alt+v" : "ctrl+v",
 	newSession: [],
 	tree: [],
 	fork: [],
