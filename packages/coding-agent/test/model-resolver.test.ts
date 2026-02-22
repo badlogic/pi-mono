@@ -298,6 +298,47 @@ describe("resolveCliModel", () => {
 		expect(result.error).toContain("No models available");
 	});
 
+	test("prefers provider/model split over gateway model with matching id", () => {
+		// When a user writes "zai/glm-5", and both a zai provider model (id: "glm-5")
+		// and a gateway model (id: "zai/glm-5") exist, prefer the zai provider model.
+		const zaiModel: Model<"anthropic-messages"> = {
+			id: "glm-5",
+			name: "GLM-5",
+			api: "anthropic-messages",
+			provider: "zai",
+			baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 },
+			contextWindow: 128000,
+			maxTokens: 8192,
+		};
+		const gatewayModel: Model<"anthropic-messages"> = {
+			id: "zai/glm-5",
+			name: "GLM-5",
+			api: "anthropic-messages",
+			provider: "vercel-ai-gateway",
+			baseUrl: "https://ai-gateway.vercel.sh",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 },
+			contextWindow: 128000,
+			maxTokens: 8192,
+		};
+		const registry = {
+			getAll: () => [...allModels, zaiModel, gatewayModel],
+		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
+
+		const result = resolveCliModel({
+			cliModel: "zai/glm-5",
+			modelRegistry: registry,
+		});
+
+		expect(result.error).toBeUndefined();
+		expect(result.model?.provider).toBe("zai");
+		expect(result.model?.id).toBe("glm-5");
+	});
+
 	test("resolves provider-prefixed fuzzy patterns (openrouter/qwen -> openrouter model)", () => {
 		const registry = {
 			getAll: () => allModels,
