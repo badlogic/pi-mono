@@ -1,5 +1,5 @@
 import { Agent, type AgentEvent } from "@mariozechner/pi-agent-core";
-import { getModel, type ImageContent } from "@mariozechner/pi-ai";
+import type { ImageContent } from "@mariozechner/pi-ai";
 import {
 	AgentSession,
 	AuthStorage,
@@ -23,9 +23,6 @@ import type { ChannelInfo, SlackContext, UserInfo } from "./slack.js";
 import type { ChannelStore } from "./store.js";
 import { createMomTools, setUploadFunction } from "./tools/index.js";
 
-// Hardcoded model for now - TODO: make configurable (issue #63)
-const model = getModel("anthropic", "claude-sonnet-4-5");
-
 export interface PendingMessage {
 	userName: string;
 	text: string;
@@ -42,12 +39,12 @@ export interface AgentRunner {
 	abort(): void;
 }
 
-async function getAnthropicApiKey(authStorage: AuthStorage): Promise<string> {
-	const key = await authStorage.getApiKey("anthropic");
+async function getApiKeyForProvider(authStorage: AuthStorage, provider: string): Promise<string> {
+	const key = await authStorage.getApiKey(provider);
 	if (!key) {
 		throw new Error(
-			"No API key found for anthropic.\n\n" +
-				"Set an API key environment variable, or use /login with Anthropic and link to auth.json from " +
+			`No API key found for ${provider}.\n\n` +
+				`Set an API key environment variable, or use /login with ${provider} and link to auth.json from ` +
 				join(homedir(), ".pi", "mom", "auth.json"),
 		);
 	}
@@ -388,18 +385,30 @@ function formatToolArgsForSlack(_toolName: string, args: Record<string, unknown>
 	return lines.join("\n");
 }
 
+// Default fallback model
+const DEFAULT_PROVIDER = "anthropic";
+const DEFAULT_MODEL = "claude-sonnet-4-5";
+
 // Cache runners per channel
 const channelRunners = new Map<string, AgentRunner>();
 
 /**
  * Get or create an AgentRunner for a channel.
  * Runners are cached - one per channel, persistent across messages.
+ * @param provider - CLI override for provider (highest priority)
+ * @param model - CLI override for model (highest priority)
  */
-export function getOrCreateRunner(sandboxConfig: SandboxConfig, channelId: string, channelDir: string): AgentRunner {
+export function getOrCreateRunner(
+	sandboxConfig: SandboxConfig,
+	channelId: string,
+	channelDir: string,
+	provider?: string,
+	model?: string,
+): AgentRunner {
 	const existing = channelRunners.get(channelId);
 	if (existing) return existing;
 
-	const runner = createRunner(sandboxConfig, channelId, channelDir);
+	const runner = createRunner(sandboxConfig, channelId, channelDir, provider, model);
 	channelRunners.set(channelId, runner);
 	return runner;
 }
@@ -407,8 +416,16 @@ export function getOrCreateRunner(sandboxConfig: SandboxConfig, channelId: strin
 /**
  * Create a new AgentRunner for a channel.
  * Sets up the session and subscribes to events once.
+ * @param cliProvider - CLI override for provider (highest priority)
+ * @param cliModel - CLI override for model (highest priority)
  */
-function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDir: string): AgentRunner {
+function createRunner(
+	sandboxConfig: SandboxConfig,
+	channelId: string,
+	channelDir: string,
+	cliProvider?: string,
+	cliModel?: string,
+): AgentRunner {
 	const executor = createExecutor(sandboxConfig);
 	const workspacePath = executor.getWorkspacePath(channelDir.replace(`/${channelId}`, ""));
 
@@ -426,10 +443,27 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	const sessionManager = SessionManager.open(contextFile, channelDir);
 	const settingsManager = new MomSettingsManager(join(channelDir, ".."));
 
-	// Create AuthStorage and ModelRegistry
+	// Resolve provider and model: CLI override > settings.json > defaults
+	const settingsProvider = settingsManager.getDefaultProvider();
+	const settingsModel = settingsManager.getDefaultModel();
+	const resolvedProvider = cliProvider || settingsProvider || DEFAULT_PROVIDER;
+	const resolvedModel = cliModel || settingsModel || DEFAULT_MODEL;
+
+	// Create AuthStorage and ModelRegistry FIRST
 	// Auth stored outside workspace so agent can't access it
 	const authStorage = AuthStorage.create(join(homedir(), ".pi", "mom", "auth.json"));
 	const modelRegistry = new ModelRegistry(authStorage);
+
+	// Use modelRegistry.find() to resolve the model - this is more robust than getModel()
+	// and checks against available models
+	const model = modelRegistry.find(resolvedProvider, resolvedModel);
+
+	// Log the resolved model
+	if (model) {
+		log.logInfo(`[${channelId}] Using model: ${model.provider}/${model.id}`);
+	} else {
+		log.logWarning(`[${channelId}] Model not found: ${resolvedProvider}/${resolvedModel}`);
+	}
 
 	// Create agent
 	const agent = new Agent({
@@ -440,7 +474,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			tools,
 		},
 		convertToLlm,
-		getApiKey: async () => getAnthropicApiKey(authStorage),
+		getApiKey: async () => getApiKeyForProvider(authStorage, resolvedProvider),
 	});
 
 	// Load existing messages
@@ -841,7 +875,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 						lastAssistantMessage.usage.cacheRead +
 						lastAssistantMessage.usage.cacheWrite
 					: 0;
-				const contextWindow = model.contextWindow || 200000;
+				const contextWindow = model?.contextWindow || 200000;
 
 				const summary = log.logUsageSummary(runState.logCtx!, runState.totalUsage, contextTokens, contextWindow);
 				runState.queue.enqueue(() => ctx.respondInThread(summary), "usage summary");

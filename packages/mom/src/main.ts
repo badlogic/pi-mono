@@ -20,6 +20,8 @@ interface ParsedArgs {
 	workingDir?: string;
 	sandbox: SandboxConfig;
 	downloadChannel?: string;
+	provider?: string;
+	model?: string;
 }
 
 function parseArgs(): ParsedArgs {
@@ -27,6 +29,8 @@ function parseArgs(): ParsedArgs {
 	let sandbox: SandboxConfig = { type: "host" };
 	let workingDir: string | undefined;
 	let downloadChannelId: string | undefined;
+	let provider: string | undefined;
+	let model: string | undefined;
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -38,6 +42,14 @@ function parseArgs(): ParsedArgs {
 			downloadChannelId = arg.slice("--download=".length);
 		} else if (arg === "--download") {
 			downloadChannelId = args[++i];
+		} else if (arg.startsWith("--provider=")) {
+			provider = arg.slice("--provider=".length);
+		} else if (arg === "--provider") {
+			provider = args[++i];
+		} else if (arg.startsWith("--model=")) {
+			model = arg.slice("--model=".length);
+		} else if (arg === "--model") {
+			model = args[++i];
 		} else if (!arg.startsWith("-")) {
 			workingDir = arg;
 		}
@@ -47,6 +59,8 @@ function parseArgs(): ParsedArgs {
 		workingDir: workingDir ? resolve(workingDir) : undefined,
 		sandbox,
 		downloadChannel: downloadChannelId,
+		provider,
+		model,
 	};
 }
 
@@ -64,12 +78,24 @@ if (parsedArgs.downloadChannel) {
 
 // Normal bot mode - require working dir
 if (!parsedArgs.workingDir) {
-	console.error("Usage: mom [--sandbox=host|docker:<name>] <working-directory>");
+	console.error(
+		"Usage: mom [--sandbox=host|docker:<name>] [--provider=<provider>] [--model=<model>] <working-directory>",
+	);
 	console.error("       mom --download <channel-id>");
+	console.error("");
+	console.error("Options:");
+	console.error("  --sandbox=host|docker:<name>  Sandbox type (default: host)");
+	console.error("  --provider=<provider>          AI provider (e.g., anthropic, nvidia)");
+	console.error("  --model=<model>              Model ID (e.g., moonshotai/kimi-k2.5)");
 	process.exit(1);
 }
 
-const { workingDir, sandbox } = { workingDir: parsedArgs.workingDir, sandbox: parsedArgs.sandbox };
+const { workingDir, sandbox, provider, model } = {
+	workingDir: parsedArgs.workingDir,
+	sandbox: parsedArgs.sandbox,
+	provider: parsedArgs.provider,
+	model: parsedArgs.model,
+};
 
 if (!MOM_SLACK_APP_TOKEN || !MOM_SLACK_BOT_TOKEN) {
 	console.error("Missing env: MOM_SLACK_APP_TOKEN, MOM_SLACK_BOT_TOKEN");
@@ -98,7 +124,7 @@ function getState(channelId: string): ChannelState {
 		const channelDir = join(workingDir, channelId);
 		state = {
 			running: false,
-			runner: getOrCreateRunner(sandbox, channelId, channelDir),
+			runner: getOrCreateRunner(sandbox, channelId, channelDir, provider, model),
 			store: new ChannelStore({ workingDir, botToken: MOM_SLACK_BOT_TOKEN! }),
 			stopRequested: false,
 		};
