@@ -450,7 +450,9 @@ import { createAgentSession, type ToolDefinition } from "@mariozechner/pi-coding
 const myTool: ToolDefinition = {
   name: "my_tool",
   label: "My Tool",
-  description: "Does something useful",
+  description: "Detailed description sent to the LLM via the API tool listing. Can be multi-line.",
+  shortDescription: "One-liner shown in the system prompt 'Available tools' list",
+  systemGuidelines: ["Guideline bullet appended to system prompt Guidelines section"],
   parameters: Type.Object({
     input: Type.String({ description: "Input value" }),
   }),
@@ -465,6 +467,8 @@ const { session } = await createAgentSession({
   customTools: [myTool],
 });
 ```
+
+`description` is the detailed text sent to the LLM via the API tool listing. `shortDescription` is an optional one-liner — if provided, the tool appears in the system prompt "Available tools" list; if omitted, the tool is not listed in the system prompt. `systemGuidelines` optionally adds bullet points to the system prompt guidelines section.
 
 Custom tools passed via `customTools` are combined with extension-registered tools. Extensions loaded by the ResourceLoader can also register tools via `pi.registerTool()`.
 
