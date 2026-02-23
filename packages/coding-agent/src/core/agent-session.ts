@@ -2344,8 +2344,9 @@ export class AgentSession {
 		this._followUpMessages = [];
 		this._pendingNextTurnMessages = [];
 
-		// Set new session
+		// Set new session and adopt its location context
 		this.sessionManager.setSessionFile(sessionPath);
+		this.sessionManager.syncLocation();
 		this.agent.sessionId = this.sessionManager.getSessionId();
 
 		// Reload messages

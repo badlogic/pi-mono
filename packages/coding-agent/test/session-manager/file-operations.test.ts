@@ -205,4 +205,39 @@ describe("SessionManager.setSessionFile with corrupted files", () => {
 		expect(sm2.getSessionId()).toBe(sessionId);
 		expect(sm2.getHeader()?.type).toBe("session");
 	});
+
+	it("setSessionFile does not change cwd or sessionDir", () => {
+		const dirA = join(tempDir, "sessions-a");
+		const dirB = join(tempDir, "sessions-b");
+		const fileA = join(dirA, "session-a.jsonl");
+		const fileB = join(dirB, "session-b.jsonl");
+		mkdirSync(dirA, { recursive: true });
+		mkdirSync(dirB, { recursive: true });
+		writeFileSync(fileA, '{"type":"session","id":"a","timestamp":"2025-01-01T00:00:00Z","cwd":"/project-a"}\n');
+		writeFileSync(fileB, '{"type":"session","id":"b","timestamp":"2025-01-01T00:00:00Z","cwd":"/project-b"}\n');
+
+		const sm = SessionManager.open(fileA, dirA);
+		sm.setSessionFile(fileB);
+
+		expect(sm.getCwd()).toBe("/project-a");
+		expect(sm.getSessionDir()).toBe(dirA);
+	});
+
+	it("syncLocation updates cwd and sessionDir from loaded session", () => {
+		const dirA = join(tempDir, "sessions-a");
+		const dirB = join(tempDir, "sessions-b");
+		const fileA = join(dirA, "session-a.jsonl");
+		const fileB = join(dirB, "session-b.jsonl");
+		mkdirSync(dirA, { recursive: true });
+		mkdirSync(dirB, { recursive: true });
+		writeFileSync(fileA, '{"type":"session","id":"a","timestamp":"2025-01-01T00:00:00Z","cwd":"/project-a"}\n');
+		writeFileSync(fileB, '{"type":"session","id":"b","timestamp":"2025-01-01T00:00:00Z","cwd":"/project-b"}\n');
+
+		const sm = SessionManager.open(fileA, dirA);
+		sm.setSessionFile(fileB);
+		sm.syncLocation();
+
+		expect(sm.getCwd()).toBe("/project-b");
+		expect(sm.getSessionDir()).toBe(dirB);
+	});
 });

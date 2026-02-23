@@ -5,8 +5,37 @@ import { fileURLToPath } from "node:url";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { RpcClient } from "../src/modes/rpc/rpc-client.js";
+import type { RpcTreeNode } from "../src/modes/rpc/rpc-types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function findFirstUserNode(tree: RpcTreeNode[]): RpcTreeNode | undefined {
+	const stack: RpcTreeNode[] = [...tree];
+	while (stack.length > 0) {
+		const node = stack.pop()!;
+		if (node.type === "message" && node.role === "user") {
+			return node;
+		}
+		for (let i = node.children.length - 1; i >= 0; i--) {
+			stack.push(node.children[i]!);
+		}
+	}
+	return undefined;
+}
+
+function findNodeById(tree: RpcTreeNode[], targetId: string): RpcTreeNode | undefined {
+	const stack: RpcTreeNode[] = [...tree];
+	while (stack.length > 0) {
+		const node = stack.pop()!;
+		if (node.id === targetId) {
+			return node;
+		}
+		for (let i = node.children.length - 1; i >= 0; i--) {
+			stack.push(node.children[i]!);
+		}
+	}
+	return undefined;
+}
 
 /**
  * RPC mode tests.
@@ -43,6 +72,33 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		expect(state.isStreaming).toBe(false);
 		expect(state.messageCount).toBe(0);
 	}, 30000);
+
+	test("should support browsing commands end-to-end", async () => {
+		await client.start();
+
+		const promptText = `rpc-browsing-smoke-${Date.now()}`;
+		await client.promptAndWait(promptText);
+
+		const currentSessions = await client.listSessions({ scope: "current" });
+		expect(currentSessions.length).toBeGreaterThan(0);
+		expect(currentSessions[0]?.allMessagesText).toContain(promptText);
+
+		const treeResult = await client.getTree();
+		const userNode = findFirstUserNode(treeResult.tree);
+		expect(userNode).toBeDefined();
+		if (!userNode || userNode.type !== "message" || userNode.role !== "user") {
+			throw new Error("Expected a user tree node in RPC smoke test");
+		}
+
+		await client.setLabel(userNode.id, "smoke");
+		const labeledTree = await client.getTree();
+		const relabeledNode = findNodeById(labeledTree.tree, userNode.id);
+		expect(relabeledNode?.label).toBe("smoke");
+
+		const navigationResult = await client.navigateTree(userNode.id);
+		expect(navigationResult.cancelled).toBe(false);
+		expect(navigationResult.editorText).toContain(promptText);
+	}, 120000);
 
 	test("should save messages to session file", async () => {
 		await client.start();

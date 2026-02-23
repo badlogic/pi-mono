@@ -646,6 +646,163 @@ Response:
 
 The current session name is available via `get_state` in the `sessionName` field.
 
+#### list_sessions
+
+List sessions for the active context (`scope: "current"`) or across all projects (`scope: "all"`).
+
+```json
+{"type": "list_sessions"}
+```
+
+With explicit scope and optional search payload:
+```json
+{"type": "list_sessions", "scope": "all", "includeSearchText": true}
+```
+
+`includeSearchText` defaults to `false`.
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "list_sessions",
+  "success": true,
+  "data": {
+    "sessions": [
+      {
+        "path": "/home/user/.pi/agent/sessions/.../2026-02-21T10-00-00-000Z_abc123.jsonl",
+        "id": "abc123",
+        "cwd": "/home/user/project",
+        "name": "debug flaky test",
+        "parentSessionPath": "/home/user/.pi/agent/sessions/.../parent.jsonl",
+        "created": "2026-02-21T10:00:00.000Z",
+        "modified": "2026-02-21T10:05:00.000Z",
+        "messageCount": 14,
+        "firstMessage": "Investigate the failing CI job"
+      }
+    ]
+  }
+}
+```
+
+When `includeSearchText` is `true`, each session item also includes `allMessagesText`.
+This field can be large for long sessions, so leave it disabled unless you need full-text search payloads.
+
+Scope semantics:
+- `"current"` (default): uses the active session's header cwd/session directory
+- `"all"`: uses global session listing across all projects
+
+#### get_tree
+
+Get a transport-safe tree projection of the current session for browsing UIs.
+
+```json
+{"type": "get_tree"}
+```
+
+Include full text payloads (`content`) in addition to previews:
+```json
+{"type": "get_tree", "includeContent": true}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "get_tree",
+  "success": true,
+  "data": {
+    "leafId": "def456",
+    "tree": [
+      {
+        "id": "abc123",
+        "parentId": null,
+        "timestamp": "2026-02-21T10:00:00.000Z",
+        "type": "message",
+        "role": "user",
+        "preview": "Investigate failing test",
+        "label": "checkpoint",
+        "children": []
+      }
+    ]
+  }
+}
+```
+
+Projection behavior:
+- Metadata-only entries (`label`, `session_info`, `custom`) are filtered out
+- Filtered entries' children are re-parented to keep parent/child links consistent
+- `leafId` is resolved to the nearest visible (projected) entry, or `null`
+- `preview` is present for `message`, `tool_result`, and `custom_message` nodes
+- `content` is omitted unless `includeContent: true`
+
+#### set_label
+
+Set or clear a label on a tree entry.
+
+```json
+{"type": "set_label", "entryId": "abc123", "label": "checkpoint"}
+```
+
+Clear the label by omitting `label`, using an empty string, or whitespace-only label text:
+```json
+{"type": "set_label", "entryId": "abc123", "label": "   "}
+```
+
+Response:
+```json
+{"type": "response", "command": "set_label", "success": true}
+```
+
+If the entry does not exist:
+```json
+{"type": "response", "command": "set_label", "success": false, "error": "Entry abc123 not found"}
+```
+
+#### navigate_tree
+
+Navigate to a tree entry. This delegates to the same session navigation logic used by interactive mode.
+
+```json
+{"type": "navigate_tree", "targetId": "abc123"}
+```
+
+With summarization and optional label:
+```json
+{
+  "type": "navigate_tree",
+  "targetId": "abc123",
+  "summarize": true,
+  "customInstructions": "Focus on key decisions and changed files",
+  "replaceInstructions": false,
+  "label": "checkpoint"
+}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "navigate_tree",
+  "success": true,
+  "data": {
+    "cancelled": false,
+    "editorText": "Draft text from selected user entry",
+    "summaryEntry": {
+      "id": "sum789",
+      "summary": "Summary of abandoned branch...",
+      "fromExtension": false
+    }
+  }
+}
+```
+
+Result semantics:
+- `cancelled: true` when navigation does not complete (extension cancellation or summarization abort)
+- `aborted: true` when summarization is explicitly aborted
+- `editorText` is present when navigating to a user/custom_message entry
+- `summaryEntry` is present only when summarization produced a branch summary
+
 ### Commands
 
 #### get_commands

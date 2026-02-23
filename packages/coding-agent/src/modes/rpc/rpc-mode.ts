@@ -19,7 +19,16 @@ import type {
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
 } from "../../core/extensions/index.js";
+import { SessionManager } from "../../core/session-manager.js";
 import { type Theme, theme } from "../interactive/theme/theme.js";
+import {
+	applyRpcLabelChange,
+	resolveListSessionsTarget,
+	toNavigateTreeOptions,
+	toRpcNavigateTreeResult,
+	toRpcSessionListItem,
+} from "./rpc-command-wiring.js";
+import { buildToolCallMap, projectTree, resolveProjectedLeafId } from "./rpc-tree-projection.js";
 import type {
 	RpcCommand,
 	RpcExtensionUIRequest,
@@ -34,8 +43,11 @@ export type {
 	RpcCommand,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
+	RpcNavigateTreeResult,
 	RpcResponse,
+	RpcSessionListItem,
 	RpcSessionState,
+	RpcTreeNode,
 } from "./rpc-types.js";
 
 /**
@@ -483,6 +495,11 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				return success(id, "abort_bash");
 			}
 
+			case "abort_branch_summary": {
+				session.abortBranchSummary();
+				return success(id, "abort_branch_summary");
+			}
+
 			// =================================================================
 			// Session
 			// =================================================================
@@ -574,6 +591,43 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				}
 
 				return success(id, "get_commands", { commands });
+			}
+
+			// =================================================================
+			// Session listing
+			// =================================================================
+
+			case "list_sessions": {
+				const target = resolveListSessionsTarget({ sessionManager: session.sessionManager }, command.scope);
+				const raw = target.listAll
+					? await SessionManager.listAll()
+					: await SessionManager.list(target.cwd, target.sessionDir);
+				const sessions = raw.map(toRpcSessionListItem);
+				return success(id, "list_sessions", { sessions });
+			}
+
+			// =================================================================
+			// Tree
+			// =================================================================
+
+			case "get_tree": {
+				const includeContent = command.includeContent ?? false;
+				const rawTree = session.sessionManager.getTree();
+				const toolCallMap = buildToolCallMap(rawTree);
+				const tree = projectTree(rawTree, toolCallMap, includeContent);
+				const leafId = resolveProjectedLeafId(rawTree, session.sessionManager.getLeafId());
+				return success(id, "get_tree", { tree, leafId });
+			}
+
+			case "navigate_tree": {
+				const options = toNavigateTreeOptions(command);
+				const result = await session.navigateTree(command.targetId, options);
+				return success(id, "navigate_tree", toRpcNavigateTreeResult(result));
+			}
+
+			case "set_label": {
+				applyRpcLabelChange(session.sessionManager, command.entryId, command.label);
+				return success(id, "set_label");
 			}
 
 			default: {

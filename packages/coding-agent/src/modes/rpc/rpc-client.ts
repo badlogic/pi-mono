@@ -11,7 +11,15 @@ import type { ImageContent } from "@mariozechner/pi-ai";
 import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
-import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.js";
+import type {
+	RpcCommand,
+	RpcGetTreeResult,
+	RpcNavigateTreeResult,
+	RpcResponse,
+	RpcSessionListItem,
+	RpcSessionState,
+	RpcSlashCommand,
+} from "./rpc-types.js";
 
 // ============================================================================
 // Types
@@ -46,6 +54,18 @@ export interface ModelInfo {
 }
 
 export type RpcEventListener = (event: AgentEvent) => void;
+
+export interface RpcListSessionsOptions {
+	/** current: sessions for active session cwd, all: sessions across projects */
+	scope?: "current" | "all";
+}
+
+export interface RpcNavigateTreeOptions {
+	summarize?: boolean;
+	customInstructions?: string;
+	replaceInstructions?: boolean;
+	label?: string;
+}
 
 // ============================================================================
 // RPC Client
@@ -313,6 +333,13 @@ export class RpcClient {
 	}
 
 	/**
+	 * Abort in-progress branch summarization.
+	 */
+	async abortBranchSummary(): Promise<void> {
+		await this.send({ type: "abort_branch_summary" });
+	}
+
+	/**
 	 * Get session statistics.
 	 */
 	async getSessionStats(): Promise<SessionStats> {
@@ -383,6 +410,50 @@ export class RpcClient {
 	async getCommands(): Promise<RpcSlashCommand[]> {
 		const response = await this.send({ type: "get_commands" });
 		return this.getData<{ commands: RpcSlashCommand[] }>(response).commands;
+	}
+
+	/**
+	 * List sessions for the active context or across all projects.
+	 */
+	async listSessions(options: RpcListSessionsOptions = {}): Promise<RpcSessionListItem[]> {
+		const response = await this.send({
+			type: "list_sessions",
+			scope: options.scope,
+		});
+		return this.getData<{ sessions: RpcSessionListItem[] }>(response).sessions;
+	}
+
+	/**
+	 * Get the session tree projection for browsing.
+	 */
+	async getTree(includeContent = false): Promise<RpcGetTreeResult> {
+		const response = await this.send({ type: "get_tree", includeContent });
+		return this.getData(response);
+	}
+
+	/**
+	 * Navigate to a tree entry.
+	 * Returns cancellation/abort state and optional editorText/summary metadata.
+	 */
+	async navigateTree(targetId: string, options: RpcNavigateTreeOptions = {}): Promise<RpcNavigateTreeResult> {
+		const response = await this.send({
+			type: "navigate_tree",
+			targetId,
+			summarize: options.summarize,
+			customInstructions: options.customInstructions,
+			replaceInstructions: options.replaceInstructions,
+			label: options.label,
+		});
+		return this.getData(response);
+	}
+
+	/**
+	 * Set or clear a label on an entry.
+	 * Empty/whitespace labels clear the existing label.
+	 */
+	async setLabel(entryId: string, label?: string): Promise<void> {
+		const response = await this.send({ type: "set_label", entryId, label });
+		this.getData<undefined>(response);
 	}
 
 	// =========================================================================
