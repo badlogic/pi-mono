@@ -18,7 +18,7 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 	private completionError: { message: string; stack: string } | null = null;
 	private completed = false;
 
-	getData(): Record<string, any> {
+	getData(): Record<string, unknown> {
 		// No data needed
 		return {};
 	}
@@ -134,7 +134,10 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 		};
 	}
 
-	async handleMessage(message: any, respond: (response: any) => void): Promise<void> {
+	async handleMessage(
+		message: Record<string, unknown>,
+		respond: (response: Record<string, unknown>) => void,
+	): Promise<void> {
 		if (message.type === "console") {
 			// Collect console output
 			this.logs.push({
@@ -146,8 +149,8 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 							: message.method === "info"
 								? "info"
 								: "log",
-				text: message.text,
-				args: message.args,
+				text: message.text as string,
+				args: message.args as unknown[],
 			});
 			// Acknowledge receipt
 			respond({ success: true });

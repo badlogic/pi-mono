@@ -13,8 +13,8 @@ fi
 
 # Restage files that were previously staged and may have been modified by formatting
 for file in $STAGED_FILES; do
-  if [ -f "$file" ]; then
-    git add "$file"
+  if [ -f "$file" ] && ! git check-ignore -q "$file" 2>/dev/null; then
+    git add "$file" 2>/dev/null || true
   fi
 done
 

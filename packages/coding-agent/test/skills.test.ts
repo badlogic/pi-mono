@@ -190,7 +190,7 @@ describe("skills", () => {
 			expect(skills[0].disableModelInvocation).toBe(false);
 		});
 
-		it("should skip embedded fixture SKILL.md files under worktrees test fixtures", () => {
+		it("should skip SKILL.md files under battle/worktrees paths", () => {
 			const root = mkdtempSync(join(homedir(), ".pi-skills-fixture-"));
 			const validDir = join(root, "valid-live-skill");
 			mkdirSync(validDir, { recursive: true });
@@ -199,10 +199,7 @@ describe("skills", () => {
 				"---\nname: valid-live-skill\ndescription: Valid production skill.\n---\nSkill body.\n",
 			);
 
-			const fixtureDir = join(
-				root,
-				"battle/worktrees/battle_20260205_113118/arena/packages/coding-agent/test/fixtures/skills/no-frontmatter",
-			);
+			const fixtureDir = join(root, "battle/worktrees/battle_20260205_113118/arena/tmp/invalid-skill");
 			mkdirSync(fixtureDir, { recursive: true });
 			writeFileSync(join(fixtureDir, "SKILL.md"), "Fixture without frontmatter.\n");
 
@@ -212,11 +209,29 @@ describe("skills", () => {
 			});
 
 			expect(skills.some((s) => s.name === "valid-live-skill")).toBe(true);
-			expect(
-				diagnostics.some(
-					(d: ResourceDiagnostic) => d.path?.includes("/worktrees/") && d.path?.includes("/test/fixtures/skills/"),
-				),
-			).toBe(false);
+			expect(diagnostics.some((d: ResourceDiagnostic) => d.path?.includes("/battle/worktrees/"))).toBe(false);
+		});
+
+		it("should skip SKILL.md files under test/fixtures/skills paths", () => {
+			const root = mkdtempSync(join(homedir(), ".pi-skills-fixture-"));
+			const validDir = join(root, "valid-live-skill");
+			mkdirSync(validDir, { recursive: true });
+			writeFileSync(
+				join(validDir, "SKILL.md"),
+				"---\nname: valid-live-skill\ndescription: Valid production skill.\n---\nSkill body.\n",
+			);
+
+			const fixtureDir = join(root, "packages/coding-agent/test/fixtures/skills/no-frontmatter");
+			mkdirSync(fixtureDir, { recursive: true });
+			writeFileSync(join(fixtureDir, "SKILL.md"), "Fixture without frontmatter.\n");
+
+			const { skills, diagnostics } = loadSkillsFromDir({
+				dir: root,
+				source: "test",
+			});
+
+			expect(skills.some((s) => s.name === "valid-live-skill")).toBe(true);
+			expect(diagnostics.some((d: ResourceDiagnostic) => d.path?.includes("/test/fixtures/skills/"))).toBe(false);
 		});
 	});
 

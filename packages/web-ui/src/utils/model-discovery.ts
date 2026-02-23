@@ -8,7 +8,7 @@ import { Ollama } from "ollama/browser";
  * @param apiKey - Optional API key (currently unused by Ollama)
  * @returns Array of discovered models
  */
-export async function discoverOllamaModels(baseUrl: string, _apiKey?: string): Promise<Model<any>[]> {
+export async function discoverOllamaModels(baseUrl: string, _apiKey?: string): Promise<Model<string>[]> {
 	try {
 		// Create Ollama client
 		const ollama = new Ollama({ host: baseUrl });
@@ -17,7 +17,7 @@ export async function discoverOllamaModels(baseUrl: string, _apiKey?: string): P
 		const { models } = await ollama.list();
 
 		// Fetch details for each model and convert to Model format
-		const ollamaModelPromises: Promise<Model<any> | null>[] = models.map(async (model: any) => {
+		const ollamaModelPromises: Promise<Model<string> | null>[] = models.map(async (model) => {
 			try {
 				// Get model details
 				const details = await ollama.show({
@@ -25,28 +25,28 @@ export async function discoverOllamaModels(baseUrl: string, _apiKey?: string): P
 				});
 
 				// Check capabilities - filter out models that don't support tools
-				const capabilities: string[] = (details as any).capabilities || [];
+				const capabilities: string[] = (details as unknown as { capabilities?: string[] }).capabilities || [];
 				if (!capabilities.includes("tools")) {
 					console.debug(`Skipping model ${model.name}: does not support tools`);
 					return null;
 				}
 
 				// Extract model info
-				const modelInfo: any = details.model_info || {};
+				const modelInfo = (details.model_info as unknown as Record<string, unknown>) || {};
 
 				// Get context window size - look for architecture-specific keys
-				const architecture = modelInfo["general.architecture"] || "";
+				const architecture = (modelInfo["general.architecture"] as string) || "";
 				const contextKey = `${architecture}.context_length`;
-				const contextWindow = parseInt(modelInfo[contextKey] || "8192", 10);
+				const contextWindow = parseInt(String(modelInfo[contextKey] || "8192"), 10);
 
 				// Ollama caps max tokens at 10x context length
 				const maxTokens = contextWindow * 10;
 
 				// Ollama only supports completions API
-				const ollamaModel: Model<any> = {
+				const ollamaModel: Model<string> = {
 					id: model.name,
 					name: model.name,
-					api: "openai-completions" as any,
+					api: "openai-completions",
 					provider: "", // Will be set by caller
 					baseUrl: `${baseUrl}/v1`,
 					reasoning: capabilities.includes("thinking"),
@@ -69,7 +69,7 @@ export async function discoverOllamaModels(baseUrl: string, _apiKey?: string): P
 		});
 
 		const results = await Promise.all(ollamaModelPromises);
-		return results.filter((m): m is Model<any> => m !== null);
+		return results.filter((m): m is Model<string> => m !== null);
 	} catch (err) {
 		console.error("Failed to discover Ollama models:", err);
 		throw new Error(`Ollama discovery failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -82,7 +82,7 @@ export async function discoverOllamaModels(baseUrl: string, _apiKey?: string): P
  * @param apiKey - Optional API key
  * @returns Array of discovered models
  */
-export async function discoverLlamaCppModels(baseUrl: string, apiKey?: string): Promise<Model<any>[]> {
+export async function discoverLlamaCppModels(baseUrl: string, apiKey?: string): Promise<Model<string>[]> {
 	try {
 		const headers: HeadersInit = {
 			"Content-Type": "application/json",
@@ -107,15 +107,15 @@ export async function discoverLlamaCppModels(baseUrl: string, apiKey?: string): 
 			throw new Error("Invalid response format from llama.cpp server");
 		}
 
-		return data.data.map((model: any) => {
+		return data.data.map((model: { id: string; context_length?: number; max_tokens?: number }) => {
 			// llama.cpp doesn't always provide context window info
 			const contextWindow = model.context_length || 8192;
 			const maxTokens = model.max_tokens || 4096;
 
-			const llamaModel: Model<any> = {
+			const llamaModel: Model<string> = {
 				id: model.id,
 				name: model.id,
-				api: "openai-completions" as any,
+				api: "openai-completions",
 				provider: "", // Will be set by caller
 				baseUrl: `${baseUrl}/v1`,
 				reasoning: false,
@@ -144,7 +144,7 @@ export async function discoverLlamaCppModels(baseUrl: string, apiKey?: string): 
  * @param apiKey - Optional API key
  * @returns Array of discovered models
  */
-export async function discoverVLLMModels(baseUrl: string, apiKey?: string): Promise<Model<any>[]> {
+export async function discoverVLLMModels(baseUrl: string, apiKey?: string): Promise<Model<string>[]> {
 	try {
 		const headers: HeadersInit = {
 			"Content-Type": "application/json",
@@ -169,15 +169,15 @@ export async function discoverVLLMModels(baseUrl: string, apiKey?: string): Prom
 			throw new Error("Invalid response format from vLLM server");
 		}
 
-		return data.data.map((model: any) => {
+		return data.data.map((model: { id: string; max_model_len?: number }) => {
 			// vLLM provides max_model_len which is the context window
 			const contextWindow = model.max_model_len || 8192;
 			const maxTokens = Math.min(contextWindow, 4096); // Cap max tokens
 
-			const vllmModel: Model<any> = {
+			const vllmModel: Model<string> = {
 				id: model.id,
 				name: model.id,
-				api: "openai-completions" as any,
+				api: "openai-completions",
 				provider: "", // Will be set by caller
 				baseUrl: `${baseUrl}/v1`,
 				reasoning: false,
@@ -206,7 +206,7 @@ export async function discoverVLLMModels(baseUrl: string, apiKey?: string): Prom
  * @param apiKey - Optional API key (unused for LM Studio SDK)
  * @returns Array of discovered models
  */
-export async function discoverLMStudioModels(baseUrl: string, _apiKey?: string): Promise<Model<any>[]> {
+export async function discoverLMStudioModels(baseUrl: string, _apiKey?: string): Promise<Model<string>[]> {
 	try {
 		// Extract host and port from baseUrl
 		const url = new URL(baseUrl);
@@ -226,10 +226,10 @@ export async function discoverLMStudioModels(baseUrl: string, _apiKey?: string):
 				// Use 10x context length like Ollama does
 				const maxTokens = contextWindow;
 
-				const lmStudioModel: Model<any> = {
+				const lmStudioModel: Model<string> = {
 					id: model.path,
 					name: model.displayName || model.path,
-					api: "openai-completions" as any,
+					api: "openai-completions",
 					provider: "", // Will be set by caller
 					baseUrl: `${baseUrl}/v1`,
 					reasoning: model.trainedForToolUse || false,
@@ -263,7 +263,7 @@ export async function discoverModels(
 	type: "ollama" | "llama.cpp" | "vllm" | "lmstudio",
 	baseUrl: string,
 	apiKey?: string,
-): Promise<Model<any>[]> {
+): Promise<Model<string>[]> {
 	switch (type) {
 		case "ollama":
 			return discoverOllamaModels(baseUrl, apiKey);

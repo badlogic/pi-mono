@@ -18,7 +18,7 @@ export class AttachmentOverlay extends LitElement {
 	@state() private error: string | null = null;
 
 	// Track current loading task to cancel if needed
-	private currentLoadingTask: any = null;
+	private currentLoadingTask: ReturnType<typeof pdfjsLib.getDocument> | null = null;
 	private onCloseCallback?: () => void;
 	private boundHandleKeyDown?: (e: KeyboardEvent) => void;
 
@@ -271,7 +271,7 @@ export class AttachmentOverlay extends LitElement {
 		}
 	}
 
-	override async updated(changedProperties: Map<string, any>) {
+	override async updated(changedProperties: Map<string, unknown>) {
 		super.updated(changedProperties);
 
 		// Only process if we need to render the actual file (not extracted text)
@@ -304,7 +304,7 @@ export class AttachmentOverlay extends LitElement {
 		const container = this.querySelector("#pdf-container");
 		if (!container || !this.attachment) return;
 
-		let pdf: any = null;
+		let pdf: Awaited<ReturnType<typeof pdfjsLib.getDocument>["promise"]> | null = null;
 
 		try {
 			// Convert base64 to ArrayBuffer
@@ -370,9 +370,9 @@ export class AttachmentOverlay extends LitElement {
 
 				wrapper.appendChild(pageContainer);
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error("Error rendering PDF:", error);
-			this.error = error?.message || i18n("Failed to load PDF");
+			this.error = error instanceof Error ? error.message : i18n("Failed to load PDF");
 		} finally {
 			if (pdf) {
 				pdf.destroy();
@@ -475,9 +475,9 @@ export class AttachmentOverlay extends LitElement {
 				}
 			`;
 			container.appendChild(style);
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error("Error rendering DOCX:", error);
-			this.error = error?.message || i18n("Failed to load document");
+			this.error = error instanceof Error ? error.message : i18n("Failed to load document");
 		}
 	}
 
@@ -550,13 +550,13 @@ export class AttachmentOverlay extends LitElement {
 				const sheetName = workbook.SheetNames[0];
 				wrapper.appendChild(this.renderExcelSheet(workbook.Sheets[sheetName], sheetName));
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error("Error rendering Excel:", error);
-			this.error = error?.message || i18n("Failed to load spreadsheet");
+			this.error = error instanceof Error ? error.message : i18n("Failed to load spreadsheet");
 		}
 	}
 
-	private renderExcelSheet(worksheet: any, sheetName: string): HTMLElement {
+	private renderExcelSheet(worksheet: XLSX.WorkSheet, sheetName: string): HTMLElement {
 		const sheetDiv = document.createElement("div");
 
 		// Generate HTML table
@@ -623,9 +623,9 @@ export class AttachmentOverlay extends LitElement {
 
 			wrapper.appendChild(pre);
 			container.appendChild(wrapper);
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error("Error rendering extracted text:", error);
-			this.error = error?.message || i18n("Failed to display text content");
+			this.error = error instanceof Error ? error.message : i18n("Failed to display text content");
 		}
 	}
 }

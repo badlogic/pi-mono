@@ -65,7 +65,7 @@ export class ToolExecutionComponent extends Container {
 	private imageComponents: Image[] = [];
 	private imageSpacers: Spacer[] = [];
 	private toolName: string;
-	private args: any;
+	private args: Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- tool args are dynamically typed
 	private expanded = false;
 	private showImages: boolean;
 	private isPartial = true;
@@ -75,7 +75,7 @@ export class ToolExecutionComponent extends Container {
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 		isError: boolean;
-		details?: any;
+		details?: any; // eslint-disable-line @typescript-eslint/no-explicit-any -- tool details vary by tool type
 	};
 	// Cached edit diff preview (computed when args arrive, before tool executes)
 	private editDiffPreview?: EditDiffResult | EditDiffError;
@@ -85,7 +85,7 @@ export class ToolExecutionComponent extends Container {
 
 	constructor(
 		toolName: string,
-		args: any,
+		args: Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any
 		options: ToolExecutionOptions = {},
 		toolDefinition: ToolDefinition | undefined,
 		ui: TUI,
@@ -127,7 +127,7 @@ export class ToolExecutionComponent extends Container {
 		return isBuiltInName && !hasCustomRenderers;
 	}
 
-	updateArgs(args: any): void {
+	updateArgs(args: Record<string, unknown>): void {
 		this.args = args;
 		this.updateDisplay();
 	}
@@ -176,7 +176,7 @@ export class ToolExecutionComponent extends Container {
 	updateResult(
 		result: {
 			content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
-			details?: any;
+			details?: any; // eslint-disable-line @typescript-eslint/no-explicit-any -- tool details vary by tool type
 			isError: boolean;
 		},
 		isPartial = false,
@@ -198,7 +198,7 @@ export class ToolExecutionComponent extends Container {
 		if (caps.images !== "kitty") return;
 		if (!this.result) return;
 
-		const imageBlocks = this.result.content?.filter((c: any) => c.type === "image") || [];
+		const imageBlocks = this.result.content?.filter((c) => c.type === "image") || [];
 
 		for (let i = 0; i < imageBlocks.length; i++) {
 			const img = imageBlocks[i];
@@ -279,7 +279,7 @@ export class ToolExecutionComponent extends Container {
 			if (this.result && this.toolDefinition.renderResult) {
 				try {
 					const resultComponent = this.toolDefinition.renderResult(
-						{ content: this.result.content as any, details: this.result.details },
+						{ content: this.result.content as any, details: this.result.details }, // eslint-disable-line @typescript-eslint/no-explicit-any
 						{ expanded: this.expanded, isPartial: this.isPartial },
 						theme,
 					);
@@ -313,7 +313,7 @@ export class ToolExecutionComponent extends Container {
 		this.imageSpacers = [];
 
 		if (this.result) {
-			const imageBlocks = this.result.content?.filter((c: any) => c.type === "image") || [];
+			const imageBlocks = this.result.content?.filter((c) => c.type === "image") || [];
 			const caps = getCapabilities();
 
 			for (let i = 0; i < imageBlocks.length; i++) {
@@ -430,11 +430,11 @@ export class ToolExecutionComponent extends Container {
 	private getTextOutput(): string {
 		if (!this.result) return "";
 
-		const textBlocks = this.result.content?.filter((c: any) => c.type === "text") || [];
-		const imageBlocks = this.result.content?.filter((c: any) => c.type === "image") || [];
+		const textBlocks = this.result.content?.filter((c) => c.type === "text") || [];
+		const imageBlocks = this.result.content?.filter((c) => c.type === "image") || [];
 
 		let output = textBlocks
-			.map((c: any) => {
+			.map((c) => {
 				// Use sanitizeBinaryOutput to handle binary data that crashes string-width
 				return sanitizeBinaryOutput(stripAnsi(c.text || "")).replace(/\r/g, "");
 			})
@@ -443,9 +443,10 @@ export class ToolExecutionComponent extends Container {
 		const caps = getCapabilities();
 		if (imageBlocks.length > 0 && (!caps.images || !this.showImages)) {
 			const imageIndicators = imageBlocks
-				.map((img: any) => {
-					const dims = img.data ? (getImageDimensions(img.data, img.mimeType) ?? undefined) : undefined;
-					return imageFallback(img.mimeType, dims);
+				.map((img) => {
+					const dims =
+						img.data && img.mimeType ? (getImageDimensions(img.data, img.mimeType) ?? undefined) : undefined;
+					return imageFallback(img.mimeType || "image/png", dims);
 				})
 				.join("\n");
 			output = output ? `${output}\n${imageIndicators}` : imageIndicators;

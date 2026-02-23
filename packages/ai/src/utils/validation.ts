@@ -1,18 +1,23 @@
 import AjvModule from "ajv";
 import addFormatsModule from "ajv-formats";
 
-// Handle both default and named exports
+// Handle both default and named exports (CJS/ESM interop)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- CJS/ESM interop requires dynamic access
 const Ajv = (AjvModule as any).default || AjvModule;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- CJS/ESM interop requires dynamic access
 const addFormats = (addFormatsModule as any).default || addFormatsModule;
 
 import type { Tool, ToolCall } from "../types.js";
 
 // Detect if we're in a browser extension environment with strict CSP
 // Chrome extensions with Manifest V3 don't allow eval/Function constructor
-const isBrowserExtension = typeof globalThis !== "undefined" && (globalThis as any).chrome?.runtime?.id !== undefined;
+const isBrowserExtension =
+	typeof globalThis !== "undefined" &&
+	(globalThis as unknown as { chrome?: { runtime?: { id?: string } } }).chrome?.runtime?.id !== undefined;
 
 // Create a singleton AJV instance with formats (only if not in browser extension)
 // AJV requires 'unsafe-eval' CSP which is not allowed in Manifest V3
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- AJV instance type varies between CJS/ESM
 let ajv: any = null;
 if (!isBrowserExtension) {
 	try {
@@ -35,7 +40,7 @@ if (!isBrowserExtension) {
  * @returns The validated arguments
  * @throws Error if tool is not found or validation fails
  */
-export function validateToolCall(tools: Tool[], toolCall: ToolCall): any {
+export function validateToolCall(tools: Tool[], toolCall: ToolCall): Record<string, unknown> {
 	const tool = tools.find((t) => t.name === toolCall.name);
 	if (!tool) {
 		throw new Error(`Tool "${toolCall.name}" not found`);
@@ -50,7 +55,7 @@ export function validateToolCall(tools: Tool[], toolCall: ToolCall): any {
  * @returns The validated (and potentially coerced) arguments
  * @throws Error with formatted message if validation fails
  */
-export function validateToolArguments(tool: Tool, toolCall: ToolCall): any {
+export function validateToolArguments(tool: Tool, toolCall: ToolCall): Record<string, unknown> {
 	// Skip validation in browser extension environment (CSP restrictions prevent AJV from working)
 	if (!ajv || isBrowserExtension) {
 		// Trust the LLM's output without validation
@@ -72,8 +77,8 @@ export function validateToolArguments(tool: Tool, toolCall: ToolCall): any {
 	// Format validation errors nicely
 	const errors =
 		validate.errors
-			?.map((err: any) => {
-				const path = err.instancePath ? err.instancePath.substring(1) : err.params.missingProperty || "root";
+			?.map((err: { instancePath?: string; params?: { missingProperty?: string }; message?: string }) => {
+				const path = err.instancePath ? err.instancePath.substring(1) : err.params?.missingProperty || "root";
 				return `  - ${path}: ${err.message}`;
 			})
 			.join("\n") || "Unknown validation error";

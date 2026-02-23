@@ -316,7 +316,10 @@ export class Markdown implements Component {
 			}
 
 			case "list": {
-				const listLines = this.renderList(token as any, 0);
+				const listLines = this.renderList(
+					token as Token & { items: { tokens: Token[] }[]; ordered: boolean; start?: number },
+					0,
+				);
 				lines.push(...listLines);
 				// Don't add spacing after lists if a space token follows
 				// (the space token will handle it)
@@ -324,7 +327,10 @@ export class Markdown implements Component {
 			}
 
 			case "table": {
-				const tableLines = this.renderTable(token as any, width);
+				const tableLines = this.renderTable(
+					token as Token & { header: { tokens: Token[] }[]; rows: { tokens: Token[] }[][]; raw?: string },
+					width,
+				);
 				lines.push(...tableLines);
 				break;
 			}
@@ -473,7 +479,10 @@ export class Markdown implements Component {
 	/**
 	 * Render a list with proper nesting support
 	 */
-	private renderList(token: Token & { items: any[]; ordered: boolean; start?: number }, depth: number): string[] {
+	private renderList(
+		token: Token & { items: { tokens: Token[] }[]; ordered: boolean; start?: number },
+		depth: number,
+	): string[] {
 		const lines: string[] = [];
 		const indent = "  ".repeat(depth);
 		// Use the list's start property (defaults to 1 for ordered lists)
@@ -532,7 +541,10 @@ export class Markdown implements Component {
 			if (token.type === "list") {
 				// Nested list - render with one additional indent level
 				// These lines will have their own indent, so we just add them as-is
-				const nestedLines = this.renderList(token as any, parentDepth + 1);
+				const nestedLines = this.renderList(
+					token as Token & { items: { tokens: Token[] }[]; ordered: boolean; start?: number },
+					parentDepth + 1,
+				);
 				lines.push(...nestedLines);
 			} else if (token.type === "text") {
 				// Text content (may have inline tokens)
@@ -601,7 +613,7 @@ export class Markdown implements Component {
 	 * Cells that don't fit are wrapped to multiple lines.
 	 */
 	private renderTable(
-		token: Token & { header: any[]; rows: any[][]; raw?: string },
+		token: Token & { header: { tokens: Token[] }[]; rows: { tokens: Token[] }[][]; raw?: string },
 		availableWidth: number,
 	): string[] {
 		const lines: string[] = [];

@@ -1,7 +1,20 @@
 import type { SandboxRuntimeProvider } from "./SandboxRuntimeProvider.js";
 
 // Type declaration for chrome extension API (when available)
-declare const chrome: any;
+declare const chrome:
+	| {
+			runtime?: {
+				onUserScriptMessage?: {
+					addListener: (
+						listener: (message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => boolean,
+					) => void;
+					removeListener: (
+						listener: (message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => boolean,
+					) => void;
+				};
+			};
+	  }
+	| undefined;
 
 /**
  * Message consumer interface - components that want to receive messages from sandboxes
@@ -11,7 +24,7 @@ export interface MessageConsumer {
 	 * Handle a message from a sandbox.
 	 * All consumers receive all messages - decide internally what to handle.
 	 */
-	handleMessage(message: any): Promise<void>;
+	handleMessage(message: Record<string, unknown>): Promise<void>;
 }
 
 /**
@@ -42,7 +55,7 @@ export class RuntimeMessageRouter {
 	private sandboxes = new Map<string, SandboxContext>();
 	private messageListener: ((e: MessageEvent) => void) | null = null;
 	private userScriptMessageListener:
-		| ((message: any, sender: any, sendResponse: (response: any) => void) => boolean)
+		| ((message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => boolean)
 		| null = null;
 
 	/**
@@ -133,7 +146,7 @@ export class RuntimeMessageRouter {
 				}
 
 				// Create respond() function for bidirectional communication
-				const respond = (response: any) => {
+				const respond = (response: Record<string, unknown>) => {
 					context.iframe?.contentWindow?.postMessage(
 						{
 							type: "runtime-response",
@@ -170,14 +183,19 @@ export class RuntimeMessageRouter {
 				return;
 			}
 
-			this.userScriptMessageListener = (message: any, _sender: any, sendResponse: (response: any) => void) => {
-				const { sandboxId } = message;
+			this.userScriptMessageListener = (
+				message: unknown,
+				_sender: unknown,
+				sendResponse: (response: unknown) => void,
+			) => {
+				const msg = message as Record<string, unknown>;
+				const sandboxId = msg.sandboxId as string | undefined;
 				if (!sandboxId) return false;
 
 				const context = this.sandboxes.get(sandboxId);
 				if (!context) return false;
 
-				const respond = (response: any) => {
+				const respond = (response: Record<string, unknown>) => {
 					sendResponse({
 						...response,
 						sandboxId,
@@ -189,14 +207,14 @@ export class RuntimeMessageRouter {
 					// 1. Try provider handlers first (for bidirectional comm)
 					for (const provider of context.providers) {
 						if (provider.handleMessage) {
-							await provider.handleMessage(message, respond);
+							await provider.handleMessage(msg, respond);
 							// Don't stop - let consumers also handle the message
 						}
 					}
 
 					// 2. Broadcast to consumers (one-way messages or lifecycle events)
 					for (const consumer of context.consumers) {
-						await consumer.handleMessage(message);
+						await consumer.handleMessage(msg);
 						// Don't stop - let all consumers see the message
 					}
 				})();

@@ -8,12 +8,12 @@ import type { SandboxRuntimeProvider } from "./SandboxRuntimeProvider.js";
 interface ArtifactsPanelLike {
 	artifacts: Map<string, { content: string }>;
 	tool: {
-		execute(toolCallId: string, args: { command: string; filename: string; content?: string }): Promise<any>;
+		execute(toolCallId: string, args: { command: string; filename: string; content?: string }): Promise<unknown>;
 	};
 }
 
 interface AgentLike {
-	appendMessage(message: any): void;
+	appendMessage(message: unknown): void;
 }
 
 /**
@@ -30,7 +30,7 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 		private readWrite: boolean = true,
 	) {}
 
-	getData(): Record<string, any> {
+	getData(): Record<string, unknown> {
 		// Inject artifact snapshot for offline mode
 		const snapshot: Record<string, string> = {};
 		this.artifactsPanel.artifacts.forEach((artifact, filename) => {
@@ -135,12 +135,15 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 		};
 	}
 
-	async handleMessage(message: any, respond: (response: any) => void): Promise<void> {
+	async handleMessage(
+		message: Record<string, unknown>,
+		respond: (response: Record<string, unknown>) => void,
+	): Promise<void> {
 		if (message.type !== "artifact-operation") {
 			return;
 		}
 
-		const { action, filename, content } = message;
+		const { action, filename, content } = message as { action: string; filename: string; content?: string };
 
 		try {
 			switch (action) {
@@ -180,8 +183,8 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 							timestamp: new Date().toISOString(),
 						});
 						respond({ success: true });
-					} catch (err: any) {
-						respond({ success: false, error: err.message });
+					} catch (err: unknown) {
+						respond({ success: false, error: err instanceof Error ? err.message : String(err) });
 					}
 					break;
 				}
@@ -199,8 +202,8 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 							timestamp: new Date().toISOString(),
 						});
 						respond({ success: true });
-					} catch (err: any) {
-						respond({ success: false, error: err.message });
+					} catch (err: unknown) {
+						respond({ success: false, error: err instanceof Error ? err.message : String(err) });
 					}
 					break;
 				}
@@ -208,8 +211,8 @@ export class ArtifactsRuntimeProvider implements SandboxRuntimeProvider {
 				default:
 					respond({ success: false, error: `Unknown artifact action: ${action}` });
 			}
-		} catch (error: any) {
-			respond({ success: false, error: error.message });
+		} catch (error: unknown) {
+			respond({ success: false, error: error instanceof Error ? error.message : String(error) });
 		}
 	}
 

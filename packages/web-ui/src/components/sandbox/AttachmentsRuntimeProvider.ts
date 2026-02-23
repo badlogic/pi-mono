@@ -12,7 +12,7 @@ import type { SandboxRuntimeProvider } from "./SandboxRuntimeProvider.js";
 export class AttachmentsRuntimeProvider implements SandboxRuntimeProvider {
 	constructor(private attachments: Attachment[]) {}
 
-	getData(): Record<string, any> {
+	getData(): Record<string, unknown> {
 		const attachmentsData = this.attachments.map((a) => ({
 			id: a.id,
 			fileName: a.fileName,

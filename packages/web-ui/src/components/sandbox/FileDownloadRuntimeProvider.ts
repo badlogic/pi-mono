@@ -17,7 +17,7 @@ export interface DownloadableFile {
 export class FileDownloadRuntimeProvider implements SandboxRuntimeProvider {
 	private files: DownloadableFile[] = [];
 
-	getData(): Record<string, any> {
+	getData(): Record<string, unknown> {
 		// No data needed
 		return {};
 	}
@@ -77,13 +77,16 @@ export class FileDownloadRuntimeProvider implements SandboxRuntimeProvider {
 		};
 	}
 
-	async handleMessage(message: any, respond: (response: any) => void): Promise<void> {
+	async handleMessage(
+		message: Record<string, unknown>,
+		respond: (response: Record<string, unknown>) => void,
+	): Promise<void> {
 		if (message.type === "file-returned") {
 			// Collect file for caller
 			this.files.push({
-				fileName: message.fileName,
-				content: message.content,
-				mimeType: message.mimeType,
+				fileName: message.fileName as string,
+				content: message.content as string | Uint8Array,
+				mimeType: message.mimeType as string,
 			});
 
 			respond({ success: true });

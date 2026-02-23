@@ -26,13 +26,16 @@ export function getToolRenderer(toolName: string): ToolRenderer | undefined {
  * Helper to render a header for tool renderers
  * Shows icon on left when complete/error, spinner on right when in progress
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- lucide icon types are complex
 export function renderHeader(
 	state: "inprogress" | "complete" | "error",
 	toolIcon: any,
 	text: string | TemplateResult,
 ): TemplateResult {
-	const statusIcon = (iconComponent: any, color: string) =>
-		html`<span class="inline-block ${color}">${icon(iconComponent, "sm")}</span>`;
+	const statusIcon = (
+		iconComponent: any,
+		color: string, // eslint-disable-line @typescript-eslint/no-explicit-any
+	) => html`<span class="inline-block ${color}">${icon(iconComponent, "sm")}</span>`;
 
 	switch (state) {
 		case "inprogress":
@@ -66,6 +69,7 @@ export function renderHeader(
  * Helper to render a collapsible header for tool renderers
  * Same as renderHeader but with a chevron button that toggles visibility of content
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- lucide icon types are complex
 export function renderCollapsibleHeader(
 	state: "inprogress" | "complete" | "error",
 	toolIcon: any,
@@ -74,8 +78,10 @@ export function renderCollapsibleHeader(
 	chevronRef: Ref<HTMLElement>,
 	defaultExpanded = false,
 ): TemplateResult {
-	const statusIcon = (iconComponent: any, color: string) =>
-		html`<span class="inline-block ${color}">${icon(iconComponent, "sm")}</span>`;
+	const statusIcon = (
+		iconComponent: any,
+		color: string, // eslint-disable-line @typescript-eslint/no-explicit-any
+	) => html`<span class="inline-block ${color}">${icon(iconComponent, "sm")}</span>`;
 
 	const toggleContent = (e: Event) => {
 		e.preventDefault();

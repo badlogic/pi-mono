@@ -268,7 +268,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 							name: isOAuthToken
 								? fromClaudeCodeName(event.content_block.name, context.tools)
 								: event.content_block.name,
-							arguments: (event.content_block.input as Record<string, any>) ?? {},
+							arguments: (event.content_block.input as Record<string, unknown>) ?? {},
 							partialJson: "",
 							index: event.index,
 						};
@@ -325,7 +325,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 					const index = blocks.findIndex((b) => b.index === event.index);
 					const block = blocks[index];
 					if (block) {
-						delete (block as any).index;
+						delete (block as unknown as Record<string, unknown>).index;
 						if (block.type === "text") {
 							stream.push({
 								type: "text_end",
@@ -342,7 +342,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 							});
 						} else if (block.type === "toolCall") {
 							block.arguments = parseStreamingJson(block.partialJson);
-							delete (block as any).partialJson;
+							delete (block as unknown as Record<string, unknown>).partialJson;
 							stream.push({
 								type: "toolcall_end",
 								contentIndex: index,
@@ -387,7 +387,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 			stream.push({ type: "done", reason: output.stopReason, message: output });
 			stream.end();
 		} catch (error) {
-			for (const block of output.content) delete (block as any).index;
+			for (const block of output.content) delete (block as unknown as Record<string, unknown>).index;
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
 			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
 			stream.push({ type: "error", reason: output.stopReason, error: output });
@@ -750,7 +750,7 @@ function convertMessages(
 					lastBlock &&
 					(lastBlock.type === "text" || lastBlock.type === "image" || lastBlock.type === "tool_result")
 				) {
-					(lastBlock as any).cache_control = cacheControl;
+					(lastBlock as unknown as Record<string, unknown>).cache_control = cacheControl;
 				}
 			} else if (typeof lastMessage.content === "string") {
 				lastMessage.content = [
@@ -759,7 +759,7 @@ function convertMessages(
 						text: lastMessage.content,
 						cache_control: cacheControl,
 					},
-				] as any;
+				] as ContentBlockParam[];
 			}
 		}
 	}
@@ -771,15 +771,15 @@ function convertTools(tools: Tool[], isOAuthToken: boolean): Anthropic.Messages.
 	if (!tools) return [];
 
 	return tools.map((tool) => {
-		const jsonSchema = tool.parameters as any; // TypeBox already generates JSON Schema
+		const jsonSchema = tool.parameters as Record<string, unknown>; // TypeBox already generates JSON Schema
 
 		return {
 			name: isOAuthToken ? toClaudeCodeName(tool.name) : tool.name,
 			description: tool.description,
 			input_schema: {
 				type: "object" as const,
-				properties: jsonSchema.properties || {},
-				required: jsonSchema.required || [],
+				properties: (jsonSchema.properties as Record<string, unknown>) || {},
+				required: (jsonSchema.required as string[]) || [],
 			},
 		};
 	});

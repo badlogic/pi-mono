@@ -82,7 +82,11 @@ export interface ProxyStreamOptions extends SimpleStreamOptions {
  * });
  * ```
  */
-export function streamProxy(model: Model<any>, context: Context, options: ProxyStreamOptions): ProxyMessageEventStream {
+export function streamProxy(
+	model: Model<string>,
+	context: Context,
+	options: ProxyStreamOptions,
+): ProxyMessageEventStream {
 	const stream = new ProxyMessageEventStream();
 
 	(async () => {
@@ -293,8 +297,9 @@ function processProxyEvent(
 		case "toolcall_delta": {
 			const content = partial.content[proxyEvent.contentIndex];
 			if (content?.type === "toolCall") {
-				(content as any).partialJson += proxyEvent.delta;
-				content.arguments = parseStreamingJson((content as any).partialJson) || {};
+				const contentExt = content as ToolCall & { partialJson?: string };
+				contentExt.partialJson = (contentExt.partialJson || "") + proxyEvent.delta;
+				content.arguments = parseStreamingJson(contentExt.partialJson) || {};
 				partial.content[proxyEvent.contentIndex] = { ...content }; // Trigger reactivity
 				return {
 					type: "toolcall_delta",
@@ -309,7 +314,7 @@ function processProxyEvent(
 		case "toolcall_end": {
 			const content = partial.content[proxyEvent.contentIndex];
 			if (content?.type === "toolCall") {
-				delete (content as any).partialJson;
+				delete (content as unknown as Record<string, unknown>).partialJson;
 				return {
 					type: "toolcall_end",
 					contentIndex: proxyEvent.contentIndex,
@@ -333,7 +338,7 @@ function processProxyEvent(
 
 		default: {
 			const _exhaustiveCheck: never = proxyEvent;
-			console.warn(`Unhandled proxy event type: ${(proxyEvent as any).type}`);
+			console.warn(`Unhandled proxy event type: ${(_exhaustiveCheck as { type: string }).type}`);
 			return undefined;
 		}
 	}

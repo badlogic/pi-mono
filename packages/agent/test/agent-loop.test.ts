@@ -395,8 +395,10 @@ describe("agentLoop with AgentMessage", () => {
 		expect(toolEnds.length).toBe(2);
 		expect(toolEnds[0].isError).toBe(false);
 		expect(toolEnds[1].isError).toBe(true);
-		if (toolEnds[1].result.content[0]?.type === "text") {
-			expect(toolEnds[1].result.content[0].text).toContain("Skipped due to queued user message");
+		if ((toolEnds[1].result as { content: Array<{ type: string; text?: string }> }).content[0]?.type === "text") {
+			expect((toolEnds[1].result as { content: Array<{ type: string; text?: string }> }).content[0].text).toContain(
+				"Skipped due to queued user message",
+			);
 		}
 
 		// Queued message should appear in events

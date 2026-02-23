@@ -2167,7 +2167,11 @@ export class InteractiveMode {
 			case "tool_execution_update": {
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
-					component.updateResult({ ...event.partialResult, isError: false }, true);
+					const partial = event.partialResult as {
+						content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+						details?: unknown;
+					};
+					component.updateResult({ ...partial, isError: false }, true);
 					this.ui.requestRender();
 				}
 				break;
@@ -2176,7 +2180,11 @@ export class InteractiveMode {
 			case "tool_execution_end": {
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
-					component.updateResult({ ...event.result, isError: event.isError });
+					const result = event.result as {
+						content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+						details?: unknown;
+					};
+					component.updateResult({ ...result, isError: event.isError });
 					this.pendingTools.delete(event.toolCallId);
 					this.ui.requestRender();
 				}

@@ -169,6 +169,20 @@ For non-standard auth, create utility (e.g., `bedrock-utils.ts`) with credential
 
 The script handles: version bump, CHANGELOG finalization, commit, tag, publish, and adding new `[Unreleased]` sections.
 
+## **CRITICAL** Memory First **CRITICAL**
+
+Before scanning the codebase (grep, find, reading files to understand a problem), query the ArangoDB knowledge graph:
+
+```bash
+.pi/skills/memory/run.sh recall --q "description of the problem"
+```
+
+- If `found: true` and `should_scan: false` — use the existing solution. Do NOT scan the codebase.
+- If `found: false` or `should_scan: true` — proceed with codebase exploration.
+- After solving a new problem, store it: `.pi/skills/memory/run.sh learn --problem "..." --solution "..."`
+
+This applies to ALL agents (Pi, Claude Code, Codex, etc.). The knowledge graph contains cross-project solutions that no amount of codebase scanning will surface.
+
 ## **CRITICAL** Tool Usage Rules **CRITICAL**
 - NEVER use sed/cat to read a file or a range of a file. Always use the read tool (use offset + limit for ranged reads).
 - You MUST read every file you modify in full before editing.
