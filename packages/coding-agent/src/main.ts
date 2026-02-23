@@ -32,11 +32,35 @@ import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 
+// Timeout for stdin detection in non-TTY contexts (D-Bus daemons, Tauri, CI).
+// Default 1000ms is sufficient to detect piped data (typically arrives in <100ms).
+// Set PI_STDIN_TIMEOUT_MS=0 to disable timeout, or higher for slow pipes.
+const STDIN_TIMEOUT_MS = (() => {
+	const envTimeout = process.env.PI_STDIN_TIMEOUT_MS;
+	if (envTimeout !== undefined) {
+		const parsed = Number(envTimeout);
+		return Number.isNaN(parsed) ? 1000 : parsed;
+	}
+	return 1000;
+})();
+
 /**
- * Read all content from piped stdin.
- * Returns undefined if stdin is a TTY (interactive terminal).
+ * Read all content from piped stdin with timeout.
+ *
+ * Returns undefined if stdin is a TTY (interactive terminal), if no data
+ * arrives within the timeout, or on error. Once data starts flowing, the
+ * timeout is cancelled permanently and we wait for EOF without time limit.
+ *
+ * NOTE: This function can only be called once per process — subsequent calls
+ * will fail since stdin is paused after timeout. Use a guard if multiple
+ * calls are possible.
+ *
+ * @param timeoutMs Maximum milliseconds to wait for first stdin data.
+ *   Set to 0 to disable timeout (wait indefinitely for EOF).
+ *   Defaults to STDIN_TIMEOUT_MS (1000ms, configurable via PI_STDIN_TIMEOUT_MS).
+ * @returns stdin content string, or undefined if TTY/timeout/error
  */
-async function readPipedStdin(): Promise<string | undefined> {
+async function readPipedStdin(timeoutMs = STDIN_TIMEOUT_MS): Promise<string | undefined> {
 	// If stdin is a TTY, we're running interactively - don't read stdin
 	if (process.stdin.isTTY) {
 		return undefined;
@@ -44,12 +68,43 @@ async function readPipedStdin(): Promise<string | undefined> {
 
 	return new Promise((resolve) => {
 		let data = "";
+		let receivedData = false;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+
+		if (timeoutMs > 0) {
+			timer = setTimeout(() => {
+				// No data received within timeout — stdin is open but idle
+				// (common in non-TTY subprocess contexts like D-Bus daemons, Tauri, CI)
+				if (!receivedData) {
+					if (process.env.DEBUG) {
+						console.error(`[DEBUG] stdin timeout after ${timeoutMs}ms - treating as no input`);
+					}
+					process.stdin.removeAllListeners();
+					process.stdin.pause();
+					resolve(undefined);
+				}
+			}, timeoutMs);
+		}
+
 		process.stdin.setEncoding("utf8");
 		process.stdin.on("data", (chunk) => {
+			receivedData = true;
 			data += chunk;
+			// Cancel timeout permanently after first chunk — data has arrived, wait for EOF without timeout
+			if (timer) clearTimeout(timer);
 		});
 		process.stdin.on("end", () => {
+			if (timer) clearTimeout(timer);
 			resolve(data.trim() || undefined);
+		});
+		process.stdin.on("error", (err) => {
+			// Log stdin errors for diagnostics (e.g., broken pipe, permission issues)
+			// but don't fail — treat as empty stdin
+			if (process.env.DEBUG) {
+				console.error(`[DEBUG] stdin error: ${err.message}`);
+			}
+			if (timer) clearTimeout(timer);
+			resolve(undefined);
 		});
 		process.stdin.resume();
 	});
@@ -516,6 +571,45 @@ export async function main(args: string[]) {
 	// First pass: parse args to get --extension paths
 	const firstPass = parseArgs(args);
 
+	// Early exit for commands that don't need resource loading.
+	// This prevents hangs in non-TTY contexts (D-Bus daemons, Tauri, KDE launcher, CI)
+	// where stdin is open but idle, and avoids slow resourceLoader.reload() overhead
+	// (228 skills + 10 extensions + potential npm/git installs).
+	//
+	// Execution flow:
+	//   - `pi --version` → Early exit here → <100ms response
+	//   - `pi "task"` → Continues to resourceLoader.reload() → readPipedStdin() → processes task
+	//
+	// NOTE: These checks are duplicated after resource loading (lines ~620-630) because
+	// extensions can define CLI flags that modify behavior. This first-pass check optimizes
+	// the common case where users just want --version/--help/--list-models without
+	// loading 228 skills + 10 extensions.
+	//
+	// Theme watchers are not started yet at this point, so no stopThemeWatcher() needed.
+	if (firstPass.version) {
+		console.log(VERSION);
+		process.exit(0);
+	}
+
+	if (firstPass.help) {
+		printHelp();
+		process.exit(0);
+	}
+
+	if (firstPass.listModels !== undefined) {
+		const authStorage = new AuthStorage();
+		const modelRegistry = new ModelRegistry(authStorage, getModelsPath());
+		const searchPattern = typeof firstPass.listModels === "string" ? firstPass.listModels : undefined;
+		try {
+			await listModels(modelRegistry, searchPattern);
+			process.exit(0);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			console.error(chalk.red(`Failed to list models: ${message}`));
+			process.exit(1);
+		}
+	}
+
 	// Early load extensions to discover their CLI flags
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
@@ -584,7 +678,12 @@ export async function main(args: string[]) {
 		process.exit(0);
 	}
 
-	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
+	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC.
+	// IMPORTANT: For D-Bus daemon usage, this adds STDIN_TIMEOUT_MS latency to every invocation
+	// where stdin isn't piped (voice commands, KDE launcher, Tauri app). Default 1000ms should
+	// be acceptable, but consider:
+	//   - Setting PI_STDIN_TIMEOUT_MS=100 for faster response (if stdin always arrives quickly)
+	//   - D-Bus wrapper could pass `--mode rpc` or a custom --no-stdin flag to skip entirely
 	if (parsed.mode !== "rpc") {
 		const stdinContent = await readPipedStdin();
 		if (stdinContent !== undefined) {
