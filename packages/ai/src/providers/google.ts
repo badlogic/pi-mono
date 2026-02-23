@@ -386,11 +386,11 @@ function buildParams(
 type ClampedThinkingLevel = Exclude<ThinkingLevel, "xhigh">;
 
 function isGemini3ProModel(model: Model<"google-generative-ai">): boolean {
-	return model.id.includes("3-pro");
+	return /3(\.\d+)?-pro/.test(model.id);
 }
 
 function isGemini3FlashModel(model: Model<"google-generative-ai">): boolean {
-	return model.id.includes("3-flash");
+	return /3(\.\d+)?-flash/.test(model.id);
 }
 
 function getGemini3ThinkingLevel(
