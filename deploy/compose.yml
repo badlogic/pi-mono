@@ -1,0 +1,32 @@
+services:
+  mom:
+    build:
+      context: .
+      dockerfile: docker/mom/Dockerfile
+    image: pi-mom:local
+    container_name: mom
+    restart: unless-stopped
+    volumes:
+      - ${MOM_BASE}/repo:/repo
+      - ${MOM_BASE}/data:/data
+    env_file:
+      - ./.env
+      - ./mom.env
+    environment:
+      MOM_DATA_DIR: /data
+
+  updater:
+    build:
+      context: .
+      dockerfile: docker/updater/Dockerfile
+    image: mom-updater:local
+    container_name: mom-updater
+    restart: unless-stopped
+    volumes:
+      - ${MOM_BASE}/repo:/work/repo
+      - ${MOM_BASE}/state:/work/state
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${MOM_BASE}/compose.yml:/stack/compose.yml:ro
+    env_file:
+      - ./.env
+      - ./updater.env
