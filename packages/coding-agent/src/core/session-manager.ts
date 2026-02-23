@@ -720,6 +720,22 @@ export class SessionManager {
 		}
 	}
 
+	/**
+	 * Update cwd and sessionDir to match the currently loaded session file.
+	 *
+	 * Sets sessionDir to the parent directory of the session file, and cwd to the
+	 * session header's cwd field (if present). Call after setSessionFile() when
+	 * switching sessions to adopt the target session's location context.
+	 */
+	syncLocation(): void {
+		if (!this.sessionFile) return;
+		this.sessionDir = resolve(this.sessionFile, "..");
+		const header = this.fileEntries.find((e) => e.type === "session") as SessionHeader | undefined;
+		if (typeof header?.cwd === "string") {
+			this.cwd = header.cwd;
+		}
+	}
+
 	newSession(options?: NewSessionOptions): string | undefined {
 		this.sessionId = randomUUID();
 		const timestamp = new Date().toISOString();
