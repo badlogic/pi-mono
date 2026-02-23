@@ -12,6 +12,7 @@ import { supportsXhigh } from "../models.js";
 import type {
 	Api,
 	AssistantMessage,
+	CacheRetention,
 	Context,
 	Model,
 	SimpleStreamOptions,
@@ -67,6 +68,7 @@ interface RequestBody {
 	text?: { verbosity?: string };
 	include?: string[];
 	prompt_cache_key?: string;
+	prompt_cache_retention?: "in-memory" | "24h";
 	[key: string]: unknown;
 }
 
@@ -279,6 +281,8 @@ function buildRequestBody(
 	context: Context,
 	options?: OpenAICodexResponsesOptions,
 ): RequestBody {
+	const cacheRetention = resolveCacheRetention(options?.cacheRetention);
+	const promptCacheKey = cacheRetention === "none" ? undefined : options?.sessionId;
 	const messages = convertResponsesMessages(model, context, CODEX_TOOL_CALL_PROVIDERS, {
 		includeSystemPrompt: false,
 	});
@@ -291,7 +295,8 @@ function buildRequestBody(
 		input: messages,
 		text: { verbosity: options?.textVerbosity || "medium" },
 		include: ["reasoning.encrypted_content"],
-		prompt_cache_key: options?.sessionId,
+		prompt_cache_key: promptCacheKey,
+		prompt_cache_retention: promptCacheKey ? getCodexPromptCacheRetention(cacheRetention) : undefined,
 		tool_choice: "auto",
 		parallel_tool_calls: true,
 	};
@@ -312,6 +317,27 @@ function buildRequestBody(
 	}
 
 	return body;
+}
+
+function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
+	if (cacheRetention) {
+		return cacheRetention;
+	}
+	if (typeof process !== "undefined" && process.env.PI_CACHE_RETENTION === "long") {
+		return "long";
+	}
+	return "short";
+}
+
+function getCodexPromptCacheRetention(cacheRetention: CacheRetention): "in-memory" | "24h" | undefined {
+	switch (cacheRetention) {
+		case "none":
+			return undefined;
+		case "long":
+			return "24h";
+		default:
+			return "in-memory";
+	}
 }
 
 function clampReasoningEffort(modelId: string, effort: string): string {
@@ -856,6 +882,7 @@ function buildHeaders(
 	}
 
 	if (sessionId) {
+		headers.set("conversation_id", sessionId);
 		headers.set("session_id", sessionId);
 	}
 
