@@ -132,6 +132,50 @@ describe("KittyKeyboardShim", () => {
 		shim.stop();
 	});
 
+	it("strips win32 input mode records from bracketed paste in shim", async () => {
+		const stdin = createMockStdin();
+		const stdout = new MockStdout();
+		const shim = new KittyKeyboardShim(stdin, stdout as unknown as NodeJS.WriteStream, "win32", {
+			windowsKittyProbeTimeoutMs: 20,
+			windowsProbeResponseSuppressMs: 20,
+		});
+		const received: string[] = [];
+
+		shim.start((data) => {
+			received.push(data);
+		});
+
+		await wait(40);
+		stdin.emit("data", "\x1b[200~I just renamed ");
+		stdin.emit("data", "\x1b[13;28;13;1;0;1_the project\x1b[201~");
+
+		assert.deepStrictEqual(received, ["\x1b[200~I just renamed the project\x1b[201~"]);
+
+		shim.stop();
+	});
+
+	it("normalizes win32 enter records without ESC inside bracketed paste", async () => {
+		const stdin = createMockStdin();
+		const stdout = new MockStdout();
+		const shim = new KittyKeyboardShim(stdin, stdout as unknown as NodeJS.WriteStream, "win32", {
+			windowsKittyProbeTimeoutMs: 20,
+			windowsProbeResponseSuppressMs: 20,
+		});
+		const received: string[] = [];
+
+		shim.start((data) => {
+			received.push(data);
+		});
+
+		await wait(40);
+		stdin.emit("data", "\x1b[200~line1");
+		stdin.emit("data", "[13;28;13;1;0;1_[13;28;13;0;0;1_line2\x1b[201~");
+
+		assert.deepStrictEqual(received, ["\x1b[200~line1\nline2\x1b[201~"]);
+
+		shim.stop();
+	});
+
 	it("falls back to win32 translation when Kitty probe times out", async () => {
 		const stdin = createMockStdin();
 		const stdout = new MockStdout();

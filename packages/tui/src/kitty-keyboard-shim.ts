@@ -13,6 +13,37 @@ const STD_INPUT_HANDLE = -10;
 const ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200;
 
 const KITTY_CSI_U_SEQUENCE = /^\x1b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$/;
+const WIN32_INPUT_MODE_RECORD_IN_PASTE = /(?:\x1b)?\[(\d+);(\d+);(\d+);([01]);(\d+)(?:;(\d+))?_/g;
+
+function stripWin32InputModeRecords(content: string): string {
+	return content.replace(
+		WIN32_INPUT_MODE_RECORD_IN_PASTE,
+		(
+			_match,
+			virtualKeyStr: string,
+			_scanCodeStr: string,
+			unicodeCharStr: string,
+			keyDownStr: string,
+			_controlKeyStateStr: string,
+		) => {
+			const virtualKey = Number.parseInt(virtualKeyStr, 10);
+			const unicodeChar = Number.parseInt(unicodeCharStr, 10);
+			const keyDown = keyDownStr === "1";
+
+			if (!keyDown) return "";
+
+			if (virtualKey === VK.enter || unicodeChar === 13) {
+				return "\n";
+			}
+
+			if (virtualKey === VK.tab || unicodeChar === 9) {
+				return "\t";
+			}
+
+			return "";
+		},
+	);
+}
 
 export interface KittyKeyboardShimOptions {
 	windowsKittyProbeTimeoutMs?: number;
@@ -154,7 +185,8 @@ export class KittyKeyboardShim {
 		});
 
 		this.stdinBuffer.on("paste", (content) => {
-			const pasteSequence = `\x1b[200~${content}\x1b[201~`;
+			const sanitizedContent = stripWin32InputModeRecords(content);
+			const pasteSequence = `\x1b[200~${sanitizedContent}\x1b[201~`;
 			if (this.windowsKittyProbeActive) {
 				this.pendingProbeSequences.push(pasteSequence);
 				return;
