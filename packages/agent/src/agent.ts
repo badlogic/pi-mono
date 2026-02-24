@@ -7,6 +7,7 @@ import {
 	getModel,
 	type ImageContent,
 	type Message,
+	type AssistantMessage,
 	type Model,
 	streamSimple,
 	type TextContent,
@@ -486,8 +487,8 @@ export class Agent {
 					}
 
 					case "turn_end":
-						if (event.message.role === "assistant" && (event.message as any).errorMessage) {
-							this._state.error = (event.message as any).errorMessage;
+						if (event.message.role === "assistant" && (event.message as AssistantMessage).errorMessage) {
+							this._state.error = (event.message as AssistantMessage).errorMessage;
 						}
 						break;
 
