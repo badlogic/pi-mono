@@ -1,7 +1,7 @@
 services:
   mom:
     build:
-      context: .
+      context: "${REPO_URL:-https://github.com/badlogic/pi-mono.git}#${REPO_BRANCH:-main}"
       dockerfile: docker/mom/Dockerfile
     image: pi-mom:local
     container_name: mom
@@ -17,7 +17,7 @@ services:
 
   updater:
     build:
-      context: .
+      context: "${REPO_URL:-https://github.com/badlogic/pi-mono.git}#${REPO_BRANCH:-main}"
       dockerfile: docker/updater/Dockerfile
     image: mom-updater:local
     container_name: mom-updater
