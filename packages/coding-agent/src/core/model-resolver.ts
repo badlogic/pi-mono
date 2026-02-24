@@ -498,10 +498,11 @@ export async function restoreModelFromSession(
 ): Promise<{ model: Model<Api> | undefined; fallbackMessage: string | undefined }> {
 	const restoredModel = modelRegistry.find(savedProvider, savedModelId);
 
-	// Check if restored model exists and has a valid API key
-	const hasApiKey = restoredModel ? !!(await modelRegistry.getApiKey(restoredModel)) : false;
+	// Check if restored model exists and has valid auth configured
+	// Use hasAuth to properly detect real auth vs fallbacks (e.g., "public" for opencode free models)
+	const hasValidAuth = restoredModel ? modelRegistry.hasAuth(restoredModel.provider) : false;
 
-	if (restoredModel && hasApiKey) {
+	if (restoredModel && hasValidAuth) {
 		if (shouldPrintMessages) {
 			console.log(chalk.dim(`Restored model: ${savedProvider}/${savedModelId}`));
 		}

@@ -11,6 +11,7 @@ import {
 	getOAuthApiKey,
 	getOAuthProvider,
 	getOAuthProviders,
+	hasEnvApiKey,
 	type OAuthCredentials,
 	type OAuthLoginCallbacks,
 	type OAuthProviderId,
@@ -299,7 +300,13 @@ export class AuthStorage {
 	hasAuth(provider: string): boolean {
 		if (this.runtimeOverrides.has(provider)) return true;
 		if (this.data[provider]) return true;
-		if (getEnvApiKey(provider)) return true;
+		// For opencode, check if env var is explicitly set (not using "public" fallback)
+		// This ensures we don't treat the fallback as real auth
+		if (provider === "opencode") {
+			if (hasEnvApiKey(provider)) return true;
+		} else {
+			if (getEnvApiKey(provider)) return true;
+		}
 		if (this.fallbackResolver?.(provider)) return true;
 		return false;
 	}

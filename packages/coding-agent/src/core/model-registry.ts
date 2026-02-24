@@ -494,9 +494,24 @@ export class ModelRegistry {
 	/**
 	 * Get only models that have auth configured.
 	 * This is a fast check that doesn't refresh OAuth tokens.
+	 *
+	 * For opencode: if no API key is set, also include free models (cost.input === 0).
 	 */
 	getAvailable(): Model<Api>[] {
-		return this.models.filter((m) => this.authStorage.hasAuth(m.provider));
+		// Get models with auth, excluding opencode (handled separately below)
+		const available = this.models.filter((m) => m.provider !== "opencode" && this.authStorage.hasAuth(m.provider));
+
+		// For opencode: use authStorage.hasAuth() which checks all sources
+		// (runtime overrides, auth.json, explicit env var via hasEnvApiKey, fallback resolver)
+		if (this.authStorage.hasAuth("opencode")) {
+			// User has API key - include all opencode models
+			const opencodeModels = this.models.filter((m) => m.provider === "opencode");
+			return [...available, ...opencodeModels];
+		} else {
+			// No API key - only include free models (cost.input === 0)
+			const freeOpencodeModels = this.models.filter((m) => m.provider === "opencode" && m.cost?.input === 0);
+			return [...available, ...freeOpencodeModels];
+		}
 	}
 
 	/**
@@ -518,6 +533,15 @@ export class ModelRegistry {
 	 */
 	async getApiKeyForProvider(provider: string): Promise<string | undefined> {
 		return this.authStorage.getApiKey(provider);
+	}
+
+	/**
+	 * Check if a provider has valid auth configured.
+	 * Unlike getApiKey(), this doesn't return fallback values (e.g., "public" for opencode).
+	 * Use this to determine if real auth is available, not just fallbacks.
+	 */
+	hasAuth(provider: string): boolean {
+		return this.authStorage.hasAuth(provider);
 	}
 
 	/**

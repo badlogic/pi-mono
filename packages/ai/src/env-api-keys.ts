@@ -111,5 +111,48 @@ export function getEnvApiKey(provider: any): string | undefined {
 	};
 
 	const envVar = envMap[provider];
-	return envVar ? process.env[envVar] : undefined;
+	const envKey = envVar ? process.env[envVar] : undefined;
+	if (envKey) return envKey;
+
+	// Fallback for opencode: use "public" key for free models
+	if (provider === "opencode") {
+		return "public";
+	}
+
+	return undefined;
+}
+
+/**
+ * Check if an API key environment variable is explicitly set for a provider.
+ * Unlike getEnvApiKey(), this does NOT return fallback values (e.g., "public" for opencode).
+ * Use this for auth detection where you need to distinguish between user-configured
+ * keys and automatic fallbacks.
+ */
+export function hasEnvApiKey(provider: KnownProvider): boolean;
+export function hasEnvApiKey(provider: string): boolean;
+export function hasEnvApiKey(provider: any): boolean {
+	const envMap: Record<string, string> = {
+		openai: "OPENAI_API_KEY",
+		"azure-openai-responses": "AZURE_OPENAI_API_KEY",
+		google: "GEMINI_API_KEY",
+		groq: "GROQ_API_KEY",
+		cerebras: "CEREBRAS_API_KEY",
+		xai: "XAI_API_KEY",
+		openrouter: "OPENROUTER_API_KEY",
+		"vercel-ai-gateway": "AI_GATEWAY_API_KEY",
+		zai: "ZAI_API_KEY",
+		mistral: "MISTRAL_API_KEY",
+		minimax: "MINIMAX_API_KEY",
+		"minimax-cn": "MINIMAX_CN_API_KEY",
+		huggingface: "HF_TOKEN",
+		opencode: "OPENCODE_API_KEY",
+		"kimi-coding": "KIMI_API_KEY",
+		anthropic: "ANTHROPIC_API_KEY",
+		"github-copilot": "GITHUB_TOKEN",
+		"google-vertex": "GOOGLE_APPLICATION_CREDENTIALS",
+		"amazon-bedrock": "AWS_ACCESS_KEY_ID",
+	};
+
+	const envVar = envMap[provider];
+	return envVar ? !!process.env[envVar] : false;
 }
