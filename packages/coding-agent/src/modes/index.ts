@@ -15,8 +15,6 @@ export {
 export { runRpcMode } from "./rpc/rpc-mode.js";
 export type {
 	RpcCommand,
-	RpcGetTreeResult,
-	RpcListSessionsResult,
 	RpcNavigateTreeResult,
 	RpcResponse,
 	RpcSessionListItem,

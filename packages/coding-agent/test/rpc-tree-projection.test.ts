@@ -222,6 +222,74 @@ describe("extractText", () => {
 	});
 });
 
+describe("projectNonMessageEntry", () => {
+	function projectAll(manager: SessionManager): RpcTreeNode[] {
+		const rawTree = manager.getTree();
+		return projectTree(rawTree, buildToolCallMap(rawTree), false);
+	}
+
+	function findByType<T extends RpcTreeNode["type"]>(
+		nodes: RpcTreeNode[],
+		type: T,
+	): Extract<RpcTreeNode, { type: T }> {
+		const stack: RpcTreeNode[] = [...nodes];
+		while (stack.length > 0) {
+			const node = stack.pop()!;
+			if (node.type === type) return node as Extract<RpcTreeNode, { type: T }>;
+			for (let i = node.children.length - 1; i >= 0; i--) {
+				stack.push(node.children[i]!);
+			}
+		}
+		throw new Error(`No node with type "${type}" found`);
+	}
+
+	test("projects compaction entry with tokensBefore", () => {
+		const manager = SessionManager.inMemory();
+		manager.appendMessage(userMsg("hello"));
+		manager.appendMessage(assistantMsg("world"));
+		const firstEntryId = manager.getEntries()[0].id;
+		manager.appendCompaction("summary text", firstEntryId, 50000);
+
+		const node = findByType(projectAll(manager), "compaction");
+		expect(node.tokensBefore).toBe(50000);
+	});
+
+	test("projects model_change entry with provider and modelId", () => {
+		const manager = SessionManager.inMemory();
+		manager.appendModelChange("anthropic", "claude-sonnet-4");
+
+		const node = findByType(projectAll(manager), "model_change");
+		expect(node.provider).toBe("anthropic");
+		expect(node.modelId).toBe("claude-sonnet-4");
+	});
+
+	test("projects thinking_level_change entry with thinkingLevel", () => {
+		const manager = SessionManager.inMemory();
+		manager.appendThinkingLevelChange("high");
+
+		const node = findByType(projectAll(manager), "thinking_level_change");
+		expect(node.thinkingLevel).toBe("high");
+	});
+
+	test("projects branch_summary entry with summary text", () => {
+		const manager = SessionManager.inMemory();
+		const rootId = manager.appendMessage(userMsg("root"));
+		manager.branchWithSummary(rootId, "abandoned this path");
+
+		const node = findByType(projectAll(manager), "branch_summary");
+		expect(node.summary).toBe("abandoned this path");
+	});
+
+	test("projects custom_message entry with customType and preview", () => {
+		const manager = SessionManager.inMemory();
+		manager.appendCustomMessageEntry("my-ext", "custom content here", true);
+
+		const node = findByType(projectAll(manager), "custom_message");
+		expect(node.customType).toBe("my-ext");
+		expect(node.preview).toBe("custom content here");
+	});
+});
+
 interface ParentViolation {
 	nodeId: string;
 	parentId: string | null;
