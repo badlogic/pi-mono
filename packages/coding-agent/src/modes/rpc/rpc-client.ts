@@ -544,7 +544,7 @@ export class RpcClient {
 		const id = `req_${++this.requestId}`;
 		const fullCommand = { ...command, id } as RpcCommand;
 
-		return new Promise((resolve, reject) => {
+		const response = await new Promise<RpcResponse>((resolve, reject) => {
 			this.pendingRequests.set(id, { resolve, reject });
 
 			const timeout = setTimeout(() => {
@@ -565,15 +565,15 @@ export class RpcClient {
 
 			this.process!.stdin!.write(`${JSON.stringify(fullCommand)}\n`);
 		});
+
+		if (!response.success) {
+			throw new Error((response as Extract<RpcResponse, { success: false }>).error);
+		}
+
+		return response;
 	}
 
 	private getData<T>(response: RpcResponse): T {
-		if (!response.success) {
-			const errorResponse = response as Extract<RpcResponse, { success: false }>;
-			throw new Error(errorResponse.error);
-		}
-		// Type assertion: we trust response.data matches T based on the command sent.
-		// This is safe because each public method specifies the correct T for its command.
 		const successResponse = response as Extract<RpcResponse, { success: true; data: unknown }>;
 		return successResponse.data as T;
 	}

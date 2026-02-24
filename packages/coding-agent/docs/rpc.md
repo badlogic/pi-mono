@@ -1402,8 +1402,7 @@ All message nodes include `preview` (single-line text). When `includeContent: tr
   "role": "assistant",
   "preview": "Here is the fix for the test...",
   "content": "Here is the fix for the test:\n...",
-  "stopReason": "stop",
-  "errorMessage": null
+  "stopReason": "stop"
 }
 ```
 
