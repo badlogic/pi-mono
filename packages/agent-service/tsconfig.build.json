@@ -1,0 +1,21 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"target": "ES2024",
+		"lib": ["ES2024"],
+		"baseUrl": ".",
+		"paths": {
+			"@mariozechner/pi-ai": ["../ai/src/index.ts"],
+			"@mariozechner/pi-ai/*": ["../ai/src/*"],
+			"@mariozechner/pi-agent-core": ["../agent/src/index.ts"],
+			"@mariozechner/pi-agent-core/*": ["../agent/src/*"],
+			"@mariozechner/pi-coding-agent": ["../coding-agent/src/index.ts"],
+			"@mariozechner/pi-coding-agent/*": ["../coding-agent/src/*"],
+			"@mariozechner/pi-tui": ["../tui/src/index.ts"],
+			"@mariozechner/pi-tui/*": ["../tui/src/*"]
+		}
+	},
+	"include": ["src/**/*.ts"],
+	"exclude": ["node_modules", "dist", "**/*.d.ts", "src/**/*.d.ts"]
+}

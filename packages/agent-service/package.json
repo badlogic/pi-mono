@@ -1,0 +1,46 @@
+{
+	"name": "@mariozechner/pi-agent-service",
+	"version": "0.54.2",
+	"description": "HTTP + SSE host service for pi-coding-agent sessions",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "rm -rf dist",
+		"build": "tsc -p tsconfig.build.json",
+		"dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+		"test": "vitest --run",
+		"typecheck": "tsc --noEmit -p tsconfig.build.json",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"@mariozechner/pi-coding-agent": "^0.54.2",
+		"@mariozechner/pi-tui": "^0.54.2"
+	},
+	"devDependencies": {
+		"@types/node": "^24.3.0",
+		"typescript": "^5.7.3",
+		"vitest": "^3.2.4"
+	},
+	"keywords": [
+		"agent",
+		"service",
+		"http",
+		"sse",
+		"sdk"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/badlogic/pi-mono.git",
+		"directory": "packages/agent-service"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	}
+}
