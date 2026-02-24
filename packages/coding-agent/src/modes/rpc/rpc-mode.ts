@@ -601,10 +601,9 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			case "get_tree": {
-				const includeContent = command.includeContent ?? false;
 				const rawTree = session.sessionManager.getTree();
 				const toolCallMap = buildToolCallMap(rawTree);
-				const tree = projectTree(rawTree, toolCallMap, includeContent);
+				const tree = projectTree(rawTree, toolCallMap);
 				const leafId = resolveProjectedLeafId(rawTree, session.sessionManager.getLeafId());
 				return success(id, "get_tree", { tree, leafId });
 			}

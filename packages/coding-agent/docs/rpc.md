@@ -699,10 +699,10 @@ Response:
 
 #### get_tree
 
-Get a lightweight tree projection of the current session. Metadata entries (`label`, `session_info`, `custom`) are filtered out; their children are re-parented. Pass `includeContent: true` to include full text payloads alongside previews. See [Tree Node Types](#tree-node-types) for the full set of node variants.
+Get a lightweight tree projection of the current session. Bookkeeping entries (`label`, `session_info`, `custom`) are stored as regular tree nodes internally but don't represent conversation turns — filtering them out and promoting their children keeps the tree clean for browsing UIs while preserving structural validity. See [Tree Node Types](#tree-node-types) for the full set of node variants.
 
 ```json
-{"type": "get_tree", "includeContent": true}
+{"type": "get_tree"}
 ```
 
 Response:
@@ -1394,14 +1394,13 @@ A conversation message. The `role` field indicates the message kind:
 - `"compactionSummary"` — Summary created by compaction
 - `"unknown"` — Unrecognized role. Includes `rawRole` with the original role string.
 
-All message nodes include `preview` (single-line text). When `includeContent: true`, full text is in `content`.
+All message nodes include `preview` (single-line text).
 
 ```json
 {
   "type": "message",
   "role": "assistant",
   "preview": "Here is the fix for the test...",
-  "content": "Here is the fix for the test:\n...",
   "stopReason": "stop"
 }
 ```
@@ -1416,12 +1415,11 @@ Result of a tool call. Includes resolved tool call metadata when the matching as
   "toolName": "read",
   "toolArgs": {"path": "/tmp/file.ts"},
   "formattedToolCall": "[read: /tmp/file.ts]",
-  "preview": "[read: /tmp/file.ts]",
-  "content": "file contents..."
+  "preview": "[read: /tmp/file.ts]"
 }
 ```
 
-`toolName`, `toolArgs`, and `formattedToolCall` are present when the tool call can be resolved from the ancestor assistant message. `content` is present only when `includeContent: true`.
+`toolName`, `toolArgs`, and `formattedToolCall` are present when the tool call can be resolved from the ancestor assistant message.
 
 #### `type: "compaction"`
 
@@ -1463,12 +1461,9 @@ Extension-created content stored in the session tree.
 {
   "type": "custom_message",
   "customType": "my-extension",
-  "preview": "Extension output summary",
-  "content": "Full extension output..."
+  "preview": "Extension output summary"
 }
 ```
-
-`content` is present only when `includeContent: true`.
 
 ### Attachment
 
