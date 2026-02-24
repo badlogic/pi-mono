@@ -1,8 +1,5 @@
 /**
- * Lightweight projection of SessionTreeNode to RpcTreeNode for RPC transport.
- *
- * Filters metadata entries (label, session_info, custom), resolves tool call info,
- * and produces compact nodes with stable preview text.
+ * Projection of SessionTreeNode to RpcTreeNode for RPC transport.
  */
 
 import type { AssistantMessage, ToolResultMessage } from "@mariozechner/pi-ai";
@@ -79,6 +76,7 @@ interface RpcMessageRoleProjection {
 function toRpcMessageRole(role: string): RpcMessageRoleProjection {
 	switch (role) {
 		case "user":
+		case "assistant":
 		case "custom":
 		case "branchSummary":
 		case "compactionSummary":
@@ -282,7 +280,7 @@ function projectMessage(
 			...base,
 			type: "message",
 			role: "bashExecution",
-			preview: `[bash]: ${normalizePreview(bashMessage.command)}`,
+			preview: formatToolCall("bash", { command: bashMessage.command }),
 			...optionalContent(includeContent, bashMessage.output),
 		};
 	}

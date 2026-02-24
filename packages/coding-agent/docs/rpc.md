@@ -648,18 +648,11 @@ The current session name is available via `get_state` in the `sessionName` field
 
 #### list_sessions
 
-List sessions for the active context (`scope: "current"`) or across all projects (`scope: "all"`).
+List sessions for the active context or across all projects. Each item always includes `allMessagesText` for full-text search.
 
 ```json
-{"type": "list_sessions"}
+{"type": "list_sessions", "scope": "all"}
 ```
-
-With explicit scope and optional search payload:
-```json
-{"type": "list_sessions", "scope": "all", "includeSearchText": true}
-```
-
-`includeSearchText` defaults to `false`.
 
 Response:
 ```json
@@ -670,37 +663,44 @@ Response:
   "data": {
     "sessions": [
       {
-        "path": "/home/user/.pi/agent/sessions/.../2026-02-21T10-00-00-000Z_abc123.jsonl",
+        "path": "/home/user/.pi/agent/sessions/.../session.jsonl",
         "id": "abc123",
         "cwd": "/home/user/project",
         "name": "debug flaky test",
-        "parentSessionPath": "/home/user/.pi/agent/sessions/.../parent.jsonl",
         "created": "2026-02-21T10:00:00.000Z",
         "modified": "2026-02-21T10:05:00.000Z",
         "messageCount": 14,
-        "firstMessage": "Investigate the failing CI job"
+        "firstMessage": "Investigate the failing CI job",
+        "allMessagesText": "Investigate the failing CI job ..."
       }
     ]
   }
 }
 ```
 
-When `includeSearchText` is `true`, each session item also includes `allMessagesText`.
-This field can be large for long sessions, so leave it disabled unless you need full-text search payloads.
-
 Scope semantics:
-- `"current"` (default): uses the active session's header cwd/session directory
-- `"all"`: uses global session listing across all projects
+- `"current"` (default): sessions for the active session's cwd/session directory
+- `"all"`: sessions across all project directories
+
+### Tree
+
+#### abort_branch_summary
+
+Abort an in-progress branch summarization.
+
+```json
+{"type": "abort_branch_summary"}
+```
+
+Response:
+```json
+{"type": "response", "command": "abort_branch_summary", "success": true}
+```
 
 #### get_tree
 
-Get a transport-safe tree projection of the current session for browsing UIs.
+Get a lightweight tree projection of the current session. Metadata entries (`label`, `session_info`, `custom`) are filtered out; their children are re-parented. Pass `includeContent: true` to include full text payloads alongside previews. See [Tree Node Types](#tree-node-types) for the full set of node variants.
 
-```json
-{"type": "get_tree"}
-```
-
-Include full text payloads (`content`) in addition to previews:
 ```json
 {"type": "get_tree", "includeContent": true}
 ```
@@ -729,24 +729,12 @@ Response:
 }
 ```
 
-Projection behavior:
-- Metadata-only entries (`label`, `session_info`, `custom`) are filtered out
-- Filtered entries' children are re-parented to keep parent/child links consistent
-- `leafId` is resolved to the nearest visible (projected) entry, or `null`
-- `preview` is present for `message`, `tool_result`, and `custom_message` nodes
-- `content` is omitted unless `includeContent: true`
-
 #### set_label
 
-Set or clear a label on a tree entry.
+Set or clear a label on a tree entry. Omit `label` or pass empty/whitespace to clear.
 
 ```json
 {"type": "set_label", "entryId": "abc123", "label": "checkpoint"}
-```
-
-Clear the label by omitting `label`, using an empty string, or whitespace-only label text:
-```json
-{"type": "set_label", "entryId": "abc123", "label": "   "}
 ```
 
 Response:
@@ -754,26 +742,16 @@ Response:
 {"type": "response", "command": "set_label", "success": true}
 ```
 
-If the entry does not exist:
-```json
-{"type": "response", "command": "set_label", "success": false, "error": "Entry abc123 not found"}
-```
-
 #### navigate_tree
 
-Navigate to a tree entry. This delegates to the same session navigation logic used by interactive mode.
+Navigate to a tree entry. Supports optional branch summarization and labeling. Invalid `targetId` returns error `"Entry <id> not found"`.
 
-```json
-{"type": "navigate_tree", "targetId": "abc123"}
-```
-
-With summarization and optional label:
 ```json
 {
   "type": "navigate_tree",
   "targetId": "abc123",
   "summarize": true,
-  "customInstructions": "Focus on key decisions and changed files",
+  "customInstructions": "Focus on key decisions",
   "replaceInstructions": false,
   "label": "checkpoint"
 }
@@ -797,11 +775,7 @@ Response:
 }
 ```
 
-Result semantics:
-- `cancelled: true` when navigation does not complete (extension cancellation or summarization abort)
-- `aborted: true` when summarization is explicitly aborted
-- `editorText` is present when navigating to a user/custom_message entry
-- `summaryEntry` is present only when summarization produced a branch summary
+`cancelled`/`aborted` indicate navigation did not complete. `editorText` is present for user/custom_message entries. `summaryEntry` is present only when summarization ran. When `replaceInstructions` is `true`, `customInstructions` replaces the default summarization prompt instead of appending.
 
 ### Commands
 
@@ -1389,6 +1363,113 @@ Created by the `bash` RPC command (not by LLM tool calls):
   "timestamp": 1733234567890
 }
 ```
+
+### Tree Node Types
+
+Tree nodes returned by `get_tree` share a common base:
+
+```json
+{
+  "id": "abc123",
+  "parentId": "parent456",
+  "timestamp": "2026-02-21T10:00:00.000Z",
+  "label": "checkpoint",
+  "children": [...]
+}
+```
+
+`label` is present only when set via `set_label` or `navigate_tree`. `children` is always present (empty array for leaf nodes).
+
+The `type` field discriminates between node variants:
+
+#### `type: "message"`
+
+A conversation message. The `role` field indicates the message kind:
+
+- `"user"` — User prompt
+- `"assistant"` — Assistant response. Includes `stopReason` (`"stop"`, `"length"`, `"toolUse"`, `"error"`, `"aborted"`) and optional `errorMessage`.
+- `"bashExecution"` — User-initiated bash command (via `bash` RPC command)
+- `"custom"` — Extension-created message
+- `"branchSummary"` — Summary of an abandoned branch
+- `"compactionSummary"` — Summary created by compaction
+- `"unknown"` — Unrecognized role. Includes `rawRole` with the original role string.
+
+All message nodes include `preview` (single-line text). When `includeContent: true`, full text is in `content`.
+
+```json
+{
+  "type": "message",
+  "role": "assistant",
+  "preview": "Here is the fix for the test...",
+  "content": "Here is the fix for the test:\n...",
+  "stopReason": "stop",
+  "errorMessage": null
+}
+```
+
+#### `type: "tool_result"`
+
+Result of a tool call. Includes resolved tool call metadata when the matching assistant tool call is in scope.
+
+```json
+{
+  "type": "tool_result",
+  "toolName": "read",
+  "toolArgs": {"path": "/tmp/file.ts"},
+  "formattedToolCall": "[read: /tmp/file.ts]",
+  "preview": "[read: /tmp/file.ts]",
+  "content": "file contents..."
+}
+```
+
+`toolName`, `toolArgs`, and `formattedToolCall` are present when the tool call can be resolved from the ancestor assistant message. `content` is present only when `includeContent: true`.
+
+#### `type: "compaction"`
+
+Records a context compaction event.
+
+```json
+{"type": "compaction", "tokensBefore": 150000}
+```
+
+#### `type: "model_change"`
+
+Records a model switch.
+
+```json
+{"type": "model_change", "provider": "anthropic", "modelId": "claude-sonnet-4-20250514"}
+```
+
+#### `type: "thinking_level_change"`
+
+Records a thinking level change.
+
+```json
+{"type": "thinking_level_change", "thinkingLevel": "high"}
+```
+
+#### `type: "branch_summary"`
+
+Records a summary of an abandoned branch (created by `navigate_tree` with `summarize: true`).
+
+```json
+{"type": "branch_summary", "summary": "Explored a regex approach but abandoned it..."}
+```
+
+#### `type: "custom_message"`
+
+Extension-created content stored in the session tree.
+
+```json
+{
+  "type": "custom_message",
+  "customType": "my-extension",
+  "preview": "Extension output summary",
+  "content": "Full extension output..."
+}
+```
+
+`content` is present only when `includeContent: true`.
 
 ### Attachment
 

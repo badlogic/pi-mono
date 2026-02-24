@@ -73,31 +73,53 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		expect(state.messageCount).toBe(0);
 	}, 30000);
 
-	test("should support browsing commands end-to-end", async () => {
+	test("should list sessions for current scope", async () => {
 		await client.start();
-
-		const promptText = `rpc-browsing-smoke-${Date.now()}`;
+		const promptText = `rpc-list-${Date.now()}`;
 		await client.promptAndWait(promptText);
 
-		const currentSessions = await client.listSessions({ scope: "current" });
-		expect(currentSessions.length).toBeGreaterThan(0);
-		expect(currentSessions[0]?.allMessagesText).toContain(promptText);
+		const sessions = await client.listSessions({ scope: "current" });
+		expect(sessions.length).toBeGreaterThan(0);
+		expect(sessions[0]?.allMessagesText).toContain(promptText);
+	}, 60000);
+
+	test("should get tree and find user node", async () => {
+		await client.start();
+		await client.promptAndWait("tree-smoke");
 
 		const treeResult = await client.getTree();
 		const userNode = findFirstUserNode(treeResult.tree);
 		expect(userNode).toBeDefined();
-		if (!userNode || userNode.type !== "message" || userNode.role !== "user") {
-			throw new Error("Expected a user tree node in RPC smoke test");
-		}
+		expect(userNode!.type).toBe("message");
+		expect((userNode as Extract<RpcTreeNode, { type: "message" }>).role).toBe("user");
+	}, 60000);
 
-		await client.setLabel(userNode.id, "smoke");
+	test("should set and verify label on tree entry", async () => {
+		await client.start();
+		await client.promptAndWait("label-smoke");
+
+		const treeResult = await client.getTree();
+		const userNode = findFirstUserNode(treeResult.tree);
+		expect(userNode).toBeDefined();
+
+		await client.setLabel(userNode!.id, "smoke");
 		const labeledTree = await client.getTree();
-		const relabeledNode = findNodeById(labeledTree.tree, userNode.id);
+		const relabeledNode = findNodeById(labeledTree.tree, userNode!.id);
 		expect(relabeledNode?.label).toBe("smoke");
+	}, 60000);
 
-		const navigationResult = await client.navigateTree(userNode.id);
-		expect(navigationResult.cancelled).toBe(false);
-		expect(navigationResult.editorText).toContain(promptText);
+	test("should navigate to tree entry", async () => {
+		await client.start();
+		const promptText = `navigate-smoke-${Date.now()}`;
+		await client.promptAndWait(promptText);
+
+		const treeResult = await client.getTree();
+		const userNode = findFirstUserNode(treeResult.tree);
+		expect(userNode).toBeDefined();
+
+		const result = await client.navigateTree(userNode!.id);
+		expect(result.cancelled).toBe(false);
+		expect(result.editorText).toContain(promptText);
 	}, 120000);
 
 	test("should save messages to session file", async () => {

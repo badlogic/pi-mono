@@ -13,12 +13,12 @@ import type { BashResult } from "../../core/bash-executor.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
 import type {
 	RpcCommand,
-	RpcGetTreeResult,
 	RpcNavigateTreeResult,
 	RpcResponse,
 	RpcSessionListItem,
 	RpcSessionState,
 	RpcSlashCommand,
+	RpcTreeNode,
 } from "./rpc-types.js";
 
 // ============================================================================
@@ -426,7 +426,7 @@ export class RpcClient {
 	/**
 	 * Get the session tree projection for browsing.
 	 */
-	async getTree(includeContent = false): Promise<RpcGetTreeResult> {
+	async getTree(includeContent = false): Promise<{ tree: RpcTreeNode[]; leafId: string | null }> {
 		const response = await this.send({ type: "get_tree", includeContent });
 		return this.getData(response);
 	}
@@ -452,8 +452,7 @@ export class RpcClient {
 	 * Empty/whitespace labels clear the existing label.
 	 */
 	async setLabel(entryId: string, label?: string): Promise<void> {
-		const response = await this.send({ type: "set_label", entryId, label });
-		this.getData<undefined>(response);
+		await this.send({ type: "set_label", entryId, label });
 	}
 
 	// =========================================================================
