@@ -533,10 +533,10 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			case "list_sessions": {
-				const scope = command.scope;
 				const cwd = session.sessionManager.getCwd();
 				const sessionDir = session.sessionManager.getSessionDir().trim() || undefined;
-				const raw = scope === "all" ? await SessionManager.listAll() : await SessionManager.list(cwd, sessionDir);
+				const raw =
+					command.scope === "all" ? await SessionManager.listAll() : await SessionManager.list(cwd, sessionDir);
 				const sessions = raw.map(toRpcSessionListItem);
 				return success(id, "list_sessions", { sessions });
 			}
@@ -612,7 +612,9 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			case "navigate_tree": {
 				try {
 					const result = await session.navigateTree(command.targetId, {
-						...command,
+						summarize: command.summarize,
+						customInstructions: command.customInstructions,
+						replaceInstructions: command.replaceInstructions,
 						label: normalizeRpcLabel(command.label),
 					});
 					return success(id, "navigate_tree", toRpcNavigateTreeResult(result));
