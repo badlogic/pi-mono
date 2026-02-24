@@ -69,7 +69,7 @@ export type RpcCommand =
 
 	// Tree
 	| { id?: string; type: "abort_branch_summary" }
-	| { id?: string; type: "get_tree"; includeContent?: boolean }
+	| { id?: string; type: "get_tree" }
 	| {
 			id?: string;
 			type: "navigate_tree";
@@ -164,7 +164,6 @@ export type RpcTreeNode =
 			/** Original role when role is "unknown" */
 			rawRole?: string;
 			preview: string;
-			content?: string;
 			stopReason?: string;
 			errorMessage?: string;
 	  })
@@ -174,13 +173,12 @@ export type RpcTreeNode =
 			toolArgs?: Record<string, unknown>;
 			formattedToolCall?: string;
 			preview: string;
-			content?: string;
 	  })
 	| (RpcTreeNodeBase & { type: "compaction"; tokensBefore: number })
 	| (RpcTreeNodeBase & { type: "model_change"; provider: string; modelId: string })
 	| (RpcTreeNodeBase & { type: "thinking_level_change"; thinkingLevel: string })
 	| (RpcTreeNodeBase & { type: "branch_summary"; summary: string })
-	| (RpcTreeNodeBase & { type: "custom_message"; customType: string; preview: string; content?: string });
+	| (RpcTreeNodeBase & { type: "custom_message"; customType: string; preview: string });
 
 /** Successful payload for navigate_tree responses. */
 export interface RpcNavigateTreeResult {

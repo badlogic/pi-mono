@@ -64,10 +64,6 @@ function normalizePreview(text: string): string {
 	return text.replace(/[\n\t]/g, " ").trim();
 }
 
-function optionalContent(include: boolean, content: string): { content?: string } {
-	return include ? { content } : {};
-}
-
 interface RpcMessageRoleProjection {
 	role: RpcMessageRole;
 	rawRole?: string;
@@ -191,11 +187,7 @@ interface ProjectionWorkItem {
  * Metadata-only entries are filtered out and their children are promoted.
  * Uses iterative traversal to avoid stack overflows on deep trees.
  */
-export function projectTree(
-	roots: SessionTreeNode[],
-	toolCallMap: Map<string, ToolCallInfo>,
-	includeContent: boolean,
-): RpcTreeNode[] {
+export function projectTree(roots: SessionTreeNode[], toolCallMap: Map<string, ToolCallInfo>): RpcTreeNode[] {
 	const projectedRoots: RpcTreeNode[] = [];
 	const stack: ProjectionWorkItem[] = [];
 
@@ -246,8 +238,8 @@ export function projectTree(
 
 		const projectedNode =
 			entry.type === "message"
-				? projectMessage(base, entry.message, branchToolCalls, toolCallMap, includeContent)
-				: projectNonMessageEntry(base, entry, includeContent);
+				? projectMessage(base, entry.message, branchToolCalls, toolCallMap)
+				: projectNonMessageEntry(base, entry);
 		target.push(projectedNode);
 
 		for (let i = node.children.length - 1; i >= 0; i--) {
@@ -268,10 +260,9 @@ function projectMessage(
 	message: Extract<SessionEntry, { type: "message" }>["message"],
 	branchToolCalls: Map<string, ToolCallInfo>,
 	globalToolCallMap: Map<string, ToolCallInfo>,
-	includeContent: boolean,
 ): RpcTreeNode {
 	if (message.role === "toolResult") {
-		return projectToolResult(base, message, branchToolCalls, globalToolCallMap, includeContent);
+		return projectToolResult(base, message, branchToolCalls, globalToolCallMap);
 	}
 
 	if (message.role === "bashExecution") {
@@ -281,12 +272,11 @@ function projectMessage(
 			type: "message",
 			role: "bashExecution",
 			preview: formatToolCall("bash", { command: bashMessage.command }),
-			...optionalContent(includeContent, bashMessage.output),
 		};
 	}
 
 	if (message.role === "assistant") {
-		return projectAssistant(base, message as AssistantMessage, includeContent);
+		return projectAssistant(base, message as AssistantMessage);
 	}
 
 	const content = "content" in message ? (message.content as ExtractableContent) : undefined;
@@ -297,11 +287,10 @@ function projectMessage(
 		role: roleProjection.role,
 		...(roleProjection.rawRole ? { rawRole: roleProjection.rawRole } : {}),
 		preview: normalizePreview(extractText(content, 200)),
-		...optionalContent(includeContent, extractText(content)),
 	};
 }
 
-function projectAssistant(base: ProjectedBase, message: AssistantMessage, includeContent: boolean): RpcTreeNode {
+function projectAssistant(base: ProjectedBase, message: AssistantMessage): RpcTreeNode {
 	const previewText = extractText(message.content, 200);
 	const preview = previewText
 		? normalizePreview(previewText)
@@ -316,7 +305,6 @@ function projectAssistant(base: ProjectedBase, message: AssistantMessage, includ
 		type: "message",
 		role: "assistant",
 		preview,
-		...optionalContent(includeContent, extractText(message.content)),
 		stopReason: message.stopReason,
 		errorMessage: message.errorMessage,
 	};
@@ -327,7 +315,6 @@ function projectToolResult(
 	message: ToolResultMessage,
 	branchToolCalls: Map<string, ToolCallInfo>,
 	globalToolCallMap: Map<string, ToolCallInfo>,
-	includeContent: boolean,
 ): RpcTreeNode {
 	const toolCall = message.toolCallId
 		? (branchToolCalls.get(message.toolCallId) ?? globalToolCallMap.get(message.toolCallId))
@@ -342,15 +329,10 @@ function projectToolResult(
 		toolArgs: toolCall?.arguments,
 		formattedToolCall: formatted,
 		preview,
-		...optionalContent(includeContent, extractText(message.content as ExtractableContent)),
 	};
 }
 
-function projectNonMessageEntry(
-	base: ProjectedBase,
-	entry: ProjectableNonMessageEntry,
-	includeContent: boolean,
-): RpcTreeNode {
+function projectNonMessageEntry(base: ProjectedBase, entry: ProjectableNonMessageEntry): RpcTreeNode {
 	switch (entry.type) {
 		case "compaction":
 			return {
@@ -383,7 +365,6 @@ function projectNonMessageEntry(
 				type: "custom_message",
 				customType: entry.customType,
 				preview: normalizePreview(extractText(entry.content, 200)),
-				...optionalContent(includeContent, extractText(entry.content)),
 			};
 	}
 }

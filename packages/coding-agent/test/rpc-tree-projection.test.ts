@@ -61,7 +61,7 @@ describe("rpc tree projection", () => {
 		manager.appendLabelChange(userId, "checkpoint");
 
 		const rawTree = manager.getTree();
-		const projected = projectTree(rawTree, buildToolCallMap(rawTree), false);
+		const projected = projectTree(rawTree, buildToolCallMap(rawTree));
 
 		expect(projected).toHaveLength(1);
 		expect(projected[0].label).toBe("checkpoint");
@@ -76,22 +76,9 @@ describe("rpc tree projection", () => {
 		manager.appendMessage(userMsg("Branch after label entry"));
 
 		const rawTree = manager.getTree();
-		const projected = projectTree(rawTree, buildToolCallMap(rawTree), false);
+		const projected = projectTree(rawTree, buildToolCallMap(rawTree));
 
 		expect(collectParentViolations(projected)).toEqual([]);
-	});
-
-	test("includeContent toggles raw content while preview remains stable", () => {
-		const manager = SessionManager.inMemory();
-		manager.appendMessage(userMsg("Hello\nworld"));
-
-		const rawTree = manager.getTree();
-		const withoutContent = asMessageNode(projectTree(rawTree, buildToolCallMap(rawTree), false)[0]);
-		const withContent = asMessageNode(projectTree(rawTree, buildToolCallMap(rawTree), true)[0]);
-
-		expect(withoutContent.preview).toBe("Hello world");
-		expect(withoutContent.content).toBeUndefined();
-		expect(withContent.content).toBe("Hello\nworld");
 	});
 
 	test("resolves tool result metadata from matching assistant tool call", () => {
@@ -101,7 +88,7 @@ describe("rpc tree projection", () => {
 		manager.appendMessage(toolResultMsg("tc-1"));
 
 		const rawTree = manager.getTree();
-		const projected = projectTree(rawTree, buildToolCallMap(rawTree), false);
+		const projected = projectTree(rawTree, buildToolCallMap(rawTree));
 		const toolResult = asToolResultNode(projected[0].children[0].children[0]);
 
 		expect(toolResult.toolName).toBe("read");
@@ -120,7 +107,7 @@ describe("rpc tree projection", () => {
 		manager.appendMessage(toolResultMsg("same-id"));
 
 		const rawTree = manager.getTree();
-		const projected = projectTree(rawTree, buildToolCallMap(rawTree), false);
+		const projected = projectTree(rawTree, buildToolCallMap(rawTree));
 		const paths = collectToolResultPaths(projected);
 
 		expect(paths).toContain("/tmp/a.ts");
@@ -137,7 +124,7 @@ describe("rpc tree projection", () => {
 		const rawTree = manager.getTree();
 		expect(() => {
 			const toolCallMap = buildToolCallMap(rawTree);
-			projectTree(rawTree, toolCallMap, false);
+			projectTree(rawTree, toolCallMap);
 		}).not.toThrow();
 	});
 
@@ -147,7 +134,7 @@ describe("rpc tree projection", () => {
 		manager.appendLabelChange(userId, "checkpoint");
 
 		const rawTree = manager.getTree();
-		projectTree(rawTree, buildToolCallMap(rawTree), false);
+		projectTree(rawTree, buildToolCallMap(rawTree));
 		const projectedLeafId = resolveProjectedLeafId(rawTree, manager.getLeafId());
 
 		expect(projectedLeafId).toBe(userId);
@@ -162,7 +149,7 @@ describe("rpc tree projection", () => {
 		} as never);
 
 		const rawTree = manager.getTree();
-		const projected = projectTree(rawTree, buildToolCallMap(rawTree), false);
+		const projected = projectTree(rawTree, buildToolCallMap(rawTree));
 		const mysteryNode = asMessageNode(projected[0]);
 
 		expect(mysteryNode.role).toBe("unknown");
@@ -193,7 +180,7 @@ describe("rpc tree projection", () => {
 		const rawTree = manager.getTree();
 		expect(() => {
 			const toolCallMap = buildToolCallMap(rawTree);
-			projectTree(rawTree, toolCallMap, false);
+			projectTree(rawTree, toolCallMap);
 		}).not.toThrow();
 	});
 });
@@ -225,7 +212,7 @@ describe("extractText", () => {
 describe("projectNonMessageEntry", () => {
 	function projectAll(manager: SessionManager): RpcTreeNode[] {
 		const rawTree = manager.getTree();
-		return projectTree(rawTree, buildToolCallMap(rawTree), false);
+		return projectTree(rawTree, buildToolCallMap(rawTree));
 	}
 
 	function findByType<T extends RpcTreeNode["type"]>(

@@ -426,8 +426,8 @@ export class RpcClient {
 	/**
 	 * Get the session tree projection for browsing.
 	 */
-	async getTree(includeContent = false): Promise<{ tree: RpcTreeNode[]; leafId: string | null }> {
-		const response = await this.send({ type: "get_tree", includeContent });
+	async getTree(): Promise<{ tree: RpcTreeNode[]; leafId: string | null }> {
+		const response = await this.send({ type: "get_tree" });
 		return this.getData(response);
 	}
 
