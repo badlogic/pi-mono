@@ -783,6 +783,32 @@ function convertMessages(
 		}
 	}
 
+	// Add a stable cache breakpoint further back in conversation history.
+	// The last-message breakpoint (below) shifts position every turn because tool_result
+	// blocks have role "user" in Anthropic's format — so every tool call moves it.
+	// This causes Anthropic to miss the previous cache entry and rewrite the entire
+	// conversation as a new cache entry on each API call in a tool-call chain.
+	// By placing a stable breakpoint MIN_STABLE_GAP messages from the end, we ensure
+	// Anthropic can reuse the cached conversation prefix across multiple turns.
+	const MIN_STABLE_GAP = 6;
+	if (cacheControl && params.length > MIN_STABLE_GAP) {
+		for (let i = params.length - MIN_STABLE_GAP - 1; i >= 1; i--) {
+			if (params[i].role === "user") {
+				const content = params[i].content;
+				if (Array.isArray(content) && content.length > 0) {
+					const lastBlock = content[content.length - 1];
+					if (
+						lastBlock &&
+						(lastBlock.type === "text" || lastBlock.type === "image" || lastBlock.type === "tool_result")
+					) {
+						(lastBlock as any).cache_control = cacheControl;
+					}
+				}
+				break;
+			}
+		}
+	}
+
 	// Add cache_control to the last user message to cache conversation history
 	if (cacheControl && params.length > 0) {
 		const lastMessage = params[params.length - 1];
