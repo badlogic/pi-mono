@@ -2,7 +2,7 @@ import { spawnSync } from "child_process";
 import { readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join } from "path";
-import { fuzzyFilter } from "./fuzzy.js";
+import { fuzzyFilter, fuzzyMatch } from "./fuzzy.js";
 
 const PATH_DELIMITERS = new Set([" ", "\t", '"', "'", "="]);
 
@@ -84,6 +84,20 @@ function buildCompletionValue(
 	return `${openQuote}${path}${closeQuote}`;
 }
 
+// Escape special regex characters
+function escapeRegex(str: string): string {
+	return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Convert a query string into a fuzzy regex pattern
+// e.g., "srcautocom" -> "s.*r.*c.*a.*u.*t.*o.*c.*o.*m"
+function toFuzzyRegex(query: string): string {
+	return query
+		.split("")
+		.map((ch) => escapeRegex(ch))
+		.join(".*");
+}
+
 // Use fd to walk directory tree (fast, respects .gitignore)
 function walkDirectoryWithFd(
 	baseDir: string,
@@ -110,9 +124,9 @@ function walkDirectoryWithFd(
 		".git/**",
 	];
 
-	// Add query as pattern if provided
+	// Add query as fuzzy regex pattern if provided
 	if (query) {
-		args.push(query);
+		args.push(toFuzzyRegex(query));
 	}
 
 	const result = spawnSync(fdPath, args, {
@@ -614,26 +628,35 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		}
 	}
 
-	// Score an entry against the query (higher = better match)
-	// isDirectory adds bonus to prioritize folders
-	private scoreEntry(filePath: string, query: string, isDirectory: boolean): number {
-		const fileName = basename(filePath);
-		const lowerFileName = fileName.toLowerCase();
-		const lowerQuery = query.toLowerCase();
+	// Score an entry against the query using fuzzy matching
+	// Returns null if no match, otherwise a numeric score (lower = better, matching fuzzyMatch convention)
+	// isDirectory gets a bonus (subtracted from score so directories rank higher)
+	private scoreEntry(filePath: string, query: string, isDirectory: boolean): number | null {
+		const pathWithoutTrailingSlash = filePath.endsWith("/") ? filePath.slice(0, -1) : filePath;
+		const fileName = basename(pathWithoutTrailingSlash);
 
-		let score = 0;
+		// Try matching against filename first, then full path
+		const fileNameMatch = fuzzyMatch(query, fileName);
+		const pathMatch = fuzzyMatch(query, pathWithoutTrailingSlash);
 
-		// Exact filename match (highest)
-		if (lowerFileName === lowerQuery) score = 100;
-		// Filename starts with query
-		else if (lowerFileName.startsWith(lowerQuery)) score = 80;
-		// Substring match in filename
-		else if (lowerFileName.includes(lowerQuery)) score = 50;
-		// Substring match in full path
-		else if (filePath.toLowerCase().includes(lowerQuery)) score = 30;
+		if (!fileNameMatch.matches && !pathMatch.matches) {
+			return null;
+		}
 
-		// Directories get a bonus to appear first
-		if (isDirectory && score > 0) score += 10;
+		// Use best (lowest) score; filename matches get a bonus (-50)
+		let score: number;
+		if (fileNameMatch.matches && pathMatch.matches) {
+			score = Math.min(fileNameMatch.score - 50, pathMatch.score);
+		} else if (fileNameMatch.matches) {
+			score = fileNameMatch.score - 50;
+		} else {
+			score = pathMatch.score;
+		}
+
+		// Directories get a bonus
+		if (isDirectory) {
+			score -= 10;
+		}
 
 		return score;
 	}
@@ -655,12 +678,12 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			const scoredEntries = entries
 				.map((entry) => ({
 					...entry,
-					score: fdQuery ? this.scoreEntry(entry.path, fdQuery, entry.isDirectory) : 1,
+					score: fdQuery ? this.scoreEntry(entry.path, fdQuery, entry.isDirectory) : 0,
 				}))
-				.filter((entry) => entry.score > 0);
+				.filter((entry) => entry.score !== null);
 
-			// Sort by score (descending) and take top 20
-			scoredEntries.sort((a, b) => b.score - a.score);
+			// Sort by score (ascending, lower is better) and take top 20
+			scoredEntries.sort((a, b) => (a.score ?? 0) - (b.score ?? 0));
 			const topEntries = scoredEntries.slice(0, 20);
 
 			// Build suggestions

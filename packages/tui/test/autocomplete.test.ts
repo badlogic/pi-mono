@@ -329,6 +329,47 @@ describe("CombinedAutocompleteProvider", () => {
 			const applied = provider.applyCompletion([line], 0, cursorCol, item!, result!.prefix);
 			assert.strictEqual(applied.lines[0], '@"my folder/test.txt" ');
 		});
+
+		test("fuzzy matches across path separators", () => {
+			setupFolder(baseDir, {
+				files: {
+					"src/autocomplete.ts": "export {};",
+					"src/other.ts": "export {};",
+					"lib/something.ts": "export {};",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@srcautocom";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			assert.notEqual(result, null, "Should return fuzzy matched suggestions");
+			const values = result?.items.map((item) => item.value);
+			assert.ok(values?.includes("@src/autocomplete.ts"), "Should find src/autocomplete.ts via fuzzy match");
+			assert.ok(!values?.includes("@src/other.ts"), "Should not include non-matching files");
+			assert.ok(!values?.includes("@lib/something.ts"), "Should not include non-matching files");
+		});
+
+		test("fuzzy matches partial filename characters", () => {
+			setupFolder(baseDir, {
+				files: {
+					"packages/tui/src/autocomplete.ts": "export {};",
+					"packages/ai/src/stream.ts": "export {};",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@tuiauto";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			assert.notEqual(result, null, "Should return fuzzy matched suggestions");
+			const values = result?.items.map((item) => item.value);
+			assert.ok(
+				values?.includes("@packages/tui/src/autocomplete.ts"),
+				"Should find packages/tui/src/autocomplete.ts via fuzzy match",
+			);
+			assert.ok(!values?.includes("@packages/ai/src/stream.ts"), "Should not include non-matching files");
+		});
 	});
 
 	describe("quoted path completion", () => {
