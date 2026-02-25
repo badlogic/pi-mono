@@ -65,6 +65,11 @@ function reportSettingsErrors(settingsManager: SettingsManager, context: string)
 	}
 }
 
+function isTruthyEnvFlag(value: string | undefined): boolean {
+	if (!value) return false;
+	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+}
+
 type PackageCommand = "install" | "remove" | "update" | "list";
 
 interface PackageCommandOptions {
@@ -535,6 +540,12 @@ async function handleConfigCommand(args: string[]): Promise<boolean> {
 }
 
 export async function main(args: string[]) {
+	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
+	if (offlineMode) {
+		process.env.PI_OFFLINE = "1";
+		process.env.PI_SKIP_VERSION_CHECK = "1";
+	}
+
 	if (await handlePackageCommand(args)) {
 		return;
 	}

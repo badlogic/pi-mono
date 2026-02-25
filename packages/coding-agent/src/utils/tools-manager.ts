@@ -8,6 +8,13 @@ import { finished } from "stream/promises";
 import { APP_NAME, getBinDir } from "../config.js";
 
 const TOOLS_DIR = getBinDir();
+const NETWORK_TIMEOUT_MS = 10000;
+
+function isOfflineModeEnabled(): boolean {
+	const value = process.env.PI_OFFLINE;
+	if (!value) return false;
+	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+}
 
 interface ToolConfig {
 	name: string;
@@ -94,6 +101,7 @@ export function getToolPath(tool: "fd" | "rg"): string | null {
 async function getLatestVersion(repo: string): Promise<string> {
 	const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
 		headers: { "User-Agent": `${APP_NAME}-coding-agent` },
+		signal: AbortSignal.timeout(NETWORK_TIMEOUT_MS),
 	});
 
 	if (!response.ok) {
@@ -106,7 +114,9 @@ async function getLatestVersion(repo: string): Promise<string> {
 
 // Download a file from URL
 async function downloadFile(url: string, dest: string): Promise<void> {
-	const response = await fetch(url);
+	const response = await fetch(url, {
+		signal: AbortSignal.timeout(NETWORK_TIMEOUT_MS),
+	});
 
 	if (!response.ok) {
 		throw new Error(`Failed to download: ${response.status}`);
@@ -206,6 +216,13 @@ export async function ensureTool(tool: "fd" | "rg", silent: boolean = false): Pr
 
 	const config = TOOLS[tool];
 	if (!config) return undefined;
+
+	if (isOfflineModeEnabled()) {
+		if (!silent) {
+			console.log(chalk.yellow(`${config.name} not found. Offline mode enabled, skipping download.`));
+		}
+		return undefined;
+	}
 
 	// On Android/Termux, Linux binaries don't work due to Bionic libc incompatibility.
 	// Users must install via pkg.

@@ -9,6 +9,14 @@ import { CONFIG_DIR_NAME } from "../config.js";
 import { type GitSource, parseGitUrl } from "../utils/git.js";
 import type { PackageSource, SettingsManager } from "./settings-manager.js";
 
+const NETWORK_TIMEOUT_MS = 10000;
+
+function isOfflineModeEnabled(): boolean {
+	const value = process.env.PI_OFFLINE;
+	if (!value) return false;
+	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+}
+
 export interface PathMetadata {
 	source: string;
 	scope: SourceScope;
@@ -842,6 +850,9 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async updateSourceForScope(source: string, scope: SourceScope): Promise<void> {
+		if (isOfflineModeEnabled()) {
+			return;
+		}
 		const parsed = this.parseSource(source);
 		if (parsed.type === "npm") {
 			if (parsed.pinned) return;
@@ -877,6 +888,9 @@ export class DefaultPackageManager implements PackageManager {
 			}
 
 			const installMissing = async (): Promise<boolean> => {
+				if (isOfflineModeEnabled()) {
+					return false;
+				}
 				if (!onMissing) {
 					await this.installParsedSource(parsed, scope);
 					return true;
@@ -905,7 +919,7 @@ export class DefaultPackageManager implements PackageManager {
 				if (!existsSync(installedPath)) {
 					const installed = await installMissing();
 					if (!installed) continue;
-				} else if (scope === "temporary" && !parsed.pinned) {
+				} else if (scope === "temporary" && !parsed.pinned && !isOfflineModeEnabled()) {
 					await this.refreshTemporaryGitSource(parsed, sourceStr);
 				}
 				metadata.baseDir = installedPath;
@@ -1039,6 +1053,10 @@ export class DefaultPackageManager implements PackageManager {
 	 * - For pinned packages: check if installed version matches the pinned version
 	 */
 	private async npmNeedsUpdate(source: NpmSource, installedPath: string): Promise<boolean> {
+		if (isOfflineModeEnabled()) {
+			return false;
+		}
+
 		const installedVersion = this.getInstalledNpmVersion(installedPath);
 		if (!installedVersion) return true;
 
@@ -1071,7 +1089,9 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async getLatestNpmVersion(packageName: string): Promise<string> {
-		const response = await fetch(`https://registry.npmjs.org/${packageName}/latest`);
+		const response = await fetch(`https://registry.npmjs.org/${packageName}/latest`, {
+			signal: AbortSignal.timeout(NETWORK_TIMEOUT_MS),
+		});
 		if (!response.ok) throw new Error(`Failed to fetch npm registry: ${response.status}`);
 		const data = (await response.json()) as { version: string };
 		return data.version;
@@ -1207,6 +1227,9 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async refreshTemporaryGitSource(source: GitSource, sourceStr: string): Promise<void> {
+		if (isOfflineModeEnabled()) {
+			return;
+		}
 		try {
 			await this.withProgress("pull", sourceStr, `Refreshing ${sourceStr}...`, async () => {
 				await this.updateGit(source, "temporary");
