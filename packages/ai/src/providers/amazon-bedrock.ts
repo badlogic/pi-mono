@@ -138,7 +138,7 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 
 			const cacheRetention = resolveCacheRetention(options.cacheRetention);
 			const commandInput = {
-				modelId: model.id,
+				modelId: stripExtendedContextSuffix(model.id),
 				messages: convertMessages(context, model, cacheRetention),
 				system: buildSystemPrompt(context.systemPrompt, model, cacheRetention),
 				inferenceConfig: { maxTokens: options.maxTokens, temperature: options.temperature },
@@ -368,6 +368,17 @@ function handleContentBlockStop(
 			stream.push({ type: "toolcall_end", contentIndex: index, toolCall: block, partial: output });
 			break;
 	}
+}
+
+/** Suffix appended to model IDs to opt into 1M extended context. */
+const EXTENDED_CONTEXT_SUFFIX = "[1m]";
+
+/** Beta header required by Bedrock to enable 1M context for Anthropic models. */
+const EXTENDED_CONTEXT_BETA = "context-1m-2025-08-07";
+
+/** Strip the [1m] extended context suffix from a model ID before sending to the API. */
+function stripExtendedContextSuffix(modelId: string): string {
+	return modelId.endsWith(EXTENDED_CONTEXT_SUFFIX) ? modelId.slice(0, -EXTENDED_CONTEXT_SUFFIX.length) : modelId;
 }
 
 /**
@@ -660,11 +671,17 @@ function buildAdditionalModelRequestFields(
 	model: Model<"bedrock-converse-stream">,
 	options: BedrockOptions,
 ): Record<string, any> | undefined {
+	const isAnthropicClaude = model.id.includes("anthropic.claude") || model.id.includes("anthropic/claude");
+	const extendedContext = model.id.endsWith(EXTENDED_CONTEXT_SUFFIX);
+
 	if (!options.reasoning || !model.reasoning) {
+		if (extendedContext && isAnthropicClaude) {
+			return { anthropic_beta: [EXTENDED_CONTEXT_BETA] };
+		}
 		return undefined;
 	}
 
-	if (model.id.includes("anthropic.claude") || model.id.includes("anthropic/claude")) {
+	if (isAnthropicClaude) {
 		const result: Record<string, any> = supportsAdaptiveThinking(model.id)
 			? {
 					thinking: { type: "adaptive" },
@@ -691,8 +708,15 @@ function buildAdditionalModelRequestFields(
 					};
 				})();
 
+		const betaHeaders: string[] = [];
 		if (!supportsAdaptiveThinking(model.id) && (options.interleavedThinking ?? true)) {
-			result.anthropic_beta = ["interleaved-thinking-2025-05-14"];
+			betaHeaders.push("interleaved-thinking-2025-05-14");
+		}
+		if (extendedContext) {
+			betaHeaders.push(EXTENDED_CONTEXT_BETA);
+		}
+		if (betaHeaders.length > 0) {
+			result.anthropic_beta = betaHeaders;
 		}
 
 		return result;

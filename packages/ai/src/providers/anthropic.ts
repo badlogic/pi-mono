@@ -100,6 +100,27 @@ const fromClaudeCodeName = (name: string, tools?: Tool[]) => {
 	return name;
 };
 
+const EXTENDED_CONTEXT_SUFFIX = "[1m]";
+const EXTENDED_CONTEXT_BETA = "context-1m-2025-08-07";
+
+function isAnthropicExtendedContextAlias(model: Model<"anthropic-messages">): boolean {
+	return model.provider === "anthropic" && model.id.endsWith(EXTENDED_CONTEXT_SUFFIX);
+}
+
+function stripExtendedContextSuffix(modelId: string): string {
+	if (!modelId.endsWith(EXTENDED_CONTEXT_SUFFIX)) {
+		return modelId;
+	}
+	return modelId.slice(0, -EXTENDED_CONTEXT_SUFFIX.length);
+}
+
+function getRequestModelId(model: Model<"anthropic-messages">): string {
+	if (!isAnthropicExtendedContextAlias(model)) {
+		return model.id;
+	}
+	return stripExtendedContextSuffix(model.id);
+}
+
 /**
  * Convert content blocks to Anthropic API format
  */
@@ -521,6 +542,9 @@ function createClient(
 	if (interleavedThinking) {
 		betaFeatures.push("interleaved-thinking-2025-05-14");
 	}
+	if (isAnthropicExtendedContextAlias(model)) {
+		betaFeatures.push(EXTENDED_CONTEXT_BETA);
+	}
 
 	// OAuth: Bearer auth, Claude Code identity headers
 	if (isOAuthToken(apiKey)) {
@@ -572,7 +596,7 @@ function buildParams(
 ): MessageCreateParamsStreaming {
 	const { cacheControl } = getCacheControl(model.baseUrl, options?.cacheRetention);
 	const params: MessageCreateParamsStreaming = {
-		model: model.id,
+		model: getRequestModelId(model),
 		messages: convertMessages(context.messages, model, isOAuthToken, cacheControl),
 		max_tokens: options?.maxTokens || (model.maxTokens / 3) | 0,
 		stream: true,

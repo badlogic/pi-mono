@@ -1315,6 +1315,44 @@ async function generateModels() {
 		}));
 	allModels.push(...azureOpenAiModels);
 
+	const inferenceProfilePrefixes = ["us.", "eu.", "global."];
+	function isSonnet4BaseFamily(modelId: string): boolean {
+		if (!modelId.includes("sonnet-4")) return false;
+		if (modelId.includes("sonnet-4-5") || modelId.includes("sonnet-4-6")) return false;
+		return modelId.includes("sonnet-4-20250514") || modelId.includes("sonnet-4-v1") || modelId === "claude-sonnet-4";
+	}
+
+	function isExtendedContextFamily(modelId: string): boolean {
+		if (modelId.includes("haiku-4-5")) return false;
+		if (modelId.includes("opus-4-6")) return true;
+		if (modelId.includes("sonnet-4-6")) return true;
+		if (modelId.includes("sonnet-4-5")) return true;
+		return isSonnet4BaseFamily(modelId);
+	}
+
+	// Generate [1m] aliases for first-party Anthropic and Bedrock Claude models.
+	// Bedrock variants are limited to inference profile IDs (us./eu./global.) because
+	// bare anthropic.* IDs can fail with "on-demand throughput isn't supported".
+	const extendedContextModels: Model<any>[] = [];
+	for (const candidate of allModels) {
+		if (candidate.id.endsWith("[1m]")) continue;
+		if (!isExtendedContextFamily(candidate.id)) continue;
+		if (candidate.provider === "amazon-bedrock") {
+			if (!candidate.id.includes("anthropic.claude")) continue;
+			if (!inferenceProfilePrefixes.some((prefix) => candidate.id.startsWith(prefix))) continue;
+		} else if (candidate.provider !== "anthropic") {
+			continue;
+		}
+
+		extendedContextModels.push({
+			...candidate,
+			id: `${candidate.id}[1m]`,
+			name: `${candidate.name} [1M]`,
+			contextWindow: 1000000,
+		});
+	}
+	allModels.push(...extendedContextModels);
+
 	// Group by provider and deduplicate by model ID
 	const providers: Record<string, Record<string, Model<any>>> = {};
 	for (const model of allModels) {
