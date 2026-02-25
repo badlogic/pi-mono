@@ -58,6 +58,32 @@ describe("fuzzyMatch", () => {
 		const result = fuzzyMatch("codex52", "gpt-5.2-codex");
 		assert.strictEqual(result.matches, true);
 	});
+
+	it("handles non-string text without throwing", () => {
+		// Extensions/plugins may pass non-string values via getText callbacks at runtime
+		const unsafeFuzzyMatch = fuzzyMatch as any;
+		const result = unsafeFuzzyMatch("test", undefined);
+		assert.strictEqual(result.matches, false);
+	});
+
+	it("handles non-string query without throwing", () => {
+		const unsafeFuzzyMatch = fuzzyMatch as any;
+		const result = unsafeFuzzyMatch(undefined, "test");
+		assert.strictEqual(result.matches, true);
+		assert.strictEqual(result.score, 0);
+	});
+
+	it("handles null inputs without throwing", () => {
+		const unsafeFuzzyMatch = fuzzyMatch as any;
+		const result = unsafeFuzzyMatch(null, null);
+		assert.strictEqual(result.matches, true); // both coerce to ""
+	});
+
+	it("coerces numeric inputs to strings", () => {
+		const unsafeFuzzyMatch = fuzzyMatch as any;
+		const result = unsafeFuzzyMatch("12", 123);
+		assert.strictEqual(result.matches, true);
+	});
 });
 
 describe("fuzzyFilter", () => {
@@ -94,5 +120,19 @@ describe("fuzzyFilter", () => {
 		assert.strictEqual(result.length, 2);
 		assert.ok(result.map((r) => r.name).includes("foo"));
 		assert.ok(result.map((r) => r.name).includes("foobar"));
+	});
+
+	it("skips items where getText returns null or undefined", () => {
+		const items = [{ name: "foo" }, { name: undefined }, { name: null }, { name: "bar" }];
+		const result = fuzzyFilter(items, "foo", (item: any) => item.name);
+		assert.strictEqual(result.length, 1);
+		assert.strictEqual(result[0]!.name, "foo");
+	});
+
+	it("coerces non-string getText return values", () => {
+		const items = [{ name: 123 }, { name: "test456" }];
+		const result = fuzzyFilter(items, "12", (item: any) => item.name);
+		assert.strictEqual(result.length, 1);
+		assert.strictEqual(result[0]!.name, 123);
 	});
 });

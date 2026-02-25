@@ -10,6 +10,8 @@ export interface FuzzyMatch {
 }
 
 export function fuzzyMatch(query: string, text: string): FuzzyMatch {
+	if (typeof query !== "string") query = String(query ?? "");
+	if (typeof text !== "string") text = String(text ?? "");
 	const queryLower = query.toLowerCase();
 	const textLower = text.toLowerCase();
 
@@ -109,7 +111,9 @@ export function fuzzyFilter<T>(items: T[], query: string, getText: (item: T) => 
 	const results: { item: T; totalScore: number }[] = [];
 
 	for (const item of items) {
-		const text = getText(item);
+		const rawText = getText(item);
+		if (rawText == null) continue;
+		const text = typeof rawText === "string" ? rawText : String(rawText);
 		let totalScore = 0;
 		let allMatch = true;
 
