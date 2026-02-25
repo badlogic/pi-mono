@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
+import type { ResponseCreateParamsStreaming, ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { getEnvApiKey } from "../env-api-keys.js";
 import { supportsXhigh } from "../models.js";
 import type {
@@ -16,6 +16,7 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
+import { acquireWebSocket, parseWebSocket } from "./openai-websocket.js";
 import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
@@ -86,11 +87,39 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses", OpenAIRes
 		};
 
 		try {
-			// Create OpenAI client
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
-			const client = createClient(model, context, apiKey, options?.headers);
 			const params = buildParams(model, context, options);
 			options?.onPayload?.(params);
+
+			const transport = options?.transport || "sse";
+
+			if (transport !== "sse") {
+				let websocketStarted = false;
+				try {
+					await processOpenAIWebSocketStream(model, output, stream, params, apiKey, options, () => {
+						websocketStarted = true;
+					});
+
+					if (options?.signal?.aborted) {
+						throw new Error("Request was aborted");
+					}
+					stream.push({
+						type: "done",
+						reason: output.stopReason as "stop" | "length" | "toolUse",
+						message: output,
+					});
+					stream.end();
+					return;
+				} catch (error) {
+					if (transport === "websocket" || websocketStarted) {
+						throw error;
+					}
+					// transport === "auto" → fall through to SSE
+				}
+			}
+
+			// SSE path via OpenAI SDK
+			const client = createClient(model, context, apiKey, options?.headers);
 			const openaiStream = await client.responses.create(
 				params,
 				options?.signal ? { signal: options.signal } : undefined,
@@ -256,4 +285,66 @@ function applyServiceTierPricing(usage: Usage, serviceTier: ResponseCreateParams
 	usage.cost.cacheRead *= multiplier;
 	usage.cost.cacheWrite *= multiplier;
 	usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
+}
+
+// ============================================================================
+// WebSocket Transport
+// ============================================================================
+
+function resolveWebSocketUrl(baseUrl: string): string {
+	const url = new URL(baseUrl.replace(/\/+$/, ""));
+	if (url.protocol === "https:") url.protocol = "wss:";
+	if (url.protocol === "http:") url.protocol = "ws:";
+	if (!url.pathname.endsWith("/responses")) {
+		url.pathname = url.pathname.replace(/\/?$/, "/responses");
+	}
+	return url.toString();
+}
+
+async function processOpenAIWebSocketStream(
+	model: Model<"openai-responses">,
+	output: AssistantMessage,
+	stream: AssistantMessageEventStream,
+	params: ResponseCreateParamsStreaming,
+	apiKey: string,
+	options: OpenAIResponsesOptions | undefined,
+	onStart: () => void,
+): Promise<void> {
+	const wsUrl = resolveWebSocketUrl(model.baseUrl);
+
+	const headers = new Headers({ Authorization: `Bearer ${apiKey}`, "content-type": "application/json" });
+	if (model.headers) {
+		for (const [key, value] of Object.entries(model.headers)) {
+			headers.set(key, value);
+		}
+	}
+	if (options?.headers) {
+		for (const [key, value] of Object.entries(options.headers)) {
+			headers.set(key, value);
+		}
+	}
+
+	// WebSocket body: same as params but without `stream` (implicit in WS mode)
+	const { stream: _stream, ...body } = params;
+
+	const { socket, release } = await acquireWebSocket(wsUrl, headers, options?.sessionId, options?.signal);
+	let keepConnection = true;
+	try {
+		socket.send(JSON.stringify({ type: "response.create", ...body }));
+		onStart();
+		stream.push({ type: "start", partial: output });
+		const wsEvents = parseWebSocket(socket, options?.signal) as AsyncGenerator<ResponseStreamEvent>;
+		await processResponsesStream(wsEvents, output, stream, model, {
+			serviceTier: options?.serviceTier,
+			applyServiceTierPricing,
+		});
+		if (options?.signal?.aborted) {
+			keepConnection = false;
+		}
+	} catch (error) {
+		keepConnection = false;
+		throw error;
+	} finally {
+		release({ keep: keepConnection });
+	}
 }

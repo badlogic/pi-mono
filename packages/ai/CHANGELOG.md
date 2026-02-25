@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added WebSocket transport support for OpenAI Responses (`openai-responses`), reusing shared WebSocket infrastructure from `openai-codex-responses`.
+- Extracted shared WebSocket utilities into `openai-websocket.ts` for reuse across providers.
+
+### Fixed
+
+- `buildBaseOptions` now forwards the `transport` option to provider-specific stream functions.
+
 ## [0.55.0] - 2026-02-24
 
 ## [0.54.2] - 2026-02-23
@@ -22,7 +31,7 @@
 
 ### Added
 
-- Added `transport` to `StreamOptions` with values `"sse"`, `"websocket"`, and `"auto"` (currently supported by `openai-codex-responses`).
+- Added `transport` to `StreamOptions` with values `"sse"`, `"websocket"`, and `"auto"` (supported by `openai-responses` and `openai-codex-responses`).
 - Added WebSocket transport support for OpenAI Codex Responses (`openai-codex-responses`).
 
 ### Changed
