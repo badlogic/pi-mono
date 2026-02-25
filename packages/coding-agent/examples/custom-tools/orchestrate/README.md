@@ -221,7 +221,7 @@ Before each task, queries `~/.pi/agent/skills/memory/run.sh recall` with the tas
 
 After each task, runs the quality gate script. If tests fail, the task is marked failed and orchestration stops (unless `continueOnError` is true).
 
-Configure in: `/home/graham/workspace/experiments/memory/.claude/hooks/quality-gate.sh`
+Configure in: `~/.claude/hooks/quality-gate.sh`
 
 ### Self-Review
 

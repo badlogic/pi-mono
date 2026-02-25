@@ -990,6 +990,11 @@ function updateTaskCheckbox(filePath: string, taskLineStart: number, taskId: num
 	fs.writeFileSync(filePath, lines.join("\n"), "utf-8");
 }
 
+interface PersonaMeta {
+	composes: string[];
+	collaborators: string[];
+}
+
 interface AgentConfig {
 	name: string;
 	description: string;
@@ -997,10 +1002,173 @@ interface AgentConfig {
 	provider?: string;
 	model?: string;
 	systemPrompt: string;
+	personaMeta?: PersonaMeta;
 }
 
 interface AgentConfigError {
 	error: string;
+}
+
+/**
+ * Walk up from cwd looking for .pi/agents/{name}/AGENTS.md (persona agents).
+ * Returns AgentConfig if found, null otherwise.
+ */
+function loadPersonaAgentConfig(agentName: string): AgentConfig | null {
+	let currentDir = process.cwd();
+	while (true) {
+		const candidate = path.join(currentDir, ".pi", "agents", agentName, "AGENTS.md");
+		if (fs.existsSync(candidate)) {
+			const content = fs.readFileSync(candidate, "utf-8");
+			const normalized = content.replace(/\r\n/g, "\n");
+
+			// Extract frontmatter and body — persona AGENTS.md uses YAML lists,
+			// so we parse name, composes, and collaborators from frontmatter
+			let body = normalized;
+			let name = agentName;
+			const composes: string[] = [];
+			const collaborators: string[] = [];
+
+			if (normalized.startsWith("---")) {
+				const endIndex = normalized.indexOf("\n---", 3);
+				if (endIndex !== -1) {
+					const frontmatterBlock = normalized.slice(4, endIndex);
+					body = normalized.slice(endIndex + 4).trim();
+
+					// Extract name from frontmatter (simple key: value match)
+					const nameMatch = frontmatterBlock.match(/^name:\s*(.+)$/m);
+					if (nameMatch) name = nameMatch[1].trim();
+
+					// Extract YAML list sections (composes, collaborators)
+					const parseYamlList = (key: string): string[] => {
+						const re = new RegExp(`^${key}:\\s*$`, "m");
+						const match = frontmatterBlock.match(re);
+						if (!match) return [];
+						const startIdx = (match.index ?? 0) + match[0].length;
+						const items: string[] = [];
+						for (const line of frontmatterBlock.slice(startIdx).split("\n")) {
+							const itemMatch = line.match(/^\s+-\s+(.+)/);
+							if (itemMatch) {
+								// Strip inline comments (e.g. "jennifer-cheung    # co-assessor")
+								items.push(itemMatch[1].replace(/#.*$/, "").trim());
+							} else if (line.match(/^\S/)) {
+								break; // Next top-level key
+							}
+						}
+						return items;
+					};
+
+					composes.push(...parseYamlList("composes"));
+					collaborators.push(...parseYamlList("collaborators"));
+				}
+			}
+
+			if (!body.trim()) return null;
+
+			return {
+				name,
+				description: `Persona agent: ${name}`,
+				tools: ["Read", "Grep", "Glob", "Bash", "Edit", "Write"],
+				systemPrompt: body,
+				personaMeta: composes.length || collaborators.length ? { composes, collaborators } : undefined,
+			};
+		}
+
+		const parentDir = path.dirname(currentDir);
+		if (parentDir === currentDir) return null;
+		currentDir = parentDir;
+	}
+}
+
+/**
+ * Build a persona preamble for the task prompt. Includes:
+ * - Skill composition list (so the persona knows what tools to use)
+ * - Collaborator list
+ * - Relevant best-practices SKILL.md descriptions (auto-detected from task content)
+ */
+function buildPersonaPreamble(agent: AgentConfig, taskDescription: string, cwd: string): string {
+	if (!agent.personaMeta) return "";
+
+	const sections: string[] = [];
+
+	// Skill composition
+	if (agent.personaMeta.composes.length > 0) {
+		sections.push(
+			`## Available Skills (compose these, don't reinvent)\n` +
+				agent.personaMeta.composes.map((s) => `- /${s}`).join("\n"),
+		);
+	}
+
+	// Collaborators
+	if (agent.personaMeta.collaborators.length > 0) {
+		sections.push(`## Collaborators\n${agent.personaMeta.collaborators.map((c) => `- ${c}`).join("\n")}`);
+	}
+
+	// Auto-detect relevant best-practices from task description
+	const bestPractices = detectBestPractices(taskDescription, cwd);
+	if (bestPractices.length > 0) {
+		sections.push(
+			`## Applicable Best Practices\n\n` +
+				`Read these before writing code:\n` +
+				bestPractices.map((bp) => `- \`${bp.path}\` — ${bp.description}`).join("\n"),
+		);
+	}
+
+	if (sections.length === 0) return "";
+
+	return `## Persona Context: ${agent.name}\n\n${sections.join("\n\n")}\n\n---\n`;
+}
+
+/**
+ * Detect which best-practices SKILL.md files are relevant to a task description.
+ * Scans .pi/skills/best-practices-{name}/SKILL.md for matching language/domain keywords.
+ */
+function detectBestPractices(taskDescription: string, cwd: string): Array<{ path: string; description: string }> {
+	const results: Array<{ path: string; description: string }> = [];
+	const descLower = taskDescription.toLowerCase();
+
+	// Walk up from cwd to find .pi/skills/
+	let skillsDir: string | null = null;
+	let searchDir = cwd;
+	while (true) {
+		const candidate = path.join(searchDir, ".pi", "skills");
+		try {
+			if (fs.statSync(candidate).isDirectory()) {
+				skillsDir = candidate;
+				break;
+			}
+		} catch {}
+		const parent = path.dirname(searchDir);
+		if (parent === searchDir) break;
+		searchDir = parent;
+	}
+
+	if (!skillsDir) return results;
+
+	// Keyword map: task keywords → best-practices skill names
+	const keywordMap: Record<string, string[]> = {
+		"best-practices-python": ["python", ".py", "pyproject", "pytest", "loguru", "typer", "uv "],
+		"best-practices-react": ["react", "next.js", "nextjs", "tailwind", "shadcn", "tsx", "jsx", "component"],
+		"best-practices-kde": ["kde", "qml", "qt", "plasma"],
+		"best-practices-skills": ["skill", "skill.md", "run.sh", "sanity.sh"],
+		"best-practices-streamdeck": ["streamdeck", "stream deck", "elgato"],
+	};
+
+	for (const [skillName, keywords] of Object.entries(keywordMap)) {
+		if (keywords.some((kw) => descLower.includes(kw))) {
+			const skillMdPath = path.join(skillsDir, skillName, "SKILL.md");
+			try {
+				if (fs.existsSync(skillMdPath)) {
+					// Read first description line from frontmatter
+					const content = fs.readFileSync(skillMdPath, "utf-8");
+					const descMatch = content.match(/^description:\s*>?\s*\n?\s*(.+)/m);
+					const desc = descMatch ? descMatch[1].trim() : skillName;
+					results.push({ path: `.pi/skills/${skillName}/SKILL.md`, description: desc });
+				}
+			} catch {}
+		}
+	}
+
+	return results;
 }
 
 function loadAgentConfig(agentName: string): AgentConfig | AgentConfigError {
@@ -1008,7 +1176,12 @@ function loadAgentConfig(agentName: string): AgentConfig | AgentConfigError {
 	const agentPath = path.join(userAgentsDir, `${agentName}.md`);
 
 	if (!fs.existsSync(agentPath)) {
-		return { error: `Agent config not found: ${agentPath}. Create ${agentName}.md in ~/.pi/agent/agents/` };
+		// Fallback: check .pi/agents/{name}/AGENTS.md (persona agents)
+		const personaConfig = loadPersonaAgentConfig(agentName);
+		if (personaConfig) return personaConfig;
+		return {
+			error: `Agent config not found: ${agentPath}. Create ${agentName}.md in ~/.pi/agent/agents/ or .pi/agents/${agentName}/AGENTS.md`,
+		};
 	}
 
 	const content = fs.readFileSync(agentPath, "utf-8");
@@ -2126,9 +2299,12 @@ ${recalledItems}
 `;
 	}
 
+	// Build persona preamble (skills, collaborators, best-practices) for persona agents
+	const personaPreamble = buildPersonaPreamble(agent, task.description, cwd);
+
 	// Build the task prompt with context and memory
 	const taskPrompt = `
-${memoryContext}## Context
+${personaPreamble}${memoryContext}## Context
 ${taskFile.context}
 
 ## Task ${task.id}: ${task.title}

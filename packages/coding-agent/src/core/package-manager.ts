@@ -266,7 +266,11 @@ function collectSkillEntries(
 			if (ig.ignores(ignorePath)) continue;
 
 			if (isDir) {
-				entries.push(...collectSkillEntries(fullPath, false, ig, root));
+				if (includeRootFiles) {
+					// Only recurse from the root level (looking for SKILL.md in immediate subdirs)
+					entries.push(...collectSkillEntries(fullPath, false, ig, root));
+				}
+				// When !includeRootFiles, we're inside a skill dir — don't recurse deeper
 			} else if (isFile) {
 				const isRootMd = includeRootFiles && entry.name.endsWith(".md");
 				const isSkillMd = !includeRootFiles && entry.name === "SKILL.md";
