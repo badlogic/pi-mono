@@ -85,6 +85,12 @@ export interface AgentOptions {
 	 * Default: 60000 (60 seconds). Set to 0 to disable the cap.
 	 */
 	maxRetryDelayMs?: number;
+
+	/**
+	 * Sampling temperature (0–2). Lower values are more deterministic, higher values more creative.
+	 * Not all providers/models support this parameter.
+	 */
+	temperature?: number;
 }
 
 export class Agent {
@@ -115,6 +121,7 @@ export class Agent {
 	private resolveRunningPrompt?: () => void;
 	private _thinkingBudgets?: ThinkingBudgets;
 	private _maxRetryDelayMs?: number;
+	private _temperature?: number;
 
 	constructor(opts: AgentOptions = {}) {
 		this._state = { ...this._state, ...opts.initialState };
@@ -127,6 +134,7 @@ export class Agent {
 		this.getApiKey = opts.getApiKey;
 		this._thinkingBudgets = opts.thinkingBudgets;
 		this._maxRetryDelayMs = opts.maxRetryDelayMs;
+		this._temperature = opts.temperature;
 	}
 
 	/**
@@ -171,6 +179,20 @@ export class Agent {
 	 */
 	set maxRetryDelayMs(value: number | undefined) {
 		this._maxRetryDelayMs = value;
+	}
+
+	/**
+	 * Get the current sampling temperature.
+	 */
+	get temperature(): number | undefined {
+		return this._temperature;
+	}
+
+	/**
+	 * Set the sampling temperature (0–2).
+	 */
+	set temperature(value: number | undefined) {
+		this._temperature = value;
 	}
 
 	get state(): AgentState {
@@ -409,6 +431,7 @@ export class Agent {
 			sessionId: this._sessionId,
 			thinkingBudgets: this._thinkingBudgets,
 			maxRetryDelayMs: this._maxRetryDelayMs,
+			temperature: this._temperature,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,

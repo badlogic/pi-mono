@@ -53,6 +53,8 @@ export interface CreateAgentSessionOptions {
 	model?: Model<any>;
 	/** Thinking level. Default: from settings, else 'medium' (clamped to model capabilities) */
 	thinkingLevel?: ThinkingLevel;
+	/** Sampling temperature (0–2). Default: from settings, else provider default. Not all providers support this. */
+	temperature?: number;
 	/** Models available for cycling (Ctrl+P in interactive mode) */
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>;
 
@@ -284,6 +286,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
+	const temperature = options.temperature ?? settingsManager.getTemperature();
+
 	agent = new Agent({
 		initialState: {
 			systemPrompt: "",
@@ -291,6 +295,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			thinkingLevel,
 			tools: [],
 		},
+		temperature,
 		convertToLlm: convertToLlmWithBlockImages,
 		sessionId: sessionManager.getSessionId(),
 		transformContext: async (messages) => {

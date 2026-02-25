@@ -82,6 +82,7 @@ export interface Settings {
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
 	doubleEscapeAction?: "fork" | "tree" | "none"; // Action for double-escape with empty editor (default: "tree")
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
+	temperature?: number; // Sampling temperature (0–2). Lower = more deterministic, higher = more creative.
 	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
@@ -430,6 +431,16 @@ export class SettingsManager {
 	setDefaultThinkingLevel(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh"): void {
 		this.globalSettings.defaultThinkingLevel = level;
 		this.markModified("defaultThinkingLevel");
+		this.save();
+	}
+
+	getTemperature(): number | undefined {
+		return this.settings.temperature;
+	}
+
+	setTemperature(temperature: number): void {
+		this.globalSettings.temperature = temperature;
+		this.markModified("temperature");
 		this.save();
 	}
 

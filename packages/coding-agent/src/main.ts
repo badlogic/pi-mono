@@ -451,6 +451,11 @@ function buildSessionOptions(
 		options.thinkingLevel = parsed.thinking;
 	}
 
+	// Temperature from CLI
+	if (parsed.temperature !== undefined) {
+		options.temperature = parsed.temperature;
+	}
+
 	// Scoped models for Ctrl+P cycling - fill in default thinking level for models without explicit level
 	if (scopedModels.length > 0) {
 		const defaultThinkingLevel = settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;

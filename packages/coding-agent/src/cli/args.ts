@@ -16,6 +16,7 @@ export interface Args {
 	systemPrompt?: string;
 	appendSystemPrompt?: string;
 	thinking?: ThinkingLevel;
+	temperature?: number;
 	continue?: boolean;
 	resume?: boolean;
 	help?: boolean;
@@ -118,6 +119,13 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 					),
 				);
 			}
+		} else if (arg === "--temperature" && i + 1 < args.length) {
+			const val = parseFloat(args[++i]);
+			if (!isNaN(val) && val >= 0 && val <= 2) {
+				result.temperature = val;
+			} else {
+				console.error(chalk.yellow(`Warning: Invalid temperature "${args[i]}". Must be a number between 0 and 2.`));
+			}
 		} else if (arg === "--print" || arg === "-p") {
 			result.print = true;
 		} else if (arg === "--export" && i + 1 < args.length) {
@@ -206,6 +214,7 @@ ${chalk.bold("Options:")}
   --tools <tools>                Comma-separated list of tools to enable (default: read,bash,edit,write)
                                  Available: read, bash, edit, write, grep, find, ls
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
+  --temperature <number>         Sampling temperature 0–2 (lower = more deterministic)
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
   --skill <path>                 Load a skill file or directory (can be used multiple times)
