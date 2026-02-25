@@ -59,8 +59,9 @@ export function formatToolCall(name: string, args: Record<string, unknown>): str
 			return `[ls: ${path}]`;
 		}
 		default: {
-			const argsStr = JSON.stringify(args).slice(0, 40);
-			return `[${name}: ${argsStr}${JSON.stringify(args).length > 40 ? "..." : ""}]`;
+			const json = JSON.stringify(args);
+			const truncated = json.slice(0, 40);
+			return `[${name}: ${truncated}${json.length > 40 ? "..." : ""}]`;
 		}
 	}
 }
