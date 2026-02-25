@@ -220,7 +220,7 @@ export class RpcClient {
 	 */
 	async newSession(parentSession?: string): Promise<{ cancelled: boolean }> {
 		const response = await this.send({ type: "new_session", parentSession });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -228,7 +228,7 @@ export class RpcClient {
 	 */
 	async getState(): Promise<RpcSessionState> {
 		const response = await this.send({ type: "get_state" });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -236,7 +236,7 @@ export class RpcClient {
 	 */
 	async setModel(provider: string, modelId: string): Promise<{ provider: string; id: string }> {
 		const response = await this.send({ type: "set_model", provider, modelId });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -248,7 +248,7 @@ export class RpcClient {
 		isScoped: boolean;
 	} | null> {
 		const response = await this.send({ type: "cycle_model" });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -256,7 +256,7 @@ export class RpcClient {
 	 */
 	async getAvailableModels(): Promise<ModelInfo[]> {
 		const response = await this.send({ type: "get_available_models" });
-		return this.getData<{ models: ModelInfo[] }>(response).models;
+		return this.extractData<{ models: ModelInfo[] }>(response).models;
 	}
 
 	/**
@@ -271,7 +271,7 @@ export class RpcClient {
 	 */
 	async cycleThinkingLevel(): Promise<{ level: ThinkingLevel } | null> {
 		const response = await this.send({ type: "cycle_thinking_level" });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -293,7 +293,7 @@ export class RpcClient {
 	 */
 	async compact(customInstructions?: string): Promise<CompactionResult> {
 		const response = await this.send({ type: "compact", customInstructions });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -322,7 +322,7 @@ export class RpcClient {
 	 */
 	async bash(command: string): Promise<BashResult> {
 		const response = await this.send({ type: "bash", command });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -344,7 +344,7 @@ export class RpcClient {
 	 */
 	async getSessionStats(): Promise<SessionStats> {
 		const response = await this.send({ type: "get_session_stats" });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -352,7 +352,7 @@ export class RpcClient {
 	 */
 	async exportHtml(outputPath?: string): Promise<{ path: string }> {
 		const response = await this.send({ type: "export_html", outputPath });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -361,7 +361,7 @@ export class RpcClient {
 	 */
 	async switchSession(sessionPath: string): Promise<{ cancelled: boolean }> {
 		const response = await this.send({ type: "switch_session", sessionPath });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -370,7 +370,7 @@ export class RpcClient {
 	 */
 	async fork(entryId: string): Promise<{ text: string; cancelled: boolean }> {
 		const response = await this.send({ type: "fork", entryId });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -378,7 +378,7 @@ export class RpcClient {
 	 */
 	async getForkMessages(): Promise<Array<{ entryId: string; text: string }>> {
 		const response = await this.send({ type: "get_fork_messages" });
-		return this.getData<{ messages: Array<{ entryId: string; text: string }> }>(response).messages;
+		return this.extractData<{ messages: Array<{ entryId: string; text: string }> }>(response).messages;
 	}
 
 	/**
@@ -386,7 +386,7 @@ export class RpcClient {
 	 */
 	async getLastAssistantText(): Promise<string | null> {
 		const response = await this.send({ type: "get_last_assistant_text" });
-		return this.getData<{ text: string | null }>(response).text;
+		return this.extractData<{ text: string | null }>(response).text;
 	}
 
 	/**
@@ -401,7 +401,7 @@ export class RpcClient {
 	 */
 	async getMessages(): Promise<AgentMessage[]> {
 		const response = await this.send({ type: "get_messages" });
-		return this.getData<{ messages: AgentMessage[] }>(response).messages;
+		return this.extractData<{ messages: AgentMessage[] }>(response).messages;
 	}
 
 	/**
@@ -409,7 +409,7 @@ export class RpcClient {
 	 */
 	async getCommands(): Promise<RpcSlashCommand[]> {
 		const response = await this.send({ type: "get_commands" });
-		return this.getData<{ commands: RpcSlashCommand[] }>(response).commands;
+		return this.extractData<{ commands: RpcSlashCommand[] }>(response).commands;
 	}
 
 	/**
@@ -420,7 +420,7 @@ export class RpcClient {
 			type: "list_sessions",
 			scope: options.scope,
 		});
-		return this.getData<{ sessions: RpcSessionListItem[] }>(response).sessions;
+		return this.extractData<{ sessions: RpcSessionListItem[] }>(response).sessions;
 	}
 
 	/**
@@ -428,7 +428,7 @@ export class RpcClient {
 	 */
 	async getTree(): Promise<{ tree: RpcTreeNode[]; leafId: string | null }> {
 		const response = await this.send({ type: "get_tree" });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -444,7 +444,7 @@ export class RpcClient {
 			replaceInstructions: options.replaceInstructions,
 			label: options.label,
 		});
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -573,7 +573,7 @@ export class RpcClient {
 		return response;
 	}
 
-	private getData<T>(response: RpcResponse): T {
+	private extractData<T>(response: RpcResponse): T {
 		const successResponse = response as Extract<RpcResponse, { success: true; data: unknown }>;
 		return successResponse.data as T;
 	}
