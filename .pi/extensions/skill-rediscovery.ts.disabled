@@ -1,0 +1,7 @@
+// REMOVED: Pi's native skills.ts in packages/coding-agent/src/core/skills.ts
+// already handles skill discovery with symlink dedup, collision detection,
+// .gitignore support, and triggers. This extension was a regression.
+//
+// The polling/hot-reload concept was valid but Pi has no mechanism to inject
+// newly-discovered skills into a running session's system prompt without /reload.
+// Delete this file when convenient.
