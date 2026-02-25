@@ -1,0 +1,25 @@
+{
+    "name": "@mariozechner/pi-ai-server",
+    "version": "0.1.0",
+    "description": "Local HTTP server exposing @mariozechner/pi-ai for Python and other non-JS clients",
+    "type": "module",
+    "main": "./dist/server.js",
+    "bin": {
+        "pi-ai-server": "./dist/server.js"
+    },
+    "scripts": {
+        "clean": "rm -rf dist",
+        "build": "tsgo -p tsconfig.build.json",
+        "dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+        "start": "node dist/server.js"
+    },
+    "dependencies": {
+        "@mariozechner/pi-ai": "*"
+    },
+    "devDependencies": {
+        "@types/node": "^24.3.0"
+    },
+    "engines": {
+        "node": ">=20.0.0"
+    }
+}
