@@ -829,7 +829,7 @@ export class Editor implements Component, Focusable {
 		let result = this.state.lines.join("\n");
 		for (const [pasteId, pasteContent] of this.pastes) {
 			const markerRegex = new RegExp(`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`, "g");
-			result = result.replace(markerRegex, pasteContent);
+			result = result.replace(markerRegex, () => pasteContent);
 		}
 		return result;
 	}
@@ -1074,7 +1074,7 @@ export class Editor implements Component, Focusable {
 		let result = this.state.lines.join("\n").trim();
 		for (const [pasteId, pasteContent] of this.pastes) {
 			const markerRegex = new RegExp(`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`, "g");
-			result = result.replace(markerRegex, pasteContent);
+			result = result.replace(markerRegex, () => pasteContent);
 		}
 
 		this.state = { lines: [""], cursorLine: 0, cursorCol: 0 };

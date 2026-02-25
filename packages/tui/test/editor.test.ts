@@ -1505,6 +1505,45 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.getText(), "hello| world");
 		});
 
+		it("preserves dollar signs in pasted content during getExpandedText", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Paste content with $1, $2, $& patterns that JavaScript's
+			// String.replace() would interpret as regex backreferences
+			const lines = Array.from({ length: 15 }, (_, i) => `Row ${i}: $${i + 1}${(i + 1) * 100}.00`);
+			const pasteContent = lines.join("\n");
+
+			// Simulate bracketed paste (>10 lines triggers marker collapse)
+			editor.handleInput(`\x1b[200~${pasteContent}\x1b[201~`);
+
+			// Editor should show a collapsed marker
+			assert.ok(editor.getText().includes("[paste #1"));
+
+			// getExpandedText() must return the original content with $ signs intact
+			const expanded = editor.getExpandedText();
+			assert.ok(expanded.includes("$1100.00"), `Expected $1100.00 but got: ${expanded.substring(0, 200)}`);
+			assert.ok(expanded.includes("$2200.00"), `Expected $2200.00 but got: ${expanded.substring(0, 200)}`);
+			assert.strictEqual(expanded, pasteContent);
+		});
+
+		it("preserves dollar signs in pasted content during submit", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			const lines = Array.from({ length: 15 }, (_, i) => `Row ${i}: $${i + 1}${(i + 1) * 100}.00`);
+			const pasteContent = lines.join("\n");
+
+			let submittedText = "";
+			editor.onSubmit = (text: string) => { submittedText = text; };
+
+			// Simulate bracketed paste (>10 lines triggers marker collapse)
+			editor.handleInput(`\x1b[200~${pasteContent}\x1b[201~`);
+			// Trigger submit (Enter key)
+			editor.handleInput("\r");
+			assert.ok(submittedText.includes("$1100.00"), `Submit: expected $1100.00 but got: ${submittedText.substring(0, 200)}`);
+			assert.ok(submittedText.includes("$2200.00"), `Submit: expected $2200.00 but got: ${submittedText.substring(0, 200)}`);
+			assert.strictEqual(submittedText, pasteContent);
+		});
+
 		it("undoes insertTextAtCursor atomically", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
