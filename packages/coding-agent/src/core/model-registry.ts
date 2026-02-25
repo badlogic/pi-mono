@@ -28,6 +28,7 @@ import type { AuthStorage } from "./auth-storage.js";
 import { clearConfigValueCache, resolveConfigValue, resolveHeaders } from "./resolve-config-value.js";
 
 const Ajv = (AjvModule as any).default || AjvModule;
+const ajv = new Ajv();
 
 // Schema for OpenRouter routing preferences
 const OpenRouterRoutingSchema = Type.Object({
@@ -119,6 +120,8 @@ const ProviderConfigSchema = Type.Object({
 const ModelsConfigSchema = Type.Object({
 	providers: Type.Record(Type.String(), ProviderConfigSchema),
 });
+
+ajv.addSchema(ModelsConfigSchema, "ModelsConfig");
 
 type ModelsConfig = Static<typeof ModelsConfigSchema>;
 
@@ -350,8 +353,7 @@ export class ModelRegistry {
 			const config: ModelsConfig = JSON.parse(content);
 
 			// Validate schema
-			const ajv = new Ajv();
-			const validate = ajv.compile(ModelsConfigSchema);
+			const validate = ajv.getSchema("ModelsConfig")!;
 			if (!validate(config)) {
 				const errors =
 					validate.errors?.map((e: any) => `  - ${e.instancePath || "root"}: ${e.message}`).join("\n") ||
