@@ -274,12 +274,13 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 						output.content.push(block);
 						stream.push({ type: "thinking_start", contentIndex: output.content.length - 1, partial: output });
 					} else if (event.content_block.type === "tool_use") {
+						const rawName = isOAuthToken
+							? fromClaudeCodeName(event.content_block.name, context.tools)
+							: event.content_block.name;
 						const block: Block = {
 							type: "toolCall",
 							id: event.content_block.id,
-							name: isOAuthToken
-								? fromClaudeCodeName(event.content_block.name, context.tools)
-								: event.content_block.name,
+							name: sanitizeToolName(rawName, context.tools),
 							arguments: (event.content_block.input as Record<string, any>) ?? {},
 							partialJson: "",
 							index: event.index,
@@ -659,6 +660,30 @@ function normalizeToolCallId(id: string): string {
 	return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
 }
 
+// Sanitize tool names from LLM responses. Models occasionally hallucinate entire
+// shell commands as the tool name (e.g. "psql postgresql://... INSERT INTO ..."
+// instead of "exec"). The Anthropic API rejects tool names > 64 chars, and without
+// sanitization the corrupted name gets persisted to the session, permanently
+// breaking it — every subsequent message replays the bad history.
+function sanitizeToolName(name: string, tools?: Array<{ name: string }>): string {
+	if (!name || name.length <= 64) return name;
+	// Try to match against a known tool name at the start of the string
+	if (tools && tools.length > 0) {
+		for (const t of tools) {
+			if (name.toLowerCase().startsWith(t.name.toLowerCase())) {
+				return t.name;
+			}
+		}
+	}
+	// Common pattern: "command arg1 arg2..." — extract just the first word
+	const firstWord = name.split(/[\s(]/)[0];
+	if (firstWord.length <= 64 && /^[a-zA-Z0-9_-]+$/.test(firstWord)) {
+		return firstWord;
+	}
+	// Last resort: truncate and strip invalid chars
+	return name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+}
+
 function convertMessages(
 	messages: Message[],
 	model: Model<"anthropic-messages">,
@@ -743,7 +768,7 @@ function convertMessages(
 					blocks.push({
 						type: "tool_use",
 						id: block.id,
-						name: isOAuthToken ? toClaudeCodeName(block.name) : block.name,
+						name: sanitizeToolName(isOAuthToken ? toClaudeCodeName(block.name) : block.name),
 						input: block.arguments ?? {},
 					});
 				}
