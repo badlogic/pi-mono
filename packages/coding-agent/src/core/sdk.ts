@@ -243,6 +243,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		? options.tools.map((t) => t.name).filter((n): n is ToolName => n in allTools)
 		: defaultActiveToolNames;
 
+	// Convert tools array to baseToolsOverride record so that _buildRuntime()
+	// uses the caller's tool instances (e.g. custom BashOperations) instead of
+	// recreating defaults via createAllTools().
+	const baseToolsOverride: Record<string, Tool> | undefined = options.tools
+		? Object.fromEntries(options.tools.map((t) => [t.name, t]))
+		: undefined;
+
 	let agent: Agent;
 
 	// Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
@@ -354,6 +361,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		customTools: options.customTools,
 		modelRegistry,
 		initialActiveToolNames,
+		baseToolsOverride,
 		extensionRunnerRef,
 	});
 	const extensionsResult = resourceLoader.getExtensions();
