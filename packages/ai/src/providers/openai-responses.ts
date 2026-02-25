@@ -143,6 +143,13 @@ export const streamSimpleOpenAIResponses: StreamFunction<"openai-responses", Sim
 	} satisfies OpenAIResponsesOptions);
 };
 
+function normalizeResponsesBaseUrl(baseUrl: string | undefined): string | undefined {
+	if (!baseUrl || baseUrl.trim().length === 0) return undefined;
+	const normalized = baseUrl.replace(/\/+$/, "");
+	if (/\/v\d+$/.test(normalized)) return normalized;
+	return `${normalized}/v1`;
+}
+
 function createClient(
 	model: Model<"openai-responses">,
 	context: Context,
@@ -175,7 +182,7 @@ function createClient(
 
 	return new OpenAI({
 		apiKey,
-		baseURL: model.baseUrl,
+		baseURL: normalizeResponsesBaseUrl(model.baseUrl),
 		dangerouslyAllowBrowser: true,
 		defaultHeaders: headers,
 	});
