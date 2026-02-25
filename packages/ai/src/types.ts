@@ -18,6 +18,7 @@ export type Api = KnownApi | (string & {});
 export type KnownProvider =
 	| "amazon-bedrock"
 	| "anthropic"
+	| "anthropic-vertex"
 	| "google"
 	| "google-gemini-cli"
 	| "google-antigravity"

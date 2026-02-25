@@ -72,6 +72,18 @@ export function getEnvApiKey(provider: any): string | undefined {
 		}
 	}
 
+	// Anthropic models on Vertex AI use GCP ADC with project ID and region.
+	// Supports both Vertex-standard and Claude-specific env var names.
+	if (provider === "anthropic-vertex") {
+		const hasCredentials = hasVertexAdcCredentials();
+		const hasProject = !!(process.env.ANTHROPIC_VERTEX_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT);
+		const hasRegion = !!(process.env.CLOUD_ML_REGION || process.env.GOOGLE_CLOUD_LOCATION);
+
+		if (hasCredentials && hasProject && hasRegion) {
+			return "<authenticated>";
+		}
+	}
+
 	if (provider === "amazon-bedrock") {
 		// Amazon Bedrock supports multiple credential sources:
 		// 1. AWS_PROFILE - named profile from ~/.aws/credentials

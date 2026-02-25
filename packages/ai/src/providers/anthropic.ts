@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
 import type {
 	ContentBlockParam,
 	MessageCreateParamsStreaming,
@@ -490,6 +491,24 @@ function createClient(
 	optionsHeaders?: Record<string, string>,
 	dynamicHeaders?: Record<string, string>,
 ): { client: Anthropic; isOAuthToken: boolean } {
+	// Vertex AI: GCP ADC auth via @anthropic-ai/vertex-sdk
+	if (model.provider === "anthropic-vertex") {
+		const projectId = process.env.ANTHROPIC_VERTEX_PROJECT_ID
+			|| process.env.GOOGLE_CLOUD_PROJECT
+			|| process.env.GCLOUD_PROJECT;
+		const region = process.env.CLOUD_ML_REGION
+			|| process.env.GOOGLE_CLOUD_LOCATION;
+		if (!projectId || !region) {
+			throw new Error(
+				"Anthropic Vertex AI requires a project ID and region. " +
+				"Set ANTHROPIC_VERTEX_PROJECT_ID + CLOUD_ML_REGION or GOOGLE_CLOUD_PROJECT + GOOGLE_CLOUD_LOCATION.",
+			);
+		}
+
+		const client = new AnthropicVertex({ projectId, region }) as unknown as Anthropic;
+		return { client, isOAuthToken: false };
+	}
+
 	// Copilot: Bearer auth, selective betas (no fine-grained-tool-streaming)
 	if (model.provider === "github-copilot") {
 		const betaFeatures: string[] = [];

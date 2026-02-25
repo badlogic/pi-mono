@@ -1269,6 +1269,19 @@ async function generateModels() {
 	];
 	allModels.push(...vertexModels);
 
+	// Derive Claude on Vertex AI models from existing Anthropic models.
+	// Uses the @anthropic-ai/vertex-sdk for GCP ADC authentication.
+	// Same models, same pricing, different provider and endpoint.
+	const vertexClaudeModels = allModels
+		.filter(m => m.provider === "anthropic" && m.api === "anthropic-messages")
+		.map(m => ({
+			...m,
+			name: `${m.name} (Vertex AI)`,
+			provider: "anthropic-vertex" as const,
+			baseUrl: "unused-vertex-sdk-handles-endpoint",
+		}));
+	allModels.push(...vertexClaudeModels);
+
 	// Kimi For Coding models (Moonshot AI's Anthropic-compatible coding API)
 	// Static fallback in case models.dev doesn't have them yet
 	const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding";
