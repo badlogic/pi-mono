@@ -286,29 +286,36 @@ interface ParentViolation {
 function collectParentViolations(nodes: RpcTreeNode[]): ParentViolation[] {
 	const ids = collectIds(nodes);
 	const violations: ParentViolation[] = [];
+	const stack: Array<{ node: RpcTreeNode; structuralParentId: string | null }> = [];
 
-	const walk = (current: RpcTreeNode[], structuralParentId: string | null) => {
-		for (const node of current) {
-			if (node.parentId !== structuralParentId) {
-				violations.push({ nodeId: node.id, parentId: node.parentId, structuralParentId });
-			}
-			if (node.parentId !== null && !ids.has(node.parentId)) {
-				violations.push({ nodeId: node.id, parentId: node.parentId, structuralParentId });
-			}
-			walk(node.children, node.id);
+	for (let i = nodes.length - 1; i >= 0; i--) {
+		stack.push({ node: nodes[i], structuralParentId: null });
+	}
+
+	while (stack.length > 0) {
+		const { node, structuralParentId } = stack.pop()!;
+		if (node.parentId !== structuralParentId) {
+			violations.push({ nodeId: node.id, parentId: node.parentId, structuralParentId });
 		}
-	};
+		if (node.parentId !== null && !ids.has(node.parentId)) {
+			violations.push({ nodeId: node.id, parentId: node.parentId, structuralParentId });
+		}
+		for (let i = node.children.length - 1; i >= 0; i--) {
+			stack.push({ node: node.children[i], structuralParentId: node.id });
+		}
+	}
 
-	walk(nodes, null);
 	return violations;
 }
 
 function collectIds(nodes: RpcTreeNode[]): Set<string> {
 	const ids = new Set<string>();
-	for (const node of nodes) {
+	const stack: RpcTreeNode[] = [...nodes];
+	while (stack.length > 0) {
+		const node = stack.pop()!;
 		ids.add(node.id);
-		for (const childId of collectIds(node.children)) {
-			ids.add(childId);
+		for (let i = node.children.length - 1; i >= 0; i--) {
+			stack.push(node.children[i]!);
 		}
 	}
 	return ids;
@@ -316,9 +323,13 @@ function collectIds(nodes: RpcTreeNode[]): Set<string> {
 
 function collectTypes(nodes: RpcTreeNode[]): string[] {
 	const types: string[] = [];
-	for (const node of nodes) {
+	const stack: RpcTreeNode[] = [...nodes];
+	while (stack.length > 0) {
+		const node = stack.pop()!;
 		types.push(node.type);
-		types.push(...collectTypes(node.children));
+		for (let i = node.children.length - 1; i >= 0; i--) {
+			stack.push(node.children[i]!);
+		}
 	}
 	return types;
 }
