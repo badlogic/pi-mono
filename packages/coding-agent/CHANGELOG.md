@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed extension tools registered asynchronously during `session_start` not being propagated to the agent tool set, which could lead to `Tool not found` errors at runtime.
+
 ## [0.55.1] - 2026-02-26
 
 ### New Features

@@ -1782,6 +1782,7 @@ export class AgentSession {
 			this._applyExtensionBindings(this._extensionRunner);
 			await this._extensionRunner.emit({ type: "session_start" });
 			await this.extendResourcesFromExtensions("startup");
+			this._refreshExtensionTools();
 		}
 	}
 
@@ -1958,6 +1959,40 @@ export class AgentSession {
 		);
 	}
 
+	private _refreshExtensionTools(): void {
+		if (!this._extensionRunner) {
+			return;
+		}
+
+		const registeredTools = this._extensionRunner.getAllRegisteredTools();
+		const allCustomTools = [
+			...registeredTools,
+			...this._customTools.map((def) => ({ definition: def, extensionPath: "<sdk>" })),
+		];
+		const wrappedExtensionTools = wrapRegisteredTools(allCustomTools, this._extensionRunner);
+
+		const toolRegistry = new Map(this._baseToolRegistry);
+		for (const tool of wrappedExtensionTools as AgentTool[]) {
+			toolRegistry.set(tool.name, tool);
+		}
+
+		const currentActiveToolNames = this.getActiveToolNames();
+		const extensionToolNames = new Set(wrappedExtensionTools.map((tool) => tool.name));
+		const activeBaseTools = currentActiveToolNames
+			.filter((name) => this._baseToolRegistry.has(name) && !extensionToolNames.has(name))
+			.map((name) => this._baseToolRegistry.get(name) as AgentTool);
+		const activeToolsArray: AgentTool[] = [...activeBaseTools, ...(wrappedExtensionTools as AgentTool[])];
+
+		const wrappedActiveTools = wrapToolsWithExtensions(activeToolsArray, this._extensionRunner);
+		this.agent.setTools(wrappedActiveTools as AgentTool[]);
+
+		const wrappedAllTools = wrapToolsWithExtensions(Array.from(toolRegistry.values()), this._extensionRunner);
+		this._toolRegistry = new Map(wrappedAllTools.map((tool) => [tool.name, tool]));
+
+		this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+		this.agent.setSystemPrompt(this._baseSystemPrompt);
+	}
+
 	private _buildRuntime(options: {
 		activeToolNames?: string[];
 		flagValues?: Map<string, boolean | string>;
@@ -2069,6 +2104,7 @@ export class AgentSession {
 		if (this._extensionRunner && hasBindings) {
 			await this._extensionRunner.emit({ type: "session_start" });
 			await this.extendResourcesFromExtensions("reload");
+			this._refreshExtensionTools();
 		}
 	}
 
