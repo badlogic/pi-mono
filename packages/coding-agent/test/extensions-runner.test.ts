@@ -26,6 +26,7 @@ describe("ExtensionRunner", () => {
 		sessionManager = SessionManager.inMemory();
 		const authStorage = AuthStorage.create(path.join(tempDir, "auth.json"));
 		modelRegistry = new ModelRegistry(authStorage);
+		delete (globalThis as any).invokeResult;
 	});
 
 	afterEach(() => {
@@ -343,6 +344,132 @@ describe("ExtensionRunner", () => {
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in command"));
 			warnSpy.mockRestore();
+		});
+	});
+
+	describe("invokeCommand API", () => {
+		it("lets shortcuts invoke commands with command-context session controls", async () => {
+			const extCode = `
+				export default function(pi) {
+					pi.registerCommand("switch-cmd", {
+						handler: async (_args, ctx) => {
+							await ctx.switchSession("/tmp/next-session.jsonl");
+						},
+					});
+					pi.registerShortcut("ctrl+shift+w", {
+						handler: async () => {
+							await pi.invokeCommand("switch-cmd", "");
+						},
+					});
+				}
+			`;
+			fs.writeFileSync(path.join(extensionsDir, "invoke.ts"), extCode);
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const switchSessionSpy = vi.fn(async () => ({ cancelled: false }));
+
+			runner.bindCommandContext({
+				waitForIdle: async () => {},
+				newSession: async () => ({ cancelled: false }),
+				fork: async () => ({ cancelled: false }),
+				navigateTree: async () => ({ cancelled: false }),
+				switchSession: switchSessionSpy,
+				reload: async () => {},
+			});
+
+			runner.bindCore(
+				{
+					sendMessage: () => {},
+					sendUserMessage: () => {},
+					invokeCommand: async (name, args) => {
+						const command = runner.getCommand(name);
+						if (!command) return false;
+						await command.handler(args ?? "", runner.createCommandContext());
+						return true;
+					},
+					appendEntry: () => {},
+					setSessionName: () => {},
+					getSessionName: () => undefined,
+					setLabel: () => {},
+					getActiveTools: () => [],
+					getAllTools: () => [],
+					setActiveTools: () => {},
+					getCommands: () => [],
+					setModel: async () => true,
+					getThinkingLevel: () => "off",
+					setThinkingLevel: () => {},
+				},
+				{
+					getModel: () => undefined,
+					isIdle: () => true,
+					abort: () => {},
+					hasPendingMessages: () => false,
+					shutdown: () => {},
+					getContextUsage: () => undefined,
+					compact: () => {},
+					getSystemPrompt: () => "",
+				},
+			);
+
+			const shortcuts = runner.getShortcuts(DEFAULT_KEYBINDINGS);
+			const shortcut = shortcuts.get("ctrl+shift+w");
+			expect(shortcut).toBeDefined();
+			await shortcut!.handler(runner.createContext());
+
+			expect(switchSessionSpy).toHaveBeenCalledWith("/tmp/next-session.jsonl");
+		});
+
+		it("returns false when invoking a missing command", async () => {
+			const extCode = `
+				export default function(pi) {
+					pi.registerShortcut("ctrl+shift+w", {
+						handler: async () => {
+							globalThis.invokeResult = await pi.invokeCommand("missing-cmd", "args");
+						},
+					});
+				}
+			`;
+			fs.writeFileSync(path.join(extensionsDir, "invoke-missing.ts"), extCode);
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+
+			runner.bindCore(
+				{
+					sendMessage: () => {},
+					sendUserMessage: () => {},
+					invokeCommand: async (name) => !!runner.getCommand(name),
+					appendEntry: () => {},
+					setSessionName: () => {},
+					getSessionName: () => undefined,
+					setLabel: () => {},
+					getActiveTools: () => [],
+					getAllTools: () => [],
+					setActiveTools: () => {},
+					getCommands: () => [],
+					setModel: async () => true,
+					getThinkingLevel: () => "off",
+					setThinkingLevel: () => {},
+				},
+				{
+					getModel: () => undefined,
+					isIdle: () => true,
+					abort: () => {},
+					hasPendingMessages: () => false,
+					shutdown: () => {},
+					getContextUsage: () => undefined,
+					compact: () => {},
+					getSystemPrompt: () => "",
+				},
+			);
+
+			const shortcuts = runner.getShortcuts(DEFAULT_KEYBINDINGS);
+			const shortcut = shortcuts.get("ctrl+shift+w");
+			expect(shortcut).toBeDefined();
+			await shortcut!.handler(runner.createContext());
+
+			expect((globalThis as any).invokeResult).toBe(false);
 		});
 	});
 

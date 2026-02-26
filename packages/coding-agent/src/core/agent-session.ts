@@ -845,15 +845,10 @@ export class AgentSession {
 	}
 
 	/**
-	 * Try to execute an extension command. Returns true if command was found and executed.
+	 * Execute an extension command by name. Returns true if command was found and executed.
 	 */
-	private async _tryExecuteExtensionCommand(text: string): Promise<boolean> {
+	private async _executeExtensionCommand(commandName: string, args: string): Promise<boolean> {
 		if (!this._extensionRunner) return false;
-
-		// Parse command name and args
-		const spaceIndex = text.indexOf(" ");
-		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
-		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
 
 		const command = this._extensionRunner.getCommand(commandName);
 		if (!command) return false;
@@ -873,6 +868,17 @@ export class AgentSession {
 			});
 			return true;
 		}
+	}
+
+	/**
+	 * Try to execute an extension command from slash-command text.
+	 */
+	private async _tryExecuteExtensionCommand(text: string): Promise<boolean> {
+		// Parse command name and args
+		const spaceIndex = text.indexOf(" ");
+		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+		const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
+		return this._executeExtensionCommand(commandName, args);
 	}
 
 	/**
@@ -1908,6 +1914,7 @@ export class AgentSession {
 						});
 					});
 				},
+				invokeCommand: async (name, args) => this._executeExtensionCommand(name, args ?? ""),
 				appendEntry: (customType, data) => {
 					this.sessionManager.appendCustomEntry(customType, data);
 				},

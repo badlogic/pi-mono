@@ -960,6 +960,30 @@ When not streaming, the message is sent immediately and triggers a new turn. Whe
 
 See [send-user-message.ts](../examples/extensions/send-user-message.ts) for a complete example.
 
+### pi.invokeCommand(name, args?)
+
+Invoke a registered extension command programmatically. Returns `false` if the command is not found.
+
+This is useful from shortcut handlers, where you want to reuse command logic that requires `ExtensionCommandContext` methods (`switchSession`, `newSession`, `fork`, `reload`, etc.).
+
+```typescript
+pi.registerCommand("switch-workspace", {
+  description: "Switch to a workspace session",
+  handler: async (args, ctx) => {
+    await ctx.waitForIdle();
+    await ctx.switchSession(args);
+  },
+});
+
+pi.registerShortcut("ctrl+shift+w", {
+  description: "Switch workspace",
+  handler: async () => {
+    const ok = await pi.invokeCommand("switch-workspace", "/path/to/session.jsonl");
+    if (!ok) throw new Error("switch-workspace command is not registered");
+  },
+});
+```
+
 ### pi.appendEntry(customType, data?)
 
 Persist extension state (does NOT participate in LLM context).
