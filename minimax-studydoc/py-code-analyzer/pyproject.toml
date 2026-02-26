@@ -1,0 +1,15 @@
+{
+  "name": "py-code-analyzer",
+  "version": "0.1.0",
+  "description": "Code analyzer using PydanticAI",
+  "requires": {
+    "python": ">=3.12"
+  },
+  "dependencies": {
+    "pydantic-ai": "^0.0.20",
+    "fastapi": "^0.115.0",
+    "uvicorn": "^0.32.0",
+    "sse-starlette": "^2.0.0",
+    "python-dotenv": "^1.0.0"
+  }
+}
