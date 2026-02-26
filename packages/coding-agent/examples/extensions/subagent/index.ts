@@ -284,7 +284,14 @@ async function runSingleAgent(
 		let wasAborted = false;
 
 		const exitCode = await new Promise<number>((resolve) => {
-			const proc = spawn("pi", args, { cwd: cwd ?? defaultCwd, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+			const isWindows = process.platform === "win32";
+			const spawnCommand = isWindows ? "cmd.exe" : "pi";
+			const spawnArgs = isWindows ? ["/d", "/s", "/c", "pi", ...args] : args;
+			const proc = spawn(spawnCommand, spawnArgs, {
+				cwd: cwd ?? defaultCwd,
+				shell: false,
+				stdio: ["ignore", "pipe", "pipe"],
+			});
 			let buffer = "";
 
 			const processLine = (line: string) => {
