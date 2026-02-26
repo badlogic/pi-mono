@@ -15,6 +15,7 @@ import {
 	type AgentSession,
 	type AgentSessionEvent,
 } from "@mariozechner/pi-coding-agent";
+import { createGitCloneTool, createGitHubZipTool } from "./git-tool.js";
 
 export interface AgentConfig {
 	repoPath: string;
@@ -83,6 +84,8 @@ export class AgentService {
 			createGrepTool(repoPath),
 			createFindTool(repoPath),
 			createLsTool(repoPath),
+			createGitCloneTool(repoPath),
+			createGitHubZipTool(repoPath),
 		];
 
 		const resourceLoader: ResourceLoader = {
@@ -114,7 +117,7 @@ export class AgentService {
 	}
 
 	private buildDefaultSystemPrompt(): string {
-		return `You are a code analysis assistant. Analyze code in the repository at: ${this.config.repoPath}
+		return `You are a code analysis assistant. Analyze code in the repository.
 
 Available tools:
 - read: Read file contents (supports offset/limit for large files)
@@ -122,13 +125,17 @@ Available tools:
 - find: Find files by glob pattern
 - ls: List directory contents
 - bash: Execute shell commands
+- git_clone: Clone a Git repository to the local filesystem
+- github_zip: Download GitHub repository as ZIP using PAT (faster for large repos)
 
 Guidelines:
-1. Start by exploring the directory structure with ls or find
-2. Use grep to find relevant code patterns
-3. Read specific files to understand implementation details
-4. Be concise and focus on the user's specific questions
-5. Provide actionable insights and code examples when helpful`;
+1. If no code is available, use git_clone or github_zip to get the repository first
+2. For GitHub repos, prefer github_zip (requires GITHUB_PAT env var) as it's faster
+3. Start by exploring the directory structure with ls or find
+4. Use grep to find relevant code patterns
+5. Read specific files to understand implementation details
+6. Be concise and focus on the user's specific questions
+7. Provide actionable insights and code examples when helpful`;
 	}
 
 	async analyze(prompt: string, onEvent?: (event: AgentSessionEvent) => void): Promise<AnalysisResult> {
