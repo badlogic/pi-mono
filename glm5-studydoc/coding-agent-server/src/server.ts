@@ -1,5 +1,6 @@
 import express, { type Request, type Response } from "express";
 import { AgentService, type AgentConfig, type AgentSessionEvent } from "./agent-service.js";
+import { AgentSessionManager } from "./session-manager.js";
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -11,22 +12,34 @@ const MODEL_ID = process.env.MODEL_ID || "claude-sonnet-4-20250514";
 const THINKING_LEVEL = (process.env.THINKING_LEVEL as AgentConfig["thinkingLevel"]) || "medium";
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
-let agentService: AgentService | null = null;
+// Session manager configuration
+const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "5", 5);
+const SESSION_IDLE_TIMEOUT_MS = parseInt(process.env.SESSION_IDLE_TIMEOUT_MS || "1800000", 10); // 30 minutes
+const SESSION_MAX_LIFETIME_MS = parseInt(process.env.SESSION_MAX_LIFETIME_MS || "7200000", 10); // 2 hours
 
-async function getAgentService(): Promise<AgentService> {
-	if (!agentService) {
-		console.log(`[Agent] Initializing agent for repo: ${REPO_PATH}`);
-		agentService = new AgentService({
-			repoPath: REPO_PATH,
-			apiKey: API_KEY,
-			provider: PROVIDER,
-			modelId: MODEL_ID,
-			thinkingLevel: THINKING_LEVEL,
-		});
-		await agentService.initialize();
-		console.log("[Agent] Agent initialized successfully");
-	}
-	return agentService;
+// Initialize session manager
+const sessionManager = new AgentSessionManager({
+	maxSessions: MAX_SESSIONS,
+	idleTimeoutMs: SESSION_IDLE_TIMEOUT_MS,
+	maxLifetimeMs: SESSION_MAX_LIFETIME_MS,
+});
+
+/**
+ * Get or create session from request
+ */
+async function getSessionFromRequest(req: Request): Promise<{ sessionId: string; agent: AgentService }> {
+	const sessionId = (req.headers["x-session-id"] as string) || "default";
+
+	const config: AgentConfig = {
+		repoPath: REPO_PATH,
+		apiKey: API_KEY,
+		provider: PROVIDER,
+		modelId: MODEL_ID,
+		thinkingLevel: THINKING_LEVEL,
+	};
+
+	const agent = await sessionManager.getSession(sessionId, config);
+	return { sessionId, agent };
 }
 
 app.post("/analyze", async (req: Request, res: Response): Promise<void> => {
@@ -39,16 +52,17 @@ app.post("/analyze", async (req: Request, res: Response): Promise<void> => {
 			return;
 		}
 
-		console.log(`[Analyze] Received prompt: ${prompt.substring(0, 100)}...`);
+		const { sessionId, agent } = await getSessionFromRequest(req);
+		console.log(`[Analyze] Session: ${sessionId}, Prompt: ${prompt.substring(0, 100)}...`);
 
-		const agent = await getAgentService();
 		const result = await agent.analyze(prompt);
 
 		const duration = Date.now() - startTime;
-		console.log(`[Analyze] Completed in ${duration}ms, ${result.toolCalls.length} tool calls`);
+		console.log(`[Analyze] Session: ${sessionId}, Completed in ${duration}ms, ${result.toolCalls.length} tool calls`);
 
 		res.json({
 			...result,
+			sessionId,
 			duration,
 		});
 	} catch (error) {
@@ -72,14 +86,13 @@ app.post("/analyze/stream", async (req: Request, res: Response): Promise<void> =
 			return;
 		}
 
-		console.log(`[Stream] Received prompt: ${prompt.substring(0, 100)}...`);
+		const { sessionId, agent } = await getSessionFromRequest(req);
+		console.log(`[Stream] Session: ${sessionId}, Prompt: ${prompt.substring(0, 100)}...`);
 
 		res.setHeader("Content-Type", "text/event-stream");
 		res.setHeader("Cache-Control", "no-cache");
 		res.setHeader("Connection", "keep-alive");
 		res.setHeader("X-Accel-Buffering", "no");
-
-		const agent = await getAgentService();
 
 		const result = await agent.analyze(prompt, (event: AgentSessionEvent) => {
 			if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
@@ -106,10 +119,11 @@ app.post("/analyze/stream", async (req: Request, res: Response): Promise<void> =
 		});
 
 		const duration = Date.now() - startTime;
-		console.log(`[Stream] Completed in ${duration}ms`);
+		console.log(`[Stream] Session: ${sessionId}, Completed in ${duration}ms`);
 
 		const doneData = JSON.stringify({
 			type: "done",
+			sessionId,
 			result: {
 				...result,
 				duration,
@@ -139,17 +153,18 @@ app.post("/chat", async (req: Request, res: Response): Promise<void> => {
 			return;
 		}
 
-		console.log(`[Chat] Received prompt: ${prompt.substring(0, 100)}...`);
+		const { sessionId, agent } = await getSessionFromRequest(req);
+		console.log(`[Chat] Session: ${sessionId}, Prompt: ${prompt.substring(0, 100)}...`);
 
-		const agent = await getAgentService();
 		const response = await agent.chat(prompt);
 
 		const duration = Date.now() - startTime;
-		console.log(`[Chat] Completed in ${duration}ms`);
+		console.log(`[Chat] Session: ${sessionId}, Completed in ${duration}ms`);
 
 		res.json({
 			success: true,
 			response,
+			sessionId,
 			duration,
 		});
 	} catch (error) {
@@ -165,10 +180,11 @@ app.post("/chat", async (req: Request, res: Response): Promise<void> => {
 
 app.get("/messages", async (req: Request, res: Response): Promise<void> => {
 	try {
-		const agent = await getAgentService();
+		const { sessionId, agent } = await getSessionFromRequest(req);
 		const messages = agent.getMessages();
 		res.json({
 			success: true,
+			sessionId,
 			count: messages.length,
 			messages,
 		});
@@ -182,26 +198,84 @@ app.get("/messages", async (req: Request, res: Response): Promise<void> => {
 });
 
 app.get("/health", (req: Request, res: Response): void => {
+	const stats = sessionManager.getStats();
 	res.json({
 		status: "ok",
+		sessions: stats,
 		config: {
 			repoPath: REPO_PATH,
 			provider: PROVIDER,
 			modelId: MODEL_ID,
 			thinkingLevel: THINKING_LEVEL,
 			hasApiKey: !!API_KEY,
+			maxSessions: MAX_SESSIONS,
+			sessionIdleTimeoutMs: SESSION_IDLE_TIMEOUT_MS,
+			sessionMaxLifetimeMs: SESSION_MAX_LIFETIME_MS,
 		},
 	});
 });
 
+/**
+ * Get session statistics
+ */
+app.get("/sessions", (req: Request, res: Response): void => {
+	const sessions = sessionManager.listSessions();
+	const stats = sessionManager.getStats();
+	res.json({
+		success: true,
+		sessions,
+		stats,
+	});
+});
+
+/**
+ * Destroy a specific session
+ */
+app.delete("/sessions/:sessionId", async (req: Request, res: Response): Promise<void> => {
+	try {
+		const { sessionId } = req.params;
+		const destroyed = await sessionManager.destroySession(sessionId);
+
+		if (destroyed) {
+			res.json({
+				success: true,
+				message: `Session ${sessionId} destroyed`,
+			});
+		} else {
+			res.status(404).json({
+				success: false,
+				error: `Session ${sessionId} not found`,
+			});
+		}
+	} catch (error) {
+		console.error("[Delete Session] Error:", error);
+		res.status(500).json({
+			success: false,
+			error: error instanceof Error ? error.message : "Unknown error",
+		});
+	}
+});
+
+/**
+ * Reset current session (from X-Session-Id header)
+ */
 app.post("/reset", async (req: Request, res: Response): Promise<void> => {
 	try {
-		if (agentService) {
-			await agentService.dispose();
-			agentService = null;
-			console.log("[Reset] Agent disposed");
+		const sessionId = (req.headers["x-session-id"] as string) || "default";
+		const destroyed = await sessionManager.destroySession(sessionId);
+
+		if (destroyed) {
+			console.log(`[Reset] Session ${sessionId} destroyed`);
+			res.json({
+				success: true,
+				message: `Session ${sessionId} reset successfully`,
+			});
+		} else {
+			res.json({
+				success: true,
+				message: `Session ${sessionId} was not active`,
+			});
 		}
-		res.json({ success: true, message: "Agent reset successfully" });
 	} catch (error) {
 		console.error("[Reset] Error:", error);
 		res.status(500).json({
@@ -219,20 +293,25 @@ const server = app.listen(PORT, "0.0.0.0", () => {
 	console.log(`  - Model: ${MODEL_ID}`);
 	console.log(`  - Thinking level: ${THINKING_LEVEL}`);
 	console.log(`  - API key configured: ${!!API_KEY}`);
+	console.log(`  - Max sessions: ${MAX_SESSIONS}`);
+	console.log(`  - Session idle timeout: ${SESSION_IDLE_TIMEOUT_MS}ms`);
+	console.log(`  - Session max lifetime: ${SESSION_MAX_LIFETIME_MS}ms`);
 	console.log(`\nEndpoints:`);
 	console.log(`  POST /analyze        - Analyze code (returns full result)`);
 	console.log(`  POST /analyze/stream - Analyze code (SSE streaming)`);
 	console.log(`  POST /chat           - Simple chat`);
 	console.log(`  GET  /messages       - Get conversation history`);
-	console.log(`  GET  /health         - Health check`);
-	console.log(`  POST /reset          - Reset agent session`);
+	console.log(`  GET  /health         - Health check with session stats`);
+	console.log(`  GET  /sessions       - List all active sessions`);
+	console.log(`  DELETE /sessions/:id - Destroy specific session`);
+	console.log(`  POST /reset          - Reset current session`);
+	console.log(`\nHeaders:`);
+	console.log(`  X-Session-Id         - Session identifier (default: "default")`);
 });
 
 process.on("SIGTERM", async () => {
 	console.log("SIGTERM received, shutting down...");
-	if (agentService) {
-		await agentService.dispose();
-	}
+	await sessionManager.dispose();
 	server.close(() => {
 		console.log("Server closed");
 		process.exit(0);
@@ -241,9 +320,7 @@ process.on("SIGTERM", async () => {
 
 process.on("SIGINT", async () => {
 	console.log("SIGINT received, shutting down...");
-	if (agentService) {
-		await agentService.dispose();
-	}
+	await sessionManager.dispose();
 	server.close(() => {
 		console.log("Server closed");
 		process.exit(0);
