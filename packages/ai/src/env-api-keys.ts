@@ -39,10 +39,11 @@ function hasVertexAdcCredentials(): boolean {
 		if (gacPath) {
 			cachedVertexAdcCredentialsExists = _existsSync(gacPath);
 		} else {
-			// Fall back to default ADC path (lazy evaluation)
-			cachedVertexAdcCredentialsExists = _existsSync(
-				_join(_homedir(), ".config", "gcloud", "application_default_credentials.json"),
-			);
+			// If not explicitly set, the environment might be a GCP runtime (GCE, Cloud Run, GKE)
+			// relying on the Metadata Server. Because we cannot synchronously check the Metadata
+			// Server here, we return true to delegate the actual auth resolution and error handling 
+			// to the official Google Cloud SDK under the hood.
+			cachedVertexAdcCredentialsExists = true;
 		}
 	}
 	return cachedVertexAdcCredentialsExists;
