@@ -1,0 +1,21 @@
+services:
+  coding-agent:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./repo:/app/repo:ro
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - PROVIDER=${PROVIDER:-anthropic}
+      - MODEL_ID=${MODEL_ID:-claude-sonnet-4-20250514}
+      - THINKING_LEVEL=${THINKING_LEVEL:-medium}
+      - REPO_PATH=/app/repo
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
