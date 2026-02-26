@@ -1,6 +1,6 @@
 {
   "name": "coding-agent-server",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "Node.js server for running pi coding agent programmatically",
   "scripts": {
@@ -9,18 +9,18 @@
     "dev": "tsc --watch"
   },
   "dependencies": {
-    "@mariozechner/pi-ai": "latest",
-    "@mariozechner/pi-agent-core": "latest",
-    "@mariozechner/pi-coding-agent": "latest",
+    "@mariozechner/pi-ai": "^0.55.1",
+    "@mariozechner/pi-agent-core": "^0.55.1",
+    "@mariozechner/pi-coding-agent": "^0.55.1",
     "@sinclair/typebox": "^0.34.0",
     "express": "^4.21.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.0.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.9.3"
   },
-  "engines": {
-    "node": ">=20.0.0"
+  "engines": { 
+    "node": ">=22.0.0"
   }
 }
