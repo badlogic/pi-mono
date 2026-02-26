@@ -163,5 +163,23 @@ export function transformMessages<TApi extends Api>(
 		}
 	}
 
+	// Final flush: insert synthetic results for any tool calls still pending at end of array.
+	// This happens when a session is interrupted mid-tool-execution (timeout, crash, abort)
+	// and the conversation ends with an assistant message containing unresolved tool calls.
+	if (pendingToolCalls.length > 0) {
+		for (const tc of pendingToolCalls) {
+			if (!existingToolResultIds.has(tc.id)) {
+				result.push({
+					role: "toolResult",
+					toolCallId: tc.id,
+					toolName: tc.name,
+					content: [{ type: "text", text: "No result provided" }],
+					isError: true,
+					timestamp: Date.now(),
+				} as ToolResultMessage);
+			}
+		}
+	}
+
 	return result;
 }
