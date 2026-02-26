@@ -6,16 +6,12 @@ import {
 	loadSkillsFromDir,
 	type ResourceLoader,
 	type Skill,
-	type LoadExtensionsResult,
 	type ResourceDiagnostic,
-	type Extension,
 } from "@mariozechner/pi-coding-agent";
 
 export interface PiResourceLoaderOptions {
 	repoPath: string;
-	extensionPaths?: string[];
 	skillPaths?: string[];
-	noExtensions?: boolean;
 	noSkills?: boolean;
 	/** Custom system prompt (optional) */
 	systemPrompt?: string;
@@ -33,49 +29,6 @@ function loadSkillsFromPiDir(repoPath: string): { skills: Skill[]; diagnostics: 
 
 	// Load skills from .pi/skills directory
 	return loadSkillsFromDir({ dir: piSkillsDir, source: "project" });
-}
-
-/**
- * Load extensions from .pi/extensions directory
- * Note: Extensions are loaded dynamically at runtime, but in server mode
- * we just collect the paths and log them since full extension loading
- * requires the ExtensionRunner which needs a UI context.
- */
-async function loadExtensionsFromPiDir(
-	repoPath: string,
-	cwd: string,
-): Promise<LoadExtensionsResult> {
-	const piExtensionsDir = join(repoPath, ".pi", "extensions");
-	
-	if (!existsSync(piExtensionsDir)) {
-		return { extensions: [], errors: [], runtime: createExtensionRuntime() };
-	}
-
-	// Find all .ts and .js files in .pi/extensions
-	const entries = readdirSync(piExtensionsDir, { withFileTypes: true });
-	const extensionPaths: string[] = [];
-
-	for (const entry of entries) {
-		if (entry.isFile() && (entry.name.endsWith(".ts") || entry.name.endsWith(".js"))) {
-			extensionPaths.push(join(piExtensionsDir, entry.name));
-		}
-	}
-
-	if (extensionPaths.length === 0) {
-		return { extensions: [], errors: [], runtime: createExtensionRuntime() };
-	}
-
-	// For now, just log the extensions found but don't fully load them
-	// as server mode doesn't have the ExtensionRunner setup
-	const errors: Array<{ path: string; error: string }> = [];
-	const extensions: Extension[] = [];
-
-	for (const extPath of extensionPaths) {
-		// Log that we found an extension but note it requires interactive mode
-		console.log(`[ResourceLoader] Found extension: ${extPath} (requires interactive mode for full functionality)`);
-	}
-
-	return { extensions, errors, runtime: createExtensionRuntime() };
 }
 
 /**
@@ -160,25 +113,8 @@ function loadSystemPromptFromFile(repoPath: string): string | undefined {
  * Create a ResourceLoader that loads resources from .pi directory
  */
 export async function createPiResourceLoader(options: PiResourceLoaderOptions): Promise<ResourceLoader> {
-	const { repoPath, extensionPaths = [], skillPaths = [], noExtensions = false, noSkills = false, systemPrompt } = options;
+	const { repoPath, skillPaths = [], noSkills = false, systemPrompt } = options;
 	const cwd = resolve(repoPath);
-
-	// Load extensions
-	let extensionsResult: LoadExtensionsResult = { extensions: [], errors: [], runtime: createExtensionRuntime() };
-	if (!noExtensions) {
-		// Load from .pi/extensions
-		const piExtensions = await loadExtensionsFromPiDir(repoPath, cwd);
-		extensionsResult.extensions.push(...piExtensions.extensions);
-		extensionsResult.errors.push(...piExtensions.errors);
-
-		// Load from additional paths
-		if (extensionPaths.length > 0) {
-			// Log additional extension paths but don't load them in server mode
-			for (const extPath of extensionPaths) {
-				console.log(`[ResourceLoader] Found extension: ${extPath} (requires interactive mode for full functionality)`);
-			}
-		}
-	}
 
 	// Load skills
 	let skillsResult: { skills: Skill[]; diagnostics: ResourceDiagnostic[] } = { skills: [], diagnostics: [] };
@@ -211,9 +147,6 @@ export async function createPiResourceLoader(options: PiResourceLoaderOptions): 
 	const finalSystemPrompt = systemPrompt ?? loadSystemPromptFromFile(repoPath);
 
 	// Log loaded resources
-	if (extensionsResult.extensions.length > 0) {
-		console.log(`[ResourceLoader] Loaded ${extensionsResult.extensions.length} extensions from .pi/extensions`);
-	}
 	if (skillsResult.skills.length > 0) {
 		console.log(`[ResourceLoader] Loaded ${skillsResult.skills.length} skills from .pi/skills`);
 	}
@@ -225,7 +158,7 @@ export async function createPiResourceLoader(options: PiResourceLoaderOptions): 
 	}
 
 	return {
-		getExtensions: () => extensionsResult,
+		getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
 		getSkills: () => skillsResult,
 		getPrompts: () => ({ 
 			prompts: promptsResult.prompts.map(p => ({ 
