@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added support for iFlow provider with OAuth authentication
+
 ## [0.55.1] - 2026-02-26
 
 ### Added
