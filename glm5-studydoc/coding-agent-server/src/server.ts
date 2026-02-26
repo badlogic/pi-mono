@@ -202,6 +202,34 @@ app.get("/messages", async (req: Request, res: Response): Promise<void> => {
 	}
 });
 
+app.post("/summarize", async (req: Request, res: Response): Promise<void> => {
+	const startTime = Date.now();
+	try {
+		const { sessionId, agent } = await getSessionFromRequest(req);
+		console.log(`[Summarize] Session: ${sessionId}`);
+
+		const summary = await agent.summarize();
+
+		const duration = Date.now() - startTime;
+		console.log(`[Summarize] Session: ${sessionId}, Completed in ${duration}ms`);
+
+		res.json({
+			success: true,
+			summary,
+			sessionId,
+			duration,
+		});
+	} catch (error) {
+		const duration = Date.now() - startTime;
+		console.error(`[Summarize] Error after ${duration}ms:`, error);
+		res.status(500).json({
+			success: false,
+			error: error instanceof Error ? error.message : "Unknown error",
+			duration,
+		});
+	}
+});
+
 app.get("/health", (req: Request, res: Response): void => {
 	const stats = sessionManager.getStats();
 	res.json({

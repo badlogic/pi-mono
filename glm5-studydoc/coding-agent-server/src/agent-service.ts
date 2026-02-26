@@ -16,6 +16,7 @@ import {
 	type AgentSessionEvent,
 } from "@mariozechner/pi-coding-agent";
 import { createGitCloneTool, createGitHubZipTool } from "./git-tool.js";
+import { summarizeConversation } from "./memory/index.js";
 
 export type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 
@@ -250,6 +251,16 @@ Guidelines:
 			return [];
 		}
 		return this.session.agent.state.messages;
+	}
+
+	async summarize(): Promise<string> {
+		const messages = this.getMessages();
+		return summarizeConversation(messages as any, {
+			provider: this.config.provider,
+			modelId: this.config.modelId,
+			apiKey: this.config.apiKey,
+			baseUrl: this.config.baseUrl,
+		});
 	}
 
 	async dispose(): Promise<void> {
