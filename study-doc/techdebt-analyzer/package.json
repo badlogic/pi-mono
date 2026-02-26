@@ -1,0 +1,22 @@
+{
+	"name": "techdebt-analyzer",
+	"version": "1.0.0",
+	"description": "技术债分析服务 - 基于coding-agent SDK",
+	"type": "module",
+	"scripts": {
+		"dev": "tsx watch server.ts",
+		"start": "tsx server.ts",
+		"build": "tsc"
+	},
+	"dependencies": {
+		"@mariozechner/pi-coding-agent": "^0.55.1",
+		"@mariozechner/pi-ai": "^0.55.1",
+		"express": "^4.18.2"
+	},
+	"devDependencies": {
+		"@types/express": "^4.17.21",
+		"@types/node": "^20.10.0",
+		"tsx": "^4.7.0",
+		"typescript": "^5.3.0"
+	}
+}

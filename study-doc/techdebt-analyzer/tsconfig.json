@@ -1,0 +1,22 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"esModuleInterop": true,
+		"strict": true,
+		"skipLibCheck": true,
+		"resolveJsonModule": true,
+		"paths": {
+			"@mariozechner/pi-coding-agent": ["../packages/coding-agent/src/index.ts"],
+			"@mariozechner/pi-coding-agent/*": ["../packages/coding-agent/src/*"],
+			"@mariozechner/pi-ai": ["../packages/ai/src/index.ts"],
+			"@mariozechner/pi-ai/*": ["../packages/ai/src/*"],
+			"@mariozechner/pi-agent-core": ["../packages/agent/src/index.ts"],
+			"@mariozechner/pi-agent-core/*": ["../packages/agent/src/*"],
+			"@mariozechner/pi-tui": ["../packages/tui/src/index.ts"],
+			"@mariozechner/pi-tui/*": ["../packages/tui/src/*"]
+		}
+	},
+	"include": ["server.ts"]
+}
