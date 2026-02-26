@@ -108,6 +108,7 @@ export class AgentService {
 		// Load resources from .pi directory
 		const resourceLoader = await createPiResourceLoader({
 			repoPath,
+			systemPrompt,
 		});
 
 		const { session } = await createAgentSession({

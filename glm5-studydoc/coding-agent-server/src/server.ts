@@ -34,6 +34,9 @@ const sessionManager = new AgentSessionManager({
 async function getSessionFromRequest(req: Request): Promise<{ sessionId: string; agent: AgentService }> {
 	const sessionId = (req.headers["x-session-id"] as string) || "default";
 
+	// Support system prompt from request body (for POST requests)
+	const requestSystemPrompt = req.body?.systemPrompt as string | undefined;
+
 	const config: AgentConfig = {
 		repoPath: REPO_PATH,
 		apiKey: API_KEY,
@@ -41,6 +44,7 @@ async function getSessionFromRequest(req: Request): Promise<{ sessionId: string;
 		modelId: CUSTOM_MODEL_ID || MODEL_ID,
 		thinkingLevel: THINKING_LEVEL,
 		baseUrl: BASE_URL || undefined,
+		systemPrompt: requestSystemPrompt,
 	};
 
 	const agent = await sessionManager.getSession(sessionId, config);

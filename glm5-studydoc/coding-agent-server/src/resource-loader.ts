@@ -11,96 +11,14 @@ import {
 	type Extension,
 } from "@mariozechner/pi-coding-agent";
 
-/** Tool descriptions for system prompt */
-const toolDescriptions: Record<string, string> = {
-	read: "Read file contents (supports offset/limit for large files)",
-	bash: "Execute shell commands",
-	grep: "Search file contents for patterns (supports regex)",
-	find: "Find files by glob pattern",
-	ls: "List directory contents",
-	git_clone: "Clone a Git repository to the local filesystem",
-	github_zip: "Download GitHub repository as ZIP using PAT",
-};
-
-/** Format skills for inclusion in system prompt */
-function formatSkillsForPrompt(skills: Skill[]): string {
-	if (skills.length === 0) return "";
-	
-	let result = "\n\n# Skills\n\n";
-	result += "You have access to the following skills:\n\n";
-	
-	for (const skill of skills) {
-		result += `## ${skill.name}\n\n`;
-		result += `${skill.description}\n\n`;
-	}
-	
-	return result;
-}
-
-/** Build system prompt similar to the main coding-agent */
-function buildSystemPrompt(options: {
-	cwd: string;
-	skills: Skill[];
-	contextFiles: Array<{ path: string; content: string }>;
-	selectedTools: string[];
-}): string {
-	const { cwd, skills, contextFiles, selectedTools } = options;
-
-	const now = new Date();
-	const dateTime = now.toLocaleString("en-US", {
-		weekday: "long",
-		year: "numeric",
-		month: "long",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		timeZoneName: "short",
-	});
-
-	// Build tools list
-	const tools = selectedTools.filter((t) => t in toolDescriptions);
-	const toolsList = tools.map((t) => `- ${t}: ${toolDescriptions[t]}`).join("\n");
-
-	let prompt = `You are a code analysis assistant. Analyze code in the repository.
-
-Available tools:
-${toolsList}
-
-Guidelines:
-1. Start by exploring the directory structure with ls or find
-2. Use grep to find relevant code patterns
-3. Read specific files to understand implementation details
-4. Be concise and focus on the user's specific questions
-5. Provide actionable insights and code examples when helpful`;
-
-	// Append project context files (AGENTS.md, etc.)
-	if (contextFiles.length > 0) {
-		prompt += "\n\n# Project Context\n\n";
-		prompt += "Project-specific instructions and guidelines:\n\n";
-		for (const { path: filePath, content } of contextFiles) {
-			prompt += `## ${filePath}\n\n${content}\n\n`;
-		}
-	}
-
-	// Append skills
-	if (skills.length > 0) {
-		prompt += formatSkillsForPrompt(skills);
-	}
-
-	// Add date/time and working directory
-	prompt += `\nCurrent date and time: ${dateTime}`;
-	prompt += `\nCurrent working directory: ${cwd}`;
-
-	return prompt;
-}
-
 export interface PiResourceLoaderOptions {
 	repoPath: string;
 	extensionPaths?: string[];
 	skillPaths?: string[];
 	noExtensions?: boolean;
 	noSkills?: boolean;
+	/** Custom system prompt (optional) */
+	systemPrompt?: string;
 }
 
 /**
@@ -219,10 +137,30 @@ function loadAgentsFile(repoPath: string): { path: string; content: string } | n
 }
 
 /**
+ * Load system prompt from .pi/system-prompt.md or .pi/SYSTEM_PROMPT.md
+ */
+function loadSystemPromptFromFile(repoPath: string): string | undefined {
+	const candidates = [".pi/system-prompt.md", ".pi/SYSTEM_PROMPT.md", "system-prompt.md", "SYSTEM_PROMPT.md"];
+	for (const filename of candidates) {
+		const filePath = join(repoPath, filename);
+		if (existsSync(filePath)) {
+			try {
+				const content = readFileSync(filePath, "utf-8");
+				console.log(`[ResourceLoader] Loaded system prompt from: ${filePath}`);
+				return content;
+			} catch {
+				// Ignore errors
+			}
+		}
+	}
+	return undefined;
+}
+
+/**
  * Create a ResourceLoader that loads resources from .pi directory
  */
 export async function createPiResourceLoader(options: PiResourceLoaderOptions): Promise<ResourceLoader> {
-	const { repoPath, extensionPaths = [], skillPaths = [], noExtensions = false, noSkills = false } = options;
+	const { repoPath, extensionPaths = [], skillPaths = [], noExtensions = false, noSkills = false, systemPrompt } = options;
 	const cwd = resolve(repoPath);
 
 	// Load extensions
@@ -269,6 +207,9 @@ export async function createPiResourceLoader(options: PiResourceLoaderOptions): 
 	const agentsFile = loadAgentsFile(repoPath);
 	const agentsFiles = agentsFile ? [agentsFile] : [];
 
+	// Determine system prompt (priority: 1. options.systemPrompt, 2. file, 3. undefined)
+	const finalSystemPrompt = systemPrompt ?? loadSystemPromptFromFile(repoPath);
+
 	// Log loaded resources
 	if (extensionsResult.extensions.length > 0) {
 		console.log(`[ResourceLoader] Loaded ${extensionsResult.extensions.length} extensions from .pi/extensions`);
@@ -282,14 +223,6 @@ export async function createPiResourceLoader(options: PiResourceLoaderOptions): 
 	if (agentsFiles.length > 0) {
 		console.log(`[ResourceLoader] Loaded agents file: ${agentsFiles[0].path}`);
 	}
-
-	// Build system prompt using the same function as the main coding-agent
-	const systemPrompt = buildSystemPrompt({
-		cwd,
-		skills: skillsResult.skills,
-		contextFiles: agentsFiles,
-		selectedTools: ["read", "bash", "grep", "find", "ls"],
-	});
 
 	return {
 		getExtensions: () => extensionsResult,
@@ -306,7 +239,7 @@ export async function createPiResourceLoader(options: PiResourceLoaderOptions): 
 		}),
 		getThemes: () => ({ themes: [], diagnostics: [] }),
 		getAgentsFiles: () => ({ agentsFiles }),
-		getSystemPrompt: () => systemPrompt,
+		getSystemPrompt: () => finalSystemPrompt,
 		getAppendSystemPrompt: () => [],
 		getPathMetadata: () => new Map(),
 		extendResources: () => {},
