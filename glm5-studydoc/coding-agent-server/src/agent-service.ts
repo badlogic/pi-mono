@@ -1,4 +1,4 @@
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel, getModels, type KnownProvider, type Model, type Api } from "@mariozechner/pi-ai";
 import {
 	AuthStorage,
 	createAgentSession,
@@ -17,6 +17,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { createGitCloneTool, createGitHubZipTool } from "./git-tool.js";
 
+export type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
+
 export interface AgentConfig {
 	repoPath: string;
 	apiKey?: string;
@@ -24,6 +26,8 @@ export interface AgentConfig {
 	modelId?: string;
 	thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 	systemPrompt?: string;
+	/** Custom base URL for OpenAI-compatible APIs (e.g., https://xxxx.yy/v1) */
+	baseUrl?: string;
 }
 
 export interface ToolCallRecord {
@@ -60,6 +64,7 @@ export class AgentService {
 			modelId = "claude-sonnet-4-20250514",
 			thinkingLevel = "medium",
 			systemPrompt,
+			baseUrl,
 		} = this.config;
 
 		const authStorage = AuthStorage.create();
@@ -68,7 +73,19 @@ export class AgentService {
 		}
 
 		const modelRegistry = new ModelRegistry(authStorage);
-		const model = getModel(provider, modelId);
+
+		// Get model - either from registry or create custom one for OpenAI-compatible APIs
+		let model: Model<Api> | undefined;
+
+		if (baseUrl) {
+			// Create custom model for OpenAI-compatible API
+			model = this.createCustomOpenAIModel(modelId, baseUrl);
+		} else {
+			// Use model from registry
+			const models = getModels(provider as KnownProvider);
+			model = models.find((m) => m.id === modelId);
+		}
+
 		if (!model) {
 			throw new Error(`Model not found: ${provider}/${modelId}`);
 		}
@@ -144,12 +161,20 @@ Guidelines:
 		}
 
 		const toolCalls: ToolCallRecord[] = [];
+		const toolArgsMap = new Map<string, Record<string, unknown>>();
 		let response = "";
 		let tokens = { input: 0, output: 0, total: 0 };
 
 		const unsubscribe = this.session!.subscribe((event) => {
 			if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
 				response += event.assistantMessageEvent.delta;
+				if (onEvent) {
+					onEvent(event);
+				}
+			}
+
+			if (event.type === "tool_execution_start") {
+				toolArgsMap.set(event.toolCallId, event.args as Record<string, unknown>);
 				if (onEvent) {
 					onEvent(event);
 				}
@@ -162,10 +187,14 @@ Guidelines:
 						: JSON.stringify(event.result?.content);
 				toolCalls.push({
 					name: event.toolName,
-					args: event.args as Record<string, unknown>,
+					args: toolArgsMap.get(event.toolCallId) || {},
 					result: resultText,
 					isError: event.isError,
 				});
+				toolArgsMap.delete(event.toolCallId);
+				if (onEvent) {
+					onEvent(event);
+				}
 			}
 
 			if (event.type === "message_end" && event.message.role === "assistant") {
@@ -228,5 +257,33 @@ Guidelines:
 			this.session.dispose();
 			this.session = null;
 		}
+	}
+
+	/**
+	 * Create a custom OpenAI-compatible model configuration
+	 */
+	private createCustomOpenAIModel(modelId: string, baseUrl: string): Model<"openai-completions"> {
+		return {
+			id: modelId,
+			name: modelId,
+			api: "openai-completions",
+			provider: "openai",
+			baseUrl: baseUrl,
+			reasoning: false,
+			input: ["text", "image"],
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 128000,
+			maxTokens: 4096,
+			compat: {
+				maxTokensField: "max_completion_tokens",
+				supportsReasoningEffort: false,
+				supportsDeveloperRole: false,
+			},
+		};
 	}
 }

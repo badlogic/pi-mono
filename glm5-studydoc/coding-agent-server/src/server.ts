@@ -12,6 +12,10 @@ const MODEL_ID = process.env.MODEL_ID || "claude-sonnet-4-20250514";
 const THINKING_LEVEL = (process.env.THINKING_LEVEL as AgentConfig["thinkingLevel"]) || "medium";
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
+// OpenAI-compatible API configuration
+const BASE_URL = process.env.BASE_URL || ""; // e.g., https://xxxx.yy/v1
+const CUSTOM_MODEL_ID = process.env.CUSTOM_MODEL_ID || ""; // Your custom model ID
+
 // Session manager configuration
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || "5", 5);
 const SESSION_IDLE_TIMEOUT_MS = parseInt(process.env.SESSION_IDLE_TIMEOUT_MS || "1800000", 10); // 30 minutes
@@ -34,8 +38,9 @@ async function getSessionFromRequest(req: Request): Promise<{ sessionId: string;
 		repoPath: REPO_PATH,
 		apiKey: API_KEY,
 		provider: PROVIDER,
-		modelId: MODEL_ID,
+		modelId: CUSTOM_MODEL_ID || MODEL_ID,
 		thinkingLevel: THINKING_LEVEL,
+		baseUrl: BASE_URL || undefined,
 	};
 
 	const agent = await sessionManager.getSession(sessionId, config);
@@ -291,6 +296,8 @@ const server = app.listen(PORT, "0.0.0.0", () => {
 	console.log(`  - Repo path: ${REPO_PATH}`);
 	console.log(`  - Provider: ${PROVIDER}`);
 	console.log(`  - Model: ${MODEL_ID}`);
+	console.log(`  - Custom Model: ${CUSTOM_MODEL_ID || "(not set)"}`);
+	console.log(`  - Base URL: ${BASE_URL || "(using provider default)"}`);
 	console.log(`  - Thinking level: ${THINKING_LEVEL}`);
 	console.log(`  - API key configured: ${!!API_KEY}`);
 	console.log(`  - Max sessions: ${MAX_SESSIONS}`);
