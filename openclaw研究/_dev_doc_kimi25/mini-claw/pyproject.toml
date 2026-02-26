@@ -1,0 +1,21 @@
+[project]
+name = "mini-claw"
+version = "0.1.0"
+description = "Minimal AI coding assistant - OpenAI only"
+requires-python = ">=3.12"
+dependencies = [
+    "openai>=1.0.0",
+    "pydantic>=2.0.0",
+    "rich>=13.0.0",
+    "prompt-toolkit>=3.0.0",
+]
+
+[project.scripts]
+mini-claw = "miniclaw.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["miniclaw"]
