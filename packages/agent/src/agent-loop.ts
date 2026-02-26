@@ -49,7 +49,9 @@ export function agentLoop(
 		}
 
 		await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
-	})();
+	})().catch((err) => {
+		terminateStreamOnError(stream, err);
+	});
 
 	return stream;
 }
@@ -86,7 +88,9 @@ export function agentLoopContinue(
 		stream.push({ type: "turn_start" });
 
 		await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
-	})();
+	})().catch((err) => {
+		terminateStreamOnError(stream, err);
+	});
 
 	return stream;
 }
@@ -96,6 +100,34 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 		(event: AgentEvent) => event.type === "agent_end",
 		(event: AgentEvent) => (event.type === "agent_end" ? event.messages : []),
 	);
+}
+
+/**
+ * Terminate an agent stream after an unexpected error in the async loop.
+ * Pushes an agent_end event with an error message so consumers (for-await)
+ * don't hang indefinitely waiting for events that will never arrive.
+ */
+function terminateStreamOnError(stream: EventStream<AgentEvent, AgentMessage[]>, err: unknown): void {
+	const errorMessage: AgentMessage = {
+		role: "assistant",
+		content: [{ type: "text", text: "" }],
+		provider: "",
+		model: "",
+		api: "" as any,
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "error",
+		errorMessage: err instanceof Error ? err.message : String(err),
+		timestamp: Date.now(),
+	} as AgentMessage;
+	stream.push({ type: "agent_end", messages: [errorMessage] });
+	stream.end([errorMessage]);
 }
 
 /**

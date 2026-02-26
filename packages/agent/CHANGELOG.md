@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed silent hang when async agent loop throws: added `.catch()` to fire-and-forget async IIFEs in `agentLoop()` and `agentLoopContinue()` so that `EventStream` is properly terminated with an `agent_end` error event instead of leaving `for-await` consumers blocked indefinitely
+
 ## [0.55.1] - 2026-02-26
 
 ## [0.55.0] - 2026-02-24

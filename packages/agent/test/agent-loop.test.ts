@@ -414,6 +414,173 @@ describe("agentLoop with AgentMessage", () => {
 	});
 });
 
+describe("agentLoop error handling", () => {
+	it("should terminate stream with error when streamFn throws synchronously", async () => {
+		const context: AgentContext = {
+			systemPrompt: "You are helpful.",
+			messages: [],
+			tools: [],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("Hello");
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		const streamFn = () => {
+			throw new Error("Connection refused");
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
+
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		const messages = await stream.result();
+
+		// Stream should terminate with agent_end containing error
+		const agentEnd = events.find((e) => e.type === "agent_end");
+		expect(agentEnd).toBeDefined();
+		if (agentEnd?.type === "agent_end") {
+			expect(agentEnd.messages.length).toBe(1);
+			const errorMsg = agentEnd.messages[0] as AssistantMessage;
+			expect(errorMsg.stopReason).toBe("error");
+			expect(errorMsg.errorMessage).toBe("Connection refused");
+		}
+
+		expect(messages.length).toBe(1);
+		expect((messages[0] as AssistantMessage).stopReason).toBe("error");
+	});
+
+	it("should terminate stream with error when convertToLlm throws", async () => {
+		const context: AgentContext = {
+			systemPrompt: "You are helpful.",
+			messages: [],
+			tools: [],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("Hello");
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: () => {
+				throw new Error("Invalid message format");
+			},
+		};
+
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				const message = createAssistantMessage([{ type: "text", text: "should not reach here" }]);
+				stream.push({ type: "done", reason: "stop", message });
+			});
+			return stream;
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
+
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		const messages = await stream.result();
+
+		const agentEnd = events.find((e) => e.type === "agent_end");
+		expect(agentEnd).toBeDefined();
+		if (agentEnd?.type === "agent_end") {
+			const errorMsg = agentEnd.messages[0] as AssistantMessage;
+			expect(errorMsg.stopReason).toBe("error");
+			expect(errorMsg.errorMessage).toBe("Invalid message format");
+		}
+
+		expect(messages.length).toBe(1);
+	});
+
+	it("should terminate stream with error when getApiKey throws", async () => {
+		const context: AgentContext = {
+			systemPrompt: "You are helpful.",
+			messages: [],
+			tools: [],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("Hello");
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			getApiKey: async () => {
+				throw new Error('No API key found for provider "anthropic"');
+			},
+		};
+
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				const message = createAssistantMessage([{ type: "text", text: "should not reach here" }]);
+				stream.push({ type: "done", reason: "stop", message });
+			});
+			return stream;
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
+
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		const messages = await stream.result();
+
+		const agentEnd = events.find((e) => e.type === "agent_end");
+		expect(agentEnd).toBeDefined();
+		if (agentEnd?.type === "agent_end") {
+			const errorMsg = agentEnd.messages[0] as AssistantMessage;
+			expect(errorMsg.stopReason).toBe("error");
+			expect(errorMsg.errorMessage).toContain("No API key found");
+		}
+
+		expect(messages.length).toBe(1);
+	});
+
+	it("should terminate agentLoopContinue stream on error", async () => {
+		const context: AgentContext = {
+			systemPrompt: "You are helpful.",
+			messages: [createUserMessage("Hello")],
+			tools: [],
+		};
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: () => {
+				throw new Error("conversion error");
+			},
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoopContinue(context, config, undefined, () => {
+			const s = new MockAssistantStream();
+			queueMicrotask(() => {
+				s.push({ type: "done", reason: "stop", message: createAssistantMessage([{ type: "text", text: "x" }]) });
+			});
+			return s;
+		});
+
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		const messages = await stream.result();
+		expect(messages.length).toBe(1);
+		expect((messages[0] as AssistantMessage).stopReason).toBe("error");
+		expect((messages[0] as AssistantMessage).errorMessage).toBe("conversion error");
+	});
+});
+
 describe("agentLoopContinue with AgentMessage", () => {
 	it("should throw when context has no messages", () => {
 		const context: AgentContext = {
