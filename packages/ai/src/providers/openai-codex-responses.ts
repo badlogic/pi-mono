@@ -6,6 +6,20 @@ if (typeof process !== "undefined" && (process.versions?.node || process.version
 	});
 }
 
+// Proxy support: Node.js fetch() does not respect HTTP_PROXY/HTTPS_PROXY env vars.
+// We lazily create an undici EnvHttpProxyAgent when proxy env vars are present.
+let _proxyReady: Promise<void> | null = null;
+let _proxyDispatcher: import("undici").Dispatcher | null = null;
+if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
+	_proxyReady = import("undici")
+		.then((m) => {
+			if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.ALL_PROXY) {
+				_proxyDispatcher = new m.EnvHttpProxyAgent();
+			}
+		})
+		.catch(() => {});
+}
+
 import type { Tool as OpenAITool, ResponseInput, ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { getEnvApiKey } from "../env-api-keys.js";
 import { supportsXhigh } from "../models.js";
@@ -181,12 +195,15 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				}
 
 				try {
+					// Ensure proxy dispatcher is initialized before first network call
+					if (_proxyReady) await _proxyReady;
 					response = await fetch(resolveCodexUrl(model.baseUrl), {
 						method: "POST",
 						headers,
 						body: bodyJson,
 						signal: options?.signal,
-					});
+						...(_proxyDispatcher ? { dispatcher: _proxyDispatcher } : {}),
+					} as RequestInit);
 
 					if (response.ok) {
 						break;
