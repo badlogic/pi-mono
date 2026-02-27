@@ -217,6 +217,18 @@ describe("AI Providers Abort Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.AVIAN_API_KEY)("Avian Provider Abort", () => {
+		const llm = getModel("avian", "deepseek/deepseek-v3.2");
+
+		it("should abort mid-stream", { retry: 3 }, async () => {
+			await testAbortSignal(llm);
+		});
+
+		it("should handle immediate abort", { retry: 3 }, async () => {
+			await testImmediateAbort(llm);
+		});
+	});
+
 	// Google Gemini CLI / Antigravity share the same provider, so one test covers both
 	describe("Google Gemini CLI Provider Abort", () => {
 		it.skipIf(!geminiCliToken)("should abort mid-stream", { retry: 3 }, async () => {

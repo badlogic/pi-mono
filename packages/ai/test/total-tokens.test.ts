@@ -418,6 +418,29 @@ describe("totalTokens field", () => {
 	});
 
 	// =========================================================================
+	// Avian
+	// =========================================================================
+
+	describe.skipIf(!process.env.AVIAN_API_KEY)("Avian", () => {
+		it(
+			"deepseek/deepseek-v3.2 - should return totalTokens equal to sum of components",
+			{ retry: 3, timeout: 60000 },
+			async () => {
+				const llm = getModel("avian", "deepseek/deepseek-v3.2");
+
+				console.log(`\nAvian / ${llm.id}:`);
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.AVIAN_API_KEY });
+
+				logUsage("First request", first);
+				logUsage("Second request", second);
+
+				assertTotalTokensEqualsComponents(first);
+				assertTotalTokensEqualsComponents(second);
+			},
+		);
+	});
+
+	// =========================================================================
 	// Vercel AI Gateway
 	// =========================================================================
 

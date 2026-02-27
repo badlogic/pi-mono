@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Avian as a new LLM provider with OpenAI-compatible API (models: DeepSeek V3.2, Kimi K2.5, GLM 5, MiniMax M2.5)
+
 ## [0.55.1] - 2026-02-26
 
 ### Added

@@ -64,6 +64,7 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - **Antigravity** (requires OAuth, see below)
 - **Amazon Bedrock**
 - **Kimi For Coding** (Moonshot AI, uses Anthropic-compatible API)
+- **Avian**
 - **Any OpenAI-compatible API**: Ollama, vLLM, LM Studio, etc.
 
 ## Installation
@@ -906,6 +907,7 @@ In Node.js environments, you can set environment variables to avoid passing API 
 | zAI | `ZAI_API_KEY` |
 | MiniMax | `MINIMAX_API_KEY` |
 | Kimi For Coding | `KIMI_API_KEY` |
+| Avian | `AVIAN_API_KEY` |
 | GitHub Copilot | `COPILOT_GITHUB_TOKEN` or `GH_TOKEN` or `GITHUB_TOKEN` |
 
 When set, the library automatically uses these keys:

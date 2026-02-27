@@ -1317,6 +1317,64 @@ async function generateModels() {
 		}
 	}
 
+	// Avian models (OpenAI-compatible API at api.avian.io)
+	const AVIAN_BASE_URL = "https://api.avian.io/v1";
+	const avianModels: Model<"openai-completions">[] = [
+		{
+			id: "deepseek/deepseek-v3.2",
+			name: "DeepSeek V3.2",
+			api: "openai-completions",
+			provider: "avian",
+			baseUrl: AVIAN_BASE_URL,
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0.26, output: 0.38, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 164000,
+			maxTokens: 65000,
+		},
+		{
+			id: "moonshotai/kimi-k2.5",
+			name: "Kimi K2.5",
+			api: "openai-completions",
+			provider: "avian",
+			baseUrl: AVIAN_BASE_URL,
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0.45, output: 2.20, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 131000,
+			maxTokens: 8000,
+		},
+		{
+			id: "z-ai/glm-5",
+			name: "GLM 5",
+			api: "openai-completions",
+			provider: "avian",
+			baseUrl: AVIAN_BASE_URL,
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0.30, output: 2.55, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 131000,
+			maxTokens: 16000,
+		},
+		{
+			id: "minimax/minimax-m2.5",
+			name: "MiniMax M2.5",
+			api: "openai-completions",
+			provider: "avian",
+			baseUrl: AVIAN_BASE_URL,
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0.30, output: 1.10, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1000000,
+			maxTokens: 1000000,
+		},
+	];
+	for (const model of avianModels) {
+		if (!allModels.some(m => m.provider === "avian" && m.id === model.id)) {
+			allModels.push(model);
+		}
+	}
+
 	const azureOpenAiModels: Model<Api>[] = allModels
 		.filter((model) => model.provider === "openai" && model.api === "openai-responses")
 		.map((model) => ({

@@ -474,6 +474,21 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
+	// Avian - OpenAI-compatible API
+	// =============================================================================
+
+	describe.skipIf(!process.env.AVIAN_API_KEY)("Avian", () => {
+		it("deepseek/deepseek-v3.2 via Avian - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("avian", "deepseek/deepseek-v3.2");
+			const result = await testContextOverflow(model, process.env.AVIAN_API_KEY!);
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
 	// OpenRouter - Multiple backend providers
 	// Expected pattern: "maximum context length is X tokens"
 	// =============================================================================

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Avian provider support (`AVIAN_API_KEY`)
+
 ## [0.55.1] - 2026-02-26
 
 ### New Features
