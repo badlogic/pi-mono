@@ -1,0 +1,32 @@
+{
+	"name": "@fugue/graph",
+	"version": "0.1.0",
+	"description": "Context graph — Drizzle schema, CRUD, Apache AGE traversal",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": ["dist"],
+	"scripts": {
+		"clean": "rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json",
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"test": "vitest --run",
+		"test:coverage": "vitest --run --coverage"
+	},
+	"license": "MIT",
+	"engines": { "node": ">=20.0.0" },
+	"dependencies": {
+		"@fugue/shared": "^0.1.0",
+		"drizzle-orm": "^0.45.0",
+		"pg": "^8.13.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.5",
+		"@types/pg": "^8.11.10",
+		"@vitest/coverage-v8": "^3.0.0",
+		"drizzle-kit": "^0.31.0",
+		"@electric-sql/pglite": "^0.3.0",
+		"typescript": "^5.9.2",
+		"vitest": "^3.0.0"
+	}
+}

@@ -26,7 +26,9 @@
 	"files": {
 		"includes": [
 			"packages/*/src/**/*.ts",
+			"packages/*/src/**/*.tsx",
 			"packages/*/test/**/*.ts",
+			"packages/*/test/**/*.tsx",
 			"packages/coding-agent/examples/**/*.ts",
 			"packages/web-ui/src/**/*.ts",
 			"packages/web-ui/example/**/*.ts",

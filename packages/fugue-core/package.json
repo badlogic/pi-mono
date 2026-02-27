@@ -1,0 +1,42 @@
+{
+	"name": "@fugue/core",
+	"version": "0.1.0",
+	"description": "Fugue API server — Hono, tRPC, auth, audit, orchestration",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": ["dist"],
+	"scripts": {
+		"clean": "rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json",
+		"dev": "tsx watch src/server.ts",
+		"start": "node dist/server.js",
+		"test": "vitest --run",
+		"test:coverage": "vitest --run --coverage"
+	},
+	"license": "MIT",
+	"engines": { "node": ">=20.0.0" },
+	"dependencies": {
+		"@fugue/events": "^0.1.0",
+		"@fugue/graph": "^0.1.0",
+		"@fugue/shared": "^0.1.0",
+		"@hono/node-server": "^1.13.0",
+		"@hono/trpc-server": "^0.3.4",
+		"@trpc/server": "^11.0.0",
+		"better-auth": "^1.2.0",
+		"hono": "^4.7.0",
+		"pg": "^8.13.0",
+		"pino": "^9.6.0",
+		"zod": "^3.24.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.5",
+		"@types/pg": "^8.11.10",
+		"@vitest/coverage-v8": "^3.0.0",
+		"drizzle-kit": "^0.31.0",
+		"@electric-sql/pglite": "^0.3.0",
+		"tsx": "^4.20.3",
+		"typescript": "^5.9.2",
+		"vitest": "^3.0.0"
+	}
+}

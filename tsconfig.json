@@ -22,9 +22,19 @@
 			"@mariozechner/pi-web-ui": ["./packages/web-ui/src/index.ts"],
 			"@mariozechner/pi-web-ui/*": ["./packages/web-ui/src/*"],
 			"@mariozechner/pi-agent-old": ["./packages/agent-old/src/index.ts"],
-			"@mariozechner/pi-agent-old/*": ["./packages/agent-old/src/*"]
+			"@mariozechner/pi-agent-old/*": ["./packages/agent-old/src/*"],
+			"@fugue/shared": ["./packages/fugue-shared/src/index.ts"],
+			"@fugue/shared/*": ["./packages/fugue-shared/src/*"],
+			"@fugue/graph": ["./packages/fugue-graph/src/index.ts"],
+			"@fugue/graph/*": ["./packages/fugue-graph/src/*"],
+			"@fugue/events": ["./packages/fugue-events/src/index.ts"],
+			"@fugue/events/*": ["./packages/fugue-events/src/*"],
+			"@fugue/core": ["./packages/fugue-core/src/index.ts"],
+			"@fugue/core/*": ["./packages/fugue-core/src/*"],
+			"@fugue/sync": ["./packages/fugue-sync/src/index.ts"],
+			"@fugue/sync/*": ["./packages/fugue-sync/src/*"]
 		}
 	},
 	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],
-	"exclude": ["packages/web-ui/**/*", "**/dist/**"]
+	"exclude": ["packages/web-ui/**/*", "packages/fugue-surface/**/*", "packages/fugue-connectors/**/*", "**/dist/**"]
 }
