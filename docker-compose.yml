@@ -57,6 +57,27 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  fugue-connectors:
+    build:
+      context: .
+      dockerfile: packages/fugue-connectors/Dockerfile
+    image: fugue-connectors:local
+    environment:
+      CONNECTOR_PORT: 4002
+      FUGUE_CORE_URL: http://fugue-core:3001
+      GITHUB_WEBHOOK_SECRET: "${GITHUB_WEBHOOK_SECRET:-}"
+    ports:
+      - "4002:4002"
+    depends_on:
+      fugue-core:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:4002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   fugue-surface:
     build:
       context: .
