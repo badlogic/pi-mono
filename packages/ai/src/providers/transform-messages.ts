@@ -38,6 +38,13 @@ export function transformMessages<TApi extends Api>(
 				assistantMsg.model === model.id;
 
 			const transformedContent = assistantMsg.content.flatMap((block) => {
+				if (block.type === "redactedThinking") {
+					// Redacted thinking is opaque encrypted content — only valid for the same model.
+					// Drop it for cross-model to avoid API errors.
+					if (isSameModel) return block;
+					return [];
+				}
+
 				if (block.type === "thinking") {
 					// For same model: keep thinking blocks with signatures (needed for replay)
 					// even if the thinking text is empty (OpenAI encrypted reasoning)

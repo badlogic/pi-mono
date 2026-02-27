@@ -14,6 +14,7 @@ import type {
 	ImageContent,
 	Message,
 	Model,
+	RedactedThinkingContent,
 	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
@@ -240,7 +241,14 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 			const anthropicStream = client.messages.stream({ ...params, stream: true }, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
 
-			type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string })) & { index: number };
+			type Block = (
+				| ThinkingContent
+				| RedactedThinkingContent
+				| TextContent
+				| (ToolCall & { partialJson: string })
+			) & {
+				index: number;
+			};
 			const blocks = output.content as Block[];
 
 			for await (const event of anthropicStream) {
@@ -269,6 +277,14 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 							type: "thinking",
 							thinking: "",
 							thinkingSignature: "",
+							index: event.index,
+						};
+						output.content.push(block);
+						stream.push({ type: "thinking_start", contentIndex: output.content.length - 1, partial: output });
+					} else if (event.content_block.type === "redacted_thinking") {
+						const block: Block = {
+							type: "redactedThinking",
+							data: event.content_block.data,
 							index: event.index,
 						};
 						output.content.push(block);
@@ -350,6 +366,13 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 								type: "thinking_end",
 								contentIndex: index,
 								content: block.thinking,
+								partial: output,
+							});
+						} else if (block.type === "redactedThinking") {
+							stream.push({
+								type: "thinking_end",
+								contentIndex: index,
+								content: "",
 								partial: output,
 							});
 						} else if (block.type === "toolCall") {
@@ -496,10 +519,15 @@ function createClient(
 	optionsHeaders?: Record<string, string>,
 	dynamicHeaders?: Record<string, string>,
 ): { client: Anthropic; isOAuthToken: boolean } {
+	// Adaptive thinking models (Opus 4.6, Sonnet 4.6) have interleaved thinking built-in.
+	// The beta header is deprecated on Opus 4.6 and redundant on Sonnet 4.6 with adaptive
+	// thinking, so skip it for all adaptive-thinking-capable models.
+	const needsInterleavedBeta = interleavedThinking && !supportsAdaptiveThinking(model.id);
+
 	// Copilot: Bearer auth, selective betas (no fine-grained-tool-streaming)
 	if (model.provider === "github-copilot") {
 		const betaFeatures: string[] = [];
-		if (interleavedThinking) {
+		if (needsInterleavedBeta) {
 			betaFeatures.push("interleaved-thinking-2025-05-14");
 		}
 
@@ -524,7 +552,7 @@ function createClient(
 	}
 
 	const betaFeatures = ["fine-grained-tool-streaming-2025-05-14"];
-	if (interleavedThinking) {
+	if (needsInterleavedBeta) {
 		betaFeatures.push("interleaved-thinking-2025-05-14");
 	}
 
@@ -611,7 +639,8 @@ function buildParams(
 		];
 	}
 
-	if (options?.temperature !== undefined) {
+	// Temperature is incompatible with extended thinking (adaptive or budget-based).
+	if (options?.temperature !== undefined && !options?.thinkingEnabled) {
 		params.temperature = options.temperature;
 	}
 
@@ -739,6 +768,11 @@ function convertMessages(
 							signature: block.thinkingSignature,
 						});
 					}
+				} else if (block.type === "redactedThinking") {
+					blocks.push({
+						type: "redacted_thinking",
+						data: block.data,
+					});
 				} else if (block.type === "toolCall") {
 					blocks.push({
 						type: "tool_use",

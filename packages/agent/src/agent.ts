@@ -506,6 +506,7 @@ export class Agent {
 				const onlyEmpty = !partial.content.some(
 					(c) =>
 						(c.type === "thinking" && c.thinking.trim().length > 0) ||
+						(c.type === "redactedThinking" && c.data.trim().length > 0) ||
 						(c.type === "text" && c.text.trim().length > 0) ||
 						(c.type === "toolCall" && c.name.trim().length > 0),
 				);

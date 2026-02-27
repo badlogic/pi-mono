@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `redacted_thinking` blocks being silently dropped — they are now captured during streaming, preserved in `AssistantMessage.content` as `redactedThinking`, passed back to the API in multi-turn/tool-use conversations, and handled correctly in cross-model message transformation.
+- Fixed `interleaved-thinking-2025-05-14` beta header being sent for Opus 4.6 and Sonnet 4.6, where interleaved thinking is automatic with adaptive thinking and the header is deprecated on Opus 4.6.
+- Fixed temperature being sent alongside extended thinking, which is incompatible with both adaptive and budget-based thinking modes.
+
 ## [0.55.1] - 2026-02-26
 
 ### Added

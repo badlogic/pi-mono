@@ -1160,6 +1160,11 @@
                   <div class="thinking-text">${escapeHtml(block.thinking)}</div>
                   <div class="thinking-collapsed">Thinking ...</div>
                 </div>`;
+              } else if (block.type === 'redactedThinking') {
+                html += `<div class="thinking-block">
+                  <div class="thinking-text">[Reasoning encrypted for safety]</div>
+                  <div class="thinking-collapsed">Thinking ...</div>
+                </div>`;
               }
             }
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `redacted_thinking` blocks not being rendered in the TUI or HTML export — they now display as `[Reasoning encrypted for safety]` in thinking text style.
+
 ## [0.55.1] - 2026-02-26
 
 ### New Features

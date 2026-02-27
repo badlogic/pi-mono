@@ -48,7 +48,10 @@ export class AssistantMessageComponent extends Container {
 		this.contentContainer.clear();
 
 		const hasVisibleContent = message.content.some(
-			(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
+			(c) =>
+				(c.type === "text" && c.text.trim()) ||
+				(c.type === "thinking" && c.thinking.trim()) ||
+				c.type === "redactedThinking",
 		);
 
 		if (hasVisibleContent) {
@@ -67,7 +70,12 @@ export class AssistantMessageComponent extends Container {
 				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
 				const hasVisibleContentAfter = message.content
 					.slice(i + 1)
-					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
+					.some(
+						(c) =>
+							(c.type === "text" && c.text.trim()) ||
+							(c.type === "thinking" && c.thinking.trim()) ||
+							c.type === "redactedThinking",
+					);
 
 				if (this.hideThinkingBlock) {
 					// Show static "Thinking..." label when hidden
@@ -86,6 +94,21 @@ export class AssistantMessageComponent extends Container {
 					if (hasVisibleContentAfter) {
 						this.contentContainer.addChild(new Spacer(1));
 					}
+				}
+			} else if (content.type === "redactedThinking") {
+				const hasVisibleContentAfter = message.content
+					.slice(i + 1)
+					.some(
+						(c) =>
+							(c.type === "text" && c.text.trim()) ||
+							(c.type === "thinking" && c.thinking.trim()) ||
+							c.type === "redactedThinking",
+					);
+				this.contentContainer.addChild(
+					new Text(theme.italic(theme.fg("thinkingText", "[Reasoning encrypted for safety]")), 1, 0),
+				);
+				if (hasVisibleContentAfter) {
+					this.contentContainer.addChild(new Spacer(1));
 				}
 			}
 		}
