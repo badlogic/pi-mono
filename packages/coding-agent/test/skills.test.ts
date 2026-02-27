@@ -200,6 +200,17 @@ describe("skills", () => {
 			expect(skills[0].modelSize).toBe("large");
 			expect(diagnostics).toHaveLength(0);
 		});
+
+		it("should ignore invalid model_size frontmatter values", () => {
+			const { skills, diagnostics } = loadSkillsFromDir({
+				dir: join(fixturesDir, "invalid-model-size"),
+				source: "test",
+			});
+
+			expect(skills).toHaveLength(1);
+			expect(skills[0].modelSize).toBeUndefined();
+			expect(diagnostics).toHaveLength(0);
+		});
 	});
 
 	describe("formatSkillsForPrompt", () => {

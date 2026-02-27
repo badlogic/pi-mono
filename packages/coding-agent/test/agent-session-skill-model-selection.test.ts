@@ -57,13 +57,9 @@ describe("AgentSession skill model selection", () => {
 				providers: {
 					anthropic: {
 						modelOverrides: {
-							"claude-opus-4-1": { size: "medium" },
-							"claude-sonnet-4-5": { size: "small" },
-						},
-					},
-					openai: {
-						modelOverrides: {
-							"gpt-5.1-codex": { size: "large" },
+							"claude-haiku-4-5": { size: "small" },
+							"claude-sonnet-4-5": { size: "medium" },
+							"claude-opus-4-1": { size: "large" },
 						},
 					},
 				},
@@ -102,7 +98,6 @@ describe("AgentSession skill model selection", () => {
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		authStorage.setRuntimeApiKey("anthropic", "test-key");
-		authStorage.setRuntimeApiKey("openai", "test-key");
 		const modelRegistry = new ModelRegistry(authStorage, join(tempDir, "models.json"));
 
 		const session = new AgentSession({
@@ -125,7 +120,7 @@ describe("AgentSession skill model selection", () => {
 			},
 		});
 
-		return { session, selectedModels };
+		return { session, selectedModels, modelRegistry };
 	}
 
 	it("uses a model matching skill model_size for that turn and restores afterwards", async () => {
@@ -156,7 +151,7 @@ Use a large model.`,
 		await session.prompt("/skill:size-skill");
 		await session.prompt("plain turn");
 
-		expect(selectedModels[0]).toBe("openai/gpt-5.1-codex");
+		expect(selectedModels[0]).toBe("anthropic/claude-opus-4-1");
 		expect(selectedModels[1]).toBe("anthropic/claude-sonnet-4-5");
 	});
 
@@ -190,5 +185,97 @@ Prefer explicit model.`,
 		await session.prompt("/skill:specific-model-skill");
 
 		expect(selectedModels[0]).toBe("anthropic/claude-opus-4-1");
+	});
+
+	it("falls back to model_size when configured model cannot be resolved", async () => {
+		const skillPath = join(tempDir, "skills", "fallback-size-skill", "SKILL.md");
+		mkdirSync(join(tempDir, "skills", "fallback-size-skill"), { recursive: true });
+		writeFileSync(
+			skillPath,
+			`---
+name: fallback-size-skill
+description: Skill with unknown model and valid model_size.
+model: anthropic/does-not-exist
+model_size: small
+---
+Fallback to size.`,
+		);
+
+		const { session, selectedModels } = createSession([
+			{
+				name: "fallback-size-skill",
+				description: "Skill with unknown model and valid model_size.",
+				filePath: skillPath,
+				baseDir: join(tempDir, "skills", "fallback-size-skill"),
+				source: "test",
+				disableModelInvocation: false,
+				model: "anthropic/does-not-exist",
+				modelSize: "small",
+			},
+		]);
+
+		await session.prompt("/skill:fallback-size-skill");
+
+		expect(selectedModels[0]).toBe("anthropic/claude-haiku-4-5");
+	});
+
+	it("keeps current model when requested model_size has no available match", async () => {
+		const skillPath = join(tempDir, "skills", "missing-size-skill", "SKILL.md");
+		mkdirSync(join(tempDir, "skills", "missing-size-skill"), { recursive: true });
+		writeFileSync(
+			skillPath,
+			`---
+name: missing-size-skill
+description: Skill with unavailable model size.
+model_size: large
+---
+No large model available.`,
+		);
+
+		const { session, selectedModels, modelRegistry } = createSession([
+			{
+				name: "missing-size-skill",
+				description: "Skill with unavailable model size.",
+				filePath: skillPath,
+				baseDir: join(tempDir, "skills", "missing-size-skill"),
+				source: "test",
+				disableModelInvocation: false,
+				modelSize: "large",
+			},
+		]);
+
+		modelRegistry.registerProvider("anthropic", {
+			baseUrl: "https://api.anthropic.com/v1",
+			models: [
+				{
+					id: "claude-haiku-4-5",
+					name: "claude-haiku-4-5",
+					api: "anthropic-messages",
+					reasoning: false,
+					input: ["text"],
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+					contextWindow: 100000,
+					maxTokens: 8000,
+					size: "small",
+				},
+				{
+					id: "claude-sonnet-4-5",
+					name: "claude-sonnet-4-5",
+					api: "anthropic-messages",
+					reasoning: false,
+					input: ["text"],
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+					contextWindow: 100000,
+					maxTokens: 8000,
+					size: "medium",
+				},
+			],
+			apiKey: "test-key",
+			api: "anthropic-messages",
+		});
+
+		await session.prompt("/skill:missing-size-skill");
+
+		expect(selectedModels[0]).toBe("anthropic/claude-sonnet-4-5");
 	});
 });
