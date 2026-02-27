@@ -244,35 +244,20 @@ No large model available.`,
 			},
 		]);
 
-		modelRegistry.registerProvider("anthropic", {
-			baseUrl: "https://api.anthropic.com/v1",
-			models: [
-				{
-					id: "claude-haiku-4-5",
-					name: "claude-haiku-4-5",
-					api: "anthropic-messages",
-					reasoning: false,
-					input: ["text"],
-					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-					contextWindow: 100000,
-					maxTokens: 8000,
-					size: "small",
+		writeFileSync(
+			join(tempDir, "models.json"),
+			JSON.stringify({
+				providers: {
+					anthropic: {
+						modelOverrides: {
+							"claude-haiku-4-5": { size: "small" },
+							"claude-sonnet-4-5": { size: "medium" },
+						},
+					},
 				},
-				{
-					id: "claude-sonnet-4-5",
-					name: "claude-sonnet-4-5",
-					api: "anthropic-messages",
-					reasoning: false,
-					input: ["text"],
-					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-					contextWindow: 100000,
-					maxTokens: 8000,
-					size: "medium",
-				},
-			],
-			apiKey: "test-key",
-			api: "anthropic-messages",
-		});
+			}),
+		);
+		modelRegistry.refresh();
 
 		await session.prompt("/skill:missing-size-skill");
 
