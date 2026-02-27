@@ -266,16 +266,52 @@ interface BenchmarkTask {
 
 ## Packages
 
-| Package | Description |
-|---------|-------------|
-| **[@mariozechner/pi-ai](packages/ai)** | Unified multi-provider LLM API — includes Neuralwatt provider and energy telemetry parsing |
-| **[@mariozechner/pi-agent-core](packages/agent)** | Agent runtime — includes `BaselinePolicy`, `EnergyAwarePolicy`, and policy hook types |
-| **[@mariozechner/pi-benchmarks](packages/benchmarks)** | Demos and benchmark runner for energy-aware evaluation |
-| **[@mariozechner/pi-coding-agent](packages/coding-agent)** | Interactive coding agent CLI (from upstream pi-mono) |
-| **[@mariozechner/pi-mom](packages/mom)** | Slack bot (from upstream pi-mono) |
-| **[@mariozechner/pi-tui](packages/tui)** | Terminal UI library (from upstream pi-mono) |
-| **[@mariozechner/pi-web-ui](packages/web-ui)** | Web components for AI chat (from upstream pi-mono) |
-| **[@mariozechner/pi-pods](packages/pods)** | vLLM deployment CLI (from upstream pi-mono) |
+| Package | Published as | Description |
+|---------|-------------|-------------|
+| **[packages/ai](packages/ai)** | `@neuralwatt/pi-ai` | Unified multi-provider LLM API — includes Neuralwatt provider and energy telemetry parsing |
+| **[packages/agent](packages/agent)** | `@neuralwatt/pi-agent-core` | Agent runtime — includes `BaselinePolicy`, `EnergyAwarePolicy`, and policy hook types |
+| **[packages/benchmarks](packages/benchmarks)** | `@mariozechner/pi-benchmarks` | Demos and benchmark runner for energy-aware evaluation |
+| **[packages/coding-agent](packages/coding-agent)** | `@mariozechner/pi-coding-agent` | Interactive coding agent CLI (from upstream pi-mono) |
+| **[packages/mom](packages/mom)** | `@mariozechner/pi-mom` | Slack bot (from upstream pi-mono) |
+| **[packages/tui](packages/tui)** | `@mariozechner/pi-tui` | Terminal UI library (from upstream pi-mono) |
+| **[packages/web-ui](packages/web-ui)** | `@mariozechner/pi-web-ui` | Web components for AI chat (from upstream pi-mono) |
+| **[packages/pods](packages/pods)** | `@mariozechner/pi` | vLLM deployment CLI (from upstream pi-mono) |
+
+---
+
+## Publishing to GitHub Packages
+
+`@neuralwatt/pi-ai` and `@neuralwatt/pi-agent-core` are published to the GitHub Packages npm registry so that downstream repos (e.g. `fugue-mono`) can consume them without needing this repo on the local filesystem.
+
+### Automatic (CI)
+
+The [publish-packages](.github/workflows/publish-packages.yml) workflow runs automatically on every push to `fugue/phase-0` that touches `packages/ai/**` or `packages/agent/**`.
+
+### Manual trigger
+
+```bash
+# Trigger from the CLI — publishes both packages
+gh workflow run publish-packages.yml --ref fugue/phase-0
+
+# Publish only one package
+gh workflow run publish-packages.yml --ref fugue/phase-0 -f package=ai
+gh workflow run publish-packages.yml --ref fugue/phase-0 -f package=agent
+```
+
+Or from the GitHub UI: **Actions → Publish Neuralwatt Packages → Run workflow**.
+
+### Versioning
+
+Both packages are versioned together at `packages/*/package.json`. Bump before publishing:
+
+```bash
+# From repo root — bumps all workspace packages and syncs cross-references
+npm run version:patch   # 0.53.0 → 0.53.1
+npm run version:minor   # 0.53.0 → 0.54.0
+npm run version:major   # 0.53.0 → 1.0.0
+```
+
+Then push to trigger the workflow. GitHub Packages will reject a publish if the version already exists, so always bump before pushing.
 
 ---
 
