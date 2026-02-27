@@ -814,6 +814,75 @@ bar`,
 			assert.ok(!allOutput.includes("\x1b[33m"), "Should NOT have yellow color from default style");
 		});
 
+		it("should render list items inside blockquotes", () => {
+			const markdown = new Markdown(
+				`> - first item\n> - second item\n> - third item`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
+
+			// All non-empty content lines must have the quote border
+			const contentLines = plainLines.filter((line) => line.length > 0);
+			assert.ok(contentLines.length > 0, "Should produce content lines");
+			for (const line of contentLines) {
+				assert.ok(line.startsWith("│ "), `Expected quote border on: "${line}"`);
+			}
+
+			// All list items must be present
+			const allPlain = plainLines.join("\n");
+			assert.ok(allPlain.includes("first item"), "Should render first item");
+			assert.ok(allPlain.includes("second item"), "Should render second item");
+			assert.ok(allPlain.includes("third item"), "Should render third item");
+		});
+
+		it("should render ordered list items inside blockquotes", () => {
+			const markdown = new Markdown(
+				`> 1. first\n> 2. second`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
+			const contentLines = plainLines.filter((line) => line.length > 0);
+
+			assert.ok(contentLines.length > 0, "Should produce content lines");
+			for (const line of contentLines) {
+				assert.ok(line.startsWith("│ "), `Expected quote border on: "${line}"`);
+			}
+			const allPlain = plainLines.join("\n");
+			assert.ok(allPlain.includes("first"), "Should render first item");
+			assert.ok(allPlain.includes("second"), "Should render second item");
+		});
+
+		it("should preserve separation between paragraph and list inside blockquote", () => {
+			const markdown = new Markdown(
+				`> intro\n>\n> - item one\n> - item two`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
+			const allPlain = plainLines.join("\n");
+
+			assert.ok(allPlain.includes("intro"), "Should render intro paragraph");
+			assert.ok(allPlain.includes("item one"), "Should render item one");
+			assert.ok(allPlain.includes("item two"), "Should render item two");
+
+			// intro and item one must be on separate lines
+			const introIdx = plainLines.findIndex((l) => l.includes("intro"));
+			const itemIdx = plainLines.findIndex((l) => l.includes("item one"));
+			assert.ok(introIdx !== -1 && itemIdx !== -1, "Both intro and item one must exist");
+			assert.ok(introIdx < itemIdx, "intro should come before item one");
+		});
+
 		it("should render inline formatting inside blockquotes and reapply quote styling after", () => {
 			const markdown = new Markdown("> Quote with **bold** and `code`", 0, 0, defaultMarkdownTheme);
 

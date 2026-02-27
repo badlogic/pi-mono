@@ -408,6 +408,19 @@ export class Markdown implements Component {
 					result += this.renderInlineTokens(token.tokens || [], resolvedStyleContext);
 					break;
 
+				case "list":
+					// List tokens inside blockquotes — delegate to block renderer,
+					// then apply quote styling to each rendered line
+					result += this.renderList(token as any, 0)
+						.map((line) => applyText(line))
+						.join("\n");
+					break;
+
+				case "space":
+					// Blank line between block elements inside a blockquote
+					result += "\n";
+					break;
+
 				case "strong": {
 					const boldContent = this.renderInlineTokens(token.tokens || [], resolvedStyleContext);
 					result += this.theme.bold(boldContent) + stylePrefix;
