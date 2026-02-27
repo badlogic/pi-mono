@@ -188,6 +188,18 @@ describe("skills", () => {
 			expect(skills).toHaveLength(1);
 			expect(skills[0].disableModelInvocation).toBe(false);
 		});
+
+		it("should parse model and model_size frontmatter fields", () => {
+			const { skills, diagnostics } = loadSkillsFromDir({
+				dir: join(fixturesDir, "model-selection"),
+				source: "test",
+			});
+
+			expect(skills).toHaveLength(1);
+			expect(skills[0].model).toBe("anthropic/claude-opus-4-1");
+			expect(skills[0].modelSize).toBe("large");
+			expect(diagnostics).toHaveLength(0);
+		});
 	});
 
 	describe("formatSkillsForPrompt", () => {
