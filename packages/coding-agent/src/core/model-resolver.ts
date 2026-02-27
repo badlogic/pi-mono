@@ -43,6 +43,14 @@ export interface ScopedModel {
 }
 
 /**
+ * Get the display name for a model.
+ * Uses the model's name field if available, falls back to id.
+ */
+export function getModelDisplayName(model: Model<Api>): string {
+	return model.name || model.id;
+}
+
+/**
  * Helper to check if a model ID looks like an alias (no date suffix)
  * Dates are typically in format: -20241022 or -20250929
  */

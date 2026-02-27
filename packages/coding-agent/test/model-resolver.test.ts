@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
 	defaultModelPerProvider,
 	findInitialModel,
+	getModelDisplayName,
 	parseModelPattern,
 	resolveCliModel,
 } from "../src/core/model-resolver.js";
@@ -386,5 +387,18 @@ describe("default model selection", () => {
 
 		expect(result.model?.provider).toBe("vercel-ai-gateway");
 		expect(result.model?.id).toBe("anthropic/claude-opus-4-6");
+	});
+});
+
+describe("getModelDisplayName", () => {
+	test("uses name field when available", () => {
+		const model = mockModels[0]; // claude-sonnet-4-5 with name "Claude Sonnet 4.5"
+		expect(getModelDisplayName(model)).toBe("Claude Sonnet 4.5");
+	});
+
+	test("falls back to id when name is missing", () => {
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
+		const { name: _name, ...modelWithoutName } = mockModels[0];
+		expect(getModelDisplayName(modelWithoutName as (typeof mockModels)[0])).toBe("claude-sonnet-4-5");
 	});
 });

@@ -10,6 +10,7 @@ import {
 	Spacer,
 	Text,
 } from "@mariozechner/pi-tui";
+import { getModelDisplayName } from "../../../core/model-resolver.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -203,7 +204,8 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 			const item = this.filteredItems[i]!;
 			const isSelected = i === this.selectedIndex;
 			const prefix = isSelected ? theme.fg("accent", "→ ") : "  ";
-			const modelText = isSelected ? theme.fg("accent", item.model.id) : item.model.id;
+			const displayName = getModelDisplayName(item.model);
+			const modelText = isSelected ? theme.fg("accent", displayName) : displayName;
 			const providerBadge = theme.fg("muted", ` [${item.model.provider}]`);
 			const status = allEnabled ? "" : item.enabled ? theme.fg("success", " ✓") : theme.fg("dim", " ✗");
 			this.listContainer.addChild(new Text(`${prefix}${modelText}${providerBadge}${status}`, 0, 0));
