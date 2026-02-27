@@ -264,5 +264,25 @@ describe("buildSessionContext", () => {
 			// Should only get the orphan since parent chain is broken
 			expect(ctx.messages).toHaveLength(1);
 		});
+
+		it("terminates on two-node parent cycles", () => {
+			const entries: SessionEntry[] = [msg("a", "b", "user", "from-a"), msg("b", "a", "assistant", "from-b")];
+
+			const ctx = buildSessionContext(entries, "b");
+			expect(ctx.messages).toHaveLength(2);
+			expect(ctx.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+		});
+
+		it("terminates on longer parent cycles", () => {
+			const entries: SessionEntry[] = [
+				msg("a", "c", "user", "cycle-a"),
+				msg("b", "a", "assistant", "cycle-b"),
+				msg("c", "b", "user", "cycle-c"),
+			];
+
+			const ctx = buildSessionContext(entries, "c");
+			expect(ctx.messages).toHaveLength(3);
+			expect(ctx.messages.map((message) => message.role)).toEqual(["user", "assistant", "user"]);
+		});
 	});
 });

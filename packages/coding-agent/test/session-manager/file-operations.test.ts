@@ -205,4 +205,167 @@ describe("SessionManager.setSessionFile with corrupted files", () => {
 		expect(sm2.getSessionId()).toBe(sessionId);
 		expect(sm2.getHeader()?.type).toBe("session");
 	});
+
+	it("rewrites deferred pre-assistant state instead of duplicating the existing session prefix", () => {
+		const sessionFile = join(tempDir, "preassistant-prefix.jsonl");
+		writeFileSync(
+			sessionFile,
+			[
+				JSON.stringify({
+					type: "session",
+					version: 3,
+					id: "session-1",
+					timestamp: "2026-02-24T21:10:41.329Z",
+					cwd: tempDir,
+				}),
+				JSON.stringify({
+					type: "model_change",
+					id: "root0001",
+					parentId: null,
+					timestamp: "2026-02-24T21:10:42.000Z",
+					provider: "openai-codex",
+					modelId: "gpt-5.3-codex",
+				}),
+				JSON.stringify({
+					type: "thinking_level_change",
+					id: "child0001",
+					parentId: "root0001",
+					timestamp: "2026-02-24T21:10:43.000Z",
+					thinkingLevel: "xhigh",
+				}),
+				"",
+			].join("\n"),
+		);
+
+		const session = SessionManager.open(sessionFile, tempDir);
+		session.appendCustomEntry("plan-mode", { enabled: false });
+		session.appendMessage({
+			role: "assistant",
+			content: [{ type: "text", text: "ready" }],
+			api: "anthropic-messages",
+			provider: "anthropic",
+			model: "test",
+			usage: {
+				input: 1,
+				output: 1,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 2,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: Date.now(),
+		});
+
+		const lines = readFileSync(sessionFile, "utf-8").trim().split("\n").filter(Boolean);
+		const records = lines.map((line) => JSON.parse(line));
+
+		expect(records.filter((record) => record.type === "session")).toHaveLength(1);
+
+		const entryIds = records
+			.filter((record) => record.type !== "session")
+			.map((record) => record.id)
+			.filter((id): id is string => typeof id === "string");
+		expect(new Set(entryIds).size).toBe(entryIds.length);
+	});
+
+	it("deduplicates duplicate entry IDs when building tree from malformed files", () => {
+		const malformedFile = join(tempDir, "duplicate-ids.jsonl");
+		writeFileSync(
+			malformedFile,
+			[
+				JSON.stringify({
+					type: "session",
+					version: 3,
+					id: "session-2",
+					timestamp: "2026-02-24T21:10:41.329Z",
+					cwd: tempDir,
+				}),
+				JSON.stringify({
+					type: "custom",
+					customType: "marker",
+					id: "root0001",
+					parentId: null,
+					timestamp: "2026-02-24T21:10:42.000Z",
+				}),
+				JSON.stringify({
+					type: "custom",
+					customType: "marker",
+					id: "child0001",
+					parentId: "root0001",
+					timestamp: "2026-02-24T21:10:43.000Z",
+				}),
+				JSON.stringify({
+					type: "custom",
+					customType: "marker",
+					id: "root0001",
+					parentId: null,
+					timestamp: "2026-02-24T21:10:42.000Z",
+				}),
+				JSON.stringify({
+					type: "custom",
+					customType: "marker",
+					id: "child0001",
+					parentId: "root0001",
+					timestamp: "2026-02-24T21:10:43.000Z",
+				}),
+				JSON.stringify({
+					type: "custom",
+					customType: "marker",
+					id: "leaf0001",
+					parentId: "child0001",
+					timestamp: "2026-02-24T21:10:44.000Z",
+				}),
+				"",
+			].join("\n"),
+		);
+
+		const session = SessionManager.open(malformedFile, tempDir);
+		const tree = session.getTree();
+
+		expect(tree).toHaveLength(1);
+		expect(tree[0].entry.id).toBe("root0001");
+		expect(tree[0].children).toHaveLength(1);
+		expect(tree[0].children[0].entry.id).toBe("child0001");
+		expect(tree[0].children[0].children).toHaveLength(1);
+		expect(tree[0].children[0].children[0].entry.id).toBe("leaf0001");
+	});
+
+	it("breaks malformed parent cycles into roots when building a tree", () => {
+		const malformedFile = join(tempDir, "parent-cycle.jsonl");
+		writeFileSync(
+			malformedFile,
+			[
+				JSON.stringify({
+					type: "session",
+					version: 3,
+					id: "session-3",
+					timestamp: "2026-02-24T21:10:41.329Z",
+					cwd: tempDir,
+				}),
+				JSON.stringify({
+					type: "custom",
+					customType: "marker",
+					id: "cycle-a",
+					parentId: "cycle-b",
+					timestamp: "2026-02-24T21:10:42.000Z",
+				}),
+				JSON.stringify({
+					type: "custom",
+					customType: "marker",
+					id: "cycle-b",
+					parentId: "cycle-a",
+					timestamp: "2026-02-24T21:10:43.000Z",
+				}),
+				"",
+			].join("\n"),
+		);
+
+		const session = SessionManager.open(malformedFile, tempDir);
+		const tree = session.getTree();
+
+		expect(tree).toHaveLength(2);
+		expect(tree.map((node) => node.entry.id).sort()).toEqual(["cycle-a", "cycle-b"]);
+		expect(tree.every((node) => node.children.length === 0)).toBe(true);
+	});
 });

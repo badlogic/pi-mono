@@ -337,8 +337,10 @@ export function buildSessionContext(
 
 	// Walk from leaf to root, collecting path
 	const path: SessionEntry[] = [];
+	const visitedEntryIds = new Set<string>();
 	let current: SessionEntry | undefined = leaf;
-	while (current) {
+	while (current && !visitedEntryIds.has(current.id)) {
+		visitedEntryIds.add(current.id);
 		path.unshift(current);
 		current = current.parentId ? byId.get(current.parentId) : undefined;
 	}
@@ -799,9 +801,7 @@ export class SessionManager {
 		}
 
 		if (!this.flushed) {
-			for (const e of this.fileEntries) {
-				appendFileSync(this.sessionFile, `${JSON.stringify(e)}\n`);
-			}
+			this._rewriteFile();
 			this.flushed = true;
 		} else {
 			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
@@ -1020,9 +1020,11 @@ export class SessionManager {
 	 */
 	getBranch(fromId?: string): SessionEntry[] {
 		const path: SessionEntry[] = [];
+		const visitedEntryIds = new Set<string>();
 		const startId = fromId ?? this.leafId;
 		let current = startId ? this.byId.get(startId) : undefined;
-		while (current) {
+		while (current && !visitedEntryIds.has(current.id)) {
+			visitedEntryIds.add(current.id);
 			path.unshift(current);
 			current = current.parentId ? this.byId.get(current.parentId) : undefined;
 		}
@@ -1061,19 +1063,83 @@ export class SessionManager {
 	 */
 	getTree(): SessionTreeNode[] {
 		const entries = this.getEntries();
+		// Malformed files can contain duplicate IDs. Keep the last occurrence so tree
+		// building matches byId/Map overwrite semantics and remains deterministic.
+		const seenEntryIds = new Set<string>();
+		const uniqueEntries: SessionEntry[] = [];
+		for (let index = entries.length - 1; index >= 0; index--) {
+			const entry = entries[index];
+			if (seenEntryIds.has(entry.id)) {
+				continue;
+			}
+			seenEntryIds.add(entry.id);
+			uniqueEntries.push(entry);
+		}
+		uniqueEntries.reverse();
+
+		const entryById = new Map<string, SessionEntry>();
+		for (const entry of uniqueEntries) {
+			entryById.set(entry.id, entry);
+		}
+
 		const nodeMap = new Map<string, SessionTreeNode>();
 		const roots: SessionTreeNode[] = [];
 
 		// Create nodes with resolved labels
-		for (const entry of entries) {
+		for (const entry of uniqueEntries) {
 			const label = this.labelsById.get(entry.id);
 			nodeMap.set(entry.id, { entry, children: [], label });
 		}
 
+		const cycleStatusByEntryId = new Map<string, boolean>();
+		const wouldCreateCycle = (entry: SessionEntry): boolean => {
+			const cachedStatus = cycleStatusByEntryId.get(entry.id);
+			if (cachedStatus !== undefined) {
+				return cachedStatus;
+			}
+
+			const traversedEntryIds: string[] = [entry.id];
+			const visitedParentIds = new Set<string>([entry.id]);
+			let parentId = entry.parentId;
+			while (parentId !== null) {
+				if (visitedParentIds.has(parentId)) {
+					for (const traversedId of traversedEntryIds) {
+						cycleStatusByEntryId.set(traversedId, true);
+					}
+					return true;
+				}
+
+				const cachedParentStatus = cycleStatusByEntryId.get(parentId);
+				if (cachedParentStatus !== undefined) {
+					for (const traversedId of traversedEntryIds) {
+						cycleStatusByEntryId.set(traversedId, cachedParentStatus);
+					}
+					return cachedParentStatus;
+				}
+
+				const parentEntry = entryById.get(parentId);
+				if (!parentEntry || parentEntry.parentId === null || parentEntry.parentId === parentEntry.id) {
+					for (const traversedId of traversedEntryIds) {
+						cycleStatusByEntryId.set(traversedId, false);
+					}
+					return false;
+				}
+
+				visitedParentIds.add(parentId);
+				traversedEntryIds.push(parentId);
+				parentId = parentEntry.parentId;
+			}
+
+			for (const traversedId of traversedEntryIds) {
+				cycleStatusByEntryId.set(traversedId, false);
+			}
+			return false;
+		};
+
 		// Build tree
-		for (const entry of entries) {
+		for (const entry of uniqueEntries) {
 			const node = nodeMap.get(entry.id)!;
-			if (entry.parentId === null || entry.parentId === entry.id) {
+			if (entry.parentId === null || entry.parentId === entry.id || wouldCreateCycle(entry)) {
 				roots.push(node);
 			} else {
 				const parent = nodeMap.get(entry.parentId);
@@ -1088,11 +1154,21 @@ export class SessionManager {
 
 		// Sort children by timestamp (oldest first, newest at bottom)
 		// Use iterative approach to avoid stack overflow on deep trees
+		const visitedNodeIds = new Set<string>();
 		const stack: SessionTreeNode[] = [...roots];
 		while (stack.length > 0) {
 			const node = stack.pop()!;
+			if (visitedNodeIds.has(node.entry.id)) {
+				continue;
+			}
+			visitedNodeIds.add(node.entry.id);
 			node.children.sort((a, b) => new Date(a.entry.timestamp).getTime() - new Date(b.entry.timestamp).getTime());
-			stack.push(...node.children);
+			for (let index = node.children.length - 1; index >= 0; index--) {
+				const child = node.children[index];
+				if (!visitedNodeIds.has(child.entry.id)) {
+					stack.push(child);
+				}
+			}
 		}
 
 		return roots;

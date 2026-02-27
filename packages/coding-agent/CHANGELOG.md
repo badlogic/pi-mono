@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `/tree` freezing the TUI on sessions with duplicate or malformed entries, as deferred persistence could duplicate the session prefix on first flush. Tree and context traversal now handle duplicate IDs and cyclic parent chains gracefully.
+
 ## [0.55.1] - 2026-02-26
 
 ### New Features

@@ -1,3 +1,6 @@
+import { mkdirSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { describe, expect, it } from "vitest";
 import { type CustomEntry, SessionManager } from "../../src/core/session-manager.js";
 import { assistantMsg, userMsg } from "../utilities.js";
@@ -158,6 +161,48 @@ describe("SessionManager append and tree traversal", () => {
 			const path = session.getBranch(id2);
 			expect(path).toHaveLength(2);
 			expect(path.map((e) => e.id)).toEqual([id1, id2]);
+		});
+
+		it("terminates on malformed parent cycles when traversing a branch", () => {
+			const tempDir = join(tmpdir(), `session-cycle-${Date.now()}`);
+			mkdirSync(tempDir, { recursive: true });
+			const sessionFile = join(tempDir, "cycle-branch.jsonl");
+
+			try {
+				writeFileSync(
+					sessionFile,
+					[
+						JSON.stringify({
+							type: "session",
+							version: 3,
+							id: "session-cycle",
+							timestamp: "2026-02-27T11:00:00.000Z",
+							cwd: tempDir,
+						}),
+						JSON.stringify({
+							type: "custom",
+							customType: "marker",
+							id: "cycle-a",
+							parentId: "cycle-b",
+							timestamp: "2026-02-27T11:00:01.000Z",
+						}),
+						JSON.stringify({
+							type: "custom",
+							customType: "marker",
+							id: "cycle-b",
+							parentId: "cycle-a",
+							timestamp: "2026-02-27T11:00:02.000Z",
+						}),
+						"",
+					].join("\n"),
+				);
+
+				const session = SessionManager.open(sessionFile, tempDir);
+				const path = session.getBranch("cycle-b");
+				expect(path.map((entry) => entry.id)).toEqual(["cycle-a", "cycle-b"]);
+			} finally {
+				rmSync(tempDir, { recursive: true, force: true });
+			}
 		});
 	});
 
