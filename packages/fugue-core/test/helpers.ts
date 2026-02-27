@@ -71,10 +71,75 @@ const SCHEMA_SQL = `
 		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 		updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 	);
+	CREATE TABLE IF NOT EXISTS fugue_investigations (
+		id TEXT PRIMARY KEY,
+		graph_node_id TEXT REFERENCES fugue_nodes(id) ON DELETE SET NULL,
+		question TEXT NOT NULL,
+		methodology TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'open',
+		conclusion TEXT NOT NULL DEFAULT '',
+		investigator_id TEXT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	CREATE TABLE IF NOT EXISTS fugue_findings (
+		id TEXT PRIMARY KEY,
+		investigation_id TEXT NOT NULL REFERENCES fugue_investigations(id) ON DELETE CASCADE,
+		graph_node_id TEXT REFERENCES fugue_nodes(id) ON DELETE SET NULL,
+		claim TEXT NOT NULL,
+		evidence TEXT NOT NULL DEFAULT '',
+		confidence REAL NOT NULL DEFAULT 0.5,
+		author_id TEXT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	CREATE TABLE IF NOT EXISTS fugue_decision_episodes (
+		id TEXT PRIMARY KEY,
+		title TEXT NOT NULL,
+		context TEXT NOT NULL DEFAULT '',
+		options_considered JSONB NOT NULL DEFAULT '[]',
+		decision TEXT NOT NULL,
+		rationale TEXT NOT NULL DEFAULT '',
+		outcome TEXT NOT NULL DEFAULT '',
+		graph_node_id TEXT REFERENCES fugue_nodes(id) ON DELETE SET NULL,
+		author_id TEXT NOT NULL,
+		decided_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	CREATE TABLE IF NOT EXISTS fugue_metrics (
+		id TEXT PRIMARY KEY,
+		graph_node_id TEXT REFERENCES fugue_nodes(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		value REAL NOT NULL,
+		unit TEXT NOT NULL DEFAULT '',
+		measured_by TEXT NOT NULL,
+		measured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	CREATE TABLE IF NOT EXISTS fugue_competitions (
+		id TEXT PRIMARY KEY,
+		title TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'active',
+		criteria JSONB NOT NULL DEFAULT '{}',
+		winner_node_id TEXT REFERENCES fugue_nodes(id) ON DELETE SET NULL,
+		author_id TEXT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		concluded_at TIMESTAMPTZ
+	);
+	CREATE TABLE IF NOT EXISTS fugue_competition_entries (
+		id TEXT PRIMARY KEY,
+		competition_id TEXT NOT NULL REFERENCES fugue_competitions(id) ON DELETE CASCADE,
+		graph_node_id TEXT NOT NULL REFERENCES fugue_nodes(id) ON DELETE CASCADE,
+		score REAL,
+		notes TEXT NOT NULL DEFAULT '',
+		author_id TEXT NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
 `;
 
 const TRUNCATE_SQL = `
-	TRUNCATE fugue_agents, fugue_audit_log, fugue_assumptions, fugue_edges, fugue_nodes, fugue_users
+	TRUNCATE fugue_competition_entries, fugue_competitions, fugue_metrics, fugue_findings, fugue_investigations,
+		fugue_decision_episodes, fugue_agents, fugue_audit_log, fugue_assumptions, fugue_edges, fugue_nodes, fugue_users
 	RESTART IDENTITY CASCADE;
 `;
 

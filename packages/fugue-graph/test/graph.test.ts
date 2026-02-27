@@ -1,22 +1,41 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DrizzleDb } from "../src/graph.js";
 import {
+	addCompetitionEntry,
+	addFinding,
 	archiveNode,
+	concludeCompetition,
+	concludeInvestigation,
 	createAgent,
 	createAssumption,
+	createCompetition,
 	createEdge,
+	createInvestigation,
 	createNode,
 	deleteEdge,
 	getAgent,
 	getAssumptionsForNode,
+	getCatchUpView,
+	getCompetition,
+	getCompetitionEntries,
 	getEdgesBetween,
 	getEdgesFrom,
 	getEdgesTo,
+	getFindingsForInvestigation,
+	getMetricsForNode,
 	getNode,
 	listAgents,
+	listCompetitions,
+	listDecisionEpisodes,
+	listInvestigations,
+	listMetrics,
 	listNodes,
 	markStaleAssumptions,
 	queryAuditLog,
+	recordDecisionEpisode,
+	recordMetric,
+	scoreCompetitionEntry,
+	searchDecisionEpisodes,
 	updateAgentStatus,
 	updateAssumptionConfidence,
 	updateNode,
@@ -716,6 +735,365 @@ describe("listAgents", () => {
 
 		const completed = await listAgents(db, { status: "completed" });
 		expect(completed).toEqual([]);
+	});
+});
+
+// ─── Investigations (C5 Research Engine) ─────────────────────────────────────
+
+describe("createInvestigation", () => {
+	it("creates an investigation with required fields", async () => {
+		const inv = await createInvestigation(
+			db,
+			{ question: "Is PostgreSQL the right choice?", investigatorId: "user-1" },
+			TEST_ACTOR,
+		);
+
+		expect(inv.id).toBeTruthy();
+		expect(inv.question).toBe("Is PostgreSQL the right choice?");
+		expect(inv.investigatorId).toBe("user-1");
+		expect(inv.status).toBe("open");
+		expect(inv.conclusion).toBe("");
+		expect(inv.methodology).toBe("");
+		expect(inv.graphNodeId).toBeNull();
+	});
+
+	it("links to a graph node when provided", async () => {
+		const node = await createNode(db, { type: "investigation", title: "DB Research", authorId: "u" }, TEST_ACTOR);
+		const inv = await createInvestigation(
+			db,
+			{ question: "Which DB?", investigatorId: "u", graphNodeId: node.id },
+			TEST_ACTOR,
+		);
+		expect(inv.graphNodeId).toBe(node.id);
+	});
+
+	it("writes an audit entry", async () => {
+		await createInvestigation(db, { question: "Q?", investigatorId: "u" }, TEST_ACTOR);
+		const log = await queryAuditLog(db, { action: "investigation.create" });
+		expect(log.length).toBe(1);
+	});
+});
+
+describe("concludeInvestigation", () => {
+	it("sets status to concluded and stores conclusion", async () => {
+		const inv = await createInvestigation(db, { question: "Q?", investigatorId: "u" }, TEST_ACTOR);
+		const concluded = await concludeInvestigation(db, inv.id, "PostgreSQL is the right choice.", TEST_ACTOR);
+
+		expect(concluded!.status).toBe("concluded");
+		expect(concluded!.conclusion).toBe("PostgreSQL is the right choice.");
+	});
+
+	it("returns undefined for nonexistent investigation", async () => {
+		const result = await concludeInvestigation(db, "ghost", "nothing", TEST_ACTOR);
+		expect(result).toBeUndefined();
+	});
+});
+
+describe("addFinding", () => {
+	it("adds a finding to an investigation", async () => {
+		const inv = await createInvestigation(db, { question: "Q?", investigatorId: "u" }, TEST_ACTOR);
+		const finding = await addFinding(
+			db,
+			{
+				investigationId: inv.id,
+				claim: "PostgreSQL handles JSONB well",
+				evidence: "Benchmarks from 2024",
+				confidence: 0.9,
+				authorId: "u",
+			},
+			TEST_ACTOR,
+		);
+
+		expect(finding.id).toBeTruthy();
+		expect(finding.investigationId).toBe(inv.id);
+		expect(finding.claim).toBe("PostgreSQL handles JSONB well");
+		expect(finding.confidence).toBe(0.9);
+		expect(finding.evidence).toBe("Benchmarks from 2024");
+	});
+
+	it("returns findings via getFindingsForInvestigation", async () => {
+		const inv = await createInvestigation(db, { question: "Q?", investigatorId: "u" }, TEST_ACTOR);
+		await addFinding(db, { investigationId: inv.id, claim: "Finding 1", authorId: "u" }, TEST_ACTOR);
+		await addFinding(db, { investigationId: inv.id, claim: "Finding 2", authorId: "u" }, TEST_ACTOR);
+
+		const findings = await getFindingsForInvestigation(db, inv.id);
+		expect(findings.length).toBe(2);
+		expect(findings.every((f) => f.investigationId === inv.id)).toBe(true);
+	});
+});
+
+describe("listInvestigations", () => {
+	it("filters by status", async () => {
+		const i1 = await createInvestigation(db, { question: "Open Q?", investigatorId: "u" }, TEST_ACTOR);
+		await concludeInvestigation(db, i1.id, "Done.", TEST_ACTOR);
+		await createInvestigation(db, { question: "Still open Q?", investigatorId: "u" }, TEST_ACTOR);
+
+		const open = await listInvestigations(db, { status: "open" });
+		expect(open.length).toBe(1);
+		expect(open[0]!.question).toBe("Still open Q?");
+
+		const concluded = await listInvestigations(db, { status: "concluded" });
+		expect(concluded.length).toBe(1);
+	});
+
+	it("filters by investigatorId", async () => {
+		await createInvestigation(db, { question: "Q by alice", investigatorId: "alice" }, TEST_ACTOR);
+		await createInvestigation(db, { question: "Q by bob", investigatorId: "bob" }, TEST_ACTOR);
+
+		const aliceInvs = await listInvestigations(db, { investigatorId: "alice" });
+		expect(aliceInvs.length).toBe(1);
+		expect(aliceInvs[0]!.question).toBe("Q by alice");
+	});
+});
+
+// ─── Decision Episodes (C10 Institutional Memory) ─────────────────────────────
+
+describe("recordDecisionEpisode", () => {
+	it("records a decision with required fields", async () => {
+		const episode = await recordDecisionEpisode(
+			db,
+			{
+				title: "Use pgmq over NATS",
+				decision: "pgmq",
+				context: "We evaluated message queue options",
+				optionsConsidered: ["pgmq", "NATS", "RabbitMQ"],
+				rationale: "pgmq runs inside Postgres, reducing infra complexity",
+				authorId: "user-1",
+			},
+			TEST_ACTOR,
+		);
+
+		expect(episode.id).toBeTruthy();
+		expect(episode.title).toBe("Use pgmq over NATS");
+		expect(episode.decision).toBe("pgmq");
+		expect(episode.optionsConsidered).toEqual(["pgmq", "NATS", "RabbitMQ"]);
+		expect(episode.rationale).toBe("pgmq runs inside Postgres, reducing infra complexity");
+		expect(episode.authorId).toBe("user-1");
+	});
+
+	it("writes an audit entry", async () => {
+		await recordDecisionEpisode(db, { title: "Decide X", decision: "X", authorId: "u" }, TEST_ACTOR);
+		const log = await queryAuditLog(db, { action: "decision.record" });
+		expect(log.length).toBe(1);
+	});
+});
+
+describe("searchDecisionEpisodes", () => {
+	it("finds episodes matching title", async () => {
+		await recordDecisionEpisode(db, { title: "Use pgmq over NATS", decision: "pgmq", authorId: "u" }, TEST_ACTOR);
+		await recordDecisionEpisode(db, { title: "Choose React", decision: "React", authorId: "u" }, TEST_ACTOR);
+
+		const results = await searchDecisionEpisodes(db, "pgmq");
+		expect(results.length).toBe(1);
+		expect(results[0]!.title).toBe("Use pgmq over NATS");
+	});
+
+	it("finds episodes matching rationale", async () => {
+		await recordDecisionEpisode(
+			db,
+			{ title: "Decision", decision: "X", rationale: "because of ACID compliance", authorId: "u" },
+			TEST_ACTOR,
+		);
+
+		const results = await searchDecisionEpisodes(db, "ACID");
+		expect(results.length).toBe(1);
+	});
+
+	it("returns empty array for no matches", async () => {
+		const results = await searchDecisionEpisodes(db, "nonexistentterm12345");
+		expect(results).toEqual([]);
+	});
+});
+
+describe("listDecisionEpisodes", () => {
+	it("returns episodes ordered by createdAt desc", async () => {
+		await recordDecisionEpisode(db, { title: "First", decision: "A", authorId: "u" }, TEST_ACTOR);
+		await recordDecisionEpisode(db, { title: "Second", decision: "B", authorId: "u" }, TEST_ACTOR);
+
+		const episodes = await listDecisionEpisodes(db);
+		expect(episodes.length).toBe(2);
+		expect(episodes[0]!.title).toBe("Second");
+	});
+});
+
+describe("getCatchUpView", () => {
+	it("returns recent activity across all entity types", async () => {
+		const past = new Date(Date.now() - 5000); // 5 seconds ago
+
+		const node = await createNode(db, { type: "idea", title: "New idea", authorId: "u" }, TEST_ACTOR);
+		const inv = await createInvestigation(db, { question: "Research Q?", investigatorId: "u" }, TEST_ACTOR);
+		await addFinding(db, { investigationId: inv.id, claim: "Found something", authorId: "u" }, TEST_ACTOR);
+		await recordDecisionEpisode(db, { title: "Big decision", decision: "Go!", authorId: "u" }, TEST_ACTOR);
+		await createAssumption(db, { graphNodeId: node.id, claim: "Will work", ownerId: "u" }, TEST_ACTOR);
+
+		const items = await getCatchUpView(db, past);
+		const types = new Set(items.map((i) => i.type));
+
+		expect(types.has("node")).toBe(true);
+		expect(types.has("investigation")).toBe(true);
+		expect(types.has("finding")).toBe(true);
+		expect(types.has("decision")).toBe(true);
+		expect(types.has("assumption")).toBe(true);
+	});
+
+	it("only returns items created after the since date", async () => {
+		const node = await createNode(db, { type: "idea", title: "Old idea", authorId: "u" }, TEST_ACTOR);
+
+		// Set since to 1 second from now — nothing should match
+		const future = new Date(Date.now() + 1000);
+		const items = await getCatchUpView(db, future);
+
+		// node.createdAt < future, so nothing should be returned
+		expect(items.filter((i) => i.id === node.id)).toHaveLength(0);
+	});
+});
+
+// ─── Metrics (C7 Impact Tracker) ──────────────────────────────────────────────
+
+describe("recordMetric", () => {
+	it("records a metric with required fields", async () => {
+		const metric = await recordMetric(
+			db,
+			{ name: "test_coverage", value: 92.5, unit: "%", measuredBy: "ci-bot" },
+			TEST_ACTOR,
+		);
+
+		expect(metric.id).toBeTruthy();
+		expect(metric.name).toBe("test_coverage");
+		expect(metric.value).toBeCloseTo(92.5);
+		expect(metric.unit).toBe("%");
+		expect(metric.measuredBy).toBe("ci-bot");
+		expect(metric.graphNodeId).toBeNull();
+	});
+
+	it("links to a graph node", async () => {
+		const node = await createNode(db, { type: "metric", title: "Coverage goal", authorId: "u" }, TEST_ACTOR);
+		const metric = await recordMetric(
+			db,
+			{ name: "coverage", value: 80, graphNodeId: node.id, measuredBy: "u" },
+			TEST_ACTOR,
+		);
+		expect(metric.graphNodeId).toBe(node.id);
+	});
+});
+
+describe("getMetricsForNode", () => {
+	it("returns all metrics for a node", async () => {
+		const node = await createNode(db, { type: "metric", title: "Goal", authorId: "u" }, TEST_ACTOR);
+		await recordMetric(db, { name: "metric_a", value: 1, graphNodeId: node.id, measuredBy: "u" }, TEST_ACTOR);
+		await recordMetric(db, { name: "metric_b", value: 2, graphNodeId: node.id, measuredBy: "u" }, TEST_ACTOR);
+
+		const metrics = await getMetricsForNode(db, node.id);
+		expect(metrics.length).toBe(2);
+		expect(metrics.every((m) => m.graphNodeId === node.id)).toBe(true);
+	});
+
+	it("returns empty array for node with no metrics", async () => {
+		const node = await createNode(db, { type: "idea", title: "No metrics", authorId: "u" }, TEST_ACTOR);
+		const metrics = await getMetricsForNode(db, node.id);
+		expect(metrics).toEqual([]);
+	});
+});
+
+describe("listMetrics", () => {
+	it("filters by name", async () => {
+		await recordMetric(db, { name: "velocity", value: 10, measuredBy: "u" }, TEST_ACTOR);
+		await recordMetric(db, { name: "coverage", value: 80, measuredBy: "u" }, TEST_ACTOR);
+
+		const velocity = await listMetrics(db, { name: "velocity" });
+		expect(velocity.length).toBe(1);
+		expect(velocity[0]!.name).toBe("velocity");
+	});
+});
+
+// ─── Competitions (C6 Competition Framework) ──────────────────────────────────
+
+describe("createCompetition", () => {
+	it("creates a competition with required fields", async () => {
+		const comp = await createCompetition(db, { title: "Best routing approach", authorId: "user-1" }, TEST_ACTOR);
+
+		expect(comp.id).toBeTruthy();
+		expect(comp.title).toBe("Best routing approach");
+		expect(comp.status).toBe("active");
+		expect(comp.winnerNodeId).toBeNull();
+		expect(comp.concludedAt).toBeNull();
+	});
+
+	it("stores criteria JSONB", async () => {
+		const comp = await createCompetition(
+			db,
+			{
+				title: "Best DB",
+				criteria: { speed: "weight: 0.4", reliability: "weight: 0.6" },
+				authorId: "u",
+			},
+			TEST_ACTOR,
+		);
+		expect(comp.criteria).toEqual({ speed: "weight: 0.4", reliability: "weight: 0.6" });
+	});
+});
+
+describe("addCompetitionEntry and scoring", () => {
+	it("adds entries and scores them", async () => {
+		const comp = await createCompetition(db, { title: "Routing comp", authorId: "u" }, TEST_ACTOR);
+		const nodeA = await createNode(db, { type: "competition", title: "Approach A", authorId: "u" }, TEST_ACTOR);
+		const nodeB = await createNode(db, { type: "competition", title: "Approach B", authorId: "u" }, TEST_ACTOR);
+
+		const entryA = await addCompetitionEntry(
+			db,
+			{ competitionId: comp.id, graphNodeId: nodeA.id, notes: "Fast", authorId: "u" },
+			TEST_ACTOR,
+		);
+		const entryB = await addCompetitionEntry(
+			db,
+			{ competitionId: comp.id, graphNodeId: nodeB.id, notes: "Reliable", authorId: "u" },
+			TEST_ACTOR,
+		);
+
+		await scoreCompetitionEntry(db, entryA.id, 0.8, TEST_ACTOR);
+		await scoreCompetitionEntry(db, entryB.id, 0.95, TEST_ACTOR);
+
+		const entries = await getCompetitionEntries(db, comp.id);
+		expect(entries.length).toBe(2);
+		const scores = entries.map((e) => e.score).sort();
+		expect(scores[0]).toBeCloseTo(0.8);
+		expect(scores[1]).toBeCloseTo(0.95);
+	});
+});
+
+describe("concludeCompetition", () => {
+	it("sets winner and concludedAt", async () => {
+		const comp = await createCompetition(db, { title: "Final comp", authorId: "u" }, TEST_ACTOR);
+		const winner = await createNode(db, { type: "competition", title: "Winner approach", authorId: "u" }, TEST_ACTOR);
+
+		const concluded = await concludeCompetition(db, comp.id, winner.id, TEST_ACTOR);
+
+		expect(concluded!.status).toBe("concluded");
+		expect(concluded!.winnerNodeId).toBe(winner.id);
+		expect(concluded!.concludedAt).toBeInstanceOf(Date);
+	});
+});
+
+describe("listCompetitions", () => {
+	it("filters by status", async () => {
+		const c1 = await createCompetition(db, { title: "Active comp", authorId: "u" }, TEST_ACTOR);
+		await createCompetition(db, { title: "Another active", authorId: "u" }, TEST_ACTOR);
+		const winner = await createNode(db, { type: "competition", title: "W", authorId: "u" }, TEST_ACTOR);
+		await concludeCompetition(db, c1.id, winner.id, TEST_ACTOR);
+
+		const active = await listCompetitions(db, { status: "active" });
+		expect(active.length).toBe(1);
+		expect(active[0]!.title).toBe("Another active");
+
+		const concluded = await listCompetitions(db, { status: "concluded" });
+		expect(concluded.length).toBe(1);
+	});
+});
+
+describe("getCompetition", () => {
+	it("returns undefined for nonexistent competition", async () => {
+		const result = await getCompetition(db, "ghost");
+		expect(result).toBeUndefined();
 	});
 });
 

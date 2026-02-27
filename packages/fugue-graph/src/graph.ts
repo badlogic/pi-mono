@@ -1,21 +1,39 @@
 import type { AgentStatus, AuthorType, EdgeType, NodeStatus, NodeType } from "@fugue/shared";
 import { newId } from "@fugue/shared";
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { Pool } from "pg";
 import {
 	fugueAgents,
 	fugueAssumptions,
 	fugueAuditLog,
+	fugueCompetitionEntries,
+	fugueCompetitions,
+	fugueDecisionEpisodes,
 	fugueEdges,
+	fugueFindings,
+	fugueInvestigations,
+	fugueMetrics,
 	fugueNodes,
 	type InsertAgent,
 	type InsertAssumption,
+	type InsertCompetition,
+	type InsertCompetitionEntry,
+	type InsertDecisionEpisode,
 	type InsertEdge,
+	type InsertFinding,
+	type InsertInvestigation,
+	type InsertMetric,
 	type InsertNode,
 	type SelectAgent,
 	type SelectAssumption,
+	type SelectCompetition,
+	type SelectCompetitionEntry,
+	type SelectDecisionEpisode,
 	type SelectEdge,
+	type SelectFinding,
+	type SelectInvestigation,
+	type SelectMetric,
 	type SelectNode,
 } from "./schema.js";
 
@@ -496,4 +514,416 @@ export async function listAgents(
 		.orderBy(desc(fugueAgents.createdAt))
 		.limit(opts?.limit ?? 50);
 	return conditions.length > 0 ? query.where(and(...conditions)) : query;
+}
+
+// ─── Investigations (C5 Research Engine) ─────────────────────────────────────
+
+export interface CreateInvestigationInput {
+	question: string;
+	methodology?: string;
+	graphNodeId?: string;
+	investigatorId: string;
+}
+
+export async function createInvestigation(
+	db: DrizzleDb,
+	input: CreateInvestigationInput,
+	ctx: AuditCtx,
+): Promise<SelectInvestigation> {
+	const id = newId();
+	const row: InsertInvestigation = {
+		id,
+		question: input.question,
+		methodology: input.methodology ?? "",
+		graphNodeId: input.graphNodeId ?? null,
+		investigatorId: input.investigatorId,
+		status: "open",
+		conclusion: "",
+		createdAt: new Date(),
+		updatedAt: new Date(),
+	};
+	const [inv] = await db.insert(fugueInvestigations).values(row).returning();
+	await audit(db, ctx, "investigation.create", "investigation", id, { question: input.question });
+	return inv;
+}
+
+export async function concludeInvestigation(
+	db: DrizzleDb,
+	id: string,
+	conclusion: string,
+	ctx: AuditCtx,
+): Promise<SelectInvestigation | undefined> {
+	const [inv] = await db
+		.update(fugueInvestigations)
+		.set({ status: "concluded", conclusion, updatedAt: new Date() })
+		.where(eq(fugueInvestigations.id, id))
+		.returning();
+	if (inv)
+		await audit(db, ctx, "investigation.concluded", "investigation", id, { conclusion: conclusion.slice(0, 200) });
+	return inv;
+}
+
+export async function listInvestigations(
+	db: DrizzleDb,
+	opts?: { status?: string; investigatorId?: string; limit?: number },
+): Promise<SelectInvestigation[]> {
+	const conditions = [];
+	if (opts?.status) conditions.push(eq(fugueInvestigations.status, opts.status));
+	if (opts?.investigatorId) conditions.push(eq(fugueInvestigations.investigatorId, opts.investigatorId));
+	const query = db
+		.select()
+		.from(fugueInvestigations)
+		.orderBy(desc(fugueInvestigations.createdAt))
+		.limit(opts?.limit ?? 50);
+	return conditions.length > 0 ? query.where(and(...conditions)) : query;
+}
+
+export interface AddFindingInput {
+	investigationId: string;
+	claim: string;
+	evidence?: string;
+	confidence?: number;
+	graphNodeId?: string;
+	authorId: string;
+}
+
+export async function addFinding(db: DrizzleDb, input: AddFindingInput, ctx: AuditCtx): Promise<SelectFinding> {
+	const id = newId();
+	const row: InsertFinding = {
+		id,
+		investigationId: input.investigationId,
+		claim: input.claim,
+		evidence: input.evidence ?? "",
+		confidence: input.confidence ?? 0.5,
+		graphNodeId: input.graphNodeId ?? null,
+		authorId: input.authorId,
+		createdAt: new Date(),
+	};
+	const [finding] = await db.insert(fugueFindings).values(row).returning();
+	await audit(db, ctx, "finding.create", "investigation", input.investigationId, { claim: input.claim });
+	return finding;
+}
+
+export async function getFindingsForInvestigation(db: DrizzleDb, investigationId: string): Promise<SelectFinding[]> {
+	return db
+		.select()
+		.from(fugueFindings)
+		.where(eq(fugueFindings.investigationId, investigationId))
+		.orderBy(desc(fugueFindings.createdAt));
+}
+
+// ─── Decision Episodes (C10 Institutional Memory) ─────────────────────────────
+
+export interface RecordDecisionEpisodeInput {
+	title: string;
+	context?: string;
+	optionsConsidered?: string[];
+	decision: string;
+	rationale?: string;
+	graphNodeId?: string;
+	authorId: string;
+}
+
+export async function recordDecisionEpisode(
+	db: DrizzleDb,
+	input: RecordDecisionEpisodeInput,
+	ctx: AuditCtx,
+): Promise<SelectDecisionEpisode> {
+	const id = newId();
+	const row: InsertDecisionEpisode = {
+		id,
+		title: input.title,
+		context: input.context ?? "",
+		optionsConsidered: input.optionsConsidered ?? [],
+		decision: input.decision,
+		rationale: input.rationale ?? "",
+		outcome: "",
+		graphNodeId: input.graphNodeId ?? null,
+		authorId: input.authorId,
+		decidedAt: new Date(),
+		createdAt: new Date(),
+	};
+	const [episode] = await db.insert(fugueDecisionEpisodes).values(row).returning();
+	await audit(db, ctx, "decision.record", "decision", id, { title: input.title, decision: input.decision });
+	return episode;
+}
+
+export async function listDecisionEpisodes(
+	db: DrizzleDb,
+	opts?: { authorId?: string; limit?: number },
+): Promise<SelectDecisionEpisode[]> {
+	const conditions = [];
+	if (opts?.authorId) conditions.push(eq(fugueDecisionEpisodes.authorId, opts.authorId));
+	const query = db
+		.select()
+		.from(fugueDecisionEpisodes)
+		.orderBy(desc(fugueDecisionEpisodes.createdAt))
+		.limit(opts?.limit ?? 50);
+	return conditions.length > 0 ? query.where(and(...conditions)) : query;
+}
+
+export async function searchDecisionEpisodes(db: DrizzleDb, q: string, limit = 20): Promise<SelectDecisionEpisode[]> {
+	const pattern = `%${q}%`;
+	return db
+		.select()
+		.from(fugueDecisionEpisodes)
+		.where(
+			or(
+				sql`lower(${fugueDecisionEpisodes.title}) like lower(${pattern})`,
+				sql`lower(${fugueDecisionEpisodes.decision}) like lower(${pattern})`,
+				sql`lower(${fugueDecisionEpisodes.rationale}) like lower(${pattern})`,
+			),
+		)
+		.orderBy(desc(fugueDecisionEpisodes.createdAt))
+		.limit(limit);
+}
+
+export interface CatchUpItem {
+	type: "node" | "assumption" | "investigation" | "decision" | "finding";
+	id: string;
+	title: string;
+	actorId: string;
+	timestamp: Date;
+}
+
+export async function getCatchUpView(db: DrizzleDb, since: Date, limit = 50): Promise<CatchUpItem[]> {
+	const [nodes, assumptions, investigations, decisions, findings] = await Promise.all([
+		db
+			.select()
+			.from(fugueNodes)
+			.where(gte(fugueNodes.createdAt, since))
+			.orderBy(desc(fugueNodes.createdAt))
+			.limit(limit),
+		db
+			.select()
+			.from(fugueAssumptions)
+			.where(gte(fugueAssumptions.updatedAt, since))
+			.orderBy(desc(fugueAssumptions.updatedAt))
+			.limit(limit),
+		db
+			.select()
+			.from(fugueInvestigations)
+			.where(gte(fugueInvestigations.updatedAt, since))
+			.orderBy(desc(fugueInvestigations.updatedAt))
+			.limit(limit),
+		db
+			.select()
+			.from(fugueDecisionEpisodes)
+			.where(gte(fugueDecisionEpisodes.createdAt, since))
+			.orderBy(desc(fugueDecisionEpisodes.createdAt))
+			.limit(limit),
+		db
+			.select()
+			.from(fugueFindings)
+			.where(gte(fugueFindings.createdAt, since))
+			.orderBy(desc(fugueFindings.createdAt))
+			.limit(limit),
+	]);
+
+	const items: CatchUpItem[] = [
+		...nodes.map((n) => ({
+			type: "node" as const,
+			id: n.id,
+			title: n.title,
+			actorId: n.authorId,
+			timestamp: n.createdAt,
+		})),
+		...assumptions.map((a) => ({
+			type: "assumption" as const,
+			id: a.id,
+			title: a.claim.slice(0, 120),
+			actorId: a.ownerId,
+			timestamp: a.updatedAt,
+		})),
+		...investigations.map((i) => ({
+			type: "investigation" as const,
+			id: i.id,
+			title: i.question.slice(0, 120),
+			actorId: i.investigatorId,
+			timestamp: i.updatedAt,
+		})),
+		...decisions.map((d) => ({
+			type: "decision" as const,
+			id: d.id,
+			title: d.title,
+			actorId: d.authorId,
+			timestamp: d.createdAt,
+		})),
+		...findings.map((f) => ({
+			type: "finding" as const,
+			id: f.id,
+			title: f.claim.slice(0, 120),
+			actorId: f.authorId,
+			timestamp: f.createdAt,
+		})),
+	];
+
+	return items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, limit);
+}
+
+// ─── Metrics (C7 Impact Tracker) ──────────────────────────────────────────────
+
+export interface RecordMetricInput {
+	graphNodeId?: string;
+	name: string;
+	value: number;
+	unit?: string;
+	measuredBy: string;
+}
+
+export async function recordMetric(db: DrizzleDb, input: RecordMetricInput, ctx: AuditCtx): Promise<SelectMetric> {
+	const id = newId();
+	const row: InsertMetric = {
+		id,
+		graphNodeId: input.graphNodeId ?? null,
+		name: input.name,
+		value: input.value,
+		unit: input.unit ?? "",
+		measuredBy: input.measuredBy,
+		measuredAt: new Date(),
+		createdAt: new Date(),
+	};
+	const [metric] = await db.insert(fugueMetrics).values(row).returning();
+	await audit(db, ctx, "metric.record", "metric", id, { name: input.name, value: input.value });
+	return metric;
+}
+
+export async function getMetricsForNode(db: DrizzleDb, graphNodeId: string): Promise<SelectMetric[]> {
+	return db
+		.select()
+		.from(fugueMetrics)
+		.where(eq(fugueMetrics.graphNodeId, graphNodeId))
+		.orderBy(desc(fugueMetrics.measuredAt));
+}
+
+export async function listMetrics(
+	db: DrizzleDb,
+	opts?: { name?: string; graphNodeId?: string; limit?: number },
+): Promise<SelectMetric[]> {
+	const conditions = [];
+	if (opts?.name) conditions.push(eq(fugueMetrics.name, opts.name));
+	if (opts?.graphNodeId) conditions.push(eq(fugueMetrics.graphNodeId, opts.graphNodeId));
+	const query = db
+		.select()
+		.from(fugueMetrics)
+		.orderBy(desc(fugueMetrics.measuredAt))
+		.limit(opts?.limit ?? 100);
+	return conditions.length > 0 ? query.where(and(...conditions)) : query;
+}
+
+// ─── Competitions (C6 Competition Framework) ──────────────────────────────────
+
+export interface CreateCompetitionInput {
+	title: string;
+	description?: string;
+	criteria?: Record<string, unknown>;
+	authorId: string;
+}
+
+export async function createCompetition(
+	db: DrizzleDb,
+	input: CreateCompetitionInput,
+	ctx: AuditCtx,
+): Promise<SelectCompetition> {
+	const id = newId();
+	const row: InsertCompetition = {
+		id,
+		title: input.title,
+		description: input.description ?? "",
+		status: "active",
+		criteria: input.criteria ?? {},
+		winnerNodeId: null,
+		authorId: input.authorId,
+		createdAt: new Date(),
+		concludedAt: null,
+	};
+	const [comp] = await db.insert(fugueCompetitions).values(row).returning();
+	await audit(db, ctx, "competition.create", "competition", id, { title: input.title });
+	return comp;
+}
+
+export async function getCompetition(db: DrizzleDb, id: string): Promise<SelectCompetition | undefined> {
+	const [comp] = await db.select().from(fugueCompetitions).where(eq(fugueCompetitions.id, id));
+	return comp;
+}
+
+export async function listCompetitions(
+	db: DrizzleDb,
+	opts?: { status?: string; limit?: number },
+): Promise<SelectCompetition[]> {
+	const conditions = [];
+	if (opts?.status) conditions.push(eq(fugueCompetitions.status, opts.status));
+	const query = db
+		.select()
+		.from(fugueCompetitions)
+		.orderBy(desc(fugueCompetitions.createdAt))
+		.limit(opts?.limit ?? 50);
+	return conditions.length > 0 ? query.where(and(...conditions)) : query;
+}
+
+export interface AddEntryInput {
+	competitionId: string;
+	graphNodeId: string;
+	notes?: string;
+	authorId: string;
+}
+
+export async function addCompetitionEntry(
+	db: DrizzleDb,
+	input: AddEntryInput,
+	ctx: AuditCtx,
+): Promise<SelectCompetitionEntry> {
+	const id = newId();
+	const row: InsertCompetitionEntry = {
+		id,
+		competitionId: input.competitionId,
+		graphNodeId: input.graphNodeId,
+		notes: input.notes ?? "",
+		score: null,
+		authorId: input.authorId,
+		createdAt: new Date(),
+	};
+	const [entry] = await db.insert(fugueCompetitionEntries).values(row).returning();
+	await audit(db, ctx, "competition.entry_added", "competition", input.competitionId, {
+		graphNodeId: input.graphNodeId,
+	});
+	return entry;
+}
+
+export async function scoreCompetitionEntry(
+	db: DrizzleDb,
+	entryId: string,
+	score: number,
+	ctx: AuditCtx,
+): Promise<SelectCompetitionEntry | undefined> {
+	const [entry] = await db
+		.update(fugueCompetitionEntries)
+		.set({ score })
+		.where(eq(fugueCompetitionEntries.id, entryId))
+		.returning();
+	if (entry) await audit(db, ctx, "competition.entry_scored", "competition", entry.competitionId, { entryId, score });
+	return entry;
+}
+
+export async function concludeCompetition(
+	db: DrizzleDb,
+	id: string,
+	winnerNodeId: string,
+	ctx: AuditCtx,
+): Promise<SelectCompetition | undefined> {
+	const [comp] = await db
+		.update(fugueCompetitions)
+		.set({ status: "concluded", winnerNodeId, concludedAt: new Date() })
+		.where(eq(fugueCompetitions.id, id))
+		.returning();
+	if (comp) await audit(db, ctx, "competition.concluded", "competition", id, { winnerNodeId });
+	return comp;
+}
+
+export async function getCompetitionEntries(db: DrizzleDb, competitionId: string): Promise<SelectCompetitionEntry[]> {
+	return db
+		.select()
+		.from(fugueCompetitionEntries)
+		.where(eq(fugueCompetitionEntries.competitionId, competitionId))
+		.orderBy(desc(fugueCompetitionEntries.createdAt));
 }

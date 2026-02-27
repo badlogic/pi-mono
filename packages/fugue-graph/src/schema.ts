@@ -73,6 +73,92 @@ export const fugueAuditLog = pgTable("fugue_audit_log", {
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ─── Investigations (C5 Research Engine) ─────────────────────────────────────
+
+export const fugueInvestigations = pgTable("fugue_investigations", {
+	id: text("id").primaryKey(),
+	graphNodeId: text("graph_node_id").references(() => fugueNodes.id, { onDelete: "set null" }),
+	question: text("question").notNull(),
+	methodology: text("methodology").notNull().default(""),
+	status: text("status").notNull().default("open"), // "open" | "active" | "concluded"
+	conclusion: text("conclusion").notNull().default(""),
+	investigatorId: text("investigator_id").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ─── Findings (C5 Research Engine) ────────────────────────────────────────────
+
+export const fugueFindings = pgTable("fugue_findings", {
+	id: text("id").primaryKey(),
+	investigationId: text("investigation_id")
+		.notNull()
+		.references(() => fugueInvestigations.id, { onDelete: "cascade" }),
+	graphNodeId: text("graph_node_id").references(() => fugueNodes.id, { onDelete: "set null" }),
+	claim: text("claim").notNull(),
+	evidence: text("evidence").notNull().default(""),
+	confidence: real("confidence").notNull().default(0.5),
+	authorId: text("author_id").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ─── Decision Episodes (C10 Institutional Memory) ─────────────────────────────
+
+export const fugueDecisionEpisodes = pgTable("fugue_decision_episodes", {
+	id: text("id").primaryKey(),
+	title: text("title").notNull(),
+	context: text("context").notNull().default(""),
+	optionsConsidered: jsonb("options_considered").notNull().default([]),
+	decision: text("decision").notNull(),
+	rationale: text("rationale").notNull().default(""),
+	outcome: text("outcome").notNull().default(""),
+	graphNodeId: text("graph_node_id").references(() => fugueNodes.id, { onDelete: "set null" }),
+	authorId: text("author_id").notNull(),
+	decidedAt: timestamp("decided_at", { withTimezone: true }).notNull().defaultNow(),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ─── Metrics (C7 Impact Tracker) ──────────────────────────────────────────────
+
+export const fugueMetrics = pgTable("fugue_metrics", {
+	id: text("id").primaryKey(),
+	graphNodeId: text("graph_node_id").references(() => fugueNodes.id, { onDelete: "cascade" }),
+	name: text("name").notNull(),
+	value: real("value").notNull(),
+	unit: text("unit").notNull().default(""),
+	measuredBy: text("measured_by").notNull(),
+	measuredAt: timestamp("measured_at", { withTimezone: true }).notNull().defaultNow(),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ─── Competitions (C6 Competition Framework) ──────────────────────────────────
+
+export const fugueCompetitions = pgTable("fugue_competitions", {
+	id: text("id").primaryKey(),
+	title: text("title").notNull(),
+	description: text("description").notNull().default(""),
+	status: text("status").notNull().default("active"), // "active" | "concluded"
+	criteria: jsonb("criteria").notNull().default({}),
+	winnerNodeId: text("winner_node_id").references(() => fugueNodes.id, { onDelete: "set null" }),
+	authorId: text("author_id").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	concludedAt: timestamp("concluded_at", { withTimezone: true }),
+});
+
+export const fugueCompetitionEntries = pgTable("fugue_competition_entries", {
+	id: text("id").primaryKey(),
+	competitionId: text("competition_id")
+		.notNull()
+		.references(() => fugueCompetitions.id, { onDelete: "cascade" }),
+	graphNodeId: text("graph_node_id")
+		.notNull()
+		.references(() => fugueNodes.id, { onDelete: "cascade" }),
+	score: real("score"),
+	notes: text("notes").notNull().default(""),
+	authorId: text("author_id").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ─── Agents ───────────────────────────────────────────────────────────────────
 
 export const fugueAgents = pgTable("fugue_agents", {
@@ -101,3 +187,15 @@ export type InsertAssumption = typeof fugueAssumptions.$inferInsert;
 export type SelectAssumption = typeof fugueAssumptions.$inferSelect;
 export type InsertAgent = typeof fugueAgents.$inferInsert;
 export type SelectAgent = typeof fugueAgents.$inferSelect;
+export type InsertInvestigation = typeof fugueInvestigations.$inferInsert;
+export type SelectInvestigation = typeof fugueInvestigations.$inferSelect;
+export type InsertFinding = typeof fugueFindings.$inferInsert;
+export type SelectFinding = typeof fugueFindings.$inferSelect;
+export type InsertDecisionEpisode = typeof fugueDecisionEpisodes.$inferInsert;
+export type SelectDecisionEpisode = typeof fugueDecisionEpisodes.$inferSelect;
+export type InsertMetric = typeof fugueMetrics.$inferInsert;
+export type SelectMetric = typeof fugueMetrics.$inferSelect;
+export type InsertCompetition = typeof fugueCompetitions.$inferInsert;
+export type SelectCompetition = typeof fugueCompetitions.$inferSelect;
+export type InsertCompetitionEntry = typeof fugueCompetitionEntries.$inferInsert;
+export type SelectCompetitionEntry = typeof fugueCompetitionEntries.$inferSelect;

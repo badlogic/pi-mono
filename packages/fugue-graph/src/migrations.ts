@@ -145,4 +145,102 @@ const MIGRATIONS: Migration[] = [
 			CREATE INDEX IF NOT EXISTS idx_fugue_agents_node ON fugue_agents(graph_node_id);
 		`,
 	},
+	{
+		id: "004_research_and_memory",
+		sql: `
+			CREATE TABLE IF NOT EXISTS fugue_investigations (
+				id TEXT PRIMARY KEY,
+				graph_node_id TEXT REFERENCES fugue_nodes(id) ON DELETE SET NULL,
+				question TEXT NOT NULL,
+				methodology TEXT NOT NULL DEFAULT '',
+				status TEXT NOT NULL DEFAULT 'open',
+				conclusion TEXT NOT NULL DEFAULT '',
+				investigator_id TEXT NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_fugue_inv_status ON fugue_investigations(status);
+			CREATE INDEX IF NOT EXISTS idx_fugue_inv_investigator ON fugue_investigations(investigator_id);
+			CREATE INDEX IF NOT EXISTS idx_fugue_inv_created ON fugue_investigations(created_at DESC);
+
+			CREATE TABLE IF NOT EXISTS fugue_findings (
+				id TEXT PRIMARY KEY,
+				investigation_id TEXT NOT NULL REFERENCES fugue_investigations(id) ON DELETE CASCADE,
+				graph_node_id TEXT REFERENCES fugue_nodes(id) ON DELETE SET NULL,
+				claim TEXT NOT NULL,
+				evidence TEXT NOT NULL DEFAULT '',
+				confidence REAL NOT NULL DEFAULT 0.5,
+				author_id TEXT NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_fugue_findings_inv ON fugue_findings(investigation_id);
+			CREATE INDEX IF NOT EXISTS idx_fugue_findings_node ON fugue_findings(graph_node_id);
+
+			CREATE TABLE IF NOT EXISTS fugue_decision_episodes (
+				id TEXT PRIMARY KEY,
+				title TEXT NOT NULL,
+				context TEXT NOT NULL DEFAULT '',
+				options_considered JSONB NOT NULL DEFAULT '[]',
+				decision TEXT NOT NULL,
+				rationale TEXT NOT NULL DEFAULT '',
+				outcome TEXT NOT NULL DEFAULT '',
+				graph_node_id TEXT REFERENCES fugue_nodes(id) ON DELETE SET NULL,
+				author_id TEXT NOT NULL,
+				decided_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_fugue_decisions_author ON fugue_decision_episodes(author_id);
+			CREATE INDEX IF NOT EXISTS idx_fugue_decisions_created ON fugue_decision_episodes(created_at DESC);
+		`,
+	},
+	{
+		id: "005_metrics_and_competitions",
+		sql: `
+			CREATE TABLE IF NOT EXISTS fugue_metrics (
+				id TEXT PRIMARY KEY,
+				graph_node_id TEXT REFERENCES fugue_nodes(id) ON DELETE CASCADE,
+				name TEXT NOT NULL,
+				value REAL NOT NULL,
+				unit TEXT NOT NULL DEFAULT '',
+				measured_by TEXT NOT NULL,
+				measured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_fugue_metrics_node ON fugue_metrics(graph_node_id);
+			CREATE INDEX IF NOT EXISTS idx_fugue_metrics_name ON fugue_metrics(name);
+			CREATE INDEX IF NOT EXISTS idx_fugue_metrics_measured ON fugue_metrics(measured_at DESC);
+
+			CREATE TABLE IF NOT EXISTS fugue_competitions (
+				id TEXT PRIMARY KEY,
+				title TEXT NOT NULL,
+				description TEXT NOT NULL DEFAULT '',
+				status TEXT NOT NULL DEFAULT 'active',
+				criteria JSONB NOT NULL DEFAULT '{}',
+				winner_node_id TEXT REFERENCES fugue_nodes(id) ON DELETE SET NULL,
+				author_id TEXT NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				concluded_at TIMESTAMPTZ
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_fugue_competitions_status ON fugue_competitions(status);
+			CREATE INDEX IF NOT EXISTS idx_fugue_competitions_created ON fugue_competitions(created_at DESC);
+
+			CREATE TABLE IF NOT EXISTS fugue_competition_entries (
+				id TEXT PRIMARY KEY,
+				competition_id TEXT NOT NULL REFERENCES fugue_competitions(id) ON DELETE CASCADE,
+				graph_node_id TEXT NOT NULL REFERENCES fugue_nodes(id) ON DELETE CASCADE,
+				score REAL,
+				notes TEXT NOT NULL DEFAULT '',
+				author_id TEXT NOT NULL,
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_fugue_entries_competition ON fugue_competition_entries(competition_id);
+			CREATE INDEX IF NOT EXISTS idx_fugue_entries_node ON fugue_competition_entries(graph_node_id);
+		`,
+	},
 ];
