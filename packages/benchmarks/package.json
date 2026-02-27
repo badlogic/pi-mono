@@ -14,8 +14,8 @@
 		"demo:hn": "npx tsx src/demos/hn-watcher.ts"
 	},
 	"dependencies": {
-		"@mariozechner/pi-agent-core": "*",
-		"@mariozechner/pi-ai": "*"
+		"@mariozechner/pi-agent-core": "npm:@neuralwatt/pi-agent-core@*",
+		"@mariozechner/pi-ai": "npm:@neuralwatt/pi-ai@*"
 	},
 	"keywords": [
 		"benchmark",

@@ -7,8 +7,8 @@ export default defineConfig({
 			"@fugue/shared": resolve(__dirname, "../fugue-shared/src/index.ts"),
 			"@fugue/graph": resolve(__dirname, "../fugue-graph/src/index.ts"),
 			"@fugue/events": resolve(__dirname, "../fugue-events/src/index.ts"),
-			"@mariozechner/pi-ai": resolve(__dirname, "../ai/src/index.ts"),
-			"@mariozechner/pi-agent-core": resolve(__dirname, "../agent/src/index.ts"),
+			"@neuralwatt/pi-ai": resolve(__dirname, "../ai/src/index.ts"),
+			"@neuralwatt/pi-agent-core": resolve(__dirname, "../agent/src/index.ts"),
 		},
 	},
 	test: {

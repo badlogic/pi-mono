@@ -20,8 +20,8 @@
 	},
 	"dependencies": {
 		"@anthropic-ai/sandbox-runtime": "^0.0.16",
-		"@mariozechner/pi-agent-core": "^0.53.0",
-		"@mariozechner/pi-ai": "^0.53.0",
+		"@mariozechner/pi-agent-core": "npm:@neuralwatt/pi-agent-core@^0.53.0",
+		"@mariozechner/pi-ai": "npm:@neuralwatt/pi-ai@^0.53.0",
 		"@mariozechner/pi-coding-agent": "^0.53.0",
 		"@sinclair/typebox": "^0.34.0",
 		"@slack/socket-mode": "^2.0.0",

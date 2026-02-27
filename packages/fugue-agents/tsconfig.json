@@ -10,10 +10,10 @@
 			"@fugue/graph/*": ["../fugue-graph/src/*"],
 			"@fugue/events": ["../fugue-events/src/index.ts"],
 			"@fugue/events/*": ["../fugue-events/src/*"],
-			"@mariozechner/pi-ai": ["../ai/src/index.ts"],
-			"@mariozechner/pi-ai/*": ["../ai/src/*"],
-			"@mariozechner/pi-agent-core": ["../agent/src/index.ts"],
-			"@mariozechner/pi-agent-core/*": ["../agent/src/*"]
+			"@neuralwatt/pi-ai": ["../ai/src/index.ts"],
+			"@neuralwatt/pi-ai/*": ["../ai/src/*"],
+			"@neuralwatt/pi-agent-core": ["../agent/src/index.ts"],
+			"@neuralwatt/pi-agent-core/*": ["../agent/src/*"]
 		}
 	},
 	"include": ["src/**/*.ts", "test/**/*.ts"]

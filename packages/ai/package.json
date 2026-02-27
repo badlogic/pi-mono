@@ -1,5 +1,5 @@
 {
-	"name": "@mariozechner/pi-ai",
+	"name": "@neuralwatt/pi-ai",
 	"version": "0.53.0",
 	"description": "Unified LLM API with automatic model discovery and provider configuration",
 	"type": "module",
@@ -55,6 +55,10 @@
 	},
 	"engines": {
 		"node": ">=20.0.0"
+	},
+	"publishConfig": {
+		"registry": "https://npm.pkg.github.com",
+		"access": "public"
 	},
 	"devDependencies": {
 		"@types/node": "^24.3.0",

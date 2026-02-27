@@ -1,8 +1,8 @@
 import type { EventBus } from "@fugue/events";
 import { type DrizzleDb, getAgent, updateAgentStatus } from "@fugue/graph";
 import { newId } from "@fugue/shared";
-import { type AgentContext, type AgentLoopConfig, agentLoop } from "@mariozechner/pi-agent-core";
-import { getModel, type Message, streamSimple } from "@mariozechner/pi-ai";
+import { type AgentContext, type AgentLoopConfig, agentLoop } from "@neuralwatt/pi-agent-core";
+import { getModel, type Message, streamSimple } from "@neuralwatt/pi-ai";
 import { createFugueTools } from "./tools.js";
 
 // ─── System Prompt ────────────────────────────────────────────────────────────

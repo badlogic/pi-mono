@@ -18,8 +18,8 @@
 		"@fugue/events": "^0.1.0",
 		"@fugue/graph": "^0.1.0",
 		"@fugue/shared": "^0.1.0",
-		"@mariozechner/pi-agent-core": "^0.53.0",
-		"@mariozechner/pi-ai": "^0.53.0",
+		"@neuralwatt/pi-agent-core": "^0.53.0",
+		"@neuralwatt/pi-ai": "^0.53.0",
 		"@sinclair/typebox": "^0.34.0"
 	},
 	"devDependencies": {

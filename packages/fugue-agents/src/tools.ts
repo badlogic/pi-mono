@@ -1,7 +1,7 @@
 import type { EventBus } from "@fugue/events";
 import { createEdge, createNode, type DrizzleDb, getNode, listNodes, searchNodes } from "@fugue/graph";
 import { newId } from "@fugue/shared";
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { AgentTool } from "@neuralwatt/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 
 // ─── Tool: search_nodes ───────────────────────────────────────────────────────

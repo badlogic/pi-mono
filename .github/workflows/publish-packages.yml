@@ -1,0 +1,61 @@
+name: Publish Neuralwatt Packages
+
+on:
+  push:
+    branches:
+      - fugue/phase-0
+    paths:
+      - "packages/ai/**"
+      - "packages/agent/**"
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Package to publish (ai, agent, or both)"
+        required: false
+        default: "both"
+        type: choice
+        options:
+          - both
+          - ai
+          - agent
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@neuralwatt"
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Build @neuralwatt/pi-ai
+        if: ${{ github.event_name == 'push' || inputs.package == 'both' || inputs.package == 'ai' }}
+        run: npm run build --workspace=@neuralwatt/pi-ai
+
+      - name: Publish @neuralwatt/pi-ai
+        if: ${{ github.event_name == 'push' || inputs.package == 'both' || inputs.package == 'ai' }}
+        run: npm publish --workspace=@neuralwatt/pi-ai
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build @neuralwatt/pi-agent-core
+        if: ${{ github.event_name == 'push' || inputs.package == 'both' || inputs.package == 'agent' }}
+        run: npm run build --workspace=@neuralwatt/pi-agent-core
+
+      - name: Publish @neuralwatt/pi-agent-core
+        if: ${{ github.event_name == 'push' || inputs.package == 'both' || inputs.package == 'agent' }}
+        run: npm publish --workspace=@neuralwatt/pi-agent-core
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
