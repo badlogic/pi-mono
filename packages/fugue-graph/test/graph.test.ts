@@ -2,18 +2,22 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DrizzleDb } from "../src/graph.js";
 import {
 	archiveNode,
+	createAgent,
 	createAssumption,
 	createEdge,
 	createNode,
 	deleteEdge,
+	getAgent,
 	getAssumptionsForNode,
 	getEdgesBetween,
 	getEdgesFrom,
 	getEdgesTo,
 	getNode,
+	listAgents,
 	listNodes,
 	markStaleAssumptions,
 	queryAuditLog,
+	updateAgentStatus,
 	updateAssumptionConfidence,
 	updateNode,
 } from "../src/graph.js";
@@ -569,6 +573,149 @@ describe("queryAuditLog", () => {
 
 		const log = await queryAuditLog(db, { actorId: "agent-1" });
 		expect(log[0]!.authorityChain).toEqual(["user-root", "agent-1"]);
+	});
+});
+
+// ─── Agent CRUD ───────────────────────────────────────────────────────────────
+
+describe("createAgent", () => {
+	it("creates an agent with required fields", async () => {
+		const agent = await createAgent(db, { goal: "Analyze market trends" }, TEST_ACTOR);
+
+		expect(agent.id).toBeTruthy();
+		expect(agent.goal).toBe("Analyze market trends");
+		expect(agent.status).toBe("pending");
+		expect(agent.model).toBe("neuralwatt-large");
+		expect(agent.budgetConsumedJoules).toBe(0);
+		expect(agent.budgetMaxJoules).toBeNull();
+		expect(agent.graphNodeId).toBeNull();
+		expect(agent.parentAgentId).toBeNull();
+		expect(agent.capabilities).toEqual({});
+		expect(agent.createdAt).toBeInstanceOf(Date);
+		expect(agent.updatedAt).toBeInstanceOf(Date);
+	});
+
+	it("creates an agent with optional fields", async () => {
+		const node = await createNode(db, { type: "investigation", title: "Market Research", authorId: "u" }, TEST_ACTOR);
+
+		const agent = await createAgent(
+			db,
+			{
+				goal: "Deep research",
+				graphNodeId: node.id,
+				model: "neuralwatt-small",
+				budgetMaxJoules: 500,
+				capabilities: { github: true },
+			},
+			TEST_ACTOR,
+		);
+
+		expect(agent.graphNodeId).toBe(node.id);
+		expect(agent.model).toBe("neuralwatt-small");
+		expect(agent.budgetMaxJoules).toBe(500);
+		expect(agent.capabilities).toEqual({ github: true });
+	});
+
+	it("creates a child agent with parentAgentId", async () => {
+		const parent = await createAgent(db, { goal: "Parent goal" }, TEST_ACTOR);
+		const child = await createAgent(db, { goal: "Child goal", parentAgentId: parent.id }, TEST_ACTOR);
+
+		expect(child.parentAgentId).toBe(parent.id);
+	});
+
+	it("writes an audit entry", async () => {
+		const agent = await createAgent(db, { goal: "Audit test" }, TEST_ACTOR);
+
+		const log = await queryAuditLog(db, { targetId: agent.id, action: "agent.create" });
+		expect(log.length).toBe(1);
+		expect(log[0]!.detail).toMatchObject({ goal: "Audit test" });
+	});
+});
+
+describe("getAgent", () => {
+	it("returns the agent by id", async () => {
+		const created = await createAgent(db, { goal: "Fetch me" }, TEST_ACTOR);
+		const found = await getAgent(db, created.id);
+
+		expect(found).toBeDefined();
+		expect(found!.id).toBe(created.id);
+		expect(found!.goal).toBe("Fetch me");
+	});
+
+	it("returns undefined for unknown id", async () => {
+		const result = await getAgent(db, "nonexistent");
+		expect(result).toBeUndefined();
+	});
+});
+
+describe("updateAgentStatus", () => {
+	it("transitions status and updates updatedAt", async () => {
+		const agent = await createAgent(db, { goal: "Status test" }, TEST_ACTOR);
+		const updated = await updateAgentStatus(db, agent.id, "running", TEST_ACTOR);
+
+		expect(updated).toBeDefined();
+		expect(updated!.status).toBe("running");
+		expect(updated!.updatedAt.getTime()).toBeGreaterThanOrEqual(agent.updatedAt.getTime());
+	});
+
+	it("updates budgetConsumedJoules when provided", async () => {
+		const agent = await createAgent(db, { goal: "Budget test", budgetMaxJoules: 1000 }, TEST_ACTOR);
+		const updated = await updateAgentStatus(db, agent.id, "running", TEST_ACTOR, 42.5);
+
+		expect(updated!.budgetConsumedJoules).toBe(42.5);
+	});
+
+	it("returns undefined for nonexistent agent", async () => {
+		const result = await updateAgentStatus(db, "ghost", "completed", TEST_ACTOR);
+		expect(result).toBeUndefined();
+	});
+
+	it("writes an audit entry for each transition", async () => {
+		const agent = await createAgent(db, { goal: "Audit transitions" }, TEST_ACTOR);
+		await updateAgentStatus(db, agent.id, "running", TEST_ACTOR);
+		await updateAgentStatus(db, agent.id, "completed", TEST_ACTOR);
+
+		const log = await queryAuditLog(db, { targetId: agent.id, action: "agent.status_changed" });
+		expect(log.length).toBe(2);
+	});
+});
+
+describe("listAgents", () => {
+	it("returns all agents ordered by createdAt desc", async () => {
+		await createAgent(db, { goal: "First" }, TEST_ACTOR);
+		await createAgent(db, { goal: "Second" }, TEST_ACTOR);
+		await createAgent(db, { goal: "Third" }, TEST_ACTOR);
+
+		const agents = await listAgents(db);
+		expect(agents.length).toBe(3);
+		// Most recently created first
+		expect(agents[0]!.goal).toBe("Third");
+	});
+
+	it("filters by status", async () => {
+		const a1 = await createAgent(db, { goal: "Will run" }, TEST_ACTOR);
+		await createAgent(db, { goal: "Stays pending" }, TEST_ACTOR);
+		await updateAgentStatus(db, a1.id, "running", TEST_ACTOR);
+
+		const running = await listAgents(db, { status: "running" });
+		expect(running.length).toBe(1);
+		expect(running[0]!.id).toBe(a1.id);
+	});
+
+	it("respects limit", async () => {
+		for (let i = 0; i < 5; i++) {
+			await createAgent(db, { goal: `Agent ${i}` }, TEST_ACTOR);
+		}
+
+		const agents = await listAgents(db, { limit: 2 });
+		expect(agents.length).toBe(2);
+	});
+
+	it("returns empty array when none match filter", async () => {
+		await createAgent(db, { goal: "Pending only" }, TEST_ACTOR);
+
+		const completed = await listAgents(db, { status: "completed" });
+		expect(completed).toEqual([]);
 	});
 });
 

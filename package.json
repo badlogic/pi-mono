@@ -13,8 +13,8 @@
 	"scripts": {
 		"clean": "npm run clean --workspaces",
 		"build": "cd packages/tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../coding-agent && npm run build && cd ../mom && npm run build && cd ../web-ui && npm run build && cd ../pods && npm run build",
-		"build:fugue": "cd packages/fugue-shared && npm run build && cd ../fugue-graph && npm run build && cd ../fugue-events && npm run build && cd ../fugue-core && npm run build && cd ../fugue-sync && npm run build && cd ../fugue-surface && npm run build",
-		"test:fugue": "npm run test --workspace=packages/fugue-shared --workspace=packages/fugue-graph --workspace=packages/fugue-events --workspace=packages/fugue-core --workspace=packages/fugue-sync --workspace=packages/fugue-surface",
+		"build:fugue": "cd packages/fugue-shared && npm run build && cd ../fugue-graph && npm run build && cd ../fugue-events && npm run build && cd ../fugue-core && npm run build && cd ../fugue-sync && npm run build && cd ../fugue-agents && npm run build && cd ../fugue-connectors && npm run build && cd ../fugue-surface && npm run build",
+		"test:fugue": "npm run test -w packages/fugue-shared -w packages/fugue-graph -w packages/fugue-events -w packages/fugue-core -w packages/fugue-sync -w packages/fugue-agents -w packages/fugue-connectors -w packages/fugue-surface",
 		"dev": "concurrently --names \"ai,agent,coding-agent,mom,web-ui,tui\" --prefix-colors \"cyan,yellow,red,white,green,magenta\" \"cd packages/ai && npm run dev\" \"cd packages/agent && npm run dev\" \"cd packages/coding-agent && npm run dev\" \"cd packages/mom && npm run dev\" \"cd packages/web-ui && npm run dev\" \"cd packages/tui && npm run dev\"",
 		"dev:tsc": "concurrently --names \"ai,web-ui\" --prefix-colors \"cyan,green\" \"cd packages/ai && npm run dev:tsc\" \"cd packages/web-ui && npm run dev:tsc\"",
 		"check": "biome check --write --error-on-warnings . && tsgo --noEmit && cd packages/web-ui && npm run check",

@@ -1,0 +1,33 @@
+{
+	"name": "@fugue/agents",
+	"version": "0.1.0",
+	"description": "Fugue agent runner — wraps pi-agent-core with graph tools and lifecycle management",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": ["dist"],
+	"scripts": {
+		"clean": "rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json",
+		"test": "vitest --run",
+		"test:coverage": "vitest --run --coverage"
+	},
+	"license": "MIT",
+	"engines": { "node": ">=20.0.0" },
+	"dependencies": {
+		"@fugue/events": "^0.1.0",
+		"@fugue/graph": "^0.1.0",
+		"@fugue/shared": "^0.1.0",
+		"@mariozechner/pi-agent-core": "^0.53.0",
+		"@mariozechner/pi-ai": "^0.53.0",
+		"@sinclair/typebox": "^0.34.0"
+	},
+	"devDependencies": {
+		"@electric-sql/pglite": "^0.3.0",
+		"@types/node": "^22.10.5",
+		"@vitest/coverage-v8": "^3.0.0",
+		"drizzle-orm": "^0.45.0",
+		"typescript": "^5.9.2",
+		"vitest": "^3.0.0"
+	}
+}

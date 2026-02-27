@@ -123,4 +123,26 @@ const MIGRATIONS: Migration[] = [
 			CREATE INDEX IF NOT EXISTS idx_fugue_nodes_search ON fugue_nodes USING gin(search_vector);
 		`,
 	},
+	{
+		id: "003_agents",
+		sql: `
+			CREATE TABLE IF NOT EXISTS fugue_agents (
+				id TEXT PRIMARY KEY,
+				graph_node_id TEXT REFERENCES fugue_nodes(id) ON DELETE SET NULL,
+				parent_agent_id TEXT,
+				goal TEXT NOT NULL,
+				status TEXT NOT NULL DEFAULT 'pending',
+				model TEXT NOT NULL DEFAULT 'neuralwatt-large',
+				budget_max_joules REAL,
+				budget_consumed_joules REAL NOT NULL DEFAULT 0,
+				capabilities JSONB NOT NULL DEFAULT '{}',
+				created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+				updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			);
+
+			CREATE INDEX IF NOT EXISTS idx_fugue_agents_status ON fugue_agents(status);
+			CREATE INDEX IF NOT EXISTS idx_fugue_agents_parent ON fugue_agents(parent_agent_id);
+			CREATE INDEX IF NOT EXISTS idx_fugue_agents_node ON fugue_agents(graph_node_id);
+		`,
+	},
 ];

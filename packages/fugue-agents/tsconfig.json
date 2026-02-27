@@ -1,0 +1,20 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"rootDir": "src",
+		"outDir": "dist",
+		"paths": {
+			"@fugue/shared": ["../fugue-shared/src/index.ts"],
+			"@fugue/shared/*": ["../fugue-shared/src/*"],
+			"@fugue/graph": ["../fugue-graph/src/index.ts"],
+			"@fugue/graph/*": ["../fugue-graph/src/*"],
+			"@fugue/events": ["../fugue-events/src/index.ts"],
+			"@fugue/events/*": ["../fugue-events/src/*"],
+			"@mariozechner/pi-ai": ["../ai/src/index.ts"],
+			"@mariozechner/pi-ai/*": ["../ai/src/*"],
+			"@mariozechner/pi-agent-core": ["../agent/src/index.ts"],
+			"@mariozechner/pi-agent-core/*": ["../agent/src/*"]
+		}
+	},
+	"include": ["src/**/*.ts", "test/**/*.ts"]
+}

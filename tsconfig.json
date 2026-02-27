@@ -32,9 +32,13 @@
 			"@fugue/core": ["./packages/fugue-core/src/index.ts"],
 			"@fugue/core/*": ["./packages/fugue-core/src/*"],
 			"@fugue/sync": ["./packages/fugue-sync/src/index.ts"],
-			"@fugue/sync/*": ["./packages/fugue-sync/src/*"]
+			"@fugue/sync/*": ["./packages/fugue-sync/src/*"],
+			"@fugue/agents": ["./packages/fugue-agents/src/index.ts"],
+			"@fugue/agents/*": ["./packages/fugue-agents/src/*"],
+			"@fugue/connectors": ["./packages/fugue-connectors/src/index.ts"],
+			"@fugue/connectors/*": ["./packages/fugue-connectors/src/*"]
 		}
 	},
 	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],
-	"exclude": ["packages/web-ui/**/*", "packages/fugue-surface/**/*", "packages/fugue-connectors/**/*", "**/dist/**"]
+	"exclude": ["packages/web-ui/**/*", "packages/fugue-surface/**/*", "**/dist/**"]
 }

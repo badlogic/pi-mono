@@ -59,10 +59,24 @@ const SCHEMA_SQL = `
 		authority_chain TEXT[] NOT NULL DEFAULT '{}',
 		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 	);
+
+	CREATE TABLE IF NOT EXISTS fugue_agents (
+		id TEXT PRIMARY KEY,
+		graph_node_id TEXT REFERENCES fugue_nodes(id) ON DELETE SET NULL,
+		parent_agent_id TEXT,
+		goal TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'pending',
+		model TEXT NOT NULL DEFAULT 'neuralwatt-large',
+		budget_max_joules REAL,
+		budget_consumed_joules REAL NOT NULL DEFAULT 0,
+		capabilities JSONB NOT NULL DEFAULT '{}',
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
 `;
 
 const TRUNCATE_SQL = `
-	TRUNCATE fugue_audit_log, fugue_assumptions, fugue_edges, fugue_nodes, fugue_users
+	TRUNCATE fugue_agents, fugue_audit_log, fugue_assumptions, fugue_edges, fugue_nodes, fugue_users
 	RESTART IDENTITY CASCADE;
 `;
 

@@ -5,13 +5,18 @@ import { NodePanel } from "../src/components/NodePanel.js";
 // ─── Mock tRPC ────────────────────────────────────────────────────────────────
 
 const mockRefetch = vi.fn();
+const mockRefetchAgents = vi.fn();
 const mockCreateMutate = vi.fn();
 const mockArchiveMutate = vi.fn();
+const mockSpawnMutate = vi.fn();
+const mockAbortMutate = vi.fn();
 
 const mockNodes = [
 	{ id: "n1", type: "idea", title: "First idea", status: "active" },
 	{ id: "n2", type: "decision", title: "Buy Postgres", status: "active" },
 ];
+
+const mockAgents: { id: string; goal: string; status: string }[] = [];
 
 vi.mock("../src/trpc.js", () => ({
 	trpc: {
@@ -40,6 +45,31 @@ vi.mock("../src/trpc.js", () => ({
 				})),
 			},
 		},
+		agents: {
+			list: {
+				useQuery: vi.fn(() => ({
+					data: mockAgents,
+					refetch: mockRefetchAgents,
+				})),
+			},
+			spawn: {
+				useMutation: vi.fn((opts?: { onSuccess?: () => void }) => ({
+					mutate: (input: unknown) => {
+						mockSpawnMutate(input);
+						opts?.onSuccess?.();
+					},
+					isPending: false,
+				})),
+			},
+			abort: {
+				useMutation: vi.fn((opts?: { onSuccess?: () => void }) => ({
+					mutate: (input: unknown) => {
+						mockAbortMutate(input);
+						opts?.onSuccess?.();
+					},
+				})),
+			},
+		},
 	},
 }));
 
@@ -47,6 +77,7 @@ vi.mock("../src/trpc.js", () => ({
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	mockAgents.length = 0;
 });
 
 describe("NodePanel", () => {
@@ -121,6 +152,42 @@ describe("NodePanel", () => {
 		);
 		void listQueryMock;
 		void originalImpl; // suppress unused warnings
+	});
+
+	it("shows spawn agent button per node", () => {
+		render(<NodePanel />);
+		expect(screen.getAllByText("Agent").length).toBeGreaterThanOrEqual(1);
+	});
+
+	it("opens spawn agent dialog when agent button clicked", () => {
+		render(<NodePanel />);
+		fireEvent.click(screen.getAllByText("Agent")[0]!);
+		expect(screen.getByRole("dialog")).toBeDefined();
+		expect(screen.getByLabelText("Agent goal")).toBeDefined();
+	});
+
+	it("spawns an agent with the node's id on dialog submit", () => {
+		render(<NodePanel />);
+		fireEvent.click(screen.getAllByText("Agent")[0]!);
+
+		const goalInput = screen.getByLabelText("Agent goal");
+		fireEvent.change(goalInput, { target: { value: "Research this idea deeply" } });
+		fireEvent.click(screen.getByText("Spawn"));
+
+		expect(mockSpawnMutate).toHaveBeenCalledWith(
+			expect.objectContaining({ goal: "Research this idea deeply", graphNodeId: "n1" }),
+		);
+	});
+
+	it("shows agents in the agent list", () => {
+		mockAgents.push({ id: "a1", goal: "Investigate the market", status: "running" });
+		render(<NodePanel />);
+		expect(screen.getByText("Investigate the market")).toBeDefined();
+	});
+
+	it("shows empty state when no agents", () => {
+		render(<NodePanel />);
+		expect(screen.getByText(/no agents yet/i)).toBeDefined();
 	});
 
 	it("allows selecting node type", () => {

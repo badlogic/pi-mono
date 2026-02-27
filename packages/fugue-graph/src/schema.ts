@@ -73,6 +73,22 @@ export const fugueAuditLog = pgTable("fugue_audit_log", {
 	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ─── Agents ───────────────────────────────────────────────────────────────────
+
+export const fugueAgents = pgTable("fugue_agents", {
+	id: text("id").primaryKey(),
+	graphNodeId: text("graph_node_id").references(() => fugueNodes.id, { onDelete: "set null" }),
+	parentAgentId: text("parent_agent_id"), // FK to self not expressed in Drizzle to avoid circular ref
+	goal: text("goal").notNull(),
+	status: text("status").notNull().default("pending"), // AgentStatus
+	model: text("model").notNull().default("neuralwatt-large"),
+	budgetMaxJoules: real("budget_max_joules"),
+	budgetConsumedJoules: real("budget_consumed_joules").notNull().default(0),
+	capabilities: jsonb("capabilities").notNull().default({}),
+	createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ─── Drizzle type exports ─────────────────────────────────────────────────────
 
 export type InsertNode = typeof fugueNodes.$inferInsert;
@@ -83,3 +99,5 @@ export type InsertAuditEntry = typeof fugueAuditLog.$inferInsert;
 export type SelectAuditEntry = typeof fugueAuditLog.$inferSelect;
 export type InsertAssumption = typeof fugueAssumptions.$inferInsert;
 export type SelectAssumption = typeof fugueAssumptions.$inferSelect;
+export type InsertAgent = typeof fugueAgents.$inferInsert;
+export type SelectAgent = typeof fugueAgents.$inferSelect;

@@ -1,16 +1,19 @@
-import type { AuthorType, EdgeType, NodeStatus, NodeType } from "@fugue/shared";
+import type { AgentStatus, AuthorType, EdgeType, NodeStatus, NodeType } from "@fugue/shared";
 import { newId } from "@fugue/shared";
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import type { Pool } from "pg";
 import {
+	fugueAgents,
 	fugueAssumptions,
 	fugueAuditLog,
 	fugueEdges,
 	fugueNodes,
+	type InsertAgent,
 	type InsertAssumption,
 	type InsertEdge,
 	type InsertNode,
+	type SelectAgent,
 	type SelectAssumption,
 	type SelectEdge,
 	type SelectNode,
@@ -429,4 +432,68 @@ export async function markStaleAssumptions(db: DrizzleDb): Promise<number> {
 
 export async function getAssumptionsForNode(db: DrizzleDb, graphNodeId: string): Promise<SelectAssumption[]> {
 	return db.select().from(fugueAssumptions).where(eq(fugueAssumptions.graphNodeId, graphNodeId));
+}
+
+// ─── Agents ───────────────────────────────────────────────────────────────────
+
+export interface CreateAgentInput {
+	goal: string;
+	graphNodeId?: string;
+	parentAgentId?: string;
+	model?: string;
+	budgetMaxJoules?: number;
+	capabilities?: Record<string, unknown>;
+}
+
+export async function createAgent(db: DrizzleDb, input: CreateAgentInput, ctx: AuditCtx): Promise<SelectAgent> {
+	const id = newId();
+	const row: InsertAgent = {
+		id,
+		goal: input.goal,
+		graphNodeId: input.graphNodeId ?? null,
+		parentAgentId: input.parentAgentId ?? null,
+		model: input.model ?? "neuralwatt-large",
+		status: "pending",
+		budgetMaxJoules: input.budgetMaxJoules ?? null,
+		budgetConsumedJoules: 0,
+		capabilities: input.capabilities ?? {},
+		createdAt: new Date(),
+		updatedAt: new Date(),
+	};
+	const [agent] = await db.insert(fugueAgents).values(row).returning();
+	await audit(db, ctx, "agent.create", "agent", id, { goal: input.goal });
+	return agent;
+}
+
+export async function getAgent(db: DrizzleDb, id: string): Promise<SelectAgent | undefined> {
+	const [agent] = await db.select().from(fugueAgents).where(eq(fugueAgents.id, id));
+	return agent;
+}
+
+export async function updateAgentStatus(
+	db: DrizzleDb,
+	id: string,
+	status: AgentStatus,
+	ctx: AuditCtx,
+	budgetConsumedJoules?: number,
+): Promise<SelectAgent | undefined> {
+	const updates: Partial<InsertAgent> = { status, updatedAt: new Date() };
+	if (budgetConsumedJoules !== undefined) updates.budgetConsumedJoules = budgetConsumedJoules;
+	const [agent] = await db.update(fugueAgents).set(updates).where(eq(fugueAgents.id, id)).returning();
+	if (agent) await audit(db, ctx, "agent.status_changed", "agent", id, { status });
+	return agent;
+}
+
+export async function listAgents(
+	db: DrizzleDb,
+	opts?: { status?: AgentStatus; limit?: number },
+): Promise<SelectAgent[]> {
+	const conditions = [];
+	if (opts?.status) conditions.push(eq(fugueAgents.status, opts.status));
+	const query = db
+		.select()
+		.from(fugueAgents)
+		.orderBy(desc(fugueAgents.createdAt))
+		.limit(opts?.limit ?? 50);
+	return conditions.length > 0 ? query.where(and(...conditions)) : query;
 }
