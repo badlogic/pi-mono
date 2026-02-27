@@ -5,8 +5,8 @@ import type { Context, Model } from "../src/types.js";
 describe("google-shared convertMessages", () => {
 	it("converts unsigned tool calls to text for Gemini 3", () => {
 		const model: Model<"google-generative-ai"> = {
-			id: "gemini-3-pro-preview",
-			name: "Gemini 3 Pro Preview",
+			id: "gemini-3.1-pro-preview",
+			name: "Gemini 3.1 Pro Preview",
 			api: "google-generative-ai",
 			provider: "google",
 			baseUrl: "https://generativelanguage.googleapis.com",

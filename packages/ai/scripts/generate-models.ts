@@ -988,18 +988,7 @@ async function generateModels() {
 			contextWindow: 1048576,
 			maxTokens: 8192,
 		},
-		{
-			id: "gemini-3-pro-preview",
-			name: "Gemini 3 Pro Preview (Cloud Code Assist)",
-			api: "google-gemini-cli",
-			provider: "google-gemini-cli",
-			baseUrl: CLOUD_CODE_ASSIST_ENDPOINT,
-			reasoning: true,
-			input: ["text", "image"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 1048576,
-			maxTokens: 65535,
-		},
+
 		{
 			id: "gemini-3-flash-preview",
 			name: "Gemini 3 Flash Preview (Cloud Code Assist)",
@@ -1032,8 +1021,8 @@ async function generateModels() {
 	const ANTIGRAVITY_ENDPOINT = "https://daily-cloudcode-pa.sandbox.googleapis.com";
 	const antigravityModels: Model<"google-gemini-cli">[] = [
 		{
-			id: "gemini-3-pro-high",
-			name: "Gemini 3 Pro High (Antigravity)",
+			id: "gemini-3.1-pro-high",
+			name: "Gemini 3.1 Pro High (Antigravity)",
 			api: "google-gemini-cli",
 			provider: "google-antigravity",
 			baseUrl: ANTIGRAVITY_ENDPOINT,
@@ -1045,8 +1034,8 @@ async function generateModels() {
 			maxTokens: 65535,
 		},
 		{
-			id: "gemini-3-pro-low",
-			name: "Gemini 3 Pro Low (Antigravity)",
+			id: "gemini-3.1-pro-low",
+			name: "Gemini 3.1 Pro Low (Antigravity)",
 			api: "google-gemini-cli",
 			provider: "google-antigravity",
 			baseUrl: ANTIGRAVITY_ENDPOINT,
@@ -1134,18 +1123,7 @@ async function generateModels() {
 
 	const VERTEX_BASE_URL = "https://{location}-aiplatform.googleapis.com";
 	const vertexModels: Model<"google-vertex">[] = [
-		{
-			id: "gemini-3-pro-preview",
-			name: "Gemini 3 Pro Preview (Vertex)",
-			api: "google-vertex",
-			provider: "google-vertex",
-			baseUrl: VERTEX_BASE_URL,
-			reasoning: true,
-			input: ["text", "image"],
-			cost: { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0 },
-			contextWindow: 1000000,
-			maxTokens: 64000,
-		},
+
 		{
 			id: "gemini-3.1-pro-preview",
 			name: "Gemini 3.1 Pro Preview (Vertex)",
