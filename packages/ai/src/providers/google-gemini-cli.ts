@@ -72,7 +72,7 @@ const GEMINI_CLI_HEADERS = {
 };
 
 // Headers for Antigravity (sandbox endpoint) - requires specific User-Agent
-const DEFAULT_ANTIGRAVITY_VERSION = "1.15.8";
+const DEFAULT_ANTIGRAVITY_VERSION = "1.18.0";
 
 function getAntigravityHeaders() {
 	const version = process.env.PI_AI_ANTIGRAVITY_VERSION || DEFAULT_ANTIGRAVITY_VERSION;
@@ -794,7 +794,7 @@ export const streamSimpleGoogleGeminiCli: StreamFunction<"google-gemini-cli", Si
 	}
 
 	const effort = clampReasoning(options.reasoning)!;
-	if (model.id.includes("3-pro") || model.id.includes("3-flash")) {
+	if (model.id.includes("3-pro") || model.id.includes("3-flash") || model.id.includes("3.1-pro")) {
 		return streamGoogleGeminiCli(model, context, {
 			...base,
 			thinking: {
@@ -917,7 +917,7 @@ export function buildRequest(
 type ClampedThinkingLevel = Exclude<ThinkingLevel, "xhigh">;
 
 function getGeminiCliThinkingLevel(effort: ClampedThinkingLevel, modelId: string): GoogleThinkingLevel {
-	if (modelId.includes("3-pro")) {
+	if (modelId.includes("3-pro") || modelId.includes("3.1-pro")) {
 		switch (effort) {
 			case "minimal":
 			case "low":
