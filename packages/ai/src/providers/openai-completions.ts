@@ -167,7 +167,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 					calculateCost(model, output.usage);
 				}
 
-				const choice = chunk.choices[0];
+				const choice = chunk.choices?.[0];
 				if (!choice) continue;
 
 				if (choice.finish_reason) {
