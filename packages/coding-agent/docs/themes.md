@@ -4,16 +4,6 @@
 
 Themes are JSON files that define colors for the TUI.
 
-## Table of Contents
-
-- [Locations](#locations)
-- [Selecting a Theme](#selecting-a-theme)
-- [Creating a Custom Theme](#creating-a-custom-theme)
-- [Theme Format](#theme-format)
-- [Color Tokens](#color-tokens)
-- [Color Values](#color-values)
-- [Tips](#tips)
-
 ## Locations
 
 Pi loads themes from:

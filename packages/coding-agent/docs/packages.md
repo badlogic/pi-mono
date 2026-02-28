@@ -4,17 +4,6 @@
 
 Pi packages bundle extensions, skills, prompt templates, and themes so you can share them through npm or git. A package can declare resources in `package.json` under the `pi` key, or use conventional directories.
 
-## Table of Contents
-
-- [Install and Manage](#install-and-manage)
-- [Package Sources](#package-sources)
-- [Creating a Pi Package](#creating-a-pi-package)
-- [Package Structure](#package-structure)
-- [Dependencies](#dependencies)
-- [Package Filtering](#package-filtering)
-- [Enable and Disable Resources](#enable-and-disable-resources)
-- [Scope and Deduplication](#scope-and-deduplication)
-
 ## Install and Manage
 
 > **Security:** Pi packages run with full system access. Extensions execute arbitrary code, and skills can instruct the model to perform any action including running executables. Review source code before installing third-party packages.

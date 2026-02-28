@@ -28,30 +28,6 @@ Pi ships with powerful defaults but skips features like sub agents and plan mode
 
 Pi runs in four modes: interactive, print or JSON, RPC for process integration, and an SDK for embedding in your own apps. See [openclaw/openclaw](https://github.com/openclaw/openclaw) for a real-world SDK integration.
 
-## Table of Contents
-
-- [Quick Start](#quick-start)
-- [Providers & Models](#providers--models)
-- [Interactive Mode](#interactive-mode)
-  - [Editor](#editor)
-  - [Commands](#commands)
-  - [Keyboard Shortcuts](#keyboard-shortcuts)
-  - [Message Queue](#message-queue)
-- [Sessions](#sessions)
-  - [Branching](#branching)
-  - [Compaction](#compaction)
-- [Settings](#settings)
-- [Context Files](#context-files)
-- [Customization](#customization)
-  - [Prompt Templates](#prompt-templates)
-  - [Skills](#skills)
-  - [Extensions](#extensions)
-  - [Themes](#themes)
-  - [Pi Packages](#pi-packages)
-- [Programmatic Usage](#programmatic-usage)
-- [Philosophy](#philosophy)
-- [CLI Reference](#cli-reference)
-
 ---
 
 ## Quick Start

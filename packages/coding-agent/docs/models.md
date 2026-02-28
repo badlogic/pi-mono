@@ -2,17 +2,6 @@
 
 Add custom providers and models (Ollama, vLLM, LM Studio, proxies) via `~/.pi/agent/models.json`.
 
-## Table of Contents
-
-- [Minimal Example](#minimal-example)
-- [Full Example](#full-example)
-- [Supported APIs](#supported-apis)
-- [Provider Configuration](#provider-configuration)
-- [Model Configuration](#model-configuration)
-- [Overriding Built-in Providers](#overriding-built-in-providers)
-- [Per-model Overrides](#per-model-overrides)
-- [OpenAI Compatibility](#openai-compatibility)
-
 ## Minimal Example
 
 For local models (Ollama, LM Studio, vLLM), only `id` is required per model:

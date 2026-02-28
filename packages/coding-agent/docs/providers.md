@@ -2,15 +2,6 @@
 
 Pi supports subscription-based providers via OAuth and API key providers via environment variables or auth file. For each provider, pi knows all available models. The list is updated with every pi release.
 
-## Table of Contents
-
-- [Subscriptions](#subscriptions)
-- [API Keys](#api-keys)
-- [Auth File](#auth-file)
-- [Cloud Providers](#cloud-providers)
-- [Custom Providers](#custom-providers)
-- [Resolution Order](#resolution-order)
-
 ## Subscriptions
 
 Use `/login` in interactive mode, then select a provider:

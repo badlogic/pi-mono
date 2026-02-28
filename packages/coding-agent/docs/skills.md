@@ -6,17 +6,6 @@ Skills are self-contained capability packages that the agent loads on-demand. A 
 
 Pi implements the [Agent Skills standard](https://agentskills.io/specification), warning about violations but remaining lenient.
 
-## Table of Contents
-
-- [Locations](#locations)
-- [How Skills Work](#how-skills-work)
-- [Skill Commands](#skill-commands)
-- [Skill Structure](#skill-structure)
-- [Frontmatter](#frontmatter)
-- [Validation](#validation)
-- [Example](#example)
-- [Skill Repositories](#skill-repositories)
-
 ## Locations
 
 > **Security:** Skills can instruct the model to perform any action and may include executable code the model invokes. Review skill content before use.

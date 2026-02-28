@@ -15,19 +15,6 @@ See these complete provider examples:
 - [`examples/extensions/custom-provider-gitlab-duo/`](../examples/extensions/custom-provider-gitlab-duo/)
 - [`examples/extensions/custom-provider-qwen-cli/`](../examples/extensions/custom-provider-qwen-cli/)
 
-## Table of Contents
-
-- [Example Extensions](#example-extensions)
-- [Quick Reference](#quick-reference)
-- [Override Existing Provider](#override-existing-provider)
-- [Register New Provider](#register-new-provider)
-- [Unregister Provider](#unregister-provider)
-- [OAuth Support](#oauth-support)
-- [Custom Streaming API](#custom-streaming-api)
-- [Testing Your Implementation](#testing-your-implementation)
-- [Config Reference](#config-reference)
-- [Model Definition Reference](#model-definition-reference)
-
 ## Quick Reference
 
 ```typescript
