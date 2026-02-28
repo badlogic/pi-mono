@@ -947,7 +947,38 @@ export class AgentSession {
 				return current;
 			}
 		}
-		return availableModels.find((model) => model.size === skill.modelSize);
+
+		const sizeMatched = availableModels.filter((model) => model.size === skill.modelSize);
+		if (sizeMatched.length === 0) return undefined;
+
+		const currentProvider = (this.model as any)?.provider as string | undefined;
+
+		// Prefer models from the same provider as the current model, if any.
+		if (currentProvider) {
+			const sameProvider = sizeMatched.filter(
+				(model) => (model as any).provider === currentProvider,
+			);
+			if (sameProvider.length > 0) {
+				sameProvider.sort((a, b) => {
+					const aId = String((a as any).id ?? "");
+					const bId = String((b as any).id ?? "");
+					return aId.localeCompare(bId);
+				});
+				return sameProvider[0];
+			}
+		}
+
+		// Fall back to a deterministic choice among all size-matched models.
+		const sorted = sizeMatched.slice().sort((a, b) => {
+			const aProvider = String((a as any).provider ?? "");
+			const bProvider = String((b as any).provider ?? "");
+			const byProvider = aProvider.localeCompare(bProvider);
+			if (byProvider !== 0) return byProvider;
+			const aId = String((a as any).id ?? "");
+			const bId = String((b as any).id ?? "");
+			return aId.localeCompare(bId);
+		});
+		return sorted[0];
 	}
 
 	/**
