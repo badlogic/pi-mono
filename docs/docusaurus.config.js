@@ -32,6 +32,18 @@ const config = {
     ],
   ],
 
+  themes: [
+    [
+      "@easyops-cn/docusaurus-search-local",
+      {
+        hashed: true,
+        docsDir: "../packages/coding-agent",
+        docsRouteBasePath: "/",
+        indexBlog: false,
+      },
+    ],
+  ],
+
   plugins: [
     [
       "@docusaurus/plugin-content-docs",

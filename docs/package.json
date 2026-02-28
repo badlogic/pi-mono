@@ -5,6 +5,7 @@
   "scripts": {
     "build": "docusaurus build",
     "start": "docusaurus start",
+    "serve": "docusaurus build && docusaurus serve",
     "clear": "docusaurus clear"
   },
   "dependencies": {
@@ -12,6 +13,7 @@
     "@docusaurus/plugin-content-docs": "^3.7.0",
     "@docusaurus/preset-classic": "^3.7.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "@easyops-cn/docusaurus-search-local": "^0.46.1"
   }
 }
