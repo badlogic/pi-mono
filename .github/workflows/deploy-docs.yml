@@ -1,0 +1,52 @@
+name: Deploy docs to GitHub Pages
+
+on:
+  push:
+    branches: [main, documentation-site]
+    paths:
+      - "docs/**"
+      - "packages/coding-agent/README.md"
+      - "packages/coding-agent/CHANGELOG.md"
+      - "packages/coding-agent/docs/**"
+      - "packages/coding-agent/examples/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: docs
+        run: npm install --ignore-scripts
+
+      - name: Build
+        working-directory: docs
+        run: npx docusaurus build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ github.event.deployment.payload.web_url }}
+    steps:
+      - uses: actions/deploy-pages@v4

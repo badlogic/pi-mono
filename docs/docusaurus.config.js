@@ -4,8 +4,8 @@
 const config = {
   title: "pi",
   tagline: "AI coding agent",
-  url: "https://pi.dev",
-  baseUrl: "/docs/",
+  url: "https://kissgyorgy.github.io",
+  baseUrl: "/pi-mono/",
   onBrokenLinks: "warn",
   favicon: "img/favicon.ico",
 
