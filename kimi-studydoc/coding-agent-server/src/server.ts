@@ -5,7 +5,7 @@ import { SessionManager } from "./SessionManager.js";
 import { ContractSynthesizer } from "./ContractSynthesizer.js";
 import { SnapshotBuilder } from "./SnapshotBuilder.js";
 import { ExecutionRunner } from "./ExecutionRunner.js";
-import type { CreateSessionRequest, ApiResponse, SessionStatusResponse, Session } from "./types.js";
+import type { CreateSessionRequest, ApiResponse, SessionStatusResponse } from "./types.js";
 
 const app = express();
 app.use(express.json());
@@ -42,7 +42,7 @@ app.get("/health", (_req: Request, res: Response) => {
 // Create a new session
 app.post("/api/sessions", async (req: Request, res: Response) => {
   try {
-    const { userPrompt, skillText, workingDir } = req.body as CreateSessionRequest;
+    const { userPrompt, skillText } = req.body as CreateSessionRequest;
 
     if (!userPrompt || !skillText) {
       res.status(400).json({
@@ -133,8 +133,9 @@ app.get("/api/sessions", async (_req: Request, res: Response) => {
 
 // Start preflight (contract synthesis)
 app.post("/api/sessions/:sessionId/preflight", async (req: Request, res: Response) => {
+  const { sessionId } = req.params;
+  
   try {
-    const { sessionId } = req.params;
     const session = await sessionManager.getSession(sessionId);
 
     if (!session) {
@@ -206,10 +207,10 @@ app.post("/api/sessions/:sessionId/preflight", async (req: Request, res: Respons
 
 // Freeze and execute
 app.post("/api/sessions/:sessionId/execute", async (req: Request, res: Response) => {
+  const { sessionId } = req.params;
+  const { workingDir } = req.body;
+  
   try {
-    const { sessionId } = req.params;
-    const { workingDir } = req.body;
-    
     const session = await sessionManager.getSession(sessionId);
 
     if (!session) {
@@ -232,9 +233,6 @@ app.post("/api/sessions/:sessionId/execute", async (req: Request, res: Response)
       res.status(400).json({
         success: false,
         error: "Cannot execute: missing required information",
-        data: {
-          missingInfo: session.contract.missingInformation,
-        },
       } as ApiResponse<never>);
       return;
     }

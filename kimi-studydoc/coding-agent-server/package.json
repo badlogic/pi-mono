@@ -16,6 +16,7 @@
     "@mariozechner/pi-ai": "^0.55.3",
     "@mariozechner/pi-coding-agent": "^0.55.3",
     "express": "^4.18.2",
+    "glob": "^10.3.10",
     "zod": "^3.22.4",
     "uuid": "^9.0.1"
   },

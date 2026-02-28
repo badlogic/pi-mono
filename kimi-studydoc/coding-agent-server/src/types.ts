@@ -16,6 +16,7 @@ export interface ExecutionContract {
   requiredTools: string[];
   requiredScripts: string[];
   missingInformation: string[];
+  canExecute: boolean;
 }
 
 export interface Snapshot {

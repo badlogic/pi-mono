@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext, ToolCallContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolCallEvent } from "@mariozechner/pi-coding-agent";
 
 /**
  * NoInteractionExtension
@@ -23,45 +23,26 @@ const FORBIDDEN_TOOLS = [
   "questionnaire",
 ];
 
-const FORBIDDEN_PATTERNS = [
-  /ask.*user/i,
-  /need.*clarification/i,
-  /please.*confirm/i,
-  /waiting.*input/i,
-];
+export interface NoInteractionOptions {
+  enabled?: boolean;
+}
 
-export default function NoInteractionExtension(pi: ExtensionAPI): void {
+export default function NoInteractionExtension(pi: ExtensionAPI, options: NoInteractionOptions = {}): void {
   // Track if we're in execution mode
-  let executionMode = false;
+  let executionMode = options.enabled ?? false;
 
-  pi.registerCommand("enable-no-interaction", {
-    description: "Enable no-interaction mode (for execution phase)",
-    async run(ctx: ExtensionContext) {
-      executionMode = true;
-      ctx.ui.notify("🔒 No-interaction mode enabled - user input is blocked");
-    },
-  });
-
-  pi.registerCommand("disable-no-interaction", {
-    description: "Disable no-interaction mode",
-    async run(ctx: ExtensionContext) {
-      executionMode = false;
-      ctx.ui.notify("🔓 No-interaction mode disabled");
-    },
-  });
-
-  // Hook into tool calls to block interactive tools
-  pi.onToolCall((toolCall: { name: string; arguments?: Record<string, unknown> }, ctx: ToolCallContext) => {
+  // Subscribe to tool_call events
+  pi.on("tool_call", (event: ToolCallEvent, _ctx: ExtensionContext) => {
     if (!executionMode) {
       return; // Allow in non-execution mode
     }
 
-    const toolName = toolCall.name.toLowerCase();
+    const toolName = event.toolName.toLowerCase();
 
     // Check if tool is in forbidden list
     if (FORBIDDEN_TOOLS.includes(toolName)) {
       const error = new Error(
-        `INTERACTION_BLOCKED: Tool '${toolCall.name}' is not allowed in execution mode. ` +
+        `INTERACTION_BLOCKED: Tool '${event.toolName}' is not allowed in execution mode. ` +
         `The agent attempted to request user interaction during a non-interactive execution phase. ` +
         `This indicates either:\n` +
         `1. The skill requires information that should have been provided during preflight\n` +
@@ -70,65 +51,18 @@ export default function NoInteractionExtension(pi: ExtensionAPI): void {
       );
       
       // Log the violation
-      console.error(`[NoInteractionExtension] Blocked tool call: ${toolCall.name}`, {
-        arguments: toolCall.arguments,
+      console.error(`[NoInteractionExtension] Blocked tool call: ${event.toolName}`, {
+        toolCallId: event.toolCallId,
         timestamp: new Date().toISOString(),
       });
 
+      // Throw to block execution
       throw error;
     }
-
-    // Check tool arguments for interaction patterns
-    const argsString = JSON.stringify(toolCall.arguments ?? {}).toLowerCase();
-    for (const pattern of FORBIDDEN_PATTERNS) {
-      if (pattern.test(argsString)) {
-        const error = new Error(
-          `INTERACTION_BLOCKED: Tool '${toolCall.name}' contains forbidden interaction pattern. ` +
-          `Arguments suggest an attempt to request user input.`
-        );
-        
-        console.error(`[NoInteractionExtension] Blocked pattern in tool call: ${toolCall.name}`, {
-          pattern: pattern.toString(),
-          timestamp: new Date().toISOString(),
-        });
-
-        throw error;
-      }
-    }
   });
 
-  // Hook into messages to detect and block clarification requests
-  pi.onMessage((message, ctx) => {
-    if (!executionMode) {
-      return;
-    }
-
-    // Check assistant messages for interaction requests
-    if (message.role === "assistant" && Array.isArray(message.content)) {
-      for (const block of message.content) {
-        if (block.type === "text") {
-          const text = block.text.toLowerCase();
-          
-          for (const pattern of FORBIDDEN_PATTERNS) {
-            if (pattern.test(text)) {
-              console.error(`[NoInteractionExtension] Detected interaction pattern in message:`, {
-                pattern: pattern.toString(),
-                preview: text.substring(0, 200),
-              });
-
-              // Replace the message content with a warning
-              block.text = `[INTERACTION_BLOCKED] The agent attempted to request clarification. ` +
-                `Original message has been suppressed. ` +
-                `The agent should proceed with available information or fail gracefully.`;
-            }
-          }
-        }
-      }
-    }
-  });
-
-  // Hook before LLM call to modify system prompt
-  pi.onBeforeLLM((request, ctx) => {
+  // Subscribe to before_agent_start to modify system prompt
+  pi.on("before_agent_start", (event, _ctx) => {
     if (!executionMode) {
       return;
     }
@@ -140,9 +74,9 @@ export default function NoInteractionExtension(pi: ExtensionAPI): void {
       "If you need information that is not available, you must FAIL with a clear error message. " +
       "Proceed with the information you have or terminate with an error.";
 
-    if (request.system) {
-      request.system += noInteractionDirective;
-    }
+    return {
+      systemPrompt: (event.systemPrompt ?? "") + noInteractionDirective,
+    };
   });
 
   console.log("[NoInteractionExtension] Registered - Interactive tools will be blocked in execution mode");

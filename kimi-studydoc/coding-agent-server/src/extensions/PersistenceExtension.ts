@@ -1,4 +1,5 @@
-import type { ExtensionAPI, ExtensionContext, ToolCallContext, AgentMessage } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 
 /**
  * PersistenceExtension
@@ -37,27 +38,9 @@ export default function PersistenceExtension(pi: ExtensionAPI, options: Persiste
   
   const saveInterval = options.saveInterval ?? 5000; // Default 5 seconds
 
-  // Register command to set total steps
-  pi.registerCommand("set-total-steps", {
-    description: "Set the total number of steps for progress tracking",
-    async run(ctx: ExtensionContext, args: { count: number }) {
-      totalSteps = args.count;
-      console.log(`[PersistenceExtension] Total steps set to: ${totalSteps}`);
-    },
-  });
-
-  // Register command to get current progress
-  pi.registerCommand("get-progress", {
-    description: "Get current execution progress",
-    async run(ctx: ExtensionContext) {
-      const progress = totalSteps > 0 ? Math.round((stepIndex / totalSteps) * 100) : 0;
-      ctx.ui.notify(`Progress: ${stepIndex}/${totalSteps} (${progress}%)`);
-    },
-  });
-
-  // Hook into messages to track history
-  pi.onMessage((message, ctx) => {
-    messageHistory.push(message);
+  // Subscribe to message_end events to track history
+  pi.on("message_end", (event) => {
+    messageHistory.push(event.message);
     
     // Check if we should force a save
     const now = Date.now();
@@ -66,8 +49,8 @@ export default function PersistenceExtension(pi: ExtensionAPI, options: Persiste
     }
   });
 
-  // Hook into tool calls to save after each execution
-  pi.onToolCall(async (toolCall, ctx: ToolCallContext) => {
+  // Subscribe to tool_execution_end to save after each execution
+  pi.on("tool_execution_end", async (event) => {
     stepIndex++;
     
     const state: PersistenceState = {
@@ -75,7 +58,7 @@ export default function PersistenceExtension(pi: ExtensionAPI, options: Persiste
       stepIndex,
       totalSteps,
       lastToolCall: {
-        name: toolCall.name,
+        name: event.toolName,
         timestamp: Date.now(),
       },
       checkpointAt: Date.now(),
@@ -89,22 +72,6 @@ export default function PersistenceExtension(pi: ExtensionAPI, options: Persiste
     } catch (error) {
       console.error("[PersistenceExtension] Failed to save state:", error);
       // Don't throw - we don't want to break execution due to persistence failure
-    }
-  });
-
-  // Hook after LLM to save state
-  pi.onAfterLLM(async (response, ctx) => {
-    const state: PersistenceState = {
-      sessionId: options.sessionId,
-      stepIndex,
-      totalSteps,
-      checkpointAt: Date.now(),
-    };
-
-    try {
-      await options.onSave(messageHistory, state);
-    } catch (error) {
-      console.error("[PersistenceExtension] Failed to save after LLM:", error);
     }
   });
 
@@ -124,29 +91,6 @@ export default function PersistenceExtension(pi: ExtensionAPI, options: Persiste
       console.error("[PersistenceExtension] Failed to save state:", error);
     }
   }
-
-  // Register restore command
-  pi.registerCommand("restore-session", {
-    description: "Restore session from last checkpoint",
-    async run(ctx: ExtensionContext) {
-      try {
-        const restored = await options.onLoad();
-        if (restored) {
-          messageHistory = restored.messages;
-          stepIndex = restored.state.stepIndex;
-          totalSteps = restored.state.totalSteps;
-          
-          ctx.ui.notify(`Session restored: step ${stepIndex}/${totalSteps}`);
-          console.log("[PersistenceExtension] Session restored from checkpoint");
-        } else {
-          ctx.ui.notify("No checkpoint found - starting fresh");
-        }
-      } catch (error) {
-        console.error("[PersistenceExtension] Failed to restore session:", error);
-        ctx.ui.notify("Failed to restore session");
-      }
-    },
-  });
 
   console.log(`[PersistenceExtension] Registered for session: ${options.sessionId}`);
 }

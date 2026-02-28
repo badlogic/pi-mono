@@ -19,12 +19,10 @@ export interface ContractSynthesizerOptions {
 export class ContractSynthesizer {
   private provider: string;
   private modelId: string;
-  private apiKey?: string;
 
   constructor(options: ContractSynthesizerOptions = {}) {
     this.provider = options.provider ?? "anthropic";
     this.modelId = options.modelId ?? "claude-sonnet-4-5";
-    this.apiKey = options.apiKey ?? process.env.ANTHROPIC_API_KEY;
   }
 
   async synthesize(userPrompt: string, skillText: string): Promise<ExecutionContract> {
@@ -65,21 +63,23 @@ Analyze the above and output the execution contract as JSON.`;
         throw new Error(`Model ${this.provider}/${this.modelId} not found`);
       }
 
-      const response = await complete({
+      const response = await complete(
         model,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userMessage }],
-      });
+        {
+          systemPrompt,
+          messages: [{ role: "user", content: userMessage, timestamp: Date.now() }],
+        }
+      );
 
-      // Extract JSON from response
-      const content = response.content;
+      // Extract text from response content
       let jsonText = "";
-
-      if (typeof content === "string") {
-        jsonText = content;
-      } else if (Array.isArray(content)) {
-        const textBlock = content.find((c) => c.type === "text");
-        jsonText = textBlock?.text ?? "";
+      
+      if (response.content && response.content.length > 0) {
+        // Find text content blocks
+        const textBlocks = response.content.filter(c => c.type === "text");
+        if (textBlocks.length > 0) {
+          jsonText = textBlocks.map(c => (c as { text: string }).text).join("");
+        }
       }
 
       // Try to extract JSON from markdown code block
@@ -98,35 +98,46 @@ Analyze the above and output the execution contract as JSON.`;
         requiredTools: validated.requiredTools,
         requiredScripts: validated.requiredScripts,
         missingInformation: validated.missingInformation,
+        canExecute: validated.missingInformation.length === 0,
       };
     } catch (error) {
-      // If synthesis fails, return a contract with the error as missing info
+      console.error("[ContractSynthesizer] Failed to synthesize contract:", error);
+      
+      // Return a safe fallback that blocks execution
       return {
         requiredInputs: [],
         requiredFiles: [],
         requiredTools: [],
         requiredScripts: [],
-        missingInformation: [
-          `Contract synthesis failed: ${error instanceof Error ? error.message : String(error)}`,
-        ],
+        missingInformation: ["Failed to synthesize contract: " + String(error)],
+        canExecute: false,
       };
     }
   }
 
+  /**
+   * Check if the contract has missing information that would prevent execution
+   */
   hasMissingInformation(contract: ExecutionContract): boolean {
     return contract.missingInformation.length > 0;
   }
 
+  /**
+   * Format missing information as a readable message
+   */
   formatMissingInfo(contract: ExecutionContract): string {
-    if (!this.hasMissingInformation(contract)) {
-      return "All required information is available.";
+    if (contract.missingInformation.length === 0) {
+      return "No missing information - ready to execute";
     }
 
-    return [
-      "Missing information required before execution:",
+    const lines = [
+      "Cannot execute due to missing information:",
+      "",
       ...contract.missingInformation.map((info) => `  - ${info}`),
       "",
-      "Please provide this information and retry.",
-    ].join("\n");
+      "Please provide the missing information and retry.",
+    ];
+
+    return lines.join("\n");
   }
 }

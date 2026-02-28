@@ -46,7 +46,6 @@ export class FileStorageAdapter implements StorageAdapter {
     if (!existsSync(this.baseDir)) {
       return [];
     }
-    const files = readFileSync(this.baseDir, "utf-8");
     // Simple implementation - read all .json files
     const sessions: Session[] = [];
     const { readdirSync } = await import("fs");

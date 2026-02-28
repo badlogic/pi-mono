@@ -1,7 +1,7 @@
-import { createAgentSession, createBashTool, createReadTool, createWriteTool, createEditTool, AuthStorage, ModelRegistry, SettingsManager, SessionManager as CodingSessionManager } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, createBashTool, createReadTool, createWriteTool, createEditTool, AuthStorage, ModelRegistry, SettingsManager } from "@mariozechner/pi-coding-agent";
 import { getModel } from "@mariozechner/pi-ai";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { Session, Snapshot } from "./types.js";
+import type { Snapshot } from "./types.js";
 import type { SessionManager } from "./SessionManager.js";
 
 export interface ExecutionRunnerOptions {
@@ -96,9 +96,6 @@ export class ExecutionRunner {
       // Create restricted tools based on whitelist
       const tools = this.createRestrictedTools(session.snapshot.toolWhitelist);
 
-      // Create coding session manager
-      const codingSessionManager = CodingSessionManager.inMemory();
-
       // Create agent session
       const { session: agentSession } = await createAgentSession({
         cwd: this.workingDir,
@@ -109,9 +106,10 @@ export class ExecutionRunner {
         modelRegistry,
         settingsManager,
         tools,
-        sessionManager: codingSessionManager,
-        systemPrompt,
       });
+
+      // Set custom system prompt
+      agentSession.agent.setSystemPrompt(systemPrompt);
 
       // Restore message history if resuming
       if (session.messageHistory && session.messageHistory.length > 0) {
@@ -138,9 +136,9 @@ export class ExecutionRunner {
             }
             break;
 
-          case "tool_call":
+          case "tool_execution_start":
             stepsExecuted++;
-            console.log(`\n[Step ${stepsExecuted}/${this.maxSteps}] Tool: ${event.toolCall.name}`);
+            console.log(`\n[Step ${stepsExecuted}/${this.maxSteps}] Tool: ${event.toolName}`);
             
             // Save progress
             this.sessionManager.updateProgress(sessionId, stepsExecuted, this.maxSteps);
@@ -152,24 +150,21 @@ export class ExecutionRunner {
             }
             break;
 
-          case "tool_result":
+          case "tool_execution_end":
             // Tool completed
             break;
 
-          case "error":
-            console.error("[ExecutionRunner] Error:", event.error);
+          case "agent_end":
+            // Agent finished
             break;
         }
       });
 
-      // Send the initial prompt
-      await agentSession.sendMessage({
-        role: "user",
-        content: session.snapshot.prompt,
-      });
+      // Send the initial prompt using prompt() method
+      await agentSession.prompt(session.snapshot.prompt);
 
       // Wait for completion or abort
-      await this.waitForCompletion(agentSession, abortController.signal);
+      await this.waitForCompletion(abortController.signal);
 
       // Update session state
       if (abortController.signal.aborted) {
@@ -244,10 +239,8 @@ export class ExecutionRunner {
   }
 
   private createRestrictedTools(whitelist: string[]) {
-    const tools = [];
-
     // Map of available tools
-    const availableTools: Record<string, () => unknown> = {
+    const availableTools: Record<string, () => any> = {
       read: () => createReadTool(this.workingDir),
       write: () => createWriteTool(this.workingDir),
       edit: () => createEditTool(this.workingDir),
@@ -255,6 +248,7 @@ export class ExecutionRunner {
     };
 
     // Only add whitelisted tools
+    const tools: any[] = [];
     for (const toolName of whitelist) {
       const toolFactory = availableTools[toolName.toLowerCase()];
       if (toolFactory) {
@@ -266,7 +260,6 @@ export class ExecutionRunner {
   }
 
   private async waitForCompletion(
-    agentSession: { close: () => Promise<void> },
     signal: AbortSignal,
   ): Promise<void> {
     return new Promise((resolve) => {
