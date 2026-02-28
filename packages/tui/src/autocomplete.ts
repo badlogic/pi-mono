@@ -448,6 +448,11 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	}
 
 	private resolveScopedFuzzyQuery(rawQuery: string): { baseDir: string; query: string; displayBase: string } | null {
+		// Bare ~ without slash - treat as home directory listing
+		if (rawQuery === "~") {
+			return { baseDir: homedir(), query: "", displayBase: "~/" };
+		}
+
 		const slashIndex = rawQuery.lastIndexOf("/");
 		if (slashIndex === -1) {
 			return null;

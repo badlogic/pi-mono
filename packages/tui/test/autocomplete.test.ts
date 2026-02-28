@@ -329,6 +329,64 @@ describe("CombinedAutocompleteProvider", () => {
 			const applied = provider.applyCompletion([line], 0, cursorCol, item!, result!.prefix);
 			assert.strictEqual(applied.lines[0], '@"my folder/test.txt" ');
 		});
+
+		test("bare @~ returns home directory contents", () => {
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@~";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			assert.notEqual(result, null, "Should return suggestions for bare ~ (home directory)");
+			assert.ok(result!.items.length > 0, "Home directory should have entries");
+			assert.strictEqual(result!.prefix, "@~");
+		});
+
+		test("@~/ returns home directory contents", () => {
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@~/";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			assert.notEqual(result, null, "Should return suggestions for ~/");
+			assert.ok(result!.items.length > 0, "Home directory should have entries");
+			assert.strictEqual(result!.prefix, "@~/");
+		});
+
+		test("@/ returns root directory contents", () => {
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@/";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			assert.notEqual(result, null, "Should return suggestions for /");
+			assert.ok(result!.items.length > 0, "Root directory should have entries");
+			assert.strictEqual(result!.prefix, "@/");
+		});
+
+		test("@~/. filters to dotfiles in home directory", () => {
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@~/.";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			assert.notEqual(result, null, "Should return dotfile suggestions from home");
+			assert.ok(result!.items.length > 0, "Home directory should have dotfiles");
+			// All results should be under ~/
+			for (const item of result!.items) {
+				assert.ok(item.description?.startsWith("~/"), `Expected ~/... path, got: ${item.description}`);
+			}
+		});
+
+		test("scopes fuzzy search to absolute directory paths", () => {
+			setupFolder(outsideDir, {
+				files: {
+					"target.ts": "export {};",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = `@${outsideDir}/tar`;
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			const values = result?.items.map((item) => item.value);
+			assert.ok(values?.includes(`@${outsideDir}/target.ts`));
+		});
 	});
 
 	describe("quoted path completion", () => {
