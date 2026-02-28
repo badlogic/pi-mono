@@ -2,7 +2,7 @@ services:
   mom:
     build:
       context: "docker/mom"
-      dockerfile: docker/mom/Dockerfile
+      dockerfile: Dockerfile
     image: pi-mom:local
     container_name: mom
     restart: unless-stopped
@@ -15,7 +15,7 @@ services:
   updater:
     build:
       context: "docker/updater"
-      dockerfile: docker/updater/Dockerfile
+      dockerfile: Dockerfile
     image: mom-updater:local
     container_name: mom-updater
     restart: unless-stopped
