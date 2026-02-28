@@ -8,7 +8,7 @@ DATA_DIR="${MOM_DATA_DIR:-/data}"
 # This heuristic is readable and usually fine.
 if [[ ! -d node_modules ]]; then
   echo "[mom] npm ci..."
-  npm ci
+  npm install
 fi
 
 echo "[mom] npm run build..."

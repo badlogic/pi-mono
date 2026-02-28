@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${REPO_URL:?set REPO_URL}"
-REPO_BRANCH="${REPO_BRANCH:-main}"
 CHECK_INTERVAL_SECONDS="${CHECK_INTERVAL_SECONDS:-120}"
 STARTUP_GRACE_SECONDS="${STARTUP_GRACE_SECONDS:-25}"
 SUCCESS_LOG_TEXT="${SUCCESS_LOG_TEXT:-⚡️ Mom bot connected and listening!}"
