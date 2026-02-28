@@ -939,9 +939,13 @@ export class AgentSession {
 
 		if (!skill.modelSize) return undefined;
 		const availableModels = await this._modelRegistry.getAvailable();
-		if (this.model?.size === skill.modelSize) {
+
+		// Prefer keeping the current model if its registry entry matches the requested size.
+		if (this.model) {
 			const current = availableModels.find((available) => modelsAreEqual(available, this.model));
-			if (current) return current;
+			if (current?.size === skill.modelSize) {
+				return current;
+			}
 		}
 		return availableModels.find((model) => model.size === skill.modelSize);
 	}
