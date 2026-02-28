@@ -1,0 +1,13 @@
+services:
+  mom:
+    build:
+      context: "${REPO_URL:-https://github.com/badlogic/pi-mono.git}#${REPO_BRANCH:-main}"
+      dockerfile: docker/mom/Dockerfile
+    image: pi-mom:local
+    container_name: mom
+    restart: unless-stopped
+    volumes:
+      - ${MOM_BASE}/repo:/repo
+      - ${MOM_BASE}/data:/data
+    environment:
+      MOM_DATA_DIR: /data
