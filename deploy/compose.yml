@@ -10,6 +10,14 @@ services:
       - ${MOM_BASE}/repo:/repo
       - ${MOM_BASE}/data:/data
     environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN}
+      REPO_URL: ${REPO_URL}
+      REPO_BRANCH: ${REPO_BRANCH:-main}
+      CHECK_INTERVAL_SECONDS: ${CHECK_INTERVAL_SECONDS:-120}
+      STARTUP_GRACE_SECONDS: ${STARTUP_GRACE_SECONDS:-25}
+      MOM_BASE: ${MOM_BASE}
       MOM_DATA_DIR: /data
 
   updater:
@@ -24,3 +32,12 @@ services:
       - ${MOM_BASE}/state:/work/state
       - /var/run/docker.sock:/var/run/docker.sock
       - ${MOM_BASE}/compose.yml:/stack/compose.yml:ro
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN}
+      REPO_URL: ${REPO_URL}
+      REPO_BRANCH: ${REPO_BRANCH:-main}
+      CHECK_INTERVAL_SECONDS: ${CHECK_INTERVAL_SECONDS:-120}
+      STARTUP_GRACE_SECONDS: ${STARTUP_GRACE_SECONDS:-25}
+      MOM_BASE: ${MOM_BASE}
