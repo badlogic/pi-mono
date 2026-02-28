@@ -1,0 +1,10 @@
+{
+	"name": "pi-examples",
+	"private": true,
+	"version": "0.0.0",
+	"description": "Example extensions for pi-coding-agent",
+	"keywords": ["pi-package"],
+	"pi": {
+		"extensions": ["./extensions"]
+	}
+}

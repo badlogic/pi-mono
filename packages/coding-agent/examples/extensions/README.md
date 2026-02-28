@@ -2,15 +2,20 @@
 
 Example extensions for pi-coding-agent.
 
-## Usage
+## Install
 
 ```bash
-# Load an extension with --extension flag
-pi --extension examples/extensions/permission-gate.ts
+# Install all examples as a pi package (from a local clone)
+pi install ./packages/coding-agent/examples
 
-# Or copy to extensions directory for auto-discovery
+# Or load a single extension for a one-off test
+pi -e ./packages/coding-agent/examples/extensions/hello.ts
+
+# Or copy individual extensions to your extensions directory
 cp permission-gate.ts ~/.pi/agent/extensions/
 ```
+
+Extensions with external dependencies (`with-deps/`, `custom-provider-*/`, `sandbox/`) need `npm install` in their directory before use.
 
 ## Examples
 
