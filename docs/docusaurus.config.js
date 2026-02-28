@@ -32,6 +32,38 @@ const config = {
     ],
   ],
 
+  themeConfig:
+    /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
+    ({
+      navbar: {
+        title: "coding agent",
+        logo: {
+          alt: "pi logo",
+          src: "img/logo.svg",
+        },
+        items: [
+          {
+            href: "https://discord.com/invite/3cU7Bz4UPx",
+            position: "right",
+            className: "header-discord-link",
+            "aria-label": "Discord community",
+          },
+          {
+            href: "https://www.npmjs.com/package/@mariozechner/pi-coding-agent",
+            position: "right",
+            className: "header-npm-link",
+            "aria-label": "npm package",
+          },
+          {
+            href: "https://github.com/badlogic/pi-mono",
+            position: "right",
+            className: "header-github-link",
+            "aria-label": "GitHub repository",
+          },
+        ],
+      },
+    }),
+
   themes: [
     [
       "@easyops-cn/docusaurus-search-local",
