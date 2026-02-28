@@ -1,27 +1,24 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { readFileSync, readdirSync, existsSync } from "fs";
 
 /**
- * Skill Selector Extension — Human-driven skill filtering prehook.
+ * Skill Selector Extension — Hybrid skill filtering prehook.
  *
- * Insight from transcript analysis: The human explicitly names skills 83% of
- * the time using /skill-name syntax. The human IS the classifier.
+ * Design insight: Skills are lightweight metadata (~60 tokens each) in the
+ * system prompt, NOT full SKILL.md bodies. At 233 skills that's ~12K tokens
+ * (6% of context). This scales to ~1000 skills before filtering is critical.
  *
- * This extension simply:
- *   1. Parses /skill-name references from the user's prompt
- *   2. Includes those skills + core skills + composes dependencies
- *   3. Filters the system prompt to only show relevant skills
+ * Strategy (Approach C — hybrid):
+ *   1. Explicit: Parse /skill-name references from user prompt (83% of messages)
+ *   2. Implicit: When no slash refs, score prompt against trigger index
+ *      built from each skill's triggers + description keywords
+ *   3. Fallback: If trigger matching yields < 3 results, pass all skills
+ *      through (at current scale, 12K tokens is a rounding error)
  *
- * No ML classifier needed. No heuristic matching on descriptions.
- * The human already knows which skills they need.
+ * The trigger index is built once at first use from the parsed <available_skills>
+ * XML — zero external dependencies, no /memory calls, sub-millisecond matching.
  *
- * For the ~15% of messages without explicit skill references,
- * a small set of core skills is always visible. The agent can
- * still read any skill by path — filtering only affects the
- * system prompt menu, not skill accessibility.
- *
- * Logs decisions to ~/.pi/assistant/skill_selector.jsonl for
- * future analysis and potential Shadow-LEGO classifier training
- * if the implicit case ever becomes worth optimizing.
+ * Logs decisions to ~/.pi/assistant/skill_selector.jsonl for trend analysis.
  */
 
 // ─── Configuration ───────────────────────────────────────────────────────────
@@ -36,7 +33,13 @@ const CORE_SKILLS = [
 ];
 
 /** Maximum skills to include in filtered prompt */
-const MAX_SKILLS = 35;
+const MAX_SKILLS = 50;
+
+/** Minimum trigger-match score to include a skill (0-1) */
+const MIN_TRIGGER_SCORE = 0.15;
+
+/** Below this skill count, don't bother filtering at all (~30K tokens) */
+const FILTER_THRESHOLD = 500;
 
 /** Minimum prompt length to bother filtering */
 const MIN_PROMPT_LENGTH = 8;
@@ -87,47 +90,140 @@ interface SkillEntry {
 	description: string;
 	triggers: string[];
 	location: string;
+	// Custom Embry OS frontmatter (parsed by extension, not Pi core)
+	composes?: string[];
+	provides?: string[];
+	model?: string;
+	tags?: string[];
+	taxonomy?: string[];
+}
+
+/** Full frontmatter parsed from SKILL.md files, keyed by skill name */
+type SkillFrontmatterMap = Record<string, Record<string, unknown>>;
+
+/**
+ * Composes map: skill → [dependency skills].
+ * Built dynamically by parsing frontmatter from each SKILL.md.
+ * Lazy-initialized once per session.
+ */
+let composesMap: Record<string, string[]> | null = null;
+
+/** Cached full frontmatter for all skills — exposed via pi.state for other extensions */
+let frontmatterMap: SkillFrontmatterMap | null = null;
+
+/**
+ * Parse all frontmatter fields from a SKILL.md file.
+ * Handles both YAML list styles: block (`- item`) and inline (`[item1, item2]`).
+ * Reads synchronously (only at index-build time, once per session).
+ */
+function parseFrontmatterFromFile(filePath: string): Record<string, unknown> {
+	try {
+		const content = readFileSync(filePath, "utf8") as string;
+		const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+		if (!fmMatch) return {};
+		const fm = fmMatch[1];
+		const result: Record<string, unknown> = {};
+
+		// Parse each top-level key in the frontmatter
+		const lines = fm.split("\n");
+		let i = 0;
+		while (i < lines.length) {
+			const keyMatch = lines[i].match(/^([a-z][a-z0-9_-]*):\s*(.*)/i);
+			if (!keyMatch) { i++; continue; }
+
+			const key = keyMatch[1];
+			const inlineValue = keyMatch[2].trim();
+
+			// Inline list: `composes: [memory, assess, plan]`
+			if (inlineValue.startsWith("[")) {
+				const listStr = inlineValue.replace(/^\[/, "").replace(/\]$/, "");
+				result[key] = listStr.split(",").map((s) => s.trim()).filter(Boolean);
+				i++;
+				continue;
+			}
+
+			// Scalar value on the same line
+			if (inlineValue && !inlineValue.startsWith(">") && !inlineValue.startsWith("|")) {
+				result[key] = inlineValue;
+				i++;
+				continue;
+			}
+
+			// Block list or folded scalar: check next lines for `- item` or continuation
+			const items: string[] = [];
+			const textLines: string[] = [];
+			i++;
+			while (i < lines.length && (lines[i].startsWith("  ") || lines[i].startsWith("\t") || lines[i].match(/^\s+-\s/))) {
+				const listItemMatch = lines[i].match(/^\s+-\s+(.+)/);
+				if (listItemMatch) {
+					items.push(listItemMatch[1].trim());
+				} else {
+					textLines.push(lines[i].trim());
+				}
+				i++;
+			}
+
+			if (items.length > 0) {
+				result[key] = items;
+			} else if (textLines.length > 0) {
+				result[key] = textLines.join(" ").trim();
+			} else if (inlineValue) {
+				result[key] = inlineValue;
+			}
+		}
+
+		return result;
+	} catch {
+		return {};
+	}
 }
 
 /**
- * Read composes from the skill entries' SKILL.md frontmatter.
- * Falls back to a static map for known high-value chains.
- * TODO: Parse composes from frontmatter at skill load time (Pi core change).
+ * Build frontmatter map + composes map from all skill SKILL.md files.
+ * Called once lazily, then cached for the session.
  */
-const COMPOSES_MAP: Record<string, string[]> = {
-	"assess": ["create-figure", "project-state", "memory"],
-	"project-state": ["create-figure", "memory"],
-	"orchestrate": ["plan", "memory"],
-	"learn-datalake": ["extractor", "review-pdf", "memory"],
-	"extractor": ["debug-pdf", "normalize", "memory"],
-	"create-movie": ["create-story", "create-storyboard", "create-score", "create-cast"],
-	"create-music": ["create-stems", "learn-voice"],
-	"recommend-skill-chain": ["skill-lab", "assistant"],
-	"review-pdf": ["create-figure", "memory"],
-	"cmmc-assessor": ["create-figure", "ops-compliance", "extractor"],
-	"lean4-prove": ["memory"],
-	"dogpile": ["brave-search", "perplexity", "memory"],
-	"skills-ci": ["create-figure", "best-practices-skills"],
-	"monitor-skills": ["create-figure", "skills-ci"],
-	"extractor-quality-check": ["create-figure", "memory"],
-	"quality-audit": ["create-figure"],
-	"classifier-lab": ["create-figure", "create-classifier"],
-	"assistant-lab": ["assistant", "create-classifier", "create-gpt"],
-	"battle": ["hack", "security-scan"],
-	"review-conversation": ["create-figure", "memory"],
-	"data-audit": ["create-figure", "memory"],
-	"corpus-report": ["create-figure"],
-	"batch-report": ["create-figure"],
-	"analytics": ["create-figure"],
-};
+function buildFrontmatterMaps(skills: SkillEntry[]): {
+	composes: Record<string, string[]>;
+	frontmatter: SkillFrontmatterMap;
+} {
+	const composes: Record<string, string[]> = {};
+	const frontmatter: SkillFrontmatterMap = {};
+
+	for (const skill of skills) {
+		const fm = parseFrontmatterFromFile(skill.location);
+		frontmatter[skill.name] = fm;
+
+		// Extract typed fields into the SkillEntry for other code to use
+		if (Array.isArray(fm.composes)) {
+			composes[skill.name] = fm.composes as string[];
+			skill.composes = fm.composes as string[];
+		}
+		if (Array.isArray(fm.provides)) skill.provides = fm.provides as string[];
+		if (typeof fm.model === "string") skill.model = fm.model;
+		if (Array.isArray(fm.tags)) skill.tags = fm.tags as string[];
+		if (Array.isArray(fm.taxonomy)) skill.taxonomy = fm.taxonomy as string[];
+	}
+
+	return { composes, frontmatter };
+}
 
 /**
  * Expand selected skills with their composes dependencies (1 level deep).
  */
-function expandComposes(selected: string[]): string[] {
+function expandComposes(selected: string[], skills: SkillEntry[], pi?: ExtensionAPI): string[] {
+	if (!composesMap) {
+		const maps = buildFrontmatterMaps(skills);
+		composesMap = maps.composes;
+		frontmatterMap = maps.frontmatter;
+		// Expose to other extensions via shared state
+		if (pi) {
+			(pi as any).state = (pi as any).state || {};
+			(pi as any).state.skillFrontmatter = frontmatterMap;
+		}
+	}
 	const expanded = new Set(selected);
 	for (const name of selected) {
-		const deps = COMPOSES_MAP[name];
+		const deps = composesMap[name];
 		if (deps) {
 			for (const dep of deps) {
 				expanded.add(dep);
@@ -135,6 +231,86 @@ function expandComposes(selected: string[]): string[] {
 		}
 	}
 	return Array.from(expanded);
+}
+
+// ─── Trigger Index (Implicit Skill Matching) ────────────────────────────────
+
+/** Stopwords to exclude from description tokenization */
+const STOPWORDS = new Set([
+	"a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+	"of", "with", "by", "from", "is", "are", "was", "were", "be", "been",
+	"has", "have", "had", "do", "does", "did", "will", "would", "could",
+	"should", "may", "might", "can", "this", "that", "these", "those",
+	"it", "its", "not", "no", "all", "any", "each", "every", "use", "using",
+]);
+
+type TriggerIndex = Map<string, Map<string, number>>;
+
+/**
+ * Build an inverted index: token → { skillName → weight }.
+ * Triggers get weight 1.0, description keywords get 0.3.
+ * Built once per session from the parsed skill entries.
+ */
+function buildTriggerIndex(skills: SkillEntry[]): TriggerIndex {
+	const index: TriggerIndex = new Map();
+
+	function addToken(token: string, skillName: string, weight: number) {
+		if (token.length < 2 || STOPWORDS.has(token)) return;
+		if (!index.has(token)) index.set(token, new Map());
+		const existing = index.get(token)!.get(skillName) || 0;
+		index.get(token)!.set(skillName, Math.max(existing, weight));
+	}
+
+	for (const skill of skills) {
+		// Trigger words → weight 1.0
+		for (const trigger of skill.triggers) {
+			for (const word of trigger.split(/\s+/)) {
+				addToken(word.toLowerCase(), skill.name, 1.0);
+			}
+			// Also index the full trigger phrase as a single token
+			const phrase = trigger.replace(/\s+/g, "-");
+			if (phrase.includes("-")) addToken(phrase, skill.name, 1.0);
+		}
+		// Skill name parts → weight 0.8 (e.g. "create-movie" → "create", "movie")
+		for (const part of skill.name.split("-")) {
+			addToken(part, skill.name, 0.8);
+		}
+		// Description keywords → weight 0.3
+		const descWords = skill.description.toLowerCase().replace(/[^a-z0-9\s-]/g, "").split(/\s+/);
+		for (const word of descWords) {
+			addToken(word, skill.name, 0.3);
+		}
+	}
+
+	return index;
+}
+
+/**
+ * Score skills against prompt using the trigger index.
+ * Returns skills sorted by score descending.
+ */
+function matchByTriggers(
+	prompt: string,
+	index: TriggerIndex,
+	availableNames: Set<string>,
+): Array<{ name: string; score: number }> {
+	const promptTokens = prompt.toLowerCase().replace(/[^a-z0-9\s-]/g, "").split(/\s+/)
+		.filter((t) => t.length >= 2 && !STOPWORDS.has(t));
+
+	const scores = new Map<string, number>();
+
+	for (const token of promptTokens) {
+		const skillWeights = index.get(token);
+		if (!skillWeights) continue;
+		for (const [skillName, weight] of skillWeights) {
+			if (!availableNames.has(skillName)) continue;
+			scores.set(skillName, (scores.get(skillName) || 0) + weight);
+		}
+	}
+
+	return Array.from(scores.entries())
+		.map(([name, score]) => ({ name, score }))
+		.sort((a, b) => b.score - a.score);
 }
 
 // ─── System Prompt XML Parsing & Rebuilding ──────────────────────────────────
@@ -228,6 +404,15 @@ function rebuildSkillsXml(allSkills: SkillEntry[], selectedNames: Set<string>): 
 		if (skill.triggers.length > 0) {
 			lines.push(`    <triggers>${escapeXml(skill.triggers.join(", "))}</triggers>`);
 		}
+		if (skill.composes && skill.composes.length > 0) {
+			lines.push(`    <composes>${escapeXml(skill.composes.join(", "))}</composes>`);
+		}
+		if (skill.model) {
+			lines.push(`    <model>${escapeXml(skill.model)}</model>`);
+		}
+		if (skill.provides && skill.provides.length > 0) {
+			lines.push(`    <provides>${escapeXml(skill.provides.join(", "))}</provides>`);
+		}
 		lines.push(`    <location>${escapeXml(skill.location)}</location>`);
 		lines.push("  </skill>");
 	}
@@ -239,6 +424,9 @@ function rebuildSkillsXml(allSkills: SkillEntry[], selectedNames: Set<string>): 
 // ─── Extension Entry Point ───────────────────────────────────────────────────
 
 export default function skillSelector(pi: ExtensionAPI) {
+	// Lazy-initialized trigger index (built once from first system prompt parse)
+	let triggerIndex: TriggerIndex | null = null;
+
 	pi.on("before_agent_start", async (event, ctx) => {
 		const prompt = event.prompt?.trim();
 		if (!prompt || prompt.length < MIN_PROMPT_LENGTH) return;
@@ -249,6 +437,14 @@ export default function skillSelector(pi: ExtensionAPI) {
 			// Nothing to filter, or already small enough
 			if (skills.length === 0 || skills.length <= MAX_SKILLS) return;
 
+			// Below threshold, the token cost is negligible — don't filter
+			if (skills.length < FILTER_THRESHOLD) {
+				// Still filter if explicit slash refs (user intent is clear)
+				const quickRefs = parseSlashReferences(prompt)
+					.filter((name) => skills.some((s) => s.name === name));
+				if (quickRefs.length === 0) return;
+			}
+
 			// Build skill name set from available skills (for validation)
 			const availableNames = new Set(skills.map((s) => s.name));
 
@@ -258,27 +454,91 @@ export default function skillSelector(pi: ExtensionAPI) {
 
 			// ── Combine: explicit refs + core + composes deps ──
 			const requested = [...slashRefs, ...CORE_SKILLS];
-			const withDeps = expandComposes(requested);
+			const withDeps = expandComposes(requested, skills, pi);
 
-			// Cap at MAX_SKILLS, prioritizing explicit refs
-			const finalNames = new Set<string>();
-			for (const name of withDeps) {
-				if (finalNames.size >= MAX_SKILLS) break;
-				if (availableNames.has(name)) {
-					finalNames.add(name);
+			// ── Implicit matching: when no slash refs, use trigger index ──
+			let triggerMatches: string[] = [];
+			let matchMode: "explicit" | "trigger" | "passthrough" = "explicit";
+
+			if (slashRefs.length === 0) {
+				// Build index lazily on first implicit query
+				if (!triggerIndex) {
+					triggerIndex = buildTriggerIndex(skills);
+				}
+				const scored = matchByTriggers(prompt, triggerIndex, availableNames);
+				triggerMatches = scored
+					.filter((s) => s.score >= MIN_TRIGGER_SCORE)
+					.slice(0, MAX_SKILLS)
+					.map((s) => s.name);
+
+				if (triggerMatches.length < 3) {
+					// Too few matches — pass everything through, not worth filtering
+					matchMode = "passthrough";
+				} else {
+					matchMode = "trigger";
 				}
 			}
 
-			// If no explicit refs and we'd only show core skills,
-			// don't filter — let the agent see everything
-			if (slashRefs.length === 0) return;
+			if (matchMode === "passthrough") return;
+
+			// ── Build final set ──
+			const finalNames = new Set<string>();
+
+			// Priority 1: explicit slash refs + core + composes
+			for (const name of withDeps) {
+				if (availableNames.has(name)) finalNames.add(name);
+			}
+
+			// Priority 2: trigger matches (implicit case)
+			if (matchMode === "trigger") {
+				const triggerWithDeps = expandComposes(triggerMatches, skills);
+				for (const name of triggerWithDeps) {
+					if (availableNames.has(name)) finalNames.add(name);
+				}
+			}
+
+			// Priority 3: Memory-backed chain recall (future-proofing for 500+ skills)
+			// Only activates when skill count >= FILTER_THRESHOLD — at current scale this never fires
+			if (matchMode === "trigger" && skills.length >= FILTER_THRESHOLD) {
+				try {
+					const memoryRun = `${process.env.HOME}/workspace/experiments/pi-mono/.pi/skills/memory/run.sh`;
+					// Pass prompt as a direct argument (no shell interpolation)
+					const safeQuery = prompt.substring(0, 200);
+					const result = await pi.exec(memoryRun, [
+						"chain-recall", safeQuery, "--limit", "3", "--json",
+					], { timeout: 2000 });
+					if (result.stdout) {
+						const chains = JSON.parse(result.stdout);
+						for (const chain of chains) {
+							if (Array.isArray(chain.skills)) {
+								for (const skill of chain.skills) {
+									if (availableNames.has(skill)) finalNames.add(skill);
+								}
+							}
+						}
+					}
+				} catch {
+					// Memory unavailable — trigger index is sufficient fallback
+				}
+			}
+
+			// Cap at MAX_SKILLS
+			if (finalNames.size > MAX_SKILLS) {
+				const arr = Array.from(finalNames);
+				finalNames.clear();
+				for (let i = 0; i < MAX_SKILLS && i < arr.length; i++) {
+					finalNames.add(arr[i]);
+				}
+			}
 
 			// ── Log for future analysis ──
 			try {
 				const logEntry = JSON.stringify({
 					ts: new Date().toISOString(),
 					prompt: prompt.substring(0, 200),
+					mode: matchMode,
 					slash_refs: slashRefs,
+					trigger_matches: triggerMatches.slice(0, 10),
 					selected: Array.from(finalNames),
 					total_available: skills.length,
 					filtered_to: finalNames.size,

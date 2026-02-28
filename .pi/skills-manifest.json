@@ -1,0 +1,1580 @@
+{
+  "generated": "2026-02-23T12:43:33.583981+00:00",
+  "skill_count": 198,
+  "skills": [
+    {
+      "name": "agent-inbox",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "agent-inbox",
+      "description": "File-based inter-agent messaging with headless dispatch. Check inbox, send bugs/requests to other projects,"
+    },
+    {
+      "name": "analytics",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "analytics",
+      "description": "Flexible data science analytics for any dataset."
+    },
+    {
+      "name": "anvil",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "anvil",
+      "description": "Heavy-duty \"No-Vibes\" debugging and hardening orchestrator. Use this for complex, stubborn bugs"
+    },
+    {
+      "name": "argue",
+      "has_skill_md": true,
+      "has_run_sh": false,
+      "has_sanity_sh": true,
+      "title": "argue",
+      "description": "Multi-persona structured debate orchestrator. Personas research via /dogpile,"
+    },
+    {
+      "name": "arxiv",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "arxiv",
+      "description": "Search arXiv for papers and extract knowledge into memory."
+    },
+    {
+      "name": "ask",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ask",
+      "description": "Zero cognitive-load learning and querying skill. Learn about a topic or persona (e.g., \"Lisa Feldman Barrett\")"
+    },
+    {
+      "name": "assess",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "assess",
+      "description": "Step back and critically reassess project state. Use when asked to \"assess\","
+    },
+    {
+      "name": "assistant",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "assistant",
+      "description": "Shared GPT + classifier inference gateway for persona monitor tasks."
+    },
+    {
+      "name": "assistant-lab",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "assistant-lab",
+      "description": "Self-improvement workbench for /assistant. All the tools needed to"
+    },
+    {
+      "name": "batch-quality",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "batch-quality",
+      "description": "Pre-flight validation and quality gates for batch LLM operations."
+    },
+    {
+      "name": "batch-report",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "batch-report",
+      "description": "Generate post-run analysis reports for batch processing jobs. Analyzes manifests,"
+    },
+    {
+      "name": "battle",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "battle",
+      "description": "Red vs Blue team security competition orchestrator. Runs long-running overnight"
+    },
+    {
+      "name": "benchmark-models",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "benchmark-models",
+      "description": "Standardized compliance QRA benchmarks against candidate LLMs"
+    },
+    {
+      "name": "best-practices-kde",
+      "has_skill_md": true,
+      "has_run_sh": false,
+      "has_sanity_sh": true,
+      "title": "best-practices-kde",
+      "description": "Repo-specific KDE/QML best practices for agentic coding: singleton design systems,"
+    },
+    {
+      "name": "best-practices-python",
+      "has_skill_md": true,
+      "has_run_sh": false,
+      "has_sanity_sh": true,
+      "title": "best-practices-python",
+      "description": "Repo-specific Python best practices for agentic coding: Loguru + Typer + uv + pyproject.toml,"
+    },
+    {
+      "name": "best-practices-react",
+      "has_skill_md": true,
+      "has_run_sh": false,
+      "has_sanity_sh": true,
+      "title": "best-practices-react",
+      "description": "|"
+    },
+    {
+      "name": "best-practices-skills",
+      "has_skill_md": true,
+      "has_run_sh": false,
+      "has_sanity_sh": true,
+      "title": "best-practices-skills",
+      "description": "Best practices for designing and structuring agent skills: SKILL.md frontmatter rules,"
+    },
+    {
+      "name": "best-practices-streamdeck",
+      "has_skill_md": true,
+      "has_run_sh": false,
+      "has_sanity_sh": true,
+      "title": "best-practices-streamdeck",
+      "description": "Project-specific best practices for the Stream Deck control suite: icon format constraints,"
+    },
+    {
+      "name": "bootcamp",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "bootcamp",
+      "description": "Guided onboarding walkthrough for new Embry OS users via Embry Lawson persona"
+    },
+    {
+      "name": "brave-search",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "brave-search",
+      "description": "Free web and local search via Brave Search API. Use when user says \"brave search\","
+    },
+    {
+      "name": "classifier-lab",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "classifier-lab",
+      "description": "Multi-modality classifier training lab. Train, evaluate, and deploy vision, text, and tabular classifiers using state-of-the-art backbones."
+    },
+    {
+      "name": "cleanup",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "cleanup",
+      "description": "Assess the project to reorganize or deprecate unused/outdated files."
+    },
+    {
+      "name": "cmmc-assessor",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "cmmc-assessor",
+      "description": "Assess CMMC Level 2/3 compliance by mapping NIST SP 800-171 controls to"
+    },
+    {
+      "name": "codex",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "codex",
+      "description": "High-reasoning agentic bridge via OpenAI Codex CLI."
+    },
+    {
+      "name": "common",
+      "has_skill_md": false,
+      "has_run_sh": false,
+      "has_sanity_sh": false
+    },
+    {
+      "name": "compliance-timeline",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "compliance-timeline",
+      "description": "Chronological audit timeline of compliance changes from ArangoDB revision history"
+    },
+    {
+      "name": "consume-book",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "consume-book",
+      "description": "Search and annotate ingested books. Supports markdown/text files and EPUBs,"
+    },
+    {
+      "name": "consume-feed",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "consume-feed",
+      "description": "Manage and run nightly ingestion of upstream feeds (RSS)."
+    },
+    {
+      "name": "consume-movie",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "consume-movie",
+      "description": "Search and extract clips from ingested movies. Query SRT subtitles,"
+    },
+    {
+      "name": "consume-music",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "consume-music",
+      "description": "Search and annotate music from ingested YouTube history."
+    },
+    {
+      "name": "consume-youtube",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "consume-youtube",
+      "description": "Search and annotate YouTube transcripts already ingested by /ingest-youtube."
+    },
+    {
+      "name": "consume_common",
+      "has_skill_md": false,
+      "has_run_sh": false,
+      "has_sanity_sh": false
+    },
+    {
+      "name": "context7",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "context7",
+      "description": "Fetch up-to-date library documentation from Context7 API. Use when user asks"
+    },
+    {
+      "name": "conversation-lab",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "conversation-lab",
+      "description": "Self-improving conversation convergence loop for SPARTA stress tests. Diagnoses unsatisfied sessions, re-runs until personas say satisfactory."
+    },
+    {
+      "name": "converse",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "converse",
+      "description": "Real-time two-way voice conversation with persona. Full-duplex audio via"
+    },
+    {
+      "name": "corpus-report",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "corpus-report",
+      "description": "Report on the continuous PDF extraction learning system. Shows corpus statistics,"
+    },
+    {
+      "name": "create-annotated-pdf",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-annotated-pdf",
+      "description": "Generate annotated PDFs from extraction pipeline run data. Overlays color-coded"
+    },
+    {
+      "name": "create-assurance-case",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-assurance-case",
+      "description": "GSN (Goal Structuring Notation) assurance case diagrams from compliance graph"
+    },
+    {
+      "name": "create-cast",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-cast",
+      "description": "Multi-round character casting orchestrator for the Horus movie pipeline."
+    },
+    {
+      "name": "create-classifier",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-classifier",
+      "description": "Train task-specific classifiers for the extractor pipeline."
+    },
+    {
+      "name": "create-code",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-code",
+      "description": "Orchestrate the end-to-end coding process for the Horus persona."
+    },
+    {
+      "name": "create-context",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-context",
+      "description": "Generate comprehensive CONTEXT.md for agent handoff. Captures current state,"
+    },
+    {
+      "name": "create-figure",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-figure",
+      "description": "Create publication-quality figures, charts, and diagrams."
+    },
+    {
+      "name": "create-gpt",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-gpt",
+      "description": "Train task-specific small GPTs (0.5B-1.7B) for Tier 1.5 inference. Supports QLoRA SFT,"
+    },
+    {
+      "name": "create-icon",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-icon",
+      "description": "Create icons for Stream Deck or other uses."
+    },
+    {
+      "name": "create-image",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-image",
+      "description": "Create images using AI generation (FLUX.1-schnell, Ollama), Mermaid diagrams,"
+    },
+    {
+      "name": "create-intent-map",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-intent-map",
+      "description": "Train LoRA intent mappers for structured query generation using GRPO with execution feedback."
+    },
+    {
+      "name": "create-journal-entry",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-journal-entry",
+      "description": "Nightly journal entry creation for all personas. Wraps persona-journal generation"
+    },
+    {
+      "name": "create-ksml",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-ksml",
+      "description": "Convert project manifests into Kling Shot Markup Language (KSML) for video generation."
+    },
+    {
+      "name": "create-lut",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-lut",
+      "description": "Generate or bake cinematic 3D LUTs (.cube) from reference/source pairs or presets."
+    },
+    {
+      "name": "create-movie",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-movie",
+      "description": "Orchestrated movie creation for Horus persona. Guides through phases:"
+    },
+    {
+      "name": "create-music",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-music",
+      "description": "AI-assisted music creation for Horus persona. Voice conversion (RVC) and"
+    },
+    {
+      "name": "create-paper",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-paper",
+      "description": "Orchestrate paper writing from project analysis. Composes assess, dogpile, arxiv,"
+    },
+    {
+      "name": "create-pdf-fixture",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-pdf-fixture",
+      "description": "Create complete PDF test fixtures combining ReportLab tables and AI-generated"
+    },
+    {
+      "name": "create-peer-review",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-peer-review",
+      "description": "Automated peer review of research papers using Shadow-LEGO's self-improving cascade."
+    },
+    {
+      "name": "create-persona",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-persona",
+      "description": "Deliberate persona creation for client modeling, expert profiles, and stakeholder mapping. Integrates with /interview for collaborative creation and /ask for knowledge enrichment. Supports Theory of Mind (BDI), voice training, and simulacrum validation."
+    },
+    {
+      "name": "create-react-designs",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-react-designs",
+      "description": "Create production-grade React/Tailwind/ShadCN designs with a multi-persona feedback loop."
+    },
+    {
+      "name": "create-regressor",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-regressor",
+      "description": "Train task-specific regression models from tabular data."
+    },
+    {
+      "name": "create-score",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-score",
+      "description": "Generate scene-specific music using ACE-Step 1.5 via Dockerized FastAPI."
+    },
+    {
+      "name": "create-sound-design",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-sound-design",
+      "description": "Orchestrate sound effects (SFX) selection and placement per scene."
+    },
+    {
+      "name": "create-stems",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-stems",
+      "description": "Audio stem separation using Demucs (4-stem or 6-stem) and optional UVR ensemble."
+    },
+    {
+      "name": "create-story",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-story",
+      "description": "Creative writing orchestrator for Horus persona. Multi-phase workflow:"
+    },
+    {
+      "name": "create-storyboard",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-storyboard",
+      "description": "Transform screenplay output from /create-story into animatics with camera"
+    },
+    {
+      "name": "create-streamdeck-page",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-streamdeck-page",
+      "description": "Create, iterate, and deploy dynamic Stream Deck button pages. Design"
+    },
+    {
+      "name": "create-table",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-table",
+      "description": "Create PDF tables using ReportLab Table class for proper structure detection."
+    },
+    {
+      "name": "create-table-classifier",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-table-classifier",
+      "description": "Train vision classifiers for Camelot table extraction strategy prediction."
+    },
+    {
+      "name": "create-walkthrough",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "create-walkthrough",
+      "description": "Collaborative argumentative walkthrough for complex implementations. REQUIRES"
+    },
+    {
+      "name": "create_music",
+      "has_skill_md": false,
+      "has_run_sh": false,
+      "has_sanity_sh": false
+    },
+    {
+      "name": "cui-marker",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "cui-marker",
+      "description": "Detect, classify, and mark Controlled Unclassified Information (CUI) per"
+    },
+    {
+      "name": "dashboard",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "dashboard",
+      "description": "Unified Embry OS development dashboard. Aggregates daemon health, LLM metrics,"
+    },
+    {
+      "name": "data-audit",
+      "has_skill_md": true,
+      "has_run_sh": false,
+      "has_sanity_sh": true,
+      "title": "data-audit",
+      "description": "Report on data completeness for the SPARTA QRA pipeline (Control -> URL -> Knowledge -> QRA)."
+    },
+    {
+      "name": "debug-fetcher",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "debug-fetcher",
+      "description": "Automated URL fetch failure handling with strategy exhaustion, memory learning,"
+    },
+    {
+      "name": "debug-pdf",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "debug-pdf",
+      "description": "Automated PDF failure analysis and fixture generation. Takes failed PDF URLs,"
+    },
+    {
+      "name": "discover-books",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "discover-books",
+      "description": "Discover new books using OpenLibrary API with Federated Taxonomy integration."
+    },
+    {
+      "name": "discover-contacts",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "discover-contacts",
+      "description": "Research and enrich professional contacts and marketing prospects."
+    },
+    {
+      "name": "discover-lut",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "discover-lut",
+      "description": "Search and retrieve cinematic 3D LUTs (.cube) from web sources or cache."
+    },
+    {
+      "name": "discover-movies",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "discover-movies",
+      "description": "Discover new movies using TMDB API with Federated Taxonomy integration."
+    },
+    {
+      "name": "discover-music",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "discover-music",
+      "description": "Discover new music using MusicBrainz and ListenBrainz APIs."
+    },
+    {
+      "name": "discover-talent",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "discover-talent",
+      "description": "Discover actors and reference talent via TMDB API with HMT taxonomy."
+    },
+    {
+      "name": "distill",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "distill",
+      "description": "Compatibility shim for legacy distill callers. Forwards to /doc2qra"
+    },
+    {
+      "name": "doc2qra",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "doc2qra",
+      "description": "Convert any document (PDF, URL, text) into Question-Reasoning-Answer pairs"
+    },
+    {
+      "name": "dogpile",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "dogpile",
+      "description": "Deep research aggregator that searches Brave (Web), Perplexity (AI), GitHub (Code/Issues),"
+    },
+    {
+      "name": "edge-verifier",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "edge-verifier",
+      "description": "Verifies relationships between a source text (e.g. Episode, Task) and existing Knowledge Graph lessons."
+    },
+    {
+      "name": "embedding",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "embedding",
+      "description": "Standalone embedding service for semantic search. Runs as persistent FastAPI"
+    },
+    {
+      "name": "embry-config",
+      "has_skill_md": true,
+      "has_run_sh": false,
+      "has_sanity_sh": true,
+      "title": "embry-config",
+      "description": "Read and explain Embry OS configuration from embry.yaml"
+    },
+    {
+      "name": "episodic-archiver",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "episodic-archiver",
+      "description": "Episodic Memory Archiver. Stores full conversation transcripts with embeddings"
+    },
+    {
+      "name": "export-oscal",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "export-oscal",
+      "description": "NIST OSCAL JSON export of compliance evidence from ArangoDB graph"
+    },
+    {
+      "name": "extract-html",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "extract-html",
+      "description": "Extract structured JSON from HTML using Schematron3B, deterministic table extraction, and Vision-based media OCR."
+    },
+    {
+      "name": "extractor",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "extractor",
+      "description": "Extract content from any document using the Preset-First Agentic Pipeline."
+    },
+    {
+      "name": "extractor-quality-check",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "extractor-quality-check",
+      "description": "Persona-driven datalake quality assessment with Margaret Chen (Pratt & Whitney) and Jennifer Cheung (NIWC Pacific). Dynamic annealing thresholds, batch review, and /ask consult integration."
+    },
+    {
+      "name": "fetcher",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "fetcher",
+      "description": "Fetch web pages, PDFs, and documents with automatic fallbacks and content extraction."
+    },
+    {
+      "name": "fixture-tricky",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "fixture-tricky",
+      "description": "Generate adversarial PDF content that breaks extractors. Creates false-positive"
+    },
+    {
+      "name": "formalize-request",
+      "has_skill_md": true,
+      "has_run_sh": false,
+      "has_sanity_sh": true,
+      "title": "formalize-request",
+      "description": "Convert natural language requests into verifiable formal specs using interview loops."
+    },
+    {
+      "name": "github-search",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "github-search",
+      "description": "Deep multi-strategy GitHub search for repositories and code. Uses gh CLI"
+    },
+    {
+      "name": "gpt-lab",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "gpt-lab",
+      "description": "Benchmark and compare small GPTs for task-specific inference. Tests base, fine-tuned,"
+    },
+    {
+      "name": "hack",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "hack",
+      "description": "Containerized security auditing and ethical hacking tools."
+    },
+    {
+      "name": "handoff",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "handoff",
+      "description": "Handoff skill to assess project state and provide context for a new agent."
+    },
+    {
+      "name": "hum",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "hum",
+      "description": "Persona humming pipeline. Downloads songs, separates vocals, converts to"
+    },
+    {
+      "name": "ingest-audiobook",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ingest-audiobook",
+      "description": "Process audiobooks from the inbox: transcribe to text and organize audio"
+    },
+    {
+      "name": "ingest-book",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ingest-book",
+      "description": "Manage book library via Readarr, search for books, and monitor downloads."
+    },
+    {
+      "name": "ingest-code",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ingest-code",
+      "description": "Ingest codebases for CWE scanning and knowledge extraction."
+    },
+    {
+      "name": "ingest-compliance-doc",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ingest-compliance-doc",
+      "description": "Single-command compliance document ingestion pipeline. Chains extractor \u2192"
+    },
+    {
+      "name": "ingest-doc",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ingest-doc",
+      "description": "Single-command document ingestion pipeline. Chains extractor \u2192"
+    },
+    {
+      "name": "ingest-kindle",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ingest-kindle",
+      "description": "Ingest Kindle books and highlights into the library pipeline."
+    },
+    {
+      "name": "ingest-movie",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ingest-movie",
+      "description": "Locate NZBGeek releases with subtitle-rich movie files, auto-tag rage/anger/humor"
+    },
+    {
+      "name": "ingest-training-datalake",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ingest-training-datalake",
+      "description": "Training-only datalake corpus acquisition and coverage balancer."
+    },
+    {
+      "name": "ingest-youtube",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ingest-youtube",
+      "description": "Extract transcripts from YouTube videos. Use when user says \"get transcript\","
+    },
+    {
+      "name": "ingest-yt-history",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ingest-yt-history",
+      "description": "Ingest YouTube and YouTube Music watch history from Google Takeout exports."
+    },
+    {
+      "name": "intent-mapper",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "intent-mapper",
+      "description": "Intent classification and mapping for natural language commands."
+    },
+    {
+      "name": "interview",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "interview",
+      "description": "Structured human-agent Q&A via HTML or TUI forms. Wizard-style interface with"
+    },
+    {
+      "name": "lean4-prove",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "lean4-prove",
+      "description": "Retrieval-augmented Lean4 proof generation. Queries 94k+ exemplars from DeepSeek-Prover V1+V2,"
+    },
+    {
+      "name": "learn-artist",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "learn-artist",
+      "description": "Train RVC models from artist names for vocals and instruments. Full pipeline:"
+    },
+    {
+      "name": "learn-datalake",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "learn-datalake",
+      "description": "User-facing continuous datalake learning orchestrator."
+    },
+    {
+      "name": "learn-movie",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "learn-movie",
+      "description": "Analyze movies to extract cinematographic techniques and store them in memory."
+    },
+    {
+      "name": "learn-timeout",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "learn-timeout",
+      "description": "General-purpose timeout estimation skill. Trains dual models (duration regression + risk classification) from corpus data and observation feedback. Returns calibrated timeout predictions with confidence intervals for any task type."
+    },
+    {
+      "name": "learn-voice",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "learn-voice",
+      "description": "Train RVC voice models from artist names. Full pipeline: YouTube search,"
+    },
+    {
+      "name": "logs",
+      "has_skill_md": false,
+      "has_run_sh": false,
+      "has_sanity_sh": false
+    },
+    {
+      "name": "memory",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "memory",
+      "description": "MEMORY FIRST - Query memory BEFORE scanning any codebase. Use when encountering"
+    },
+    {
+      "name": "mine-transcripts",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "mine-transcripts",
+      "description": "Mine real human CLI conversation transcripts into labeled training data for"
+    },
+    {
+      "name": "monitor-contacts",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "monitor-contacts",
+      "description": "Always-on contact freshness monitoring service. Periodically re-researches"
+    },
+    {
+      "name": "monitor-drift-sensors",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "monitor-drift-sensors",
+      "description": "CUSUM and Page-Hinkley statistical drift detection on sensor data streams"
+    },
+    {
+      "name": "monitor-episodic-archiver",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "monitor-episodic-archiver",
+      "description": "Monitor episodic archiver health and run nightly analysis pipeline."
+    },
+    {
+      "name": "monitor-memory",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "monitor-memory",
+      "description": "Nightly orchestrator that verifies the full memory pipeline is healthy."
+    },
+    {
+      "name": "monitor-pdfs",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "monitor-pdfs",
+      "description": "Dashboard and monitoring tool for PDF harvesting and classifier training data preparation."
+    },
+    {
+      "name": "monitor-personas",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "monitor-personas",
+      "description": "Self-contained persona learning pipeline. Monitors ALL sources (YouTube, RSS, arXiv, Books, Movies, Music, Code),"
+    },
+    {
+      "name": "monitor-security",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "monitor-security",
+      "description": "Nightly self-hack orchestrator and continuous security monitoring for embry-os."
+    },
+    {
+      "name": "monitor-skill-health",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "monitor-skill-health",
+      "description": "Nightly skill quality monitor that scans registered skills for best-practice"
+    },
+    {
+      "name": "monitor-skills",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "monitor-skills",
+      "description": "Continuous skill health monitoring with auto-drift correction."
+    },
+    {
+      "name": "monitor-sparta",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "monitor-sparta",
+      "description": "Continuous SPARTA quality monitor. Runs the 3-tier validation cascade"
+    },
+    {
+      "name": "monitor-taxonomy",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "monitor-taxonomy",
+      "description": "Three-tier cascade taxonomy quality monitor. Assesses whether bridge_attributes"
+    },
+    {
+      "name": "normalize",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "normalize",
+      "description": "Normalize text to handle PDF/Unicode encoding issues."
+    },
+    {
+      "name": "ops-arango",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ops-arango",
+      "description": "Manage ArangoDB operations including backups with automatic retention,"
+    },
+    {
+      "name": "ops-chutes",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ops-chutes",
+      "description": "Manage Chutes.ai resources, tracking subscription quota and account balance."
+    },
+    {
+      "name": "ops-claude",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ops-claude",
+      "description": "Claude Code maintenance, diagnostics, and usage analytics. Check inotify limits,"
+    },
+    {
+      "name": "ops-compliance",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ops-compliance",
+      "description": "Check codebases against compliance frameworks (SOC2, GDPR, HIPAA, PCI-DSS)."
+    },
+    {
+      "name": "ops-darpa",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ops-darpa",
+      "description": "Query DARPA programs, opportunities, and BAAs. Searches RSS feeds and Grants.gov API"
+    },
+    {
+      "name": "ops-discord",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ops-discord",
+      "description": "TOS-compliant Discord notification monitor. Watches YOUR Discord server for"
+    },
+    {
+      "name": "ops-docker",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ops-docker",
+      "description": "Safe Docker cleanup and compose stack management."
+    },
+    {
+      "name": "ops-f36-plant",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": false,
+      "title": "ops-f36-plant",
+      "description": "F-36 plant floor operations namespace. Subcommand router for machine testing,"
+    },
+    {
+      "name": "ops-llm",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ops-llm",
+      "description": "Local LLM operations: health checks, cache management, Ollama model management,"
+    },
+    {
+      "name": "ops-nzbgeek",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ops-nzbgeek",
+      "description": "General-purpose NZBGeek search and SABnzbd download management with interview and task-monitor integration"
+    },
+    {
+      "name": "ops-runpod",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ops-runpod",
+      "description": "Provision, manage, and terminate RunPod GPU instances for LLM training. Use when"
+    },
+    {
+      "name": "ops-sam-gov",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ops-sam-gov",
+      "description": "Query SAM.gov for federal contracts, entity registrations, exclusions, and opportunities."
+    },
+    {
+      "name": "ops-streamdeck",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ops-streamdeck",
+      "description": "Stream Deck control skill for agents. Provides ability to restart streamdeck"
+    },
+    {
+      "name": "ops-workstation",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "ops-workstation",
+      "description": "Workstation diagnostics, health monitoring, and maintenance."
+    },
+    {
+      "name": "orchestrate",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "orchestrate",
+      "description": "Orchestrate tasks from a 0N_TASKS.md file with enforced memory-first pre-hooks,"
+    },
+    {
+      "name": "paper-lab",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "paper-lab",
+      "description": "Self-improving documentation convergence loop. Computes quality deltas between"
+    },
+    {
+      "name": "pdf-lab",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "pdf-lab",
+      "description": "Self-improving PDF extraction convergence loop. Diagnoses extraction failures"
+    },
+    {
+      "name": "pdf-screenshot",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "pdf-screenshot",
+      "description": "Render PDF pages or cropped regions to PNG images for visual verification."
+    },
+    {
+      "name": "perplexity",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "perplexity",
+      "description": "Paid research assistant with real-time web search. Use when user asks \"what's the latest\","
+    },
+    {
+      "name": "persona-journal",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "persona-journal",
+      "description": "Generate daily journal entries for personas. Creates human-like blog entries"
+    },
+    {
+      "name": "plan",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "plan",
+      "description": "Create orchestration-ready task files (0N_TASKS.md) with enforced quality gates."
+    },
+    {
+      "name": "project-state",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "project-state",
+      "description": "Comprehensive Embry OS project state in one command."
+    },
+    {
+      "name": "prompt-lab",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "prompt-lab",
+      "description": "Iterate on LLM prompts with structured evaluation and self-correction."
+    },
+    {
+      "name": "prototype-react-iterate",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "prototype-react-iterate",
+      "description": "Generate and iterate on React/Tailwind/ShadCN prototypes with Persona-driven feedback loops."
+    },
+    {
+      "name": "quality-audit",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "quality-audit",
+      "description": "Stratified quality sampling and statistical validation for LLM outputs."
+    },
+    {
+      "name": "rate-limit-recovery",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "rate-limit-recovery",
+      "description": "Collects recent transcripts and logging information from agent platforms that were rate-limited mid-task."
+    },
+    {
+      "name": "reality-check-sparta",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "reality-check-sparta",
+      "description": "Adversarial data quality assessment for the SPARTA QRA pipeline with self-correction loop. Actively hunts for flaws using multiple fresh verification techniques. Models The Aerospace Corporation's SPARTA Framework."
+    },
+    {
+      "name": "regressor-lab",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "regressor-lab",
+      "description": "-"
+    },
+    {
+      "name": "review-code",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "review-code",
+      "description": "Submit code review requests to multiple AI providers (GitHub Copilot, Anthropic Claude,"
+    },
+    {
+      "name": "review-conversation",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "review-conversation",
+      "description": "Review SPARTA conversation transcripts and grading. Transparent viewer with Rich rendering, markdown export, Mermaid flow diagrams, and semantic search via /memory."
+    },
+    {
+      "name": "review-design",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "review-design",
+      "description": "Multi-provider AI design review of UI screenshots and design tokens for UX audits."
+    },
+    {
+      "name": "review-music",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "review-music",
+      "description": "Analyze audio files to extract musical features (BPM, key, chords, timbre, dynamics)"
+    },
+    {
+      "name": "review-paper",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "review-paper",
+      "description": "Multi-persona documentation review for technical papers, architecture docs, API references,"
+    },
+    {
+      "name": "review-pdf",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "review-pdf",
+      "description": "Comprehensive PDF extraction fidelity auditor for extractor pipeline quality."
+    },
+    {
+      "name": "review-persona",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "review-persona",
+      "description": "Multi-provider AI persona review for character realism, voice casting, and authenticity."
+    },
+    {
+      "name": "review-sparta",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "review-sparta",
+      "description": "Comprehensive SPARTA dataset assessment driven by Brandon Bailey persona."
+    },
+    {
+      "name": "review-story",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "review-story",
+      "description": "Multi-provider creative writing critique for stories, screenplays, and narratives."
+    },
+    {
+      "name": "sanity",
+      "has_skill_md": false,
+      "has_run_sh": false,
+      "has_sanity_sh": false
+    },
+    {
+      "name": "scheduler",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "scheduler",
+      "description": "Background task scheduler for Pi and Claude Code. Register, list, and run"
+    },
+    {
+      "name": "scillm",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "scillm",
+      "description": "LLM completions (text and VLM) via scillm/Chutes.ai. Two main patterns:"
+    },
+    {
+      "name": "security-scan",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "security-scan",
+      "description": "Orchestrates SAST, dependency audit, and secrets detection using self-hosted tools"
+    },
+    {
+      "name": "service-status",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "service-status",
+      "description": "Check health of Embry OS service daemons via Unix sockets"
+    },
+    {
+      "name": "sfx-catalog",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "sfx-catalog",
+      "description": "Sound effects management for Horus's filmmaking pipeline. Catalogs audio files"
+    },
+    {
+      "name": "skill-lab",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "skill-lab",
+      "description": "Self-replicating skill creation via symbiogenesis. Scans the skill soup,"
+    },
+    {
+      "name": "skills-broadcast",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "skills-broadcast",
+      "description": "Sync skills across all IDEs (Pi, Codex, Claude Code, Antigravity) using symlinks"
+    },
+    {
+      "name": "skills-ci",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "skills-ci",
+      "description": "Scan and optionally fix all skills under .pi/skills using best-practices-* rules,"
+    },
+    {
+      "name": "social-bridge",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "social-bridge",
+      "description": "Aggregate security content from Telegram public channels and X/Twitter accounts,"
+    },
+    {
+      "name": "sparta-intent",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "sparta-intent",
+      "description": "\"DEPRECATED \u2014 Use /memory intent, /memory recall, /memory clarify instead. All capabilities absorbed into graph_memory.\""
+    },
+    {
+      "name": "sparta-qra-validator-gpt",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "sparta-qra-validator-gpt",
+      "description": "Automated QRA quality validation where Brandon Bailey (persona via /scillm)"
+    },
+    {
+      "name": "sparta-review",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "sparta-review",
+      "description": "Comprehensive SPARTA dataset assessment driven by Brandon Bailey persona."
+    },
+    {
+      "name": "sparta-stress-test",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "sparta-stress-test",
+      "description": "Stress tests the full SPARTA query pipeline: intent classification, QRA retrieval,"
+    },
+    {
+      "name": "streamdeck-lab",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": false,
+      "title": "streamdeck-lab",
+      "description": "Iterate, evaluate, generate dynamic pages, and push context-aware layouts to Stream Deck."
+    },
+    {
+      "name": "surf",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "surf",
+      "description": "Unified browser automation for AI agents. Uses surf-cli extension when available"
+    },
+    {
+      "name": "surf-qml",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "surf-qml",
+      "description": "QML/Qt application automation for AI agents. Uses Linux AT-SPI accessibility API"
+    },
+    {
+      "name": "sync-sites",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "sync-sites",
+      "description": "OSTree static-delta federation for multi-plant air-gapped deployment"
+    },
+    {
+      "name": "table-lab",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "table-lab",
+      "description": "Iteratively tune Camelot table extraction parameters for PDFs."
+    },
+    {
+      "name": "task-monitor",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "task-monitor",
+      "description": "Monitor long-running tasks with Rich TUI and HTTP API. Includes scheduler integration and auto-restart."
+    },
+    {
+      "name": "taxonomy",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "taxonomy",
+      "description": "Extract Federated Taxonomy tags from text for multi-hop graph traversal."
+    },
+    {
+      "name": "test-lab",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "test-lab",
+      "description": "Adversarial blind evaluation harness. Generates and runs hidden tests"
+    },
+    {
+      "name": "train-convo-steering",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "train-convo-steering",
+      "description": "Voice-first runtime steering + nightly deep analysis to learn per-user conversation priors."
+    },
+    {
+      "name": "train-persona",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "train-persona",
+      "description": "Train LoRA adapters for persona agents to embody defined characters with consistent voice, reasoning style, and grounded knowledge. Complements /create-persona which defines WHO the persona is; this skill trains HOW they respond."
+    },
+    {
+      "name": "train-voice",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "train-voice",
+      "description": "Unified voice training for personas. Orchestrates PersonaPlex (real-time conversation)"
+    },
+    {
+      "name": "treesitter",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "treesitter",
+      "description": "Parse and extract code symbols using tree-sitter. Use when you need to extract"
+    },
+    {
+      "name": "tts-horus",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "tts-horus",
+      "description": "Build and operate the Horus TTS pipeline from cleared audiobooks."
+    },
+    {
+      "name": "tts-train",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "tts-train",
+      "description": "Build TTS datasets and train Qwen3-TTS voice models from audiobooks or curated clips."
+    },
+    {
+      "name": "vector-store",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "vector-store",
+      "description": "Transient vector store service for fast similarity search (FAISS)"
+    },
+    {
+      "name": "voice-lab",
+      "has_skill_md": true,
+      "has_run_sh": true,
+      "has_sanity_sh": true,
+      "title": "voice-lab",
+      "description": "Unified voice workbench: TTS quality eval, waveform visualization, RVC parameter"
+    }
+  ]
+}

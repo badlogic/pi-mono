@@ -1,0 +1,17 @@
+[Unit]
+Description=Embry OS scillm LLM Proxy Service
+After=embry-state.service
+PartOf=embry-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/workspace/experiments/pi-mono/.pi/skills/scillm
+ExecStartPre=/usr/bin/mkdir -p /run/user/%U/embry
+ExecStart=%h/.local/bin/uv run python service.py
+EnvironmentFile=-%h/workspace/experiments/pi-mono/.env
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=embry-session.target

@@ -18,20 +18,33 @@ const MAX_PROMPT_LENGTH = 200; // truncate for recall query
 const SKIP_PATTERNS = [/^\//, /^help\b/i, /^clear\b/i]; // skip slash commands
 
 export default function memoryFirst(pi: ExtensionAPI) {
+	// Initialize shared state for skill-first-gate coordination
+	(pi as any).state = (pi as any).state || {};
+
 	// Before every agent turn, query memory for relevant context
 	pi.on("before_agent_start", async (event, ctx) => {
 		const prompt = event.prompt?.trim();
-		if (!prompt || prompt.length < 10) return;
+		if (!prompt || prompt.length < 10) {
+			// Trivial prompts get a free pass on the gate
+			(pi as any).state.memoryQueriedThisTurn = true;
+			return;
+		}
 
 		// Skip slash commands and trivial inputs
-		if (SKIP_PATTERNS.some((p) => p.test(prompt))) return;
+		if (SKIP_PATTERNS.some((p) => p.test(prompt))) {
+			(pi as any).state.memoryQueriedThisTurn = true;
+			return;
+		}
 
 		try {
 			const queryText = prompt.substring(0, MAX_PROMPT_LENGTH);
 			const result = await pi.exec("bash", [
 				"-c",
-				`${MEMORY_SKILL} recall --q "${queryText.replace(/"/g, '\\"')}" --json 2>/dev/null || echo '{"found":false}'`,
+				`${MEMORY_SKILL} recall --q "${queryText.replace(/"/g, '\\"')}" 2>/dev/null || echo '{"found":false}'`,
 			]);
+
+			// Memory was queried — unlock the skill-first gate regardless of result
+			(pi as any).state.memoryQueriedThisTurn = true;
 
 			if (!result.stdout) return;
 
@@ -81,6 +94,8 @@ export default function memoryFirst(pi: ExtensionAPI) {
 			};
 		} catch {
 			// Memory First should NEVER block. Fail silently.
+			// Still unlock the gate — memory was attempted.
+			(pi as any).state.memoryQueriedThisTurn = true;
 		}
 	});
 }

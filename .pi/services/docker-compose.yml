@@ -1,0 +1,23 @@
+# Embry OS shared services
+# Start: docker compose -f .pi/services/docker-compose.yml up -d
+# Redis is used by litellm/scillm for LLM completion caching
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: embry-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  redis-data:
+    driver: local

@@ -1,0 +1,17 @@
+[Unit]
+Description=Embry Agent D-Bus Service
+After=embry-session.target
+PartOf=embry-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/workspace/experiments/pi-mono
+ExecStart=/usr/bin/node %h/workspace/experiments/pi-mono/packages/coding-agent/dist/dbus/cli.js --cwd %h/workspace/experiments/pi-mono
+EnvironmentFile=-%h/workspace/experiments/pi-mono/.env
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Restart=always
+RestartSec=5
+RestartMaxDelaySec=30
+
+[Install]
+WantedBy=embry-session.target

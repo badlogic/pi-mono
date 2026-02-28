@@ -8,7 +8,8 @@
 		"configDir": ".pi"
 	},
 	"bin": {
-		"pi": "dist/cli.js"
+		"pi": "dist/cli.js",
+		"pi-dbus": "dist/dbus/cli.js"
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -54,6 +55,7 @@
 		"marked": "^15.0.12",
 		"minimatch": "^10.1.1",
 		"proper-lockfile": "^4.1.2",
+		"dbus-next": "^0.10.2",
 		"yaml": "^2.8.2"
 	},
 	"overrides": {

@@ -1,0 +1,81 @@
+[
+  {
+    "name": "memory-first-on-bash",
+    "description": "Remind agent to query memory before bash codebase scanning",
+    "conditions": ["\\b(find|grep|rg|ls\\s+-R)\\b.*\\.(py|ts|js|rs)"],
+    "toolScope": "bash",
+    "matchOn": "command",
+    "message": "REMINDER: Query /memory recall before scanning the codebase. Memory-first is non-negotiable in Embry OS.",
+    "repeatMode": "repeat",
+    "repeatGap": 10
+  },
+  {
+    "name": "memory-first-on-grep",
+    "description": "Remind agent to query memory before using Grep tool",
+    "conditions": ["\"pattern\""],
+    "toolScope": "grep",
+    "matchOn": "command",
+    "message": "REMINDER: Query /memory recall before scanning the codebase. Memory-first is non-negotiable in Embry OS.",
+    "repeatMode": "repeat",
+    "repeatGap": 10
+  },
+  {
+    "name": "memory-first-on-glob",
+    "description": "Remind agent to query memory before using Glob tool",
+    "conditions": ["\"pattern\""],
+    "toolScope": "glob",
+    "matchOn": "command",
+    "message": "REMINDER: Query /memory recall before scanning the codebase. Memory-first is non-negotiable in Embry OS.",
+    "repeatMode": "repeat",
+    "repeatGap": 10
+  },
+  {
+    "name": "memory-first-on-find",
+    "description": "Remind agent to query memory before using Find tool (Pi equivalent of Glob)",
+    "conditions": ["\"pattern\""],
+    "toolScope": "find",
+    "matchOn": "command",
+    "message": "REMINDER: Query /memory recall before scanning the codebase. Memory-first is non-negotiable in Embry OS.",
+    "repeatMode": "repeat",
+    "repeatGap": 10
+  },
+  {
+    "name": "cpu-thrash-warning",
+    "description": "Detect excessive parallel process spawning in commands",
+    "conditions": ["(xargs\\s.*-P\\s*(0|[1-9]\\d)|Pool\\(\\s*\\d{2,}|parallel\\s+(?!.*-j\\s*[1-8]))"],
+    "toolScope": "bash",
+    "matchOn": "command",
+    "message": "WARNING: Detected potential mass process spawning. Use bounded concurrency (max 8 concurrent). Use the batch_exec tool instead.",
+    "repeatMode": "once"
+  },
+  {
+    "name": "env-leak-guard",
+    "description": "Detect commands that would print secrets to stdout",
+    "conditions": ["\\b(cat|head|tail|less|more)\\b.*\\.(env|secret|credentials|keyfile)\\b"],
+    "toolScope": "bash",
+    "matchOn": "command",
+    "message": "SECURITY: Do not read environment files or secrets directly. Use indirect references (e.g., check existence with test -f, read individual vars with dotenv).",
+    "repeatMode": "repeat",
+    "repeatGap": 3
+  },
+  {
+    "name": "env-leak-guard-read",
+    "description": "Detect Read tool targeting secret files",
+    "conditions": ["\\.(env|secret|credentials|keyfile)"],
+    "toolScope": "read",
+    "matchOn": "command",
+    "message": "SECURITY: Do not read environment files or secrets directly. Use indirect references (e.g., check existence with test -f, read individual vars with dotenv).",
+    "repeatMode": "repeat",
+    "repeatGap": 3
+  },
+  {
+    "name": "skill-run-sh-pattern",
+    "description": "Ensure skills are invoked via run.sh not raw Python",
+    "conditions": ["\\bpython\\b.*\\.pi/skills/.*\\.py\\b"],
+    "toolScope": "bash",
+    "matchOn": "command",
+    "message": "Skills must be invoked via run.sh, not by calling Python directly. Use: .pi/skills/<name>/run.sh <args>",
+    "repeatMode": "repeat",
+    "repeatGap": 5
+  }
+]
