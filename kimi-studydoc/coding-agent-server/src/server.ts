@@ -1,7 +1,14 @@
 import express from "express";
-import { resolve } from "path";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 import type { Request, Response } from "express";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 import { SessionManager } from "./SessionManager.js";
+// ... (保留其它 import)
+
 import { ContractSynthesizer } from "./ContractSynthesizer.js";
 import { SnapshotBuilder } from "./SnapshotBuilder.js";
 import { ExecutionRunner } from "./ExecutionRunner.js";
@@ -398,6 +405,15 @@ app.delete("/api/sessions/:sessionId", async (req: Request, res: Response) => {
 });
 
 // Start server
+const frontendPath = resolve(__dirname, "../frontend/dist");
+app.use(express.static(frontendPath));
+
+// SPA fallback
+app.get("*", (req, res, next) => {
+  if (req.path.startsWith("/api")) return next();
+  res.sendFile(resolve(frontendPath, "index.html"));
+});
+
 app.listen(PORT, () => {
   console.log(`
 ╔════════════════════════════════════════════════════════════╗
