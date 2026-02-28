@@ -1,0 +1,59 @@
+/**
+ * pi docs — minimal custom styles
+ */
+
+:root {
+  --ifm-color-primary: #4f46e5;
+  --ifm-color-primary-dark: #4338ca;
+  --ifm-color-primary-darker: #3730a3;
+  --ifm-color-primary-darkest: #312e81;
+  --ifm-color-primary-light: #6366f1;
+  --ifm-color-primary-lighter: #818cf8;
+  --ifm-color-primary-lightest: #a5b4fc;
+  --ifm-code-font-size: 90%;
+}
+
+[data-theme="dark"] {
+  --ifm-color-primary: #818cf8;
+  --ifm-color-primary-dark: #6366f1;
+  --ifm-color-primary-darker: #4f46e5;
+  --ifm-color-primary-darkest: #4338ca;
+  --ifm-color-primary-light: #a5b4fc;
+  --ifm-color-primary-lighter: #c7d2fe;
+  --ifm-color-primary-lightest: #e0e7ff;
+}
+
+/* Collapsible example code blocks */
+details.example-embed {
+  margin: 1rem 0;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: var(--ifm-global-radius);
+  padding: 0;
+  overflow: hidden;
+}
+
+details.example-embed summary {
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-weight: 600;
+  background: var(--ifm-color-emphasis-100);
+  border-bottom: 1px solid var(--ifm-color-emphasis-300);
+  list-style: none;
+}
+
+details.example-embed summary::-webkit-details-marker {
+  display: none;
+}
+
+details.example-embed[open] summary {
+  border-bottom: 1px solid var(--ifm-color-emphasis-300);
+}
+
+details.example-embed > div {
+  padding: 0;
+}
+
+details.example-embed pre {
+  margin: 0;
+  border-radius: 0;
+}
