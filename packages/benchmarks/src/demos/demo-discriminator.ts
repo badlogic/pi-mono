@@ -18,7 +18,7 @@
  * tuned to its classification task.
  */
 
-import { completeSimple, type Model } from "@mariozechner/pi-ai";
+import { completeSimple, type Model, type ModelCapability } from "@mariozechner/pi-ai";
 
 // -- Types --------------------------------------------------------------------
 
@@ -87,6 +87,11 @@ export interface RoutingDecision {
 	energyJ: number;
 }
 
+export interface DiscriminateOptions {
+	/** Required model capabilities. If set, the resolved tier's model must support all of them. */
+	requires?: ModelCapability[];
+}
+
 // -- Default system prompt ----------------------------------------------------
 
 /**
@@ -104,6 +109,13 @@ export const DEFAULT_DISCRIMINATOR_SYSTEM_PROMPT =
 	'Reply with ONLY valid JSON: {"tier":"medium","length":"full","reason":"<=10 words"}';
 
 // -- Tier resolution ----------------------------------------------------------
+
+/** Returns true if the model's capabilities include all required capabilities. */
+function meetsRequirements(model: Model<"openai-completions">, requires: ModelCapability[]): boolean {
+	if (requires.length === 0) return true;
+	const caps = model.capabilities ?? [];
+	return requires.every((r) => caps.includes(r));
+}
 
 /**
  * Resolves a tier name to the configured TierConfig, falling back gracefully
@@ -129,6 +141,38 @@ function resolveTier(
 	return { resolvedTier: "complex", tierConfig: config.complex };
 }
 
+/**
+ * Fallback chains per tier: when the resolved tier's model lacks required
+ * capabilities, try these tiers in order.
+ */
+const FALLBACK_CHAINS: Record<DiscriminatorTier, DiscriminatorTier[]> = {
+	simple: ["medium", "complex", "thinking"],
+	medium: ["simple", "complex", "thinking"],
+	complex: ["medium", "simple", "thinking"],
+	thinking: ["complex", "medium", "simple"],
+};
+
+/**
+ * Like resolveTier, but walks a fallback chain when the initial tier's model
+ * doesn't meet capability requirements. Falls back to `complex` as safe default.
+ */
+function resolveTierWithRequirements(
+	tier: DiscriminatorTier,
+	config: DiscriminatorConfig,
+	requires: ModelCapability[],
+): { resolvedTier: DiscriminatorTier; tierConfig: DiscriminatorTierConfig } {
+	const primary = resolveTier(tier, config);
+	if (meetsRequirements(primary.tierConfig.model, requires)) return primary;
+
+	for (const fallback of FALLBACK_CHAINS[tier]) {
+		const candidate = resolveTier(fallback, config);
+		if (meetsRequirements(candidate.tierConfig.model, requires)) return candidate;
+	}
+
+	// Last resort: complex is always defined
+	return { resolvedTier: "complex", tierConfig: config.complex };
+}
+
 // -- Core function ------------------------------------------------------------
 
 /**
@@ -141,6 +185,7 @@ function resolveTier(
  * @param config     Tier configs, energy rates, optional system prompt override.
  * @param memContext Optional memory context injected before the prompt.
  * @param apiKey     Neuralwatt API key.
+ * @param options    Optional: require specific model capabilities (e.g. tool_calling).
  */
 export async function discriminate(
 	phase: string,
@@ -148,6 +193,7 @@ export async function discriminate(
 	config: DiscriminatorConfig,
 	memContext: string,
 	apiKey: string,
+	options?: DiscriminateOptions,
 ): Promise<RoutingDecision> {
 	const systemPrompt = config.systemPrompt ?? DEFAULT_DISCRIMINATOR_SYSTEM_PROMPT;
 	const contextPrefix = memContext ? `${memContext}\n\n` : "";
@@ -194,7 +240,9 @@ export async function discriminate(
 			? (rawTier as DiscriminatorTier)
 			: "complex";
 
-		const { resolvedTier, tierConfig } = resolveTier(tier, config);
+		const requires = options?.requires ?? [];
+		const { resolvedTier, tierConfig } =
+			requires.length > 0 ? resolveTierWithRequirements(tier, config, requires) : resolveTier(tier, config);
 		const isBrief = parsed.length === "brief";
 		const maxTokens = isBrief ? tierConfig.briefMaxTokens : undefined;
 		const reason =

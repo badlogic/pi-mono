@@ -325,6 +325,24 @@ npm run check        # Lint, format, and type check (biome + tsgo)
 
 See [AGENTS.md](AGENTS.md) for contribution rules and [energy_aware_agent_plan.md](energy_aware_agent_plan.md) for the full implementation plan.
 
+### Fugue integration
+
+The [Fugue](../fugue) repo consumes `@neuralwatt/pi-ai` and `@mariozechner/pi-benchmarks` via `file:` references for local dev. For Docker builds, Fugue vendors these packages using `fugue/docker/vendor-pi-mono.sh`, which copies `packages/ai` and `packages/benchmarks` (including `dist/` and `src/`) into Fugue's `.vendor/` directory and patches `package.json` to resolve private `npm:@neuralwatt/*` aliases locally.
+
+After making changes to `packages/ai` or `packages/benchmarks`, rebuild them before Fugue can pick up the changes:
+
+```bash
+npm run build --workspace=@neuralwatt/pi-ai
+npm run build --workspace=@mariozechner/pi-benchmarks
+```
+
+Then in the Fugue repo, re-vendor and rebuild Docker:
+
+```bash
+cd ~/dev/fugue
+bash docker/vendor-pi-mono.sh && docker compose up -d --build fugue-core
+```
+
 ---
 
 ## License

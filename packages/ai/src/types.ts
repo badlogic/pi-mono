@@ -289,6 +289,8 @@ export interface VercelGatewayRouting {
 	order?: string[];
 }
 
+export type ModelCapability = "tool_calling" | "reasoning" | "vision";
+
 // Model interface for the unified model system
 export interface Model<TApi extends Api> {
 	id: string;
@@ -313,4 +315,6 @@ export interface Model<TApi extends Api> {
 		: TApi extends "openai-responses"
 			? OpenAIResponsesCompat
 			: never;
+	/** Optional capability flags for model routing (e.g., discriminator). */
+	capabilities?: ModelCapability[];
 }
