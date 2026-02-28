@@ -1,7 +1,7 @@
 services:
   mom:
     build:
-      context: "${REPO_URL:-https://github.com/badlogic/pi-mono.git}#${REPO_BRANCH:-main}"
+      context: "docker/mom"
       dockerfile: docker/mom/Dockerfile
     image: pi-mom:local
     container_name: mom
@@ -9,15 +9,12 @@ services:
     volumes:
       - ${MOM_BASE}/repo:/repo
       - ${MOM_BASE}/data:/data
-    env_file:
-      - ./.env
-      - ./mom.env
     environment:
       MOM_DATA_DIR: /data
 
   updater:
     build:
-      context: "${REPO_URL:-https://github.com/badlogic/pi-mono.git}#${REPO_BRANCH:-main}"
+      context: "docker/updater"
       dockerfile: docker/updater/Dockerfile
     image: mom-updater:local
     container_name: mom-updater
@@ -27,6 +24,3 @@ services:
       - ${MOM_BASE}/state:/work/state
       - /var/run/docker.sock:/var/run/docker.sock
       - ${MOM_BASE}/compose.yml:/stack/compose.yml:ro
-    env_file:
-      - ./.env
-      - ./updater.env
