@@ -23,7 +23,7 @@ import type {
 	AgentTool,
 	ThinkingLevel,
 } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
+import type { Api, AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@mariozechner/pi-ai";
 import { getDocsPath } from "../config.js";
 import { theme } from "../modes/interactive/theme/theme.js";
@@ -71,6 +71,7 @@ import {
 } from "./extensions/index.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
+import { resolveCliModel } from "./model-resolver.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.js";
 import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.js";
@@ -756,92 +757,104 @@ export class AgentSession {
 			return;
 		}
 
-		// Flush any pending bash messages before the new prompt
-		this._flushPendingBashMessages();
-
-		// Validate model
-		if (!this.model) {
-			throw new Error(
-				"No model selected.\n\n" +
-					`Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}\n\n` +
-					"Then use /model to select a model.",
-			);
+		const previousModel = this.model;
+		const turnModelOverride = await this._resolveSkillModelOverride(currentText);
+		if (turnModelOverride && (!previousModel || !modelsAreEqual(turnModelOverride, previousModel))) {
+			this.agent.setModel(turnModelOverride);
 		}
 
-		// Validate API key
-		const apiKey = await this._modelRegistry.getApiKey(this.model);
-		if (!apiKey) {
-			const isOAuth = this._modelRegistry.isUsingOAuth(this.model);
-			if (isOAuth) {
+		try {
+			// Flush any pending bash messages before the new prompt
+			this._flushPendingBashMessages();
+
+			// Validate model
+			if (!this.model) {
 				throw new Error(
-					`Authentication failed for "${this.model.provider}". ` +
-						`Credentials may have expired or network is unavailable. ` +
-						`Run '/login ${this.model.provider}' to re-authenticate.`,
+					"No model selected.\n\n" +
+						`Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}\n\n` +
+						"Then use /model to select a model.",
 				);
 			}
-			throw new Error(
-				`No API key found for ${this.model.provider}.\n\n` +
-					`Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}`,
-			);
-		}
 
-		// Check if we need to compact before sending (catches aborted responses)
-		const lastAssistant = this._findLastAssistantMessage();
-		if (lastAssistant) {
-			await this._checkCompaction(lastAssistant, false);
-		}
+			// Validate API key
+			const apiKey = await this._modelRegistry.getApiKey(this.model);
+			if (!apiKey) {
+				const isOAuth = this._modelRegistry.isUsingOAuth(this.model);
+				if (isOAuth) {
+					throw new Error(
+						`Authentication failed for "${this.model.provider}". ` +
+							`Credentials may have expired or network is unavailable. ` +
+							`Run '/login ${this.model.provider}' to re-authenticate.`,
+					);
+				}
+				throw new Error(
+					`No API key found for ${this.model.provider}.\n\n` +
+						`Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}`,
+				);
+			}
 
-		// Build messages array (custom message if any, then user message)
-		const messages: AgentMessage[] = [];
+			// Check if we need to compact before sending (catches aborted responses)
+			const lastAssistant = this._findLastAssistantMessage();
+			if (lastAssistant) {
+				await this._checkCompaction(lastAssistant, false);
+			}
 
-		// Add user message
-		const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
-		if (currentImages) {
-			userContent.push(...currentImages);
-		}
-		messages.push({
-			role: "user",
-			content: userContent,
-			timestamp: Date.now(),
-		});
+			// Build messages array (custom message if any, then user message)
+			const messages: AgentMessage[] = [];
 
-		// Inject any pending "nextTurn" messages as context alongside the user message
-		for (const msg of this._pendingNextTurnMessages) {
-			messages.push(msg);
-		}
-		this._pendingNextTurnMessages = [];
+			// Add user message
+			const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
+			if (currentImages) {
+				userContent.push(...currentImages);
+			}
+			messages.push({
+				role: "user",
+				content: userContent,
+				timestamp: Date.now(),
+			});
 
-		// Emit before_agent_start extension event
-		if (this._extensionRunner) {
-			const result = await this._extensionRunner.emitBeforeAgentStart(
-				expandedText,
-				currentImages,
-				this._baseSystemPrompt,
-			);
-			// Add all custom messages from extensions
-			if (result?.messages) {
-				for (const msg of result.messages) {
-					messages.push({
-						role: "custom",
-						customType: msg.customType,
-						content: msg.content,
-						display: msg.display,
-						details: msg.details,
-						timestamp: Date.now(),
-					});
+			// Inject any pending "nextTurn" messages as context alongside the user message
+			for (const msg of this._pendingNextTurnMessages) {
+				messages.push(msg);
+			}
+			this._pendingNextTurnMessages = [];
+
+			// Emit before_agent_start extension event
+			if (this._extensionRunner) {
+				const result = await this._extensionRunner.emitBeforeAgentStart(
+					expandedText,
+					currentImages,
+					this._baseSystemPrompt,
+				);
+				// Add all custom messages from extensions
+				if (result?.messages) {
+					for (const msg of result.messages) {
+						messages.push({
+							role: "custom",
+							customType: msg.customType,
+							content: msg.content,
+							display: msg.display,
+							details: msg.details,
+							timestamp: Date.now(),
+						});
+					}
+				}
+				// Apply extension-modified system prompt, or reset to base
+				if (result?.systemPrompt) {
+					this.agent.setSystemPrompt(result.systemPrompt);
+				} else {
+					// Ensure we're using the base prompt (in case previous turn had modifications)
+					this.agent.setSystemPrompt(this._baseSystemPrompt);
 				}
 			}
-			// Apply extension-modified system prompt, or reset to base
-			if (result?.systemPrompt) {
-				this.agent.setSystemPrompt(result.systemPrompt);
-			} else {
-				// Ensure we're using the base prompt (in case previous turn had modifications)
-				this.agent.setSystemPrompt(this._baseSystemPrompt);
+
+			await this.agent.prompt(messages);
+			await this.waitForRetry();
+		} finally {
+			if (turnModelOverride && previousModel && !modelsAreEqual(turnModelOverride, previousModel)) {
+				this.agent.setModel(previousModel);
 			}
 		}
-
-		await this.agent.prompt(messages);
-		await this.waitForRetry();
 	}
 
 	/**
@@ -904,6 +917,68 @@ export class AgentSession {
 			});
 			return text; // Return original on error
 		}
+	}
+
+	private async _resolveSkillModelOverride(text: string): Promise<Model<Api> | undefined> {
+		if (!text.startsWith("/skill:")) return undefined;
+
+		const spaceIndex = text.indexOf(" ");
+		const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
+		const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
+		if (!skill) return undefined;
+
+		if (skill.model) {
+			const { model } = resolveCliModel({
+				cliModel: skill.model,
+				modelRegistry: this._modelRegistry,
+			});
+			if (model && (await this._modelRegistry.getApiKey(model))) {
+				return model;
+			}
+		}
+
+		if (!skill.modelSize) return undefined;
+		const availableModels = await this._modelRegistry.getAvailable();
+
+		// Prefer keeping the current model if its registry entry matches the requested size.
+		if (this.model) {
+			const current = availableModels.find((available) => modelsAreEqual(available, this.model));
+			if (current?.size === skill.modelSize) {
+				return current;
+			}
+		}
+
+		const sizeMatched = availableModels.filter((model) => model.size === skill.modelSize);
+		if (sizeMatched.length === 0) return undefined;
+
+		const currentProvider = (this.model as any)?.provider as string | undefined;
+
+		// Prefer models from the same provider as the current model, if any.
+		if (currentProvider) {
+			const sameProvider = sizeMatched.filter(
+				(model) => (model as any).provider === currentProvider,
+			);
+			if (sameProvider.length > 0) {
+				sameProvider.sort((a, b) => {
+					const aId = String((a as any).id ?? "");
+					const bId = String((b as any).id ?? "");
+					return aId.localeCompare(bId);
+				});
+				return sameProvider[0];
+			}
+		}
+
+		// Fall back to a deterministic choice among all size-matched models.
+		const sorted = sizeMatched.slice().sort((a, b) => {
+			const aProvider = String((a as any).provider ?? "");
+			const bProvider = String((b as any).provider ?? "");
+			const byProvider = aProvider.localeCompare(bProvider);
+			if (byProvider !== 0) return byProvider;
+			const aId = String((a as any).id ?? "");
+			const bId = String((b as any).id ?? "");
+			return aId.localeCompare(bId);
+		});
+		return sorted[0];
 	}
 
 	/**

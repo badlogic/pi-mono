@@ -146,6 +146,8 @@ Per the [Agent Skills specification](https://agentskills.io/specification#frontm
 | `metadata` | No | Arbitrary key-value mapping. |
 | `allowed-tools` | No | Space-delimited list of pre-approved tools (experimental). |
 | `disable-model-invocation` | No | When `true`, skill is hidden from system prompt. Users must use `/skill:name`. |
+| `model` | No | Model to use for `/skill:name` turns (for example `anthropic/claude-opus-4-1`). |
+| `model_size` | No | Model size to use for `/skill:name` turns: `small`, `medium`, or `large`. Used when `model` is not set, or as a fallback when the specified `model` cannot be resolved or has no usable credentials. |
 
 ### Name Rules
 
