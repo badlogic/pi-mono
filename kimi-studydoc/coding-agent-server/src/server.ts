@@ -5,7 +5,7 @@ import { SessionManager } from "./SessionManager.js";
 import { ContractSynthesizer } from "./ContractSynthesizer.js";
 import { SnapshotBuilder } from "./SnapshotBuilder.js";
 import { ExecutionRunner } from "./ExecutionRunner.js";
-import type { CreateSessionRequest, ApiResponse, SessionStatusResponse } from "./types.js";
+import type { CreateSessionRequest, ApiResponse, SessionStatusResponse, ExecutionState } from "./types.js";
 
 const app = express();
 app.use(express.json());
@@ -33,6 +33,28 @@ const executionRunner = new ExecutionRunner({
   apiKey: process.env.LLM_API_KEY,
   maxSteps: parseInt(process.env.MAX_STEPS ?? "100", 10),
 });
+
+// Helper function to handle state transition errors
+async function safeTransition(
+  sessionId: string,
+  newState: ExecutionState,
+  res: Response,
+): Promise<boolean> {
+  try {
+    await sessionManager.transitionTo(sessionId, newState);
+    return true;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes("Invalid state transition")) {
+      res.status(400).json({
+        success: false,
+        error: `Invalid state transition: ${errorMessage}`,
+      } as ApiResponse<never>);
+      return false;
+    }
+    throw error;
+  }
+}
 
 // Health check
 app.get("/health", (_req: Request, res: Response) => {
@@ -147,7 +169,9 @@ app.post("/api/sessions/:sessionId/preflight", async (req: Request, res: Respons
     }
 
     // Transition to contract synthesis
-    await sessionManager.transitionTo(sessionId, "CONTRACT_SYNTHESIS");
+    if (!await safeTransition(sessionId, "CONTRACT_SYNTHESIS", res)) {
+      return;
+    }
 
     // Synthesize contract
     console.log(`[Server] Synthesizing contract for session: ${sessionId}`);
@@ -161,8 +185,10 @@ app.post("/api/sessions/:sessionId/preflight", async (req: Request, res: Respons
 
     // Check if we can proceed
     if (contractSynthesizer.hasMissingInformation(contract)) {
-      await sessionManager.transitionTo(sessionId, "PREFLIGHT");
-      
+      if (!await safeTransition(sessionId, "PREFLIGHT", res)) {
+        return;
+      }
+
       res.json({
         success: true,
         data: {
@@ -181,7 +207,9 @@ app.post("/api/sessions/:sessionId/preflight", async (req: Request, res: Respons
     }
 
     // Transition to preflight complete
-    await sessionManager.transitionTo(sessionId, "PREFLIGHT");
+    if (!await safeTransition(sessionId, "PREFLIGHT", res)) {
+      return;
+    }
 
     res.json({
       success: true,
@@ -253,7 +281,9 @@ app.post("/api/sessions/:sessionId/execute", async (req: Request, res: Response)
 
     // Save snapshot
     await sessionManager.updateSnapshot(sessionId, snapshot);
-    await sessionManager.transitionTo(sessionId, "FROZEN");
+    if (!await safeTransition(sessionId, "FROZEN", res)) {
+      return;
+    }
 
     // Start execution in background
     console.log(`[Server] Starting execution for session: ${sessionId}`);
@@ -324,7 +354,9 @@ app.post("/api/sessions/:sessionId/abort", async (req: Request, res: Response) =
     }
 
     await executionRunner.abort(sessionId);
-    await sessionManager.transitionTo(sessionId, "PAUSED");
+    if (!await safeTransition(sessionId, "PAUSED", res)) {
+      return;
+    }
 
     res.json({
       success: true,

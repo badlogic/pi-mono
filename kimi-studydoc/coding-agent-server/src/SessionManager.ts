@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { v4 as uuidv4 } from "uuid";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { Session, ExecutionState, ExecutionContract, Snapshot } from "./types.js";
 
 export interface StorageAdapter {
@@ -164,6 +165,24 @@ export class SessionManager {
 
     session.currentStep = currentStep;
     session.totalSteps = totalSteps;
+    session.updatedAt = Date.now();
+
+    await this.storage.save(session);
+    this.activeSessions.set(sessionId, session);
+
+    return session;
+  }
+
+  async updateMessageHistory(
+    sessionId: string,
+    messageHistory: AgentMessage[],
+  ): Promise<Session | null> {
+    const session = await this.getSession(sessionId);
+    if (!session) {
+      return null;
+    }
+
+    session.messageHistory = messageHistory;
     session.updatedAt = Date.now();
 
     await this.storage.save(session);
