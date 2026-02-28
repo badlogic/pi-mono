@@ -758,8 +758,8 @@ export class AgentSession {
 		}
 
 		const previousModel = this.model;
-		const turnModelOverride = previousModel ? await this._resolveSkillModelOverride(currentText) : undefined;
-		if (turnModelOverride && !modelsAreEqual(turnModelOverride, previousModel)) {
+		const turnModelOverride = await this._resolveSkillModelOverride(currentText);
+		if (turnModelOverride && (!previousModel || !modelsAreEqual(turnModelOverride, previousModel))) {
 			this.agent.setModel(turnModelOverride);
 		}
 
