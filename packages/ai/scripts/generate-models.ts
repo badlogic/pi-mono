@@ -1032,6 +1032,30 @@ async function generateModels() {
 	const ANTIGRAVITY_ENDPOINT = "https://daily-cloudcode-pa.sandbox.googleapis.com";
 	const antigravityModels: Model<"google-gemini-cli">[] = [
 		{
+			id: "gemini-3.1-pro-high",
+			name: "Gemini 3.1 Pro High (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_ENDPOINT,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.375 },
+			contextWindow: 1048576,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-3.1-pro-low",
+			name: "Gemini 3.1 Pro Low (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_ENDPOINT,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.375 },
+			contextWindow: 1048576,
+			maxTokens: 65535,
+		},
+		{
 			id: "gemini-3-pro-high",
 			name: "Gemini 3 Pro High (Antigravity)",
 			api: "google-gemini-cli",
