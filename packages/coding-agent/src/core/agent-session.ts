@@ -1136,8 +1136,6 @@ export class AgentSession {
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 	}): Promise<boolean> {
-		const previousSessionFile = this.sessionFile;
-
 		// Emit session_before_switch event with reason "new" (can be cancelled)
 		if (this._extensionRunner?.hasHandlers("session_before_switch")) {
 			const result = (await this._extensionRunner.emit({
@@ -1152,6 +1150,11 @@ export class AgentSession {
 
 		this._disconnectFromAgent();
 		await this.abort();
+
+		// Shutdown extensions before resetting so they can clean up their state
+		const previousFlagValues = this._extensionRunner?.getFlagValues();
+		await this._extensionRunner?.emit({ type: "session_shutdown" });
+
 		this.agent.reset();
 		this.sessionManager.newSession({ parentSession: options?.parentSession });
 		this.agent.sessionId = this.sessionManager.getSessionId();
@@ -1160,6 +1163,13 @@ export class AgentSession {
 		this._pendingNextTurnMessages = [];
 
 		this.sessionManager.appendThinkingLevelChange(this.thinkingLevel);
+
+		// Rebuild runtime to reinitialize extensions for the new session
+		this._buildRuntime({
+			activeToolNames: this.getActiveToolNames(),
+			flagValues: previousFlagValues,
+			includeAllExtensionTools: true,
+		});
 
 		// Run setup callback if provided (e.g., to append initial messages)
 		if (options?.setup) {
@@ -1171,13 +1181,15 @@ export class AgentSession {
 
 		this._reconnectToAgent();
 
-		// Emit session_switch event with reason "new" to extensions
-		if (this._extensionRunner) {
-			await this._extensionRunner.emit({
-				type: "session_switch",
-				reason: "new",
-				previousSessionFile,
-			});
+		// Start extensions in the new session context
+		const hasBindings =
+			this._extensionUIContext ||
+			this._extensionCommandContextActions ||
+			this._extensionShutdownHandler ||
+			this._extensionErrorListener;
+		if (this._extensionRunner && hasBindings) {
+			await this._extensionRunner.emit({ type: "session_start" });
+			await this.extendResourcesFromExtensions("reload");
 		}
 
 		// Emit session event to custom tools
