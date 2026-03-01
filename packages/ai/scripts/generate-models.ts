@@ -904,6 +904,42 @@ async function generateModels() {
 	];
 	allModels.push(...codexModels);
 
+	// Add missing GitHub Copilot GPT-5.3 models
+	const COPILOT_BASE_URL = "https://api.individual.githubcopilot.com";
+	const copilotGpt53Models: Model<Api>[] = [
+		{
+			id: "gpt-5.3",
+			name: "GPT-5.3",
+			api: "openai-responses",
+			provider: "github-copilot",
+			baseUrl: COPILOT_BASE_URL,
+			headers: { ...COPILOT_STATIC_HEADERS },
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 272000,
+			maxTokens: 128000,
+		},
+		{
+			id: "gpt-5.3-codex",
+			name: "GPT-5.3-Codex",
+			api: "openai-responses",
+			provider: "github-copilot",
+			baseUrl: COPILOT_BASE_URL,
+			headers: { ...COPILOT_STATIC_HEADERS },
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 272000,
+			maxTokens: 128000,
+		},
+	];
+	for (const model of copilotGpt53Models) {
+		if (!allModels.some((candidate) => candidate.provider === "github-copilot" && candidate.id === model.id)) {
+			allModels.push(model);
+		}
+	}
+
 	// Add missing Grok models
 	if (!allModels.some(m => m.provider === "xai" && m.id === "grok-code-fast-1")) {
 		allModels.push({
