@@ -19,6 +19,8 @@ services:
       STARTUP_GRACE_SECONDS: ${STARTUP_GRACE_SECONDS:-25}
       MOM_BASE: ${MOM_BASE}
       MOM_DATA_DIR: /data
+    stdin_open: true
+    tty: true
 
   updater:
     build:
@@ -41,3 +43,5 @@ services:
       CHECK_INTERVAL_SECONDS: ${CHECK_INTERVAL_SECONDS:-120}
       STARTUP_GRACE_SECONDS: ${STARTUP_GRACE_SECONDS:-25}
       MOM_BASE: ${MOM_BASE}
+    stdin_open: true
+    tty: true
