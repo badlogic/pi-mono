@@ -9,7 +9,7 @@ REPO_DIR="/work/repo"
 STATE_DIR="/work/state"
 GOOD_FILE="$STATE_DIR/good_commit"
 NOTICE_FILE="$STATE_DIR/NEEDS_USER_NOTIFICATION.txt"
-STACK="/stack/compose.yml"
+STACK="$REPO_DIR/deploy/compose.yml"
 
 mkdir -p "$STATE_DIR" "$REPO_DIR"
 
@@ -29,8 +29,9 @@ setup_ssh() {
 
 ensure_repo() {
   if [[ ! -d "$REPO_DIR/.git" ]]; then
-    log "Cloning $REPO_URL (branch $REPO_BRANCH)..."
-    rm -rf "$REPO_DIR"/*
+    log "Cloning $REPO_URL (branch $REPO_BRANCH) into $REPO_DIR..."
+    mkdir -p "$REPO_DIR"
+    find "$REPO_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
     git clone --branch "$REPO_BRANCH" --single-branch "$REPO_URL" "$REPO_DIR"
   fi
 }

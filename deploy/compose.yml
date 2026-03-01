@@ -33,7 +33,6 @@ services:
       - ${MOM_BASE}/repo:/work/repo
       - ${MOM_BASE}/state:/work/state
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${MOM_BASE}/compose.yml:/stack/compose.yml:ro
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
