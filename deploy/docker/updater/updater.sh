@@ -47,7 +47,7 @@ restart_mom() {
   log "Rebuilding/recreating mom..."
 
   # If container_name: mom is set, a stale container will block recreation.
-  docker rm -f mom >/dev/null 2>&1 || true
+  docker rm -f mom
 
   compose up -d --build --force-recreate mom
 }
