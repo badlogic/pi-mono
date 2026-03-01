@@ -45,9 +45,13 @@ latest_remote() {
 
 restart_mom() {
   log "Rebuilding/recreating mom..."
-  # Build uses /repo volume in mom container; compose rebuilds mom image and recreates container.
+
+  # If container_name: mom is set, a stale container will block recreation.
+  docker rm -f mom >/dev/null 2>&1 || true
+
   compose up -d --build --force-recreate mom
 }
+
 
 startup_ok() {
   sleep "$STARTUP_GRACE_SECONDS"
