@@ -7,12 +7,12 @@ DATA_DIR="${MOM_DATA_DIR:-/data}"
 # Install/build every start is simplest but slower.
 # This heuristic is readable and usually fine.
 if [[ ! -d node_modules ]]; then
-  echo "[mom] npm ci..."
+  echo "[mom] npm install..."
   npm install
 fi
 
-echo "[mom] npm run build..."
-npm run build
+#echo "[mom] npm run build..."
+#npm run build
 
 echo "[mom] Starting Terminal 1: (root) npm run dev"
 npm run dev &
