@@ -25,8 +25,8 @@ npm install @mariozechner/pi-web-ui @mariozechner/pi-agent-core @mariozechner/pi
 See the [example](./example) directory for a complete working application.
 
 ```typescript
-import { Agent } from '@mariozechner/pi-agent-core';
-import { getModel } from '@mariozechner/pi-ai';
+import { Agent } from "@mariozechner/pi-agent-core";
+import { getModel } from "@mariozechner/pi-ai";
 import {
   ChatPanel,
   AppStorage,
@@ -37,8 +37,8 @@ import {
   setAppStorage,
   defaultConvertToLlm,
   ApiKeyPromptDialog,
-} from '@mariozechner/pi-web-ui';
-import '@mariozechner/pi-web-ui/app.css';
+} from "@mariozechner/pi-web-ui";
+import "@mariozechner/pi-web-ui/app.css";
 
 // Set up storage
 const settings = new SettingsStore();
@@ -46,7 +46,7 @@ const providerKeys = new ProviderKeysStore();
 const sessions = new SessionsStore();
 
 const backend = new IndexedDBStorageBackend({
-  dbName: 'my-app',
+  dbName: "my-app",
   version: 1,
   stores: [
     settings.getConfig(),
@@ -60,15 +60,21 @@ settings.setBackend(backend);
 providerKeys.setBackend(backend);
 sessions.setBackend(backend);
 
-const storage = new AppStorage(settings, providerKeys, sessions, undefined, backend);
+const storage = new AppStorage(
+  settings,
+  providerKeys,
+  sessions,
+  undefined,
+  backend,
+);
 setAppStorage(storage);
 
 // Create agent
 const agent = new Agent({
   initialState: {
-    systemPrompt: 'You are a helpful assistant.',
-    model: getModel('anthropic', 'claude-sonnet-4-5-20250929'),
-    thinkingLevel: 'off',
+    systemPrompt: "You are a helpful assistant.",
+    model: getModel("anthropic", "claude-sonnet-4-5-20250929"),
+    thinkingLevel: "off",
     messages: [],
     tools: [],
   },
@@ -128,16 +134,25 @@ await chatPanel.setAgent(agent, {
   onApiKeyRequired: async (provider) => ApiKeyPromptDialog.prompt(provider),
 
   // Hook before sending messages
-  onBeforeSend: async () => { /* save draft, etc. */ },
+  onBeforeSend: async () => {
+    /* save draft, etc. */
+  },
 
   // Handle cost display click
-  onCostClick: () => { /* show cost breakdown */ },
+  onCostClick: () => {
+    /* show cost breakdown */
+  },
 
   // Custom sandbox URL for browser extensions
-  sandboxUrlProvider: () => chrome.runtime.getURL('sandbox.html'),
+  sandboxUrlProvider: () => chrome.runtime.getURL("sandbox.html"),
 
   // Add custom tools
-  toolsFactory: (agent, agentInterface, artifactsPanel, runtimeProvidersFactory) => {
+  toolsFactory: (
+    agent,
+    agentInterface,
+    artifactsPanel,
+    runtimeProvidersFactory,
+  ) => {
     const replTool = createJavaScriptReplTool();
     replTool.runtimeProvidersFactory = runtimeProvidersFactory;
     return [replTool];
@@ -150,16 +165,21 @@ await chatPanel.setAgent(agent, {
 Lower-level chat interface for custom layouts.
 
 ```typescript
-const chat = document.createElement('agent-interface') as AgentInterface;
+const chat = document.createElement("agent-interface") as AgentInterface;
 chat.session = agent;
 chat.enableAttachments = true;
 chat.enableModelSelector = true;
 chat.enableThinkingSelector = true;
-chat.onApiKeyRequired = async (provider) => { /* ... */ };
-chat.onBeforeSend = async () => { /* ... */ };
+chat.onApiKeyRequired = async (provider) => {
+  /* ... */
+};
+chat.onBeforeSend = async () => {
+  /* ... */
+};
 ```
 
 Properties:
+
 - `session`: Agent instance
 - `enableAttachments`: Show attachment button (default: true)
 - `enableModelSelector`: Show model selector (default: true)
@@ -216,8 +236,8 @@ User message with file attachments:
 
 ```typescript
 const message: UserMessageWithAttachments = {
-  role: 'user-with-attachments',
-  content: 'Analyze this document',
+  role: "user-with-attachments",
+  content: "Analyze this document",
   attachments: [pdfAttachment],
   timestamp: Date.now(),
 };
@@ -234,10 +254,10 @@ For session persistence of artifacts:
 
 ```typescript
 const artifact: ArtifactMessage = {
-  role: 'artifact',
-  action: 'create', // or 'update', 'delete'
-  filename: 'chart.html',
-  content: '<div>...</div>',
+  role: "artifact",
+  action: "create", // or 'update', 'delete'
+  filename: "chart.html",
+  content: "<div>...</div>",
   timestamp: new Date().toISOString(),
 };
 
@@ -253,28 +273,32 @@ Extend via declaration merging:
 
 ```typescript
 interface SystemNotification {
-  role: 'system-notification';
+  role: "system-notification";
   message: string;
-  level: 'info' | 'warning' | 'error';
+  level: "info" | "warning" | "error";
   timestamp: string;
 }
 
-declare module '@mariozechner/pi-agent-core' {
+declare module "@mariozechner/pi-agent-core" {
   interface CustomAgentMessages {
-    'system-notification': SystemNotification;
+    "system-notification": SystemNotification;
   }
 }
 
 // Register renderer
-registerMessageRenderer('system-notification', {
+registerMessageRenderer("system-notification", {
   render: (msg) => html`<div class="alert">${msg.message}</div>`,
 });
 
 // Extend convertToLlm
 function myConvertToLlm(messages: AgentMessage[]): Message[] {
   const processed = messages.map((m) => {
-    if (m.role === 'system-notification') {
-      return { role: 'user', content: `<system>${m.message}</system>`, timestamp: Date.now() };
+    if (m.role === "system-notification") {
+      return {
+        role: "user",
+        content: `<system>${m.message}</system>`,
+        timestamp: Date.now(),
+      };
     }
     return m;
   });
@@ -287,7 +311,10 @@ function myConvertToLlm(messages: AgentMessage[]): Message[] {
 `convertToLlm` transforms app messages to LLM-compatible format:
 
 ```typescript
-import { defaultConvertToLlm, convertAttachments } from '@mariozechner/pi-web-ui';
+import {
+  defaultConvertToLlm,
+  convertAttachments,
+} from "@mariozechner/pi-web-ui";
 
 // defaultConvertToLlm handles:
 // - UserMessageWithAttachments → user message with image/text content blocks
@@ -302,7 +329,7 @@ import { defaultConvertToLlm, convertAttachments } from '@mariozechner/pi-web-ui
 Execute JavaScript in a sandboxed browser environment:
 
 ```typescript
-import { createJavaScriptReplTool } from '@mariozechner/pi-web-ui';
+import { createJavaScriptReplTool } from "@mariozechner/pi-web-ui";
 
 const replTool = createJavaScriptReplTool();
 
@@ -320,10 +347,10 @@ agent.setTools([replTool]);
 Extract text from documents at URLs:
 
 ```typescript
-import { createExtractDocumentTool } from '@mariozechner/pi-web-ui';
+import { createExtractDocumentTool } from "@mariozechner/pi-web-ui";
 
 const extractTool = createExtractDocumentTool();
-extractTool.corsProxyUrl = 'https://corsproxy.io/?';
+extractTool.corsProxyUrl = "https://corsproxy.io/?";
 
 agent.setTools([extractTool]);
 ```
@@ -343,7 +370,10 @@ agent.setTools([artifactsPanel.tool]);
 ### Custom Tool Renderers
 
 ```typescript
-import { registerToolRenderer, type ToolRenderer } from '@mariozechner/pi-web-ui';
+import {
+  registerToolRenderer,
+  type ToolRenderer,
+} from "@mariozechner/pi-web-ui";
 
 const myRenderer: ToolRenderer = {
   render(params, result, isStreaming) {
@@ -354,7 +384,7 @@ const myRenderer: ToolRenderer = {
   },
 };
 
-registerToolRenderer('my_tool', myRenderer);
+registerToolRenderer("my_tool", myRenderer);
 ```
 
 ## Storage
@@ -371,7 +401,7 @@ import {
   CustomProvidersStore,
   setAppStorage,
   getAppStorage,
-} from '@mariozechner/pi-web-ui';
+} from "@mariozechner/pi-web-ui";
 
 // Create stores
 const settings = new SettingsStore();
@@ -381,7 +411,7 @@ const customProviders = new CustomProvidersStore();
 
 // Create backend with all store configs
 const backend = new IndexedDBStorageBackend({
-  dbName: 'my-app',
+  dbName: "my-app",
   version: 1,
   stores: [
     settings.getConfig(),
@@ -399,7 +429,13 @@ sessions.setBackend(backend);
 customProviders.setBackend(backend);
 
 // Create and set global storage
-const storage = new AppStorage(settings, providerKeys, sessions, customProviders, backend);
+const storage = new AppStorage(
+  settings,
+  providerKeys,
+  sessions,
+  customProviders,
+  backend,
+);
 setAppStorage(storage);
 ```
 
@@ -408,9 +444,9 @@ setAppStorage(storage);
 Key-value settings:
 
 ```typescript
-await storage.settings.set('proxy.enabled', true);
-await storage.settings.set('proxy.url', 'https://proxy.example.com');
-const enabled = await storage.settings.get<boolean>('proxy.enabled');
+await storage.settings.set("proxy.enabled", true);
+await storage.settings.set("proxy.url", "https://proxy.example.com");
+const enabled = await storage.settings.get<boolean>("proxy.enabled");
 ```
 
 ### ProviderKeysStore
@@ -418,8 +454,8 @@ const enabled = await storage.settings.get<boolean>('proxy.enabled');
 API keys by provider:
 
 ```typescript
-await storage.providerKeys.set('anthropic', 'sk-ant-...');
-const key = await storage.providerKeys.get('anthropic');
+await storage.providerKeys.set("anthropic", "sk-ant-...");
+const key = await storage.providerKeys.get("anthropic");
 const providers = await storage.providerKeys.list();
 ```
 
@@ -439,7 +475,7 @@ const metadata = await storage.sessions.getMetadata(sessionId);
 const allMetadata = await storage.sessions.getAllMetadata();
 
 // Update title
-await storage.sessions.updateTitle(sessionId, 'New Title');
+await storage.sessions.updateTitle(sessionId, "New Title");
 
 // Delete
 await storage.sessions.delete(sessionId);
@@ -452,9 +488,9 @@ Custom LLM providers:
 ```typescript
 const provider: CustomProvider = {
   id: crypto.randomUUID(),
-  name: 'My Ollama',
-  type: 'ollama',
-  baseUrl: 'http://localhost:11434',
+  name: "My Ollama",
+  type: "ollama",
+  baseUrl: "http://localhost:11434",
 };
 
 await storage.customProviders.set(provider);
@@ -466,28 +502,28 @@ const all = await storage.customProviders.getAll();
 Load and process files:
 
 ```typescript
-import { loadAttachment, type Attachment } from '@mariozechner/pi-web-ui';
+import { loadAttachment, type Attachment } from "@mariozechner/pi-web-ui";
 
 // From File input
 const file = inputElement.files[0];
 const attachment = await loadAttachment(file);
 
 // From URL
-const attachment = await loadAttachment('https://example.com/doc.pdf');
+const attachment = await loadAttachment("https://example.com/doc.pdf");
 
 // From ArrayBuffer
-const attachment = await loadAttachment(arrayBuffer, 'document.pdf');
+const attachment = await loadAttachment(arrayBuffer, "document.pdf");
 
 // Attachment structure
 interface Attachment {
   id: string;
-  type: 'image' | 'document';
+  type: "image" | "document";
   fileName: string;
   mimeType: string;
   size: number;
-  content: string;        // base64 encoded
+  content: string; // base64 encoded
   extractedText?: string; // For documents
-  preview?: string;       // base64 preview image
+  preview?: string; // base64 preview image
 }
 ```
 
@@ -498,13 +534,17 @@ Supported formats: PDF, DOCX, XLSX, PPTX, images, text files.
 For browser environments with CORS restrictions:
 
 ```typescript
-import { createStreamFn, shouldUseProxyForProvider, isCorsError } from '@mariozechner/pi-web-ui';
+import {
+  createStreamFn,
+  shouldUseProxyForProvider,
+  isCorsError,
+} from "@mariozechner/pi-web-ui";
 
 // AgentInterface auto-configures proxy from settings
 // For manual setup:
 agent.streamFn = createStreamFn(async () => {
-  const enabled = await storage.settings.get<boolean>('proxy.enabled');
-  return enabled ? await storage.settings.get<string>('proxy.url') : undefined;
+  const enabled = await storage.settings.get<boolean>("proxy.enabled");
+  return enabled ? await storage.settings.get<string>("proxy.url") : undefined;
 });
 
 // Providers requiring proxy:
@@ -517,38 +557,47 @@ agent.streamFn = createStreamFn(async () => {
 ### SettingsDialog
 
 ```typescript
-import { SettingsDialog, ProvidersModelsTab, ProxyTab, ApiKeysTab } from '@mariozechner/pi-web-ui';
+import {
+  SettingsDialog,
+  ProvidersModelsTab,
+  ProxyTab,
+  ApiKeysTab,
+} from "@mariozechner/pi-web-ui";
 
 SettingsDialog.open([
   new ProvidersModelsTab(), // Custom providers + model list
-  new ProxyTab(),           // CORS proxy settings
-  new ApiKeysTab(),         // API keys per provider
+  new ProxyTab(), // CORS proxy settings
+  new ApiKeysTab(), // API keys per provider
 ]);
 ```
 
 ### SessionListDialog
 
 ```typescript
-import { SessionListDialog } from '@mariozechner/pi-web-ui';
+import { SessionListDialog } from "@mariozechner/pi-web-ui";
 
 SessionListDialog.open(
-  async (sessionId) => { /* load session */ },
-  (deletedId) => { /* handle deletion */ },
+  async (sessionId) => {
+    /* load session */
+  },
+  (deletedId) => {
+    /* handle deletion */
+  },
 );
 ```
 
 ### ApiKeyPromptDialog
 
 ```typescript
-import { ApiKeyPromptDialog } from '@mariozechner/pi-web-ui';
+import { ApiKeyPromptDialog } from "@mariozechner/pi-web-ui";
 
-const success = await ApiKeyPromptDialog.prompt('anthropic');
+const success = await ApiKeyPromptDialog.prompt("anthropic");
 ```
 
 ### ModelSelector
 
 ```typescript
-import { ModelSelector } from '@mariozechner/pi-web-ui';
+import { ModelSelector } from "@mariozechner/pi-web-ui";
 
 ModelSelector.open(currentModel, (selectedModel) => {
   agent.setModel(selectedModel);
@@ -560,13 +609,13 @@ ModelSelector.open(currentModel, (selectedModel) => {
 Import the pre-built CSS:
 
 ```typescript
-import '@mariozechner/pi-web-ui/app.css';
+import "@mariozechner/pi-web-ui/app.css";
 ```
 
 Or use Tailwind with custom config:
 
 ```css
-@import '@mariozechner/mini-lit/themes/claude.css';
+@import "@mariozechner/mini-lit/themes/claude.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -575,26 +624,22 @@ Or use Tailwind with custom config:
 ## Internationalization
 
 ```typescript
-import { i18n, setLanguage, translations } from '@mariozechner/pi-web-ui';
+import { i18n, setLanguage, translations } from "@mariozechner/pi-web-ui";
 
 // Add translations
 translations.de = {
-  'Loading...': 'Laden...',
-  'No sessions yet': 'Noch keine Sitzungen',
+  "Loading...": "Laden...",
+  "No sessions yet": "Noch keine Sitzungen",
 };
 
-setLanguage('de');
-console.log(i18n('Loading...')); // "Laden..."
+setLanguage("de");
+console.log(i18n("Loading...")); // "Laden..."
 ```
 
 ## Examples
 
 - [example/](./example) - Complete web app with sessions, artifacts, custom messages
 - [sitegeist](https://sitegeist.ai) - Browser extension using pi-web-ui
-
-## Known Issues
-
-- **PersistentStorageDialog**: Currently broken
 
 ## License
 

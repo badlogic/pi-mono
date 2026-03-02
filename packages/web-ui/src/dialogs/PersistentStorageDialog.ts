@@ -2,13 +2,11 @@ import { Button } from "@mariozechner/mini-lit/dist/Button.js";
 import { DialogContent, DialogHeader } from "@mariozechner/mini-lit/dist/Dialog.js";
 import { DialogBase } from "@mariozechner/mini-lit/dist/DialogBase.js";
 import { html } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { customElement } from "lit/decorators.js";
 import { i18n } from "../utils/i18n.js";
 
 @customElement("persistent-storage-dialog")
 export class PersistentStorageDialog extends DialogBase {
-	@state() private requesting = false;
-
 	private resolvePromise?: (userApproved: boolean) => void;
 
 	protected modalWidth = "min(500px, 90vw)";
@@ -127,14 +125,12 @@ export class PersistentStorageDialog extends DialogBase {
 						${Button({
 							variant: "outline",
 							onClick: () => this.handleDeny(),
-							disabled: this.requesting,
 							children: i18n("Continue Anyway"),
 						})}
 						${Button({
 							variant: "default",
 							onClick: () => this.handleGrant(),
-							disabled: this.requesting,
-							children: this.requesting ? i18n("Requesting...") : i18n("Grant Permission"),
+							children: i18n("Grant Permission"),
 						})}
 					</div>
 				`,
