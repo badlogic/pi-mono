@@ -1,5 +1,6 @@
 import { i18n } from "@mariozechner/mini-lit";
-import { Dialog, DialogContent, DialogHeader } from "@mariozechner/mini-lit/dist/Dialog.js";
+import { DialogContent, DialogHeader } from "@mariozechner/mini-lit/dist/Dialog.js";
+import { DialogBase } from "@mariozechner/mini-lit/dist/DialogBase.js";
 import { Input } from "@mariozechner/mini-lit/dist/Input.js";
 import { Label } from "@mariozechner/mini-lit/dist/Label.js";
 import { Switch } from "@mariozechner/mini-lit/dist/Switch.js";
@@ -113,20 +114,17 @@ export class ProxyTab extends SettingsTab {
 }
 
 @customElement("settings-dialog")
-export class SettingsDialog extends LitElement {
+export class SettingsDialog extends DialogBase {
 	@property({ type: Array, attribute: false }) tabs: SettingsTab[] = [];
-	@state() private isOpen = false;
 	@state() private activeTabIndex = 0;
 
-	protected createRenderRoot() {
-		return this;
-	}
+	protected override modalWidth = "min(1000px, 90vw)";
+	protected override modalHeight = "min(800px, 90vh)";
 
 	static async open(tabs: SettingsTab[]) {
 		const dialog = new SettingsDialog();
 		dialog.tabs = tabs;
-		dialog.isOpen = true;
-		document.body.appendChild(dialog);
+		dialog.open();
 	}
 
 	private setActiveTab(index: number) {
@@ -163,52 +161,42 @@ export class SettingsDialog extends LitElement {
 		`;
 	}
 
-	render() {
+	protected override renderContent(): TemplateResult {
 		if (this.tabs.length === 0) {
 			return html``;
 		}
 
-		return Dialog({
-			isOpen: this.isOpen,
-			onClose: () => {
-				this.isOpen = false;
-				this.remove();
-			},
-			width: "min(1000px, 90vw)",
-			height: "min(800px, 90vh)",
-			backdropClassName: "bg-black/50 backdrop-blur-sm",
-			children: html`
-				${DialogContent({
-					className: "h-full p-6",
-					children: html`
-						<div class="flex flex-col h-full overflow-hidden">
-							<!-- Header -->
-							<div class="pb-4 flex-shrink-0">${DialogHeader({ title: i18n("Settings") })}</div>
+		return html`
+			${DialogContent({
+				className: "h-full p-6",
+				children: html`
+					<div class="flex flex-col h-full overflow-hidden">
+						<!-- Header -->
+						<div class="pb-4 flex-shrink-0">${DialogHeader({ title: i18n("Settings") })}</div>
 
-							<!-- Mobile Tabs -->
-							<div class="md:hidden flex flex-shrink-0 pb-4">
-								${this.tabs.map((tab, index) => this.renderMobileTab(tab, index))}
+						<!-- Mobile Tabs -->
+						<div class="md:hidden flex flex-shrink-0 pb-4">
+							${this.tabs.map((tab, index) => this.renderMobileTab(tab, index))}
+						</div>
+
+						<!-- Layout -->
+						<div class="flex flex-1 overflow-hidden">
+							<!-- Sidebar (desktop only) -->
+							<div class="hidden md:block w-64 flex-shrink-0 space-y-1">
+								${this.tabs.map((tab, index) => this.renderSidebarItem(tab, index))}
 							</div>
 
-							<!-- Layout -->
-							<div class="flex flex-1 overflow-hidden">
-								<!-- Sidebar (desktop only) -->
-								<div class="hidden md:block w-64 flex-shrink-0 space-y-1">
-									${this.tabs.map((tab, index) => this.renderSidebarItem(tab, index))}
-								</div>
-
-								<!-- Content -->
-								<div class="flex-1 overflow-y-auto md:pl-6">
-									${this.tabs.map(
-										(tab, index) =>
-											html`<div style="display: ${this.activeTabIndex === index ? "block" : "none"}">${tab}</div>`,
-									)}
-								</div>
+							<!-- Content -->
+							<div class="flex-1 overflow-y-auto md:pl-6">
+								${this.tabs.map(
+									(tab, index) =>
+										html`<div style="display: ${this.activeTabIndex === index ? "block" : "none"}">${tab}</div>`,
+								)}
 							</div>
 						</div>
-					`,
-				})}
-			`,
-		});
+					</div>
+				`,
+			})}
+		`;
 	}
 }
