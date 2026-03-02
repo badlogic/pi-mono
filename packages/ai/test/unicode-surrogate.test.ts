@@ -482,28 +482,28 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 
 	describe("Google Antigravity Provider Unicode Handling", () => {
 		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should handle emoji in tool results",
+			"gemini-3.1-pro - should handle emoji in tool results",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("google-antigravity", "gemini-3-flash");
+				const llm = getModel("google-antigravity", "gemini-3.1-pro");
 				await testEmojiInToolResults(llm, { apiKey: antigravityToken });
 			},
 		);
 
 		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should handle real-world LinkedIn comment data with emoji",
+			"gemini-3.1-pro - should handle real-world LinkedIn comment data with emoji",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("google-antigravity", "gemini-3-flash");
+				const llm = getModel("google-antigravity", "gemini-3.1-pro");
 				await testRealWorldLinkedInData(llm, { apiKey: antigravityToken });
 			},
 		);
 
 		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should handle unpaired high surrogate (0xD83D) in tool results",
+			"gemini-3.1-pro - should handle unpaired high surrogate (0xD83D) in tool results",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("google-antigravity", "gemini-3-flash");
+				const llm = getModel("google-antigravity", "gemini-3.1-pro");
 				await testUnpairedHighSurrogate(llm, { apiKey: antigravityToken });
 			},
 		);

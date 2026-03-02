@@ -420,19 +420,19 @@ describe("Tool Results with Images", () => {
 
 	describe("Google Antigravity Provider", () => {
 		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should handle tool result with only image",
+			"gemini-3.1-pro - should handle tool result with only image",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("google-antigravity", "gemini-3-flash");
+				const llm = getModel("google-antigravity", "gemini-3.1-pro");
 				await handleToolWithImageResult(llm, { apiKey: antigravityToken });
 			},
 		);
 
 		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should handle tool result with text and image",
+			"gemini-3.1-pro - should handle tool result with text and image",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("google-antigravity", "gemini-3-flash");
+				const llm = getModel("google-antigravity", "gemini-3.1-pro");
 				await handleToolWithTextAndImageResult(llm, { apiKey: antigravityToken });
 			},
 		);

@@ -273,10 +273,10 @@ describe("Tool Call Without Result Tests", () => {
 
 	describe("Google Antigravity Provider", () => {
 		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should filter out tool calls without corresponding tool results",
+			"gemini-3.1-pro - should filter out tool calls without corresponding tool results",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const model = getModel("google-antigravity", "gemini-3-flash");
+				const model = getModel("google-antigravity", "gemini-3.1-pro");
 				await testToolCallWithoutResult(model, { apiKey: antigravityToken });
 			},
 		);

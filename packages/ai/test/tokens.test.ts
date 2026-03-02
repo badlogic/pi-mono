@@ -251,10 +251,10 @@ describe("Token Statistics on Abort", () => {
 
 	describe("Google Antigravity Provider", () => {
 		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should include token stats when aborted mid-stream",
+			"gemini-3.1-pro - should include token stats when aborted mid-stream",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("google-antigravity", "gemini-3-flash");
+				const llm = getModel("google-antigravity", "gemini-3.1-pro");
 				await testTokensOnAbort(llm, { apiKey: antigravityToken });
 			},
 		);

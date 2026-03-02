@@ -1027,13 +1027,13 @@ async function generateModels() {
 	];
 	allModels.push(...cloudCodeAssistModels);
 
-	// Antigravity models (Gemini 3, Claude, GPT-OSS via Google Cloud)
+	// Antigravity models (Gemini 3.1, Claude, GPT-OSS via Google Cloud)
 	// Uses sandbox endpoint and different OAuth credentials for access to additional models
 	const ANTIGRAVITY_ENDPOINT = "https://daily-cloudcode-pa.sandbox.googleapis.com";
 	const antigravityModels: Model<"google-gemini-cli">[] = [
 		{
-			id: "gemini-3-pro-high",
-			name: "Gemini 3 Pro High (Antigravity)",
+			id: "gemini-3.1-pro-high",
+			name: "Gemini 3.1 Pro High (Antigravity)",
 			api: "google-gemini-cli",
 			provider: "google-antigravity",
 			baseUrl: ANTIGRAVITY_ENDPOINT,
@@ -1045,8 +1045,8 @@ async function generateModels() {
 			maxTokens: 65535,
 		},
 		{
-			id: "gemini-3-pro-low",
-			name: "Gemini 3 Pro Low (Antigravity)",
+			id: "gemini-3.1-pro",
+			name: "Gemini 3.1 Pro (Antigravity)",
 			api: "google-gemini-cli",
 			provider: "google-antigravity",
 			baseUrl: ANTIGRAVITY_ENDPOINT,
@@ -1054,18 +1054,6 @@ async function generateModels() {
 			input: ["text", "image"],
 			// the Model type doesn't seem to support having extended-context costs, so I'm just using the pricing for <200k input
 			cost: { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.375 },
-			contextWindow: 1048576,
-			maxTokens: 65535,
-		},
-		{
-			id: "gemini-3-flash",
-			name: "Gemini 3 Flash (Antigravity)",
-			api: "google-gemini-cli",
-			provider: "google-antigravity",
-			baseUrl: ANTIGRAVITY_ENDPOINT,
-			reasoning: true,
-			input: ["text", "image"],
-			cost: { input: 0.5, output: 3, cacheRead: 0.5, cacheWrite: 0 },
 			contextWindow: 1048576,
 			maxTokens: 65535,
 		},

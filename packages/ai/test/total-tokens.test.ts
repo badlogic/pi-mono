@@ -600,10 +600,10 @@ describe("totalTokens field", () => {
 
 	describe("Google Antigravity (OAuth)", () => {
 		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should return totalTokens equal to sum of components",
+			"gemini-3.1-pro - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
-				const llm = getModel("google-antigravity", "gemini-3-flash");
+				const llm = getModel("google-antigravity", "gemini-3.1-pro");
 
 				console.log(`\nGoogle Antigravity / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: antigravityToken });

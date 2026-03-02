@@ -594,37 +594,37 @@ describe("AI Providers Empty Message Tests", () => {
 
 	describe("Google Antigravity Provider Empty Messages", () => {
 		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should handle empty content array",
+			"gemini-3.1-pro - should handle empty content array",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("google-antigravity", "gemini-3-flash");
+				const llm = getModel("google-antigravity", "gemini-3.1-pro");
 				await testEmptyMessage(llm, { apiKey: antigravityToken });
 			},
 		);
 
 		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should handle empty string content",
+			"gemini-3.1-pro - should handle empty string content",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("google-antigravity", "gemini-3-flash");
+				const llm = getModel("google-antigravity", "gemini-3.1-pro");
 				await testEmptyStringMessage(llm, { apiKey: antigravityToken });
 			},
 		);
 
 		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should handle whitespace-only content",
+			"gemini-3.1-pro - should handle whitespace-only content",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("google-antigravity", "gemini-3-flash");
+				const llm = getModel("google-antigravity", "gemini-3.1-pro");
 				await testWhitespaceOnlyMessage(llm, { apiKey: antigravityToken });
 			},
 		);
 
 		it.skipIf(!antigravityToken)(
-			"gemini-3-flash - should handle empty assistant message in conversation",
+			"gemini-3.1-pro - should handle empty assistant message in conversation",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("google-antigravity", "gemini-3-flash");
+				const llm = getModel("google-antigravity", "gemini-3.1-pro");
 				await testEmptyAssistantMessage(llm, { apiKey: antigravityToken });
 			},
 		);
