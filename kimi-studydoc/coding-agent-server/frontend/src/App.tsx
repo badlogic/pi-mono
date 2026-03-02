@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import { 
   Layout, Card, Button, Input, Form, Typography, Space, 
-  Tag, Steps, Progress, Empty, message, Row, Col
+  Tag, Empty, message, Row, Col
 } from 'antd';
 import { 
   PlayCircleOutlined, SearchOutlined, DeleteOutlined, 
-  StopOutlined, PlusOutlined, RocketOutlined, BuildOutlined,
-  CheckCircleOutlined, SyncOutlined, ExclamationCircleOutlined
+  StopOutlined, PlusOutlined, RocketOutlined 
 } from '@ant-design/icons';
 
 const { Header, Content } = Layout;
@@ -24,33 +23,13 @@ interface Session {
 
 const API_BASE = '/api';
 
-const stateToStep = (state: string) => {
-  switch (state) {
-    case 'INIT': return 0;
-    case 'CONTRACT_SYNTHESIS':
-    case 'PREFLIGHT': return 1;
-    case 'FROZEN': return 2;
-    case 'EXECUTING': return 3;
-    case 'COMPLETE': return 4;
-    case 'FAILED': return 4;
-    default: return 0;
-  }
-};
-
-const getStateStatus = (state: string) => {
-  if (state === 'FAILED') return 'error';
-  if (state === 'COMPLETE') return 'finish';
-  if (state === 'EXECUTING') return 'process';
-  return 'wait';
-};
-
 const getStateTag = (state: string) => {
   switch (state) {
-    case 'EXECUTING': return <Tag color="processing" icon={<SyncOutlined spin />}>EXECUTING</Tag>;
-    case 'COMPLETE': return <Tag color="success" icon={<CheckCircleOutlined />}>COMPLETE</Tag>;
-    case 'FAILED': return <Tag color="error" icon={<ExclamationCircleOutlined />}>FAILED</Tag>;
-    case 'FROZEN': return <Tag color="cyan" icon={<BuildOutlined />}>FROZEN</Tag>;
-    case 'PREFLIGHT': return <Tag color="purple" icon={<SearchOutlined />}>PREFLIGHT</Tag>;
+    case 'EXECUTING': return <Tag color="processing">EXECUTING</Tag>;
+    case 'COMPLETE': return <Tag color="success">COMPLETE</Tag>;
+    case 'FAILED': return <Tag color="error">FAILED</Tag>;
+    case 'FROZEN': return <Tag color="cyan">FROZEN</Tag>;
+    case 'PREFLIGHT': return <Tag color="purple">PREFLIGHT</Tag>;
     default: return <Tag color="default">{state}</Tag>;
   }
 };
@@ -58,7 +37,6 @@ const getStateTag = (state: string) => {
 export default function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
 
   const fetchSessions = async () => {
     try {
@@ -84,7 +62,6 @@ export default function App() {
   }, []);
 
   const handleCreate = async (values: any) => {
-    setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/sessions`, {
         method: 'POST',
@@ -98,8 +75,6 @@ export default function App() {
       }
     } catch (err) {
       message.error('Failed to create session');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -157,7 +132,7 @@ export default function App() {
                 </Form.Item>
               </Col>
             </Row>
-            <Button type="primary" htmlType="submit" loading={loading} icon={<PlusOutlined />} size="large">
+            <Button type="primary" htmlType="submit" icon={<PlusOutlined />} size="large">
               Initialize Session
             </Button>
           </Form>
@@ -173,47 +148,30 @@ export default function App() {
               style={{ marginBottom: '20px', borderRadius: '12px' }}
               bodyStyle={{ padding: '24px' }}
               actions={[
-                s.state === 'INIT' && <Button type="link" key="preflight" icon={<SearchOutlined />} onClick={() => runAction(s.sessionId, 'preflight')}>Check Dependencies</Button>,
+                s.state === 'INIT&& <Button type="link" key="preflight" icon={<SearchOutlined />} onClick={() => runAction(s.sessionId, 'preflight')}>Check Dependencies</Button>,
                 (s.state === 'PREFLIGHT' || s.state === 'FROZEN') && <Button type="link" key="execute" icon={<PlayCircleOutlined />} onClick={() => runAction(s.sessionId, 'execute')}>Start Execution</Button>,
-                s.state === 'EXECUTING' && <Button type="link" key="abort" danger icon={<StopOutlined />} onClick={() => runAction(s.sessionId, 'abort')}>Abort</Button>,
-                <Button type="link" key="delete" danger icon={<DeleteOutlined />} onClick={() => deleteSession(s.sessionId)}>Delete</Button>
+                s.state === 'EXECUTING&& <Button type="link" danger key="abort" icon={<StopOutlined />} onClick={() => runAction(s.sessionId, 'abort')}>Abort</Button>,
+                <Button type="link" danger key="delete" icon={<DeleteOutlined />} onClick={() => deleteSession(s.sessionId)}>Delete</Button>
               ].filter(Boolean) as React.ReactNode[]}
             >
-              <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Space direction="vertical" size={2}>
-                  <Space>
-                    <Text strong style={{ fontSize: '16px' }}>Session: {s.sessionId.slice(0, 8)}</Text>
-                    {getStateTag(s.state)}
-                  </Space>
-                  <Text type="secondary" style={{ fontSize: '12px' }}>Created at {new Date(s.createdAt).toLocaleString()}</Text>
+              <Space direction="vertical" size={2}>
+                <Space>
+                  <Text strong style={{ fontSize: '16px' }}>Session: {s.sessionId.slice(0, 8)}...</Text>
+                  {getStateTag(s.state)}
                 </Space>
-                {s.state === 'EXECUTING' && s.progress && (
-                  <div style={{ textAlign: 'right', width: '300px' }}>
-                    <Text type="secondary" style={{ fontSize: '12px' }}>Total Progress</Text>
-                    <Progress 
-                      percent={Math.round((s.progress.current / s.progress.total) * 100)} 
-                      status="active" 
-                      strokeColor={{ '0%': '#108ee9', '100%': '#87d068' }}
-                    />
-                  </div>
-                )}
-              </div>
+                <Text type="secondary" style={{ fontSize: '12px' }}>Created at {new Date(s.createdAt).toLocaleString()}</Text>
+              </Space>
 
-              <Steps
-                size="small"
-                current={stateToStep(s.state)}
-                status={getStateStatus(s.state)}
-                items={[
-                  { title: 'Initialized' },
-                  { title: 'Preflight' },
-                  { title: 'Frozen' },
-                  { title: 'Executing' },
-                  { title: 'Finished' },
-                ]}
-              />
+              {s.state === 'EXECUTING&& s.progress && (
+                <div style={{ marginTop: '15px' }}>
+                  <div style={{ height: '8px', background: '#eee', borderRadius: '4px', overflow: 'hidden' }}>
+                    <div style={{ width: `${(s.progress.current / s.progress.total) * 100}%`, height: '100%', background: '#2563eb', transition: 'width 0.5s' }} /></div>
+                  <div style={{ fontSize: '11px', textAlign: 'right', marginTop: '5px', color: '#666' }}>{s.progress.current} / {s.progress.total} Steps</div>
+                </div>
+              )}
 
               {s.error && (
-                <div style={{ marginTop: '20px', padding: '12px', background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: '8px' }}>
+                <div style={{ marginTop: '10px', padding: '12px', background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: '8px' }}>
                   <Space align="start">
                     <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />
                     <Text type="danger">{s.error}</Text>
