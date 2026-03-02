@@ -37,4 +37,19 @@ describe("buildSystemPrompt", () => {
 			expect(prompt).toContain("- write:");
 		});
 	});
+
+	describe("custom tool snippets", () => {
+		test("includes custom tools in available tools section", () => {
+			const prompt = buildSystemPrompt({
+				selectedTools: ["read", "dynamic_tool"],
+				toolSnippets: {
+					dynamic_tool: "Run dynamic test behavior",
+				},
+				contextFiles: [],
+				skills: [],
+			});
+
+			expect(prompt).toContain("- dynamic_tool: Run dynamic test behavior");
+		});
+	});
 });

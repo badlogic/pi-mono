@@ -119,6 +119,8 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		getActiveTools: notInitialized,
 		getAllTools: notInitialized,
 		setActiveTools: notInitialized,
+		// registerTool() is valid during extension load; refresh is only needed post-bind.
+		refreshTools: () => {},
 		getCommands: notInitialized,
 		setModel: () => Promise.reject(new Error("Extension runtime not initialized")),
 		getThinkingLevel: notInitialized,
@@ -162,6 +164,7 @@ function createExtensionAPI(
 				definition: tool,
 				extensionPath: extension.path,
 			});
+			runtime.refreshTools();
 		},
 
 		registerCommand(name: string, options: Omit<RegisteredCommand, "name">): void {

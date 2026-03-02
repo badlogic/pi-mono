@@ -21,6 +21,8 @@ export interface BuildSystemPromptOptions {
 	customPrompt?: string;
 	/** Tools to include in prompt. Default: [read, bash, edit, write] */
 	selectedTools?: string[];
+	/** Optional one-line tool snippets keyed by tool name. */
+	toolSnippets?: Record<string, string>;
 	/** Text to append to system prompt. */
 	appendSystemPrompt?: string;
 	/** Working directory. Default: process.cwd() */
@@ -36,6 +38,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 	const {
 		customPrompt,
 		selectedTools,
+		toolSnippets,
 		appendSystemPrompt,
 		cwd,
 		contextFiles: providedContextFiles,
@@ -94,9 +97,18 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 	const docsPath = getDocsPath();
 	const examplesPath = getExamplesPath();
 
-	// Build tools list based on selected tools (only built-in tools with known descriptions)
-	const tools = (selectedTools || ["read", "bash", "edit", "write"]).filter((t) => t in toolDescriptions);
-	const toolsList = tools.length > 0 ? tools.map((t) => `- ${t}: ${toolDescriptions[t]}`).join("\n") : "(none)";
+	// Build tools list based on selected tools.
+	// Built-ins use toolDescriptions. Custom tools can provide one-line snippets.
+	const tools = selectedTools || ["read", "bash", "edit", "write"];
+	const toolsList =
+		tools.length > 0
+			? tools
+					.map((name) => {
+						const snippet = toolSnippets?.[name] ?? toolDescriptions[name] ?? name;
+						return `- ${name}: ${snippet}`;
+					})
+					.join("\n")
+			: "(none)";
 
 	// Build guidelines based on which tools are actually available
 	const guidelinesList: string[] = [];
