@@ -220,6 +220,7 @@ export class AgentSession {
 	// Event subscription state
 	private _unsubscribeAgent?: () => void;
 	private _eventListeners: AgentSessionEventListener[] = [];
+	private _agentEventQueue: Promise<void> = Promise.resolve();
 
 	/** Tracks pending steering messages for UI display. Removed when delivered. */
 	private _steeringMessages: string[] = [];
@@ -314,7 +315,17 @@ export class AgentSession {
 	private _lastAssistantMessage: AssistantMessage | undefined = undefined;
 
 	/** Internal handler for agent events - shared by subscribe and reconnect */
-	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
+	private _handleAgentEvent = (event: AgentEvent): void => {
+		this._agentEventQueue = this._agentEventQueue.then(
+			() => this._processAgentEvent(event),
+			() => this._processAgentEvent(event),
+		);
+
+		// Keep queue alive if an event handler fails
+		this._agentEventQueue.catch(() => {});
+	};
+
+	private async _processAgentEvent(event: AgentEvent): Promise<void> {
 		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
 		// This ensures the UI sees the updated queue state
 		if (event.type === "message_start" && event.message.role === "user") {
@@ -393,7 +404,7 @@ export class AgentSession {
 
 			await this._checkCompaction(msg);
 		}
-	};
+	}
 
 	/** Resolve the pending retry promise */
 	private _resolveRetry(): void {
