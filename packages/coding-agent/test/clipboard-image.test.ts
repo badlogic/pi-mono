@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => {
 			hasImage: vi.fn<() => boolean>(),
 			getImageBinary: vi.fn<() => Promise<Uint8Array | null>>(),
 		},
+		readFileSync: vi.fn(),
+		unlinkSync: vi.fn(),
 	};
 });
 
@@ -20,6 +22,15 @@ vi.mock("child_process", () => {
 vi.mock("../src/utils/clipboard-native.js", () => {
 	return {
 		clipboard: mocks.clipboard,
+	};
+});
+
+vi.mock("fs", async (importOriginal) => {
+	const actual = (await importOriginal()) as typeof import("fs");
+	return {
+		...actual,
+		readFileSync: mocks.readFileSync,
+		unlinkSync: mocks.unlinkSync,
 	};
 });
 
@@ -52,6 +63,8 @@ describe("readClipboardImage", () => {
 		mocks.spawnSync.mockReset();
 		mocks.clipboard.hasImage.mockReset();
 		mocks.clipboard.getImageBinary.mockReset();
+		mocks.readFileSync.mockReset();
+		mocks.unlinkSync.mockReset();
 	});
 
 	test("Wayland: uses wl-paste and never calls clipboard", async () => {
@@ -132,5 +145,77 @@ describe("readClipboardImage", () => {
 		const { readClipboardImage } = await import("../src/utils/clipboard-image.js");
 		const result = await readClipboardImage({ platform: "linux", env: {} });
 		expect(result).toBeNull();
+	});
+
+	test("WSL: falls back to PowerShell when wl-paste and xclip fail", async () => {
+		mocks.clipboard.hasImage.mockImplementation(() => {
+			throw new Error("clipboard.hasImage should not be called on Wayland");
+		});
+
+		const enoent = new Error("spawn ENOENT");
+		(enoent as { code?: string }).code = "ENOENT";
+
+		const fakeImageBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+
+		mocks.spawnSync.mockImplementation((command, args, _options) => {
+			if (command === "wl-paste" || command === "xclip") {
+				return spawnError(enoent);
+			}
+			if (command === "wslpath") {
+				return spawnOk(Buffer.from("C:\\tmp\\test.png\n", "utf-8"));
+			}
+			if (command === "powershell.exe") {
+				return spawnOk(Buffer.from("ok\n", "utf-8"));
+			}
+			throw new Error(`Unexpected spawnSync call: ${command} ${(args as string[]).join(" ")}`);
+		});
+
+		mocks.readFileSync.mockReturnValue(fakeImageBytes);
+		mocks.unlinkSync.mockReturnValue(undefined);
+
+		const { readClipboardImage } = await import("../src/utils/clipboard-image.js");
+		const result = await readClipboardImage({
+			platform: "linux",
+			env: { WAYLAND_DISPLAY: "1", WSL_DISTRO_NAME: "Ubuntu" },
+		});
+
+		expect(result).not.toBeNull();
+		expect(result?.mimeType).toBe("image/png");
+		expect(Array.from(result?.bytes ?? [])).toEqual([0x89, 0x50, 0x4e, 0x47]);
+
+		const psCall = mocks.spawnSync.mock.calls.find(([cmd]) => cmd === "powershell.exe");
+		expect(psCall).toBeDefined();
+	});
+
+	test("WSL: does not use PowerShell when wl-paste succeeds", async () => {
+		mocks.clipboard.hasImage.mockImplementation(() => {
+			throw new Error("clipboard.hasImage should not be called on Wayland");
+		});
+
+		mocks.spawnSync.mockImplementation((command, args, _options) => {
+			if (command === "wl-paste" && args[0] === "--list-types") {
+				return spawnOk(Buffer.from("image/png\n", "utf-8"));
+			}
+			if (command === "wl-paste" && args[0] === "--type") {
+				return spawnOk(Buffer.from([4, 5, 6]));
+			}
+			if (command === "powershell.exe") {
+				throw new Error("powershell.exe should not be called when wl-paste succeeds");
+			}
+			throw new Error(`Unexpected spawnSync call: ${command} ${(args as string[]).join(" ")}`);
+		});
+
+		const { readClipboardImage } = await import("../src/utils/clipboard-image.js");
+		const result = await readClipboardImage({
+			platform: "linux",
+			env: { WAYLAND_DISPLAY: "1", WSL_DISTRO_NAME: "Ubuntu" },
+		});
+
+		expect(result).not.toBeNull();
+		expect(result?.mimeType).toBe("image/png");
+		expect(Array.from(result?.bytes ?? [])).toEqual([4, 5, 6]);
+
+		const psCall = mocks.spawnSync.mock.calls.find(([cmd]) => cmd === "powershell.exe");
+		expect(psCall).toBeUndefined();
 	});
 });

@@ -1,4 +1,8 @@
 import { spawnSync } from "child_process";
+import { randomUUID } from "crypto";
+import { readFileSync, unlinkSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 import { clipboard } from "./clipboard-native.js";
 import { loadPhoton } from "./photon.js";
@@ -134,6 +138,60 @@ function readClipboardImageViaWlPaste(): ClipboardImage | null {
 	return { bytes: data.stdout, mimeType: baseMimeType(selectedType) };
 }
 
+function isWSL(env: NodeJS.ProcessEnv = process.env): boolean {
+	if (env.WSL_DISTRO_NAME || env.WSLENV) {
+		return true;
+	}
+	try {
+		const release = readFileSync("/proc/version", "utf-8");
+		return /microsoft|wsl/i.test(release);
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * On WSL, the Linux clipboard (Wayland/X11) doesn't receive image data from
+ * Windows screenshots (Win+Shift+S). PowerShell can access the Windows clipboard
+ * directly, so we use it as a fallback.
+ */
+function readClipboardImageViaPowerShell(): ClipboardImage | null {
+	const tmpFile = join(tmpdir(), `pi-wsl-clip-${randomUUID()}.png`);
+
+	// Convert WSL path to Windows path for PowerShell
+	const winPathResult = runCommand("wslpath", ["-w", tmpFile], { timeoutMs: DEFAULT_LIST_TIMEOUT_MS });
+	if (!winPathResult.ok) {
+		return null;
+	}
+	const winPath = winPathResult.stdout.toString("utf-8").trim();
+
+	const psScript = `Add-Type -AssemblyName System.Windows.Forms; $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($img) { $img.Save('${winPath}'); Write-Output 'ok' } else { Write-Output 'empty' }`;
+
+	const result = runCommand("powershell.exe", ["-NoProfile", "-command", psScript], {
+		timeoutMs: 5000,
+	});
+
+	if (!result.ok) {
+		return null;
+	}
+
+	const output = result.stdout.toString("utf-8").trim();
+	if (output !== "ok") {
+		return null;
+	}
+
+	try {
+		const bytes = readFileSync(tmpFile);
+		unlinkSync(tmpFile);
+		if (bytes.length === 0) {
+			return null;
+		}
+		return { bytes: new Uint8Array(bytes), mimeType: "image/png" };
+	} catch {
+		return null;
+	}
+}
+
 function readClipboardImageViaXclip(): ClipboardImage | null {
 	const targets = runCommand("xclip", ["-selection", "clipboard", "-t", "TARGETS", "-o"], {
 		timeoutMs: DEFAULT_LIST_TIMEOUT_MS,
@@ -176,6 +234,10 @@ export async function readClipboardImage(options?: {
 
 	if (platform === "linux" && isWaylandSession(env)) {
 		image = readClipboardImageViaWlPaste() ?? readClipboardImageViaXclip();
+		// WSL: Linux clipboard doesn't receive Windows screenshot images — try PowerShell
+		if (!image && isWSL(env)) {
+			image = readClipboardImageViaPowerShell();
+		}
 	} else {
 		if (!clipboard || !clipboard.hasImage()) {
 			return null;
