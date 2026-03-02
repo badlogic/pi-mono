@@ -318,6 +318,13 @@ export class AgentSession {
 
 	/** Internal handler for agent events - shared by subscribe and reconnect */
 	private _handleAgentEvent = (event: AgentEvent): void => {
+		// Create retry promise synchronously before queueing async processing.
+		// Agent.emit() calls this handler synchronously, and prompt() calls waitForRetry()
+		// as soon as agent.prompt() resolves. If _retryPromise is created only inside
+		// _processAgentEvent, slow earlier queued events can delay agent_end processing
+		// and waitForRetry() can miss the in-flight retry.
+		this._createRetryPromiseForAgentEnd(event);
+
 		this._agentEventQueue = this._agentEventQueue.then(
 			() => this._processAgentEvent(event),
 			() => this._processAgentEvent(event),
@@ -326,6 +333,36 @@ export class AgentSession {
 		// Keep queue alive if an event handler fails
 		this._agentEventQueue.catch(() => {});
 	};
+
+	private _createRetryPromiseForAgentEnd(event: AgentEvent): void {
+		if (event.type !== "agent_end" || this._retryPromise) {
+			return;
+		}
+
+		const settings = this.settingsManager.getRetrySettings();
+		if (!settings.enabled) {
+			return;
+		}
+
+		const lastAssistant = this._findLastAssistantInMessages(event.messages);
+		if (!lastAssistant || !this._isRetryableError(lastAssistant)) {
+			return;
+		}
+
+		this._retryPromise = new Promise((resolve) => {
+			this._retryResolve = resolve;
+		});
+	}
+
+	private _findLastAssistantInMessages(messages: AgentMessage[]): AssistantMessage | undefined {
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const message = messages[i];
+			if (message.role === "assistant") {
+				return message as AssistantMessage;
+			}
+		}
+		return undefined;
+	}
 
 	private async _processAgentEvent(event: AgentEvent): Promise<void> {
 		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
@@ -2178,16 +2215,20 @@ export class AgentSession {
 	 */
 	private async _handleRetryableError(message: AssistantMessage): Promise<boolean> {
 		const settings = this.settingsManager.getRetrySettings();
-		if (!settings.enabled) return false;
+		if (!settings.enabled) {
+			this._resolveRetry();
+			return false;
+		}
 
-		this._retryAttempt++;
-
-		// Create retry promise on first attempt so waitForRetry() can await it
-		if (this._retryAttempt === 1 && !this._retryPromise) {
+		// Retry promise is created synchronously in _handleAgentEvent for agent_end.
+		// Keep a defensive fallback here in case a future refactor bypasses that path.
+		if (!this._retryPromise) {
 			this._retryPromise = new Promise((resolve) => {
 				this._retryResolve = resolve;
 			});
 		}
+
+		this._retryAttempt++;
 
 		if (this._retryAttempt > settings.maxRetries) {
 			// Max retries exceeded, emit final failure and reset
