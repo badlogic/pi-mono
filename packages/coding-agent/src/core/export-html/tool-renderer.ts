@@ -49,6 +49,9 @@ export function createToolHtmlRenderer(deps: ToolHtmlRendererDeps): ToolHtmlRend
 				}
 
 				const component = toolDef.renderCall(args, theme);
+				if (!component) {
+					return undefined;
+				}
 				const lines = component.render(width);
 				return ansiLinesToHtml(lines);
 			} catch {
@@ -79,6 +82,9 @@ export function createToolHtmlRenderer(deps: ToolHtmlRendererDeps): ToolHtmlRend
 
 				// Always render expanded, client-side will apply truncation
 				const component = toolDef.renderResult(agentToolResult, { expanded: true, isPartial: false }, theme);
+				if (!component) {
+					return undefined;
+				}
 				const lines = component.render(width);
 				return ansiLinesToHtml(lines);
 			} catch {
