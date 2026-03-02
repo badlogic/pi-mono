@@ -2109,7 +2109,6 @@ export class InteractiveMode {
 					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {
 							if (!this.pendingTools.has(content.id)) {
-								this.chatContainer.addChild(new Text("", 0, 0));
 								const component = new ToolExecutionComponent(
 									content.name,
 									content.arguments,
