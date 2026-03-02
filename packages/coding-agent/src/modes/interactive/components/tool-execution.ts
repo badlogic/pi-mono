@@ -95,6 +95,8 @@ export class ToolExecutionComponent extends Container {
 	private convertedImages: Map<number, { data: string; mimeType: string }> = new Map();
 	// Incremental syntax highlighting cache for write tool call args
 	private writeHighlightCache?: WriteHighlightCache;
+	// When true, this component intentionally renders no lines
+	private hideComponent = false;
 
 	constructor(
 		toolName: string,
@@ -354,6 +356,13 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
+	override render(width: number): string[] {
+		if (this.hideComponent) {
+			return [];
+		}
+		return super.render(width);
+	}
+
 	private updateDisplay(): void {
 		// Set background based on state
 		const bgFn = this.isPartial
@@ -362,8 +371,12 @@ export class ToolExecutionComponent extends Container {
 				? (text: string) => theme.bg("toolErrorBg", text)
 				: (text: string) => theme.bg("toolSuccessBg", text);
 
+		const useBuiltInRenderer = this.shouldUseBuiltInRenderer();
+		let customRendererHasContent = false;
+		this.hideComponent = false;
+
 		// Use built-in rendering for built-in tools (or overrides without custom renderers)
-		if (this.shouldUseBuiltInRenderer()) {
+		if (useBuiltInRenderer) {
 			if (this.toolName === "bash") {
 				// Bash uses Box with visual line truncation
 				this.contentBox.setBgFn(bgFn);
@@ -383,16 +396,19 @@ export class ToolExecutionComponent extends Container {
 			if (this.toolDefinition.renderCall) {
 				try {
 					const callComponent = this.toolDefinition.renderCall(this.args, theme);
-					if (callComponent) {
+					if (callComponent !== undefined) {
 						this.contentBox.addChild(callComponent);
+						customRendererHasContent = true;
 					}
 				} catch {
 					// Fall back to default on error
 					this.contentBox.addChild(new Text(theme.fg("toolTitle", theme.bold(this.toolName)), 0, 0));
+					customRendererHasContent = true;
 				}
 			} else {
 				// No custom renderCall, show tool name
 				this.contentBox.addChild(new Text(theme.fg("toolTitle", theme.bold(this.toolName)), 0, 0));
+				customRendererHasContent = true;
 			}
 
 			// Render result component if we have a result
@@ -403,14 +419,16 @@ export class ToolExecutionComponent extends Container {
 						{ expanded: this.expanded, isPartial: this.isPartial },
 						theme,
 					);
-					if (resultComponent) {
+					if (resultComponent !== undefined) {
 						this.contentBox.addChild(resultComponent);
+						customRendererHasContent = true;
 					}
 				} catch {
 					// Fall back to showing raw output on error
 					const output = this.getTextOutput();
 					if (output) {
 						this.contentBox.addChild(new Text(theme.fg("toolOutput", output), 0, 0));
+						customRendererHasContent = true;
 					}
 				}
 			} else if (this.result) {
@@ -418,8 +436,13 @@ export class ToolExecutionComponent extends Container {
 				const output = this.getTextOutput();
 				if (output) {
 					this.contentBox.addChild(new Text(theme.fg("toolOutput", output), 0, 0));
+					customRendererHasContent = true;
 				}
 			}
+		} else {
+			// Unknown tool with no registered definition - show generic fallback
+			this.contentText.setCustomBgFn(bgFn);
+			this.contentText.setText(this.formatToolExecution());
 		}
 
 		// Handle images (same for both custom and built-in)
@@ -462,6 +485,10 @@ export class ToolExecutionComponent extends Container {
 					this.addChild(imageComponent);
 				}
 			}
+		}
+
+		if (!useBuiltInRenderer && this.toolDefinition) {
+			this.hideComponent = !customRendererHasContent && this.imageComponents.length === 0;
 		}
 	}
 

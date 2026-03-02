@@ -1,11 +1,3 @@
-# 🏖️ OSS Vacation
-
-**Issue tracker and PRs reopen March 2, 2026.**
-
-All PRs will be auto-closed until then. Approved contributors can submit PRs after vacation without reapproval. For support, join [Discord](https://discord.com/invite/3cU7Bz4UPx).
-
----
-
 <p align="center">
   <a href="https://shittycodingagent.ai">
     <img src="https://shittycodingagent.ai/logo.svg" alt="pi logo" width="128">

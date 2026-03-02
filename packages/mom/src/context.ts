@@ -7,11 +7,11 @@
  *
  * This module provides:
  * - syncLogToSessionManager: Syncs messages from log.jsonl to SessionManager
- * - MomSettingsManager: Simple settings for mom (compaction, retry, model preferences)
+ * - createMomSettingsManager: Creates a SettingsManager backed by workspace settings.json
  */
 
 import type { UserMessage } from "@mariozechner/pi-ai";
-import type { SessionManager, SessionMessageEntry } from "@mariozechner/pi-coding-agent";
+import { type SessionManager, type SessionMessageEntry, SettingsManager } from "@mariozechner/pi-coding-agent";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 
@@ -142,156 +142,39 @@ export function syncLogToSessionManager(
 }
 
 // ============================================================================
-// MomSettingsManager - Simple settings for mom
+// Settings manager for mom
 // ============================================================================
 
-export interface MomCompactionSettings {
-	enabled: boolean;
-	reserveTokens: number;
-	keepRecentTokens: number;
-}
+type MomSettingsStorage = Parameters<typeof SettingsManager.fromStorage>[0];
 
-export interface MomRetrySettings {
-	enabled: boolean;
-	maxRetries: number;
-	baseDelayMs: number;
-}
-
-export interface MomSettings {
-	defaultProvider?: string;
-	defaultModel?: string;
-	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high";
-	compaction?: Partial<MomCompactionSettings>;
-	retry?: Partial<MomRetrySettings>;
-}
-
-const DEFAULT_COMPACTION: MomCompactionSettings = {
-	enabled: true,
-	reserveTokens: 16384,
-	keepRecentTokens: 20000,
-};
-
-const DEFAULT_RETRY: MomRetrySettings = {
-	enabled: true,
-	maxRetries: 3,
-	baseDelayMs: 2000,
-};
-
-/**
- * Settings manager for mom.
- * Stores settings in the workspace root directory.
- */
-export class MomSettingsManager {
+class WorkspaceSettingsStorage implements MomSettingsStorage {
 	private settingsPath: string;
-	private settings: MomSettings;
 
 	constructor(workspaceDir: string) {
 		this.settingsPath = join(workspaceDir, "settings.json");
-		this.settings = this.load();
 	}
 
-	private load(): MomSettings {
-		if (!existsSync(this.settingsPath)) {
-			return {};
+	withLock(scope: "global" | "project", fn: (current: string | undefined) => string | undefined): void {
+		if (scope === "project") {
+			// Mom stores all settings in a single workspace file.
+			fn(undefined);
+			return;
 		}
 
-		try {
-			const content = readFileSync(this.settingsPath, "utf-8");
-			return JSON.parse(content);
-		} catch {
-			return {};
+		const current = existsSync(this.settingsPath) ? readFileSync(this.settingsPath, "utf-8") : undefined;
+		const next = fn(current);
+		if (next === undefined) {
+			return;
 		}
-	}
 
-	private save(): void {
-		try {
-			const dir = dirname(this.settingsPath);
-			if (!existsSync(dir)) {
-				mkdirSync(dir, { recursive: true });
-			}
-			writeFileSync(this.settingsPath, JSON.stringify(this.settings, null, 2), "utf-8");
-		} catch (error) {
-			console.error(`Warning: Could not save settings file: ${error}`);
+		const dir = dirname(this.settingsPath);
+		if (!existsSync(dir)) {
+			mkdirSync(dir, { recursive: true });
 		}
+		writeFileSync(this.settingsPath, next, "utf-8");
 	}
+}
 
-	getCompactionSettings(): MomCompactionSettings {
-		return {
-			...DEFAULT_COMPACTION,
-			...this.settings.compaction,
-		};
-	}
-
-	getCompactionEnabled(): boolean {
-		return this.settings.compaction?.enabled ?? DEFAULT_COMPACTION.enabled;
-	}
-
-	setCompactionEnabled(enabled: boolean): void {
-		this.settings.compaction = { ...this.settings.compaction, enabled };
-		this.save();
-	}
-
-	getRetrySettings(): MomRetrySettings {
-		return {
-			...DEFAULT_RETRY,
-			...this.settings.retry,
-		};
-	}
-
-	getRetryEnabled(): boolean {
-		return this.settings.retry?.enabled ?? DEFAULT_RETRY.enabled;
-	}
-
-	setRetryEnabled(enabled: boolean): void {
-		this.settings.retry = { ...this.settings.retry, enabled };
-		this.save();
-	}
-
-	getDefaultModel(): string | undefined {
-		return this.settings.defaultModel;
-	}
-
-	getDefaultProvider(): string | undefined {
-		return this.settings.defaultProvider;
-	}
-
-	setDefaultModelAndProvider(provider: string, modelId: string): void {
-		this.settings.defaultProvider = provider;
-		this.settings.defaultModel = modelId;
-		this.save();
-	}
-
-	getDefaultThinkingLevel(): string {
-		return this.settings.defaultThinkingLevel || "off";
-	}
-
-	setDefaultThinkingLevel(level: string): void {
-		this.settings.defaultThinkingLevel = level as MomSettings["defaultThinkingLevel"];
-		this.save();
-	}
-
-	// Compatibility methods for AgentSession
-	getSteeringMode(): "all" | "one-at-a-time" {
-		return "one-at-a-time"; // Mom processes one message at a time
-	}
-
-	setSteeringMode(_mode: "all" | "one-at-a-time"): void {
-		// No-op for mom
-	}
-
-	getFollowUpMode(): "all" | "one-at-a-time" {
-		return "one-at-a-time"; // Mom processes one message at a time
-	}
-
-	setFollowUpMode(_mode: "all" | "one-at-a-time"): void {
-		// No-op for mom
-	}
-
-	getHookPaths(): string[] {
-		return []; // Mom doesn't use hooks
-	}
-
-	getHookTimeout(): number {
-		return 30000;
-	}
+export function createMomSettingsManager(workspaceDir: string): SettingsManager {
+	return SettingsManager.fromStorage(new WorkspaceSettingsStorage(workspaceDir));
 }
