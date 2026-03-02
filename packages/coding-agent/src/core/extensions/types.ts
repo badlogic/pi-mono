@@ -341,6 +341,8 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	description: string;
 	/** Optional one-line snippet for the Available tools section in the default system prompt. Falls back to description when omitted. */
 	promptSnippet?: string;
+	/** Optional guideline bullets appended to the default system prompt Guidelines section when this tool is active. */
+	promptGuidelines?: string[];
 	/** Parameter schema (TypeBox) */
 	parameters: TParams;
 

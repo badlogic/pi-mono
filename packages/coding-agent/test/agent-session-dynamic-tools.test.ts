@@ -41,6 +41,7 @@ describe("AgentSession dynamic tool registration", () => {
 							label: "Dynamic Tool",
 							description: "Tool registered from session_start",
 							promptSnippet: "Run dynamic test behavior",
+							promptGuidelines: ["Use dynamic_tool when the user asks for dynamic behavior tests."],
 							parameters: Type.Object({}),
 							execute: async () => ({
 								content: [{ type: "text", text: "ok" }],
@@ -69,6 +70,7 @@ describe("AgentSession dynamic tool registration", () => {
 		expect(session.getAllTools().map((tool) => tool.name)).toContain("dynamic_tool");
 		expect(session.getActiveToolNames()).toContain("dynamic_tool");
 		expect(session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
+		expect(session.systemPrompt).toContain("- Use dynamic_tool when the user asks for dynamic behavior tests.");
 
 		session.dispose();
 	});

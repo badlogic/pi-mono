@@ -884,6 +884,8 @@ Register a custom tool callable by the LLM. See [Custom Tools](#custom-tools) fo
 
 Use `pi.setActiveTools()` to enable or disable tools (including dynamically added tools) at runtime.
 
+Use `promptSnippet` to customize that tool's one-line entry in `Available tools`, and `promptGuidelines` to append tool-specific bullets to the default `Guidelines` section when the tool is active.
+
 See [dynamic-tools.ts](../examples/extensions/dynamic-tools.ts) for a full example.
 
 ```typescript
@@ -895,6 +897,7 @@ pi.registerTool({
   label: "My Tool",
   description: "What this tool does",
   promptSnippet: "Summarize or transform text according to action",
+  promptGuidelines: ["Use this tool when the user asks to summarize previously generated text."],
   parameters: Type.Object({
     action: StringEnum(["list", "add"] as const),
     text: Type.Optional(Type.String()),
@@ -1285,6 +1288,8 @@ Register tools the LLM can call via `pi.registerTool()`. Tools appear in the sys
 
 Use `promptSnippet` for a short one-line entry in the `Available tools` section in the default system prompt. If omitted, pi falls back to `description`.
 
+Use `promptGuidelines` to add tool-specific bullets to the default system prompt `Guidelines` section. These bullets are included only while the tool is active (for example, after `pi.setActiveTools([...])`).
+
 Note: Some models are idiots and include the @ prefix in tool path arguments. Built-in tools strip a leading @ before resolving paths. If your custom tool accepts a path, normalize a leading @ as well.
 
 ### Tool Definition
@@ -1299,6 +1304,9 @@ pi.registerTool({
   label: "My Tool",
   description: "What this tool does (shown to LLM)",
   promptSnippet: "List or add items in the project todo list",
+  promptGuidelines: [
+    "Use this tool for todo planning instead of direct file edits when the user asks for a task list."
+  ],
   parameters: Type.Object({
     action: StringEnum(["list", "add"] as const),  // Use StringEnum for Google compatibility
     text: Type.Optional(Type.String()),

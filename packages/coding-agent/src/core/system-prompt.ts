@@ -23,6 +23,8 @@ export interface BuildSystemPromptOptions {
 	selectedTools?: string[];
 	/** Optional one-line tool snippets keyed by tool name. */
 	toolSnippets?: Record<string, string>;
+	/** Additional guideline bullets appended to the default system prompt guidelines. */
+	promptGuidelines?: string[];
 	/** Text to append to system prompt. */
 	appendSystemPrompt?: string;
 	/** Working directory. Default: process.cwd() */
@@ -39,6 +41,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		customPrompt,
 		selectedTools,
 		toolSnippets,
+		promptGuidelines,
 		appendSystemPrompt,
 		cwd,
 		contextFiles: providedContextFiles,
@@ -112,6 +115,14 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	// Build guidelines based on which tools are actually available
 	const guidelinesList: string[] = [];
+	const guidelinesSet = new Set<string>();
+	const addGuideline = (guideline: string): void => {
+		if (guidelinesSet.has(guideline)) {
+			return;
+		}
+		guidelinesSet.add(guideline);
+		guidelinesList.push(guideline);
+	};
 
 	const hasBash = tools.includes("bash");
 	const hasEdit = tools.includes("edit");
@@ -123,36 +134,43 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	// File exploration guidelines
 	if (hasBash && !hasGrep && !hasFind && !hasLs) {
-		guidelinesList.push("Use bash for file operations like ls, rg, find");
+		addGuideline("Use bash for file operations like ls, rg, find");
 	} else if (hasBash && (hasGrep || hasFind || hasLs)) {
-		guidelinesList.push("Prefer grep/find/ls tools over bash for file exploration (faster, respects .gitignore)");
+		addGuideline("Prefer grep/find/ls tools over bash for file exploration (faster, respects .gitignore)");
 	}
 
 	// Read before edit guideline
 	if (hasRead && hasEdit) {
-		guidelinesList.push("Use read to examine files before editing. You must use this tool instead of cat or sed.");
+		addGuideline("Use read to examine files before editing. You must use this tool instead of cat or sed.");
 	}
 
 	// Edit guideline
 	if (hasEdit) {
-		guidelinesList.push("Use edit for precise changes (old text must match exactly)");
+		addGuideline("Use edit for precise changes (old text must match exactly)");
 	}
 
 	// Write guideline
 	if (hasWrite) {
-		guidelinesList.push("Use write only for new files or complete rewrites");
+		addGuideline("Use write only for new files or complete rewrites");
 	}
 
 	// Output guideline (only when actually writing or executing)
 	if (hasEdit || hasWrite) {
-		guidelinesList.push(
+		addGuideline(
 			"When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did",
 		);
 	}
 
+	for (const guideline of promptGuidelines ?? []) {
+		const normalized = guideline.trim();
+		if (normalized.length > 0) {
+			addGuideline(normalized);
+		}
+	}
+
 	// Always include these
-	guidelinesList.push("Be concise in your responses");
-	guidelinesList.push("Show file paths clearly when working with files");
+	addGuideline("Be concise in your responses");
+	addGuideline("Show file paths clearly when working with files");
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 

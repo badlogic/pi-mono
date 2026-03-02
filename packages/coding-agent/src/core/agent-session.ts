@@ -269,6 +269,7 @@ export class AgentSession {
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
 	private _toolPromptSnippets: Map<string, string> = new Map();
+	private _toolPromptGuidelines: Map<string, string[]> = new Map();
 
 	// Base system prompt (without extension appends) - used to apply fresh appends each turn
 	private _baseSystemPrompt = "";
@@ -692,13 +693,34 @@ export class AgentSession {
 		return oneLine.length > 0 ? oneLine : undefined;
 	}
 
+	private _normalizePromptGuidelines(guidelines: string[] | undefined): string[] {
+		if (!guidelines || guidelines.length === 0) {
+			return [];
+		}
+
+		const unique = new Set<string>();
+		for (const guideline of guidelines) {
+			const normalized = guideline.trim();
+			if (normalized.length > 0) {
+				unique.add(normalized);
+			}
+		}
+		return Array.from(unique);
+	}
+
 	private _rebuildSystemPrompt(toolNames: string[]): string {
 		const validToolNames = toolNames.filter((name) => this._toolRegistry.has(name));
 		const toolSnippets: Record<string, string> = {};
+		const promptGuidelines: string[] = [];
 		for (const name of validToolNames) {
 			const snippet = this._toolPromptSnippets.get(name);
 			if (snippet) {
 				toolSnippets[name] = snippet;
+			}
+
+			const toolGuidelines = this._toolPromptGuidelines.get(name);
+			if (toolGuidelines) {
+				promptGuidelines.push(...toolGuidelines);
 			}
 		}
 
@@ -717,6 +739,7 @@ export class AgentSession {
 			appendSystemPrompt,
 			selectedTools: validToolNames,
 			toolSnippets,
+			promptGuidelines,
 		});
 	}
 
@@ -2007,6 +2030,14 @@ export class AgentSession {
 					return snippet ? ([registeredTool.definition.name, snippet] as const) : undefined;
 				})
 				.filter((entry): entry is readonly [string, string] => entry !== undefined),
+		);
+		this._toolPromptGuidelines = new Map(
+			allCustomTools
+				.map((registeredTool) => {
+					const guidelines = this._normalizePromptGuidelines(registeredTool.definition.promptGuidelines);
+					return guidelines.length > 0 ? ([registeredTool.definition.name, guidelines] as const) : undefined;
+				})
+				.filter((entry): entry is readonly [string, string[]] => entry !== undefined),
 		);
 		const wrappedExtensionTools = this._extensionRunner
 			? wrapRegisteredTools(allCustomTools, this._extensionRunner)
