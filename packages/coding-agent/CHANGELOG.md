@@ -4,7 +4,8 @@
 
 ### Added
 
-- Added optional `promptSnippet` and `promptGuidelines` to `ToolDefinition`. `promptSnippet` customizes one-line entries in the default system prompt's `Available tools` section, and `promptGuidelines` appends tool-specific bullets to the default `Guidelines` section while the tool is active. Active extension tools now appear in `Available tools`, including tools registered dynamically after startup ([#1720](https://github.com/badlogic/pi-mono/issues/1720), [#1237](https://github.com/badlogic/pi-mono/pull/1237)).
+- Added optional `promptSnippet` to `ToolDefinition` for one-line entries in the default system prompt's `Available tools` section. Active extension tools appear there when registered and active ([#1237](https://github.com/badlogic/pi-mono/pull/1237) by [@semtexzv](https://github.com/semtexzv)).
+- Added optional `promptGuidelines` to `ToolDefinition` so active tools can append tool-specific bullets to the default system prompt `Guidelines` section ([#1720](https://github.com/badlogic/pi-mono/issues/1720)).
 
 ### Fixed
 
