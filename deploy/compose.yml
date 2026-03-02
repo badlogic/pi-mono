@@ -1,46 +1,65 @@
 services:
   mom:
     build:
-      context: "docker/mom"
-      dockerfile: Dockerfile
-    image: pi-mom:local
+      context: docker/mom
     container_name: mom
     restart: unless-stopped
+    stdin_open: true
+    tty: true
     volumes:
       - ${MOM_BASE}/repo:/repo
       - ${MOM_BASE}/data:/data
+      - ${MOM_BASE}/state:/state
     environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
-      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN}
       REPO_URL: ${REPO_URL}
       REPO_BRANCH: ${REPO_BRANCH:-main}
       CHECK_INTERVAL_SECONDS: ${CHECK_INTERVAL_SECONDS:-120}
       STARTUP_GRACE_SECONDS: ${STARTUP_GRACE_SECONDS:-25}
-      MOM_BASE: ${MOM_BASE}
+      SUCCESS_LOG_TEXT: ${SUCCESS_LOG_TEXT:-⚡️ Mom bot connected and listening!}
       MOM_DATA_DIR: /data
-    stdin_open: true
-    tty: true
+    command:
+      - sh
+      - -lc
+      - |
+          set -euo pipefail
+          apk add --no-cache git bash >/dev/null 2>&1 || true
 
-  updater:
-    build:
-      context: "docker/updater"
-      dockerfile: Dockerfile
-    image: mom-updater:local
-    container_name: mom-updater
-    restart: unless-stopped
-    volumes:
-      - ${MOM_BASE}/repo:/work/repo
-      - ${MOM_BASE}/state:/work/state
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
-      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN}
-      REPO_URL: ${REPO_URL}
-      REPO_BRANCH: ${REPO_BRANCH:-main}
-      CHECK_INTERVAL_SECONDS: ${CHECK_INTERVAL_SECONDS:-120}
-      STARTUP_GRACE_SECONDS: ${STARTUP_GRACE_SECONDS:-25}
-      MOM_BASE: ${MOM_BASE}
-    stdin_open: true
-    tty: true
+          REPO_DIR=/repo
+          STATE_DIR=/state
+          GOOD_FILE="$STATE_DIR/good_commit"
+          CHECK_INTERVAL_SECONDS="${CHECK_INTERVAL_SECONDS:-120}"
+
+          mkdir -p "$STATE_DIR" "$REPO_DIR"
+
+          if [ ! -d "$REPO_DIR/.git" ]; then
+            rm -rf "$REPO_DIR"/*
+            git clone --branch "$REPO_BRANCH" --single-branch "$REPO_URL" "$REPO_DIR"
+          fi
+
+          cd "$REPO_DIR"
+          npm install
+
+          run_mom() {
+            npm run dev &
+            ROOT_PID=$!
+            cd packages/mom
+            npx tsx --watch-path src --watch src/main.ts "${MOM_DATA_DIR:-/data}" &
+            MOM_PID=$!
+            wait "$ROOT_PID" "$MOM_PID"
+          }
+
+          updater_loop() {
+            while true; do
+              git fetch origin "$REPO_BRANCH" --quiet
+              REMOTE="$(git rev-parse "origin/$REPO_BRANCH")"
+              HEAD="$(git rev-parse HEAD)"
+              if [ "$REMOTE" != "$HEAD" ]; then
+                git reset --hard "$REMOTE" --quiet
+                echo "$REMOTE" > "$GOOD_FILE"
+              fi
+              sleep "$CHECK_INTERVAL_SECONDS"
+            done
+          }
+
+          updater_loop &
+          exec run_mom

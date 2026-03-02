@@ -7,3 +7,4 @@ COPY entrypoint.sh /usr/local/bin/mom-entrypoint.sh
 RUN chmod +x /usr/local/bin/mom-entrypoint.sh
 
 ENTRYPOINT ["/usr/local/bin/mom-entrypoint.sh"]
+CMD ["sh","-lc","node -v && sleep infinity"]
