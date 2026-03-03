@@ -1032,8 +1032,8 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe("Google Antigravity Provider (gemini-3-pro-high)", () => {
-		const llm = getModel("google-antigravity", "gemini-3-pro-high");
+	describe("Google Antigravity Provider (gemini-3.1-pro-high)", () => {
+		const llm = getModel("google-antigravity", "gemini-3.1-pro-high");
 
 		it.skipIf(!antigravityToken)("should complete basic text generation", { retry: 3 }, async () => {
 			await basicTextGeneration(llm, { apiKey: antigravityToken });
@@ -1064,8 +1064,8 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe("Google Antigravity Provider (gemini-3-pro-high with thinkingLevel)", () => {
-		const llm = getModel("google-antigravity", "gemini-3-pro-high");
+	describe("Google Antigravity Provider (gemini-3.1-pro-high with thinkingLevel)", () => {
+		const llm = getModel("google-antigravity", "gemini-3.1-pro-high");
 
 		it.skipIf(!antigravityToken)("should handle thinking with thinkingLevel HIGH", { retry: 3 }, async () => {
 			// gemini-3-pro only supports LOW/HIGH
