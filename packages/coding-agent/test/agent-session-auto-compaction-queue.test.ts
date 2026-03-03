@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@mariozechner/pi-agent-core";
-import { getModel } from "@mariozechner/pi-ai";
+import { type AssistantMessage, getModel } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
@@ -93,5 +93,59 @@ describe("AgentSession auto-compaction queue resume", () => {
 		await vi.advanceTimersByTimeAsync(100);
 
 		expect(continueSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it("should not compact repeatedly after overflow recovery already attempted", async () => {
+		const model = session.model!;
+		const overflowMessage: AssistantMessage = {
+			role: "assistant",
+			content: [{ type: "text", text: "" }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "error",
+			errorMessage: "prompt is too long",
+			timestamp: Date.now(),
+		};
+
+		const runAutoCompactionSpy = vi
+			.spyOn(
+				session as unknown as {
+					_runAutoCompaction: (reason: "overflow" | "threshold", willRetry: boolean) => Promise<void>;
+				},
+				"_runAutoCompaction",
+			)
+			.mockResolvedValue();
+
+		const events: Array<{ type: string; errorMessage?: string }> = [];
+		session.subscribe((event) => {
+			if (event.type === "auto_compaction_end") {
+				events.push({ type: event.type, errorMessage: event.errorMessage });
+			}
+		});
+
+		const checkCompaction = (
+			session as unknown as {
+				_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
+			}
+		)._checkCompaction.bind(session);
+
+		await checkCompaction(overflowMessage);
+		await checkCompaction({ ...overflowMessage, timestamp: Date.now() + 1 });
+
+		expect(runAutoCompactionSpy).toHaveBeenCalledTimes(1);
+		expect(events).toContainEqual({
+			type: "auto_compaction_end",
+			errorMessage:
+				"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
+		});
 	});
 });
