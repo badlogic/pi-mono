@@ -460,14 +460,21 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
-		// Process OpenCode Zen models
+		// Process OpenCode models (Zen and Go)
 		// API mapping based on provider.npm field:
 		// - @ai-sdk/openai → openai-responses
 		// - @ai-sdk/anthropic → anthropic-messages
 		// - @ai-sdk/google → google-generative-ai
 		// - null/undefined/@ai-sdk/openai-compatible → openai-completions
-		if (data.opencode?.models) {
-			for (const [modelId, model] of Object.entries(data.opencode.models)) {
+		const opencodeVariants = [
+			{ key: "opencode", provider: "opencode", basePath: "https://opencode.ai/zen" },
+			{ key: "opencode-go", provider: "opencode-go", basePath: "https://opencode.ai/zen/go" },
+		] as const;
+
+		for (const variant of opencodeVariants) {
+			if (!data[variant.key]?.models) continue;
+
+			for (const [modelId, model] of Object.entries(data[variant.key].models)) {
 				const m = model as ModelsDevModel & { status?: string };
 				if (m.tool_call !== true) continue;
 				if (m.status === "deprecated") continue;
@@ -478,25 +485,25 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 
 				if (npm === "@ai-sdk/openai") {
 					api = "openai-responses";
-					baseUrl = "https://opencode.ai/zen/v1";
+					baseUrl = `${variant.basePath}/v1`;
 				} else if (npm === "@ai-sdk/anthropic") {
 					api = "anthropic-messages";
 					// Anthropic SDK appends /v1/messages to baseURL
-					baseUrl = "https://opencode.ai/zen";
+					baseUrl = variant.basePath;
 				} else if (npm === "@ai-sdk/google") {
 					api = "google-generative-ai";
-					baseUrl = "https://opencode.ai/zen/v1";
+					baseUrl = `${variant.basePath}/v1`;
 				} else {
 					// null, undefined, or @ai-sdk/openai-compatible
 					api = "openai-completions";
-					baseUrl = "https://opencode.ai/zen/v1";
+					baseUrl = `${variant.basePath}/v1`;
 				}
 
 				models.push({
 					id: modelId,
 					name: m.name || modelId,
 					api,
-					provider: "opencode",
+					provider: variant.provider,
 					baseUrl,
 					reasoning: m.reasoning === true,
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
@@ -657,11 +664,17 @@ async function generateModels() {
 			candidate.cost.cacheWrite = 6.25;
 			candidate.contextWindow = 200000;
 		}
-		if ((candidate.provider === "anthropic" || candidate.provider === "opencode") && candidate.id === "claude-opus-4-6") {
+		if (
+			(candidate.provider === "anthropic" || candidate.provider === "opencode" || candidate.provider === "opencode-go") &&
+			candidate.id === "claude-opus-4-6"
+		) {
 			candidate.contextWindow = 200000;
 		}
-		// opencode lists Claude Sonnet 4/4.5 with 1M context, actual limit is 200K
-		if (candidate.provider === "opencode" && (candidate.id === "claude-sonnet-4-5" || candidate.id === "claude-sonnet-4")) {
+		// OpenCode variants list Claude Sonnet 4/4.5 with 1M context, actual limit is 200K
+		if (
+			(candidate.provider === "opencode" || candidate.provider === "opencode-go") &&
+			(candidate.id === "claude-sonnet-4-5" || candidate.id === "claude-sonnet-4")
+		) {
 			candidate.contextWindow = 200000;
 		}
 	}

@@ -113,6 +113,7 @@ export function getEnvApiKey(provider: any): string | undefined {
 		"minimax-cn": "MINIMAX_CN_API_KEY",
 		huggingface: "HF_TOKEN",
 		opencode: "OPENCODE_API_KEY",
+		"opencode-go": "OPENCODE_API_KEY",
 		"kimi-coding": "KIMI_API_KEY",
 	};
 

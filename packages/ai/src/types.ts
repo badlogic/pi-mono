@@ -37,6 +37,7 @@ export type KnownProvider =
 	| "minimax-cn"
 	| "huggingface"
 	| "opencode"
+	| "opencode-go"
 	| "kimi-coding";
 export type Provider = KnownProvider | string;
 
