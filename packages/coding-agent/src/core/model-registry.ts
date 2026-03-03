@@ -70,6 +70,7 @@ const ModelDefinitionSchema = Type.Object({
 	id: Type.String({ minLength: 1 }),
 	name: Type.Optional(Type.String({ minLength: 1 })),
 	api: Type.Optional(Type.String({ minLength: 1 })),
+	baseUrl: Type.Optional(Type.String({ minLength: 1 })),
 	reasoning: Type.Optional(Type.Boolean()),
 	input: Type.Optional(Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]))),
 	cost: Type.Optional(
@@ -469,15 +470,15 @@ export class ModelRegistry {
 					}
 				}
 
-				// baseUrl is validated to exist for providers with models
-				// Apply defaults for optional fields
+				// Provider baseUrl is required when custom models are defined.
+				// Individual models can override it with modelDef.baseUrl.
 				const defaultCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 				models.push({
 					id: modelDef.id,
 					name: modelDef.name ?? modelDef.id,
 					api: api as Api,
 					provider: providerName,
-					baseUrl: providerConfig.baseUrl!,
+					baseUrl: modelDef.baseUrl ?? providerConfig.baseUrl!,
 					reasoning: modelDef.reasoning ?? false,
 					input: (modelDef.input ?? ["text"]) as ("text" | "image")[],
 					cost: modelDef.cost ?? defaultCost,
@@ -682,6 +683,7 @@ export interface ProviderConfigInput {
 		id: string;
 		name: string;
 		api?: Api;
+		baseUrl?: string;
 		reasoning: boolean;
 		input: ("text" | "image")[];
 		cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
