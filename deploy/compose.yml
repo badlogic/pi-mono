@@ -29,7 +29,8 @@ services:
           GOOD_FILE="$STATE_DIR/good_commit"
           CHECK_INTERVAL_SECONDS="${CHECK_INTERVAL_SECONDS:-120}"
 
-          mkdir -p "$STATE_DIR" "$REPO_DIR"
+          mkdir -p "$STATE_DIR"
+          mkdir -p "$REPO_DIR"
 
           if [ ! -d "$REPO_DIR/.git" ]; then
             rm -rf "$REPO_DIR"/*
