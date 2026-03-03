@@ -440,7 +440,7 @@ class SessionList implements Component, Focusable {
 			// Session display text (name or first message)
 			const hasName = !!session.name;
 			const displayText = session.name ?? session.firstMessage;
-			const normalizedMessage = displayText.replace(/\n/g, " ").trim();
+			const normalizedMessage = displayText.replace(/[\x00-\x1f\x7f]/g, " ").trim();
 
 			// Right side: message count and age
 			const age = formatSessionDate(session.modified);
