@@ -42,9 +42,50 @@ export function registerSubagentTools(pi: ExtensionAPI, manager: SubagentManager
 			),
 		}),
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, _signal, onUpdate, ctx) {
 			const isAlive = params.mode === "alive";
 			const waitForResult = params.waitForResult ?? !isAlive;
+
+			// Track subagent for streaming updates
+			let subagentId: string | null = null;
+			let currentStatus: string = "starting";
+			let lastOutput: string = "";
+
+			// Subscribe to manager events for streaming progress
+			const unsubscribe = manager.on((event) => {
+				// Only process events for our subagent
+				if (subagentId && "subagentId" in event && event.subagentId !== subagentId) return;
+				if (event.type === "started") {
+					subagentId = event.subagent.id;
+					currentStatus = event.subagent.status;
+				}
+				if (event.type === "status") {
+					currentStatus = event.status;
+				}
+
+				// Get current output for streaming
+				const subagent = subagentId ? manager.getSubagent(subagentId) : null;
+				lastOutput = subagent ? (subagent.messageHistory.at(-1)?.content ?? "") : "";
+
+				// Stream update to TUI
+				if (onUpdate && subagentId) {
+					onUpdate({
+						content: [
+							{
+								type: "text",
+								text: lastOutput || `[${params.agent}] ${currentStatus}...`,
+							},
+						],
+						details: {
+							subagentId,
+							name: params.agent,
+							status: currentStatus as SubagentStartDetails["status"],
+							mode: "in-memory",
+							isStreaming: true,
+						} satisfies SubagentStartDetails & { isStreaming: boolean },
+					});
+				}
+			});
 
 			try {
 				const result = await manager.startSubagent(params.agent, params.task, {
@@ -52,6 +93,9 @@ export function registerSubagentTools(pi: ExtensionAPI, manager: SubagentManager
 					waitForResult,
 					cwd: ctx.cwd,
 				});
+
+				// Unsubscribe after completion
+				unsubscribe();
 
 				if (isAlive) {
 					return {
@@ -82,11 +126,12 @@ export function registerSubagentTools(pi: ExtensionAPI, manager: SubagentManager
 					} satisfies SubagentStartDetails,
 				};
 			} catch (error) {
+				unsubscribe();
 				const message = error instanceof Error ? error.message : String(error);
 				return {
 					content: [{ type: "text", text: `Failed to start subagent: ${message}` }],
 					details: {
-						subagentId: "",
+						subagentId: subagentId ?? "",
 						name: params.agent,
 						status: "error" as const,
 						mode: "in-memory",
@@ -105,8 +150,8 @@ export function registerSubagentTools(pi: ExtensionAPI, manager: SubagentManager
 			return new Text(text, 0, 0);
 		},
 
-		renderResult(result, { expanded }, theme) {
-			const details = result.details as SubagentStartDetails | undefined;
+		renderResult(result, { expanded, isPartial }, theme) {
+			const details = result.details as (SubagentStartDetails & { isStreaming?: boolean }) | undefined;
 
 			if (details?.error) {
 				const text = result.content[0];
@@ -116,6 +161,15 @@ export function registerSubagentTools(pi: ExtensionAPI, manager: SubagentManager
 			if (!details) {
 				const text = result.content[0];
 				return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
+			}
+
+			// Streaming state - show activity indicator
+			if (isPartial || details.isStreaming) {
+				const statusIcon = theme.fg("warning", "⏳");
+				let text = `${statusIcon} ${theme.fg("toolTitle", theme.bold(details.name))}`;
+				text += theme.fg("muted", ` (${details.subagentId}, ${details.status}...)`);
+				text += `\n  ${theme.fg("dim", "Working...")}`;
+				return new Text(text, 0, 0);
 			}
 
 			const icon = details.status === "done" ? theme.fg("success", "✓") : theme.fg("warning", "⏳");
