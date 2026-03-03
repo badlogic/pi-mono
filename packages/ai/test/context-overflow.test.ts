@@ -413,7 +413,6 @@ describe("Context overflow error handling", () => {
 
 	// =============================================================================
 	// Mistral
-	// Expected pattern: TBD - need to test actual error message
 	// =============================================================================
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral", () => {
@@ -423,6 +422,7 @@ describe("Context overflow error handling", () => {
 			logResult(result);
 
 			expect(result.stopReason).toBe("error");
+			expect(result.errorMessage).toMatch(/too large for model with \d+ maximum context length/i);
 			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
 		}, 120000);
 	});

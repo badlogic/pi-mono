@@ -414,9 +414,9 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				models.push({
 					id: modelId,
 					name: m.name || modelId,
-					api: "openai-completions",
+					api: "mistral-conversations",
 					provider: "mistral",
-					baseUrl: "https://api.mistral.ai/v1",
+					baseUrl: "https://api.mistral.ai",
 					reasoning: m.reasoning === true,
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					cost: {
