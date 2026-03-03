@@ -311,8 +311,29 @@ export function resolveCliModel(options: {
 		};
 	}
 
-	// If no explicit --provider, first try exact matches without any provider inference.
-	// This avoids misinterpreting model IDs that themselves contain slashes (e.g. OpenRouter-style IDs).
+	// If no explicit --provider, try to interpret "provider/model" format first.
+	// When the prefix before the first slash matches a known provider, prefer that
+	// interpretation over matching models whose IDs literally contain slashes
+	// (e.g. "zai/glm-5" should resolve to provider=zai, model=glm-5, not to a
+	// vercel-ai-gateway model with id "zai/glm-5").
+	let pattern = cliModel;
+	let inferredProvider = false;
+
+	if (!provider) {
+		const slashIndex = cliModel.indexOf("/");
+		if (slashIndex !== -1) {
+			const maybeProvider = cliModel.substring(0, slashIndex);
+			const canonical = providerMap.get(maybeProvider.toLowerCase());
+			if (canonical) {
+				provider = canonical;
+				pattern = cliModel.substring(slashIndex + 1);
+				inferredProvider = true;
+			}
+		}
+	}
+
+	// If no provider was inferred from the slash, try exact matches without provider inference.
+	// This handles models whose IDs naturally contain slashes (e.g. OpenRouter-style IDs).
 	if (!provider) {
 		const lower = cliModel.toLowerCase();
 		const exact = availableModels.find(
@@ -323,20 +344,7 @@ export function resolveCliModel(options: {
 		}
 	}
 
-	let pattern = cliModel;
-
-	// If no explicit --provider, allow --model provider/<pattern>
-	if (!provider) {
-		const slashIndex = cliModel.indexOf("/");
-		if (slashIndex !== -1) {
-			const maybeProvider = cliModel.substring(0, slashIndex);
-			const canonical = providerMap.get(maybeProvider.toLowerCase());
-			if (canonical) {
-				provider = canonical;
-				pattern = cliModel.substring(slashIndex + 1);
-			}
-		}
-	} else {
+	if (cliProvider && provider) {
 		// If both were provided, tolerate --model <provider>/<pattern> by stripping the provider prefix
 		const prefix = `${provider}/`;
 		if (cliModel.toLowerCase().startsWith(prefix.toLowerCase())) {
@@ -349,17 +357,43 @@ export function resolveCliModel(options: {
 		allowInvalidThinkingLevelFallback: false,
 	});
 
-	if (!model) {
-		const display = provider ? `${provider}/${pattern}` : cliModel;
-		return {
-			model: undefined,
-			thinkingLevel: undefined,
-			warning,
-			error: `Model "${display}" not found. Use --list-models to see available models.`,
-		};
+	if (model) {
+		return { model, thinkingLevel, warning, error: undefined };
 	}
 
-	return { model, thinkingLevel, warning, error: undefined };
+	// If we inferred a provider from the slash but found no match within that provider,
+	// fall back to matching the full input as a raw model id across all models.
+	// This handles OpenRouter-style IDs like "openai/gpt-4o:extended" where "openai"
+	// looks like a provider but the full string is actually a model id on openrouter.
+	if (inferredProvider) {
+		const lower = cliModel.toLowerCase();
+		const exact = availableModels.find(
+			(m) => m.id.toLowerCase() === lower || `${m.provider}/${m.id}`.toLowerCase() === lower,
+		);
+		if (exact) {
+			return { model: exact, warning: undefined, thinkingLevel: undefined, error: undefined };
+		}
+		// Also try parseModelPattern on the full input against all models
+		const fallback = parseModelPattern(cliModel, availableModels, {
+			allowInvalidThinkingLevelFallback: false,
+		});
+		if (fallback.model) {
+			return {
+				model: fallback.model,
+				thinkingLevel: fallback.thinkingLevel,
+				warning: fallback.warning,
+				error: undefined,
+			};
+		}
+	}
+
+	const display = provider ? `${provider}/${pattern}` : cliModel;
+	return {
+		model: undefined,
+		thinkingLevel: undefined,
+		warning,
+		error: `Model "${display}" not found. Use --list-models to see available models.`,
+	};
 }
 
 export interface InitialModelResult {

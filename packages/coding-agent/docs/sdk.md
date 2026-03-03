@@ -19,7 +19,7 @@ See [examples/sdk/](../examples/sdk/) for working examples from minimal to full 
 import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@mariozechner/pi-coding-agent";
 
 // Set up credential storage and model registry
-const authStorage = new AuthStorage();
+const authStorage = AuthStorage.create();
 const modelRegistry = new ModelRegistry(authStorage);
 
 const { session } = await createAgentSession({
@@ -258,14 +258,18 @@ const { session } = await createAgentSession({
 
 `cwd` is used by `DefaultResourceLoader` for:
 - Project extensions (`.pi/extensions/`)
-- Project skills (`.pi/skills/`)
+- Project skills:
+  - `.pi/skills/`
+  - `.agents/skills/` in `cwd` and ancestor directories (up to git repo root, or filesystem root when not in a repo)
 - Project prompts (`.pi/prompts/`)
 - Context files (`AGENTS.md` walking up from cwd)
 - Session directory naming
 
 `agentDir` is used by `DefaultResourceLoader` for:
 - Global extensions (`extensions/`)
-- Global skills (`skills/`)
+- Global skills:
+  - `skills/` under `agentDir` (for example `~/.pi/agent/skills/`)
+  - `~/.agents/skills/`
 - Global prompts (`prompts/`)
 - Global context file (`AGENTS.md`)
 - Settings (`settings.json`)
@@ -281,7 +285,7 @@ When you pass a custom `ResourceLoader`, `cwd` and `agentDir` no longer control 
 import { getModel } from "@mariozechner/pi-ai";
 import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 
-const authStorage = new AuthStorage();
+const authStorage = AuthStorage.create();
 const modelRegistry = new ModelRegistry(authStorage);
 
 // Find specific built-in model (doesn't check if API key exists)
@@ -329,7 +333,7 @@ API key resolution priority (handled by AuthStorage):
 import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 
 // Default: uses ~/.pi/agent/auth.json and ~/.pi/agent/models.json
-const authStorage = new AuthStorage();
+const authStorage = AuthStorage.create();
 const modelRegistry = new ModelRegistry(authStorage);
 
 const { session } = await createAgentSession({
@@ -342,7 +346,7 @@ const { session } = await createAgentSession({
 authStorage.setRuntimeApiKey("anthropic", "sk-my-temp-key");
 
 // Custom auth storage location
-const customAuth = new AuthStorage("/my/app/auth.json");
+const customAuth = AuthStorage.create("/my/app/auth.json");
 const customRegistry = new ModelRegistry(customAuth, "/my/app/models.json");
 
 const { session } = await createAgentSession({
@@ -700,6 +704,13 @@ Settings load from two locations and merge:
 
 Project overrides global. Nested objects merge keys. Setters modify global settings by default.
 
+**Persistence and error handling semantics:**
+
+- Settings getters/setters are synchronous for in-memory state.
+- Setters enqueue persistence writes asynchronously.
+- Call `await settingsManager.flush()` when you need a durability boundary (for example, before process exit or before asserting file contents in tests).
+- `SettingsManager` does not print settings I/O errors. Use `settingsManager.drainErrors()` and report them in your app layer.
+
 > See [examples/sdk/10-settings.ts](../examples/sdk/10-settings.ts)
 
 ## ResourceLoader
@@ -766,7 +777,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 
 // Set up auth storage (custom location)
-const authStorage = new AuthStorage("/custom/agent/auth.json");
+const authStorage = AuthStorage.create("/custom/agent/auth.json");
 
 // Runtime API key override (not persisted)
 if (process.env.MY_KEY) {

@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { OpenAICompletionsCompat } from "@mariozechner/pi-ai";
+import type { Api, Context, Model, OpenAICompletionsCompat } from "@mariozechner/pi-ai";
+import { getApiProvider, getOAuthProvider } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { clearApiKeyCache, ModelRegistry } from "../src/core/model-registry.js";
@@ -15,7 +16,7 @@ describe("ModelRegistry", () => {
 		tempDir = join(tmpdir(), `pi-test-model-registry-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 		modelsJsonPath = join(tempDir, "models.json");
-		authStorage = new AuthStorage(join(tempDir, "auth.json"));
+		authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 	});
 
 	afterEach(() => {
@@ -64,6 +65,23 @@ describe("ModelRegistry", () => {
 	function writeRawModelsJson(providers: Record<string, unknown>) {
 		writeFileSync(modelsJsonPath, JSON.stringify({ providers }));
 	}
+
+	const openAiModel: Model<Api> = {
+		id: "test-openai-model",
+		name: "Test OpenAI Model",
+		api: "openai-completions",
+		provider: "openai",
+		baseUrl: "https://api.openai.com/v1",
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 4096,
+	};
+
+	const emptyContext: Context = {
+		messages: [],
+	};
 
 	describe("baseUrl override (no custom models)", () => {
 		test("overriding baseUrl keeps all built-in models", () => {
@@ -524,6 +542,61 @@ describe("ModelRegistry", () => {
 				(m) => m.id === "anthropic/claude-sonnet-4",
 			)?.name;
 			expect(restoredName).not.toBe("Custom Name");
+		});
+	});
+
+	describe("dynamic provider lifecycle", () => {
+		test("unregisterProvider removes custom OAuth provider and restores built-in OAuth provider", () => {
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+			registry.registerProvider("anthropic", {
+				oauth: {
+					name: "Custom Anthropic OAuth",
+					login: async () => ({
+						access: "custom-access-token",
+						refresh: "custom-refresh-token",
+						expires: Date.now() + 60_000,
+					}),
+					refreshToken: async (credentials) => credentials,
+					getApiKey: (credentials) => credentials.access,
+				},
+			});
+
+			expect(getOAuthProvider("anthropic")?.name).toBe("Custom Anthropic OAuth");
+
+			registry.unregisterProvider("anthropic");
+
+			expect(getOAuthProvider("anthropic")?.name).not.toBe("Custom Anthropic OAuth");
+		});
+
+		test("unregisterProvider removes custom streamSimple override and restores built-in API stream handler", () => {
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+			registry.registerProvider("stream-override-provider", {
+				api: "openai-completions",
+				streamSimple: () => {
+					throw new Error("custom streamSimple override");
+				},
+			});
+
+			let threwCustomOverride = false;
+			try {
+				getApiProvider("openai-completions")?.streamSimple(openAiModel, emptyContext);
+			} catch (error) {
+				threwCustomOverride = error instanceof Error && error.message === "custom streamSimple override";
+			}
+			expect(threwCustomOverride).toBe(true);
+
+			registry.unregisterProvider("stream-override-provider");
+
+			let threwCustomOverrideAfterUnregister = false;
+			try {
+				getApiProvider("openai-completions")?.streamSimple(openAiModel, emptyContext);
+			} catch (error) {
+				threwCustomOverrideAfterUnregister =
+					error instanceof Error && error.message === "custom streamSimple override";
+			}
+			expect(threwCustomOverrideAfterUnregister).toBe(false);
 		});
 	});
 

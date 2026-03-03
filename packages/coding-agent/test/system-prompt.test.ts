@@ -37,4 +37,43 @@ describe("buildSystemPrompt", () => {
 			expect(prompt).toContain("- write:");
 		});
 	});
+
+	describe("custom tool snippets", () => {
+		test("includes custom tools in available tools section", () => {
+			const prompt = buildSystemPrompt({
+				selectedTools: ["read", "dynamic_tool"],
+				toolSnippets: {
+					dynamic_tool: "Run dynamic test behavior",
+				},
+				contextFiles: [],
+				skills: [],
+			});
+
+			expect(prompt).toContain("- dynamic_tool: Run dynamic test behavior");
+		});
+	});
+
+	describe("prompt guidelines", () => {
+		test("appends promptGuidelines to default guidelines", () => {
+			const prompt = buildSystemPrompt({
+				selectedTools: ["read", "dynamic_tool"],
+				promptGuidelines: ["Use dynamic_tool for project summaries."],
+				contextFiles: [],
+				skills: [],
+			});
+
+			expect(prompt).toContain("- Use dynamic_tool for project summaries.");
+		});
+
+		test("deduplicates and trims promptGuidelines", () => {
+			const prompt = buildSystemPrompt({
+				selectedTools: ["read", "dynamic_tool"],
+				promptGuidelines: ["Use dynamic_tool for summaries.", "  Use dynamic_tool for summaries.  ", "   "],
+				contextFiles: [],
+				skills: [],
+			});
+
+			expect(prompt.match(/- Use dynamic_tool for summaries\./g)).toHaveLength(1);
+		});
+	});
 });

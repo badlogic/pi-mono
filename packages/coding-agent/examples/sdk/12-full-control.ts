@@ -22,7 +22,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 
 // Custom auth storage location
-const authStorage = new AuthStorage("/tmp/my-agent/auth.json");
+const authStorage = AuthStorage.create("/tmp/my-agent/auth.json");
 
 // Runtime API key override (not persisted)
 if (process.env.MY_ANTHROPIC_KEY) {

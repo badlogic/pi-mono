@@ -21,6 +21,7 @@ See these complete provider examples:
 - [Quick Reference](#quick-reference)
 - [Override Existing Provider](#override-existing-provider)
 - [Register New Provider](#register-new-provider)
+- [Unregister Provider](#unregister-provider)
 - [OAuth Support](#oauth-support)
 - [Custom Streaming API](#custom-streaming-api)
 - [Testing Your Implementation](#testing-your-implementation)
@@ -115,6 +116,37 @@ pi.registerProvider("my-llm", {
 ```
 
 When `models` is provided, it **replaces** all existing models for that provider.
+
+## Unregister Provider
+
+Use `pi.unregisterProvider(name)` to remove a provider that was previously registered via `pi.registerProvider(name, ...)`:
+
+```typescript
+// Register
+pi.registerProvider("my-llm", {
+  baseUrl: "https://api.my-llm.com/v1",
+  apiKey: "MY_LLM_API_KEY",
+  api: "openai-completions",
+  models: [
+    {
+      id: "my-llm-large",
+      name: "My LLM Large",
+      reasoning: true,
+      input: ["text", "image"],
+      cost: { input: 3.0, output: 15.0, cacheRead: 0.3, cacheWrite: 3.75 },
+      contextWindow: 200000,
+      maxTokens: 16384
+    }
+  ]
+});
+
+// Later, remove it
+pi.unregisterProvider("my-llm");
+```
+
+Unregistering removes that provider's dynamic models, API key fallback, OAuth provider registration, and custom stream handler registrations. Any built-in models or provider behavior that were overridden are restored.
+
+Calls made after the initial extension load phase are applied immediately, so no `/reload` is required.
 
 ### API Types
 

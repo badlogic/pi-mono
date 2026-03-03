@@ -24,7 +24,7 @@ describe("SettingsManager", () => {
 	});
 
 	describe("preserves externally added settings", () => {
-		it("should preserve enabledModels when changing thinking level", () => {
+		it("should preserve enabledModels when changing thinking level", async () => {
 			// Create initial settings file
 			const settingsPath = join(agentDir, "settings.json");
 			writeFileSync(
@@ -45,6 +45,7 @@ describe("SettingsManager", () => {
 
 			// User changes thinking level via Shift+Tab
 			manager.setDefaultThinkingLevel("high");
+			await manager.flush();
 
 			// Verify enabledModels is preserved
 			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
@@ -54,7 +55,7 @@ describe("SettingsManager", () => {
 			expect(savedSettings.defaultModel).toBe("claude-sonnet");
 		});
 
-		it("should preserve custom settings when changing theme", () => {
+		it("should preserve custom settings when changing theme", async () => {
 			const settingsPath = join(agentDir, "settings.json");
 			writeFileSync(
 				settingsPath,
@@ -73,6 +74,7 @@ describe("SettingsManager", () => {
 
 			// User changes theme
 			manager.setTheme("light");
+			await manager.flush();
 
 			// Verify all settings preserved
 			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
@@ -81,7 +83,7 @@ describe("SettingsManager", () => {
 			expect(savedSettings.theme).toBe("light");
 		});
 
-		it("should let in-memory changes override file changes for same key", () => {
+		it("should let in-memory changes override file changes for same key", async () => {
 			const settingsPath = join(agentDir, "settings.json");
 			writeFileSync(
 				settingsPath,
@@ -99,6 +101,7 @@ describe("SettingsManager", () => {
 
 			// But then changes it via UI to "high"
 			manager.setDefaultThinkingLevel("high");
+			await manager.flush();
 
 			// In-memory change should win
 			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
@@ -193,6 +196,66 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("error tracking", () => {
+		it("should collect and clear load errors via drainErrors", () => {
+			const globalSettingsPath = join(agentDir, "settings.json");
+			const projectSettingsPath = join(projectDir, ".pi", "settings.json");
+			writeFileSync(globalSettingsPath, "{ invalid global json");
+			writeFileSync(projectSettingsPath, "{ invalid project json");
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			const errors = manager.drainErrors();
+
+			expect(errors).toHaveLength(2);
+			expect(errors.map((e) => e.scope).sort()).toEqual(["global", "project"]);
+			expect(manager.drainErrors()).toEqual([]);
+		});
+	});
+
+	describe("project settings directory creation", () => {
+		it("should not create .pi folder when only reading project settings", () => {
+			// Create agent dir with global settings, but NO .pi folder in project
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+
+			// Delete the .pi folder that beforeEach created
+			rmSync(join(projectDir, ".pi"), { recursive: true });
+
+			// Create SettingsManager (reads both global and project settings)
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			// .pi folder should NOT have been created just from reading
+			expect(existsSync(join(projectDir, ".pi"))).toBe(false);
+
+			// Settings should still be loaded from global
+			expect(manager.getTheme()).toBe("dark");
+		});
+
+		it("should create .pi folder when writing project settings", async () => {
+			// Create agent dir with global settings, but NO .pi folder in project
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+
+			// Delete the .pi folder that beforeEach created
+			rmSync(join(projectDir, ".pi"), { recursive: true });
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			// .pi folder should NOT exist yet
+			expect(existsSync(join(projectDir, ".pi"))).toBe(false);
+
+			// Write a project-specific setting
+			manager.setProjectPackages([{ source: "npm:test-pkg" }]);
+			await manager.flush();
+
+			// Now .pi folder should exist
+			expect(existsSync(join(projectDir, ".pi"))).toBe(true);
+
+			// And settings file should be created
+			expect(existsSync(join(projectDir, ".pi", "settings.json"))).toBe(true);
+		});
+	});
+
 	describe("shellCommandPrefix", () => {
 		it("should load shellCommandPrefix from settings", () => {
 			const settingsPath = join(agentDir, "settings.json");
@@ -212,12 +275,13 @@ describe("SettingsManager", () => {
 			expect(manager.getShellCommandPrefix()).toBeUndefined();
 		});
 
-		it("should preserve shellCommandPrefix when saving unrelated settings", () => {
+		it("should preserve shellCommandPrefix when saving unrelated settings", async () => {
 			const settingsPath = join(agentDir, "settings.json");
 			writeFileSync(settingsPath, JSON.stringify({ shellCommandPrefix: "shopt -s expand_aliases" }));
 
 			const manager = SettingsManager.create(projectDir, agentDir);
 			manager.setTheme("light");
+			await manager.flush();
 
 			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
 			expect(savedSettings.shellCommandPrefix).toBe("shopt -s expand_aliases");

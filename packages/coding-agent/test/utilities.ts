@@ -119,7 +119,7 @@ export const PI_AGENT_DIR = join(homedir(), ".pi", "agent");
  * Use this for tests that need real OAuth credentials.
  */
 export function getRealAuthStorage(): AuthStorage {
-	return new AuthStorage(AUTH_PATH);
+	return AuthStorage.create(AUTH_PATH);
 }
 
 /**
@@ -214,7 +214,7 @@ export function createTestSession(options: TestSessionOptions = {}): TestSession
 		settingsManager.applyOverrides(options.settingsOverrides);
 	}
 
-	const authStorage = new AuthStorage(join(tempDir, "auth.json"));
+	const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 	const modelRegistry = new ModelRegistry(authStorage, tempDir);
 
 	const session = new AgentSession({

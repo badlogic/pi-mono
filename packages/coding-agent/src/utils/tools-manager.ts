@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import { spawnSync } from "child_process";
-import { chmodSync, createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from "fs";
+import extractZip from "extract-zip";
+import { chmodSync, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "fs";
 import { arch, platform } from "os";
 import { join } from "path";
 import { Readable } from "stream";
@@ -8,6 +9,13 @@ import { finished } from "stream/promises";
 import { APP_NAME, getBinDir } from "../config.js";
 
 const TOOLS_DIR = getBinDir();
+const NETWORK_TIMEOUT_MS = 10000;
+
+function isOfflineModeEnabled(): boolean {
+	const value = process.env.PI_OFFLINE;
+	if (!value) return false;
+	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+}
 
 interface ToolConfig {
 	name: string;
@@ -94,6 +102,7 @@ export function getToolPath(tool: "fd" | "rg"): string | null {
 async function getLatestVersion(repo: string): Promise<string> {
 	const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
 		headers: { "User-Agent": `${APP_NAME}-coding-agent` },
+		signal: AbortSignal.timeout(NETWORK_TIMEOUT_MS),
 	});
 
 	if (!response.ok) {
@@ -106,7 +115,9 @@ async function getLatestVersion(repo: string): Promise<string> {
 
 // Download a file from URL
 async function downloadFile(url: string, dest: string): Promise<void> {
-	const response = await fetch(url);
+	const response = await fetch(url, {
+		signal: AbortSignal.timeout(NETWORK_TIMEOUT_MS),
+	});
 
 	if (!response.ok) {
 		throw new Error(`Failed to download: ${response.status}`);
@@ -118,6 +129,28 @@ async function downloadFile(url: string, dest: string): Promise<void> {
 
 	const fileStream = createWriteStream(dest);
 	await finished(Readable.fromWeb(response.body as any).pipe(fileStream));
+}
+
+function findBinaryRecursively(rootDir: string, binaryFileName: string): string | null {
+	const stack: string[] = [rootDir];
+
+	while (stack.length > 0) {
+		const currentDir = stack.pop();
+		if (!currentDir) continue;
+
+		const entries = readdirSync(currentDir, { withFileTypes: true });
+		for (const entry of entries) {
+			const fullPath = join(currentDir, entry.name);
+			if (entry.isFile() && entry.name === binaryFileName) {
+				return fullPath;
+			}
+			if (entry.isDirectory()) {
+				stack.push(fullPath);
+			}
+		}
+	}
+
+	return null;
 }
 
 // Download and install a tool
@@ -148,33 +181,42 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 	// Download
 	await downloadFile(downloadUrl, archivePath);
 
-	// Extract
-	const extractDir = join(TOOLS_DIR, "extract_tmp");
+	// Extract into a unique temp directory. fd and rg downloads can run concurrently
+	// during startup, so sharing a fixed directory causes races.
+	const extractDir = join(
+		TOOLS_DIR,
+		`extract_tmp_${config.binaryName}_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+	);
 	mkdirSync(extractDir, { recursive: true });
 
 	try {
-		// Use tar for both .tar.gz and .zip extraction. Windows 10+ ships bsdtar
-		// which handles both formats, avoiding the need for `unzip` (not available
-		// on Windows by default).
-		const extractResult = assetName.endsWith(".tar.gz")
-			? spawnSync("tar", ["xzf", archivePath, "-C", extractDir], { stdio: "pipe" })
-			: assetName.endsWith(".zip")
-				? spawnSync("tar", ["xf", archivePath, "-C", extractDir], { stdio: "pipe" })
-				: null;
-
-		if (!extractResult || extractResult.error || extractResult.status !== 0) {
-			const errMsg = extractResult?.error?.message ?? extractResult?.stderr?.toString().trim() ?? "unknown error";
-			throw new Error(`Failed to extract ${assetName}: ${errMsg}`);
+		if (assetName.endsWith(".tar.gz")) {
+			const extractResult = spawnSync("tar", ["xzf", archivePath, "-C", extractDir], { stdio: "pipe" });
+			if (extractResult.error || extractResult.status !== 0) {
+				const errMsg = extractResult.error?.message ?? extractResult.stderr?.toString().trim() ?? "unknown error";
+				throw new Error(`Failed to extract ${assetName}: ${errMsg}`);
+			}
+		} else if (assetName.endsWith(".zip")) {
+			await extractZip(archivePath, { dir: extractDir });
+		} else {
+			throw new Error(`Unsupported archive format: ${assetName}`);
 		}
 
-		// Find the binary in extracted files
+		// Find the binary in extracted files. Some archives contain files directly
+		// at root, others nest under a versioned subdirectory.
+		const binaryFileName = config.binaryName + binaryExt;
 		const extractedDir = join(extractDir, assetName.replace(/\.(tar\.gz|zip)$/, ""));
-		const extractedBinary = join(extractedDir, config.binaryName + binaryExt);
+		const extractedBinaryCandidates = [join(extractedDir, binaryFileName), join(extractDir, binaryFileName)];
+		let extractedBinary = extractedBinaryCandidates.find((candidate) => existsSync(candidate));
 
-		if (existsSync(extractedBinary)) {
+		if (!extractedBinary) {
+			extractedBinary = findBinaryRecursively(extractDir, binaryFileName) ?? undefined;
+		}
+
+		if (extractedBinary) {
 			renameSync(extractedBinary, binaryPath);
 		} else {
-			throw new Error(`Binary not found in archive: ${extractedBinary}`);
+			throw new Error(`Binary not found in archive: expected ${binaryFileName} under ${extractDir}`);
 		}
 
 		// Make executable (Unix only)
@@ -206,6 +248,13 @@ export async function ensureTool(tool: "fd" | "rg", silent: boolean = false): Pr
 
 	const config = TOOLS[tool];
 	if (!config) return undefined;
+
+	if (isOfflineModeEnabled()) {
+		if (!silent) {
+			console.log(chalk.yellow(`${config.name} not found. Offline mode enabled, skipping download.`));
+		}
+		return undefined;
+	}
 
 	// On Android/Termux, Linux binaries don't work due to Bionic libc incompatibility.
 	// Users must install via pkg.

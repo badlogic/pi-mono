@@ -55,6 +55,21 @@ async function readPipedStdin(): Promise<string | undefined> {
 	});
 }
 
+function reportSettingsErrors(settingsManager: SettingsManager, context: string): void {
+	const errors = settingsManager.drainErrors();
+	for (const { scope, error } of errors) {
+		console.error(chalk.yellow(`Warning (${context}, ${scope} settings): ${error.message}`));
+		if (error.stack) {
+			console.error(chalk.dim(error.stack));
+		}
+	}
+}
+
+function isTruthyEnvFlag(value: string | undefined): boolean {
+	if (!value) return false;
+	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+}
+
 type PackageCommand = "install" | "remove" | "update" | "list";
 
 interface PackageCommandOptions {
@@ -200,6 +215,7 @@ async function handlePackageCommand(args: string[]): Promise<boolean> {
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
+	reportSettingsErrors(settingsManager, "package command");
 	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
 
 	packageManager.setProgressCallback((event) => {
@@ -508,6 +524,7 @@ async function handleConfigCommand(args: string[]): Promise<boolean> {
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
+	reportSettingsErrors(settingsManager, "config command");
 	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
 
 	const resolvedPaths = await packageManager.resolve();
@@ -523,6 +540,12 @@ async function handleConfigCommand(args: string[]): Promise<boolean> {
 }
 
 export async function main(args: string[]) {
+	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
+	if (offlineMode) {
+		process.env.PI_OFFLINE = "1";
+		process.env.PI_SKIP_VERSION_CHECK = "1";
+	}
+
 	if (await handlePackageCommand(args)) {
 		return;
 	}
@@ -541,7 +564,8 @@ export async function main(args: string[]) {
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
-	const authStorage = new AuthStorage();
+	reportSettingsErrors(settingsManager, "startup");
+	const authStorage = AuthStorage.create();
 	const modelRegistry = new ModelRegistry(authStorage, getModelsPath());
 
 	const resourceLoader = new DefaultResourceLoader({

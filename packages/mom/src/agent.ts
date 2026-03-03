@@ -16,7 +16,7 @@ import { existsSync, readFileSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
-import { MomSettingsManager, syncLogToSessionManager } from "./context.js";
+import { createMomSettingsManager, syncLogToSessionManager } from "./context.js";
 import * as log from "./log.js";
 import { createExecutor, type SandboxConfig } from "./sandbox.js";
 import type { ChannelInfo, SlackContext, UserInfo } from "./slack.js";
@@ -424,11 +424,11 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	// Use a fixed context.jsonl file per channel (not timestamped like coding-agent)
 	const contextFile = join(channelDir, "context.jsonl");
 	const sessionManager = SessionManager.open(contextFile, channelDir);
-	const settingsManager = new MomSettingsManager(join(channelDir, ".."));
+	const settingsManager = createMomSettingsManager(join(channelDir, ".."));
 
 	// Create AuthStorage and ModelRegistry
 	// Auth stored outside workspace so agent can't access it
-	const authStorage = new AuthStorage(join(homedir(), ".pi", "mom", "auth.json"));
+	const authStorage = AuthStorage.create(join(homedir(), ".pi", "mom", "auth.json"));
 	const modelRegistry = new ModelRegistry(authStorage);
 
 	// Create agent
@@ -469,7 +469,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	const session = new AgentSession({
 		agent,
 		sessionManager,
-		settingsManager: settingsManager as any,
+		settingsManager,
 		cwd: process.cwd(),
 		modelRegistry,
 		resourceLoader,

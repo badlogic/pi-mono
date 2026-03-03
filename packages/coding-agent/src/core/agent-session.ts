@@ -220,6 +220,7 @@ export class AgentSession {
 	// Event subscription state
 	private _unsubscribeAgent?: () => void;
 	private _eventListeners: AgentSessionEventListener[] = [];
+	private _agentEventQueue: Promise<void> = Promise.resolve();
 
 	/** Tracks pending steering messages for UI display. Removed when delivered. */
 	private _steeringMessages: string[] = [];
@@ -267,6 +268,8 @@ export class AgentSession {
 
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
+	private _toolPromptSnippets: Map<string, string> = new Map();
+	private _toolPromptGuidelines: Map<string, string[]> = new Map();
 
 	// Base system prompt (without extension appends) - used to apply fresh appends each turn
 	private _baseSystemPrompt = "";
@@ -314,7 +317,54 @@ export class AgentSession {
 	private _lastAssistantMessage: AssistantMessage | undefined = undefined;
 
 	/** Internal handler for agent events - shared by subscribe and reconnect */
-	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
+	private _handleAgentEvent = (event: AgentEvent): void => {
+		// Create retry promise synchronously before queueing async processing.
+		// Agent.emit() calls this handler synchronously, and prompt() calls waitForRetry()
+		// as soon as agent.prompt() resolves. If _retryPromise is created only inside
+		// _processAgentEvent, slow earlier queued events can delay agent_end processing
+		// and waitForRetry() can miss the in-flight retry.
+		this._createRetryPromiseForAgentEnd(event);
+
+		this._agentEventQueue = this._agentEventQueue.then(
+			() => this._processAgentEvent(event),
+			() => this._processAgentEvent(event),
+		);
+
+		// Keep queue alive if an event handler fails
+		this._agentEventQueue.catch(() => {});
+	};
+
+	private _createRetryPromiseForAgentEnd(event: AgentEvent): void {
+		if (event.type !== "agent_end" || this._retryPromise) {
+			return;
+		}
+
+		const settings = this.settingsManager.getRetrySettings();
+		if (!settings.enabled) {
+			return;
+		}
+
+		const lastAssistant = this._findLastAssistantInMessages(event.messages);
+		if (!lastAssistant || !this._isRetryableError(lastAssistant)) {
+			return;
+		}
+
+		this._retryPromise = new Promise((resolve) => {
+			this._retryResolve = resolve;
+		});
+	}
+
+	private _findLastAssistantInMessages(messages: AgentMessage[]): AssistantMessage | undefined {
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const message = messages[i];
+			if (message.role === "assistant") {
+				return message as AssistantMessage;
+			}
+		}
+		return undefined;
+	}
+
+	private async _processAgentEvent(event: AgentEvent): Promise<void> {
 		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
 		// This ensures the UI sees the updated queue state
 		if (event.type === "message_start" && event.message.role === "user") {
@@ -393,7 +443,7 @@ export class AgentSession {
 
 			await this._checkCompaction(msg);
 		}
-	};
+	}
 
 	/** Resolve the pending retry promise */
 	private _resolveRetry(): void {
@@ -671,8 +721,46 @@ export class AgentSession {
 		return this._resourceLoader.getPrompts().prompts;
 	}
 
+	private _normalizePromptSnippet(text: string | undefined): string | undefined {
+		if (!text) return undefined;
+		const oneLine = text
+			.replace(/[\r\n]+/g, " ")
+			.replace(/\s+/g, " ")
+			.trim();
+		return oneLine.length > 0 ? oneLine : undefined;
+	}
+
+	private _normalizePromptGuidelines(guidelines: string[] | undefined): string[] {
+		if (!guidelines || guidelines.length === 0) {
+			return [];
+		}
+
+		const unique = new Set<string>();
+		for (const guideline of guidelines) {
+			const normalized = guideline.trim();
+			if (normalized.length > 0) {
+				unique.add(normalized);
+			}
+		}
+		return Array.from(unique);
+	}
+
 	private _rebuildSystemPrompt(toolNames: string[]): string {
-		const validToolNames = toolNames.filter((name) => this._baseToolRegistry.has(name));
+		const validToolNames = toolNames.filter((name) => this._toolRegistry.has(name));
+		const toolSnippets: Record<string, string> = {};
+		const promptGuidelines: string[] = [];
+		for (const name of validToolNames) {
+			const snippet = this._toolPromptSnippets.get(name);
+			if (snippet) {
+				toolSnippets[name] = snippet;
+			}
+
+			const toolGuidelines = this._toolPromptGuidelines.get(name);
+			if (toolGuidelines) {
+				promptGuidelines.push(...toolGuidelines);
+			}
+		}
+
 		const loaderSystemPrompt = this._resourceLoader.getSystemPrompt();
 		const loaderAppendSystemPrompt = this._resourceLoader.getAppendSystemPrompt();
 		const appendSystemPrompt =
@@ -687,6 +775,8 @@ export class AgentSession {
 			customPrompt: loaderSystemPrompt,
 			appendSystemPrompt,
 			selectedTools: validToolNames,
+			toolSnippets,
+			promptGuidelines,
 		});
 	}
 
@@ -1923,6 +2013,7 @@ export class AgentSession {
 				getActiveTools: () => this.getActiveToolNames(),
 				getAllTools: () => this.getAllTools(),
 				setActiveTools: (toolNames) => this.setActiveToolsByName(toolNames),
+				refreshTools: () => this._refreshToolRegistry(),
 				getCommands,
 				setModel: async (model) => {
 					const key = await this.modelRegistry.getApiKey(model);
@@ -1956,6 +2047,68 @@ export class AgentSession {
 				getSystemPrompt: () => this.systemPrompt,
 			},
 		);
+	}
+
+	private _refreshToolRegistry(options?: { activeToolNames?: string[]; includeAllExtensionTools?: boolean }): void {
+		const previousRegistryNames = new Set(this._toolRegistry.keys());
+		const previousActiveToolNames = this.getActiveToolNames();
+
+		const registeredTools = this._extensionRunner?.getAllRegisteredTools() ?? [];
+		const allCustomTools = [
+			...registeredTools,
+			...this._customTools.map((def) => ({ definition: def, extensionPath: "<sdk>" })),
+		];
+		this._toolPromptSnippets = new Map(
+			allCustomTools
+				.map((registeredTool) => {
+					const snippet = this._normalizePromptSnippet(
+						registeredTool.definition.promptSnippet ?? registeredTool.definition.description,
+					);
+					return snippet ? ([registeredTool.definition.name, snippet] as const) : undefined;
+				})
+				.filter((entry): entry is readonly [string, string] => entry !== undefined),
+		);
+		this._toolPromptGuidelines = new Map(
+			allCustomTools
+				.map((registeredTool) => {
+					const guidelines = this._normalizePromptGuidelines(registeredTool.definition.promptGuidelines);
+					return guidelines.length > 0 ? ([registeredTool.definition.name, guidelines] as const) : undefined;
+				})
+				.filter((entry): entry is readonly [string, string[]] => entry !== undefined),
+		);
+		const wrappedExtensionTools = this._extensionRunner
+			? wrapRegisteredTools(allCustomTools, this._extensionRunner)
+			: [];
+
+		const toolRegistry = new Map(this._baseToolRegistry);
+		for (const tool of wrappedExtensionTools as AgentTool[]) {
+			toolRegistry.set(tool.name, tool);
+		}
+
+		if (this._extensionRunner) {
+			const wrappedAllTools = wrapToolsWithExtensions(Array.from(toolRegistry.values()), this._extensionRunner);
+			this._toolRegistry = new Map(wrappedAllTools.map((tool) => [tool.name, tool]));
+		} else {
+			this._toolRegistry = toolRegistry;
+		}
+
+		const nextActiveToolNames = options?.activeToolNames
+			? [...options.activeToolNames]
+			: [...previousActiveToolNames];
+
+		if (options?.includeAllExtensionTools) {
+			for (const tool of wrappedExtensionTools) {
+				nextActiveToolNames.push(tool.name);
+			}
+		} else if (!options?.activeToolNames) {
+			for (const toolName of this._toolRegistry.keys()) {
+				if (!previousRegistryNames.has(toolName)) {
+					nextActiveToolNames.push(toolName);
+				}
+			}
+		}
+
+		this.setActiveToolsByName([...new Set(nextActiveToolNames)]);
 	}
 
 	private _buildRuntime(options: {
@@ -2001,52 +2154,14 @@ export class AgentSession {
 			this._applyExtensionBindings(this._extensionRunner);
 		}
 
-		const registeredTools = this._extensionRunner?.getAllRegisteredTools() ?? [];
-		const allCustomTools = [
-			...registeredTools,
-			...this._customTools.map((def) => ({ definition: def, extensionPath: "<sdk>" })),
-		];
-		const wrappedExtensionTools = this._extensionRunner
-			? wrapRegisteredTools(allCustomTools, this._extensionRunner)
-			: [];
-
-		const toolRegistry = new Map(this._baseToolRegistry);
-		for (const tool of wrappedExtensionTools as AgentTool[]) {
-			toolRegistry.set(tool.name, tool);
-		}
-
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
 			: ["read", "bash", "edit", "write"];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
-		const activeToolNameSet = new Set<string>(baseActiveToolNames);
-		if (options.includeAllExtensionTools) {
-			for (const tool of wrappedExtensionTools as AgentTool[]) {
-				activeToolNameSet.add(tool.name);
-			}
-		}
-
-		const extensionToolNames = new Set(wrappedExtensionTools.map((tool) => tool.name));
-		const activeBaseTools = Array.from(activeToolNameSet)
-			.filter((name) => this._baseToolRegistry.has(name) && !extensionToolNames.has(name))
-			.map((name) => this._baseToolRegistry.get(name) as AgentTool);
-		const activeExtensionTools = wrappedExtensionTools.filter((tool) => activeToolNameSet.has(tool.name));
-		const activeToolsArray: AgentTool[] = [...activeBaseTools, ...activeExtensionTools];
-
-		if (this._extensionRunner) {
-			const wrappedActiveTools = wrapToolsWithExtensions(activeToolsArray, this._extensionRunner);
-			this.agent.setTools(wrappedActiveTools as AgentTool[]);
-
-			const wrappedAllTools = wrapToolsWithExtensions(Array.from(toolRegistry.values()), this._extensionRunner);
-			this._toolRegistry = new Map(wrappedAllTools.map((tool) => [tool.name, tool]));
-		} else {
-			this.agent.setTools(activeToolsArray);
-			this._toolRegistry = toolRegistry;
-		}
-
-		const systemPromptToolNames = Array.from(activeToolNameSet).filter((name) => this._baseToolRegistry.has(name));
-		this._baseSystemPrompt = this._rebuildSystemPrompt(systemPromptToolNames);
-		this.agent.setSystemPrompt(this._baseSystemPrompt);
+		this._refreshToolRegistry({
+			activeToolNames: baseActiveToolNames,
+			includeAllExtensionTools: options.includeAllExtensionTools,
+		});
 	}
 
 	async reload(): Promise<void> {
@@ -2100,16 +2215,20 @@ export class AgentSession {
 	 */
 	private async _handleRetryableError(message: AssistantMessage): Promise<boolean> {
 		const settings = this.settingsManager.getRetrySettings();
-		if (!settings.enabled) return false;
+		if (!settings.enabled) {
+			this._resolveRetry();
+			return false;
+		}
 
-		this._retryAttempt++;
-
-		// Create retry promise on first attempt so waitForRetry() can await it
-		if (this._retryAttempt === 1 && !this._retryPromise) {
+		// Retry promise is created synchronously in _handleAgentEvent for agent_end.
+		// Keep a defensive fallback here in case a future refactor bypasses that path.
+		if (!this._retryPromise) {
 			this._retryPromise = new Promise((resolve) => {
 				this._retryResolve = resolve;
 			});
 		}
+
+		this._retryAttempt++;
 
 		if (this._retryAttempt > settings.maxRetries) {
 			// Max retries exceeded, emit final failure and reset

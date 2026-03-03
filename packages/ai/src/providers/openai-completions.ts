@@ -167,7 +167,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 					calculateCost(model, output.usage);
 				}
 
-				const choice = chunk.choices[0];
+				const choice = chunk.choices?.[0];
 				if (!choice) continue;
 
 				if (choice.finish_reason) {
@@ -423,12 +423,8 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		params.tool_choice = options.toolChoice;
 	}
 
-	if (compat.thinkingFormat === "zai" && model.reasoning) {
-		// Z.ai uses binary thinking: { type: "enabled" | "disabled" }
-		// Must explicitly disable since z.ai defaults to thinking enabled
-		(params as any).thinking = { type: options?.reasoningEffort ? "enabled" : "disabled" };
-	} else if (compat.thinkingFormat === "qwen" && model.reasoning) {
-		// Qwen uses enable_thinking: boolean
+	if ((compat.thinkingFormat === "zai" || compat.thinkingFormat === "qwen") && model.reasoning) {
+		// Both Z.ai and Qwen use enable_thinking: boolean
 		(params as any).enable_thinking = !!options?.reasoningEffort;
 	} else if (options?.reasoningEffort && model.reasoning && compat.supportsReasoningEffort) {
 		// OpenAI-style reasoning_effort

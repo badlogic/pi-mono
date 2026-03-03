@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@mariozechner/pi-agent-core";
 import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel } from "@mariozechner/pi-ai";
+import { Type } from "@sinclair/typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
@@ -99,7 +100,7 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		const sessionManager = SessionManager.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
-		const authStorage = new AuthStorage(join(tempDir, "auth.json"));
+		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRegistry = new ModelRegistry(authStorage, tempDir);
 		// Set a runtime API key so validation passes
 		authStorage.setRuntimeApiKey("anthropic", "test-key");
@@ -192,7 +193,7 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		const sessionManager = SessionManager.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
-		const authStorage = new AuthStorage(join(tempDir, "auth.json"));
+		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRegistry = new ModelRegistry(authStorage, tempDir);
 		authStorage.setRuntimeApiKey("anthropic", "test-key");
 
@@ -213,5 +214,139 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		// Second prompt should work
 		await expect(session.prompt("Second message")).resolves.not.toThrow();
+	});
+
+	it("should persist message_end events in order with slow extension handlers", async () => {
+		const model = getModel("anthropic", "claude-sonnet-4-5")!;
+		const tool = {
+			name: "dummy",
+			description: "Dummy tool",
+			label: "dummy",
+			parameters: Type.Object({ q: Type.String() }),
+			execute: async (_toolCallId: string, params: unknown) => {
+				const q =
+					typeof params === "object" && params !== null && "q" in params
+						? String((params as { q: unknown }).q)
+						: "";
+				return {
+					content: [{ type: "text" as const, text: `result:${q}` }],
+					details: {},
+				};
+			},
+		};
+
+		const agent = new Agent({
+			getApiKey: () => "test-key",
+			initialState: {
+				model,
+				systemPrompt: "Test",
+				tools: [tool],
+			},
+			streamFn: async (_model, context) => {
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					const hasToolResult = context.messages.some((message) => message.role === "toolResult");
+
+					if (hasToolResult) {
+						const message: AssistantMessage = {
+							role: "assistant",
+							content: [{ type: "text", text: "done" }],
+							api: "anthropic-messages",
+							provider: "anthropic",
+							model: "mock",
+							usage: {
+								input: 1,
+								output: 1,
+								cacheRead: 0,
+								cacheWrite: 0,
+								totalTokens: 2,
+								cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+							},
+							stopReason: "stop",
+							timestamp: Date.now(),
+						};
+						stream.push({ type: "start", partial: { ...message, content: [] } });
+						stream.push({ type: "done", reason: "stop", message });
+						return;
+					}
+
+					const message: AssistantMessage = {
+						role: "assistant",
+						content: [
+							{ type: "text", text: "calling tool" },
+							{ type: "toolCall", id: "toolu_1", name: "dummy", arguments: { q: "x" } },
+						],
+						api: "anthropic-messages",
+						provider: "anthropic",
+						model: "mock",
+						usage: {
+							input: 1,
+							output: 1,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 2,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
+						stopReason: "toolUse",
+						timestamp: Date.now(),
+					};
+
+					stream.push({ type: "start", partial: { ...message, content: [] } });
+					stream.push({ type: "done", reason: "toolUse", message });
+				});
+				return stream;
+			},
+		});
+
+		const sessionManager = SessionManager.inMemory();
+		const settingsManager = SettingsManager.create(tempDir, tempDir);
+		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
+		const modelRegistry = new ModelRegistry(authStorage, tempDir);
+		authStorage.setRuntimeApiKey("anthropic", "test-key");
+
+		session = new AgentSession({
+			agent,
+			sessionManager,
+			settingsManager,
+			cwd: tempDir,
+			modelRegistry,
+			resourceLoader: createTestResourceLoader(),
+			baseToolsOverride: { dummy: tool },
+		});
+
+		const sessionWithRunner = session as unknown as {
+			_extensionRunner?: {
+				hasHandlers: (eventType: string) => boolean;
+				emit: (event: { type: string; message?: { role?: string } }) => Promise<void>;
+				emitInput: (
+					text: string,
+					images: unknown,
+					source: "interactive" | "rpc" | "extension",
+				) => Promise<{ action: "continue" }>;
+				emitBeforeAgentStart: (prompt: string, images: unknown, systemPrompt: string) => Promise<undefined>;
+			};
+		};
+		sessionWithRunner._extensionRunner = {
+			hasHandlers: () => false,
+			emit: async (event) => {
+				if (event.type === "message_end" && event.message?.role === "assistant") {
+					await new Promise((resolve) => setTimeout(resolve, 40));
+				}
+			},
+			emitInput: async () => ({ action: "continue" }),
+			emitBeforeAgentStart: async () => undefined,
+		};
+
+		await session.prompt("hi");
+		await session.agent.waitForIdle();
+		await new Promise((resolve) => setTimeout(resolve, 100));
+
+		const messageEntries = sessionManager.getEntries().filter((entry) => entry.type === "message");
+		expect(messageEntries.map((entry) => entry.message.role)).toEqual([
+			"user",
+			"assistant",
+			"toolResult",
+			"assistant",
+		]);
 	});
 });

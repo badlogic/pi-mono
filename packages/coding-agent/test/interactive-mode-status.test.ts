@@ -60,6 +60,54 @@ describe("InteractiveMode.showStatus", () => {
 	});
 });
 
+describe("InteractiveMode.createExtensionUIContext setTheme", () => {
+	test("persists theme changes to settings manager", () => {
+		initTheme("dark");
+
+		let currentTheme = "dark";
+		const settingsManager = {
+			getTheme: vi.fn(() => currentTheme),
+			setTheme: vi.fn((theme: string) => {
+				currentTheme = theme;
+			}),
+		};
+		const fakeThis: any = {
+			session: { settingsManager },
+			settingsManager,
+			ui: { requestRender: vi.fn() },
+		};
+
+		const uiContext = (InteractiveMode as any).prototype.createExtensionUIContext.call(fakeThis);
+		const result = uiContext.setTheme("light");
+
+		expect(result.success).toBe(true);
+		expect(settingsManager.setTheme).toHaveBeenCalledWith("light");
+		expect(currentTheme).toBe("light");
+		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
+	});
+
+	test("does not persist invalid theme names", () => {
+		initTheme("dark");
+
+		const settingsManager = {
+			getTheme: vi.fn(() => "dark"),
+			setTheme: vi.fn(),
+		};
+		const fakeThis: any = {
+			session: { settingsManager },
+			settingsManager,
+			ui: { requestRender: vi.fn() },
+		};
+
+		const uiContext = (InteractiveMode as any).prototype.createExtensionUIContext.call(fakeThis);
+		const result = uiContext.setTheme("__missing_theme__");
+
+		expect(result.success).toBe(false);
+		expect(settingsManager.setTheme).not.toHaveBeenCalled();
+		expect(fakeThis.ui.requestRender).not.toHaveBeenCalled();
+	});
+});
+
 describe("InteractiveMode.showLoadedResources", () => {
 	beforeAll(() => {
 		initTheme("dark");

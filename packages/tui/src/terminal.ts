@@ -1,7 +1,9 @@
 import * as fs from "node:fs";
-import koffi from "koffi";
+import { createRequire } from "node:module";
 import { setKittyProtocolActive } from "./keys.js";
 import { StdinBuffer } from "./stdin-buffer.js";
+
+const cjsRequire = createRequire(import.meta.url);
 
 /**
  * Minimal terminal interface for TUI
@@ -174,6 +176,10 @@ export class ProcessTerminal implements Terminal {
 	private enableWindowsVTInput(): void {
 		if (process.platform !== "win32") return;
 		try {
+			// Dynamic require to avoid bundling koffi's 74MB of cross-platform
+			// native binaries into every compiled binary. Koffi is only needed
+			// on Windows for VT input support.
+			const koffi = cjsRequire("koffi");
 			const k32 = koffi.load("kernel32.dll");
 			const GetStdHandle = k32.func("void* __stdcall GetStdHandle(int)");
 			const GetConsoleMode = k32.func("bool __stdcall GetConsoleMode(void*, _Out_ uint32_t*)");

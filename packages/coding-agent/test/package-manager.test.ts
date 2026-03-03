@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DefaultPackageManager, type ProgressEvent, type ResolvedResource } from "../src/core/package-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 
@@ -17,8 +17,11 @@ describe("DefaultPackageManager", () => {
 	let agentDir: string;
 	let settingsManager: SettingsManager;
 	let packageManager: DefaultPackageManager;
+	let previousOfflineEnv: string | undefined;
 
 	beforeEach(() => {
+		previousOfflineEnv = process.env.PI_OFFLINE;
+		delete process.env.PI_OFFLINE;
 		tempDir = join(tmpdir(), `pm-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 		agentDir = join(tempDir, "agent");
@@ -33,16 +36,25 @@ describe("DefaultPackageManager", () => {
 	});
 
 	afterEach(() => {
+		if (previousOfflineEnv === undefined) {
+			delete process.env.PI_OFFLINE;
+		} else {
+			process.env.PI_OFFLINE = previousOfflineEnv;
+		}
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
 		rmSync(tempDir, { recursive: true, force: true });
 	});
 
 	describe("resolve", () => {
-		it("should return empty paths when no sources configured", async () => {
+		it("should return no package-sourced paths when no sources configured", async () => {
 			const result = await packageManager.resolve();
 			expect(result.extensions).toEqual([]);
-			expect(result.skills).toEqual([]);
 			expect(result.prompts).toEqual([]);
 			expect(result.themes).toEqual([]);
+			expect(result.skills.every((r) => r.metadata.source === "auto" && r.metadata.origin === "top-level")).toBe(
+				true,
+			);
 		});
 
 		it("should resolve local extension paths from settings", async () => {
@@ -144,6 +156,62 @@ Content`,
 
 			// Should NOT find helper.ts (not declared in manifest)
 			expect(result.extensions.some((r) => r.path.endsWith("helper.ts"))).toBe(false);
+		});
+	});
+
+	describe(".agents/skills auto-discovery", () => {
+		it("should scan .agents/skills from cwd up to git repo root", async () => {
+			const repoRoot = join(tempDir, "repo");
+			const nestedCwd = join(repoRoot, "packages", "feature");
+			mkdirSync(nestedCwd, { recursive: true });
+			mkdirSync(join(repoRoot, ".git"), { recursive: true });
+
+			const aboveRepoSkill = join(tempDir, ".agents", "skills", "above-repo", "SKILL.md");
+			mkdirSync(join(tempDir, ".agents", "skills", "above-repo"), { recursive: true });
+			writeFileSync(aboveRepoSkill, "---\nname: above-repo\ndescription: above\n---\n");
+
+			const repoRootSkill = join(repoRoot, ".agents", "skills", "repo-root", "SKILL.md");
+			mkdirSync(join(repoRoot, ".agents", "skills", "repo-root"), { recursive: true });
+			writeFileSync(repoRootSkill, "---\nname: repo-root\ndescription: repo\n---\n");
+
+			const nestedSkill = join(repoRoot, "packages", ".agents", "skills", "nested", "SKILL.md");
+			mkdirSync(join(repoRoot, "packages", ".agents", "skills", "nested"), { recursive: true });
+			writeFileSync(nestedSkill, "---\nname: nested\ndescription: nested\n---\n");
+
+			const pm = new DefaultPackageManager({
+				cwd: nestedCwd,
+				agentDir,
+				settingsManager,
+			});
+
+			const result = await pm.resolve();
+			expect(result.skills.some((r) => r.path === repoRootSkill && r.enabled)).toBe(true);
+			expect(result.skills.some((r) => r.path === nestedSkill && r.enabled)).toBe(true);
+			expect(result.skills.some((r) => r.path === aboveRepoSkill)).toBe(false);
+		});
+
+		it("should scan .agents/skills up to filesystem root when not in a git repo", async () => {
+			const nonRepoRoot = join(tempDir, "non-repo");
+			const nestedCwd = join(nonRepoRoot, "a", "b");
+			mkdirSync(nestedCwd, { recursive: true });
+
+			const rootSkill = join(nonRepoRoot, ".agents", "skills", "root", "SKILL.md");
+			mkdirSync(join(nonRepoRoot, ".agents", "skills", "root"), { recursive: true });
+			writeFileSync(rootSkill, "---\nname: root\ndescription: root\n---\n");
+
+			const middleSkill = join(nonRepoRoot, "a", ".agents", "skills", "middle", "SKILL.md");
+			mkdirSync(join(nonRepoRoot, "a", ".agents", "skills", "middle"), { recursive: true });
+			writeFileSync(middleSkill, "---\nname: middle\ndescription: middle\n---\n");
+
+			const pm = new DefaultPackageManager({
+				cwd: nestedCwd,
+				agentDir,
+				settingsManager,
+			});
+
+			const result = await pm.resolve();
+			expect(result.skills.some((r) => r.path === rootSkill && r.enabled)).toBe(true);
+			expect(result.skills.some((r) => r.path === middleSkill && r.enabled)).toBe(true);
 		});
 	});
 
@@ -1095,6 +1163,68 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			// Should only find the valid top-level extension
 			expect(result.extensions.some((r) => r.path.endsWith("valid.ts") && r.enabled)).toBe(true);
 			expect(result.extensions.filter((r) => r.enabled).length).toBe(1);
+		});
+	});
+
+	describe("offline mode and network timeouts", () => {
+		it("should skip installing missing package sources when offline", async () => {
+			process.env.PI_OFFLINE = "1";
+			settingsManager.setProjectPackages(["npm:missing-package", "git:github.com/example/missing-repo"]);
+
+			const installParsedSourceSpy = vi.spyOn(packageManager as any, "installParsedSource");
+
+			const result = await packageManager.resolve();
+			const allResources = [...result.extensions, ...result.skills, ...result.prompts, ...result.themes];
+			expect(allResources.some((r) => r.metadata.origin === "package")).toBe(false);
+			expect(installParsedSourceSpy).not.toHaveBeenCalled();
+		});
+
+		it("should skip refreshing temporary git sources when offline", async () => {
+			process.env.PI_OFFLINE = "1";
+			const gitSource = "git:github.com/example/repo";
+			const parsedGitSource = (packageManager as any).parseSource(gitSource);
+			const installedPath = (packageManager as any).getGitInstallPath(parsedGitSource, "temporary") as string;
+
+			mkdirSync(join(installedPath, "extensions"), { recursive: true });
+			writeFileSync(join(installedPath, "extensions", "index.ts"), "export default function() {};");
+
+			const refreshTemporaryGitSourceSpy = vi.spyOn(packageManager as any, "refreshTemporaryGitSource");
+
+			const result = await packageManager.resolveExtensionSources([gitSource], { temporary: true });
+			expect(result.extensions.some((r) => r.path.endsWith("extensions/index.ts") && r.enabled)).toBe(true);
+			expect(refreshTemporaryGitSourceSpy).not.toHaveBeenCalled();
+		});
+
+		it("should not call fetch in npmNeedsUpdate when offline", async () => {
+			process.env.PI_OFFLINE = "1";
+			const installedPath = join(tempDir, "installed-package");
+			mkdirSync(installedPath, { recursive: true });
+			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ version: "1.0.0" }));
+
+			const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+			const needsUpdate = await (packageManager as any).npmNeedsUpdate(
+				{ type: "npm", spec: "example", name: "example", pinned: false },
+				installedPath,
+			);
+
+			expect(needsUpdate).toBe(false);
+			expect(fetchSpy).not.toHaveBeenCalled();
+		});
+
+		it("should pass an AbortSignal timeout when fetching npm latest version", async () => {
+			const fetchMock = vi.fn().mockResolvedValue({
+				ok: true,
+				json: async () => ({ version: "1.2.3" }),
+			});
+			vi.stubGlobal("fetch", fetchMock);
+
+			const latest = await (packageManager as any).getLatestNpmVersion("example");
+			expect(latest).toBe("1.2.3");
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+
+			const [, options] = fetchMock.mock.calls[0] as [string, RequestInit | undefined];
+			expect(options?.signal).toBeDefined();
 		});
 	});
 });

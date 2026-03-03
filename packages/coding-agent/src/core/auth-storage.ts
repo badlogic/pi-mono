@@ -34,6 +34,125 @@ export type AuthCredential = ApiKeyCredential | OAuthCredential;
 
 export type AuthStorageData = Record<string, AuthCredential>;
 
+type LockResult<T> = {
+	result: T;
+	next?: string;
+};
+
+export interface AuthStorageBackend {
+	withLock<T>(fn: (current: string | undefined) => LockResult<T>): T;
+	withLockAsync<T>(fn: (current: string | undefined) => Promise<LockResult<T>>): Promise<T>;
+}
+
+export class FileAuthStorageBackend implements AuthStorageBackend {
+	constructor(private authPath: string = join(getAgentDir(), "auth.json")) {}
+
+	private ensureParentDir(): void {
+		const dir = dirname(this.authPath);
+		if (!existsSync(dir)) {
+			mkdirSync(dir, { recursive: true, mode: 0o700 });
+		}
+	}
+
+	private ensureFileExists(): void {
+		if (!existsSync(this.authPath)) {
+			writeFileSync(this.authPath, "{}", "utf-8");
+			chmodSync(this.authPath, 0o600);
+		}
+	}
+
+	withLock<T>(fn: (current: string | undefined) => LockResult<T>): T {
+		this.ensureParentDir();
+		this.ensureFileExists();
+
+		let release: (() => void) | undefined;
+		try {
+			release = lockfile.lockSync(this.authPath, { realpath: false });
+			const current = existsSync(this.authPath) ? readFileSync(this.authPath, "utf-8") : undefined;
+			const { result, next } = fn(current);
+			if (next !== undefined) {
+				writeFileSync(this.authPath, next, "utf-8");
+				chmodSync(this.authPath, 0o600);
+			}
+			return result;
+		} finally {
+			if (release) {
+				release();
+			}
+		}
+	}
+
+	async withLockAsync<T>(fn: (current: string | undefined) => Promise<LockResult<T>>): Promise<T> {
+		this.ensureParentDir();
+		this.ensureFileExists();
+
+		let release: (() => Promise<void>) | undefined;
+		let lockCompromised = false;
+		let lockCompromisedError: Error | undefined;
+		const throwIfCompromised = () => {
+			if (lockCompromised) {
+				throw lockCompromisedError ?? new Error("Auth storage lock was compromised");
+			}
+		};
+
+		try {
+			release = await lockfile.lock(this.authPath, {
+				retries: {
+					retries: 10,
+					factor: 2,
+					minTimeout: 100,
+					maxTimeout: 10000,
+					randomize: true,
+				},
+				stale: 30000,
+				onCompromised: (err) => {
+					lockCompromised = true;
+					lockCompromisedError = err;
+				},
+			});
+
+			throwIfCompromised();
+			const current = existsSync(this.authPath) ? readFileSync(this.authPath, "utf-8") : undefined;
+			const { result, next } = await fn(current);
+			throwIfCompromised();
+			if (next !== undefined) {
+				writeFileSync(this.authPath, next, "utf-8");
+				chmodSync(this.authPath, 0o600);
+			}
+			throwIfCompromised();
+			return result;
+		} finally {
+			if (release) {
+				try {
+					await release();
+				} catch {
+					// Ignore unlock errors when lock is compromised.
+				}
+			}
+		}
+	}
+}
+
+export class InMemoryAuthStorageBackend implements AuthStorageBackend {
+	private value: string | undefined;
+
+	withLock<T>(fn: (current: string | undefined) => LockResult<T>): T {
+		const { result, next } = fn(this.value);
+		if (next !== undefined) {
+			this.value = next;
+		}
+		return result;
+	}
+
+	async withLockAsync<T>(fn: (current: string | undefined) => Promise<LockResult<T>>): Promise<T> {
+		const { result, next } = await fn(this.value);
+		if (next !== undefined) {
+			this.value = next;
+		}
+		return result;
+	}
+}
+
 /**
  * Credential storage backed by a JSON file.
  */
@@ -41,9 +160,25 @@ export class AuthStorage {
 	private data: AuthStorageData = {};
 	private runtimeOverrides: Map<string, string> = new Map();
 	private fallbackResolver?: (provider: string) => string | undefined;
+	private loadError: Error | null = null;
+	private errors: Error[] = [];
 
-	constructor(private authPath: string = join(getAgentDir(), "auth.json")) {
+	private constructor(private storage: AuthStorageBackend) {
 		this.reload();
+	}
+
+	static create(authPath?: string): AuthStorage {
+		return new AuthStorage(new FileAuthStorageBackend(authPath ?? join(getAgentDir(), "auth.json")));
+	}
+
+	static fromStorage(storage: AuthStorageBackend): AuthStorage {
+		return new AuthStorage(storage);
+	}
+
+	static inMemory(data: AuthStorageData = {}): AuthStorage {
+		const storage = new InMemoryAuthStorageBackend();
+		storage.withLock(() => ({ result: undefined, next: JSON.stringify(data, null, 2) }));
+		return AuthStorage.fromStorage(storage);
 	}
 
 	/**
@@ -69,31 +204,55 @@ export class AuthStorage {
 		this.fallbackResolver = resolver;
 	}
 
-	/**
-	 * Reload credentials from disk.
-	 */
-	reload(): void {
-		if (!existsSync(this.authPath)) {
-			this.data = {};
-			return;
+	private recordError(error: unknown): void {
+		const normalizedError = error instanceof Error ? error : new Error(String(error));
+		this.errors.push(normalizedError);
+	}
+
+	private parseStorageData(content: string | undefined): AuthStorageData {
+		if (!content) {
+			return {};
 		}
-		try {
-			this.data = JSON.parse(readFileSync(this.authPath, "utf-8"));
-		} catch {
-			this.data = {};
-		}
+		return JSON.parse(content) as AuthStorageData;
 	}
 
 	/**
-	 * Save credentials to disk.
+	 * Reload credentials from storage.
 	 */
-	private save(): void {
-		const dir = dirname(this.authPath);
-		if (!existsSync(dir)) {
-			mkdirSync(dir, { recursive: true, mode: 0o700 });
+	reload(): void {
+		let content: string | undefined;
+		try {
+			this.storage.withLock((current) => {
+				content = current;
+				return { result: undefined };
+			});
+			this.data = this.parseStorageData(content);
+			this.loadError = null;
+		} catch (error) {
+			this.loadError = error as Error;
+			this.recordError(error);
 		}
-		writeFileSync(this.authPath, JSON.stringify(this.data, null, 2), "utf-8");
-		chmodSync(this.authPath, 0o600);
+	}
+
+	private persistProviderChange(provider: string, credential: AuthCredential | undefined): void {
+		if (this.loadError) {
+			return;
+		}
+
+		try {
+			this.storage.withLock((current) => {
+				const currentData = this.parseStorageData(current);
+				const merged: AuthStorageData = { ...currentData };
+				if (credential) {
+					merged[provider] = credential;
+				} else {
+					delete merged[provider];
+				}
+				return { result: undefined, next: JSON.stringify(merged, null, 2) };
+			});
+		} catch (error) {
+			this.recordError(error);
+		}
 	}
 
 	/**
@@ -108,7 +267,7 @@ export class AuthStorage {
 	 */
 	set(provider: string, credential: AuthCredential): void {
 		this.data[provider] = credential;
-		this.save();
+		this.persistProviderChange(provider, credential);
 	}
 
 	/**
@@ -116,7 +275,7 @@ export class AuthStorage {
 	 */
 	remove(provider: string): void {
 		delete this.data[provider];
-		this.save();
+		this.persistProviderChange(provider, undefined);
 	}
 
 	/**
@@ -152,6 +311,12 @@ export class AuthStorage {
 		return { ...this.data };
 	}
 
+	drainErrors(): Error[] {
+		const drained = [...this.errors];
+		this.errors = [];
+		return drained;
+	}
+
 	/**
 	 * Login to an OAuth provider.
 	 */
@@ -173,9 +338,8 @@ export class AuthStorage {
 	}
 
 	/**
-	 * Refresh OAuth token with file locking to prevent race conditions.
+	 * Refresh OAuth token with backend locking to prevent race conditions.
 	 * Multiple pi instances may try to refresh simultaneously when tokens expire.
-	 * This ensures only one instance refreshes while others wait and use the result.
 	 */
 	private async refreshOAuthTokenWithLock(
 		providerId: OAuthProviderId,
@@ -185,91 +349,42 @@ export class AuthStorage {
 			return null;
 		}
 
-		// Ensure auth file exists for locking
-		if (!existsSync(this.authPath)) {
-			const dir = dirname(this.authPath);
-			if (!existsSync(dir)) {
-				mkdirSync(dir, { recursive: true, mode: 0o700 });
-			}
-			writeFileSync(this.authPath, "{}", "utf-8");
-			chmodSync(this.authPath, 0o600);
-		}
+		const result = await this.storage.withLockAsync(async (current) => {
+			const currentData = this.parseStorageData(current);
+			this.data = currentData;
+			this.loadError = null;
 
-		let release: (() => Promise<void>) | undefined;
-		let lockCompromised = false;
-		let lockCompromisedError: Error | undefined;
-		const throwIfLockCompromised = () => {
-			if (lockCompromised) {
-				throw lockCompromisedError ?? new Error("OAuth refresh lock was compromised");
-			}
-		};
-
-		try {
-			// Acquire exclusive lock with retry and timeout
-			// Use generous retry window to handle slow token endpoints
-			release = await lockfile.lock(this.authPath, {
-				retries: {
-					retries: 10,
-					factor: 2,
-					minTimeout: 100,
-					maxTimeout: 10000,
-					randomize: true,
-				},
-				stale: 30000, // Consider lock stale after 30 seconds
-				onCompromised: (err) => {
-					lockCompromised = true;
-					lockCompromisedError = err;
-				},
-			});
-
-			throwIfLockCompromised();
-
-			// Re-read file after acquiring lock - another instance may have refreshed
-			this.reload();
-
-			const cred = this.data[providerId];
+			const cred = currentData[providerId];
 			if (cred?.type !== "oauth") {
-				return null;
+				return { result: null };
 			}
 
-			// Check if token is still expired after re-reading
-			// (another instance may have already refreshed it)
 			if (Date.now() < cred.expires) {
-				// Token is now valid - another instance refreshed it
-				throwIfLockCompromised();
-				const apiKey = provider.getApiKey(cred);
-				return { apiKey, newCredentials: cred };
+				return { result: { apiKey: provider.getApiKey(cred), newCredentials: cred } };
 			}
 
-			// Token still expired, we need to refresh
 			const oauthCreds: Record<string, OAuthCredentials> = {};
-			for (const [key, value] of Object.entries(this.data)) {
+			for (const [key, value] of Object.entries(currentData)) {
 				if (value.type === "oauth") {
 					oauthCreds[key] = value;
 				}
 			}
 
-			const result = await getOAuthApiKey(providerId, oauthCreds);
-			if (result) {
-				throwIfLockCompromised();
-				this.data[providerId] = { type: "oauth", ...result.newCredentials };
-				this.save();
-				throwIfLockCompromised();
-				return result;
+			const refreshed = await getOAuthApiKey(providerId, oauthCreds);
+			if (!refreshed) {
+				return { result: null };
 			}
 
-			throwIfLockCompromised();
-			return null;
-		} finally {
-			// Always release the lock
-			if (release) {
-				try {
-					await release();
-				} catch {
-					// Ignore unlock errors (lock may have been compromised)
-				}
-			}
-		}
+			const merged: AuthStorageData = {
+				...currentData,
+				[providerId]: { type: "oauth", ...refreshed.newCredentials },
+			};
+			this.data = merged;
+			this.loadError = null;
+			return { result: refreshed, next: JSON.stringify(merged, null, 2) };
+		});
+
+		return result;
 	}
 
 	/**
@@ -311,7 +426,8 @@ export class AuthStorage {
 					if (result) {
 						return result.apiKey;
 					}
-				} catch {
+				} catch (error) {
+					this.recordError(error);
 					// Refresh failed - re-read file to check if another instance succeeded
 					this.reload();
 					const updatedCred = this.data[providerId];

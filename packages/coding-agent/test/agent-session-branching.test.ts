@@ -54,7 +54,7 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 
 		sessionManager = noSession ? SessionManager.inMemory() : SessionManager.create(tempDir);
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
-		const authStorage = new AuthStorage(join(tempDir, "auth.json"));
+		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRegistry = new ModelRegistry(authStorage, tempDir);
 
 		session = new AgentSession({

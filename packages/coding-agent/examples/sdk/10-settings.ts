@@ -24,6 +24,19 @@ await createAgentSession({
 
 console.log("Session created with custom settings");
 
+// Setters update memory immediately and queue persistence writes.
+// Call flush() when you need a durability boundary.
+settingsManager.setDefaultThinkingLevel("low");
+await settingsManager.flush();
+
+// Surface settings I/O errors at the app layer.
+const settingsErrors = settingsManager.drainErrors();
+if (settingsErrors.length > 0) {
+	for (const { scope, error } of settingsErrors) {
+		console.warn(`Warning (${scope} settings): ${error.message}`);
+	}
+}
+
 // For testing without file I/O:
 const inMemorySettings = SettingsManager.inMemory({
 	compaction: { enabled: false },
