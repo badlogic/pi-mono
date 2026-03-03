@@ -10,6 +10,22 @@ import type { Api, Context, ImageContent, Model, StreamOptions, Tool, ToolResult
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
+function nebiusModel(id: string): Model<"openai-completions"> {
+	return {
+		id,
+		name: id,
+		api: "openai-completions",
+		provider: "nebius",
+		baseUrl: "https://api.tokenfactory.nebius.com/v1",
+		reasoning: /(-R1|-Thinking|QwQ)/.test(id),
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 40960,
+		maxTokens: 32768,
+		compat: { supportsDeveloperRole: false, maxTokensField: "max_tokens" },
+	};
+}
+
 import { StringEnum } from "../src/utils/typebox-helpers.js";
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
@@ -842,6 +858,33 @@ describe("Generate E2E Tests", () => {
 		"Kimi For Coding Provider (kimi-k2-thinking via Anthropic Messages)",
 		() => {
 			const llm = getModel("kimi-coding", "kimi-k2-thinking");
+
+			it("should complete basic text generation", { retry: 3 }, async () => {
+				await basicTextGeneration(llm);
+			});
+
+			it("should handle tool calling", { retry: 3 }, async () => {
+				await handleToolCall(llm);
+			});
+
+			it("should handle streaming", { retry: 3 }, async () => {
+				await handleStreaming(llm);
+			});
+
+			it("should handle thinking mode", { retry: 3 }, async () => {
+				await handleThinking(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+			});
+
+			it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+				await multiTurn(llm, { thinkingEnabled: true, thinkingBudgetTokens: 2048 });
+			});
+		},
+	);
+
+	describe.skipIf(!process.env.NEBIUS_API_KEY)(
+		"Nebius Token Factory Provider (Qwen3-32B via OpenAI Completions)",
+		() => {
+			const llm = nebiusModel("Qwen/Qwen3-32B");
 
 			it("should complete basic text generation", { retry: 3 }, async () => {
 				await basicTextGeneration(llm);

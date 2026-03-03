@@ -48,6 +48,8 @@ interface ProviderModelPair {
 	model: string;
 	label: string;
 	apiOverride?: Api;
+	/** Inline model object for providers not in the static registry. */
+	modelOverride?: Model<Api>;
 }
 
 const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
@@ -94,6 +96,25 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 	{ provider: "mistral", model: "devstral-medium-latest", label: "mistral-devstral-medium" },
 	// MiniMax
 	{ provider: "minimax", model: "MiniMax-M2.1", label: "minimax-m2.1" },
+	// Nebius Token Factory (runtime extension — inline model, not in static registry)
+	{
+		provider: "nebius",
+		model: "Qwen/Qwen3-32B",
+		label: "nebius-qwen3-32b",
+		modelOverride: {
+			id: "Qwen/Qwen3-32B",
+			name: "Qwen/Qwen3-32B",
+			api: "openai-completions",
+			provider: "nebius",
+			baseUrl: "https://api.tokenfactory.nebius.com/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 40960,
+			maxTokens: 32768,
+			compat: { supportsDeveloperRole: false, maxTokensField: "max_tokens" },
+		},
+	},
 	// OpenCode Zen
 	{ provider: "opencode", model: "big-pickle", label: "zen-big-pickle" },
 	{ provider: "opencode", model: "claude-sonnet-4-5", label: "zen-claude-sonnet-4-5" },
@@ -159,7 +180,8 @@ async function generateContext(
 	pair: ProviderModelPair,
 	apiKey: string,
 ): Promise<{ messages: Message[]; api: Api } | null> {
-	const baseModel = (getModel as (p: string, m: string) => Model<Api> | undefined)(pair.provider, pair.model);
+	const baseModel =
+		pair.modelOverride ?? (getModel as (p: string, m: string) => Model<Api> | undefined)(pair.provider, pair.model);
 	if (!baseModel) {
 		console.log(`  Model not found: ${pair.provider}/${pair.model}`);
 		return null;
@@ -369,10 +391,9 @@ describe.skipIf(!hasAnyApiKey())("Cross-Provider Handoff", () => {
 					},
 				];
 
-				const baseModel = (getModel as (p: string, m: string) => Model<Api> | undefined)(
-					targetPair.provider,
-					targetPair.model,
-				);
+				const baseModel =
+					targetPair.modelOverride ??
+					(getModel as (p: string, m: string) => Model<Api> | undefined)(targetPair.provider, targetPair.model);
 				if (!baseModel) {
 					console.log(`[Target: ${targetPair.label}] Model not found`);
 					continue;

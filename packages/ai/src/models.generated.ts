@@ -4908,6 +4908,8 @@ export const MODELS = {
 			maxTokens: 128000,
 		} satisfies Model<"openai-completions">,
 	},
+	"nebius": {
+	},
 	"openai": {
 		"codex-mini-latest": {
 			id: "codex-mini-latest",

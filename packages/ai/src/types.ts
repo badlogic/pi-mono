@@ -35,6 +35,7 @@ export type KnownProvider =
 	| "mistral"
 	| "minimax"
 	| "minimax-cn"
+	| "nebius"
 	| "huggingface"
 	| "opencode"
 	| "kimi-coding";

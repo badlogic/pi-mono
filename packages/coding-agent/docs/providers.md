@@ -67,6 +67,7 @@ pi
 | OpenCode Zen | `OPENCODE_API_KEY` | `opencode` |
 | Hugging Face | `HF_TOKEN` | `huggingface` |
 | Kimi For Coding | `KIMI_API_KEY` | `kimi-coding` |
+| Nebius Token Factory | `NEBIUS_API_KEY` | `nebius` |
 | MiniMax | `MINIMAX_API_KEY` | `minimax` |
 | MiniMax (China) | `MINIMAX_CN_API_KEY` | `minimax-cn` |
 

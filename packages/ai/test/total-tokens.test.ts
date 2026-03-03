@@ -19,6 +19,22 @@ import type { Api, Context, Model, StreamOptions, Usage } from "../src/types.js"
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
+function nebiusModel(id: string): Model<"openai-completions"> {
+	return {
+		id,
+		name: id,
+		api: "openai-completions",
+		provider: "nebius",
+		baseUrl: "https://api.tokenfactory.nebius.com/v1",
+		reasoning: /(-R1|-Thinking|QwQ)/.test(id),
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 40960,
+		maxTokens: 32768,
+		compat: { supportsDeveloperRole: false, maxTokensField: "max_tokens" },
+	};
+}
+
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
@@ -415,6 +431,25 @@ describe("totalTokens field", () => {
 				assertTotalTokensEqualsComponents(second);
 			},
 		);
+	});
+
+	// =========================================================================
+	// Nebius Token Factory
+	// =========================================================================
+
+	describe.skipIf(!process.env.NEBIUS_API_KEY)("Nebius Token Factory", () => {
+		it("Qwen3-32B - should return totalTokens equal to sum of components", { retry: 3, timeout: 60000 }, async () => {
+			const llm = nebiusModel("Qwen/Qwen3-32B");
+
+			console.log(`\nNebius Token Factory / ${llm.id}:`);
+			const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.NEBIUS_API_KEY });
+
+			logUsage("First request", first);
+			logUsage("Second request", second);
+
+			assertTotalTokensEqualsComponents(first);
+			assertTotalTokensEqualsComponents(second);
+		});
 	});
 
 	// =========================================================================

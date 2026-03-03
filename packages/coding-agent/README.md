@@ -100,6 +100,7 @@ For each built-in provider, pi maintains a list of tool-capable models, updated 
 - OpenCode Zen
 - Hugging Face
 - Kimi For Coding
+- Nebius Token Factory
 - MiniMax
 
 See [docs/providers.md](docs/providers.md) for detailed setup instructions.

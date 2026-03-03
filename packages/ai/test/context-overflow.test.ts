@@ -22,6 +22,22 @@ import { hasAzureOpenAICredentials } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
+function nebiusModel(id: string): Model<"openai-completions"> {
+	return {
+		id,
+		name: id,
+		api: "openai-completions",
+		provider: "nebius",
+		baseUrl: "https://api.tokenfactory.nebius.com/v1",
+		reasoning: /(-R1|-Thinking|QwQ)/.test(id),
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 40960,
+		maxTokens: 32768,
+		compat: { supportsDeveloperRole: false, maxTokensField: "max_tokens" },
+	};
+}
+
 // Resolve OAuth tokens at module level (async, runs before tests)
 const oauthTokens = await Promise.all([
 	resolveApiKey("github-copilot"),
@@ -451,6 +467,21 @@ describe("Context overflow error handling", () => {
 		it("kimi-k2-thinking - should detect overflow via isContextOverflow", async () => {
 			const model = getModel("kimi-coding", "kimi-k2-thinking");
 			const result = await testContextOverflow(model, process.env.KIMI_API_KEY!);
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
+	// Nebius Token Factory
+	// =============================================================================
+
+	describe.skipIf(!process.env.NEBIUS_API_KEY)("Nebius Token Factory", () => {
+		it("Qwen3-32B - should detect overflow via isContextOverflow", async () => {
+			const model = nebiusModel("Qwen/Qwen3-32B");
+			const result = await testContextOverflow(model, process.env.NEBIUS_API_KEY!);
 			logResult(result);
 
 			expect(result.stopReason).toBe("error");

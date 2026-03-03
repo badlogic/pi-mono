@@ -5,6 +5,22 @@ import type { Api, AssistantMessage, Context, Model, StreamOptions, UserMessage 
 
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
+function nebiusModel(id: string): Model<"openai-completions"> {
+	return {
+		id,
+		name: id,
+		api: "openai-completions",
+		provider: "nebius",
+		baseUrl: "https://api.tokenfactory.nebius.com/v1",
+		reasoning: /(-R1|-Thinking|QwQ)/.test(id),
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 40960,
+		maxTokens: 32768,
+		compat: { supportsDeveloperRole: false, maxTokensField: "max_tokens" },
+	};
+}
+
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
 import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
@@ -390,6 +406,26 @@ describe("AI Providers Empty Message Tests", () => {
 
 	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding Provider Empty Messages", () => {
 		const llm = getModel("kimi-coding", "kimi-k2-thinking");
+
+		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyMessage(llm);
+		});
+
+		it("should handle empty string content", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyStringMessage(llm);
+		});
+
+		it("should handle whitespace-only content", { retry: 3, timeout: 30000 }, async () => {
+			await testWhitespaceOnlyMessage(llm);
+		});
+
+		it("should handle empty assistant message in conversation", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyAssistantMessage(llm);
+		});
+	});
+
+	describe.skipIf(!process.env.NEBIUS_API_KEY)("Nebius Token Factory Provider Empty Messages", () => {
+		const llm = nebiusModel("Qwen/Qwen3-32B");
 
 		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
 			await testEmptyMessage(llm);
