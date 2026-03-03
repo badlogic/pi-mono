@@ -21,6 +21,7 @@ services:
       - sh
       - -lc
       - |
+          set -x
           set -euo pipefail
           apk add --no-cache git bash >/dev/null 2>&1 || true
 
