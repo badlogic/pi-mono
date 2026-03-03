@@ -4,7 +4,6 @@
  * @module subagents/tools
  */
 
-import { StringEnum } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "../extensions/types.js";
@@ -15,14 +14,15 @@ import type { SubagentListDetails, SubagentSendDetails, SubagentStartDetails } f
  * Register all subagent tools with the extension API.
  */
 export function registerSubagentTools(pi: ExtensionAPI, manager: SubagentManager): void {
-	// subagent_start - Start a new subagent
+	// subagent_start - Start a new subagent (non-blocking)
 	pi.registerTool({
 		name: "subagent_start",
 		label: "Start Subagent",
 		description: [
-			"Delegate tasks to specialized subagents with isolated context.",
-			"Modes: 'fork' = one-shot task (default), 'alive' = persistent session for follow-up.",
-			"Use 'alive' mode when you need to interact with the subagent later or chain multiple tasks.",
+			"Start a specialized subagent that runs in the background (non-blocking).",
+			"Returns immediately with a subagent ID.",
+			"Results are delivered to the main window when the subagent completes.",
+			"Use subagent_wait to block until completion, or subagent_list to check status.",
 			"Available agents: scout (fast recon), planner (implementation plans), worker (full capabilities).",
 		].join(" "),
 		parameters: Type.Object({
@@ -30,108 +30,37 @@ export function registerSubagentTools(pi: ExtensionAPI, manager: SubagentManager
 				description: "Agent name: 'scout' (fast recon), 'planner' (planning), 'worker' (general purpose)",
 			}),
 			task: Type.String({ description: "Task for the subagent to execute" }),
-			mode: Type.Optional(
-				StringEnum(["fork", "alive"] as const, {
-					description: "'fork' = one-shot (default), 'alive' = persistent session",
-				}),
-			),
-			waitForResult: Type.Optional(
-				Type.Boolean({
-					description: "Wait for completion before returning (default: true for fork, false for alive)",
-				}),
-			),
 		}),
 
-		async execute(_toolCallId, params, _signal, onUpdate, ctx) {
-			const isAlive = params.mode === "alive";
-			const waitForResult = params.waitForResult ?? !isAlive;
-
-			// Track subagent for streaming updates
-			let subagentId: string | null = null;
-			let currentStatus: string = "starting";
-			let lastOutput: string = "";
-
-			// Subscribe to manager events for streaming progress
-			const unsubscribe = manager.on((event) => {
-				// Only process events for our subagent
-				if (subagentId && "subagentId" in event && event.subagentId !== subagentId) return;
-				if (event.type === "started") {
-					subagentId = event.subagent.id;
-					currentStatus = event.subagent.status;
-				}
-				if (event.type === "status") {
-					currentStatus = event.status;
-				}
-
-				// Get current output for streaming
-				const subagent = subagentId ? manager.getSubagent(subagentId) : null;
-				lastOutput = subagent ? (subagent.messageHistory.at(-1)?.content ?? "") : "";
-
-				// Stream update to TUI
-				if (onUpdate && subagentId) {
-					onUpdate({
-						content: [
-							{
-								type: "text",
-								text: lastOutput || `[${params.agent}] ${currentStatus}...`,
-							},
-						],
-						details: {
-							subagentId,
-							name: params.agent,
-							status: currentStatus as SubagentStartDetails["status"],
-							mode: "in-memory",
-							isStreaming: true,
-						} satisfies SubagentStartDetails & { isStreaming: boolean },
-					});
-				}
-			});
-
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
+				// Always non-blocking - start subagent and return immediately
 				const result = await manager.startSubagent(params.agent, params.task, {
 					mode: "in-memory",
-					waitForResult,
+					waitForResult: false,
 					cwd: ctx.cwd,
 				});
 
-				// Unsubscribe after completion
-				unsubscribe();
-
-				if (isAlive) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Started alive subagent '${params.agent}' with ID: ${result.id}\nStatus: ${result.status}\n\nUser can interact via: /agent ${result.id}\nYou can send follow-up messages via subagent_send tool.`,
-							},
-						],
-						details: {
-							subagentId: result.id,
-							name: params.agent,
-							status: result.status,
-							mode: "in-memory",
-						} satisfies SubagentStartDetails,
-					};
-				}
-
 				return {
-					content: [{ type: "text", text: result.output ?? "(no output)" }],
+					content: [
+						{
+							type: "text",
+							text: `Started subagent '${params.agent}' with ID: ${result.id}\nStatus: ${result.status}\n\nThe subagent is running in the background. Results will appear when complete.\nUse subagent_list to check status, or subagent_wait to block until done.`,
+						},
+					],
 					details: {
 						subagentId: result.id,
 						name: params.agent,
 						status: result.status,
 						mode: "in-memory",
-						output: result.output,
-						usage: result.usage,
 					} satisfies SubagentStartDetails,
 				};
 			} catch (error) {
-				unsubscribe();
 				const message = error instanceof Error ? error.message : String(error);
 				return {
 					content: [{ type: "text", text: `Failed to start subagent: ${message}` }],
 					details: {
-						subagentId: subagentId ?? "",
+						subagentId: "",
 						name: params.agent,
 						status: "error" as const,
 						mode: "in-memory",
@@ -142,16 +71,14 @@ export function registerSubagentTools(pi: ExtensionAPI, manager: SubagentManager
 		},
 
 		renderCall(args, theme) {
-			const mode = args.mode ?? "fork";
 			let text = theme.fg("toolTitle", theme.bold("subagent_start ")) + theme.fg("accent", args.agent);
-			text += theme.fg("muted", ` [${mode}]`);
 			const taskPreview = args.task.length > 60 ? `${args.task.slice(0, 60)}...` : args.task;
 			text += `\n  ${theme.fg("dim", taskPreview)}`;
 			return new Text(text, 0, 0);
 		},
 
-		renderResult(result, { expanded, isPartial }, theme) {
-			const details = result.details as (SubagentStartDetails & { isStreaming?: boolean }) | undefined;
+		renderResult(result, _options, theme) {
+			const details = result.details as SubagentStartDetails | undefined;
 
 			if (details?.error) {
 				const text = result.content[0];
@@ -160,32 +87,122 @@ export function registerSubagentTools(pi: ExtensionAPI, manager: SubagentManager
 
 			if (!details) {
 				const text = result.content[0];
-				return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
+				return new Text(text?.type === "text" ? text.text : "Started", 0, 0);
 			}
 
-			// Streaming state - show activity indicator
-			if (isPartial || details.isStreaming) {
-				const statusIcon = theme.fg("warning", "⏳");
-				let text = `${statusIcon} ${theme.fg("toolTitle", theme.bold(details.name))}`;
-				text += theme.fg("muted", ` (${details.subagentId}, ${details.status}...)`);
-				text += `\n  ${theme.fg("dim", "Working...")}`;
-				return new Text(text, 0, 0);
-			}
-
-			const icon = details.status === "done" ? theme.fg("success", "✓") : theme.fg("warning", "⏳");
+			const icon = theme.fg("success", "▶");
 			let text = `${icon} ${theme.fg("toolTitle", theme.bold(details.name))}`;
 			text += theme.fg("muted", ` (${details.subagentId}, ${details.status})`);
+			text += `\n  ${theme.fg("dim", "Running in background...")}`;
+			return new Text(text, 0, 0);
+		},
+	});
 
-			if (details.output && expanded) {
-				text += `\n\n${theme.fg("dim", details.output)}`;
-			} else if (details.output) {
-				const preview = details.output.slice(0, 200);
-				text += `\n${theme.fg("dim", preview)}${details.output.length > 200 ? "..." : ""}`;
+	// subagent_wait - Wait for a subagent to complete
+	pi.registerTool({
+		name: "subagent_wait",
+		label: "Wait for Subagent",
+		description: "Wait for a subagent to complete and return its result. Blocks until the subagent finishes.",
+		parameters: Type.Object({
+			subagentId: Type.String({ description: "ID of the subagent to wait for" }),
+			timeout: Type.Optional(Type.Number({ description: "Timeout in milliseconds (default: 300000 = 5 min)" })),
+		}),
+
+		async execute(_toolCallId, params, _signal, onUpdate, _ctx) {
+			const timeout = params.timeout ?? 300000;
+
+			try {
+				// Subscribe to status updates for streaming
+				const unsubscribe = manager.on((event) => {
+					if (event.type === "status" && event.subagentId === params.subagentId) {
+						const subagent = manager.getSubagent(params.subagentId);
+						if (onUpdate && subagent) {
+							onUpdate({
+								content: [
+									{
+										type: "text",
+										text: `Waiting for subagent '${subagent.name}'...\nStatus: ${event.status}`,
+									},
+								],
+								details: {
+									subagentId: params.subagentId,
+									status: event.status,
+								},
+							});
+						}
+					}
+				});
+
+				// Check if subagent exists
+				const subagent = manager.getSubagent(params.subagentId);
+				if (!subagent) {
+					unsubscribe();
+					return {
+						content: [{ type: "text", text: `Subagent ${params.subagentId} not found` }],
+						details: {
+							subagentId: params.subagentId,
+							status: "error" as const,
+							error: "Subagent not found",
+						},
+					};
+				}
+
+				// Wait for completion
+				await manager.waitForCompletion(params.subagentId, timeout);
+				unsubscribe();
+
+				// Get final output
+				const output = await manager.getSubagentOutput(params.subagentId);
+				const finalSubagent = manager.getSubagent(params.subagentId);
+
+				return {
+					content: [{ type: "text", text: output.output ?? "(no output)" }],
+					details: {
+						subagentId: params.subagentId,
+						name: finalSubagent?.name,
+						status: output.status,
+						output: output.output,
+						usage: output.usage,
+					},
+				};
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return {
+					content: [{ type: "text", text: `Failed to wait for subagent: ${message}` }],
+					details: {
+						subagentId: params.subagentId,
+						status: "error" as const,
+						error: message,
+					},
+				};
+			}
+		},
+
+		renderCall(args, theme) {
+			let text = theme.fg("toolTitle", theme.bold("subagent_wait ")) + theme.fg("accent", args.subagentId);
+			if (args.timeout) {
+				text += theme.fg("muted", ` (${args.timeout}ms)`);
+			}
+			return new Text(text, 0, 0);
+		},
+
+		renderResult(result, _options, theme) {
+			const details = result.details as
+				| { subagentId: string; status: string; error?: string; output?: string }
+				| undefined;
+
+			if (details?.error) {
+				const text = result.content[0];
+				return new Text(theme.fg("error", text?.type === "text" ? text.text : "Error"), 0, 0);
 			}
 
-			if (details.usage) {
-				const usage = `↑${details.usage.inputTokens} ↓${details.usage.outputTokens}`;
-				text += `\n${theme.fg("muted", usage)}`;
+			const icon = details?.status === "done" ? theme.fg("success", "✓") : theme.fg("warning", "⏳");
+			let text = `${icon} ${theme.fg("toolTitle", theme.bold("subagent_wait"))}`;
+			text += theme.fg("muted", ` (${details?.subagentId}, ${details?.status})`);
+
+			if (details?.output) {
+				const preview = details.output.slice(0, 200);
+				text += `\n${theme.fg("dim", preview)}${details.output.length > 200 ? "..." : ""}`;
 			}
 
 			return new Text(text, 0, 0);
