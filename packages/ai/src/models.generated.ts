@@ -3188,6 +3188,23 @@ export const MODELS = {
 			contextWindow: 1048576,
 			maxTokens: 65536,
 		} satisfies Model<"google-generative-ai">,
+		"gemini-3.1-flash-lite-preview": {
+			id: "gemini-3.1-flash-lite-preview",
+			name: "Gemini 3.1 Flash Lite Preview",
+			api: "google-generative-ai",
+			provider: "google",
+			baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 1048576,
+			maxTokens: 65536,
+		} satisfies Model<"google-generative-ai">,
 		"gemini-3.1-pro-preview-customtools": {
 			id: "gemini-3.1-pro-preview-customtools",
 			name: "Gemini 3.1 Pro Preview Custom Tools",
