@@ -21,7 +21,7 @@ services:
       - sh
       - -lc
       - |
-          set -x
+          # set -x
           set -euo pipefail
           apk add --no-cache git bash >/dev/null 2>&1 || true
 
@@ -30,7 +30,9 @@ services:
           GOOD_FILE="$STATE_DIR/good_commit"
           CHECK_INTERVAL_SECONDS="${CHECK_INTERVAL_SECONDS:-120}"
 
+          echo mkdir -p "$STATE_DIR"
           mkdir -p "$STATE_DIR"
+          echo mkdir -p "$REPO_DIR"
           mkdir -p "$REPO_DIR"
 
           if [ ! -d "$REPO_DIR/.git" ]; then
