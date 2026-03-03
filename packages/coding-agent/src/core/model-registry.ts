@@ -15,6 +15,8 @@ import {
 	type OpenAIResponsesCompat,
 	registerApiProvider,
 	registerOAuthProvider,
+	resetApiProviders,
+	resetOAuthProviders,
 	type SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
@@ -243,6 +245,11 @@ export class ModelRegistry {
 	refresh(): void {
 		this.customProviderApiKeys.clear();
 		this.loadError = undefined;
+
+		// Ensure dynamic API/OAuth registrations are rebuilt from current provider state.
+		resetApiProviders();
+		resetOAuthProviders();
+
 		this.loadModels();
 
 		for (const [providerName, config] of this.registeredProviders.entries()) {
@@ -540,6 +547,22 @@ export class ModelRegistry {
 		this.applyProviderConfig(providerName, config);
 	}
 
+	/**
+	 * Unregister a previously registered provider.
+	 *
+	 * Removes the provider from the registry and reloads models from disk so that
+	 * built-in models overridden by this provider are restored to their original state.
+	 * Also resets dynamic OAuth and API stream registrations before reapplying
+	 * remaining dynamic providers.
+	 * Has no effect if the provider was never registered.
+	 */
+	unregisterProvider(providerName: string): void {
+		if (!this.registeredProviders.has(providerName)) return;
+		this.registeredProviders.delete(providerName);
+		this.customProviderApiKeys.delete(providerName);
+		this.refresh();
+	}
+
 	private applyProviderConfig(providerName: string, config: ProviderConfigInput): void {
 		// Register OAuth provider if provided
 		if (config.oauth) {
@@ -556,11 +579,14 @@ export class ModelRegistry {
 				throw new Error(`Provider ${providerName}: "api" is required when registering streamSimple.`);
 			}
 			const streamSimple = config.streamSimple;
-			registerApiProvider({
-				api: config.api,
-				stream: (model, context, options) => streamSimple(model, context, options as SimpleStreamOptions),
-				streamSimple,
-			});
+			registerApiProvider(
+				{
+					api: config.api,
+					stream: (model, context, options) => streamSimple(model, context, options as SimpleStreamOptions),
+					streamSimple,
+				},
+				`provider:${providerName}`,
+			);
 		}
 
 		// Store API key for auth resolution

@@ -42,13 +42,17 @@ import { geminiCliOAuthProvider } from "./google-gemini-cli.js";
 import { openaiCodexOAuthProvider } from "./openai-codex.js";
 import type { OAuthCredentials, OAuthProviderId, OAuthProviderInfo, OAuthProviderInterface } from "./types.js";
 
-const oauthProviderRegistry = new Map<string, OAuthProviderInterface>([
-	[anthropicOAuthProvider.id, anthropicOAuthProvider],
-	[githubCopilotOAuthProvider.id, githubCopilotOAuthProvider],
-	[geminiCliOAuthProvider.id, geminiCliOAuthProvider],
-	[antigravityOAuthProvider.id, antigravityOAuthProvider],
-	[openaiCodexOAuthProvider.id, openaiCodexOAuthProvider],
-]);
+const BUILT_IN_OAUTH_PROVIDERS: OAuthProviderInterface[] = [
+	anthropicOAuthProvider,
+	githubCopilotOAuthProvider,
+	geminiCliOAuthProvider,
+	antigravityOAuthProvider,
+	openaiCodexOAuthProvider,
+];
+
+const oauthProviderRegistry = new Map<string, OAuthProviderInterface>(
+	BUILT_IN_OAUTH_PROVIDERS.map((provider) => [provider.id, provider]),
+);
 
 /**
  * Get an OAuth provider by ID
@@ -62,6 +66,31 @@ export function getOAuthProvider(id: OAuthProviderId): OAuthProviderInterface | 
  */
 export function registerOAuthProvider(provider: OAuthProviderInterface): void {
 	oauthProviderRegistry.set(provider.id, provider);
+}
+
+/**
+ * Unregister an OAuth provider.
+ *
+ * If the provider is built-in, restores the built-in implementation.
+ * Custom providers are removed completely.
+ */
+export function unregisterOAuthProvider(id: string): void {
+	const builtInProvider = BUILT_IN_OAUTH_PROVIDERS.find((provider) => provider.id === id);
+	if (builtInProvider) {
+		oauthProviderRegistry.set(id, builtInProvider);
+		return;
+	}
+	oauthProviderRegistry.delete(id);
+}
+
+/**
+ * Reset OAuth providers to built-ins.
+ */
+export function resetOAuthProviders(): void {
+	oauthProviderRegistry.clear();
+	for (const provider of BUILT_IN_OAUTH_PROVIDERS) {
+		oauthProviderRegistry.set(provider.id, provider);
+	}
 }
 
 /**

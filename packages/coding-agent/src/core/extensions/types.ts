@@ -339,6 +339,10 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	label: string;
 	/** Description for LLM */
 	description: string;
+	/** Optional one-line snippet for the Available tools section in the default system prompt. Falls back to description when omitted. */
+	promptSnippet?: string;
+	/** Optional guideline bullets appended to the default system prompt Guidelines section when this tool is active. */
+	promptGuidelines?: string[];
 	/** Parameter schema (TypeBox) */
 	parameters: TParams;
 
@@ -352,10 +356,14 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	): Promise<AgentToolResult<TDetails>>;
 
 	/** Custom rendering for tool call display */
-	renderCall?: (args: Static<TParams>, theme: Theme) => Component;
+	renderCall?: (args: Static<TParams>, theme: Theme) => Component | undefined;
 
 	/** Custom rendering for tool result display */
-	renderResult?: (result: AgentToolResult<TDetails>, options: ToolRenderResultOptions, theme: Theme) => Component;
+	renderResult?: (
+		result: AgentToolResult<TDetails>,
+		options: ToolRenderResultOptions,
+		theme: Theme,
+	) => Component | undefined;
 }
 
 // ============================================================================
@@ -1071,6 +1079,11 @@ export interface ExtensionAPI {
 	 * If `oauth` is provided: registers OAuth provider for /login support.
 	 * If `streamSimple` is provided: registers a custom API stream handler.
 	 *
+	 * During initial extension load this call is queued and applied once the
+	 * runner has bound its context. After that it takes effect immediately, so
+	 * it is safe to call from command handlers or event callbacks without
+	 * requiring a `/reload`.
+	 *
 	 * @example
 	 * // Register a new provider with custom models
 	 * pi.registerProvider("my-proxy", {
@@ -1111,6 +1124,21 @@ export interface ExtensionAPI {
 	 * });
 	 */
 	registerProvider(name: string, config: ProviderConfig): void;
+
+	/**
+	 * Unregister a previously registered provider.
+	 *
+	 * Removes all models belonging to the named provider and restores any
+	 * built-in models that were overridden by it. Has no effect if the provider
+	 * is not currently registered.
+	 *
+	 * Like `registerProvider`, this takes effect immediately when called after
+	 * the initial load phase.
+	 *
+	 * @example
+	 * pi.unregisterProvider("my-proxy");
+	 */
+	unregisterProvider(name: string): void;
 
 	/** Shared event bus for extension communication. */
 	events: EventBus;
@@ -1231,6 +1259,8 @@ export type GetCommandsHandler = () => SlashCommandInfo[];
 
 export type SetActiveToolsHandler = (toolNames: string[]) => void;
 
+export type RefreshToolsHandler = () => void;
+
 export type SetModelHandler = (model: Model<any>) => Promise<boolean>;
 
 export type GetThinkingLevelHandler = () => ThinkingLevel;
@@ -1247,6 +1277,14 @@ export interface ExtensionRuntimeState {
 	flagValues: Map<string, boolean | string>;
 	/** Provider registrations queued during extension loading, processed when runner binds */
 	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig }>;
+	/**
+	 * Register or unregister a provider.
+	 *
+	 * Before bindCore(): queues registrations / removes from queue.
+	 * After bindCore(): calls ModelRegistry directly for immediate effect.
+	 */
+	registerProvider: (name: string, config: ProviderConfig) => void;
+	unregisterProvider: (name: string) => void;
 }
 
 /**
@@ -1263,6 +1301,7 @@ export interface ExtensionActions {
 	getActiveTools: GetActiveToolsHandler;
 	getAllTools: GetAllToolsHandler;
 	setActiveTools: SetActiveToolsHandler;
+	refreshTools: RefreshToolsHandler;
 	getCommands: GetCommandsHandler;
 	setModel: SetModelHandler;
 	getThinkingLevel: GetThinkingLevelHandler;

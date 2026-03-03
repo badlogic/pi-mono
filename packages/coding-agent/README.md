@@ -1,11 +1,3 @@
-# 🏖️ OSS Vacation
-
-**Issue tracker and PRs reopen March 2, 2026.**
-
-All PRs will be auto-closed until then. Approved contributors can submit PRs after vacation without reapproval. For support, join [Discord](https://discord.com/invite/3cU7Bz4UPx).
-
----
-
 <p align="center">
   <a href="https://shittycodingagent.ai">
     <img src="https://shittycodingagent.ai/logo.svg" alt="pi logo" width="128">
@@ -136,7 +128,7 @@ The editor can be temporarily replaced by other UI, like built-in `/settings` or
 | File reference | Type `@` to fuzzy-search project files |
 | Path completion | Tab to complete paths |
 | Multi-line | Shift+Enter (or Ctrl+Enter on Windows Terminal) |
-| Images | Ctrl+V to paste, or drag onto terminal |
+| Images | Ctrl+V to paste (Alt+V on Windows), or drag onto terminal |
 | Bash commands | `!command` runs and sends output to LLM, `!!command` runs without sending |
 
 Standard editing keybindings for delete word, undo, etc. See [docs/keybindings.md](docs/keybindings.md).
@@ -385,7 +377,7 @@ import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "
 
 const { session } = await createAgentSession({
   sessionManager: SessionManager.inMemory(),
-  authStorage: new AuthStorage(),
+  authStorage: AuthStorage.create(),
   modelRegistry: new ModelRegistry(authStorage),
 });
 

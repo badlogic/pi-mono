@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.55.4] - 2026-03-02
+
+### Fixed
+
+- Fixed mom startup crash caused by settings API drift by using `SettingsManager` with workspace-backed storage ([#1444](https://github.com/badlogic/pi-mono/issues/1444))
+
+## [0.55.3] - 2026-02-27
+
+## [0.55.2] - 2026-02-27
+
+## [0.55.1] - 2026-02-26
+
+## [0.55.0] - 2026-02-24
+
 ## [0.54.2] - 2026-02-23
 
 ## [0.54.1] - 2026-02-22

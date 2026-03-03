@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.55.4] - 2026-03-02
+
+## [0.55.3] - 2026-02-27
+
+## [0.55.2] - 2026-02-27
+
+## [0.55.1] - 2026-02-26
+
+### Fixed
+
+- Fixed Windows VT input initialization in ESM by loading `koffi` via `createRequire`, restoring VT input mode while keeping `koffi` externalized from compiled binaries ([#1627](https://github.com/badlogic/pi-mono/pull/1627) by [@kaste](https://github.com/kaste))
+
+## [0.55.0] - 2026-02-24
+
 ## [0.54.2] - 2026-02-23
 
 ## [0.54.1] - 2026-02-22

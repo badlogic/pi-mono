@@ -2,6 +2,77 @@
 
 ## [Unreleased]
 
+## [0.55.4] - 2026-03-02
+
+### New Features
+
+- Runtime tool registration now applies immediately in active sessions. Tools registered via `pi.registerTool()` after startup are available to `pi.getAllTools()` and the LLM without `/reload` ([docs/extensions.md](docs/extensions.md), [examples/extensions/dynamic-tools.ts](examples/extensions/dynamic-tools.ts), [#1720](https://github.com/badlogic/pi-mono/issues/1720)).
+- Tool definitions can customize the default system prompt with `promptSnippet` (`Available tools`) and `promptGuidelines` (`Guidelines`) while the tool is active ([docs/extensions.md](docs/extensions.md), [#1720](https://github.com/badlogic/pi-mono/issues/1720)).
+- Custom tool renderers can suppress transcript output without leaving extra spacing or empty transcript footprint in interactive rendering ([docs/extensions.md](docs/extensions.md), [#1719](https://github.com/badlogic/pi-mono/pull/1719)).
+
+### Added
+
+- Added optional `promptSnippet` to `ToolDefinition` for one-line entries in the default system prompt's `Available tools` section. Active extension tools appear there when registered and active ([#1237](https://github.com/badlogic/pi-mono/pull/1237) by [@semtexzv](https://github.com/semtexzv)).
+- Added optional `promptGuidelines` to `ToolDefinition` so active tools can append tool-specific bullets to the default system prompt `Guidelines` section ([#1720](https://github.com/badlogic/pi-mono/issues/1720)).
+
+### Fixed
+
+- Fixed `pi.registerTool()` dynamic registration after session initialization. Tools registered in `session_start` and later handlers now refresh immediately, become active, and are visible to the LLM without `/reload` ([#1720](https://github.com/badlogic/pi-mono/issues/1720))
+- Fixed session message persistence ordering by serializing `AgentSession` event processing, preventing `toolResult` entries from being written before their corresponding assistant tool-call messages when extension handlers are asynchronous ([#1717](https://github.com/badlogic/pi-mono/issues/1717))
+- Fixed spacing artifacts when custom tool renderers intentionally suppress per-call transcript output, including extra blank rows in interactive streaming and non-zero transcript footprint for empty custom renders ([#1719](https://github.com/badlogic/pi-mono/pull/1719) by [@alasano](https://github.com/alasano))
+- Fixed `session.prompt()` returning before retry completion by creating the retry promise synchronously at `agent_end` dispatch, which closes a race when earlier queued event handlers are async ([#1726](https://github.com/badlogic/pi-mono/pull/1726) by [@pasky](https://github.com/pasky))
+
+## [0.55.3] - 2026-02-27
+
+### Fixed
+
+- Changed the default image paste keybinding on Windows to `alt+v` to avoid `ctrl+v` conflicts with terminal paste behavior ([#1682](https://github.com/badlogic/pi-mono/pull/1682) by [@mrexodia](https://github.com/mrexodia)).
+
+## [0.55.2] - 2026-02-27
+
+### New Features
+
+- Extensions can dynamically remove custom providers via `pi.unregisterProvider(name)`, restoring any built-in models that were overridden, without requiring `/reload` ([docs](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/custom-provider.md)).
+- `pi.registerProvider()` now takes effect immediately when called outside the initial extension load phase (e.g. from a command handler), removing the need for `/reload` after late registrations.
+
+### Added
+
+- `pi.unregisterProvider(name)` removes a dynamically registered provider and its models from the registry without requiring `/reload`. Built-in models that were overridden by the provider are restored ([#1669](https://github.com/badlogic/pi-mono/pull/1669) by [@aliou](https://github.com/aliou)).
+
+### Fixed
+
+- `pi.registerProvider()` now takes effect immediately when called after the initial extension load phase (e.g. from a command handler). Previously the registration sat in a pending queue that was never flushed until the next `/reload` ([#1669](https://github.com/badlogic/pi-mono/pull/1669) by [@aliou](https://github.com/aliou)).
+- Fixed duplicate session headers when forking from a point before any assistant message. `createBranchedSession` now defers file creation to `_persist()` when the branched path has no assistant message, matching the `newSession()` contract ([#1672](https://github.com/badlogic/pi-mono/pull/1672) by [@w-winter](https://github.com/w-winter)).
+- Fixed SIGINT being delivered to pi while the process is suspended (e.g. via `ctrl+z`), which could corrupt terminal state on resume ([#1668](https://github.com/badlogic/pi-mono/pull/1668) by [@aliou](https://github.com/aliou)).
+- Fixed Z.ai thinking control using wrong parameter name, causing thinking to always be enabled and wasting tokens/latency ([#1674](https://github.com/badlogic/pi-mono/pull/1674) by [@okuyam2y](https://github.com/okuyam2y))
+- Fixed `redacted_thinking` blocks being silently dropped during Anthropic streaming, and related issues with interleaved-thinking beta headers and temperature being sent alongside extended thinking ([#1665](https://github.com/badlogic/pi-mono/pull/1665) by [@tctev](https://github.com/tctev))
+- Fixed `(external, cli)` user-agent flag causing 401 errors on Anthropic setup-token endpoint ([#1677](https://github.com/badlogic/pi-mono/pull/1677) by [@LazerLance777](https://github.com/LazerLance777))
+- Fixed crash when OpenAI-compatible provider returns a chunk with no `choices` array ([#1671](https://github.com/badlogic/pi-mono/issues/1671))
+
+## [0.55.1] - 2026-02-26
+
+### New Features
+
+- Added offline startup mode via `--offline` (or `PI_OFFLINE`) to disable startup network operations, with startup network timeouts to avoid hangs in restricted or offline environments.
+- Added `gemini-3.1-pro-preview` model support to the `google-gemini-cli` provider ([#1599](https://github.com/badlogic/pi-mono/pull/1599) by [@audichuang](https://github.com/audichuang)).
+
+### Fixed
+
+- Fixed offline startup hangs by adding offline startup behavior and network timeouts during managed tool setup ([#1631](https://github.com/badlogic/pi-mono/pull/1631) by [@mcollina](https://github.com/mcollina))
+- Fixed Windows VT input initialization in ESM by loading koffi via createRequire, avoiding runtime and bundling issues in end-user environments ([#1627](https://github.com/badlogic/pi-mono/pull/1627) by [@kaste](https://github.com/kaste))
+- Fixed managed `fd`/`rg` bootstrap on Windows in Git Bash by using `extract-zip` for `.zip` archives, searching extracted layouts more robustly, and isolating extraction temp directories to avoid concurrent download races ([#1348](https://github.com/badlogic/pi-mono/issues/1348))
+- Fixed extension loading on Windows when resolving `@sinclair/typebox` aliases so subpath imports like `@sinclair/typebox/compiler` resolve correctly.
+- Fixed adaptive thinking for Claude Sonnet 4.6 in Anthropic and Bedrock providers, and clamped unsupported `xhigh` effort values to supported levels ([#1548](https://github.com/badlogic/pi-mono/pull/1548) by [@tctev](https://github.com/tctev))
+- Fixed Vertex ADC credential detection race by avoiding caching a false negative during async import initialization ([#1550](https://github.com/badlogic/pi-mono/pull/1550) by [@jeremiahgaylord-web](https://github.com/jeremiahgaylord-web))
+- Fixed subagent extension example to resolve user agents from the configured agent directory instead of hardcoded paths ([#1559](https://github.com/badlogic/pi-mono/pull/1559) by [@tianshuwang](https://github.com/tianshuwang))
+
+## [0.55.0] - 2026-02-24
+
+### Breaking Changes
+
+- Resource precedence for extensions, skills, prompts, themes, and slash-command name collisions is now project-first (`cwd/.pi`) before user-global (`~/.pi/agent`). If you relied on global resources overriding project resources with the same names, rename or reorder your resources.
+- Extension registration conflicts no longer unload the entire later extension. All extensions stay loaded, and conflicting command/tool/flag names are resolved by first registration in load order.
+
 ## [0.54.2] - 2026-02-23
 
 ### Fixed

@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+## [0.55.4] - 2026-03-02
+
+## [0.55.3] - 2026-02-27
+
+## [0.55.2] - 2026-02-27
+
+### Fixed
+
+- Restored built-in OAuth providers when unregistering dynamically registered provider IDs and added `resetOAuthProviders()` for registry reset flows.
+- Fixed Z.ai thinking control using wrong parameter name (`thinking` instead of `enable_thinking`), causing thinking to always be enabled and wasting tokens/latency ([#1674](https://github.com/badlogic/pi-mono/pull/1674) by [@okuyam2y](https://github.com/okuyam2y))
+- Fixed `redacted_thinking` blocks being silently dropped during Anthropic streaming. They are now captured as `ThinkingContent` with `redacted: true`, passed back to the API in multi-turn conversations, and handled in cross-model message transformation ([#1665](https://github.com/badlogic/pi-mono/pull/1665) by [@tctev](https://github.com/tctev))
+- Fixed `interleaved-thinking-2025-05-14` beta header being sent for adaptive thinking models (Opus 4.6, Sonnet 4.6) where the header is deprecated or redundant ([#1665](https://github.com/badlogic/pi-mono/pull/1665) by [@tctev](https://github.com/tctev))
+- Fixed temperature being sent alongside extended thinking, which is incompatible with both adaptive and budget-based thinking modes ([#1665](https://github.com/badlogic/pi-mono/pull/1665) by [@tctev](https://github.com/tctev))
+- Fixed `(external, cli)` user-agent flag causing 401 errors on Anthropic setup-token endpoint ([#1677](https://github.com/badlogic/pi-mono/pull/1677) by [@LazerLance777](https://github.com/LazerLance777))
+- Fixed crash when OpenAI-compatible provider returns a chunk with no `choices` array by adding optional chaining ([#1671](https://github.com/badlogic/pi-mono/issues/1671))
+
+## [0.55.1] - 2026-02-26
+
+### Added
+
+- Added `gemini-3.1-pro-preview` model support to the `google-gemini-cli` provider ([#1599](https://github.com/badlogic/pi-mono/pull/1599) by [@audichuang](https://github.com/audichuang))
+
+### Fixed
+
+- Fixed adaptive thinking for Claude Sonnet 4.6 in Anthropic and Bedrock providers, and clamped unsupported `xhigh` effort values to supported levels ([#1548](https://github.com/badlogic/pi-mono/pull/1548) by [@tctev](https://github.com/tctev))
+- Fixed Vertex ADC credential detection race by avoiding caching a false negative during async import initialization ([#1550](https://github.com/badlogic/pi-mono/pull/1550) by [@jeremiahgaylord-web](https://github.com/jeremiahgaylord-web))
+
+## [0.55.0] - 2026-02-24
+
 ## [0.54.2] - 2026-02-23
 
 ## [0.54.1] - 2026-02-22

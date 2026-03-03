@@ -572,10 +572,12 @@ export class InteractiveMode {
 	 * Check npm registry for a newer version.
 	 */
 	private async checkForNewVersion(): Promise<string | undefined> {
-		if (process.env.PI_SKIP_VERSION_CHECK) return undefined;
+		if (process.env.PI_SKIP_VERSION_CHECK || process.env.PI_OFFLINE) return undefined;
 
 		try {
-			const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest");
+			const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest", {
+				signal: AbortSignal.timeout(10000),
+			});
 			if (!response.ok) return undefined;
 
 			const data = (await response.json()) as { version?: string };
@@ -729,7 +731,7 @@ export class InteractiveMode {
 			}
 		}
 
-		return [groups.user, groups.project, groups.path].filter(
+		return [groups.project, groups.user, groups.path].filter(
 			(group) => group.paths.length > 0 || group.packages.size > 0,
 		);
 	}
@@ -2107,7 +2109,6 @@ export class InteractiveMode {
 					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {
 							if (!this.pendingTools.has(content.id)) {
-								this.chatContainer.addChild(new Text("", 0, 0));
 								const component = new ToolExecutionComponent(
 									content.name,
 									content.arguments,
@@ -2610,8 +2611,14 @@ export class InteractiveMode {
 	}
 
 	private handleCtrlZ(): void {
+		// Ignore SIGINT while suspended so Ctrl+C in the terminal does not
+		// kill the backgrounded process. The handler is removed on resume.
+		const ignoreSigint = () => {};
+		process.on("SIGINT", ignoreSigint);
+
 		// Set up handler to restore TUI when resumed
 		process.once("SIGCONT", () => {
+			process.removeListener("SIGINT", ignoreSigint);
 			this.ui.start();
 			this.ui.requestRender(true);
 		});

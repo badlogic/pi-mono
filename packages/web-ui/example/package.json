@@ -1,6 +1,6 @@
 {
   "name": "pi-web-ui-example",
-  "version": "1.42.2",
+  "version": "1.43.4",
   "private": true,
   "type": "module",
   "scripts": {

@@ -880,6 +880,14 @@ Subscribe to events. See [Events](#events) for event types and return values.
 
 Register a custom tool callable by the LLM. See [Custom Tools](#custom-tools) for full details.
 
+`pi.registerTool()` works both during extension load and after startup. You can call it inside `session_start`, command handlers, or other event handlers. New tools are refreshed immediately in the same session, so they appear in `pi.getAllTools()` and are callable by the LLM without `/reload`.
+
+Use `pi.setActiveTools()` to enable or disable tools (including dynamically added tools) at runtime.
+
+Use `promptSnippet` to customize that tool's one-line entry in `Available tools`, and `promptGuidelines` to append tool-specific bullets to the default `Guidelines` section when the tool is active.
+
+See [dynamic-tools.ts](../examples/extensions/dynamic-tools.ts) for a full example.
+
 ```typescript
 import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
@@ -888,6 +896,8 @@ pi.registerTool({
   name: "my_tool",
   label: "My Tool",
   description: "What this tool does",
+  promptSnippet: "Summarize or transform text according to action",
+  promptGuidelines: ["Use this tool when the user asks to summarize previously generated text."],
   parameters: Type.Object({
     action: StringEnum(["list", "add"] as const),
     text: Type.Optional(Type.String()),
@@ -1116,7 +1126,7 @@ const result = await pi.exec("git", ["status"], { signal, timeout: 5000 });
 
 ### pi.getActiveTools() / pi.getAllTools() / pi.setActiveTools(names)
 
-Manage active tools.
+Manage active tools. This works for both built-in tools and dynamically registered tools.
 
 ```typescript
 const active = pi.getActiveTools();  // ["read", "bash", "edit", "write"]
@@ -1160,6 +1170,8 @@ pi.events.emit("my:event", { ... });
 ### pi.registerProvider(name, config)
 
 Register or override a model provider dynamically. Useful for proxies, custom endpoints, or team-wide model configurations.
+
+Calls made during the extension factory function are queued and applied once the runner initialises. Calls made after that — for example from a command handler following a user setup flow — take effect immediately without requiring a `/reload`.
 
 ```typescript
 // Register a new provider with custom models
@@ -1221,6 +1233,21 @@ pi.registerProvider("corporate-ai", {
 
 See [custom-provider.md](custom-provider.md) for advanced topics: custom streaming APIs, OAuth details, model definition reference.
 
+### pi.unregisterProvider(name)
+
+Remove a previously registered provider and its models. Built-in models that were overridden by the provider are restored. Has no effect if the provider was not registered.
+
+Like `registerProvider`, this takes effect immediately when called after the initial load phase, so a `/reload` is not required.
+
+```typescript
+pi.registerCommand("my-setup-teardown", {
+  description: "Remove the custom proxy provider",
+  handler: async (_args, _ctx) => {
+    pi.unregisterProvider("my-proxy");
+  },
+});
+```
+
 ## State Management
 
 Extensions with state should store it in tool result `details` for proper branching support:
@@ -1259,6 +1286,10 @@ export default function (pi: ExtensionAPI) {
 
 Register tools the LLM can call via `pi.registerTool()`. Tools appear in the system prompt and can have custom rendering.
 
+Use `promptSnippet` for a short one-line entry in the `Available tools` section in the default system prompt. If omitted, pi falls back to `description`.
+
+Use `promptGuidelines` to add tool-specific bullets to the default system prompt `Guidelines` section. These bullets are included only while the tool is active (for example, after `pi.setActiveTools([...])`).
+
 Note: Some models are idiots and include the @ prefix in tool path arguments. Built-in tools strip a leading @ before resolving paths. If your custom tool accepts a path, normalize a leading @ as well.
 
 ### Tool Definition
@@ -1272,6 +1303,10 @@ pi.registerTool({
   name: "my_tool",
   label: "My Tool",
   description: "What this tool does (shown to LLM)",
+  promptSnippet: "List or add items in the project todo list",
+  promptGuidelines: [
+    "Use this tool for todo planning instead of direct file edits when the user asks for a task list."
+  ],
   parameters: Type.Object({
     action: StringEnum(["list", "add"] as const),  // Use StringEnum for Google compatibility
     text: Type.Optional(Type.String()),
@@ -1869,6 +1904,7 @@ All examples in [examples/extensions/](../examples/extensions/).
 | `question.ts` | Tool with user interaction | `registerTool`, `ui.select` |
 | `questionnaire.ts` | Multi-step wizard tool | `registerTool`, `ui.custom` |
 | `todo.ts` | Stateful tool with persistence | `registerTool`, `appendEntry`, `renderResult`, session events |
+| `dynamic-tools.ts` | Register tools after startup and during commands | `registerTool`, `session_start`, `registerCommand` |
 | `truncated-tool.ts` | Output truncation example | `registerTool`, `truncateHead` |
 | `tool-override.ts` | Override built-in read tool | `registerTool` (same name as built-in) |
 | **Commands** |||

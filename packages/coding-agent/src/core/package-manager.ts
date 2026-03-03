@@ -9,6 +9,14 @@ import { CONFIG_DIR_NAME } from "../config.js";
 import { type GitSource, parseGitUrl } from "../utils/git.js";
 import type { PackageSource, SettingsManager } from "./settings-manager.js";
 
+const NETWORK_TIMEOUT_MS = 10000;
+
+function isOfflineModeEnabled(): boolean {
+	const value = process.env.PI_OFFLINE;
+	if (!value) return false;
+	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+}
+
 export interface PathMetadata {
 	source: string;
 	scope: SourceScope;
@@ -722,13 +730,13 @@ export class DefaultPackageManager implements PackageManager {
 		const globalSettings = this.settingsManager.getGlobalSettings();
 		const projectSettings = this.settingsManager.getProjectSettings();
 
-		// Collect all packages with scope
+		// Collect all packages with scope (project first so cwd resources win collisions)
 		const allPackages: Array<{ pkg: PackageSource; scope: SourceScope }> = [];
-		for (const pkg of globalSettings.packages ?? []) {
-			allPackages.push({ pkg, scope: "user" });
-		}
 		for (const pkg of projectSettings.packages ?? []) {
 			allPackages.push({ pkg, scope: "project" });
+		}
+		for (const pkg of globalSettings.packages ?? []) {
+			allPackages.push({ pkg, scope: "user" });
 		}
 
 		// Dedupe: project scope wins over global for same package identity
@@ -743,17 +751,6 @@ export class DefaultPackageManager implements PackageManager {
 			const globalEntries = (globalSettings[resourceType] ?? []) as string[];
 			const projectEntries = (projectSettings[resourceType] ?? []) as string[];
 			this.resolveLocalEntries(
-				globalEntries,
-				resourceType,
-				target,
-				{
-					source: "local",
-					scope: "user",
-					origin: "top-level",
-				},
-				globalBaseDir,
-			);
-			this.resolveLocalEntries(
 				projectEntries,
 				resourceType,
 				target,
@@ -763,6 +760,17 @@ export class DefaultPackageManager implements PackageManager {
 					origin: "top-level",
 				},
 				projectBaseDir,
+			);
+			this.resolveLocalEntries(
+				globalEntries,
+				resourceType,
+				target,
+				{
+					source: "local",
+					scope: "user",
+					origin: "top-level",
+				},
+				globalBaseDir,
 			);
 		}
 
@@ -842,6 +850,9 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async updateSourceForScope(source: string, scope: SourceScope): Promise<void> {
+		if (isOfflineModeEnabled()) {
+			return;
+		}
 		const parsed = this.parseSource(source);
 		if (parsed.type === "npm") {
 			if (parsed.pinned) return;
@@ -877,6 +888,9 @@ export class DefaultPackageManager implements PackageManager {
 			}
 
 			const installMissing = async (): Promise<boolean> => {
+				if (isOfflineModeEnabled()) {
+					return false;
+				}
 				if (!onMissing) {
 					await this.installParsedSource(parsed, scope);
 					return true;
@@ -905,7 +919,7 @@ export class DefaultPackageManager implements PackageManager {
 				if (!existsSync(installedPath)) {
 					const installed = await installMissing();
 					if (!installed) continue;
-				} else if (scope === "temporary" && !parsed.pinned) {
+				} else if (scope === "temporary" && !parsed.pinned && !isOfflineModeEnabled()) {
 					await this.refreshTemporaryGitSource(parsed, sourceStr);
 				}
 				metadata.baseDir = installedPath;
@@ -1039,6 +1053,10 @@ export class DefaultPackageManager implements PackageManager {
 	 * - For pinned packages: check if installed version matches the pinned version
 	 */
 	private async npmNeedsUpdate(source: NpmSource, installedPath: string): Promise<boolean> {
+		if (isOfflineModeEnabled()) {
+			return false;
+		}
+
 		const installedVersion = this.getInstalledNpmVersion(installedPath);
 		if (!installedVersion) return true;
 
@@ -1071,7 +1089,9 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async getLatestNpmVersion(packageName: string): Promise<string> {
-		const response = await fetch(`https://registry.npmjs.org/${packageName}/latest`);
+		const response = await fetch(`https://registry.npmjs.org/${packageName}/latest`, {
+			signal: AbortSignal.timeout(NETWORK_TIMEOUT_MS),
+		});
 		if (!response.ok) throw new Error(`Failed to fetch npm registry: ${response.status}`);
 		const data = (await response.json()) as { version: string };
 		return data.version;
@@ -1207,6 +1227,9 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async refreshTemporaryGitSource(source: GitSource, sourceStr: string): Promise<void> {
+		if (isOfflineModeEnabled()) {
+			return;
+		}
 		try {
 			await this.withProgress("pull", sourceStr, `Refreshing ${sourceStr}...`, async () => {
 				await this.updateGit(source, "temporary");
@@ -1602,35 +1625,6 @@ export class DefaultPackageManager implements PackageManager {
 
 		addResources(
 			"extensions",
-			collectAutoExtensionEntries(userDirs.extensions),
-			userMetadata,
-			userOverrides.extensions,
-			globalBaseDir,
-		);
-		addResources(
-			"skills",
-			[...collectAutoSkillEntries(userDirs.skills), ...collectAutoSkillEntries(userAgentsSkillsDir)],
-			userMetadata,
-			userOverrides.skills,
-			globalBaseDir,
-		);
-		addResources(
-			"prompts",
-			collectAutoPromptEntries(userDirs.prompts),
-			userMetadata,
-			userOverrides.prompts,
-			globalBaseDir,
-		);
-		addResources(
-			"themes",
-			collectAutoThemeEntries(userDirs.themes),
-			userMetadata,
-			userOverrides.themes,
-			globalBaseDir,
-		);
-
-		addResources(
-			"extensions",
 			collectAutoExtensionEntries(projectDirs.extensions),
 			projectMetadata,
 			projectOverrides.extensions,
@@ -1659,6 +1653,35 @@ export class DefaultPackageManager implements PackageManager {
 			projectMetadata,
 			projectOverrides.themes,
 			projectBaseDir,
+		);
+
+		addResources(
+			"extensions",
+			collectAutoExtensionEntries(userDirs.extensions),
+			userMetadata,
+			userOverrides.extensions,
+			globalBaseDir,
+		);
+		addResources(
+			"skills",
+			[...collectAutoSkillEntries(userDirs.skills), ...collectAutoSkillEntries(userAgentsSkillsDir)],
+			userMetadata,
+			userOverrides.skills,
+			globalBaseDir,
+		);
+		addResources(
+			"prompts",
+			collectAutoPromptEntries(userDirs.prompts),
+			userMetadata,
+			userOverrides.prompts,
+			globalBaseDir,
+		);
+		addResources(
+			"themes",
+			collectAutoThemeEntries(userDirs.themes),
+			userMetadata,
+			userOverrides.themes,
+			globalBaseDir,
 		);
 	}
 
