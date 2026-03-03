@@ -80,7 +80,7 @@ export interface StartSubagentOptions {
 	/** Working directory (default: current cwd) */
 	cwd?: string;
 
-	/** Wait for result before returning (default: true for fork, false for alive) */
+	/** Wait for result before returning (default: true for in-memory, false for process) */
 	waitForResult?: boolean;
 
 	/** Timeout in milliseconds */
@@ -226,8 +226,8 @@ export interface RpcClientLike {
  * Tool factory for creating tool subsets
  */
 export interface ToolFactory {
-	createSubset(toolNames: string[]): AgentTool[];
-	createAll(): AgentTool[];
+	createSubset(toolNames: string[], cwd: string): AgentTool[];
+	createAll(cwd: string): AgentTool[];
 }
 
 /**

@@ -136,9 +136,18 @@ export class SubagentManager {
 				usage: subagent.usage,
 			};
 		} catch (error) {
-			subagent.status = "error";
-			this.emit({ type: "status", subagentId: id, status: "error" });
-			this.emit({ type: "stopped", subagentId: id, reason: "error" });
+			const isTimeout = error instanceof Error && error.message.includes("timed out");
+			if (isTimeout) {
+				subagent.status = "error";
+				this.emit({ type: "status", subagentId: id, status: "error" });
+				this.emit({ type: "stopped", subagentId: id, reason: "timeout" });
+				// Cancel the running work
+				await this.stopSubagent(id);
+			} else {
+				subagent.status = "error";
+				this.emit({ type: "status", subagentId: id, status: "error" });
+				this.emit({ type: "stopped", subagentId: id, reason: "error" });
+			}
 			throw error;
 		}
 	}
@@ -165,8 +174,8 @@ export class SubagentManager {
 
 		// Create tools subset
 		const tools = config.tools
-			? this.config.toolFactory.createSubset(config.tools)
-			: this.config.toolFactory.createAll();
+			? this.config.toolFactory.createSubset(config.tools, subagent.cwd)
+			: this.config.toolFactory.createAll(subagent.cwd);
 		subagent.tools = tools;
 
 		// Build system prompt
@@ -213,7 +222,23 @@ export class SubagentManager {
 		subagent.messageHistory.push(taskMessage);
 
 		try {
-			await agent.prompt(task);
+			// If waitForResult is false, start the prompt without awaiting
+			if (options.waitForResult === false) {
+				agent
+					.prompt(task)
+					.then(() => {
+						subagent.status = "done";
+						this.emit({ type: "status", subagentId: subagent.id, status: "done" });
+						this.emit({ type: "stopped", subagentId: subagent.id, reason: "completed" });
+					})
+					.catch((error) => {
+						subagent.status = "error";
+						this.emit({ type: "status", subagentId: subagent.id, status: "error" });
+						this.emit({ type: "error", subagentId: subagent.id, error: error as Error });
+					});
+			} else {
+				await agent.prompt(task);
+			}
 		} catch (error) {
 			// Agent errors are handled via events, but prompt() can throw synchronously
 			subagent.status = "error";
@@ -363,6 +388,10 @@ export class SubagentManager {
 				await subagent.agent.prompt(message);
 			} else if (subagent.mode === "process" && subagent.rpcClient) {
 				await subagent.rpcClient.call("prompt", { message });
+			} else {
+				throw new Error(
+					`No transport available for subagent ${subagent.id} (${subagent.name}, mode: ${subagent.mode})`,
+				);
 			}
 		} catch (error) {
 			// Restore status on error if not already in error state

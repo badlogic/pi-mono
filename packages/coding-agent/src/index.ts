@@ -213,6 +213,42 @@ export {
 	type Skill,
 	type SkillFrontmatter,
 } from "./core/skills.js";
+export type {
+	AgentFrontmatter,
+	AliveSubagent,
+	DiscoveryResult,
+	MemoryScope,
+	RpcClientLike,
+	StartSubagentOptions,
+	StartSubagentResult,
+	SubagentConfig,
+	SubagentContextActions,
+	SubagentFilter,
+	SubagentListDetails,
+	SubagentManagerConfig,
+	SubagentManagerEvent,
+	SubagentManagerEventHandler,
+	SubagentMessage,
+	SubagentMode,
+	SubagentOutput,
+	SubagentSendDetails,
+	SubagentSource,
+	SubagentStartDetails,
+	SubagentStatus,
+	SubagentUsage,
+	ToolFactory,
+} from "./core/subagents/index.js";
+// Subagents
+export {
+	discoverAgents,
+	formatAgentList,
+	getAgentByName,
+	getAvailableAgentNames,
+	parseAgentFile,
+	registerSubagentCommands,
+	registerSubagentTools,
+	SubagentManager,
+} from "./core/subagents/index.js";
 // Tools
 export {
 	type BashOperations,

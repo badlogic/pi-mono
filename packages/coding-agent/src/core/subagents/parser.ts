@@ -93,7 +93,7 @@ export function parseAgentFile(content: string, filePath: string, source: Subage
 		return null;
 	}
 
-	// Parse tools (comma-separated string to array)
+	// Parse tools (comma-separated string to array, or array from YAML)
 	let tools: string[] | undefined;
 	if (frontmatter.tools) {
 		if (typeof frontmatter.tools === "string") {
@@ -101,6 +101,9 @@ export function parseAgentFile(content: string, filePath: string, source: Subage
 				.split(",")
 				.map((s) => s.trim())
 				.filter(Boolean);
+		} else if (Array.isArray(frontmatter.tools)) {
+			// parseSimpleYaml may return array for comma-separated values
+			tools = (frontmatter.tools as unknown[]).map((s) => String(s).trim()).filter((s): s is string => Boolean(s));
 		}
 		// Empty array = undefined (use all tools)
 		if (tools && tools.length === 0) {
