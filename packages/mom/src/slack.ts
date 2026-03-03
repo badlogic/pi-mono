@@ -79,6 +79,13 @@ export interface MomHandler {
 	handleEvent(event: SlackEvent, slack: SlackBot, isEvent?: boolean): Promise<void>;
 
 	/**
+	 * Handle a message while the agent is already running (SYNC).
+	 * Called instead of ignoring the message. Optional — if not provided,
+	 * the bot posts "Already working" as before.
+	 */
+	handleSteer?(channelId: string, event: SlackEvent, slack: SlackBot): void;
+
+	/**
 	 * Handle stop command (ASYNC)
 	 * Called when user says "stop" while mom is running
 	 */
@@ -321,7 +328,11 @@ export class SlackBot {
 
 			// SYNC: Check if busy
 			if (this.handler.isRunning(e.channel)) {
-				this.postMessage(e.channel, "_Already working. Say `@mom stop` to cancel._");
+				if (this.handler.handleSteer) {
+					this.handler.handleSteer(e.channel, slackEvent, this);
+				} else {
+					this.postMessage(e.channel, "_Already working. Say `@mom stop` to cancel._");
+				}
 			} else {
 				this.getQueue(e.channel).enqueue(() => this.handler.handleEvent(slackEvent, this));
 			}
@@ -399,7 +410,11 @@ export class SlackBot {
 				}
 
 				if (this.handler.isRunning(e.channel)) {
-					this.postMessage(e.channel, "_Already working. Say `stop` to cancel._");
+					if (this.handler.handleSteer) {
+						this.handler.handleSteer(e.channel, slackEvent, this);
+					} else {
+						this.postMessage(e.channel, "_Already working. Say `stop` to cancel._");
+					}
 				} else {
 					this.getQueue(e.channel).enqueue(() => this.handler.handleEvent(slackEvent, this));
 				}

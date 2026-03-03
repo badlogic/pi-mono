@@ -1,4 +1,4 @@
-import { Agent, type AgentEvent } from "@mariozechner/pi-agent-core";
+import { Agent, type AgentEvent, type AgentTool } from "@mariozechner/pi-agent-core";
 import { getModel, type ImageContent } from "@mariozechner/pi-ai";
 import {
 	AgentSession,
@@ -40,6 +40,14 @@ export interface AgentRunner {
 		pendingMessages?: PendingMessage[],
 	): Promise<{ stopReason: string; errorMessage?: string }>;
 	abort(): void;
+	steer(message: { role: string; content: { type: string; text: string }[]; timestamp: number }): void;
+}
+
+export interface AgentExtension {
+	/** Return extra tools to add to the agent. Receives the Agent instance for wiring callbacks. */
+	tools(agent: Agent, channelDir: string, sandboxConfig: SandboxConfig): AgentTool<any>[];
+	/** Return extra text to append to the system prompt (optional). */
+	systemPrompt?(): string;
 }
 
 async function getAnthropicApiKey(authStorage: AuthStorage): Promise<string> {
@@ -395,11 +403,16 @@ const channelRunners = new Map<string, AgentRunner>();
  * Get or create an AgentRunner for a channel.
  * Runners are cached - one per channel, persistent across messages.
  */
-export function getOrCreateRunner(sandboxConfig: SandboxConfig, channelId: string, channelDir: string): AgentRunner {
+export function getOrCreateRunner(
+	sandboxConfig: SandboxConfig,
+	channelId: string,
+	channelDir: string,
+	extensions?: AgentExtension[],
+): AgentRunner {
 	const existing = channelRunners.get(channelId);
 	if (existing) return existing;
 
-	const runner = createRunner(sandboxConfig, channelId, channelDir);
+	const runner = createRunner(sandboxConfig, channelId, channelDir, extensions);
 	channelRunners.set(channelId, runner);
 	return runner;
 }
@@ -408,7 +421,12 @@ export function getOrCreateRunner(sandboxConfig: SandboxConfig, channelId: strin
  * Create a new AgentRunner for a channel.
  * Sets up the session and subscribes to events once.
  */
-function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDir: string): AgentRunner {
+function createRunner(
+	sandboxConfig: SandboxConfig,
+	channelId: string,
+	channelDir: string,
+	extensions?: AgentExtension[],
+): AgentRunner {
 	const executor = createExecutor(sandboxConfig);
 	const workspacePath = executor.getWorkspacePath(channelDir.replace(`/${channelId}`, ""));
 
@@ -418,7 +436,16 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 	// Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
 	const memory = getMemory(channelDir);
 	const skills = loadMomSkills(channelDir, workspacePath);
-	const systemPrompt = buildSystemPrompt(workspacePath, channelId, memory, sandboxConfig, [], [], skills);
+	let systemPrompt = buildSystemPrompt(workspacePath, channelId, memory, sandboxConfig, [], [], skills);
+
+	// Append extension system prompts
+	const extraSystemPrompt = (extensions || [])
+		.map((ext) => ext.systemPrompt?.() || "")
+		.filter(Boolean)
+		.join("\n\n");
+	if (extraSystemPrompt) {
+		systemPrompt += "\n\n" + extraSystemPrompt;
+	}
 
 	// Create session manager and settings manager
 	// Use a fixed context.jsonl file per channel (not timestamped like coding-agent)
@@ -443,6 +470,11 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 		getApiKey: async () => getAnthropicApiKey(authStorage),
 	});
 
+	// Apply extension tools
+	const extraTools = (extensions || []).flatMap((ext) => ext.tools(agent, channelDir, sandboxConfig));
+	const allTools = extraTools.length > 0 ? [...tools, ...extraTools] : tools;
+	if (extraTools.length > 0) agent.setTools(allTools);
+
 	// Load existing messages
 	const loadedSession = sessionManager.buildSessionContext();
 	if (loadedSession.messages.length > 0) {
@@ -463,7 +495,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 		reload: async () => {},
 	};
 
-	const baseToolsOverride = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
+	const baseToolsOverride = Object.fromEntries(allTools.map((tool) => [tool.name, tool]));
 
 	// Create AgentSession wrapper
 	const session = new AgentSession({
@@ -665,7 +697,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 			// Update system prompt with fresh memory, channel/user info, and skills
 			const memory = getMemory(channelDir);
 			const skills = loadMomSkills(channelDir, workspacePath);
-			const systemPrompt = buildSystemPrompt(
+			let systemPrompt = buildSystemPrompt(
 				workspacePath,
 				channelId,
 				memory,
@@ -674,6 +706,9 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 				ctx.users,
 				skills,
 			);
+			if (extraSystemPrompt) {
+				systemPrompt += "\n\n" + extraSystemPrompt;
+			}
 			session.agent.setSystemPrompt(systemPrompt);
 
 			// Set up file upload function
@@ -858,6 +893,10 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 
 		abort(): void {
 			session.abort();
+		},
+
+		steer(message: { role: string; content: { type: string; text: string }[]; timestamp: number }): void {
+			agent.steer(message as any);
 		},
 	};
 }

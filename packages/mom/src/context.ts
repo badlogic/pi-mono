@@ -294,4 +294,24 @@ export class MomSettingsManager {
 	getHookTimeout(): number {
 		return 30000;
 	}
+
+	getImageAutoResize(): boolean {
+		return true;
+	}
+
+	getShellCommandPrefix(): string | undefined {
+		return undefined;
+	}
+
+	reload(): void {
+		this.settings = this.load();
+	}
+
+	getBranchSummarySettings(): { enabled: boolean } {
+		return { enabled: false };
+	}
+
+	getTheme(): string | undefined {
+		return undefined;
+	}
 }
