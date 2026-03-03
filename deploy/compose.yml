@@ -21,45 +21,44 @@ services:
       - sh
       - -lc
       - |
-          # set -x
           set -euo pipefail
           apk add --no-cache git bash >/dev/null 2>&1 || true
 
           REPO_DIR=/repo
           STATE_DIR=/state
-          GOOD_FILE="$STATE_DIR/good_commit"
+          GOOD_FILE="$$STATE_DIR/good_commit"
           CHECK_INTERVAL_SECONDS="${CHECK_INTERVAL_SECONDS:-120}"
 
-          echo mkdir -p "$STATE_DIR"
-          mkdir -p "$STATE_DIR"
-          echo mkdir -p "$REPO_DIR"
-          mkdir -p "$REPO_DIR"
+          echo mkdir -p "$$STATE_DIR"
+          mkdir -p "$$STATE_DIR"
+          echo mkdir -p "$$REPO_DIR"
+          mkdir -p "$$REPO_DIR"
 
-          if [ ! -d "$REPO_DIR/.git" ]; then
-            rm -rf "$REPO_DIR"/*
+          if [ ! -d "$$REPO_DIR/.git" ]; then
+            rm -rf "$$REPO_DIR"/*
             git clone --branch "$REPO_BRANCH" --single-branch "$REPO_URL" "$REPO_DIR"
           fi
 
-          cd "$REPO_DIR"
+          cd "$$REPO_DIR"
           npm install
 
           run_mom() {
             npm run dev &
-            ROOT_PID=$!
+            ROOT_PID=$$!
             cd packages/mom
             npx tsx --watch-path src --watch src/main.ts "${MOM_DATA_DIR:-/data}" &
             MOM_PID=$!
-            wait "$ROOT_PID" "$MOM_PID"
+            wait "$$ROOT_PID" "$$MOM_PID"
           }
 
           updater_loop() {
             while true; do
               git fetch origin "$REPO_BRANCH" --quiet
-              REMOTE="$(git rev-parse "origin/$REPO_BRANCH")"
-              HEAD="$(git rev-parse HEAD)"
-              if [ "$REMOTE" != "$HEAD" ]; then
-                git reset --hard "$REMOTE" --quiet
-                echo "$REMOTE" > "$GOOD_FILE"
+              REMOTE="$$(git rev-parse "origin/$REPO_BRANCH")"
+              HEAD="$$(git rev-parse HEAD)"
+              if [ "$$REMOTE" != "$$HEAD" ]; then
+                git reset --hard "$$REMOTE" --quiet
+                echo "$$REMOTE" > "$$GOOD_FILE"
               fi
               sleep "$CHECK_INTERVAL_SECONDS"
             done
