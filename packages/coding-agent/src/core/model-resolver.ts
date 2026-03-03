@@ -113,6 +113,22 @@ export interface ParsedModelResult {
 	warning: string | undefined;
 }
 
+function buildFallbackModel(provider: string, modelId: string, availableModels: Model<Api>[]): Model<Api> | undefined {
+	const providerModels = availableModels.filter((m) => m.provider === provider);
+	if (providerModels.length === 0) return undefined;
+
+	const defaultId = defaultModelPerProvider[provider as KnownProvider];
+	const baseModel = defaultId
+		? (providerModels.find((m) => m.id === defaultId) ?? providerModels[0])
+		: providerModels[0];
+
+	return {
+		...baseModel,
+		id: modelId,
+		name: modelId,
+	};
+}
+
 /**
  * Parse a pattern to extract model and thinking level.
  * Handles models with colons in their IDs (e.g., OpenRouter's :exacto suffix).
@@ -387,6 +403,16 @@ export function resolveCliModel(options: {
 		}
 	}
 
+	if (provider) {
+		const fallbackModel = buildFallbackModel(provider, pattern, availableModels);
+		if (fallbackModel) {
+			const fallbackWarning = warning
+				? `${warning} Model "${pattern}" not found for provider "${provider}". Using custom model id.`
+				: `Model "${pattern}" not found for provider "${provider}". Using custom model id.`;
+			return { model: fallbackModel, thinkingLevel: undefined, warning: fallbackWarning, error: undefined };
+		}
+	}
+
 	const display = provider ? `${provider}/${pattern}` : cliModel;
 	return {
 		model: undefined,
@@ -436,12 +462,18 @@ export async function findInitialModel(options: {
 
 	// 1. CLI args take priority
 	if (cliProvider && cliModel) {
-		const found = modelRegistry.find(cliProvider, cliModel);
-		if (!found) {
-			console.error(chalk.red(`Model ${cliProvider}/${cliModel} not found`));
+		const resolved = resolveCliModel({
+			cliProvider,
+			cliModel,
+			modelRegistry,
+		});
+		if (resolved.error) {
+			console.error(chalk.red(resolved.error));
 			process.exit(1);
 		}
-		return { model: found, thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
+		if (resolved.model) {
+			return { model: resolved.model, thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
+		}
 	}
 
 	// 2. Use first model from scoped models (skip if continuing/resuming)

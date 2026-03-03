@@ -268,7 +268,7 @@ describe("resolveCliModel", () => {
 		expect(result.model?.id).toBe("openai/gpt-4o:extended");
 	});
 
-	test("does not strip invalid :suffix as thinking level in --model (fail fast)", () => {
+	test("does not strip invalid :suffix as thinking level in --model (treat as raw id)", () => {
 		const registry = {
 			getAll: () => allModels,
 		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
@@ -279,8 +279,25 @@ describe("resolveCliModel", () => {
 			modelRegistry: registry,
 		});
 
-		expect(result.model).toBeUndefined();
-		expect(result.error).toContain("not found");
+		expect(result.error).toBeUndefined();
+		expect(result.model?.provider).toBe("openai");
+		expect(result.model?.id).toBe("gpt-4o:extended");
+	});
+
+	test("allows custom model ids for explicit providers without double prefixing", () => {
+		const registry = {
+			getAll: () => allModels,
+		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
+
+		const result = resolveCliModel({
+			cliProvider: "openrouter",
+			cliModel: "openrouter/openai/ghost-model",
+			modelRegistry: registry,
+		});
+
+		expect(result.error).toBeUndefined();
+		expect(result.model?.provider).toBe("openrouter");
+		expect(result.model?.id).toBe("openai/ghost-model");
 	});
 
 	test("returns a clear error when there are no models", () => {
@@ -358,6 +375,23 @@ describe("resolveCliModel", () => {
 describe("default model selection", () => {
 	test("ai-gateway default is opus 4.6", () => {
 		expect(defaultModelPerProvider["vercel-ai-gateway"]).toBe("anthropic/claude-opus-4-6");
+	});
+
+	test("findInitialModel accepts explicit provider custom model ids", async () => {
+		const registry = {
+			getAll: () => allModels,
+		} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
+
+		const result = await findInitialModel({
+			cliProvider: "openrouter",
+			cliModel: "openrouter/openai/ghost-model",
+			scopedModels: [],
+			isContinuing: false,
+			modelRegistry: registry,
+		});
+
+		expect(result.model?.provider).toBe("openrouter");
+		expect(result.model?.id).toBe("openai/ghost-model");
 	});
 
 	test("findInitialModel selects ai-gateway default when available", async () => {
