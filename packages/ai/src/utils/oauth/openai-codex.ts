@@ -286,8 +286,11 @@ function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
 
 function getAccountId(accessToken: string): string | null {
 	const payload = decodeJwt(accessToken);
-	const auth = payload?.[JWT_CLAIM_PATH];
-	const accountId = auth?.chatgpt_account_id;
+	if (!payload) return null;
+	const accountId =
+		payload[JWT_CLAIM_PATH]?.chatgpt_account_id ??
+		payload.chatgpt_account_id ??
+		payload.account_id;
 	return typeof accountId === "string" && accountId.length > 0 ? accountId : null;
 }
 
