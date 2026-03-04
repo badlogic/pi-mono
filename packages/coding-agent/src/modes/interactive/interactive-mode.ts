@@ -3307,13 +3307,11 @@ export class InteractiveMode {
 		// Helper to update session's scoped models (session-only, no persist)
 		const updateSessionModels = async (enabledIds: Set<string>) => {
 			if (enabledIds.size > 0 && enabledIds.size < allModels.length) {
-				// Use current session thinking level, not settings default
-				const currentThinkingLevel = this.session.thinkingLevel;
 				const newScopedModels = await resolveModelScope(Array.from(enabledIds), this.session.modelRegistry);
 				this.session.setScopedModels(
 					newScopedModels.map((sm) => ({
 						model: sm.model,
-						thinkingLevel: sm.thinkingLevel ?? currentThinkingLevel,
+						thinkingLevel: sm.thinkingLevel,
 					})),
 				);
 			} else {

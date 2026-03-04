@@ -135,7 +135,7 @@ export interface AgentSessionConfig {
 	settingsManager: SettingsManager;
 	cwd: string;
 	/** Models to cycle through with Ctrl+P (from --models flag) */
-	scopedModels?: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>;
+	scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 	/** Resource loader for skills, prompts, themes, context files, system prompt */
 	resourceLoader: ResourceLoader;
 	/** SDK custom tools registered outside extensions */
@@ -215,7 +215,7 @@ export class AgentSession {
 	readonly sessionManager: SessionManager;
 	readonly settingsManager: SettingsManager;
 
-	private _scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>;
+	private _scopedModels: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 
 	// Event subscription state
 	private _unsubscribeAgent?: () => void;
@@ -717,12 +717,12 @@ export class AgentSession {
 	}
 
 	/** Scoped models for cycling (from --models flag) */
-	get scopedModels(): ReadonlyArray<{ model: Model<any>; thinkingLevel: ThinkingLevel }> {
+	get scopedModels(): ReadonlyArray<{ model: Model<any>; thinkingLevel?: ThinkingLevel }> {
 		return this._scopedModels;
 	}
 
 	/** Update scoped models for cycling */
-	setScopedModels(scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>): void {
+	setScopedModels(scopedModels: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>): void {
 		this._scopedModels = scopedModels;
 	}
 
@@ -1338,9 +1338,9 @@ export class AgentSession {
 		return this._cycleAvailableModel(direction);
 	}
 
-	private async _getScopedModelsWithApiKey(): Promise<Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>> {
+	private async _getScopedModelsWithApiKey(): Promise<Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>> {
 		const apiKeysByProvider = new Map<string, string | undefined>();
-		const result: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }> = [];
+		const result: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }> = [];
 
 		for (const scoped of this._scopedModels) {
 			const provider = scoped.model.provider;
@@ -1377,8 +1377,11 @@ export class AgentSession {
 		this.sessionManager.appendModelChange(next.model.provider, next.model.id);
 		this.settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id);
 
-		// Apply thinking level (setThinkingLevel clamps to model capabilities)
-		this.setThinkingLevel(next.thinkingLevel);
+		// Apply thinking level.
+		// - Explicit scoped model thinking level overrides current session level
+		// - Undefined scoped model thinking level inherits current session level
+		// setThinkingLevel clamps to model capabilities.
+		this.setThinkingLevel(next.thinkingLevel ?? this.thinkingLevel);
 
 		await this._emitModelSelect(next.model, currentModel, "cycle");
 
