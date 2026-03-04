@@ -361,6 +361,16 @@ describe("Editor component", () => {
 		});
 	});
 
+	describe("Kitty CSI-u handling", () => {
+		it("ignores printable CSI-u sequences with unsupported modifiers", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("\x1b[99;9u");
+
+			assert.strictEqual(editor.getText(), "");
+		});
+	});
+
 	describe("Unicode text editing behavior", () => {
 		it("inserts mixed ASCII, umlauts, and emojis as literal text", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
