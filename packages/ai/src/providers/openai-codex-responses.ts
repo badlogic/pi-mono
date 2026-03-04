@@ -6,10 +6,11 @@ let _os: typeof NodeOs | null = null;
 
 type DynamicImport = (specifier: string) => Promise<unknown>;
 
-const dynamicImport = new Function("specifier", "return import(specifier);") as DynamicImport;
+const dynamicImport: DynamicImport = (specifier) => import(specifier);
+const NODE_OS_SPECIFIER = "node:" + "os";
 
 if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
-	dynamicImport("node:os").then((m) => {
+	dynamicImport(NODE_OS_SPECIFIER).then((m) => {
 		_os = m as typeof NodeOs;
 	});
 }

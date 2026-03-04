@@ -5,17 +5,20 @@ let _join: typeof import("node:path").join | null = null;
 
 type DynamicImport = (specifier: string) => Promise<unknown>;
 
-const dynamicImport = new Function("specifier", "return import(specifier);") as DynamicImport;
+const dynamicImport: DynamicImport = (specifier) => import(specifier);
+const NODE_FS_SPECIFIER = "node:" + "fs";
+const NODE_OS_SPECIFIER = "node:" + "os";
+const NODE_PATH_SPECIFIER = "node:" + "path";
 
 // Eagerly load in Node.js/Bun environment only
 if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
-	dynamicImport("node:fs").then((m) => {
+	dynamicImport(NODE_FS_SPECIFIER).then((m) => {
 		_existsSync = (m as typeof import("node:fs")).existsSync;
 	});
-	dynamicImport("node:os").then((m) => {
+	dynamicImport(NODE_OS_SPECIFIER).then((m) => {
 		_homedir = (m as typeof import("node:os")).homedir;
 	});
-	dynamicImport("node:path").then((m) => {
+	dynamicImport(NODE_PATH_SPECIFIER).then((m) => {
 		_join = (m as typeof import("node:path")).join;
 	});
 }

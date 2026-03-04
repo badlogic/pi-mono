@@ -32,7 +32,8 @@ interface BedrockProviderModule {
 
 type DynamicImport = (specifier: string) => Promise<unknown>;
 
-const dynamicImport = new Function("specifier", "return import(specifier);") as DynamicImport;
+const dynamicImport: DynamicImport = (specifier) => import(specifier);
+const BEDROCK_PROVIDER_SPECIFIER = "./amazon-" + "bedrock.js";
 
 let bedrockProviderModuleOverride: BedrockProviderModule | undefined;
 
@@ -44,7 +45,7 @@ async function loadBedrockProviderModule(): Promise<BedrockProviderModule> {
 	if (bedrockProviderModuleOverride) {
 		return bedrockProviderModuleOverride;
 	}
-	const module = await dynamicImport("./amazon-bedrock.js");
+	const module = await dynamicImport(BEDROCK_PROVIDER_SPECIFIER);
 	return module as BedrockProviderModule;
 }
 
