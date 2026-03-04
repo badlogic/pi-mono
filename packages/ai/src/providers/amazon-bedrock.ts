@@ -88,13 +88,20 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 		const blocks = output.content as Block[];
 
 		const config: BedrockRuntimeClientConfig = {
-			region: options.region,
 			profile: options.profile,
 		};
 
 		// in Node.js/Bun environment only
 		if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
-			config.region = config.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
+			// Region resolution: explicit option > env vars > SDK default chain.
+			// When AWS_PROFILE is set, we leave region undefined so the SDK can
+			// resovle it from aws profile configs. Otherwise fall back to us-east-1.
+			const explicitRegion = options.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
+			if (explicitRegion) {
+				config.region = explicitRegion;
+			} else if (!process.env.AWS_PROFILE) {
+				config.region = "us-east-1";
+			}
 
 			// Support proxies that don't need authentication
 			if (process.env.AWS_BEDROCK_SKIP_AUTH === "1") {
@@ -129,9 +136,11 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 				const nodeHttpHandler = await import("@smithy/node-http-handler");
 				config.requestHandler = new nodeHttpHandler.NodeHttpHandler();
 			}
+		} else {
+			// Non-Node environment (browser): fall back to us-east-1 since
+			// there's no config file resolution available.
+			config.region = options.region || "us-east-1";
 		}
-
-		config.region = config.region || "us-east-1";
 
 		try {
 			const client = new BedrockRuntimeClient(config);
