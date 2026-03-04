@@ -1,0 +1,1 @@
+sh ./scripts/start.sh 300s
