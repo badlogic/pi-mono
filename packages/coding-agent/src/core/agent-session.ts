@@ -508,9 +508,13 @@ export class AgentSession {
 		}
 	}
 
-	/** Whether auto-compaction is currently running */
+	/** Whether compaction or branch summarization is currently running */
 	get isCompacting(): boolean {
-		return this._autoCompactionAbortController !== undefined || this._compactionAbortController !== undefined;
+		return (
+			this._autoCompactionAbortController !== undefined ||
+			this._compactionAbortController !== undefined ||
+			this._branchSummaryAbortController !== undefined
+		);
 	}
 
 	/** All messages including custom types like BashExecutionMessage */
