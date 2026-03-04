@@ -8,15 +8,18 @@
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
+			"import": "./dist/index.js",
+			"default": "./dist/index.js"
 		},
 		"./oauth": {
 			"types": "./oauth.d.ts",
-			"import": "./oauth.js"
+			"import": "./oauth.js",
+			"default": "./oauth.js"
 		},
 		"./bedrock-provider": {
 			"types": "./bedrock-provider.d.ts",
-			"import": "./bedrock-provider.js"
+			"import": "./bedrock-provider.js",
+			"default": "./bedrock-provider.js"
 		}
 	},
 	"bin": {
