@@ -12,6 +12,7 @@ export interface CompactionSettings {
 
 export interface BranchSummarySettings {
 	reserveTokens?: number; // default: 16384 (tokens reserved for prompt + LLM response)
+	skipPrompt?: boolean; // default: false - when true, skips "Summarize branch?" prompt and defaults to no summary
 }
 
 export interface RetrySettings {
@@ -607,10 +608,15 @@ export class SettingsManager {
 		};
 	}
 
-	getBranchSummarySettings(): { reserveTokens: number } {
+	getBranchSummarySettings(): { reserveTokens: number; skipPrompt: boolean } {
 		return {
 			reserveTokens: this.settings.branchSummary?.reserveTokens ?? 16384,
+			skipPrompt: this.settings.branchSummary?.skipPrompt ?? false,
 		};
+	}
+
+	getBranchSummarySkipPrompt(): boolean {
+		return this.settings.branchSummary?.skipPrompt ?? false;
 	}
 
 	getRetryEnabled(): boolean {

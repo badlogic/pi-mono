@@ -69,6 +69,7 @@ Edit directly or use `/settings` for common options.
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `branchSummary.reserveTokens` | number | `16384` | Tokens reserved for branch summarization |
+| `branchSummary.skipPrompt` | boolean | `false` | Skip "Summarize branch?" prompt on `/tree` navigation (defaults to no summary) |
 
 ### Retry
 
