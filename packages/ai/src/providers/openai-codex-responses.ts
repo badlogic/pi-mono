@@ -844,11 +844,18 @@ function buildHeaders(
 ): Headers {
 	const headers = new Headers(initHeaders);
 	headers.set("Authorization", `Bearer ${token}`);
-	headers.set("chatgpt-account-id", accountId);
-	headers.set("OpenAI-Beta", "responses=experimental");
-	headers.set("originator", "pi");
-	const userAgent = _os ? `pi (${_os.platform()} ${_os.release()}; ${_os.arch()})` : "pi (browser)";
+	headers.set("ChatGPT-Account-ID", accountId);
+	// Match canonical codex_cli_rs originator — the chatgpt.com/backend-api endpoint
+	// whitelists first-party originators (codex_cli_rs, codex_vscode, codex_sdk_ts).
+	headers.set("originator", "codex_cli_rs");
+	// User-Agent must match the originator format: {originator}/{version} ({os} {os_version}; {arch})
+	const userAgent = _os
+		? `codex_cli_rs/0.0.1 (${_os.platform()} ${_os.release()}; ${_os.arch()})`
+		: "codex_cli_rs/0.0.1";
 	headers.set("User-Agent", userAgent);
+	headers.set("version", "0.0.1");
+	// Do NOT set OpenAI-Beta for SSE requests — the canonical Codex CLI only sends it
+	// on WebSocket upgrade handshakes (responses_websockets=2026-02-06).
 	headers.set("accept", "text/event-stream");
 	headers.set("content-type", "application/json");
 	for (const [key, value] of Object.entries(additionalHeaders || {})) {

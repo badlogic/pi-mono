@@ -79,9 +79,10 @@ describe("openai-codex streaming", () => {
 			if (url === "https://chatgpt.com/backend-api/codex/responses") {
 				const headers = init?.headers instanceof Headers ? init.headers : undefined;
 				expect(headers?.get("Authorization")).toBe(`Bearer ${token}`);
-				expect(headers?.get("chatgpt-account-id")).toBe("acc_test");
-				expect(headers?.get("OpenAI-Beta")).toBe("responses=experimental");
-				expect(headers?.get("originator")).toBe("pi");
+				expect(headers?.get("ChatGPT-Account-ID")).toBe("acc_test");
+				// OpenAI-Beta should NOT be set for SSE requests (only for WebSocket)
+				expect(headers?.has("OpenAI-Beta")).toBe(false);
+				expect(headers?.get("originator")).toBe("codex_cli_rs");
 				expect(headers?.get("accept")).toBe("text/event-stream");
 				expect(headers?.has("x-api-key")).toBe(false);
 				return new Response(stream, {
