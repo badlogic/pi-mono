@@ -172,6 +172,84 @@ async function fetchAiGatewayModels(): Promise<Model<any>[]> {
 	}
 }
 
+interface ZenmuxPricingItem {
+	value: number;
+	unit: string;
+	currency: string;
+	conditions?: {
+		prompt_tokens?: { gte?: number; gt?: number; lt?: number | null; lte?: number };
+	};
+}
+
+interface ZenmuxModel {
+	id: string;
+	display_name: string;
+	owned_by: string;
+	input_modalities: string[];
+	capabilities?: { reasoning?: boolean };
+	context_length: number;
+	pricings?: {
+		prompt?: ZenmuxPricingItem[];
+		completion?: ZenmuxPricingItem[];
+		input_cache_read?: ZenmuxPricingItem[];
+		input_cache_write_5_min?: ZenmuxPricingItem[];
+	};
+}
+
+async function fetchZenmuxModels(): Promise<Model<any>[]> {
+	try {
+		console.log("Fetching models from ZenMux API...");
+		// Use the OpenAI-compatible endpoint to get all models across all providers
+		const response = await fetch("https://zenmux.ai/api/v1/models");
+		const data = await response.json() as { data: ZenmuxModel[] };
+
+		// For tiered pricing, pick the baseline tier (gte=0 or no conditions)
+		const getBasePrice = (items?: ZenmuxPricingItem[]): number => {
+			if (!items || items.length === 0) return 0;
+			const baseline = items.find(
+				(item) => !item.conditions || (item.conditions.prompt_tokens?.gte ?? 0) === 0,
+			);
+			return baseline?.value ?? items[0].value;
+		};
+
+		const models: Model<any>[] = [];
+		for (const model of data.data) {
+			const input: ("text" | "image")[] = ["text"];
+			if (model.input_modalities.includes("image")) input.push("image");
+
+			// Route Anthropic models through the Anthropic-compatible API for native
+			// prompt caching, extended thinking, and tool use support.
+			// All other providers use the OpenAI-compatible API.
+			const isAnthropic = model.owned_by === "anthropic";
+
+			models.push({
+				id: model.id,
+				name: model.display_name,
+				api: isAnthropic ? "anthropic-messages" : "openai-completions",
+				provider: "zenmux",
+				baseUrl: isAnthropic ? "https://zenmux.ai/api/anthropic" : "https://zenmux.ai/api/v1",
+				reasoning: model.capabilities?.reasoning ?? false,
+				input,
+				cost: {
+					input: getBasePrice(model.pricings?.prompt),
+					output: getBasePrice(model.pricings?.completion),
+					cacheRead: getBasePrice(model.pricings?.input_cache_read),
+					cacheWrite: getBasePrice(model.pricings?.input_cache_write_5_min),
+				},
+				contextWindow: model.context_length,
+				// ZenMux API does not expose max output tokens; use a conservative default
+				maxTokens: 32768,
+			});
+		}
+
+		console.log(`Fetched ${models.length} models from ZenMux`);
+		return models;
+	} catch (error) {
+		console.error("Failed to fetch ZenMux models:", error);
+		return [];
+	}
+}
+
 async function loadModelsDevData(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from models.dev API...");
@@ -642,12 +720,14 @@ async function generateModels() {
 	// models.dev: Anthropic, Google, OpenAI, Groq, Cerebras
 	// OpenRouter: xAI and other providers (excluding Anthropic, Google, OpenAI)
 	// AI Gateway: OpenAI-compatible catalog with tool-capable models
+	// ZenMux: Anthropic-compatible multi-model proxy (Claude, GPT, Gemini, etc.)
 	const modelsDevModels = await loadModelsDevData();
 	const openRouterModels = await fetchOpenRouterModels();
 	const aiGatewayModels = await fetchAiGatewayModels();
+	const zenmuxModels = await fetchZenmuxModels();
 
-	// Combine models (models.dev has priority)
-	const allModels = [...modelsDevModels, ...openRouterModels, ...aiGatewayModels];
+	// Combine models (models.dev has priority; ZenMux uses unique provider-prefixed IDs)
+	const allModels = [...modelsDevModels, ...openRouterModels, ...aiGatewayModels, ...zenmuxModels];
 
 	// Fix incorrect cache pricing for Claude Opus 4.5 from models.dev
 	// models.dev has 3x the correct pricing (1.5/18.75 instead of 0.5/6.25)
