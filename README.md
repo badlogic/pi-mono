@@ -13,11 +13,22 @@
   <a href="https://exe.dev"><img src="packages/coding-agent/docs/images/exy.png" alt="Exy mascot" width="48" /><br />exe.dev</a>
 </p>
 
-# Pi Monorepo
+![Codi Header](wallhaven-jew6op.jpg)
 
-> **Looking for the pi coding agent?** See **[packages/coding-agent](packages/coding-agent)** for installation and usage.
+# Codi Monorepo
 
-Tools for building AI agents and managing LLM deployments.
+> **Looking for the coding agent package?** See **[packages/coding-agent](packages/coding-agent)** for installation and usage.
+
+Codi is a maintained fork of the Pi monorepo for custom local workflows while staying aligned with upstream Pi releases.
+
+## CLI Split (Recommended)
+
+This fork uses a split CLI setup:
+
+- `codi`: runs this local fork from source (`/Users/ever/Documents/GitHub/Codi `)
+- `pi`: runs upstream npm-installed Pi in an isolated config dir (`~/.pi-upstream/agent`)
+
+This keeps custom Codi extensions/settings separate from upstream Pi.
 
 ## Packages
 
