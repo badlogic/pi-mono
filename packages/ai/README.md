@@ -33,6 +33,7 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - [Cross-Provider Handoffs](#cross-provider-handoffs)
 - [Context Serialization](#context-serialization)
 - [Browser Usage](#browser-usage)
+  - [Browser Compatibility Notes](#browser-compatibility-notes)
   - [Environment Variables](#environment-variables-nodejs-only)
   - [Checking Environment Variables](#checking-environment-variables)
 - [OAuth Providers](#oauth-providers)
@@ -888,6 +889,13 @@ const response = await complete(model, {
 
 > **Security Warning**: Exposing API keys in frontend code is dangerous. Anyone can extract and abuse your keys. Only use this approach for internal tools or demos. For production applications, use a backend proxy that keeps your API keys secure.
 
+### Browser Compatibility Notes
+
+- Amazon Bedrock (`bedrock-converse-stream`) is not supported in browser environments.
+- OAuth login flows are not supported in browser environments. Use the `@mariozechner/pi-ai/oauth` entry point in Node.js.
+- In browser builds, Bedrock can still appear in model lists. Calls to Bedrock models fail at runtime.
+- Use a server-side proxy or backend service if you need Bedrock or OAuth-based auth from a web app.
+
 ### Environment Variables (Node.js only)
 
 In Node.js environments, you can set environment variables to avoid passing API keys:
@@ -1018,7 +1026,7 @@ Credentials are saved to `auth.json` in the current directory.
 
 ### Programmatic OAuth
 
-The library provides login and token refresh functions. Credential storage is the caller's responsibility.
+The library provides login and token refresh functions via the `@mariozechner/pi-ai/oauth` entry point. Credential storage is the caller's responsibility.
 
 ```typescript
 import {
@@ -1036,13 +1044,13 @@ import {
   // Types
   type OAuthProvider,  // 'anthropic' | 'openai-codex' | 'github-copilot' | 'google-gemini-cli' | 'google-antigravity'
   type OAuthCredentials,
-} from '@mariozechner/pi-ai';
+} from '@mariozechner/pi-ai/oauth';
 ```
 
 ### Login Flow Example
 
 ```typescript
-import { loginGitHubCopilot } from '@mariozechner/pi-ai';
+import { loginGitHubCopilot } from '@mariozechner/pi-ai/oauth';
 import { writeFileSync } from 'fs';
 
 const credentials = await loginGitHubCopilot({
@@ -1066,7 +1074,8 @@ writeFileSync('auth.json', JSON.stringify(auth, null, 2));
 Use `getOAuthApiKey()` to get an API key, automatically refreshing if expired:
 
 ```typescript
-import { getModel, complete, getOAuthApiKey } from '@mariozechner/pi-ai';
+import { getModel, complete } from '@mariozechner/pi-ai';
+import { getOAuthApiKey } from '@mariozechner/pi-ai/oauth';
 import { readFileSync, writeFileSync } from 'fs';
 
 // Load your stored credentials

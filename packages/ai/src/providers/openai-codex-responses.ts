@@ -1,12 +1,19 @@
-// NEVER convert to top-level import - breaks browser/Vite builds (web-ui)
-let _os: typeof import("node:os") | null = null;
+import type * as NodeOs from "node:os";
+import type { Tool as OpenAITool, ResponseInput, ResponseStreamEvent } from "openai/resources/responses/responses.js";
+
+// NEVER convert to top-level runtime imports - breaks browser/Vite builds (web-ui)
+let _os: typeof NodeOs | null = null;
+
+type DynamicImport = (specifier: string) => Promise<unknown>;
+
+const dynamicImport = new Function("specifier", "return import(specifier);") as DynamicImport;
+
 if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
-	import("node:os").then((m) => {
-		_os = m;
+	dynamicImport("node:os").then((m) => {
+		_os = m as typeof NodeOs;
 	});
 }
 
-import type { Tool as OpenAITool, ResponseInput, ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { getEnvApiKey } from "../env-api-keys.js";
 import { supportsXhigh } from "../models.js";
 import type {

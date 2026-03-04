@@ -3,16 +3,20 @@ let _existsSync: typeof import("node:fs").existsSync | null = null;
 let _homedir: typeof import("node:os").homedir | null = null;
 let _join: typeof import("node:path").join | null = null;
 
+type DynamicImport = (specifier: string) => Promise<unknown>;
+
+const dynamicImport = new Function("specifier", "return import(specifier);") as DynamicImport;
+
 // Eagerly load in Node.js/Bun environment only
 if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
-	import("node:fs").then((m) => {
-		_existsSync = m.existsSync;
+	dynamicImport("node:fs").then((m) => {
+		_existsSync = (m as typeof import("node:fs")).existsSync;
 	});
-	import("node:os").then((m) => {
-		_homedir = m.homedir;
+	dynamicImport("node:os").then((m) => {
+		_homedir = (m as typeof import("node:os")).homedir;
 	});
-	import("node:path").then((m) => {
-		_join = m.join;
+	dynamicImport("node:path").then((m) => {
+		_join = (m as typeof import("node:path")).join;
 	});
 }
 

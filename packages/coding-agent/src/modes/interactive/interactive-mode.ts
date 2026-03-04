@@ -8,14 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import {
-	type AssistantMessage,
-	getOAuthProviders,
-	type ImageContent,
-	type Message,
-	type Model,
-	type OAuthProvider,
-} from "@mariozechner/pi-ai";
+import type { AssistantMessage, ImageContent, Message, Model, OAuthProviderId } from "@mariozechner/pi-ai";
 import type {
 	AutocompleteItem,
 	EditorAction,
@@ -3625,7 +3618,9 @@ export class InteractiveMode {
 						await this.showLoginDialog(providerId);
 					} else {
 						// Logout flow
-						const providerInfo = getOAuthProviders().find((p) => p.id === providerId);
+						const providerInfo = this.session.modelRegistry.authStorage
+							.getOAuthProviders()
+							.find((p) => p.id === providerId);
 						const providerName = providerInfo?.name || providerId;
 
 						try {
@@ -3648,7 +3643,7 @@ export class InteractiveMode {
 	}
 
 	private async showLoginDialog(providerId: string): Promise<void> {
-		const providerInfo = getOAuthProviders().find((p) => p.id === providerId);
+		const providerInfo = this.session.modelRegistry.authStorage.getOAuthProviders().find((p) => p.id === providerId);
 		const providerName = providerInfo?.name || providerId;
 
 		// Providers that use callback servers (can paste redirect URL)
@@ -3682,7 +3677,7 @@ export class InteractiveMode {
 		};
 
 		try {
-			await this.session.modelRegistry.authStorage.login(providerId as OAuthProvider, {
+			await this.session.modelRegistry.authStorage.login(providerId as OAuthProviderId, {
 				onAuth: (info: { url: string; instructions?: string }) => {
 					dialog.showAuth(info.url, info.instructions);
 
