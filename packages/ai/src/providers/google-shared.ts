@@ -138,28 +138,25 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 				} else if (block.type === "toolCall") {
 					const thoughtSignature = resolveThoughtSignature(isSameProviderAndModel, block.thoughtSignature);
 					// Gemini 3 requires thoughtSignature on all function calls when thinking mode is enabled.
-					// When replaying history from providers without thought signatures (e.g. Claude via Antigravity),
-					// convert unsigned function calls to text to avoid API validation errors.
-					// We include a note telling the model this is historical context to prevent mimicry.
+					// If missing (e.g., from Claude or older models), we use the Google Cloud Code Assist
+					// sentinel value to bypass signature validation. This avoids text-fallback hallucinations.
 					const isGemini3 = model.id.toLowerCase().includes("gemini-3");
-					if (isGemini3 && !thoughtSignature) {
-						const argsStr = JSON.stringify(block.arguments ?? {}, null, 2);
-						parts.push({
-							text: `[Historical context: a different model called tool "${block.name}" with arguments: ${argsStr}. Do not mimic this format - use proper function calling.]`,
-						});
-					} else {
-						const part: Part = {
-							functionCall: {
-								name: block.name,
-								args: block.arguments ?? {},
-								...(requiresToolCallId(model.id) ? { id: block.id } : {}),
-							},
-						};
-						if (thoughtSignature) {
-							part.thoughtSignature = thoughtSignature;
-						}
-						parts.push(part);
+
+					const part: Part = {
+						functionCall: {
+							name: block.name,
+							args: block.arguments ?? {},
+							...(requiresToolCallId(model.id) ? { id: block.id } : {}),
+						},
+					};
+
+					if (thoughtSignature) {
+						part.thoughtSignature = thoughtSignature;
+					} else if (isGemini3) {
+						part.thoughtSignature = "skip_thought_signature_validator";
 					}
+
+					parts.push(part);
 				}
 			}
 

@@ -3,7 +3,7 @@ import { convertMessages } from "../src/providers/google-shared.js";
 import type { Context, Model } from "../src/types.js";
 
 describe("google-shared convertMessages", () => {
-	it("converts unsigned tool calls to text for Gemini 3", () => {
+	it("adds skip_thought_signature_validator for unsigned tool calls in Gemini 3", () => {
 		const model: Model<"google-generative-ai"> = {
 			id: "gemini-3-pro-preview",
 			name: "Gemini 3 Pro Preview",
@@ -60,13 +60,9 @@ describe("google-shared convertMessages", () => {
 		}
 
 		expect(toolTurn).toBeTruthy();
-		expect(toolTurn?.parts?.some((p) => p.functionCall !== undefined)).toBe(false);
-
-		const text = toolTurn?.parts?.map((p) => p.text ?? "").join("\n");
-		// Should contain historical context note to prevent mimicry
-		expect(text).toContain("Historical context");
-		expect(text).toContain("bash");
-		expect(text).toContain("ls -la");
-		expect(text).toContain("Do not mimic this format");
+		const functionCallPart = toolTurn?.parts?.find((p) => p.functionCall !== undefined);
+		expect(functionCallPart).toBeDefined();
+		expect(functionCallPart?.functionCall?.name).toBe("bash");
+		expect(functionCallPart?.thoughtSignature).toBe("skip_thought_signature_validator");
 	});
 });
