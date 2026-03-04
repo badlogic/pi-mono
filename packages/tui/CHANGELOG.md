@@ -8,6 +8,7 @@
 - Fixed Kitty CSI-u handling to ignore unsupported modifiers so modifier-only events do not insert stray printable characters ([#1807](https://github.com/badlogic/pi-mono/issues/1807))
 - Fixed single-line paste performance by inserting pasted text atomically instead of character-by-character, preventing repeated `@` autocomplete scans during paste ([#1812](https://github.com/badlogic/pi-mono/issues/1812))
 - Fixed `visibleWidth()` to ignore generic OSC escape sequences (including OSC 133 semantic prompt markers), preventing width drift when terminals emit semantic zone markers ([#1805](https://github.com/badlogic/pi-mono/issues/1805))
+- Fixed markdown blockquotes dropping nested list content by rendering blockquote children as block-level tokens ([#1787](https://github.com/badlogic/pi-mono/issues/1787))
 
 ## [0.55.4] - 2026-03-02
 

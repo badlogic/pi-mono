@@ -331,19 +331,36 @@ export class Markdown implements Component {
 
 			case "blockquote": {
 				const quoteStyle = (text: string) => this.theme.quote(this.theme.italic(text));
-				const quoteStyleContext: InlineStyleContext = {
-					applyText: quoteStyle,
-					stylePrefix: this.getStylePrefix(quoteStyle),
+				const quoteStylePrefix = this.getStylePrefix(quoteStyle);
+				const applyQuoteStyle = (line: string): string => {
+					if (!quoteStylePrefix) {
+						return quoteStyle(line);
+					}
+					const lineWithReappliedStyle = line.replace(/\x1b\[0m/g, `\x1b[0m${quoteStylePrefix}`);
+					return quoteStyle(lineWithReappliedStyle);
 				};
-				const quoteText = this.renderInlineTokens(token.tokens || [], quoteStyleContext);
-				const quoteLines = quoteText.split("\n");
 
 				// Calculate available width for quote content (subtract border "│ " = 2 chars)
 				const quoteContentWidth = Math.max(1, width - 2);
 
-				for (const quoteLine of quoteLines) {
-					// Wrap the styled line, then add border to each wrapped line
-					const wrappedLines = wrapTextWithAnsi(quoteLine, quoteContentWidth);
+				// Blockquotes contain block-level tokens (paragraph, list, code, etc.), so render
+				// children with renderToken() instead of renderInlineTokens().
+				const quoteTokens = token.tokens || [];
+				const renderedQuoteLines: string[] = [];
+				for (let i = 0; i < quoteTokens.length; i++) {
+					const quoteToken = quoteTokens[i];
+					const nextQuoteToken = quoteTokens[i + 1];
+					renderedQuoteLines.push(...this.renderToken(quoteToken, quoteContentWidth, nextQuoteToken?.type));
+				}
+
+				// Avoid rendering an extra empty quote line before the outer blockquote spacing.
+				while (renderedQuoteLines.length > 0 && renderedQuoteLines[renderedQuoteLines.length - 1] === "") {
+					renderedQuoteLines.pop();
+				}
+
+				for (const quoteLine of renderedQuoteLines) {
+					const styledLine = applyQuoteStyle(quoteLine);
+					const wrappedLines = wrapTextWithAnsi(styledLine, quoteContentWidth);
 					for (const wrappedLine of wrappedLines) {
 						lines.push(this.theme.quoteBorder("│ ") + wrappedLine);
 					}
