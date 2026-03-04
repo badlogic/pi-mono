@@ -1496,6 +1496,26 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.getText(), "hello| world");
 		});
 
+		it("does not trigger autocomplete during single-line paste", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			let suggestionCalls = 0;
+
+			const mockProvider: AutocompleteProvider = {
+				getSuggestions: () => {
+					suggestionCalls += 1;
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+			editor.handleInput("\x1b[200~look at @node_modules/react/index.js please\x1b[201~");
+
+			assert.strictEqual(editor.getText(), "look at @node_modules/react/index.js please");
+			assert.strictEqual(suggestionCalls, 0);
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+		});
+
 		it("undoes multi-line paste atomically", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 

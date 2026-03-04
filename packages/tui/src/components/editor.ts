@@ -1029,10 +1029,8 @@ export class Editor implements Component, Focusable {
 		}
 
 		if (pastedLines.length === 1) {
-			// Single line - insert character by character to trigger autocomplete
-			for (const char of filteredText) {
-				this.insertCharacter(char, true);
-			}
+			// Single line - insert atomically (do not trigger autocomplete during paste)
+			this.insertTextAtCursorInternal(filteredText);
 			return;
 		}
 
