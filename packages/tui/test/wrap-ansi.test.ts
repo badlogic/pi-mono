@@ -111,6 +111,16 @@ describe("wrapTextWithAnsi", () => {
 			}
 		});
 
+		it("should ignore OSC 133 semantic markers in visible width", () => {
+			const text = "\x1b]133;A\x07hello\x1b]133;B\x07";
+			assert.strictEqual(visibleWidth(text), 5);
+		});
+
+		it("should ignore OSC sequences terminated with ST in visible width", () => {
+			const text = "\x1b]133;A\x1b\\hello\x1b]133;B\x1b\\";
+			assert.strictEqual(visibleWidth(text), 5);
+		});
+
 		it("should treat isolated regional indicators as width 2", () => {
 			assert.strictEqual(visibleWidth("🇨"), 2);
 			assert.strictEqual(visibleWidth("🇨🇳"), 2);

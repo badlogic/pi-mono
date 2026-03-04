@@ -115,12 +115,21 @@ export function visibleWidth(str: string): number {
 		clean = clean.replace(/\t/g, "   ");
 	}
 	if (clean.includes("\x1b")) {
-		// Strip SGR codes (\x1b[...m) and cursor codes (\x1b[...G/K/H/J)
-		clean = clean.replace(/\x1b\[[0-9;]*[mGKHJ]/g, "");
-		// Strip OSC 8 hyperlinks: \x1b]8;;URL\x07 and \x1b]8;;\x07
-		clean = clean.replace(/\x1b\]8;;[^\x07]*\x07/g, "");
-		// Strip APC sequences: \x1b_...\x07 or \x1b_...\x1b\\ (used for cursor marker)
-		clean = clean.replace(/\x1b_[^\x07\x1b]*(?:\x07|\x1b\\)/g, "");
+		// Strip supported ANSI/OSC/APC escape sequences in one pass.
+		// This covers CSI styling/cursor codes, OSC hyperlinks and prompt markers,
+		// and APC sequences like CURSOR_MARKER.
+		let stripped = "";
+		let i = 0;
+		while (i < clean.length) {
+			const ansi = extractAnsiCode(clean, i);
+			if (ansi) {
+				i += ansi.length;
+				continue;
+			}
+			stripped += clean[i];
+			i++;
+		}
+		clean = stripped;
 	}
 
 	// Calculate width
