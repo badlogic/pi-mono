@@ -33,6 +33,15 @@ import {
 import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 
 /**
+ * Strips headers that trigger project-level IAM checks which fail for
+ * OAuth-based Antigravity requests (causes 403).
+ */
+export function stripProblematicHeaders(headers: Record<string, string>): void {
+	delete headers["x-goog-user-project"];
+	delete headers["X-Goog-User-Project"];
+}
+
+/**
  * Thinking level for Gemini 3 models.
  * Mirrors Google's ThinkingLevel enum values.
  */
@@ -383,6 +392,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli", GoogleGe
 				...(isClaudeThinkingModel(model.id) ? { "anthropic-beta": CLAUDE_THINKING_BETA_HEADER } : {}),
 				...options?.headers,
 			};
+			stripProblematicHeaders(requestHeaders);
 			const requestBodyJson = JSON.stringify(requestBody);
 
 			// Fetch with retry logic for rate limits and transient errors
