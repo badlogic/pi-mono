@@ -13,6 +13,10 @@
 		"./oauth": {
 			"types": "./oauth.d.ts",
 			"import": "./oauth.js"
+		},
+		"./bedrock-provider": {
+			"types": "./bedrock-provider.d.ts",
+			"import": "./bedrock-provider.js"
 		}
 	},
 	"bin": {
@@ -22,6 +26,8 @@
 		"dist",
 		"oauth.js",
 		"oauth.d.ts",
+		"bedrock-provider.js",
+		"bedrock-provider.d.ts",
 		"README.md"
 	],
 	"scripts": {

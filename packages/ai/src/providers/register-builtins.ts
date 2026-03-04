@@ -22,26 +22,35 @@ interface BedrockProviderModule {
 		model: Model<"bedrock-converse-stream">,
 		context: Context,
 		options?: StreamOptions,
-	) => AssistantMessageEventStream;
+	) => AsyncIterable<AssistantMessageEvent>;
 	streamSimpleBedrock: (
 		model: Model<"bedrock-converse-stream">,
 		context: Context,
 		options?: SimpleStreamOptions,
-	) => AssistantMessageEventStream;
+	) => AsyncIterable<AssistantMessageEvent>;
 }
 
 type DynamicImport = (specifier: string) => Promise<unknown>;
 
 const dynamicImport = new Function("specifier", "return import(specifier);") as DynamicImport;
 
+let bedrockProviderModuleOverride: BedrockProviderModule | undefined;
+
+export function setBedrockProviderModule(module: BedrockProviderModule): void {
+	bedrockProviderModuleOverride = module;
+}
+
 async function loadBedrockProviderModule(): Promise<BedrockProviderModule> {
+	if (bedrockProviderModuleOverride) {
+		return bedrockProviderModuleOverride;
+	}
 	const module = await dynamicImport("./amazon-bedrock.js");
 	return module as BedrockProviderModule;
 }
 
-function forwardStream(target: AssistantMessageEventStream, source: AssistantMessageEventStream): void {
+function forwardStream(target: AssistantMessageEventStream, source: AsyncIterable<AssistantMessageEvent>): void {
 	(async () => {
-		for await (const event of source as AsyncIterable<AssistantMessageEvent>) {
+		for await (const event of source) {
 			target.push(event);
 		}
 		target.end();
