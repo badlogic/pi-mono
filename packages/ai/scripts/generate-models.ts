@@ -938,6 +938,21 @@ async function generateModels() {
 	];
 	allModels.push(...codexModels);
 
+	// Add GPT-5.3 Codex to github-copilot
+	allModels.push({
+		id: "gpt-5.3-codex",
+		name: "GPT-5.3 Codex",
+		api: "openai-responses",
+		provider: "github-copilot",
+		baseUrl: "https://api.individual.githubcopilot.com",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 128000,
+		headers: { ...COPILOT_STATIC_HEADERS },
+	});
+
 	// Add missing Grok models
 	if (!allModels.some(m => m.provider === "xai" && m.id === "grok-code-fast-1")) {
 		allModels.push({

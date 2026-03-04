@@ -12,6 +12,66 @@ for (const [provider, models] of Object.entries(MODELS)) {
 	modelRegistry.set(provider, providerModels);
 }
 
+function registerFallbackModel(model: Model<Api>): void {
+	const providerModels = modelRegistry.get(model.provider) ?? new Map<string, Model<Api>>();
+	if (!providerModels.has(model.id)) {
+		providerModels.set(model.id, model);
+	}
+	if (!modelRegistry.has(model.provider)) {
+		modelRegistry.set(model.provider, providerModels);
+	}
+}
+
+const COPILOT_FALLBACK_HEADERS = {
+	"User-Agent": "GitHubCopilotChat/0.35.0",
+	"Editor-Version": "vscode/1.107.0",
+	"Editor-Plugin-Version": "copilot-chat/0.35.0",
+	"Copilot-Integration-Id": "vscode-chat",
+} as const;
+
+const COPILOT_GPT53_FALLBACK_MODELS: Model<"openai-responses">[] = [
+	{
+		id: "gpt-5.3",
+		name: "GPT-5.3",
+		api: "openai-responses",
+		provider: "github-copilot",
+		baseUrl: "https://api.individual.githubcopilot.com",
+		headers: { ...COPILOT_FALLBACK_HEADERS },
+		reasoning: true,
+		input: ["text", "image"],
+		cost: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+		},
+		contextWindow: 272000,
+		maxTokens: 128000,
+	},
+	{
+		id: "gpt-5.3-codex",
+		name: "GPT-5.3-Codex",
+		api: "openai-responses",
+		provider: "github-copilot",
+		baseUrl: "https://api.individual.githubcopilot.com",
+		headers: { ...COPILOT_FALLBACK_HEADERS },
+		reasoning: true,
+		input: ["text", "image"],
+		cost: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+		},
+		contextWindow: 272000,
+		maxTokens: 128000,
+	},
+];
+
+for (const model of COPILOT_GPT53_FALLBACK_MODELS) {
+	registerFallbackModel(model);
+}
+
 type ModelApi<
 	TProvider extends KnownProvider,
 	TModelId extends keyof (typeof MODELS)[TProvider],
