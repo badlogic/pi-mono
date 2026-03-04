@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed TUI width calculation for regional indicator symbols (e.g. partial flag sequences like `🇨` during streaming) to prevent wrap drift and stale character artifacts in differential rendering.
+
 ## [0.55.4] - 2026-03-02
 
 ## [0.55.3] - 2026-02-27

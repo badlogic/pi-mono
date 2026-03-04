@@ -111,6 +111,11 @@ describe("wrapTextWithAnsi", () => {
 			}
 		});
 
+		it("should treat isolated regional indicators as width 2", () => {
+			assert.strictEqual(visibleWidth("🇨"), 2);
+			assert.strictEqual(visibleWidth("🇨🇳"), 2);
+		});
+
 		it("should truncate trailing whitespace that exceeds width", () => {
 			const twoSpacesWrappedToWidth1 = wrapTextWithAnsi("  ", 1);
 			assert.ok(visibleWidth(twoSpacesWrappedToWidth1[0]) <= 1);

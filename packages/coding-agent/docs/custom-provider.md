@@ -172,10 +172,17 @@ models: [{
   // ...
   compat: {
     supportsDeveloperRole: false,      // use "system" instead of "developer"
-    supportsReasoningEffort: false,    // disable reasoning_effort param
+    supportsReasoningEffort: true,
+    reasoningEffortMap: {              // map pi-ai levels to provider values
+      minimal: "default",
+      low: "default",
+      medium: "default",
+      high: "default",
+      xhigh: "default"
+    },
     maxTokensField: "max_tokens",      // instead of "max_completion_tokens"
     requiresToolResultName: true,      // tool results need name field
-    requiresMistralToolIds: true       // tool IDs must be 9 alphanumeric chars
+    requiresMistralToolIds: true,
     thinkingFormat: "qwen"             // uses enable_thinking: true
   }
 }]
@@ -568,6 +575,7 @@ interface ProviderModelConfig {
     supportsStore?: boolean;
     supportsDeveloperRole?: boolean;
     supportsReasoningEffort?: boolean;
+    reasoningEffortMap?: Partial<Record<"minimal" | "low" | "medium" | "high" | "xhigh", string>>;
     supportsUsageInStreaming?: boolean;
     maxTokensField?: "max_completion_tokens" | "max_tokens";
     requiresToolResultName?: boolean;

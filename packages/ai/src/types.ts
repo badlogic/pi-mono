@@ -37,6 +37,7 @@ export type KnownProvider =
 	| "minimax-cn"
 	| "huggingface"
 	| "opencode"
+	| "opencode-go"
 	| "kimi-coding";
 export type Provider = KnownProvider | string;
 
@@ -234,6 +235,8 @@ export interface OpenAICompletionsCompat {
 	supportsDeveloperRole?: boolean;
 	/** Whether the provider supports `reasoning_effort`. Default: auto-detected from URL. */
 	supportsReasoningEffort?: boolean;
+	/** Optional mapping from pi-ai reasoning levels to provider/model-specific `reasoning_effort` values. */
+	reasoningEffortMap?: Partial<Record<ThinkingLevel, string>>;
 	/** Whether the provider supports `stream_options: { include_usage: true }` for token usage in streaming responses. Default: true. */
 	supportsUsageInStreaming?: boolean;
 	/** Which field to use for max tokens. Default: auto-detected from URL. */

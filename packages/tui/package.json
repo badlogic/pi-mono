@@ -5,7 +5,7 @@
 	"type": "module",
 	"main": "dist/index.js",
 	"scripts": {
-		"clean": "rm -rf dist",
+		"clean": "shx rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"test": "node --test --import tsx test/*.test.ts",

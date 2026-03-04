@@ -10,7 +10,7 @@
 		"README.md"
 	],
 	"scripts": {
-		"clean": "rm -rf dist",
+		"clean": "shx rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"test": "vitest --run",
