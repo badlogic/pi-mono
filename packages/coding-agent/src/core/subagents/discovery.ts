@@ -16,20 +16,25 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const BUILTIN_AGENTS_DIR = path.join(currentDir, "builtins");
 
 /**
- * Find the nearest .pi/agents directory starting from cwd.
- * Walks up the directory tree until it finds .pi/agents or reaches the root.
+ * Find the nearest project agent directory starting from cwd.
+ * Checks both modern and compatibility paths in order:
+ * 1. .pi/agent/agents
+ * 2. .pi/agents
+ * Walks up the directory tree until one is found or root is reached.
  */
 function findProjectAgentsDir(cwd: string): string | null {
 	let current = cwd;
 
 	while (true) {
-		const candidate = path.join(current, ".pi", "agents");
-		try {
-			if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
-				return candidate;
+		const candidates = [path.join(current, ".pi", "agent", "agents"), path.join(current, ".pi", "agents")];
+		for (const candidate of candidates) {
+			try {
+				if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+					return candidate;
+				}
+			} catch {
+				// Ignore errors (permission, etc.)
 			}
-		} catch {
-			// Ignore errors (permission, etc.)
 		}
 
 		const parent = path.dirname(current);
@@ -97,7 +102,7 @@ function loadAgentsFromDir(dir: string, source: "user" | "project" | "builtin"):
  * Agents are loaded in this order (later sources override earlier):
  * 1. Built-in agents
  * 2. User agents (~/.pi/agent/agents/)
- * 3. Project agents (.pi/agents/)
+ * 3. Project agents (.pi/agent/agents/ or .pi/agents/)
  *
  * @param cwd - Current working directory to search from
  * @returns Discovery result with all agents and directory paths

@@ -188,7 +188,7 @@ export function registerSubagentTools(pi: ExtensionAPI, manager: SubagentManager
 
 		renderResult(result, _options, theme) {
 			const details = result.details as
-				| { subagentId: string; status: string; error?: string; output?: string }
+				| { subagentId: string; status: string; error?: string; output?: string; name?: string }
 				| undefined;
 
 			if (details?.error) {
@@ -196,9 +196,17 @@ export function registerSubagentTools(pi: ExtensionAPI, manager: SubagentManager
 				return new Text(theme.fg("error", text?.type === "text" ? text.text : "Error"), 0, 0);
 			}
 
-			const icon = details?.status === "done" ? theme.fg("success", "✓") : theme.fg("warning", "⏳");
-			let text = `${icon} ${theme.fg("toolTitle", theme.bold("subagent_wait"))}`;
-			text += theme.fg("muted", ` (${details?.subagentId}, ${details?.status})`);
+			// Handle all terminal states explicitly (fix #9)
+			const status = details?.status;
+			const icon =
+				status === "done"
+					? theme.fg("success", "✓")
+					: status === "error" || status === "stopped"
+						? theme.fg("error", "✗")
+						: theme.fg("warning", "⏳");
+
+			const label = details?.name ? `${details.name} (${details?.subagentId})` : (details?.subagentId ?? "");
+			let text = `${icon} ${theme.fg("toolTitle", theme.bold("subagent_wait"))} ${theme.fg("muted", label)}`;
 
 			if (details?.output) {
 				const preview = details.output.slice(0, 200);

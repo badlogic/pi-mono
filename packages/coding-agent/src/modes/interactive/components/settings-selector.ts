@@ -24,6 +24,7 @@ const THINKING_DESCRIPTIONS: Record<ThinkingLevel, string> = {
 
 export interface SettingsConfig {
 	autoCompact: boolean;
+	autoCompactTriggerPercent: number | undefined;
 	showImages: boolean;
 	autoResizeImages: boolean;
 	blockImages: boolean;
@@ -47,6 +48,7 @@ export interface SettingsConfig {
 
 export interface SettingsCallbacks {
 	onAutoCompactChange: (enabled: boolean) => void;
+	onAutoCompactTriggerPercentChange: (percent: number | undefined) => void;
 	onShowImagesChange: (enabled: boolean) => void;
 	onAutoResizeImagesChange: (enabled: boolean) => void;
 	onBlockImagesChange: (blocked: boolean) => void;
@@ -140,6 +142,7 @@ export class SettingsSelectorComponent extends Container {
 		super();
 
 		const supportsImages = getCapabilities().images;
+		const autoCompactPercentValues = ["default", ...Array.from({ length: 40 }, (_, i) => String(60 + i))];
 
 		const items: SettingItem[] = [
 			{
@@ -148,6 +151,14 @@ export class SettingsSelectorComponent extends Container {
 				description: "Automatically compact context when it gets too large",
 				currentValue: config.autoCompact ? "true" : "false",
 				values: ["true", "false"],
+			},
+			{
+				id: "autocompact-trigger-percent",
+				label: "Auto-compact at %",
+				description: "Trigger compaction at context usage percentage (default uses reserve tokens only)",
+				currentValue:
+					config.autoCompactTriggerPercent === undefined ? "default" : String(config.autoCompactTriggerPercent),
+				values: autoCompactPercentValues,
 			},
 			{
 				id: "steering-mode",
@@ -345,6 +356,11 @@ export class SettingsSelectorComponent extends Container {
 				switch (id) {
 					case "autocompact":
 						callbacks.onAutoCompactChange(newValue === "true");
+						break;
+					case "autocompact-trigger-percent":
+						callbacks.onAutoCompactTriggerPercentChange(
+							newValue === "default" ? undefined : parseInt(newValue, 10),
+						);
 						break;
 					case "show-images":
 						callbacks.onShowImagesChange(newValue === "true");

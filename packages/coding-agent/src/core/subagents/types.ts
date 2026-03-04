@@ -60,6 +60,9 @@ export interface SubagentConfig {
 	/** Preferred model ID (e.g., "claude-haiku-4-5") */
 	model?: string;
 
+	/** Preferred thinking level for this agent */
+	thinking?: ThinkingLevel;
+
 	/** Memory persistence setting */
 	memory?: MemoryScope;
 
@@ -360,6 +363,7 @@ export interface AgentFrontmatter {
 	description: string;
 	tools?: string;
 	model?: string;
+	thinking?: ThinkingLevel;
 	memory?: MemoryScope;
 }
 

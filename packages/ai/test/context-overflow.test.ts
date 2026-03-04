@@ -637,7 +637,7 @@ describe("Context overflow error handling", () => {
 	let lmStudioRunning = false;
 	if (!process.env.PI_NO_LOCAL_LLM) {
 		try {
-			execSync("curl -s --max-time 1 http://localhost:1234/v1/models > /dev/null", { stdio: "ignore" });
+			execSync("curl -sf --max-time 1 http://localhost:1234/v1/models > /dev/null", { stdio: "ignore" });
 			lmStudioRunning = true;
 		} catch {
 			lmStudioRunning = false;
@@ -673,7 +673,7 @@ describe("Context overflow error handling", () => {
 
 	let llamaCppRunning = false;
 	try {
-		execSync("curl -s --max-time 1 http://localhost:8081/health > /dev/null", { stdio: "ignore" });
+		execSync("curl -sf --max-time 1 http://localhost:8081/health > /dev/null", { stdio: "ignore" });
 		llamaCppRunning = true;
 	} catch {
 		llamaCppRunning = false;

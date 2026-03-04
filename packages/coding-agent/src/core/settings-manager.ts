@@ -8,6 +8,7 @@ export interface CompactionSettings {
 	enabled?: boolean; // default: true
 	reserveTokens?: number; // default: 16384
 	keepRecentTokens?: number; // default: 20000
+	triggerPercent?: number; // optional integer threshold (60-99), auto-compacts at context usage %
 }
 
 export interface BranchSummarySettings {
@@ -317,7 +318,34 @@ export class SettingsManager {
 			}
 		}
 
+		// Normalize compaction.triggerPercent
+		if (
+			"compaction" in settings &&
+			typeof settings.compaction === "object" &&
+			settings.compaction !== null &&
+			!Array.isArray(settings.compaction)
+		) {
+			const compaction = settings.compaction as Record<string, unknown>;
+			const normalizedTriggerPercent = SettingsManager.normalizeCompactionTriggerPercent(compaction.triggerPercent);
+			if (normalizedTriggerPercent === undefined) {
+				delete compaction.triggerPercent;
+			} else {
+				compaction.triggerPercent = normalizedTriggerPercent;
+			}
+		}
+
 		return settings as Settings;
+	}
+
+	private static normalizeCompactionTriggerPercent(value: unknown): number | undefined {
+		if (typeof value !== "number" || !Number.isFinite(value)) {
+			return undefined;
+		}
+		const rounded = Math.floor(value);
+		if (rounded < 60 || rounded > 99) {
+			return undefined;
+		}
+		return rounded;
 	}
 
 	getGlobalSettings(): Settings {
@@ -599,11 +627,31 @@ export class SettingsManager {
 		return this.settings.compaction?.keepRecentTokens ?? 20000;
 	}
 
-	getCompactionSettings(): { enabled: boolean; reserveTokens: number; keepRecentTokens: number } {
+	getCompactionTriggerPercent(): number | undefined {
+		return SettingsManager.normalizeCompactionTriggerPercent(this.settings.compaction?.triggerPercent);
+	}
+
+	setCompactionTriggerPercent(percent: number | undefined): void {
+		if (!this.globalSettings.compaction) {
+			this.globalSettings.compaction = {};
+		}
+		this.globalSettings.compaction.triggerPercent =
+			percent === undefined ? undefined : SettingsManager.normalizeCompactionTriggerPercent(percent);
+		this.markModified("compaction", "triggerPercent");
+		this.save();
+	}
+
+	getCompactionSettings(): {
+		enabled: boolean;
+		reserveTokens: number;
+		keepRecentTokens: number;
+		triggerPercent?: number;
+	} {
 		return {
 			enabled: this.getCompactionEnabled(),
 			reserveTokens: this.getCompactionReserveTokens(),
 			keepRecentTokens: this.getCompactionKeepRecentTokens(),
+			triggerPercent: this.getCompactionTriggerPercent(),
 		};
 	}
 

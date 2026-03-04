@@ -109,6 +109,7 @@ export interface CompactionSettings {
 	enabled: boolean;
 	reserveTokens: number;
 	keepRecentTokens: number;
+	triggerPercent?: number;
 }
 
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
@@ -211,7 +212,19 @@ export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEst
  */
 export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
 	if (!settings.enabled) return false;
-	return contextTokens > contextWindow - settings.reserveTokens;
+	const reserveThreshold = contextWindow - settings.reserveTokens;
+	const reserveTriggered = contextTokens > reserveThreshold;
+
+	let percentTriggered = false;
+	if (typeof settings.triggerPercent === "number" && Number.isFinite(settings.triggerPercent)) {
+		const roundedPercent = Math.floor(settings.triggerPercent);
+		if (roundedPercent >= 1 && roundedPercent <= 100) {
+			const percentThreshold = Math.floor((contextWindow * roundedPercent) / 100);
+			percentTriggered = contextTokens >= percentThreshold;
+		}
+	}
+
+	return reserveTriggered || percentTriggered;
 }
 
 // ============================================================================

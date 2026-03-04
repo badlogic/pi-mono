@@ -76,6 +76,9 @@ export class SubagentManager {
 	 * @returns Result with subagent ID and status
 	 */
 	async startSubagent(name: string, task: string, options: StartSubagentOptions = {}): Promise<StartSubagentResult> {
+		// Reload configs so newly added agent files are picked up without restart (fix #13)
+		this.reloadConfigs();
+
 		const config = this.configs.get(name);
 		if (!config) {
 			const available = Array.from(this.configs.keys()).join(", ") || "none";
@@ -172,9 +175,28 @@ export class SubagentManager {
 		}
 		subagent.model = model;
 
-		// Create tools subset
+		// Create tools subset — validate names against known tools (fix #10)
+		const knownToolNames = new Set(
+			Object.keys(
+				this.config.toolFactory.createAll(subagent.cwd).reduce(
+					(acc, t) => {
+						acc[t.name] = true;
+						return acc;
+					},
+					{} as Record<string, boolean>,
+				),
+			),
+		);
 		const tools = config.tools
-			? this.config.toolFactory.createSubset(config.tools, subagent.cwd)
+			? (() => {
+					const unknown = config.tools.filter((n) => !knownToolNames.has(n));
+					if (unknown.length > 0) {
+						console.warn(
+							`[SubagentManager] Agent "${subagent.name}" references unknown tools: ${unknown.join(", ")}. Valid names: ${Array.from(knownToolNames).join(", ")}`,
+						);
+					}
+					return this.config.toolFactory.createSubset(config.tools, subagent.cwd);
+				})()
 			: this.config.toolFactory.createAll(subagent.cwd);
 		subagent.tools = tools;
 
@@ -197,6 +219,10 @@ export class SubagentManager {
 				isStreaming: false,
 				streamMessage: null,
 				pendingToolCalls: new Set(),
+			},
+			// Pass getApiKey from ModelRegistry so the agent can authenticate LLM calls
+			getApiKey: async (provider: string) => {
+				return this.config.modelRegistry.getApiKeyForProvider(provider);
 			},
 		});
 		subagent.agent = agent;
@@ -248,16 +274,10 @@ export class SubagentManager {
 	}
 
 	/**
-	 * Find a model by ID across all providers.
+	 * Find a model by ID across all registered providers (fix #3).
 	 */
 	private findModel(modelId: string) {
-		// Try common providers
-		const providers = ["anthropic", "google", "openai"];
-		for (const provider of providers) {
-			const model = this.config.modelRegistry.find(provider, modelId);
-			if (model) return model;
-		}
-		return undefined;
+		return this.config.modelRegistry.getAll().find((m) => m.id === modelId);
 	}
 
 	/**
@@ -304,6 +324,11 @@ export class SubagentManager {
 
 			case "agent_end":
 				subagent.status = "done";
+				// Clean up Agent instance and subscription to allow GC (fix #4)
+				subagent.unsubscribe?.();
+				subagent.unsubscribe = undefined;
+				subagent.agent = undefined;
+				subagent.tools = undefined;
 				this.emit({ type: "status", subagentId: subagent.id, status: "done" });
 				this.emit({ type: "stopped", subagentId: subagent.id, reason: "completed" });
 				break;
@@ -429,21 +454,13 @@ export class SubagentManager {
 		const subagent = this.subagents.get(id);
 		if (!subagent) throw new Error(`Subagent not found: ${id}`);
 
-		// Already complete?
-		if (subagent.status === "done" || subagent.status === "error" || subagent.status === "stopped") {
-			if (subagent.status === "error") {
-				throw new Error(`Subagent ${id} failed`);
-			}
-			return;
-		}
-
 		return new Promise((resolve, reject) => {
 			const timeoutMs = timeout ?? this.config.defaultTimeout ?? 300000;
-			const timer = setTimeout(() => {
-				cleanup();
-				reject(new Error(`Subagent ${id} timed out after ${timeoutMs}ms`));
-			}, timeoutMs);
 
+			// Declare timer with let so cleanup() can reference it before setTimeout fires (fix #1)
+			let timer: ReturnType<typeof setTimeout>;
+
+			// Register handler BEFORE checking status to close the race window
 			const handler = (event: SubagentManagerEvent) => {
 				if (event.type === "stopped" && event.subagentId === id) {
 					cleanup();
@@ -454,13 +471,29 @@ export class SubagentManager {
 					}
 				}
 			};
-
 			const cleanup = () => {
 				clearTimeout(timer);
 				this.off(handler);
 			};
-
 			this.on(handler);
+
+			// Re-check status after registering to handle already-complete case
+			const current = this.subagents.get(id);
+			if (!current || current.status === "done" || current.status === "stopped") {
+				cleanup();
+				resolve();
+				return;
+			}
+			if (current.status === "error") {
+				cleanup();
+				reject(new Error(`Subagent ${id} failed`));
+				return;
+			}
+
+			timer = setTimeout(() => {
+				cleanup();
+				reject(new Error(`Subagent ${id} timed out after ${timeoutMs}ms`));
+			}, timeoutMs);
 		});
 	}
 

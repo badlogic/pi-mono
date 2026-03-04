@@ -33,6 +33,7 @@ contextTokens > contextWindow - reserveTokens
 ```
 
 By default, `reserveTokens` is 16384 tokens (configurable in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settings.json`). This leaves room for the LLM's response.
+You can also configure `triggerPercent` (60-99). If set, compaction triggers when either threshold is reached first.
 
 You can also trigger manually with `/compact [instructions]`, where optional instructions focus the summary.
 
@@ -376,7 +377,8 @@ Configure compaction in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settin
   "compaction": {
     "enabled": true,
     "reserveTokens": 16384,
-    "keepRecentTokens": 20000
+    "keepRecentTokens": 20000,
+    "triggerPercent": 80
   }
 }
 ```
@@ -386,5 +388,6 @@ Configure compaction in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settin
 | `enabled` | `true` | Enable auto-compaction |
 | `reserveTokens` | `16384` | Tokens to reserve for LLM response |
 | `keepRecentTokens` | `20000` | Recent tokens to keep (not summarized) |
+| `triggerPercent` | - | Optional integer threshold (60-99) for context usage percentage |
 
 Disable auto-compaction with `"enabled": false`. You can still compact manually with `/compact`.

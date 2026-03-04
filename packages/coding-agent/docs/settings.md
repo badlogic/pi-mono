@@ -53,13 +53,15 @@ Edit directly or use `/settings` for common options.
 | `compaction.enabled` | boolean | `true` | Enable auto-compaction |
 | `compaction.reserveTokens` | number | `16384` | Tokens reserved for LLM response |
 | `compaction.keepRecentTokens` | number | `20000` | Recent tokens to keep (not summarized) |
+| `compaction.triggerPercent` | number | - | Optional integer threshold (60-99) to compact at context usage percentage |
 
 ```json
 {
   "compaction": {
     "enabled": true,
     "reserveTokens": 16384,
-    "keepRecentTokens": 20000
+    "keepRecentTokens": 20000,
+    "triggerPercent": 80
   }
 }
 ```
@@ -188,7 +190,8 @@ See [packages.md](packages.md) for package management details.
   "compaction": {
     "enabled": true,
     "reserveTokens": 16384,
-    "keepRecentTokens": 20000
+    "keepRecentTokens": 20000,
+    "triggerPercent": 80
   },
   "retry": {
     "enabled": true,

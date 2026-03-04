@@ -6,7 +6,16 @@
  * @module subagents/parser
  */
 
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { AgentFrontmatter, SubagentConfig, SubagentSource } from "./types.js";
+
+const VALID_THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh"]);
+
+function parseThinkingLevel(value: unknown): ThinkingLevel | undefined {
+	if (typeof value !== "string") return undefined;
+	if (!VALID_THINKING_LEVELS.has(value as ThinkingLevel)) return undefined;
+	return value as ThinkingLevel;
+}
 
 /**
  * Parse YAML frontmatter from markdown content.
@@ -117,6 +126,7 @@ export function parseAgentFile(content: string, filePath: string, source: Subage
 		systemPrompt: body.trim(),
 		tools,
 		model: frontmatter.model,
+		thinking: parseThinkingLevel(frontmatter.thinking),
 		memory: frontmatter.memory ?? "none",
 		source,
 		filePath,

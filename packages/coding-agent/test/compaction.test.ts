@@ -193,6 +193,7 @@ describe("shouldCompact", () => {
 			enabled: true,
 			reserveTokens: 10000,
 			keepRecentTokens: 20000,
+			triggerPercent: undefined,
 		};
 
 		expect(shouldCompact(95000, 100000, settings)).toBe(true);
@@ -204,9 +205,33 @@ describe("shouldCompact", () => {
 			enabled: false,
 			reserveTokens: 10000,
 			keepRecentTokens: 20000,
+			triggerPercent: 70,
 		};
 
 		expect(shouldCompact(95000, 100000, settings)).toBe(false);
+	});
+
+	it("should trigger when percentage threshold is reached", () => {
+		const settings: CompactionSettings = {
+			enabled: true,
+			reserveTokens: 10000,
+			keepRecentTokens: 20000,
+			triggerPercent: 70,
+		};
+
+		expect(shouldCompact(140000, 200000, settings)).toBe(true);
+		expect(shouldCompact(139999, 200000, settings)).toBe(false);
+	});
+
+	it("should trigger when either reserve or percent threshold is reached", () => {
+		const settings: CompactionSettings = {
+			enabled: true,
+			reserveTokens: 50000, // triggers after 150000
+			keepRecentTokens: 20000,
+			triggerPercent: 90, // triggers at 180000
+		};
+
+		expect(shouldCompact(151000, 200000, settings)).toBe(true);
 	});
 });
 

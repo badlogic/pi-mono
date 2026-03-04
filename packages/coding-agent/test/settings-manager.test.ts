@@ -256,6 +256,61 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("compaction trigger percent", () => {
+		it("should load valid triggerPercent from settings", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					compaction: {
+						triggerPercent: 80,
+					},
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getCompactionTriggerPercent()).toBe(80);
+			expect(manager.getCompactionSettings().triggerPercent).toBe(80);
+		});
+
+		it("should ignore invalid triggerPercent values from settings", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					compaction: {
+						triggerPercent: 42,
+					},
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getCompactionTriggerPercent()).toBeUndefined();
+			expect(manager.getCompactionSettings().triggerPercent).toBeUndefined();
+		});
+
+		it("should persist triggerPercent and allow clearing it", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			manager.setCompactionTriggerPercent(80.9);
+			await manager.flush();
+
+			let savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.compaction.triggerPercent).toBe(80);
+
+			manager.setCompactionTriggerPercent(undefined);
+			await manager.flush();
+
+			savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.compaction?.triggerPercent).toBeUndefined();
+		});
+	});
+
 	describe("shellCommandPrefix", () => {
 		it("should load shellCommandPrefix from settings", () => {
 			const settingsPath = join(agentDir, "settings.json");

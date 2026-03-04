@@ -251,6 +251,7 @@ export {
 } from "./core/subagents/index.js";
 // Tools
 export {
+	allTools,
 	type BashOperations,
 	type BashSpawnContext,
 	type BashSpawnHook,
@@ -259,6 +260,7 @@ export {
 	type BashToolOptions,
 	bashTool,
 	codingTools,
+	createAllTools,
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
 	type EditOperations,
@@ -287,6 +289,7 @@ export {
 	type ReadToolInput,
 	type ReadToolOptions,
 	readTool,
+	type ToolName,
 	type ToolsOptions,
 	type TruncationOptions,
 	type TruncationResult,
