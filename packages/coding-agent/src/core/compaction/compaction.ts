@@ -256,7 +256,7 @@ export function estimateTokens(message: AgentMessage): number {
 		case "toolResult": {
 			if (typeof message.content === "string") {
 				chars = message.content.length;
-			} else {
+			} else if (Array.isArray(message.content)) {
 				for (const block of message.content) {
 					if (block.type === "text" && block.text) {
 						chars += block.text.length;
@@ -266,6 +266,7 @@ export function estimateTokens(message: AgentMessage): number {
 					}
 				}
 			}
+			// undefined/null content → 0 tokens
 			return Math.ceil(chars / 4);
 		}
 		case "bashExecution": {
