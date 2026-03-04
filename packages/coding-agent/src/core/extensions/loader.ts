@@ -65,20 +65,20 @@ function getAliases(): Record<string, string> {
 	const typeboxRoot = typeboxEntry.replace(/[\\/]build[\\/]cjs[\\/]index\.js$/, "");
 
 	const packagesRoot = path.resolve(__dirname, "../../../../");
-	const resolveWorkspaceOrSpecifier = (workspaceRelativePath: string, specifier: string): string => {
+	const resolveWorkspaceOrImport = (workspaceRelativePath: string, specifier: string): string => {
 		const workspacePath = path.join(packagesRoot, workspaceRelativePath);
 		if (fs.existsSync(workspacePath)) {
 			return workspacePath;
 		}
-		return specifier;
+		return fileURLToPath(import.meta.resolve(specifier));
 	};
 
 	_aliases = {
 		"@mariozechner/pi-coding-agent": packageIndex,
-		"@mariozechner/pi-agent-core": resolveWorkspaceOrSpecifier("agent/src/index.ts", "@mariozechner/pi-agent-core"),
-		"@mariozechner/pi-tui": resolveWorkspaceOrSpecifier("tui/src/index.ts", "@mariozechner/pi-tui"),
-		"@mariozechner/pi-ai": resolveWorkspaceOrSpecifier("ai/src/index.ts", "@mariozechner/pi-ai"),
-		"@mariozechner/pi-ai/oauth": resolveWorkspaceOrSpecifier("ai/src/oauth.ts", "@mariozechner/pi-ai/oauth"),
+		"@mariozechner/pi-agent-core": resolveWorkspaceOrImport("agent/src/index.ts", "@mariozechner/pi-agent-core"),
+		"@mariozechner/pi-tui": resolveWorkspaceOrImport("tui/src/index.ts", "@mariozechner/pi-tui"),
+		"@mariozechner/pi-ai": resolveWorkspaceOrImport("ai/src/index.ts", "@mariozechner/pi-ai"),
+		"@mariozechner/pi-ai/oauth": resolveWorkspaceOrImport("ai/src/oauth.ts", "@mariozechner/pi-ai/oauth"),
 		"@sinclair/typebox": typeboxRoot,
 	};
 
