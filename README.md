@@ -21,15 +21,15 @@ Tools for building AI agents and managing LLM deployments.
 
 ## Packages
 
-| Package | Description |
-|---------|-------------|
-| **[@mariozechner/pi-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
-| **[@mariozechner/pi-agent-core](packages/agent)** | Agent runtime with tool calling and state management |
-| **[@mariozechner/pi-coding-agent](packages/coding-agent)** | Interactive coding agent CLI |
-| **[@mariozechner/pi-mom](packages/mom)** | Slack bot that delegates messages to the pi coding agent |
-| **[@mariozechner/pi-tui](packages/tui)** | Terminal UI library with differential rendering |
-| **[@mariozechner/pi-web-ui](packages/web-ui)** | Web components for AI chat interfaces |
-| **[@mariozechner/pi-pods](packages/pods)** | CLI for managing vLLM deployments on GPU pods |
+| Package | Description | Context |
+|---------|-------------|---------|
+| **[@mariozechner/pi-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) | [![Chat with Repo](https://badge.forgithub.com/badlogic/pi-mono/tree/main/packages/ai?maxTokens=10000000&badge=context)](https://uithub.com/badlogic/pi-mono/tree/main/packages/ai?maxTokens=10000000) |
+| **[@mariozechner/pi-agent-core](packages/agent)** | Agent runtime with tool calling and state management | [![Chat with Repo](https://badge.forgithub.com/badlogic/pi-mono/tree/main/packages/agent?maxTokens=10000000&badge=context)](https://uithub.com/badlogic/pi-mono/tree/main/packages/agent?maxTokens=10000000) |
+| **[@mariozechner/pi-coding-agent](packages/coding-agent)** | Interactive coding agent CLI | [![Chat with Repo](https://badge.forgithub.com/badlogic/pi-mono/tree/main/packages/coding-agent?maxTokens=10000000&badge=context)](https://uithub.com/badlogic/pi-mono/tree/main/packages/coding-agent?maxTokens=10000000) |
+| **[@mariozechner/pi-mom](packages/mom)** | Slack bot that delegates messages to the pi coding agent | [![Chat with Repo](https://badge.forgithub.com/badlogic/pi-mono/tree/main/packages/mom?maxTokens=10000000&badge=context)](https://uithub.com/badlogic/pi-mono/tree/main/packages/mom?maxTokens=10000000) |
+| **[@mariozechner/pi-tui](packages/tui)** | Terminal UI library with differential rendering | [![Chat with Repo](https://badge.forgithub.com/badlogic/pi-mono/tree/main/packages/tui?maxTokens=10000000&badge=context)](https://uithub.com/badlogic/pi-mono/tree/main/packages/tui?maxTokens=10000000) |
+| **[@mariozechner/pi-web-ui](packages/web-ui)** | Web components for AI chat interfaces | [![Chat with Repo](https://badge.forgithub.com/badlogic/pi-mono/tree/main/packages/web-ui?maxTokens=10000000&badge=context)](https://uithub.com/badlogic/pi-mono/tree/main/packages/web-ui?maxTokens=10000000) |
+| **[@mariozechner/pi-pods](packages/pods)** | CLI for managing vLLM deployments on GPU pods | [![Chat with Repo](https://badge.forgithub.com/badlogic/pi-mono/tree/main/packages/pods?maxTokens=10000000&badge=context)](https://uithub.com/badlogic/pi-mono/tree/main/packages/pods?maxTokens=10000000)  |
 
 ## Contributing
 
