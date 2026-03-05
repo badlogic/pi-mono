@@ -1,4 +1,5 @@
 import { getEditorKeybindings } from "../keybindings.js";
+import { decodeKittyPrintable } from "../keys.js";
 import { KillRing } from "../kill-ring.js";
 import { type Component, CURSOR_MARKER, type Focusable } from "../tui.js";
 import { UndoStack } from "../undo-stack.js";
@@ -184,6 +185,16 @@ export class Input implements Component, Focusable {
 
 		if (kb.matches(data, "cursorWordRight")) {
 			this.moveWordForwards();
+			return;
+		}
+
+		// Kitty CSI-u printable character (e.g. \x1b[97u for 'a').
+		// Terminals with Kitty protocol flag 1 (disambiguate) send CSI-u for all keys,
+		// including plain printable characters. Decode before the control-char check
+		// since CSI-u sequences contain \x1b which would be rejected.
+		const kittyPrintable = decodeKittyPrintable(data);
+		if (kittyPrintable !== undefined) {
+			this.insertCharacter(kittyPrintable);
 			return;
 		}
 

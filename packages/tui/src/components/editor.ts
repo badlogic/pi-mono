@@ -1,6 +1,6 @@
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
 import { getEditorKeybindings } from "../keybindings.js";
-import { matchesKey } from "../keys.js";
+import { decodeKittyPrintable, matchesKey } from "../keys.js";
 import { KillRing } from "../kill-ring.js";
 import { type Component, CURSOR_MARKER, type Focusable, type TUI } from "../tui.js";
 import { UndoStack } from "../undo-stack.js";
@@ -92,48 +92,6 @@ export function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
 }
 
 // Kitty CSI-u sequences for printable keys, including optional shifted/base codepoints.
-const KITTY_CSI_U_REGEX = /^\x1b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$/;
-const KITTY_MOD_SHIFT = 1;
-const KITTY_MOD_ALT = 2;
-const KITTY_MOD_CTRL = 4;
-const KITTY_LOCK_MASK = 64 + 128; // Caps Lock + Num Lock
-const KITTY_ALLOWED_MODIFIERS = KITTY_MOD_SHIFT | KITTY_LOCK_MASK;
-
-// Decode a printable CSI-u sequence, preferring the shifted key when present.
-function decodeKittyPrintable(data: string): string | undefined {
-	const match = data.match(KITTY_CSI_U_REGEX);
-	if (!match) return undefined;
-
-	// CSI-u groups: <codepoint>[:<shifted>[:<base>]];<mod>u
-	const codepoint = Number.parseInt(match[1] ?? "", 10);
-	if (!Number.isFinite(codepoint)) return undefined;
-
-	const shiftedKey = match[2] && match[2].length > 0 ? Number.parseInt(match[2], 10) : undefined;
-	const modValue = match[4] ? Number.parseInt(match[4], 10) : 1;
-	// Modifiers are 1-indexed in CSI-u; normalize to our bitmask.
-	const modifier = Number.isFinite(modValue) ? modValue - 1 : 0;
-
-	// Only accept printable CSI-u input for plain or Shift-modified text keys.
-	// Reject unsupported modifier bits (e.g. Super/Meta) to avoid inserting
-	// characters from modifier-only terminal events.
-	if ((modifier & ~KITTY_ALLOWED_MODIFIERS) !== 0) return undefined;
-	if (modifier & (KITTY_MOD_ALT | KITTY_MOD_CTRL)) return undefined;
-
-	// Prefer the shifted keycode when Shift is held.
-	let effectiveCodepoint = codepoint;
-	if (modifier & KITTY_MOD_SHIFT && typeof shiftedKey === "number") {
-		effectiveCodepoint = shiftedKey;
-	}
-	// Drop control characters or invalid codepoints.
-	if (!Number.isFinite(effectiveCodepoint) || effectiveCodepoint < 32) return undefined;
-
-	try {
-		return String.fromCodePoint(effectiveCodepoint);
-	} catch {
-		return undefined;
-	}
-}
-
 interface EditorState {
 	lines: string[];
 	cursorLine: number;
