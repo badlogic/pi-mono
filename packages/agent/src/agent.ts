@@ -85,6 +85,11 @@ export interface AgentOptions {
 	transport?: Transport;
 
 	/**
+	 * Sampling temperature passed to providers that support it.
+	 */
+	temperature?: number;
+
+	/**
 	 * Maximum delay in milliseconds to wait for a retry when the server requests a long wait.
 	 * If the server's requested delay exceeds this value, the request fails immediately,
 	 * allowing higher-level retry logic to handle it with user visibility.
@@ -121,6 +126,7 @@ export class Agent {
 	private resolveRunningPrompt?: () => void;
 	private _thinkingBudgets?: ThinkingBudgets;
 	private _transport: Transport;
+	private _temperature?: number;
 	private _maxRetryDelayMs?: number;
 
 	constructor(opts: AgentOptions = {}) {
@@ -134,6 +140,7 @@ export class Agent {
 		this.getApiKey = opts.getApiKey;
 		this._thinkingBudgets = opts.thinkingBudgets;
 		this._transport = opts.transport ?? "sse";
+		this._temperature = opts.temperature;
 		this._maxRetryDelayMs = opts.maxRetryDelayMs;
 	}
 
@@ -178,6 +185,20 @@ export class Agent {
 	 */
 	setTransport(value: Transport) {
 		this._transport = value;
+	}
+
+	/**
+	 * Get the current temperature.
+	 */
+	get temperature(): number | undefined {
+		return this._temperature;
+	}
+
+	/**
+	 * Set the temperature.
+	 */
+	set temperature(value: number | undefined) {
+		this._temperature = value;
 	}
 
 	/**
@@ -430,6 +451,7 @@ export class Agent {
 			reasoning,
 			sessionId: this._sessionId,
 			transport: this._transport,
+			temperature: this._temperature,
 			thinkingBudgets: this._thinkingBudgets,
 			maxRetryDelayMs: this._maxRetryDelayMs,
 			convertToLlm: this.convertToLlm,

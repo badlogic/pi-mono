@@ -25,6 +25,7 @@ const THINKING_DESCRIPTIONS: Record<ThinkingLevel, string> = {
 export interface SettingsConfig {
 	autoCompact: boolean;
 	autoCompactTriggerPercent: number | undefined;
+	temperature: number | undefined;
 	showImages: boolean;
 	autoResizeImages: boolean;
 	blockImages: boolean;
@@ -49,6 +50,7 @@ export interface SettingsConfig {
 export interface SettingsCallbacks {
 	onAutoCompactChange: (enabled: boolean) => void;
 	onAutoCompactTriggerPercentChange: (percent: number | undefined) => void;
+	onTemperatureChange: (temperature: number | undefined) => void;
 	onShowImagesChange: (enabled: boolean) => void;
 	onAutoResizeImagesChange: (enabled: boolean) => void;
 	onBlockImagesChange: (blocked: boolean) => void;
@@ -143,6 +145,11 @@ export class SettingsSelectorComponent extends Container {
 
 		const supportsImages = getCapabilities().images;
 		const autoCompactPercentValues = ["default", ...Array.from({ length: 40 }, (_, i) => String(60 + i))];
+		const currentTemperatureValue = config.temperature === undefined ? "default" : String(config.temperature);
+		const temperatureValues = ["default", ...Array.from({ length: 21 }, (_, i) => String(i / 10))];
+		if (currentTemperatureValue !== "default" && !temperatureValues.includes(currentTemperatureValue)) {
+			temperatureValues.push(currentTemperatureValue);
+		}
 
 		const items: SettingItem[] = [
 			{
@@ -182,6 +189,13 @@ export class SettingsSelectorComponent extends Container {
 				description: "Preferred transport for providers that support multiple transports",
 				currentValue: config.transport,
 				values: ["sse", "websocket", "auto"],
+			},
+			{
+				id: "temperature",
+				label: "Temperature",
+				description: "Sampling temperature for providers that support it",
+				currentValue: currentTemperatureValue,
+				values: temperatureValues,
 			},
 			{
 				id: "hide-thinking",
@@ -382,6 +396,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "transport":
 						callbacks.onTransportChange(newValue as Transport);
+						break;
+					case "temperature":
+						callbacks.onTemperatureChange(newValue === "default" ? undefined : parseFloat(newValue));
 						break;
 					case "hide-thinking":
 						callbacks.onHideThinkingBlockChange(newValue === "true");

@@ -66,6 +66,7 @@ export interface Settings {
 	defaultProvider?: string;
 	defaultModel?: string;
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+	temperature?: number;
 	transport?: TransportSetting; // default: "sse"
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
@@ -335,6 +336,14 @@ export class SettingsManager {
 			}
 		}
 
+		// Normalize temperature
+		const normalizedTemperature = SettingsManager.normalizeTemperature(settings.temperature);
+		if (normalizedTemperature === undefined) {
+			delete settings.temperature;
+		} else {
+			settings.temperature = normalizedTemperature;
+		}
+
 		return settings as Settings;
 	}
 
@@ -347,6 +356,13 @@ export class SettingsManager {
 			return undefined;
 		}
 		return rounded;
+	}
+
+	private static normalizeTemperature(value: unknown): number | undefined {
+		if (typeof value !== "number" || !Number.isFinite(value)) {
+			return undefined;
+		}
+		return value;
 	}
 
 	getGlobalSettings(): Settings {
@@ -599,6 +615,16 @@ export class SettingsManager {
 
 	getTransport(): TransportSetting {
 		return this.settings.transport ?? "sse";
+	}
+
+	getTemperature(): number | undefined {
+		return SettingsManager.normalizeTemperature(this.settings.temperature);
+	}
+
+	setTemperature(temperature: number | undefined): void {
+		this.globalSettings.temperature = SettingsManager.normalizeTemperature(temperature);
+		this.markModified("temperature");
+		this.save();
 	}
 
 	setTransport(transport: TransportSetting): void {

@@ -433,6 +433,13 @@ function supportsAdaptiveThinking(modelId: string): boolean {
 	);
 }
 
+function supportsTemperatureWithThinking(model: Model<"anthropic-messages">): boolean {
+	if (model.provider === "zai") {
+		return true;
+	}
+	return model.baseUrl.toLowerCase().includes("api.z.ai");
+}
+
 /**
  * Map ThinkingLevel to Anthropic effort levels for adaptive thinking.
  * Note: effort "max" is only valid on Opus 4.6.
@@ -625,8 +632,9 @@ function buildParams(
 		];
 	}
 
-	// Temperature is incompatible with extended thinking (adaptive or budget-based).
-	if (options?.temperature !== undefined && !options?.thinkingEnabled) {
+	// Anthropic rejects temperature with thinking enabled, but z.ai Anthropic-compatible endpoints accept it.
+	const canUseTemperature = !options?.thinkingEnabled || supportsTemperatureWithThinking(model);
+	if (options?.temperature !== undefined && canUseTemperature) {
 		params.temperature = options.temperature;
 	}
 

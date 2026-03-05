@@ -56,6 +56,7 @@ interface SubState {
 	sessionFile: string;
 	turnCount: number;
 	proc?: ReturnType<typeof spawn>;
+	tmuxSession?: string;     // set when running in a tmux session
 	tmuxWindow?: string;      // set when running in a tmux window
 	pollTimer?: ReturnType<typeof setInterval>; // polling timer for tmux mode
 	retryTimer?: ReturnType<typeof setTimeout>;
@@ -134,13 +135,14 @@ const MAX_MAIN_AGENT_RUNNING_SUBAGENTS = 6;
 const MAX_TRACKED_SUBAGENTS = 40;
 const SUBAGENT_RESULT_CHAT_PREVIEW_CHARS = 220;
 const AUTO_INGEST_TRIGGER_TEXT = "[subagent-auto-ingest]";
-const DISPATCH_TOOL_NAMES = ["task", "subagent_create"] as const;
+const DISPATCH_TOOL_NAMES = ["task", "subagent_create", "subagent_continue"] as const;
 const DISPATCH_TOOL_SET = new Set<string>(DISPATCH_TOOL_NAMES);
 const VALID_THINKING_LEVELS: ReadonlySet<ThinkingLevel> = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
 const DEFAULT_SUBAGENT_THINKING: ThinkingLevel = "high";
 const START_ACTIVITY_TIMEOUT_MS = 45_000;
 const SUBAGENT_MAX_RETRIES = 10;
 const SUBAGENT_RETRY_DELAYS_SECONDS = [5, 15, 30, 15, 30, 15, 30, 15, 30, 15] as const;
+const DEFAULT_SUBAGENT_TMUX_SESSION_PREFIX = "pi-subagent";
 
 let defaultMainAgentTools: string[] = [];
 let dispatchModeRequested = false;
@@ -292,6 +294,70 @@ function isSyntheticToolMarkerText(text: string): boolean {
 function shellQuote(value: string): string {
 	if (value.length === 0) return "''";
 	return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
+
+function getCurrentTmuxSession(): string | undefined {
+	try {
+		const session = execSync("tmux display-message -p '#S'", { encoding: "utf-8" }).trim();
+		return session.length > 0 ? session : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function getPreferredDetachedTmuxSessionPrefix(): string {
+	const configured = process.env.PI_SUBAGENT_TMUX_SESSION_PREFIX?.trim()
+		?? process.env.PI_SUBAGENT_TMUX_SESSION?.trim();
+	if (configured && configured.length > 0) return configured;
+	return DEFAULT_SUBAGENT_TMUX_SESSION_PREFIX;
+}
+
+function sanitizeTmuxName(value: string): string {
+	const normalized = value.replace(/[^A-Za-z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+	return normalized.length > 0 ? normalized : DEFAULT_SUBAGENT_TMUX_SESSION_PREFIX;
+}
+
+function buildSubagentTmuxSessionName(state: SubState): string {
+	const prefix = sanitizeTmuxName(getPreferredDetachedTmuxSessionPrefix());
+	return `${prefix}-${state.id}`;
+}
+
+function ensureTmuxAvailable(): boolean {
+	try {
+		execSync("tmux -V", { encoding: "utf-8" });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function clearExistingTmuxSession(sessionName: string): void {
+	try {
+		execSync(`tmux has-session -t ${shellQuote(sessionName)}`, { encoding: "utf-8" });
+		execSync(`tmux kill-session -t ${shellQuote(sessionName)}`, { encoding: "utf-8" });
+	} catch {
+		// no existing session
+	}
+}
+
+function createDetachedTmuxSession(sessionName: string, windowName: string, command: string): { created: boolean } {
+	try {
+		clearExistingTmuxSession(sessionName);
+		execSync(
+			`tmux new-session -d -s ${shellQuote(sessionName)} -n ${shellQuote(windowName)} ${shellQuote(command)}`,
+			{ encoding: "utf-8" },
+		);
+		return { created: true };
+	} catch {
+		return { created: false };
+	}
+}
+
+function resolveTmuxSessionForSubagent(state: SubState): {
+	session?: string;
+} {
+	if (!ensureTmuxAvailable()) return { session: undefined };
+	return { session: buildSubagentTmuxSessionName(state) };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -736,11 +802,14 @@ function updateWidgets(): void {
 						const fullText = state.textChunks.join("");
 						const lastLine = fullText.split("\n").filter((l) => l.trim()).pop() ?? "";
 						if (state.tmuxWindow) {
-							if (!lastLine) return `tmux: ${state.tmuxWindow} — /sub-attach ${state.id} to jump in`;
+							const tmuxTarget = state.tmuxSession
+								? `${state.tmuxSession}:${state.tmuxWindow}`
+								: state.tmuxWindow;
+							if (!lastLine) return `tmux: ${tmuxTarget} — /sub-attach ${state.id} to jump in`;
 							const line = lastLine.length > width - 36
 								? `${lastLine.slice(0, Math.max(0, width - 39))}...`
 								: lastLine;
-							return `tmux: ${state.tmuxWindow} | ${line}`;
+							return `tmux: ${tmuxTarget} | ${line}`;
 						}
 						return lastLine.length > width - 10
 							? `${lastLine.slice(0, width - 13)}...`
@@ -914,6 +983,8 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 	state.status = "running";
 	state.toolCount = 0;
 	state.textChunks = [];
+	state.tmuxSession = undefined;
+	state.tmuxWindow = undefined;
 	if (state.retryTimer) {
 		clearTimeout(state.retryTimer);
 		state.retryTimer = undefined;
@@ -985,12 +1056,15 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 		state.elapsed = Date.now() - startTime;
 		state.lastError = reason;
 		state.failureCount += 1;
-		if (state.tmuxWindow && tmuxSession) {
+		if (state.tmuxWindow && state.tmuxSession) {
 			try {
-				execSync(`tmux kill-window -t "${tmuxSession}:${state.tmuxWindow}"`, { encoding: "utf-8" });
+				execSync(`tmux kill-session -t ${shellQuote(state.tmuxSession)}`, {
+					encoding: "utf-8",
+				});
 			} catch {
 				// ignore
 			}
+			state.tmuxSession = undefined;
 			state.tmuxWindow = undefined;
 		}
 		if (state.proc) {
@@ -1034,6 +1108,7 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 			queueAutoIngest(pi);
 		}
 		state.status = "done";
+		state.tmuxSession = undefined;
 		state.tmuxWindow = undefined;
 		updateWidgets();
 		onAgentComplete(pi, state, ctx);
@@ -1084,30 +1159,32 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 		? `${shellQuote(piCmd)} ${piArgs}`
 		: `cat ${shellQuote(promptFile ?? "")} | ${shellQuote(piCmd)} ${piArgs} | node ${shellQuote(jsonRendererFile ?? "")}`;
 
-	try {
-		tmuxSession = execSync("tmux display-message -p '#S'", { encoding: "utf-8" }).trim();
-	} catch {
-		tmuxSession = null;
+	{
+		const tmuxResolution = resolveTmuxSessionForSubagent(state);
+		tmuxSession = tmuxResolution.session ?? null;
 	}
 
 	if (tmuxSession) {
-		try {
-			execSync(
-				`tmux new-window -t "${tmuxSession}" -n "${windowName}" "${piInvocation}"`,
-				{ encoding: "utf-8" },
-			);
-			state.tmuxWindow = windowName;
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			finalizeFailure(`Failed to create tmux window: ${message}`);
+		const started = createDetachedTmuxSession(tmuxSession, windowName, piInvocation);
+		if (!started.created) {
+			finalizeFailure("Failed to create detached tmux session for subagent.");
 			return;
 		}
+		state.tmuxSession = tmuxSession;
+		state.tmuxWindow = windowName;
 
 		const timer = setInterval(() => {
 			if (state.attempt !== attempt || finalized) return;
 			state.elapsed = Date.now() - startTime;
 			try {
-				const windows = execSync(`tmux list-windows -t "${tmuxSession}" -F "#W"`, { encoding: "utf-8" })
+				try {
+					execSync(`tmux has-session -t ${shellQuote(tmuxSession)}`, { encoding: "utf-8" });
+				} catch {
+					finalizeSuccess();
+					return;
+				}
+
+				const windows = execSync(`tmux list-windows -t ${shellQuote(tmuxSession)} -F "#W"`, { encoding: "utf-8" })
 					.split("\n")
 					.map((window) => window.trim());
 
@@ -1117,7 +1194,7 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 				}
 
 				const paneOutput = execSync(
-					`tmux capture-pane -t "${tmuxSession}:${windowName}" -p -S -120`,
+					`tmux capture-pane -t ${shellQuote(`${tmuxSession}:${windowName}`)} -p -S -120`,
 					{ encoding: "utf-8" },
 				);
 				if (paneOutput.trim()) {
@@ -1144,7 +1221,9 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 					}
 					if (shouldRunInteractive && state.spawnedBy === "main-agent" && report.kind === "agent_end") {
 						try {
-							execSync(`tmux kill-window -t "${tmuxSession}:${windowName}"`, { encoding: "utf-8" });
+							execSync(`tmux kill-session -t ${shellQuote(tmuxSession)}`, {
+								encoding: "utf-8",
+							});
 						} catch {
 							// ignore
 						}
@@ -1161,8 +1240,9 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 
 		state.pollTimer = timer;
 		updateWidgets();
+		const modeLabel = shouldRunInteractive ? "interactive" : "batch";
 		ctx.ui.notify(
-			`Subagent #${state.id} running in tmux window "${windowName}" (${shouldRunInteractive ? "interactive" : "batch"}). Use /sub-attach ${state.id} to jump in.`,
+			`Subagent #${state.id} running in dedicated tmux session "${tmuxSession}" (${modeLabel}). Attach with: tmux attach -t ${tmuxSession}`,
 			"info",
 		);
 		return;
@@ -1327,11 +1407,16 @@ function killAgent(state: SubState): void {
 	}
 	if (state.tmuxWindow) {
 		try {
-			const tmuxSession = execSync("tmux display-message -p '#S'", { encoding: "utf-8" }).trim();
-			execSync(`tmux kill-window -t "${tmuxSession}:${state.tmuxWindow}"`, { encoding: "utf-8" });
+			const tmuxSession = state.tmuxSession ?? getCurrentTmuxSession();
+			if (tmuxSession) {
+				execSync(`tmux kill-session -t ${shellQuote(tmuxSession)}`, {
+					encoding: "utf-8",
+				});
+			}
 		} catch {
 			// window may already be gone
 		}
+		state.tmuxSession = undefined;
 		state.tmuxWindow = undefined;
 	}
 	state.status = "error";
@@ -1535,7 +1620,7 @@ export default function (pi: ExtensionAPI) {
 		const dispatcherPrompt = `
 ## Dispatcher Mode
 
-You are an orchestrator. You have TWO tools: \`task\` and \`subagent_create\`. No file access. No shell. No search.
+You are an orchestrator. You have THREE tools: \`task\`, \`subagent_create\`, and \`subagent_continue\`. No file access. No shell. No search.
 
 ### Agent roster
 ${catalog}
@@ -1879,13 +1964,25 @@ Then STOP. No filler. No "I'll wait". No follow-up tool calls.
 				);
 				return;
 			}
-			if (!state.tmuxWindow) {
+			if (!state.tmuxSession || !state.tmuxWindow) {
 				ctx.ui.notify(`Subagent #${num} is not running in a tmux window.`, "warning");
 				return;
 			}
 			try {
-				const tmuxSession = execSync("tmux display-message -p '#S'", { encoding: "utf-8" }).trim();
-				execSync(`tmux select-window -t "${tmuxSession}:${state.tmuxWindow}"`, { encoding: "utf-8" });
+				const currentSession = getCurrentTmuxSession();
+				if (!currentSession) {
+					ctx.ui.notify(
+						`Subagent #${num} is running in tmux target "${state.tmuxSession}:${state.tmuxWindow}". Attach first with: tmux attach -t ${state.tmuxSession}`,
+						"info",
+					);
+					return;
+				}
+				execSync(`tmux switch-client -t ${shellQuote(state.tmuxSession)}`, {
+					encoding: "utf-8",
+				});
+				execSync(`tmux select-window -t ${shellQuote(`${state.tmuxSession}:${state.tmuxWindow}`)}`, {
+					encoding: "utf-8",
+				});
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				if (message.includes("can't find window")) {
@@ -1893,6 +1990,7 @@ Then STOP. No filler. No "I'll wait". No follow-up tool calls.
 						clearInterval(state.pollTimer);
 						state.pollTimer = undefined;
 					}
+					state.tmuxSession = undefined;
 					state.tmuxWindow = undefined;
 					if (state.status === "running") {
 						state.status = "done";

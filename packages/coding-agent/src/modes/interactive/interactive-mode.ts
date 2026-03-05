@@ -3032,6 +3032,7 @@ export class InteractiveMode {
 				{
 					autoCompact: this.session.autoCompactionEnabled,
 					autoCompactTriggerPercent: this.settingsManager.getCompactionTriggerPercent(),
+					temperature: this.settingsManager.getTemperature(),
 					showImages: this.settingsManager.getShowImages(),
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
 					blockImages: this.settingsManager.getBlockImages(),
@@ -3059,6 +3060,10 @@ export class InteractiveMode {
 					},
 					onAutoCompactTriggerPercentChange: (percent) => {
 						this.settingsManager.setCompactionTriggerPercent(percent);
+					},
+					onTemperatureChange: (temperature) => {
+						this.settingsManager.setTemperature(temperature);
+						this.session.agent.temperature = temperature;
 					},
 					onShowImagesChange: (enabled) => {
 						this.settingsManager.setShowImages(enabled);

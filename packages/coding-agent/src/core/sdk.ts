@@ -53,6 +53,8 @@ export interface CreateAgentSessionOptions {
 	model?: Model<any>;
 	/** Thinking level. Default: from settings, else 'medium' (clamped to model capabilities) */
 	thinkingLevel?: ThinkingLevel;
+	/** Sampling temperature. Default: from settings */
+	temperature?: number;
 	/** Models available for cycling (Ctrl+P in interactive mode) */
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 
@@ -238,6 +240,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = "off";
 	}
 
+	const temperature = options.temperature ?? settingsManager.getTemperature();
+
 	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
 	const initialActiveToolNames: ToolName[] = options.tools
 		? options.tools.map((t) => t.name).filter((n): n is ToolName => n in allTools)
@@ -301,6 +305,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		steeringMode: settingsManager.getSteeringMode(),
 		followUpMode: settingsManager.getFollowUpMode(),
 		transport: settingsManager.getTransport(),
+		temperature,
 		thinkingBudgets: settingsManager.getThinkingBudgets(),
 		maxRetryDelayMs: settingsManager.getRetrySettings().maxDelayMs,
 		getApiKey: async (provider) => {

@@ -7,7 +7,7 @@
  *
  * LLM tool: `task` — add, set_status, set_priority, list, remove, clear_done
  * Slash commands: /tasks (interactive board), /task-add, /task-done, /task-clear
- * Widget: live board above editor showing active tasks
+ * Widget: live board below editor showing active tasks
  * Footer: "N tasks · M in progress"
  *
  * Usage:
@@ -152,17 +152,8 @@ function getActiveTask(): Task | undefined {
 	return tasks.find((task) => task.status === "in-progress");
 }
 
-function ensureActiveTaskForSubagentBrief(brief: string): void {
+function addSubagentDispatchTask(brief: string): void {
 	const now = Date.now();
-	if (getActiveTask()) return;
-
-	const pending = sortedTasks(tasks.filter((task) => task.status !== "done"));
-	if (pending.length > 0) {
-		pending[0].status = "in-progress";
-		pending[0].updatedAt = now;
-		return;
-	}
-
 	tasks.push({
 		id: nextId++,
 		text: summarizeSubagentBrief(brief),
@@ -295,7 +286,7 @@ function updateWidget(ctx: ExtensionContext): void {
 			},
 			invalidate() {},
 		};
-	});
+	}, { placement: "belowEditor" });
 
 	// suppress unused warning
 	void lines;
@@ -448,14 +439,12 @@ export default function (pi: ExtensionAPI) {
 		const hasPending = tasks.some((task) => task.status !== "done");
 
 		if (toolName === SUBAGENT_CREATE_TOOL) {
-			if (!hasActive) {
-				const input = event.input as Record<string, unknown> | undefined;
-				const subagentTask = input?.task;
-				const brief = typeof subagentTask === "string" ? subagentTask : "Subagent task";
-				ensureActiveTaskForSubagentBrief(brief);
-				persistSnapshot();
-				updateWidget(ctx);
-			}
+			const input = event.input as Record<string, unknown> | undefined;
+			const subagentTask = input?.task;
+			const brief = typeof subagentTask === "string" ? subagentTask : "Subagent task";
+			addSubagentDispatchTask(brief);
+			persistSnapshot();
+			updateWidget(ctx);
 			return { block: false };
 		}
 
