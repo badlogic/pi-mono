@@ -465,17 +465,22 @@ function toChatMessages(messages: Message[], supportsImages: boolean): ChatCompl
 		}
 
 		if (msg.role === "assistant") {
-			const textParts: Array<{ type: "text"; text: string }> = [];
+			const contentParts: ContentChunk[] = [];
 			const toolCalls: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> = [];
 
 			for (const block of msg.content) {
 				if (block.type === "text") {
-					if (block.text.trim().length > 0) textParts.push({ type: "text", text: sanitizeSurrogates(block.text) });
+					if (block.text.trim().length > 0) {
+						contentParts.push({ type: "text", text: sanitizeSurrogates(block.text) });
+					}
 					continue;
 				}
 				if (block.type === "thinking") {
 					if (block.thinking.trim().length > 0) {
-						textParts.push({ type: "text", text: sanitizeSurrogates(block.thinking) });
+						contentParts.push({
+							type: "thinking",
+							thinking: [{ type: "text", text: sanitizeSurrogates(block.thinking) }],
+						});
 					}
 					continue;
 				}
@@ -487,9 +492,9 @@ function toChatMessages(messages: Message[], supportsImages: boolean): ChatCompl
 			}
 
 			const assistantMessage: ChatCompletionStreamRequestMessages = { role: "assistant" };
-			if (textParts.length > 0) assistantMessage.content = textParts;
+			if (contentParts.length > 0) assistantMessage.content = contentParts;
 			if (toolCalls.length > 0) assistantMessage.toolCalls = toolCalls;
-			if (textParts.length > 0 || toolCalls.length > 0) result.push(assistantMessage);
+			if (contentParts.length > 0 || toolCalls.length > 0) result.push(assistantMessage);
 			continue;
 		}
 
