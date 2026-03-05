@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [0.56.1] - 2026-03-05
+
+## [0.56.0] - 2026-03-04
+
+### Breaking Changes
+
+- Moved Node OAuth runtime exports off the top-level package entry. Import OAuth login/refresh functions from `@mariozechner/pi-ai/oauth` instead of `@mariozechner/pi-ai` ([#1814](https://github.com/badlogic/pi-mono/issues/1814))
+
+### Added
+
+- Added `gemini-3.1-flash-lite-preview` fallback model entry for the `google` provider so it remains selectable until upstream model catalogs include it ([#1785](https://github.com/badlogic/pi-mono/issues/1785), thanks [@n-WN](https://github.com/n-WN)).
+- Added OpenCode Go provider support with `opencode-go` model catalog entries and `OPENCODE_API_KEY` environment variable support ([#1757](https://github.com/badlogic/pi-mono/issues/1757)).
+
+### Changed
+
+- Updated Antigravity Gemini 3.1 model metadata and request headers to match current upstream behavior.
+
+### Fixed
+
+- Fixed Gemini 3.1 thinking-level detection in `google` and `google-vertex` providers so `gemini-3.1-*` models use Gemini 3 level-based thinking config instead of budget fallback ([#1785](https://github.com/badlogic/pi-mono/issues/1785), thanks [@n-WN](https://github.com/n-WN)).
+- Fixed browser bundling failures by lazy-loading the Bedrock provider and removing Node-only side effects from the default browser import graph ([#1814](https://github.com/badlogic/pi-mono/issues/1814)).
+- Fixed `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING` failures by replacing `Function`-based dynamic imports with module dynamic imports in browser-safe provider loading paths ([#1814](https://github.com/badlogic/pi-mono/issues/1814)).
+- Fixed Bedrock region resolution for `AWS_PROFILE` by honoring `region` from the selected profile when present ([#1800](https://github.com/badlogic/pi-mono/issues/1800)).
+- Fixed Groq Qwen3 reasoning effort mapping by translating unsupported effort values to provider-supported values ([#1745](https://github.com/badlogic/pi-mono/issues/1745)).
+
 ## [0.55.4] - 2026-03-02
 
 ## [0.55.3] - 2026-02-27

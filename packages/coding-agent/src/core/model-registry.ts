@@ -14,11 +14,10 @@ import {
 	type OpenAICompletionsCompat,
 	type OpenAIResponsesCompat,
 	registerApiProvider,
-	registerOAuthProvider,
 	resetApiProviders,
-	resetOAuthProviders,
 	type SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
+import { registerOAuthProvider, resetOAuthProviders } from "@mariozechner/pi-ai/oauth";
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import { existsSync, readFileSync } from "fs";
@@ -28,6 +27,7 @@ import type { AuthStorage } from "./auth-storage.js";
 import { clearConfigValueCache, resolveConfigValue, resolveHeaders } from "./resolve-config-value.js";
 
 const Ajv = (AjvModule as any).default || AjvModule;
+const ajv = new Ajv();
 
 // Schema for OpenRouter routing preferences
 const OpenRouterRoutingSchema = Type.Object({
@@ -69,6 +69,7 @@ const ModelDefinitionSchema = Type.Object({
 	id: Type.String({ minLength: 1 }),
 	name: Type.Optional(Type.String({ minLength: 1 })),
 	api: Type.Optional(Type.String({ minLength: 1 })),
+	baseUrl: Type.Optional(Type.String({ minLength: 1 })),
 	reasoning: Type.Optional(Type.Boolean()),
 	input: Type.Optional(Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]))),
 	cost: Type.Optional(
@@ -119,6 +120,8 @@ const ProviderConfigSchema = Type.Object({
 const ModelsConfigSchema = Type.Object({
 	providers: Type.Record(Type.String(), ProviderConfigSchema),
 });
+
+ajv.addSchema(ModelsConfigSchema, "ModelsConfig");
 
 type ModelsConfig = Static<typeof ModelsConfigSchema>;
 
@@ -350,8 +353,7 @@ export class ModelRegistry {
 			const config: ModelsConfig = JSON.parse(content);
 
 			// Validate schema
-			const ajv = new Ajv();
-			const validate = ajv.compile(ModelsConfigSchema);
+			const validate = ajv.getSchema("ModelsConfig")!;
 			if (!validate(config)) {
 				const errors =
 					validate.errors?.map((e: any) => `  - ${e.instancePath || "root"}: ${e.message}`).join("\n") ||
@@ -467,15 +469,15 @@ export class ModelRegistry {
 					}
 				}
 
-				// baseUrl is validated to exist for providers with models
-				// Apply defaults for optional fields
+				// Provider baseUrl is required when custom models are defined.
+				// Individual models can override it with modelDef.baseUrl.
 				const defaultCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 				models.push({
 					id: modelDef.id,
 					name: modelDef.name ?? modelDef.id,
 					api: api as Api,
 					provider: providerName,
-					baseUrl: providerConfig.baseUrl!,
+					baseUrl: modelDef.baseUrl ?? providerConfig.baseUrl!,
 					reasoning: modelDef.reasoning ?? false,
 					input: (modelDef.input ?? ["text"]) as ("text" | "image")[],
 					cost: modelDef.cost ?? defaultCost,
@@ -680,6 +682,7 @@ export interface ProviderConfigInput {
 		id: string;
 		name: string;
 		api?: Api;
+		baseUrl?: string;
 		reasoning: boolean;
 		input: ("text" | "image")[];
 		cost: { input: number; output: number; cacheRead: number; cacheWrite: number };

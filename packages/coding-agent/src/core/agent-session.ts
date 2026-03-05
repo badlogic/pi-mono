@@ -135,7 +135,7 @@ export interface AgentSessionConfig {
 	settingsManager: SettingsManager;
 	cwd: string;
 	/** Models to cycle through with Ctrl+P (from --models flag) */
-	scopedModels?: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>;
+	scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 	/** Resource loader for skills, prompts, themes, context files, system prompt */
 	resourceLoader: ResourceLoader;
 	/** SDK custom tools registered outside extensions */
@@ -215,7 +215,7 @@ export class AgentSession {
 	readonly sessionManager: SessionManager;
 	readonly settingsManager: SettingsManager;
 
-	private _scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>;
+	private _scopedModels: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 
 	// Event subscription state
 	private _unsubscribeAgent?: () => void;
@@ -232,6 +232,7 @@ export class AgentSession {
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
+	private _overflowRecoveryAttempted = false;
 
 	// Branch summarization state
 	private _branchSummaryAbortController: AbortController | undefined = undefined;
@@ -368,6 +369,7 @@ export class AgentSession {
 		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
 		// This ensures the UI sees the updated queue state
 		if (event.type === "message_start" && event.message.role === "user") {
+			this._overflowRecoveryAttempted = false;
 			const messageText = this._getUserMessageText(event.message);
 			if (messageText) {
 				// Check steering queue first
@@ -415,9 +417,13 @@ export class AgentSession {
 			if (event.message.role === "assistant") {
 				this._lastAssistantMessage = event.message;
 
+				const assistantMsg = event.message as AssistantMessage;
+				if (assistantMsg.stopReason !== "error") {
+					this._overflowRecoveryAttempted = false;
+				}
+
 				// Reset retry counter immediately on successful assistant response
 				// This prevents accumulation across multiple LLM calls within a turn
-				const assistantMsg = event.message as AssistantMessage;
 				if (assistantMsg.stopReason !== "error" && this._retryAttempt > 0) {
 					this._emit({
 						type: "auto_retry_end",
@@ -671,9 +677,13 @@ export class AgentSession {
 		this.agent.setSystemPrompt(this._baseSystemPrompt);
 	}
 
-	/** Whether auto-compaction is currently running */
+	/** Whether compaction or branch summarization is currently running */
 	get isCompacting(): boolean {
-		return this._autoCompactionAbortController !== undefined || this._compactionAbortController !== undefined;
+		return (
+			this._autoCompactionAbortController !== undefined ||
+			this._compactionAbortController !== undefined ||
+			this._branchSummaryAbortController !== undefined
+		);
 	}
 
 	/** All messages including custom types like BashExecutionMessage */
@@ -707,12 +717,12 @@ export class AgentSession {
 	}
 
 	/** Scoped models for cycling (from --models flag) */
-	get scopedModels(): ReadonlyArray<{ model: Model<any>; thinkingLevel: ThinkingLevel }> {
+	get scopedModels(): ReadonlyArray<{ model: Model<any>; thinkingLevel?: ThinkingLevel }> {
 		return this._scopedModels;
 	}
 
 	/** Update scoped models for cycling */
-	setScopedModels(scopedModels: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>): void {
+	setScopedModels(scopedModels: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>): void {
 		this._scopedModels = scopedModels;
 	}
 
@@ -1328,9 +1338,9 @@ export class AgentSession {
 		return this._cycleAvailableModel(direction);
 	}
 
-	private async _getScopedModelsWithApiKey(): Promise<Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }>> {
+	private async _getScopedModelsWithApiKey(): Promise<Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>> {
 		const apiKeysByProvider = new Map<string, string | undefined>();
-		const result: Array<{ model: Model<any>; thinkingLevel: ThinkingLevel }> = [];
+		const result: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }> = [];
 
 		for (const scoped of this._scopedModels) {
 			const provider = scoped.model.provider;
@@ -1367,8 +1377,11 @@ export class AgentSession {
 		this.sessionManager.appendModelChange(next.model.provider, next.model.id);
 		this.settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id);
 
-		// Apply thinking level (setThinkingLevel clamps to model capabilities)
-		this.setThinkingLevel(next.thinkingLevel);
+		// Apply thinking level.
+		// - Explicit scoped model thinking level overrides current session level
+		// - Undefined scoped model thinking level inherits current session level
+		// setThinkingLevel clamps to model capabilities.
+		this.setThinkingLevel(next.thinkingLevel ?? this.thinkingLevel);
 
 		await this._emitModelSelect(next.model, currentModel, "cycle");
 
@@ -1679,6 +1692,19 @@ export class AgentSession {
 
 		// Case 1: Overflow - LLM returned context overflow error
 		if (sameModel && !errorIsFromBeforeCompaction && isContextOverflow(assistantMessage, contextWindow)) {
+			if (this._overflowRecoveryAttempted) {
+				this._emit({
+					type: "auto_compaction_end",
+					result: undefined,
+					aborted: false,
+					willRetry: false,
+					errorMessage:
+						"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
+				});
+				return;
+			}
+
+			this._overflowRecoveryAttempted = true;
 			// Remove the error message from agent state (it IS saved to session for history,
 			// but we don't want it in context for the retry)
 			const messages = this.agent.state.messages;

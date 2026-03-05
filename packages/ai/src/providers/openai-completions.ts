@@ -428,7 +428,7 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		(params as any).enable_thinking = !!options?.reasoningEffort;
 	} else if (options?.reasoningEffort && model.reasoning && compat.supportsReasoningEffort) {
 		// OpenAI-style reasoning_effort
-		params.reasoning_effort = options.reasoningEffort;
+		(params as any).reasoning_effort = mapReasoningEffort(options.reasoningEffort, compat.reasoningEffortMap);
 	}
 
 	// OpenRouter provider routing preferences
@@ -448,6 +448,13 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 	}
 
 	return params;
+}
+
+function mapReasoningEffort(
+	effort: NonNullable<OpenAICompletionsOptions["reasoningEffort"]>,
+	reasoningEffortMap: Partial<Record<NonNullable<OpenAICompletionsOptions["reasoningEffort"]>, string>>,
+): string {
+	return reasoningEffortMap[effort] ?? effort;
 }
 
 function maybeAddOpenRouterAnthropicCacheControl(
@@ -777,13 +784,26 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 	const useMaxTokens = provider === "mistral" || baseUrl.includes("mistral.ai") || baseUrl.includes("chutes.ai");
 
 	const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
+	const isGroq = provider === "groq" || baseUrl.includes("groq.com");
 
 	const isMistral = provider === "mistral" || baseUrl.includes("mistral.ai");
+
+	const reasoningEffortMap =
+		isGroq && model.id === "qwen/qwen3-32b"
+			? {
+					minimal: "default",
+					low: "default",
+					medium: "default",
+					high: "default",
+					xhigh: "default",
+				}
+			: {};
 
 	return {
 		supportsStore: !isNonStandard,
 		supportsDeveloperRole: !isNonStandard,
 		supportsReasoningEffort: !isGrok && !isZai,
+		reasoningEffortMap,
 		supportsUsageInStreaming: true,
 		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
 		requiresToolResultName: isMistral,
@@ -809,6 +829,7 @@ function getCompat(model: Model<"openai-completions">): Required<OpenAICompletio
 		supportsStore: model.compat.supportsStore ?? detected.supportsStore,
 		supportsDeveloperRole: model.compat.supportsDeveloperRole ?? detected.supportsDeveloperRole,
 		supportsReasoningEffort: model.compat.supportsReasoningEffort ?? detected.supportsReasoningEffort,
+		reasoningEffortMap: model.compat.reasoningEffortMap ?? detected.reasoningEffortMap,
 		supportsUsageInStreaming: model.compat.supportsUsageInStreaming ?? detected.supportsUsageInStreaming,
 		maxTokensField: model.compat.maxTokensField ?? detected.maxTokensField,
 		requiresToolResultName: model.compat.requiresToolResultName ?? detected.requiresToolResultName,

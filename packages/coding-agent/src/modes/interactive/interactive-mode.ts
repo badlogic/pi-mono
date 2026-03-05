@@ -8,14 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import {
-	type AssistantMessage,
-	getOAuthProviders,
-	type ImageContent,
-	type Message,
-	type Model,
-	type OAuthProvider,
-} from "@mariozechner/pi-ai";
+import type { AssistantMessage, ImageContent, Message, Model, OAuthProviderId } from "@mariozechner/pi-ai";
 import type {
 	AutocompleteItem,
 	EditorAction,
@@ -3311,13 +3304,11 @@ export class InteractiveMode {
 		// Helper to update session's scoped models (session-only, no persist)
 		const updateSessionModels = async (enabledIds: Set<string>) => {
 			if (enabledIds.size > 0 && enabledIds.size < allModels.length) {
-				// Use current session thinking level, not settings default
-				const currentThinkingLevel = this.session.thinkingLevel;
 				const newScopedModels = await resolveModelScope(Array.from(enabledIds), this.session.modelRegistry);
 				this.session.setScopedModels(
 					newScopedModels.map((sm) => ({
 						model: sm.model,
-						thinkingLevel: sm.thinkingLevel ?? currentThinkingLevel,
+						thinkingLevel: sm.thinkingLevel,
 					})),
 				);
 			} else {
@@ -3452,31 +3443,34 @@ export class InteractiveMode {
 					let wantsSummary = false;
 					let customInstructions: string | undefined;
 
-					while (true) {
-						const summaryChoice = await this.showExtensionSelector("Summarize branch?", [
-							"No summary",
-							"Summarize",
-							"Summarize with custom prompt",
-						]);
+					// Check if we should skip the prompt (user preference to always default to no summary)
+					if (!this.settingsManager.getBranchSummarySkipPrompt()) {
+						while (true) {
+							const summaryChoice = await this.showExtensionSelector("Summarize branch?", [
+								"No summary",
+								"Summarize",
+								"Summarize with custom prompt",
+							]);
 
-						if (summaryChoice === undefined) {
-							// User pressed escape - re-show tree selector with same selection
-							this.showTreeSelector(entryId);
-							return;
-						}
-
-						wantsSummary = summaryChoice !== "No summary";
-
-						if (summaryChoice === "Summarize with custom prompt") {
-							customInstructions = await this.showExtensionEditor("Custom summarization instructions");
-							if (customInstructions === undefined) {
-								// User cancelled - loop back to summary selector
-								continue;
+							if (summaryChoice === undefined) {
+								// User pressed escape - re-show tree selector with same selection
+								this.showTreeSelector(entryId);
+								return;
 							}
-						}
 
-						// User made a complete choice
-						break;
+							wantsSummary = summaryChoice !== "No summary";
+
+							if (summaryChoice === "Summarize with custom prompt") {
+								customInstructions = await this.showExtensionEditor("Custom summarization instructions");
+								if (customInstructions === undefined) {
+									// User cancelled - loop back to summary selector
+									continue;
+								}
+							}
+
+							// User made a complete choice
+							break;
+						}
 					}
 
 					// Set up escape handler and loader if summarizing
@@ -3628,7 +3622,9 @@ export class InteractiveMode {
 						await this.showLoginDialog(providerId);
 					} else {
 						// Logout flow
-						const providerInfo = getOAuthProviders().find((p) => p.id === providerId);
+						const providerInfo = this.session.modelRegistry.authStorage
+							.getOAuthProviders()
+							.find((p) => p.id === providerId);
 						const providerName = providerInfo?.name || providerId;
 
 						try {
@@ -3651,7 +3647,7 @@ export class InteractiveMode {
 	}
 
 	private async showLoginDialog(providerId: string): Promise<void> {
-		const providerInfo = getOAuthProviders().find((p) => p.id === providerId);
+		const providerInfo = this.session.modelRegistry.authStorage.getOAuthProviders().find((p) => p.id === providerId);
 		const providerName = providerInfo?.name || providerId;
 
 		// Providers that use callback servers (can paste redirect URL)
@@ -3685,7 +3681,7 @@ export class InteractiveMode {
 		};
 
 		try {
-			await this.session.modelRegistry.authStorage.login(providerId as OAuthProvider, {
+			await this.session.modelRegistry.authStorage.login(providerId as OAuthProviderId, {
 				onAuth: (info: { url: string; instructions?: string }) => {
 					dialog.showAuth(info.url, info.instructions);
 

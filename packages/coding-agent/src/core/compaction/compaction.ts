@@ -567,10 +567,14 @@ export async function generateSummary(
 		},
 	];
 
+	const completionOptions = model.reasoning
+		? { maxTokens, signal, apiKey, reasoning: "high" as const }
+		: { maxTokens, signal, apiKey };
+
 	const response = await completeSimple(
 		model,
 		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
-		{ maxTokens, signal, apiKey, reasoning: "high" },
+		completionOptions,
 	);
 
 	if (response.stopReason === "error") {

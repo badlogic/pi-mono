@@ -96,6 +96,8 @@ const KITTY_CSI_U_REGEX = /^\x1b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+
 const KITTY_MOD_SHIFT = 1;
 const KITTY_MOD_ALT = 2;
 const KITTY_MOD_CTRL = 4;
+const KITTY_LOCK_MASK = 64 + 128; // Caps Lock + Num Lock
+const KITTY_ALLOWED_MODIFIERS = KITTY_MOD_SHIFT | KITTY_LOCK_MASK;
 
 // Decode a printable CSI-u sequence, preferring the shifted key when present.
 function decodeKittyPrintable(data: string): string | undefined {
@@ -111,7 +113,10 @@ function decodeKittyPrintable(data: string): string | undefined {
 	// Modifiers are 1-indexed in CSI-u; normalize to our bitmask.
 	const modifier = Number.isFinite(modValue) ? modValue - 1 : 0;
 
-	// Ignore CSI-u sequences used for Alt/Ctrl shortcuts.
+	// Only accept printable CSI-u input for plain or Shift-modified text keys.
+	// Reject unsupported modifier bits (e.g. Super/Meta) to avoid inserting
+	// characters from modifier-only terminal events.
+	if ((modifier & ~KITTY_ALLOWED_MODIFIERS) !== 0) return undefined;
 	if (modifier & (KITTY_MOD_ALT | KITTY_MOD_CTRL)) return undefined;
 
 	// Prefer the shifted keycode when Shift is held.
@@ -1024,10 +1029,8 @@ export class Editor implements Component, Focusable {
 		}
 
 		if (pastedLines.length === 1) {
-			// Single line - insert character by character to trigger autocomplete
-			for (const char of filteredText) {
-				this.insertCharacter(char, true);
-			}
+			// Single line - insert atomically (do not trigger autocomplete during paste)
+			this.insertTextAtCursorInternal(filteredText);
 			return;
 		}
 

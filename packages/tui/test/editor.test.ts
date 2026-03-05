@@ -361,6 +361,16 @@ describe("Editor component", () => {
 		});
 	});
 
+	describe("Kitty CSI-u handling", () => {
+		it("ignores printable CSI-u sequences with unsupported modifiers", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			editor.handleInput("\x1b[99;9u");
+
+			assert.strictEqual(editor.getText(), "");
+		});
+	});
+
 	describe("Unicode text editing behavior", () => {
 		it("inserts mixed ASCII, umlauts, and emojis as literal text", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
@@ -1484,6 +1494,26 @@ describe("Editor component", () => {
 
 			editor.handleInput("|");
 			assert.strictEqual(editor.getText(), "hello| world");
+		});
+
+		it("does not trigger autocomplete during single-line paste", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			let suggestionCalls = 0;
+
+			const mockProvider: AutocompleteProvider = {
+				getSuggestions: () => {
+					suggestionCalls += 1;
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+			editor.handleInput("\x1b[200~look at @node_modules/react/index.js please\x1b[201~");
+
+			assert.strictEqual(editor.getText(), "look at @node_modules/react/index.js please");
+			assert.strictEqual(suggestionCalls, 0);
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
 		});
 
 		it("undoes multi-line paste atomically", () => {

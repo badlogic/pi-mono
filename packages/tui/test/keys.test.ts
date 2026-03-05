@@ -294,6 +294,12 @@ describe("parseKey", () => {
 			assert.strictEqual(parseKey(latinCtrlC), "ctrl+c");
 			setKittyProtocolActive(false);
 		});
+
+		it("should ignore Kitty CSI-u with unsupported modifiers", () => {
+			setKittyProtocolActive(true);
+			assert.strictEqual(parseKey("\x1b[99;9u"), undefined);
+			setKittyProtocolActive(false);
+		});
 	});
 
 	describe("Legacy key parsing", () => {

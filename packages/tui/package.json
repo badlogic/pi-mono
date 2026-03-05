@@ -1,11 +1,11 @@
 {
 	"name": "@mariozechner/pi-tui",
-	"version": "0.55.4",
+	"version": "0.56.1",
 	"description": "Terminal User Interface library with differential rendering for efficient text-based applications",
 	"type": "module",
 	"main": "dist/index.js",
 	"scripts": {
-		"clean": "rm -rf dist",
+		"clean": "shx rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"test": "node --test --import tsx test/*.test.ts",

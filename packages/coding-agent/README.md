@@ -98,6 +98,7 @@ For each built-in provider, pi maintains a list of tool-capable models, updated 
 - Vercel AI Gateway
 - ZAI
 - OpenCode Zen
+- OpenCode Go
 - Hugging Face
 - Kimi For Coding
 - MiniMax
