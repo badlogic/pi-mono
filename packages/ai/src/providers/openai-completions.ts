@@ -771,6 +771,8 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 	const isNonStandard =
 		provider === "cerebras" ||
 		baseUrl.includes("cerebras.ai") ||
+		provider === "inception" ||
+		baseUrl.includes("inceptionlabs.ai") ||
 		provider === "xai" ||
 		baseUrl.includes("api.x.ai") ||
 		provider === "mistral" ||
