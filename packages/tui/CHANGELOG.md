@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed markdown blockquote rendering to isolate blockquote styling from default text style, preventing style leakage.
+
 ## [0.56.0] - 2026-03-04
 
 ### Fixed

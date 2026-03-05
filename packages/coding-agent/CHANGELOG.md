@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed extension alias fallback resolution to use ESM-aware resolution for `jiti` aliases in global installs ([#1821](https://github.com/badlogic/pi-mono/pull/1821) by [@Perlence](https://github.com/Perlence))
+- Fixed markdown blockquote rendering to isolate blockquote styling from default text style, preventing style leakage.
+
 ## [0.56.0] - 2026-03-04
 
 ### New Features
