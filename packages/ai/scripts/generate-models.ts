@@ -844,6 +844,20 @@ async function generateModels() {
 		});
 	}
 
+	// Add missing GitHub Copilot GPT-5.3 models until models.dev includes them.
+	const copilotBaseModel = allModels.find(
+		(m) => m.provider === "github-copilot" && m.id === "gpt-5.2-codex",
+	);
+	if (copilotBaseModel) {
+		if (!allModels.some((m) => m.provider === "github-copilot" && m.id === "gpt-5.3-codex")) {
+			allModels.push({
+				...copilotBaseModel,
+				id: "gpt-5.3-codex",
+				name: "GPT-5.3 Codex",
+			});
+		}
+	}
+
 	// OpenAI Codex (ChatGPT OAuth) models
 	// NOTE: These are not fetched from models.dev; we keep a small, explicit list to avoid aliases.
 	// Context window is based on observed server limits (400s above ~272k), not marketing numbers.

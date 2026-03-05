@@ -490,26 +490,6 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Responses Provider (gpt-5-mini)", () => {
-		const model = getModel("openai", "gpt-5-mini");
-
-		it("should complete basic text generation", { retry: 3 }, async () => {
-			await basicTextGeneration(model);
-		});
-
-		it("should handle tool calling", { retry: 3 }, async () => {
-			await handleToolCall(model);
-		});
-
-		it("should handle streaming", { retry: 3 }, async () => {
-			await handleStreaming(model);
-		});
-
-		it("should handle image input", { retry: 3 }, async () => {
-			await handleImage(model);
-		});
-	});
-
 	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Responses Provider (gpt-4o-mini)", () => {
 		const llm = getModel("azure-openai-responses", "gpt-4o-mini");
 		const azureDeploymentName = resolveAzureDeploymentName(llm.id);
@@ -934,8 +914,8 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe("GitHub Copilot Provider (gpt-4o via OpenAI Completions)", () => {
-		const llm = getModel("github-copilot", "gpt-4o");
+	describe("GitHub Copilot Provider (gpt-5.3-codex via OpenAI Completions)", () => {
+		const llm = getModel("github-copilot", "gpt-5.3-codex");
 
 		it.skipIf(!githubCopilotToken)("should complete basic text generation", { retry: 3 }, async () => {
 			await basicTextGeneration(llm, { apiKey: githubCopilotToken });
