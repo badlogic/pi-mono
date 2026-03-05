@@ -119,10 +119,16 @@ export type StreamFunction<TApi extends Api = Api, TOptions extends StreamOption
 	options?: TOptions,
 ) => AssistantMessageEventStream;
 
+export interface TextSignatureV1 {
+	v: 1;
+	id: string;
+	phase?: "commentary" | "final_answer";
+}
+
 export interface TextContent {
 	type: "text";
 	text: string;
-	textSignature?: string; // e.g., for OpenAI responses, the message ID
+	textSignature?: string; // e.g., for OpenAI responses, message metadata (legacy id string or TextSignatureV1 JSON)
 }
 
 export interface ThinkingContent {

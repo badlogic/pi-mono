@@ -20,6 +20,7 @@ import type {
 	Model,
 	StopReason,
 	TextContent,
+	TextSignatureV1,
 	ThinkingContent,
 	Tool,
 	ToolCall,
@@ -46,6 +47,32 @@ function shortHash(str: string): string {
 	h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
 	h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
 	return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36);
+}
+
+function encodeTextSignatureV1(id: string, phase?: TextSignatureV1["phase"]): string {
+	const payload: TextSignatureV1 = { v: 1, id };
+	if (phase) payload.phase = phase;
+	return JSON.stringify(payload);
+}
+
+function parseTextSignature(
+	signature: string | undefined,
+): { id: string; phase?: TextSignatureV1["phase"] } | undefined {
+	if (!signature) return undefined;
+	if (signature.startsWith("{")) {
+		try {
+			const parsed = JSON.parse(signature) as Partial<TextSignatureV1>;
+			if (parsed.v === 1 && typeof parsed.id === "string") {
+				if (parsed.phase === "commentary" || parsed.phase === "final_answer") {
+					return { id: parsed.id, phase: parsed.phase };
+				}
+				return { id: parsed.id };
+			}
+		} catch {
+			// Fall through to legacy plain-string handling.
+		}
+	}
+	return { id: signature };
 }
 
 export interface OpenAIResponsesStreamOptions {
@@ -152,8 +179,9 @@ export function convertResponsesMessages<TApi extends Api>(
 					}
 				} else if (block.type === "text") {
 					const textBlock = block as TextContent;
+					const parsedSignature = parseTextSignature(textBlock.textSignature);
 					// OpenAI requires id to be max 64 characters
-					let msgId = textBlock.textSignature;
+					let msgId = parsedSignature?.id;
 					if (!msgId) {
 						msgId = `msg_${msgIndex}`;
 					} else if (msgId.length > 64) {
@@ -165,6 +193,7 @@ export function convertResponsesMessages<TApi extends Api>(
 						content: [{ type: "output_text", text: sanitizeSurrogates(textBlock.text), annotations: [] }],
 						status: "completed",
 						id: msgId,
+						phase: parsedSignature?.phase,
 					} satisfies ResponseOutputMessage);
 				} else if (block.type === "toolCall") {
 					const toolCall = block as ToolCall;
@@ -403,7 +432,7 @@ export async function processResponsesStream<TApi extends Api>(
 				currentBlock = null;
 			} else if (item.type === "message" && currentBlock?.type === "text") {
 				currentBlock.text = item.content.map((c) => (c.type === "output_text" ? c.text : c.refusal)).join("");
-				currentBlock.textSignature = item.id;
+				currentBlock.textSignature = encodeTextSignatureV1(item.id, item.phase ?? undefined);
 				stream.push({
 					type: "text_end",
 					contentIndex: blockIndex(),
