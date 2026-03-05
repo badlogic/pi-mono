@@ -231,7 +231,7 @@ describe("openai-codex streaming", () => {
 		await streamResult.result();
 	});
 
-	it("clamps gpt-5.3-codex minimal reasoning effort to low", async () => {
+	it.each(["gpt-5.3-codex", "gpt-5.4"])("clamps %s minimal reasoning effort to low", async (modelId) => {
 		const tempDir = mkdtempSync(join(tmpdir(), "pi-codex-stream-"));
 		process.env.PI_CODING_AGENT_DIR = tempDir;
 
@@ -303,8 +303,8 @@ describe("openai-codex streaming", () => {
 		global.fetch = fetchMock as typeof fetch;
 
 		const model: Model<"openai-codex-responses"> = {
-			id: "gpt-5.3-codex",
-			name: "GPT-5.3 Codex",
+			id: modelId,
+			name: modelId,
 			api: "openai-codex-responses",
 			provider: "openai-codex",
 			baseUrl: "https://chatgpt.com/backend-api",
