@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed transient missing input/footer lines during streaming when terminal height changes by forcing a full screen redraw on resize.
+
 ## [0.56.1] - 2026-03-05
 
 ### Fixed

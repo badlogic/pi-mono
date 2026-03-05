@@ -202,6 +202,7 @@ export class TUI extends Container {
 	public terminal: Terminal;
 	private previousLines: string[] = [];
 	private previousWidth = 0;
+	private previousHeight = 0;
 	private focusedComponent: Component | null = null;
 	private inputListeners = new Set<InputListener>();
 
@@ -218,6 +219,7 @@ export class TUI extends Container {
 	private previousViewportTop = 0; // Track previous viewport top for resize-aware cursor moves
 	private fullRedrawCount = 0;
 	private stopped = false;
+	private resizeDirty = false;
 
 	// Overlay stack for modal components rendered on top of base content
 	private overlayStack: {
@@ -374,7 +376,10 @@ export class TUI extends Container {
 		this.stopped = false;
 		this.terminal.start(
 			(data) => this.handleInput(data),
-			() => this.requestRender(),
+			() => {
+				this.resizeDirty = true;
+				this.requestRender();
+			},
 		);
 		this.terminal.hideCursor();
 		this.queryCellSize();
@@ -425,10 +430,12 @@ export class TUI extends Container {
 		if (force) {
 			this.previousLines = [];
 			this.previousWidth = -1; // -1 triggers widthChanged, forcing a full clear
+			this.previousHeight = -1; // -1 triggers heightChanged, forcing a full clear
 			this.cursorRow = 0;
 			this.hardwareCursorRow = 0;
 			this.maxLinesRendered = 0;
 			this.previousViewportTop = 0;
+			this.resizeDirty = false;
 		}
 		if (this.renderRequested) return;
 		this.renderRequested = true;
@@ -873,12 +880,19 @@ export class TUI extends Container {
 
 		// Width changed - need full re-render (line wrapping changes)
 		const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;
+		const heightChanged = this.previousHeight !== 0 && this.previousHeight !== height;
+		const resizeChanged = this.resizeDirty || heightChanged;
 
-		// Helper to clear scrollback and viewport and render all new lines
-		const fullRender = (clear: boolean): void => {
+		// Helper to clear and render all new lines.
+		// "screenAndScrollback" keeps previous width-change behavior.
+		const fullRender = (clearMode: "none" | "screen" | "screenAndScrollback"): void => {
 			this.fullRedrawCount += 1;
 			let buffer = "\x1b[?2026h"; // Begin synchronized output
-			if (clear) buffer += "\x1b[3J\x1b[2J\x1b[H"; // Clear scrollback, screen, and home
+			if (clearMode === "screenAndScrollback") {
+				buffer += "\x1b[3J\x1b[2J\x1b[H";
+			} else if (clearMode === "screen") {
+				buffer += "\x1b[2J\x1b[H";
+			}
 			for (let i = 0; i < newLines.length; i++) {
 				if (i > 0) buffer += "\r\n";
 				buffer += newLines[i];
@@ -888,15 +902,17 @@ export class TUI extends Container {
 			this.cursorRow = Math.max(0, newLines.length - 1);
 			this.hardwareCursorRow = this.cursorRow;
 			// Reset max lines when clearing, otherwise track growth
-			if (clear) {
-				this.maxLinesRendered = newLines.length;
-			} else {
+			if (clearMode === "none") {
 				this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
+			} else {
+				this.maxLinesRendered = newLines.length;
 			}
 			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
 			this.previousWidth = width;
+			this.previousHeight = height;
+			this.resizeDirty = false;
 		};
 
 		const debugRedraw = process.env.PI_DEBUG_REDRAW === "1";
@@ -910,14 +926,21 @@ export class TUI extends Container {
 		// First render - just output everything without clearing (assumes clean screen)
 		if (this.previousLines.length === 0 && !widthChanged) {
 			logRedraw("first render");
-			fullRender(false);
+			fullRender("none");
 			return;
 		}
 
 		// Width changed - full re-render (line wrapping changes)
 		if (widthChanged) {
 			logRedraw(`width changed (${this.previousWidth} -> ${width})`);
-			fullRender(true);
+			fullRender("screenAndScrollback");
+			return;
+		}
+
+		// Height/resize changed - force a full screen redraw to realign viewport/cursor state.
+		if (resizeChanged) {
+			logRedraw(`resize changed (height ${this.previousHeight} -> ${height}, dirty=${this.resizeDirty})`);
+			fullRender("screen");
 			return;
 		}
 
@@ -926,7 +949,7 @@ export class TUI extends Container {
 		// Configurable via setClearOnShrink() or PI_CLEAR_ON_SHRINK=0 env var
 		if (this.clearOnShrink && newLines.length < this.maxLinesRendered && this.overlayStack.length === 0) {
 			logRedraw(`clearOnShrink (maxLinesRendered=${this.maxLinesRendered})`);
-			fullRender(true);
+			fullRender("screenAndScrollback");
 			return;
 		}
 
@@ -958,6 +981,8 @@ export class TUI extends Container {
 		if (firstChanged === -1) {
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+			this.previousHeight = height;
+			this.resizeDirty = false;
 			return;
 		}
 
@@ -975,7 +1000,7 @@ export class TUI extends Container {
 				const extraLines = this.previousLines.length - newLines.length;
 				if (extraLines > height) {
 					logRedraw(`extraLines > height (${extraLines} > ${height})`);
-					fullRender(true);
+					fullRender("screenAndScrollback");
 					return;
 				}
 				if (extraLines > 0) {
@@ -996,7 +1021,9 @@ export class TUI extends Container {
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
 			this.previousWidth = width;
+			this.previousHeight = height;
 			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+			this.resizeDirty = false;
 			return;
 		}
 
@@ -1006,7 +1033,7 @@ export class TUI extends Container {
 		if (firstChanged < previousContentViewportTop) {
 			// First change is above previous viewport - need full re-render
 			logRedraw(`firstChanged < viewportTop (${firstChanged} < ${previousContentViewportTop})`);
-			fullRender(true);
+			fullRender("screenAndScrollback");
 			return;
 		}
 
@@ -1144,6 +1171,8 @@ export class TUI extends Container {
 
 		this.previousLines = newLines;
 		this.previousWidth = width;
+		this.previousHeight = height;
+		this.resizeDirty = false;
 	}
 
 	/**

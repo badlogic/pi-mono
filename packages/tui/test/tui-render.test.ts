@@ -44,6 +44,52 @@ describe("TUI resize handling", () => {
 
 		tui.stop();
 	});
+
+	it("keeps input/footer lines visible during resize while streaming updates", async () => {
+		class StreamingLayoutComponent implements Component {
+			frame = 0;
+
+			render(_width: number): string[] {
+				const lines: string[] = [];
+				for (let i = 0; i < 22; i++) {
+					lines.push(`Chat line ${i}`);
+				}
+				const dynamicLines = 6 + (this.frame % 5);
+				for (let i = 0; i < dynamicLines; i++) {
+					lines.push(`Streaming ${this.frame}:${i}`);
+				}
+				lines.push("");
+				lines.push(">>INPUT<<");
+				lines.push("<<FOOTER>>");
+				return lines;
+			}
+
+			invalidate(): void {}
+		}
+
+		const terminal = new VirtualTerminal(80, 16);
+		const tui = new TUI(terminal);
+		const component = new StreamingLayoutComponent();
+		tui.addChild(component);
+		tui.start();
+		await terminal.flush();
+
+		for (let frame = 0; frame < 60; frame++) {
+			component.frame = frame;
+			if (frame % 2 === 0) {
+				terminal.resize(80, 11 + (frame % 7));
+			}
+			tui.requestRender();
+			await terminal.flush();
+
+			const viewport = terminal.getViewport();
+			const tail = viewport.slice(-6).join("\n");
+			assert.ok(tail.includes(">>INPUT<<"), `input missing at frame ${frame} (rows=${terminal.rows})`);
+			assert.ok(tail.includes("<<FOOTER>>"), `footer missing at frame ${frame} (rows=${terminal.rows})`);
+		}
+
+		tui.stop();
+	});
 });
 
 describe("TUI content shrinkage", () => {
