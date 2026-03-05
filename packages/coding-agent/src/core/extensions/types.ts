@@ -345,6 +345,8 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	promptGuidelines?: string[];
 	/** Parameter schema (TypeBox) */
 	parameters: TParams;
+	/** @see Tool.builtinTypes */
+	builtinTypes?: Record<string, unknown>;
 
 	/** Execute the tool. */
 	execute(

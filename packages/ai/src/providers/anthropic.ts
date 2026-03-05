@@ -839,14 +839,21 @@ function convertMessages(
 	return params;
 }
 
-function convertTools(tools: Tool[], isOAuthToken: boolean): Anthropic.Messages.Tool[] {
+function convertTools(tools: Tool[], isOAuthToken: boolean): any[] {
 	if (!tools) return [];
 
 	return tools.map((tool) => {
+		const toolName = isOAuthToken ? toClaudeCodeName(tool.name) : tool.name;
+
+		const builtin = tool.builtinTypes?.anthropic;
+		if (builtin) {
+			return { ...builtin, name: toolName };
+		}
+
 		const jsonSchema = tool.parameters as any; // TypeBox already generates JSON Schema
 
 		return {
-			name: isOAuthToken ? toClaudeCodeName(tool.name) : tool.name,
+			name: toolName,
 			description: tool.description,
 			input_schema: {
 				type: "object" as const,

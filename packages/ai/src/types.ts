@@ -202,6 +202,10 @@ export interface Tool<TParameters extends TSchema = TSchema> {
 	name: string;
 	description: string;
 	parameters: TParameters;
+	/** Provider-specific built-in tool type overrides.
+	 * Key: provider name ("anthropic", "openai", etc.)
+	 * Value: provider-specific wire format object (e.g., { type: "memory_20250818" }) */
+	builtinTypes?: Record<string, unknown>;
 }
 
 export interface Context {
