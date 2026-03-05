@@ -37,7 +37,7 @@ interface FlatNode {
 }
 
 /** Filter mode for tree display */
-type FilterMode = "default" | "no-tools" | "user-only" | "labeled-only" | "all";
+export type FilterMode = "default" | "no-tools" | "user-only" | "labeled-only" | "all";
 
 /**
  * Tree list component with selection and ASCII art visualization
@@ -70,9 +70,11 @@ class TreeList implements Component {
 		currentLeafId: string | null,
 		maxVisibleLines: number,
 		initialSelectedId?: string,
+		initialFilterMode?: FilterMode,
 	) {
 		this.currentLeafId = currentLeafId;
 		this.maxVisibleLines = maxVisibleLines;
+		this.filterMode = initialFilterMode ?? "default";
 		this.multipleRoots = tree.length > 1;
 		this.flatNodes = this.flattenTree(tree);
 		this.buildActivePath();
@@ -1001,13 +1003,14 @@ export class TreeSelectorComponent extends Container implements Focusable {
 		onCancel: () => void,
 		onLabelChange?: (entryId: string, label: string | undefined) => void,
 		initialSelectedId?: string,
+		initialFilterMode?: FilterMode,
 	) {
 		super();
 
 		this.onLabelChangeCallback = onLabelChange;
 		const maxVisibleLines = Math.max(5, Math.floor(terminalHeight / 2));
 
-		this.treeList = new TreeList(tree, currentLeafId, maxVisibleLines, initialSelectedId);
+		this.treeList = new TreeList(tree, currentLeafId, maxVisibleLines, initialSelectedId, initialFilterMode);
 		this.treeList.onSelect = onSelect;
 		this.treeList.onCancel = onCancel;
 		this.treeList.onLabelEdit = (entryId, currentLabel) => this.showLabelInput(entryId, currentLabel);
