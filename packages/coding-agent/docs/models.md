@@ -129,13 +129,17 @@ The `apiKey` and `headers` fields support three formats:
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `id` | Yes | — | Model identifier (passed to the API) |
-| `name` | No | `id` | Display name in model selector |
+| `name` | No | `id` | Human-readable model label. Used for matching (`--model` patterns) and shown in model details/status text. |
 | `api` | No | provider's `api` | Override provider's API for this model |
 | `reasoning` | No | `false` | Supports extended thinking |
 | `input` | No | `["text"]` | Input types: `["text"]` or `["text", "image"]` |
 | `contextWindow` | No | `128000` | Context window size in tokens |
 | `maxTokens` | No | `16384` | Maximum output tokens |
 | `cost` | No | all zeros | `{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}` (per million tokens) |
+
+Current behavior:
+- `/model` and `--list-models` list entries by model `id`.
+- The configured `name` is used for model matching and detail/status text.
 
 ## Overriding Built-in Providers
 
