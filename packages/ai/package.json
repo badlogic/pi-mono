@@ -11,8 +11,8 @@
 			"import": "./dist/index.js"
 		},
 		"./oauth": {
-			"types": "./oauth.d.ts",
-			"import": "./oauth.js"
+			"types": "./dist/oauth.d.ts",
+			"import": "./dist/oauth.js"
 		},
 		"./bedrock-provider": {
 			"types": "./bedrock-provider.d.ts",
@@ -24,8 +24,6 @@
 	},
 	"files": [
 		"dist",
-		"oauth.js",
-		"oauth.d.ts",
 		"bedrock-provider.js",
 		"bedrock-provider.d.ts",
 		"README.md"
