@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { Mistral } from "@mistralai/mistralai";
 import type { RequestOptions } from "@mistralai/mistralai/lib/sdks.js";
 import type {
@@ -25,6 +24,7 @@ import type {
 	ToolCall,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { shortHash } from "../utils/hash.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { buildBaseOptions, clampReasoning } from "./simple-options.js";
@@ -165,7 +165,9 @@ function deriveMistralToolCallId(id: string, attempt: number): string {
 	if (attempt === 0 && normalized.length === MISTRAL_TOOL_CALL_ID_LENGTH) return normalized;
 	const seedBase = normalized || id;
 	const seed = attempt === 0 ? seedBase : `${seedBase}:${attempt}`;
-	return createHash("sha256").update(seed).digest("hex").slice(0, MISTRAL_TOOL_CALL_ID_LENGTH);
+	return shortHash(seed)
+		.replace(/[^a-zA-Z0-9]/g, "")
+		.slice(0, MISTRAL_TOOL_CALL_ID_LENGTH);
 }
 
 function formatMistralError(error: unknown): string {
