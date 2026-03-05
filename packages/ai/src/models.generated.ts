@@ -6615,7 +6615,7 @@ export const MODELS = {
 				cacheRead: 0.3,
 				cacheWrite: 3.75,
 			},
-			contextWindow: 1000000,
+			contextWindow: 200000,
 			maxTokens: 64000,
 		} satisfies Model<"openai-completions">,
 		"anthropic/claude-sonnet-4.5": {
@@ -6884,11 +6884,11 @@ export const MODELS = {
 			cost: {
 				input: 0.19999999999999998,
 				output: 0.77,
-				cacheRead: 0.135,
+				cacheRead: 0.13,
 				cacheWrite: 0,
 			},
 			contextWindow: 163840,
-			maxTokens: 4096,
+			maxTokens: 163840,
 		} satisfies Model<"openai-completions">,
 		"deepseek/deepseek-chat-v3.1": {
 			id: "deepseek/deepseek-chat-v3.1",
