@@ -5707,7 +5707,7 @@ export const MODELS = {
 				cacheRead: 0.25,
 				cacheWrite: 0,
 			},
-			contextWindow: 1050000,
+			contextWindow: 922000,
 			maxTokens: 128000,
 		} satisfies Model<"openai-codex-responses">,
 	},

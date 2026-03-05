@@ -373,6 +373,11 @@ describe("resolveCliModel", () => {
 });
 
 describe("default model selection", () => {
+	test("openai defaults are gpt-5.4", () => {
+		expect(defaultModelPerProvider.openai).toBe("gpt-5.4");
+		expect(defaultModelPerProvider["openai-codex"]).toBe("gpt-5.4");
+	});
+
 	test("ai-gateway default is opus 4.6", () => {
 		expect(defaultModelPerProvider["vercel-ai-gateway"]).toBe("anthropic/claude-opus-4-6");
 	});
