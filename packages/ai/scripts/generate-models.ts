@@ -844,6 +844,26 @@ async function generateModels() {
 		});
 	}
 
+	if (!allModels.some(m => m.provider === "openai" && m.id === "gpt-5.4")) {
+		allModels.push({
+			id: "gpt-5.4",
+			name: "GPT-5.4",
+			api: "openai-responses",
+			baseUrl: "https://api.openai.com/v1",
+			provider: "openai",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 2.5,
+				output: 15,
+				cacheRead: 0.25,
+				cacheWrite: 0,
+			},
+			contextWindow: 1050000,
+			maxTokens: 128000,
+		});
+	}
+
 	// OpenAI Codex (ChatGPT OAuth) models
 	// NOTE: These are not fetched from models.dev; we keep a small, explicit list to avoid aliases.
 	// Context window is based on observed server limits (400s above ~272k), not marketing numbers.
@@ -921,6 +941,18 @@ async function generateModels() {
 			input: ["text", "image"],
 			cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 },
 			contextWindow: CODEX_CONTEXT,
+			maxTokens: CODEX_MAX_TOKENS,
+		},
+		{
+			id: "gpt-5.4",
+			name: "GPT-5.4",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: CODEX_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0 },
+			contextWindow: 1050000,
 			maxTokens: CODEX_MAX_TOKENS,
 		},
 		{
