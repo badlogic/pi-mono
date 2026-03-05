@@ -23,6 +23,31 @@ function getCellItalic(terminal: VirtualTerminal, row: number, col: number): num
 }
 
 describe("TUI resize handling", () => {
+	it("triggers full re-render when terminal height changes", async () => {
+		const terminal = new VirtualTerminal(40, 10);
+		const tui = new TUI(terminal);
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		component.lines = ["Line 0", "Line 1", "Line 2"];
+		tui.start();
+		await terminal.flush();
+
+		const initialRedraws = tui.fullRedraws;
+
+		// Resize height
+		terminal.resize(40, 15);
+		await terminal.flush();
+
+		// Should have triggered a full redraw
+		assert.ok(tui.fullRedraws > initialRedraws, "Height change should trigger full redraw");
+
+		const viewport = terminal.getViewport();
+		assert.ok(viewport[0]?.includes("Line 0"), "Content preserved after height change");
+
+		tui.stop();
+	});
+
 	it("triggers full re-render when terminal width changes", async () => {
 		const terminal = new VirtualTerminal(40, 10);
 		const tui = new TUI(terminal);
