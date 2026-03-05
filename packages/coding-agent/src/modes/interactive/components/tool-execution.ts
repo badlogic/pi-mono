@@ -48,6 +48,14 @@ function replaceTabs(text: string): string {
 	return text.replace(/\t/g, "   ");
 }
 
+/**
+ * Normalize control characters for terminal preview rendering.
+ * Keep tool arguments unchanged, sanitize only display text.
+ */
+function normalizeDisplayText(text: string): string {
+	return text.replace(/\r/g, "");
+}
+
 /** Safely coerce value to string for display. Returns null if invalid type. */
 function str(value: unknown): string | null {
 	if (typeof value === "string") return value;
@@ -174,7 +182,8 @@ export class ToolExecutionComponent extends Container {
 			return;
 		}
 
-		const normalized = replaceTabs(fileContent);
+		const displayContent = normalizeDisplayText(fileContent);
+		const normalized = replaceTabs(displayContent);
 		this.writeHighlightCache = {
 			rawPath,
 			lang,
@@ -219,7 +228,8 @@ export class ToolExecutionComponent extends Container {
 		}
 
 		const deltaRaw = fileContent.slice(cache.rawContent.length);
-		const deltaNormalized = replaceTabs(deltaRaw);
+		const deltaDisplay = normalizeDisplayText(deltaRaw);
+		const deltaNormalized = replaceTabs(deltaDisplay);
 		cache.rawContent = fileContent;
 
 		if (cache.normalizedLines.length === 0) {
@@ -686,7 +696,8 @@ export class ToolExecutionComponent extends Container {
 					if (cache && cache.lang === lang && cache.rawPath === rawPath && cache.rawContent === fileContent) {
 						lines = cache.highlightedLines;
 					} else {
-						const normalized = replaceTabs(fileContent);
+						const displayContent = normalizeDisplayText(fileContent);
+						const normalized = replaceTabs(displayContent);
 						lines = highlightCode(normalized, lang);
 						this.writeHighlightCache = {
 							rawPath,
@@ -697,7 +708,7 @@ export class ToolExecutionComponent extends Container {
 						};
 					}
 				} else {
-					lines = fileContent.split("\n");
+					lines = normalizeDisplayText(fileContent).split("\n");
 					this.writeHighlightCache = undefined;
 				}
 
