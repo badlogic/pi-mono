@@ -7,6 +7,7 @@ import {
 	type AssistantMessage,
 	type Context,
 	EventStream,
+	type Message,
 	streamSimple,
 	type ToolResultMessage,
 	validateToolArguments,
@@ -49,7 +50,9 @@ export function agentLoop(
 		}
 
 		await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
-	})();
+	})().catch((err) => {
+		terminateStreamOnError(stream, err);
+	});
 
 	return stream;
 }
@@ -86,7 +89,9 @@ export function agentLoopContinue(
 		stream.push({ type: "turn_start" });
 
 		await runLoop(currentContext, newMessages, config, signal, stream, streamFn);
-	})();
+	})().catch((err) => {
+		terminateStreamOnError(stream, err);
+	});
 
 	return stream;
 }
@@ -96,6 +101,34 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 		(event: AgentEvent) => event.type === "agent_end",
 		(event: AgentEvent) => (event.type === "agent_end" ? event.messages : []),
 	);
+}
+
+/**
+ * Terminate an agent stream after an unexpected error in the async loop.
+ * Pushes an agent_end event with an error message so consumers (for-await)
+ * don't hang indefinitely waiting for events that will never arrive.
+ */
+function terminateStreamOnError(stream: EventStream<AgentEvent, AgentMessage[]>, err: unknown): void {
+	const errorMessage: AgentMessage = {
+		role: "assistant",
+		content: [{ type: "text", text: "" }],
+		provider: "",
+		model: "",
+		api: "" as any,
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "error",
+		errorMessage: err instanceof Error ? err.message : String(err),
+		timestamp: Date.now(),
+	} as AgentMessage;
+	stream.push({ type: "agent_end", messages: [errorMessage] });
+	stream.end([errorMessage]);
 }
 
 /**
@@ -198,6 +231,47 @@ async function runLoop(
 }
 
 /**
+ * Sanitize LLM messages to ensure a valid conversation structure.
+ *
+ * Removes orphaned tool results whose toolCallId doesn't match any toolCall
+ * in the preceding assistant message. These can appear when:
+ * - The process crashed mid-tool-execution and was repaired on resume
+ * - A duplicate persistence bug wrote results out of order
+ * - A prior compaction round removed the assistant message but left the results
+ *
+ * Without this, the Anthropic API rejects the request with:
+ *   "unexpected tool_use_id found in tool_result block"
+ */
+function sanitizeMessages(messages: Message[]): Message[] {
+	let lastAssistantToolIds: Set<string> | null = null;
+
+	return messages.filter((msg) => {
+		if (msg.role === "assistant") {
+			lastAssistantToolIds = new Set<string>();
+			for (const c of msg.content) {
+				if (c.type === "toolCall") {
+					lastAssistantToolIds.add(c.id);
+				}
+			}
+			return true;
+		}
+
+		if (msg.role === "toolResult") {
+			// Drop tool results that don't match any tool call in the
+			// immediately preceding assistant message.
+			if (!lastAssistantToolIds || !lastAssistantToolIds.has(msg.toolCallId)) {
+				return false;
+			}
+			return true;
+		}
+
+		// User messages reset the tool context
+		lastAssistantToolIds = null;
+		return true;
+	});
+}
+
+/**
  * Stream an assistant response from the LLM.
  * This is where AgentMessage[] gets transformed to Message[] for the LLM.
  */
@@ -215,7 +289,7 @@ async function streamAssistantResponse(
 	}
 
 	// Convert to LLM-compatible messages (AgentMessage[] → Message[])
-	const llmMessages = await config.convertToLlm(messages);
+	const llmMessages = sanitizeMessages(await config.convertToLlm(messages));
 
 	// Build LLM context
 	const llmContext: Context = {
@@ -276,6 +350,20 @@ async function streamAssistantResponse(
 				} else {
 					context.messages.push(finalMessage);
 				}
+
+				// Guard against malformed LLM responses: stopReason says "toolUse"
+				// but no tool call content blocks were delivered. This can happen when
+				// a proxy or network glitch truncates the streaming response.
+				// Convert to error so the agent stops cleanly and the malformed
+				// message is persisted with a clear error status.
+				if (finalMessage.stopReason === "toolUse" && !finalMessage.content.some((c) => c.type === "toolCall")) {
+					finalMessage.stopReason = "error";
+					finalMessage.errorMessage =
+						`LLM returned stopReason "toolUse" but no tool call content blocks ` +
+						`were present. This is typically caused by a proxy or network issue ` +
+						`that truncated the streaming response.`;
+				}
+
 				if (!addedPartial) {
 					stream.push({ type: "message_start", message: { ...finalMessage } });
 				}
