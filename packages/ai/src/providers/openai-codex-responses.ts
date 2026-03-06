@@ -71,6 +71,9 @@ interface RequestBody {
 	tool_choice?: "auto";
 	parallel_tool_calls?: boolean;
 	temperature?: number;
+	top_p?: number;
+	presence_penalty?: number;
+	repetition_penalty?: number;
 	reasoning?: { effort?: string; summary?: string };
 	text?: { verbosity?: string };
 	include?: string[];
@@ -306,6 +309,18 @@ function buildRequestBody(
 
 	if (options?.temperature !== undefined) {
 		body.temperature = options.temperature;
+	}
+
+	if (options?.topP !== undefined) {
+		body.top_p = options.topP;
+	}
+
+	if (options?.presencePenalty !== undefined) {
+		body.presence_penalty = options.presencePenalty;
+	}
+
+	if (options?.repetitionPenalty !== undefined) {
+		body.repetition_penalty = options.repetitionPenalty;
 	}
 
 	if (context.tools) {

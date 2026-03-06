@@ -343,4 +343,126 @@ describe("SettingsManager", () => {
 			expect(savedSettings.theme).toBe("light");
 		});
 	});
+
+	describe("async and bash timeout settings", () => {
+		it("should read canonical tools.maxTimeout and legacy bashMaxTimeoutSeconds", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					tools: {
+						maxTimeout: 500,
+						bashMaxTimeoutSeconds: 300,
+					},
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getBashMaxTimeoutSeconds()).toBe(500);
+		});
+
+		it("should persist async settings from setters", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setAsyncExecutionEnabled(true);
+			manager.setAsyncMaxJobs(250);
+			await manager.flush();
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.async.enabled).toBe(true);
+			expect(savedSettings.async.maxJobs).toBe(250);
+		});
+
+		it("should clamp async max jobs and bash max timeout to safe bounds", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setAsyncMaxJobs(0);
+			manager.setBashMaxTimeoutSeconds(100_000);
+			await manager.flush();
+
+			expect(manager.getAsyncMaxJobs()).toBe(1);
+			expect(manager.getBashMaxTimeoutSeconds()).toBe(7200);
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.async.maxJobs).toBe(1);
+			expect(savedSettings.tools.maxTimeout).toBe(7200);
+			expect(savedSettings.tools.bashMaxTimeoutSeconds).toBe(7200);
+		});
+	});
+
+	describe("Anthropic fine-grained tool streaming setting", () => {
+		it("should persist anthropic fine-grained tool streaming changes", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getAnthropicFineGrainedToolStreaming()).toBe(false);
+
+			manager.setAnthropicFineGrainedToolStreaming(true);
+			await manager.flush();
+
+			let savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.anthropicFineGrainedToolStreaming).toBe(true);
+			expect(manager.getAnthropicFineGrainedToolStreaming()).toBe(true);
+
+			manager.setAnthropicFineGrainedToolStreaming(false);
+			await manager.flush();
+
+			savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.anthropicFineGrainedToolStreaming).toBe(false);
+			expect(manager.getAnthropicFineGrainedToolStreaming()).toBe(false);
+		});
+	});
+
+	describe("sampling settings", () => {
+		it("should persist topP, presencePenalty, and repetitionPenalty changes", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setTopP(0.7);
+			manager.setPresencePenalty(1.25);
+			manager.setRepetitionPenalty(1.1);
+			await manager.flush();
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.topP).toBe(0.7);
+			expect(savedSettings.presencePenalty).toBe(1.25);
+			expect(savedSettings.repetitionPenalty).toBe(1.1);
+			expect(manager.getTopP()).toBe(0.7);
+			expect(manager.getPresencePenalty()).toBe(1.25);
+			expect(manager.getRepetitionPenalty()).toBe(1.1);
+		});
+
+		it("should normalize invalid sampling settings from disk and setters", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					topP: 2,
+					presencePenalty: 3,
+					repetitionPenalty: -1,
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getTopP()).toBeUndefined();
+			expect(manager.getPresencePenalty()).toBeUndefined();
+			expect(manager.getRepetitionPenalty()).toBeUndefined();
+
+			manager.setTopP(undefined);
+			manager.setPresencePenalty(undefined);
+			manager.setRepetitionPenalty(undefined);
+			await manager.flush();
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.topP).toBeUndefined();
+			expect(savedSettings.presencePenalty).toBeUndefined();
+			expect(savedSettings.repetitionPenalty).toBeUndefined();
+		});
+	});
 });

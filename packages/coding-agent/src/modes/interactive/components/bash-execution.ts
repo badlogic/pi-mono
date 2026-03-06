@@ -13,6 +13,7 @@ import {
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { editorKey, keyHint } from "./keybinding-hints.js";
+import { clampDisplayLine, renderToolStatusLine } from "./tool-ui.js";
 import { truncateToVisualLines } from "./visual-truncate.js";
 
 // Preview line limit when not expanded (matches tool execution behavior)
@@ -58,7 +59,7 @@ export class BashExecutionComponent extends Container {
 			ui,
 			(spinner) => theme.fg(colorKey, spinner),
 			(text) => theme.fg("muted", text),
-			`Running... (${editorKey("selectCancel")} to cancel)`, // Plain text for loader
+			`Running… (${editorKey("selectCancel")} to cancel)`,
 		);
 		this.contentContainer.addChild(this.loader);
 
@@ -88,10 +89,12 @@ export class BashExecutionComponent extends Container {
 		const newLines = clean.split("\n");
 		if (this.outputLines.length > 0 && newLines.length > 0) {
 			// Append first chunk to last line (incomplete line continuation)
-			this.outputLines[this.outputLines.length - 1] += newLines[0];
-			this.outputLines.push(...newLines.slice(1));
+			this.outputLines[this.outputLines.length - 1] = clampDisplayLine(
+				`${this.outputLines[this.outputLines.length - 1]}${newLines[0]}`,
+			);
+			this.outputLines.push(...newLines.slice(1).map((line) => clampDisplayLine(line)));
 		} else {
-			this.outputLines.push(...newLines);
+			this.outputLines.push(...newLines.map((line) => clampDisplayLine(line)));
 		}
 
 		this.updateDisplay();
@@ -137,7 +140,23 @@ export class BashExecutionComponent extends Container {
 		this.contentContainer.clear();
 
 		// Command header
-		const header = new Text(theme.fg("bashMode", theme.bold(`$ ${this.command}`)), 1, 0);
+		const headerState =
+			this.status === "running"
+				? "running"
+				: this.status === "error"
+					? "error"
+					: this.status === "cancelled"
+						? "warning"
+						: "success";
+		const header = new Text(
+			renderToolStatusLine({
+				state: headerState,
+				title: "Bash",
+				description: `$ ${this.command}`,
+			}),
+			1,
+			0,
+		);
 		this.contentContainer.addChild(header);
 
 		// Output
@@ -171,7 +190,7 @@ export class BashExecutionComponent extends Container {
 					statusParts.push(`(${keyHint("expandTools", "to collapse")})`);
 				} else {
 					statusParts.push(
-						`${theme.fg("muted", `... ${hiddenLineCount} more lines`)} (${keyHint("expandTools", "to expand")})`,
+						`${theme.fg("muted", `… ${hiddenLineCount} more lines`)} (${keyHint("expandTools", "to expand")})`,
 					);
 				}
 			}

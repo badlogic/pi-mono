@@ -81,6 +81,21 @@ const ThemeJsonSchema = Type.Object({
 		thinkingXhigh: ColorValueSchema,
 		// Bash Mode (1 color)
 		bashMode: ColorValueSchema,
+		// Status line (14 colors)
+		statusLineBg: ColorValueSchema,
+		statusLineSep: ColorValueSchema,
+		statusLineModel: ColorValueSchema,
+		statusLinePath: ColorValueSchema,
+		statusLineGitClean: ColorValueSchema,
+		statusLineGitDirty: ColorValueSchema,
+		statusLineContext: ColorValueSchema,
+		statusLineSpend: ColorValueSchema,
+		statusLineStaged: ColorValueSchema,
+		statusLineDirty: ColorValueSchema,
+		statusLineUntracked: ColorValueSchema,
+		statusLineOutput: ColorValueSchema,
+		statusLineCost: ColorValueSchema,
+		statusLineSubagents: ColorValueSchema,
 	}),
 	export: Type.Optional(
 		Type.Object({
@@ -140,7 +155,20 @@ export type ThemeColor =
 	| "thinkingMedium"
 	| "thinkingHigh"
 	| "thinkingXhigh"
-	| "bashMode";
+	| "bashMode"
+	| "statusLineSep"
+	| "statusLineModel"
+	| "statusLinePath"
+	| "statusLineGitClean"
+	| "statusLineGitDirty"
+	| "statusLineContext"
+	| "statusLineSpend"
+	| "statusLineStaged"
+	| "statusLineDirty"
+	| "statusLineUntracked"
+	| "statusLineOutput"
+	| "statusLineCost"
+	| "statusLineSubagents";
 
 export type ThemeBg =
 	| "selectedBg"
@@ -148,7 +176,8 @@ export type ThemeBg =
 	| "customMessageBg"
 	| "toolPendingBg"
 	| "toolSuccessBg"
-	| "toolErrorBg";
+	| "toolErrorBg"
+	| "statusLineBg";
 
 type ColorMode = "truecolor" | "256color";
 
@@ -586,6 +615,7 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 		"toolPendingBg",
 		"toolSuccessBg",
 		"toolErrorBg",
+		"statusLineBg",
 	]);
 	for (const [key, value] of Object.entries(resolvedColors)) {
 		if (bgColorKeys.has(key)) {

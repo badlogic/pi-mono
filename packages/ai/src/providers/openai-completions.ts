@@ -412,6 +412,18 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		params.temperature = options.temperature;
 	}
 
+	if (options?.topP !== undefined) {
+		params.top_p = options.topP;
+	}
+
+	if (options?.presencePenalty !== undefined) {
+		params.presence_penalty = options.presencePenalty;
+	}
+
+	if (options?.repetitionPenalty !== undefined) {
+		(params as unknown as Record<string, unknown>).repetition_penalty = options.repetitionPenalty;
+	}
+
 	if (context.tools) {
 		params.tools = convertTools(context.tools, compat);
 	} else if (hasToolHistory(context.messages)) {

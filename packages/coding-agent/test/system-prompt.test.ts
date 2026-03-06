@@ -36,6 +36,26 @@ describe("buildSystemPrompt", () => {
 			expect(prompt).toContain("- edit:");
 			expect(prompt).toContain("- write:");
 		});
+
+		test("includes native tool-calling guardrail", () => {
+			const prompt = buildSystemPrompt({
+				contextFiles: [],
+				skills: [],
+			});
+
+			expect(prompt).toContain("Never emit pseudo tool tags like <tool_call>, <arg_key>, or <arg_value> in text");
+		});
+
+		test("includes anti-repetition guardrails", () => {
+			const prompt = buildSystemPrompt({
+				contextFiles: [],
+				skills: [],
+			});
+
+			expect(prompt).toContain("Do not restate the same plan, issue list, or status update multiple times");
+			expect(prompt).toContain("After a brief plan, immediately take the next concrete tool action");
+			expect(prompt).toContain("If blocked, state the exact blocker once instead of repeating analysis");
+		});
 	});
 
 	describe("custom tool snippets", () => {

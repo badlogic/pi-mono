@@ -336,6 +336,15 @@ function buildParams(
 	if (options.temperature !== undefined) {
 		generationConfig.temperature = options.temperature;
 	}
+	if (options.topP !== undefined) {
+		generationConfig.topP = options.topP;
+	}
+	if (options.presencePenalty !== undefined) {
+		generationConfig.presencePenalty = options.presencePenalty;
+	}
+	if (options.repetitionPenalty !== undefined) {
+		generationConfig.frequencyPenalty = options.repetitionPenalty;
+	}
 	if (options.maxTokens !== undefined) {
 		generationConfig.maxOutputTokens = options.maxTokens;
 	}

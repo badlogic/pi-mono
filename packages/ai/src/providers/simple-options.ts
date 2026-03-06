@@ -3,6 +3,10 @@ import type { Api, Model, SimpleStreamOptions, StreamOptions, ThinkingBudgets, T
 export function buildBaseOptions(model: Model<Api>, options?: SimpleStreamOptions, apiKey?: string): StreamOptions {
 	return {
 		temperature: options?.temperature,
+		topP: options?.topP,
+		presencePenalty: options?.presencePenalty,
+		repetitionPenalty: options?.repetitionPenalty,
+		anthropicFineGrainedToolStreaming: options?.anthropicFineGrainedToolStreaming,
 		maxTokens: options?.maxTokens || Math.min(model.maxTokens, 32000),
 		signal: options?.signal,
 		apiKey: apiKey || options?.apiKey,

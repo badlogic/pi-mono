@@ -75,6 +75,17 @@ function createUserMessage(text: string): UserMessage {
 	};
 }
 
+function createRepeatedPlanningText(): string {
+	return [
+		"Let me fix all the errors systematically.",
+		"I'll start by examining the key problematic files.",
+		"Let me fix all the errors systematically.",
+		"I'll start by examining the key problematic files.",
+		"Let me fix all the errors systematically.",
+		"I'll start by examining the key problematic files.",
+	].join(" ");
+}
+
 // Simple identity converter for tests - just passes through standard messages
 function identityConverter(messages: AgentMessage[]): Message[] {
 	return messages.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult") as Message[];
@@ -411,6 +422,336 @@ describe("agentLoop with AgentMessage", () => {
 
 		// Interrupt message should be in context when second LLM call is made
 		expect(sawInterruptInContext).toBe(true);
+	});
+
+	it("should retry once when assistant emits pseudo tool markup as text", async () => {
+		const toolSchema = Type.Object({ path: Type.String(), limit: Type.Number() });
+		const executed: Array<{ path: string; limit: number }> = [];
+		const tool: AgentTool<typeof toolSchema, { path: string; limit: number }> = {
+			name: "read",
+			label: "Read",
+			description: "Read file",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params);
+				return {
+					content: [{ type: "text", text: `ok:${params.path}:${params.limit}` }],
+					details: { path: params.path, limit: params.limit },
+				};
+			},
+		};
+
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		let callIndex = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					const malformedXml =
+						"<tool_call>read<arg_key>path</arg_key><arg_value>/tmp/demo.md</arg_value><arg_key>limit</arg_key><arg_value>200</arg_value></tool_call>";
+					const message = createAssistantMessage([{ type: "text", text: malformedXml }], "stop");
+					stream.push({ type: "done", reason: "stop", message });
+				} else if (callIndex === 1) {
+					const message = createAssistantMessage(
+						[{ type: "toolCall", id: "tool-1", name: "read", arguments: { path: "/tmp/demo.md", limit: 200 } }],
+						"toolUse",
+					);
+					stream.push({ type: "done", reason: "toolUse", message });
+				} else {
+					const message = createAssistantMessage([{ type: "text", text: "done" }], "stop");
+					stream.push({ type: "done", reason: "stop", message });
+				}
+				callIndex++;
+			});
+			return stream;
+		};
+
+		const events: AgentEvent[] = [];
+		const userPrompt: AgentMessage = createUserMessage("read it");
+		const stream = agentLoop([userPrompt], context, config, undefined, streamFn);
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		expect(executed).toEqual([{ path: "/tmp/demo.md", limit: 200 }]);
+		expect(events.some((event) => event.type === "tool_execution_start")).toBe(true);
+		expect(callIndex).toBe(3);
+	});
+
+	it("should stop with a clear error when malformed pseudo tool markup repeats after retry", async () => {
+		const toolSchema = Type.Object({ path: Type.String(), limit: Type.Number() });
+		const tool: AgentTool<typeof toolSchema, { ok: boolean }> = {
+			name: "read",
+			label: "Read",
+			description: "Read file",
+			parameters: toolSchema,
+			async execute(_toolCallId, _params) {
+				return {
+					content: [{ type: "text", text: "ok" }],
+					details: { ok: true },
+				};
+			},
+		};
+
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		let callIndex = 0;
+		const malformedXml =
+			"<tool_call>read<arg_key>path</arg_key><arg_value>/tmp/demo.md</arg_value><arg_key>limit</arg_key><arg_value>200</arg_value></tool_call>";
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				const message = createAssistantMessage([{ type: "text", text: malformedXml }], "stop");
+				stream.push({ type: "done", reason: "stop", message });
+				callIndex++;
+			});
+			return stream;
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([createUserMessage("read it")], context, config, undefined, streamFn);
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		const messages = await stream.result();
+		const assistant = messages[messages.length - 1] as AssistantMessage;
+		expect(assistant.stopReason).toBe("error");
+		expect(assistant.errorMessage).toContain("pseudo tool markup");
+		expect(callIndex).toBe(2);
+		expect(events.some((event) => event.type === "tool_execution_start")).toBe(false);
+	});
+
+	it("should retry once when assistant repeats no-progress planning text", async () => {
+		const toolSchema = Type.Object({ path: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { path: string }> = {
+			name: "read",
+			label: "Read",
+			description: "Read file",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.path);
+				return {
+					content: [{ type: "text", text: `ok:${params.path}` }],
+					details: { path: params.path },
+				};
+			},
+		};
+
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		let callIndex = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					const message = createAssistantMessage([{ type: "text", text: createRepeatedPlanningText() }], "stop");
+					stream.push({ type: "done", reason: "stop", message });
+				} else if (callIndex === 1) {
+					const message = createAssistantMessage(
+						[{ type: "toolCall", id: "tool-1", name: "read", arguments: { path: "/tmp/demo.md" } }],
+						"toolUse",
+					);
+					stream.push({ type: "done", reason: "toolUse", message });
+				} else {
+					const message = createAssistantMessage([{ type: "text", text: "done" }], "stop");
+					stream.push({ type: "done", reason: "stop", message });
+				}
+				callIndex++;
+			});
+			return stream;
+		};
+
+		const stream = agentLoop([createUserMessage("read it")], context, config, undefined, streamFn);
+		for await (const _event of stream) {
+			// consume
+		}
+
+		expect(callIndex).toBe(3);
+		expect(executed).toEqual(["/tmp/demo.md"]);
+	});
+
+	it("should stop with a clear error when repeated no-progress planning text repeats after retry", async () => {
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [],
+		};
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		let callIndex = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				const message = createAssistantMessage([{ type: "text", text: createRepeatedPlanningText() }], "stop");
+				stream.push({ type: "done", reason: "stop", message });
+				callIndex++;
+			});
+			return stream;
+		};
+
+		const stream = agentLoop([createUserMessage("fix it")], context, config, undefined, streamFn);
+		for await (const _event of stream) {
+			// consume
+		}
+
+		const messages = await stream.result();
+		const assistant = messages[messages.length - 1] as AssistantMessage;
+		expect(assistant.stopReason).toBe("error");
+		expect(assistant.errorMessage).toContain("no-progress");
+		expect(callIndex).toBe(2);
+	});
+
+	it("should retry once when assistant repeats the same failing tool call and then changes strategy", async () => {
+		const toolSchema = Type.Object({ path: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { ok: boolean }> = {
+			name: "read",
+			label: "Read",
+			description: "Read file",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.path);
+				throw new Error(`missing:${params.path}`);
+			},
+		};
+
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		let callIndex = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex < 2) {
+					const message = createAssistantMessage(
+						[
+							{
+								type: "toolCall",
+								id: `tool-${callIndex + 1}`,
+								name: "read",
+								arguments: { path: "/tmp/demo.md" },
+							},
+						],
+						"toolUse",
+					);
+					stream.push({ type: "done", reason: "toolUse", message });
+				} else {
+					const message = createAssistantMessage(
+						[{ type: "text", text: "The read tool failed twice. Blocked on a missing file." }],
+						"stop",
+					);
+					stream.push({ type: "done", reason: "stop", message });
+				}
+				callIndex++;
+			});
+			return stream;
+		};
+
+		const stream = agentLoop([createUserMessage("read it")], context, config, undefined, streamFn);
+		for await (const _event of stream) {
+			// consume
+		}
+
+		const messages = await stream.result();
+		const assistant = messages[messages.length - 1] as AssistantMessage;
+		expect(callIndex).toBe(3);
+		expect(executed).toEqual(["/tmp/demo.md", "/tmp/demo.md"]);
+		expect(assistant.stopReason).toBe("stop");
+		expect(assistant.errorMessage).toBeUndefined();
+	});
+
+	it("should stop with a clear error when the same failing tool call repeats after retry", async () => {
+		const toolSchema = Type.Object({ path: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { ok: boolean }> = {
+			name: "read",
+			label: "Read",
+			description: "Read file",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.path);
+				throw new Error(`missing:${params.path}`);
+			},
+		};
+
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		let callIndex = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				const message = createAssistantMessage(
+					[{ type: "toolCall", id: `tool-${callIndex + 1}`, name: "read", arguments: { path: "/tmp/demo.md" } }],
+					"toolUse",
+				);
+				stream.push({ type: "done", reason: "toolUse", message });
+				callIndex++;
+			});
+			return stream;
+		};
+
+		const stream = agentLoop([createUserMessage("read it")], context, config, undefined, streamFn);
+		for await (const _event of stream) {
+			// consume
+		}
+
+		const messages = await stream.result();
+		const assistant = messages[messages.length - 1] as AssistantMessage;
+		expect(callIndex).toBe(3);
+		expect(executed).toEqual(["/tmp/demo.md", "/tmp/demo.md", "/tmp/demo.md"]);
+		expect(assistant.stopReason).toBe("error");
+		expect(assistant.errorMessage).toContain("same failing tool call");
 	});
 });
 

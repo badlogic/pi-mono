@@ -7,8 +7,15 @@ AUTH_FILE="$HOME/.pi/agent/auth.json"
 AUTH_BACKUP="$HOME/.pi/agent/auth.json.bak"
 
 DEFAULT_REGRESSION_TESTS=(
-	"test/subagent-reporter.test.ts"
-	"test/taskboard-extension.test.ts"
+	"packages/coding-agent:test/subagent-reporter.test.ts"
+	"packages/coding-agent:test/taskboard-extension.test.ts"
+	"packages/coding-agent:test/settings-manager.test.ts"
+	"packages/coding-agent:test/system-prompt.test.ts"
+	"packages/coding-agent:test/subagent-builtins.test.ts"
+	"packages/coding-agent:test/subagent-guard.test.ts"
+	"packages/agent:test/agent-loop.test.ts"
+	"packages/ai:test/anthropic-compatibility.test.ts"
+	"packages/ai:test/openai-completions-tool-choice.test.ts"
 )
 EXTRA_REGRESSION_TESTS=()
 
@@ -16,21 +23,21 @@ normalize_extra_test_target() {
 	local raw="$1"
 	case "$raw" in
 		*addons-extensions/taskboard.ts)
-			echo "test/taskboard-extension.test.ts"
+			echo "packages/coding-agent:test/taskboard-extension.test.ts"
 			return
 			;;
 		*addons-extensions/subagent.ts)
-			echo "test/subagent-reporter.test.ts"
+			echo "packages/coding-agent:test/subagent-reporter.test.ts"
 			return
 			;;
 	esac
 
-	if [[ "$raw" == packages/coding-agent/* ]]; then
-		echo "${raw#packages/coding-agent/}"
+	if [[ "$raw" =~ ^(packages/[^/]+)/(.+)$ ]]; then
+		echo "${BASH_REMATCH[1]}:${BASH_REMATCH[2]}"
 		return
 	fi
 
-	echo "$raw"
+	echo "packages/coding-agent:$raw"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -45,7 +52,7 @@ while [[ $# -gt 0 ]]; do
 			;;
 		*)
 			echo "Unknown argument: $1" >&2
-			echo "Usage: ./test.sh [-e|--extra-test <coding-agent test file>]" >&2
+			echo "Usage: ./test.sh [-e|--extra-test <test file or source path>]" >&2
 			exit 1
 			;;
 	esac
@@ -111,23 +118,53 @@ npm test
 REGRESSION_TESTS=("${DEFAULT_REGRESSION_TESTS[@]}" "${EXTRA_REGRESSION_TESTS[@]}")
 UNIQUE_REGRESSION_TESTS=()
 declare -A SEEN_TESTS=()
+declare -A SEEN_PACKAGES=()
+declare -A TESTS_BY_PACKAGE=()
+PACKAGE_ORDER=()
 
-for test_file in "${REGRESSION_TESTS[@]}"; do
-	if [[ -n "${SEEN_TESTS[$test_file]+x}" ]]; then
-		continue
-	fi
-	SEEN_TESTS["$test_file"]=1
-	if [[ ! -f "$SCRIPT_DIR/packages/coding-agent/$test_file" ]]; then
-		echo "Error: Regression test not found: $test_file" >&2
+for test_spec in "${REGRESSION_TESTS[@]}"; do
+	package_dir="${test_spec%%:*}"
+	test_file="${test_spec#*:}"
+	test_key="$package_dir:$test_file"
+
+	if [[ "$package_dir" == "$test_spec" || -z "$test_file" ]]; then
+		echo "Error: Invalid regression test target: $test_spec" >&2
 		exit 1
 	fi
-	UNIQUE_REGRESSION_TESTS+=("$test_file")
+
+	if [[ -n "${SEEN_TESTS[$test_key]+x}" ]]; then
+		continue
+	fi
+	SEEN_TESTS["$test_key"]=1
+	if [[ ! -f "$SCRIPT_DIR/$package_dir/$test_file" ]]; then
+		echo "Error: Regression test not found: $package_dir/$test_file" >&2
+		exit 1
+	fi
+	UNIQUE_REGRESSION_TESTS+=("$test_key")
+	TESTS_BY_PACKAGE["$package_dir"]+=$'\n'"$test_file"
+	if [[ -z "${SEEN_PACKAGES[$package_dir]+x}" ]]; then
+		SEEN_PACKAGES["$package_dir"]=1
+		PACKAGE_ORDER+=("$package_dir")
+	fi
 done
 
 if [[ ${#UNIQUE_REGRESSION_TESTS[@]} -gt 0 ]]; then
-	echo "Running targeted coding-agent regression tests..."
-	(
-		cd "$SCRIPT_DIR/packages/coding-agent"
-		npx tsx ../../node_modules/vitest/dist/cli.js --run "${UNIQUE_REGRESSION_TESTS[@]}"
-	)
+	echo "Running targeted regression tests..."
+	for package_dir in "${PACKAGE_ORDER[@]}"; do
+		package_tests=()
+		while IFS= read -r test_file; do
+			if [[ -n "$test_file" ]]; then
+				package_tests+=("$test_file")
+			fi
+		done <<< "${TESTS_BY_PACKAGE[$package_dir]}"
+
+		if [[ ${#package_tests[@]} -eq 0 ]]; then
+			continue
+		fi
+
+		(
+			cd "$SCRIPT_DIR/$package_dir"
+			npx tsx ../../node_modules/vitest/dist/cli.js --run "${package_tests[@]}"
+		)
+	done
 fi

@@ -202,6 +202,7 @@ export {
 	type PackageSource,
 	type RetrySettings,
 	SettingsManager,
+	type StatusLineSettings,
 } from "./core/settings-manager.js";
 // Skills
 export {
@@ -213,6 +214,12 @@ export {
 	type Skill,
 	type SkillFrontmatter,
 } from "./core/skills.js";
+export type {
+	StatusLinePreset,
+	StatusLineSegmentId,
+	StatusLineSegmentOptions,
+	StatusLineSeparatorStyle,
+} from "./core/status-line-settings.js";
 export type {
 	AgentFrontmatter,
 	AliveSubagent,
@@ -342,6 +349,7 @@ export {
 	SettingsSelectorComponent,
 	ShowImagesSelectorComponent,
 	SkillInvocationMessageComponent,
+	StatusLineComponent,
 	ThemeSelectorComponent,
 	ThinkingSelectorComponent,
 	ToolExecutionComponent,

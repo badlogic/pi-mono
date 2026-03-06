@@ -79,7 +79,7 @@ import type { SettingsManager } from "./settings-manager.js";
 import { BUILTIN_SLASH_COMMANDS, type SlashCommandInfo, type SlashCommandLocation } from "./slash-commands.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import type { BashOperations } from "./tools/bash.js";
-import { createAllTools } from "./tools/index.js";
+import { AsyncJobManager, createAllTools } from "./tools/index.js";
 
 // ============================================================================
 // Skill Block Parsing
@@ -246,6 +246,7 @@ export class AgentSession {
 	// Bash execution state
 	private _bashAbortController: AbortController | undefined = undefined;
 	private _pendingBashMessages: BashExecutionMessage[] = [];
+	private _asyncJobManager: AsyncJobManager;
 
 	// Extension system
 	private _extensionRunner: ExtensionRunner | undefined = undefined;
@@ -287,6 +288,27 @@ export class AgentSession {
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._baseToolsOverride = config.baseToolsOverride;
+		this._asyncJobManager = new AsyncJobManager({
+			maxRunningJobs: this.settingsManager.getAsyncMaxJobs(),
+		});
+		this._asyncJobManager.setCompletionHandler(async (jobId, text, job) => {
+			const status = job?.status ?? "completed";
+			const label = job?.label ? ` — ${job.label}` : "";
+			await this.sendCustomMessage(
+				{
+					customType: "async-job",
+					content: [{ type: "text", text: `[async ${status}] ${jobId}${label}\n\n${text}` }],
+					display: true,
+					details: {
+						jobId,
+						status,
+						label: job?.label,
+						type: job?.type,
+					},
+				},
+				{ deliverAs: "followUp" },
+			);
+		});
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -599,6 +621,7 @@ export class AgentSession {
 	dispose(): void {
 		this._disconnectFromAgent();
 		this._eventListeners = [];
+		void this._asyncJobManager.dispose({ timeoutMs: 3_000 });
 	}
 
 	// =========================================================================
@@ -2137,19 +2160,70 @@ export class AgentSession {
 		this.setActiveToolsByName([...new Set(nextActiveToolNames)]);
 	}
 
+	private _isAsyncToolName(name: string): boolean {
+		return name === "await" || name === "cancel_job";
+	}
+
+	private _getDefaultBuiltInToolNames(): string[] {
+		if (this._baseToolsOverride) {
+			return Object.keys(this._baseToolsOverride);
+		}
+
+		const baseNames = ["read", "bash", "edit", "write"];
+		if (this.settingsManager.getAsyncExecutionEnabled()) {
+			baseNames.push("await", "cancel_job");
+		}
+		return baseNames;
+	}
+
+	private _createBaseTools(): Record<string, AgentTool> {
+		if (this._baseToolsOverride) {
+			return this._baseToolsOverride;
+		}
+
+		return createAllTools(this._cwd, {
+			read: { autoResizeImages: this.settingsManager.getImageAutoResize() },
+			bash: {
+				commandPrefix: this.settingsManager.getShellCommandPrefix(),
+				maxTimeoutSeconds: this.settingsManager.getBashMaxTimeoutSeconds(),
+			},
+			async: {
+				enabled: this.settingsManager.getAsyncExecutionEnabled(),
+				maxJobs: this.settingsManager.getAsyncMaxJobs(),
+				jobManager: this._asyncJobManager,
+			},
+		});
+	}
+
+	private _refreshBaseToolsFromSettings(options?: { syncAsyncTools?: boolean }): void {
+		this._baseToolRegistry = new Map(
+			Object.entries(this._createBaseTools()).map(([name, tool]) => [name, tool as AgentTool]),
+		);
+
+		const currentActiveToolNames = this.getActiveToolNames();
+		let nextActiveToolNames = [...currentActiveToolNames];
+
+		if (options?.syncAsyncTools && !this._baseToolsOverride) {
+			const asyncEnabled = this.settingsManager.getAsyncExecutionEnabled();
+			nextActiveToolNames = currentActiveToolNames.filter((name) => !this._isAsyncToolName(name));
+			if (asyncEnabled) {
+				nextActiveToolNames.push("await", "cancel_job");
+			}
+		}
+
+		if (nextActiveToolNames.length === 0) {
+			nextActiveToolNames = this._getDefaultBuiltInToolNames();
+		}
+
+		this._refreshToolRegistry({ activeToolNames: nextActiveToolNames });
+	}
+
 	private _buildRuntime(options: {
 		activeToolNames?: string[];
 		flagValues?: Map<string, boolean | string>;
 		includeAllExtensionTools?: boolean;
 	}): void {
-		const autoResizeImages = this.settingsManager.getImageAutoResize();
-		const shellCommandPrefix = this.settingsManager.getShellCommandPrefix();
-		const baseTools = this._baseToolsOverride
-			? this._baseToolsOverride
-			: createAllTools(this._cwd, {
-					read: { autoResizeImages },
-					bash: { commandPrefix: shellCommandPrefix },
-				});
+		const baseTools = this._createBaseTools();
 
 		this._baseToolRegistry = new Map(Object.entries(baseTools).map(([name, tool]) => [name, tool as AgentTool]));
 
@@ -2180,9 +2254,7 @@ export class AgentSession {
 			this._applyExtensionBindings(this._extensionRunner);
 		}
 
-		const defaultActiveToolNames = this._baseToolsOverride
-			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write"];
+		const defaultActiveToolNames = this._getDefaultBuiltInToolNames();
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,
@@ -2349,6 +2421,22 @@ export class AgentSession {
 	 */
 	setAutoRetryEnabled(enabled: boolean): void {
 		this.settingsManager.setRetryEnabled(enabled);
+	}
+
+	setAsyncExecutionEnabled(enabled: boolean): void {
+		this.settingsManager.setAsyncExecutionEnabled(enabled);
+		this._refreshBaseToolsFromSettings({ syncAsyncTools: true });
+	}
+
+	setAsyncMaxJobs(maxJobs: number): void {
+		this.settingsManager.setAsyncMaxJobs(maxJobs);
+		this._asyncJobManager.setMaxRunningJobs(this.settingsManager.getAsyncMaxJobs());
+		this._refreshBaseToolsFromSettings();
+	}
+
+	setBashMaxTimeoutSeconds(timeoutSeconds: number | undefined): void {
+		this.settingsManager.setBashMaxTimeoutSeconds(timeoutSeconds);
+		this._refreshBaseToolsFromSettings();
 	}
 
 	// =========================================================================

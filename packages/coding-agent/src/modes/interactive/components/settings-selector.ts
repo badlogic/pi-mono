@@ -10,6 +10,7 @@ import {
 	Spacer,
 	Text,
 } from "@mariozechner/pi-tui";
+import type { StatusLinePreset, StatusLineSeparatorStyle } from "../../../core/status-line-settings.js";
 import { getSelectListTheme, getSettingsListTheme, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
@@ -26,6 +27,17 @@ export interface SettingsConfig {
 	autoCompact: boolean;
 	autoCompactTriggerPercent: number | undefined;
 	temperature: number | undefined;
+	topP: number | undefined;
+	presencePenalty: number | undefined;
+	repetitionPenalty: number | undefined;
+	statusLinePreset: StatusLinePreset;
+	statusLineSeparator: StatusLineSeparatorStyle;
+	statusLineShowHookStatus: boolean;
+	anthropicFineGrainedToolStreaming: boolean;
+	subagentTmuxLinkedWindows: boolean;
+	asyncExecutionEnabled: boolean;
+	asyncMaxJobs: number;
+	bashMaxTimeoutSeconds: number | undefined;
 	showImages: boolean;
 	autoResizeImages: boolean;
 	blockImages: boolean;
@@ -51,6 +63,17 @@ export interface SettingsCallbacks {
 	onAutoCompactChange: (enabled: boolean) => void;
 	onAutoCompactTriggerPercentChange: (percent: number | undefined) => void;
 	onTemperatureChange: (temperature: number | undefined) => void;
+	onTopPChange: (topP: number | undefined) => void;
+	onPresencePenaltyChange: (penalty: number | undefined) => void;
+	onRepetitionPenaltyChange: (penalty: number | undefined) => void;
+	onStatusLinePresetChange: (preset: StatusLinePreset) => void;
+	onStatusLineSeparatorChange: (separator: StatusLineSeparatorStyle) => void;
+	onStatusLineShowHookStatusChange: (enabled: boolean) => void;
+	onAnthropicFineGrainedToolStreamingChange: (enabled: boolean) => void;
+	onSubagentTmuxLinkedWindowsChange: (enabled: boolean) => void;
+	onAsyncExecutionEnabledChange: (enabled: boolean) => void;
+	onAsyncMaxJobsChange: (maxJobs: number) => void;
+	onBashMaxTimeoutSecondsChange: (timeoutSeconds: number | undefined) => void;
 	onShowImagesChange: (enabled: boolean) => void;
 	onAutoResizeImagesChange: (enabled: boolean) => void;
 	onBlockImagesChange: (blocked: boolean) => void;
@@ -150,6 +173,32 @@ export class SettingsSelectorComponent extends Container {
 		if (currentTemperatureValue !== "default" && !temperatureValues.includes(currentTemperatureValue)) {
 			temperatureValues.push(currentTemperatureValue);
 		}
+		const currentTopPValue = config.topP === undefined ? "default" : String(config.topP);
+		const topPValues = ["default", ...Array.from({ length: 10 }, (_, i) => String((i + 1) / 10))];
+		if (currentTopPValue !== "default" && !topPValues.includes(currentTopPValue)) {
+			topPValues.push(currentTopPValue);
+		}
+		const penaltyValues = ["default", "-2", "-1.5", "-1", "-0.5", "0", "0.5", "1", "1.5", "2"];
+		const currentPresencePenaltyValue =
+			config.presencePenalty === undefined ? "default" : String(config.presencePenalty);
+		if (currentPresencePenaltyValue !== "default" && !penaltyValues.includes(currentPresencePenaltyValue)) {
+			penaltyValues.push(currentPresencePenaltyValue);
+		}
+		const repetitionPenaltyValues = ["default", "0", "0.5", "0.8", "1", "1.1", "1.2", "1.5", "2"];
+		const currentRepetitionPenaltyValue =
+			config.repetitionPenalty === undefined ? "default" : String(config.repetitionPenalty);
+		if (
+			currentRepetitionPenaltyValue !== "default" &&
+			!repetitionPenaltyValues.includes(currentRepetitionPenaltyValue)
+		) {
+			repetitionPenaltyValues.push(currentRepetitionPenaltyValue);
+		}
+		const currentBashMaxTimeoutValue =
+			config.bashMaxTimeoutSeconds === undefined ? "default" : String(config.bashMaxTimeoutSeconds);
+		const bashMaxTimeoutValues = ["default", "30", "60", "120", "300", "600", "1800", "3600", "7200"];
+		if (currentBashMaxTimeoutValue !== "default" && !bashMaxTimeoutValues.includes(currentBashMaxTimeoutValue)) {
+			bashMaxTimeoutValues.push(currentBashMaxTimeoutValue);
+		}
 
 		const items: SettingItem[] = [
 			{
@@ -196,6 +245,85 @@ export class SettingsSelectorComponent extends Container {
 				description: "Sampling temperature for providers that support it",
 				currentValue: currentTemperatureValue,
 				values: temperatureValues,
+			},
+			{
+				id: "top-p",
+				label: "Top-p",
+				description: "Nucleus sampling probability mass for providers that support it",
+				currentValue: currentTopPValue,
+				values: topPValues,
+			},
+			{
+				id: "presence-penalty",
+				label: "Presence penalty",
+				description: "Bias against reusing already-present concepts on providers that support it",
+				currentValue: currentPresencePenaltyValue,
+				values: penaltyValues,
+			},
+			{
+				id: "repetition-penalty",
+				label: "Repetition penalty",
+				description: "Bias against repeating the same tokens on providers that support it",
+				currentValue: currentRepetitionPenaltyValue,
+				values: repetitionPenaltyValues,
+			},
+			{
+				id: "status-line-preset",
+				label: "Status line preset",
+				description: "Top status-line layout preset",
+				currentValue: config.statusLinePreset,
+				values: ["default", "minimal", "compact", "full", "nerd", "ascii", "custom"],
+			},
+			{
+				id: "status-line-separator",
+				label: "Status line separator",
+				description: "Separator style for the top status-line",
+				currentValue: config.statusLineSeparator,
+				values: ["powerline", "powerline-thin", "slash", "pipe", "block", "none", "ascii"],
+			},
+			{
+				id: "status-line-hooks",
+				label: "Status line hook text",
+				description: "Show extension status text below the top status-line",
+				currentValue: config.statusLineShowHookStatus ? "true" : "false",
+				values: ["true", "false"],
+			},
+			{
+				id: "anthropic-fine-grained-tool-streaming",
+				label: "Anthropic tool streaming beta",
+				description:
+					"Enable fine-grained tool streaming for Anthropic-compatible providers. Off by default because some endpoints can emit malformed tool text.",
+				currentValue: config.anthropicFineGrainedToolStreaming ? "true" : "false",
+				values: ["true", "false"],
+			},
+			{
+				id: "subagent-tmux-linked-windows",
+				label: "Link tmux subagents",
+				description:
+					"When pi is already running inside tmux, also link each subagent window into the current tmux session while keeping a dedicated attachable session.",
+				currentValue: config.subagentTmuxLinkedWindows ? "true" : "false",
+				values: ["true", "false"],
+			},
+			{
+				id: "async-execution",
+				label: "Background bash",
+				description: "Allow `bash` tool async jobs and enable `await` / `cancel_job` helpers",
+				currentValue: config.asyncExecutionEnabled ? "true" : "false",
+				values: ["true", "false"],
+			},
+			{
+				id: "async-max-jobs",
+				label: "Background jobs max",
+				description: "Maximum concurrent background bash jobs",
+				currentValue: String(config.asyncMaxJobs),
+				values: ["10", "25", "50", "100", "200", "500", "1000"],
+			},
+			{
+				id: "bash-max-timeout",
+				label: "Bash timeout cap (s)",
+				description: "Global maximum timeout for bash tool (`default` keeps per-call timeout unbounded)",
+				currentValue: currentBashMaxTimeoutValue,
+				values: bashMaxTimeoutValues,
 			},
 			{
 				id: "hide-thinking",
@@ -400,6 +528,39 @@ export class SettingsSelectorComponent extends Container {
 					case "temperature":
 						callbacks.onTemperatureChange(newValue === "default" ? undefined : parseFloat(newValue));
 						break;
+					case "top-p":
+						callbacks.onTopPChange(newValue === "default" ? undefined : parseFloat(newValue));
+						break;
+					case "presence-penalty":
+						callbacks.onPresencePenaltyChange(newValue === "default" ? undefined : parseFloat(newValue));
+						break;
+					case "repetition-penalty":
+						callbacks.onRepetitionPenaltyChange(newValue === "default" ? undefined : parseFloat(newValue));
+						break;
+					case "status-line-preset":
+						callbacks.onStatusLinePresetChange(newValue as StatusLinePreset);
+						break;
+					case "status-line-separator":
+						callbacks.onStatusLineSeparatorChange(newValue as StatusLineSeparatorStyle);
+						break;
+					case "status-line-hooks":
+						callbacks.onStatusLineShowHookStatusChange(newValue === "true");
+						break;
+					case "anthropic-fine-grained-tool-streaming":
+						callbacks.onAnthropicFineGrainedToolStreamingChange(newValue === "true");
+						break;
+					case "subagent-tmux-linked-windows":
+						callbacks.onSubagentTmuxLinkedWindowsChange(newValue === "true");
+						break;
+					case "async-execution":
+						callbacks.onAsyncExecutionEnabledChange(newValue === "true");
+						break;
+					case "async-max-jobs":
+						callbacks.onAsyncMaxJobsChange(parseInt(newValue, 10));
+						break;
+					case "bash-max-timeout":
+						callbacks.onBashMaxTimeoutSecondsChange(newValue === "default" ? undefined : parseInt(newValue, 10));
+						break;
 					case "hide-thinking":
 						callbacks.onHideThinkingBlockChange(newValue === "true");
 						break;
@@ -410,7 +571,7 @@ export class SettingsSelectorComponent extends Container {
 						callbacks.onQuietStartupChange(newValue === "true");
 						break;
 					case "double-escape-action":
-						callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree");
+						callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree" | "none");
 						break;
 					case "show-hardware-cursor":
 						callbacks.onShowHardwareCursorChange(newValue === "true");

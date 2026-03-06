@@ -5,6 +5,7 @@ import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
+import type { AsyncJobManager } from "./async-jobs.js";
 import { resolveReadPath } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
@@ -44,11 +45,17 @@ export interface ReadToolOptions {
 	autoResizeImages?: boolean;
 	/** Custom operations for file reading. Default: local filesystem */
 	operations?: ReadOperations;
+	/** Enable jobs:// protocol reads */
+	asyncEnabled?: boolean;
+	/** Shared async job manager for jobs:// protocol reads */
+	asyncJobManager?: AsyncJobManager;
 }
 
 export function createReadTool(cwd: string, options?: ReadToolOptions): AgentTool<typeof readSchema> {
 	const autoResizeImages = options?.autoResizeImages ?? true;
 	const ops = options?.operations ?? defaultReadOperations;
+	const asyncEnabled = options?.asyncEnabled ?? false;
+	const asyncJobManager = options?.asyncJobManager;
 
 	return {
 		name: "read",
@@ -60,6 +67,27 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 			{ path, offset, limit }: { path: string; offset?: number; limit?: number },
 			signal?: AbortSignal,
 		) => {
+			if (path.startsWith("jobs://")) {
+				if (!asyncEnabled || !asyncJobManager) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: "# Jobs\n\nAsync execution is disabled. Enable async.enabled to use jobs://.",
+							},
+						],
+						details: undefined,
+					};
+				}
+
+				const jobId = path.slice("jobs://".length).replace(/^\/+/, "").trim();
+				const content = jobId ? asyncJobManager.formatJobMarkdown(jobId) : asyncJobManager.formatJobsListMarkdown();
+				return {
+					content: [{ type: "text", text: content }],
+					details: undefined,
+				};
+			}
+
 			const absolutePath = resolveReadPath(path, cwd);
 
 			return new Promise<{ content: (TextContent | ImageContent)[]; details: ReadToolDetails | undefined }>(

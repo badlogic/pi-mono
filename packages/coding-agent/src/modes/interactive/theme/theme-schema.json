@@ -85,7 +85,21 @@
 				"thinkingMedium",
 				"thinkingHigh",
 				"thinkingXhigh",
-				"bashMode"
+				"bashMode",
+				"statusLineBg",
+				"statusLineSep",
+				"statusLineModel",
+				"statusLinePath",
+				"statusLineGitClean",
+				"statusLineGitDirty",
+				"statusLineContext",
+				"statusLineSpend",
+				"statusLineStaged",
+				"statusLineDirty",
+				"statusLineUntracked",
+				"statusLineOutput",
+				"statusLineCost",
+				"statusLineSubagents"
 			],
 			"properties": {
 				"accent": {
@@ -291,6 +305,62 @@
 				"bashMode": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Editor border color in bash mode"
+				},
+				"statusLineBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Status line background color"
+				},
+				"statusLineSep": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Status line separator color"
+				},
+				"statusLineModel": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Status line model segment color"
+				},
+				"statusLinePath": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Status line path segment color"
+				},
+				"statusLineGitClean": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Status line clean git segment color"
+				},
+				"statusLineGitDirty": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Status line dirty git segment color"
+				},
+				"statusLineContext": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Status line context segment color"
+				},
+				"statusLineSpend": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Status line spend/input segment color"
+				},
+				"statusLineStaged": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Status line staged-change indicator color"
+				},
+				"statusLineDirty": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Status line unstaged-change indicator color"
+				},
+				"statusLineUntracked": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Status line untracked-change indicator color"
+				},
+				"statusLineOutput": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Status line output segment color"
+				},
+				"statusLineCost": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Status line cost segment color"
+				},
+				"statusLineSubagents": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Status line subagents segment color"
 				}
 			},
 			"additionalProperties": false

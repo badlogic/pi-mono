@@ -100,6 +100,169 @@ const fromClaudeCodeName = (name: string, tools?: Tool[]) => {
 	return name;
 };
 
+const PSEUDO_TOOL_MARKUP_REGEX = /<(?:tool_call|tool\b|invoke\b|parameter\b|arg_key\b|arg_value\b)/i;
+const TOOL_CALL_BLOCK_REGEX = /<tool_call>\s*([A-Za-z0-9_.:-]+)\s*([\s\S]*?)<\/tool_call>/gi;
+const TOOL_BLOCK_REGEX = /<tool(?!_call)\b(?:\s+name=["']([^"']+)["'])?\s*>([\s\S]*?)<\/tool>/gi;
+const INVOKE_BLOCK_REGEX = /<invoke\b(?:\s+name=["']([^"']+)["'])?\s*>([\s\S]*?)<\/invoke>/gi;
+
+function findToolByName(tools: Tool[] | undefined, name: string | undefined): Tool | undefined {
+	if (!tools || !name) return undefined;
+	const lowerName = name.trim().toLowerCase();
+	if (lowerName.length === 0) return undefined;
+	return tools.find((tool) => tool.name.toLowerCase() === lowerName);
+}
+
+function extractNamedTag(body: string, tagName: string): string | undefined {
+	const match = body.match(new RegExp(`<${tagName}>\\s*([^<]+?)\\s*<\\/${tagName}>`, "i"));
+	return match?.[1]?.trim() || undefined;
+}
+
+function stripXmlTags(text: string): string {
+	return text
+		.replace(/<\/?[^>]+>/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function parseMalformedToolArgumentValue(rawValue: string): unknown {
+	if (rawValue === "") return "";
+	if (/^-?\d+(\.\d+)?$/.test(rawValue)) return Number(rawValue);
+	if (/^(true|false)$/i.test(rawValue)) return rawValue.toLowerCase() === "true";
+	if (/^null$/i.test(rawValue)) return null;
+	if (
+		(rawValue.startsWith("{") && rawValue.endsWith("}")) ||
+		(rawValue.startsWith("[") && rawValue.endsWith("]")) ||
+		(rawValue.startsWith('"') && rawValue.endsWith('"'))
+	) {
+		try {
+			return JSON.parse(rawValue);
+		} catch {
+			return rawValue;
+		}
+	}
+	return rawValue;
+}
+
+function parseMalformedToolArguments(body: string): Record<string, unknown> {
+	const args: Record<string, unknown> = {};
+
+	const argRegex = /<arg_key>\s*([\s\S]*?)\s*<\/arg_key>\s*<arg_value>\s*([\s\S]*?)\s*<\/arg_value>/gi;
+	let argMatch: RegExpExecArray | null = argRegex.exec(body);
+	while (argMatch !== null) {
+		const key = stripXmlTags(argMatch[1] ?? "");
+		if (key.length > 0) {
+			const rawValue = stripXmlTags(argMatch[2] ?? "");
+			args[key] = parseMalformedToolArgumentValue(rawValue);
+		}
+		argMatch = argRegex.exec(body);
+	}
+
+	const parameterRegex = /<parameter\b(?:\s+name=["']([^"']+)["'])?\s*>([\s\S]*?)<\/parameter>/gi;
+	let parameterMatch: RegExpExecArray | null = parameterRegex.exec(body);
+	while (parameterMatch !== null) {
+		let key: string | undefined = parameterMatch[1]?.trim();
+		let rawValue = parameterMatch[2] ?? "";
+		if (!key) {
+			key = extractNamedTag(rawValue, "name");
+			rawValue = extractNamedTag(rawValue, "value") ?? rawValue;
+		}
+		if (key && key.length > 0) {
+			args[key] = parseMalformedToolArgumentValue(stripXmlTags(rawValue));
+		}
+		parameterMatch = parameterRegex.exec(body);
+	}
+
+	return args;
+}
+
+function buildRecoveredToolCall(
+	rawName: string | undefined,
+	body: string,
+	tools: Tool[] | undefined,
+	timestamp: number,
+	index: number,
+): ToolCall | undefined {
+	const fallbackName = extractNamedTag(body, "name");
+	const tool = findToolByName(tools, rawName ?? fallbackName);
+	if (!tool) return undefined;
+	return {
+		type: "toolCall",
+		id: `anthropic-recovered-${timestamp}-${index}`,
+		name: tool.name,
+		arguments: parseMalformedToolArguments(body),
+	};
+}
+
+function recoverMalformedToolCallsFromText(
+	text: string,
+	tools: Tool[] | undefined,
+	timestamp: number,
+	startIndex: number,
+): { cleanedText: string; toolCalls: ToolCall[] } {
+	let remaining = text;
+	const recovered: ToolCall[] = [];
+
+	const consumeMatches = (
+		regex: RegExp,
+		resolveMatch: (rawName: string | undefined, body: string, matchText: string) => ToolCall | undefined,
+	): void => {
+		regex.lastIndex = 0;
+		remaining = remaining.replace(regex, (full: string, rawName: string | undefined, body: string | undefined) => {
+			const toolCall = resolveMatch(rawName, body ?? "", full);
+			if (!toolCall) return full;
+			recovered.push(toolCall);
+			return " ";
+		});
+	};
+
+	consumeMatches(TOOL_CALL_BLOCK_REGEX, (rawName, body) =>
+		buildRecoveredToolCall(rawName, body, tools, timestamp, startIndex + recovered.length),
+	);
+	consumeMatches(TOOL_BLOCK_REGEX, (rawName, body) =>
+		buildRecoveredToolCall(rawName, body, tools, timestamp, startIndex + recovered.length),
+	);
+	consumeMatches(INVOKE_BLOCK_REGEX, (rawName, body) =>
+		buildRecoveredToolCall(rawName, body, tools, timestamp, startIndex + recovered.length),
+	);
+
+	return {
+		cleanedText: remaining.replace(/\n{3,}/g, "\n\n").trim(),
+		toolCalls: recovered,
+	};
+}
+
+function recoverMalformedAnthropicToolText(message: AssistantMessage, tools: Tool[] | undefined): AssistantMessage {
+	if (!tools || tools.length === 0) return message;
+	if (message.content.some((block) => block.type === "toolCall")) return message;
+
+	const recoveredContent: AssistantMessage["content"] = [];
+	let recoveredToolCallCount = 0;
+
+	for (const block of message.content) {
+		if (block.type !== "text" || !PSEUDO_TOOL_MARKUP_REGEX.test(block.text)) {
+			recoveredContent.push(block);
+			continue;
+		}
+
+		const recovered = recoverMalformedToolCallsFromText(block.text, tools, message.timestamp, recoveredToolCallCount);
+		recoveredToolCallCount += recovered.toolCalls.length;
+
+		if (recovered.cleanedText.length > 0) {
+			recoveredContent.push({ type: "text", text: recovered.cleanedText });
+		}
+		for (const toolCall of recovered.toolCalls) {
+			recoveredContent.push(toolCall);
+		}
+	}
+
+	if (recoveredToolCallCount === 0) return message;
+	return {
+		...message,
+		content: recoveredContent,
+		stopReason: "toolUse",
+	};
+}
+
 /**
  * Convert content blocks to Anthropic API format
  */
@@ -232,6 +395,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 				model,
 				apiKey,
 				options?.interleavedThinking ?? true,
+				options?.anthropicFineGrainedToolStreaming === true,
 				options?.headers,
 				copilotDynamicHeaders,
 			);
@@ -363,7 +527,9 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 								partial: output,
 							});
 						} else if (block.type === "toolCall") {
-							block.arguments = parseStreamingJson(block.partialJson);
+							if (block.partialJson.trim().length > 0) {
+								block.arguments = parseStreamingJson(block.partialJson);
+							}
 							delete (block as any).partialJson;
 							stream.push({
 								type: "toolcall_end",
@@ -406,7 +572,12 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 				throw new Error("An unknown error occurred");
 			}
 
-			stream.push({ type: "done", reason: output.stopReason, message: output });
+			const finalOutput = recoverMalformedAnthropicToolText(output, context.tools);
+			const finalReason =
+				finalOutput.stopReason === "toolUse" || finalOutput.stopReason === "length"
+					? finalOutput.stopReason
+					: "stop";
+			stream.push({ type: "done", reason: finalReason, message: finalOutput });
 			stream.end();
 		} catch (error) {
 			for (const block of output.content) delete (block as any).index;
@@ -472,14 +643,17 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 	}
 
 	const base = buildBaseOptions(model, options, apiKey);
-	if (!options?.reasoning) {
+	// Runtime callers may pass "off" (from pi-agent-core), which must disable thinking.
+	const reasoning = options?.reasoning;
+	if (!reasoning || (reasoning as string) === "off") {
 		return streamAnthropic(model, context, { ...base, thinkingEnabled: false } satisfies AnthropicOptions);
 	}
+	const reasoningLevel = reasoning;
 
 	// For Opus 4.6 and Sonnet 4.6: use adaptive thinking with effort level
 	// For older models: use budget-based thinking
 	if (supportsAdaptiveThinking(model.id)) {
-		const effort = mapThinkingLevelToEffort(options.reasoning, model.id);
+		const effort = mapThinkingLevelToEffort(reasoningLevel, model.id);
 		return streamAnthropic(model, context, {
 			...base,
 			thinkingEnabled: true,
@@ -490,8 +664,8 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 	const adjusted = adjustMaxTokensForThinking(
 		base.maxTokens || 0,
 		model.maxTokens,
-		options.reasoning,
-		options.thinkingBudgets,
+		reasoningLevel,
+		options?.thinkingBudgets,
 	);
 
 	return streamAnthropic(model, context, {
@@ -510,6 +684,7 @@ function createClient(
 	model: Model<"anthropic-messages">,
 	apiKey: string,
 	interleavedThinking: boolean,
+	fineGrainedToolStreaming: boolean,
 	optionsHeaders?: Record<string, string>,
 	dynamicHeaders?: Record<string, string>,
 ): { client: Anthropic; isOAuthToken: boolean } {
@@ -544,9 +719,14 @@ function createClient(
 		return { client, isOAuthToken: false };
 	}
 
-	const betaFeatures = ["fine-grained-tool-streaming-2025-05-14"];
+	// Fine-grained tool streaming is disabled by default. Standard tool_use blocks
+	// are more robust across Anthropic-compatible providers such as z.ai.
+	const betaFeatures: string[] = [];
 	if (needsInterleavedBeta) {
 		betaFeatures.push("interleaved-thinking-2025-05-14");
+	}
+	if (fineGrainedToolStreaming) {
+		betaFeatures.push("fine-grained-tool-streaming-2025-05-14");
 	}
 
 	// OAuth: Bearer auth, Claude Code identity headers
@@ -560,7 +740,10 @@ function createClient(
 				{
 					accept: "application/json",
 					"anthropic-dangerous-direct-browser-access": "true",
-					"anthropic-beta": `claude-code-20250219,oauth-2025-04-20,${betaFeatures.join(",")}`,
+					"anthropic-beta":
+						betaFeatures.length > 0
+							? `claude-code-20250219,oauth-2025-04-20,${betaFeatures.join(",")}`
+							: "claude-code-20250219,oauth-2025-04-20",
 					"user-agent": `claude-cli/${claudeCodeVersion}`,
 					"x-app": "cli",
 				},
@@ -581,7 +764,7 @@ function createClient(
 			{
 				accept: "application/json",
 				"anthropic-dangerous-direct-browser-access": "true",
-				"anthropic-beta": betaFeatures.join(","),
+				...(betaFeatures.length > 0 ? { "anthropic-beta": betaFeatures.join(",") } : {}),
 			},
 			model.headers,
 			optionsHeaders,
@@ -638,8 +821,12 @@ function buildParams(
 		params.temperature = options.temperature;
 	}
 
+	if (options?.topP !== undefined) {
+		params.top_p = options.topP;
+	}
+
 	if (context.tools) {
-		params.tools = convertTools(context.tools, isOAuthToken);
+		params.tools = convertTools(context.tools, isOAuthToken, options?.anthropicFineGrainedToolStreaming === true);
 	}
 
 	// Configure thinking mode: adaptive (Opus 4.6 and Sonnet 4.6) or budget-based (older models)
@@ -847,7 +1034,11 @@ function convertMessages(
 	return params;
 }
 
-function convertTools(tools: Tool[], isOAuthToken: boolean): Anthropic.Messages.Tool[] {
+function convertTools(
+	tools: Tool[],
+	isOAuthToken: boolean,
+	fineGrainedToolStreaming: boolean,
+): Anthropic.Messages.Tool[] {
 	if (!tools) return [];
 
 	return tools.map((tool) => {
@@ -856,6 +1047,7 @@ function convertTools(tools: Tool[], isOAuthToken: boolean): Anthropic.Messages.
 		return {
 			name: isOAuthToken ? toClaudeCodeName(tool.name) : tool.name,
 			description: tool.description,
+			eager_input_streaming: fineGrainedToolStreaming,
 			input_schema: {
 				type: "object" as const,
 				properties: jsonSchema.properties || {},

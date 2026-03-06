@@ -103,6 +103,27 @@ When a provider requests a retry delay longer than `maxDelayMs` (e.g., Google's 
 | `followUpMode` | string | `"one-at-a-time"` | How follow-up messages are sent: `"all"` or `"one-at-a-time"` |
 | `transport` | string | `"sse"` | Preferred transport for providers that support multiple transports: `"sse"`, `"websocket"`, or `"auto"` |
 
+### Async & Tool Execution
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `async.enabled` | boolean | `false` | Enable background `bash` jobs (`async: true`) and async helper tools |
+| `async.maxJobs` | number | `100` | Maximum concurrent background jobs (clamped to `1-1000`) |
+| `tools.maxTimeout` | number | - | Canonical global maximum timeout for `bash` tool calls (clamped to `1-7200`) |
+| `tools.bashMaxTimeoutSeconds` | number | - | Legacy alias for `tools.maxTimeout` (still supported) |
+
+```json
+{
+  "async": {
+    "enabled": true,
+    "maxJobs": 100
+  },
+  "tools": {
+    "maxTimeout": 600
+  }
+}
+```
+
 ### Terminal & Images
 
 | Setting | Type | Default | Description |

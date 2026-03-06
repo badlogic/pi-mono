@@ -125,9 +125,10 @@ ajv.addSchema(ModelsConfigSchema, "ModelsConfig");
 
 type ModelsConfig = Static<typeof ModelsConfigSchema>;
 
-/** Provider override config (baseUrl, headers, apiKey) without custom models */
+/** Provider override config (baseUrl, api, headers, apiKey) without custom models */
 interface ProviderOverride {
 	baseUrl?: string;
+	api?: Api;
 	headers?: Record<string, string>;
 	apiKey?: string;
 }
@@ -308,12 +309,13 @@ export class ModelRegistry {
 			return models.map((m) => {
 				let model = m;
 
-				// Apply provider-level baseUrl/headers override
+				// Apply provider-level baseUrl/api/headers override
 				if (providerOverride) {
 					const resolvedHeaders = resolveHeaders(providerOverride.headers);
 					model = {
 						...model,
 						baseUrl: providerOverride.baseUrl ?? model.baseUrl,
+						api: providerOverride.api ?? model.api,
 						headers: resolvedHeaders ? { ...model.headers, ...resolvedHeaders } : model.headers,
 					};
 				}
@@ -368,10 +370,11 @@ export class ModelRegistry {
 			const modelOverrides = new Map<string, Map<string, ModelOverride>>();
 
 			for (const [providerName, providerConfig] of Object.entries(config.providers)) {
-				// Apply provider-level baseUrl/headers/apiKey override to built-in models when configured.
-				if (providerConfig.baseUrl || providerConfig.headers || providerConfig.apiKey) {
+				// Apply provider-level baseUrl/api/headers/apiKey override to built-in models when configured.
+				if (providerConfig.baseUrl || providerConfig.api || providerConfig.headers || providerConfig.apiKey) {
 					overrides.set(providerName, {
 						baseUrl: providerConfig.baseUrl,
+						api: providerConfig.api as Api | undefined,
 						headers: providerConfig.headers,
 						apiKey: providerConfig.apiKey,
 					});
@@ -406,9 +409,13 @@ export class ModelRegistry {
 				providerConfig.modelOverrides && Object.keys(providerConfig.modelOverrides).length > 0;
 
 			if (models.length === 0) {
-				// Override-only config: needs baseUrl OR modelOverrides (or both)
-				if (!providerConfig.baseUrl && !hasModelOverrides) {
-					throw new Error(`Provider ${providerName}: must specify "baseUrl", "modelOverrides", or "models".`);
+				// Override-only config: needs a provider override field or modelOverrides.
+				const hasProviderOverride =
+					!!providerConfig.baseUrl || !!providerConfig.api || !!providerConfig.headers || !!providerConfig.apiKey;
+				if (!hasProviderOverride && !hasModelOverrides) {
+					throw new Error(
+						`Provider ${providerName}: must specify "baseUrl", "api", "headers", "apiKey", "modelOverrides", or "models".`,
+					);
 				}
 			} else {
 				// Custom models are merged into provider models and require endpoint + auth.
@@ -651,14 +658,15 @@ export class ModelRegistry {
 					this.models = config.oauth.modifyModels(this.models, cred);
 				}
 			}
-		} else if (config.baseUrl) {
-			// Override-only: update baseUrl/headers for existing models
+		} else if (config.baseUrl || config.api || config.headers) {
+			// Override-only: update baseUrl/api/headers for existing models
 			const resolvedHeaders = resolveHeaders(config.headers);
 			this.models = this.models.map((m) => {
 				if (m.provider !== providerName) return m;
 				return {
 					...m,
 					baseUrl: config.baseUrl ?? m.baseUrl,
+					api: config.api ?? m.api,
 					headers: resolvedHeaders ? { ...m.headers, ...resolvedHeaders } : m.headers,
 				};
 			});

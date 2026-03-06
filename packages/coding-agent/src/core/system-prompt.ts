@@ -14,6 +14,8 @@ const toolDescriptions: Record<string, string> = {
 	grep: "Search file contents for patterns (respects .gitignore)",
 	find: "Find files by glob pattern (respects .gitignore)",
 	ls: "List directory contents",
+	await: "Wait for background jobs to complete",
+	cancel_job: "Cancel a running background job by ID",
 };
 
 export interface BuildSystemPromptOptions {
@@ -168,8 +170,17 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		}
 	}
 
+	if (tools.length > 0) {
+		addGuideline(
+			"Never emit pseudo tool tags like <tool_call>, <arg_key>, or <arg_value> in text; use native tool/function calling instead.",
+		);
+	}
+
 	// Always include these
 	addGuideline("Be concise in your responses");
+	addGuideline("Do not restate the same plan, issue list, or status update multiple times");
+	addGuideline("After a brief plan, immediately take the next concrete tool action");
+	addGuideline("If blocked, state the exact blocker once instead of repeating analysis");
 	addGuideline("Show file paths clearly when working with files");
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");

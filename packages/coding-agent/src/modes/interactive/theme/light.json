@@ -74,7 +74,21 @@
 		"thinkingHigh": "#875f87",
 		"thinkingXhigh": "#8b008b",
 
-		"bashMode": "green"
+		"bashMode": "green",
+		"statusLineBg": "#e0e0e0",
+		"statusLineSep": "#808080",
+		"statusLineModel": "#875f87",
+		"statusLinePath": "#005f87",
+		"statusLineGitClean": "#005f00",
+		"statusLineGitDirty": "#af5f00",
+		"statusLineContext": "#5f5f87",
+		"statusLineSpend": "#005f5f",
+		"statusLineStaged": 28,
+		"statusLineDirty": 136,
+		"statusLineUntracked": 31,
+		"statusLineOutput": 133,
+		"statusLineCost": 133,
+		"statusLineSubagents": "teal"
 	},
 	"export": {
 		"pageBg": "#f8f8f8",

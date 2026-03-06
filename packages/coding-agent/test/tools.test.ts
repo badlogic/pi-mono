@@ -2,12 +2,15 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { bashTool, createBashTool } from "../src/core/tools/bash.js";
+import { AsyncJobManager } from "../src/core/tools/async-jobs.js";
+import { createAwaitTool } from "../src/core/tools/await.js";
+import { type BashOperations, bashTool, createBashTool } from "../src/core/tools/bash.js";
+import { createCancelJobTool } from "../src/core/tools/cancel-job.js";
 import { editTool } from "../src/core/tools/edit.js";
 import { findTool } from "../src/core/tools/find.js";
 import { grepTool } from "../src/core/tools/grep.js";
 import { lsTool } from "../src/core/tools/ls.js";
-import { readTool } from "../src/core/tools/read.js";
+import { createReadTool, readTool } from "../src/core/tools/read.js";
 import { writeTool } from "../src/core/tools/write.js";
 import * as shellModule from "../src/utils/shell.js";
 
@@ -187,6 +190,21 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("definitely not a png");
 			expect(result.content.some((c: any) => c.type === "image")).toBe(false);
 		});
+
+		it("should read jobs:// list when async mode is enabled", async () => {
+			const jobManager = new AsyncJobManager();
+			const bash = createBashTool(testDir, { asyncEnabled: true, asyncJobManager: jobManager });
+			const read = createReadTool(testDir, { asyncEnabled: true, asyncJobManager: jobManager });
+
+			const started = await bash.execute("test-call-jobs-1", { command: "sleep 1 && echo done", async: true });
+			const jobId = started.details?.async?.jobId;
+
+			expect(jobId).toBeDefined();
+
+			const result = await read.execute("test-call-jobs-2", { path: "jobs://" });
+			expect(getTextOutput(result)).toContain("# Jobs");
+			expect(getTextOutput(result)).toContain(jobId as string);
+		});
 	});
 
 	describe("write tool", () => {
@@ -323,6 +341,114 @@ describe("Coding Agent Tools", () => {
 
 			const result = await bashWithoutPrefix.execute("test-prefix-3", { command: "echo no-prefix" });
 			expect(getTextOutput(result).trim()).toBe("no-prefix");
+		});
+
+		it("should run async bash jobs and await completion", async () => {
+			const jobManager = new AsyncJobManager();
+			const bash = createBashTool(testDir, { asyncEnabled: true, asyncJobManager: jobManager });
+			const awaitTool = createAwaitTool({ asyncEnabled: true, asyncJobManager: jobManager });
+
+			const started = await bash.execute("test-async-1", { command: "echo async-ok", async: true });
+			const jobId = started.details?.async?.jobId;
+
+			expect(jobId).toBeDefined();
+			expect(getTextOutput(started)).toContain("Background job");
+
+			const awaited = await awaitTool.execute("test-async-2", { jobs: [jobId as string] });
+			expect(awaited.details?.jobs).toHaveLength(1);
+			expect(awaited.details?.jobs[0]?.id).toBe(jobId);
+			expect(awaited.details?.jobs[0]?.status).toBe("completed");
+			expect(awaited.details?.jobs[0]?.resultText).toContain("async-ok");
+		});
+
+		it("should cancel running async bash jobs", async () => {
+			const jobManager = new AsyncJobManager();
+			const bash = createBashTool(testDir, { asyncEnabled: true, asyncJobManager: jobManager });
+			const cancelTool = createCancelJobTool({ asyncEnabled: true, asyncJobManager: jobManager });
+
+			const started = await bash.execute("test-async-cancel-1", { command: "sleep 5", async: true });
+			const jobId = started.details?.async?.jobId;
+			expect(jobId).toBeDefined();
+
+			const cancelled = await cancelTool.execute("test-async-cancel-2", { job_id: jobId as string });
+			expect(cancelled.details?.status).toBe("cancelled");
+		});
+
+		it("should execute bash in PTY mode when available", async () => {
+			const exec: BashOperations["exec"] = vi.fn(async (_command, _cwd, options) => {
+				expect(options.usePty).toBe(true);
+				options.onData(Buffer.from("pty-ok\n"));
+				return { exitCode: 0 };
+			});
+			const bash = createBashTool(testDir, {
+				operations: { exec },
+				ptyAvailable: true,
+			});
+
+			const result = await bash.execute("test-pty-1", { command: "echo pty", pty: true });
+			expect(getTextOutput(result)).toContain("pty-ok");
+		});
+
+		it("should fall back to non-PTY mode with warning when PTY is unavailable", async () => {
+			const exec: BashOperations["exec"] = vi.fn(async (_command, _cwd, options) => {
+				expect(options.usePty).toBe(false);
+				options.onData(Buffer.from("fallback-ok\n"));
+				return { exitCode: 0 };
+			});
+			const updates: string[] = [];
+			const bash = createBashTool(testDir, {
+				operations: { exec },
+				ptyAvailable: false,
+			});
+
+			const result = await bash.execute(
+				"test-pty-2",
+				{ command: "echo fallback", pty: true },
+				undefined,
+				(update) => {
+					updates.push(getTextOutput(update));
+				},
+			);
+			expect(updates.join("\n")).toContain("PTY mode is unavailable on this system.");
+			expect(getTextOutput(result)).toContain("fallback-ok");
+		});
+	});
+
+	describe("async delivery queue", () => {
+		it("should retry completion delivery until it succeeds", async () => {
+			let attempts = 0;
+			const manager = new AsyncJobManager({
+				onJobComplete: async () => {
+					attempts += 1;
+					if (attempts < 2) {
+						throw new Error("transient");
+					}
+				},
+			});
+
+			manager.register("bash", "retry-test", async () => "done");
+			await manager.waitForAll();
+			const drained = await manager.drainDeliveries({ timeoutMs: 3_000 });
+
+			expect(drained).toBe(true);
+			expect(attempts).toBeGreaterThanOrEqual(2);
+		});
+
+		it("await should acknowledge completed deliveries", async () => {
+			const manager = new AsyncJobManager({
+				onJobComplete: async () => {
+					throw new Error("keep queued until await acknowledges");
+				},
+			});
+			const bash = createBashTool(testDir, { asyncEnabled: true, asyncJobManager: manager });
+			const awaitTool = createAwaitTool({ asyncEnabled: true, asyncJobManager: manager });
+
+			const started = await bash.execute("test-await-ack-1", { command: "echo queued", async: true });
+			const jobId = started.details?.async?.jobId as string;
+
+			const awaited = await awaitTool.execute("test-await-ack-2", { jobs: [jobId] });
+			expect(awaited.details?.jobs[0]?.status).toBe("completed");
+			expect(manager.getDeliveryState().queued).toBe(0);
 		});
 	});
 

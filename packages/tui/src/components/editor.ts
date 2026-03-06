@@ -4,7 +4,7 @@ import { matchesKey } from "../keys.js";
 import { KillRing } from "../kill-ring.js";
 import { type Component, CURSOR_MARKER, type Focusable, type TUI } from "../tui.js";
 import { UndoStack } from "../undo-stack.js";
-import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
+import { getSegmenter, isPunctuationChar, isWhitespaceChar, truncateToWidth, visibleWidth } from "../utils.js";
 import { SelectList, type SelectListTheme } from "./select-list.js";
 
 const segmenter = getSegmenter();
@@ -151,6 +151,11 @@ export interface EditorTheme {
 	selectList: SelectListTheme;
 }
 
+export interface EditorTopBorder {
+	content: string;
+	width: number;
+}
+
 export interface EditorOptions {
 	paddingX?: number;
 	autocompleteMaxVisible?: number;
@@ -178,6 +183,9 @@ export class Editor implements Component, Focusable {
 
 	// Border color (can be changed dynamically)
 	public borderColor: (str: string) => string;
+
+	// Optional custom top border payload (e.g. status line)
+	private topBorderContent: EditorTopBorder | undefined;
 
 	// Autocomplete support
 	private autocompleteProvider?: AutocompleteProvider;
@@ -227,6 +235,15 @@ export class Editor implements Component, Focusable {
 
 	getPaddingX(): number {
 		return this.paddingX;
+	}
+
+	setTopBorder(content: EditorTopBorder | undefined): void {
+		this.topBorderContent = content;
+		this.tui.requestRender();
+	}
+
+	getTopBorderAvailableWidth(terminalWidth: number): number {
+		return Math.max(0, terminalWidth);
 	}
 
 	setPaddingX(padding: number): void {
@@ -368,8 +385,14 @@ export class Editor implements Component, Focusable {
 		const leftPadding = " ".repeat(paddingX);
 		const rightPadding = leftPadding;
 
-		// Render top border (with scroll indicator if scrolled down)
-		if (this.scrollOffset > 0) {
+		// Render top border (custom status line takes precedence over scroll indicator)
+		if (this.topBorderContent) {
+			if (this.topBorderContent.width <= width) {
+				result.push(this.topBorderContent.content + horizontal.repeat(width - this.topBorderContent.width));
+			} else {
+				result.push(truncateToWidth(this.topBorderContent.content, width));
+			}
+		} else if (this.scrollOffset > 0) {
 			const indicator = `─── ↑ ${this.scrollOffset} more `;
 			const remaining = width - visibleWidth(indicator);
 			result.push(this.borderColor(indicator + "─".repeat(Math.max(0, remaining))));

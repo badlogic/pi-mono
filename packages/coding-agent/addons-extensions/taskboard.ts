@@ -51,6 +51,7 @@ interface TaskboardSnapshot {
 
 let tasks: Task[] = [];
 let nextId = 1;
+const autoToolTaskByCallId = new Map<string, number>();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -165,18 +166,18 @@ function addSubagentDispatchTask(brief: string): void {
 	});
 }
 
-function ensureActiveTaskForToolCall(toolName: string, input: unknown): void {
+function ensureActiveTaskForToolCall(toolName: string, input: unknown): number | undefined {
 	const now = Date.now();
-	if (getActiveTask()) return;
+	if (getActiveTask()) return undefined;
 
 	const pending = sortedTasks(tasks.filter((task) => task.status !== "done"));
 	if (pending.length > 0) {
 		pending[0].status = "in-progress";
 		pending[0].updatedAt = now;
-		return;
+		return undefined;
 	}
 
-	tasks.push({
+	const task: Task = {
 		id: nextId++,
 		text: summarizeToolCall(toolName, input),
 		status: "in-progress",
@@ -184,7 +185,9 @@ function ensureActiveTaskForToolCall(toolName: string, input: unknown): void {
 		category: "auto",
 		createdAt: now,
 		updatedAt: now,
-	});
+	};
+	tasks.push(task);
+	return task.id;
 }
 
 function statusColor(status: TaskStatus, theme: Theme): string {
@@ -210,6 +213,7 @@ function priorityLabel(priority: TaskPriority, theme: Theme): string {
 function reconstructState(ctx: ExtensionContext): void {
 	tasks = [];
 	nextId = 1;
+	autoToolTaskByCallId.clear();
 	const entries = ctx.sessionManager.getBranch();
 	if (!Array.isArray(entries)) return;
 	for (const entry of entries) {
@@ -449,12 +453,34 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		if (tasks.length === 0 || !hasPending || !hasActive) {
-			ensureActiveTaskForToolCall(toolName, event.input);
+			const createdAutoTaskId = ensureActiveTaskForToolCall(toolName, event.input);
+			if (createdAutoTaskId !== undefined) {
+				autoToolTaskByCallId.set(event.toolCallId, createdAutoTaskId);
+			}
 			persistSnapshot();
 			updateWidget(ctx);
 		}
 
 		return { block: false };
+	});
+
+	pi.on("tool_result", async (event, ctx) => {
+		const taskId = autoToolTaskByCallId.get(event.toolCallId);
+		if (taskId === undefined) return;
+		autoToolTaskByCallId.delete(event.toolCallId);
+
+		const idx = tasks.findIndex((task) => task.id === taskId && task.category === "auto");
+		if (idx === -1) return;
+
+		if (event.isError) {
+			tasks[idx].status = "blocked";
+			tasks[idx].updatedAt = Date.now();
+		} else {
+			tasks.splice(idx, 1);
+		}
+
+		persistSnapshot();
+		updateWidget(ctx);
 	});
 
 	// ── Tool ───────────────────────────────────────────────────────────────────

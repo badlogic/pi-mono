@@ -28,12 +28,13 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder, discoverAgents } from "@mariozechner/pi-coding-agent";
 import { parseSessionEntries } from "@mariozechner/pi-coding-agent";
+import { SettingsManager } from "@mariozechner/pi-coding-agent";
 import type { SubagentConfig } from "@mariozechner/pi-coding-agent";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { Container, Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { execSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,6 +58,7 @@ interface SubState {
 	turnCount: number;
 	proc?: ReturnType<typeof spawn>;
 	tmuxSession?: string;     // set when running in a tmux session
+	tmuxLinkedSession?: string; // session where the tmux window is linked for easy switching
 	tmuxWindow?: string;      // set when running in a tmux window
 	pollTimer?: ReturnType<typeof setInterval>; // polling timer for tmux mode
 	retryTimer?: ReturnType<typeof setTimeout>;
@@ -65,6 +67,7 @@ interface SubState {
 	startedThisAttempt: boolean;
 	failureCount: number;
 	lastError?: string;
+	workingDir: string;
 }
 
 interface PendingSubagentResult {
@@ -131,11 +134,11 @@ const MAX_PENDING_RESULTS_QUEUE = 32;
 const MAX_PENDING_LIFECYCLE_QUEUE = 128;
 const MAX_AUTO_INGEST_RESULTS_PER_TURN = 2;
 const MAX_AUTO_INGEST_LIFECYCLE_EVENTS_PER_TURN = 8;
-const MAX_MAIN_AGENT_RUNNING_SUBAGENTS = 6;
+const SOFT_MAX_MAIN_AGENT_TRACKED_SUBAGENTS = 8;
 const MAX_TRACKED_SUBAGENTS = 40;
 const SUBAGENT_RESULT_CHAT_PREVIEW_CHARS = 220;
 const AUTO_INGEST_TRIGGER_TEXT = "[subagent-auto-ingest]";
-const DISPATCH_TOOL_NAMES = ["task", "subagent_create", "subagent_continue"] as const;
+const DISPATCH_TOOL_NAMES = ["task", "subagent_create", "subagent_continue", "subagent_list", "subagent_clear_finished"] as const;
 const DISPATCH_TOOL_SET = new Set<string>(DISPATCH_TOOL_NAMES);
 const VALID_THINKING_LEVELS: ReadonlySet<ThinkingLevel> = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
 const DEFAULT_SUBAGENT_THINKING: ThinkingLevel = "high";
@@ -296,6 +299,38 @@ function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
+function getSafeProcessCwd(): string | undefined {
+	try {
+		return process.cwd();
+	} catch {
+		return undefined;
+	}
+}
+
+function resolveValidWorkingDirectory(...candidates: Array<string | undefined>): string {
+	const fallbacks = [getSafeProcessCwd(), process.env.PWD, homedir(), "/tmp", "/"];
+	for (const candidate of [...candidates, ...fallbacks]) {
+		if (!candidate) continue;
+		const trimmed = candidate.trim();
+		if (trimmed.length === 0) continue;
+		let absolute = trimmed;
+		try {
+			absolute = resolve(trimmed);
+		} catch {
+			if (!trimmed.startsWith("/")) continue;
+			absolute = trimmed;
+		}
+		try {
+			if (existsSync(absolute) && statSync(absolute).isDirectory()) {
+				return absolute;
+			}
+		} catch {
+			// try next candidate
+		}
+	}
+	return "/";
+}
+
 function getCurrentTmuxSession(): string | undefined {
 	try {
 		const session = execSync("tmux display-message -p '#S'", { encoding: "utf-8" }).trim();
@@ -340,11 +375,16 @@ function clearExistingTmuxSession(sessionName: string): void {
 	}
 }
 
-function createDetachedTmuxSession(sessionName: string, windowName: string, command: string): { created: boolean } {
+function createDetachedTmuxSession(
+	sessionName: string,
+	windowName: string,
+	command: string,
+	workingDir: string,
+): { created: boolean } {
 	try {
 		clearExistingTmuxSession(sessionName);
 		execSync(
-			`tmux new-session -d -s ${shellQuote(sessionName)} -n ${shellQuote(windowName)} ${shellQuote(command)}`,
+			`tmux new-session -d -s ${shellQuote(sessionName)} -n ${shellQuote(windowName)} -c ${shellQuote(workingDir)} ${shellQuote(command)}`,
 			{ encoding: "utf-8" },
 		);
 		return { created: true };
@@ -353,11 +393,207 @@ function createDetachedTmuxSession(sessionName: string, windowName: string, comm
 	}
 }
 
-function resolveTmuxSessionForSubagent(state: SubState): {
+function getSubagentTmuxLinkedWindowsEnabled(cwd: string): boolean {
+	const envValue = process.env.PI_SUBAGENT_TMUX_LINKED_WINDOWS?.trim().toLowerCase();
+	if (envValue === "1" || envValue === "true" || envValue === "yes" || envValue === "on") {
+		return true;
+	}
+	if (envValue === "0" || envValue === "false" || envValue === "no" || envValue === "off") {
+		return false;
+	}
+	try {
+		return SettingsManager.create(resolveValidWorkingDirectory(cwd)).getSubagentTmuxLinkedWindows();
+	} catch {
+		return true;
+	}
+}
+
+function buildTmuxLaunchPlan(
+	session: string | undefined,
+	currentSession?: string,
+	linkIntoCurrentSession = true,
+): {
 	session?: string;
+	linkedSession?: string;
 } {
-	if (!ensureTmuxAvailable()) return { session: undefined };
-	return { session: buildSubagentTmuxSessionName(state) };
+	if (!session) return { session: undefined, linkedSession: undefined };
+	const normalizedCurrent = currentSession?.trim();
+	return {
+		session,
+		linkedSession:
+			linkIntoCurrentSession && normalizedCurrent && normalizedCurrent !== session ? normalizedCurrent : undefined,
+	};
+}
+
+function resolveTmuxSessionForSubagent(state: SubState, linkIntoCurrentSession: boolean): {
+	session?: string;
+	linkedSession?: string;
+} {
+	if (!ensureTmuxAvailable()) return { session: undefined, linkedSession: undefined };
+	return buildTmuxLaunchPlan(buildSubagentTmuxSessionName(state), getCurrentTmuxSession(), linkIntoCurrentSession);
+}
+
+function linkTmuxWindowIntoSession(sessionName: string, windowName: string, targetSession: string): boolean {
+	try {
+		execSync(
+			`tmux link-window -d -s ${shellQuote(`${sessionName}:${windowName}`)} -t ${shellQuote(`${targetSession}:`)}`,
+			{ encoding: "utf-8" },
+		);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function listTmuxWindowTargets(state: Pick<SubState, "tmuxSession" | "tmuxLinkedSession" | "tmuxWindow">): string[] {
+	if (!state.tmuxWindow) return [];
+	const targets: string[] = [];
+	if (state.tmuxLinkedSession) {
+		targets.push(`${state.tmuxLinkedSession}:${state.tmuxWindow}`);
+	}
+	if (state.tmuxSession && state.tmuxSession !== state.tmuxLinkedSession) {
+		targets.push(`${state.tmuxSession}:${state.tmuxWindow}`);
+	}
+	return targets;
+}
+
+function clearTmuxTracking(state: SubState): void {
+	state.tmuxSession = undefined;
+	state.tmuxLinkedSession = undefined;
+	state.tmuxWindow = undefined;
+}
+
+function closeTrackedTmuxWindow(state: SubState): void {
+	for (const target of listTmuxWindowTargets(state)) {
+		try {
+			execSync(`tmux kill-window -t ${shellQuote(target)}`, {
+				encoding: "utf-8",
+			});
+			clearTmuxTracking(state);
+			return;
+		} catch {
+			// try the next target
+		}
+	}
+	if (state.tmuxSession) {
+		try {
+			execSync(`tmux kill-session -t ${shellQuote(state.tmuxSession)}`, {
+				encoding: "utf-8",
+			});
+		} catch {
+			// ignore
+		}
+	}
+	clearTmuxTracking(state);
+}
+
+function resolveTmuxAttachTarget(
+	state: Pick<SubState, "tmuxSession" | "tmuxLinkedSession" | "tmuxWindow">,
+	currentSession?: string,
+): {
+	session?: string;
+	windowTarget?: string;
+	attachSession?: string;
+} {
+	if (!state.tmuxSession || !state.tmuxWindow) {
+		return { session: undefined, windowTarget: undefined, attachSession: undefined };
+	}
+	const attachSession = state.tmuxSession;
+	const preferredSession = currentSession && state.tmuxLinkedSession === currentSession
+		? currentSession
+		: (state.tmuxLinkedSession ?? state.tmuxSession);
+	if (!currentSession) {
+		return {
+			session: preferredSession,
+			windowTarget: `${preferredSession}:${state.tmuxWindow}`,
+			attachSession,
+		};
+	}
+	return {
+		session: preferredSession,
+		windowTarget: `${preferredSession}:${state.tmuxWindow}`,
+		attachSession,
+	};
+}
+
+function focusTmuxTarget(session: string, windowTarget: string, currentSession?: string): void {
+	if (currentSession && currentSession !== session) {
+		execSync(`tmux switch-client -t ${shellQuote(session)}`, {
+			encoding: "utf-8",
+		});
+	}
+	execSync(`tmux select-window -t ${shellQuote(windowTarget)}`, {
+		encoding: "utf-8",
+	});
+}
+
+function textToolResult(text: string): {
+	content: [{ type: "text"; text: string }];
+	details: Record<string, never>;
+} {
+	return {
+		content: [{ type: "text", text }],
+		details: {},
+	};
+}
+
+export const __testing = {
+	buildTmuxLaunchPlan,
+	listTmuxWindowTargets,
+	resolveTmuxAttachTarget,
+	summarizeMainAgentSubagentBudget,
+	buildMainAgentSubagentCreatePolicy,
+	seedAgentStates(states: Array<Pick<SubState, "id" | "status" | "spawnedBy"> & Partial<Pick<SubState, "task" | "runMode" | "turnCount">>>) {
+		agents.clear();
+		for (const state of states) {
+			agents.set(state.id, {
+				id: state.id,
+				status: state.status,
+				task: state.task ?? `Task ${state.id}`,
+				spawnedBy: state.spawnedBy,
+				runMode: state.runMode ?? "interactive",
+				textChunks: [],
+				toolCount: 0,
+				elapsed: 0,
+				sessionFile: `/tmp/subagent-${state.id}.jsonl`,
+				turnCount: state.turnCount ?? 1,
+				attempt: 0,
+				startedThisAttempt: false,
+				failureCount: 0,
+				workingDir: "/tmp",
+			});
+		}
+		nextId = states.reduce((maxId, state) => Math.max(maxId, state.id), 0) + 1;
+	},
+	getAgentStates() {
+		return Array.from(agents.values()).map((state) => ({
+			id: state.id,
+			status: state.status,
+			spawnedBy: state.spawnedBy,
+			task: state.task,
+		}));
+	},
+	resetState() {
+		agents.clear();
+		nextId = 1;
+		pendingMainAgentResults = [];
+		pendingLifecycleEvents = [];
+		autoIngestTriggerQueued = false;
+		defaultMainAgentTools = [];
+		dispatchModeRequested = false;
+	},
+};
+
+interface MainAgentSubagentBudget {
+	tracked: number;
+	running: number;
+	finished: number;
+}
+
+interface MainAgentSubagentCreatePolicy {
+	block: boolean;
+	reason?: string;
+	warning?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -738,14 +974,66 @@ function pullPendingLifecycleEvents(targetId?: number): PendingSubagentLifecycle
 	return selected;
 }
 
-function countRunningMainAgentSubagents(): number {
+function summarizeMainAgentSubagentBudget(states: Iterable<Pick<SubState, "spawnedBy" | "status">>): MainAgentSubagentBudget {
+	let tracked = 0;
 	let running = 0;
-	for (const state of agents.values()) {
-		if (state.spawnedBy === "main-agent" && state.status === "running") {
+	let finished = 0;
+	for (const state of states) {
+		if (state.spawnedBy !== "main-agent") continue;
+		tracked += 1;
+		if (state.status === "running") {
 			running += 1;
+		} else {
+			finished += 1;
 		}
 	}
-	return running;
+	return { tracked, running, finished };
+}
+
+function buildMainAgentSubagentCreatePolicy(budget: MainAgentSubagentBudget): MainAgentSubagentCreatePolicy {
+	if (budget.tracked < SOFT_MAX_MAIN_AGENT_TRACKED_SUBAGENTS) {
+		return { block: false };
+	}
+	if (budget.finished > 0) {
+		return {
+			block: true,
+			reason: [
+				`Subagent soft limit reached: ${budget.tracked} tracked main-agent subagents (preferred max ${SOFT_MAX_MAIN_AGENT_TRACKED_SUBAGENTS}).`,
+				"Reuse an existing finished thread with subagent_continue when possible.",
+				"Otherwise call subagent_clear_finished to remove completed or errored main-agent subagents before spawning more.",
+			].join(" "),
+		};
+	}
+	const projectedTracked = budget.tracked + 1;
+	return {
+		block: false,
+		warning: [
+			`Soft-limit warning: this spawn increases tracked main-agent subagents to ${projectedTracked} (preferred max ${SOFT_MAX_MAIN_AGENT_TRACKED_SUBAGENTS}).`,
+			"All tracked main-agent subagents are still running, so no finished threads are available to clear or reuse yet.",
+			"Allowed anyway, but prefer waiting for current subagents to finish before expanding the team further.",
+		].join(" "),
+	};
+}
+
+function clearFinishedMainAgentSubagents(ctx: ExtensionContext): number {
+	let removed = 0;
+	for (const [id, state] of agents.entries()) {
+		if (state.spawnedBy !== "main-agent" || state.status === "running") continue;
+		ctx.ui.setWidget(`sub-${id}`, undefined);
+		agents.delete(id);
+		removed += 1;
+	}
+	if (removed > 0) {
+		updateWidgets();
+	}
+	return removed;
+}
+
+function listSubagentLines(): string[] {
+	return Array.from(agents.values()).map((a) => {
+		const reusableLabel = a.status === "running" ? "" : " | reusable";
+		return `#${a.id} [${a.status}] owner=${a.spawnedBy} Turn ${a.turnCount} | ${Math.round(a.elapsed / 1000)}s | Tools: ${a.toolCount}${reusableLabel}\n  Task: ${a.task}`;
+	});
 }
 
 function pruneTrackedSubagents(ctx: ExtensionContext): void {
@@ -802,8 +1090,9 @@ function updateWidgets(): void {
 						const fullText = state.textChunks.join("");
 						const lastLine = fullText.split("\n").filter((l) => l.trim()).pop() ?? "";
 						if (state.tmuxWindow) {
-							const tmuxTarget = state.tmuxSession
-								? `${state.tmuxSession}:${state.tmuxWindow}`
+							const tmuxSession = state.tmuxLinkedSession ?? state.tmuxSession;
+							const tmuxTarget = tmuxSession
+								? `${tmuxSession}:${state.tmuxWindow}`
 								: state.tmuxWindow;
 							if (!lastLine) return `tmux: ${tmuxTarget} — /sub-attach ${state.id} to jump in`;
 							const line = lastLine.length > width - 36
@@ -972,6 +1261,9 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 	const shouldRunInteractive = state.runMode === "interactive";
 	const agentCfg = state.agentName ? agentConfigs.get(state.agentName) : undefined;
 	const executionConfig = resolveSubagentExecutionConfig(agentCfg, mainModel);
+	const workingDir = resolveValidWorkingDirectory(state.workingDir, ctx.cwd);
+	const linkTmuxWindows = getSubagentTmuxLinkedWindowsEnabled(workingDir);
+	state.workingDir = workingDir;
 
 	state.attempt += 1;
 	state.startedThisAttempt = false;
@@ -984,6 +1276,7 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 	state.toolCount = 0;
 	state.textChunks = [];
 	state.tmuxSession = undefined;
+	state.tmuxLinkedSession = undefined;
 	state.tmuxWindow = undefined;
 	if (state.retryTimer) {
 		clearTimeout(state.retryTimer);
@@ -997,6 +1290,7 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 	let finalized = false;
 	let startupTimer: ReturnType<typeof setTimeout> | undefined;
 	let tmuxSession: string | null = null;
+	let tmuxLinkedSession: string | null = null;
 
 	const cleanupAttempt = (): void => {
 		if (startupTimer) {
@@ -1056,16 +1350,8 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 		state.elapsed = Date.now() - startTime;
 		state.lastError = reason;
 		state.failureCount += 1;
-		if (state.tmuxWindow && state.tmuxSession) {
-			try {
-				execSync(`tmux kill-session -t ${shellQuote(state.tmuxSession)}`, {
-					encoding: "utf-8",
-				});
-			} catch {
-				// ignore
-			}
-			state.tmuxSession = undefined;
-			state.tmuxWindow = undefined;
+		if (state.tmuxWindow) {
+			closeTrackedTmuxWindow(state);
 		}
 		if (state.proc) {
 			try {
@@ -1108,8 +1394,7 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 			queueAutoIngest(pi);
 		}
 		state.status = "done";
-		state.tmuxSession = undefined;
-		state.tmuxWindow = undefined;
+		clearTmuxTracking(state);
 		updateWidgets();
 		onAgentComplete(pi, state, ctx);
 	};
@@ -1160,17 +1445,21 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 		: `cat ${shellQuote(promptFile ?? "")} | ${shellQuote(piCmd)} ${piArgs} | node ${shellQuote(jsonRendererFile ?? "")}`;
 
 	{
-		const tmuxResolution = resolveTmuxSessionForSubagent(state);
+		const tmuxResolution = resolveTmuxSessionForSubagent(state, linkTmuxWindows);
 		tmuxSession = tmuxResolution.session ?? null;
+		tmuxLinkedSession = tmuxResolution.linkedSession ?? null;
 	}
 
 	if (tmuxSession) {
-		const started = createDetachedTmuxSession(tmuxSession, windowName, piInvocation);
+		const started = createDetachedTmuxSession(tmuxSession, windowName, piInvocation, workingDir);
 		if (!started.created) {
 			finalizeFailure("Failed to create detached tmux session for subagent.");
 			return;
 		}
 		state.tmuxSession = tmuxSession;
+		if (tmuxLinkedSession && linkTmuxWindowIntoSession(tmuxSession, windowName, tmuxLinkedSession)) {
+			state.tmuxLinkedSession = tmuxLinkedSession;
+		}
 		state.tmuxWindow = windowName;
 
 		const timer = setInterval(() => {
@@ -1220,13 +1509,7 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 						markFirstActivity("report text");
 					}
 					if (shouldRunInteractive && state.spawnedBy === "main-agent" && report.kind === "agent_end") {
-						try {
-							execSync(`tmux kill-session -t ${shellQuote(tmuxSession)}`, {
-								encoding: "utf-8",
-							});
-						} catch {
-							// ignore
-						}
+						closeTrackedTmuxWindow(state);
 						finalizeSuccess();
 						return;
 					}
@@ -1241,8 +1524,11 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 		state.pollTimer = timer;
 		updateWidgets();
 		const modeLabel = shouldRunInteractive ? "interactive" : "batch";
+		const linkedNotice = state.tmuxLinkedSession
+			? ` Linked into current tmux session "${state.tmuxLinkedSession}" as window "${windowName}".`
+			: "";
 		ctx.ui.notify(
-			`Subagent #${state.id} running in dedicated tmux session "${tmuxSession}" (${modeLabel}). Attach with: tmux attach -t ${tmuxSession}`,
+			`Subagent #${state.id} running in dedicated tmux session "${tmuxSession}" (${modeLabel}).${linkedNotice} Attach with: tmux attach -t ${tmuxSession}`,
 			"info",
 		);
 		return;
@@ -1269,7 +1555,8 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 
 	const proc = spawn(piCmd, args, {
 		stdio: ["ignore", "pipe", "pipe"],
-		env: { ...process.env },
+		env: { ...process.env, PWD: workingDir },
+		cwd: workingDir,
 	});
 
 	state.proc = proc;
@@ -1344,7 +1631,7 @@ function onAgentComplete(pi: ExtensionAPI, state: SubState, ctx: ExtensionContex
 
 	ctx.ui.notify(
 		`Subagent #${state.id} finished in ${Math.round(state.elapsed / 1000)}s`,
-		"success",
+		"info",
 	);
 
 	if (state.spawnedBy === "main-agent") {
@@ -1406,21 +1693,56 @@ function killAgent(state: SubState): void {
 		state.proc = undefined;
 	}
 	if (state.tmuxWindow) {
-		try {
-			const tmuxSession = state.tmuxSession ?? getCurrentTmuxSession();
-			if (tmuxSession) {
-				execSync(`tmux kill-session -t ${shellQuote(tmuxSession)}`, {
-					encoding: "utf-8",
-				});
-			}
-		} catch {
-			// window may already be gone
-		}
-		state.tmuxSession = undefined;
-		state.tmuxWindow = undefined;
+		closeTrackedTmuxWindow(state);
 	}
 	state.status = "error";
 	state.startedThisAttempt = false;
+}
+
+function buildDispatcherPrompt(catalog: string): string {
+	return `
+## Dispatcher Mode
+
+You are an orchestrator. You have FIVE tools: \`task\`, \`subagent_create\`, \`subagent_continue\`, \`subagent_list\`, and \`subagent_clear_finished\`. No file access. No shell. No search.
+
+### Agent roster
+${catalog}
+
+### Dispatching (when user gives you a task)
+1. Identify independent sub-tasks
+2. Before each dispatch, ensure taskboard tracking is up to date via \`task\`:
+   - If needed, add a task
+   - Ensure the dispatched task is marked \`in-progress\`
+3. Treat ${SOFT_MAX_MAIN_AGENT_TRACKED_SUBAGENTS} tracked main-agent subagents as a soft orchestration budget
+4. If you are near or above that budget, inspect current agents with \`subagent_list\`
+5. Prefer \`subagent_continue\` for follow-up on existing finished threads instead of creating replacements
+6. If finished or errored main-agent subagents are cluttering the board, call \`subagent_clear_finished\` before dispatching a fresh batch
+7. Call \`subagent_create\` once per genuinely new sub-task — all in the SAME response, they run in parallel
+8. Each brief must be 100% self-contained: goal, file paths, context, constraints, output format
+9. Every brief must require the subagent to return the minimum useful result only: no progress chatter, no repeated plan restatements, no long file inventories unless needed
+10. After ALL tool calls, write ONLY this — nothing more:
+
+Dispatched N agent(s):
+- [agent-type] brief summary of mission
+- [agent-type] brief summary of mission
+
+Then STOP. No filler. No "I'll wait". No follow-up tool calls.
+
+### When results arrive
+- Update taskboard status via \`task\` (for example, done or blocked)
+- Synthesize all results and respond directly to the user
+- If a result is insufficient, prefer \`subagent_continue\` on the same subagent for follow-up; only create a new subagent for truly independent workstreams
+- If a subagent returns repetitive planning chatter or obvious no-progress output, send a short corrective follow-up with \`subagent_continue\` instead of echoing the chatter
+
+### Hard rules
+- Your response after dispatching must be < 5 lines
+- NEVER make tool calls after the dispatch summary
+- NEVER attempt direct file/shell access
+- ALWAYS write self-contained briefs
+- NEVER ask subagents for ongoing progress reports
+- ALWAYS keep taskboard state synchronized with dispatches/results using \`task\`
+- ALWAYS dispatch independent tasks in parallel (same response, multiple tool calls)
+- Going beyond ${SOFT_MAX_MAIN_AGENT_TRACKED_SUBAGENTS} tracked main-agent subagents is bad practice; only do it when every tracked subagent is still actively running and nothing can be reused or cleared first`;
 }
 
 // ── Extension entry point ─────────────────────────────────────────────────────
@@ -1439,6 +1761,7 @@ export default function (pi: ExtensionAPI) {
 			"The agent has no access to this conversation — write as if briefing a colleague cold.",
 			"Results are delivered automatically when the agent finishes. Do not poll or follow up.",
 			"Use the 'agent' parameter to pick a specialist from the available agent roster.",
+			`Prefer staying within ${SOFT_MAX_MAIN_AGENT_TRACKED_SUBAGENTS} tracked main-agent subagents; reuse or clear finished threads before expanding further.`,
 		].join(" "),
 		parameters: Type.Object({
 			task: Type.String({
@@ -1458,34 +1781,18 @@ export default function (pi: ExtensionAPI) {
 			// Validate agent name if provided
 			if (args.agent && !agentConfigs.has(args.agent)) {
 				const available = Array.from(agentConfigs.keys()).join(", ") || "none";
-				return {
-					content: [{ type: "text", text: `Unknown agent "${args.agent}". Available: ${available}` }],
-				};
+				return textToolResult(`Unknown agent "${args.agent}". Available: ${available}`);
 			}
 			pruneTrackedSubagents(ctx);
-			const runningMainAgentSubagents = countRunningMainAgentSubagents();
-			if (runningMainAgentSubagents >= MAX_MAIN_AGENT_RUNNING_SUBAGENTS) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: [
-								`Subagent limit reached: ${runningMainAgentSubagents} main-agent subagents are currently running (max ${MAX_MAIN_AGENT_RUNNING_SUBAGENTS}).`,
-								"Wait for current subagents to finish, then reuse an existing thread via subagent_continue when possible.",
-							].join(" "),
-						},
-					],
-				};
-			}
 			if (agents.size >= MAX_TRACKED_SUBAGENTS) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Subagent capacity reached (${MAX_TRACKED_SUBAGENTS} tracked entries). Remove old entries with /subrm or /subclear before spawning more.`,
-						},
-					],
-				};
+				return textToolResult(
+					`Subagent capacity reached (${MAX_TRACKED_SUBAGENTS} tracked entries). Remove old entries with /subrm or /subclear before spawning more.`,
+				);
+			}
+			const budget = summarizeMainAgentSubagentBudget(agents.values());
+			const createPolicy = buildMainAgentSubagentCreatePolicy(budget);
+			if (createPolicy.block) {
+				return textToolResult(createPolicy.reason ?? "Subagent creation blocked.");
 			}
 
 			const id = nextId++;
@@ -1505,6 +1812,7 @@ export default function (pi: ExtensionAPI) {
 				attempt: 0,
 				startedThisAttempt: false,
 				failureCount: 0,
+				workingDir: resolveValidWorkingDirectory(ctx.cwd),
 			};
 			agents.set(id, state);
 			updateWidgets();
@@ -1515,15 +1823,16 @@ export default function (pi: ExtensionAPI) {
 			const agentLabel = agentConfigs.get(agentName)?.description
 				? `${agentName} (${agentConfigs.get(agentName)?.description})`
 				: agentName;
+			if (createPolicy.warning) {
+				ctx.ui.notify(createPolicy.warning, "warning");
+			}
 
-			return {
-				content: [
-					{
-						type: "text",
-						text: `Subagent #${id} [${agentLabel}] spawned and running in background. Results will appear when done.`,
-					},
-				],
-			};
+			return textToolResult(
+				[
+					`Subagent #${id} [${agentLabel}] spawned and running in background. Results will appear when done.`,
+					...(createPolicy.warning ? [createPolicy.warning] : []),
+				].join(" "),
+			);
 		},
 	});
 
@@ -1540,14 +1849,10 @@ export default function (pi: ExtensionAPI) {
 			widgetCtx = ctx;
 			const state = agents.get(args.id);
 			if (!state) {
-				return {
-					content: [{ type: "text", text: `Error: No subagent #${args.id} found.` }],
-				};
+				return textToolResult(`Error: No subagent #${args.id} found.`);
 			}
 			if (state.status === "running") {
-				return {
-					content: [{ type: "text", text: `Error: Subagent #${args.id} is still running.` }],
-				};
+				return textToolResult(`Error: Subagent #${args.id} is still running.`);
 			}
 
 			state.status = "running";
@@ -1561,18 +1866,12 @@ export default function (pi: ExtensionAPI) {
 			state.startedThisAttempt = false;
 			state.failureCount = 0;
 			state.lastReportTimestamp = undefined;
+			state.workingDir = resolveValidWorkingDirectory(ctx.cwd, state.workingDir);
 			updateWidgets();
 
 			spawnAgent(pi, state, args.prompt, ctx);
 
-			return {
-				content: [
-					{
-						type: "text",
-						text: `Subagent #${args.id} continuing (Turn ${state.turnCount}). Results will appear when done.`,
-					},
-				],
-			};
+			return textToolResult(`Subagent #${args.id} continuing (Turn ${state.turnCount}). Results will appear when done.`);
 		},
 	});
 
@@ -1583,13 +1882,24 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({}),
 		execute: async (_callId, _args, _signal, _onUpdate, _ctx) => {
 			if (agents.size === 0) {
-				return { content: [{ type: "text", text: "No subagents." }] };
+				return textToolResult("No subagents.");
 			}
-			const lines = Array.from(agents.values()).map(
-				(a) =>
-					`#${a.id} [${a.status}] Turn ${a.turnCount} | ${Math.round(a.elapsed / 1000)}s | Tools: ${a.toolCount}\n  Task: ${a.task}`,
-			);
-			return { content: [{ type: "text", text: lines.join("\n\n") }] };
+			return textToolResult(listSubagentLines().join("\n\n"));
+		},
+	});
+
+	pi.registerTool({
+		name: "subagent_clear_finished",
+		label: "Clear Finished Subagents",
+		description: "Remove completed or errored main-agent subagents from the tracked board. Running subagents are preserved.",
+		parameters: Type.Object({}),
+		execute: async (_callId, _args, _signal, _onUpdate, ctx) => {
+			widgetCtx = ctx;
+			const removed = clearFinishedMainAgentSubagents(ctx);
+			if (removed === 0) {
+				return textToolResult("No completed or errored main-agent subagents to clear.");
+			}
+			return textToolResult(`Cleared ${removed} completed or errored main-agent subagent${removed === 1 ? "" : "s"}.`);
 		},
 	});
 
@@ -1603,11 +1913,11 @@ export default function (pi: ExtensionAPI) {
 		execute: async (_callId, args, _signal, _onUpdate, _ctx) => {
 			const state = agents.get(args.id);
 			if (!state) {
-				return { content: [{ type: "text", text: `No subagent #${args.id} found.` }] };
+				return textToolResult(`No subagent #${args.id} found.`);
 			}
 			killAgent(state);
 			updateWidgets();
-			return { content: [{ type: "text", text: `Subagent #${args.id} stopped.` }] };
+			return textToolResult(`Subagent #${args.id} stopped.`);
 		},
 	});
 
@@ -1617,45 +1927,25 @@ export default function (pi: ExtensionAPI) {
 		if (!dispatchModeRequested) return;
 		const catalog = getAgentCatalog();
 
-		const dispatcherPrompt = `
-## Dispatcher Mode
-
-You are an orchestrator. You have THREE tools: \`task\`, \`subagent_create\`, and \`subagent_continue\`. No file access. No shell. No search.
-
-### Agent roster
-${catalog}
-
-### Dispatching (when user gives you a task)
-1. Identify independent sub-tasks
-2. Before each dispatch, ensure taskboard tracking is up to date via \`task\`:
-   - If needed, add a task
-   - Ensure the dispatched task is marked \`in-progress\`
-3. Call \`subagent_create\` once per sub-task — all in the SAME response, they run in parallel
-4. Each brief must be 100% self-contained: goal, file paths, context, constraints, output format
-5. After ALL tool calls, write ONLY this — nothing more:
-
-Dispatched N agent(s):
-- [agent-type] brief summary of mission
-- [agent-type] brief summary of mission
-
-Then STOP. No filler. No "I'll wait". No follow-up tool calls.
-
-### When results arrive
-- Update taskboard status via \`task\` (for example, done or blocked)
-- Synthesize all results and respond directly to the user
-- If a result is insufficient, prefer \`subagent_continue\` on the same subagent for follow-up; only create a new subagent for truly independent workstreams
-
-### Hard rules
-- Your response after dispatching must be < 5 lines
-- NEVER make tool calls after the dispatch summary
-- NEVER attempt direct file/shell access
-- ALWAYS write self-contained briefs
-- ALWAYS keep taskboard state synchronized with dispatches/results using \`task\`
-- ALWAYS dispatch independent tasks in parallel (same response, multiple tool calls)
-- NEVER exceed ${MAX_MAIN_AGENT_RUNNING_SUBAGENTS} concurrently running main-agent subagents`;
-
 		return {
-			systemPrompt: `${event.systemPrompt}\n${dispatcherPrompt}`,
+			systemPrompt: `${event.systemPrompt}\n${buildDispatcherPrompt(catalog)}`,
+		};
+	});
+
+	pi.on("tool_call", async (event, ctx) => {
+		if (event.toolName !== "subagent_create") return undefined;
+		pruneTrackedSubagents(ctx);
+		if (agents.size >= MAX_TRACKED_SUBAGENTS) {
+			return {
+				block: true,
+				reason: `Subagent capacity reached (${MAX_TRACKED_SUBAGENTS} tracked entries). Remove old entries with /subrm or /subclear before spawning more.`,
+			};
+		}
+		const createPolicy = buildMainAgentSubagentCreatePolicy(summarizeMainAgentSubagentBudget(agents.values()));
+		if (!createPolicy.block) return undefined;
+		return {
+			block: true,
+			reason: createPolicy.reason,
 		};
 	});
 
@@ -1724,7 +2014,7 @@ Then STOP. No filler. No "I'll wait". No follow-up tool calls.
 		reconstructPendingResults(ctx);
 
 		// Load agent configs from ~/.pi/agent/agents/ and builtins
-		loadAgentConfigs(ctx.cwd);
+		loadAgentConfigs(resolveValidWorkingDirectory(ctx.cwd));
 		if (!subagentReporterExtensionPath) {
 			ctx.ui.notify(
 				"subagent-reporter extension file not found; subagent previews/tool counts may be limited.",
@@ -1796,6 +2086,7 @@ Then STOP. No filler. No "I'll wait". No follow-up tool calls.
 				attempt: 0,
 				startedThisAttempt: false,
 				failureCount: 0,
+				workingDir: resolveValidWorkingDirectory(ctx.cwd),
 			};
 			agents.set(id, state);
 			updateWidgets();
@@ -1835,6 +2126,7 @@ Then STOP. No filler. No "I'll wait". No follow-up tool calls.
 			state.startedThisAttempt = false;
 			state.failureCount = 0;
 			state.lastReportTimestamp = undefined;
+			state.workingDir = resolveValidWorkingDirectory(ctx.cwd, state.workingDir);
 			updateWidgets();
 			ctx.ui.notify(`Continuing Subagent #${num} (Turn ${state.turnCount})…`, "info");
 			spawnAgent(pi, state, prompt, ctx);
@@ -1970,19 +2262,38 @@ Then STOP. No filler. No "I'll wait". No follow-up tool calls.
 			}
 			try {
 				const currentSession = getCurrentTmuxSession();
+				const attachTarget = resolveTmuxAttachTarget(state, currentSession);
 				if (!currentSession) {
 					ctx.ui.notify(
-						`Subagent #${num} is running in tmux target "${state.tmuxSession}:${state.tmuxWindow}". Attach first with: tmux attach -t ${state.tmuxSession}`,
+						`Subagent #${num} is running in tmux target "${state.tmuxSession}:${state.tmuxWindow}". Attach first with: tmux attach -t ${attachTarget.attachSession ?? state.tmuxSession}`,
 						"info",
 					);
 					return;
 				}
-				execSync(`tmux switch-client -t ${shellQuote(state.tmuxSession)}`, {
-					encoding: "utf-8",
-				});
-				execSync(`tmux select-window -t ${shellQuote(`${state.tmuxSession}:${state.tmuxWindow}`)}`, {
-					encoding: "utf-8",
-				});
+				if (!attachTarget.session || !attachTarget.windowTarget) {
+					ctx.ui.notify(`Subagent #${num} is not running in a tmux window.`, "warning");
+					return;
+				}
+				try {
+					focusTmuxTarget(attachTarget.session, attachTarget.windowTarget, currentSession);
+				} catch (attachErr) {
+					const canFallbackToDedicated = Boolean(
+						state.tmuxLinkedSession &&
+						state.tmuxSession &&
+						state.tmuxLinkedSession !== state.tmuxSession &&
+						attachTarget.session === state.tmuxLinkedSession,
+					);
+					if (!canFallbackToDedicated) {
+						throw attachErr;
+					}
+					state.tmuxLinkedSession = undefined;
+					const fallbackSession = state.tmuxSession;
+					const fallbackWindow = state.tmuxWindow;
+					if (!fallbackSession || !fallbackWindow) {
+						throw attachErr;
+					}
+					focusTmuxTarget(fallbackSession, `${fallbackSession}:${fallbackWindow}`, currentSession);
+				}
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				if (message.includes("can't find window")) {
@@ -1990,8 +2301,7 @@ Then STOP. No filler. No "I'll wait". No follow-up tool calls.
 						clearInterval(state.pollTimer);
 						state.pollTimer = undefined;
 					}
-					state.tmuxSession = undefined;
-					state.tmuxWindow = undefined;
+					clearTmuxTracking(state);
 					if (state.status === "running") {
 						state.status = "done";
 						updateWidgets();
@@ -2053,7 +2363,7 @@ Then STOP. No filler. No "I'll wait". No follow-up tool calls.
 				total === 0
 					? "No subagents to clear."
 					: `Cleared ${total} subagent${total !== 1 ? "s" : ""}${killed > 0 ? ` (${killed} killed)` : ""}.`;
-			ctx.ui.notify(msg, total === 0 ? "info" : "success");
+			ctx.ui.notify(msg, "info");
 			updateWidgets();
 		},
 	});

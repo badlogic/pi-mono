@@ -175,4 +175,41 @@ describe("openai-completions tool_choice", () => {
 		const params = (payload ?? mockState.lastParams) as { reasoning_effort?: string };
 		expect(params.reasoning_effort).toBe("medium");
 	});
+
+	it("forwards sampling controls supported by openai-completions payloads", async () => {
+		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini")!;
+		const model = { ...baseModel, api: "openai-completions" } as const;
+		let payload: unknown;
+
+		await streamSimple(
+			model,
+			{
+				messages: [
+					{
+						role: "user",
+						content: "Hi",
+						timestamp: Date.now(),
+					},
+				],
+			},
+			{
+				apiKey: "test",
+				topP: 0.7,
+				presencePenalty: 1.25,
+				repetitionPenalty: 1.1,
+				onPayload: (params: unknown) => {
+					payload = params;
+				},
+			},
+		).result();
+
+		const params = (payload ?? mockState.lastParams) as {
+			top_p?: number;
+			presence_penalty?: number;
+			repetition_penalty?: number;
+		};
+		expect(params.top_p).toBe(0.7);
+		expect(params.presence_penalty).toBe(1.25);
+		expect(params.repetition_penalty).toBe(1.1);
+	});
 });

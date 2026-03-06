@@ -90,6 +90,26 @@ export interface AgentOptions {
 	temperature?: number;
 
 	/**
+	 * Nucleus sampling probability mass passed to providers that support it.
+	 */
+	topP?: number;
+
+	/**
+	 * Presence penalty passed to providers that support it.
+	 */
+	presencePenalty?: number;
+
+	/**
+	 * Repetition penalty passed to providers that support it.
+	 */
+	repetitionPenalty?: number;
+
+	/**
+	 * Anthropic-only: enable the fine-grained tool streaming beta.
+	 */
+	anthropicFineGrainedToolStreaming?: boolean;
+
+	/**
 	 * Maximum delay in milliseconds to wait for a retry when the server requests a long wait.
 	 * If the server's requested delay exceeds this value, the request fails immediately,
 	 * allowing higher-level retry logic to handle it with user visibility.
@@ -127,6 +147,10 @@ export class Agent {
 	private _thinkingBudgets?: ThinkingBudgets;
 	private _transport: Transport;
 	private _temperature?: number;
+	private _topP?: number;
+	private _presencePenalty?: number;
+	private _repetitionPenalty?: number;
+	private _anthropicFineGrainedToolStreaming?: boolean;
 	private _maxRetryDelayMs?: number;
 
 	constructor(opts: AgentOptions = {}) {
@@ -141,6 +165,10 @@ export class Agent {
 		this._thinkingBudgets = opts.thinkingBudgets;
 		this._transport = opts.transport ?? "sse";
 		this._temperature = opts.temperature;
+		this._topP = opts.topP;
+		this._presencePenalty = opts.presencePenalty;
+		this._repetitionPenalty = opts.repetitionPenalty;
+		this._anthropicFineGrainedToolStreaming = opts.anthropicFineGrainedToolStreaming;
 		this._maxRetryDelayMs = opts.maxRetryDelayMs;
 	}
 
@@ -199,6 +227,62 @@ export class Agent {
 	 */
 	set temperature(value: number | undefined) {
 		this._temperature = value;
+	}
+
+	/**
+	 * Get the current top-p setting.
+	 */
+	get topP(): number | undefined {
+		return this._topP;
+	}
+
+	/**
+	 * Set the top-p setting.
+	 */
+	set topP(value: number | undefined) {
+		this._topP = value;
+	}
+
+	/**
+	 * Get the current presence penalty.
+	 */
+	get presencePenalty(): number | undefined {
+		return this._presencePenalty;
+	}
+
+	/**
+	 * Set the presence penalty.
+	 */
+	set presencePenalty(value: number | undefined) {
+		this._presencePenalty = value;
+	}
+
+	/**
+	 * Get the current repetition penalty.
+	 */
+	get repetitionPenalty(): number | undefined {
+		return this._repetitionPenalty;
+	}
+
+	/**
+	 * Set the repetition penalty.
+	 */
+	set repetitionPenalty(value: number | undefined) {
+		this._repetitionPenalty = value;
+	}
+
+	/**
+	 * Get whether Anthropic fine-grained tool streaming is enabled.
+	 */
+	get anthropicFineGrainedToolStreaming(): boolean | undefined {
+		return this._anthropicFineGrainedToolStreaming;
+	}
+
+	/**
+	 * Enable or disable Anthropic fine-grained tool streaming.
+	 */
+	set anthropicFineGrainedToolStreaming(value: boolean | undefined) {
+		this._anthropicFineGrainedToolStreaming = value;
 	}
 
 	/**
@@ -452,6 +536,10 @@ export class Agent {
 			sessionId: this._sessionId,
 			transport: this._transport,
 			temperature: this._temperature,
+			topP: this._topP,
+			presencePenalty: this._presencePenalty,
+			repetitionPenalty: this._repetitionPenalty,
+			anthropicFineGrainedToolStreaming: this._anthropicFineGrainedToolStreaming,
 			thinkingBudgets: this._thinkingBudgets,
 			maxRetryDelayMs: this._maxRetryDelayMs,
 			convertToLlm: this.convertToLlm,

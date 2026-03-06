@@ -78,7 +78,6 @@ import { DynamicBorder } from "./components/dynamic-border.js";
 import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
-import { FooterComponent } from "./components/footer.js";
 import { appKey, appKeyHint, editorKey, keyHint, rawKeyHint } from "./components/keybinding-hints.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
@@ -87,6 +86,7 @@ import { ScopedModelsSelectorComponent } from "./components/scoped-models-select
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
+import { StatusLineComponent } from "./components/status-line.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
@@ -150,8 +150,9 @@ export class InteractiveMode {
 	private autocompleteProvider: CombinedAutocompleteProvider | undefined;
 	private fdPath: string | undefined;
 	private editorContainer: Container;
-	private footer: FooterComponent;
+	private footer: StatusLineComponent;
 	private footerDataProvider: FooterDataProvider;
+	private footerSlotContainer: Container;
 	private keybindings: KeybindingsManager;
 	private version: string;
 	private isInitialized = false;
@@ -270,8 +271,15 @@ export class InteractiveMode {
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider();
-		this.footer = new FooterComponent(session, this.footerDataProvider);
+		this.footer = new StatusLineComponent(session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
+		this.footer.setSessionStartTime(Date.now());
+		this.footer.updateSettings(this.settingsManager.getStatusLineSettings());
+		this.footer.watchBranch(() => {
+			this.updateEditorTopBorder();
+			this.ui.requestRender();
+		});
+		this.footerSlotContainer = new Container();
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -445,10 +453,12 @@ export class InteractiveMode {
 		this.ui.addChild(this.statusContainer);
 		this.renderWidgets(); // Initialize with default spacer
 		this.ui.addChild(this.widgetContainerAbove);
+		this.ui.addChild(this.footer);
 		this.ui.addChild(this.editorContainer);
 		this.ui.addChild(this.widgetContainerBelow);
-		this.ui.addChild(this.footer);
+		this.ui.addChild(this.footerSlotContainer);
 		this.ui.setFocus(this.editor);
+		this.updateEditorTopBorder();
 
 		this.setupKeyHandlers();
 		this.setupEditorSubmitHandler();
@@ -478,6 +488,7 @@ export class InteractiveMode {
 
 		// Set up git branch watcher (uses provider instead of footer)
 		this.footerDataProvider.onBranchChange(() => {
+			this.updateEditorTopBorder();
 			this.ui.requestRender();
 		});
 
@@ -1162,6 +1173,7 @@ export class InteractiveMode {
 	 */
 	private setExtensionStatus(key: string, text: string | undefined): void {
 		this.footerDataProvider.setExtensionStatus(key, text);
+		this.updateEditorTopBorder();
 		this.ui.requestRender();
 	}
 
@@ -1298,21 +1310,14 @@ export class InteractiveMode {
 			this.customFooter.dispose();
 		}
 
-		// Remove current footer from UI
-		if (this.customFooter) {
-			this.ui.removeChild(this.customFooter);
-		} else {
-			this.ui.removeChild(this.footer);
-		}
+		this.footerSlotContainer.clear();
 
 		if (factory) {
 			// Create and add custom footer, passing the data provider
 			this.customFooter = factory(this.ui, theme, this.footerDataProvider);
-			this.ui.addChild(this.customFooter);
+			this.footerSlotContainer.addChild(this.customFooter);
 		} else {
-			// Restore built-in footer
 			this.customFooter = undefined;
-			this.ui.addChild(this.footer);
 		}
 
 		this.ui.requestRender();
@@ -1652,6 +1657,7 @@ export class InteractiveMode {
 		}
 
 		this.editorContainer.addChild(this.editor as Component);
+		this.updateEditorTopBorder();
 		this.ui.setFocus(this.editor as Component);
 		this.ui.requestRender();
 	}
@@ -2039,6 +2045,7 @@ export class InteractiveMode {
 		}
 
 		this.footer.invalidate();
+		this.updateEditorTopBorder();
 
 		switch (event.type) {
 			case "agent_start":
@@ -2670,7 +2677,25 @@ export class InteractiveMode {
 			const level = this.session.thinkingLevel || "off";
 			this.editor.borderColor = theme.getThinkingBorderColor(level);
 		}
+		this.updateEditorTopBorder();
 		this.ui.requestRender();
+	}
+
+	private editorSupportsTopBorder(
+		editor: EditorComponent,
+	): editor is EditorComponent & Required<Pick<EditorComponent, "setTopBorder" | "getTopBorderAvailableWidth">> {
+		return typeof editor.setTopBorder === "function" && typeof editor.getTopBorderAvailableWidth === "function";
+	}
+
+	private updateEditorTopBorder(): void {
+		if (!this.editorSupportsTopBorder(this.editor)) {
+			this.footer.setRenderMainLineInBody(true);
+			return;
+		}
+
+		this.footer.setRenderMainLineInBody(false);
+		const availableWidth = this.editor.getTopBorderAvailableWidth(this.ui.terminal.columns);
+		this.editor.setTopBorder(this.footer.getTopBorder(availableWidth));
 	}
 
 	private cycleThinkingLevel(): void {
@@ -3028,11 +3053,23 @@ export class InteractiveMode {
 
 	private showSettingsSelector(): void {
 		this.showSelector((done) => {
+			const statusLineSettings = this.settingsManager.getStatusLineSettings();
 			const selector = new SettingsSelectorComponent(
 				{
 					autoCompact: this.session.autoCompactionEnabled,
 					autoCompactTriggerPercent: this.settingsManager.getCompactionTriggerPercent(),
 					temperature: this.settingsManager.getTemperature(),
+					topP: this.settingsManager.getTopP(),
+					presencePenalty: this.settingsManager.getPresencePenalty(),
+					repetitionPenalty: this.settingsManager.getRepetitionPenalty(),
+					statusLinePreset: statusLineSettings.preset ?? "default",
+					statusLineSeparator: statusLineSettings.separator ?? "powerline-thin",
+					statusLineShowHookStatus: statusLineSettings.showHookStatus ?? true,
+					anthropicFineGrainedToolStreaming: this.settingsManager.getAnthropicFineGrainedToolStreaming(),
+					subagentTmuxLinkedWindows: this.settingsManager.getSubagentTmuxLinkedWindows(),
+					asyncExecutionEnabled: this.settingsManager.getAsyncExecutionEnabled(),
+					asyncMaxJobs: this.settingsManager.getAsyncMaxJobs(),
+					bashMaxTimeoutSeconds: this.settingsManager.getBashMaxTimeoutSeconds(),
 					showImages: this.settingsManager.getShowImages(),
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
 					blockImages: this.settingsManager.getBlockImages(),
@@ -3064,6 +3101,53 @@ export class InteractiveMode {
 					onTemperatureChange: (temperature) => {
 						this.settingsManager.setTemperature(temperature);
 						this.session.agent.temperature = temperature;
+					},
+					onTopPChange: (topP) => {
+						this.settingsManager.setTopP(topP);
+						this.session.agent.topP = topP;
+					},
+					onPresencePenaltyChange: (penalty) => {
+						this.settingsManager.setPresencePenalty(penalty);
+						this.session.agent.presencePenalty = penalty;
+					},
+					onRepetitionPenaltyChange: (penalty) => {
+						this.settingsManager.setRepetitionPenalty(penalty);
+						this.session.agent.repetitionPenalty = penalty;
+					},
+					onStatusLinePresetChange: (preset) => {
+						this.settingsManager.setStatusLinePreset(preset);
+						this.footer.updateSettings(this.settingsManager.getStatusLineSettings());
+						this.footer.invalidate();
+						this.updateEditorTopBorder();
+					},
+					onStatusLineSeparatorChange: (separator) => {
+						this.settingsManager.setStatusLineSeparator(separator);
+						this.footer.updateSettings(this.settingsManager.getStatusLineSettings());
+						this.footer.invalidate();
+						this.updateEditorTopBorder();
+					},
+					onStatusLineShowHookStatusChange: (enabled) => {
+						this.settingsManager.setStatusLineShowHookStatus(enabled);
+						this.footer.updateSettings(this.settingsManager.getStatusLineSettings());
+						this.updateEditorTopBorder();
+					},
+					onAnthropicFineGrainedToolStreamingChange: (enabled) => {
+						this.settingsManager.setAnthropicFineGrainedToolStreaming(enabled);
+						this.session.agent.anthropicFineGrainedToolStreaming = enabled;
+					},
+					onSubagentTmuxLinkedWindowsChange: (enabled) => {
+						this.settingsManager.setSubagentTmuxLinkedWindows(enabled);
+						process.env.PI_SUBAGENT_TMUX_LINKED_WINDOWS = enabled ? "1" : "0";
+					},
+					onAsyncExecutionEnabledChange: (enabled) => {
+						this.session.setAsyncExecutionEnabled(enabled);
+						this.showStatus(`Background bash: ${enabled ? "enabled" : "disabled"}`);
+					},
+					onAsyncMaxJobsChange: (maxJobs) => {
+						this.session.setAsyncMaxJobs(maxJobs);
+					},
+					onBashMaxTimeoutSecondsChange: (timeoutSeconds) => {
+						this.session.setBashMaxTimeoutSeconds(timeoutSeconds);
 					},
 					onShowImagesChange: (enabled) => {
 						this.settingsManager.setShowImages(enabled);
@@ -3233,6 +3317,7 @@ export class InteractiveMode {
 		const models = await this.getModelCandidates();
 		const uniqueProviders = new Set(models.map((m) => m.provider));
 		this.footerDataProvider.setAvailableProviderCount(uniqueProviders.size);
+		this.updateEditorTopBorder();
 	}
 
 	private showModelSelector(initialSearchInput?: string): void {

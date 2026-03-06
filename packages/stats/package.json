@@ -1,0 +1,51 @@
+{
+	"name": "@mariozechner/pi-stats",
+	"version": "0.56.1",
+	"description": "Local observability dashboard for pi session usage statistics",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"bin": {
+		"pi-stats": "./dist/index.js"
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json && shx chmod +x dist/index.js",
+		"dev": "tsx src/index.ts",
+		"test": "tsx --test test/**/*.test.ts",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"@mariozechner/pi-ai": "^0.56.1",
+		"better-sqlite3": "^12.6.2"
+	},
+	"devDependencies": {
+		"@types/better-sqlite3": "^7.6.13",
+		"@types/node": "^24.3.0",
+		"shx": "^0.4.0",
+		"tsx": "^4.20.3",
+		"typescript": "^5.7.3"
+	},
+	"keywords": [
+		"ai",
+		"observability",
+		"metrics",
+		"dashboard",
+		"llm",
+		"statistics"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/badlogic/pi-mono.git",
+		"directory": "packages/stats"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	}
+}

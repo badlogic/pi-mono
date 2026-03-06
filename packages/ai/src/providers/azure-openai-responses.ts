@@ -225,6 +225,10 @@ function buildParams(
 		params.temperature = options?.temperature;
 	}
 
+	if (options?.topP !== undefined) {
+		params.top_p = options.topP;
+	}
+
 	if (context.tools) {
 		params.tools = convertResponsesTools(context.tools);
 	}

@@ -112,4 +112,43 @@ describe("OpenAI to Anthropic session migration for Copilot Claude", () => {
 
 		expect(toolCall.thoughtSignature).toBeUndefined();
 	});
+
+	it("sanitizes pseudo tool markup in assistant text and appends a tool-contract hint", () => {
+		const model = makeCopilotClaudeModel();
+		const messages: Message[] = [
+			{ role: "user", content: "continue", timestamp: Date.now() },
+			{
+				role: "assistant",
+				content: [
+					{
+						type: "text",
+						text: "<tool_call>read<arg_key>path</arg_key><arg_value>/tmp/demo.md</arg_value></tool_call>",
+					},
+				],
+				api: "openai-responses",
+				provider: "github-copilot",
+				model: "gpt-5",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: Date.now(),
+			},
+		];
+
+		const result = transformMessages(messages, model, anthropicNormalizeToolCallId);
+		const assistantMsg = result.find((m) => m.role === "assistant") as AssistantMessage;
+		const textBlocks = assistantMsg.content.filter((b) => b.type === "text");
+		const combinedText = textBlocks.map((block) => block.text).join("\n");
+
+		expect(combinedText).not.toContain("<tool_call>");
+		expect(combinedText).not.toContain("<arg_key>");
+		expect(combinedText).toContain("[tool_call]");
+		expect(combinedText).toContain("Tool contract note");
+	});
 });

@@ -1,5 +1,22 @@
 import type { Api, AssistantMessage, Message, Model, ToolCall, ToolResultMessage } from "../types.js";
 
+const PSEUDO_TOOL_MARKUP_TAG_REGEX = /<\/?(tool_call|arg_key|arg_value)>/gi;
+const PSEUDO_TOOL_MARKUP_HINT =
+	"[Tool contract note: previous pseudo tool tags were normalized. Use native tool/function calling only; never emit pseudo tags like tool_call/arg_key/arg_value in text.]";
+
+function sanitizePseudoToolMarkup(text: string): { text: string; changed: boolean } {
+	PSEUDO_TOOL_MARKUP_TAG_REGEX.lastIndex = 0;
+	if (!PSEUDO_TOOL_MARKUP_TAG_REGEX.test(text)) {
+		return { text, changed: false };
+	}
+	PSEUDO_TOOL_MARKUP_TAG_REGEX.lastIndex = 0;
+	const sanitized = text.replace(
+		PSEUDO_TOOL_MARKUP_TAG_REGEX,
+		(_full, tag: string) => `[${String(tag).toLowerCase()}]`,
+	);
+	return { text: sanitized, changed: sanitized !== text };
+}
+
 /**
  * Normalize tool call ID for cross-provider compatibility.
  * OpenAI Responses API generates IDs that are 450+ chars with special characters like `|`.
@@ -36,6 +53,7 @@ export function transformMessages<TApi extends Api>(
 				assistantMsg.provider === model.provider &&
 				assistantMsg.api === model.api &&
 				assistantMsg.model === model.id;
+			let sanitizedPseudoToolMarkup = false;
 
 			const transformedContent = assistantMsg.content.flatMap((block) => {
 				if (block.type === "thinking") {
@@ -57,10 +75,16 @@ export function transformMessages<TApi extends Api>(
 				}
 
 				if (block.type === "text") {
-					if (isSameModel) return block;
+					const sanitized = sanitizePseudoToolMarkup(block.text);
+					if (sanitized.changed) {
+						sanitizedPseudoToolMarkup = true;
+					}
+					if (isSameModel) {
+						return sanitized.changed ? { type: "text" as const, text: sanitized.text } : block;
+					}
 					return {
 						type: "text" as const,
-						text: block.text,
+						text: sanitized.text,
 					};
 				}
 
@@ -87,9 +111,13 @@ export function transformMessages<TApi extends Api>(
 				return block;
 			});
 
+			const contentWithContractHint = sanitizedPseudoToolMarkup
+				? [...transformedContent, { type: "text" as const, text: PSEUDO_TOOL_MARKUP_HINT }]
+				: transformedContent;
+
 			return {
 				...assistantMsg,
-				content: transformedContent,
+				content: contentWithContractHint,
 			};
 		}
 		return msg;

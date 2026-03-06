@@ -1,6 +1,7 @@
 import * as os from "node:os";
 import {
 	Box,
+	type Component,
 	Container,
 	getCapabilities,
 	getImageDimensions,
@@ -21,7 +22,14 @@ import { sanitizeBinaryOutput } from "../../../utils/shell.js";
 import { getLanguageFromPath, highlightCode, theme } from "../theme/theme.js";
 import { renderDiff } from "./diff.js";
 import { keyHint } from "./keybinding-hints.js";
-import { truncateToVisualLines } from "./visual-truncate.js";
+import {
+	CachedOutputBlock,
+	clampDisplayLine,
+	humanizeToolName,
+	type OutputBlockSection,
+	renderToolStatusLine,
+	type ToolBlockState,
+} from "./tool-ui.js";
 
 // Preview line limit for bash when not expanded
 const BASH_PREVIEW_LINES = 5;
@@ -71,11 +79,17 @@ type WriteHighlightCache = {
  * Component that renders a tool call with its result (updateable)
  */
 export class ToolExecutionComponent extends Container {
-	private contentBox: Box; // Used for custom tools and bash visual truncation
-	private contentText: Text; // For built-in tools (with its own padding/bg)
+	private contentHost: Container;
+	private contentBox: Box; // Used for custom tool renderers
+	private contentText: Text; // Used for unknown tool fallbacks
+	private builtInBox: Box; // Used for built-in tools with rich block rendering
+	private activeContentChild?: Component;
+	private builtInRenderer: Component;
+	private builtInBlockCache = new CachedOutputBlock();
 	private imageComponents: Image[] = [];
 	private imageSpacers: Spacer[] = [];
 	private toolName: string;
+	private toolLabel: string;
 	private args: any;
 	private expanded = false;
 	private showImages: boolean;
@@ -108,6 +122,7 @@ export class ToolExecutionComponent extends Container {
 	) {
 		super();
 		this.toolName = toolName;
+		this.toolLabel = toolDefinition?.label ?? humanizeToolName(toolName);
 		this.args = args;
 		this.showImages = options.showImages ?? true;
 		this.toolDefinition = toolDefinition;
@@ -116,17 +131,19 @@ export class ToolExecutionComponent extends Container {
 
 		this.addChild(new Spacer(1));
 
-		// Always create both - contentBox for custom tools/bash, contentText for other built-ins
+		this.contentHost = new Container();
+		this.addChild(this.contentHost);
+
+		// Always create both - contentBox for custom renderers, contentText for unknown tools
 		this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
 		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
-
-		// Use contentBox for bash (visual truncation) or custom tools with custom renderers
-		// Use contentText for built-in tools (including overrides without custom renderers)
-		if (toolName === "bash" || (toolDefinition && !this.shouldUseBuiltInRenderer())) {
-			this.addChild(this.contentBox);
-		} else {
-			this.addChild(this.contentText);
-		}
+		this.builtInBox = new Box(0, 0);
+		this.builtInRenderer = {
+			render: (width: number) => this.renderBuiltInBlock(width),
+			invalidate: () => {
+				this.builtInBlockCache.invalidate();
+			},
+		};
 
 		this.updateDisplay();
 	}
@@ -140,6 +157,15 @@ export class ToolExecutionComponent extends Container {
 		const isBuiltInName = this.toolName in allTools;
 		const hasCustomRenderers = this.toolDefinition?.renderCall || this.toolDefinition?.renderResult;
 		return isBuiltInName && !hasCustomRenderers;
+	}
+
+	private setActiveContentChild(component: Component): void {
+		if (this.activeContentChild === component) {
+			return;
+		}
+		this.contentHost.clear();
+		this.contentHost.addChild(component);
+		this.activeContentChild = component;
 	}
 
 	updateArgs(args: any): void {
@@ -374,20 +400,16 @@ export class ToolExecutionComponent extends Container {
 		const useBuiltInRenderer = this.shouldUseBuiltInRenderer();
 		let customRendererHasContent = false;
 		this.hideComponent = false;
+		this.builtInBlockCache.invalidate();
 
 		// Use built-in rendering for built-in tools (or overrides without custom renderers)
 		if (useBuiltInRenderer) {
-			if (this.toolName === "bash") {
-				// Bash uses Box with visual line truncation
-				this.contentBox.setBgFn(bgFn);
-				this.contentBox.clear();
-				this.renderBashContent();
-			} else {
-				// Other built-in tools: use Text directly with caching
-				this.contentText.setCustomBgFn(bgFn);
-				this.contentText.setText(this.formatToolExecution());
-			}
+			this.setActiveContentChild(this.builtInBox);
+			this.builtInBox.setBgFn(undefined);
+			this.builtInBox.clear();
+			this.builtInBox.addChild(this.builtInRenderer);
 		} else if (this.toolDefinition) {
+			this.setActiveContentChild(this.contentBox);
 			// Custom tools use Box for flexible component rendering
 			this.contentBox.setBgFn(bgFn);
 			this.contentBox.clear();
@@ -440,6 +462,7 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else {
+			this.setActiveContentChild(this.contentText);
 			// Unknown tool with no registered definition - show generic fallback
 			this.contentText.setCustomBgFn(bgFn);
 			this.contentText.setText(this.formatToolExecution());
@@ -492,86 +515,439 @@ export class ToolExecutionComponent extends Container {
 		}
 	}
 
-	/**
-	 * Render bash content using visual line truncation (like bash-execution.ts)
-	 */
-	private renderBashContent(): void {
-		const command = str(this.args?.command);
-		const timeout = this.args?.timeout as number | undefined;
+	private getToolBlockState(): ToolBlockState {
+		if (this.result?.isError) {
+			return "error";
+		}
+		if (this.isPartial) {
+			return "pending";
+		}
+		return "success";
+	}
 
-		// Header
-		const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
-		const commandDisplay =
-			command === null ? theme.fg("error", "[invalid arg]") : command ? command : theme.fg("toolOutput", "...");
-		this.contentBox.addChild(
-			new Text(theme.fg("toolTitle", theme.bold(`$ ${commandDisplay}`)) + timeoutSuffix, 0, 0),
-		);
+	private renderBuiltInBlock(width: number): string[] {
+		return this.builtInBlockCache.render({
+			header: this.getToolBlockHeader(),
+			state: this.getToolBlockState(),
+			sections: this.getToolBlockSections(),
+			width,
+		});
+	}
 
-		if (this.result) {
-			const output = this.getTextOutput().trim();
+	private getToolBlockHeader(): string {
+		const meta: string[] = [];
+		let description = "";
 
-			if (output) {
-				// Style each line for the output
-				const styledOutput = output
-					.split("\n")
-					.map((line) => theme.fg("toolOutput", line))
-					.join("\n");
-
-				if (this.expanded) {
-					// Show all lines when expanded
-					this.contentBox.addChild(new Text(`\n${styledOutput}`, 0, 0));
-				} else {
-					// Use visual line truncation when collapsed with width-aware caching
-					let cachedWidth: number | undefined;
-					let cachedLines: string[] | undefined;
-					let cachedSkipped: number | undefined;
-
-					this.contentBox.addChild({
-						render: (width: number) => {
-							if (cachedLines === undefined || cachedWidth !== width) {
-								const result = truncateToVisualLines(styledOutput, BASH_PREVIEW_LINES, width);
-								cachedLines = result.visualLines;
-								cachedSkipped = result.skippedCount;
-								cachedWidth = width;
-							}
-							if (cachedSkipped && cachedSkipped > 0) {
-								const hint =
-									theme.fg("muted", `... (${cachedSkipped} earlier lines,`) +
-									` ${keyHint("expandTools", "to expand")})`;
-								return ["", truncateToWidth(hint, width, "..."), ...cachedLines];
-							}
-							// Add blank line for spacing (matches expanded case)
-							return ["", ...cachedLines];
-						},
-						invalidate: () => {
-							cachedWidth = undefined;
-							cachedLines = undefined;
-							cachedSkipped = undefined;
-						},
-					});
+		switch (this.toolName) {
+			case "read": {
+				const rawPath = str(this.args?.file_path ?? this.args?.path);
+				const path = rawPath !== null ? shortenPath(rawPath) : null;
+				description = path ?? "[invalid path]";
+				const offset = this.args?.offset;
+				const limit = this.args?.limit;
+				if (offset !== undefined || limit !== undefined) {
+					const startLine = offset ?? 1;
+					const endLine = limit !== undefined ? startLine + limit - 1 : undefined;
+					meta.push(endLine ? `${startLine}-${endLine}` : `${startLine}`);
 				}
+				break;
 			}
-
-			// Truncation warnings
-			const truncation = this.result.details?.truncation;
-			const fullOutputPath = this.result.details?.fullOutputPath;
-			if (truncation?.truncated || fullOutputPath) {
-				const warnings: string[] = [];
-				if (fullOutputPath) {
-					warnings.push(`Full output: ${fullOutputPath}`);
+			case "write": {
+				const rawPath = str(this.args?.file_path ?? this.args?.path);
+				const path = rawPath !== null ? shortenPath(rawPath) : null;
+				description = path ?? "[invalid path]";
+				break;
+			}
+			case "edit": {
+				const rawPath = str(this.args?.file_path ?? this.args?.path);
+				const path = rawPath !== null ? shortenPath(rawPath) : null;
+				description = path ?? "[invalid path]";
+				const firstChangedLine =
+					(this.editDiffPreview && "firstChangedLine" in this.editDiffPreview
+						? this.editDiffPreview.firstChangedLine
+						: undefined) ||
+					(this.result && !this.result.isError ? this.result.details?.firstChangedLine : undefined);
+				if (typeof firstChangedLine === "number") {
+					meta.push(`line ${firstChangedLine}`);
 				}
-				if (truncation?.truncated) {
-					if (truncation.truncatedBy === "lines") {
-						warnings.push(`Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines`);
-					} else {
-						warnings.push(
-							`Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`,
-						);
-					}
+				break;
+			}
+			case "ls": {
+				const rawPath = str(this.args?.path);
+				const path = rawPath !== null ? shortenPath(rawPath || ".") : null;
+				description = path ?? "[invalid path]";
+				if (typeof this.args?.limit === "number") {
+					meta.push(`limit ${this.args.limit}`);
 				}
-				this.contentBox.addChild(new Text(`\n${theme.fg("warning", `[${warnings.join(". ")}]`)}`, 0, 0));
+				break;
+			}
+			case "find": {
+				const pattern = str(this.args?.pattern);
+				const rawPath = str(this.args?.path);
+				const path = rawPath !== null ? shortenPath(rawPath || ".") : null;
+				description = pattern === null ? "[invalid pattern]" : (pattern ?? "");
+				if (path !== null) {
+					meta.push(`in ${path}`);
+				}
+				if (typeof this.args?.limit === "number") {
+					meta.push(`limit ${this.args.limit}`);
+				}
+				break;
+			}
+			case "grep": {
+				const pattern = str(this.args?.pattern);
+				const rawPath = str(this.args?.path);
+				const path = rawPath !== null ? shortenPath(rawPath || ".") : null;
+				description = pattern === null ? "[invalid pattern]" : `/${pattern ?? ""}/`;
+				if (path !== null) {
+					meta.push(`in ${path}`);
+				}
+				const glob = str(this.args?.glob);
+				if (glob) {
+					meta.push(glob);
+				}
+				if (typeof this.args?.limit === "number") {
+					meta.push(`limit ${this.args.limit}`);
+				}
+				break;
+			}
+			case "bash": {
+				const command = str(this.args?.command);
+				description = command === null ? "[invalid command]" : (command ?? "");
+				if (typeof this.args?.timeout === "number") {
+					meta.push(`timeout ${this.args.timeout}s`);
+				}
+				break;
+			}
+			default: {
+				description = this.formatInlineArgsPreview();
+				break;
 			}
 		}
+
+		return renderToolStatusLine({
+			state: this.getToolBlockState(),
+			title: this.toolLabel,
+			description,
+			meta,
+		});
+	}
+
+	private getToolBlockSections(): OutputBlockSection[] {
+		switch (this.toolName) {
+			case "read":
+				return this.getReadSections();
+			case "write":
+				return this.getWriteSections();
+			case "edit":
+				return this.getEditSections();
+			case "ls":
+			case "find":
+			case "grep":
+				return this.getListSections();
+			case "bash":
+				return this.getBashSections();
+			default:
+				return this.getGenericSections();
+		}
+	}
+
+	private getReadSections(): OutputBlockSection[] {
+		if (!this.result) {
+			return [];
+		}
+		const output = this.getTextOutput();
+		const rawPath = str(this.args?.file_path ?? this.args?.path);
+		const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
+		const lines = lang ? highlightCode(replaceTabs(output), lang) : output.split("\n").map(replaceTabs);
+		const preview = this.createPreviewLines(lines, 8, !lang);
+		const sections: OutputBlockSection[] = [];
+		if (preview.lines.length > 0) {
+			sections.push({ lines: preview.lines });
+		}
+		const notices = [...this.getPreviewNotice(preview.remaining), ...this.getReadTruncationNotices()];
+		if (notices.length > 0) {
+			sections.push({ lines: notices });
+		}
+		return sections;
+	}
+
+	private getWriteSections(): OutputBlockSection[] {
+		const rawPath = str(this.args?.file_path ?? this.args?.path);
+		const fileContent = str(this.args?.content);
+		const sections: OutputBlockSection[] = [];
+		if (fileContent === null) {
+			sections.push({ lines: [theme.fg("error", "[invalid content arg - expected string]")] });
+		} else if (fileContent) {
+			const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
+			const lines = this.getWritePreviewLines(lang, rawPath, fileContent);
+			const preview = this.createPreviewLines(lines, 8, !lang);
+			sections.push({ lines: preview.lines });
+			const notices = this.getPreviewNotice(preview.remaining);
+			if (notices.length > 0) {
+				sections.push({ lines: notices });
+			}
+		}
+		if (this.result?.isError) {
+			const errorText = this.getTextOutput();
+			if (errorText) {
+				sections.push({ label: "Error", lines: [theme.fg("error", errorText)] });
+			}
+		}
+		return sections;
+	}
+
+	private getEditSections(): OutputBlockSection[] {
+		const sections: OutputBlockSection[] = [];
+		if (this.result?.isError) {
+			const errorText = this.getTextOutput();
+			if (errorText) {
+				sections.push({ lines: [theme.fg("error", errorText)] });
+			}
+			return sections;
+		}
+
+		let diffText: string | undefined;
+		const rawPath = str(this.args?.file_path ?? this.args?.path);
+		if (this.result?.details?.diff) {
+			diffText = renderDiff(this.result.details.diff, { filePath: rawPath ?? undefined });
+		} else if (this.editDiffPreview) {
+			if ("error" in this.editDiffPreview) {
+				sections.push({ lines: [theme.fg("error", this.editDiffPreview.error)] });
+				return sections;
+			}
+			if (this.editDiffPreview.diff) {
+				diffText = renderDiff(this.editDiffPreview.diff, { filePath: rawPath ?? undefined });
+			}
+		}
+		if (diffText) {
+			const diffLines = diffText.split("\n").map((line) => clampDisplayLine(line));
+			const preview = this.createPreviewLines(diffLines, 18, false);
+			sections.push({ lines: preview.lines });
+			const notices = this.getPreviewNotice(preview.remaining);
+			if (notices.length > 0) {
+				sections.push({ lines: notices });
+			}
+		}
+		return sections;
+	}
+
+	private getListSections(): OutputBlockSection[] {
+		if (!this.result) {
+			return [];
+		}
+		const output = this.getTextOutput().trim();
+		const sections: OutputBlockSection[] = [];
+		if (output) {
+			const preview = this.createPreviewLines(output.split("\n"), 10, true);
+			sections.push({ lines: preview.lines });
+			const notices = [...this.getPreviewNotice(preview.remaining), ...this.getListNotices()];
+			if (notices.length > 0) {
+				sections.push({ lines: notices });
+			}
+			return sections;
+		}
+		const notices = this.getListNotices();
+		if (notices.length > 0) {
+			sections.push({ lines: notices });
+		}
+		return sections;
+	}
+
+	private getBashSections(): OutputBlockSection[] {
+		if (!this.result) {
+			return [];
+		}
+		const output = this.getTextOutput().trimEnd();
+		const sections: OutputBlockSection[] = [];
+		if (output) {
+			const preview = this.createPreviewLines(output.split("\n"), BASH_PREVIEW_LINES, true);
+			sections.push({ lines: preview.lines });
+			const notices = [...this.getPreviewNotice(preview.remaining), ...this.getBashNotices()];
+			if (notices.length > 0) {
+				sections.push({ lines: notices });
+			}
+			return sections;
+		}
+		const notices = this.getBashNotices();
+		if (notices.length > 0) {
+			sections.push({ lines: notices });
+		}
+		return sections;
+	}
+
+	private getGenericSections(): OutputBlockSection[] {
+		const sections: OutputBlockSection[] = [];
+		if (this.expanded && this.args !== undefined) {
+			const argsText = JSON.stringify(this.args, null, 2) ?? "";
+			if (argsText) {
+				sections.push({ label: "Args", lines: argsText.split("\n").map((line) => theme.fg("toolOutput", line)) });
+			}
+		}
+		if (!this.result) {
+			return sections;
+		}
+		const output = this.getTextOutput().trimEnd();
+		if (!output) {
+			sections.push({ lines: [theme.fg("dim", "(no output)")] });
+			return sections;
+		}
+		const preview = this.createPreviewLines(output.split("\n"), 6, true);
+		sections.push({ lines: preview.lines });
+		const notices = this.getPreviewNotice(preview.remaining);
+		if (notices.length > 0) {
+			sections.push({ lines: notices });
+		}
+		return sections;
+	}
+
+	private getWritePreviewLines(lang: string | undefined, rawPath: string | null, fileContent: string): string[] {
+		if (lang) {
+			const cache = this.writeHighlightCache;
+			if (cache && cache.lang === lang && cache.rawPath === rawPath && cache.rawContent === fileContent) {
+				return cache.highlightedLines;
+			}
+			const normalized = replaceTabs(fileContent);
+			const highlighted = highlightCode(normalized, lang);
+			this.writeHighlightCache = {
+				rawPath,
+				lang,
+				rawContent: fileContent,
+				normalizedLines: normalized.split("\n"),
+				highlightedLines: highlighted,
+			};
+			return highlighted;
+		}
+		this.writeHighlightCache = undefined;
+		return fileContent.split("\n").map(replaceTabs);
+	}
+
+	private createPreviewLines(
+		lines: string[],
+		collapsedLimit: number,
+		applyOutputColor: boolean,
+	): {
+		lines: string[];
+		remaining: number;
+	} {
+		const totalLines = lines.map((line) => clampDisplayLine(line));
+		const maxLines = this.expanded ? totalLines.length : collapsedLimit;
+		const displayLines = totalLines
+			.slice(0, maxLines)
+			.map((line) => (applyOutputColor ? theme.fg("toolOutput", line) : line));
+		return {
+			lines: displayLines.length > 0 ? displayLines : [theme.fg("dim", "(no output)")],
+			remaining: Math.max(0, totalLines.length - maxLines),
+		};
+	}
+
+	private getPreviewNotice(remaining: number): string[] {
+		if (remaining <= 0) {
+			return [];
+		}
+		return [`${theme.fg("dim", `… ${remaining} more lines`)} (${keyHint("expandTools", "to expand")})`];
+	}
+
+	private getReadTruncationNotices(): string[] {
+		const truncation = this.result?.details?.truncation;
+		if (!truncation?.truncated) {
+			return [];
+		}
+		if (truncation.firstLineExceedsLimit) {
+			return [
+				theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`),
+			];
+		}
+		if (truncation.truncatedBy === "lines") {
+			return [
+				theme.fg(
+					"warning",
+					`[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`,
+				),
+			];
+		}
+		return [
+			theme.fg(
+				"warning",
+				`[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`,
+			),
+		];
+	}
+
+	private getListNotices(): string[] {
+		if (!this.result) {
+			return [];
+		}
+		const notices: string[] = [];
+		if (this.toolName === "ls" && this.result.details?.entryLimitReached) {
+			notices.push(theme.fg("warning", `[Truncated: ${this.result.details.entryLimitReached} entries limit]`));
+		}
+		if (this.toolName === "find" && this.result.details?.resultLimitReached) {
+			notices.push(theme.fg("warning", `[Truncated: ${this.result.details.resultLimitReached} results limit]`));
+		}
+		if (this.toolName === "grep") {
+			if (this.result.details?.matchLimitReached) {
+				notices.push(theme.fg("warning", `[Truncated: ${this.result.details.matchLimitReached} matches limit]`));
+			}
+			if (this.result.details?.linesTruncated) {
+				notices.push(theme.fg("warning", "[Some lines were truncated]"));
+			}
+		}
+		const truncation = this.result.details?.truncation;
+		if (truncation?.truncated) {
+			notices.push(
+				theme.fg("warning", `[Output limited to ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)}]`),
+			);
+		}
+		return notices;
+	}
+
+	private getBashNotices(): string[] {
+		if (!this.result) {
+			return [];
+		}
+		const notices: string[] = [];
+		const truncation = this.result.details?.truncation;
+		const fullOutputPath = this.result.details?.fullOutputPath;
+		if (this.result.isError && typeof this.result.details?.exitCode === "number") {
+			notices.push(theme.fg("error", `(exit ${this.result.details.exitCode})`));
+		}
+		if (fullOutputPath) {
+			notices.push(theme.fg("warning", `Full output: ${fullOutputPath}`));
+		}
+		if (truncation?.truncated) {
+			if (truncation.truncatedBy === "lines") {
+				notices.push(
+					theme.fg("warning", `Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines`),
+				);
+			} else {
+				notices.push(
+					theme.fg(
+						"warning",
+						`Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`,
+					),
+				);
+			}
+		}
+		return notices;
+	}
+
+	private formatInlineArgsPreview(): string {
+		if (!this.args || typeof this.args !== "object") {
+			return "";
+		}
+		const entries = Object.entries(this.args as Record<string, unknown>).slice(0, 3);
+		return entries
+			.map(([key, value]) => {
+				if (typeof value === "string") {
+					return `${key}=${truncateToWidth(value, 24)}`;
+				}
+				if (typeof value === "number" || typeof value === "boolean") {
+					return `${key}=${String(value)}`;
+				}
+				return key;
+			})
+			.join(" · ");
 	}
 
 	private getTextOutput(): string {

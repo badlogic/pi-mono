@@ -3,6 +3,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
+import type {
+	StatusLinePreset,
+	StatusLineSegmentId,
+	StatusLineSeparatorStyle,
+	StatusLineSettings,
+} from "./status-line-settings.js";
+import { STATUS_LINE_SEGMENTS } from "./status-line-settings.js";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -44,6 +51,18 @@ export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
+export interface AsyncExecutionSettings {
+	enabled?: boolean; // default: false
+	maxJobs?: number; // default: 100
+}
+
+export interface ToolExecutionSettings {
+	maxTimeout?: number; // canonical global upper bound for bash timeout
+	bashMaxTimeoutSeconds?: number; // optional global upper bound for bash timeout
+}
+
+export type { StatusLineSettings } from "./status-line-settings.js";
+
 export type TransportSetting = Transport;
 
 /**
@@ -67,6 +86,11 @@ export interface Settings {
 	defaultModel?: string;
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 	temperature?: number;
+	topP?: number;
+	presencePenalty?: number;
+	repetitionPenalty?: number;
+	anthropicFineGrainedToolStreaming?: boolean;
+	subagentTmuxLinkedWindows?: boolean;
 	transport?: TransportSetting; // default: "sse"
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
@@ -94,6 +118,9 @@ export interface Settings {
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
+	async?: AsyncExecutionSettings;
+	tools?: ToolExecutionSettings;
+	statusLine?: StatusLineSettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -344,6 +371,128 @@ export class SettingsManager {
 			settings.temperature = normalizedTemperature;
 		}
 
+		// Normalize topP
+		const normalizedTopP = SettingsManager.normalizeTopP(settings.topP);
+		if (normalizedTopP === undefined) {
+			delete settings.topP;
+		} else {
+			settings.topP = normalizedTopP;
+		}
+
+		// Normalize presencePenalty
+		const normalizedPresencePenalty = SettingsManager.normalizePresencePenalty(settings.presencePenalty);
+		if (normalizedPresencePenalty === undefined) {
+			delete settings.presencePenalty;
+		} else {
+			settings.presencePenalty = normalizedPresencePenalty;
+		}
+
+		// Normalize repetitionPenalty
+		const normalizedRepetitionPenalty = SettingsManager.normalizeRepetitionPenalty(settings.repetitionPenalty);
+		if (normalizedRepetitionPenalty === undefined) {
+			delete settings.repetitionPenalty;
+		} else {
+			settings.repetitionPenalty = normalizedRepetitionPenalty;
+		}
+
+		// Normalize anthropicFineGrainedToolStreaming
+		const normalizedAnthropicFineGrainedToolStreaming = SettingsManager.normalizeBoolean(
+			settings.anthropicFineGrainedToolStreaming,
+		);
+		if (normalizedAnthropicFineGrainedToolStreaming === undefined) {
+			delete settings.anthropicFineGrainedToolStreaming;
+		} else {
+			settings.anthropicFineGrainedToolStreaming = normalizedAnthropicFineGrainedToolStreaming;
+		}
+
+		// Normalize subagentTmuxLinkedWindows
+		const normalizedSubagentTmuxLinkedWindows = SettingsManager.normalizeBoolean(settings.subagentTmuxLinkedWindows);
+		if (normalizedSubagentTmuxLinkedWindows === undefined) {
+			delete settings.subagentTmuxLinkedWindows;
+		} else {
+			settings.subagentTmuxLinkedWindows = normalizedSubagentTmuxLinkedWindows;
+		}
+
+		// Normalize async settings
+		if (
+			"async" in settings &&
+			typeof settings.async === "object" &&
+			settings.async !== null &&
+			!Array.isArray(settings.async)
+		) {
+			const asyncSettings = settings.async as Record<string, unknown>;
+			const normalizedMaxJobs = SettingsManager.normalizeAsyncMaxJobs(asyncSettings.maxJobs);
+			if (normalizedMaxJobs === undefined) {
+				delete asyncSettings.maxJobs;
+			} else {
+				asyncSettings.maxJobs = normalizedMaxJobs;
+			}
+		}
+
+		// Normalize tools settings
+		if (
+			"tools" in settings &&
+			typeof settings.tools === "object" &&
+			settings.tools !== null &&
+			!Array.isArray(settings.tools)
+		) {
+			const toolsSettings = settings.tools as Record<string, unknown>;
+			const normalizedBashMaxTimeout = SettingsManager.normalizeBashMaxTimeoutSeconds(
+				toolsSettings.maxTimeout ?? toolsSettings.bashMaxTimeoutSeconds,
+			);
+			if (normalizedBashMaxTimeout === undefined) {
+				delete toolsSettings.maxTimeout;
+				delete toolsSettings.bashMaxTimeoutSeconds;
+			} else {
+				toolsSettings.maxTimeout = normalizedBashMaxTimeout;
+				toolsSettings.bashMaxTimeoutSeconds = normalizedBashMaxTimeout;
+			}
+		}
+
+		// Normalize statusLine settings
+		if (
+			"statusLine" in settings &&
+			typeof settings.statusLine === "object" &&
+			settings.statusLine !== null &&
+			!Array.isArray(settings.statusLine)
+		) {
+			const statusLineSettings = settings.statusLine as Record<string, unknown>;
+			const normalizedPreset = SettingsManager.normalizeStatusLinePreset(statusLineSettings.preset);
+			if (normalizedPreset === undefined) {
+				delete statusLineSettings.preset;
+			} else {
+				statusLineSettings.preset = normalizedPreset;
+			}
+
+			const normalizedSeparator = SettingsManager.normalizeStatusLineSeparator(statusLineSettings.separator);
+			if (normalizedSeparator === undefined) {
+				delete statusLineSettings.separator;
+			} else {
+				statusLineSettings.separator = normalizedSeparator;
+			}
+
+			const normalizedLeftSegments = SettingsManager.normalizeStatusLineSegments(statusLineSettings.leftSegments);
+			if (normalizedLeftSegments === undefined) {
+				delete statusLineSettings.leftSegments;
+			} else {
+				statusLineSettings.leftSegments = normalizedLeftSegments;
+			}
+
+			const normalizedRightSegments = SettingsManager.normalizeStatusLineSegments(statusLineSettings.rightSegments);
+			if (normalizedRightSegments === undefined) {
+				delete statusLineSettings.rightSegments;
+			} else {
+				statusLineSettings.rightSegments = normalizedRightSegments;
+			}
+
+			const normalizedShowHookStatus = SettingsManager.normalizeBoolean(statusLineSettings.showHookStatus);
+			if (normalizedShowHookStatus === undefined) {
+				delete statusLineSettings.showHookStatus;
+			} else {
+				statusLineSettings.showHookStatus = normalizedShowHookStatus;
+			}
+		}
+
 		return settings as Settings;
 	}
 
@@ -363,6 +512,91 @@ export class SettingsManager {
 			return undefined;
 		}
 		return value;
+	}
+
+	private static normalizeTopP(value: unknown): number | undefined {
+		if (typeof value !== "number" || !Number.isFinite(value)) {
+			return undefined;
+		}
+		return value > 0 && value <= 1 ? value : undefined;
+	}
+
+	private static normalizePresencePenalty(value: unknown): number | undefined {
+		if (typeof value !== "number" || !Number.isFinite(value)) {
+			return undefined;
+		}
+		return value >= -2 && value <= 2 ? value : undefined;
+	}
+
+	private static normalizeRepetitionPenalty(value: unknown): number | undefined {
+		if (typeof value !== "number" || !Number.isFinite(value)) {
+			return undefined;
+		}
+		return value >= 0 && value <= 2 ? value : undefined;
+	}
+
+	private static normalizeBoolean(value: unknown): boolean | undefined {
+		if (typeof value !== "boolean") {
+			return undefined;
+		}
+		return value;
+	}
+
+	private static normalizeStatusLinePreset(value: unknown): StatusLinePreset | undefined {
+		if (
+			value === "default" ||
+			value === "minimal" ||
+			value === "compact" ||
+			value === "full" ||
+			value === "nerd" ||
+			value === "ascii" ||
+			value === "custom"
+		) {
+			return value;
+		}
+		return undefined;
+	}
+
+	private static normalizeStatusLineSeparator(value: unknown): StatusLineSeparatorStyle | undefined {
+		if (
+			value === "powerline" ||
+			value === "powerline-thin" ||
+			value === "slash" ||
+			value === "pipe" ||
+			value === "block" ||
+			value === "none" ||
+			value === "ascii"
+		) {
+			return value;
+		}
+		return undefined;
+	}
+
+	private static normalizeStatusLineSegments(value: unknown): StatusLineSegmentId[] | undefined {
+		if (!Array.isArray(value)) {
+			return undefined;
+		}
+
+		const normalized = value.filter(
+			(segment): segment is StatusLineSegmentId =>
+				typeof segment === "string" && (STATUS_LINE_SEGMENTS as readonly string[]).includes(segment),
+		);
+
+		return normalized.length > 0 ? normalized : undefined;
+	}
+
+	private static normalizeAsyncMaxJobs(value: unknown): number | undefined {
+		if (typeof value !== "number" || !Number.isFinite(value)) {
+			return undefined;
+		}
+		return Math.max(1, Math.min(1000, Math.floor(value)));
+	}
+
+	private static normalizeBashMaxTimeoutSeconds(value: unknown): number | undefined {
+		if (typeof value !== "number" || !Number.isFinite(value)) {
+			return undefined;
+		}
+		return Math.max(1, Math.min(7200, Math.floor(value)));
 	}
 
 	getGlobalSettings(): Settings {
@@ -624,6 +858,101 @@ export class SettingsManager {
 	setTemperature(temperature: number | undefined): void {
 		this.globalSettings.temperature = SettingsManager.normalizeTemperature(temperature);
 		this.markModified("temperature");
+		this.save();
+	}
+
+	getTopP(): number | undefined {
+		return SettingsManager.normalizeTopP(this.settings.topP);
+	}
+
+	setTopP(topP: number | undefined): void {
+		this.globalSettings.topP = SettingsManager.normalizeTopP(topP);
+		this.markModified("topP");
+		this.save();
+	}
+
+	getPresencePenalty(): number | undefined {
+		return SettingsManager.normalizePresencePenalty(this.settings.presencePenalty);
+	}
+
+	setPresencePenalty(presencePenalty: number | undefined): void {
+		this.globalSettings.presencePenalty = SettingsManager.normalizePresencePenalty(presencePenalty);
+		this.markModified("presencePenalty");
+		this.save();
+	}
+
+	getRepetitionPenalty(): number | undefined {
+		return SettingsManager.normalizeRepetitionPenalty(this.settings.repetitionPenalty);
+	}
+
+	setRepetitionPenalty(repetitionPenalty: number | undefined): void {
+		this.globalSettings.repetitionPenalty = SettingsManager.normalizeRepetitionPenalty(repetitionPenalty);
+		this.markModified("repetitionPenalty");
+		this.save();
+	}
+
+	getAnthropicFineGrainedToolStreaming(): boolean {
+		return SettingsManager.normalizeBoolean(this.settings.anthropicFineGrainedToolStreaming) ?? false;
+	}
+
+	setAnthropicFineGrainedToolStreaming(enabled: boolean): void {
+		this.globalSettings.anthropicFineGrainedToolStreaming = enabled;
+		this.markModified("anthropicFineGrainedToolStreaming");
+		this.save();
+	}
+
+	getSubagentTmuxLinkedWindows(): boolean {
+		return SettingsManager.normalizeBoolean(this.settings.subagentTmuxLinkedWindows) ?? true;
+	}
+
+	setSubagentTmuxLinkedWindows(enabled: boolean): void {
+		this.globalSettings.subagentTmuxLinkedWindows = enabled;
+		this.markModified("subagentTmuxLinkedWindows");
+		this.save();
+	}
+
+	getAsyncExecutionEnabled(): boolean {
+		return this.settings.async?.enabled ?? false;
+	}
+
+	setAsyncExecutionEnabled(enabled: boolean): void {
+		if (!this.globalSettings.async) {
+			this.globalSettings.async = {};
+		}
+		this.globalSettings.async.enabled = enabled;
+		this.markModified("async", "enabled");
+		this.save();
+	}
+
+	getAsyncMaxJobs(): number {
+		return SettingsManager.normalizeAsyncMaxJobs(this.settings.async?.maxJobs) ?? 100;
+	}
+
+	setAsyncMaxJobs(maxJobs: number): void {
+		if (!this.globalSettings.async) {
+			this.globalSettings.async = {};
+		}
+		this.globalSettings.async.maxJobs = SettingsManager.normalizeAsyncMaxJobs(maxJobs) ?? 100;
+		this.markModified("async", "maxJobs");
+		this.save();
+	}
+
+	getBashMaxTimeoutSeconds(): number | undefined {
+		return SettingsManager.normalizeBashMaxTimeoutSeconds(
+			this.settings.tools?.maxTimeout ?? this.settings.tools?.bashMaxTimeoutSeconds,
+		);
+	}
+
+	setBashMaxTimeoutSeconds(timeoutSeconds: number | undefined): void {
+		if (!this.globalSettings.tools) {
+			this.globalSettings.tools = {};
+		}
+		const normalized =
+			timeoutSeconds === undefined ? undefined : SettingsManager.normalizeBashMaxTimeoutSeconds(timeoutSeconds);
+		this.globalSettings.tools.maxTimeout = normalized;
+		this.globalSettings.tools.bashMaxTimeoutSeconds = normalized;
+		this.markModified("tools", "maxTimeout");
+		this.markModified("tools", "bashMaxTimeoutSeconds");
 		this.save();
 	}
 
@@ -972,5 +1301,44 @@ export class SettingsManager {
 
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
+	}
+
+	getStatusLineSettings(): StatusLineSettings {
+		return {
+			preset: SettingsManager.normalizeStatusLinePreset(this.settings.statusLine?.preset) ?? "default",
+			leftSegments: this.settings.statusLine?.leftSegments,
+			rightSegments: this.settings.statusLine?.rightSegments,
+			separator:
+				SettingsManager.normalizeStatusLineSeparator(this.settings.statusLine?.separator) ?? "powerline-thin",
+			segmentOptions: this.settings.statusLine?.segmentOptions,
+			showHookStatus: SettingsManager.normalizeBoolean(this.settings.statusLine?.showHookStatus) ?? true,
+		};
+	}
+
+	setStatusLinePreset(preset: StatusLinePreset): void {
+		if (!this.globalSettings.statusLine) {
+			this.globalSettings.statusLine = {};
+		}
+		this.globalSettings.statusLine.preset = preset;
+		this.markModified("statusLine", "preset");
+		this.save();
+	}
+
+	setStatusLineSeparator(separator: StatusLineSeparatorStyle): void {
+		if (!this.globalSettings.statusLine) {
+			this.globalSettings.statusLine = {};
+		}
+		this.globalSettings.statusLine.separator = separator;
+		this.markModified("statusLine", "separator");
+		this.save();
+	}
+
+	setStatusLineShowHookStatus(enabled: boolean): void {
+		if (!this.globalSettings.statusLine) {
+			this.globalSettings.statusLine = {};
+		}
+		this.globalSettings.statusLine.showHookStatus = enabled;
+		this.markModified("statusLine", "showHookStatus");
+		this.save();
 	}
 }

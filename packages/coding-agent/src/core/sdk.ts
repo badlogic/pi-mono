@@ -55,6 +55,14 @@ export interface CreateAgentSessionOptions {
 	thinkingLevel?: ThinkingLevel;
 	/** Sampling temperature. Default: from settings */
 	temperature?: number;
+	/** Top-p sampling. Default: from settings */
+	topP?: number;
+	/** Presence penalty. Default: from settings */
+	presencePenalty?: number;
+	/** Repetition penalty. Default: from settings */
+	repetitionPenalty?: number;
+	/** Anthropic-only fine-grained tool streaming beta. Default: from settings */
+	anthropicFineGrainedToolStreaming?: boolean;
 	/** Models available for cycling (Ctrl+P in interactive mode) */
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 
@@ -241,6 +249,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	const temperature = options.temperature ?? settingsManager.getTemperature();
+	const topP = options.topP ?? settingsManager.getTopP();
+	const presencePenalty = options.presencePenalty ?? settingsManager.getPresencePenalty();
+	const repetitionPenalty = options.repetitionPenalty ?? settingsManager.getRepetitionPenalty();
+	const anthropicFineGrainedToolStreaming =
+		options.anthropicFineGrainedToolStreaming ?? settingsManager.getAnthropicFineGrainedToolStreaming();
 
 	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
 	const initialActiveToolNames: ToolName[] = options.tools
@@ -306,6 +319,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		followUpMode: settingsManager.getFollowUpMode(),
 		transport: settingsManager.getTransport(),
 		temperature,
+		topP,
+		presencePenalty,
+		repetitionPenalty,
+		anthropicFineGrainedToolStreaming,
 		thinkingBudgets: settingsManager.getThinkingBudgets(),
 		maxRetryDelayMs: settingsManager.getRetrySettings().maxDelayMs,
 		getApiKey: async (provider) => {

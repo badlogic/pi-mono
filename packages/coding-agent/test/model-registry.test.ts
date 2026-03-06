@@ -181,6 +181,24 @@ describe("ModelRegistry", () => {
 
 			expect(getModelsForProvider(registry, "anthropic")[0].baseUrl).toBe("https://second-proxy.example.com/v1");
 		});
+
+		test("override-only config can change API for built-in models", () => {
+			writeRawModelsJson({
+				zai: {
+					baseUrl: "https://api.z.ai/api/anthropic",
+					api: "anthropic-messages",
+				},
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const zaiModels = getModelsForProvider(registry, "zai");
+
+			expect(zaiModels.length).toBeGreaterThan(0);
+			for (const model of zaiModels) {
+				expect(model.baseUrl).toBe("https://api.z.ai/api/anthropic");
+				expect(model.api).toBe("anthropic-messages");
+			}
+		});
 	});
 
 	describe("custom models merge behavior", () => {

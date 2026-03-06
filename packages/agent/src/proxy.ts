@@ -129,6 +129,10 @@ export function streamProxy(model: Model<any>, context: Context, options: ProxyS
 					context,
 					options: {
 						temperature: options.temperature,
+						topP: options.topP,
+						presencePenalty: options.presencePenalty,
+						repetitionPenalty: options.repetitionPenalty,
+						anthropicFineGrainedToolStreaming: options.anthropicFineGrainedToolStreaming,
 						maxTokens: options.maxTokens,
 						reasoning: options.reasoning,
 					},

@@ -58,6 +58,14 @@ export type Transport = "sse" | "websocket" | "auto";
 
 export interface StreamOptions {
 	temperature?: number;
+	topP?: number;
+	presencePenalty?: number;
+	repetitionPenalty?: number;
+	/**
+	 * Anthropic-only: enable the fine-grained tool streaming beta.
+	 * Disabled by default because some Anthropic-compatible providers can emit malformed tool text.
+	 */
+	anthropicFineGrainedToolStreaming?: boolean;
 	maxTokens?: number;
 	signal?: AbortSignal;
 	apiKey?: string;
