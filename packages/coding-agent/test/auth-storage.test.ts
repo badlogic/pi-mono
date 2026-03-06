@@ -421,6 +421,24 @@ describe("AuthStorage", () => {
 			const secondDrain = authStorage.drainErrors();
 			expect(secondDrain).toHaveLength(0);
 		});
+
+		test("falls back to unlocked read when startup lock is held", async () => {
+			writeAuthJson({
+				"openai-codex": { type: "api_key", key: "codex-test-key" },
+			});
+
+			const release = lockfile.lockSync(authJsonPath, { realpath: false });
+			try {
+				authStorage = AuthStorage.create(authJsonPath);
+			} finally {
+				release();
+			}
+
+			const apiKey = await authStorage.getApiKey("openai-codex");
+			expect(apiKey).toBe("codex-test-key");
+			expect(authStorage.hasAuth("openai-codex")).toBe(true);
+			expect(authStorage.drainErrors()).toHaveLength(0);
+		});
 	});
 
 	describe("runtime overrides", () => {

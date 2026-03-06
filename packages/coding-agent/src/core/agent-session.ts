@@ -81,6 +81,12 @@ import { buildSystemPrompt } from "./system-prompt.js";
 import type { BashOperations } from "./tools/bash.js";
 import { createAllTools } from "./tools/index.js";
 
+function isLockHeldError(error: unknown): boolean {
+	if (!(error instanceof Error)) return false;
+	const code = (error as { code?: string }).code;
+	return code === "ELOCKED" || /lock file is already being held/i.test(error.message);
+}
+
 // ============================================================================
 // Skill Block Parsing
 // ============================================================================
@@ -871,6 +877,16 @@ export class AgentSession {
 		// Validate API key
 		const apiKey = await this._modelRegistry.getApiKey(this.model);
 		if (!apiKey) {
+			const authErrors = this._modelRegistry.authStorage.drainErrors();
+			const lockError = authErrors.find(isLockHeldError);
+			if (lockError) {
+				throw new Error(
+					`Could not read credentials for "${this.model.provider}" because another pi process is holding the auth/settings lock.\n\n` +
+						`Please retry in a moment. If this keeps happening, reduce concurrent pi startup fan-out.\n\n` +
+						`Original error: ${lockError.message}`,
+				);
+			}
+
 			const isOAuth = this._modelRegistry.isUsingOAuth(this.model);
 			if (isOAuth) {
 				throw new Error(

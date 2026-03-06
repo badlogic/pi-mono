@@ -19,6 +19,14 @@ import lockfile from "proper-lockfile";
 import { getAgentDir } from "../config.js";
 import { resolveConfigValue } from "./resolve-config-value.js";
 
+function isLockHeldError(error: unknown): boolean {
+	if (!(error instanceof Error)) {
+		return false;
+	}
+	const maybeCode = (error as { code?: string }).code;
+	return maybeCode === "ELOCKED" || /lock file is already being held/i.test(error.message);
+}
+
 export type ApiKeyCredential = {
 	type: "api_key";
 	key: string;
@@ -57,6 +65,12 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 			writeFileSync(this.authPath, "{}", "utf-8");
 			chmodSync(this.authPath, 0o600);
 		}
+	}
+
+	readUnlocked(): string | undefined {
+		this.ensureParentDir();
+		this.ensureFileExists();
+		return existsSync(this.authPath) ? readFileSync(this.authPath, "utf-8") : undefined;
 	}
 
 	withLock<T>(fn: (current: string | undefined) => LockResult<T>): T {
@@ -227,6 +241,19 @@ export class AuthStorage {
 			this.data = this.parseStorageData(content);
 			this.loadError = null;
 		} catch (error) {
+			// During parallel startup another pi process may hold the auth lock.
+			// Fall back to an unlocked read so model discovery/auth checks still work.
+			if (isLockHeldError(error) && this.storage instanceof FileAuthStorageBackend) {
+				try {
+					const unlockedContent = this.storage.readUnlocked();
+					this.data = this.parseStorageData(unlockedContent);
+					this.loadError = null;
+					return;
+				} catch {
+					// Ignore fallback failures and surface the original lock error below.
+				}
+			}
+
 			this.loadError = error as Error;
 			this.recordError(error);
 		}
