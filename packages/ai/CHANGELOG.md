@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `claude-sonnet-4-6` model for the `google-antigravity` provider ([#1859](https://github.com/badlogic/pi-mono/issues/1859)).
+- Bumped default Antigravity User-Agent version to `1.18.4` ([#1859](https://github.com/badlogic/pi-mono/issues/1859)).
+
+### Fixed
+
+- Fixed Antigravity Claude thinking beta header detection to use provider and model capability instead of `-thinking` suffix, so models like `claude-sonnet-4-6` receive the header correctly ([#1859](https://github.com/badlogic/pi-mono/issues/1859)).
+
 ## [0.56.2] - 2026-03-05
 
 ### Added
