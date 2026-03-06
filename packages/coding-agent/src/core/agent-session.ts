@@ -1736,8 +1736,20 @@ export class AgentSession {
 		// This ensures sessions that hit persistent API errors (e.g. 529) can still compact.
 		let contextTokens: number;
 		if (assistantMessage.stopReason === "error") {
-			const estimate = estimateContextTokens(this.agent.state.messages);
+			const messages = this.agent.state.messages;
+			const estimate = estimateContextTokens(messages);
 			if (estimate.lastUsageIndex === null) return; // No usage data at all
+			// Verify the usage source is post-compaction. Kept pre-compaction messages
+			// have stale usage reflecting the old (larger) context and would falsely
+			// trigger compaction right after one just finished.
+			const usageMsg = messages[estimate.lastUsageIndex];
+			if (
+				compactionEntry &&
+				usageMsg.role === "assistant" &&
+				(usageMsg as AssistantMessage).timestamp <= new Date(compactionEntry.timestamp).getTime()
+			) {
+				return;
+			}
 			contextTokens = estimate.tokens;
 		} else {
 			contextTokens = calculateContextTokens(assistantMessage.usage);

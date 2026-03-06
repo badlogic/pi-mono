@@ -351,4 +351,86 @@ describe("AgentSession auto-compaction queue resume", () => {
 
 		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
 	});
+
+	it("should not trigger threshold compaction for error messages when only kept pre-compaction usage exists", async () => {
+		const model = session.model!;
+		const preCompactionTimestamp = Date.now() - 10_000;
+
+		// A "kept" assistant message from before compaction with high usage
+		const keptAssistant: AssistantMessage = {
+			role: "assistant",
+			content: [{ type: "text", text: "kept response from before compaction" }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 180_000,
+				output: 10_000,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 190_000,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: preCompactionTimestamp,
+		};
+
+		// Record the kept assistant in the session and create a compaction after it
+		sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "before compaction" }],
+			timestamp: preCompactionTimestamp - 1000,
+		});
+		sessionManager.appendMessage(keptAssistant);
+		const firstKeptEntryId = sessionManager.getEntries()[0]!.id;
+		sessionManager.appendCompaction("summary", firstKeptEntryId, keptAssistant.usage.totalTokens, undefined, false);
+
+		// Post-compaction error message
+		const errorAssistant: AssistantMessage = {
+			role: "assistant",
+			content: [{ type: "text", text: "" }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "error",
+			errorMessage: "529 overloaded",
+			timestamp: Date.now(),
+		};
+
+		// Agent state has the kept assistant (pre-compaction) and the error (post-compaction)
+		session.agent.replaceMessages([
+			{ role: "user", content: [{ type: "text", text: "kept user msg" }], timestamp: preCompactionTimestamp - 1000 },
+			keptAssistant,
+			{ role: "user", content: [{ type: "text", text: "new prompt" }], timestamp: Date.now() - 500 },
+			errorAssistant,
+		]);
+
+		const runAutoCompactionSpy = vi
+			.spyOn(
+				session as unknown as {
+					_runAutoCompaction: (reason: "overflow" | "threshold", willRetry: boolean) => Promise<void>;
+				},
+				"_runAutoCompaction",
+			)
+			.mockResolvedValue();
+
+		const checkCompaction = (
+			session as unknown as {
+				_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
+			}
+		)._checkCompaction.bind(session);
+
+		await checkCompaction(errorAssistant);
+
+		// Should NOT compact because the only usage data is from a kept pre-compaction message
+		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
+	});
 });
