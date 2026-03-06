@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it, test } from "node:test";
 import { CombinedAutocompleteProvider } from "../src/autocomplete.js";
@@ -188,6 +188,24 @@ describe("CombinedAutocompleteProvider", () => {
 			assert.ok(hasSrcFile);
 		});
 
+		test("orders equal-score matches by path", () => {
+			setupFolder(baseDir, {
+				files: {
+					"docs/alpha.ts": "export {};",
+					"src/alpha.ts": "export {};",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@alpha";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			assert.deepStrictEqual(
+				result?.items.map((item) => item.value),
+				["@docs/alpha.ts", "@src/alpha.ts"],
+			);
+		});
+
 		test("returns nested file paths", () => {
 			setupFolder(baseDir, {
 				files: {
@@ -328,6 +346,153 @@ describe("CombinedAutocompleteProvider", () => {
 
 			const applied = provider.applyCompletion([line], 0, cursorCol, item!, result!.prefix);
 			assert.strictEqual(applied.lines[0], '@"my folder/test.txt" ');
+		});
+	});
+
+	describe("fd @ file suggestions async", { skip: !isFdInstalled }, () => {
+		let rootDir = "";
+		let baseDir = "";
+		let outsideDir = "";
+
+		beforeEach(() => {
+			rootDir = mkdtempSync(join(tmpdir(), "pi-autocomplete-root-"));
+			baseDir = join(rootDir, "cwd");
+			outsideDir = join(rootDir, "outside");
+			mkdirSync(baseDir, { recursive: true });
+			mkdirSync(outsideDir, { recursive: true });
+		});
+
+		afterEach(() => {
+			rmSync(rootDir, { recursive: true, force: true });
+		});
+
+		test("streams incremental results from fd", async () => {
+			setupFolder(baseDir, {
+				files: {
+					"alpha.ts": "export {};",
+					"nested/also-alpha.ts": "export {};",
+					"nested/zzz.ts": "export {};",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const updates: string[][] = [];
+			const controller = new AbortController();
+
+			const final = await provider.getSuggestionsAsync!([`@a`], 0, 2, controller.signal, (suggestions) => {
+				updates.push(suggestions.items.map((item) => item.value));
+			});
+
+			assert.ok(updates.length >= 1);
+			assert.ok(updates.some((values) => values.includes("@alpha.ts") || values.includes("@nested/also-alpha.ts")));
+			assert.deepStrictEqual(
+				final?.items.map((item) => item.value),
+				updates[updates.length - 1],
+			);
+		});
+
+		test("scopes async fuzzy search to relative, absolute, and home directories", async () => {
+			setupFolder(outsideDir, {
+				files: {
+					"nested/alpha.ts": "export {};",
+					"nested/deeper/also-alpha.ts": "export {};",
+					"nested/deeper/zzz.ts": "export {};",
+				},
+			});
+
+			const homeScopedDir = mkdtempSync(join(homedir(), "pi-autocomplete-home-"));
+			try {
+				setupFolder(homeScopedDir, {
+					files: {
+						"alpha.ts": "export {};",
+						"beta.ts": "export {};",
+					},
+				});
+
+				const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+				const relativeLine = "@../outside/alp";
+				const relativeFinal = await provider.getSuggestionsAsync!(
+					[relativeLine],
+					0,
+					relativeLine.length,
+					new AbortController().signal,
+					() => {},
+				);
+
+				const relativeValues = relativeFinal?.items.map((item) => item.value);
+				assert.ok(relativeValues?.includes("@../outside/nested/alpha.ts"));
+				assert.ok(relativeValues?.includes("@../outside/nested/deeper/also-alpha.ts"));
+				assert.ok(!relativeValues?.includes("@../outside/nested/deeper/zzz.ts"));
+
+				const absoluteLine = `@${outsideDir}/alp`;
+				const absoluteFinal = await provider.getSuggestionsAsync!(
+					[absoluteLine],
+					0,
+					absoluteLine.length,
+					new AbortController().signal,
+					() => {},
+				);
+				assert.ok(absoluteFinal?.items.some((item) => item.value === `@${outsideDir}/nested/alpha.ts`));
+
+				const homeRelativePath = homeScopedDir.slice(homedir().length + 1);
+				const homeLine = `@~/${homeRelativePath}/alp`;
+				const homeFinal = await provider.getSuggestionsAsync!(
+					[homeLine],
+					0,
+					homeLine.length,
+					new AbortController().signal,
+					() => {},
+				);
+				assert.ok(homeFinal?.items.some((item) => item.value === `@~/${homeRelativePath}/alpha.ts`));
+				assert.ok(!homeFinal?.items.some((item) => item.value === `@~/${homeRelativePath}/beta.ts`));
+			} finally {
+				rmSync(homeScopedDir, { recursive: true, force: true });
+			}
+		});
+
+		test("supports quoted async @ paths", async () => {
+			setupFolder(baseDir, {
+				files: {
+					"my folder/test.txt": "content",
+					"my folder/other.txt": "content",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = '@"my folder/"';
+			const final = await provider.getSuggestionsAsync!(
+				[line],
+				0,
+				line.length - 1,
+				new AbortController().signal,
+				() => {},
+			);
+
+			const values = final?.items.map((item) => item.value);
+			assert.ok(values?.includes('@"my folder/test.txt"'));
+			assert.ok(values?.includes('@"my folder/other.txt"'));
+		});
+
+		test("returns null after aborting a streamed request", async () => {
+			setupFolder(baseDir, {
+				files: {
+					"alpha.ts": "export {};",
+					"another-alpha.ts": "export {};",
+					"nested/also-alpha.ts": "export {};",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const controller = new AbortController();
+			let updates = 0;
+
+			const final = await provider.getSuggestionsAsync!([`@a`], 0, 2, controller.signal, () => {
+				updates += 1;
+				controller.abort();
+			});
+
+			assert.ok(updates >= 1);
+			assert.strictEqual(final, null);
 		});
 	});
 

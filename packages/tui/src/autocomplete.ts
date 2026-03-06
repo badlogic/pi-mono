@@ -1,7 +1,8 @@
-import { spawnSync } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join } from "path";
+import { createInterface } from "readline";
 import { fuzzyFilter } from "./fuzzy.js";
 
 const PATH_DELIMITERS = new Set([" ", "\t", '"', "'", "="]);
@@ -175,13 +176,7 @@ function getAutocompleteContext(lines: string[], cursorLine: number, cursorCol: 
 	return getAutocompleteContextFromText(textBeforeCursor);
 }
 
-// Use fd to walk directory tree (fast, respects .gitignore)
-function walkDirectoryWithFd(
-	baseDir: string,
-	fdPath: string,
-	query: string,
-	maxResults: number,
-): Array<{ path: string; isDirectory: boolean }> {
+function buildFdArgs(baseDir: string, query: string, maxResults: number): string[] {
 	const args = [
 		"--base-directory",
 		baseDir,
@@ -201,10 +196,21 @@ function walkDirectoryWithFd(
 		".git/**",
 	];
 
-	// Add query as pattern if provided
 	if (query) {
 		args.push(query);
 	}
+
+	return args;
+}
+
+// Use fd to walk directory tree (fast, respects .gitignore)
+function walkDirectoryWithFd(
+	baseDir: string,
+	fdPath: string,
+	query: string,
+	maxResults: number,
+): Array<{ path: string; isDirectory: boolean }> {
+	const args = buildFdArgs(baseDir, query, maxResults);
 
 	const result = spawnSync(fdPath, args, {
 		encoding: "utf-8",
@@ -236,10 +242,90 @@ function walkDirectoryWithFd(
 	return results;
 }
 
+// Stream fd output so async attachment autocomplete can publish incremental updates
+function streamDirectoryWithFd(
+	baseDir: string,
+	fdPath: string,
+	query: string,
+	maxResults: number,
+	options: {
+		onEntry: (entry: { path: string; isDirectory: boolean }) => void;
+		signal: AbortSignal;
+	},
+): Promise<void> {
+	const args = buildFdArgs(baseDir, query, maxResults);
+
+	return new Promise((resolve) => {
+		let finished = false;
+		const child = spawn(fdPath, args, {
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+		const stdout = child.stdout;
+		const lineReader = stdout ? createInterface({ input: stdout, crlfDelay: Infinity }) : null;
+
+		const finalize = (): void => {
+			if (finished) {
+				return;
+			}
+
+			finished = true;
+			options.signal.removeEventListener("abort", handleAbort);
+			if (lineReader) {
+				lineReader.removeAllListeners();
+				lineReader.close();
+			}
+			resolve();
+		};
+
+		const handleAbort = (): void => {
+			if (!child.killed) {
+				child.kill();
+			}
+			finalize();
+		};
+
+		if (options.signal.aborted) {
+			handleAbort();
+			return;
+		}
+
+		options.signal.addEventListener("abort", handleAbort, { once: true });
+
+		if (!stdout || !lineReader) {
+			finalize();
+			return;
+		}
+
+		lineReader.on("line", (line: string) => {
+			if (!line) {
+				return;
+			}
+
+			const normalizedPath = line.endsWith("/") ? line.slice(0, -1) : line;
+			if (normalizedPath === ".git" || normalizedPath.startsWith(".git/") || normalizedPath.includes("/.git/")) {
+				return;
+			}
+
+			options.onEntry({
+				path: line,
+				isDirectory: line.endsWith("/"),
+			});
+		});
+
+		child.on("close", finalize);
+		child.on("error", finalize);
+	});
+}
+
 export interface AutocompleteItem {
 	value: string;
 	label: string;
 	description?: string;
+}
+
+export interface AutocompleteSuggestions {
+	items: AutocompleteItem[];
+	prefix: string;
 }
 
 export interface SlashCommand {
@@ -253,14 +339,16 @@ export interface SlashCommand {
 export interface AutocompleteProvider {
 	// Get autocomplete suggestions for current text/cursor position
 	// Returns null if no suggestions available
-	getSuggestions(
+	getSuggestions(lines: string[], cursorLine: number, cursorCol: number): AutocompleteSuggestions | null;
+
+	// Stream async autocomplete suggestions for slow providers
+	getSuggestionsAsync?(
 		lines: string[],
 		cursorLine: number,
 		cursorCol: number,
-	): {
-		items: AutocompleteItem[];
-		prefix: string; // What we're matching against (e.g., "/" or "src/")
-	} | null;
+		signal: AbortSignal,
+		onUpdate: (suggestions: AutocompleteSuggestions) => void,
+	): Promise<AutocompleteSuggestions | null>;
 
 	// Apply the selected item
 	// Returns the new text and cursor position
@@ -293,11 +381,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		this.fdPath = fdPath;
 	}
 
-	getSuggestions(
-		lines: string[],
-		cursorLine: number,
-		cursorCol: number,
-	): { items: AutocompleteItem[]; prefix: string } | null {
+	getSuggestions(lines: string[], cursorLine: number, cursorCol: number): AutocompleteSuggestions | null {
 		const currentLine = lines[cursorLine] || "";
 		const textBeforeCursor = currentLine.slice(0, cursorCol);
 		const context = getAutocompleteContext(lines, cursorLine, cursorCol);
@@ -371,6 +455,31 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				};
 			}
 		}
+	}
+
+	async getSuggestionsAsync(
+		lines: string[],
+		cursorLine: number,
+		cursorCol: number,
+		signal: AbortSignal,
+		onUpdate: (suggestions: AutocompleteSuggestions) => void,
+	): Promise<AutocompleteSuggestions | null> {
+		if (!this.fdPath) {
+			return null;
+		}
+
+		const context = getAutocompleteContext(lines, cursorLine, cursorCol);
+		if (!context || context.kind !== "attachment") {
+			return null;
+		}
+
+		const { rawPrefix, isQuotedPrefix } = parsePathPrefix(context.prefix);
+		return this.getFuzzyFileSuggestionsAsync(rawPrefix, {
+			isQuotedPrefix,
+			prefix: context.prefix,
+			signal,
+			onUpdate,
+		});
 	}
 
 	applyCompletion(
@@ -663,6 +772,44 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		return score;
 	}
 
+	// Reuse the same ranking and formatting for sync and streamed fd suggestions
+	private buildFuzzyFileSuggestions(
+		entries: Array<{ path: string; isDirectory: boolean }>,
+		query: string,
+		options: {
+			isQuotedPrefix: boolean;
+			scopedQuery: { baseDir: string; query: string; displayBase: string } | null;
+		},
+	): AutocompleteItem[] {
+		const scoredEntries = entries
+			.map((entry) => ({
+				...entry,
+				score: query ? this.scoreEntry(entry.path, query, entry.isDirectory) : 1,
+			}))
+			.filter((entry) => entry.score > 0);
+
+		scoredEntries.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
+
+		return scoredEntries.slice(0, 20).map(({ path: entryPath, isDirectory }) => {
+			const pathWithoutSlash = isDirectory ? entryPath.slice(0, -1) : entryPath;
+			const displayPath = options.scopedQuery
+				? this.scopedPathForDisplay(options.scopedQuery.displayBase, pathWithoutSlash)
+				: pathWithoutSlash;
+			const entryName = basename(pathWithoutSlash);
+			const completionPath = isDirectory ? `${displayPath}/` : displayPath;
+
+			return {
+				value: buildCompletionValue(completionPath, {
+					isDirectory,
+					isAtPrefix: true,
+					isQuotedPrefix: options.isQuotedPrefix,
+				}),
+				label: entryName + (isDirectory ? "/" : ""),
+				description: displayPath,
+			};
+		});
+	}
+
 	// Fuzzy file search using fd (fast, respects .gitignore)
 	private getFuzzyFileSuggestions(query: string, options: { isQuotedPrefix: boolean }): AutocompleteItem[] {
 		if (!this.fdPath) {
@@ -675,46 +822,96 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			const fdBaseDir = scopedQuery?.baseDir ?? this.basePath;
 			const fdQuery = scopedQuery?.query ?? query;
 			const entries = walkDirectoryWithFd(fdBaseDir, this.fdPath, fdQuery, 100);
-
-			// Score entries
-			const scoredEntries = entries
-				.map((entry) => ({
-					...entry,
-					score: fdQuery ? this.scoreEntry(entry.path, fdQuery, entry.isDirectory) : 1,
-				}))
-				.filter((entry) => entry.score > 0);
-
-			// Sort by score (descending) and take top 20
-			scoredEntries.sort((a, b) => b.score - a.score);
-			const topEntries = scoredEntries.slice(0, 20);
-
-			// Build suggestions
-			const suggestions: AutocompleteItem[] = [];
-			for (const { path: entryPath, isDirectory } of topEntries) {
-				// fd already includes trailing / for directories
-				const pathWithoutSlash = isDirectory ? entryPath.slice(0, -1) : entryPath;
-				const displayPath = scopedQuery
-					? this.scopedPathForDisplay(scopedQuery.displayBase, pathWithoutSlash)
-					: pathWithoutSlash;
-				const entryName = basename(pathWithoutSlash);
-				const completionPath = isDirectory ? `${displayPath}/` : displayPath;
-				const value = buildCompletionValue(completionPath, {
-					isDirectory,
-					isAtPrefix: true,
-					isQuotedPrefix: options.isQuotedPrefix,
-				});
-
-				suggestions.push({
-					value,
-					label: entryName + (isDirectory ? "/" : ""),
-					description: displayPath,
-				});
-			}
-
-			return suggestions;
+			return this.buildFuzzyFileSuggestions(entries, fdQuery, {
+				isQuotedPrefix: options.isQuotedPrefix,
+				scopedQuery,
+			});
 		} catch {
 			return [];
 		}
+	}
+
+	private async getFuzzyFileSuggestionsAsync(
+		query: string,
+		options: {
+			isQuotedPrefix: boolean;
+			prefix: string;
+			signal: AbortSignal;
+			onUpdate: (suggestions: AutocompleteSuggestions) => void;
+		},
+	): Promise<AutocompleteSuggestions | null> {
+		if (!this.fdPath || options.signal.aborted) {
+			return null;
+		}
+
+		const scopedQuery = this.resolveScopedFuzzyQuery(query);
+		const fdBaseDir = scopedQuery?.baseDir ?? this.basePath;
+		const fdQuery = scopedQuery?.query ?? query;
+		const entries = new Map<string, { path: string; isDirectory: boolean }>();
+		let lastKey = "";
+		let lastSuggestions: AutocompleteSuggestions | null = null;
+
+		const emitSuggestions = (): void => {
+			if (options.signal.aborted) {
+				return;
+			}
+
+			const items = this.buildFuzzyFileSuggestions([...entries.values()], fdQuery, {
+				isQuotedPrefix: options.isQuotedPrefix,
+				scopedQuery,
+			});
+			if (items.length === 0) {
+				return;
+			}
+
+			const suggestions = {
+				items,
+				prefix: options.prefix,
+			};
+			const key = suggestions.items.map((item) => item.value).join("\n");
+			if (key === lastKey) {
+				return;
+			}
+
+			lastKey = key;
+			lastSuggestions = suggestions;
+			options.onUpdate(suggestions);
+		};
+
+		try {
+			await streamDirectoryWithFd(fdBaseDir, this.fdPath, fdQuery, 100, {
+				signal: options.signal,
+				onEntry: (entry) => {
+					if (options.signal.aborted) {
+						return;
+					}
+
+					entries.set(entry.path, entry);
+					emitSuggestions();
+				},
+			});
+		} catch {
+			return null;
+		}
+
+		if (options.signal.aborted) {
+			return null;
+		}
+
+		if (lastSuggestions) {
+			return lastSuggestions;
+		}
+
+		const items = this.buildFuzzyFileSuggestions([...entries.values()], fdQuery, {
+			isQuotedPrefix: options.isQuotedPrefix,
+			scopedQuery,
+		});
+		return items.length > 0
+			? {
+					items,
+					prefix: options.prefix,
+				}
+			: null;
 	}
 
 	// Force file completion (called on Tab key) - always returns suggestions
