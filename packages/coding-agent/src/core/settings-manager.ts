@@ -146,6 +146,33 @@ export class FileSettingsStorage implements SettingsStorage {
 		this.projectSettingsPath = join(cwd, CONFIG_DIR_NAME, "settings.json");
 	}
 
+	private acquireLockSyncWithRetry(path: string): () => void {
+		const maxAttempts = 10;
+		const delayMs = 20;
+		let lastError: unknown;
+
+		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+			try {
+				return lockfile.lockSync(path, { realpath: false });
+			} catch (error) {
+				const code =
+					typeof error === "object" && error !== null && "code" in error
+						? String((error as { code?: unknown }).code)
+						: undefined;
+				if (code !== "ELOCKED" || attempt === maxAttempts) {
+					throw error;
+				}
+				lastError = error;
+				const start = Date.now();
+				while (Date.now() - start < delayMs) {
+					// Sleep synchronously to avoid changing callers to async.
+				}
+			}
+		}
+
+		throw (lastError as Error) ?? new Error("Failed to acquire settings lock");
+	}
+
 	withLock(scope: SettingsScope, fn: (current: string | undefined) => string | undefined): void {
 		const path = scope === "global" ? this.globalSettingsPath : this.projectSettingsPath;
 		const dir = dirname(path);
@@ -155,7 +182,7 @@ export class FileSettingsStorage implements SettingsStorage {
 			// Only create directory and lock if file exists or we need to write
 			const fileExists = existsSync(path);
 			if (fileExists) {
-				release = lockfile.lockSync(path, { realpath: false });
+				release = this.acquireLockSyncWithRetry(path);
 			}
 			const current = fileExists ? readFileSync(path, "utf-8") : undefined;
 			const next = fn(current);
@@ -165,7 +192,7 @@ export class FileSettingsStorage implements SettingsStorage {
 					mkdirSync(dir, { recursive: true });
 				}
 				if (!release) {
-					release = lockfile.lockSync(path, { realpath: false });
+					release = this.acquireLockSyncWithRetry(path);
 				}
 				writeFileSync(path, next, "utf-8");
 			}
