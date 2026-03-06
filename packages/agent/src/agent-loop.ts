@@ -8,6 +8,7 @@ import {
 	type Context,
 	EventStream,
 	streamSimple,
+	type ToolCall,
 	type ToolResultMessage,
 	validateToolArguments,
 } from "@mariozechner/pi-ai";
@@ -149,7 +150,7 @@ async function runLoop(
 			}
 
 			// Check for tool calls
-			const toolCalls = message.content.filter((c) => c.type === "toolCall");
+			const toolCalls = getToolCalls(message);
 			hasMoreToolCalls = toolCalls.length > 0;
 
 			const toolResults: ToolResultMessage[] = [];
@@ -288,6 +289,10 @@ async function streamAssistantResponse(
 	return await response.result();
 }
 
+function getToolCalls(message: AssistantMessage): ToolCall[] {
+	return (message.content ?? []).filter((c): c is ToolCall => c.type === "toolCall");
+}
+
 /**
  * Execute tool calls from an assistant message.
  */
@@ -298,7 +303,7 @@ async function executeToolCalls(
 	stream: EventStream<AgentEvent, AgentMessage[]>,
 	getSteeringMessages?: AgentLoopConfig["getSteeringMessages"],
 ): Promise<{ toolResults: ToolResultMessage[]; steeringMessages?: AgentMessage[] }> {
-	const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
+	const toolCalls = getToolCalls(assistantMessage);
 	const results: ToolResultMessage[] = [];
 	let steeringMessages: AgentMessage[] | undefined;
 

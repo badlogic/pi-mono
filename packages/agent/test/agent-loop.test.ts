@@ -307,6 +307,67 @@ describe("agentLoop with AgentMessage", () => {
 		}
 	});
 
+	it("should not crash when a toolUse assistant message has undefined content", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.value);
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("echo something");
+
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		const malformedMessage = {
+			...createAssistantMessage([], "toolUse"),
+			content: undefined,
+		} as unknown as AssistantMessage;
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([userPrompt], context, config, undefined, () => {
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				mockStream.push({ type: "done", reason: "toolUse", message: malformedMessage });
+			});
+			return mockStream;
+		});
+
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		const messages = await stream.result();
+		expect(messages).toHaveLength(2);
+		expect(messages[1]).toEqual(malformedMessage);
+		expect(executed).toEqual([]);
+
+		const turnEnd = events.find(
+			(event): event is Extract<AgentEvent, { type: "turn_end" }> => event.type === "turn_end",
+		);
+		expect(turnEnd).toBeDefined();
+		expect(turnEnd?.toolResults).toEqual([]);
+		expect(events.some((event) => event.type === "agent_end")).toBe(true);
+	});
+
 	it("should inject queued messages and skip remaining tool calls", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const executed: string[] = [];
