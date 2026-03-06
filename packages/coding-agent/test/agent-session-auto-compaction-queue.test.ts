@@ -12,7 +12,13 @@ import { SettingsManager } from "../src/core/settings-manager.js";
 import { createTestResourceLoader } from "./utilities.js";
 
 vi.mock("../src/core/compaction/index.js", () => ({
-	calculateContextTokens: () => 0,
+	calculateContextTokens: (usage: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		totalTokens?: number;
+	}) => usage.totalTokens ?? usage.input + usage.output + usage.cacheRead + usage.cacheWrite,
 	collectEntriesForBranchSummary: () => ({ entries: [], commonAncestorId: null }),
 	compact: async () => ({
 		summary: "compacted",
@@ -23,11 +29,16 @@ vi.mock("../src/core/compaction/index.js", () => ({
 	estimateContextTokens: () => ({ tokens: 0, usageTokens: 0, trailingTokens: 0, lastUsageIndex: -1 }),
 	generateBranchSummary: async () => ({ summary: "", aborted: false, readFiles: [], modifiedFiles: [] }),
 	prepareCompaction: () => ({ dummy: true }),
-	shouldCompact: () => false,
+	shouldCompact: (
+		contextTokens: number,
+		contextWindow: number,
+		settings: { enabled: boolean; reserveTokens: number },
+	) => settings.enabled && contextTokens > contextWindow - settings.reserveTokens,
 }));
 
 describe("AgentSession auto-compaction queue resume", () => {
 	let session: AgentSession;
+	let sessionManager: SessionManager;
 	let tempDir: string;
 
 	beforeEach(() => {
@@ -44,7 +55,7 @@ describe("AgentSession auto-compaction queue resume", () => {
 			},
 		});
 
-		const sessionManager = SessionManager.inMemory();
+		sessionManager = SessionManager.inMemory();
 		const settingsManager = SettingsManager.create(tempDir, tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		authStorage.setRuntimeApiKey("anthropic", "test-key");
@@ -147,5 +158,62 @@ describe("AgentSession auto-compaction queue resume", () => {
 			errorMessage:
 				"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
 		});
+	});
+
+	it("should ignore stale pre-compaction assistant usage on pre-prompt compaction checks", async () => {
+		const model = session.model!;
+		const staleAssistantTimestamp = Date.now() - 10_000;
+		const staleAssistant: AssistantMessage = {
+			role: "assistant",
+			content: [{ type: "text", text: "large response before compaction" }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 600_000,
+				output: 10_000,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 610_000,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: staleAssistantTimestamp,
+		};
+
+		sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "before compaction" }],
+			timestamp: staleAssistantTimestamp - 1000,
+		});
+		sessionManager.appendMessage(staleAssistant);
+
+		const firstKeptEntryId = sessionManager.getEntries()[0]!.id;
+		sessionManager.appendCompaction("summary", firstKeptEntryId, staleAssistant.usage.totalTokens, undefined, false);
+
+		sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "session recovery payload" }],
+			timestamp: Date.now(),
+		});
+
+		const runAutoCompactionSpy = vi
+			.spyOn(
+				session as unknown as {
+					_runAutoCompaction: (reason: "overflow" | "threshold", willRetry: boolean) => Promise<void>;
+				},
+				"_runAutoCompaction",
+			)
+			.mockResolvedValue();
+
+		const checkCompaction = (
+			session as unknown as {
+				_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
+			}
+		)._checkCompaction.bind(session);
+
+		await checkCompaction(staleAssistant, false);
+
+		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
 	});
 });

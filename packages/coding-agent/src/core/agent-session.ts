@@ -1696,17 +1696,18 @@ export class AgentSession {
 		const sameModel =
 			this.model && assistantMessage.provider === this.model.provider && assistantMessage.model === this.model.id;
 
-		// Skip overflow check if the error is from before a compaction in the current path.
-		// This handles the case where an error was kept after compaction (in the "kept" region).
-		// The error shouldn't trigger another compaction since we already compacted.
-		// Example: opus fails → switch to codex → compact → switch back to opus → opus error
-		// is still in context but shouldn't trigger compaction again.
+		// Skip compaction checks if this assistant message is older than the latest
+		// compaction boundary. This prevents a stale pre-compaction usage/error
+		// from retriggering compaction on the first prompt after compaction.
 		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getBranch());
-		const errorIsFromBeforeCompaction =
-			compactionEntry !== null && assistantMessage.timestamp < new Date(compactionEntry.timestamp).getTime();
+		const assistantIsFromBeforeCompaction =
+			compactionEntry !== null && assistantMessage.timestamp <= new Date(compactionEntry.timestamp).getTime();
+		if (assistantIsFromBeforeCompaction) {
+			return;
+		}
 
 		// Case 1: Overflow - LLM returned context overflow error
-		if (sameModel && !errorIsFromBeforeCompaction && isContextOverflow(assistantMessage, contextWindow)) {
+		if (sameModel && isContextOverflow(assistantMessage, contextWindow)) {
 			if (this._overflowRecoveryAttempted) {
 				this._emit({
 					type: "auto_compaction_end",
