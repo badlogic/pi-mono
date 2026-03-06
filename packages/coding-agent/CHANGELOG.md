@@ -10,6 +10,7 @@
 
 - Fixed `/new` leaving startup header content, including the changelog, visible after starting a fresh session ([#1880](https://github.com/badlogic/pi-mono/issues/1880))
 - Fixed misleading docs and example implying that returning `{ isError: true }` from a tool's `execute` function marks the execution as failed; errors must be signaled by throwing ([#1881](https://github.com/badlogic/pi-mono/issues/1881))
+- Fixed model switches through non-reasoning models to preserve the saved default thinking level instead of persisting a capability-forced `off` clamp ([#1864](https://github.com/badlogic/pi-mono/issues/1864))
 
 ## [0.56.2] - 2026-03-05
 

@@ -1315,12 +1315,13 @@ export class AgentSession {
 		}
 
 		const previousModel = this.model;
+		const thinkingLevel = this._getThinkingLevelForModelSwitch();
 		this.agent.setModel(model);
 		this.sessionManager.appendModelChange(model.provider, model.id);
 		this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
 
 		// Re-clamp thinking level for new model's capabilities
-		this.setThinkingLevel(this.thinkingLevel);
+		this.setThinkingLevel(thinkingLevel);
 
 		await this._emitModelSelect(model, previousModel, "set");
 	}
@@ -1371,6 +1372,7 @@ export class AgentSession {
 		const len = scopedModels.length;
 		const nextIndex = direction === "forward" ? (currentIndex + 1) % len : (currentIndex - 1 + len) % len;
 		const next = scopedModels[nextIndex];
+		const thinkingLevel = this._getThinkingLevelForModelSwitch(next.thinkingLevel);
 
 		// Apply model
 		this.agent.setModel(next.model);
@@ -1379,9 +1381,9 @@ export class AgentSession {
 
 		// Apply thinking level.
 		// - Explicit scoped model thinking level overrides current session level
-		// - Undefined scoped model thinking level inherits current session level
+		// - Undefined scoped model thinking level inherits the current session preference
 		// setThinkingLevel clamps to model capabilities.
-		this.setThinkingLevel(next.thinkingLevel ?? this.thinkingLevel);
+		this.setThinkingLevel(thinkingLevel);
 
 		await this._emitModelSelect(next.model, currentModel, "cycle");
 
@@ -1405,12 +1407,13 @@ export class AgentSession {
 			throw new Error(`No API key for ${nextModel.provider}/${nextModel.id}`);
 		}
 
+		const thinkingLevel = this._getThinkingLevelForModelSwitch();
 		this.agent.setModel(nextModel);
 		this.sessionManager.appendModelChange(nextModel.provider, nextModel.id);
 		this.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id);
 
 		// Re-clamp thinking level for new model's capabilities
-		this.setThinkingLevel(this.thinkingLevel);
+		this.setThinkingLevel(thinkingLevel);
 
 		await this._emitModelSelect(nextModel, currentModel, "cycle");
 
@@ -1437,7 +1440,9 @@ export class AgentSession {
 
 		if (isChanging) {
 			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
-			this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
+			if (this.supportsThinking() || effectiveLevel !== "off") {
+				this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
+			}
 		}
 	}
 
@@ -1478,6 +1483,16 @@ export class AgentSession {
 	 */
 	supportsThinking(): boolean {
 		return !!this.model?.reasoning;
+	}
+
+	private _getThinkingLevelForModelSwitch(explicitLevel?: ThinkingLevel): ThinkingLevel {
+		if (explicitLevel !== undefined) {
+			return explicitLevel;
+		}
+		if (!this.supportsThinking()) {
+			return this.settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;
+		}
+		return this.thinkingLevel;
 	}
 
 	private _clampThinkingLevel(level: ThinkingLevel, availableLevels: ThinkingLevel[]): ThinkingLevel {
