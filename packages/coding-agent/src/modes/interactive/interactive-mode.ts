@@ -4164,6 +4164,7 @@ export class InteractiveMode {
 		await this.session.newSession();
 
 		// Clear UI state
+		this.headerContainer.clear();
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
 		this.compactionQueuedMessages = [];
