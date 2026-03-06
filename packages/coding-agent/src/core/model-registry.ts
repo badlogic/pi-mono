@@ -113,6 +113,7 @@ const ProviderConfigSchema = Type.Object({
 	api: Type.Optional(Type.String({ minLength: 1 })),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
 	authHeader: Type.Optional(Type.Boolean()),
+	cacheTtl: Type.Optional(Type.Number()),
 	models: Type.Optional(Type.Array(ModelDefinitionSchema)),
 	modelOverrides: Type.Optional(Type.Record(Type.String(), ModelOverrideSchema)),
 });
@@ -130,6 +131,7 @@ interface ProviderOverride {
 	baseUrl?: string;
 	headers?: Record<string, string>;
 	apiKey?: string;
+	cacheTtl?: number;
 }
 
 /** Result of loading custom models from models.json */
@@ -203,7 +205,7 @@ function applyModelOverride(model: Model<Api>, override: ModelOverride): Model<A
 
 	// Merge headers
 	if (override.headers) {
-		const resolvedHeaders = resolveHeaders(override.headers);
+		const resolvedHeaders = resolveHeaders(override.headers); // No easy access to provider TTL here, but override headers are usually literals
 		result.headers = resolvedHeaders ? { ...model.headers, ...resolvedHeaders } : model.headers;
 	}
 
@@ -233,7 +235,9 @@ export class ModelRegistry {
 		this.authStorage.setFallbackResolver((provider) => {
 			const keyConfig = this.customProviderApiKeys.get(provider);
 			if (keyConfig) {
-				return resolveConfigValue(keyConfig);
+				const config = this.registeredProviders.get(provider);
+				const ttlMs = config?.cacheTtl ? config.cacheTtl * 1000 : undefined;
+				return resolveConfigValue(keyConfig, ttlMs);
 			}
 			return undefined;
 		});
@@ -252,6 +256,7 @@ export class ModelRegistry {
 		// Ensure dynamic API/OAuth registrations are rebuilt from current provider state.
 		resetApiProviders();
 		resetOAuthProviders();
+		clearConfigValueCache();
 
 		this.loadModels();
 
@@ -310,7 +315,8 @@ export class ModelRegistry {
 
 				// Apply provider-level baseUrl/headers override
 				if (providerOverride) {
-					const resolvedHeaders = resolveHeaders(providerOverride.headers);
+					const ttlMs = providerOverride.cacheTtl ? providerOverride.cacheTtl * 1000 : undefined;
+					const resolvedHeaders = resolveHeaders(providerOverride.headers, ttlMs);
 					model = {
 						...model,
 						baseUrl: providerOverride.baseUrl ?? model.baseUrl,
@@ -374,6 +380,7 @@ export class ModelRegistry {
 						baseUrl: providerConfig.baseUrl,
 						headers: providerConfig.headers,
 						apiKey: providerConfig.apiKey,
+						cacheTtl: providerConfig.cacheTtl,
 					});
 				}
 
@@ -457,13 +464,14 @@ export class ModelRegistry {
 
 				// Merge headers: provider headers are base, model headers override
 				// Resolve env vars and shell commands in header values
-				const providerHeaders = resolveHeaders(providerConfig.headers);
-				const modelHeaders = resolveHeaders(modelDef.headers);
+				const ttlMs = providerConfig.cacheTtl ? providerConfig.cacheTtl * 1000 : undefined;
+				const providerHeaders = resolveHeaders(providerConfig.headers, ttlMs);
+				const modelHeaders = resolveHeaders(modelDef.headers, ttlMs);
 				let headers = providerHeaders || modelHeaders ? { ...providerHeaders, ...modelHeaders } : undefined;
 
 				// If authHeader is true, add Authorization header with resolved API key
 				if (providerConfig.authHeader && providerConfig.apiKey) {
-					const resolvedKey = resolveConfigValue(providerConfig.apiKey);
+					const resolvedKey = resolveConfigValue(providerConfig.apiKey, ttlMs);
 					if (resolvedKey) {
 						headers = { ...headers, Authorization: `Bearer ${resolvedKey}` };
 					}
@@ -519,14 +527,18 @@ export class ModelRegistry {
 	 * Get API key for a model.
 	 */
 	async getApiKey(model: Model<Api>): Promise<string | undefined> {
-		return this.authStorage.getApiKey(model.provider);
+		const config = this.registeredProviders.get(model.provider);
+		const ttlMs = config?.cacheTtl ? config.cacheTtl * 1000 : undefined;
+		return this.authStorage.getApiKey(model.provider, ttlMs);
 	}
 
 	/**
 	 * Get API key for a provider.
 	 */
 	async getApiKeyForProvider(provider: string): Promise<string | undefined> {
-		return this.authStorage.getApiKey(provider);
+		const config = this.registeredProviders.get(provider);
+		const ttlMs = config?.cacheTtl ? config.cacheTtl * 1000 : undefined;
+		return this.authStorage.getApiKey(provider, ttlMs);
 	}
 
 	/**
@@ -616,13 +628,14 @@ export class ModelRegistry {
 				}
 
 				// Merge headers
-				const providerHeaders = resolveHeaders(config.headers);
-				const modelHeaders = resolveHeaders(modelDef.headers);
+				const ttlMs = config.cacheTtl ? config.cacheTtl * 1000 : undefined;
+				const providerHeaders = resolveHeaders(config.headers, ttlMs);
+				const modelHeaders = resolveHeaders(modelDef.headers, ttlMs);
 				let headers = providerHeaders || modelHeaders ? { ...providerHeaders, ...modelHeaders } : undefined;
 
 				// If authHeader is true, add Authorization header
 				if (config.authHeader && config.apiKey) {
-					const resolvedKey = resolveConfigValue(config.apiKey);
+					const resolvedKey = resolveConfigValue(config.apiKey, ttlMs);
 					if (resolvedKey) {
 						headers = { ...headers, Authorization: `Bearer ${resolvedKey}` };
 					}
@@ -653,7 +666,8 @@ export class ModelRegistry {
 			}
 		} else if (config.baseUrl) {
 			// Override-only: update baseUrl/headers for existing models
-			const resolvedHeaders = resolveHeaders(config.headers);
+			const ttlMs = config.cacheTtl ? config.cacheTtl * 1000 : undefined;
+			const resolvedHeaders = resolveHeaders(config.headers, ttlMs);
 			this.models = this.models.map((m) => {
 				if (m.provider !== providerName) return m;
 				return {
@@ -676,6 +690,7 @@ export interface ProviderConfigInput {
 	streamSimple?: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 	headers?: Record<string, string>;
 	authHeader?: boolean;
+	cacheTtl?: number;
 	/** OAuth provider for /login support */
 	oauth?: Omit<OAuthProviderInterface, "id">;
 	models?: Array<{

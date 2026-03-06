@@ -6,24 +6,32 @@
 import { execSync } from "child_process";
 
 // Cache for shell command results (persists for process lifetime)
-const commandResultCache = new Map<string, string | undefined>();
+interface CacheEntry {
+	value: string | undefined;
+	cachedAt: number;
+}
+const commandResultCache = new Map<string, CacheEntry>();
 
 /**
  * Resolve a config value (API key, header value, etc.) to an actual value.
  * - If starts with "!", executes the rest as a shell command and uses stdout (cached)
  * - Otherwise checks environment variable first, then treats as literal (not cached)
  */
-export function resolveConfigValue(config: string): string | undefined {
+export function resolveConfigValue(config: string, ttlMs?: number): string | undefined {
 	if (config.startsWith("!")) {
-		return executeCommand(config);
+		return executeCommand(config, ttlMs);
 	}
 	const envValue = process.env[config];
 	return envValue || config;
 }
 
-function executeCommand(commandConfig: string): string | undefined {
-	if (commandResultCache.has(commandConfig)) {
-		return commandResultCache.get(commandConfig);
+function executeCommand(commandConfig: string, ttlMs?: number): string | undefined {
+	const cached = commandResultCache.get(commandConfig);
+	const now = Date.now();
+
+	if (cached) {
+		const expired = ttlMs !== undefined && now - cached.cachedAt > ttlMs;
+		if (!expired) return cached.value;
 	}
 
 	const command = commandConfig.slice(1);
@@ -39,18 +47,21 @@ function executeCommand(commandConfig: string): string | undefined {
 		result = undefined;
 	}
 
-	commandResultCache.set(commandConfig, result);
+	commandResultCache.set(commandConfig, { value: result, cachedAt: now });
 	return result;
 }
 
 /**
  * Resolve all header values using the same resolution logic as API keys.
  */
-export function resolveHeaders(headers: Record<string, string> | undefined): Record<string, string> | undefined {
+export function resolveHeaders(
+	headers: Record<string, string> | undefined,
+	ttlMs?: number,
+): Record<string, string> | undefined {
 	if (!headers) return undefined;
 	const resolved: Record<string, string> = {};
 	for (const [key, value] of Object.entries(headers)) {
-		const resolvedValue = resolveConfigValue(value);
+		const resolvedValue = resolveConfigValue(value, ttlMs);
 		if (resolvedValue) {
 			resolved[key] = resolvedValue;
 		}

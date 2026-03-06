@@ -84,6 +84,7 @@ Set `api` at provider level (default for all models) or model level (override pe
 | `apiKey` | API key (see value resolution below) |
 | `headers` | Custom headers (see value resolution below) |
 | `authHeader` | Set `true` to add `Authorization: Bearer <apiKey>` automatically |
+| `cacheTtl` | Cache TTL in seconds for shell command results (e.g. `60`) |
 | `models` | Array of model configurations |
 | `modelOverrides` | Per-model overrides for built-in models on this provider |
 
@@ -104,6 +105,8 @@ The `apiKey` and `headers` fields support three formats:
   ```json
   "apiKey": "sk-..."
   ```
+
+Shell command results are cached for the lifetime of the process by default. Use `cacheTtl` (in seconds) at the provider level to force re-execution after a specific duration. This is useful for short-lived tokens generated via CLI tools (e.g. `gcloud`, `aws`, `op`).
 
 ### Custom Headers
 
