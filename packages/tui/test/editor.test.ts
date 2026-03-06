@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
-import type { AutocompleteProvider } from "../src/autocomplete.js";
+import type { AutocompleteProvider, AutocompleteSuggestions } from "../src/autocomplete.js";
 import { Editor, wordWrapLine } from "../src/components/editor.js";
 import { TUI } from "../src/tui.js";
 import { visibleWidth } from "../src/utils.js";
@@ -30,6 +30,56 @@ function applyCompletion(
 		lines: newLines,
 		cursorLine,
 		cursorCol: cursorCol - prefix.length + item.value.length,
+	};
+}
+
+type PendingAsyncRequest = {
+	lines: string[];
+	cursorLine: number;
+	cursorCol: number;
+	signal: AbortSignal;
+	onUpdate: (suggestions: AutocompleteSuggestions) => void;
+	resolve: (suggestions: AutocompleteSuggestions | null) => void;
+};
+
+/** Flush queued async provider work before asserting editor state */
+async function waitForAsyncWork(): Promise<void> {
+	await Promise.resolve();
+	await new Promise<void>((resolve) => {
+		setImmediate(resolve);
+	});
+}
+
+/** Create a provider whose async attachment results are driven by the test */
+function createPendingAsyncProvider(): {
+	provider: AutocompleteProvider;
+	requests: PendingAsyncRequest[];
+	getSyncCalls: () => number;
+} {
+	const requests: PendingAsyncRequest[] = [];
+	let syncCalls = 0;
+
+	return {
+		provider: {
+			getSuggestions: () => {
+				syncCalls += 1;
+				return null;
+			},
+			getSuggestionsAsync: async (lines, cursorLine, cursorCol, signal, onUpdate) =>
+				await new Promise<AutocompleteSuggestions | null>((resolve) => {
+					requests.push({
+						lines: [...lines],
+						cursorLine,
+						cursorCol,
+						signal,
+						onUpdate,
+						resolve,
+					});
+				}),
+			applyCompletion,
+		},
+		requests,
+		getSyncCalls: () => syncCalls,
 	};
 }
 
@@ -1993,6 +2043,182 @@ describe("Editor component", () => {
 			editor.handleInput("\x7f"); // Backspace
 			assert.strictEqual(editor.getText(), "");
 			assert.strictEqual(editor.isShowingAutocomplete(), false);
+		});
+
+		it("uses async suggestions for @ attachments without calling the sync path", async () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, requests, getSyncCalls } = createPendingAsyncProvider();
+			editor.setAutocompleteProvider(provider);
+
+			editor.handleInput("@");
+			await waitForAsyncWork();
+
+			assert.strictEqual(getSyncCalls(), 0);
+			assert.strictEqual(requests.length, 1);
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+
+			requests[0]!.onUpdate({
+				items: [{ value: "@alpha.ts", label: "alpha.ts" }],
+				prefix: "@",
+			});
+			await waitForAsyncWork();
+
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "@alpha.ts");
+		});
+
+		it("aborts a pending async request when submitting", async () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, requests } = createPendingAsyncProvider();
+			let submitted: string | null = null;
+			editor.onSubmit = (text) => {
+				submitted = text;
+			};
+			editor.setAutocompleteProvider(provider);
+
+			editor.handleInput("@");
+			editor.handleInput("a");
+			await waitForAsyncWork();
+
+			const activeRequest = requests[requests.length - 1]!;
+			assert.strictEqual(activeRequest.signal.aborted, false);
+
+			editor.handleInput("\r");
+
+			assert.strictEqual(activeRequest.signal.aborted, true);
+			assert.strictEqual(editor.getText(), "");
+			assert.strictEqual(submitted, "@a");
+
+			activeRequest.onUpdate({
+				items: [{ value: "@stale.ts", label: "stale.ts" }],
+				prefix: "@a",
+			});
+			await waitForAsyncWork();
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+		});
+
+		it("ignores stale streamed results after the @ query changes", async () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, requests } = createPendingAsyncProvider();
+			editor.setAutocompleteProvider(provider);
+
+			editor.handleInput("@");
+			await waitForAsyncWork();
+			assert.strictEqual(requests.length, 1);
+
+			editor.handleInput("a");
+			await waitForAsyncWork();
+			assert.strictEqual(requests.length, 2);
+			assert.strictEqual(requests[0]!.signal.aborted, true);
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+
+			requests[0]!.onUpdate({
+				items: [{ value: "@stale.ts", label: "stale.ts" }],
+				prefix: "@",
+			});
+			await waitForAsyncWork();
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+
+			requests[1]!.onUpdate({
+				items: [{ value: "@alpha.ts", label: "alpha.ts" }],
+				prefix: "@a",
+			});
+			await waitForAsyncWork();
+
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "@alpha.ts");
+		});
+
+		it("aborts a pending async request when the cursor leaves attachment context", async () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, requests } = createPendingAsyncProvider();
+			editor.setAutocompleteProvider(provider);
+
+			editor.handleInput("@");
+			editor.handleInput("a");
+			await waitForAsyncWork();
+
+			const activeRequest = requests[requests.length - 1]!;
+			assert.strictEqual(activeRequest.signal.aborted, false);
+
+			editor.handleInput("\x1b[D");
+
+			assert.strictEqual(activeRequest.signal.aborted, true);
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+
+			activeRequest.onUpdate({
+				items: [{ value: "@alpha.ts", label: "alpha.ts" }],
+				prefix: "@a",
+			});
+			await waitForAsyncWork();
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+		});
+
+		it("resets to the first item on new results until the user changes selection", async () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, requests } = createPendingAsyncProvider();
+			editor.setAutocompleteProvider(provider);
+
+			editor.handleInput("@");
+			await waitForAsyncWork();
+
+			const activeRequest = requests[0]!;
+			activeRequest.onUpdate({
+				items: [
+					{ value: "@alpha.ts", label: "alpha.ts" },
+					{ value: "@beta.ts", label: "beta.ts" },
+				],
+				prefix: "@",
+			});
+			await waitForAsyncWork();
+
+			activeRequest.onUpdate({
+				items: [
+					{ value: "@beta.ts", label: "beta.ts" },
+					{ value: "@alpha.ts", label: "alpha.ts" },
+				],
+				prefix: "@",
+			});
+			await waitForAsyncWork();
+
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "@beta.ts");
+		});
+
+		it("preserves the selected item across streamed updates after explicit navigation", async () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, requests } = createPendingAsyncProvider();
+			editor.setAutocompleteProvider(provider);
+
+			editor.handleInput("@");
+			await waitForAsyncWork();
+
+			const activeRequest = requests[0]!;
+			activeRequest.onUpdate({
+				items: [
+					{ value: "@alpha.ts", label: "alpha.ts" },
+					{ value: "@beta.ts", label: "beta.ts" },
+				],
+				prefix: "@",
+			});
+			await waitForAsyncWork();
+
+			editor.handleInput("\x1b[B");
+
+			activeRequest.onUpdate({
+				items: [
+					{ value: "@gamma.ts", label: "gamma.ts" },
+					{ value: "@beta.ts", label: "beta.ts" },
+					{ value: "@alpha.ts", label: "alpha.ts" },
+				],
+				prefix: "@",
+			});
+			await waitForAsyncWork();
+
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "@beta.ts");
 		});
 	});
 

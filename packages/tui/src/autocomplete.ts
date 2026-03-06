@@ -170,7 +170,11 @@ function getAutocompleteContextFromText(textBeforeCursor: string): AutocompleteC
 	return null;
 }
 
-function getAutocompleteContext(lines: string[], cursorLine: number, cursorCol: number): AutocompleteContext | null {
+export function getAutocompleteContext(
+	lines: string[],
+	cursorLine: number,
+	cursorCol: number,
+): AutocompleteContext | null {
 	const currentLine = lines[cursorLine] || "";
 	const textBeforeCursor = currentLine.slice(0, cursorCol);
 	return getAutocompleteContextFromText(textBeforeCursor);
