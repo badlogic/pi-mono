@@ -56,7 +56,7 @@ export interface ModelInfo {
 export type RpcEventListener = (event: AgentEvent) => void;
 
 export interface RpcListSessionsOptions {
-	/** current: sessions for active session cwd, all: sessions across projects */
+	/** current: sessions for the project directory pi was started in, all: sessions across projects */
 	scope?: "current" | "all";
 }
 

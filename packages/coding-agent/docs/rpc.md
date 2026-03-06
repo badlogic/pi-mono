@@ -648,7 +648,7 @@ The current session name is available via `get_state` in the `sessionName` field
 
 #### list_sessions
 
-List sessions for the active context or across all projects. Each item always includes `allMessagesText` for full-text search.
+List sessions for the project directory pi was started in, or across all projects. Each item always includes `allMessagesText` for full-text search.
 
 ```json
 {"type": "list_sessions", "scope": "all"}
@@ -679,7 +679,7 @@ Response:
 ```
 
 Scope semantics:
-- `"current"` (default): sessions for the active session's cwd/session directory
+- `"current"` (default): sessions for the project directory pi was started in
 - `"all"`: sessions across all project directories
 
 ### Tree
