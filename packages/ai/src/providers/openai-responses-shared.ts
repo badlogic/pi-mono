@@ -90,22 +90,31 @@ export function convertResponsesMessages<TApi extends Api>(
 ): ResponseInput {
 	const messages: ResponseInput = [];
 
+	const normalizeResponsesToolIds = (id: string): { callId: string; itemId: string; combined: string } => {
+		const raw = id == null ? "" : String(id);
+		const parts = raw.split("|");
+		const rawCallId = (parts.shift() || "").trim();
+		const rawItemId = (parts.join("_") || "").trim();
+		const sanitize = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+$/, "");
+		const callFallback = `call_auto_${shortHash(raw || "empty")}`;
+		let callId = sanitize(rawCallId);
+		if (!callId) callId = callFallback;
+		if (callId.length > 64) callId = callId.slice(0, 64).replace(/_+$/, "") || callFallback;
+
+		let itemId = sanitize(rawItemId);
+		if (!itemId) itemId = `fc_${callId}`;
+		if (!itemId.startsWith("fc")) {
+			itemId = `fc_${itemId}`;
+		}
+		if (itemId.length > 64) itemId = itemId.slice(0, 64).replace(/_+$/, "");
+		if (!itemId) itemId = "fc_call_auto_fix";
+
+		return { callId, itemId, combined: `${callId}|${itemId}` };
+	};
+
 	const normalizeToolCallId = (id: string): string => {
 		if (!allowedToolCallProviders.has(model.provider)) return id;
-		if (!id.includes("|")) return id;
-		const [callId, itemId] = id.split("|");
-		const sanitizedCallId = callId.replace(/[^a-zA-Z0-9_-]/g, "_");
-		let sanitizedItemId = itemId.replace(/[^a-zA-Z0-9_-]/g, "_");
-		// OpenAI Responses API requires item id to start with "fc"
-		if (!sanitizedItemId.startsWith("fc")) {
-			sanitizedItemId = `fc_${sanitizedItemId}`;
-		}
-		// Truncate to 64 chars and strip trailing underscores (OpenAI Codex rejects them)
-		let normalizedCallId = sanitizedCallId.length > 64 ? sanitizedCallId.slice(0, 64) : sanitizedCallId;
-		let normalizedItemId = sanitizedItemId.length > 64 ? sanitizedItemId.slice(0, 64) : sanitizedItemId;
-		normalizedCallId = normalizedCallId.replace(/_+$/, "");
-		normalizedItemId = normalizedItemId.replace(/_+$/, "");
-		return `${normalizedCallId}|${normalizedItemId}`;
+		return normalizeResponsesToolIds(id).combined;
 	};
 
 	const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId);
@@ -184,8 +193,8 @@ export function convertResponsesMessages<TApi extends Api>(
 					} satisfies ResponseOutputMessage);
 				} else if (block.type === "toolCall") {
 					const toolCall = block as ToolCall;
-					const [callId, itemIdRaw] = toolCall.id.split("|");
-					let itemId: string | undefined = itemIdRaw;
+					const { callId, itemId: normalizedItemId } = normalizeResponsesToolIds(toolCall.id);
+					let itemId: string | undefined = normalizedItemId;
 
 					// For different-model messages, set id to undefined to avoid pairing validation.
 					// OpenAI tracks which fc_xxx IDs were paired with rs_xxx reasoning items.
@@ -215,7 +224,7 @@ export function convertResponsesMessages<TApi extends Api>(
 
 			// Always send function_call_output with text (or placeholder if only images)
 			const hasText = textResult.length > 0;
-			const [callId] = msg.toolCallId.split("|");
+			const { callId } = normalizeResponsesToolIds(msg.toolCallId);
 			messages.push({
 				type: "function_call_output",
 				call_id: callId,

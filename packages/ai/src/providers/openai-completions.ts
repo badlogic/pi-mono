@@ -27,6 +27,7 @@ import type {
 	ToolResultMessage,
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import { shortHash } from "../utils/hash.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
@@ -479,18 +480,24 @@ export function convertMessages(
 	const params: ChatCompletionMessageParam[] = [];
 
 	const normalizeToolCallId = (id: string): string => {
-		// Handle pipe-separated IDs from OpenAI Responses API
-		// Format: {call_id}|{id} where {id} can be 400+ chars with special chars (+, /, =)
-		// These come from providers like github-copilot, openai-codex, opencode
-		// Extract just the call_id part and normalize it
-		if (id.includes("|")) {
-			const [callId] = id.split("|");
-			// Sanitize to allowed chars and truncate to 40 chars (OpenAI limit)
-			return callId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40);
+		const raw = id == null ? "" : String(id);
+		const sanitize = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+$/, "");
+		const fallback = `call_auto_${shortHash(raw || "empty")}`;
+
+		if (raw.includes("|")) {
+			const [callIdRaw] = raw.split("|");
+			let out = sanitize(callIdRaw || "");
+			if (!out) out = fallback;
+			if (out.length > 40) out = out.slice(0, 40).replace(/_+$/, "") || fallback;
+			return out;
 		}
 
-		if (model.provider === "openai") return id.length > 40 ? id.slice(0, 40) : id;
-		return id;
+		if (model.provider === "openai") {
+			let out = sanitize(raw);
+			if (!out) out = fallback;
+			return out.length > 40 ? out.slice(0, 40).replace(/_+$/, "") || fallback : out;
+		}
+		return raw;
 	};
 
 	const transformedMessages = transformMessages(context.messages, model, (id) => normalizeToolCallId(id));
