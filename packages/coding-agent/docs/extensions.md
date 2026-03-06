@@ -1340,6 +1340,18 @@ pi.registerTool({
 });
 ```
 
+**Signaling errors:** To mark a tool execution as failed (sets `isError: true` on the result and reports it to the LLM), throw an error from `execute`. Returning a value never sets the error flag regardless of what properties you include in the return object.
+
+```typescript
+// Correct: throw to signal an error
+async execute(toolCallId, params) {
+  if (!isValid(params.input)) {
+    throw new Error(`Invalid input: ${params.input}`);
+  }
+  return { content: [{ type: "text", text: "OK" }], details: {} };
+}
+```
+
 **Important:** Use `StringEnum` from `@mariozechner/pi-ai` for string enums. `Type.Union`/`Type.Literal` doesn't work with Google's API.
 
 ### Overriding Built-in Tools
@@ -1880,7 +1892,7 @@ const highlighted = highlightCode(code, lang, theme);
 
 - Extension errors are logged, agent continues
 - `tool_call` errors block the tool (fail-safe)
-- Tool `execute` errors are reported to the LLM with `isError: true`
+- Tool `execute` errors must be signaled by throwing; the thrown error is caught, reported to the LLM with `isError: true`, and execution continues
 
 ## Mode Behavior
 

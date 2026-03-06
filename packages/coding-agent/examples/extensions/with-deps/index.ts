@@ -21,11 +21,7 @@ export default function (pi: ExtensionAPI) {
 		execute: async (_toolCallId, params) => {
 			const result = ms(params.duration as ms.StringValue);
 			if (result === undefined) {
-				return {
-					content: [{ type: "text", text: `Invalid duration: "${params.duration}"` }],
-					isError: true,
-					details: {},
-				};
+				throw new Error(`Invalid duration: "${params.duration}"`);
 			}
 			return {
 				content: [{ type: "text", text: `${params.duration} = ${result} milliseconds` }],
