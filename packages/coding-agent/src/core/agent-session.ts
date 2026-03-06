@@ -1315,12 +1315,14 @@ export class AgentSession {
 		}
 
 		const previousModel = this.model;
+		const preferredThinkingLevel = this._getPreferredThinkingLevelForModelSwitch();
 		this.agent.setModel(model);
 		this.sessionManager.appendModelChange(model.provider, model.id);
 		this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
 
-		// Re-clamp thinking level for new model's capabilities
-		this.setThinkingLevel(this.thinkingLevel);
+		// Model switches may clamp the effective session level, but they should not
+		// overwrite the user's saved default thinking preference.
+		this.setThinkingLevel(preferredThinkingLevel, false);
 
 		await this._emitModelSelect(model, previousModel, "set");
 	}
@@ -1371,6 +1373,7 @@ export class AgentSession {
 		const len = scopedModels.length;
 		const nextIndex = direction === "forward" ? (currentIndex + 1) % len : (currentIndex - 1 + len) % len;
 		const next = scopedModels[nextIndex];
+		const preferredThinkingLevel = next.thinkingLevel ?? this._getPreferredThinkingLevelForModelSwitch();
 
 		// Apply model
 		this.agent.setModel(next.model);
@@ -1380,8 +1383,8 @@ export class AgentSession {
 		// Apply thinking level.
 		// - Explicit scoped model thinking level overrides current session level
 		// - Undefined scoped model thinking level inherits current session level
-		// setThinkingLevel clamps to model capabilities.
-		this.setThinkingLevel(next.thinkingLevel ?? this.thinkingLevel);
+		// - Model-switch clamping should not rewrite the saved default preference
+		this.setThinkingLevel(preferredThinkingLevel, false);
 
 		await this._emitModelSelect(next.model, currentModel, "cycle");
 
@@ -1405,12 +1408,14 @@ export class AgentSession {
 			throw new Error(`No API key for ${nextModel.provider}/${nextModel.id}`);
 		}
 
+		const preferredThinkingLevel = this._getPreferredThinkingLevelForModelSwitch();
 		this.agent.setModel(nextModel);
 		this.sessionManager.appendModelChange(nextModel.provider, nextModel.id);
 		this.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id);
 
-		// Re-clamp thinking level for new model's capabilities
-		this.setThinkingLevel(this.thinkingLevel);
+		// Model switches may clamp the effective session level, but they should not
+		// overwrite the user's saved default thinking preference.
+		this.setThinkingLevel(preferredThinkingLevel, false);
 
 		await this._emitModelSelect(nextModel, currentModel, "cycle");
 
@@ -1426,9 +1431,8 @@ export class AgentSession {
 	 * Clamps to model capabilities based on available thinking levels.
 	 * Saves to session and settings only if the level actually changes.
 	 */
-	setThinkingLevel(level: ThinkingLevel): void {
-		const availableLevels = this.getAvailableThinkingLevels();
-		const effectiveLevel = availableLevels.includes(level) ? level : this._clampThinkingLevel(level, availableLevels);
+	setThinkingLevel(level: ThinkingLevel, persistDefault: boolean = true): void {
+		const effectiveLevel = this._resolveThinkingLevel(level);
 
 		// Only persist if actually changing
 		const isChanging = effectiveLevel !== this.agent.state.thinkingLevel;
@@ -1437,7 +1441,9 @@ export class AgentSession {
 
 		if (isChanging) {
 			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
-			this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
+			if (persistDefault) {
+				this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
+			}
 		}
 	}
 
@@ -1478,6 +1484,18 @@ export class AgentSession {
 	 */
 	supportsThinking(): boolean {
 		return !!this.model?.reasoning;
+	}
+
+	private _getPreferredThinkingLevelForModelSwitch(): ThinkingLevel {
+		if (!this.supportsThinking() && this.thinkingLevel === "off") {
+			return this.settingsManager.getDefaultThinkingLevel() ?? "off";
+		}
+		return this.thinkingLevel;
+	}
+
+	private _resolveThinkingLevel(level: ThinkingLevel): ThinkingLevel {
+		const availableLevels = this.getAvailableThinkingLevels();
+		return availableLevels.includes(level) ? level : this._clampThinkingLevel(level, availableLevels);
 	}
 
 	private _clampThinkingLevel(level: ThinkingLevel, availableLevels: ThinkingLevel[]): ThinkingLevel {
@@ -2526,13 +2544,11 @@ export class AgentSession {
 		const defaultThinkingLevel = this.settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;
 
 		if (hasThinkingEntry) {
-			// Restore thinking level if saved (setThinkingLevel clamps to model capabilities)
-			this.setThinkingLevel(sessionContext.thinkingLevel as ThinkingLevel);
+			// Restore session state without mutating persisted defaults or duplicating
+			// session history.
+			this.agent.setThinkingLevel(this._resolveThinkingLevel(sessionContext.thinkingLevel as ThinkingLevel));
 		} else {
-			const availableLevels = this.getAvailableThinkingLevels();
-			const effectiveLevel = availableLevels.includes(defaultThinkingLevel)
-				? defaultThinkingLevel
-				: this._clampThinkingLevel(defaultThinkingLevel, availableLevels);
+			const effectiveLevel = this._resolveThinkingLevel(defaultThinkingLevel);
 			this.agent.setThinkingLevel(effectiveLevel);
 			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
 		}
