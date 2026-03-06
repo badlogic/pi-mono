@@ -729,6 +729,10 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): Sto
 			return "toolUse";
 		case "content_filter":
 			return "error";
+		// Modern APIs (Anthropic, AWS Bedrock, ZhipuAI/GLM) return this when the context
+		// window is exceeded. Map to "length" to trigger overflow recovery mechanisms.
+		case "model_context_window_exceeded":
+			return "length";
 		default: {
 			const _exhaustive: never = reason;
 			throw new Error(`Unhandled stop reason: ${_exhaustive}`);
