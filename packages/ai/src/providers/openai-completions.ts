@@ -354,12 +354,12 @@ function createClient(
 		Object.assign(headers, optionsHeaders);
 	}
 
-	return new OpenAI({
-		apiKey,
-		baseURL: model.baseUrl,
-		dangerouslyAllowBrowser: true,
-		defaultHeaders: headers,
-	});
+	  return new OpenAI({
+      apiKey,
+      baseURL: model.baseUrl,
+      dangerouslyAllowBrowser: true,
+      defaultHeaders: headers,
+      maxRetries: 30, // Allow retries during local model loading (e.g. llama-swap model swap ~30-120s)
 }
 
 function buildParams(model: Model<"openai-completions">, context: Context, options?: OpenAICompletionsOptions) {
