@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- Fixed custom editors having their `onEscape`/`onCtrlD` handlers unconditionally overwritten by app-level defaults, making vim-style escape handling impossible ([#1838](https://github.com/badlogic/pi-mono/issues/1838))
 - Fixed auto-compaction retriggering on the first prompt after compaction due to stale pre-compaction assistant usage ([#1860](https://github.com/badlogic/pi-mono/issues/1860) by [@joelhooks](https://github.com/joelhooks))
 - Fixed sessions never auto-compacting when hitting persistent API errors (e.g. 529 overloaded) by estimating context size from the last successful response ([#1834](https://github.com/badlogic/pi-mono/issues/1834))
 - Fixed `/new` leaving startup header content, including the changelog, visible after starting a fresh session ([#1880](https://github.com/badlogic/pi-mono/issues/1880))
