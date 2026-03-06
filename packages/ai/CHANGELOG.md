@@ -10,6 +10,7 @@
 ### Fixed
 
 - Fixed Antigravity Claude thinking beta header detection to use provider and model capability instead of `-thinking` suffix, so models like `claude-sonnet-4-6` receive the header correctly ([#1859](https://github.com/badlogic/pi-mono/issues/1859)).
+- Fixed OpenAI Responses reasoning replay regression that dropped reasoning blocks on follow-up turns ([#1878](https://github.com/badlogic/pi-mono/issues/1878))
 
 ## [0.56.2] - 2026-03-05
 
