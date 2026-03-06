@@ -84,6 +84,97 @@ function buildCompletionValue(
 	return `${openQuote}${path}${closeQuote}`;
 }
 
+function extractAttachmentPrefix(text: string): string | null {
+	const quotedPrefix = extractQuotedPrefix(text);
+	if (quotedPrefix?.startsWith('@"')) {
+		return quotedPrefix;
+	}
+
+	const lastDelimiterIndex = findLastDelimiter(text);
+	const tokenStart = lastDelimiterIndex === -1 ? 0 : lastDelimiterIndex + 1;
+
+	if (text[tokenStart] === "@") {
+		return text.slice(tokenStart);
+	}
+
+	return null;
+}
+
+function extractPathPrefix(text: string, forceExtract: boolean = false): string | null {
+	const quotedPrefix = extractQuotedPrefix(text);
+	if (quotedPrefix) {
+		return quotedPrefix;
+	}
+
+	const lastDelimiterIndex = findLastDelimiter(text);
+	const pathPrefix = lastDelimiterIndex === -1 ? text : text.slice(lastDelimiterIndex + 1);
+
+	// For forced extraction (Tab key), always return something
+	if (forceExtract) {
+		return pathPrefix;
+	}
+
+	// For natural triggers, return if it looks like a path, ends with /, starts with ~/, .
+	// Only return empty string if the text looks like it's starting a path context
+	if (pathPrefix.includes("/") || pathPrefix.startsWith(".") || pathPrefix.startsWith("~/")) {
+		return pathPrefix;
+	}
+
+	// Return empty string only after a space (not for completely empty text)
+	// Empty text should not trigger file suggestions - that's for forced Tab completion
+	if (pathPrefix === "" && text.endsWith(" ")) {
+		return pathPrefix;
+	}
+
+	return null;
+}
+
+type AutocompleteContext = {
+	kind: "attachment" | "slash-command" | "command-argument" | "path";
+	prefix: string;
+};
+
+function getAutocompleteContextFromText(textBeforeCursor: string): AutocompleteContext | null {
+	const attachmentPrefix = extractAttachmentPrefix(textBeforeCursor);
+	if (attachmentPrefix) {
+		return {
+			kind: "attachment",
+			prefix: attachmentPrefix,
+		};
+	}
+
+	if (textBeforeCursor.startsWith("/")) {
+		const spaceIndex = textBeforeCursor.indexOf(" ");
+		if (spaceIndex === -1) {
+			return {
+				kind: "slash-command",
+				prefix: textBeforeCursor,
+			};
+		}
+
+		return {
+			kind: "command-argument",
+			prefix: textBeforeCursor.slice(spaceIndex + 1),
+		};
+	}
+
+	const pathPrefix = extractPathPrefix(textBeforeCursor);
+	if (pathPrefix !== null) {
+		return {
+			kind: "path",
+			prefix: pathPrefix,
+		};
+	}
+
+	return null;
+}
+
+function getAutocompleteContext(lines: string[], cursorLine: number, cursorCol: number): AutocompleteContext | null {
+	const currentLine = lines[cursorLine] || "";
+	const textBeforeCursor = currentLine.slice(0, cursorCol);
+	return getAutocompleteContextFromText(textBeforeCursor);
+}
+
 // Use fd to walk directory tree (fast, respects .gitignore)
 function walkDirectoryWithFd(
 	baseDir: string,
@@ -209,27 +300,23 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	): { items: AutocompleteItem[]; prefix: string } | null {
 		const currentLine = lines[cursorLine] || "";
 		const textBeforeCursor = currentLine.slice(0, cursorCol);
+		const context = getAutocompleteContext(lines, cursorLine, cursorCol);
+		if (!context) return null;
 
-		// Check for @ file reference (fuzzy search) - must be after a delimiter or at start
-		const atPrefix = this.extractAtPrefix(textBeforeCursor);
-		if (atPrefix) {
-			const { rawPrefix, isQuotedPrefix } = parsePathPrefix(atPrefix);
-			const suggestions = this.getFuzzyFileSuggestions(rawPrefix, { isQuotedPrefix: isQuotedPrefix });
-			if (suggestions.length === 0) return null;
+		switch (context.kind) {
+			case "attachment": {
+				const { rawPrefix, isQuotedPrefix } = parsePathPrefix(context.prefix);
+				const suggestions = this.getFuzzyFileSuggestions(rawPrefix, { isQuotedPrefix });
+				if (suggestions.length === 0) return null;
 
-			return {
-				items: suggestions,
-				prefix: atPrefix,
-			};
-		}
+				return {
+					items: suggestions,
+					prefix: context.prefix,
+				};
+			}
 
-		// Check for slash commands
-		if (textBeforeCursor.startsWith("/")) {
-			const spaceIndex = textBeforeCursor.indexOf(" ");
-
-			if (spaceIndex === -1) {
-				// No space yet - complete command names with fuzzy matching
-				const prefix = textBeforeCursor.slice(1); // Remove the "/"
+			case "slash-command": {
+				const prefix = context.prefix.slice(1);
 				const commandItems = this.commands.map((cmd) => ({
 					name: "name" in cmd ? cmd.name : cmd.value,
 					label: "name" in cmd ? cmd.name : cmd.label,
@@ -246,19 +333,21 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 
 				return {
 					items: filtered,
-					prefix: textBeforeCursor,
+					prefix: context.prefix,
 				};
-			} else {
-				// Space found - complete command arguments
-				const commandName = textBeforeCursor.slice(1, spaceIndex); // Command without "/"
-				const argumentText = textBeforeCursor.slice(spaceIndex + 1); // Text after space
+			}
+
+			case "command-argument": {
+				const spaceIndex = textBeforeCursor.indexOf(" ");
+				const commandName = textBeforeCursor.slice(1, spaceIndex);
+				const argumentText = context.prefix;
 
 				const command = this.commands.find((cmd) => {
 					const name = "name" in cmd ? cmd.name : cmd.value;
 					return name === commandName;
 				});
 				if (!command || !("getArgumentCompletions" in command) || !command.getArgumentCompletions) {
-					return null; // No argument completion for this command
+					return null;
 				}
 
 				const argumentSuggestions = command.getArgumentCompletions(argumentText);
@@ -271,34 +360,17 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 					prefix: argumentText,
 				};
 			}
-		}
 
-		// Check for file paths - triggered by Tab or if we detect a path pattern
-		const pathMatch = this.extractPathPrefix(textBeforeCursor, false);
+			case "path": {
+				const suggestions = this.getFileSuggestions(context.prefix);
+				if (suggestions.length === 0) return null;
 
-		if (pathMatch !== null) {
-			const suggestions = this.getFileSuggestions(pathMatch);
-			if (suggestions.length === 0) return null;
-
-			// Check if we have an exact match that is a directory
-			// In that case, we might want to return suggestions for the directory content instead
-			// But only if the prefix ends with /
-			if (suggestions.length === 1 && suggestions[0]?.value === pathMatch && !pathMatch.endsWith("/")) {
-				// Exact match found (e.g. user typed "src" and "src/" is the only match)
-				// We still return it so user can select it and add /
 				return {
 					items: suggestions,
-					prefix: pathMatch,
+					prefix: context.prefix,
 				};
 			}
-
-			return {
-				items: suggestions,
-				prefix: pathMatch,
-			};
 		}
-
-		return null;
 	}
 
 	applyCompletion(
@@ -386,53 +458,6 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			cursorLine,
 			cursorCol: beforePrefix.length + cursorOffset,
 		};
-	}
-
-	// Extract @ prefix for fuzzy file suggestions
-	private extractAtPrefix(text: string): string | null {
-		const quotedPrefix = extractQuotedPrefix(text);
-		if (quotedPrefix?.startsWith('@"')) {
-			return quotedPrefix;
-		}
-
-		const lastDelimiterIndex = findLastDelimiter(text);
-		const tokenStart = lastDelimiterIndex === -1 ? 0 : lastDelimiterIndex + 1;
-
-		if (text[tokenStart] === "@") {
-			return text.slice(tokenStart);
-		}
-
-		return null;
-	}
-
-	// Extract a path-like prefix from the text before cursor
-	private extractPathPrefix(text: string, forceExtract: boolean = false): string | null {
-		const quotedPrefix = extractQuotedPrefix(text);
-		if (quotedPrefix) {
-			return quotedPrefix;
-		}
-
-		const lastDelimiterIndex = findLastDelimiter(text);
-		const pathPrefix = lastDelimiterIndex === -1 ? text : text.slice(lastDelimiterIndex + 1);
-
-		// For forced extraction (Tab key), always return something
-		if (forceExtract) {
-			return pathPrefix;
-		}
-
-		// For natural triggers, return if it looks like a path, ends with /, starts with ~/, .
-		// Only return empty string if the text looks like it's starting a path context
-		if (pathPrefix.includes("/") || pathPrefix.startsWith(".") || pathPrefix.startsWith("~/")) {
-			return pathPrefix;
-		}
-
-		// Return empty string only after a space (not for completely empty text)
-		// Empty text should not trigger file suggestions - that's for forced Tab completion
-		if (pathPrefix === "" && text.endsWith(" ")) {
-			return pathPrefix;
-		}
-
-		return null;
 	}
 
 	// Expand home directory (~/) to actual home path
@@ -707,7 +732,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		}
 
 		// Force extract path prefix - this will always return something
-		const pathMatch = this.extractPathPrefix(textBeforeCursor, true);
+		const pathMatch = extractPathPrefix(textBeforeCursor, true);
 		if (pathMatch !== null) {
 			const suggestions = this.getFileSuggestions(pathMatch);
 			if (suggestions.length === 0) return null;
