@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed ctrl+enter keybinding not working in terminals without Kitty protocol by adding modifyOtherKeys format support ([#1872](https://github.com/badlogic/pi-mono/issues/1872))
+
 ## [0.56.2] - 2026-03-05
 
 ### Added

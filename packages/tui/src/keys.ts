@@ -767,6 +767,20 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 				}
 				return false;
 			}
+			if (ctrl && !shift && !alt) {
+				// CSI u sequences (standard Kitty protocol)
+				if (
+					matchesKittySequence(data, CODEPOINTS.enter, MODIFIERS.ctrl) ||
+					matchesKittySequence(data, CODEPOINTS.kpEnter, MODIFIERS.ctrl)
+				) {
+					return true;
+				}
+				// xterm modifyOtherKeys format (fallback when Kitty protocol not enabled)
+				if (matchesModifyOtherKeys(data, CODEPOINTS.enter, MODIFIERS.ctrl)) {
+					return true;
+				}
+				return false;
+			}
 			if (alt && !ctrl && !shift) {
 				// CSI u sequences (standard Kitty protocol)
 				if (
