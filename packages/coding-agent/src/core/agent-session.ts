@@ -1731,11 +1731,17 @@ export class AgentSession {
 			return;
 		}
 
-		// Case 2: Threshold - turn succeeded but context is getting large
-		// Skip if this was an error (non-overflow errors don't have usage data)
-		if (assistantMessage.stopReason === "error") return;
-
-		const contextTokens = calculateContextTokens(assistantMessage.usage);
+		// Case 2: Threshold - context is getting large
+		// For error messages (no usage data), estimate from last successful response.
+		// This ensures sessions that hit persistent API errors (e.g. 529) can still compact.
+		let contextTokens: number;
+		if (assistantMessage.stopReason === "error") {
+			const estimate = estimateContextTokens(this.agent.state.messages);
+			if (estimate.lastUsageIndex === null) return; // No usage data at all
+			contextTokens = estimate.tokens;
+		} else {
+			contextTokens = calculateContextTokens(assistantMessage.usage);
+		}
 		if (shouldCompact(contextTokens, contextWindow, settings)) {
 			await this._runAutoCompaction("threshold", false);
 		}

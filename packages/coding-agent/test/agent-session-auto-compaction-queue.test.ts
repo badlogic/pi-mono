@@ -26,7 +26,24 @@ vi.mock("../src/core/compaction/index.js", () => ({
 		tokensBefore: 100,
 		details: {},
 	}),
-	estimateContextTokens: () => ({ tokens: 0, usageTokens: 0, trailingTokens: 0, lastUsageIndex: -1 }),
+	estimateContextTokens: (
+		messages: Array<{
+			role: string;
+			usage?: { input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens?: number };
+			stopReason?: string;
+		}>,
+	) => {
+		// Walk backwards to find last non-error, non-aborted assistant with usage
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const msg = messages[i];
+			if (msg.role === "assistant" && msg.stopReason !== "error" && msg.stopReason !== "aborted" && msg.usage) {
+				const tokens =
+					msg.usage.totalTokens ?? msg.usage.input + msg.usage.output + msg.usage.cacheRead + msg.usage.cacheWrite;
+				return { tokens, usageTokens: tokens, trailingTokens: 0, lastUsageIndex: i };
+			}
+		}
+		return { tokens: 0, usageTokens: 0, trailingTokens: 0, lastUsageIndex: null };
+	},
 	generateBranchSummary: async () => ({ summary: "", aborted: false, readFiles: [], modifiedFiles: [] }),
 	prepareCompaction: () => ({ dummy: true }),
 	shouldCompact: (
@@ -213,6 +230,124 @@ describe("AgentSession auto-compaction queue resume", () => {
 		)._checkCompaction.bind(session);
 
 		await checkCompaction(staleAssistant, false);
+
+		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
+	});
+
+	it("should trigger threshold compaction for error messages using last successful usage", async () => {
+		const model = session.model!;
+
+		// A successful assistant message with high token usage (near context limit)
+		const successfulAssistant: AssistantMessage = {
+			role: "assistant",
+			content: [{ type: "text", text: "large successful response" }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 180_000,
+				output: 10_000,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 190_000,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: Date.now(),
+		};
+
+		// An error message (e.g. 529 overloaded) with no useful usage data
+		const errorAssistant: AssistantMessage = {
+			role: "assistant",
+			content: [{ type: "text", text: "" }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "error",
+			errorMessage: "529 overloaded",
+			timestamp: Date.now() + 1000,
+		};
+
+		// Put both messages into agent state so estimateContextTokens can find the successful one
+		session.agent.replaceMessages([
+			{ role: "user", content: [{ type: "text", text: "hello" }], timestamp: Date.now() - 1000 },
+			successfulAssistant,
+			{ role: "user", content: [{ type: "text", text: "another prompt" }], timestamp: Date.now() + 500 },
+			errorAssistant,
+		]);
+
+		const runAutoCompactionSpy = vi
+			.spyOn(
+				session as unknown as {
+					_runAutoCompaction: (reason: "overflow" | "threshold", willRetry: boolean) => Promise<void>;
+				},
+				"_runAutoCompaction",
+			)
+			.mockResolvedValue();
+
+		const checkCompaction = (
+			session as unknown as {
+				_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
+			}
+		)._checkCompaction.bind(session);
+
+		await checkCompaction(errorAssistant);
+
+		expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
+	});
+
+	it("should not trigger threshold compaction for error messages when no prior usage exists", async () => {
+		const model = session.model!;
+
+		// An error message with no prior successful assistant in context
+		const errorAssistant: AssistantMessage = {
+			role: "assistant",
+			content: [{ type: "text", text: "" }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "error",
+			errorMessage: "529 overloaded",
+			timestamp: Date.now(),
+		};
+
+		session.agent.replaceMessages([
+			{ role: "user", content: [{ type: "text", text: "hello" }], timestamp: Date.now() - 1000 },
+			errorAssistant,
+		]);
+
+		const runAutoCompactionSpy = vi
+			.spyOn(
+				session as unknown as {
+					_runAutoCompaction: (reason: "overflow" | "threshold", willRetry: boolean) => Promise<void>;
+				},
+				"_runAutoCompaction",
+			)
+			.mockResolvedValue();
+
+		const checkCompaction = (
+			session as unknown as {
+				_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
+			}
+		)._checkCompaction.bind(session);
+
+		await checkCompaction(errorAssistant);
 
 		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
 	});
