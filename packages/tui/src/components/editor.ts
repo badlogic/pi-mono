@@ -287,6 +287,7 @@ export class Editor implements Component, Focusable {
 
 	/** Internal setText that doesn't reset history state - used by navigateHistory */
 	private setTextInternal(text: string): void {
+		this.cancelAutocomplete();
 		const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
 		this.state.lines = lines.length === 0 ? [""] : lines;
 		this.state.cursorLine = this.state.lines.length - 1;
@@ -862,6 +863,7 @@ export class Editor implements Component, Focusable {
 		this.pushUndoSnapshot();
 		this.lastAction = null;
 		this.historyIndex = -1;
+		this.cancelAutocomplete();
 		this.insertTextAtCursorInternal(text);
 	}
 
@@ -980,6 +982,7 @@ export class Editor implements Component, Focusable {
 		this.lastAction = null;
 
 		this.pushUndoSnapshot();
+		this.cancelAutocomplete();
 
 		// Clean the pasted text
 		const cleanText = pastedText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -1038,6 +1041,7 @@ export class Editor implements Component, Focusable {
 		this.lastAction = null;
 
 		this.pushUndoSnapshot();
+		this.cancelAutocomplete();
 
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 
@@ -1110,7 +1114,15 @@ export class Editor implements Component, Focusable {
 
 			this.state.lines[this.state.cursorLine] = before + after;
 			this.setCursorCol(this.state.cursorCol - graphemeLength);
-		} else if (this.state.cursorLine > 0) {
+
+			if (this.onChange) {
+				this.onChange(this.getText());
+			}
+			this.refreshAutocompleteAfterEdit();
+			return;
+		}
+
+		if (this.state.cursorLine > 0) {
 			this.pushUndoSnapshot();
 
 			// Merge with previous line
@@ -1122,27 +1134,12 @@ export class Editor implements Component, Focusable {
 
 			this.state.cursorLine--;
 			this.setCursorCol(previousLine.length);
-		}
 
-		if (this.onChange) {
-			this.onChange(this.getText());
-		}
-
-		// Update or re-trigger autocomplete after backspace
-		if (this.autocompleteState) {
-			this.updateAutocomplete();
-		} else {
-			// If autocomplete was cancelled (no matches), re-trigger if we're in a completable context
-			const currentLine = this.state.lines[this.state.cursorLine] || "";
-			const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
-			// Slash command context
-			if (this.isInSlashCommandContext(textBeforeCursor)) {
-				this.tryTriggerAutocomplete();
+			if (this.onChange) {
+				this.onChange(this.getText());
 			}
-			// @ file reference context
-			else if (textBeforeCursor.match(/(?:^|[\s])@[^\s]*$/)) {
-				this.tryTriggerAutocomplete();
-			}
+			this.refreshAutocompleteAfterEdit();
+			return;
 		}
 	}
 
@@ -1275,7 +1272,15 @@ export class Editor implements Component, Focusable {
 			// Delete from start of line up to cursor
 			this.state.lines[this.state.cursorLine] = currentLine.slice(this.state.cursorCol);
 			this.setCursorCol(0);
-		} else if (this.state.cursorLine > 0) {
+
+			if (this.onChange) {
+				this.onChange(this.getText());
+			}
+			this.refreshAutocompleteAfterEdit();
+			return;
+		}
+
+		if (this.state.cursorLine > 0) {
 			this.pushUndoSnapshot();
 
 			// At start of line - merge with previous line, treating newline as deleted text
@@ -1287,10 +1292,12 @@ export class Editor implements Component, Focusable {
 			this.state.lines.splice(this.state.cursorLine, 1);
 			this.state.cursorLine--;
 			this.setCursorCol(previousLine.length);
-		}
 
-		if (this.onChange) {
-			this.onChange(this.getText());
+			if (this.onChange) {
+				this.onChange(this.getText());
+			}
+			this.refreshAutocompleteAfterEdit();
+			return;
 		}
 	}
 
@@ -1309,7 +1316,15 @@ export class Editor implements Component, Focusable {
 
 			// Delete from cursor to end of line
 			this.state.lines[this.state.cursorLine] = currentLine.slice(0, this.state.cursorCol);
-		} else if (this.state.cursorLine < this.state.lines.length - 1) {
+
+			if (this.onChange) {
+				this.onChange(this.getText());
+			}
+			this.refreshAutocompleteAfterEdit();
+			return;
+		}
+
+		if (this.state.cursorLine < this.state.lines.length - 1) {
 			this.pushUndoSnapshot();
 
 			// At end of line - merge with next line, treating newline as deleted text
@@ -1319,10 +1334,12 @@ export class Editor implements Component, Focusable {
 			const nextLine = this.state.lines[this.state.cursorLine + 1] || "";
 			this.state.lines[this.state.cursorLine] = currentLine + nextLine;
 			this.state.lines.splice(this.state.cursorLine + 1, 1);
-		}
 
-		if (this.onChange) {
-			this.onChange(this.getText());
+			if (this.onChange) {
+				this.onChange(this.getText());
+			}
+			this.refreshAutocompleteAfterEdit();
+			return;
 		}
 	}
 
@@ -1345,30 +1362,37 @@ export class Editor implements Component, Focusable {
 				this.state.lines.splice(this.state.cursorLine, 1);
 				this.state.cursorLine--;
 				this.setCursorCol(previousLine.length);
+
+				if (this.onChange) {
+					this.onChange(this.getText());
+				}
+				this.refreshAutocompleteAfterEdit();
 			}
-		} else {
-			this.pushUndoSnapshot();
-
-			// Save lastAction before cursor movement (moveWordBackwards resets it)
-			const wasKill = this.lastAction === "kill";
-
-			const oldCursorCol = this.state.cursorCol;
-			this.moveWordBackwards();
-			const deleteFrom = this.state.cursorCol;
-			this.setCursorCol(oldCursorCol);
-
-			const deletedText = currentLine.slice(deleteFrom, this.state.cursorCol);
-			this.killRing.push(deletedText, { prepend: true, accumulate: wasKill });
-			this.lastAction = "kill";
-
-			this.state.lines[this.state.cursorLine] =
-				currentLine.slice(0, deleteFrom) + currentLine.slice(this.state.cursorCol);
-			this.setCursorCol(deleteFrom);
+			return;
 		}
+
+		this.pushUndoSnapshot();
+
+		// Save lastAction before cursor movement (moveWordBackwards resets it)
+		const wasKill = this.lastAction === "kill";
+
+		const oldCursorCol = this.state.cursorCol;
+		this.moveWordBackwards();
+		const deleteFrom = this.state.cursorCol;
+		this.setCursorCol(oldCursorCol);
+
+		const deletedText = currentLine.slice(deleteFrom, this.state.cursorCol);
+		this.killRing.push(deletedText, { prepend: true, accumulate: wasKill });
+		this.lastAction = "kill";
+
+		this.state.lines[this.state.cursorLine] =
+			currentLine.slice(0, deleteFrom) + currentLine.slice(this.state.cursorCol);
+		this.setCursorCol(deleteFrom);
 
 		if (this.onChange) {
 			this.onChange(this.getText());
 		}
+		this.refreshAutocompleteAfterEdit();
 	}
 
 	private deleteWordForward(): void {
@@ -1388,29 +1412,36 @@ export class Editor implements Component, Focusable {
 				const nextLine = this.state.lines[this.state.cursorLine + 1] || "";
 				this.state.lines[this.state.cursorLine] = currentLine + nextLine;
 				this.state.lines.splice(this.state.cursorLine + 1, 1);
+
+				if (this.onChange) {
+					this.onChange(this.getText());
+				}
+				this.refreshAutocompleteAfterEdit();
 			}
-		} else {
-			this.pushUndoSnapshot();
-
-			// Save lastAction before cursor movement (moveWordForwards resets it)
-			const wasKill = this.lastAction === "kill";
-
-			const oldCursorCol = this.state.cursorCol;
-			this.moveWordForwards();
-			const deleteTo = this.state.cursorCol;
-			this.setCursorCol(oldCursorCol);
-
-			const deletedText = currentLine.slice(this.state.cursorCol, deleteTo);
-			this.killRing.push(deletedText, { prepend: false, accumulate: wasKill });
-			this.lastAction = "kill";
-
-			this.state.lines[this.state.cursorLine] =
-				currentLine.slice(0, this.state.cursorCol) + currentLine.slice(deleteTo);
+			return;
 		}
+
+		this.pushUndoSnapshot();
+
+		// Save lastAction before cursor movement (moveWordForwards resets it)
+		const wasKill = this.lastAction === "kill";
+
+		const oldCursorCol = this.state.cursorCol;
+		this.moveWordForwards();
+		const deleteTo = this.state.cursorCol;
+		this.setCursorCol(oldCursorCol);
+
+		const deletedText = currentLine.slice(this.state.cursorCol, deleteTo);
+		this.killRing.push(deletedText, { prepend: false, accumulate: wasKill });
+		this.lastAction = "kill";
+
+		this.state.lines[this.state.cursorLine] =
+			currentLine.slice(0, this.state.cursorCol) + currentLine.slice(deleteTo);
 
 		if (this.onChange) {
 			this.onChange(this.getText());
 		}
+		this.refreshAutocompleteAfterEdit();
 	}
 
 	private handleForwardDelete(): void {
@@ -1433,33 +1464,27 @@ export class Editor implements Component, Focusable {
 			const before = currentLine.slice(0, this.state.cursorCol);
 			const after = currentLine.slice(this.state.cursorCol + graphemeLength);
 			this.state.lines[this.state.cursorLine] = before + after;
-		} else if (this.state.cursorLine < this.state.lines.length - 1) {
+
+			if (this.onChange) {
+				this.onChange(this.getText());
+			}
+			this.refreshAutocompleteAfterEdit();
+			return;
+		}
+
+		if (this.state.cursorLine < this.state.lines.length - 1) {
 			this.pushUndoSnapshot();
 
 			// At end of line - merge with next line
 			const nextLine = this.state.lines[this.state.cursorLine + 1] || "";
 			this.state.lines[this.state.cursorLine] = currentLine + nextLine;
 			this.state.lines.splice(this.state.cursorLine + 1, 1);
-		}
 
-		if (this.onChange) {
-			this.onChange(this.getText());
-		}
-
-		// Update or re-trigger autocomplete after forward delete
-		if (this.autocompleteState) {
-			this.updateAutocomplete();
-		} else {
-			const currentLine = this.state.lines[this.state.cursorLine] || "";
-			const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
-			// Slash command context
-			if (this.isInSlashCommandContext(textBeforeCursor)) {
-				this.tryTriggerAutocomplete();
+			if (this.onChange) {
+				this.onChange(this.getText());
 			}
-			// @ file reference context
-			else if (textBeforeCursor.match(/(?:^|[\s])@[^\s]*$/)) {
-				this.tryTriggerAutocomplete();
-			}
+			this.refreshAutocompleteAfterEdit();
+			return;
 		}
 	}
 
@@ -1645,6 +1670,7 @@ export class Editor implements Component, Focusable {
 		this.insertYankedText(text);
 
 		this.lastAction = "yank";
+		this.refreshAutocompleteAfterEdit();
 	}
 
 	/**
@@ -1668,6 +1694,7 @@ export class Editor implements Component, Focusable {
 		this.insertYankedText(text);
 
 		this.lastAction = "yank";
+		this.refreshAutocompleteAfterEdit();
 	}
 
 	/**
@@ -1768,6 +1795,7 @@ export class Editor implements Component, Focusable {
 		if (this.onChange) {
 			this.onChange(this.getText());
 		}
+		this.refreshAutocompleteAfterEdit();
 	}
 
 	/**
@@ -1869,6 +1897,19 @@ export class Editor implements Component, Focusable {
 	// Autocomplete methods
 	private hasAutocompleteSession(): boolean {
 		return this.autocompleteState !== null || this.activeAutocompleteRequest !== null;
+	}
+
+	private refreshAutocompleteAfterEdit(): void {
+		if (!this.autocompleteProvider) return;
+
+		if (this.hasAutocompleteSession()) {
+			this.updateAutocomplete();
+			return;
+		}
+
+		if (this.getEditorAutocompleteContext()) {
+			this.tryTriggerAutocomplete();
+		}
 	}
 
 	private getEditorAutocompleteContext() {

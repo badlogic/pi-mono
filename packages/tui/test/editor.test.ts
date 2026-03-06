@@ -83,6 +83,48 @@ function createPendingAsyncProvider(): {
 	};
 }
 
+function createTrackingAutocompleteProvider(): {
+	provider: AutocompleteProvider;
+	getSuggestionCalls: () => number;
+} {
+	let suggestionCalls = 0;
+
+	return {
+		provider: {
+			getSuggestions: (lines, cursorLine, cursorCol) => {
+				suggestionCalls += 1;
+				const line = lines[cursorLine] || "";
+				const textBeforeCursor = line.slice(0, cursorCol);
+				if (textBeforeCursor.trimStart().startsWith("/")) {
+					return {
+						items: [{ value: textBeforeCursor, label: textBeforeCursor }],
+						prefix: textBeforeCursor,
+					};
+				}
+
+				const attachmentMatch = textBeforeCursor.match(/(?:^|[\s])(@[^\s]*)$/);
+				if (attachmentMatch) {
+					const prefix = attachmentMatch[1] || "";
+					return {
+						items: [{ value: prefix, label: prefix }],
+						prefix,
+					};
+				}
+
+				return null;
+			},
+			applyCompletion,
+		},
+		getSuggestionCalls: () => suggestionCalls,
+	};
+}
+
+function typeText(editor: Editor, text: string): void {
+	for (const char of text) {
+		editor.handleInput(char);
+	}
+}
+
 describe("Editor component", () => {
 	describe("Prompt history navigation", () => {
 		it("does nothing on Up arrow when history is empty", () => {
@@ -2219,6 +2261,222 @@ describe("Editor component", () => {
 
 			editor.handleInput("\t");
 			assert.strictEqual(editor.getText(), "@beta.ts");
+		});
+
+		for (const { name, apply, expectedText } of [
+			{
+				name: "setText",
+				apply: (editor: Editor) => {
+					editor.setText("@passive");
+				},
+				expectedText: "@passive",
+			},
+			{
+				name: "insertTextAtCursor",
+				apply: (editor: Editor) => {
+					editor.insertTextAtCursor("passive");
+				},
+				expectedText: "@passive",
+			},
+			{
+				name: "paste",
+				apply: (editor: Editor) => {
+					editor.handleInput("\x1b[200~passive\x1b[201~");
+				},
+				expectedText: "@passive",
+			},
+			{
+				name: "addNewLine",
+				apply: (editor: Editor) => {
+					editor.handleInput("\n");
+				},
+				expectedText: "@\n",
+			},
+		]) {
+			it(`${name} cancels pending async autocomplete and stays passive`, async () => {
+				const editor = new Editor(createTestTUI(), defaultEditorTheme);
+				const { provider, requests } = createPendingAsyncProvider();
+				editor.setAutocompleteProvider(provider);
+
+				editor.handleInput("@");
+				await waitForAsyncWork();
+
+				const request = requests[0]!;
+				assert.strictEqual(request.signal.aborted, false);
+
+				apply(editor);
+				await waitForAsyncWork();
+
+				assert.strictEqual(editor.getText(), expectedText);
+				assert.strictEqual(request.signal.aborted, true);
+				assert.strictEqual(editor.isShowingAutocomplete(), false);
+
+				request.onUpdate({
+					items: [{ value: "@stale.ts", label: "stale.ts" }],
+					prefix: "@",
+				});
+				request.resolve({
+					items: [{ value: "@stale.ts", label: "stale.ts" }],
+					prefix: "@",
+				});
+				await waitForAsyncWork();
+				assert.strictEqual(editor.isShowingAutocomplete(), false);
+			});
+		}
+
+		it("backspace refreshes autocomplete when attachment context remains valid", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, getSuggestionCalls } = createTrackingAutocompleteProvider();
+			editor.setAutocompleteProvider(provider);
+
+			editor.setText("@ab");
+			const beforeCalls = getSuggestionCalls();
+
+			editor.handleInput("\x7f");
+
+			assert.strictEqual(editor.getText(), "@a");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+			assert.ok(getSuggestionCalls() > beforeCalls);
+		});
+
+		it("Ctrl+U refreshes autocomplete when deleting out of an active slash session", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, getSuggestionCalls } = createTrackingAutocompleteProvider();
+			editor.setAutocompleteProvider(provider);
+
+			typeText(editor, "/help");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+			const beforeCalls = getSuggestionCalls();
+
+			editor.handleInput("\x15");
+
+			assert.strictEqual(editor.getText(), "");
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+			assert.ok(getSuggestionCalls() > beforeCalls);
+		});
+
+		it("Ctrl+K refreshes autocomplete when slash context remains valid", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, getSuggestionCalls } = createTrackingAutocompleteProvider();
+			editor.setAutocompleteProvider(provider);
+
+			editor.setText("/help arg");
+			editor.handleInput("\x01");
+			for (let i = 0; i < 5; i++) editor.handleInput("\x1b[C");
+			const beforeCalls = getSuggestionCalls();
+
+			editor.handleInput("\x0b");
+
+			assert.strictEqual(editor.getText(), "/help");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+			assert.ok(getSuggestionCalls() > beforeCalls);
+		});
+
+		it("Ctrl+W refreshes autocomplete when slash context remains valid", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, getSuggestionCalls } = createTrackingAutocompleteProvider();
+			editor.setAutocompleteProvider(provider);
+
+			editor.setText("/help arg");
+			const beforeCalls = getSuggestionCalls();
+
+			editor.handleInput("\x17");
+
+			assert.strictEqual(editor.getText(), "/help ");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+			assert.ok(getSuggestionCalls() > beforeCalls);
+		});
+
+		it("Alt+D refreshes autocomplete when slash context remains valid", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, getSuggestionCalls } = createTrackingAutocompleteProvider();
+			editor.setAutocompleteProvider(provider);
+
+			editor.setText("/help arg");
+			editor.handleInput("\x01");
+			for (let i = 0; i < 6; i++) editor.handleInput("\x1b[C");
+			const beforeCalls = getSuggestionCalls();
+
+			editor.handleInput("\x1bd");
+
+			assert.strictEqual(editor.getText(), "/help ");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+			assert.ok(getSuggestionCalls() > beforeCalls);
+		});
+
+		it("Delete refreshes autocomplete when attachment context remains valid", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, getSuggestionCalls } = createTrackingAutocompleteProvider();
+			editor.setAutocompleteProvider(provider);
+
+			editor.setText("@ab");
+			editor.handleInput("\x01");
+			editor.handleInput("\x1b[C");
+			const beforeCalls = getSuggestionCalls();
+
+			editor.handleInput("\x1b[3~");
+
+			assert.strictEqual(editor.getText(), "@b");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+			assert.ok(getSuggestionCalls() > beforeCalls);
+		});
+
+		it("Ctrl+Y refreshes autocomplete when yanking into attachment context", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, getSuggestionCalls } = createTrackingAutocompleteProvider();
+			editor.setAutocompleteProvider(provider);
+
+			editor.setText("alpha");
+			editor.handleInput("\x17");
+			editor.setText("@");
+			const beforeCalls = getSuggestionCalls();
+
+			editor.handleInput("\x19");
+
+			assert.strictEqual(editor.getText(), "@alpha");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+			assert.ok(getSuggestionCalls() > beforeCalls);
+		});
+
+		it("Alt+Y refreshes autocomplete after replacing yanked attachment text", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, getSuggestionCalls } = createTrackingAutocompleteProvider();
+			editor.setAutocompleteProvider(provider);
+
+			editor.setText("alpha");
+			editor.handleInput("\x17");
+			editor.setText("beta");
+			editor.handleInput("\x17");
+			editor.setText("@");
+			editor.handleInput("\x19");
+			assert.strictEqual(editor.getText(), "@beta");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+			const beforeCalls = getSuggestionCalls();
+
+			editor.handleInput("\x1by");
+
+			assert.strictEqual(editor.getText(), "@alpha");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+			assert.ok(getSuggestionCalls() > beforeCalls);
+		});
+
+		it("undo refreshes autocomplete when restoring attachment context", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const { provider, getSuggestionCalls } = createTrackingAutocompleteProvider();
+			editor.setAutocompleteProvider(provider);
+
+			typeText(editor, "@a");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			editor.handleInput(" ");
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+			const beforeCalls = getSuggestionCalls();
+
+			editor.handleInput("\x1b[45;5u");
+
+			assert.strictEqual(editor.getText(), "@a");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+			assert.ok(getSuggestionCalls() > beforeCalls);
 		});
 	});
 
