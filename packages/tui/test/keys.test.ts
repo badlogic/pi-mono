@@ -54,6 +54,16 @@ describe("matchesKey", () => {
 			setKittyProtocolActive(false);
 		});
 
+		it("should match digit bindings via Kitty CSI-u", () => {
+			setKittyProtocolActive(true);
+			assert.strictEqual(matchesKey("\x1b[49u", "1"), true);
+			assert.strictEqual(matchesKey("\x1b[49;5u", "ctrl+1"), true);
+			assert.strictEqual(matchesKey("\x1b[49;5u", "ctrl+2"), false);
+			assert.strictEqual(parseKey("\x1b[49u"), "1");
+			assert.strictEqual(parseKey("\x1b[49;5u"), "ctrl+1");
+			setKittyProtocolActive(false);
+		});
+
 		it("should handle shifted key in format", () => {
 			setKittyProtocolActive(true);
 			// Format with shifted key: CSI codepoint:shifted:base;modifier u
@@ -152,6 +162,14 @@ describe("matchesKey", () => {
 			assert.strictEqual(matchesKey("\x1b[27;5;47~", "ctrl+/"), true);
 			assert.strictEqual(parseKey("\x1b[27;5;47~"), "ctrl+/");
 		});
+
+		it("should match xterm modifyOtherKeys digit combos", () => {
+			setKittyProtocolActive(false);
+			assert.strictEqual(matchesKey("\x1b[27;5;49~", "ctrl+1"), true);
+			assert.strictEqual(matchesKey("\x1b[27;2;49~", "shift+1"), true);
+			assert.strictEqual(parseKey("\x1b[27;5;49~"), "ctrl+1");
+			assert.strictEqual(parseKey("\x1b[27;2;49~"), "shift+1");
+		});
 	});
 
 	describe("Legacy key matching", () => {
@@ -238,6 +256,8 @@ describe("matchesKey", () => {
 			assert.strictEqual(parseKey("\x1bF"), "alt+right");
 			assert.strictEqual(matchesKey("\x1ba", "alt+a"), true);
 			assert.strictEqual(parseKey("\x1ba"), "alt+a");
+			assert.strictEqual(matchesKey("\x1b1", "alt+1"), true);
+			assert.strictEqual(parseKey("\x1b1"), "alt+1");
 			assert.strictEqual(matchesKey("\x1by", "alt+y"), true);
 			assert.strictEqual(parseKey("\x1by"), "alt+y");
 			assert.strictEqual(matchesKey("\x1bz", "alt+z"), true);
@@ -256,6 +276,8 @@ describe("matchesKey", () => {
 			assert.strictEqual(parseKey("\x1bF"), undefined);
 			assert.strictEqual(matchesKey("\x1ba", "alt+a"), false);
 			assert.strictEqual(parseKey("\x1ba"), undefined);
+			assert.strictEqual(matchesKey("\x1b1", "alt+1"), false);
+			assert.strictEqual(parseKey("\x1b1"), undefined);
 			assert.strictEqual(matchesKey("\x1by", "alt+y"), false);
 			assert.strictEqual(parseKey("\x1by"), undefined);
 			setKittyProtocolActive(false);
@@ -352,6 +374,8 @@ describe("parseKey", () => {
 			assert.strictEqual(parseKey("\n"), "enter");
 			assert.strictEqual(parseKey("\x00"), "ctrl+space");
 			assert.strictEqual(parseKey(" "), "space");
+			assert.strictEqual(parseKey("1"), "1");
+			assert.strictEqual(matchesKey("1", "1"), true);
 		});
 
 		it("should parse arrow keys", () => {

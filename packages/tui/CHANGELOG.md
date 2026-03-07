@@ -5,6 +5,7 @@
 ### Added
 
 - Added `treeFoldOrUp` and `treeUnfoldOrDown` editor actions with default bindings for `Ctrl+←`/`Ctrl+→` and `Alt+←`/`Alt+→` ([#1724](https://github.com/badlogic/pi-mono/pull/1724) by [@Perlence](https://github.com/Perlence))
+- Added digit keys (`0-9`) to the keybinding system, including Kitty CSI-u and xterm `modifyOtherKeys` support for bindings like `ctrl+1` ([#1905](https://github.com/badlogic/pi-mono/issues/1905))
 
 ### Fixed
 
