@@ -49,7 +49,7 @@ export class Loader extends Text {
 		const frame = this.frames[this.currentFrame];
 		this.setText(`${this.spinnerColorFn(frame)} ${this.messageColorFn(this.message)}`);
 		if (this.ui) {
-			this.ui.requestRender();
+			this.ui.requestRender(false, "low");
 		}
 	}
 }
