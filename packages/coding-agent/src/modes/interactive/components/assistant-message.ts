@@ -1,5 +1,5 @@
 import type { AssistantMessage } from "@mariozechner/pi-ai";
-import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@mariozechner/pi-tui";
+import { type Component, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@mariozechner/pi-tui";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 
 /**
@@ -10,6 +10,11 @@ export class AssistantMessageComponent extends Container {
 	private hideThinkingBlock: boolean;
 	private markdownTheme: MarkdownTheme;
 	private lastMessage?: AssistantMessage;
+	private streamingMode = false;
+	private streamingSpacer?: Spacer;
+	private streamingTextComponent?: Text;
+	private streamingErrorSpacer?: Spacer;
+	private streamingErrorTextComponent?: Text;
 
 	constructor(
 		message?: AssistantMessage,
@@ -39,11 +44,33 @@ export class AssistantMessageComponent extends Container {
 
 	setHideThinkingBlock(hide: boolean): void {
 		this.hideThinkingBlock = hide;
+		if (this.lastMessage) {
+			this.updateContent(this.lastMessage);
+		}
+	}
+
+	setStreamingMode(streaming: boolean): void {
+		if (this.streamingMode === streaming) {
+			return;
+		}
+		this.streamingMode = streaming;
+		if (this.lastMessage) {
+			this.updateContent(this.lastMessage);
+		}
 	}
 
 	updateContent(message: AssistantMessage): void {
 		this.lastMessage = message;
 
+		if (this.streamingMode) {
+			this.updateStreamingContent(message);
+			return;
+		}
+
+		this.updateRichContent(message);
+	}
+
+	private updateRichContent(message: AssistantMessage): void {
 		// Clear content container
 		this.contentContainer.clear();
 
@@ -111,5 +138,78 @@ export class AssistantMessageComponent extends Container {
 				this.contentContainer.addChild(new Text(theme.fg("error", `Error: ${errorMsg}`), 1, 0));
 			}
 		}
+	}
+
+	private updateStreamingContent(message: AssistantMessage): void {
+		const visibleText = this.buildStreamingText(message);
+		const errorText = this.getStreamingErrorText(message);
+
+		const children: Component[] = [];
+
+		if (visibleText) {
+			if (!this.streamingSpacer) {
+				this.streamingSpacer = new Spacer(1);
+			}
+			if (!this.streamingTextComponent) {
+				this.streamingTextComponent = new Text(visibleText, 1, 0);
+			} else {
+				this.streamingTextComponent.setText(visibleText);
+			}
+			children.push(this.streamingSpacer, this.streamingTextComponent);
+		}
+
+		if (errorText) {
+			if (!this.streamingErrorSpacer) {
+				this.streamingErrorSpacer = new Spacer(1);
+			}
+			if (!this.streamingErrorTextComponent) {
+				this.streamingErrorTextComponent = new Text(errorText, 1, 0);
+			} else {
+				this.streamingErrorTextComponent.setText(errorText);
+			}
+			children.push(this.streamingErrorSpacer, this.streamingErrorTextComponent);
+		}
+
+		this.contentContainer.children = children;
+	}
+
+	private buildStreamingText(message: AssistantMessage): string {
+		const blocks: string[] = [];
+
+		for (const content of message.content) {
+			if (content.type === "text" && content.text.trim()) {
+				blocks.push(content.text.trim());
+			} else if (content.type === "thinking" && content.thinking.trim()) {
+				if (this.hideThinkingBlock) {
+					blocks.push(theme.italic(theme.fg("thinkingText", "Thinking...")));
+				} else {
+					blocks.push(theme.italic(theme.fg("thinkingText", content.thinking.trim())));
+				}
+			}
+		}
+
+		return blocks.join("\n\n");
+	}
+
+	private getStreamingErrorText(message: AssistantMessage): string | undefined {
+		const hasToolCalls = message.content.some((c) => c.type === "toolCall");
+		if (hasToolCalls) {
+			return undefined;
+		}
+
+		if (message.stopReason === "aborted") {
+			const abortMessage =
+				message.errorMessage && message.errorMessage !== "Request was aborted"
+					? message.errorMessage
+					: "Operation aborted";
+			return theme.fg("error", abortMessage);
+		}
+
+		if (message.stopReason === "error") {
+			const errorMsg = message.errorMessage || "Unknown error";
+			return theme.fg("error", `Error: ${errorMsg}`);
+		}
+
+		return undefined;
 	}
 }

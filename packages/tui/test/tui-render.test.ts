@@ -302,3 +302,28 @@ describe("TUI differential rendering", () => {
 		tui.stop();
 	});
 });
+
+describe("TUI render priority", () => {
+	it("upgrades a queued low-priority render when a normal render is requested", async () => {
+		const terminal = new VirtualTerminal(40, 10);
+		const tui = new TUI(terminal);
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		component.lines = ["initial"];
+		tui.start();
+		await terminal.flush();
+
+		component.lines = ["low-priority"];
+		tui.requestRender(false, "low");
+
+		component.lines = ["normal-priority"];
+		tui.requestRender();
+		await terminal.flush();
+
+		const viewport = terminal.getViewport();
+		assert.ok(viewport[0]?.includes("normal-priority"), `Expected upgraded render, got: ${viewport[0]}`);
+
+		tui.stop();
+	});
+});

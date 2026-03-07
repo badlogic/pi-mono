@@ -208,6 +208,8 @@ export class TUI extends Container {
 	/** Global callback for debug key (Shift+Ctrl+D). Called before input is forwarded to focused component. */
 	public onDebug?: () => void;
 	private renderRequested = false;
+	private lowPriorityRenderRequested = false;
+	private lowPriorityRenderHandle: NodeJS.Immediate | undefined;
 	private cursorRow = 0; // Logical cursor row (end of rendered content)
 	private hardwareCursorRow = 0; // Actual terminal cursor row (may differ due to IME positioning)
 	private inputBuffer = ""; // Buffer for parsing terminal responses
@@ -421,7 +423,7 @@ export class TUI extends Container {
 		this.terminal.stop();
 	}
 
-	requestRender(force = false): void {
+	requestRender(force = false, priority: "normal" | "low" = "normal"): void {
 		if (force) {
 			this.previousLines = [];
 			this.previousWidth = -1; // -1 triggers widthChanged, forcing a full clear
@@ -430,8 +432,30 @@ export class TUI extends Container {
 			this.maxLinesRendered = 0;
 			this.previousViewportTop = 0;
 		}
-		if (this.renderRequested) return;
+		if (this.renderRequested) {
+			if (priority === "normal" && this.lowPriorityRenderRequested && this.lowPriorityRenderHandle) {
+				clearImmediate(this.lowPriorityRenderHandle);
+				this.lowPriorityRenderHandle = undefined;
+				this.lowPriorityRenderRequested = false;
+				process.nextTick(() => {
+					this.renderRequested = false;
+					this.doRender();
+				});
+			}
+			return;
+		}
 		this.renderRequested = true;
+		if (priority === "low") {
+			this.lowPriorityRenderRequested = true;
+			this.lowPriorityRenderHandle = setImmediate(() => {
+				this.lowPriorityRenderHandle = undefined;
+				this.lowPriorityRenderRequested = false;
+				this.renderRequested = false;
+				this.doRender();
+			});
+			return;
+		}
+
 		process.nextTick(() => {
 			this.renderRequested = false;
 			this.doRender();
