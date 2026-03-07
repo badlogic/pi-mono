@@ -1994,6 +1994,266 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.getText(), "");
 			assert.strictEqual(editor.isShowingAutocomplete(), false);
 		});
+
+		it("applies exact typed slash-argument value on Enter even when first item is highlighted", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Mock provider for /argtest command with argument completions
+			const mockProvider: AutocompleteProvider = {
+				getSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const beforeCursor = text.slice(0, cursorCol);
+
+					// Check if we're in argument completion context: "/argtest <prefix>"
+					const argtestMatch = beforeCursor.match(/^\/argtest\s+(\S+)$/);
+					if (argtestMatch) {
+						const argumentText = argtestMatch[1]!;
+						const allArguments = [
+							{ value: "one", label: "one" },
+							{ value: "two", label: "two" },
+							{ value: "three", label: "three" },
+						];
+						// Return all arguments that start with the typed prefix
+						const filtered = allArguments.filter((arg) => arg.value.startsWith(argumentText));
+						if (filtered.length > 0) {
+							return { items: filtered, prefix: argumentText };
+						}
+					}
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Type "/argtest two"
+			editor.handleInput("/");
+			editor.handleInput("a");
+			editor.handleInput("r");
+			editor.handleInput("g");
+			editor.handleInput("t");
+			editor.handleInput("e");
+			editor.handleInput("s");
+			editor.handleInput("t");
+			editor.handleInput(" ");
+			editor.handleInput("t");
+			editor.handleInput("w");
+			editor.handleInput("o");
+
+			assert.strictEqual(editor.getText(), "/argtest two");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Press Enter - should apply the exact typed value "two", not the first item
+			editor.handleInput("\r");
+
+			// The exact typed value "two" should be retained
+			assert.strictEqual(editor.getText(), "/argtest two");
+		});
+
+		it("selects first prefix match on Enter when typed arg is not exact match", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Mock provider for /argtest command with argument completions
+			const mockProvider: AutocompleteProvider = {
+				getSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const beforeCursor = text.slice(0, cursorCol);
+
+					// Check if we're in argument completion context
+					const argtestMatch = beforeCursor.match(/^\/argtest\s+(\S+)$/);
+					if (argtestMatch) {
+						const argumentText = argtestMatch[1]!;
+						const allArguments = [
+							{ value: "two", label: "two" }, // First item
+							{ value: "three", label: "three" }, // Second item
+							{ value: "twelve", label: "twelve" }, // Third item
+						];
+						// Return all items that start with the typed prefix
+						const filtered = allArguments.filter((arg) => arg.value.startsWith(argumentText));
+						if (filtered.length > 0) {
+							return { items: filtered, prefix: argumentText };
+						}
+					}
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Type "/argtest t" - filtered to [two, three, twelve], prefix "t" matches "two" first
+			editor.handleInput("/");
+			editor.handleInput("a");
+			editor.handleInput("r");
+			editor.handleInput("g");
+			editor.handleInput("t");
+			editor.handleInput("e");
+			editor.handleInput("s");
+			editor.handleInput("t");
+			editor.handleInput(" ");
+			editor.handleInput("t");
+
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Press Enter - "t" prefix matches "two" (first in list), so "two" is applied
+			editor.handleInput("\r");
+			assert.strictEqual(editor.getText(), "/argtest two");
+		});
+
+		it("highlights unique prefix match as user types (before full exact match)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Mock provider that returns all items unfiltered (like real extensions do)
+			const mockProvider: AutocompleteProvider = {
+				getSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const beforeCursor = text.slice(0, cursorCol);
+
+					const argtestMatch = beforeCursor.match(/^\/argtest\s+(\S+)$/);
+					if (argtestMatch) {
+						const argumentText = argtestMatch[1]!;
+						// Return all items - provider does not filter
+						const allArguments = [
+							{ value: "one", label: "one" },
+							{ value: "two", label: "two" },
+							{ value: "three", label: "three" },
+						];
+						return { items: allArguments, prefix: argumentText };
+					}
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Type "/argtest tw" - "tw" is a prefix of only "two"
+			editor.handleInput("/");
+			editor.handleInput("a");
+			editor.handleInput("r");
+			editor.handleInput("g");
+			editor.handleInput("t");
+			editor.handleInput("e");
+			editor.handleInput("s");
+			editor.handleInput("t");
+			editor.handleInput(" ");
+			editor.handleInput("t");
+			editor.handleInput("w");
+
+			assert.strictEqual(editor.getText(), "/argtest tw");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Press Enter - "tw" uniquely matches "two", so "two" should be applied
+			editor.handleInput("\r");
+			assert.strictEqual(editor.getText(), "/argtest two");
+		});
+
+		it("selects first prefix match when multiple items match", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Mock provider that returns all items unfiltered
+			const mockProvider: AutocompleteProvider = {
+				getSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const beforeCursor = text.slice(0, cursorCol);
+
+					const argtestMatch = beforeCursor.match(/^\/argtest\s+(\S+)$/);
+					if (argtestMatch) {
+						const argumentText = argtestMatch[1]!;
+						const allArguments = [
+							{ value: "one", label: "one" },
+							{ value: "two", label: "two" },
+							{ value: "three", label: "three" },
+						];
+						return { items: allArguments, prefix: argumentText };
+					}
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Type "/argtest t" - "t" is a prefix of both "two" and "three"
+			editor.handleInput("/");
+			editor.handleInput("a");
+			editor.handleInput("r");
+			editor.handleInput("g");
+			editor.handleInput("t");
+			editor.handleInput("e");
+			editor.handleInput("s");
+			editor.handleInput("t");
+			editor.handleInput(" ");
+			editor.handleInput("t");
+
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Press Enter - "t" matches "two" first, so "two" is selected
+			editor.handleInput("\r");
+			assert.strictEqual(editor.getText(), "/argtest two");
+		});
+
+		it("works for built-in-style command argument completion path (model-like)", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+
+			// Mock provider for /model command with model completions
+			const mockProvider: AutocompleteProvider = {
+				getSuggestions: (lines, _cursorLine, cursorCol) => {
+					const text = lines[0] || "";
+					const beforeCursor = text.slice(0, cursorCol);
+
+					// Check if we're in /model argument completion context
+					// Use [^ ]+ to match any non-space characters (including hyphens)
+					const modelMatch = beforeCursor.match(/^\/model\s+(\S+)$/);
+					if (modelMatch) {
+						const modelText = modelMatch[1]!;
+						const allModels = [
+							{ value: "gpt-4o", label: "gpt-4o" },
+							{ value: "gpt-4o-mini", label: "gpt-4o-mini" },
+							{ value: "claude-sonnet", label: "claude-sonnet" },
+						];
+						// Return all models that start with the typed prefix
+						const filtered = allModels.filter((m) => m.value.startsWith(modelText));
+						if (filtered.length > 0) {
+							return { items: filtered, prefix: modelText };
+						}
+					}
+					return null;
+				},
+				applyCompletion,
+			};
+
+			editor.setAutocompleteProvider(mockProvider);
+
+			// Type "/model gpt-4o-mini" - exact match for second item in list
+			editor.handleInput("/");
+			editor.handleInput("m");
+			editor.handleInput("o");
+			editor.handleInput("d");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput(" ");
+			editor.handleInput("g");
+			editor.handleInput("p");
+			editor.handleInput("t");
+			editor.handleInput("-");
+			editor.handleInput("4");
+			editor.handleInput("o");
+			editor.handleInput("-");
+			editor.handleInput("m");
+			editor.handleInput("i");
+			editor.handleInput("n");
+			editor.handleInput("i");
+
+			assert.strictEqual(editor.getText(), "/model gpt-4o-mini");
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			// Press Enter - should retain exact typed value, not apply first highlighted item
+			editor.handleInput("\r");
+
+			// The exact typed value should be retained
+			assert.strictEqual(editor.getText(), "/model gpt-4o-mini");
+		});
 	});
 
 	describe("Character jump (Ctrl+])", () => {
