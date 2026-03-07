@@ -760,6 +760,7 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 
 	const useMaxTokens = baseUrl.includes("chutes.ai");
 
+	const isGoogle = provider === "google" || baseUrl.includes("generativelanguage.googleapis.com");
 	const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
 	const isGroq = provider === "groq" || baseUrl.includes("groq.com");
 
@@ -778,7 +779,7 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 		supportsDeveloperRole: !isNonStandard,
 		supportsReasoningEffort: !isGrok && !isZai,
 		reasoningEffortMap,
-		supportsUsageInStreaming: true,
+		supportsUsageInStreaming: !isGoogle,
 		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
 		requiresToolResultName: false,
 		requiresAssistantAfterToolResult: false,
