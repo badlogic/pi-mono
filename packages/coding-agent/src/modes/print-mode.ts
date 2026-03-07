@@ -21,6 +21,10 @@ export interface PrintModeOptions {
 	initialMessage?: string;
 	/** Images to attach to the initial message */
 	initialImages?: ImageContent[];
+	/** Stop the agent loop after N turns (--max-turns) */
+	maxTurns?: number;
+	/** Stop if cumulative output tokens exceed N (--max-tokens) */
+	maxTokens?: number;
 }
 
 /**
@@ -28,7 +32,7 @@ export interface PrintModeOptions {
  * Sends prompts to the agent and outputs the result.
  */
 export async function runPrintMode(session: AgentSession, options: PrintModeOptions): Promise<void> {
-	const { mode, messages = [], initialMessage, initialImages } = options;
+	const { mode, messages = [], initialMessage, initialImages, maxTurns, maxTokens } = options;
 	if (mode === "json") {
 		const header = session.sessionManager.getHeader();
 		if (header) {
@@ -72,11 +76,34 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 		},
 	});
 
+	// Track turns and tokens for --max-turns / --max-tokens enforcement
+	let turnCount = 0;
+	let totalOutputTokens = 0;
+
 	// Always subscribe to enable session persistence via _handleAgentEvent
 	session.subscribe((event) => {
 		// In JSON mode, output all events
 		if (mode === "json") {
 			console.log(JSON.stringify(event));
+		}
+
+		// Enforce --max-turns limit
+		if (maxTurns !== undefined && event.type === "turn_end") {
+			turnCount++;
+			if (turnCount >= maxTurns) {
+				session.abort();
+			}
+		}
+
+		// Enforce --max-tokens limit
+		if (maxTokens !== undefined && event.type === "message_end" && event.message.role === "assistant") {
+			const assistantMsg = event.message as AssistantMessage;
+			if (assistantMsg.usage) {
+				totalOutputTokens += assistantMsg.usage.output;
+				if (totalOutputTokens >= maxTokens) {
+					session.abort();
+				}
+			}
 		}
 	});
 

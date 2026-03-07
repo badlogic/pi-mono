@@ -39,6 +39,8 @@ export interface Args {
 	noThemes?: boolean;
 	listModels?: string | true;
 	verbose?: boolean;
+	maxTurns?: number;
+	maxTokens?: number;
 	messages: string[];
 	fileArgs: string[];
 	/** Unknown flags (potentially extension flags) - map of flag name to value */
@@ -151,6 +153,12 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 			}
 		} else if (arg === "--verbose") {
 			result.verbose = true;
+		} else if (arg === "--max-turns" && i + 1 < args.length) {
+			const n = parseInt(args[++i], 10);
+			if (!isNaN(n) && n > 0) result.maxTurns = n;
+		} else if (arg === "--max-tokens" && i + 1 < args.length) {
+			const n = parseInt(args[++i], 10);
+			if (!isNaN(n) && n > 0) result.maxTokens = n;
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (arg.startsWith("--") && extensionFlags) {
@@ -216,6 +224,8 @@ ${chalk.bold("Options:")}
   --no-themes                    Disable theme discovery and loading
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
+  --max-turns <n>                Stop agent loop after N turns in --print mode
+  --max-tokens <n>               Stop if cumulative output tokens exceed N in --print mode
   --verbose                      Force verbose startup (overrides quietStartup setting)
   --help, -h                     Show this help
   --version, -v                  Show version number

@@ -760,6 +760,8 @@ export async function main(args: string[]) {
 			messages: parsed.messages,
 			initialMessage,
 			initialImages,
+			maxTurns: parsed.maxTurns,
+			maxTokens: parsed.maxTokens,
 		});
 		stopThemeWatcher();
 		if (process.stdout.writableLength > 0) {
