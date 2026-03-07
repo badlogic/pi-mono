@@ -22,13 +22,13 @@ export interface ToolHtmlRendererDeps {
 export interface ToolHtmlRenderer {
 	/** Render a tool call to HTML. Returns undefined if tool has no custom renderer. */
 	renderCall(toolName: string, args: unknown): string | undefined;
-	/** Render a tool result to HTML. Returns undefined if tool has no custom renderer. */
+	/** Render a tool result to collapsed/expanded HTML. Returns undefined if tool has no custom renderer. */
 	renderResult(
 		toolName: string,
 		result: Array<{ type: string; text?: string; data?: string; mimeType?: string }>,
 		details: unknown,
 		isError: boolean,
-	): string | undefined;
+	): { collapsed?: string; expanded?: string } | undefined;
 }
 
 /**
@@ -65,7 +65,7 @@ export function createToolHtmlRenderer(deps: ToolHtmlRendererDeps): ToolHtmlRend
 			result: Array<{ type: string; text?: string; data?: string; mimeType?: string }>,
 			details: unknown,
 			isError: boolean,
-		): string | undefined {
+		): { collapsed?: string; expanded?: string } | undefined {
 			try {
 				const toolDef = getToolDefinition(toolName);
 				if (!toolDef?.renderResult) {
@@ -80,13 +80,31 @@ export function createToolHtmlRenderer(deps: ToolHtmlRendererDeps): ToolHtmlRend
 					isError,
 				};
 
-				// Always render expanded, client-side will apply truncation
-				const component = toolDef.renderResult(agentToolResult, { expanded: true, isPartial: false }, theme);
-				if (!component) {
+				// Render collapsed
+				const collapsedComponent = toolDef.renderResult(
+					agentToolResult,
+					{ expanded: false, isPartial: false },
+					theme,
+				);
+				const collapsed = collapsedComponent ? ansiLinesToHtml(collapsedComponent.render(width)) : undefined;
+
+				// Render expanded
+				const expandedComponent = toolDef.renderResult(
+					agentToolResult,
+					{ expanded: true, isPartial: false },
+					theme,
+				);
+				const expanded = expandedComponent ? ansiLinesToHtml(expandedComponent.render(width)) : undefined;
+
+				// Return collapsed only if it exists and differs from expanded
+				if (!expanded) {
 					return undefined;
 				}
-				const lines = component.render(width);
-				return ansiLinesToHtml(lines);
+
+				return {
+					...(collapsed && collapsed !== expanded ? { collapsed } : {}),
+					expanded,
+				};
 			} catch {
 				// On error, return undefined to trigger JSON fallback
 				return undefined;

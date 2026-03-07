@@ -74,8 +74,11 @@ export const streamGoogle: StreamFunction<"google-generative-ai", GoogleOptions>
 		try {
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
 			const client = createClient(model, apiKey, options?.headers);
-			const params = buildParams(model, context, options);
-			options?.onPayload?.(params);
+			let params = buildParams(model, context, options);
+			const nextParams = await options?.onPayload?.(params, model);
+			if (nextParams !== undefined) {
+				params = nextParams as GenerateContentParameters;
+			}
 			const googleStream = await client.models.generateContentStream(params);
 
 			stream.push({ type: "start", partial: output });

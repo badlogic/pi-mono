@@ -87,8 +87,11 @@ export const streamGoogleVertex: StreamFunction<"google-vertex", GoogleVertexOpt
 			const project = resolveProject(options);
 			const location = resolveLocation(options);
 			const client = createClient(model, project, location, options?.headers);
-			const params = buildParams(model, context, options);
-			options?.onPayload?.(params);
+			let params = buildParams(model, context, options);
+			const nextParams = await options?.onPayload?.(params, model);
+			if (nextParams !== undefined) {
+				params = nextParams as GenerateContentParameters;
+			}
 			const googleStream = await client.models.generateContentStream(params);
 
 			stream.push({ type: "start", partial: output });

@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed autocomplete selection ignoring typed text: highlight now follows the first prefix match as the user types, and exact matches are always selected on Enter ([#1931](https://github.com/badlogic/pi-mono/pull/1931) by [@aliou](https://github.com/aliou))
+- Fixed xterm `modifyOtherKeys` parsing in `matchesKey()` and `parseKey()`, restoring Ctrl-based keybindings and modified Enter keys in tmux when `extended-keys-format` is left at the default `xterm` ([#1872](https://github.com/badlogic/pi-mono/issues/1872))
+
+## [0.57.0] - 2026-03-07
+
+### Added
+
+- Added non-capturing overlays via `OverlayOptions.nonCapturing` and new `OverlayHandle` methods: `focus()`, `unfocus()`, and `isFocused()` for programmatic overlay focus control ([#1916](https://github.com/badlogic/pi-mono/pull/1916) by [@nicobailon](https://github.com/nicobailon))
+
+### Changed
+
+- Overlay compositing order now uses focus order so focused overlays render on top while preserving stack semantics for show/hide behavior ([#1916](https://github.com/badlogic/pi-mono/pull/1916) by [@nicobailon](https://github.com/nicobailon))
+
+### Fixed
+
+- Fixed automatic focus restoration to skip non-capturing overlays and fixed `hideOverlay()` to only reassign focus when the popped overlay had focus ([#1916](https://github.com/badlogic/pi-mono/pull/1916) by [@nicobailon](https://github.com/nicobailon))
+
+## [0.56.3] - 2026-03-06
+
+### Added
+
+- Added xterm modifyOtherKeys mode 2 fallback when Kitty keyboard protocol is not available, enabling modified enter keys (Shift+Enter, Ctrl+Enter) inside tmux ([#1872](https://github.com/badlogic/pi-mono/issues/1872))
+
 ## [0.56.2] - 2026-03-05
 
 ### Added

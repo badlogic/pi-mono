@@ -1315,12 +1315,13 @@ export class AgentSession {
 		}
 
 		const previousModel = this.model;
+		const thinkingLevel = this._getThinkingLevelForModelSwitch();
 		this.agent.setModel(model);
 		this.sessionManager.appendModelChange(model.provider, model.id);
 		this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
 
 		// Re-clamp thinking level for new model's capabilities
-		this.setThinkingLevel(this.thinkingLevel);
+		this.setThinkingLevel(thinkingLevel);
 
 		await this._emitModelSelect(model, previousModel, "set");
 	}
@@ -1371,6 +1372,7 @@ export class AgentSession {
 		const len = scopedModels.length;
 		const nextIndex = direction === "forward" ? (currentIndex + 1) % len : (currentIndex - 1 + len) % len;
 		const next = scopedModels[nextIndex];
+		const thinkingLevel = this._getThinkingLevelForModelSwitch(next.thinkingLevel);
 
 		// Apply model
 		this.agent.setModel(next.model);
@@ -1379,9 +1381,9 @@ export class AgentSession {
 
 		// Apply thinking level.
 		// - Explicit scoped model thinking level overrides current session level
-		// - Undefined scoped model thinking level inherits current session level
+		// - Undefined scoped model thinking level inherits the current session preference
 		// setThinkingLevel clamps to model capabilities.
-		this.setThinkingLevel(next.thinkingLevel ?? this.thinkingLevel);
+		this.setThinkingLevel(thinkingLevel);
 
 		await this._emitModelSelect(next.model, currentModel, "cycle");
 
@@ -1405,12 +1407,13 @@ export class AgentSession {
 			throw new Error(`No API key for ${nextModel.provider}/${nextModel.id}`);
 		}
 
+		const thinkingLevel = this._getThinkingLevelForModelSwitch();
 		this.agent.setModel(nextModel);
 		this.sessionManager.appendModelChange(nextModel.provider, nextModel.id);
 		this.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id);
 
 		// Re-clamp thinking level for new model's capabilities
-		this.setThinkingLevel(this.thinkingLevel);
+		this.setThinkingLevel(thinkingLevel);
 
 		await this._emitModelSelect(nextModel, currentModel, "cycle");
 
@@ -1437,7 +1440,9 @@ export class AgentSession {
 
 		if (isChanging) {
 			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
-			this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
+			if (this.supportsThinking() || effectiveLevel !== "off") {
+				this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
+			}
 		}
 	}
 
@@ -1478,6 +1483,16 @@ export class AgentSession {
 	 */
 	supportsThinking(): boolean {
 		return !!this.model?.reasoning;
+	}
+
+	private _getThinkingLevelForModelSwitch(explicitLevel?: ThinkingLevel): ThinkingLevel {
+		if (explicitLevel !== undefined) {
+			return explicitLevel;
+		}
+		if (!this.supportsThinking()) {
+			return this.settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;
+		}
+		return this.thinkingLevel;
 	}
 
 	private _clampThinkingLevel(level: ThinkingLevel, availableLevels: ThinkingLevel[]): ThinkingLevel {
@@ -1681,17 +1696,18 @@ export class AgentSession {
 		const sameModel =
 			this.model && assistantMessage.provider === this.model.provider && assistantMessage.model === this.model.id;
 
-		// Skip overflow check if the error is from before a compaction in the current path.
-		// This handles the case where an error was kept after compaction (in the "kept" region).
-		// The error shouldn't trigger another compaction since we already compacted.
-		// Example: opus fails → switch to codex → compact → switch back to opus → opus error
-		// is still in context but shouldn't trigger compaction again.
+		// Skip compaction checks if this assistant message is older than the latest
+		// compaction boundary. This prevents a stale pre-compaction usage/error
+		// from retriggering compaction on the first prompt after compaction.
 		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getBranch());
-		const errorIsFromBeforeCompaction =
-			compactionEntry !== null && assistantMessage.timestamp < new Date(compactionEntry.timestamp).getTime();
+		const assistantIsFromBeforeCompaction =
+			compactionEntry !== null && assistantMessage.timestamp <= new Date(compactionEntry.timestamp).getTime();
+		if (assistantIsFromBeforeCompaction) {
+			return;
+		}
 
 		// Case 1: Overflow - LLM returned context overflow error
-		if (sameModel && !errorIsFromBeforeCompaction && isContextOverflow(assistantMessage, contextWindow)) {
+		if (sameModel && isContextOverflow(assistantMessage, contextWindow)) {
 			if (this._overflowRecoveryAttempted) {
 				this._emit({
 					type: "auto_compaction_end",
@@ -1715,11 +1731,29 @@ export class AgentSession {
 			return;
 		}
 
-		// Case 2: Threshold - turn succeeded but context is getting large
-		// Skip if this was an error (non-overflow errors don't have usage data)
-		if (assistantMessage.stopReason === "error") return;
-
-		const contextTokens = calculateContextTokens(assistantMessage.usage);
+		// Case 2: Threshold - context is getting large
+		// For error messages (no usage data), estimate from last successful response.
+		// This ensures sessions that hit persistent API errors (e.g. 529) can still compact.
+		let contextTokens: number;
+		if (assistantMessage.stopReason === "error") {
+			const messages = this.agent.state.messages;
+			const estimate = estimateContextTokens(messages);
+			if (estimate.lastUsageIndex === null) return; // No usage data at all
+			// Verify the usage source is post-compaction. Kept pre-compaction messages
+			// have stale usage reflecting the old (larger) context and would falsely
+			// trigger compaction right after one just finished.
+			const usageMsg = messages[estimate.lastUsageIndex];
+			if (
+				compactionEntry &&
+				usageMsg.role === "assistant" &&
+				(usageMsg as AssistantMessage).timestamp <= new Date(compactionEntry.timestamp).getTime()
+			) {
+				return;
+			}
+			contextTokens = estimate.tokens;
+		} else {
+			contextTokens = calculateContextTokens(assistantMessage.usage);
+		}
 		if (shouldCompact(contextTokens, contextWindow, settings)) {
 			await this._runAutoCompaction("threshold", false);
 		}

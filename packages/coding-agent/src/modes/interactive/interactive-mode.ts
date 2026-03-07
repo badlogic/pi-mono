@@ -512,6 +512,13 @@ export class InteractiveMode {
 			}
 		});
 
+		// Check tmux keyboard setup asynchronously
+		this.checkTmuxKeyboardSetup().then((warning) => {
+			if (warning) {
+				this.showWarning(warning);
+			}
+		});
+
 		// Show startup warnings
 		const { migratedProviders, modelFallbackMessage, initialMessage, initialImages, initialMessages } = this.options;
 
@@ -584,6 +591,50 @@ export class InteractiveMode {
 		} catch {
 			return undefined;
 		}
+	}
+
+	private async checkTmuxKeyboardSetup(): Promise<string | undefined> {
+		if (!process.env.TMUX) return undefined;
+
+		const runTmuxShow = (option: string): Promise<string | undefined> => {
+			return new Promise((resolve) => {
+				const proc = spawn("tmux", ["show", "-gv", option], {
+					stdio: ["ignore", "pipe", "ignore"],
+				});
+				let stdout = "";
+				const timer = setTimeout(() => {
+					proc.kill();
+					resolve(undefined);
+				}, 2000);
+
+				proc.stdout?.on("data", (data) => {
+					stdout += data.toString();
+				});
+				proc.on("error", () => {
+					clearTimeout(timer);
+					resolve(undefined);
+				});
+				proc.on("close", (code) => {
+					clearTimeout(timer);
+					resolve(code === 0 ? stdout.trim() : undefined);
+				});
+			});
+		};
+
+		const [extendedKeys, extendedKeysFormat] = await Promise.all([
+			runTmuxShow("extended-keys"),
+			runTmuxShow("extended-keys-format"),
+		]);
+
+		if (extendedKeys !== "on" && extendedKeys !== "always") {
+			return "tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.";
+		}
+
+		if (extendedKeysFormat === "xterm") {
+			return "tmux extended-keys-format is xterm. Pi works best with csi-u. Add `set -g extended-keys-format csi-u` to ~/.tmux.conf and restart tmux.";
+		}
+
+		return undefined;
 	}
 
 	/**
@@ -1634,10 +1685,18 @@ export class InteractiveMode {
 			// Use duck typing since instanceof fails across jiti module boundaries
 			const customEditor = newEditor as unknown as Record<string, unknown>;
 			if ("actionHandlers" in customEditor && customEditor.actionHandlers instanceof Map) {
-				customEditor.onEscape = () => this.defaultEditor.onEscape?.();
-				customEditor.onCtrlD = () => this.defaultEditor.onCtrlD?.();
-				customEditor.onPasteImage = () => this.defaultEditor.onPasteImage?.();
-				customEditor.onExtensionShortcut = (data: string) => this.defaultEditor.onExtensionShortcut?.(data);
+				if (!customEditor.onEscape) {
+					customEditor.onEscape = () => this.defaultEditor.onEscape?.();
+				}
+				if (!customEditor.onCtrlD) {
+					customEditor.onCtrlD = () => this.defaultEditor.onCtrlD?.();
+				}
+				if (!customEditor.onPasteImage) {
+					customEditor.onPasteImage = () => this.defaultEditor.onPasteImage?.();
+				}
+				if (!customEditor.onExtensionShortcut) {
+					customEditor.onExtensionShortcut = (data: string) => this.defaultEditor.onExtensionShortcut?.(data);
+				}
 				// Copy action handlers (clear, suspend, model switching, etc.)
 				for (const [action, handler] of this.defaultEditor.actionHandlers) {
 					(customEditor.actionHandlers as Map<string, () => void>).set(action, handler);

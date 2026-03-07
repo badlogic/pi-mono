@@ -140,8 +140,11 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 			}
 
 			const accountId = extractAccountId(apiKey);
-			const body = buildRequestBody(model, context, options);
-			options?.onPayload?.(body);
+			let body = buildRequestBody(model, context, options);
+			const nextBody = await options?.onPayload?.(body, model);
+			if (nextBody !== undefined) {
+				body = nextBody as RequestBody;
+			}
 			const headers = buildHeaders(model.headers, options?.headers, accountId, apiKey, options?.sessionId);
 			const bodyJson = JSON.stringify(body);
 			const transport = options?.transport || "sse";

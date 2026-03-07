@@ -13,6 +13,7 @@ import type { SessionManager } from "../session-manager.js";
 import type {
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	BeforeProviderRequestEvent,
 	CompactOptions,
 	ContextEvent,
 	ContextEventResult,
@@ -105,6 +106,7 @@ type RunnerEmitEvent = Exclude<
 	| ToolResultEvent
 	| UserBashEvent
 	| ContextEvent
+	| BeforeProviderRequestEvent
 	| BeforeAgentStartEvent
 	| ResourcesDiscoverEvent
 	| InputEvent
@@ -708,6 +710,40 @@ export class ExtensionRunner {
 		}
 
 		return currentMessages;
+	}
+
+	async emitBeforeProviderRequest(payload: unknown): Promise<unknown> {
+		const ctx = this.createContext();
+		let currentPayload = payload;
+
+		for (const ext of this.extensions) {
+			const handlers = ext.handlers.get("before_provider_request");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					const event: BeforeProviderRequestEvent = {
+						type: "before_provider_request",
+						payload: currentPayload,
+					};
+					const handlerResult = await handler(event, ctx);
+					if (handlerResult !== undefined) {
+						currentPayload = handlerResult;
+					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
+					this.emitError({
+						extensionPath: ext.path,
+						event: "before_provider_request",
+						error: message,
+						stack,
+					});
+				}
+			}
+		}
+
+		return currentPayload;
 	}
 
 	async emitBeforeAgentStart(

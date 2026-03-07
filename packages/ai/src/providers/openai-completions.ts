@@ -86,8 +86,11 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 		try {
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
 			const client = createClient(model, context, apiKey, options?.headers);
-			const params = buildParams(model, context, options);
-			options?.onPayload?.(params);
+			let params = buildParams(model, context, options);
+			const nextParams = await options?.onPayload?.(params, model);
+			if (nextParams !== undefined) {
+				params = nextParams as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming;
+			}
 			const openaiStream = await client.chat.completions.create(params, { signal: options?.signal });
 			stream.push({ type: "start", partial: output });
 

@@ -77,7 +77,7 @@ const GEMINI_CLI_HEADERS = {
 };
 
 // Headers for Antigravity (sandbox endpoint) - requires specific User-Agent
-const DEFAULT_ANTIGRAVITY_VERSION = "1.18.3";
+const DEFAULT_ANTIGRAVITY_VERSION = "1.18.4";
 
 function getAntigravityHeaders() {
 	const version = process.env.PI_AI_ANTIGRAVITY_VERSION || DEFAULT_ANTIGRAVITY_VERSION;
@@ -203,9 +203,8 @@ export function extractRetryDelay(errorText: string, response?: Response | Heade
 	return undefined;
 }
 
-function isClaudeThinkingModel(modelId: string): boolean {
-	const normalized = modelId.toLowerCase();
-	return normalized.includes("claude") && normalized.includes("thinking");
+function needsClaudeThinkingBetaHeader(model: Model<"google-gemini-cli">): boolean {
+	return model.provider === "google-antigravity" && model.id.startsWith("claude-") && model.reasoning;
 }
 
 function isGemini3ProModel(modelId: string): boolean {
@@ -370,8 +369,11 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli", GoogleGe
 			const baseUrl = model.baseUrl?.trim();
 			const endpoints = baseUrl ? [baseUrl] : isAntigravity ? ANTIGRAVITY_ENDPOINT_FALLBACKS : [DEFAULT_ENDPOINT];
 
-			const requestBody = buildRequest(model, context, projectId, options, isAntigravity);
-			options?.onPayload?.(requestBody);
+			let requestBody = buildRequest(model, context, projectId, options, isAntigravity);
+			const nextRequestBody = await options?.onPayload?.(requestBody, model);
+			if (nextRequestBody !== undefined) {
+				requestBody = nextRequestBody as CloudCodeAssistRequest;
+			}
 			const headers = isAntigravity ? getAntigravityHeaders() : GEMINI_CLI_HEADERS;
 
 			const requestHeaders = {
@@ -379,7 +381,7 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli", GoogleGe
 				"Content-Type": "application/json",
 				Accept: "text/event-stream",
 				...headers,
-				...(isClaudeThinkingModel(model.id) ? { "anthropic-beta": CLAUDE_THINKING_BETA_HEADER } : {}),
+				...(needsClaudeThinkingBetaHeader(model) ? { "anthropic-beta": CLAUDE_THINKING_BETA_HEADER } : {}),
 				...options?.headers,
 			};
 			const requestBodyJson = JSON.stringify(requestBody);
