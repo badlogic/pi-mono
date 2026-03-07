@@ -2,13 +2,29 @@
 
 ## [Unreleased]
 
+### New Features
+
+- Extensions can intercept and modify provider request payloads via `before_provider_request`. See [docs/extensions.md#before_provider_request](docs/extensions.md#before_provider_request).
+- Extension UIs can use non-capturing overlays with explicit focus control via `OverlayOptions.nonCapturing` and `OverlayHandle.focus()` / `unfocus()` / `isFocused()`. See [docs/extensions.md](docs/extensions.md) and [../tui/README.md](../tui/README.md).
+- RPC mode now uses strict LF-only JSONL framing for robust payload handling. See [docs/rpc.md](docs/rpc.md).
+
 ### Breaking Changes
 
 - RPC mode now uses strict LF-delimited JSONL framing. Clients must split records on `\n` only instead of using generic line readers such as Node `readline`, which also split on Unicode separators inside JSON payloads ([#1911](https://github.com/badlogic/pi-mono/issues/1911))
 
+### Added
+
+- Added `before_provider_request` extension hook so extensions can inspect or replace provider payloads before requests are sent, with an example in `examples/extensions/provider-payload.ts`
+- Added non-capturing overlay focus control for extension UIs via `OverlayOptions.nonCapturing` and `OverlayHandle.focus()` / `unfocus()` / `isFocused()` ([#1916](https://github.com/badlogic/pi-mono/pull/1916) by [@nicobailon](https://github.com/nicobailon))
+
+### Changed
+
+- Overlay compositing in extension UIs now uses focus order so focused overlays render on top while preserving stack semantics for show/hide behavior ([#1916](https://github.com/badlogic/pi-mono/pull/1916) by [@nicobailon](https://github.com/nicobailon))
+
 ### Fixed
 
 - Fixed RPC mode stdin/stdout framing to use strict LF-delimited JSONL instead of `readline`, so payloads containing `U+2028` or `U+2029` no longer corrupt command or event streams ([#1911](https://github.com/badlogic/pi-mono/issues/1911))
+- Fixed automatic overlay focus restoration in extension UIs to skip non-capturing overlays, and fixed overlay hide behavior to only reassign focus when the hidden overlay had focus ([#1916](https://github.com/badlogic/pi-mono/pull/1916) by [@nicobailon](https://github.com/nicobailon))
 - Fixed `pi config` misclassifying `~/.agents/skills` as project-scoped in non-git directories under `$HOME`, so toggling those skills no longer writes project overrides to `.pi/settings.json` ([#1915](https://github.com/badlogic/pi-mono/issues/1915))
 
 ## [0.56.3] - 2026-03-06
