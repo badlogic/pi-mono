@@ -1828,6 +1828,35 @@ export class Editor implements Component, Focusable {
 	}
 
 	// Autocomplete methods
+	/**
+	 * Find the best autocomplete item index for the given prefix.
+	 * Returns -1 if no match is found.
+	 *
+	 * Match priority:
+	 * 1. Exact match (prefix === item.value) -> always selected
+	 * 2. Prefix match -> first item whose value starts with prefix
+	 * 3. No match -> -1 (keep default highlight)
+	 *
+	 * Matching is case-sensitive and checks item.value only.
+	 */
+	private getBestAutocompleteMatchIndex(items: Array<{ value: string; label: string }>, prefix: string): number {
+		if (!prefix) return -1;
+
+		let firstPrefixIndex = -1;
+
+		for (let i = 0; i < items.length; i++) {
+			const value = items[i]!.value;
+			if (value === prefix) {
+				return i; // Exact match always wins
+			}
+			if (firstPrefixIndex === -1 && value.startsWith(prefix)) {
+				firstPrefixIndex = i;
+			}
+		}
+
+		return firstPrefixIndex;
+	}
+
 	private tryTriggerAutocomplete(explicitTab: boolean = false): void {
 		if (!this.autocompleteProvider) return;
 
@@ -1851,6 +1880,13 @@ export class Editor implements Component, Focusable {
 		if (suggestions && suggestions.items.length > 0) {
 			this.autocompletePrefix = suggestions.prefix;
 			this.autocompleteList = new SelectList(suggestions.items, this.autocompleteMaxVisible, this.theme.selectList);
+
+			// If typed prefix exactly matches one of the suggestions, select that item
+			const bestMatchIndex = this.getBestAutocompleteMatchIndex(suggestions.items, suggestions.prefix);
+			if (bestMatchIndex >= 0) {
+				this.autocompleteList.setSelectedIndex(bestMatchIndex);
+			}
+
 			this.autocompleteState = "regular";
 		} else {
 			this.cancelAutocomplete();
@@ -1920,6 +1956,13 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 
 			this.autocompletePrefix = suggestions.prefix;
 			this.autocompleteList = new SelectList(suggestions.items, this.autocompleteMaxVisible, this.theme.selectList);
+
+			// If typed prefix exactly matches one of the suggestions, select that item
+			const bestMatchIndex = this.getBestAutocompleteMatchIndex(suggestions.items, suggestions.prefix);
+			if (bestMatchIndex >= 0) {
+				this.autocompleteList.setSelectedIndex(bestMatchIndex);
+			}
+
 			this.autocompleteState = "force";
 		} else {
 			this.cancelAutocomplete();
@@ -1953,6 +1996,12 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 			this.autocompletePrefix = suggestions.prefix;
 			// Always create new SelectList to ensure update
 			this.autocompleteList = new SelectList(suggestions.items, this.autocompleteMaxVisible, this.theme.selectList);
+
+			// If typed prefix exactly matches one of the suggestions, select that item
+			const bestMatchIndex = this.getBestAutocompleteMatchIndex(suggestions.items, suggestions.prefix);
+			if (bestMatchIndex >= 0) {
+				this.autocompleteList.setSelectedIndex(bestMatchIndex);
+			}
 		} else {
 			this.cancelAutocomplete();
 		}
