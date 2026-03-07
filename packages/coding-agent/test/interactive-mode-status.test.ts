@@ -116,8 +116,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 	function createShowLoadedResourcesThis(options: {
 		quietStartup: boolean;
 		verbose?: boolean;
-		skills?: Array<{ filePath: string }>;
+		skills?: Array<{ filePath: string; baseDir?: string; sourceDir?: string }>;
 		skillDiagnostics?: Array<{ type: "warning" | "error" | "collision"; message: string }>;
+		pathMetadata?: Map<string, { source: string; scope: string; origin: string }>;
 	}) {
 		const fakeThis: any = {
 			options: { verbose: options.verbose ?? false },
@@ -129,7 +130,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 				promptTemplates: [],
 				extensionRunner: undefined,
 				resourceLoader: {
-					getPathMetadata: () => new Map(),
+					getPathMetadata: () => options.pathMetadata ?? new Map(),
 					getAgentsFiles: () => ({ agentsFiles: [] }),
 					getSkills: () => ({
 						skills: options.skills ?? [],
@@ -143,7 +144,25 @@ describe("InteractiveMode.showLoadedResources", () => {
 			formatDisplayPath: (p: string) => p,
 			buildScopeGroups: () => [],
 			formatScopeGroups: () => "resource-list",
-			getShortPath: (p: string) => p,
+			getShortPath: (fullPath: string, source: string) =>
+				(InteractiveMode as any).prototype.getShortPath.call(fakeThis, fullPath, source),
+			getDisplaySourceInfo: (source: string, scope: string) =>
+				(InteractiveMode as any).prototype.getDisplaySourceInfo.call(fakeThis, source, scope),
+			findMetadata: (p: string, metadata: Map<string, { source: string; scope: string; origin: string }>) =>
+				(InteractiveMode as any).prototype.findMetadata.call(fakeThis, p, metadata),
+			getSkillSourceDir: (skill: { sourceDir?: string; baseDir?: string; filePath: string }) =>
+				(InteractiveMode as any).prototype.getSkillSourceDir.call(fakeThis, skill),
+			formatSkillSourceDir: (
+				sourceDir: string,
+				representativePath: string,
+				metadata: Map<string, { source: string; scope: string; origin: string }>,
+			) =>
+				(InteractiveMode as any).prototype.formatSkillSourceDir.call(
+					fakeThis,
+					sourceDir,
+					representativePath,
+					metadata,
+				),
 			formatDiagnostics: () => "diagnostics",
 		};
 
@@ -180,5 +199,41 @@ describe("InteractiveMode.showLoadedResources", () => {
 		const output = renderAll(fakeThis.chatContainer);
 		expect(output).toContain("[Skill conflicts]");
 		expect(output).not.toContain("[Skills]");
+	});
+
+	test("falls back to baseDir when a custom skill omits sourceDir", () => {
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			skills: [{ filePath: "/tmp/skill/SKILL.md", baseDir: "/tmp/skill" }],
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		const output = renderAll(fakeThis.chatContainer);
+		expect(output).toContain("[Skills]");
+		expect(output).toContain("1 skill loaded from /tmp/skill");
+	});
+
+	test("shows package source info for package-provided skills", () => {
+		const packageRoot = "/tmp/node_modules/@acme/pi-skills";
+		const sourceDir = `${packageRoot}/skills`;
+		const filePath = `${sourceDir}/browser/SKILL.md`;
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			skills: [{ filePath, sourceDir }],
+			pathMetadata: new Map([
+				[packageRoot, { source: "npm:@acme/pi-skills", scope: "path", origin: "npm:@acme/pi-skills" }],
+			]),
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		const output = renderAll(fakeThis.chatContainer);
+		expect(output).toContain("1 skill loaded from npm:@acme/pi-skills skills");
+		expect(output).not.toContain(`1 skill loaded from ${sourceDir}`);
 	});
 });
