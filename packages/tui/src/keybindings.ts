@@ -109,8 +109,8 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	// Tool output
 	expandTools: "ctrl+o",
 	// Tree navigation
-	treeFoldOrUp: "ctrl+left",
-	treeUnfoldOrDown: "ctrl+right",
+	treeFoldOrUp: ["ctrl+left", "alt+left"],
+	treeUnfoldOrDown: ["ctrl+right", "alt+right"],
 	// Session
 	toggleSessionPath: "ctrl+p",
 	toggleSessionSort: "ctrl+s",

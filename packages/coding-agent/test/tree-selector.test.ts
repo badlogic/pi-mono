@@ -314,6 +314,8 @@ describe("TreeSelectorComponent", () => {
 		const DOWN = "\x1b[B";
 		const CTRL_LEFT = "\x1b[1;5D";
 		const CTRL_RIGHT = "\x1b[1;5C";
+		const ALT_LEFT = "\x1b[1;3D";
+		const ALT_RIGHT = "\x1b[1;3C";
 
 		// Tree structure:
 		//
@@ -383,6 +385,30 @@ describe("TreeSelectorComponent", () => {
 			expect(list.getSelectedNode()?.entry.id).toBe("user-3a");
 
 			selector.handleInput(CTRL_RIGHT); // user-3a → asst-4a (segment jump to leaf)
+			expect(list.getSelectedNode()?.entry.id).toBe("asst-4a");
+		});
+
+		test("alt+left/right are aliases for fold and unfold navigation", () => {
+			const tree = buildBranchingTree();
+			const selector = new TreeSelectorComponent(
+				tree,
+				"asst-4a",
+				24,
+				() => {},
+				() => {},
+			);
+			const list = selector.getTreeList();
+
+			selector.handleInput(ALT_LEFT); // asst-4a → user-3a
+			expect(list.getSelectedNode()?.entry.id).toBe("user-3a");
+
+			selector.handleInput(ALT_LEFT); // fold user-3a
+			expect(list.getSelectedNode()?.entry.id).toBe("user-3a");
+
+			selector.handleInput(ALT_RIGHT); // unfold user-3a
+			expect(list.getSelectedNode()?.entry.id).toBe("user-3a");
+
+			selector.handleInput(ALT_RIGHT); // user-3a → asst-4a
 			expect(list.getSelectedNode()?.entry.id).toBe("asst-4a");
 		});
 

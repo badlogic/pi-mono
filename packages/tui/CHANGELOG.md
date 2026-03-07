@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `treeFoldOrUp` and `treeUnfoldOrDown` editor actions with default bindings for `Ctrl+←`/`Ctrl+→` and `Alt+←`/`Alt+→` ([#1724](https://github.com/badlogic/pi-mono/pull/1724) by [@Perlence](https://github.com/Perlence))
+
 ### Fixed
 
 - Fixed autocomplete selection ignoring typed text: highlight now follows the first prefix match as the user types, and exact matches are always selected on Enter ([#1931](https://github.com/badlogic/pi-mono/pull/1931) by [@aliou](https://github.com/aliou))

@@ -1127,7 +1127,7 @@ export class TreeSelectorComponent extends Container implements Focusable {
 		this.addChild(new Text(theme.bold("  Session Tree"), 1, 0));
 		this.addChild(
 			new TruncatedText(
-				theme.fg("muted", "  ↑/↓: move. ←/→: page. ^←/^→: fold/branch. Shift+L: label. ") +
+				theme.fg("muted", "  ↑/↓: move. ←/→: page. ^←/^→ or Alt+←/Alt+→: fold/branch. Shift+L: label. ") +
 					theme.fg("muted", "^D/^T/^U/^L/^A: filters (^O/⇧^O cycle)"),
 				0,
 				0,
