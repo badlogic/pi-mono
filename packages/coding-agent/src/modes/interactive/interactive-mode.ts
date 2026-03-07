@@ -662,7 +662,7 @@ export class InteractiveMode {
 		source: string,
 		scope: string,
 	): { label: string; scopeLabel?: string; color: "accent" | "muted" } {
-		if (source === "local") {
+		if (source === "local" || source === "auto") {
 			if (scope === "user") {
 				return { label: "user", color: "muted" };
 			}
@@ -863,21 +863,6 @@ export class InteractiveMode {
 		return skill.sourceDir ?? skill.baseDir ?? path.dirname(skill.filePath);
 	}
 
-	private formatSkillSourceDir(
-		sourceDir: string,
-		representativePath: string,
-		metadata: Map<string, { source: string; scope: string; origin: string }>,
-	): string {
-		const meta = this.findMetadata(representativePath, metadata) ?? this.findMetadata(sourceDir, metadata);
-		if (meta) {
-			const shortPath = this.getShortPath(sourceDir, meta.source);
-			const { label, scopeLabel } = this.getDisplaySourceInfo(meta.source, meta.scope);
-			const labelText = scopeLabel ? `${label} (${scopeLabel})` : label;
-			return `${labelText} ${shortPath}`;
-		}
-		return this.formatDisplayPath(sourceDir);
-	}
-
 	private showLoadedResources(options?: {
 		extensionPaths?: string[];
 		force?: boolean;
@@ -909,25 +894,61 @@ export class InteractiveMode {
 
 			const skills = skillsResult.skills;
 			if (skills.length > 0) {
-				const skillsByDir = new Map<string, { count: number; representativePath: string }>();
+				const skillGroups: Record<
+					"user" | "project" | "path",
+					{
+						scope: "user" | "project" | "path";
+						dirs: Map<string, number>;
+						packages: Map<string, Map<string, number>>;
+					}
+				> = {
+					user: { scope: "user", dirs: new Map(), packages: new Map() },
+					project: { scope: "project", dirs: new Map(), packages: new Map() },
+					path: { scope: "path", dirs: new Map(), packages: new Map() },
+				};
+
 				for (const s of skills) {
 					const sourceDir = this.getSkillSourceDir(s);
-					const existing = skillsByDir.get(sourceDir);
-					if (existing) {
-						existing.count += 1;
+					const meta = this.findMetadata(s.filePath, metadata) ?? this.findMetadata(sourceDir, metadata);
+					const source = meta?.source ?? "local";
+					const scope = meta?.scope ?? "project";
+					const groupKey = this.getScopeGroup(source, scope);
+					const group = skillGroups[groupKey];
+
+					if (this.isPackageSource(source)) {
+						const pkgDirs = group.packages.get(source) ?? new Map<string, number>();
+						pkgDirs.set(sourceDir, (pkgDirs.get(sourceDir) ?? 0) + 1);
+						group.packages.set(source, pkgDirs);
 					} else {
-						skillsByDir.set(sourceDir, { count: 1, representativePath: s.filePath });
+						group.dirs.set(sourceDir, (group.dirs.get(sourceDir) ?? 0) + 1);
 					}
 				}
-				const lines = Array.from(skillsByDir.entries())
-					.sort(([a], [b]) => a.localeCompare(b))
-					.map(([dir, info]) => {
-						const sourceInfo = this.formatSkillSourceDir(dir, info.representativePath, metadata);
-						return theme.fg(
-							"dim",
-							`  ${info.count} skill${info.count !== 1 ? "s" : ""} loaded from ${sourceInfo}`,
-						);
-					});
+
+				const orderedGroups = [skillGroups.project, skillGroups.user, skillGroups.path].filter(
+					(g) => g.dirs.size > 0 || g.packages.size > 0,
+				);
+
+				const skillCountLabel = (count: number) => `${count} skill${count !== 1 ? "s" : ""} loaded from`;
+
+				const lines: string[] = [];
+				for (const group of orderedGroups) {
+					lines.push(`  ${theme.fg("accent", group.scope)}`);
+
+					const sortedDirs = Array.from(group.dirs.entries()).sort(([a], [b]) => a.localeCompare(b));
+					for (const [dir, count] of sortedDirs) {
+						lines.push(theme.fg("dim", `    ${skillCountLabel(count)} ${this.formatDisplayPath(dir)}`));
+					}
+
+					const sortedPackages = Array.from(group.packages.entries()).sort(([a], [b]) => a.localeCompare(b));
+					for (const [source, dirs] of sortedPackages) {
+						lines.push(`    ${theme.fg("mdLink", source)}`);
+						const sortedPkgDirs = Array.from(dirs.entries()).sort(([a], [b]) => a.localeCompare(b));
+						for (const [dir, count] of sortedPkgDirs) {
+							lines.push(theme.fg("dim", `      ${skillCountLabel(count)} ${this.getShortPath(dir, source)}`));
+						}
+					}
+				}
+
 				this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${lines.join("\n")}`, 0, 0));
 				this.chatContainer.addChild(new Spacer(1));
 			}
