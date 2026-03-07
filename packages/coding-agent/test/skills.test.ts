@@ -204,6 +204,7 @@ describe("skills", () => {
 					filePath: "/path/to/skill/SKILL.md",
 					baseDir: "/path/to/skill",
 					source: "test",
+					sourceDir: "/path/to",
 					disableModelInvocation: false,
 				},
 			];
@@ -226,6 +227,7 @@ describe("skills", () => {
 					filePath: "/path/to/skill/SKILL.md",
 					baseDir: "/path/to/skill",
 					source: "test",
+					sourceDir: "/path/to",
 					disableModelInvocation: false,
 				},
 			];
@@ -246,6 +248,7 @@ describe("skills", () => {
 					filePath: "/path/to/skill/SKILL.md",
 					baseDir: "/path/to/skill",
 					source: "test",
+					sourceDir: "/path/to",
 					disableModelInvocation: false,
 				},
 			];
@@ -265,6 +268,7 @@ describe("skills", () => {
 					filePath: "/path/one/SKILL.md",
 					baseDir: "/path/one",
 					source: "test",
+					sourceDir: "/path",
 					disableModelInvocation: false,
 				},
 				{
@@ -273,6 +277,7 @@ describe("skills", () => {
 					filePath: "/path/two/SKILL.md",
 					baseDir: "/path/two",
 					source: "test",
+					sourceDir: "/path",
 					disableModelInvocation: false,
 				},
 			];
@@ -292,6 +297,7 @@ describe("skills", () => {
 					filePath: "/path/visible/SKILL.md",
 					baseDir: "/path/visible",
 					source: "test",
+					sourceDir: "/path",
 					disableModelInvocation: false,
 				},
 				{
@@ -300,6 +306,7 @@ describe("skills", () => {
 					filePath: "/path/hidden/SKILL.md",
 					baseDir: "/path/hidden",
 					source: "test",
+					sourceDir: "/path",
 					disableModelInvocation: true,
 				},
 			];
@@ -319,6 +326,7 @@ describe("skills", () => {
 					filePath: "/path/hidden/SKILL.md",
 					baseDir: "/path/hidden",
 					source: "test",
+					sourceDir: "/path",
 					disableModelInvocation: true,
 				},
 			];

@@ -410,6 +410,7 @@ Content`,
 				filePath: "/fake/path",
 				baseDir: "/fake",
 				source: "custom",
+				sourceDir: "/fake",
 				disableModelInvocation: false,
 			};
 			const loader = new DefaultResourceLoader({
