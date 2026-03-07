@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Fixed HTTP 413 "request too large" errors when sessions accumulate many images. Images are cheap in tokens but large in bytes (~1-2MB each); after ~20 image reads the request payload exceeds provider limits while context usage shows only ~30%. On 413, the oldest half of images are now automatically stripped and the request is retried (up to 3 attempts).
 - Fixed custom tool collapsed/expanded rendering in HTML exports. Custom tools that define different collapsed vs expanded displays now render correctly in exported HTML, with expandable sections when both states differ and direct display when only expanded exists ([#1934](https://github.com/badlogic/pi-mono/pull/1934) by [@aliou](https://github.com/aliou))
 
 ## [0.57.0] - 2026-03-07

@@ -115,6 +115,43 @@ export function isContextOverflow(message: AssistantMessage, contextWindow?: num
 }
 
 /**
+ * Check if an assistant message indicates the HTTP request body was too large.
+ *
+ * This is separate from context overflow (token limits). Request size limits
+ * are about the raw HTTP payload bytes, not model context windows. This typically
+ * happens when sessions accumulate many images — each image is cheap in tokens
+ * but large in bytes (~1-2MB base64 each).
+ *
+ * Detection: checks for HTTP 413 status or known "request too large" error patterns.
+ * Note: Cerebras 413 with no body is already handled by isContextOverflow() as a
+ * context overflow, so callers should check isContextOverflow() first.
+ *
+ * Known error formats:
+ * - Anthropic SDK: '413 {"type":"error","error":{"type":"request_too_large","message":"..."}}'
+ * - Generic HTTP: "413", "request entity too large", "payload too large"
+ *
+ * @param message - The assistant message to check
+ * @returns true if the error indicates a request payload size issue
+ */
+export function isRequestTooLarge(message: AssistantMessage): boolean {
+	if (message.stopReason !== "error" || !message.errorMessage) return false;
+	const err = message.errorMessage;
+
+	// Exclude "no body" variants — those are context overflow (Cerebras), not payload size
+	if (/\(no body\)/i.test(err)) return false;
+
+	// Check for HTTP 413 status
+	if (/^413\b/.test(err)) return true;
+
+	// Check for known request-too-large error patterns
+	if (/request_too_large|request.*exceeds.*maximum.*size|request entity too large|payload too large/i.test(err)) {
+		return true;
+	}
+
+	return false;
+}
+
+/**
  * Get the overflow patterns for testing purposes.
  */
 export function getOverflowPatterns(): RegExp[] {

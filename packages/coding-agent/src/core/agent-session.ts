@@ -24,7 +24,13 @@ import type {
 	ThinkingLevel,
 } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
-import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@mariozechner/pi-ai";
+import {
+	isContextOverflow,
+	isRequestTooLarge,
+	modelsAreEqual,
+	resetApiProviders,
+	supportsXhigh,
+} from "@mariozechner/pi-ai";
 import { getDocsPath } from "../config.js";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { stripFrontmatter } from "../utils/frontmatter.js";
@@ -72,6 +78,7 @@ import {
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
+import { countImages, stripOldestImages } from "./request-size.js";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.js";
 import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.js";
 import { getLatestCompactionEntry } from "./session-manager.js";
@@ -233,6 +240,8 @@ export class AgentSession {
 	private _compactionAbortController: AbortController | undefined = undefined;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
 	private _overflowRecoveryAttempted = false;
+	private _requestTooLargeRecoveryAttempts = 0;
+	private static readonly MAX_REQUEST_TOO_LARGE_RETRIES = 3;
 
 	// Branch summarization state
 	private _branchSummaryAbortController: AbortController | undefined = undefined;
@@ -370,6 +379,7 @@ export class AgentSession {
 		// This ensures the UI sees the updated queue state
 		if (event.type === "message_start" && event.message.role === "user") {
 			this._overflowRecoveryAttempted = false;
+			this._requestTooLargeRecoveryAttempts = 0;
 			const messageText = this._getUserMessageText(event.message);
 			if (messageText) {
 				// Check steering queue first
@@ -420,6 +430,7 @@ export class AgentSession {
 				const assistantMsg = event.message as AssistantMessage;
 				if (assistantMsg.stopReason !== "error") {
 					this._overflowRecoveryAttempted = false;
+					this._requestTooLargeRecoveryAttempts = 0;
 				}
 
 				// Reset retry counter immediately on successful assistant response
@@ -1681,9 +1692,6 @@ export class AgentSession {
 	 * @param skipAbortedCheck If false, include aborted messages (for pre-prompt check). Default: true
 	 */
 	private async _checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck = true): Promise<void> {
-		const settings = this.settingsManager.getCompactionSettings();
-		if (!settings.enabled) return;
-
 		// Skip if message was aborted (user cancelled) - unless skipAbortedCheck is false
 		if (skipAbortedCheck && assistantMessage.stopReason === "aborted") return;
 
@@ -1705,6 +1713,69 @@ export class AgentSession {
 		if (assistantIsFromBeforeCompaction) {
 			return;
 		}
+
+		// Case 0: Request too large - HTTP payload exceeded provider's size limit.
+		// This is distinct from token overflow. Typically caused by accumulated image data
+		// (images are cheap in tokens but large in bytes). Strip oldest images and retry.
+		if (sameModel && isRequestTooLarge(assistantMessage)) {
+			if (this._requestTooLargeRecoveryAttempts >= AgentSession.MAX_REQUEST_TOO_LARGE_RETRIES) {
+				this._emit({
+					type: "auto_compaction_end",
+					result: undefined,
+					aborted: false,
+					willRetry: false,
+					errorMessage:
+						"Request payload too large. Tried stripping images but request is still too large. Try starting a new session or using /compact.",
+				});
+				return;
+			}
+
+			// Remove the error message from agent state
+			const messages = this.agent.state.messages;
+			if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+				this.agent.replaceMessages(messages.slice(0, -1));
+			}
+
+			// Strip oldest half of images from the in-memory messages.
+			const currentMessages = this.agent.state.messages;
+			const imageCount = countImages(currentMessages);
+			if (imageCount === 0) {
+				this._emit({
+					type: "auto_compaction_end",
+					result: undefined,
+					aborted: false,
+					willRetry: false,
+					errorMessage:
+						"Request payload too large but no images to strip. Try starting a new session or using /compact.",
+				});
+				return;
+			}
+
+			// Strip images from the raw agent messages (user and toolResult roles)
+			const { messages: strippedMessages, strippedCount } = stripOldestImages(currentMessages);
+			this.agent.replaceMessages(strippedMessages);
+			this._requestTooLargeRecoveryAttempts++;
+
+			this._emit({
+				type: "auto_compaction_start",
+				reason: "overflow",
+			});
+			this._emit({
+				type: "auto_compaction_end",
+				result: undefined,
+				aborted: false,
+				willRetry: true,
+				errorMessage: `Request too large: stripped ${strippedCount} old image(s), retrying (attempt ${this._requestTooLargeRecoveryAttempts}/${AgentSession.MAX_REQUEST_TOO_LARGE_RETRIES})`,
+			});
+
+			setTimeout(() => {
+				this.agent.continue().catch(() => {});
+			}, 100);
+			return;
+		}
+
+		const settings = this.settingsManager.getCompactionSettings();
+		if (!settings.enabled) return;
 
 		// Case 1: Overflow - LLM returned context overflow error
 		if (sameModel && isContextOverflow(assistantMessage, contextWindow)) {
@@ -2261,6 +2332,9 @@ export class AgentSession {
 		// Context overflow is handled by compaction, not retry
 		const contextWindow = this.model?.contextWindow ?? 0;
 		if (isContextOverflow(message, contextWindow)) return false;
+
+		// Request too large is handled by image pruning, not retry
+		if (isRequestTooLarge(message)) return false;
 
 		const err = message.errorMessage;
 		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection errors, fetch failed, terminated, retry delay exceeded
