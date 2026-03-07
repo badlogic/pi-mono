@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed tool download when GitHub releases have no assets (e.g., fd v10.4.0). Now falls back to previous releases until finding one with available assets ([#1933](https://github.com/badlogic/pi-mono/pull/1933)) by [@aliou](https://github.com/aliou)).
+
 ## [0.57.0] - 2026-03-07
 
 ### New Features

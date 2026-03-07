@@ -98,9 +98,9 @@ export function getToolPath(tool: "fd" | "rg"): string | null {
 	return null;
 }
 
-// Fetch latest release version from GitHub
-async function getLatestVersion(repo: string): Promise<string> {
-	const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+// Fetch releases from GitHub
+async function getReleases(repo: string): Promise<Array<{ tag_name: string; assets: Array<{ name: string }> }>> {
+	const response = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=10`, {
 		headers: { "User-Agent": `${APP_NAME}-coding-agent` },
 		signal: AbortSignal.timeout(NETWORK_TIMEOUT_MS),
 	});
@@ -109,8 +109,39 @@ async function getLatestVersion(repo: string): Promise<string> {
 		throw new Error(`GitHub API error: ${response.status}`);
 	}
 
-	const data = (await response.json()) as { tag_name: string };
-	return data.tag_name.replace(/^v/, "");
+	return (await response.json()) as Array<{ tag_name: string; assets: Array<{ name: string }> }>;
+}
+
+// Find first release with assets matching the expected asset name
+async function getVersionWithAsset(
+	repo: string,
+	getExpectedAssetName: (version: string) => string | null,
+	skippedVersions: string[],
+): Promise<string> {
+	const releases = await getReleases(repo);
+
+	for (const release of releases) {
+		const version = release.tag_name.replace(/^v/, "");
+		const expectedAsset = getExpectedAssetName(version);
+
+		if (!expectedAsset) {
+			continue;
+		}
+
+		// Check if this release has any assets (e.g., the expected asset or similar)
+		// Some repos might use slightly different naming, so we check if assets exist at all
+		if (release.assets.length > 0) {
+			if (skippedVersions.length > 0) {
+				const skippedList = skippedVersions.join(", ");
+				skippedVersions.push(version);
+				console.log(chalk.dim(`Skipping releases without assets: ${skippedList}. Using ${release.tag_name}`));
+			}
+			return version;
+		}
+		skippedVersions.push(version);
+	}
+
+	throw new Error(`No release with assets found for ${repo}`);
 }
 
 // Download a file from URL
@@ -161,8 +192,13 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 	const plat = platform();
 	const architecture = arch();
 
-	// Get latest version
-	const version = await getLatestVersion(config.repo);
+	// Find latest version that has assets
+	const skippedVersions: string[] = [];
+	const version = await getVersionWithAsset(
+		config.repo,
+		(ver) => config.getAssetName(ver, plat, architecture),
+		skippedVersions,
+	);
 
 	// Get asset name for this platform
 	const assetName = config.getAssetName(version, plat, architecture);
