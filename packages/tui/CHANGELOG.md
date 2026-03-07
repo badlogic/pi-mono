@@ -5,6 +5,7 @@
 ### Fixed
 
 - Fixed autocomplete selection ignoring typed text: highlight now follows the first prefix match as the user types, and exact matches are always selected on Enter ([#1931](https://github.com/badlogic/pi-mono/pull/1931) by [@aliou](https://github.com/aliou))
+- Fixed xterm `modifyOtherKeys` parsing in `matchesKey()` and `parseKey()`, restoring Ctrl-based keybindings and modified Enter keys in tmux when `extended-keys-format` is left at the default `xterm` ([#1872](https://github.com/badlogic/pi-mono/issues/1872))
 
 ## [0.57.0] - 2026-03-07
 

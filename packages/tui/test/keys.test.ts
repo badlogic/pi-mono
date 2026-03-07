@@ -118,6 +118,42 @@ describe("matchesKey", () => {
 		});
 	});
 
+	describe("modifyOtherKeys matching", () => {
+		it("should match xterm modifyOtherKeys Ctrl+c", () => {
+			setKittyProtocolActive(false);
+			assert.strictEqual(matchesKey("\x1b[27;5;99~", "ctrl+c"), true);
+			assert.strictEqual(parseKey("\x1b[27;5;99~"), "ctrl+c");
+		});
+
+		it("should match xterm modifyOtherKeys Ctrl+d", () => {
+			setKittyProtocolActive(false);
+			assert.strictEqual(matchesKey("\x1b[27;5;100~", "ctrl+d"), true);
+			assert.strictEqual(parseKey("\x1b[27;5;100~"), "ctrl+d");
+		});
+
+		it("should match xterm modifyOtherKeys Ctrl+z", () => {
+			setKittyProtocolActive(false);
+			assert.strictEqual(matchesKey("\x1b[27;5;122~", "ctrl+z"), true);
+			assert.strictEqual(parseKey("\x1b[27;5;122~"), "ctrl+z");
+		});
+
+		it("should match xterm modifyOtherKeys Enter variants", () => {
+			setKittyProtocolActive(false);
+			assert.strictEqual(matchesKey("\x1b[27;5;13~", "ctrl+enter"), true);
+			assert.strictEqual(matchesKey("\x1b[27;2;13~", "shift+enter"), true);
+			assert.strictEqual(matchesKey("\x1b[27;3;13~", "alt+enter"), true);
+			assert.strictEqual(parseKey("\x1b[27;5;13~"), "ctrl+enter");
+			assert.strictEqual(parseKey("\x1b[27;2;13~"), "shift+enter");
+			assert.strictEqual(parseKey("\x1b[27;3;13~"), "alt+enter");
+		});
+
+		it("should match xterm modifyOtherKeys symbol combos", () => {
+			setKittyProtocolActive(false);
+			assert.strictEqual(matchesKey("\x1b[27;5;47~", "ctrl+/"), true);
+			assert.strictEqual(parseKey("\x1b[27;5;47~"), "ctrl+/");
+		});
+	});
+
 	describe("Legacy key matching", () => {
 		it("should match legacy Ctrl+c", () => {
 			setKittyProtocolActive(false);
