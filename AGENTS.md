@@ -1,4 +1,4 @@
-# Development Rules
+# 规范要求
 
 ## First Message
 If the user did not give you a concrete task in their first message,
@@ -222,3 +222,6 @@ git pull --rebase && git push
 - Resolve conflicts in YOUR files only
 - If conflict is in a file you didn't modify, abort and ask the user
 - NEVER force push
+
+## 研究文档规范
+如果要求"研究"、"分析"、"对比"、"总结"等，必须把这个研究写成文档，文档的格式必须是Markdown，文档的标题必须是"研究"，文档的内容必须是研究的完整结果。根据使用的模型存到相应的目录，比如使用了"Qwen"来问答，就存到"qwen-studydoc"下。
