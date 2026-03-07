@@ -14,10 +14,13 @@
  *   /overlay-maxheight  - Test maxHeight truncation
  *   /overlay-sidepanel  - Responsive sidepanel (hides when terminal < 100 cols)
  *   /overlay-toggle     - Toggle visibility demo (demonstrates OverlayHandle.setHidden)
+ *   /overlay-passive    - Non-capturing overlay demo (passive info panel alongside active overlay)
+ *   /overlay-focus      - Focus cycling and rendering order with non-capturing overlays
+ *   /overlay-streaming  - Multiple input panels with simulated streaming (Tab to cycle focus)
  */
 
 import type { ExtensionAPI, ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
-import type { OverlayAnchor, OverlayHandle, OverlayOptions, TUI } from "@mariozechner/pi-tui";
+import type { Component, OverlayAnchor, OverlayHandle, OverlayOptions, TUI } from "@mariozechner/pi-tui";
 import { matchesKey, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { spawn } from "child_process";
 
@@ -254,6 +257,42 @@ export default function (pi: ExtensionAPI) {
 				},
 			});
 			globalToggleHandle = null;
+		},
+	});
+
+	// Non-capturing overlay demo - passive info panel that doesn't steal focus
+	pi.registerCommand("overlay-passive", {
+		description: "Test non-capturing overlay (passive info panel alongside active overlay)",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			ctx.ui.setEditorText("");
+			await ctx.ui.custom<void>((tui, theme, _kb, done) => new PassiveDemoController(tui, theme, done), {
+				overlay: true,
+				overlayOptions: { anchor: "center", width: 48 },
+			});
+		},
+	});
+
+	// Focus cycling demo - demonstrates focus(), unfocus(), isFocused() and rendering order
+	pi.registerCommand("overlay-focus", {
+		description: "Test focus cycling and rendering order with non-capturing overlays",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			ctx.ui.setEditorText("");
+			await ctx.ui.custom<void>((tui, theme, _kb, done) => new FocusDemoController(tui, theme, done), {
+				overlay: true,
+				overlayOptions: { anchor: "bottom-center", width: 55, margin: { bottom: 1 } },
+			});
+		},
+	});
+
+	// Test multiple input panels with simulated streaming
+	pi.registerCommand("overlay-streaming", {
+		description: "Multiple input panels with simulated streaming (Tab to cycle focus)",
+		handler: async (_args: string, ctx: ExtensionCommandContext) => {
+			ctx.ui.setEditorText("");
+			await ctx.ui.custom<void>((tui, theme, _kb, done) => new StreamingInputController(tui, theme, done), {
+				overlay: true,
+				overlayOptions: { anchor: "bottom-center", width: 60, margin: { bottom: 1 } },
+			});
 		},
 	});
 }
@@ -878,4 +917,432 @@ class ToggleDemoComponent extends BaseOverlay {
 			"Toggle Demo",
 		);
 	}
+}
+
+// === Non-capturing passive overlay demo ===
+
+class PassiveDemoController extends BaseOverlay {
+	focused = false;
+	private typed = "";
+	private timerComponent: TimerPanel;
+	private timerHandle: OverlayHandle | null = null;
+	private interval: ReturnType<typeof setInterval> | null = null;
+	private inputCount = 0;
+	private lastInputDebug = "";
+
+	constructor(
+		private tui: TUI,
+		theme: Theme,
+		private done: () => void,
+	) {
+		super(theme);
+		this.timerComponent = new TimerPanel(theme);
+		this.timerHandle = this.tui.showOverlay(this.timerComponent, {
+			nonCapturing: true,
+			anchor: "top-right",
+			width: 22,
+			margin: { top: 1, right: 2 },
+		});
+		this.interval = setInterval(() => {
+			this.timerComponent.tick();
+			this.tui.requestRender();
+		}, 1000);
+	}
+
+	handleInput(data: string): void {
+		this.inputCount++;
+		this.lastInputDebug = `len=${data.length} c0=${data.charCodeAt(0)}`;
+		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+			this.cleanup();
+			this.done();
+		} else if (matchesKey(data, "backspace")) {
+			this.typed = this.typed.slice(0, -1);
+		} else if (data.length === 1 && data.charCodeAt(0) >= 32) {
+			this.typed += data;
+		}
+	}
+
+	render(width: number): string[] {
+		const th = this.theme;
+		const display = this.typed.length > 0 ? this.typed : th.fg("dim", "(type here)");
+		return this.box(
+			[
+				"",
+				` ${th.fg("dim", `focused=${this.focused} inputs=${this.inputCount}`)}`,
+				` ${th.fg("dim", `last: ${this.lastInputDebug || "none"}`)}`,
+				"",
+				` > ${display}`,
+				"",
+				th.fg("dim", " Type to prove input goes here."),
+				th.fg("dim", " Press Esc to close both."),
+				"",
+			],
+			width,
+			"Non-Capturing Demo",
+		);
+	}
+
+	private cleanup(): void {
+		if (this.interval) {
+			clearInterval(this.interval);
+			this.interval = null;
+		}
+		this.timerHandle?.hide();
+		this.timerHandle = null;
+	}
+
+	override dispose(): void {
+		this.cleanup();
+	}
+}
+
+class TimerPanel extends BaseOverlay {
+	private seconds = 0;
+
+	tick(): void {
+		this.seconds++;
+	}
+
+	render(width: number): string[] {
+		const th = this.theme;
+		const mins = Math.floor(this.seconds / 60);
+		const secs = this.seconds % 60;
+		const time = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+		return this.box([` ${th.fg("accent", time)}`, th.fg("dim", " nonCapturing: true")], width, "Timer");
+	}
+}
+
+// === Focus cycling demo ===
+
+class FocusDemoController extends BaseOverlay {
+	private panels: FocusPanel[] = [];
+	private handles: OverlayHandle[] = [];
+	private focusIndex = -1;
+
+	constructor(
+		private tui: TUI,
+		theme: Theme,
+		private done: () => void,
+	) {
+		super(theme);
+		const colors = ["error", "success", "accent"] as const;
+		const labels = ["Alpha", "Beta", "Gamma"];
+
+		for (let i = 0; i < 3; i++) {
+			const panel = new FocusPanel(
+				theme,
+				labels[i]!,
+				colors[i]!,
+				() => this.cycleFocus(),
+				() => this.close(),
+			);
+			const handle = this.tui.showOverlay(panel, {
+				nonCapturing: true,
+				row: 2,
+				col: 5 + i * 6,
+				width: 28,
+			});
+			panel.handle = handle;
+			this.panels.push(panel);
+			this.handles.push(handle);
+		}
+	}
+
+	private cycleFocus(): void {
+		if (this.focusIndex >= 0 && this.focusIndex < this.handles.length) {
+			this.handles[this.focusIndex]!.unfocus();
+		}
+		this.focusIndex++;
+		if (this.focusIndex >= this.handles.length) {
+			this.focusIndex = -1;
+		} else {
+			this.handles[this.focusIndex]!.focus();
+		}
+		this.tui.requestRender();
+	}
+
+	private close(): void {
+		for (const handle of this.handles) handle.hide();
+		this.handles = [];
+		this.panels = [];
+		this.done();
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+			this.close();
+		} else if (matchesKey(data, "tab")) {
+			this.cycleFocus();
+		}
+	}
+
+	render(width: number): string[] {
+		const th = this.theme;
+		const focused = this.focusIndex === -1 ? "Controller" : (this.panels[this.focusIndex]?.label ?? "?");
+		return this.box(
+			[
+				"",
+				` Current focus: ${th.fg("accent", focused)}`,
+				"",
+				" Three overlapping panels above are",
+				` all ${th.fg("accent", "nonCapturing")}. Press Tab to`,
+				" cycle focus() between them.",
+				"",
+				" Focused panel renders on top",
+				" (focus-based rendering order).",
+				"",
+				th.fg("dim", " Tab = cycle focus | Esc = close"),
+				"",
+			],
+			width,
+			"Focus Demo",
+		);
+	}
+
+	override dispose(): void {
+		for (const handle of this.handles) handle.hide();
+	}
+}
+
+class FocusPanel extends BaseOverlay {
+	handle: OverlayHandle | null = null;
+	readonly label: string;
+
+	constructor(
+		theme: Theme,
+		label: string,
+		private color: "error" | "success" | "accent",
+		private onTab: () => void,
+		private onClose: () => void,
+	) {
+		super(theme);
+		this.label = label;
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, "tab")) {
+			this.onTab();
+		} else if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+			this.onClose();
+		}
+	}
+
+	render(width: number): string[] {
+		const th = this.theme;
+		const focused = this.handle?.isFocused() ?? false;
+		const innerW = Math.max(1, width - 2);
+		const border = (c: string) => th.fg(this.color, c);
+		const padLine = (s: string) => truncateToWidth(s, innerW, "...", true);
+		const lines: string[] = [];
+
+		lines.push(border(`╭${"─".repeat(innerW)}╮`));
+		lines.push(border("│") + padLine(` ${th.fg("accent", this.label)}`) + border("│"));
+		lines.push(border("│") + padLine("") + border("│"));
+		if (focused) {
+			lines.push(border("│") + padLine(th.fg("success", " ● FOCUSED")) + border("│"));
+			lines.push(border("│") + padLine(th.fg("dim", " (receiving input)")) + border("│"));
+		} else {
+			lines.push(border("│") + padLine(th.fg("dim", " ○ unfocused")) + border("│"));
+			lines.push(border("│") + padLine(th.fg("dim", " (passive)")) + border("│"));
+		}
+		lines.push(border("│") + padLine("") + border("│"));
+		lines.push(border(`╰${"─".repeat(innerW)}╯`));
+
+		return lines;
+	}
+}
+
+// === Streaming input panel test (/overlay-streaming) ===
+
+class StreamingInputController extends BaseOverlay {
+	private panels: StreamingInputPanel[] = [];
+	private handles: OverlayHandle[] = [];
+	private focusIndex = -1; // -1 = controller focused, 0-2 = panel focused
+	private streamLines: string[] = [];
+	private streamInterval: ReturnType<typeof setInterval> | null = null;
+	private lineCount = 0;
+
+	constructor(
+		private tui: TUI,
+		theme: Theme,
+		private done: () => void,
+	) {
+		super(theme);
+
+		// Create 3 input panels as non-capturing overlays
+		const colors = ["error", "success", "accent"] as const;
+		const labels = ["Panel A", "Panel B", "Panel C"];
+
+		for (let i = 0; i < 3; i++) {
+			const panel = new StreamingInputPanel(
+				theme,
+				labels[i]!,
+				colors[i]!,
+				() => this.cycleFocus(),
+				() => this.close(),
+			);
+			const handle = this.tui.showOverlay(panel, {
+				nonCapturing: true,
+				row: 1 + i * 9,
+				col: 2,
+				width: 35,
+			});
+			panel.handle = handle;
+			this.panels.push(panel);
+			this.handles.push(handle);
+		}
+
+		// Start with controller focused (focusIndex = -1)
+
+		// Start simulated streaming
+		this.streamInterval = setInterval(() => {
+			this.lineCount++;
+			const timestamp = new Date().toLocaleTimeString();
+			this.streamLines.push(`[${timestamp}] Streaming line ${this.lineCount}...`);
+			if (this.streamLines.length > 8) {
+				this.streamLines.shift();
+			}
+			this.tui.requestRender();
+		}, 500);
+	}
+
+	private cycleFocus(): void {
+		// Unfocus current panel if any
+		if (this.focusIndex >= 0 && this.focusIndex < this.handles.length) {
+			this.handles[this.focusIndex]!.unfocus();
+		}
+
+		// Cycle: -1 (controller) → 0 → 1 → 2 → -1 ...
+		this.focusIndex++;
+		if (this.focusIndex >= this.handles.length) {
+			this.focusIndex = -1; // Back to controller
+		}
+
+		// Focus new panel if any
+		if (this.focusIndex >= 0) {
+			this.handles[this.focusIndex]!.focus();
+		}
+
+		this.tui.requestRender();
+	}
+
+	private close(): void {
+		if (this.streamInterval) {
+			clearInterval(this.streamInterval);
+			this.streamInterval = null;
+		}
+		for (const handle of this.handles) handle.hide();
+		this.handles = [];
+		this.panels = [];
+		this.done();
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+			this.close();
+		} else if (matchesKey(data, "tab")) {
+			this.cycleFocus();
+		}
+	}
+
+	render(width: number): string[] {
+		const th = this.theme;
+		const focusedLabel =
+			this.focusIndex === -1
+				? th.fg("success", "Controller (this panel)")
+				: (this.panels[this.focusIndex]?.label ?? "?");
+
+		const lines = [
+			"",
+			` Current focus: ${th.fg("accent", focusedLabel)}`,
+			"",
+			" Simulated streaming output:",
+			th.fg("dim", " ─".repeat((width - 2) / 2)),
+		];
+
+		for (const line of this.streamLines) {
+			lines.push(` ${th.fg("dim", line)}`);
+		}
+
+		while (lines.length < 12) {
+			lines.push("");
+		}
+
+		lines.push(th.fg("dim", " ─".repeat((width - 2) / 2)));
+		lines.push("");
+		lines.push(` Three ${th.fg("accent", "nonCapturing")} input panels on the left.`);
+		lines.push(" Tab cycles: Controller → Panel A → B → C → Controller");
+		lines.push(" Type in each panel to test input routing.");
+		lines.push("");
+		lines.push(th.fg("dim", " Tab = cycle focus | Esc = close all"));
+		lines.push("");
+
+		return this.box(lines, width, "Streaming + Input Test");
+	}
+
+	override dispose(): void {
+		this.close();
+	}
+}
+
+class StreamingInputPanel implements Component {
+	handle: OverlayHandle | null = null;
+	private typed = "";
+	readonly label: string;
+
+	constructor(
+		private theme: Theme,
+		label: string,
+		private color: "error" | "success" | "accent",
+		private onTab: () => void,
+		private onClose: () => void,
+	) {
+		this.label = label;
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, "tab")) {
+			this.onTab();
+		} else if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) {
+			this.onClose();
+		} else if (matchesKey(data, "backspace")) {
+			this.typed = this.typed.slice(0, -1);
+		} else if (data.length === 1 && data.charCodeAt(0) >= 32) {
+			this.typed += data;
+		}
+	}
+
+	render(width: number): string[] {
+		const th = this.theme;
+		const focused = this.handle?.isFocused() ?? false;
+		const innerW = Math.max(1, width - 2);
+		const border = (c: string) => th.fg(this.color, c);
+		const padLine = (s: string) => {
+			const w = visibleWidth(s);
+			return s + " ".repeat(Math.max(0, innerW - w));
+		};
+
+		const inputDisplay = this.typed.length > 0 ? this.typed : th.fg("dim", "(type here)");
+		const truncatedInput = truncateToWidth(` > ${inputDisplay}`, innerW, "...", true);
+
+		const lines: string[] = [];
+		lines.push(border(`╭${"─".repeat(innerW)}╮`));
+		lines.push(border("│") + padLine(` ${th.fg("accent", this.label)}`) + border("│"));
+		lines.push(border("│") + padLine("") + border("│"));
+		if (focused) {
+			lines.push(border("│") + padLine(th.fg("success", " ● FOCUSED")) + border("│"));
+			lines.push(border("│") + padLine(th.fg("dim", " (receiving input)")) + border("│"));
+		} else {
+			lines.push(border("│") + padLine(th.fg("dim", " ○ unfocused")) + border("│"));
+			lines.push(border("│") + padLine("") + border("│"));
+		}
+		lines.push(border("│") + padLine(truncatedInput) + border("│"));
+		lines.push(border("│") + padLine("") + border("│"));
+		lines.push(border("│") + padLine(th.fg("dim", " Tab | Esc")) + border("│"));
+		lines.push(border(`╰${"─".repeat(innerW)}╯`));
+
+		return lines;
+	}
+
+	invalidate(): void {}
 }
