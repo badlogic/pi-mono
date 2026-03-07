@@ -238,6 +238,18 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 			const params = buildParams(model, context, isOAuthToken, options);
 			options?.onPayload?.(params);
 			const anthropicStream = client.messages.stream({ ...params, stream: true }, { signal: options?.signal });
+			// Capture rate limit headers from the HTTP response as soon as it arrives (best-effort).
+			anthropicStream.response.then((httpResponse) => {
+				const rateLimits: Record<string, string> = {};
+				for (const key of httpResponse.headers.keys()) {
+					if (key.startsWith("anthropic-ratelimit-")) {
+						rateLimits[key] = httpResponse.headers.get(key) ?? "";
+					}
+				}
+				if (Object.keys(rateLimits).length > 0) {
+					output.rateLimits = rateLimits;
+				}
+			}).catch(() => { /* best-effort, don't fail the stream */ });
 			stream.push({ type: "start", partial: output });
 
 			type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string })) & { index: number };

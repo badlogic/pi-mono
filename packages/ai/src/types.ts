@@ -189,6 +189,12 @@ export interface AssistantMessage {
 	stopReason: StopReason;
 	errorMessage?: string;
 	timestamp: number; // Unix timestamp in milliseconds
+	/**
+	 * Raw rate limit headers from the LLM provider HTTP response, keyed by header name.
+	 * Currently populated for Anthropic (headers starting with `anthropic-ratelimit-`).
+	 * `undefined` for providers that do not expose response headers.
+	 */
+	rateLimits?: Record<string, string>;
 }
 
 export interface ToolResultMessage<TDetails = any> {
