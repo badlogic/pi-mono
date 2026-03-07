@@ -32,6 +32,8 @@ export type {
 	BashToolResultEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	BeforeProviderRequestEvent,
+	BeforeProviderRequestEventResult,
 	// Context
 	CompactOptions,
 	// Events - Agent

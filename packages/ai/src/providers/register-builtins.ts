@@ -1,13 +1,7 @@
 import { clearApiProviders, registerApiProvider } from "../api-registry.js";
-import type {
-	AssistantMessage,
-	AssistantMessageEvent,
-	Context,
-	Model,
-	SimpleStreamOptions,
-	StreamOptions,
-} from "../types.js";
+import type { AssistantMessage, AssistantMessageEvent, Context, Model, SimpleStreamOptions } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
+import type { BedrockOptions } from "./amazon-bedrock.js";
 import { streamAnthropic, streamSimpleAnthropic } from "./anthropic.js";
 import { streamAzureOpenAIResponses, streamSimpleAzureOpenAIResponses } from "./azure-openai-responses.js";
 import { streamGoogle, streamSimpleGoogle } from "./google.js";
@@ -22,7 +16,7 @@ interface BedrockProviderModule {
 	streamBedrock: (
 		model: Model<"bedrock-converse-stream">,
 		context: Context,
-		options?: StreamOptions,
+		options?: BedrockOptions,
 	) => AsyncIterable<AssistantMessageEvent>;
 	streamSimpleBedrock: (
 		model: Model<"bedrock-converse-stream">,
@@ -83,7 +77,7 @@ function createLazyLoadErrorMessage(model: Model<"bedrock-converse-stream">, err
 function streamBedrockLazy(
 	model: Model<"bedrock-converse-stream">,
 	context: Context,
-	options?: StreamOptions,
+	options?: BedrockOptions,
 ): AssistantMessageEventStream {
 	const outer = new AssistantMessageEventStream();
 

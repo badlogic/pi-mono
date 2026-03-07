@@ -79,9 +79,10 @@ export interface StreamOptions {
 	 */
 	sessionId?: string;
 	/**
-	 * Optional callback for inspecting provider payloads before sending.
+	 * Optional callback for inspecting or replacing provider payloads before sending.
+	 * Return undefined to keep the payload unchanged.
 	 */
-	onPayload?: (payload: unknown) => void;
+	onPayload?: (payload: unknown, model: Model<Api>) => unknown | undefined | Promise<unknown | undefined>;
 	/**
 	 * Optional custom HTTP headers to include in API requests.
 	 * Merged with provider defaults; can override default headers.

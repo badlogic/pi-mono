@@ -146,7 +146,7 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 			const client = new BedrockRuntimeClient(config);
 
 			const cacheRetention = resolveCacheRetention(options.cacheRetention);
-			const commandInput = {
+			let commandInput = {
 				modelId: model.id,
 				messages: convertMessages(context, model, cacheRetention),
 				system: buildSystemPrompt(context.systemPrompt, model, cacheRetention),
@@ -154,7 +154,10 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 				toolConfig: convertToolConfig(context.tools, options.toolChoice),
 				additionalModelRequestFields: buildAdditionalModelRequestFields(model, options),
 			};
-			options?.onPayload?.(commandInput);
+			const nextCommandInput = await options?.onPayload?.(commandInput, model);
+			if (nextCommandInput !== undefined) {
+				commandInput = nextCommandInput as typeof commandInput;
+			}
 			const command = new ConverseStreamCommand(commandInput);
 
 			const response = await client.send(command, { abortSignal: options.signal });
