@@ -1607,7 +1607,9 @@ export class DefaultPackageManager implements PackageManager {
 			themes: join(projectBaseDir, "themes"),
 		};
 		const userAgentsSkillsDir = join(homedir(), ".agents", "skills");
-		const projectAgentsSkillDirs = collectAncestorAgentsSkillDirs(this.cwd);
+		const projectAgentsSkillDirs = collectAncestorAgentsSkillDirs(this.cwd).filter(
+			(dir) => resolve(dir) !== resolve(userAgentsSkillsDir),
+		);
 
 		const addResources = (
 			resourceType: ResourceType,

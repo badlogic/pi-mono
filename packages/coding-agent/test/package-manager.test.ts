@@ -213,6 +213,42 @@ Content`,
 			expect(result.skills.some((r) => r.path === rootSkill && r.enabled)).toBe(true);
 			expect(result.skills.some((r) => r.path === middleSkill && r.enabled)).toBe(true);
 		});
+
+		it("should keep ~/.agents/skills user-scoped when cwd is under home in a non-git directory", async () => {
+			const previousHome = process.env.HOME;
+			process.env.HOME = tempDir;
+
+			try {
+				const cwd = join(tempDir, "scratch", "nested");
+				const localAgentDir = join(tempDir, ".pi", "agent");
+				const localSettingsManager = SettingsManager.inMemory();
+				mkdirSync(cwd, { recursive: true });
+				mkdirSync(localAgentDir, { recursive: true });
+
+				const homeSkill = join(tempDir, ".agents", "skills", "home-skill", "SKILL.md");
+				mkdirSync(join(tempDir, ".agents", "skills", "home-skill"), { recursive: true });
+				writeFileSync(homeSkill, "---\nname: home-skill\ndescription: home\n---\n");
+
+				const pm = new DefaultPackageManager({
+					cwd,
+					agentDir: localAgentDir,
+					settingsManager: localSettingsManager,
+				});
+
+				const result = await pm.resolve();
+				const matchingSkills = result.skills.filter((r) => r.path === homeSkill);
+				expect(matchingSkills).toHaveLength(1);
+				expect(matchingSkills[0]?.enabled).toBe(true);
+				expect(matchingSkills[0]?.metadata.scope).toBe("user");
+				expect(matchingSkills[0]?.metadata.source).toBe("auto");
+			} finally {
+				if (previousHome === undefined) {
+					delete process.env.HOME;
+				} else {
+					process.env.HOME = previousHome;
+				}
+			}
+		});
 	});
 
 	describe("ignore files", () => {
