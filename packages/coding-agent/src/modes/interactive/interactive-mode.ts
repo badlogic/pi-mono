@@ -859,6 +859,25 @@ export class InteractiveMode {
 		return lines.join("\n");
 	}
 
+	private getSkillSourceDir(skill: { sourceDir?: string; baseDir?: string; filePath: string }): string {
+		return skill.sourceDir ?? skill.baseDir ?? path.dirname(skill.filePath);
+	}
+
+	private formatSkillSourceDir(
+		sourceDir: string,
+		representativePath: string,
+		metadata: Map<string, { source: string; scope: string; origin: string }>,
+	): string {
+		const meta = this.findMetadata(representativePath, metadata) ?? this.findMetadata(sourceDir, metadata);
+		if (meta) {
+			const shortPath = this.getShortPath(sourceDir, meta.source);
+			const { label, scopeLabel } = this.getDisplaySourceInfo(meta.source, meta.scope);
+			const labelText = scopeLabel ? `${label} (${scopeLabel})` : label;
+			return `${labelText} ${shortPath}`;
+		}
+		return this.formatDisplayPath(sourceDir);
+	}
+
 	private showLoadedResources(options?: {
 		extensionPaths?: string[];
 		force?: boolean;
@@ -890,13 +909,26 @@ export class InteractiveMode {
 
 			const skills = skillsResult.skills;
 			if (skills.length > 0) {
-				const skillPaths = skills.map((s) => s.filePath);
-				const groups = this.buildScopeGroups(skillPaths, metadata);
-				const skillList = this.formatScopeGroups(groups, {
-					formatPath: (p) => this.formatDisplayPath(p),
-					formatPackagePath: (p, source) => this.getShortPath(p, source),
-				});
-				this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
+				const skillsByDir = new Map<string, { count: number; representativePath: string }>();
+				for (const s of skills) {
+					const sourceDir = this.getSkillSourceDir(s);
+					const existing = skillsByDir.get(sourceDir);
+					if (existing) {
+						existing.count += 1;
+					} else {
+						skillsByDir.set(sourceDir, { count: 1, representativePath: s.filePath });
+					}
+				}
+				const lines = Array.from(skillsByDir.entries())
+					.sort(([a], [b]) => a.localeCompare(b))
+					.map(([dir, info]) => {
+						const sourceInfo = this.formatSkillSourceDir(dir, info.representativePath, metadata);
+						return theme.fg(
+							"dim",
+							`  ${info.count} skill${info.count !== 1 ? "s" : ""} loaded from ${sourceInfo}`,
+						);
+					});
+				this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${lines.join("\n")}`, 0, 0));
 				this.chatContainer.addChild(new Spacer(1));
 			}
 
