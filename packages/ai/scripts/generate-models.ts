@@ -602,6 +602,42 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
+		// Process Aliyun CodingPlan models
+		if (data["alibaba-coding-plan-cn"]?.models) {
+			const aliyunBaseUrl = "https://coding.dashscope.aliyuncs.com/v1";
+			const provider = "aliyun-codingplan";
+
+			for (const [modelId, model] of Object.entries(data["alibaba-coding-plan-cn"].models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				const supportsImage = m.modalities?.input?.includes("image");
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					api: "openai-completions",
+					provider,
+					baseUrl: aliyunBaseUrl,
+					reasoning: m.reasoning === true,
+					input: supportsImage ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					compat: {
+						supportsDeveloperRole: false,
+						supportsUsageInStreaming: false,
+						maxTokensField: "max_tokens",
+					},
+					contextWindow: m.limit?.context || 202752,
+					maxTokens: m.limit?.output || 16384,
+				});
+			}
+		}
+
 		// Process Kimi For Coding models
 		if (data["kimi-for-coding"]?.models) {
 			for (const [modelId, model] of Object.entries(data["kimi-for-coding"].models)) {

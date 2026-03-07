@@ -53,6 +53,7 @@ pi
 
 | Provider | Environment Variable | `auth.json` key |
 |----------|----------------------|------------------|
+| Aliyun Coding Plan | `ALIYUN_CODING_PLAN_API_KEY` | `aliyun` |
 | Anthropic | `ANTHROPIC_API_KEY` | `anthropic` |
 | Azure OpenAI Responses | `AZURE_OPENAI_API_KEY` | `azure-openai-responses` |
 | OpenAI | `OPENAI_API_KEY` | `openai` |

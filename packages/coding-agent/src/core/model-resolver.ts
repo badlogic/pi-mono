@@ -35,6 +35,7 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	opencode: "claude-opus-4-6",
 	"opencode-go": "kimi-k2.5",
 	"kimi-coding": "kimi-k2-thinking",
+	"aliyun-codingplan": "glm-4.7",
 };
 
 export interface ScopedModel {
