@@ -76,6 +76,7 @@ export interface Skill {
 	filePath: string;
 	baseDir: string;
 	source: string;
+	sourceDir?: string;
 	disableModelInvocation: boolean;
 }
 
@@ -154,6 +155,7 @@ function loadSkillsFromDirInternal(
 	includeRootFiles: boolean,
 	ignoreMatcher?: IgnoreMatcher,
 	rootDir?: string,
+	sourceDir?: string,
 ): LoadSkillsResult {
 	const skills: Skill[] = [];
 	const diagnostics: ResourceDiagnostic[] = [];
@@ -163,6 +165,7 @@ function loadSkillsFromDirInternal(
 	}
 
 	const root = rootDir ?? dir;
+	const resolvedSourceDir = sourceDir ?? dir;
 	const ig = ignoreMatcher ?? ignore();
 	addIgnoreRules(ig, dir, root);
 
@@ -202,7 +205,7 @@ function loadSkillsFromDirInternal(
 			}
 
 			if (isDirectory) {
-				const subResult = loadSkillsFromDirInternal(fullPath, source, false, ig, root);
+				const subResult = loadSkillsFromDirInternal(fullPath, source, false, ig, root, resolvedSourceDir);
 				skills.push(...subResult.skills);
 				diagnostics.push(...subResult.diagnostics);
 				continue;
@@ -218,7 +221,7 @@ function loadSkillsFromDirInternal(
 				continue;
 			}
 
-			const result = loadSkillFromFile(fullPath, source);
+			const result = loadSkillFromFile(fullPath, source, resolvedSourceDir);
 			if (result.skill) {
 				skills.push(result.skill);
 			}
@@ -232,6 +235,7 @@ function loadSkillsFromDirInternal(
 function loadSkillFromFile(
 	filePath: string,
 	source: string,
+	sourceDir?: string,
 ): { skill: Skill | null; diagnostics: ResourceDiagnostic[] } {
 	const diagnostics: ResourceDiagnostic[] = [];
 
@@ -268,6 +272,7 @@ function loadSkillFromFile(
 				filePath,
 				baseDir: skillDir,
 				source,
+				sourceDir: sourceDir ?? skillDir,
 				disableModelInvocation: frontmatter["disable-model-invocation"] === true,
 			},
 			diagnostics,
@@ -435,9 +440,11 @@ export function loadSkills(options: LoadSkillsOptions = {}): LoadSkillsResult {
 			const stats = statSync(resolvedPath);
 			const source = getSource(resolvedPath);
 			if (stats.isDirectory()) {
-				addSkills(loadSkillsFromDirInternal(resolvedPath, source, true));
+				addSkills(loadSkillsFromDirInternal(resolvedPath, source, true, undefined, undefined, resolvedPath));
 			} else if (stats.isFile() && resolvedPath.endsWith(".md")) {
-				const result = loadSkillFromFile(resolvedPath, source);
+				const fileSourceDir =
+					basename(resolvedPath) === "SKILL.md" ? dirname(dirname(resolvedPath)) : dirname(resolvedPath);
+				const result = loadSkillFromFile(resolvedPath, source, fileSourceDir);
 				if (result.skill) {
 					addSkills({ skills: [result.skill], diagnostics: result.diagnostics });
 				} else {
