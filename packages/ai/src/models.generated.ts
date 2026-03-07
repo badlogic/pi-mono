@@ -3250,9 +3250,9 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
-				input: 0,
-				output: 0,
-				cacheRead: 0,
+				input: 0.5,
+				output: 3,
+				cacheRead: 0.05,
 				cacheWrite: 0,
 			},
 			contextWindow: 1048576,
@@ -4588,7 +4588,7 @@ export const MODELS = {
 	"mistral": {
 		"codestral-latest": {
 			id: "codestral-latest",
-			name: "Codestral",
+			name: "Codestral (latest)",
 			api: "mistral-conversations",
 			provider: "mistral",
 			baseUrl: "https://api.mistral.ai",
@@ -4639,7 +4639,7 @@ export const MODELS = {
 		} satisfies Model<"mistral-conversations">,
 		"devstral-medium-latest": {
 			id: "devstral-medium-latest",
-			name: "Devstral 2",
+			name: "Devstral 2 (latest)",
 			api: "mistral-conversations",
 			provider: "mistral",
 			baseUrl: "https://api.mistral.ai",
@@ -4707,7 +4707,7 @@ export const MODELS = {
 		} satisfies Model<"mistral-conversations">,
 		"magistral-medium-latest": {
 			id: "magistral-medium-latest",
-			name: "Magistral Medium",
+			name: "Magistral Medium (latest)",
 			api: "mistral-conversations",
 			provider: "mistral",
 			baseUrl: "https://api.mistral.ai",
@@ -4741,7 +4741,7 @@ export const MODELS = {
 		} satisfies Model<"mistral-conversations">,
 		"ministral-3b-latest": {
 			id: "ministral-3b-latest",
-			name: "Ministral 3B",
+			name: "Ministral 3B (latest)",
 			api: "mistral-conversations",
 			provider: "mistral",
 			baseUrl: "https://api.mistral.ai",
@@ -4758,7 +4758,7 @@ export const MODELS = {
 		} satisfies Model<"mistral-conversations">,
 		"ministral-8b-latest": {
 			id: "ministral-8b-latest",
-			name: "Ministral 8B",
+			name: "Ministral 8B (latest)",
 			api: "mistral-conversations",
 			provider: "mistral",
 			baseUrl: "https://api.mistral.ai",
@@ -4809,7 +4809,7 @@ export const MODELS = {
 		} satisfies Model<"mistral-conversations">,
 		"mistral-large-latest": {
 			id: "mistral-large-latest",
-			name: "Mistral Large",
+			name: "Mistral Large (latest)",
 			api: "mistral-conversations",
 			provider: "mistral",
 			baseUrl: "https://api.mistral.ai",
@@ -4860,7 +4860,7 @@ export const MODELS = {
 		} satisfies Model<"mistral-conversations">,
 		"mistral-medium-latest": {
 			id: "mistral-medium-latest",
-			name: "Mistral Medium",
+			name: "Mistral Medium (latest)",
 			api: "mistral-conversations",
 			provider: "mistral",
 			baseUrl: "https://api.mistral.ai",
@@ -4911,7 +4911,7 @@ export const MODELS = {
 		} satisfies Model<"mistral-conversations">,
 		"mistral-small-latest": {
 			id: "mistral-small-latest",
-			name: "Mistral Small",
+			name: "Mistral Small (latest)",
 			api: "mistral-conversations",
 			provider: "mistral",
 			baseUrl: "https://api.mistral.ai",
@@ -4996,7 +4996,7 @@ export const MODELS = {
 		} satisfies Model<"mistral-conversations">,
 		"pixtral-large-latest": {
 			id: "pixtral-large-latest",
-			name: "Pixtral Large",
+			name: "Pixtral Large (latest)",
 			api: "mistral-conversations",
 			provider: "mistral",
 			baseUrl: "https://api.mistral.ai",
@@ -12228,7 +12228,7 @@ export const MODELS = {
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
-			contextWindow: 1050000,
+			contextWindow: 200000,
 			maxTokens: 128000,
 		} satisfies Model<"anthropic-messages">,
 		"openai/gpt-oss-120b": {
@@ -12811,20 +12811,20 @@ export const MODELS = {
 		} satisfies Model<"anthropic-messages">,
 		"zai/glm-5": {
 			id: "zai/glm-5",
-			name: "GLM-5",
+			name: "GLM 5",
 			api: "anthropic-messages",
 			provider: "vercel-ai-gateway",
 			baseUrl: "https://ai-gateway.vercel.sh",
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 1,
-				output: 3.1999999999999997,
-				cacheRead: 0.19999999999999998,
+				input: 0.7999999999999999,
+				output: 2.56,
+				cacheRead: 0.16,
 				cacheWrite: 0,
 			},
 			contextWindow: 202800,
-			maxTokens: 131072,
+			maxTokens: 131100,
 		} satisfies Model<"anthropic-messages">,
 	},
 	"xai": {
