@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added digit keys (`0-9`) to the keybinding system, including Kitty CSI-u and legacy `modifyOtherKeys` support for bindings like `ctrl+1` ([#1905](https://github.com/badlogic/pi-mono/issues/1905))
+
 ## [0.56.3] - 2026-03-06
 
 ### Added

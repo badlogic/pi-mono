@@ -54,6 +54,15 @@ describe("matchesKey", () => {
 			setKittyProtocolActive(false);
 		});
 
+		it("should match ctrl+1 via Kitty CSI-u", () => {
+			setKittyProtocolActive(true);
+			const ctrlOne = "\x1b[49;5u";
+			assert.strictEqual(matchesKey(ctrlOne, "ctrl+1"), true);
+			assert.strictEqual(matchesKey(ctrlOne, "ctrl+2"), false);
+			assert.strictEqual(parseKey(ctrlOne), "ctrl+1");
+			setKittyProtocolActive(false);
+		});
+
 		it("should handle shifted key in format", () => {
 			setKittyProtocolActive(true);
 			// Format with shifted key: CSI codepoint:shifted:base;modifier u
@@ -202,6 +211,8 @@ describe("matchesKey", () => {
 			assert.strictEqual(parseKey("\x1bF"), "alt+right");
 			assert.strictEqual(matchesKey("\x1ba", "alt+a"), true);
 			assert.strictEqual(parseKey("\x1ba"), "alt+a");
+			assert.strictEqual(matchesKey("\x1b1", "alt+1"), true);
+			assert.strictEqual(parseKey("\x1b1"), "alt+1");
 			assert.strictEqual(matchesKey("\x1by", "alt+y"), true);
 			assert.strictEqual(parseKey("\x1by"), "alt+y");
 			assert.strictEqual(matchesKey("\x1bz", "alt+z"), true);
@@ -220,9 +231,22 @@ describe("matchesKey", () => {
 			assert.strictEqual(parseKey("\x1bF"), undefined);
 			assert.strictEqual(matchesKey("\x1ba", "alt+a"), false);
 			assert.strictEqual(parseKey("\x1ba"), undefined);
+			assert.strictEqual(matchesKey("\x1b1", "alt+1"), false);
+			assert.strictEqual(parseKey("\x1b1"), undefined);
 			assert.strictEqual(matchesKey("\x1by", "alt+y"), false);
 			assert.strictEqual(parseKey("\x1by"), undefined);
 			setKittyProtocolActive(false);
+		});
+
+		it("should match modifyOtherKeys digits", () => {
+			setKittyProtocolActive(false);
+			const ctrlOne = "\x1b[27;5;49~";
+			const shiftOne = "\x1b[27;2;49~";
+			assert.strictEqual(matchesKey(ctrlOne, "ctrl+1"), true);
+			assert.strictEqual(matchesKey(ctrlOne, "ctrl+2"), false);
+			assert.strictEqual(matchesKey(shiftOne, "shift+1"), true);
+			assert.strictEqual(parseKey(ctrlOne), "ctrl+1");
+			assert.strictEqual(parseKey(shiftOne), "shift+1");
 		});
 
 		it("should match arrow keys", () => {
@@ -292,6 +316,12 @@ describe("parseKey", () => {
 			setKittyProtocolActive(true);
 			const latinCtrlC = "\x1b[99;5u";
 			assert.strictEqual(parseKey(latinCtrlC), "ctrl+c");
+			setKittyProtocolActive(false);
+		});
+
+		it("should parse Kitty digits", () => {
+			setKittyProtocolActive(true);
+			assert.strictEqual(parseKey("\x1b[49u"), "1");
 			setKittyProtocolActive(false);
 		});
 
