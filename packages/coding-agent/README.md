@@ -211,7 +211,7 @@ pi --session <path>    # Use specific session file or ID
 
 <p align="center"><img src="docs/images/tree-view.png" alt="Tree View" width="600"></p>
 
-- Search by typing, page with ←/→
+- Search by typing, fold/unfold and jump between branches with Ctrl+←/Ctrl+→ or Alt+←/Alt+→, page with ←/→
 - Filter modes (Ctrl+O): default → no-tools → user-only → labeled-only → all
 - Press `l` to label entries as bookmarks
 
