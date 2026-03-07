@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.57.1] - 2026-03-07
 
 ### New Features
 - Tree branch folding and segment-jump navigation in `/tree`, with `Ctrl+←`/`Ctrl+→` and `Alt+←`/`Alt+→` shortcuts while `←`/`→` and `Page Up`/`Page Down` remain available for paging. See [docs/tree.md](docs/tree.md) and [docs/keybindings.md](docs/keybindings.md).
