@@ -144,11 +144,6 @@
 - Fixed Bedrock `AWS_PROFILE` region resolution by honoring profile `region` values ([#1800](https://github.com/badlogic/pi-mono/issues/1800)).
 - Fixed Gemini 3.1 thinking-level detection for `google` and `google-vertex` providers ([#1785](https://github.com/badlogic/pi-mono/issues/1785)).
 - Fixed browser bundling compatibility for `@mariozechner/pi-ai` by removing Node-only side effects from default browser import paths ([#1814](https://github.com/badlogic/pi-mono/issues/1814)).
-=======
-
-- Added `session_directory` extension event that fires before session manager creation, allowing extensions to customize the session directory path based on cwd and other factors. CLI `--session-dir` flag takes precedence over extension-provided paths ([#1729](https://github.com/badlogic/pi-mono/issues/1729)).
->>>>>>> ddf3c31b (feat(coding-agent): add session_directory extension event)
-
 ## [0.55.4] - 2026-03-02
 
 ### New Features

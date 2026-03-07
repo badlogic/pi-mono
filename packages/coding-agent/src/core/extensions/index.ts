@@ -115,6 +115,7 @@ export type {
 	SessionBeforeTreeResult,
 	SessionCompactEvent,
 	SessionDirectoryEvent,
+	SessionDirectoryHandler,
 	SessionDirectoryResult,
 	SessionEvent,
 	SessionForkEvent,

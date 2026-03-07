@@ -392,8 +392,6 @@ export interface ResourcesDiscoverResult {
 export interface SessionDirectoryEvent {
 	type: "session_directory";
 	cwd: string;
-	/** CLI-provided session directory (if any) */
-	cliSessionDir: string | undefined;
 }
 
 /** Fired on initial session load */
@@ -880,6 +878,11 @@ export interface SessionDirectoryResult {
 	sessionDir?: string;
 }
 
+/** Special startup-only handler. Unlike other events, this receives no ExtensionContext. */
+export type SessionDirectoryHandler = (
+	event: SessionDirectoryEvent,
+) => Promise<SessionDirectoryResult | undefined> | SessionDirectoryResult | undefined;
+
 export interface SessionBeforeSwitchResult {
 	cancel?: boolean;
 }
@@ -950,7 +953,7 @@ export interface ExtensionAPI {
 	// =========================================================================
 
 	on(event: "resources_discover", handler: ExtensionHandler<ResourcesDiscoverEvent, ResourcesDiscoverResult>): void;
-	on(event: "session_directory", handler: ExtensionHandler<SessionDirectoryEvent, SessionDirectoryResult>): void;
+	on(event: "session_directory", handler: SessionDirectoryHandler): void;
 	on(event: "session_start", handler: ExtensionHandler<SessionStartEvent>): void;
 	on(
 		event: "session_before_switch",
