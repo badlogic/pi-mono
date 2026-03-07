@@ -376,7 +376,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 		const extensionPaths = this.noExtensions
 			? cliEnabledExtensions
-			: this.mergePaths(enabledExtensions, cliEnabledExtensions);
+			: this.mergePaths(cliEnabledExtensions, enabledExtensions);
 
 		const extensionsResult = await loadExtensions(extensionPaths, this.cwd, this.eventBus);
 		const inlineExtensions = await this.loadExtensionFactories(extensionsResult.runtime);
