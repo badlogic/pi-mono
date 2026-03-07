@@ -2,8 +2,13 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- RPC mode now uses strict LF-delimited JSONL framing. Clients must split records on `\n` only instead of using generic line readers such as Node `readline`, which also split on Unicode separators inside JSON payloads ([#1911](https://github.com/badlogic/pi-mono/issues/1911))
+
 ### Fixed
 
+- Fixed RPC mode stdin/stdout framing to use strict LF-delimited JSONL instead of `readline`, so payloads containing `U+2028` or `U+2029` no longer corrupt command or event streams ([#1911](https://github.com/badlogic/pi-mono/issues/1911))
 - Fixed `pi config` misclassifying `~/.agents/skills` as project-scoped in non-git directories under `$HOME`, so toggling those skills no longer writes project overrides to `.pi/settings.json` ([#1915](https://github.com/badlogic/pi-mono/issues/1915))
 
 ## [0.56.3] - 2026-03-06

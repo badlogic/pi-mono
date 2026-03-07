@@ -395,6 +395,8 @@ For non-Node.js integrations, use RPC mode over stdin/stdout:
 pi --mode rpc
 ```
 
+RPC mode uses strict LF-delimited JSONL framing. Clients must split records on `\n` only. Do not use generic line readers like Node `readline`, which also split on Unicode separators inside JSON payloads.
+
 See [docs/rpc.md](docs/rpc.md) for the protocol.
 
 ---
