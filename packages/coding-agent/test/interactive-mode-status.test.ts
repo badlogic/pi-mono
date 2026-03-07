@@ -152,17 +152,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 				(InteractiveMode as any).prototype.findMetadata.call(fakeThis, p, metadata),
 			getSkillSourceDir: (skill: { sourceDir?: string; baseDir?: string; filePath: string }) =>
 				(InteractiveMode as any).prototype.getSkillSourceDir.call(fakeThis, skill),
-			formatSkillSourceDir: (
-				sourceDir: string,
-				representativePath: string,
-				metadata: Map<string, { source: string; scope: string; origin: string }>,
-			) =>
-				(InteractiveMode as any).prototype.formatSkillSourceDir.call(
-					fakeThis,
-					sourceDir,
-					representativePath,
-					metadata,
-				),
+			getScopeGroup: (source: string, scope: string) =>
+				(InteractiveMode as any).prototype.getScopeGroup.call(fakeThis, source, scope),
+			isPackageSource: (source: string) => (InteractiveMode as any).prototype.isPackageSource.call(fakeThis, source),
 			formatDiagnostics: () => "diagnostics",
 		};
 
@@ -216,6 +208,45 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(output).toContain("1 skill loaded from /tmp/skill");
 	});
 
+	test("shows 'user' scope header for auto-discovered user skills", () => {
+		const sourceDir = "/home/user/.agents/skills";
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			skills: [
+				{ filePath: `${sourceDir}/foo/SKILL.md`, sourceDir },
+				{ filePath: `${sourceDir}/bar/SKILL.md`, sourceDir },
+			],
+			pathMetadata: new Map([[sourceDir, { source: "auto", scope: "user", origin: "top-level" }]]),
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		const output = renderAll(fakeThis.chatContainer);
+		expect(output).toContain("user");
+		expect(output).toContain(`2 skills loaded from ${sourceDir}`);
+		expect(output).not.toContain("auto");
+	});
+
+	test("shows 'project' scope header for auto-discovered project skills", () => {
+		const sourceDir = "/home/user/project/.agents/skills";
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			skills: [{ filePath: `${sourceDir}/deploy/SKILL.md`, sourceDir }],
+			pathMetadata: new Map([[sourceDir, { source: "auto", scope: "project", origin: "top-level" }]]),
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		const output = renderAll(fakeThis.chatContainer);
+		expect(output).toContain("project");
+		expect(output).toContain(`1 skill loaded from ${sourceDir}`);
+		expect(output).not.toContain("auto");
+	});
+
 	test("shows package source info for package-provided skills", () => {
 		const packageRoot = "/tmp/node_modules/@acme/pi-skills";
 		const sourceDir = `${packageRoot}/skills`;
@@ -233,7 +264,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.chatContainer);
-		expect(output).toContain("1 skill loaded from npm:@acme/pi-skills skills");
-		expect(output).not.toContain(`1 skill loaded from ${sourceDir}`);
+		expect(output).toContain("path");
+		expect(output).toContain("npm:@acme/pi-skills");
+		expect(output).toContain("1 skill loaded from skills");
 	});
 });
