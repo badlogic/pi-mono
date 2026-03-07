@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `isRequestTooLarge()` to detect HTTP 413 / request payload size errors, separate from token-based context overflow detection
+
 ## [0.57.0] - 2026-03-07
 
 ### Added

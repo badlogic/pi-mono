@@ -30,7 +30,7 @@ function createAssistantMessage(text: string, overrides?: Partial<AssistantMessa
 		content: [{ type: "text", text }],
 		api: "anthropic-messages",
 		provider: "anthropic",
-		model: "mock",
+		model: "claude-sonnet-4-5",
 		usage: {
 			input: 0,
 			output: 0,
@@ -67,10 +67,18 @@ describe("AgentSession retry", () => {
 		}
 	});
 
-	function createSession(options?: { failCount?: number; maxRetries?: number; delayAssistantMessageEndMs?: number }) {
+	function createSession(options?: {
+		failCount?: number;
+		maxRetries?: number;
+		delayAssistantMessageEndMs?: number;
+		errorMessage?: string;
+		compactionEnabled?: boolean;
+	}) {
 		const failCount = options?.failCount ?? 1;
 		const maxRetries = options?.maxRetries ?? 3;
 		const delayAssistantMessageEndMs = options?.delayAssistantMessageEndMs ?? 0;
+		const errorMessage = options?.errorMessage ?? "overloaded_error";
+		const compactionEnabled = options?.compactionEnabled ?? true;
 		let callCount = 0;
 
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
@@ -84,7 +92,7 @@ describe("AgentSession retry", () => {
 					if (callCount <= failCount) {
 						const msg = createAssistantMessage("", {
 							stopReason: "error",
-							errorMessage: "overloaded_error",
+							errorMessage,
 						});
 						stream.push({ type: "start", partial: msg });
 						stream.push({ type: "error", reason: "error", error: msg });
@@ -103,7 +111,10 @@ describe("AgentSession retry", () => {
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRegistry = new ModelRegistry(authStorage, tempDir);
 		authStorage.setRuntimeApiKey("anthropic", "test-key");
-		settingsManager.applyOverrides({ retry: { enabled: true, maxRetries, baseDelayMs: 1 } });
+		settingsManager.applyOverrides({
+			retry: { enabled: true, maxRetries, baseDelayMs: 1 },
+			compaction: { enabled: compactionEnabled },
+		});
 
 		session = new AgentSession({
 			agent,
@@ -167,5 +178,55 @@ describe("AgentSession retry", () => {
 
 		expect(created.getCallCount()).toBe(2);
 		expect(created.session.isRetrying).toBe(false);
+	});
+
+	it("recovers from request-too-large even when auto-compaction is disabled", async () => {
+		const created = createSession({
+			failCount: 1,
+			errorMessage: '413 {"error":{"type":"request_too_large","message":"Request exceeds the maximum size"}}',
+			compactionEnabled: false,
+		});
+
+		created.session.agent.appendMessage({
+			role: "toolResult",
+			toolCallId: "call-1",
+			toolName: "read",
+			content: [
+				{ type: "text", text: "Read image-1.png [image/png]" },
+				{ type: "image", data: "image-1", mimeType: "image/png" },
+			],
+			isError: false,
+			timestamp: Date.now(),
+		});
+		created.session.agent.appendMessage({
+			role: "toolResult",
+			toolCallId: "call-2",
+			toolName: "read",
+			content: [
+				{ type: "text", text: "Read image-2.png [image/png]" },
+				{ type: "image", data: "image-2", mimeType: "image/png" },
+			],
+			isError: false,
+			timestamp: Date.now(),
+		});
+
+		await created.session.prompt("yoo");
+		await created.session.agent.waitForIdle();
+		await new Promise((resolve) => setTimeout(resolve, 150));
+		await created.session.agent.waitForIdle();
+
+		expect(created.getCallCount()).toBe(2);
+
+		const toolResults = created.session.agent.state.messages.filter((m) => m.role === "toolResult");
+		expect(toolResults).toHaveLength(2);
+		const first = toolResults[0];
+		if (first.role !== "toolResult") throw new Error("expected toolResult");
+		expect(first.content[1].type).toBe("text");
+		if (first.content[1].type !== "text") throw new Error("expected text placeholder");
+		expect(first.content[1].text).toContain("image omitted");
+
+		const second = toolResults[1];
+		if (second.role !== "toolResult") throw new Error("expected toolResult");
+		expect(second.content[1].type).toBe("image");
 	});
 });
