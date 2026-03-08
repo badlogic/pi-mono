@@ -335,7 +335,7 @@ const handler: MomHandler = {
 // Start
 // ============================================================================
 
-log.logStartup(workingDir, sandbox.type === "host" ? "host" : `docker:${sandbox.container}`);
+log.logStartup(workingDir, sandbox.type === "host" ? "host" : `${sandbox.type}:${sandbox.container}`);
 
 // Shared store for attachment downloads (also used per-channel in getState)
 const sharedStore = new ChannelStore({ workingDir, botToken: MOM_SLACK_BOT_TOKEN! });

@@ -1,19 +1,24 @@
-# Mom Docker Sandbox
+# Mom Sandbox Guide
 
 ## Overview
 
-Mom can run tools either directly on the host or inside a Docker container for isolation.
+Mom can run tools either directly on the host or inside a container for isolation. Two container options are available:
 
-## Why Docker?
+- **Docker** - Cross-platform, widely supported
+- **Apple container** - Native macOS solution (requires macOS 26+ with Apple silicon)
+
+## Why Use a Sandbox?
 
 When mom runs on your machine and is accessible via Slack, anyone in your workspace could potentially:
 - Execute arbitrary commands on your machine
 - Access your files, credentials, etc.
 - Cause damage via prompt injection
 
-The Docker sandbox isolates mom's tools to a container where she can only access what you explicitly mount.
+The sandbox isolates mom's tools to a container where she can only access what you explicitly mount.
 
 ## Quick Start
+
+### Docker (Cross-platform)
 
 ```bash
 # 1. Create and start the container
@@ -22,6 +27,17 @@ cd packages/mom
 
 # 2. Run mom with Docker sandbox
 mom --sandbox=docker:mom-sandbox ./data
+```
+
+### Apple Container (macOS 26+, Apple silicon)
+
+```bash
+# 1. Create and start the container
+cd packages/mom
+./apple.sh create ./data
+
+# 2. Run mom with Apple container sandbox
+mom --sandbox=apple:mom-sandbox ./data
 ```
 
 ## How It Works
@@ -36,7 +52,7 @@ mom --sandbox=docker:mom-sandbox ./data
 │  └── Tool execution ──────┐                         │
 │                           ▼                         │
 │              ┌─────────────────────────┐            │
-│              │  Docker Container       │            │
+│              │  Docker/Apple Container │            │
 │              │  ├── bash, git, gh, etc │            │
 │              │  └── /workspace (mount) │            │
 │              └─────────────────────────┘            │
@@ -47,7 +63,7 @@ mom --sandbox=docker:mom-sandbox ./data
 - All tool execution (`bash`, `read`, `write`, `edit`) happens inside the container
 - Only `/workspace` (your data dir) is accessible to the container
 
-## Container Setup
+## Docker Setup
 
 Use the provided script:
 
@@ -64,6 +80,39 @@ Or manually:
 
 ```bash
 docker run -d --name mom-sandbox \
+  -v /path/to/mom-data:/workspace \
+  alpine:latest tail -f /dev/null
+```
+
+## Apple Container Setup
+
+**Requirements:**
+- macOS 26 (Tahoe) or later
+- Apple silicon (M1/M2/M3/M4)
+- [Apple container CLI](https://github.com/apple/container/releases) installed
+
+Use the provided script:
+
+```bash
+./apple.sh create <data-dir>   # Create and start container
+./apple.sh start               # Start existing container
+./apple.sh stop                # Stop container
+./apple.sh remove              # Remove container
+./apple.sh status              # Check if running
+./apple.sh shell               # Open shell in container
+```
+
+Or manually:
+
+```bash
+# Start container system (if not running)
+container system start
+
+# Pull image
+container image pull alpine:latest
+
+# Create and run container
+container run -d --name mom-sandbox \
   -v /path/to/mom-data:/workspace \
   alpine:latest tail -f /dev/null
 ```
@@ -109,6 +158,9 @@ mom ./data
 
 # Run with Docker sandbox
 mom --sandbox=docker:mom-sandbox ./data
+
+# Run with Apple container sandbox (macOS 26+, Apple silicon)
+mom --sandbox=apple:mom-sandbox ./data
 
 # Explicit host mode
 mom --sandbox=host ./data

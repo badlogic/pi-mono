@@ -1,6 +1,9 @@
 import { spawn } from "child_process";
 
-export type SandboxConfig = { type: "host" } | { type: "docker"; container: string };
+export type SandboxConfig =
+	| { type: "host" }
+	| { type: "docker"; container: string }
+	| { type: "apple"; container: string };
 
 export function parseSandboxArg(value: string): SandboxConfig {
 	if (value === "host") {
@@ -14,7 +17,15 @@ export function parseSandboxArg(value: string): SandboxConfig {
 		}
 		return { type: "docker", container };
 	}
-	console.error(`Error: Invalid sandbox type '${value}'. Use 'host' or 'docker:<container-name>'`);
+	if (value.startsWith("apple:")) {
+		const container = value.slice("apple:".length);
+		if (!container) {
+			console.error("Error: apple sandbox requires container name (e.g., apple:mom-sandbox)");
+			process.exit(1);
+		}
+		return { type: "apple", container };
+	}
+	console.error(`Error: Invalid sandbox type '${value}'. Use 'host', 'docker:<container-name>', or 'apple:<container-name>'`);
 	process.exit(1);
 }
 
@@ -23,29 +34,103 @@ export async function validateSandbox(config: SandboxConfig): Promise<void> {
 		return;
 	}
 
-	// Check if Docker is available
-	try {
-		await execSimple("docker", ["--version"]);
-	} catch {
-		console.error("Error: Docker is not installed or not in PATH");
-		process.exit(1);
-	}
-
-	// Check if container exists and is running
-	try {
-		const result = await execSimple("docker", ["inspect", "-f", "{{.State.Running}}", config.container]);
-		if (result.trim() !== "true") {
-			console.error(`Error: Container '${config.container}' is not running.`);
-			console.error(`Start it with: docker start ${config.container}`);
+	if (config.type === "docker") {
+		// Check if Docker is available
+		try {
+			await execSimple("docker", ["--version"]);
+		} catch {
+			console.error("Error: Docker is not installed or not in PATH");
 			process.exit(1);
 		}
-	} catch {
-		console.error(`Error: Container '${config.container}' does not exist.`);
-		console.error("Create it with: ./docker.sh create <data-dir>");
-		process.exit(1);
+
+		// Check if container exists and is running
+		try {
+			const result = await execSimple("docker", ["inspect", "-f", "{{.State.Running}}", config.container]);
+			if (result.trim() !== "true") {
+				console.error(`Error: Container '${config.container}' is not running.`);
+				console.error(`Start it with: docker start ${config.container}`);
+				process.exit(1);
+			}
+		} catch {
+			console.error(`Error: Container '${config.container}' does not exist.`);
+			console.error("Create it with: ./docker.sh create <data-dir>");
+			process.exit(1);
+		}
+
+		console.log(`  Docker container '${config.container}' is running.`);
 	}
 
-	console.log(`  Docker container '${config.container}' is running.`);
+	if (config.type === "apple") {
+		// Check if running on macOS
+		if (process.platform !== "darwin") {
+			console.error("Error: Apple container is only available on macOS");
+			process.exit(1);
+		}
+
+		// Check macOS version (requires macOS 26+)
+		try {
+			const swVers = await execSimple("sw_vers", ["-productVersion"]);
+			const version = swVers.trim();
+			const majorVersion = parseInt(version.split(".")[0], 10);
+			if (majorVersion < 26) {
+				console.error(`Error: Apple container requires macOS 26 (Tahoe) or later. Current version: ${version}`);
+				process.exit(1);
+			}
+		} catch {
+			console.error("Error: Failed to detect macOS version");
+			process.exit(1);
+		}
+
+		// Check if container CLI is available
+		try {
+			await execSimple("container", ["--version"]);
+		} catch {
+			console.error("Error: Apple container CLI is not installed or not in PATH");
+			console.error("Install it from: https://github.com/apple/container/releases");
+			process.exit(1);
+		}
+
+		// Check if container system is running
+		try {
+			const statusResult = await execSimple("container", ["system", "status", "--format", "json"]);
+			const status = JSON.parse(statusResult);
+			if (status.status !== "running") {
+				console.error("Error: Apple container system is not running.");
+				console.error("Start it with: container system start");
+				process.exit(1);
+			}
+		} catch {
+			console.error("Error: Apple container system is not running.");
+			console.error("Start it with: container system start");
+			process.exit(1);
+		}
+
+		// Check if container exists and is running
+		try {
+			const listResult = await execSimple("container", ["list", "--format", "json"]);
+			const containers = JSON.parse(listResult);
+			interface ContainerInfo {
+				configuration?: { id: string };
+				status: string;
+			}
+			const container = containers.find((c: ContainerInfo) => c.configuration?.id === config.container);
+			if (!container) {
+				console.error(`Error: Container '${config.container}' does not exist.`);
+				console.error("Create it with: ./apple.sh create <data-dir>");
+				process.exit(1);
+			}
+			if (container.status !== "running") {
+				console.error(`Error: Container '${config.container}' is not running.`);
+				console.error(`Start it with: container start ${config.container}`);
+				process.exit(1);
+			}
+		} catch (e) {
+			console.error(`Error: Failed to check container status: ${e}`);
+			process.exit(1);
+		}
+
+		console.log(`  Apple container '${config.container}' is running.`);
+	}
 }
 
 function execSimple(cmd: string, args: string[]): Promise<string> {
@@ -67,13 +152,16 @@ function execSimple(cmd: string, args: string[]): Promise<string> {
 }
 
 /**
- * Create an executor that runs commands either on host or in Docker container
+ * Create an executor that runs commands either on host or in Docker/Apple container
  */
 export function createExecutor(config: SandboxConfig): Executor {
 	if (config.type === "host") {
 		return new HostExecutor();
 	}
-	return new DockerExecutor(config.container);
+	if (config.type === "docker") {
+		return new DockerExecutor(config.container);
+	}
+	return new AppleExecutor(config.container);
 }
 
 export interface Executor {
@@ -188,6 +276,22 @@ class DockerExecutor implements Executor {
 
 	getWorkspacePath(_hostPath: string): string {
 		// Docker container sees /workspace
+		return "/workspace";
+	}
+}
+
+class AppleExecutor implements Executor {
+	constructor(private container: string) {}
+
+	async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
+		// Wrap command for container exec
+		const appleCmd = `container exec ${this.container} sh -c ${shellEscape(command)}`;
+		const hostExecutor = new HostExecutor();
+		return hostExecutor.exec(appleCmd, options);
+	}
+
+	getWorkspacePath(_hostPath: string): string {
+		// Apple container sees /workspace
 		return "/workspace";
 	}
 }

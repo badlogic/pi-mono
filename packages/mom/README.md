@@ -8,7 +8,7 @@ A Slack bot powered by an LLM that can execute bash commands, read/write files, 
 - **Self-Managing**: Installs tools (apk, npm, etc.), writes scripts, configures credentials. Zero setup from you
 - **Slack Integration**: Responds to @mentions in channels and DMs
 - **Full Bash Access**: Execute any command, read/write files, automate workflows
-- **Docker Sandbox**: Isolate mom in a container (recommended for all use)
+- **Sandbox Options**: Isolate mom in Docker or Apple container (recommended for all use)
 - **Persistent Workspace**: All conversation history, files, and tools stored in one directory you control
 - **Working Memory & Custom Tools**: Mom remembers context across sessions and creates workflow-specific CLI tools ([aka "skills"](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)) for your tasks
 - **Thread-Based Details**: Clean main messages with verbose tool details in threads
@@ -66,15 +66,18 @@ export MOM_SLACK_BOT_TOKEN=xoxb-...
 export ANTHROPIC_API_KEY=sk-ant-...
 # Option 2: use /login command in pi agent, then copy/link auth.json to ~/.pi/mom/
 
-# Create Docker sandbox (recommended)
+# Option A: Docker sandbox (recommended for all platforms)
 docker run -d \
   --name mom-sandbox \
   -v $(pwd)/data:/workspace \
   alpine:latest \
   tail -f /dev/null
 
-# Run mom in Docker mode
 mom --sandbox=docker:mom-sandbox ./data
+
+# Option B: Apple container sandbox (macOS 26+ with Apple silicon)
+./apple.sh create ./data
+mom --sandbox=apple:mom-sandbox ./data
 
 # Mom will install any tools she needs herself (git, jq, etc.)
 ```
@@ -87,6 +90,7 @@ mom [options] <working-directory>
 Options:
   --sandbox=host              Run tools on host (not recommended)
   --sandbox=docker:<name>     Run tools in Docker container (recommended)
+  --sandbox=apple:<name>      Run tools in Apple container (macOS 26+, Apple silicon)
 ```
 
 ## Environment Variables
