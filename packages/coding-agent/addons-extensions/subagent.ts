@@ -138,8 +138,18 @@ const SOFT_MAX_MAIN_AGENT_TRACKED_SUBAGENTS = 8;
 const MAX_TRACKED_SUBAGENTS = 40;
 const SUBAGENT_RESULT_CHAT_PREVIEW_CHARS = 220;
 const AUTO_INGEST_TRIGGER_TEXT = "[subagent-auto-ingest]";
-const DISPATCH_TOOL_NAMES = ["task", "subagent_create", "subagent_continue", "subagent_list", "subagent_clear_finished"] as const;
+const DISPATCH_TOOL_NAMES = ["todo_write", "subagent_create", "subagent_continue", "subagent_list", "subagent_clear_finished"] as const;
 const DISPATCH_TOOL_SET = new Set<string>(DISPATCH_TOOL_NAMES);
+const CANONICAL_NONREGULAR_SUBAGENT_TOOL_NAMES = [...DISPATCH_TOOL_NAMES, "subagent_kill"] as const;
+const CANONICAL_NONREGULAR_SUBAGENT_TOOL_SET = new Set<string>(CANONICAL_NONREGULAR_SUBAGENT_TOOL_NAMES);
+const LEGACY_SUBAGENT_TOOL_NAMES = [
+	"subagent",
+	"subagent_start",
+	"subagent_wait",
+	"subagent_send",
+	"subagent_stop",
+] as const;
+const LEGACY_SUBAGENT_TOOL_SET = new Set<string>(LEGACY_SUBAGENT_TOOL_NAMES);
 const VALID_THINKING_LEVELS: ReadonlySet<ThinkingLevel> = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
 const DEFAULT_SUBAGENT_THINKING: ThinkingLevel = "high";
 const START_ACTIVITY_TIMEOUT_MS = 45_000;
@@ -156,11 +166,27 @@ function hasExplicitSubagentRequest(text: string): boolean {
 	const patterns: RegExp[] = [
 		/\buse\s+subagents?\b/i,
 		/\bspawn\s+subagents?\b/i,
+		/\bspawn\s+\d+\s+\w+\s+agents?\b/i,
+		/\bspawn\s+\d+\s+agents?\b/i,
+		/\buse\s+the\s+\w+\s+agent\b/i,
+		/\b(?:scout|planner|worker|tester|reviewer|documenter|coder)\s+agents?\b/i,
 		/\bdispatch\s+subagents?\b/i,
 		/\bdelegate\s+to\s+subagents?\b/i,
 		/\bparallel\s+subagents?\b/i,
+		/\bparallel\b.*\bagents?\b/i,
 		/\bsubagent_create\b/i,
 	];
+	const knownAgentNames = Array.from(agentConfigs.keys()).map((name) => name.toLowerCase());
+	if (
+		knownAgentNames.some(
+			(name) =>
+				normalized.includes(`${name} agent`) ||
+				normalized.includes(`${name} agents`) ||
+				(normalized.includes(name) && (normalized.includes("spawn") || normalized.includes("parallel"))),
+		)
+	) {
+		return true;
+	}
 	return patterns.some((pattern) => pattern.test(normalized));
 }
 
@@ -175,10 +201,27 @@ function setMainAgentToolMode(pi: ExtensionAPI, mode: "regular" | "dispatch"): v
 	}
 
 	const baseline = defaultMainAgentTools.length > 0 ? defaultMainAgentTools : pi.getActiveTools();
-	const regularTools = baseline.filter((toolName) => availableTools.has(toolName) && !DISPATCH_TOOL_SET.has(toolName));
+	const regularTools = baseline.filter(
+		(toolName) =>
+			availableTools.has(toolName) &&
+			!CANONICAL_NONREGULAR_SUBAGENT_TOOL_SET.has(toolName) &&
+			!LEGACY_SUBAGENT_TOOL_SET.has(toolName),
+	);
 	if (regularTools.length > 0) {
 		pi.setActiveTools(regularTools);
 	}
+}
+
+function filterLegacySubagentTools(toolNames: string[]): string[] {
+	return toolNames.filter((toolName) => !LEGACY_SUBAGENT_TOOL_SET.has(toolName));
+}
+
+function buildLegacySubagentToolReason(toolName: string): string {
+	return [
+		`Legacy subagent tool "${toolName}" is disabled in this session.`,
+		"Use the tmux-backed subagent tools instead:",
+		"`subagent_create` for new background agents, `subagent_continue` for follow-up, and `subagent_list` to inspect running work.",
+	].join(" ");
 }
 
 function loadAgentConfigs(cwd: string): void {
@@ -408,6 +451,13 @@ function getSubagentTmuxLinkedWindowsEnabled(cwd: string): boolean {
 	}
 }
 
+function shouldLinkSubagentTmuxWindow(cwd: string, currentSession?: string): boolean {
+	if (currentSession?.trim()) {
+		return true;
+	}
+	return getSubagentTmuxLinkedWindowsEnabled(cwd);
+}
+
 function buildTmuxLaunchPlan(
 	session: string | undefined,
 	currentSession?: string,
@@ -539,10 +589,13 @@ function textToolResult(text: string): {
 
 export const __testing = {
 	buildTmuxLaunchPlan,
+	shouldLinkSubagentTmuxWindow,
 	listTmuxWindowTargets,
 	resolveTmuxAttachTarget,
 	summarizeMainAgentSubagentBudget,
 	buildMainAgentSubagentCreatePolicy,
+	filterLegacySubagentTools,
+	buildLegacySubagentToolReason,
 	seedAgentStates(states: Array<Pick<SubState, "id" | "status" | "spawnedBy"> & Partial<Pick<SubState, "task" | "runMode" | "turnCount">>>) {
 		agents.clear();
 		for (const state of states) {
@@ -1262,7 +1315,8 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 	const agentCfg = state.agentName ? agentConfigs.get(state.agentName) : undefined;
 	const executionConfig = resolveSubagentExecutionConfig(agentCfg, mainModel);
 	const workingDir = resolveValidWorkingDirectory(state.workingDir, ctx.cwd);
-	const linkTmuxWindows = getSubagentTmuxLinkedWindowsEnabled(workingDir);
+	const currentTmuxSession = getCurrentTmuxSession();
+	const linkTmuxWindows = shouldLinkSubagentTmuxWindow(workingDir, currentTmuxSession);
 	state.workingDir = workingDir;
 
 	state.attempt += 1;
@@ -1445,7 +1499,7 @@ function spawnAgent(pi: ExtensionAPI, state: SubState, prompt: string, ctx: Exte
 		: `cat ${shellQuote(promptFile ?? "")} | ${shellQuote(piCmd)} ${piArgs} | node ${shellQuote(jsonRendererFile ?? "")}`;
 
 	{
-		const tmuxResolution = resolveTmuxSessionForSubagent(state, linkTmuxWindows);
+		const tmuxResolution = buildTmuxLaunchPlan(buildSubagentTmuxSessionName(state), currentTmuxSession, linkTmuxWindows);
 		tmuxSession = tmuxResolution.session ?? null;
 		tmuxLinkedSession = tmuxResolution.linkedSession ?? null;
 	}
@@ -1703,16 +1757,16 @@ function buildDispatcherPrompt(catalog: string): string {
 	return `
 ## Dispatcher Mode
 
-You are an orchestrator. You have FIVE tools: \`task\`, \`subagent_create\`, \`subagent_continue\`, \`subagent_list\`, and \`subagent_clear_finished\`. No file access. No shell. No search.
+You are an orchestrator. You have FIVE tools: \`todo_write\`, \`subagent_create\`, \`subagent_continue\`, \`subagent_list\`, and \`subagent_clear_finished\`. No file access. No shell. No search.
 
 ### Agent roster
 ${catalog}
 
 ### Dispatching (when user gives you a task)
 1. Identify independent sub-tasks
-2. Before each dispatch, ensure taskboard tracking is up to date via \`task\`:
-   - If needed, add a task
-   - Ensure the dispatched task is marked \`in-progress\`
+2. Before each dispatch, ensure todo tracking is up to date via \`todo_write\`:
+   - If needed, add a todo item
+   - Ensure the dispatched item is marked \`in_progress\`
 3. Treat ${SOFT_MAX_MAIN_AGENT_TRACKED_SUBAGENTS} tracked main-agent subagents as a soft orchestration budget
 4. If you are near or above that budget, inspect current agents with \`subagent_list\`
 5. Prefer \`subagent_continue\` for follow-up on existing finished threads instead of creating replacements
@@ -1729,7 +1783,7 @@ Dispatched N agent(s):
 Then STOP. No filler. No "I'll wait". No follow-up tool calls.
 
 ### When results arrive
-- Update taskboard status via \`task\` (for example, done or blocked)
+- Update todo status via \`todo_write\` (for example, mark work \`completed\` or \`abandoned\`)
 - Synthesize all results and respond directly to the user
 - If a result is insufficient, prefer \`subagent_continue\` on the same subagent for follow-up; only create a new subagent for truly independent workstreams
 - If a subagent returns repetitive planning chatter or obvious no-progress output, send a short corrective follow-up with \`subagent_continue\` instead of echoing the chatter
@@ -1740,7 +1794,7 @@ Then STOP. No filler. No "I'll wait". No follow-up tool calls.
 - NEVER attempt direct file/shell access
 - ALWAYS write self-contained briefs
 - NEVER ask subagents for ongoing progress reports
-- ALWAYS keep taskboard state synchronized with dispatches/results using \`task\`
+- ALWAYS keep todo state synchronized with dispatches/results using \`todo_write\`
 - ALWAYS dispatch independent tasks in parallel (same response, multiple tool calls)
 - Going beyond ${SOFT_MAX_MAIN_AGENT_TRACKED_SUBAGENTS} tracked main-agent subagents is bad practice; only do it when every tracked subagent is still actively running and nothing can be reused or cleared first`;
 }
@@ -1933,6 +1987,12 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
+		if (LEGACY_SUBAGENT_TOOL_SET.has(event.toolName)) {
+			return {
+				block: true,
+				reason: buildLegacySubagentToolReason(event.toolName),
+			};
+		}
 		if (event.toolName !== "subagent_create") return undefined;
 		pruneTrackedSubagents(ctx);
 		if (agents.size >= MAX_TRACKED_SUBAGENTS) {
@@ -2029,7 +2089,7 @@ export default function (pi: ExtensionAPI) {
 		}
 		agents.clear();
 		nextId = 1;
-		defaultMainAgentTools = pi.getActiveTools();
+		defaultMainAgentTools = filterLegacySubagentTools(pi.getActiveTools());
 		dispatchModeRequested = false;
 		setMainAgentToolMode(pi, "regular");
 	});

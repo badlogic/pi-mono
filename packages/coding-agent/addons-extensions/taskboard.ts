@@ -1,313 +1,470 @@
 /**
- * Task Board Extension
+ * Task Board / Todo Extension
  *
- * A persistent, branch-aware task board for the pi coding agent.
- * State is stored in tool result details and taskboard snapshots so it correctly
- * follows session branching, including auto-tracked subagent dispatches.
+ * Uses oh-my-pi-style todo state semantics instead of extension-owned snapshots.
+ * State is reconstructed from tool result details in session history.
  *
- * LLM tool: `task` — add, set_status, set_priority, list, remove, clear_done
- * Slash commands: /tasks (interactive board), /task-add, /task-done, /task-clear
- * Widget: live board below editor showing active tasks
- * Footer: "N tasks · M in progress"
- *
- * Usage:
- *   pi -e addons-extensions/taskboard.ts
+ * Tools:
+ * - `todo_write` - primary todo API
+ * - `task` - compatibility alias over the same state model
  */
 
 import { StringEnum } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { matchesKey, Text, truncateToWidth } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+export type TodoStatus = "pending" | "in_progress" | "completed" | "abandoned";
 
-type TaskStatus = "todo" | "in-progress" | "done" | "blocked";
-type TaskPriority = "low" | "medium" | "high" | "critical";
-
-interface Task {
-	id: number;
-	text: string;
-	status: TaskStatus;
-	priority: TaskPriority;
-	category?: string;
-	createdAt: number;
-	updatedAt: number;
+export interface TodoItem {
+	id: string;
+	content: string;
+	status: TodoStatus;
+	notes?: string;
 }
 
-interface TaskDetails {
+export interface TodoPhase {
+	id: string;
+	name: string;
+	tasks: TodoItem[];
+}
+
+interface TodoWriteToolDetails {
+	phases: TodoPhase[];
+	storage: "session" | "memory";
+}
+
+type LegacyTaskStatus = "todo" | "in-progress" | "done" | "blocked";
+type LegacyTaskPriority = "low" | "medium" | "high" | "critical";
+
+interface LegacyTaskToolDetails extends TodoWriteToolDetails {
 	action: string;
-	tasks: Task[];
-	nextId: number;
-	error?: string;
 }
 
-interface TaskboardSnapshot {
-	version: 1;
-	tasks: Task[];
-	nextId: number;
+const StatusEnum = StringEnum(["pending", "in_progress", "completed", "abandoned"] as const, {
+	description: "Task status",
+});
+
+const InputTask = Type.Object({
+	content: Type.String({ description: "Task description" }),
+	status: Type.Optional(StatusEnum),
+	notes: Type.Optional(Type.String({ description: "Additional context or notes" })),
+});
+
+const InputPhase = Type.Object({
+	name: Type.String({ description: "Phase name" }),
+	tasks: Type.Optional(Type.Array(InputTask)),
+});
+
+const todoWriteSchema = Type.Object({
+	ops: Type.Array(
+		Type.Union([
+			Type.Object({
+				op: Type.Literal("replace"),
+				phases: Type.Array(InputPhase),
+			}),
+			Type.Object({
+				op: Type.Literal("add_phase"),
+				name: Type.String({ description: "Phase name" }),
+				tasks: Type.Optional(Type.Array(InputTask)),
+			}),
+			Type.Object({
+				op: Type.Literal("add_task"),
+				phase: Type.String({ description: "Phase ID, e.g. phase-1" }),
+				content: Type.String({ description: "Task description" }),
+				notes: Type.Optional(Type.String({ description: "Additional context or notes" })),
+			}),
+			Type.Object({
+				op: Type.Literal("update"),
+				id: Type.String({ description: "Task ID, e.g. task-3" }),
+				status: Type.Optional(StatusEnum),
+				content: Type.Optional(Type.String({ description: "Updated task description" })),
+				notes: Type.Optional(Type.String({ description: "Additional context or notes" })),
+			}),
+			Type.Object({
+				op: Type.Literal("remove_task"),
+				id: Type.String({ description: "Task ID, e.g. task-3" }),
+			}),
+		]),
+	),
+});
+
+type TodoWriteParams = Static<typeof todoWriteSchema>;
+
+const legacyTaskSchema = Type.Object({
+	action: StringEnum(["add", "set_status", "set_priority", "list", "remove", "clear_done", "clear_all"] as const),
+	text: Type.Optional(Type.String({ description: "Task text (for add)" })),
+	id: Type.Optional(Type.Number({ description: "Task ID (for set_status, set_priority, remove)" })),
+	status: Type.Optional(StringEnum(["todo", "in-progress", "done", "blocked"] as const)),
+	priority: Type.Optional(StringEnum(["low", "medium", "high", "critical"] as const)),
+	category: Type.Optional(Type.String({ description: "Category tag (e.g. 'refactor', 'tests')" })),
+});
+
+type LegacyTaskParams = Static<typeof legacyTaskSchema>;
+
+interface TodoFile {
+	phases: TodoPhase[];
+	nextTaskId: number;
+	nextPhaseId: number;
 }
 
-// ── In-memory state ───────────────────────────────────────────────────────────
+let phases: TodoPhase[] = [];
 
-let tasks: Task[] = [];
-let nextId = 1;
-const autoToolTaskByCallId = new Map<string, number>();
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const TASKBOARD_SNAPSHOT_TYPE = "taskboard-state";
-const SUBAGENT_CREATE_TOOL = "subagent_create";
-const NON_COMPLEX_TOOLS = new Set(["task", "read", "grep", "find", "ls"]);
-const VALID_STATUSES: TaskStatus[] = ["todo", "in-progress", "done", "blocked"];
-const VALID_PRIORITIES: TaskPriority[] = ["low", "medium", "high", "critical"];
-
-const STATUS_ICONS: Record<TaskStatus, string> = {
-	"todo": "○",
-	"in-progress": "●",
-	"done": "✓",
-	"blocked": "✗",
-};
-
-const PRIORITY_ORDER: Record<TaskPriority, number> = {
-	critical: 0,
-	high: 1,
-	medium: 2,
-	low: 3,
-};
-
-function sortedTasks(ts: Task[]): Task[] {
-	return [...ts].sort((a, b) => {
-		const aDone = a.status === "done" ? 1 : 0;
-		const bDone = b.status === "done" ? 1 : 0;
-		if (aDone !== bDone) return aDone - bDone;
-		return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
-	});
-}
-
-function cloneTasks(ts: Task[]): Task[] {
-	return ts.map((task) => ({ ...task }));
-}
-
-function isTaskStatus(value: unknown): value is TaskStatus {
-	return typeof value === "string" && (VALID_STATUSES as string[]).includes(value);
-}
-
-function isTaskPriority(value: unknown): value is TaskPriority {
-	return typeof value === "string" && (VALID_PRIORITIES as string[]).includes(value);
+function clonePhases(items: TodoPhase[]): TodoPhase[] {
+	return items.map((phase) => ({
+		...phase,
+		tasks: phase.tasks.map((task) => ({ ...task })),
+	}));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isTask(value: unknown): value is Task {
+function isTodoStatus(value: unknown): value is TodoStatus {
+	return value === "pending" || value === "in_progress" || value === "completed" || value === "abandoned";
+}
+
+function isTodoItem(value: unknown): value is TodoItem {
 	if (!isRecord(value)) return false;
-	const category = value.category;
 	return (
-		typeof value.id === "number" &&
-		typeof value.text === "string" &&
-		isTaskStatus(value.status) &&
-		isTaskPriority(value.priority) &&
-		(category === undefined || typeof category === "string") &&
-		typeof value.createdAt === "number" &&
-		typeof value.updatedAt === "number"
+		typeof value.id === "string" &&
+		typeof value.content === "string" &&
+		isTodoStatus(value.status) &&
+		(value.notes === undefined || typeof value.notes === "string")
 	);
 }
 
-function isTaskSnapshot(value: unknown): value is TaskboardSnapshot {
+function isTodoPhase(value: unknown): value is TodoPhase {
 	if (!isRecord(value)) return false;
-	return (
-		value.version === 1 &&
-		Array.isArray(value.tasks) &&
-		value.tasks.every((task) => isTask(task)) &&
-		typeof value.nextId === "number"
-	);
+	return typeof value.id === "string" && typeof value.name === "string" && Array.isArray(value.tasks) && value.tasks.every(isTodoItem);
 }
 
-function summarizeSubagentBrief(raw: string): string {
-	const compact = raw.replace(/\s+/g, " ").trim();
-	if (!compact) return "Subagent task";
-	if (compact.length <= 140) return compact;
-	return `${compact.slice(0, 137)}...`;
+function extractPhasesFromToolResult(message: unknown): TodoPhase[] | undefined {
+	if (!isRecord(message)) return undefined;
+	if (message.role !== "toolResult" || message.isError === true) return undefined;
+	if (message.toolName !== "todo_write" && message.toolName !== "task") return undefined;
+	const details = isRecord(message.details) ? message.details : undefined;
+	const detailsPhases = details?.phases;
+	if (!Array.isArray(detailsPhases) || !detailsPhases.every(isTodoPhase)) return undefined;
+	return clonePhases(detailsPhases);
 }
 
-function summarizeToolCall(toolName: string, input: unknown): string {
-	if (toolName === "bash") {
-		if (isRecord(input) && typeof input.command === "string") {
-			const compact = input.command.replace(/\s+/g, " ").trim();
-			if (compact.length === 0) return "Bash task";
-			return compact.length <= 140 ? compact : `${compact.slice(0, 137)}...`;
-		}
-		return "Bash task";
+function getLatestTodoPhasesFromEntries(entries: unknown[]): TodoPhase[] {
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const entry = entries[i];
+		if (!isRecord(entry) || entry.type !== "message") continue;
+		const extracted = extractPhasesFromToolResult(entry.message);
+		if (extracted) return extracted;
 	}
-
-	if (isRecord(input) && typeof input.path === "string" && input.path.trim().length > 0) {
-		const verb = toolName === "edit" ? "Edit" : toolName === "write" ? "Write" : "Update";
-		return `${verb} ${input.path.trim()}`;
-	}
-
-	return `Complex ${toolName} task`;
+	return [];
 }
-
-function getActiveTask(): Task | undefined {
-	return tasks.find((task) => task.status === "in-progress");
-}
-
-function addSubagentDispatchTask(brief: string): void {
-	const now = Date.now();
-	tasks.push({
-		id: nextId++,
-		text: summarizeSubagentBrief(brief),
-		status: "in-progress",
-		priority: "high",
-		category: "subagent",
-		createdAt: now,
-		updatedAt: now,
-	});
-}
-
-function ensureActiveTaskForToolCall(toolName: string, input: unknown): number | undefined {
-	const now = Date.now();
-	if (getActiveTask()) return undefined;
-
-	const pending = sortedTasks(tasks.filter((task) => task.status !== "done"));
-	if (pending.length > 0) {
-		pending[0].status = "in-progress";
-		pending[0].updatedAt = now;
-		return undefined;
-	}
-
-	const task: Task = {
-		id: nextId++,
-		text: summarizeToolCall(toolName, input),
-		status: "in-progress",
-		priority: "medium",
-		category: "auto",
-		createdAt: now,
-		updatedAt: now,
-	};
-	tasks.push(task);
-	return task.id;
-}
-
-function statusColor(status: TaskStatus, theme: Theme): string {
-	switch (status) {
-		case "todo": return theme.fg("dim", STATUS_ICONS[status]);
-		case "in-progress": return theme.fg("accent", STATUS_ICONS[status]);
-		case "done": return theme.fg("success", STATUS_ICONS[status]);
-		case "blocked": return theme.fg("error", STATUS_ICONS[status]);
-	}
-}
-
-function priorityLabel(priority: TaskPriority, theme: Theme): string {
-	switch (priority) {
-		case "critical": return theme.fg("error", "[critical]");
-		case "high": return theme.fg("warning", "[high]");
-		case "medium": return "";
-		case "low": return theme.fg("dim", "[low]");
-	}
-}
-
-// ── Rebuild state from session entries ───────────────────────────────────────
 
 function reconstructState(ctx: ExtensionContext): void {
-	tasks = [];
-	nextId = 1;
-	autoToolTaskByCallId.clear();
 	const entries = ctx.sessionManager.getBranch();
-	if (!Array.isArray(entries)) return;
-	for (const entry of entries) {
-		if (entry.type === "custom" && entry.customType === TASKBOARD_SNAPSHOT_TYPE) {
-			const snapshot = entry.data;
-			if (isTaskSnapshot(snapshot)) {
-				tasks = cloneTasks(snapshot.tasks);
-				nextId = snapshot.nextId;
-			}
-			continue;
+	phases = Array.isArray(entries) ? getLatestTodoPhasesFromEntries(entries) : [];
+}
+
+function makeEmptyFile(): TodoFile {
+	return { phases: [], nextTaskId: 1, nextPhaseId: 1 };
+}
+
+function findTask(items: TodoPhase[], id: string): TodoItem | undefined {
+	for (const phase of items) {
+		const task = phase.tasks.find((entry) => entry.id === id);
+		if (task) return task;
+	}
+	return undefined;
+}
+
+function getNextIds(items: TodoPhase[]): { nextTaskId: number; nextPhaseId: number } {
+	let maxTaskId = 0;
+	let maxPhaseId = 0;
+	for (const phase of items) {
+		const phaseMatch = /^phase-(\d+)$/u.exec(phase.id);
+		if (phaseMatch) {
+			const value = Number.parseInt(phaseMatch[1], 10);
+			if (Number.isFinite(value) && value > maxPhaseId) maxPhaseId = value;
 		}
-		if (entry.type === "message") {
-			const msg = entry.message;
-			if (msg.role !== "toolResult" || msg.toolName !== "task") continue;
-			const details = msg.details as TaskDetails | undefined;
-			if (details && !details.error && Array.isArray(details.tasks) && typeof details.nextId === "number") {
-				tasks = cloneTasks(details.tasks);
-				nextId = details.nextId;
-			}
+		for (const task of phase.tasks) {
+			const taskMatch = /^task-(\d+)$/u.exec(task.id);
+			if (!taskMatch) continue;
+			const value = Number.parseInt(taskMatch[1], 10);
+			if (Number.isFinite(value) && value > maxTaskId) maxTaskId = value;
 		}
+	}
+	return { nextTaskId: maxTaskId + 1, nextPhaseId: maxPhaseId + 1 };
+}
+
+function fileFromPhases(items: TodoPhase[]): TodoFile {
+	const { nextTaskId, nextPhaseId } = getNextIds(items);
+	return { phases: clonePhases(items), nextTaskId, nextPhaseId };
+}
+
+function buildPhaseFromInput(
+	input: { name: string; tasks?: Array<{ content: string; status?: TodoStatus; notes?: string }> },
+	phaseId: string,
+	nextTaskId: number,
+): { phase: TodoPhase; nextTaskId: number } {
+	const tasks: TodoItem[] = [];
+	let taskId = nextTaskId;
+	for (const task of input.tasks ?? []) {
+		tasks.push({
+			id: `task-${taskId++}`,
+			content: task.content,
+			status: task.status ?? "pending",
+			notes: task.notes,
+		});
+	}
+	return { phase: { id: phaseId, name: input.name, tasks }, nextTaskId: taskId };
+}
+
+function normalizeInProgressTask(items: TodoPhase[]): void {
+	const orderedTasks = items.flatMap((phase) => phase.tasks);
+	if (orderedTasks.length === 0) return;
+	const inProgressTasks = orderedTasks.filter((task) => task.status === "in_progress");
+	if (inProgressTasks.length > 1) {
+		for (const task of inProgressTasks.slice(1)) {
+			task.status = "pending";
+		}
+	}
+	if (inProgressTasks.length > 0) return;
+	const firstPendingTask = orderedTasks.find((task) => task.status === "pending");
+	if (firstPendingTask) {
+		firstPendingTask.status = "in_progress";
 	}
 }
 
-// ── Widget ────────────────────────────────────────────────────────────────────
+function applyOps(file: TodoFile, ops: TodoWriteParams["ops"]): { file: TodoFile; errors: string[] } {
+	const errors: string[] = [];
+	for (const op of ops) {
+		switch (op.op) {
+			case "replace": {
+				const next = makeEmptyFile();
+				for (const inputPhase of op.phases) {
+					const phaseId = `phase-${next.nextPhaseId++}`;
+					const { phase, nextTaskId } = buildPhaseFromInput(inputPhase, phaseId, next.nextTaskId);
+					next.phases.push(phase);
+					next.nextTaskId = nextTaskId;
+				}
+				file = next;
+				break;
+			}
+			case "add_phase": {
+				const phaseId = `phase-${file.nextPhaseId++}`;
+				const { phase, nextTaskId } = buildPhaseFromInput(op, phaseId, file.nextTaskId);
+				file.phases.push(phase);
+				file.nextTaskId = nextTaskId;
+				break;
+			}
+			case "add_task": {
+				const phase = file.phases.find((entry) => entry.id === op.phase);
+				if (!phase) {
+					errors.push(`phase ${op.phase} not found`);
+					break;
+				}
+				phase.tasks.push({
+					id: `task-${file.nextTaskId++}`,
+					content: op.content,
+					status: "pending",
+					notes: op.notes,
+				});
+				break;
+			}
+			case "update": {
+				const task = findTask(file.phases, op.id);
+				if (!task) {
+					errors.push(`task ${op.id} not found`);
+					break;
+				}
+				if (op.status !== undefined) task.status = op.status;
+				if (op.content !== undefined) task.content = op.content;
+				if (op.notes !== undefined) task.notes = op.notes;
+				break;
+			}
+			case "remove_task": {
+				let removed = false;
+				for (const phase of file.phases) {
+					const before = phase.tasks.length;
+					phase.tasks = phase.tasks.filter((task) => task.id !== op.id);
+					if (phase.tasks.length !== before) {
+						removed = true;
+						break;
+					}
+				}
+				if (!removed) {
+					errors.push(`task ${op.id} not found`);
+				}
+				break;
+			}
+		}
+	}
+	file.phases = file.phases.filter((phase) => phase.tasks.length > 0);
+	normalizeInProgressTask(file.phases);
+	return { file, errors };
+}
+
+function formatSummary(items: TodoPhase[], errors: string[]): string {
+	const incomplete = items.flatMap((phase) =>
+		phase.tasks
+			.filter((task) => task.status === "pending" || task.status === "in_progress")
+			.map((task) => ({ phase: phase.name, task })),
+	);
+	const lines: string[] = [];
+	if (errors.length > 0) {
+		lines.push(`Errors (${errors.length}):`);
+		for (const error of errors) lines.push(`- ${error}`);
+		lines.push("");
+	}
+	if (incomplete.length === 0) {
+		lines.push("Remaining items: none.");
+		return lines.join("\n");
+	}
+	lines.push(`Remaining items (${incomplete.length}):`);
+	for (const { phase, task } of incomplete) {
+		lines.push(`- ${task.id} ${task.content} [${task.status}] (${phase})`);
+	}
+	return lines.join("\n");
+}
+
+function getPhaseLabel(phase: TodoPhase): string {
+	return phase.name || "Execution";
+}
+
+function statusColor(status: TodoStatus, theme: Theme): string {
+	switch (status) {
+		case "completed":
+			return theme.fg("success", "✓");
+		case "in_progress":
+			return theme.fg("accent", "●");
+		case "abandoned":
+			return theme.fg("error", "✗");
+		default:
+			return theme.fg("dim", "○");
+	}
+}
+
+function flattenTodos(items: TodoPhase[]): Array<{ phase: string; todo: TodoItem }> {
+	return items.flatMap((phase) => phase.tasks.map((todo) => ({ phase: getPhaseLabel(phase), todo })));
+}
 
 function updateWidget(ctx: ExtensionContext): void {
-	const active = sortedTasks(tasks.filter((t) => t.status !== "done"));
-	const total = tasks.length;
-	const done = tasks.filter((t) => t.status === "done").length;
-	const inProgress = tasks.filter((t) => t.status === "in-progress").length;
-	const blocked = tasks.filter((t) => t.status === "blocked").length;
-
-	if (active.length === 0) {
+	const todos = flattenTodos(phases);
+	if (todos.length === 0) {
 		ctx.ui.setWidget("taskboard", undefined);
-		ctx.ui.setStatus("tasks", total > 0 ? `${total}/${total} done` : undefined);
+		ctx.ui.setStatus("tasks", undefined);
 		return;
 	}
 
-	// Footer
-	const parts = [`${total} task${total !== 1 ? "s" : ""}`];
-	if (inProgress > 0) parts.push(`${inProgress} in progress`);
-	if (blocked > 0) parts.push(`${blocked} blocked`);
-	if (done > 0) parts.push(`${done} done`);
-	ctx.ui.setStatus("tasks", parts.join(" · "));
+	const incomplete = todos.filter(({ todo }) => todo.status === "pending" || todo.status === "in_progress");
+	const inProgress = todos.filter(({ todo }) => todo.status === "in_progress").length;
+	const completed = todos.filter(({ todo }) => todo.status === "completed").length;
+	ctx.ui.setStatus(
+		"tasks",
+		`${todos.length} task${todos.length === 1 ? "" : "s"} · ${inProgress} in progress${completed > 0 ? ` · ${completed} done` : ""}`,
+	);
 
-	// Widget as string[] (simple, reliable)
-	const lines: string[] = [];
-	// lines are built at render time via factory form
-	ctx.ui.setWidget("taskboard", (_tui, theme) => {
-		return {
+	ctx.ui.setWidget(
+		"taskboard",
+		(_tui, theme) => ({
 			render(width: number): string[] {
-				const out: string[] = [];
-				out.push(theme.fg("borderMuted", "─".repeat(width)));
-
-				const display = active.slice(0, 6);
-				for (const task of display) {
-					const icon = statusColor(task.status, theme);
-					const id = theme.fg("dim", `#${task.id}`);
-					const pri = priorityLabel(task.priority, theme);
-					const cat = task.category ? theme.fg("dim", ` [${task.category}]`) : "";
-					const maxTxt = width - 16;
-					const txt = task.status === "done"
-						? theme.fg("dim", truncateToWidth(task.text, maxTxt))
-						: theme.fg("text", truncateToWidth(task.text, maxTxt));
-					out.push(truncateToWidth(` ${icon} ${id}${pri ? " " + pri : ""}${cat} ${txt}`, width));
+				const lines: string[] = [theme.fg("borderMuted", "─".repeat(width))];
+				const display = incomplete.length > 0 ? incomplete.slice(0, 6) : todos.slice(0, 6);
+				for (const { phase, todo } of display) {
+					const icon = statusColor(todo.status, theme);
+					const phaseLabel = theme.fg("dim", `[${phase}]`);
+					const maxTxt = Math.max(10, width - 24);
+					const text = todo.status === "completed"
+						? theme.fg("dim", truncateToWidth(todo.content, maxTxt))
+						: theme.fg("text", truncateToWidth(todo.content, maxTxt));
+					lines.push(truncateToWidth(` ${icon} ${theme.fg("dim", todo.id)} ${phaseLabel} ${text}`, width));
 				}
-
-				if (active.length > 6) {
-					out.push(theme.fg("dim", ` ... ${active.length - 6} more — /tasks to view all`));
+				if (todos.length > 6) {
+					lines.push(theme.fg("dim", ` ... ${todos.length - 6} more — /tasks to view all`));
 				}
-
-				out.push(theme.fg("borderMuted", "─".repeat(width)));
-				return out;
+				lines.push(theme.fg("borderMuted", "─".repeat(width)));
+				return lines;
 			},
 			invalidate() {},
-		};
-	}, { placement: "belowEditor" });
-
-	// suppress unused warning
-	void lines;
+		}),
+		{ placement: "aboveEditor" },
+	);
 }
 
-// ── Interactive board ─────────────────────────────────────────────────────────
+function mapLegacyStatus(status: LegacyTaskStatus | undefined): TodoStatus | undefined {
+	switch (status) {
+		case "todo":
+			return "pending";
+		case "in-progress":
+			return "in_progress";
+		case "done":
+			return "completed";
+		case "blocked":
+			return "abandoned";
+		default:
+			return undefined;
+	}
+}
+
+function getOrCreateExecutionPhase(file: TodoFile): TodoPhase {
+	let phase = file.phases[0];
+	if (!phase) {
+		phase = { id: `phase-${file.nextPhaseId++}`, name: "Execution", tasks: [] };
+		file.phases.push(phase);
+	}
+	return phase;
+}
+
+function legacyActionToOps(file: TodoFile, args: LegacyTaskParams): TodoWriteParams["ops"] | { error: string } {
+	switch (args.action) {
+		case "add": {
+			if (!args.text?.trim()) return { error: "text is required for add" };
+			const phase = getOrCreateExecutionPhase(file);
+			const notes: string[] = [];
+			if (args.priority && args.priority !== "medium") notes.push(`priority:${args.priority}`);
+			if (args.category) notes.push(`category:${args.category}`);
+			return [{ op: "add_task", phase: phase.id, content: args.text.trim(), notes: notes.join(" ") || undefined }];
+		}
+		case "set_status": {
+			if (args.id === undefined || !args.status) return { error: "id and status required" };
+			const status = mapLegacyStatus(args.status);
+			if (!status) return { error: `unsupported status: ${String(args.status)}` };
+			return [{ op: "update", id: `task-${args.id}`, status }];
+		}
+		case "set_priority": {
+			if (args.id === undefined || !args.priority) return { error: "id and priority required" };
+			const task = findTask(file.phases, `task-${args.id}`);
+			if (!task) return { error: `task #${args.id} not found` };
+			const notes = task.notes ? `${task.notes} priority:${args.priority}` : `priority:${args.priority}`;
+			return [{ op: "update", id: task.id, notes }];
+		}
+		case "remove": {
+			if (args.id === undefined) return { error: "id required for remove" };
+			return [{ op: "remove_task", id: `task-${args.id}` }];
+		}
+		case "clear_done": {
+			const doneTasks = file.phases.flatMap((phase) => phase.tasks.filter((task) => task.status === "completed"));
+			return doneTasks.map((task) => ({ op: "remove_task" as const, id: task.id }));
+		}
+		case "clear_all":
+			return [{ op: "replace", phases: [] }];
+		case "list":
+			return [];
+		default:
+			return { error: `unknown action: ${String(args.action)}` };
+	}
+}
 
 class TaskBoardComponent {
-	private items: Task[];
+	private items: Array<{ phase: string; todo: TodoItem }>;
 	private theme: Theme;
 	private onClose: () => void;
 	private selectedIdx = 0;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
 
-	constructor(items: Task[], theme: Theme, onClose: () => void) {
-		this.items = sortedTasks(items);
+	constructor(items: TodoPhase[], theme: Theme, onClose: () => void) {
+		this.items = flattenTodos(items);
 		this.theme = theme;
 		this.onClose = onClose;
 	}
@@ -317,82 +474,46 @@ class TaskBoardComponent {
 			this.onClose();
 			return;
 		}
-		const len = this.items.length;
-		if (len === 0) return;
+		if (this.items.length === 0) return;
 		if (matchesKey(data, "up") || data === "k") {
 			this.selectedIdx = Math.max(0, this.selectedIdx - 1);
 			this.cachedLines = undefined;
 		}
 		if (matchesKey(data, "down") || data === "j") {
-			this.selectedIdx = Math.min(len - 1, this.selectedIdx + 1);
+			this.selectedIdx = Math.min(this.items.length - 1, this.selectedIdx + 1);
 			this.cachedLines = undefined;
 		}
 	}
 
 	render(width: number): string[] {
 		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
-		const th = this.theme;
 		const lines: string[] = [];
-
 		lines.push("");
-		const title = " Task Board ";
+		const title = " Todo Board ";
 		const sides = Math.max(0, Math.floor((width - title.length) / 2));
 		lines.push(
-			th.fg("borderMuted", "─".repeat(sides)) +
-			th.fg("accent", title) +
-			th.fg("borderMuted", "─".repeat(Math.max(0, width - sides - title.length)))
+			this.theme.fg("borderMuted", "─".repeat(sides)) +
+			this.theme.fg("accent", title) +
+			this.theme.fg("borderMuted", "─".repeat(Math.max(0, width - sides - title.length))),
 		);
 		lines.push("");
-
-		const done = this.items.filter((t) => t.status === "done").length;
-		const total = this.items.length;
-		const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-		const barW = Math.min(28, width - 18);
-		const filled = Math.round((pct / 100) * barW);
-		const bar = th.fg("success", "█".repeat(filled)) + th.fg("dim", "░".repeat(barW - filled));
-		lines.push(truncateToWidth(`  ${bar}  ${th.fg("muted", `${done}/${total} done (${pct}%)`)}`, width));
-		lines.push("");
-
 		if (this.items.length === 0) {
-			lines.push(truncateToWidth(`  ${th.fg("dim", "No tasks yet.")}`, width));
+			lines.push(this.theme.fg("dim", "  No todos yet."));
+		} else {
+			this.items.forEach(({ phase, todo }, index) => {
+				const selected = index === this.selectedIdx;
+				const prefix = selected ? this.theme.fg("accent", "▶") : " ";
+				const icon = statusColor(todo.status, this.theme);
+				const text = todo.status === "completed"
+					? this.theme.fg("dim", todo.content)
+					: this.theme.fg("text", todo.content);
+				lines.push(truncateToWidth(`  ${prefix} ${icon} ${this.theme.fg("dim", todo.id)} ${this.theme.fg("dim", `[${phase}]`)} ${text}`, width));
+			});
 		}
-
-		const groups: { label: string; statuses: TaskStatus[] }[] = [
-			{ label: "In Progress", statuses: ["in-progress"] },
-			{ label: "Blocked", statuses: ["blocked"] },
-			{ label: "Todo", statuses: ["todo"] },
-			{ label: "Done", statuses: ["done"] },
-		];
-
-		let globalIdx = 0;
-		for (const group of groups) {
-			const groupItems = this.items.filter((t) => group.statuses.includes(t.status));
-			if (groupItems.length === 0) continue;
-
-			lines.push(truncateToWidth(`  ${th.fg("muted", group.label.toUpperCase())}`, width));
-			for (const task of groupItems) {
-				const isSelected = globalIdx === this.selectedIdx;
-				const icon = statusColor(task.status, th);
-				const id = th.fg("dim", `#${task.id}`);
-				const pri = priorityLabel(task.priority, th);
-				const cat = task.category ? th.fg("dim", ` [${task.category}]`) : "";
-				const maxTxt = width - 16;
-				const txt = task.status === "done"
-					? th.fg("dim", truncateToWidth(task.text, maxTxt))
-					: isSelected
-						? th.fg("text", truncateToWidth(task.text, maxTxt))
-						: th.fg("muted", truncateToWidth(task.text, maxTxt));
-				const prefix = isSelected ? th.fg("accent", "▶") : " ";
-				lines.push(truncateToWidth(`  ${prefix} ${icon} ${id}${pri ? " " + pri : ""}${cat} ${txt}`, width));
-				globalIdx++;
-			}
-			lines.push("");
-		}
-
-		lines.push(th.fg("borderMuted", "─".repeat(width)));
-		lines.push(truncateToWidth(`  ${th.fg("dim", "↑/↓  navigate    Esc  close")}`, width));
 		lines.push("");
-
+		lines.push(this.theme.fg("borderMuted", "─".repeat(width)));
+		lines.push(truncateToWidth(`  ${this.theme.fg("dim", "↑/↓ navigate    Esc close")}`, width));
+		lines.push("");
 		this.cachedWidth = width;
 		this.cachedLines = lines;
 		return lines;
@@ -403,270 +524,142 @@ class TaskBoardComponent {
 	}
 }
 
-// ── Extension ─────────────────────────────────────────────────────────────────
-
 export default function (pi: ExtensionAPI) {
-	const persistSnapshot = (): void => {
-		pi.appendEntry(TASKBOARD_SNAPSHOT_TYPE, {
-			version: 1,
-			tasks: cloneTasks(tasks),
-			nextId,
-		} satisfies TaskboardSnapshot);
+	const syncUi = (ctx: ExtensionContext): void => {
+		reconstructState(ctx);
+		updateWidget(ctx);
 	};
 
-	// Rebuild state on all session events that can change branch context
-	pi.on("session_start", async (_event, ctx) => {
-		reconstructState(ctx);
-		updateWidget(ctx);
-	});
-	pi.on("session_switch", async (_event, ctx) => {
-		reconstructState(ctx);
-		updateWidget(ctx);
-	});
-	pi.on("session_fork", async (_event, ctx) => {
-		reconstructState(ctx);
-		updateWidget(ctx);
-	});
-	pi.on("session_tree", async (_event, ctx) => {
-		reconstructState(ctx);
-		updateWidget(ctx);
-	});
-
-	// Enforce task discipline for complex work and auto-track subagent dispatches.
-	pi.on("tool_call", async (event, ctx) => {
-		const toolName = event.toolName;
-		if (NON_COMPLEX_TOOLS.has(toolName)) {
-			return { block: false };
-		}
-
-		const hasActive = getActiveTask() !== undefined;
-		const hasPending = tasks.some((task) => task.status !== "done");
-
-		if (toolName === SUBAGENT_CREATE_TOOL) {
-			const input = event.input as Record<string, unknown> | undefined;
-			const subagentTask = input?.task;
-			const brief = typeof subagentTask === "string" ? subagentTask : "Subagent task";
-			addSubagentDispatchTask(brief);
-			persistSnapshot();
-			updateWidget(ctx);
-			return { block: false };
-		}
-
-		if (tasks.length === 0 || !hasPending || !hasActive) {
-			const createdAutoTaskId = ensureActiveTaskForToolCall(toolName, event.input);
-			if (createdAutoTaskId !== undefined) {
-				autoToolTaskByCallId.set(event.toolCallId, createdAutoTaskId);
-			}
-			persistSnapshot();
-			updateWidget(ctx);
-		}
-
-		return { block: false };
-	});
-
+	pi.on("session_start", async (_event, ctx) => syncUi(ctx));
+	pi.on("session_switch", async (_event, ctx) => syncUi(ctx));
+	pi.on("session_fork", async (_event, ctx) => syncUi(ctx));
+	pi.on("session_tree", async (_event, ctx) => syncUi(ctx));
 	pi.on("tool_result", async (event, ctx) => {
-		const taskId = autoToolTaskByCallId.get(event.toolCallId);
-		if (taskId === undefined) return;
-		autoToolTaskByCallId.delete(event.toolCallId);
-
-		const idx = tasks.findIndex((task) => task.id === taskId && task.category === "auto");
-		if (idx === -1) return;
-
-		if (event.isError) {
-			tasks[idx].status = "blocked";
-			tasks[idx].updatedAt = Date.now();
-		} else {
-			tasks.splice(idx, 1);
+		if (event.toolName === "todo_write" || event.toolName === "task") {
+			syncUi(ctx);
 		}
-
-		persistSnapshot();
-		updateWidget(ctx);
 	});
 
-	// ── Tool ───────────────────────────────────────────────────────────────────
+	pi.registerTool({
+		name: "todo_write",
+		label: "Todo Write",
+		description: "Create and manage structured todo/task lists during a session.",
+		promptGuidelines: [
+			"Use todo_write to initialize and keep progress visible during multi-step work.",
+			"Update todo_write immediately after a step completes so the visible board stays accurate.",
+			"Keep only one in_progress task at a time.",
+		],
+		parameters: todoWriteSchema,
+		execute: async (_callId, args, _signal, _onUpdate, ctx) => {
+			const previous = fileFromPhases(phases);
+			const { file: updated, errors } = applyOps(previous, args.ops);
+			phases = clonePhases(updated.phases);
+			updateWidget(ctx);
+			return {
+				content: [{ type: "text" as const, text: formatSummary(phases, errors) }],
+				details: {
+					phases: clonePhases(phases),
+					storage: "session",
+				} satisfies TodoWriteToolDetails,
+			};
+		},
+		renderCall(args, theme) {
+			const count = Array.isArray(args.ops) ? args.ops.length : 0;
+			const label = count === 1 && isRecord(args.ops?.[0]) && typeof args.ops[0].op === "string"
+				? args.ops[0].op
+				: `${count} ops`;
+			return new Text(`${theme.fg("toolTitle", theme.bold("todo_write"))} ${theme.fg("accent", label)}`, 0, 0);
+		},
+		renderResult(result, { expanded }, theme) {
+			const details = result.details as TodoWriteToolDetails | undefined;
+			const allTasks = details?.phases.flatMap((phase) => phase.tasks) ?? [];
+			if (allTasks.length === 0) {
+				const fallback = result.content.find((part) => part.type === "text")?.text ?? "No todos";
+				return new Text(`${theme.fg("success", "✓ Todo Write")}\n${theme.fg("dim", fallback)}`, 0, 0);
+			}
+			const lines = [`${theme.fg("success", "✓ Todo Write")} ${theme.fg("dim", `${allTasks.length} tasks`)}`];
+			for (const phase of details?.phases ?? []) {
+				if ((details?.phases.length ?? 0) > 1) {
+					lines.push(theme.fg("accent", `  ${phase.name}`));
+				}
+				const display = expanded ? phase.tasks : phase.tasks.slice(0, 5);
+				for (const task of display) {
+					lines.push(`  ${statusColor(task.status, theme)} ${theme.fg("dim", task.id)} ${task.content}`);
+				}
+				if (!expanded && phase.tasks.length > 5) {
+					lines.push(theme.fg("dim", `  ... ${phase.tasks.length - 5} more`));
+				}
+			}
+			return new Text(lines.join("\n"), 0, 0);
+		},
+	});
 
 	pi.registerTool({
 		name: "task",
 		label: "Task",
-		description: "Manage the task board. Track work with statuses and priorities.",
+		description: "Compatibility alias over the todo board. Prefer todo_write for structured task tracking.",
 		promptGuidelines: [
-			"If tasks drift out of sync after a failed run, use `clear_all` to reset the board and start fresh.",
-			"Before subagent dispatch or other complex tool use, ensure there is an active `in-progress` task.",
-			"Use 'add' at the START of complex work to break it into trackable steps.",
-			"Use 'set_status in-progress' when you BEGIN a task.",
-			"Use 'set_status done' IMMEDIATELY when a task is completed.",
-			"Use 'set_status blocked' when a task cannot proceed.",
-			"Use 'list' to check state before starting a multi-step plan.",
-			"Set priority 'critical' or 'high' for tasks the user explicitly emphasised.",
+			"This is a compatibility alias over the todo board.",
+			"Prefer todo_write when you need structured multi-step planning.",
 		],
-		parameters: Type.Object({
-			action: StringEnum(["add", "set_status", "set_priority", "list", "remove", "clear_done", "clear_all"] as const),
-			text: Type.Optional(Type.String({ description: "Task text (for add)" })),
-			id: Type.Optional(Type.Number({ description: "Task ID (for set_status, set_priority, remove)" })),
-			status: Type.Optional(StringEnum(["todo", "in-progress", "done", "blocked"] as const)),
-			priority: Type.Optional(StringEnum(["low", "medium", "high", "critical"] as const)),
-			category: Type.Optional(Type.String({ description: "Category tag (e.g. 'refactor', 'tests')" })),
-		}),
-
+		parameters: legacyTaskSchema,
 		execute: async (_callId, args, _signal, _onUpdate, ctx) => {
-			const now = Date.now();
-
-			const ok = (action: string, text: string): { content: [{ type: "text"; text: string }]; details: TaskDetails } => {
-				const details: TaskDetails = { action, tasks: [...tasks], nextId };
-				persistSnapshot();
+			const file = fileFromPhases(phases);
+			if (args.action === "list") {
+				const todos = flattenTodos(phases);
+				const text = todos.length === 0
+					? "No tasks."
+					: todos
+						.map(({ phase, todo }) => `#${todo.id.replace(/^task-/u, "")} [${todo.status}] [${phase}] ${todo.content}`)
+						.join("\n");
 				updateWidget(ctx);
-				return { content: [{ type: "text" as const, text }], details };
-			};
-
-			const err = (msg: string): { content: [{ type: "text"; text: string }]; details: TaskDetails } => ({
-				content: [{ type: "text" as const, text: `Error: ${msg}` }],
-				details: { action: args.action, tasks: [...tasks], nextId, error: msg },
-			});
-
-			switch (args.action) {
-				case "add": {
-					if (!args.text?.trim()) return err("text is required for add");
-					const task: Task = {
-						id: nextId++,
-						text: args.text.trim(),
-						status: "todo",
-						priority: args.priority ?? "medium",
-						category: args.category,
-						createdAt: now,
-						updatedAt: now,
-					};
-					tasks.push(task);
-					return ok("add", `Added #${task.id}: ${task.text}`);
-				}
-
-				case "set_status": {
-					if (args.id === undefined || !args.status) return err("id and status required");
-					const t = tasks.find((t) => t.id === args.id);
-					if (!t) return err(`task #${args.id} not found`);
-					t.status = args.status;
-					t.updatedAt = now;
-					return ok("set_status", `#${t.id} → ${args.status}`);
-				}
-
-				case "set_priority": {
-					if (args.id === undefined || !args.priority) return err("id and priority required");
-					const t = tasks.find((t) => t.id === args.id);
-					if (!t) return err(`task #${args.id} not found`);
-					t.priority = args.priority;
-					t.updatedAt = now;
-					return ok("set_priority", `#${t.id} priority → ${args.priority}`);
-				}
-
-				case "list": {
-					if (tasks.length === 0) return ok("list", "No tasks.");
-					const lines = sortedTasks(tasks).map(
-						(t) => `#${t.id} [${t.status}] [${t.priority}]${t.category ? ` [${t.category}]` : ""} ${t.text}`
-					);
-					return ok("list", lines.join("\n"));
-				}
-
-				case "remove": {
-					if (args.id === undefined) return err("id required for remove");
-					const idx = tasks.findIndex((t) => t.id === args.id);
-					if (idx === -1) return err(`task #${args.id} not found`);
-					const [removed] = tasks.splice(idx, 1);
-					return ok("remove", `Removed #${removed.id}: ${removed.text}`);
-				}
-
-				case "clear_done": {
-					const count = tasks.filter((t) => t.status === "done").length;
-					tasks = tasks.filter((t) => t.status !== "done");
-					return ok("clear_done", `Cleared ${count} done task${count !== 1 ? "s" : ""}`);
-				}
-
-				case "clear_all": {
-					const count = tasks.length;
-					tasks = [];
-					nextId = 1;
-					return ok("clear_all", `Cleared all ${count} task${count !== 1 ? "s" : ""}`);
-				}
-
-				default:
-					return err(`unknown action: ${String(args.action)}`);
+				return {
+					content: [{ type: "text" as const, text }],
+					details: { action: "list", phases: clonePhases(phases), storage: "session" } satisfies LegacyTaskToolDetails,
+				};
 			}
-		},
 
+			const ops = legacyActionToOps(file, args);
+			if ("error" in ops) {
+				return {
+					content: [{ type: "text" as const, text: `Error: ${ops.error}` }],
+					details: { action: args.action, phases: clonePhases(phases), storage: "session" } satisfies LegacyTaskToolDetails,
+				};
+			}
+
+			const { file: updated } = applyOps(file, ops);
+			phases = clonePhases(updated.phases);
+			updateWidget(ctx);
+			const summary = args.action === "clear_done"
+				? `Cleared completed tasks. ${formatSummary(phases, [])}`
+				: formatSummary(phases, []);
+			return {
+				content: [{ type: "text" as const, text: summary }],
+				details: { action: args.action, phases: clonePhases(phases), storage: "session" } satisfies LegacyTaskToolDetails,
+			};
+		},
 		renderCall(args, theme) {
-			let text = theme.fg("toolTitle", theme.bold("task ")) + theme.fg("accent", args.action);
+			let text = theme.fg("toolTitle", theme.bold("task")) + " " + theme.fg("accent", args.action);
 			if (args.id !== undefined) text += " " + theme.fg("dim", `#${args.id}`);
 			if (args.status) text += " → " + theme.fg("muted", args.status);
-			if (args.priority && args.action !== "set_status") text += " " + theme.fg("warning", args.priority);
-			if (args.text) text += " " + theme.fg("dim", `"${truncateToWidth(args.text, 55)}"`);
-			if (args.category) text += theme.fg("dim", ` [${args.category}]`);
+			if (args.text) text += " " + theme.fg("dim", `\"${truncateToWidth(args.text, 55)}\"`);
 			return new Text(text, 0, 0);
 		},
-
-		renderResult(result, { expanded }, theme) {
-			const details = result.details as TaskDetails | undefined;
-			if (!details) {
-				const t = result.content[0];
-				return new Text(t?.type === "text" ? t.text : "", 0, 0);
-			}
-			if (details.error) {
-				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
-			}
-
-			switch (details.action) {
-				case "add": {
-					const added = details.tasks[details.tasks.length - 1];
-					return new Text(
-						theme.fg("success", "+ ") +
-						theme.fg("accent", `#${added?.id}`) + " " +
-						theme.fg("muted", added?.text ?? ""),
-						0, 0,
-					);
-				}
-				case "set_status": {
-					const t = result.content[0];
-					const msg = t?.type === "text" ? t.text : "";
-					const icon = msg.includes("done")
-						? theme.fg("success", "✓ ")
-						: msg.includes("blocked")
-							? theme.fg("error", "✗ ")
-							: msg.includes("in-progress")
-								? theme.fg("accent", "● ")
-								: theme.fg("dim", "○ ");
-					return new Text(icon + theme.fg("muted", msg), 0, 0);
-				}
-				case "list": {
-					if (details.tasks.length === 0) return new Text(theme.fg("dim", "No tasks"), 0, 0);
-					const display = expanded ? sortedTasks(details.tasks) : sortedTasks(details.tasks).slice(0, 5);
-					let text = theme.fg("muted", `${details.tasks.length} task(s):`);
-					for (const t of display) {
-						const icon = statusColor(t.status, theme);
-						const txt = t.status === "done" ? theme.fg("dim", t.text) : theme.fg("muted", t.text);
-						text += `\n${icon} ${theme.fg("dim", `#${t.id}`)} ${txt}`;
-					}
-					if (!expanded && details.tasks.length > 5) {
-						text += `\n${theme.fg("dim", `... ${details.tasks.length - 5} more`)}`;
-					}
-					return new Text(text, 0, 0);
-				}
-				default: {
-					const t = result.content[0];
-					return new Text(theme.fg("success", "✓ ") + theme.fg("muted", t?.type === "text" ? t.text : ""), 0, 0);
-				}
-			}
+		renderResult(result, _options, theme) {
+			const text = result.content.find((part) => part.type === "text")?.text ?? "";
+			return new Text(theme.fg("muted", text), 0, 0);
 		},
 	});
 
-	// ── Slash commands ─────────────────────────────────────────────────────────
-
 	pi.registerCommand("tasks", {
-		description: "Open the interactive task board",
+		description: "Open the interactive todo board",
 		handler: async (_args, ctx) => {
+			syncUi(ctx);
 			if (!ctx.hasUI) {
 				ctx.ui.notify("/tasks requires interactive mode", "error");
 				return;
 			}
-			await ctx.ui.custom<void>((_tui, theme, _kb, done) => {
-				return new TaskBoardComponent(tasks, theme, () => done());
-			});
+			await ctx.ui.custom<void>((_tui, theme, _kb, done) => new TaskBoardComponent(phases, theme, () => done()));
 		},
 	});
 
@@ -674,63 +667,58 @@ export default function (pi: ExtensionAPI) {
 		description: "Quickly add a task: /task-add <text>",
 		handler: async (args, ctx) => {
 			const text = args.trim();
-			if (!text) { ctx.ui.notify("Usage: /task-add <text>", "warning"); return; }
-			const task: Task = {
-				id: nextId++,
-				text,
-				status: "todo",
-				priority: "medium",
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			};
-			tasks.push(task);
-			persistSnapshot();
+			if (!text) {
+				ctx.ui.notify("Usage: /task-add <text>", "warning");
+				return;
+			}
+			const file = fileFromPhases(phases);
+			const phase = getOrCreateExecutionPhase(file);
+			const { file: updated } = applyOps(file, [{ op: "add_task", phase: phase.id, content: text }]);
+			phases = clonePhases(updated.phases);
 			updateWidget(ctx);
-			ctx.ui.notify(`Added #${task.id}: ${text}`, "info");
+			ctx.ui.notify(`Added: ${text}`, "info");
 		},
 	});
 
 	pi.registerCommand("task-done", {
 		description: "Mark a task done: /task-done <id>",
 		handler: async (args, ctx) => {
-			const id = parseInt(args.trim(), 10);
-			if (isNaN(id)) { ctx.ui.notify("Usage: /task-done <id>", "warning"); return; }
-			const task = tasks.find((t) => t.id === id);
-			if (!task) { ctx.ui.notify(`Task #${id} not found`, "error"); return; }
-			task.status = "done";
-			task.updatedAt = Date.now();
-			persistSnapshot();
+			const id = Number.parseInt(args.trim(), 10);
+			if (!Number.isFinite(id)) {
+				ctx.ui.notify("Usage: /task-done <id>", "warning");
+				return;
+			}
+			const file = fileFromPhases(phases);
+			const { file: updated, errors } = applyOps(file, [{ op: "update", id: `task-${id}`, status: "completed" }]);
+			if (errors.length > 0) {
+				ctx.ui.notify(errors[0], "error");
+				return;
+			}
+			phases = clonePhases(updated.phases);
 			updateWidget(ctx);
-			ctx.ui.notify(`✓ #${id}: ${task.text}`, "info");
+			ctx.ui.notify(`✓ task-${id}`, "info");
 		},
 	});
 
 	pi.registerCommand("task-clear", {
-		description: "Clear all done tasks",
+		description: "Clear all completed tasks",
 		handler: async (_args, ctx) => {
-			const count = tasks.filter((t) => t.status === "done").length;
-			tasks = tasks.filter((t) => t.status !== "done");
-			persistSnapshot();
+			const file = fileFromPhases(phases);
+			const completed = file.phases.flatMap((phase) => phase.tasks.filter((task) => task.status === "completed"));
+			const ops = completed.map((task) => ({ op: "remove_task" as const, id: task.id }));
+			const { file: updated } = applyOps(file, ops);
+			phases = clonePhases(updated.phases);
 			updateWidget(ctx);
-			ctx.ui.notify(
-				count > 0 ? `Cleared ${count} done task${count !== 1 ? "s" : ""}` : "No done tasks to clear",
-				"info",
-			);
+			ctx.ui.notify(completed.length > 0 ? `Cleared ${completed.length} completed task${completed.length === 1 ? "" : "s"}` : "No completed tasks to clear", "info");
 		},
 	});
 
 	pi.registerCommand("task-reset", {
-		description: "Clear all tasks and reset IDs",
+		description: "Clear all tasks",
 		handler: async (_args, ctx) => {
-			const count = tasks.length;
-			tasks = [];
-			nextId = 1;
-			persistSnapshot();
+			phases = [];
 			updateWidget(ctx);
-			ctx.ui.notify(
-				count > 0 ? `Cleared all ${count} task${count !== 1 ? "s" : ""}` : "Task board already empty",
-				"info",
-			);
+			ctx.ui.notify("Cleared all tasks", "info");
 		},
 	});
 }

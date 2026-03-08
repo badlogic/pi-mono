@@ -4,7 +4,7 @@ import type { ExtensionAPI } from "../src/core/extensions/types.js";
 
 type EventHandler = (event: unknown, ctx: unknown) => Promise<unknown> | unknown;
 
-type TaskToolExecute = (
+type ToolExecute = (
 	callId: string,
 	args: Record<string, unknown>,
 	signal: AbortSignal | undefined,
@@ -14,28 +14,34 @@ type TaskToolExecute = (
 
 interface Harness {
 	handlers: Map<string, EventHandler>;
-	executeTask: TaskToolExecute;
+	executeTask: ToolExecute;
+	executeTodoWrite: ToolExecute;
 	ctx: {
 		sessionManager: { getBranch: () => unknown[] };
 		ui: {
-			setWidget: (_key: string, _widget: unknown) => void;
+			setWidget: (_key: string, _widget: unknown, _options?: { placement?: "aboveEditor" | "belowEditor" }) => void;
 			setStatus: (_key: string, _status: string | undefined) => void;
 			notify: (_msg: string, _kind: string) => void;
+			custom: <T>(factory: unknown) => Promise<T>;
 		};
 		hasUI: boolean;
 	};
+	widgetCalls: Array<{ key: string; placement?: "aboveEditor" | "belowEditor"; cleared: boolean }>;
 }
 
 function createHarness(): Harness {
 	const handlers = new Map<string, EventHandler>();
-	let executeTask: TaskToolExecute | undefined;
+	let executeTask: ToolExecute | undefined;
+	let executeTodoWrite: ToolExecute | undefined;
+	const widgetCalls: Array<{ key: string; placement?: "aboveEditor" | "belowEditor"; cleared: boolean }> = [];
 
 	const api = {
 		on: (event: string, handler: EventHandler) => {
 			handlers.set(event, handler);
 		},
-		registerTool: (tool: { name: string; execute: TaskToolExecute }) => {
+		registerTool: (tool: { name: string; execute: ToolExecute }) => {
 			if (tool.name === "task") executeTask = tool.execute;
+			if (tool.name === "todo_write") executeTodoWrite = tool.execute;
 		},
 		registerCommand: () => {},
 		appendEntry: () => {},
@@ -43,8 +49,8 @@ function createHarness(): Harness {
 
 	taskboardExtension(api);
 
-	if (!executeTask) {
-		throw new Error("task tool was not registered");
+	if (!executeTask || !executeTodoWrite) {
+		throw new Error("expected task and todo_write tools to be registered");
 	}
 
 	const ctx = {
@@ -52,23 +58,30 @@ function createHarness(): Harness {
 			getBranch: () => [],
 		},
 		ui: {
-			setWidget: () => {},
+			setWidget: (key: string, widget: unknown, options?: { placement?: "aboveEditor" | "belowEditor" }) => {
+				widgetCalls.push({
+					key,
+					placement: options?.placement,
+					cleared: widget === undefined,
+				});
+			},
 			setStatus: () => {},
 			notify: () => {},
+			custom: async () => undefined as never,
 		},
 		hasUI: true,
 	};
 
-	return { handlers, executeTask, ctx };
+	return { handlers, executeTask, executeTodoWrite, ctx, widgetCalls };
 }
 
 async function emitToolCall(
 	harness: Harness,
 	toolName: string,
 	input: Record<string, unknown>,
-): Promise<{ block?: boolean; reason?: string }> {
+): Promise<{ block?: boolean; reason?: string } | undefined> {
 	const handler = harness.handlers.get("tool_call");
-	if (!handler) throw new Error("tool_call handler not found");
+	if (!handler) return undefined;
 	const result = await handler(
 		{
 			type: "tool_call",
@@ -78,7 +91,7 @@ async function emitToolCall(
 		},
 		harness.ctx,
 	);
-	return result as { block?: boolean; reason?: string };
+	return result as { block?: boolean; reason?: string } | undefined;
 }
 
 async function startSession(harness: Harness): Promise<void> {
@@ -88,69 +101,146 @@ async function startSession(harness: Harness): Promise<void> {
 	}
 }
 
-async function listTasks(harness: Harness): Promise<{
-	text: string;
-	tasks: Array<{ id: number; text: string; status: string; priority: string; category?: string }>;
-}> {
-	const result = await harness.executeTask("call-1", { action: "list" }, undefined, undefined, harness.ctx);
-	const textPart = result.content.find((part) => part.type === "text");
-	const details = result.details as {
-		tasks: Array<{ id: number; text: string; status: string; priority: string; category?: string }>;
-	};
-	return {
-		text: textPart?.text ?? "",
-		tasks: details.tasks,
-	};
-}
-
-describe("taskboard extension guard", () => {
-	it("does not block bash when no tasks exist and auto-creates an in-progress task", async () => {
+describe("taskboard extension parity", () => {
+	it("does not block bash when no task exists", async () => {
 		const harness = createHarness();
 		await startSession(harness);
 
 		const outcome = await emitToolCall(harness, "bash", { command: "echo test" });
-		expect(outcome.block).toBe(false);
-
-		const list = await listTasks(harness);
-		expect(list.tasks).toHaveLength(1);
-		expect(list.tasks[0].status).toBe("in-progress");
-		expect(list.text.toLowerCase()).toContain("echo test");
+		expect(outcome?.block ?? false).toBe(false);
 	});
 
-	it("auto-creates an in-progress subagent task when dispatching without active work", async () => {
+	it("does not block subagent dispatch when no task exists", async () => {
 		const harness = createHarness();
 		await startSession(harness);
+
 		const outcome = await emitToolCall(harness, "subagent_create", {
 			task: "Investigate extension API mismatch and summarize findings",
 		});
-		expect(outcome.block).toBe(false);
-
-		const list = await listTasks(harness);
-		expect(list.tasks).toHaveLength(1);
-		expect(list.tasks[0].status).toBe("in-progress");
-		expect(list.tasks[0].category).toBe("subagent");
+		expect(outcome?.block ?? false).toBe(false);
 	});
 
-	it("promotes an existing pending task to in-progress instead of creating a new one", async () => {
+	it("auto-starts the first task after todo_write replace", async () => {
 		const harness = createHarness();
-		await startSession(harness);
-
-		await harness.executeTask(
-			"call-2",
-			{ action: "add", text: "Create integration tests for queue draining" },
+		const result = await harness.executeTodoWrite(
+			"call-1",
+			{
+				ops: [
+					{
+						op: "replace",
+						phases: [
+							{
+								name: "Execution",
+								tasks: [{ content: "status" }, { content: "diagnostics" }],
+							},
+						],
+					},
+				],
+			},
 			undefined,
 			undefined,
 			harness.ctx,
 		);
 
-		const outcome = await emitToolCall(harness, "write", {
-			path: "/tmp/demo.txt",
-			content: "hello",
-		});
-		expect(outcome.block).toBe(false);
+		const details = result.details as {
+			phases: Array<{ tasks: Array<{ status: string }> }>;
+		};
+		expect(details.phases[0]?.tasks.map((task) => task.status)).toEqual(["in_progress", "pending"]);
+		expect(result.content[0]?.text).toContain("Remaining items (2):");
+		expect(result.content[0]?.text).toContain("task-1 status [in_progress] (Execution)");
+	});
 
-		const list = await listTasks(harness);
-		expect(list.tasks).toHaveLength(1);
-		expect(list.tasks[0].status).toBe("in-progress");
+	it("auto-promotes the next pending task when current task is completed", async () => {
+		const harness = createHarness();
+		await harness.executeTodoWrite(
+			"call-1",
+			{
+				ops: [
+					{
+						op: "replace",
+						phases: [
+							{
+								name: "Execution",
+								tasks: [{ content: "status" }, { content: "diagnostics" }],
+							},
+						],
+					},
+				],
+			},
+			undefined,
+			undefined,
+			harness.ctx,
+		);
+
+		const result = await harness.executeTodoWrite(
+			"call-2",
+			{ ops: [{ op: "update", id: "task-1", status: "completed" }] },
+			undefined,
+			undefined,
+			harness.ctx,
+		);
+
+		const details = result.details as {
+			phases: Array<{ tasks: Array<{ status: string }> }>;
+		};
+		expect(details.phases[0]?.tasks.map((task) => task.status)).toEqual(["completed", "in_progress"]);
+		expect(result.content[0]?.text).toContain("Remaining items (1):");
+		expect(result.content[0]?.text).toContain("task-2 diagnostics [in_progress] (Execution)");
+	});
+
+	it("keeps only one in_progress task when replace input contains multiples", async () => {
+		const harness = createHarness();
+		const result = await harness.executeTodoWrite(
+			"call-1",
+			{
+				ops: [
+					{
+						op: "replace",
+						phases: [
+							{
+								name: "Execution",
+								tasks: [
+									{ content: "status", status: "in_progress" },
+									{ content: "diagnostics", status: "in_progress" },
+								],
+							},
+						],
+					},
+				],
+			},
+			undefined,
+			undefined,
+			harness.ctx,
+		);
+
+		const details = result.details as {
+			phases: Array<{ tasks: Array<{ status: string }> }>;
+		};
+		expect(details.phases[0]?.tasks.map((task) => task.status)).toEqual(["in_progress", "pending"]);
+	});
+
+	it("renders the widget above the editor", async () => {
+		const harness = createHarness();
+		await harness.executeTodoWrite(
+			"call-1",
+			{
+				ops: [
+					{
+						op: "replace",
+						phases: [{ name: "Execution", tasks: [{ content: "Map architecture" }] }],
+					},
+				],
+			},
+			undefined,
+			undefined,
+			harness.ctx,
+		);
+
+		const lastWidget = [...harness.widgetCalls].reverse().find((call) => call.key === "taskboard" && !call.cleared);
+		expect(lastWidget).toEqual({
+			key: "taskboard",
+			placement: "aboveEditor",
+			cleared: false,
+		});
 	});
 });

@@ -27,12 +27,34 @@ interface Harness {
 	handlers: Map<string, EventHandler>;
 	tools: Map<string, ToolExecute>;
 	ctx: HarnessContext;
+	getActiveTools: () => string[];
 }
 
 function createHarness(): Harness {
 	const handlers = new Map<string, EventHandler>();
 	const tools = new Map<string, ToolExecute>();
-	let activeTools = ["task", "subagent_create", "subagent_continue", "subagent_list", "subagent_clear_finished"];
+	const allTools = [
+		"read",
+		"bash",
+		"todo_write",
+		"task",
+		"subagent",
+		"subagent_create",
+		"subagent_continue",
+		"subagent_list",
+		"subagent_clear_finished",
+	];
+	let activeTools = [
+		"read",
+		"bash",
+		"todo_write",
+		"task",
+		"subagent",
+		"subagent_create",
+		"subagent_continue",
+		"subagent_list",
+		"subagent_clear_finished",
+	];
 
 	const api = {
 		on: (event: string, handler: EventHandler) => {
@@ -43,7 +65,7 @@ function createHarness(): Harness {
 		},
 		registerCommand: () => {},
 		appendEntry: () => {},
-		getAllTools: () => activeTools.map((name) => ({ name })),
+		getAllTools: () => allTools.map((name) => ({ name })),
 		getActiveTools: () => activeTools,
 		setActiveTools: (toolsToSet: string[]) => {
 			activeTools = [...toolsToSet];
@@ -66,7 +88,12 @@ function createHarness(): Harness {
 		cwd: "/tmp",
 	};
 
-	return { handlers, tools, ctx };
+	return {
+		handlers,
+		tools,
+		ctx,
+		getActiveTools: () => [...activeTools],
+	};
 }
 
 async function emitToolCall(
@@ -101,11 +128,83 @@ async function enableDispatchMode(harness: Harness): Promise<void> {
 	);
 }
 
+async function startSession(harness: Harness): Promise<void> {
+	const handler = harness.handlers.get("session_start");
+	if (!handler) throw new Error("session_start handler not found");
+	await handler(
+		{
+			type: "session_start",
+		},
+		harness.ctx,
+	);
+}
+
 afterEach(() => {
 	__testing.resetState();
 });
 
 describe("subagent soft-cap guard", () => {
+	it("removes legacy subagent tools from the main-agent baseline when the tmux addon starts", async () => {
+		const harness = createHarness();
+
+		await startSession(harness);
+
+		expect(harness.getActiveTools()).toEqual(["read", "bash", "task"]);
+	});
+
+	it("treats explicit scout-agent requests as dispatch mode triggers", async () => {
+		const harness = createHarness();
+		const handler = harness.handlers.get("input");
+		if (!handler) throw new Error("input handler not found");
+
+		await startSession(harness);
+		await handler(
+			{
+				type: "input",
+				text: "spawn 4 scout agents in parallel and explore the codebase",
+				source: "user",
+				images: undefined,
+			},
+			harness.ctx,
+		);
+
+		expect(harness.getActiveTools()).toEqual([
+			"todo_write",
+			"subagent_create",
+			"subagent_continue",
+			"subagent_list",
+			"subagent_clear_finished",
+		]);
+	});
+
+	it("blocks legacy subagent tool calls and points the main agent to the tmux-backed API", async () => {
+		const harness = createHarness();
+
+		const outcome = await emitToolCall(harness, "subagent", { agent: "scout", task: "Explore the codebase" });
+
+		expect(outcome).toEqual({
+			block: true,
+			reason: expect.stringContaining('Legacy subagent tool "subagent" is disabled'),
+		});
+		expect(outcome?.reason).toContain("subagent_create");
+		expect(outcome?.reason).toContain("subagent_continue");
+	});
+
+	it("switches dispatch mode to the canonical tmux-backed subagent tools only", async () => {
+		const harness = createHarness();
+
+		await startSession(harness);
+		await enableDispatchMode(harness);
+
+		expect(harness.getActiveTools()).toEqual([
+			"todo_write",
+			"subagent_create",
+			"subagent_continue",
+			"subagent_list",
+			"subagent_clear_finished",
+		]);
+	});
+
 	it("blocks subagent_create at the soft cap when finished main-agent subagents can be reused or cleared", async () => {
 		const harness = createHarness();
 		__testing.seedAgentStates([
@@ -184,9 +283,11 @@ describe("subagent soft-cap guard", () => {
 		)) as { systemPrompt: string };
 
 		expect(result.systemPrompt).toContain("You have FIVE tools");
+		expect(result.systemPrompt).toContain("todo_write");
 		expect(result.systemPrompt).toContain("subagent_list");
 		expect(result.systemPrompt).toContain("subagent_clear_finished");
 		expect(result.systemPrompt).toContain("soft orchestration budget");
+		expect(result.systemPrompt).toContain("todo state synchronized");
 		expect(result.systemPrompt).toContain("Going beyond 8 tracked main-agent subagents is bad practice");
 	});
 });
