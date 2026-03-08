@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
+import { existsSync } from "fs";
+import { homedir } from "os";
 import { join, resolve } from "path";
-import { type AgentRunner, getOrCreateRunner } from "./agent.js";
+import { type AgentRunner, getOrCreateRunner, type ModelSelection, type RunnerConfig } from "./agent.js";
 import { downloadChannel } from "./download.js";
 import { createEventsWatcher } from "./events.js";
 import * as log from "./log.js";
@@ -20,6 +22,9 @@ interface ParsedArgs {
 	workingDir?: string;
 	sandbox: SandboxConfig;
 	downloadChannel?: string;
+	modelSelection: ModelSelection;
+	authFile?: string;
+	modelsFile?: string;
 }
 
 function parseArgs(): ParsedArgs {
@@ -27,6 +32,10 @@ function parseArgs(): ParsedArgs {
 	let sandbox: SandboxConfig = { type: "host" };
 	let workingDir: string | undefined;
 	let downloadChannelId: string | undefined;
+	let provider = process.env.MOM_PROVIDER;
+	let model = process.env.MOM_MODEL;
+	let authFile = process.env.MOM_AUTH_FILE;
+	let modelsFile = process.env.MOM_MODELS_FILE;
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -38,19 +47,55 @@ function parseArgs(): ParsedArgs {
 			downloadChannelId = arg.slice("--download=".length);
 		} else if (arg === "--download") {
 			downloadChannelId = args[++i];
+		} else if (arg.startsWith("--provider=")) {
+			provider = arg.slice("--provider=".length);
+		} else if (arg === "--provider") {
+			provider = args[++i];
+		} else if (arg.startsWith("--model=")) {
+			model = arg.slice("--model=".length);
+		} else if (arg === "--model") {
+			model = args[++i];
+		} else if (arg.startsWith("--auth-file=")) {
+			authFile = arg.slice("--auth-file=".length);
+		} else if (arg === "--auth-file") {
+			authFile = args[++i];
+		} else if (arg.startsWith("--models-file=")) {
+			modelsFile = arg.slice("--models-file=".length);
+		} else if (arg === "--models-file") {
+			modelsFile = args[++i];
 		} else if (!arg.startsWith("-")) {
 			workingDir = arg;
 		}
+	}
+
+	if (model && !provider) {
+		log.logWarning("--model specified without --provider", "Model ID lookup may be ambiguous across providers.");
 	}
 
 	return {
 		workingDir: workingDir ? resolve(workingDir) : undefined,
 		sandbox,
 		downloadChannel: downloadChannelId,
+		modelSelection: { provider, model },
+		authFile: authFile ? resolve(authFile) : undefined,
+		modelsFile: modelsFile ? resolve(modelsFile) : undefined,
 	};
 }
 
 const parsedArgs = parseArgs();
+
+function resolveDefaultModelsFile(explicitModelsFile: string | undefined): string | undefined {
+	if (explicitModelsFile) {
+		return explicitModelsFile;
+	}
+
+	const momModelsPath = join(homedir(), ".pi", "mom", "models.json");
+	if (existsSync(momModelsPath)) {
+		return momModelsPath;
+	}
+
+	return undefined;
+}
 
 // Handle --download mode
 if (parsedArgs.downloadChannel) {
@@ -64,12 +109,19 @@ if (parsedArgs.downloadChannel) {
 
 // Normal bot mode - require working dir
 if (!parsedArgs.workingDir) {
-	console.error("Usage: mom [--sandbox=host|docker:<name>] <working-directory>");
+	console.error(
+		"Usage: mom [--sandbox=host|docker:<name>] [--provider <id>] [--model <id>] [--auth-file <path>] [--models-file <path>] <working-directory>",
+	);
 	console.error("       mom --download <channel-id>");
 	process.exit(1);
 }
 
 const { workingDir, sandbox } = { workingDir: parsedArgs.workingDir, sandbox: parsedArgs.sandbox };
+const runnerConfig: RunnerConfig = {
+	modelSelection: parsedArgs.modelSelection,
+	authFile: parsedArgs.authFile,
+	modelsFile: resolveDefaultModelsFile(parsedArgs.modelsFile),
+};
 
 if (!MOM_SLACK_APP_TOKEN || !MOM_SLACK_BOT_TOKEN) {
 	console.error("Missing env: MOM_SLACK_APP_TOKEN, MOM_SLACK_BOT_TOKEN");
@@ -98,7 +150,7 @@ function getState(channelId: string): ChannelState {
 		const channelDir = join(workingDir, channelId);
 		state = {
 			running: false,
-			runner: getOrCreateRunner(sandbox, channelId, channelDir),
+			runner: getOrCreateRunner(sandbox, channelId, channelDir, runnerConfig),
 			store: new ChannelStore({ workingDir, botToken: MOM_SLACK_BOT_TOKEN! }),
 			stopRequested: false,
 		};
@@ -335,7 +387,12 @@ const handler: MomHandler = {
 // Start
 // ============================================================================
 
-log.logStartup(workingDir, sandbox.type === "host" ? "host" : `docker:${sandbox.container}`);
+log.logStartup(workingDir, sandbox.type === "host" ? "host" : `docker:${sandbox.container}`, {
+	provider: runnerConfig.modelSelection?.provider,
+	model: runnerConfig.modelSelection?.model,
+	authFile: runnerConfig.authFile,
+	modelsFile: runnerConfig.modelsFile,
+});
 
 // Shared store for attachment downloads (also used per-channel in getState)
 const sharedStore = new ChannelStore({ workingDir, botToken: MOM_SLACK_BOT_TOKEN! });

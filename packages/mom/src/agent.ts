@@ -1,5 +1,5 @@
 import { Agent, type AgentEvent } from "@mariozechner/pi-agent-core";
-import { getModel, type ImageContent } from "@mariozechner/pi-ai";
+import type { Api, ImageContent, Model } from "@mariozechner/pi-ai";
 import {
 	AgentSession,
 	AuthStorage,
@@ -23,9 +23,6 @@ import type { ChannelInfo, SlackContext, UserInfo } from "./slack.js";
 import type { ChannelStore } from "./store.js";
 import { createMomTools, setUploadFunction } from "./tools/index.js";
 
-// Hardcoded model for now - TODO: make configurable (issue #63)
-const model = getModel("anthropic", "claude-sonnet-4-5");
-
 export interface PendingMessage {
 	userName: string;
 	text: string;
@@ -42,13 +39,92 @@ export interface AgentRunner {
 	abort(): void;
 }
 
-async function getAnthropicApiKey(authStorage: AuthStorage): Promise<string> {
-	const key = await authStorage.getApiKey("anthropic");
+export interface ModelSelection {
+	provider?: string;
+	model?: string;
+}
+
+export interface RunnerConfig {
+	modelSelection?: ModelSelection;
+	authFile?: string;
+	modelsFile?: string;
+}
+
+function getModelDescription(model: Model<Api>): string {
+	return `${model.provider}/${model.id}`;
+}
+
+function resolveModel(modelRegistry: ModelRegistry, selection?: ModelSelection): Model<Api> {
+	const configuredProvider = selection?.provider?.trim();
+	const configuredModel = selection?.model?.trim();
+	const allModels = modelRegistry.getAll();
+	const availableModels = modelRegistry.getAvailable();
+
+	if (configuredProvider && configuredModel) {
+		const selected = allModels.find((model) => model.provider === configuredProvider && model.id === configuredModel);
+		if (!selected) {
+			throw new Error(`Configured model not found: ${configuredProvider}/${configuredModel}`);
+		}
+		if (!availableModels.some((model) => model.provider === selected.provider && model.id === selected.id)) {
+			throw new Error(
+				`No credentials found for configured model: ${configuredProvider}/${configuredModel}. ` +
+					`Configure auth for provider "${configuredProvider}" in env vars or auth.json.`,
+			);
+		}
+		return selected;
+	}
+
+	if (configuredProvider) {
+		const providerModels = availableModels.filter((model) => model.provider === configuredProvider);
+		if (providerModels.length === 0) {
+			const hasProviderModels = allModels.some((model) => model.provider === configuredProvider);
+			if (!hasProviderModels) {
+				throw new Error(`Configured provider not found: ${configuredProvider}`);
+			}
+			throw new Error(
+				`No credentials found for configured provider: ${configuredProvider}. ` +
+					`Configure auth for this provider in env vars or auth.json.`,
+			);
+		}
+		return providerModels[0];
+	}
+
+	if (configuredModel) {
+		const matches = availableModels.filter((model) => model.id === configuredModel);
+		if (matches.length === 1) {
+			return matches[0];
+		}
+		if (matches.length > 1) {
+			const providerList = matches.map((model) => model.provider).join(", ");
+			throw new Error(
+				`Model ID "${configuredModel}" is ambiguous across providers (${providerList}). ` +
+					`Set MOM_PROVIDER or pass --provider.`,
+			);
+		}
+		throw new Error(`Configured model not found or has no credentials: ${configuredModel}`);
+	}
+
+	const preferredAnthropic = availableModels.find(
+		(model) => model.provider === "anthropic" && model.id === "claude-sonnet-4-5",
+	);
+	if (preferredAnthropic) {
+		return preferredAnthropic;
+	}
+
+	if (availableModels.length === 0) {
+		throw new Error(
+			"No models with credentials available. Configure a provider API key/OAuth in auth.json or environment variables.",
+		);
+	}
+	return availableModels[0];
+}
+
+async function getApiKeyForModel(authStorage: AuthStorage, selectedModel: Model<Api>): Promise<string> {
+	const key = await authStorage.getApiKey(selectedModel.provider);
 	if (!key) {
 		throw new Error(
-			"No API key found for anthropic.\n\n" +
-				"Set an API key environment variable, or use /login with Anthropic and link to auth.json from " +
-				join(homedir(), ".pi", "mom", "auth.json"),
+			`No API key found for provider "${selectedModel.provider}" (model ${getModelDescription(selectedModel)}).\n\n` +
+				"Set an API key environment variable, store credentials in auth.json, or use /login for OAuth-enabled providers.",
 		);
 	}
 	return key;
@@ -395,11 +471,16 @@ const channelRunners = new Map<string, AgentRunner>();
  * Get or create an AgentRunner for a channel.
  * Runners are cached - one per channel, persistent across messages.
  */
-export function getOrCreateRunner(sandboxConfig: SandboxConfig, channelId: string, channelDir: string): AgentRunner {
+export function getOrCreateRunner(
+	sandboxConfig: SandboxConfig,
+	channelId: string,
+	channelDir: string,
+	config: RunnerConfig,
+): AgentRunner {
 	const existing = channelRunners.get(channelId);
 	if (existing) return existing;
 
-	const runner = createRunner(sandboxConfig, channelId, channelDir);
+	const runner = createRunner(sandboxConfig, channelId, channelDir, config);
 	channelRunners.set(channelId, runner);
 	return runner;
 }
@@ -408,7 +489,12 @@ export function getOrCreateRunner(sandboxConfig: SandboxConfig, channelId: strin
  * Create a new AgentRunner for a channel.
  * Sets up the session and subscribes to events once.
  */
-function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDir: string): AgentRunner {
+function createRunner(
+	sandboxConfig: SandboxConfig,
+	channelId: string,
+	channelDir: string,
+	config: RunnerConfig,
+): AgentRunner {
 	const executor = createExecutor(sandboxConfig);
 	const workspacePath = executor.getWorkspacePath(channelDir.replace(`/${channelId}`, ""));
 
@@ -428,19 +514,26 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 
 	// Create AuthStorage and ModelRegistry
 	// Auth stored outside workspace so agent can't access it
-	const authStorage = AuthStorage.create(join(homedir(), ".pi", "mom", "auth.json"));
-	const modelRegistry = new ModelRegistry(authStorage);
+	const authStoragePath = config.authFile ?? join(homedir(), ".pi", "mom", "auth.json");
+	const authStorage = AuthStorage.create(authStoragePath);
+	const modelRegistry = new ModelRegistry(authStorage, config.modelsFile);
+	const modelRegistryError = modelRegistry.getError();
+	if (modelRegistryError) {
+		log.logWarning(`[${channelId}] Failed to load custom models`, modelRegistryError);
+	}
+	const selectedModel = resolveModel(modelRegistry, config.modelSelection);
+	log.logInfo(`[${channelId}] Using model ${getModelDescription(selectedModel)}`);
 
 	// Create agent
 	const agent = new Agent({
 		initialState: {
 			systemPrompt,
-			model,
+			model: selectedModel,
 			thinkingLevel: "off",
 			tools,
 		},
 		convertToLlm,
-		getApiKey: async () => getAnthropicApiKey(authStorage),
+		getApiKey: async () => getApiKeyForModel(authStorage, selectedModel),
 	});
 
 	// Load existing messages
@@ -841,7 +934,7 @@ function createRunner(sandboxConfig: SandboxConfig, channelId: string, channelDi
 						lastAssistantMessage.usage.cacheRead +
 						lastAssistantMessage.usage.cacheWrite
 					: 0;
-				const contextWindow = model.contextWindow || 200000;
+				const contextWindow = selectedModel.contextWindow || 200000;
 
 				const summary = log.logUsageSummary(runState.logCtx!, runState.totalUsage, contextTokens, contextWindow);
 				runState.queue.enqueue(() => ctx.respondInThread(summary), "usage summary");

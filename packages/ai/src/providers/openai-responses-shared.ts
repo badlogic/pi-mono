@@ -78,6 +78,15 @@ export interface ConvertResponsesToolsOptions {
 	strict?: boolean | null;
 }
 
+type ResponseOutputMessageWithPhase = ResponseOutputMessage & {
+	phase?: TextSignatureV1["phase"];
+};
+
+function getResponseOutputMessagePhase(message: ResponseOutputMessage): TextSignatureV1["phase"] | undefined {
+	const phase = (message as ResponseOutputMessageWithPhase).phase;
+	return phase === "commentary" || phase === "final_answer" ? phase : undefined;
+}
+
 // =============================================================================
 // Message conversion
 // =============================================================================
@@ -174,14 +183,15 @@ export function convertResponsesMessages<TApi extends Api>(
 					} else if (msgId.length > 64) {
 						msgId = `msg_${shortHash(msgId)}`;
 					}
-					output.push({
+					const messageOutput: ResponseOutputMessageWithPhase = {
 						type: "message",
 						role: "assistant",
 						content: [{ type: "output_text", text: sanitizeSurrogates(textBlock.text), annotations: [] }],
 						status: "completed",
 						id: msgId,
 						phase: parsedSignature?.phase,
-					} satisfies ResponseOutputMessage);
+					};
+					output.push(messageOutput);
 				} else if (block.type === "toolCall") {
 					const toolCall = block as ToolCall;
 					const [callId, itemIdRaw] = toolCall.id.split("|");
@@ -419,7 +429,7 @@ export async function processResponsesStream<TApi extends Api>(
 				currentBlock = null;
 			} else if (item.type === "message" && currentBlock?.type === "text") {
 				currentBlock.text = item.content.map((c) => (c.type === "output_text" ? c.text : c.refusal)).join("");
-				currentBlock.textSignature = encodeTextSignatureV1(item.id, item.phase ?? undefined);
+				currentBlock.textSignature = encodeTextSignatureV1(item.id, getResponseOutputMessagePhase(item));
 				stream.push({
 					type: "text_end",
 					contentIndex: blockIndex(),

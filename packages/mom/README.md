@@ -62,8 +62,10 @@ npm install @mariozechner/pi-mom
 # Set environment variables
 export MOM_SLACK_APP_TOKEN=xapp-...
 export MOM_SLACK_BOT_TOKEN=xoxb-...
-# Option 1: Anthropic API key
+# Option 1: API key for your provider (examples)
 export ANTHROPIC_API_KEY=sk-ant-...
+# export OPENAI_API_KEY=sk-...
+# export GEMINI_API_KEY=...
 # Option 2: use /login command in pi agent, then copy/link auth.json to ~/.pi/mom/
 
 # Create Docker sandbox (recommended)
@@ -87,7 +89,19 @@ mom [options] <working-directory>
 Options:
   --sandbox=host              Run tools on host (not recommended)
   --sandbox=docker:<name>     Run tools in Docker container (recommended)
+  --provider <id>             Force provider (e.g. anthropic, openai, google)
+  --model <id>                Force model ID for selected provider
+  --auth-file <path>          Custom auth.json location (default: ~/.pi/mom/auth.json)
+  --models-file <path>        Custom models.json location (default: ~/.pi/mom/models.json if present)
 ```
+
+### Model Selection
+
+Mom resolves model/provider in this order:
+
+1. `--provider` / `--model` flags (or `MOM_PROVIDER` / `MOM_MODEL`)
+2. If nothing set: prefers `anthropic/claude-sonnet-4-5` when available
+3. Otherwise: first model with configured credentials
 
 ## Environment Variables
 
@@ -95,24 +109,38 @@ Options:
 |----------|-------------|
 | `MOM_SLACK_APP_TOKEN` | Slack app-level token (xapp-...) |
 | `MOM_SLACK_BOT_TOKEN` | Slack bot token (xoxb-...) |
-| `ANTHROPIC_API_KEY` | (Optional) Anthropic API key |
+| Provider API key vars | Optional, e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, etc. |
+| `MOM_PROVIDER` | Optional default provider override |
+| `MOM_MODEL` | Optional default model override |
+| `MOM_AUTH_FILE` | Optional auth.json path override |
+| `MOM_MODELS_FILE` | Optional models.json path override |
 
 ## Authentication
 
-Mom needs credentials for Anthropic API. The options to set it are:
+Mom needs credentials for whichever provider/model you use.
 
 1. **Environment Variable**
+
+Set the provider key you want to use (examples):
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
+# or
+export OPENAI_API_KEY=sk-...
+# or
+export GEMINI_API_KEY=...
 ```
 
-2. **OAuth Login via coding agent command** (Recommended for Claude Pro/Max)
+2. **OAuth Login via coding agent command** (for providers that support `/login`)
 
 - run interactive coding agent session: `npx @mariozechner/pi-coding-agent`
 - enter `/login` command
-  - choose "Anthropic" provider
+  - choose a provider
   - follow instructions in the browser
 - link `auth.json` to mom: `ln -s ~/.pi/agent/auth.json ~/.pi/mom/auth.json`
+
+3. **Custom provider/model config**
+
+Use `~/.pi/mom/models.json` (or `--models-file`) to define custom providers and models compatible with pi model config.
 
 ## How Mom Works
 

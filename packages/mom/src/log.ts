@@ -241,10 +241,31 @@ export function logUsageSummary(
 }
 
 // Startup (no context needed)
-export function logStartup(workingDir: string, sandbox: string): void {
+export function logStartup(
+	workingDir: string,
+	sandbox: string,
+	options?: {
+		provider?: string;
+		model?: string;
+		authFile?: string;
+		modelsFile?: string;
+	},
+): void {
 	console.log("Starting mom bot...");
 	console.log(`  Working directory: ${workingDir}`);
 	console.log(`  Sandbox: ${sandbox}`);
+	if (options?.provider) {
+		console.log(`  Provider: ${options.provider}`);
+	}
+	if (options?.model) {
+		console.log(`  Model: ${options.model}`);
+	}
+	if (options?.authFile) {
+		console.log(`  Auth file: ${options.authFile}`);
+	}
+	if (options?.modelsFile) {
+		console.log(`  Models file: ${options.modelsFile}`);
+	}
 }
 
 export function logConnected(): void {
