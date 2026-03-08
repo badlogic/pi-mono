@@ -384,7 +384,7 @@ async function* mapCodexEvents(events: AsyncIterable<Record<string, unknown>>): 
 				? { ...response, status: normalizeCodexStatus(response.status) }
 				: response;
 			yield { ...event, type: "response.completed", response: normalizedResponse } as ResponseStreamEvent;
-			continue;
+			return;
 		}
 
 		yield event as unknown as ResponseStreamEvent;
