@@ -200,7 +200,7 @@ ${chalk.bold("Options:")}
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume
-  --session <path>               Use specific session file
+  --session <path>               Use specific session file or partial UUID
   --session-dir <dir>            Directory for session storage and lookup
   --no-session                   Don't save session (ephemeral)
   --models <patterns>            Comma-separated model patterns for Ctrl+P cycling
@@ -244,6 +244,13 @@ ${chalk.bold("Examples:")}
 
   # Continue previous session
   ${APP_NAME} --continue "What did we discuss?"
+
+  # Resume specific session by ID prefix
+  ${APP_NAME} --session 94a31582
+
+  # Git Bash/MSYS on Windows: quote backslash paths or use forward slashes
+  ${APP_NAME} --session 'C:\\Users\\Admin\\.pi\\agent\\sessions\\...jsonl'
+  ${APP_NAME} --session C:/Users/Admin/.pi/agent/sessions/...jsonl
 
   # Use different model
   ${APP_NAME} --provider openai --model gpt-4o-mini "Help me refactor this code"

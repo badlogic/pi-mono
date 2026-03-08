@@ -12,6 +12,7 @@ import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { selectConfig } from "./cli/config-selector.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
+import { resolveSessionPath } from "./cli/session-path.js";
 import { selectSession } from "./cli/session-picker.js";
 import { APP_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
 import { AuthStorage } from "./core/auth-storage.js";
@@ -327,44 +328,6 @@ async function prepareInitialMessage(
 	};
 }
 
-/** Result from resolving a session argument */
-type ResolvedSession =
-	| { type: "path"; path: string } // Direct file path
-	| { type: "local"; path: string } // Found in current project
-	| { type: "global"; path: string; cwd: string } // Found in different project
-	| { type: "not_found"; arg: string }; // Not found anywhere
-
-/**
- * Resolve a session argument to a file path.
- * If it looks like a path, use as-is. Otherwise try to match as session ID prefix.
- */
-async function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: string): Promise<ResolvedSession> {
-	// If it looks like a file path, use as-is
-	if (sessionArg.includes("/") || sessionArg.includes("\\") || sessionArg.endsWith(".jsonl")) {
-		return { type: "path", path: sessionArg };
-	}
-
-	// Try to match as session ID in current project first
-	const localSessions = await SessionManager.list(cwd, sessionDir);
-	const localMatches = localSessions.filter((s) => s.id.startsWith(sessionArg));
-
-	if (localMatches.length >= 1) {
-		return { type: "local", path: localMatches[0].path };
-	}
-
-	// Try global search across all projects
-	const allSessions = await SessionManager.listAll();
-	const globalMatches = allSessions.filter((s) => s.id.startsWith(sessionArg));
-
-	if (globalMatches.length >= 1) {
-		const match = globalMatches[0];
-		return { type: "global", path: match.path, cwd: match.cwd };
-	}
-
-	// Not found anywhere
-	return { type: "not_found", arg: sessionArg };
-}
-
 /** Prompt user for yes/no confirmation */
 async function promptConfirm(message: string): Promise<boolean> {
 	return new Promise((resolve) => {
@@ -440,7 +403,14 @@ async function createSessionManager(
 			}
 
 			case "not_found":
-				console.error(chalk.red(`No session found matching '${resolved.arg}'`));
+				if (resolved.pathLike) {
+					console.error(chalk.red(`Session file not found: ${resolved.arg}`));
+					if (resolved.hint) {
+						console.error(chalk.yellow(resolved.hint));
+					}
+				} else {
+					console.error(chalk.red(`No session found matching '${resolved.arg}'`));
+				}
 				process.exit(1);
 		}
 	}

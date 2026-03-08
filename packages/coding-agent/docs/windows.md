@@ -15,3 +15,16 @@ For most users, [Git for Windows](https://git-scm.com/download/win) is sufficien
   "shellPath": "C:\\cygwin64\\bin\\bash.exe"
 }
 ```
+
+## Session Paths in Git Bash / MSYS
+
+When using `--session` with a Windows path in Git Bash/MSYS, quote backslash paths or use forward slashes.
+
+```bash
+# Good
+pi --session 'C:\Users\Admin\.pi\agent\sessions\...jsonl'
+pi --session C:/Users/Admin/.pi/agent/sessions/...jsonl
+
+# Bad (unquoted backslashes get eaten by bash)
+pi --session C:\Users\Admin\.pi\agent\sessions\...jsonl
+```

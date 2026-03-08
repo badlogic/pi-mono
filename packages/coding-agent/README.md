@@ -204,7 +204,11 @@ Sessions auto-save to `~/.pi/agent/sessions/` organized by working directory.
 pi -c                  # Continue most recent session
 pi -r                  # Browse and select from past sessions
 pi --no-session        # Ephemeral mode (don't save)
-pi --session <path>    # Use specific session file or ID
+pi --session <path>    # Use specific session file or ID prefix
+
+# Git Bash/MSYS on Windows: quote backslash paths or use forward slashes
+pi --session 'C:\Users\Admin\.pi\agent\sessions\...jsonl'
+pi --session C:/Users/Admin/.pi/agent/sessions/...jsonl
 ```
 
 ### Branching
@@ -466,7 +470,7 @@ pi config                   # Enable/disable package resources
 |--------|-------------|
 | `-c`, `--continue` | Continue most recent session |
 | `-r`, `--resume` | Browse and select session |
-| `--session <path>` | Use specific session file or partial UUID |
+| `--session <path>` | Use specific session file or partial UUID (quote Windows backslash paths in Git Bash/MSYS) |
 | `--session-dir <dir>` | Custom session storage directory |
 | `--no-session` | Ephemeral mode (don't save) |
 

@@ -5,6 +5,8 @@
 ### Fixed
 
 - Fixed interactive input fields backed by the TUI `Input` component to scroll by visual column width for wide Unicode text (CJK, fullwidth characters), preventing rendered line overflow and TUI crashes in places like search and filter inputs ([#1982](https://github.com/badlogic/pi-mono/issues/1982))
+- Fixed `--session` path handling to error when a path-like argument does not exist instead of silently creating a new session file.
+- Added a targeted Git Bash/MSYS hint for `--session` when unquoted Windows backslashes are likely stripped by shell escaping (`C:Users...jsonl`).
 
 ## [0.57.1] - 2026-03-07
 
