@@ -48,7 +48,9 @@ export class AssistantMessageComponent extends Container {
 		this.contentContainer.clear();
 
 		const hasVisibleContent = message.content.some(
-			(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
+			(c) =>
+				(c.type === "text" && c.text.trim()) ||
+				(c.type === "thinking" && c.thinking.trim() && !this.hideThinkingBlock),
 		);
 
 		if (hasVisibleContent) {
@@ -70,11 +72,7 @@ export class AssistantMessageComponent extends Container {
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
 
 				if (this.hideThinkingBlock) {
-					// Show static "Thinking..." label when hidden
-					this.contentContainer.addChild(new Text(theme.italic(theme.fg("thinkingText", "Thinking...")), 1, 0));
-					if (hasVisibleContentAfter) {
-						this.contentContainer.addChild(new Spacer(1));
-					}
+					// Fully hidden: no label, no space
 				} else {
 					// Thinking traces in thinkingText color, italic
 					this.contentContainer.addChild(
