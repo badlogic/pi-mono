@@ -196,9 +196,53 @@ export class Container implements Component {
 }
 
 /**
+ * Cached container for mostly-static UI regions.
+ * Child additions/removals invalidate the cache, but child-internal mutations
+ * still need an explicit invalidate() call from the owner.
+ */
+export class CachedContainer extends Container {
+	private cachedWidth?: number;
+	private cachedLines?: string[];
+
+	override addChild(component: Component): void {
+		super.addChild(component);
+		this.invalidate();
+	}
+
+	override removeChild(component: Component): void {
+		super.removeChild(component);
+		this.invalidate();
+	}
+
+	override clear(): void {
+		super.clear();
+		this.invalidate();
+	}
+
+	override invalidate(): void {
+		super.invalidate();
+		this.cachedWidth = undefined;
+		this.cachedLines = undefined;
+	}
+
+	override render(width: number): string[] {
+		if (this.cachedLines && this.cachedWidth === width) {
+			return this.cachedLines;
+		}
+
+		const lines = super.render(width);
+		this.cachedWidth = width;
+		this.cachedLines = lines;
+		return lines;
+	}
+}
+
+/**
  * TUI - Main class for managing terminal UI with differential rendering
  */
 export class TUI extends Container {
+	private static readonly LOW_PRIORITY_RENDER_IDLE_MS = 48;
+
 	public terminal: Terminal;
 	private previousLines: string[] = [];
 	private previousWidth = 0;
@@ -209,7 +253,7 @@ export class TUI extends Container {
 	public onDebug?: () => void;
 	private renderRequested = false;
 	private lowPriorityRenderRequested = false;
-	private lowPriorityRenderHandle: NodeJS.Immediate | undefined;
+	private lowPriorityRenderHandle: ReturnType<typeof setTimeout> | undefined;
 	private cursorRow = 0; // Logical cursor row (end of rendered content)
 	private hardwareCursorRow = 0; // Actual terminal cursor row (may differ due to IME positioning)
 	private inputBuffer = ""; // Buffer for parsing terminal responses
@@ -220,6 +264,7 @@ export class TUI extends Container {
 	private previousViewportTop = 0; // Track previous viewport top for resize-aware cursor moves
 	private fullRedrawCount = 0;
 	private stopped = false;
+	private lastInputAt = 0;
 
 	// Overlay stack for modal components rendered on top of base content
 	private overlayStack: {
@@ -434,7 +479,7 @@ export class TUI extends Container {
 		}
 		if (this.renderRequested) {
 			if (priority === "normal" && this.lowPriorityRenderRequested && this.lowPriorityRenderHandle) {
-				clearImmediate(this.lowPriorityRenderHandle);
+				clearTimeout(this.lowPriorityRenderHandle);
 				this.lowPriorityRenderHandle = undefined;
 				this.lowPriorityRenderRequested = false;
 				process.nextTick(() => {
@@ -447,12 +492,7 @@ export class TUI extends Container {
 		this.renderRequested = true;
 		if (priority === "low") {
 			this.lowPriorityRenderRequested = true;
-			this.lowPriorityRenderHandle = setImmediate(() => {
-				this.lowPriorityRenderHandle = undefined;
-				this.lowPriorityRenderRequested = false;
-				this.renderRequested = false;
-				this.doRender();
-			});
+			this.scheduleLowPriorityRender();
 			return;
 		}
 
@@ -462,7 +502,36 @@ export class TUI extends Container {
 		});
 	}
 
+	private scheduleLowPriorityRender(): void {
+		if (this.lowPriorityRenderHandle) {
+			return;
+		}
+
+		const idleForMs = Date.now() - this.lastInputAt;
+		const delayMs = Math.max(0, TUI.LOW_PRIORITY_RENDER_IDLE_MS - idleForMs);
+
+		this.lowPriorityRenderHandle = setTimeout(() => {
+			this.lowPriorityRenderHandle = undefined;
+
+			if (!this.renderRequested || !this.lowPriorityRenderRequested) {
+				return;
+			}
+
+			const idleAfterTimerMs = Date.now() - this.lastInputAt;
+			if (idleAfterTimerMs < TUI.LOW_PRIORITY_RENDER_IDLE_MS) {
+				this.scheduleLowPriorityRender();
+				return;
+			}
+
+			this.lowPriorityRenderRequested = false;
+			this.renderRequested = false;
+			this.doRender();
+		}, delayMs);
+	}
+
 	private handleInput(data: string): void {
+		this.lastInputAt = Date.now();
+
 		if (this.inputListeners.size > 0) {
 			let current = data;
 			for (const listener of this.inputListeners) {

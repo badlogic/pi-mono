@@ -48,6 +48,7 @@ describe("InteractiveMode streaming UI updates", () => {
 				role: "assistant",
 				content: [{ type: "text", text: "latest" }],
 			},
+			chatLiveContainer: { invalidate: vi.fn() },
 			pendingStreamingUiTimer: undefined,
 			pendingStreamingFooterRefresh: false,
 			pendingToolExecutionUpdates: new Map([

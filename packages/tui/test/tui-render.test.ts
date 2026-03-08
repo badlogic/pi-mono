@@ -1,15 +1,71 @@
 import assert from "node:assert";
-import { describe, it } from "node:test";
+import { afterEach, describe, it, mock } from "node:test";
 import type { Terminal as XtermTerminalType } from "@xterm/headless";
-import { type Component, TUI } from "../src/tui.js";
+import type { Terminal } from "../src/terminal.js";
+import { CachedContainer, type Component, TUI } from "../src/tui.js";
 import { VirtualTerminal } from "./virtual-terminal.js";
 
 class TestComponent implements Component {
 	lines: string[] = [];
+	renderCount = 0;
 	render(_width: number): string[] {
+		this.renderCount++;
 		return this.lines;
 	}
 	invalidate(): void {}
+}
+
+class InputAwareTerminal implements Terminal {
+	private inputHandler?: (data: string) => void;
+	writes: string[] = [];
+
+	start(onInput: (data: string) => void, _onResize: () => void): void {
+		this.inputHandler = onInput;
+	}
+
+	stop(): void {
+		this.inputHandler = undefined;
+	}
+
+	async drainInput(): Promise<void> {}
+
+	write(data: string): void {
+		this.writes.push(data);
+	}
+
+	get columns(): number {
+		return 80;
+	}
+
+	get rows(): number {
+		return 24;
+	}
+
+	get kittyProtocolActive(): boolean {
+		return true;
+	}
+
+	moveBy(_lines: number): void {}
+
+	hideCursor(): void {}
+
+	showCursor(): void {}
+
+	clearLine(): void {}
+
+	clearFromCursor(): void {}
+
+	clearScreen(): void {}
+
+	setTitle(_title: string): void {}
+
+	sendInput(data: string): void {
+		this.inputHandler?.(data);
+	}
+}
+
+class InputComponent extends TestComponent {
+	handleInput(_data: string): void {}
 }
 
 function getCellItalic(terminal: VirtualTerminal, row: number, col: number): number {
@@ -21,6 +77,10 @@ function getCellItalic(terminal: VirtualTerminal, row: number, col: number): num
 	assert.ok(cell, `Missing cell at row ${row} col ${col}`);
 	return cell.isItalic();
 }
+
+afterEach(() => {
+	mock.timers.reset();
+});
 
 describe("TUI resize handling", () => {
 	it("triggers full re-render when terminal width changes", async () => {
@@ -128,6 +188,29 @@ describe("TUI content shrinkage", () => {
 });
 
 describe("TUI differential rendering", () => {
+	it("reuses cached lines for unchanged static content", () => {
+		const container = new CachedContainer();
+		const child = new TestComponent();
+		child.lines = ["static line"];
+		container.addChild(child);
+
+		const firstRender = container.render(80);
+		const firstRenderCount = child.renderCount;
+		const secondRender = container.render(80);
+
+		assert.strictEqual(
+			child.renderCount,
+			firstRenderCount,
+			"Cached container should not rerender unchanged children",
+		);
+		assert.strictEqual(secondRender, firstRender, "Cached container should reuse the same rendered lines");
+
+		container.invalidate();
+		const thirdRender = container.render(80);
+		assert.ok(child.renderCount > firstRenderCount, "Invalidation should force rerender");
+		assert.notStrictEqual(thirdRender, secondRender, "Invalidation should refresh cached lines");
+	});
+
 	it("tracks cursor correctly when content shrinks with unchanged remaining lines", async () => {
 		const terminal = new VirtualTerminal(40, 10);
 		const tui = new TUI(terminal);
@@ -323,6 +406,49 @@ describe("TUI render priority", () => {
 
 		const viewport = terminal.getViewport();
 		assert.ok(viewport[0]?.includes("normal-priority"), `Expected upgraded render, got: ${viewport[0]}`);
+
+		tui.stop();
+	});
+
+	it("waits for a brief idle window before low-priority renders after typing", async () => {
+		mock.timers.enable({ apis: ["setTimeout", "Date"] });
+
+		const terminal = new InputAwareTerminal();
+		const tui = new TUI(terminal);
+		const component = new InputComponent();
+		tui.addChild(component);
+		tui.setFocus(component);
+
+		component.lines = ["initial"];
+		tui.start();
+		await new Promise((resolve) => process.nextTick(resolve));
+
+		const initialRenderCount = component.renderCount;
+
+		terminal.sendInput("a");
+		await new Promise((resolve) => process.nextTick(resolve));
+
+		const renderCountAfterInput = component.renderCount;
+		assert.ok(renderCountAfterInput > initialRenderCount, "Input should trigger an immediate render");
+
+		component.lines = ["background update"];
+		tui.requestRender(false, "low");
+
+		assert.strictEqual(
+			component.renderCount,
+			renderCountAfterInput,
+			"Low-priority render should not run immediately",
+		);
+
+		mock.timers.tick(47);
+		assert.strictEqual(
+			component.renderCount,
+			renderCountAfterInput,
+			"Low-priority render should wait for idle window",
+		);
+
+		mock.timers.tick(1);
+		assert.ok(component.renderCount > renderCountAfterInput, "Low-priority render should run after idle window");
 
 		tui.stop();
 	});

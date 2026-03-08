@@ -21,6 +21,7 @@ import type {
 	SlashCommand,
 } from "@mariozechner/pi-tui";
 import {
+	CachedContainer,
 	CombinedAutocompleteProvider,
 	type Component,
 	Container,
@@ -146,7 +147,8 @@ export class InteractiveMode {
 
 	private session: AgentSession;
 	private ui: TUI;
-	private chatContainer: Container;
+	private chatContainer: CachedContainer;
+	private chatLiveContainer: Container;
 	private pendingMessagesContainer: Container;
 	private statusContainer: Container;
 	private defaultEditor: CustomEditor;
@@ -263,7 +265,8 @@ export class InteractiveMode {
 		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
 		this.headerContainer = new Container();
-		this.chatContainer = new Container();
+		this.chatContainer = new CachedContainer();
+		this.chatLiveContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
 		this.widgetContainerAbove = new Container();
@@ -457,6 +460,7 @@ export class InteractiveMode {
 		}
 
 		this.ui.addChild(this.chatContainer);
+		this.ui.addChild(this.chatLiveContainer);
 		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
 		this.renderWidgets(); // Initialize with default spacer
@@ -899,12 +903,12 @@ export class InteractiveMode {
 		if (showListing) {
 			const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
 			if (contextFiles.length > 0) {
-				this.chatContainer.addChild(new Spacer(1));
+				this.appendChatComponent(new Spacer(1));
 				const contextList = contextFiles
 					.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`))
 					.join("\n");
-				this.chatContainer.addChild(new Text(`${sectionHeader("Context")}\n${contextList}`, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
+				this.appendChatComponent(new Text(`${sectionHeader("Context")}\n${contextList}`, 0, 0));
+				this.appendChatComponent(new Spacer(1));
 			}
 
 			const skills = skillsResult.skills;
@@ -915,8 +919,8 @@ export class InteractiveMode {
 					formatPath: (p) => this.formatDisplayPath(p),
 					formatPackagePath: (p, source) => this.getShortPath(p, source),
 				});
-				this.chatContainer.addChild(new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
+				this.appendChatComponent(new Text(`${sectionHeader("Skills")}\n${skillList}`, 0, 0));
+				this.appendChatComponent(new Spacer(1));
 			}
 
 			const templates = this.session.promptTemplates;
@@ -934,8 +938,8 @@ export class InteractiveMode {
 						return template ? `/${template.name}` : this.formatDisplayPath(p);
 					},
 				});
-				this.chatContainer.addChild(new Text(`${sectionHeader("Prompts")}\n${templateList}`, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
+				this.appendChatComponent(new Text(`${sectionHeader("Prompts")}\n${templateList}`, 0, 0));
+				this.appendChatComponent(new Spacer(1));
 			}
 
 			const extensionPaths = options?.extensionPaths ?? [];
@@ -945,8 +949,8 @@ export class InteractiveMode {
 					formatPath: (p) => this.formatDisplayPath(p),
 					formatPackagePath: (p, source) => this.getShortPath(p, source),
 				});
-				this.chatContainer.addChild(new Text(`${sectionHeader("Extensions", "mdHeading")}\n${extList}`, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
+				this.appendChatComponent(new Text(`${sectionHeader("Extensions", "mdHeading")}\n${extList}`, 0, 0));
+				this.appendChatComponent(new Spacer(1));
 			}
 
 			// Show loaded themes (excluding built-in)
@@ -959,8 +963,8 @@ export class InteractiveMode {
 					formatPath: (p) => this.formatDisplayPath(p),
 					formatPackagePath: (p, source) => this.getShortPath(p, source),
 				});
-				this.chatContainer.addChild(new Text(`${sectionHeader("Themes")}\n${themeList}`, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
+				this.appendChatComponent(new Text(`${sectionHeader("Themes")}\n${themeList}`, 0, 0));
+				this.appendChatComponent(new Spacer(1));
 			}
 		}
 
@@ -968,17 +972,15 @@ export class InteractiveMode {
 			const skillDiagnostics = skillsResult.diagnostics;
 			if (skillDiagnostics.length > 0) {
 				const warningLines = this.formatDiagnostics(skillDiagnostics, metadata);
-				this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Skill conflicts]")}\n${warningLines}`, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
+				this.appendChatComponent(new Text(`${theme.fg("warning", "[Skill conflicts]")}\n${warningLines}`, 0, 0));
+				this.appendChatComponent(new Spacer(1));
 			}
 
 			const promptDiagnostics = promptsResult.diagnostics;
 			if (promptDiagnostics.length > 0) {
 				const warningLines = this.formatDiagnostics(promptDiagnostics, metadata);
-				this.chatContainer.addChild(
-					new Text(`${theme.fg("warning", "[Prompt conflicts]")}\n${warningLines}`, 0, 0),
-				);
-				this.chatContainer.addChild(new Spacer(1));
+				this.appendChatComponent(new Text(`${theme.fg("warning", "[Prompt conflicts]")}\n${warningLines}`, 0, 0));
+				this.appendChatComponent(new Spacer(1));
 			}
 
 			const extensionDiagnostics: ResourceDiagnostic[] = [];
@@ -997,17 +999,15 @@ export class InteractiveMode {
 
 			if (extensionDiagnostics.length > 0) {
 				const warningLines = this.formatDiagnostics(extensionDiagnostics, metadata);
-				this.chatContainer.addChild(
-					new Text(`${theme.fg("warning", "[Extension issues]")}\n${warningLines}`, 0, 0),
-				);
-				this.chatContainer.addChild(new Spacer(1));
+				this.appendChatComponent(new Text(`${theme.fg("warning", "[Extension issues]")}\n${warningLines}`, 0, 0));
+				this.appendChatComponent(new Spacer(1));
 			}
 
 			const themeDiagnostics = themesResult.diagnostics;
 			if (themeDiagnostics.length > 0) {
 				const warningLines = this.formatDiagnostics(themeDiagnostics, metadata);
-				this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Theme conflicts]")}\n${warningLines}`, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
+				this.appendChatComponent(new Text(`${theme.fg("warning", "[Theme conflicts]")}\n${warningLines}`, 0, 0));
+				this.appendChatComponent(new Spacer(1));
 			}
 		}
 	}
@@ -1035,7 +1035,7 @@ export class InteractiveMode {
 					}
 
 					// Clear UI state
-					this.chatContainer.clear();
+					this.clearRenderedChat();
 					this.pendingMessagesContainer.clear();
 					this.compactionQueuedMessages = [];
 					this.streamingComponent = undefined;
@@ -1055,7 +1055,7 @@ export class InteractiveMode {
 						return { cancelled: true };
 					}
 
-					this.chatContainer.clear();
+					this.clearRenderedChat();
 					this.renderInitialMessages();
 					this.editor.setText(result.selectedText);
 					this.showStatus("Forked to new session");
@@ -1073,7 +1073,7 @@ export class InteractiveMode {
 						return { cancelled: true };
 					}
 
-					this.chatContainer.clear();
+					this.clearRenderedChat();
 					this.renderInitialMessages();
 					if (result.editorText && !this.editor.getText().trim()) {
 						this.editor.setText(result.editorText);
@@ -1769,7 +1769,7 @@ export class InteractiveMode {
 	private showExtensionError(extensionPath: string, error: string, stack?: string): void {
 		const errorMsg = `Extension "${extensionPath}" error: ${error}`;
 		const errorText = new Text(theme.fg("error", errorMsg), 1, 0);
-		this.chatContainer.addChild(errorText);
+		this.appendChatComponent(errorText);
 		if (stack) {
 			// Show stack trace in dim color, indented
 			const stackLines = stack
@@ -1778,7 +1778,7 @@ export class InteractiveMode {
 				.map((line) => theme.fg("dim", `  ${line.trim()}`))
 				.join("\n");
 			if (stackLines) {
-				this.chatContainer.addChild(new Text(stackLines, 1, 0));
+				this.appendChatComponent(new Text(stackLines, 1, 0));
 			}
 		}
 		this.ui.requestRender();
@@ -2108,7 +2108,7 @@ export class InteractiveMode {
 					);
 					this.streamingComponent.setStreamingMode(true);
 					this.streamingMessage = event.message;
-					this.chatContainer.addChild(this.streamingComponent);
+					this.chatLiveContainer.addChild(this.streamingComponent);
 					this.flushStreamingUiUpdates(true);
 				}
 				break;
@@ -2173,7 +2173,7 @@ export class InteractiveMode {
 						this.ui,
 					);
 					component.setExpanded(this.toolOutputExpanded);
-					this.chatContainer.addChild(component);
+					this.chatLiveContainer.addChild(component);
 					this.pendingTools.set(event.toolCallId, component);
 					this.ui.requestRender();
 				}
@@ -2196,6 +2196,7 @@ export class InteractiveMode {
 				if (component) {
 					component.updateResult({ ...event.result, isError: event.isError });
 					this.pendingTools.delete(event.toolCallId);
+					this.chatLiveContainer.invalidate();
 					this.ui.requestRender();
 				}
 				break;
@@ -2208,12 +2209,13 @@ export class InteractiveMode {
 					this.statusContainer.clear();
 				}
 				if (this.streamingComponent) {
-					this.chatContainer.removeChild(this.streamingComponent);
+					this.chatLiveContainer.removeChild(this.streamingComponent);
 					this.streamingComponent = undefined;
 					this.streamingMessage = undefined;
 				}
 				this.clearPendingStreamingUiUpdates();
 				this.pendingTools.clear();
+				this.freezeLiveChat();
 
 				await this.checkShutdownRequested();
 
@@ -2258,7 +2260,7 @@ export class InteractiveMode {
 					this.showStatus("Auto-compaction cancelled");
 				} else if (event.result) {
 					// Rebuild chat to show compacted state
-					this.chatContainer.clear();
+					this.clearRenderedChat();
 					this.rebuildChatFromMessages();
 					// Add compaction component at bottom so user sees it without scrolling
 					this.addMessageToChat({
@@ -2270,8 +2272,8 @@ export class InteractiveMode {
 					this.footer.invalidate();
 				} else if (event.errorMessage) {
 					// Compaction failed (e.g., quota exceeded, API error)
-					this.chatContainer.addChild(new Spacer(1));
-					this.chatContainer.addChild(new Text(theme.fg("error", event.errorMessage), 1, 0));
+					this.appendChatComponent(new Spacer(1));
+					this.appendChatComponent(new Text(theme.fg("error", event.errorMessage), 1, 0));
 				}
 				void this.flushCompactionQueue({ willRetry: event.willRetry });
 				this.ui.requestRender();
@@ -2330,6 +2332,40 @@ export class InteractiveMode {
 		return textBlocks.map((c) => (c as { text: string }).text).join("");
 	}
 
+	private getChatAppendTarget(options?: { live?: boolean }): Container {
+		if (options?.live || this.chatLiveContainer.children.length > 0) {
+			return this.chatLiveContainer;
+		}
+		return this.chatContainer;
+	}
+
+	private appendChatComponent(component: Component, options?: { live?: boolean }): void {
+		this.getChatAppendTarget(options).addChild(component);
+	}
+
+	private clearRenderedChat(): void {
+		this.chatContainer.clear();
+		this.chatLiveContainer.clear();
+		this.lastStatusSpacer = undefined;
+		this.lastStatusText = undefined;
+	}
+
+	private freezeLiveChat(): void {
+		if (this.chatLiveContainer.children.length === 0) {
+			return;
+		}
+
+		const liveChildren = [...this.chatLiveContainer.children];
+		this.chatLiveContainer.clear();
+		for (const child of liveChildren) {
+			this.chatContainer.addChild(child);
+		}
+	}
+
+	private getAllChatChildren(): Component[] {
+		return [...this.chatContainer.children, ...this.chatLiveContainer.children];
+	}
+
 	/**
 	 * Show a status message in the chat.
 	 *
@@ -2337,26 +2373,28 @@ export class InteractiveMode {
 	 * we update the previous status line instead of appending new ones to avoid log spam.
 	 */
 	private showStatus(message: string): void {
-		const children = this.chatContainer.children;
+		const target = this.getChatAppendTarget();
+		const children = target.children;
 		const last = children.length > 0 ? children[children.length - 1] : undefined;
 		const secondLast = children.length > 1 ? children[children.length - 2] : undefined;
 
 		if (last && secondLast && last === this.lastStatusText && secondLast === this.lastStatusSpacer) {
 			this.lastStatusText.setText(theme.fg("dim", message));
+			target.invalidate();
 			this.ui.requestRender();
 			return;
 		}
 
 		const spacer = new Spacer(1);
 		const text = new Text(theme.fg("dim", message), 1, 0);
-		this.chatContainer.addChild(spacer);
-		this.chatContainer.addChild(text);
+		target.addChild(spacer);
+		target.addChild(text);
 		this.lastStatusSpacer = spacer;
 		this.lastStatusText = text;
 		this.ui.requestRender();
 	}
 
-	private addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {
+	private addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean; live?: boolean }): void {
 		switch (message.role) {
 			case "bashExecution": {
 				const component = new BashExecutionComponent(message.command, this.ui, message.excludeFromContext, {
@@ -2371,7 +2409,7 @@ export class InteractiveMode {
 					message.truncated ? ({ truncated: true } as TruncationResult) : undefined,
 					message.fullOutputPath,
 				);
-				this.chatContainer.addChild(component);
+				this.appendChatComponent(component, options);
 				break;
 			}
 			case "custom": {
@@ -2379,22 +2417,22 @@ export class InteractiveMode {
 					const renderer = this.session.extensionRunner?.getMessageRenderer(message.customType);
 					const component = new CustomMessageComponent(message, renderer, this.getMarkdownThemeWithSettings());
 					component.setExpanded(this.toolOutputExpanded);
-					this.chatContainer.addChild(component);
+					this.appendChatComponent(component, options);
 				}
 				break;
 			}
 			case "compactionSummary": {
-				this.chatContainer.addChild(new Spacer(1));
+				this.appendChatComponent(new Spacer(1), options);
 				const component = new CompactionSummaryMessageComponent(message, this.getMarkdownThemeWithSettings());
 				component.setExpanded(this.toolOutputExpanded);
-				this.chatContainer.addChild(component);
+				this.appendChatComponent(component, options);
 				break;
 			}
 			case "branchSummary": {
-				this.chatContainer.addChild(new Spacer(1));
+				this.appendChatComponent(new Spacer(1), options);
 				const component = new BranchSummaryMessageComponent(message, this.getMarkdownThemeWithSettings());
 				component.setExpanded(this.toolOutputExpanded);
-				this.chatContainer.addChild(component);
+				this.appendChatComponent(component, options);
 				break;
 			}
 			case "user": {
@@ -2403,24 +2441,24 @@ export class InteractiveMode {
 					const skillBlock = parseSkillBlock(textContent);
 					if (skillBlock) {
 						// Render skill block (collapsible)
-						this.chatContainer.addChild(new Spacer(1));
+						this.appendChatComponent(new Spacer(1), options);
 						const component = new SkillInvocationMessageComponent(
 							skillBlock,
 							this.getMarkdownThemeWithSettings(),
 						);
 						component.setExpanded(this.toolOutputExpanded);
-						this.chatContainer.addChild(component);
+						this.appendChatComponent(component, options);
 						// Render user message separately if present
 						if (skillBlock.userMessage) {
 							const userComponent = new UserMessageComponent(
 								skillBlock.userMessage,
 								this.getMarkdownThemeWithSettings(),
 							);
-							this.chatContainer.addChild(userComponent);
+							this.appendChatComponent(userComponent, options);
 						}
 					} else {
 						const userComponent = new UserMessageComponent(textContent, this.getMarkdownThemeWithSettings());
-						this.chatContainer.addChild(userComponent);
+						this.appendChatComponent(userComponent, options);
 					}
 					if (options?.populateHistory) {
 						this.editor.addToHistory?.(textContent);
@@ -2434,7 +2472,7 @@ export class InteractiveMode {
 					this.hideThinkingBlock,
 					this.getMarkdownThemeWithSettings(),
 				);
-				this.chatContainer.addChild(assistantComponent);
+				this.appendChatComponent(assistantComponent, options);
 				break;
 			}
 			case "toolResult": {
@@ -2482,7 +2520,7 @@ export class InteractiveMode {
 							this.ui,
 						);
 						component.setExpanded(this.toolOutputExpanded);
-						this.chatContainer.addChild(component);
+						this.appendChatComponent(component);
 
 						if (message.stopReason === "aborted" || message.stopReason === "error") {
 							let errorMessage: string;
@@ -2545,7 +2583,7 @@ export class InteractiveMode {
 	}
 
 	private rebuildChatFromMessages(): void {
-		this.chatContainer.clear();
+		this.clearRenderedChat();
 		const context = this.sessionManager.buildSessionContext();
 		this.renderSessionContext(context);
 		this.footer.syncToolStatsFromSessionEntries();
@@ -2730,6 +2768,7 @@ export class InteractiveMode {
 		if (this.streamingComponent && this.streamingMessage) {
 			this.streamingComponent.updateContent(this.streamingMessage);
 			this.syncStreamingToolComponents(this.streamingMessage);
+			this.chatLiveContainer.invalidate();
 			shouldRender = true;
 		}
 
@@ -2738,6 +2777,7 @@ export class InteractiveMode {
 				const component = this.pendingTools.get(toolCallId);
 				if (component) {
 					component.updateResult({ ...partialResult, isError: false }, true);
+					this.chatLiveContainer.invalidate();
 					shouldRender = true;
 				}
 			}
@@ -2784,7 +2824,7 @@ export class InteractiveMode {
 					this.ui,
 				);
 				component.setExpanded(this.toolOutputExpanded);
-				this.chatContainer.addChild(component);
+				this.chatLiveContainer.addChild(component);
 				this.pendingTools.set(content.id, component);
 				continue;
 			}
@@ -2792,6 +2832,7 @@ export class InteractiveMode {
 			const component = this.pendingTools.get(content.id);
 			if (component) {
 				component.updateArgs(content.arguments);
+				this.chatLiveContainer.invalidate();
 			}
 		}
 	}
@@ -2831,11 +2872,13 @@ export class InteractiveMode {
 
 	private setToolsExpanded(expanded: boolean): void {
 		this.toolOutputExpanded = expanded;
-		for (const child of this.chatContainer.children) {
+		for (const child of this.getAllChatChildren()) {
 			if (isExpandable(child)) {
 				child.setExpanded(expanded);
 			}
 		}
+		this.chatContainer.invalidate();
+		this.chatLiveContainer.invalidate();
 		this.ui.requestRender();
 	}
 
@@ -2844,14 +2887,15 @@ export class InteractiveMode {
 		this.settingsManager.setHideThinkingBlock(this.hideThinkingBlock);
 
 		// Rebuild chat from session messages
-		this.chatContainer.clear();
+		this.clearRenderedChat();
 		this.rebuildChatFromMessages();
 
 		// If streaming, re-add the streaming component with updated visibility and re-render
 		if (this.streamingComponent && this.streamingMessage) {
 			this.streamingComponent.setHideThinkingBlock(this.hideThinkingBlock);
 			this.streamingComponent.updateContent(this.streamingMessage);
-			this.chatContainer.addChild(this.streamingComponent);
+			this.chatLiveContainer.addChild(this.streamingComponent);
+			this.syncStreamingToolComponents(this.streamingMessage);
 		}
 
 		this.showStatus(`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`);
@@ -2914,14 +2958,14 @@ export class InteractiveMode {
 	}
 
 	showError(errorMessage: string): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
+		this.appendChatComponent(new Spacer(1));
+		this.appendChatComponent(new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
 		this.ui.requestRender();
 	}
 
 	showWarning(warningMessage: string): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
+		this.appendChatComponent(new Spacer(1));
+		this.appendChatComponent(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
 		this.ui.requestRender();
 	}
 
@@ -2934,16 +2978,16 @@ export class InteractiveMode {
 		);
 		const changelogLine = theme.fg("muted", "Changelog: ") + changelogUrl;
 
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
-		this.chatContainer.addChild(
+		this.appendChatComponent(new Spacer(1));
+		this.appendChatComponent(new DynamicBorder((text) => theme.fg("warning", text)));
+		this.appendChatComponent(
 			new Text(
 				`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}\n${changelogLine}`,
 				1,
 				0,
 			),
 		);
-		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
+		this.appendChatComponent(new DynamicBorder((text) => theme.fg("warning", text)));
 		this.ui.requestRender();
 	}
 
@@ -3249,11 +3293,13 @@ export class InteractiveMode {
 					},
 					onShowImagesChange: (enabled) => {
 						this.settingsManager.setShowImages(enabled);
-						for (const child of this.chatContainer.children) {
+						for (const child of this.getAllChatChildren()) {
 							if (child instanceof ToolExecutionComponent) {
 								child.setShowImages(enabled);
 							}
 						}
+						this.chatContainer.invalidate();
+						this.chatLiveContainer.invalidate();
 					},
 					onAutoResizeImagesChange: (enabled) => {
 						this.settingsManager.setImageAutoResize(enabled);
@@ -3298,12 +3344,11 @@ export class InteractiveMode {
 					onHideThinkingBlockChange: (hidden) => {
 						this.hideThinkingBlock = hidden;
 						this.settingsManager.setHideThinkingBlock(hidden);
-						for (const child of this.chatContainer.children) {
+						for (const child of this.getAllChatChildren()) {
 							if (child instanceof AssistantMessageComponent) {
 								child.setHideThinkingBlock(hidden);
 							}
 						}
-						this.chatContainer.clear();
 						this.rebuildChatFromMessages();
 					},
 					onCollapseChangelogChange: (collapsed) => {
@@ -3587,7 +3632,7 @@ export class InteractiveMode {
 						return;
 					}
 
-					this.chatContainer.clear();
+					this.clearRenderedChat();
 					this.renderInitialMessages();
 					this.editor.setText(result.selectedText);
 					done();
@@ -3669,7 +3714,7 @@ export class InteractiveMode {
 						this.defaultEditor.onEscape = () => {
 							this.session.abortBranchSummary();
 						};
-						this.chatContainer.addChild(new Spacer(1));
+						this.appendChatComponent(new Spacer(1));
 						summaryLoader = new Loader(
 							this.ui,
 							(spinner) => theme.fg("accent", spinner),
@@ -3698,7 +3743,7 @@ export class InteractiveMode {
 						}
 
 						// Update UI
-						this.chatContainer.clear();
+						this.clearRenderedChat();
 						this.renderInitialMessages();
 						if (result.editorText && !this.editor.getText().trim()) {
 							this.editor.setText(result.editorText);
@@ -3783,7 +3828,7 @@ export class InteractiveMode {
 		await this.session.switchSession(sessionPath);
 
 		// Clear and re-render the chat
-		this.chatContainer.clear();
+		this.clearRenderedChat();
 		this.renderInitialMessages();
 		this.showStatus("Resumed session");
 	}
@@ -4125,8 +4170,8 @@ export class InteractiveMode {
 		if (!name) {
 			const currentName = this.sessionManager.getSessionName();
 			if (currentName) {
-				this.chatContainer.addChild(new Spacer(1));
-				this.chatContainer.addChild(new Text(theme.fg("dim", `Session name: ${currentName}`), 1, 0));
+				this.appendChatComponent(new Spacer(1));
+				this.appendChatComponent(new Text(theme.fg("dim", `Session name: ${currentName}`), 1, 0));
 			} else {
 				this.showWarning("Usage: /name <name>");
 			}
@@ -4136,8 +4181,8 @@ export class InteractiveMode {
 
 		this.sessionManager.appendSessionInfo(name);
 		this.updateTerminalTitle();
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("dim", `Session name set: ${name}`), 1, 0));
+		this.appendChatComponent(new Spacer(1));
+		this.appendChatComponent(new Text(theme.fg("dim", `Session name set: ${name}`), 1, 0));
 		this.ui.requestRender();
 	}
 
@@ -4173,8 +4218,8 @@ export class InteractiveMode {
 			info += `${theme.fg("dim", "Total:")} ${stats.cost.toFixed(4)}`;
 		}
 
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(info, 1, 0));
+		this.appendChatComponent(new Spacer(1));
+		this.appendChatComponent(new Text(info, 1, 0));
 		this.ui.requestRender();
 	}
 
@@ -4190,12 +4235,12 @@ export class InteractiveMode {
 						.join("\n\n")
 				: "No changelog entries found.";
 
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder());
-		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1, this.getMarkdownThemeWithSettings()));
-		this.chatContainer.addChild(new DynamicBorder());
+		this.appendChatComponent(new Spacer(1));
+		this.appendChatComponent(new DynamicBorder());
+		this.appendChatComponent(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
+		this.appendChatComponent(new Spacer(1));
+		this.appendChatComponent(new Markdown(changelogMarkdown, 1, 1, this.getMarkdownThemeWithSettings()));
+		this.appendChatComponent(new DynamicBorder());
 		this.ui.requestRender();
 	}
 
@@ -4330,12 +4375,12 @@ export class InteractiveMode {
 			}
 		}
 
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder());
-		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Keyboard Shortcuts")), 1, 0));
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Markdown(hotkeys.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
-		this.chatContainer.addChild(new DynamicBorder());
+		this.appendChatComponent(new Spacer(1));
+		this.appendChatComponent(new DynamicBorder());
+		this.appendChatComponent(new Text(theme.bold(theme.fg("accent", "Keyboard Shortcuts")), 1, 0));
+		this.appendChatComponent(new Spacer(1));
+		this.appendChatComponent(new Markdown(hotkeys.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
+		this.appendChatComponent(new DynamicBorder());
 		this.ui.requestRender();
 	}
 
@@ -4352,7 +4397,7 @@ export class InteractiveMode {
 		this.footer.syncToolStatsFromSessionEntries();
 
 		// Clear UI state
-		this.chatContainer.clear();
+		this.clearRenderedChat();
 		this.pendingMessagesContainer.clear();
 		this.compactionQueuedMessages = [];
 		this.streamingComponent = undefined;
@@ -4360,8 +4405,8 @@ export class InteractiveMode {
 		this.clearPendingStreamingUiUpdates();
 		this.pendingTools.clear();
 
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
+		this.appendChatComponent(new Spacer(1));
+		this.appendChatComponent(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
 		this.ui.requestRender();
 	}
 
@@ -4391,22 +4436,22 @@ export class InteractiveMode {
 		fs.mkdirSync(path.dirname(debugLogPath), { recursive: true });
 		fs.writeFileSync(debugLogPath, debugData);
 
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(
+		this.appendChatComponent(new Spacer(1));
+		this.appendChatComponent(
 			new Text(`${theme.fg("accent", "✓ Debug log written")}\n${theme.fg("muted", debugLogPath)}`, 1, 1),
 		);
 		this.ui.requestRender();
 	}
 
 	private handleArminSaysHi(): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new ArminComponent(this.ui));
+		this.appendChatComponent(new Spacer(1));
+		this.appendChatComponent(new ArminComponent(this.ui));
 		this.ui.requestRender();
 	}
 
 	private handleDaxnuts(): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DaxnutsComponent(this.ui));
+		this.appendChatComponent(new Spacer(1));
+		this.appendChatComponent(new DaxnutsComponent(this.ui));
 		this.ui.requestRender();
 	}
 
@@ -4439,7 +4484,7 @@ export class InteractiveMode {
 				this.pendingMessagesContainer.addChild(this.bashComponent);
 				this.pendingBashComponents.push(this.bashComponent);
 			} else {
-				this.chatContainer.addChild(this.bashComponent);
+				this.chatLiveContainer.addChild(this.bashComponent);
 			}
 
 			// Show output and complete
@@ -4455,6 +4500,7 @@ export class InteractiveMode {
 
 			// Record the result in session
 			this.session.recordBashResult(command, result, { excludeFromContext });
+			this.freezeLiveChat();
 			this.bashComponent = undefined;
 			this.ui.requestRender();
 			return;
@@ -4469,8 +4515,8 @@ export class InteractiveMode {
 			this.pendingMessagesContainer.addChild(this.bashComponent);
 			this.pendingBashComponents.push(this.bashComponent);
 		} else {
-			// Show in chat immediately when agent is idle
-			this.chatContainer.addChild(this.bashComponent);
+			// Show in live chat when agent is idle so large history stays cached.
+			this.chatLiveContainer.addChild(this.bashComponent);
 		}
 		this.ui.requestRender();
 
@@ -4480,7 +4526,8 @@ export class InteractiveMode {
 				(chunk) => {
 					if (this.bashComponent) {
 						this.bashComponent.appendOutput(chunk);
-						this.ui.requestRender();
+						this.chatLiveContainer.invalidate();
+						this.ui.requestRender(false, "low");
 					}
 				},
 				{ excludeFromContext, operations: eventResult?.operations },
@@ -4501,6 +4548,7 @@ export class InteractiveMode {
 			this.showError(`Bash command failed: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}
 
+		this.freezeLiveChat();
 		this.bashComponent = undefined;
 		this.ui.requestRender();
 	}
@@ -4532,7 +4580,7 @@ export class InteractiveMode {
 		};
 
 		// Show compacting status
-		this.chatContainer.addChild(new Spacer(1));
+		this.appendChatComponent(new Spacer(1));
 		const cancelHint = `(${appKey(this.keybindings, "interrupt")} to cancel)`;
 		const label = isAuto ? `Auto-compacting context... ${cancelHint}` : `Compacting context... ${cancelHint}`;
 		const compactingLoader = new Loader(
