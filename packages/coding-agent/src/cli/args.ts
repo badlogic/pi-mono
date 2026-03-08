@@ -183,12 +183,26 @@ ${chalk.bold("Usage:")}
   ${APP_NAME} [options] [@files...] [messages...]
 
 ${chalk.bold("Commands:")}
+  ${APP_NAME} launch [options] [@files...] [messages...]
+                                 Start the coding agent explicitly
+  ${APP_NAME} agents [--json]     List discovered subagent definitions
+  ${APP_NAME} commit [options]    Commit already staged changes
+  ${APP_NAME} grep <pattern> ...  Run the built-in grep tool from the CLI
+  ${APP_NAME} jupyter [command]   Inspect or stop the shared Jupyter gateway
+  ${APP_NAME} plugin <action> ... Manage plugins via the package manager
+  ${APP_NAME} q [options] <query> Search the web from the CLI
+  ${APP_NAME} search [options] <query>
+                                 Alias for q
+  ${APP_NAME} setup <component>   Install or check optional local dependencies
+  ${APP_NAME} shell [options]     Open an interactive shell console
+  ${APP_NAME} ssh <action> ...    Manage SSH host configs for remote workflows
+  ${APP_NAME} stats [options]     Open or query the local usage dashboard
   ${APP_NAME} install <source> [-l]    Install extension source and add to settings
   ${APP_NAME} remove <source> [-l]     Remove extension source from settings
   ${APP_NAME} update [source]          Update installed extensions (skips pinned sources)
   ${APP_NAME} list                     List installed extensions from settings
   ${APP_NAME} config                   Open TUI to enable/disable package resources
-  ${APP_NAME} <command> --help         Show help for install/remove/update/list
+  ${APP_NAME} <command> --help         Show help for agents/commit/grep/install/jupyter/plugin/q/search/remove/setup/shell/update/list/ssh/stats
 
 ${chalk.bold("Options:")}
   --provider <name>              Provider name (default: google)
@@ -230,8 +244,41 @@ ${chalk.bold("Examples:")}
   # Interactive mode
   ${APP_NAME}
 
+  # Explicit launch command
+  ${APP_NAME} launch
+
   # Interactive mode with initial prompt
   ${APP_NAME} "List all .ts files in src/"
+
+  # Stats dashboard
+  ${APP_NAME} stats
+
+  # List discovered agents
+  ${APP_NAME} agents --json
+
+  # Commit staged changes
+  ${APP_NAME} commit --dry-run
+
+  # Search code with the built-in grep tool
+  ${APP_NAME} grep "TODO" src --glob "*.ts"
+
+  # Inspect the shared Jupyter gateway status
+  ${APP_NAME} jupyter status
+
+  # Manage package-backed plugins
+  ${APP_NAME} plugin list
+
+  # Search the web
+  ${APP_NAME} q "latest TypeScript 5.9 changes"
+
+  # Install Python/Jupyter prerequisites used by optional workflows
+  ${APP_NAME} setup python
+
+  # Open an interactive shell console in the current project
+  ${APP_NAME} shell --timeout 2000
+
+  # Add an SSH host config
+  ${APP_NAME} ssh add prod --host prod.example.com --user deploy --scope user
 
   # Include files in initial message
   ${APP_NAME} @prompt.md @image.png "What color is the sky?"

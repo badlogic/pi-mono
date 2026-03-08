@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import { parseArgs } from "../src/cli/args.js";
+import { describe, expect, test, vi } from "vitest";
+import { parseArgs, printHelp } from "../src/cli/args.js";
 
 describe("parseArgs", () => {
 	describe("--version flag", () => {
@@ -30,6 +30,31 @@ describe("parseArgs", () => {
 		test("parses -h shorthand", () => {
 			const result = parseArgs(["-h"]);
 			expect(result.help).toBe(true);
+		});
+	});
+
+	describe("printHelp", () => {
+		test("documents launch and stats commands", () => {
+			const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+			try {
+				printHelp();
+
+				const output = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
+				expect(output).toContain("pi launch [options] [@files...] [messages...]");
+				expect(output).toContain("pi agents [--json]");
+				expect(output).toContain("pi commit [options]");
+				expect(output).toContain("pi grep <pattern> ...");
+				expect(output).toContain("pi jupyter [command]");
+				expect(output).toContain("pi plugin <action> ...");
+				expect(output).toContain("pi q [options] <query>");
+				expect(output).toContain("pi search [options] <query>");
+				expect(output).toContain("pi setup <component>");
+				expect(output).toContain("pi shell [options]");
+				expect(output).toContain("pi ssh <action> ...");
+				expect(output).toContain("pi stats [options]");
+			} finally {
+				logSpy.mockRestore();
+			}
 		});
 	});
 

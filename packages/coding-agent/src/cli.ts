@@ -10,9 +10,12 @@ process.title = "pi";
 import { setBedrockProviderModule } from "@mariozechner/pi-ai";
 import { bedrockProviderModule } from "@mariozechner/pi-ai/bedrock-provider";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
-import { main } from "./main.js";
+import { runCli } from "./cli/command-router.js";
 
 setGlobalDispatcher(new EnvHttpProxyAgent());
 setBedrockProviderModule(bedrockProviderModule);
 
-main(process.argv.slice(2));
+void runCli(process.argv.slice(2)).catch((error) => {
+	console.error(error instanceof Error ? error.message : error);
+	process.exit(1);
+});

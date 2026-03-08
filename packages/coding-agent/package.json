@@ -42,6 +42,7 @@
 		"@mariozechner/jiti": "^2.6.2",
 		"@mariozechner/pi-agent-core": "^0.56.1",
 		"@mariozechner/pi-ai": "^0.56.1",
+		"@mariozechner/pi-stats": "^0.56.1",
 		"@mariozechner/pi-tui": "^0.56.1",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"chalk": "^5.5.0",
