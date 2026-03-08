@@ -3,7 +3,8 @@
  * Used by auth-storage.ts and model-registry.ts.
  */
 
-import { execSync } from "child_process";
+import { spawnSync } from "child_process";
+import { getShellConfig, getShellEnv } from "../utils/shell.js";
 
 // Cache for shell command results (persists for process lifetime)
 const commandResultCache = new Map<string, string | undefined>();
@@ -29,12 +30,14 @@ function executeCommand(commandConfig: string): string | undefined {
 	const command = commandConfig.slice(1);
 	let result: string | undefined;
 	try {
-		const output = execSync(command, {
+		const { shell, args } = getShellConfig();
+		const output = spawnSync(shell, [...args, command], {
 			encoding: "utf-8",
 			timeout: 10000,
 			stdio: ["ignore", "pipe", "ignore"],
+			env: getShellEnv(),
 		});
-		result = output.trim() || undefined;
+		result = output.status === 0 ? output.stdout?.trim() || undefined : undefined;
 	} catch {
 		result = undefined;
 	}

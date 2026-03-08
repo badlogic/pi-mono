@@ -57,6 +57,18 @@ describe("ModelRegistry", () => {
 		return registry.getAll().filter((m) => m.provider === provider);
 	}
 
+	function buildCounterCommand(counterFile: string, options?: { fail?: boolean }): string {
+		const portablePath = counterFile.replace(/\\/g, "/");
+		const script = [
+			"const fs=require('fs');",
+			`const p=${JSON.stringify(portablePath)};`,
+			"const count=parseInt(fs.readFileSync(p,'utf8').trim(),10)||0;",
+			"fs.writeFileSync(p,String(count+1));",
+			options?.fail ? "process.exit(1);" : "console.log('key-value');",
+		].join("");
+		return `!node -e ${JSON.stringify(script)}`;
+	}
+
 	/** Create a baseUrl-only override (no custom models) */
 	function overrideConfig(baseUrl: string, headers?: Record<string, string>) {
 		return { baseUrl, ...(headers && { headers }) };
@@ -778,7 +790,7 @@ describe("ModelRegistry", () => {
 				const counterFile = join(tempDir, "counter");
 				writeFileSync(counterFile, "0");
 
-				const command = `!sh -c 'count=$(cat ${counterFile}); echo $((count + 1)) > ${counterFile}; echo "key-value"'`;
+				const command = buildCounterCommand(counterFile);
 				writeRawModelsJson({
 					"custom-provider": providerWithApiKey(command),
 				});
@@ -799,7 +811,7 @@ describe("ModelRegistry", () => {
 				const counterFile = join(tempDir, "counter");
 				writeFileSync(counterFile, "0");
 
-				const command = `!sh -c 'count=$(cat ${counterFile}); echo $((count + 1)) > ${counterFile}; echo "key-value"'`;
+				const command = buildCounterCommand(counterFile);
 				writeRawModelsJson({
 					"custom-provider": providerWithApiKey(command),
 				});
@@ -820,7 +832,7 @@ describe("ModelRegistry", () => {
 				const counterFile = join(tempDir, "counter");
 				writeFileSync(counterFile, "0");
 
-				const command = `!sh -c 'count=$(cat ${counterFile}); echo $((count + 1)) > ${counterFile}; echo "key-value"'`;
+				const command = buildCounterCommand(counterFile);
 				writeRawModelsJson({
 					"custom-provider": providerWithApiKey(command),
 				});
@@ -856,7 +868,7 @@ describe("ModelRegistry", () => {
 				const counterFile = join(tempDir, "counter");
 				writeFileSync(counterFile, "0");
 
-				const command = `!sh -c 'count=$(cat ${counterFile}); echo $((count + 1)) > ${counterFile}; exit 1'`;
+				const command = buildCounterCommand(counterFile, { fail: true });
 				writeRawModelsJson({
 					"custom-provider": providerWithApiKey(command),
 				});

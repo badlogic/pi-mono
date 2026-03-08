@@ -511,41 +511,57 @@ function collectResourceFiles(dir: string, resourceType: ResourceType): string[]
 	return collectFiles(dir, FILE_PATTERNS[resourceType]);
 }
 
+function normalizePatternPath(pattern: string): string {
+	return pattern.replace(/\\/g, "/");
+}
+
 function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
-	const rel = relative(baseDir, filePath);
+	const rel = toPosixPath(relative(baseDir, filePath));
+	const absolute = toPosixPath(filePath);
 	const name = basename(filePath);
 	const isSkillFile = name === "SKILL.md";
-	const parentDir = isSkillFile ? dirname(filePath) : undefined;
-	const parentRel = isSkillFile ? relative(baseDir, parentDir!) : undefined;
-	const parentName = isSkillFile ? basename(parentDir!) : undefined;
+	const parentDir = isSkillFile ? toPosixPath(dirname(filePath)) : undefined;
+	const parentRel = isSkillFile ? toPosixPath(relative(baseDir, dirname(filePath))) : undefined;
+	const parentName = isSkillFile ? basename(dirname(filePath)) : undefined;
 
 	return patterns.some((pattern) => {
-		if (minimatch(rel, pattern) || minimatch(name, pattern) || minimatch(filePath, pattern)) {
+		const normalizedPattern = normalizePatternPath(pattern);
+		if (
+			minimatch(rel, normalizedPattern) ||
+			minimatch(name, normalizedPattern) ||
+			minimatch(absolute, normalizedPattern)
+		) {
 			return true;
 		}
 		if (!isSkillFile) return false;
-		return minimatch(parentRel!, pattern) || minimatch(parentName!, pattern) || minimatch(parentDir!, pattern);
+		return (
+			minimatch(parentRel!, normalizedPattern) ||
+			minimatch(parentName!, normalizedPattern) ||
+			minimatch(parentDir!, normalizedPattern)
+		);
 	});
 }
 
 function normalizeExactPattern(pattern: string): string {
-	if (pattern.startsWith("./") || pattern.startsWith(".\\")) {
-		return pattern.slice(2);
+	const normalizedPattern = normalizePatternPath(pattern);
+	if (normalizedPattern.startsWith("./")) {
+		return normalizedPattern.slice(2);
 	}
-	return pattern;
+	return normalizedPattern;
 }
 
 function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: string): boolean {
 	if (patterns.length === 0) return false;
-	const rel = relative(baseDir, filePath);
+	const rel = toPosixPath(relative(baseDir, filePath));
+	const absolute = toPosixPath(filePath);
 	const name = basename(filePath);
 	const isSkillFile = name === "SKILL.md";
-	const parentDir = isSkillFile ? dirname(filePath) : undefined;
-	const parentRel = isSkillFile ? relative(baseDir, parentDir!) : undefined;
+	const parentDir = isSkillFile ? toPosixPath(dirname(filePath)) : undefined;
+	const parentRel = isSkillFile ? toPosixPath(relative(baseDir, dirname(filePath))) : undefined;
 
 	return patterns.some((pattern) => {
 		const normalized = normalizeExactPattern(pattern);
-		if (normalized === rel || normalized === filePath) {
+		if (normalized === rel || normalized === absolute) {
 			return true;
 		}
 		if (!isSkillFile) return false;
@@ -1762,12 +1778,25 @@ export class DefaultPackageManager implements PackageManager {
 		};
 	}
 
+	private getCommandEnv(command: string): NodeJS.ProcessEnv {
+		if (command !== "git") {
+			return process.env;
+		}
+
+		return {
+			...process.env,
+			GIT_TERMINAL_PROMPT: process.env.GIT_TERMINAL_PROMPT ?? "0",
+			GCM_INTERACTIVE: process.env.GCM_INTERACTIVE ?? "never",
+		};
+	}
+
 	private runCommand(command: string, args: string[], options?: { cwd?: string }): Promise<void> {
 		return new Promise((resolvePromise, reject) => {
 			const child = spawn(command, args, {
 				cwd: options?.cwd,
 				stdio: "inherit",
 				shell: process.platform === "win32",
+				env: this.getCommandEnv(command),
 			});
 			child.on("error", reject);
 			child.on("exit", (code) => {
@@ -1785,6 +1814,7 @@ export class DefaultPackageManager implements PackageManager {
 			stdio: ["ignore", "pipe", "pipe"],
 			encoding: "utf-8",
 			shell: process.platform === "win32",
+			env: this.getCommandEnv(command),
 		});
 		if (result.status !== 0) {
 			throw new Error(`Failed to run ${command} ${args.join(" ")}: ${result.stderr || result.stdout}`);

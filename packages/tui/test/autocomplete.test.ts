@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it, test } from "node:test";
 import { CombinedAutocompleteProvider } from "../src/autocomplete.js";
@@ -70,7 +70,6 @@ describe("CombinedAutocompleteProvider", () => {
 
 			const result = provider.getForceFileSuggestions(lines, cursorLine, cursorCol);
 
-			console.log("Result:", result);
 			// This might return null if /A doesn't match anything, which is fine
 			// We're mainly testing that the prefix extraction works
 			if (result) {
@@ -86,7 +85,6 @@ describe("CombinedAutocompleteProvider", () => {
 
 			const result = provider.getForceFileSuggestions(lines, cursorLine, cursorCol);
 
-			console.log("Result:", result);
 			assert.strictEqual(result, null, "Should not trigger for slash commands");
 		});
 
@@ -98,7 +96,6 @@ describe("CombinedAutocompleteProvider", () => {
 
 			const result = provider.getForceFileSuggestions(lines, cursorLine, cursorCol);
 
-			console.log("Result:", result);
 			assert.notEqual(result, null, "Should trigger for absolute paths in command arguments");
 			if (result) {
 				assert.strictEqual(result.prefix, "/", "Prefix should be '/'");
@@ -256,6 +253,23 @@ describe("CombinedAutocompleteProvider", () => {
 			assert.ok(!values?.includes("@../outside/nested/deeper/zzz.ts"));
 		});
 
+		test("accepts Windows backslashes in @ queries", { skip: process.platform !== "win32" }, () => {
+			setupFolder(baseDir, {
+				files: {
+					"src/file.txt": "content",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, requireFdPath());
+			const line = "@src\\fi";
+			const result = provider.getSuggestions([line], 0, line.length);
+
+			assert.notEqual(result, null, "Should return suggestions for Windows-style path input");
+			assert.strictEqual(result?.prefix, "@src/fi");
+			const values = result?.items.map((item) => item.value);
+			assert.ok(values?.includes("@src/file.txt"));
+		});
+
 		test("quotes paths with spaces for @ suggestions", () => {
 			setupFolder(baseDir, {
 				dirs: ["my folder"],
@@ -359,6 +373,23 @@ describe("CombinedAutocompleteProvider", () => {
 			assert.ok(values?.includes('"my folder/"'));
 		});
 
+		test("accepts Windows backslashes for direct path completion", { skip: process.platform !== "win32" }, () => {
+			setupFolder(baseDir, {
+				files: {
+					"src/file.txt": "content",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir);
+			const line = "src\\fi";
+			const result = provider.getForceFileSuggestions([line], 0, line.length);
+
+			assert.notEqual(result, null, "Should return suggestions for Windows-style path input");
+			assert.strictEqual(result?.prefix, "src/fi");
+			const values = result?.items.map((item) => item.value);
+			assert.ok(values?.includes("src/file.txt"));
+		});
+
 		test("continues completion inside quoted paths", () => {
 			setupFolder(baseDir, {
 				files: {
@@ -395,6 +426,35 @@ describe("CombinedAutocompleteProvider", () => {
 
 			const applied = provider.applyCompletion([line], 0, cursorCol, item!, result!.prefix);
 			assert.strictEqual(applied.lines[0], '"my folder/test.txt"');
+		});
+	});
+
+	describe("shell command path completion", () => {
+		test("keeps slash-style home paths when completing after a shell command", () => {
+			const homeRoot = mkdtempSync(join(homedir(), "pi-autocomplete-home-"));
+
+			try {
+				setupFolder(homeRoot, {
+					files: {
+						"agents/keybindings.json": "{}",
+					},
+				});
+
+				const provider = new CombinedAutocompleteProvider([], tmpdir());
+				const homeRelativeDir = homeRoot.slice(homedir().length + 1).replace(/\\/g, "/");
+				const line = `! code ~/${homeRelativeDir}/agents/keybind`;
+				const result = provider.getForceFileSuggestions([line], 0, line.length);
+
+				assert.notEqual(result, null, "Should return suggestions for shell command path completion");
+				const item = result?.items.find((entry) => entry.value.endsWith("keybindings.json"));
+				assert.ok(item, "Should find keybindings.json suggestion");
+
+				const applied = provider.applyCompletion([line], 0, line.length, item!, result!.prefix);
+				assert.strictEqual(applied.lines[0], `! code ~/${homeRelativeDir}/agents/keybindings.json`);
+				assert.ok(!applied.lines[0].includes("\\"));
+			} finally {
+				rmSync(homeRoot, { recursive: true, force: true });
+			}
 		});
 	});
 });

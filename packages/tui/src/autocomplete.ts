@@ -1,7 +1,7 @@
 import { spawnSync } from "child_process";
 import { readdirSync, statSync } from "fs";
 import { homedir } from "os";
-import { basename, dirname, join } from "path";
+import { basename, dirname, isAbsolute, join } from "path";
 import { fuzzyFilter } from "./fuzzy.js";
 
 const PATH_DELIMITERS = new Set([" ", "\t", '"', "'", "="]);
@@ -84,6 +84,17 @@ function buildCompletionValue(
 	return `${openQuote}${path}${closeQuote}`;
 }
 
+function toSlashPath(path: string): string {
+	return process.platform === "win32" ? path.replace(/\\/g, "/") : path;
+}
+
+function buildFdPatternFromQuery(query: string): string {
+	return query
+		.split(/[\\/]+/)
+		.map((segment) => segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+		.join("[/\\\\]");
+}
+
 // Use fd to walk directory tree (fast, respects .gitignore)
 function walkDirectoryWithFd(
 	baseDir: string,
@@ -110,9 +121,9 @@ function walkDirectoryWithFd(
 		".git/**",
 	];
 
-	// Add query as pattern if provided
+	// Add query as a literal pattern if provided, while allowing either path separator
 	if (query) {
-		args.push(query);
+		args.push(buildFdPatternFromQuery(query));
 	}
 
 	const result = spawnSync(fdPath, args, {
@@ -129,15 +140,16 @@ function walkDirectoryWithFd(
 	const results: Array<{ path: string; isDirectory: boolean }> = [];
 
 	for (const line of lines) {
-		const normalizedPath = line.endsWith("/") ? line.slice(0, -1) : line;
+		const displayLine = toSlashPath(line);
+		const normalizedPath = displayLine.endsWith("/") ? displayLine.slice(0, -1) : displayLine;
 		if (normalizedPath === ".git" || normalizedPath.startsWith(".git/") || normalizedPath.includes("/.git/")) {
 			continue;
 		}
 
-		// fd outputs directories with trailing /
-		const isDirectory = line.endsWith("/");
+		// fd outputs directories with a trailing separator
+		const isDirectory = displayLine.endsWith("/");
 		results.push({
-			path: line,
+			path: isDirectory ? `${normalizedPath}/` : normalizedPath,
 			isDirectory,
 		});
 	}
@@ -392,14 +404,14 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	private extractAtPrefix(text: string): string | null {
 		const quotedPrefix = extractQuotedPrefix(text);
 		if (quotedPrefix?.startsWith('@"')) {
-			return quotedPrefix;
+			return toSlashPath(quotedPrefix);
 		}
 
 		const lastDelimiterIndex = findLastDelimiter(text);
 		const tokenStart = lastDelimiterIndex === -1 ? 0 : lastDelimiterIndex + 1;
 
 		if (text[tokenStart] === "@") {
-			return text.slice(tokenStart);
+			return toSlashPath(text.slice(tokenStart));
 		}
 
 		return null;
@@ -409,11 +421,11 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	private extractPathPrefix(text: string, forceExtract: boolean = false): string | null {
 		const quotedPrefix = extractQuotedPrefix(text);
 		if (quotedPrefix) {
-			return quotedPrefix;
+			return toSlashPath(quotedPrefix);
 		}
 
 		const lastDelimiterIndex = findLastDelimiter(text);
-		const pathPrefix = lastDelimiterIndex === -1 ? text : text.slice(lastDelimiterIndex + 1);
+		const pathPrefix = toSlashPath(lastDelimiterIndex === -1 ? text : text.slice(lastDelimiterIndex + 1));
 
 		// For forced extraction (Tab key), always return something
 		if (forceExtract) {
@@ -459,7 +471,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		let baseDir: string;
 		if (displayBase.startsWith("~/")) {
 			baseDir = this.expandHomePath(displayBase);
-		} else if (displayBase.startsWith("/")) {
+		} else if (isAbsolute(displayBase)) {
 			baseDir = displayBase;
 		} else {
 			baseDir = join(this.basePath, displayBase);
@@ -496,6 +508,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				expandedPrefix = this.expandHomePath(expandedPrefix);
 			}
 
+			const isAbsolutePrefix = isAbsolute(expandedPrefix);
 			const isRootPrefix =
 				rawPrefix === "" ||
 				rawPrefix === "./" ||
@@ -507,7 +520,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 
 			if (isRootPrefix) {
 				// Complete from specified position
-				if (rawPrefix.startsWith("~") || expandedPrefix.startsWith("/")) {
+				if (rawPrefix.startsWith("~") || isAbsolutePrefix) {
 					searchDir = expandedPrefix;
 				} else {
 					searchDir = join(this.basePath, expandedPrefix);
@@ -515,7 +528,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				searchPrefix = "";
 			} else if (rawPrefix.endsWith("/")) {
 				// If prefix ends with /, show contents of that directory
-				if (rawPrefix.startsWith("~") || expandedPrefix.startsWith("/")) {
+				if (rawPrefix.startsWith("~") || isAbsolutePrefix) {
 					searchDir = expandedPrefix;
 				} else {
 					searchDir = join(this.basePath, expandedPrefix);
@@ -525,7 +538,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				// Split into directory and file prefix
 				const dir = dirname(expandedPrefix);
 				const file = basename(expandedPrefix);
-				if (rawPrefix.startsWith("~") || expandedPrefix.startsWith("/")) {
+				if (rawPrefix.startsWith("~") || isAbsolutePrefix) {
 					searchDir = dir;
 				} else {
 					searchDir = join(this.basePath, dir);
@@ -585,7 +598,8 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 					}
 				}
 
-				const pathValue = isDirectory ? `${relativePath}/` : relativePath;
+				const displayPath = toSlashPath(relativePath);
+				const pathValue = isDirectory ? `${displayPath}/` : displayPath;
 				const value = buildCompletionValue(pathValue, {
 					isDirectory,
 					isAtPrefix,

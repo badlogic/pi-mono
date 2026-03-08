@@ -5,12 +5,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DefaultPackageManager, type ProgressEvent, type ResolvedResource } from "../src/core/package-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 
+const normalizePathForTest = (value: string) => value.replace(/\\/g, "/");
+
 // Helper to check if a resource is enabled
 const isEnabled = (r: ResolvedResource, pathMatch: string, matchFn: "endsWith" | "includes" = "endsWith") =>
-	matchFn === "endsWith" ? r.path.endsWith(pathMatch) && r.enabled : r.path.includes(pathMatch) && r.enabled;
+	matchFn === "endsWith"
+		? normalizePathForTest(r.path).endsWith(pathMatch) && r.enabled
+		: normalizePathForTest(r.path).includes(pathMatch) && r.enabled;
 
 const isDisabled = (r: ResolvedResource, pathMatch: string, matchFn: "endsWith" | "includes" = "endsWith") =>
-	matchFn === "endsWith" ? r.path.endsWith(pathMatch) && !r.enabled : r.path.includes(pathMatch) && !r.enabled;
+	matchFn === "endsWith"
+		? normalizePathForTest(r.path).endsWith(pathMatch) && !r.enabled
+		: normalizePathForTest(r.path).includes(pathMatch) && !r.enabled;
 
 describe("DefaultPackageManager", () => {
 	let tempDir: string;
@@ -216,7 +222,13 @@ Content`,
 
 		it("should keep ~/.agents/skills user-scoped when cwd is under home in a non-git directory", async () => {
 			const previousHome = process.env.HOME;
+			const previousUserProfile = process.env.USERPROFILE;
+			const previousHomeDrive = process.env.HOMEDRIVE;
+			const previousHomePath = process.env.HOMEPATH;
 			process.env.HOME = tempDir;
+			process.env.USERPROFILE = tempDir;
+			delete process.env.HOMEDRIVE;
+			delete process.env.HOMEPATH;
 
 			try {
 				const cwd = join(tempDir, "scratch", "nested");
@@ -246,6 +258,21 @@ Content`,
 					delete process.env.HOME;
 				} else {
 					process.env.HOME = previousHome;
+				}
+				if (previousUserProfile === undefined) {
+					delete process.env.USERPROFILE;
+				} else {
+					process.env.USERPROFILE = previousUserProfile;
+				}
+				if (previousHomeDrive === undefined) {
+					delete process.env.HOMEDRIVE;
+				} else {
+					process.env.HOMEDRIVE = previousHomeDrive;
+				}
+				if (previousHomePath === undefined) {
+					delete process.env.HOMEPATH;
+				} else {
+					process.env.HOMEPATH = previousHomePath;
 				}
 			}
 		});
@@ -1132,11 +1159,15 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			const result = await packageManager.resolveExtensionSources([pkgDir]);
 
 			// Should find the index.ts and standalone.ts
-			expect(result.extensions.some((r) => r.path.endsWith("subagent/index.ts") && r.enabled)).toBe(true);
-			expect(result.extensions.some((r) => r.path.endsWith("standalone.ts") && r.enabled)).toBe(true);
+			expect(
+				result.extensions.some((r) => normalizePathForTest(r.path).endsWith("subagent/index.ts") && r.enabled),
+			).toBe(true);
+			expect(
+				result.extensions.some((r) => normalizePathForTest(r.path).endsWith("standalone.ts") && r.enabled),
+			).toBe(true);
 
 			// Should NOT find agents.ts as a standalone extension
-			expect(result.extensions.some((r) => r.path.endsWith("agents.ts"))).toBe(false);
+			expect(result.extensions.some((r) => normalizePathForTest(r.path).endsWith("agents.ts"))).toBe(false);
 		});
 
 		it("should respect package.json pi.extensions manifest in subdirectories", async () => {
@@ -1158,10 +1189,12 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			const result = await packageManager.resolveExtensionSources([pkgDir]);
 
 			// Should find main.ts declared in manifest
-			expect(result.extensions.some((r) => r.path.endsWith("custom/main.ts") && r.enabled)).toBe(true);
+			expect(
+				result.extensions.some((r) => normalizePathForTest(r.path).endsWith("custom/main.ts") && r.enabled),
+			).toBe(true);
 
 			// Should NOT find utils.ts (not declared in manifest)
-			expect(result.extensions.some((r) => r.path.endsWith("utils.ts"))).toBe(false);
+			expect(result.extensions.some((r) => normalizePathForTest(r.path).endsWith("utils.ts"))).toBe(false);
 		});
 
 		it("should handle mixed top-level files and subdirectories", async () => {
@@ -1182,12 +1215,16 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			const result = await packageManager.resolveExtensionSources([pkgDir]);
 
 			// Should find simple.ts and complex/index.ts
-			expect(result.extensions.some((r) => r.path.endsWith("simple.ts") && r.enabled)).toBe(true);
-			expect(result.extensions.some((r) => r.path.endsWith("complex/index.ts") && r.enabled)).toBe(true);
+			expect(result.extensions.some((r) => normalizePathForTest(r.path).endsWith("simple.ts") && r.enabled)).toBe(
+				true,
+			);
+			expect(
+				result.extensions.some((r) => normalizePathForTest(r.path).endsWith("complex/index.ts") && r.enabled),
+			).toBe(true);
 
 			// Should NOT find helper modules
-			expect(result.extensions.some((r) => r.path.endsWith("complex/a.ts"))).toBe(false);
-			expect(result.extensions.some((r) => r.path.endsWith("complex/b.ts"))).toBe(false);
+			expect(result.extensions.some((r) => normalizePathForTest(r.path).endsWith("complex/a.ts"))).toBe(false);
+			expect(result.extensions.some((r) => normalizePathForTest(r.path).endsWith("complex/b.ts"))).toBe(false);
 
 			// Total should be exactly 2
 			expect(result.extensions.filter((r) => r.enabled).length).toBe(2);
@@ -1237,7 +1274,9 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			const refreshTemporaryGitSourceSpy = vi.spyOn(packageManager as any, "refreshTemporaryGitSource");
 
 			const result = await packageManager.resolveExtensionSources([gitSource], { temporary: true });
-			expect(result.extensions.some((r) => r.path.endsWith("extensions/index.ts") && r.enabled)).toBe(true);
+			expect(
+				result.extensions.some((r) => normalizePathForTest(r.path).endsWith("extensions/index.ts") && r.enabled),
+			).toBe(true);
 			expect(refreshTemporaryGitSourceSpy).not.toHaveBeenCalled();
 		});
 

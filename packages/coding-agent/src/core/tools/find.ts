@@ -101,10 +101,13 @@ export function createFindTool(cwd: string, options?: FindToolOptions): AgentToo
 
 							// Relativize paths
 							const relativized = results.map((p) => {
+								let relativePath: string;
 								if (p.startsWith(searchPath)) {
-									return p.slice(searchPath.length + 1);
+									relativePath = p.slice(searchPath.length + 1);
+								} else {
+									relativePath = path.relative(searchPath, p);
 								}
-								return path.relative(searchPath, p);
+								return relativePath.replace(/\\/g, "/");
 							});
 
 							const resultLimitReached = relativized.length >= effectiveLimit;
@@ -223,6 +226,8 @@ export function createFindTool(cwd: string, options?: FindToolOptions): AgentToo
 							} else {
 								relativePath = path.relative(searchPath, line);
 							}
+
+							relativePath = relativePath.replace(/\\/g, "/");
 
 							if (hadTrailingSlash && !relativePath.endsWith("/")) {
 								relativePath += "/";
