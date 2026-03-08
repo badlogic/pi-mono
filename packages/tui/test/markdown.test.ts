@@ -480,6 +480,37 @@ describe("Markdown component", () => {
 		});
 	});
 
+	describe("Heading rendering", () => {
+		it("should not render raw markdown heading markers for h3 to h6", () => {
+			const markdown = new Markdown(
+				`### Third level
+#### Fourth level
+##### Fifth level
+###### Sixth level`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines
+				.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trim())
+				.filter((line) => line.length > 0);
+
+			assert.ok(plainLines.includes("Third level"));
+			assert.ok(plainLines.includes("Fourth level"));
+			assert.ok(plainLines.includes("Fifth level"));
+			assert.ok(plainLines.includes("Sixth level"));
+
+			for (const line of plainLines) {
+				assert.ok(!line.startsWith("### "), `Expected no raw heading prefix, got: "${line}"`);
+				assert.ok(!line.startsWith("#### "), `Expected no raw heading prefix, got: "${line}"`);
+				assert.ok(!line.startsWith("##### "), `Expected no raw heading prefix, got: "${line}"`);
+				assert.ok(!line.startsWith("###### "), `Expected no raw heading prefix, got: "${line}"`);
+			}
+		});
+	});
+
 	describe("Pre-styled text (thinking traces)", () => {
 		it("should preserve gray italic styling after inline code", () => {
 			// This replicates how thinking content is rendered in assistant-message.ts

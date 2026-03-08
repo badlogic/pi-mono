@@ -271,7 +271,6 @@ export class Markdown implements Component {
 		switch (token.type) {
 			case "heading": {
 				const headingLevel = token.depth;
-				const headingPrefix = `${"#".repeat(headingLevel)} `;
 				const headingText = this.renderInlineTokens(token.tokens || [], styleContext);
 				let styledHeading: string;
 				if (headingLevel === 1) {
@@ -279,7 +278,7 @@ export class Markdown implements Component {
 				} else if (headingLevel === 2) {
 					styledHeading = this.theme.heading(this.theme.bold(headingText));
 				} else {
-					styledHeading = this.theme.heading(this.theme.bold(headingPrefix + headingText));
+					styledHeading = this.theme.heading(this.theme.bold(headingText));
 				}
 				lines.push(styledHeading);
 				if (nextTokenType !== "space") {
