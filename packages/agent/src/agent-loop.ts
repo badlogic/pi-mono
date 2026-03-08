@@ -676,6 +676,21 @@ function createLoopErrorAssistantMessage(
 	};
 }
 
+function attachDurationToToolResult<TDetails>(
+	result: AgentToolResult<TDetails>,
+	durationMs: number,
+): AgentToolResult<TDetails | { durationMs: number }> {
+	const normalizedDurationMs = Math.max(0, durationMs);
+	const details =
+		result.details && typeof result.details === "object"
+			? { ...(result.details as Record<string, unknown>), durationMs: normalizedDurationMs }
+			: { durationMs: normalizedDurationMs };
+	return {
+		...result,
+		details: details as TDetails | { durationMs: number },
+	};
+}
+
 /**
  * Execute tool calls from an assistant message.
  */
@@ -703,6 +718,7 @@ async function executeToolCalls(
 
 		let result: AgentToolResult<any>;
 		let isError = false;
+		const toolStartTime = Date.now();
 
 		try {
 			if (!tool) throw new Error(`Tool ${toolCall.name} not found`);
@@ -725,6 +741,7 @@ async function executeToolCalls(
 			};
 			isError = true;
 		}
+		result = attachDurationToToolResult(result, Date.now() - toolStartTime);
 
 		stream.push({
 			type: "tool_execution_end",
@@ -769,10 +786,13 @@ function skipToolCall(
 	toolCall: Extract<AssistantMessage["content"][number], { type: "toolCall" }>,
 	stream: EventStream<AgentEvent, AgentMessage[]>,
 ): ToolResultMessage {
-	const result: AgentToolResult<any> = {
-		content: [{ type: "text", text: "Skipped due to queued user message." }],
-		details: {},
-	};
+	const result: AgentToolResult<any> = attachDurationToToolResult(
+		{
+			content: [{ type: "text", text: "Skipped due to queued user message." }],
+			details: {},
+		},
+		0,
+	);
 
 	stream.push({
 		type: "tool_execution_start",

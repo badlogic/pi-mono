@@ -1,6 +1,7 @@
 import * as os from "node:os";
 import { visibleWidth } from "@mariozechner/pi-tui";
 import { theme } from "../../theme/theme.js";
+import { formatExecutionDuration } from "../tool-ui.js";
 import type { RenderedSegment, SegmentContext, StatusLineSegment, StatusLineSegmentId } from "./types.js";
 
 function formatNumber(value: number): string {
@@ -158,6 +159,29 @@ const subagentsSegment: StatusLineSegment = {
 		if (ctx.subagentCount <= 0) return { content: "", visible: false };
 		return {
 			content: theme.fg("statusLineSubagents", maybeWithIcon(ctx, "subagents", `${ctx.subagentCount}`)),
+			visible: true,
+		};
+	},
+};
+
+const toolCallsSegment: StatusLineSegment = {
+	id: "tool_calls",
+	render(ctx) {
+		if (ctx.usageStats.toolCalls <= 0) return { content: "", visible: false };
+		return {
+			content: theme.fg("statusLineSubagents", `tools ${formatNumber(ctx.usageStats.toolCalls)}`),
+			visible: true,
+		};
+	},
+};
+
+const toolTimeSegment: StatusLineSegment = {
+	id: "tool_time",
+	render(ctx) {
+		const duration = formatExecutionDuration(ctx.usageStats.toolDurationMs);
+		if (!duration) return { content: "", visible: false };
+		return {
+			content: theme.fg("dim", `tool ${duration}`),
 			visible: true,
 		};
 	},
@@ -339,6 +363,8 @@ export const SEGMENTS: Record<StatusLineSegmentId, StatusLineSegment> = {
 	git: gitSegment,
 	pr: prSegment,
 	subagents: subagentsSegment,
+	tool_calls: toolCallsSegment,
+	tool_time: toolTimeSegment,
 	token_in: tokenInSegment,
 	token_out: tokenOutSegment,
 	token_total: tokenTotalSegment,

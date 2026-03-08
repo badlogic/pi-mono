@@ -13,11 +13,17 @@ import {
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { editorKey, keyHint } from "./keybinding-hints.js";
-import { clampDisplayLine, renderToolStatusLine } from "./tool-ui.js";
+import { clampDisplayLine, formatExecutionDuration, renderToolStatusLine } from "./tool-ui.js";
 import { truncateToVisualLines } from "./visual-truncate.js";
 
 // Preview line limit when not expanded (matches tool execution behavior)
 const PREVIEW_LINES = 20;
+
+interface BashExecutionComponentOptions {
+	trackDuration?: boolean;
+	startedAt?: number;
+	durationMs?: number;
+}
 
 export class BashExecutionComponent extends Container {
 	private command: string;
@@ -30,11 +36,17 @@ export class BashExecutionComponent extends Container {
 	private expanded = false;
 	private contentContainer: Container;
 	private ui: TUI;
+	private startedAt: number | undefined;
+	private durationMs: number | undefined;
+	private trackDuration: boolean;
 
-	constructor(command: string, ui: TUI, excludeFromContext = false) {
+	constructor(command: string, ui: TUI, excludeFromContext = false, options: BashExecutionComponentOptions = {}) {
 		super();
 		this.command = command;
 		this.ui = ui;
+		this.trackDuration = options.trackDuration ?? true;
+		this.startedAt = options.startedAt ?? (this.trackDuration ? Date.now() : undefined);
+		this.durationMs = options.durationMs;
 
 		// Use dim border for excluded-from-context commands (!! prefix)
 		const colorKey = excludeFromContext ? "dim" : "bashMode";
@@ -105,6 +117,7 @@ export class BashExecutionComponent extends Container {
 		cancelled: boolean,
 		truncationResult?: TruncationResult,
 		fullOutputPath?: string,
+		durationMs?: number,
 	): void {
 		this.exitCode = exitCode;
 		this.status = cancelled
@@ -114,6 +127,12 @@ export class BashExecutionComponent extends Container {
 				: "complete";
 		this.truncationResult = truncationResult;
 		this.fullOutputPath = fullOutputPath;
+		this.durationMs =
+			typeof durationMs === "number"
+				? Math.max(0, durationMs)
+				: this.trackDuration && this.startedAt !== undefined
+					? Math.max(0, Date.now() - this.startedAt)
+					: undefined;
 
 		// Stop loader
 		this.loader.stop();
@@ -153,6 +172,10 @@ export class BashExecutionComponent extends Container {
 				state: headerState,
 				title: "Bash",
 				description: `$ ${this.command}`,
+				meta: (() => {
+					const duration = formatExecutionDuration(this.durationMs);
+					return duration ? [duration] : [];
+				})(),
 			}),
 			1,
 			0,

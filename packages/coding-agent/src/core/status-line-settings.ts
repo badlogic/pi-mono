@@ -20,6 +20,8 @@ export const STATUS_LINE_SEGMENTS = [
 	"git",
 	"pr",
 	"subagents",
+	"tool_calls",
+	"tool_time",
 	"token_in",
 	"token_out",
 	"token_total",

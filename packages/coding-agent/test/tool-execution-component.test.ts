@@ -59,6 +59,20 @@ describe("ToolExecutionComponent custom renderer suppression", () => {
 		expect(rendered).toContain("Read: README.md");
 	});
 
+	test("shows execution duration when a built-in tool completes", () => {
+		const component = new ToolExecutionComponent("read", { path: "README.md" }, {}, undefined, createFakeTui());
+		component.updateResult(
+			{
+				content: [{ type: "text", text: "hello" }],
+				details: { durationMs: 1250 },
+				isError: false,
+			},
+			false,
+		);
+		const rendered = stripAnsi(component.render(120).join("\n"));
+		expect(rendered).toContain("1.3s");
+	});
+
 	test("keeps custom tool rendering visible when renderer returns a component", () => {
 		const toolDefinition: ToolDefinition = {
 			...createBaseToolDefinition(),

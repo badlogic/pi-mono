@@ -1,6 +1,6 @@
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import type { AssistantMessage } from "@mariozechner/pi-ai";
+import type { AssistantMessage, ToolResultMessage } from "@mariozechner/pi-ai";
 import { type Component, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import type { AgentSession } from "../../../core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
@@ -17,6 +17,8 @@ interface AssistantMessageWithMetrics extends AssistantMessage {
 	ttft?: number;
 	usage: AssistantMessage["usage"] & { premiumRequests?: number };
 }
+
+type ToolResultWithDuration = ToolResultMessage<{ durationMs?: unknown }>;
 
 function inferSubagentCount(statuses: ReadonlyMap<string, string>): number {
 	const statusText = statuses.get("subagents");
@@ -40,6 +42,14 @@ function sanitizeStatusText(text: string): string {
 		.trim();
 }
 
+function extractDurationMs(details: unknown): number {
+	if (!details || typeof details !== "object") {
+		return 0;
+	}
+	const maybeDuration = (details as { durationMs?: unknown }).durationMs;
+	return typeof maybeDuration === "number" && Number.isFinite(maybeDuration) && maybeDuration > 0 ? maybeDuration : 0;
+}
+
 export class StatusLineComponent implements Component {
 	private autoCompactEnabled = true;
 	private settings: StatusLineSettings = {};
@@ -53,11 +63,15 @@ export class StatusLineComponent implements Component {
 	private onChange: (() => void) | undefined;
 	private unsubscribeBranch: (() => void) | undefined;
 	private renderMainLineInBody = false;
+	private toolCallCount = 0;
+	private toolDurationMs = 0;
 
 	constructor(
 		private readonly session: AgentSession,
 		private readonly footerData: ReadonlyFooterDataProvider,
-	) {}
+	) {
+		this.syncToolStatsFromSessionEntries();
+	}
 
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.autoCompactEnabled = enabled;
@@ -81,6 +95,26 @@ export class StatusLineComponent implements Component {
 
 	setRenderMainLineInBody(enabled: boolean): void {
 		this.renderMainLineInBody = enabled;
+	}
+
+	recordToolExecution(result: { details?: unknown } | undefined): void {
+		this.toolCallCount += 1;
+		this.toolDurationMs += extractDurationMs(result?.details);
+	}
+
+	resetToolStats(): void {
+		this.toolCallCount = 0;
+		this.toolDurationMs = 0;
+	}
+
+	syncToolStatsFromSessionEntries(): void {
+		this.resetToolStats();
+		for (const entry of this.session.sessionManager.getEntries()) {
+			if (entry.type !== "message" || entry.message.role !== "toolResult") continue;
+			const toolResult = entry.message as ToolResultWithDuration;
+			this.toolCallCount += 1;
+			this.toolDurationMs += extractDurationMs(toolResult.details);
+		}
 	}
 
 	watchBranch(onChange: () => void): void {
@@ -239,6 +273,8 @@ export class StatusLineComponent implements Component {
 				cacheWrite,
 				cost,
 				premiumRequests,
+				toolCalls: this.toolCallCount,
+				toolDurationMs: this.toolDurationMs,
 				tokensPerSecond: this.getTokensPerSecond(),
 			},
 			contextPercent: contextUsage?.percent ?? null,

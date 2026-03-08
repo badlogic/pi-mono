@@ -23,6 +23,13 @@ describe("BashExecutionComponent", () => {
 		expect(rendered).toContain("Bash: $ git status");
 	});
 
+	test("shows execution duration when bash completes", () => {
+		const component = new BashExecutionComponent("git status", createFakeTui());
+		component.setComplete(0, false, undefined, undefined, 1250);
+		const rendered = stripAnsi(component.render(80).join("\n"));
+		expect(rendered).toContain("1.3s");
+	});
+
 	test("clamps extremely long bash output lines", () => {
 		const component = new BashExecutionComponent("printf", createFakeTui());
 		component.appendOutput("x".repeat(4505));

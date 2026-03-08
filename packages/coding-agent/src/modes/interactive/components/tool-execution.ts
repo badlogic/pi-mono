@@ -25,6 +25,7 @@ import { keyHint } from "./keybinding-hints.js";
 import {
 	CachedOutputBlock,
 	clampDisplayLine,
+	formatExecutionDuration,
 	humanizeToolName,
 	type OutputBlockSection,
 	renderToolStatusLine,
@@ -65,6 +66,9 @@ function str(value: unknown): string | null {
 
 export interface ToolExecutionOptions {
 	showImages?: boolean; // default: true (only used if terminal supports images)
+	trackDuration?: boolean;
+	startedAt?: number;
+	durationMs?: number;
 }
 
 type WriteHighlightCache = {
@@ -97,6 +101,9 @@ export class ToolExecutionComponent extends Container {
 	private toolDefinition?: ToolDefinition;
 	private ui: TUI;
 	private cwd: string;
+	private startedAt: number | undefined;
+	private durationMs: number | undefined;
+	private trackDuration: boolean;
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 		isError: boolean;
@@ -128,6 +135,9 @@ export class ToolExecutionComponent extends Container {
 		this.toolDefinition = toolDefinition;
 		this.ui = ui;
 		this.cwd = cwd;
+		this.trackDuration = options.trackDuration ?? true;
+		this.startedAt = options.startedAt ?? (this.trackDuration ? Date.now() : undefined);
+		this.durationMs = options.durationMs;
 
 		this.addChild(new Spacer(1));
 
@@ -324,6 +334,14 @@ export class ToolExecutionComponent extends Container {
 	): void {
 		this.result = result;
 		this.isPartial = isPartial;
+		if (!isPartial) {
+			this.durationMs =
+				typeof result.details?.durationMs === "number"
+					? Math.max(0, result.details.durationMs)
+					: this.trackDuration && this.startedAt !== undefined
+						? Math.max(0, Date.now() - this.startedAt)
+						: undefined;
+		}
 		if (this.toolName === "write" && !isPartial) {
 			const rawPath = str(this.args?.file_path ?? this.args?.path);
 			const fileContent = str(this.args?.content);
@@ -623,6 +641,11 @@ export class ToolExecutionComponent extends Container {
 				description = this.formatInlineArgsPreview();
 				break;
 			}
+		}
+
+		const duration = formatExecutionDuration(this.durationMs);
+		if (duration) {
+			meta.push(duration);
 		}
 
 		return renderToolStatusLine({

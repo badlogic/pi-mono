@@ -77,6 +77,30 @@ export function formatExpandHint(expanded: boolean, keyHintText: string, hasMore
 	return theme.fg("dim", `(${keyHintText} for more)`);
 }
 
+export function formatExecutionDuration(durationMs: number | undefined): string | undefined {
+	if (durationMs === undefined || !Number.isFinite(durationMs) || durationMs < 0) {
+		return undefined;
+	}
+	if (durationMs < 1000) {
+		return `${Math.round(durationMs)}ms`;
+	}
+	if (durationMs < 10_000) {
+		return `${(durationMs / 1000).toFixed(1)}s`;
+	}
+	const totalSeconds = Math.floor(durationMs / 1000);
+	if (totalSeconds < 60) {
+		return `${totalSeconds}s`;
+	}
+	const minutes = Math.floor(totalSeconds / 60);
+	const remainingSeconds = totalSeconds % 60;
+	if (minutes < 60) {
+		return `${minutes}m ${remainingSeconds}s`;
+	}
+	const hours = Math.floor(minutes / 60);
+	const remainingMinutes = minutes % 60;
+	return `${hours}h ${remainingMinutes}m`;
+}
+
 export function renderToolStatusLine(options: ToolStatusLineOptions): string {
 	const symbol = formatStatusSymbol(options.state);
 	const title = theme.fg("accent", options.title);
