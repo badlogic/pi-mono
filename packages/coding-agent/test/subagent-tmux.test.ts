@@ -10,6 +10,10 @@ describe("subagent tmux helpers", () => {
 		});
 	});
 
+	it("always links subagents into the current tmux session when pi is already inside tmux", () => {
+		expect(__testing.shouldLinkSubagentTmuxWindow("/tmp/project", "main")).toBe(true);
+	});
+
 	it("does not link back into the dedicated session", () => {
 		expect(__testing.buildTmuxLaunchPlan("pi-subagent-7", "pi-subagent-7")).toEqual({
 			session: "pi-subagent-7",
