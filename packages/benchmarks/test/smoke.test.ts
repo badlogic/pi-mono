@@ -7,15 +7,15 @@ import type { BenchmarkTask, RunConfig } from "../src/types.js";
 /** Reusable mock model for testing. */
 function createMockModel(overrides?: Partial<Model<Api>>): Model<Api> {
 	return {
-		id: "neuralwatt-large",
-		name: "Neuralwatt Large",
+		id: "moonshotai/Kimi-K2.5",
+		name: "Kimi K2.5",
 		api: "openai-completions" as Api,
 		provider: "neuralwatt",
 		baseUrl: "https://api.neuralwatt.com/v1",
-		reasoning: true,
-		input: ["text", "image"],
-		cost: { input: 3.0, output: 15.0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 200_000,
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 1.327, output: 1.327, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 262_144,
 		maxTokens: 16_384,
 		...overrides,
 	};
@@ -134,8 +134,8 @@ describe("smoke tests", () => {
 
 		it("logs policy decisions with model routing", async () => {
 			const cheapModel = createMockModel({
-				id: "neuralwatt-mini",
-				cost: { input: 0.1, output: 0.3, cacheRead: 0, cacheWrite: 0 },
+				id: "openai/gpt-oss-20b",
+				cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 },
 			});
 			const policy = {
 				name: "routing-policy",
@@ -151,7 +151,7 @@ describe("smoke tests", () => {
 			const result = await runTask(task, config);
 
 			expect(result.policy_decisions).toHaveLength(1);
-			expect(result.policy_decisions[0].actions).toContain("route:neuralwatt-mini");
+			expect(result.policy_decisions[0].actions).toContain("route:openai/gpt-oss-20b");
 			expect(result.policy_decisions[0].reason).toBe("routing to cheaper model");
 		});
 	});

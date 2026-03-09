@@ -5,7 +5,7 @@
 ### Added
 
 - Added Neuralwatt as a new provider (`"neuralwatt"`) using OpenAI-compatible completions API with base URL `https://api.neuralwatt.com/v1`.
-- Added `neuralwatt-large` and `neuralwatt-small` model entries for the Neuralwatt provider.
+- Replaced placeholder Neuralwatt models with 7 real models from the NeuralWatt API: Devstral 24B, GPT-OSS 20B, Kimi K2.5, MiniMax M2.5, Qwen3.5 397B, Qwen3.5 35B, and GLM-5. All models include `capabilities: ["tool_calling"]` and updated pricing/context windows from portal.neuralwatt.com.
 - Added `NEURALWATT_API_KEY` environment variable detection for Neuralwatt provider authentication.
 - Added `EnergyUsage` interface (`energy_joules`, `energy_kwh`, `duration_seconds`) to types.
 - Added `energy?: EnergyUsage` field to `AssistantMessage` for per-request energy telemetry.

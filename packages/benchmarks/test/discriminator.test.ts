@@ -349,17 +349,17 @@ describe("discriminate — Fugue tool_calling scenario", () => {
 		return {
 			classifierModel: mockModel("openai/gpt-oss-20b", "GPT-OSS 20B", []),
 			thinking: { model: mockModel("moonshotai/Kimi-K2.5", "Kimi K2.5", ["tool_calling"]) },
-			complex: { model: mockModel("Qwen/Qwen3-Coder-480B-A35B-Instruct", "Qwen3-Coder 480B", ["tool_calling"]) },
+			complex: { model: mockModel("Qwen/Qwen3.5-397B-A17B-FP8", "Qwen3.5 397B", ["tool_calling"]) },
 			medium: {
 				model: mockModel("mistralai/Devstral-Small-2-24B-Instruct-2512", "Devstral 24B", ["tool_calling"]),
 				briefMaxTokens: 4_096,
 			},
 			simple: { model: mockModel("openai/gpt-oss-20b", "GPT-OSS 20B", []), briefMaxTokens: 2_048 },
 			tokensPerJoule: {
-				"openai/gpt-oss-20b": 1.371,
-				"mistralai/Devstral-Small-2-24B-Instruct-2512": 0.809,
-				"moonshotai/Kimi-K2.5": 0.482,
-				"Qwen/Qwen3-Coder-480B-A35B-Instruct": 0.314,
+				"openai/gpt-oss-20b": 0.5,
+				"mistralai/Devstral-Small-2-24B-Instruct-2512": 9.92,
+				"moonshotai/Kimi-K2.5": 0.21,
+				"Qwen/Qwen3.5-397B-A17B-FP8": 1.03,
 			},
 		};
 	}
@@ -385,7 +385,7 @@ describe("discriminate — Fugue tool_calling scenario", () => {
 				requires: ["tool_calling"],
 			},
 		);
-		expect(result.model.name).toBe("Qwen3-Coder 480B");
+		expect(result.model.name).toBe("Qwen3.5 397B");
 	});
 
 	it("classifier says medium → Devstral has tool_calling → uses Devstral directly", async () => {
@@ -410,6 +410,6 @@ describe("discriminate — Fugue tool_calling scenario", () => {
 			requires: ["tool_calling"],
 		});
 		// Error path doesn't apply requires — goes straight to complex model
-		expect(result.model.name).toBe("Qwen3-Coder 480B");
+		expect(result.model.name).toBe("Qwen3.5 397B");
 	});
 });

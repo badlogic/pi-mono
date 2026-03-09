@@ -5,10 +5,10 @@
  * RoutingDecision selecting one of four tiers based on task complexity and
  * whether chain-of-thought reasoning is needed:
  *
- *   thinking → Kimi K2.5    (0.482 tok/J, $1.327/1M) — CoT reasoning, debugging
- *   complex  → Qwen3-480B   (0.314 tok/J, $0.10/1M)  — high quality, no CoT needed
- *   medium   → Devstral-24B (0.809 tok/J, $0.12/1M)  — moderate complexity
- *   simple   → GPT-OSS-20B  (1.371 tok/J, $0.10/1M)  — boilerplate, obvious tasks
+ *   thinking → Kimi K2.5      (0.21 tok/J, $1.327/1M)  — CoT reasoning, debugging
+ *   complex  → Qwen3.5 397B  (1.03 tok/J, $0/1M)      — high quality, no CoT needed
+ *   medium   → Devstral 24B  (9.92 tok/J, $0.12/1M)   — moderate complexity
+ *   simple   → GPT-OSS 20B   (0.50 tok/J, $0.10/1M)   — boilerplate, obvious tasks
  *
  * Tiers are optional in the config — if "thinking" or "medium" are omitted,
  * the classifier falls back to the nearest configured tier.
@@ -47,7 +47,7 @@ export interface DiscriminatorConfig {
 	/**
 	 * High-quality tasks where a direct answer suffices (no CoT needed).
 	 * Required.
-	 * Recommended: Qwen3-Coder-480B ($0.10/1M, same price as GPT-OSS).
+	 * Recommended: Qwen3.5-397B ($0/1M, free tier).
 	 */
 	complex: DiscriminatorTierConfig;
 	/**
@@ -102,7 +102,7 @@ export const DEFAULT_DISCRIMINATOR_SYSTEM_PROMPT =
 	"You are a prompt routing classifier for a four-tier AI system.\n" +
 	"Choose the tier that best matches the task:\n" +
 	'  "thinking" — needs step-by-step reasoning, debugging, or chain-of-thought (Kimi K2.5)\n' +
-	'  "complex"  — needs high quality but reasoning is not required; direct answer ok (Qwen 480B)\n' +
+	'  "complex"  — needs high quality but reasoning is not required; direct answer ok (Qwen3.5 397B)\n' +
 	'  "medium"   — moderately complex but clear spec; no deep reasoning needed (Devstral 24B)\n' +
 	'  "simple"   — boilerplate, obvious implementation, or trivial answer (GPT-OSS 20B)\n' +
 	'Also classify response length: "full" if a detailed response is needed, "brief" if a short concise answer suffices.\n' +

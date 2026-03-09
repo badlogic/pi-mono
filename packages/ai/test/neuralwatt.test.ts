@@ -10,46 +10,64 @@ describe("Neuralwatt provider configuration", () => {
 			expect(providers).toContain("neuralwatt");
 		});
 
-		it("should have neuralwatt-large model", () => {
-			const model = getModel("neuralwatt", "neuralwatt-large");
-			expect(model).toBeDefined();
-			expect(model.id).toBe("neuralwatt-large");
-			expect(model.api).toBe("openai-completions");
-			expect(model.provider).toBe("neuralwatt");
-			expect(model.baseUrl).toBe("https://api.neuralwatt.com/v1");
-			expect(model.reasoning).toBe(true);
-			expect(model.input).toContain("text");
-			expect(model.input).toContain("image");
-			expect(model.contextWindow).toBe(128000);
-			expect(model.maxTokens).toBe(16384);
+		it("should have all 7 neuralwatt models", () => {
+			const models = getModels("neuralwatt");
+			expect(models.length).toBe(7);
+			const ids = models.map((m: Model<"openai-completions">) => m.id);
+			expect(ids).toContain("mistralai/Devstral-Small-2-24B-Instruct-2512");
+			expect(ids).toContain("openai/gpt-oss-20b");
+			expect(ids).toContain("moonshotai/Kimi-K2.5");
+			expect(ids).toContain("MiniMaxAI/MiniMax-M2.5");
+			expect(ids).toContain("Qwen/Qwen3.5-397B-A17B-FP8");
+			expect(ids).toContain("Qwen/Qwen3.5-35B-A3B");
+			expect(ids).toContain("zai-org/GLM-5-FP8");
 		});
 
-		it("should have neuralwatt-small model", () => {
-			const model = getModel("neuralwatt", "neuralwatt-small");
+		it("should have correct properties for Devstral model", () => {
+			const model = getModel("neuralwatt", "mistralai/Devstral-Small-2-24B-Instruct-2512");
 			expect(model).toBeDefined();
-			expect(model.id).toBe("neuralwatt-small");
 			expect(model.api).toBe("openai-completions");
 			expect(model.provider).toBe("neuralwatt");
 			expect(model.baseUrl).toBe("https://api.neuralwatt.com/v1");
 			expect(model.reasoning).toBe(false);
 			expect(model.input).toEqual(["text"]);
-			expect(model.contextWindow).toBe(128000);
-			expect(model.maxTokens).toBe(8192);
+			expect(model.contextWindow).toBe(262144);
+			expect(model.maxTokens).toBe(16384);
+			expect(model.capabilities).toContain("tool_calling");
 		});
 
-		it("should have neuralwatt-small cost lower than neuralwatt-large", () => {
-			const large = getModel("neuralwatt", "neuralwatt-large");
-			const small = getModel("neuralwatt", "neuralwatt-small");
-			expect(small.cost.output).toBeLessThan(large.cost.output);
-			expect(small.cost.input).toBeLessThan(large.cost.input);
+		it("should have correct properties for GPT-OSS model", () => {
+			const model = getModel("neuralwatt", "openai/gpt-oss-20b");
+			expect(model).toBeDefined();
+			expect(model.contextWindow).toBe(16384);
+			expect(model.maxTokens).toBe(4096);
+			expect(model.capabilities).toContain("tool_calling");
 		});
 
-		it("should return all neuralwatt models via getModels", () => {
+		it("should have correct context window and pricing for Kimi K2.5", () => {
+			const model = getModel("neuralwatt", "moonshotai/Kimi-K2.5");
+			expect(model).toBeDefined();
+			expect(model.contextWindow).toBe(262144);
+			expect(model.cost.input).toBe(1.327);
+			expect(model.cost.output).toBe(1.327);
+		});
+
+		it("should have free pricing for Qwen3.5-397B", () => {
+			const model = getModel("neuralwatt", "Qwen/Qwen3.5-397B-A17B-FP8");
+			expect(model).toBeDefined();
+			expect(model.cost.input).toBe(0);
+			expect(model.cost.output).toBe(0);
+			expect(model.contextWindow).toBe(262144);
+		});
+
+		it("should have Kimi K2.5 as the most expensive model", () => {
 			const models = getModels("neuralwatt");
-			expect(models.length).toBe(2);
-			const ids = models.map((m: Model<"openai-completions">) => m.id);
-			expect(ids).toContain("neuralwatt-large");
-			expect(ids).toContain("neuralwatt-small");
+			const kimi = models.find((m) => m.id === "moonshotai/Kimi-K2.5")!;
+			for (const model of models) {
+				if (model.id !== kimi.id) {
+					expect(model.cost.output).toBeLessThanOrEqual(kimi.cost.output);
+				}
+			}
 		});
 	});
 
@@ -78,7 +96,7 @@ describe("Neuralwatt provider configuration", () => {
 		() => {
 			it("should complete a chat request through Neuralwatt endpoint", { timeout: 30000 }, async () => {
 				const { complete } = await import("../src/stream.js");
-				const model = getModel("neuralwatt", "neuralwatt-large");
+				const model = getModel("neuralwatt", "openai/gpt-oss-20b");
 				const response = await complete(model, {
 					systemPrompt: "You are a helpful assistant. Be concise.",
 					messages: [
@@ -94,12 +112,12 @@ describe("Neuralwatt provider configuration", () => {
 
 	describe("model compat settings", () => {
 		it("should have conservative compat settings for neuralwatt models", () => {
-			const large = getModel("neuralwatt", "neuralwatt-large");
-			expect(large.compat).toBeDefined();
-			expect(large.compat!.supportsStore).toBe(false);
-			expect(large.compat!.supportsDeveloperRole).toBe(false);
-			expect(large.compat!.supportsReasoningEffort).toBe(false);
-			expect(large.compat!.maxTokensField).toBe("max_tokens");
+			const model = getModel("neuralwatt", "openai/gpt-oss-20b");
+			expect(model.compat).toBeDefined();
+			expect(model.compat!.supportsStore).toBe(false);
+			expect(model.compat!.supportsDeveloperRole).toBe(false);
+			expect(model.compat!.supportsReasoningEffort).toBe(false);
+			expect(model.compat!.maxTokensField).toBe("max_tokens");
 		});
 	});
 });

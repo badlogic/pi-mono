@@ -62,7 +62,7 @@ const DEFAULT_KEYWORDS = [
 ];
 
 const GPT_OSS_MODEL: Model<"openai-completions"> = {
-	// Most energy-efficient: 1.371 tokens/J, $0.10/$0.10/1M
+	// 0.50 tokens/J, $0.10/$0.10/1M — cheap and fast
 	id: "openai/gpt-oss-20b",
 	name: "GPT-OSS 20B",
 	api: "openai-completions",
@@ -76,7 +76,7 @@ const GPT_OSS_MODEL: Model<"openai-completions"> = {
 };
 
 const DEVSTRAL_MODEL: Model<"openai-completions"> = {
-	// Middle tier: 0.809 tokens/J, $0.12/$0.12/1M, 262K context
+	// Most energy-efficient: 9.92 tokens/J, $0.12/$0.12/1M, 262K context
 	id: "mistralai/Devstral-Small-2-24B-Instruct-2512",
 	name: "Devstral-24B",
 	api: "openai-completions",
@@ -90,7 +90,7 @@ const DEVSTRAL_MODEL: Model<"openai-completions"> = {
 };
 
 const KIMI_MODEL: Model<"openai-completions"> = {
-	// Flagship: 0.482 tokens/J, $1.327/$1.327/1M, 262K context — CoT/thinking
+	// Flagship: 0.21 tokens/J, $1.327/$1.327/1M, 262K context — CoT/thinking
 	id: "moonshotai/Kimi-K2.5",
 	name: "Kimi K2.5",
 	api: "openai-completions",
@@ -107,8 +107,8 @@ const KIMI_MODEL: Model<"openai-completions"> = {
 const NEURALWATT_MODELS: Model<"openai-completions">[] = [GPT_OSS_MODEL, DEVSTRAL_MODEL, KIMI_MODEL];
 
 /**
- * Start on Kimi K2.5 (0.482 tokens/J) — policy will route to
- * GPT-OSS-20B (1.371 tokens/J, 2.8x more efficient, 13x cheaper) at >70% budget pressure.
+ * Start on Kimi K2.5 (0.21 tokens/J) — policy will route to
+ * GPT-OSS-20B (0.50 tokens/J, 2.4x more efficient, 13x cheaper) at >70% budget pressure.
  */
 const SCORING_MODEL = KIMI_MODEL;
 
@@ -125,11 +125,10 @@ const MEMORY_KEY = "kimi-k2.5→gpt-oss-20b";
 
 /** Energy efficiency (tokens per joule) from portal.neuralwatt.com. */
 const TOKENS_PER_JOULE: Record<string, number> = {
-	"openai/gpt-oss-20b": 1.371,
-	"mistralai/Devstral-Small-2-24B-Instruct-2512": 0.809,
-	"deepseek-ai/deepseek-coder-33b-instruct": 0.092,
-	"moonshotai/Kimi-K2.5": 0.482,
-	"Qwen/Qwen3-Coder-480B-A35B-Instruct": 0.314,
+	"mistralai/Devstral-Small-2-24B-Instruct-2512": 9.92,
+	"Qwen/Qwen3.5-397B-A17B-FP8": 1.03,
+	"openai/gpt-oss-20b": 0.5,
+	"moonshotai/Kimi-K2.5": 0.21,
 };
 
 /**

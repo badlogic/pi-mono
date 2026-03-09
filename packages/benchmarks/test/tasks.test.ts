@@ -61,7 +61,7 @@ describe("benchmark task suite", () => {
 				task_id: task.id,
 				run_id: "test-run",
 				step_id: `${task.id}-step-${i}`,
-				model: "neuralwatt-large",
+				model: "moonshotai/Kimi-K2.5",
 				provider: "neuralwatt",
 				tokens: { input: 500, output: 200, total: 700 },
 				latency_ms: 100,

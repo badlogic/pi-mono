@@ -35,7 +35,7 @@ function makeInput(overrides?: Partial<TelemetryInput>): TelemetryInput {
 		task_id: "task-001",
 		run_id: "run-abc",
 		step_id: "step-1",
-		model: "neuralwatt-large",
+		model: "openai/gpt-oss-20b",
 		provider: "neuralwatt",
 		usage: makeUsage(),
 		energy: makeEnergy(),
@@ -52,7 +52,7 @@ describe("telemetry schema", () => {
 			expect(record.task_id).toBe("task-001");
 			expect(record.run_id).toBe("run-abc");
 			expect(record.step_id).toBe("step-1");
-			expect(record.model).toBe("neuralwatt-large");
+			expect(record.model).toBe("openai/gpt-oss-20b");
 			expect(record.provider).toBe("neuralwatt");
 			expect(record.tokens.input).toBe(100);
 			expect(record.tokens.output).toBe(50);

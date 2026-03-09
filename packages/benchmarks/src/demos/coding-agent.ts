@@ -12,8 +12,8 @@
  *                  Memory accumulates per-phase discriminator accuracy across runs.
  *
  * Energy benchmarks from portal.neuralwatt.com:
- *   Kimi K2.5:    0.482 tokens/J  ($1.327/$1.327 per 1M)  ← default/baseline
- *   GPT-OSS-20B:  1.371 tokens/J  ($0.10/$0.10 per 1M)    ← 2.8x more efficient
+ *   Kimi K2.5:    0.21 tokens/J   ($1.327/$1.327 per 1M)  ← default/baseline
+ *   GPT-OSS-20B:  0.50 tokens/J   ($0.10/$0.10 per 1M)   ← 2.4x more efficient
  *
  * Usage:
  *   npx tsx src/demos/coding-agent.ts                    (generate new challenge)
@@ -62,15 +62,14 @@ import {
  * Used as fallback when the API does not return energy_joules.
  */
 const TOKENS_PER_JOULE: Record<string, number> = {
-	"openai/gpt-oss-20b": 1.371,
-	"mistralai/Devstral-Small-2-24B-Instruct-2512": 0.809,
-	"moonshotai/Kimi-K2.5": 0.482,
-	"Qwen/Qwen3-Coder-480B-A35B-Instruct": 0.314,
-	"deepseek-ai/deepseek-coder-33b-instruct": 0.092,
+	"mistralai/Devstral-Small-2-24B-Instruct-2512": 9.92,
+	"Qwen/Qwen3.5-397B-A17B-FP8": 1.03,
+	"openai/gpt-oss-20b": 0.5,
+	"moonshotai/Kimi-K2.5": 0.21,
 };
 
 const KIMI_MODEL: Model<"openai-completions"> = {
-	// thinking tier: 0.482 tok/J, $1.327/1M — best CoT reasoning, 262K context
+	// thinking tier: 0.21 tok/J, $1.327/1M — best CoT reasoning, 262K context
 	id: "moonshotai/Kimi-K2.5",
 	name: "Kimi K2.5",
 	api: "openai-completions",
@@ -84,21 +83,21 @@ const KIMI_MODEL: Model<"openai-completions"> = {
 };
 
 const QWEN_MODEL: Model<"openai-completions"> = {
-	// complex tier: 0.314 tok/J, $0.10/1M — 480B MoE, high quality, no CoT overhead
-	id: "Qwen/Qwen3-Coder-480B-A35B-Instruct",
-	name: "Qwen3-Coder 480B",
+	// complex tier: 1.03 tok/J, $0/1M — 397B MoE (17B active), high quality, no CoT overhead
+	id: "Qwen/Qwen3.5-397B-A17B-FP8",
+	name: "Qwen3.5 397B",
 	api: "openai-completions",
 	provider: "neuralwatt",
 	baseUrl: "https://api.neuralwatt.com/v1",
 	reasoning: false,
 	input: ["text"],
-	cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 },
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 	contextWindow: 262_144,
-	maxTokens: 8_192,
+	maxTokens: 16_384,
 };
 
 const DEVSTRAL_MODEL: Model<"openai-completions"> = {
-	// medium tier: 0.809 tok/J, $0.12/1M — 1.7x more efficient than Kimi, 262K context
+	// medium tier: 9.92 tok/J, $0.12/1M — most energy-efficient model, 262K context
 	id: "mistralai/Devstral-Small-2-24B-Instruct-2512",
 	name: "Devstral 24B",
 	api: "openai-completions",
@@ -112,7 +111,7 @@ const DEVSTRAL_MODEL: Model<"openai-completions"> = {
 };
 
 const GPT_OSS_MODEL: Model<"openai-completions"> = {
-	// simple tier + discriminator: 1.371 tok/J, $0.10/1M — most energy-efficient
+	// simple tier + discriminator: 0.50 tok/J, $0.10/1M — cheap and fast
 	id: "openai/gpt-oss-20b",
 	name: "GPT-OSS 20B",
 	api: "openai-completions",
@@ -150,7 +149,7 @@ const DISCRIMINATOR_CONFIG: DiscriminatorConfig = {
 		"You are a routing classifier for a four-tier coding AI system.\n" +
 		"Choose the tier that best matches the coding task:\n" +
 		'  "thinking" → Kimi K2.5: needs chain-of-thought reasoning — debugging, tricky edge cases, ambiguous specs, logic puzzles.\n' +
-		'  "complex"  → Qwen 480B: high-quality implementation without reasoning — clear architecture, feature implementation.\n' +
+		'  "complex"  → Qwen3.5 397B: high-quality implementation without reasoning — clear architecture, feature implementation.\n' +
 		'  "medium"   → Devstral 24B: moderate complexity — clear spec, standard patterns, non-trivial but routine.\n' +
 		'  "simple"   → GPT-OSS 20B: boilerplate, interface/type definitions, trivial wrappers, obvious code.\n' +
 		'Also classify response length: "full" for complete implementations, "brief" for short focused answers.\n' +

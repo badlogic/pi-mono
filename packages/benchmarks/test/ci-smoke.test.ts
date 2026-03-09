@@ -12,28 +12,28 @@ import { BENCHMARK_TASKS, getTasksByGlob } from "../src/tasks.js";
 import type { RunConfig, TaskResult } from "../src/types.js";
 
 const MOCK_MODEL: Model<Api> = {
-	id: "neuralwatt-large",
-	name: "Neuralwatt Large",
-	api: "openai-completions" as Api,
-	provider: "neuralwatt",
-	baseUrl: "https://api.neuralwatt.com/v1",
-	reasoning: true,
-	input: ["text", "image"],
-	cost: { input: 3.0, output: 15.0, cacheRead: 0, cacheWrite: 0 },
-	contextWindow: 200_000,
-	maxTokens: 16_384,
-};
-
-const CHEAP_MODEL: Model<Api> = {
-	id: "neuralwatt-mini",
-	name: "Neuralwatt Mini",
+	id: "moonshotai/Kimi-K2.5",
+	name: "Kimi K2.5",
 	api: "openai-completions" as Api,
 	provider: "neuralwatt",
 	baseUrl: "https://api.neuralwatt.com/v1",
 	reasoning: false,
 	input: ["text"],
-	cost: { input: 0.1, output: 0.3, cacheRead: 0, cacheWrite: 0 },
-	contextWindow: 32_000,
+	cost: { input: 1.327, output: 1.327, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 262_144,
+	maxTokens: 16_384,
+};
+
+const CHEAP_MODEL: Model<Api> = {
+	id: "openai/gpt-oss-20b",
+	name: "GPT-OSS 20B",
+	api: "openai-completions" as Api,
+	provider: "neuralwatt",
+	baseUrl: "https://api.neuralwatt.com/v1",
+	reasoning: false,
+	input: ["text"],
+	cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 16_384,
 	maxTokens: 4_096,
 };
 
