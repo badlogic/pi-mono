@@ -103,6 +103,21 @@ Mom resolves model/provider in this order:
 2. If nothing set: prefers `anthropic/claude-sonnet-4-5` when available
 3. Otherwise: first model with configured credentials
 
+In Slack, you can inspect and change the active model at runtime:
+
+```text
+models
+models page 2
+models nano-gpt
+models nano-gpt page 2
+models providers
+model
+model openai-codex/gpt-5.2-codex
+model gpt-5.2-codex
+```
+
+`model <id>` prefers the current provider when possible and otherwise uses normal model resolution rules. The selected model is persisted for that Slack channel.
+
 ## Environment Variables
 
 | Variable | Description |

@@ -1,1 +1,197 @@
-@import "../../dist/app.css";
+@import "../../src/app.css";
+
+:root {
+	--console-shell: color-mix(in oklab, var(--background) 85%, #0f172a 15%);
+	--console-panel: color-mix(in oklab, var(--background) 88%, #122033 12%);
+	--console-panel-border: color-mix(in oklab, var(--border) 70%, #3b82f6 30%);
+	--console-strong: color-mix(in oklab, var(--foreground) 85%, #9bd0ff 15%);
+}
+
+html,
+body {
+	min-height: 100%;
+}
+
+body {
+	margin: 0;
+	background:
+		radial-gradient(circle at top left, rgb(56 189 248 / 0.14), transparent 26%),
+		radial-gradient(circle at bottom right, rgb(16 185 129 / 0.12), transparent 22%),
+		var(--background);
+	color: var(--foreground);
+}
+
+#app {
+	min-height: 100vh;
+}
+
+.app-shell {
+	display: grid;
+	grid-template-columns: 20rem minmax(0, 1fr);
+	min-height: 100vh;
+	gap: 1rem;
+	padding: 1rem;
+	box-sizing: border-box;
+}
+
+.app-rail,
+.app-main {
+	min-height: 0;
+}
+
+.app-rail {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
+.panel {
+	background: var(--console-panel);
+	border: 1px solid var(--console-panel-border);
+	border-radius: 1.25rem;
+	padding: 1rem;
+	box-shadow: 0 18px 50px rgb(15 23 42 / 0.12);
+}
+
+.panel-brand {
+	padding: 1.25rem;
+}
+
+.panel-brand h1,
+.app-header h2 {
+	margin: 0.25rem 0 0;
+	font-size: clamp(1.4rem, 2vw, 2rem);
+	line-height: 1.05;
+	letter-spacing: -0.03em;
+	color: var(--console-strong);
+}
+
+.panel-brand p,
+.panel-note,
+.model-label {
+	margin: 0.6rem 0 0;
+	color: var(--muted-foreground);
+	line-height: 1.5;
+}
+
+.panel-heading,
+.eyebrow {
+	font-size: 0.78rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.12em;
+	color: color-mix(in oklab, var(--muted-foreground) 74%, #7dd3fc 26%);
+}
+
+.button-stack {
+	display: flex;
+	flex-direction: column;
+	gap: 0.65rem;
+	margin-top: 0.85rem;
+}
+
+.action-button {
+	border: 1px solid color-mix(in oklab, var(--border) 55%, #38bdf8 45%);
+	background: color-mix(in oklab, var(--secondary) 78%, #0b1c2d 22%);
+	color: var(--foreground);
+	border-radius: 0.95rem;
+	padding: 0.8rem 0.95rem;
+	text-align: left;
+	font: inherit;
+	cursor: pointer;
+	transition:
+		transform 140ms ease,
+		background 140ms ease,
+		border-color 140ms ease;
+}
+
+.action-button:hover {
+	transform: translateY(-1px);
+	background: color-mix(in oklab, var(--secondary) 68%, #082133 32%);
+	border-color: color-mix(in oklab, var(--border) 35%, #7dd3fc 65%);
+}
+
+.action-button-secondary {
+	background: transparent;
+}
+
+.panel-muted {
+	background: color-mix(in oklab, var(--background) 92%, #0b1725 8%);
+}
+
+.hint-list {
+	margin: 0.85rem 0 0;
+	padding-left: 1rem;
+	display: grid;
+	gap: 0.6rem;
+	color: var(--muted-foreground);
+}
+
+.app-main {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	background: var(--console-shell);
+	border: 1px solid color-mix(in oklab, var(--border) 70%, #1d4ed8 30%);
+	border-radius: 1.5rem;
+	overflow: hidden;
+	box-shadow: 0 24px 70px rgb(15 23 42 / 0.18);
+}
+
+.app-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 1.1rem 1.2rem;
+	border-bottom: 1px solid color-mix(in oklab, var(--border) 78%, #1e293b 22%);
+	background: linear-gradient(180deg, rgb(15 23 42 / 0.16), transparent);
+}
+
+.header-actions {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+}
+
+.chat-stage {
+	flex: 1;
+	min-height: 0;
+}
+
+.chat-stage chat-panel,
+.chat-stage agent-interface {
+	display: block;
+	height: 100%;
+}
+
+@media (max-width: 960px) {
+	.app-shell {
+		grid-template-columns: 1fr;
+	}
+
+	.app-rail {
+		order: 2;
+	}
+
+	.app-main {
+		order: 1;
+		min-height: 70vh;
+	}
+}
+
+@media (max-width: 640px) {
+	.app-shell {
+		padding: 0.5rem;
+	}
+
+	.app-header {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+
+	.header-actions {
+		width: 100%;
+		justify-content: space-between;
+	}
+}

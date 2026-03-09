@@ -50,8 +50,31 @@ export interface RunnerConfig {
 	modelsFile?: string;
 }
 
+export interface ModelRegistrySnapshot {
+	allModels: Model<Api>[];
+	availableModels: Model<Api>[];
+	loadError?: string;
+}
+
 function getModelDescription(model: Model<Api>): string {
 	return `${model.provider}/${model.id}`;
+}
+
+const PREFERRED_CODEX_MODEL_IDS = ["gpt-5.4", "gpt-5.3-codex", "gpt-5.2-codex", "gpt-5.2", "gpt-5.1"] as const;
+
+function findPreferredModel(
+	availableModels: Model<Api>[],
+	provider: string,
+	preferredIds: readonly string[],
+): Model<Api> | undefined {
+	for (const id of preferredIds) {
+		const match = availableModels.find((model) => model.provider === provider && model.id === id);
+		if (match) {
+			return match;
+		}
+	}
+
+	return availableModels.find((model) => model.provider === provider);
 }
 
 function resolveModel(modelRegistry: ModelRegistry, selection?: ModelSelection): Model<Api> {
@@ -104,9 +127,15 @@ function resolveModel(modelRegistry: ModelRegistry, selection?: ModelSelection):
 		throw new Error(`Configured model not found or has no credentials: ${configuredModel}`);
 	}
 
-	const preferredAnthropic = availableModels.find(
-		(model) => model.provider === "anthropic" && model.id === "claude-sonnet-4-5",
-	);
+	const preferredCodex = findPreferredModel(availableModels, "openai-codex", PREFERRED_CODEX_MODEL_IDS);
+	if (preferredCodex) {
+		return preferredCodex;
+	}
+
+	const preferredAnthropic = findPreferredModel(availableModels, "anthropic", [
+		"claude-sonnet-4-5",
+		"claude-opus-4-6",
+	]);
 	if (preferredAnthropic) {
 		return preferredAnthropic;
 	}
@@ -128,6 +157,34 @@ async function getApiKeyForModel(authStorage: AuthStorage, selectedModel: Model<
 		);
 	}
 	return key;
+}
+
+function createModelRegistrySnapshot(config: RunnerConfig): {
+	authStorage: AuthStorage;
+	modelRegistry: ModelRegistry;
+	snapshot: ModelRegistrySnapshot;
+} {
+	const authStoragePath = config.authFile ?? join(homedir(), ".pi", "mom", "auth.json");
+	const authStorage = AuthStorage.create(authStoragePath);
+	const modelRegistry = new ModelRegistry(authStorage, config.modelsFile);
+	return {
+		authStorage,
+		modelRegistry,
+		snapshot: {
+			allModels: modelRegistry.getAll(),
+			availableModels: modelRegistry.getAvailable(),
+			loadError: modelRegistry.getError(),
+		},
+	};
+}
+
+export function getModelRegistrySnapshot(config: RunnerConfig): ModelRegistrySnapshot {
+	return createModelRegistrySnapshot(config).snapshot;
+}
+
+export function resolveConfiguredModel(config: RunnerConfig): Model<Api> {
+	const { modelRegistry } = createModelRegistrySnapshot(config);
+	return resolveModel(modelRegistry, config.modelSelection);
 }
 
 const IMAGE_MIME_TYPES: Record<string, string> = {
@@ -243,7 +300,17 @@ function buildSystemPrompt(
 - Bash working directory: ${process.cwd()}
 - Be careful with system modifications`;
 
-	return `You are mom, a Slack bot assistant. Be concise. No emojis.
+	return `You are Frieren, inhabiting mom's role as a Slack bot assistant.
+
+## Persona
+- Speak with Frieren's calm, understated, long-lived perspective.
+- Be concise, observant, and mildly detached rather than bubbly or performative.
+- Dry humor and light teasing are fine, but keep them sparse and effortless.
+- No emojis.
+- Do not over-roleplay. Competence, accuracy, and task completion matter more than atmosphere.
+- Prefer direct action over prolonged discussion. If a tool can answer the question, use it.
+- Treat repetitive urgency from others with patience, not panic.
+- When users are vague, ask only the minimum clarifying question needed to proceed.
 
 ## Context
 - For current date/time, use: date
@@ -465,7 +532,16 @@ function formatToolArgsForSlack(_toolName: string, args: Record<string, unknown>
 }
 
 // Cache runners per channel
-const channelRunners = new Map<string, AgentRunner>();
+const channelRunners = new Map<string, { configKey: string; runner: AgentRunner }>();
+
+function getRunnerConfigKey(config: RunnerConfig): string {
+	return JSON.stringify({
+		provider: config.modelSelection?.provider ?? null,
+		model: config.modelSelection?.model ?? null,
+		authFile: config.authFile ?? null,
+		modelsFile: config.modelsFile ?? null,
+	});
+}
 
 /**
  * Get or create an AgentRunner for a channel.
@@ -477,11 +553,12 @@ export function getOrCreateRunner(
 	channelDir: string,
 	config: RunnerConfig,
 ): AgentRunner {
+	const configKey = getRunnerConfigKey(config);
 	const existing = channelRunners.get(channelId);
-	if (existing) return existing;
+	if (existing?.configKey === configKey) return existing.runner;
 
 	const runner = createRunner(sandboxConfig, channelId, channelDir, config);
-	channelRunners.set(channelId, runner);
+	channelRunners.set(channelId, { configKey, runner });
 	return runner;
 }
 

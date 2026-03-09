@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 
-import { existsSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join, resolve } from "path";
-import { type AgentRunner, getOrCreateRunner, type ModelSelection, type RunnerConfig } from "./agent.js";
+import {
+	type AgentRunner,
+	getModelRegistrySnapshot,
+	getOrCreateRunner,
+	type ModelSelection,
+	type RunnerConfig,
+	resolveConfiguredModel,
+} from "./agent.js";
 import { downloadChannel } from "./download.js";
 import { createEventsWatcher } from "./events.js";
 import * as log from "./log.js";
@@ -144,19 +151,283 @@ interface ChannelState {
 
 const channelStates = new Map<string, ChannelState>();
 
+const CHANNEL_MODEL_SELECTION_FILENAME = "model.json";
+
+function getChannelModelSelectionPath(channelId: string): string {
+	return join(workingDir, channelId, CHANNEL_MODEL_SELECTION_FILENAME);
+}
+
+function loadChannelModelSelection(channelId: string): ModelSelection | undefined {
+	const path = getChannelModelSelectionPath(channelId);
+	if (!existsSync(path)) return undefined;
+
+	try {
+		const parsed = JSON.parse(readFileSync(path, "utf-8")) as ModelSelection;
+		const provider = parsed.provider?.trim();
+		const model = parsed.model?.trim();
+		if (!provider || !model) return undefined;
+		return { provider, model };
+	} catch (error) {
+		log.logWarning(`[${channelId}] Failed to read model selection`, String(error));
+		return undefined;
+	}
+}
+
+function saveChannelModelSelection(channelId: string, selection: ModelSelection): void {
+	const path = getChannelModelSelectionPath(channelId);
+	mkdirSync(join(workingDir, channelId), { recursive: true });
+	writeFileSync(path, `${JSON.stringify(selection, null, 2)}\n`, "utf-8");
+}
+
+function getRunnerConfigForChannel(channelId: string): RunnerConfig {
+	const channelSelection = loadChannelModelSelection(channelId);
+	return {
+		...runnerConfig,
+		modelSelection: channelSelection ?? runnerConfig.modelSelection,
+	};
+}
+
+function buildState(channelId: string): ChannelState {
+	const channelDir = join(workingDir, channelId);
+	const config = getRunnerConfigForChannel(channelId);
+	return {
+		running: false,
+		runner: getOrCreateRunner(sandbox, channelId, channelDir, config),
+		store: new ChannelStore({ workingDir, botToken: MOM_SLACK_BOT_TOKEN! }),
+		stopRequested: false,
+	};
+}
+
 function getState(channelId: string): ChannelState {
 	let state = channelStates.get(channelId);
 	if (!state) {
-		const channelDir = join(workingDir, channelId);
-		state = {
-			running: false,
-			runner: getOrCreateRunner(sandbox, channelId, channelDir, runnerConfig),
-			store: new ChannelStore({ workingDir, botToken: MOM_SLACK_BOT_TOKEN! }),
-			stopRequested: false,
-		};
+		state = buildState(channelId);
 		channelStates.set(channelId, state);
 	}
 	return state;
+}
+
+function refreshRunner(state: ChannelState, channelId: string): void {
+	const channelDir = join(workingDir, channelId);
+	state.runner = getOrCreateRunner(sandbox, channelId, channelDir, getRunnerConfigForChannel(channelId));
+}
+
+function parseModelCommand(text: string): { command: "models" | "model"; args: string } | null {
+	const trimmed = text.trim();
+	if (!trimmed) return null;
+
+	const firstSpace = trimmed.indexOf(" ");
+	const command = (firstSpace === -1 ? trimmed : trimmed.slice(0, firstSpace)).toLowerCase();
+	if (command !== "models" && command !== "model") return null;
+
+	return {
+		command,
+		args: firstSpace === -1 ? "" : trimmed.slice(firstSpace + 1).trim(),
+	};
+}
+
+function parseModelsArgs(args: string): { filter?: string; page: number; providersOnly: boolean } | { error: string } {
+	const trimmed = args.trim();
+	let page = 1;
+	let remaining = trimmed;
+
+	const pageMatch = trimmed.match(/(?:^|\s+)page\s+(\d+)\s*$/i);
+	if (pageMatch) {
+		page = Number.parseInt(pageMatch[1], 10);
+		remaining = trimmed.slice(0, pageMatch.index).trim();
+	}
+
+	if (!Number.isInteger(page) || page < 1) {
+		return { error: "Page must be a positive integer." };
+	}
+
+	const normalized = remaining.toLowerCase();
+	if (normalized === "providers" || normalized === "provider") {
+		return { page, providersOnly: true };
+	}
+
+	if (remaining === "" || normalized === "list") {
+		return { page, providersOnly: false };
+	}
+
+	return { filter: remaining, page, providersOnly: false };
+}
+
+function formatModelList(
+	_currentChannelId: string,
+	currentSelection: ModelSelection | undefined,
+	availableModels: Array<{ provider: string; id: string }>,
+	filter?: string,
+	page = 1,
+): string {
+	const currentLabel =
+		currentSelection?.provider && currentSelection?.model
+			? `${currentSelection.provider}/${currentSelection.model}`
+			: "(auto)";
+	const pageSize = 100;
+	const totalPages = Math.max(1, Math.ceil(availableModels.length / pageSize));
+	const safePage = Math.min(page, totalPages);
+	const startIndex = (safePage - 1) * pageSize;
+	const shownModels = availableModels.slice(startIndex, startIndex + pageSize);
+	const header = [`Current model: \`${currentLabel}\``];
+	if (filter) {
+		header.push(`Filter: \`${filter}\``);
+	}
+	header.push(`Page: ${safePage}/${totalPages}`);
+	header.push("", "Available models:");
+	const lines = shownModels.map((model) => {
+		const label = `${model.provider}/${model.id}`;
+		const isCurrent = currentSelection?.provider === model.provider && currentSelection?.model === model.id;
+		return `${isCurrent ? "•" : "-"} \`${label}\`${isCurrent ? " <- current" : ""}`;
+	});
+
+	if (lines.length === 0) {
+		lines.push("_No authenticated models available. Configure provider credentials first._");
+	}
+
+	header.push(...lines);
+	if (page !== safePage) {
+		header.push("", `_Requested page ${page}; showing last available page instead._`);
+	}
+	if (availableModels.length > shownModels.length || safePage > 1) {
+		header.push(
+			"",
+			`_Showing ${startIndex + 1}-${startIndex + shownModels.length} of ${availableModels.length} available models._`,
+		);
+	}
+	header.push(
+		"",
+		"Commands: `models`, `models page <n>`, `models <filter>`, `models <filter> page <n>`, `models providers`, `model`, `model <provider>/<id>`, `model <id>`",
+	);
+	return header.join("\n");
+}
+
+function formatProviderList(
+	currentSelection: ModelSelection | undefined,
+	availableModels: Array<{ provider: string; id: string }>,
+): string {
+	const currentLabel =
+		currentSelection?.provider && currentSelection?.model
+			? `${currentSelection.provider}/${currentSelection.model}`
+			: "(auto)";
+	const providerCounts = new Map<string, number>();
+	for (const model of availableModels) {
+		providerCounts.set(model.provider, (providerCounts.get(model.provider) ?? 0) + 1);
+	}
+
+	const lines = Array.from(providerCounts.entries())
+		.sort((a, b) => a[0].localeCompare(b[0]))
+		.map(([provider, count]) => {
+			const isCurrentProvider = currentSelection?.provider === provider;
+			return `${isCurrentProvider ? "•" : "-"} \`${provider}\` (${count})${isCurrentProvider ? " <- current provider" : ""}`;
+		});
+
+	if (lines.length === 0) {
+		lines.push("_No authenticated providers available._");
+	}
+
+	return [
+		`Current model: \`${currentLabel}\``,
+		"",
+		"Available providers:",
+		...lines,
+		"",
+		"Commands: `models`, `models page <n>`, `models <filter>`, `models <filter> page <n>`, `models providers`, `model <provider>/<id>`, `model <id>`",
+	].join("\n");
+}
+
+async function handleModelCommand(event: SlackEvent, slack: SlackBot): Promise<boolean> {
+	const parsed = parseModelCommand(event.text);
+	if (!parsed) return false;
+
+	const state = getState(event.channel);
+	const baseConfig = getRunnerConfigForChannel(event.channel);
+	const snapshot = getModelRegistrySnapshot(baseConfig);
+	if (snapshot.loadError) {
+		log.logWarning(`[${event.channel}] Failed to load model registry`, snapshot.loadError);
+	}
+
+	const currentSelection =
+		loadChannelModelSelection(event.channel) ??
+		(baseConfig.modelSelection?.provider && baseConfig.modelSelection?.model ? baseConfig.modelSelection : undefined);
+	const availableModels = snapshot.availableModels
+		.map((model) => ({ provider: model.provider, id: model.id }))
+		.sort((a, b) => `${a.provider}/${a.id}`.localeCompare(`${b.provider}/${b.id}`));
+
+	if (parsed.command === "models") {
+		log.logInfo(`[${event.channel}] Handling built-in command: ${parsed.command}`);
+		const listArgs = parseModelsArgs(parsed.args);
+		if ("error" in listArgs) {
+			const ts = await slack.postMessage(event.channel, listArgs.error);
+			slack.logBotResponse(event.channel, listArgs.error, ts);
+			return true;
+		}
+		let text: string;
+		if (listArgs.providersOnly) {
+			text = formatProviderList(currentSelection, availableModels);
+		} else if (listArgs.filter) {
+			const normalizedFilter = listArgs.filter.toLowerCase();
+			const filteredModels = availableModels.filter((model) => {
+				const haystack = `${model.provider}/${model.id}`.toLowerCase();
+				return haystack.includes(normalizedFilter);
+			});
+			text = formatModelList(event.channel, currentSelection, filteredModels, listArgs.filter, listArgs.page);
+		} else {
+			text = formatModelList(event.channel, currentSelection, availableModels, undefined, listArgs.page);
+		}
+		const ts = await slack.postMessage(event.channel, text);
+		slack.logBotResponse(event.channel, text, ts);
+		return true;
+	}
+
+	const requested = parsed.args;
+	let nextSelection: ModelSelection;
+	if (requested.includes("/")) {
+		const [provider, ...rest] = requested.split("/");
+		nextSelection = { provider: provider.trim(), model: rest.join("/").trim() };
+	} else {
+		const currentProvider = currentSelection?.provider;
+		const providerScopedConfig = currentProvider
+			? {
+					...baseConfig,
+					modelSelection: { provider: currentProvider, model: requested },
+				}
+			: undefined;
+		if (providerScopedConfig) {
+			try {
+				const resolved = resolveConfiguredModel(providerScopedConfig);
+				nextSelection = { provider: resolved.provider, model: resolved.id };
+			} catch {
+				nextSelection = { model: requested };
+			}
+		} else {
+			nextSelection = { model: requested };
+		}
+	}
+
+	try {
+		const resolvedModel = resolveConfiguredModel({
+			...baseConfig,
+			modelSelection: nextSelection,
+		});
+		const resolvedSelection = { provider: resolvedModel.provider, model: resolvedModel.id };
+		saveChannelModelSelection(event.channel, resolvedSelection);
+		refreshRunner(state, event.channel);
+		log.logInfo(
+			`[${event.channel}] Handling built-in command: model -> ${resolvedSelection.provider}/${resolvedSelection.model}`,
+		);
+		const text = `Switched model to \`${resolvedSelection.provider}/${resolvedSelection.model}\``;
+		const ts = await slack.postMessage(event.channel, text);
+		slack.logBotResponse(event.channel, text, ts);
+		return true;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		log.logWarning(`[${event.channel}] Built-in model command failed`, message);
+		const text = `Could not change model.\n\n${message}`;
+		const ts = await slack.postMessage(event.channel, text);
+		slack.logBotResponse(event.channel, text, ts);
+		return true;
+	}
 }
 
 // ============================================================================
@@ -350,6 +621,11 @@ const handler: MomHandler = {
 
 	async handleEvent(event: SlackEvent, slack: SlackBot, isEvent?: boolean): Promise<void> {
 		const state = getState(event.channel);
+		refreshRunner(state, event.channel);
+
+		if (!isEvent && (await handleModelCommand(event, slack))) {
+			return;
+		}
 
 		// Start run
 		state.running = true;
