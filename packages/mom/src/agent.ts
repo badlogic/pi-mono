@@ -17,6 +17,7 @@ import { mkdir, writeFile } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
 import { createMomSettingsManager, syncLogToSessionManager } from "./context.js";
+import { createGuardedExecutor, type RequesterContext } from "./guardrails.js";
 import * as log from "./log.js";
 import { createExecutor, type SandboxConfig } from "./sandbox.js";
 import type { ChannelInfo, SlackContext, UserInfo } from "./slack.js";
@@ -572,8 +573,15 @@ function createRunner(
 	channelDir: string,
 	config: RunnerConfig,
 ): AgentRunner {
-	const executor = createExecutor(sandboxConfig);
-	const workspacePath = executor.getWorkspacePath(channelDir.replace(`/${channelId}`, ""));
+	const baseExecutor = createExecutor(sandboxConfig);
+	const workspaceDir = join(channelDir, "..");
+	let currentRequester: RequesterContext | null = null;
+	const executor = createGuardedExecutor(baseExecutor, {
+		workspaceDir,
+		channelDir,
+		getRequester: () => currentRequester,
+	});
+	const workspacePath = executor.getWorkspacePath(workspaceDir);
 
 	// Create tools
 	const tools = createMomTools(executor);
@@ -949,73 +957,82 @@ function createRunner(
 			};
 			await writeFile(join(channelDir, "last_prompt.jsonl"), JSON.stringify(debugContext, null, 2));
 
-			await session.prompt(userMessage, imageAttachments.length > 0 ? { images: imageAttachments } : undefined);
+			currentRequester = {
+				userId: ctx.message.user,
+				userName: ctx.message.userName,
+			};
 
-			// Wait for queued messages
-			await queueChain;
+			try {
+				await session.prompt(userMessage, imageAttachments.length > 0 ? { images: imageAttachments } : undefined);
 
-			// Handle error case - update main message and post error to thread
-			if (runState.stopReason === "error" && runState.errorMessage) {
-				try {
-					await ctx.replaceMessage("_Sorry, something went wrong_");
-					await ctx.respondInThread(`_Error: ${runState.errorMessage}_`);
-				} catch (err) {
-					const errMsg = err instanceof Error ? err.message : String(err);
-					log.logWarning("Failed to post error message", errMsg);
-				}
-			} else {
-				// Final message update
-				const messages = session.messages;
-				const lastAssistant = messages.filter((m) => m.role === "assistant").pop();
-				const finalText =
-					lastAssistant?.content
-						.filter((c): c is { type: "text"; text: string } => c.type === "text")
-						.map((c) => c.text)
-						.join("\n") || "";
-
-				// Check for [SILENT] marker - delete message and thread instead of posting
-				if (finalText.trim() === "[SILENT]" || finalText.trim().startsWith("[SILENT]")) {
-					try {
-						await ctx.deleteMessage();
-						log.logInfo("Silent response - deleted message and thread");
-					} catch (err) {
-						const errMsg = err instanceof Error ? err.message : String(err);
-						log.logWarning("Failed to delete message for silent response", errMsg);
-					}
-				} else if (finalText.trim()) {
-					try {
-						const mainText =
-							finalText.length > SLACK_MAX_LENGTH
-								? `${finalText.substring(0, SLACK_MAX_LENGTH - 50)}\n\n_(see thread for full response)_`
-								: finalText;
-						await ctx.replaceMessage(mainText);
-					} catch (err) {
-						const errMsg = err instanceof Error ? err.message : String(err);
-						log.logWarning("Failed to replace message with final text", errMsg);
-					}
-				}
-			}
-
-			// Log usage summary with context info
-			if (runState.totalUsage.cost.total > 0) {
-				// Get last non-aborted assistant message for context calculation
-				const messages = session.messages;
-				const lastAssistantMessage = messages
-					.slice()
-					.reverse()
-					.find((m) => m.role === "assistant" && (m as any).stopReason !== "aborted") as any;
-
-				const contextTokens = lastAssistantMessage
-					? lastAssistantMessage.usage.input +
-						lastAssistantMessage.usage.output +
-						lastAssistantMessage.usage.cacheRead +
-						lastAssistantMessage.usage.cacheWrite
-					: 0;
-				const contextWindow = selectedModel.contextWindow || 200000;
-
-				const summary = log.logUsageSummary(runState.logCtx!, runState.totalUsage, contextTokens, contextWindow);
-				runState.queue.enqueue(() => ctx.respondInThread(summary), "usage summary");
+				// Wait for queued messages
 				await queueChain;
+
+				// Handle error case - update main message and post error to thread
+				if (runState.stopReason === "error" && runState.errorMessage) {
+					try {
+						await ctx.replaceMessage("_Sorry, something went wrong_");
+						await ctx.respondInThread(`_Error: ${runState.errorMessage}_`);
+					} catch (err) {
+						const errMsg = err instanceof Error ? err.message : String(err);
+						log.logWarning("Failed to post error message", errMsg);
+					}
+				} else {
+					// Final message update
+					const messages = session.messages;
+					const lastAssistant = messages.filter((m) => m.role === "assistant").pop();
+					const finalText =
+						lastAssistant?.content
+							.filter((c): c is { type: "text"; text: string } => c.type === "text")
+							.map((c) => c.text)
+							.join("\n") || "";
+
+					// Check for [SILENT] marker - delete message and thread instead of posting
+					if (finalText.trim() === "[SILENT]" || finalText.trim().startsWith("[SILENT]")) {
+						try {
+							await ctx.deleteMessage();
+							log.logInfo("Silent response - deleted message and thread");
+						} catch (err) {
+							const errMsg = err instanceof Error ? err.message : String(err);
+							log.logWarning("Failed to delete message for silent response", errMsg);
+						}
+					} else if (finalText.trim()) {
+						try {
+							const mainText =
+								finalText.length > SLACK_MAX_LENGTH
+									? `${finalText.substring(0, SLACK_MAX_LENGTH - 50)}\n\n_(see thread for full response)_`
+									: finalText;
+							await ctx.replaceMessage(mainText);
+						} catch (err) {
+							const errMsg = err instanceof Error ? err.message : String(err);
+							log.logWarning("Failed to replace message with final text", errMsg);
+						}
+					}
+				}
+
+				// Log usage summary with context info
+				if (runState.totalUsage.cost.total > 0) {
+					// Get last non-aborted assistant message for context calculation
+					const messages = session.messages;
+					const lastAssistantMessage = messages
+						.slice()
+						.reverse()
+						.find((m) => m.role === "assistant" && (m as any).stopReason !== "aborted") as any;
+
+					const contextTokens = lastAssistantMessage
+						? lastAssistantMessage.usage.input +
+							lastAssistantMessage.usage.output +
+							lastAssistantMessage.usage.cacheRead +
+							lastAssistantMessage.usage.cacheWrite
+						: 0;
+					const contextWindow = selectedModel.contextWindow || 200000;
+
+					const summary = log.logUsageSummary(runState.logCtx!, runState.totalUsage, contextTokens, contextWindow);
+					runState.queue.enqueue(() => ctx.respondInThread(summary), "usage summary");
+					await queueChain;
+				}
+			} finally {
+				currentRequester = null;
 			}
 
 			// Clear run state

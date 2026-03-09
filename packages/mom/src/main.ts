@@ -13,6 +13,11 @@ import {
 } from "./agent.js";
 import { downloadChannel } from "./download.js";
 import { createEventsWatcher } from "./events.js";
+import {
+	approveSensitiveCommandRequest,
+	denySensitiveCommandRequest,
+	isSensitiveCommandApprover,
+} from "./guardrails.js";
 import * as log from "./log.js";
 import { parseSandboxArg, type SandboxConfig, validateSandbox } from "./sandbox.js";
 import { type MomHandler, type SlackBot, SlackBot as SlackBotClass, type SlackEvent } from "./slack.js";
@@ -226,6 +231,17 @@ function parseModelCommand(text: string): { command: "models" | "model"; args: s
 	};
 }
 
+function parseApprovalCommand(text: string): { action: "approve" | "deny"; id: string } | null {
+	const trimmed = text.trim();
+	const match = trimmed.match(/^(approve|deny)\s+([a-z0-9-]+)$/i);
+	if (!match) return null;
+
+	return {
+		action: match[1].toLowerCase() as "approve" | "deny",
+		id: match[2],
+	};
+}
+
 function parseModelsArgs(args: string): { filter?: string; page: number; providersOnly: boolean } | { error: string } {
 	const trimmed = args.trim();
 	let page = 1;
@@ -430,6 +446,41 @@ async function handleModelCommand(event: SlackEvent, slack: SlackBot): Promise<b
 	}
 }
 
+async function handleApprovalCommand(event: SlackEvent, slack: SlackBot): Promise<boolean> {
+	const parsed = parseApprovalCommand(event.text);
+	if (!parsed) return false;
+
+	if (!isSensitiveCommandApprover(workingDir, event.user)) {
+		const text = "Only configured approvers can approve or deny sensitive command requests.";
+		const ts = await slack.postMessage(event.channel, text);
+		slack.logBotResponse(event.channel, text, ts);
+		return true;
+	}
+
+	const user = slack.getUser(event.user);
+	const channelDir = join(workingDir, event.channel);
+	const approval =
+		parsed.action === "approve"
+			? approveSensitiveCommandRequest(workingDir, channelDir, parsed.id, event.user, user?.userName)
+			: denySensitiveCommandRequest(workingDir, channelDir, parsed.id, event.user, user?.userName);
+
+	if (!approval) {
+		const text = `Could not find sensitive command request \`${parsed.id}\`.`;
+		const ts = await slack.postMessage(event.channel, text);
+		slack.logBotResponse(event.channel, text, ts);
+		return true;
+	}
+
+	const requesterMention = `<@${approval.requesterId}>`;
+	const text =
+		parsed.action === "approve"
+			? `Approved sensitive command request \`${approval.id}\` for ${requesterMention}. Ask Mom to retry the command.`
+			: `Denied sensitive command request \`${approval.id}\` for ${requesterMention}.`;
+	const ts = await slack.postMessage(event.channel, text);
+	slack.logBotResponse(event.channel, text, ts);
+	return true;
+}
+
 // ============================================================================
 // Create SlackContext adapter
 // ============================================================================
@@ -622,6 +673,10 @@ const handler: MomHandler = {
 	async handleEvent(event: SlackEvent, slack: SlackBot, isEvent?: boolean): Promise<void> {
 		const state = getState(event.channel);
 		refreshRunner(state, event.channel);
+
+		if (!isEvent && (await handleApprovalCommand(event, slack))) {
+			return;
+		}
 
 		if (!isEvent && (await handleModelCommand(event, slack))) {
 			return;

@@ -3,6 +3,37 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+find_compatible_node_bin() {
+  local candidate
+  local version
+  local major
+
+  if candidate="$(command -v node 2>/dev/null)"; then
+    version="$("$candidate" -p 'process.versions.node' 2>/dev/null || true)"
+    major="${version%%.*}"
+    if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 20 )); then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+
+  while IFS= read -r candidate; do
+    version="$("$candidate" -p 'process.versions.node' 2>/dev/null || true)"
+    major="${version%%.*}"
+    if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 20 )); then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done < <(find "${HOME:-/home/dev}/.nvm/versions/node" -mindepth 3 -maxdepth 3 -type f -path '*/bin/node' 2>/dev/null | sort -V -r)
+
+  echo "No compatible Node.js runtime found. pi requires Node >=20." >&2
+  exit 1
+}
+
+NODE_BIN="$(find_compatible_node_bin)"
+NODE_DIR="$(dirname "$NODE_BIN")"
+export PATH="$NODE_DIR:$PATH"
+
 # Check for --no-env flag
 NO_ENV=false
 ARGS=()
@@ -53,4 +84,4 @@ if [[ "$NO_ENV" == "true" ]]; then
   echo "Running without API keys..."
 fi
 
-npx tsx "$SCRIPT_DIR/packages/coding-agent/src/cli.ts" ${ARGS[@]+"${ARGS[@]}"}
+exec "$NODE_BIN" "$SCRIPT_DIR/node_modules/tsx/dist/cli.mjs" "$SCRIPT_DIR/packages/coding-agent/src/cli.ts" ${ARGS[@]+"${ARGS[@]}"}
