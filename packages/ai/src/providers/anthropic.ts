@@ -178,6 +178,12 @@ export interface AnthropicOptions extends StreamOptions {
 	effort?: AnthropicEffort;
 	interleavedThinking?: boolean;
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
+	/**
+	 * Pre-built Anthropic client instance. When provided, skips internal client
+	 * construction entirely. Use this to inject alternative SDK clients such as
+	 * `AnthropicVertex` that shares the same messaging API.
+	 */
+	client?: Anthropic;
 }
 
 function mergeHeaders(...headerSources: (Record<string, string> | undefined)[]): Record<string, string> {
@@ -217,25 +223,35 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 		};
 
 		try {
-			const apiKey = options?.apiKey ?? getEnvApiKey(model.provider) ?? "";
+			let client: Anthropic;
+			let isOAuth: boolean;
 
-			let copilotDynamicHeaders: Record<string, string> | undefined;
-			if (model.provider === "github-copilot") {
-				const hasImages = hasCopilotVisionInput(context.messages);
-				copilotDynamicHeaders = buildCopilotDynamicHeaders({
-					messages: context.messages,
-					hasImages,
-				});
+			if (options?.client) {
+				client = options.client;
+				isOAuth = false;
+			} else {
+				const apiKey = options?.apiKey ?? getEnvApiKey(model.provider) ?? "";
+
+				let copilotDynamicHeaders: Record<string, string> | undefined;
+				if (model.provider === "github-copilot") {
+					const hasImages = hasCopilotVisionInput(context.messages);
+					copilotDynamicHeaders = buildCopilotDynamicHeaders({
+						messages: context.messages,
+						hasImages,
+					});
+				}
+
+				const created = createClient(
+					model,
+					apiKey,
+					options?.interleavedThinking ?? true,
+					options?.headers,
+					copilotDynamicHeaders,
+				);
+				client = created.client;
+				isOAuth = created.isOAuthToken;
 			}
-
-			const { client, isOAuthToken } = createClient(
-				model,
-				apiKey,
-				options?.interleavedThinking ?? true,
-				options?.headers,
-				copilotDynamicHeaders,
-			);
-			let params = buildParams(model, context, isOAuthToken, options);
+			let params = buildParams(model, context, isOAuth, options);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
 				params = nextParams as MessageCreateParamsStreaming;
@@ -290,7 +306,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 						const block: Block = {
 							type: "toolCall",
 							id: event.content_block.id,
-							name: isOAuthToken
+							name: isOAuth
 								? fromClaudeCodeName(event.content_block.name, context.tools)
 								: event.content_block.name,
 							arguments: (event.content_block.input as Record<string, any>) ?? {},
