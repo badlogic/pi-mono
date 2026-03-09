@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Together AI provider support with `TOGETHER_API_KEY` environment variable and models fetched from models.dev
+
 ## [0.57.1] - 2026-03-07
 
 ### Fixed
