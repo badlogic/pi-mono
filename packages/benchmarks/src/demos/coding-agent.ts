@@ -615,10 +615,10 @@ async function runCodingAgent(
 				discriminatorDecision === "thinking"
 					? "Kimi K2.5 (thinking)"
 					: discriminatorDecision === "complex"
-						? "Qwen3-480B"
+						? "Qwen3.5-397B"
 						: discriminatorDecision === "medium"
 							? "Devstral-24B"
-							: "GPT-OSS-20B (most efficient)";
+							: "GPT-OSS-20B";
 			const memLabel = memCtx ? " \x1b[2m[memory-informed]\x1b[0m" : "";
 			const briefLabel = turnMaxTokens ? ` \x1b[2m[brief: max ${turnMaxTokens} tok]\x1b[0m` : "";
 			decisionLabel = `↳ discriminated: ${discriminatorDecision} → ${modelLabel}${memLabel}${briefLabel}  (${discriminatorEnergyJ.toFixed(1)}J)  reason: ${disc.reason}`;
@@ -718,11 +718,15 @@ async function runCodingAgent(
 		while (!testResult.passed) {
 			fixAttempt++;
 			const fixTurnLabel = `[fix #${fixAttempt}]`;
-			const failureSummary = testResult.failedTests.map((f) => `  - ${f}`).join("\n");
+			const failureSummary =
+				testResult.failedTests.length > 0
+					? testResult.failedTests.map((f) => `  - ${f}`).join("\n")
+					: testResult.output.split("\n").slice(0, 10).join("\n");
 			const fixPrompt =
 				`The acceptance tests failed:\n${failureSummary}\n\n` +
 				(config.fixPromptExtra ? `${config.fixPromptExtra}\n` : "") +
 				"Write the complete corrected implementation as a single TypeScript file. " +
+				"Make sure all classes and functions are named exports. " +
 				"No external imports. Output raw TypeScript only — no markdown fences.";
 
 			await runTurn(fixPrompt, fixTurnLabel);
@@ -777,7 +781,7 @@ function printScorecard(
 	const modelPrice = (modelId: string): number => {
 		if (modelId.includes("gpt-oss")) return 0.1 / 1_000_000;
 		if (modelId.includes("Devstral")) return 0.12 / 1_000_000;
-		if (modelId.includes("Qwen")) return 0.1 / 1_000_000;
+		if (modelId.includes("Qwen")) return 0; // Qwen3.5-397B is free
 		return 1.327 / 1_000_000; // Kimi default
 	};
 	const baseCost = baseline.turns.reduce((sum, t) => sum + t.tokens * modelPrice(t.model), 0);
