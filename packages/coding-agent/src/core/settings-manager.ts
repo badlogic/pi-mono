@@ -91,6 +91,7 @@ export interface Settings {
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
+	agentsWalkBoundary?: string; // Boundary dir for .agents/skills ancestor walk (default: git root, "~" for home dir)
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */

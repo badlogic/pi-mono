@@ -308,15 +308,15 @@ function findGitRepoRoot(startDir: string): string | null {
 	}
 }
 
-function collectAncestorAgentsSkillDirs(startDir: string): string[] {
+function collectAncestorAgentsSkillDirs(startDir: string, walkBoundary?: string): string[] {
 	const skillDirs: string[] = [];
 	const resolvedStartDir = resolve(startDir);
-	const gitRepoRoot = findGitRepoRoot(resolvedStartDir);
+	const boundary = walkBoundary ?? findGitRepoRoot(resolvedStartDir);
 
 	let dir = resolvedStartDir;
 	while (true) {
 		skillDirs.push(join(dir, ".agents", "skills"));
-		if (gitRepoRoot && dir === gitRepoRoot) {
+		if (boundary && dir === boundary) {
 			break;
 		}
 		const parent = dirname(dir);
@@ -1607,7 +1607,9 @@ export class DefaultPackageManager implements PackageManager {
 			themes: join(projectBaseDir, "themes"),
 		};
 		const userAgentsSkillsDir = join(homedir(), ".agents", "skills");
-		const projectAgentsSkillDirs = collectAncestorAgentsSkillDirs(this.cwd);
+		const agentsWalkBoundary = projectSettings.agentsWalkBoundary ?? globalSettings.agentsWalkBoundary;
+		const resolvedBoundary = agentsWalkBoundary ? this.resolvePath(agentsWalkBoundary) : undefined;
+		const projectAgentsSkillDirs = collectAncestorAgentsSkillDirs(this.cwd, resolvedBoundary);
 
 		const addResources = (
 			resourceType: ResourceType,

@@ -190,6 +190,39 @@ Content`,
 			expect(result.skills.some((r) => r.path === aboveRepoSkill)).toBe(false);
 		});
 
+		it("should use agentsWalkBoundary as walk boundary instead of git root", async () => {
+			const workspace = join(tempDir, "workspace");
+			const repoRoot = join(workspace, "repo");
+			const nestedCwd = join(repoRoot, "packages", "feature");
+			mkdirSync(nestedCwd, { recursive: true });
+			mkdirSync(join(repoRoot, ".git"), { recursive: true });
+
+			// Skill above git root but within boundary — should be found
+			const aboveRepoSkill = join(workspace, ".agents", "skills", "above-repo", "SKILL.md");
+			mkdirSync(join(workspace, ".agents", "skills", "above-repo"), { recursive: true });
+			writeFileSync(aboveRepoSkill, "---\nname: above-repo\ndescription: above\n---\n");
+
+			// Skill above boundary — should NOT be found
+			const aboveBoundarySkill = join(tempDir, ".agents", "skills", "above-boundary", "SKILL.md");
+			mkdirSync(join(tempDir, ".agents", "skills", "above-boundary"), { recursive: true });
+			writeFileSync(aboveBoundarySkill, "---\nname: above-boundary\ndescription: above boundary\n---\n");
+
+			const repoRootSkill = join(repoRoot, ".agents", "skills", "repo-root", "SKILL.md");
+			mkdirSync(join(repoRoot, ".agents", "skills", "repo-root"), { recursive: true });
+			writeFileSync(repoRootSkill, "---\nname: repo-root\ndescription: repo\n---\n");
+
+			const pm = new DefaultPackageManager({
+				cwd: nestedCwd,
+				agentDir,
+				settingsManager: SettingsManager.inMemory({ agentsWalkBoundary: workspace }),
+			});
+
+			const result = await pm.resolve();
+			expect(result.skills.some((r) => r.path === repoRootSkill && r.enabled)).toBe(true);
+			expect(result.skills.some((r) => r.path === aboveRepoSkill && r.enabled)).toBe(true);
+			expect(result.skills.some((r) => r.path === aboveBoundarySkill)).toBe(false);
+		});
+
 		it("should scan .agents/skills up to filesystem root when not in a git repo", async () => {
 			const nonRepoRoot = join(tempDir, "non-repo");
 			const nestedCwd = join(nonRepoRoot, "a", "b");
