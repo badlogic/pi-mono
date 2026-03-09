@@ -1,3 +1,4 @@
+import "./utils/http-proxy.js";
 import "./providers/register-builtins.js";
 
 import { getApiProvider } from "./api-registry.js";

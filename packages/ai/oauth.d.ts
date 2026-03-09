@@ -1,1 +1,1 @@
-export * from "./src/oauth.js";
+export * from "./dist/oauth.js";

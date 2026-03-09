@@ -244,11 +244,15 @@ export async function runShellCommand(args: string[], deps: ShellCommandDeps = {
 	const onSigint = deps.onSigint ?? ((handler) => process.on("SIGINT", handler));
 	const offSigint = deps.offSigint ?? ((handler) => process.off("SIGINT", handler));
 
-	let cwd = parsed.cwd ? resolve(process.cwd(), parsed.cwd) : process.cwd();
-	if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
-		stderrWrite(`Error: working directory does not exist: ${cwd}\n`);
-		process.exitCode = 1;
-		return;
+	let cwd = process.cwd();
+	if (parsed.cwd !== undefined) {
+		const initialDirectory = changeDirectory(parsed.cwd, process.cwd());
+		if (initialDirectory.error || !initialDirectory.nextCwd) {
+			stderrWrite(`Error: ${initialDirectory.error ?? "working directory does not exist"}\n`);
+			process.exitCode = 1;
+			return;
+		}
+		cwd = initialDirectory.nextCwd;
 	}
 
 	const rl = promptFactory();

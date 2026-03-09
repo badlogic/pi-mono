@@ -49,12 +49,22 @@ async function loadBedrockProviderModule(): Promise<BedrockProviderModule> {
 	return module as BedrockProviderModule;
 }
 
-function forwardStream(target: AssistantMessageEventStream, source: AsyncIterable<AssistantMessageEvent>): void {
+function forwardStream(
+	target: AssistantMessageEventStream,
+	model: Model<"bedrock-converse-stream">,
+	source: AsyncIterable<AssistantMessageEvent>,
+): void {
 	(async () => {
-		for await (const event of source) {
-			target.push(event);
+		try {
+			for await (const event of source) {
+				target.push(event);
+			}
+			target.end();
+		} catch (error) {
+			const message = createLazyLoadErrorMessage(model, error);
+			target.push({ type: "error", reason: "error", error: message });
+			target.end(message);
 		}
-		target.end();
 	})();
 }
 
@@ -89,7 +99,7 @@ function streamBedrockLazy(
 	loadBedrockProviderModule()
 		.then((module) => {
 			const inner = module.streamBedrock(model, context, options);
-			forwardStream(outer, inner);
+			forwardStream(outer, model, inner);
 		})
 		.catch((error) => {
 			const message = createLazyLoadErrorMessage(model, error);
@@ -110,7 +120,7 @@ function streamSimpleBedrockLazy(
 	loadBedrockProviderModule()
 		.then((module) => {
 			const inner = module.streamSimpleBedrock(model, context, options);
-			forwardStream(outer, inner);
+			forwardStream(outer, model, inner);
 		})
 		.catch((error) => {
 			const message = createLazyLoadErrorMessage(model, error);

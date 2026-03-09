@@ -489,15 +489,18 @@ function isNoProgressOutput(message: AssistantMessage, previousAssistant: Assist
 
 	const currentText = extractVisibleAssistantText(message);
 	if (currentText.length === 0) return false;
-	if (hasInternalRepetition(currentText)) return true;
 
 	const currentFingerprint = normalizedAssistantFingerprint(message);
 	const previousFingerprint = normalizedAssistantFingerprint(previousAssistant);
-	return (
+	if (
 		currentFingerprint !== undefined &&
 		previousFingerprint !== undefined &&
 		currentFingerprint === previousFingerprint
-	);
+	) {
+		return true;
+	}
+
+	return previousAssistant !== undefined && hasInternalRepetition(currentText);
 }
 
 function shouldRetryNoProgressOutput(
@@ -620,7 +623,10 @@ function findPreviousToolTurnSignature(messages: AgentMessage[]): ToolTurnSignat
 			if (toolResults.length > 0) break;
 		}
 
-		return buildToolTurnSignature(message as AssistantMessage, toolResults);
+		const signature = buildToolTurnSignature(message as AssistantMessage, toolResults);
+		if (signature) {
+			return signature;
+		}
 	}
 	return undefined;
 }

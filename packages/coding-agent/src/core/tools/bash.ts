@@ -295,6 +295,11 @@ async function runBashCommand(
 	let tempFilePath: string | undefined;
 	let tempFileStream: ReturnType<typeof createWriteStream> | undefined;
 	let totalBytes = 0;
+	const requestedHead = head !== undefined && Number.isFinite(head) && head >= 0 ? Math.floor(head) : undefined;
+	const captureHeadSelection = requestedHead !== undefined;
+	let headCaptureComplete = requestedHead === 0;
+	const headChunks: Buffer[] = [];
+	let selectedHeadOutput = requestedHead === 0 ? "" : undefined;
 
 	// Keep a rolling buffer of the last chunk for tail truncation
 	const chunks: Buffer[] = [];
@@ -304,6 +309,16 @@ async function runBashCommand(
 
 	const handleData = (data: Buffer) => {
 		totalBytes += data.length;
+		if (captureHeadSelection && !headCaptureComplete) {
+			headChunks.push(data);
+			const headText = Buffer.concat(headChunks).toString("utf-8");
+			const headLines = headText.split("\n");
+			if (headLines.length > requestedHead!) {
+				selectedHeadOutput = headLines.slice(0, requestedHead).join("\n");
+				headCaptureComplete = true;
+				headChunks.length = 0;
+			}
+		}
 
 		// Start writing to temp file once we exceed the threshold
 		if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
@@ -334,8 +349,12 @@ async function runBashCommand(
 
 		// Stream partial output to callback (truncated rolling buffer)
 		if (onUpdate) {
-			const fullBuffer = Buffer.concat(chunks);
-			const fullText = fullBuffer.toString("utf-8");
+			const fullText =
+				captureHeadSelection && !headCaptureComplete
+					? Buffer.concat(headChunks).toString("utf-8")
+					: captureHeadSelection
+						? (selectedHeadOutput ?? "")
+						: Buffer.concat(chunks).toString("utf-8");
 			const truncation = truncateTail(fullText);
 			let text = truncation.content || "";
 			if (head !== undefined || tail !== undefined) {
@@ -364,8 +383,12 @@ async function runBashCommand(
 			tempFileStream.end();
 		}
 
-		const fullBuffer = Buffer.concat(chunks);
-		const fullOutput = fullBuffer.toString("utf-8");
+		const fullOutput =
+			captureHeadSelection && !headCaptureComplete
+				? Buffer.concat(headChunks).toString("utf-8")
+				: captureHeadSelection
+					? (selectedHeadOutput ?? "")
+					: Buffer.concat(chunks).toString("utf-8");
 		const truncation = truncateTail(fullOutput);
 		let outputText = truncation.content || "(no output)";
 		if (head !== undefined || tail !== undefined) {
@@ -401,8 +424,12 @@ async function runBashCommand(
 			tempFileStream.end();
 		}
 
-		const fullBuffer = Buffer.concat(chunks);
-		let output = fullBuffer.toString("utf-8");
+		let output =
+			captureHeadSelection && !headCaptureComplete
+				? Buffer.concat(headChunks).toString("utf-8")
+				: captureHeadSelection
+					? (selectedHeadOutput ?? "")
+					: Buffer.concat(chunks).toString("utf-8");
 		const error = err as Error;
 
 		if (error.message === "aborted") {
