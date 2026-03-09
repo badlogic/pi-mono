@@ -32,7 +32,7 @@ fi
 
 # Restage files that were previously staged and may have been modified by formatting
 for file in $STAGED_FILES; do
-  if [ -f "$file" ]; then
+  if [ -f "$file" ] && ! git check-ignore -q "$file" 2>/dev/null; then
     git add "$file"
   fi
 done
