@@ -277,38 +277,58 @@ if (failed > 0) process.exit(1);
  * Prompt for generating a fresh coding challenge with a self-contained
  * acceptance test. Embedded template ensures the test harness is correct.
  */
-const CHALLENGE_TOPICS = [
-	"LRU cache",
-	"debounce/throttle utility",
-	"event emitter",
-	"retry with exponential backoff",
-	"promise queue with concurrency limit",
-	"memoize with TTL",
-	"circular buffer (ring buffer)",
-	"priority queue (min-heap)",
-	"observable/subject (reactive)",
-	"pipe operator (function composition)",
-	"pub-sub message bus",
-	"task scheduler with dependencies",
-	"semaphore (async concurrency control)",
-	"trie (prefix tree)",
-	"bloom filter",
-	"undo-redo stack",
-	"object pool",
-	"finite state machine",
-	"middleware pipeline",
+interface ChallengeTopic {
+	topic: string;
+	difficulty: "standard" | "hard";
+}
+
+const CHALLENGE_TOPICS: ChallengeTopic[] = [
+	// Standard — medium/simple models handle these well
+	{ topic: "LRU cache", difficulty: "standard" },
+	{ topic: "debounce/throttle utility", difficulty: "standard" },
+	{ topic: "event emitter", difficulty: "standard" },
+	{ topic: "retry with exponential backoff", difficulty: "standard" },
+	{ topic: "promise queue with concurrency limit", difficulty: "standard" },
+	{ topic: "memoize with TTL", difficulty: "standard" },
+	{ topic: "circular buffer (ring buffer)", difficulty: "standard" },
+	{ topic: "priority queue (min-heap)", difficulty: "standard" },
+	{ topic: "pub-sub message bus", difficulty: "standard" },
+	{ topic: "undo-redo stack", difficulty: "standard" },
+	{ topic: "object pool with auto-reclaim", difficulty: "standard" },
+	{ topic: "middleware pipeline", difficulty: "standard" },
+	// Hard — algorithmic reasoning, tricky invariants, or subtle edge cases
+	{ topic: "observable with switchMap, mergeMap, and backpressure", difficulty: "hard" },
+	{ topic: "trie with wildcard search and prefix-count", difficulty: "hard" },
+	{ topic: "skip list with probabilistic balancing", difficulty: "hard" },
+	{ topic: "async dependency resolver (topological sort with cycle detection)", difficulty: "hard" },
+	{ topic: "interval tree with overlap queries", difficulty: "hard" },
+	{ topic: "CRDT counter (conflict-free replicated data type)", difficulty: "hard" },
+	{ topic: "regex engine supporting ., *, +, and ? operators", difficulty: "hard" },
+	{ topic: "constraint propagation solver (Sudoku-style)", difficulty: "hard" },
+	{ topic: "persistent (immutable) balanced BST with structural sharing", difficulty: "hard" },
+	{ topic: "async stream with map, filter, take, and backpressure", difficulty: "hard" },
+	{ topic: "expression parser and evaluator with operator precedence", difficulty: "hard" },
+	{ topic: "cron expression parser and next-run calculator", difficulty: "hard" },
 ];
 
-function buildChallengePrompt(): string {
-	const topic = CHALLENGE_TOPICS[Math.floor(Math.random() * CHALLENGE_TOPICS.length)];
-	return (
-		`Generate a TypeScript coding challenge about: ${topic}\n` +
+function buildChallengePrompt(): { prompt: string; topic: string; difficulty: string } {
+	const entry = CHALLENGE_TOPICS[Math.floor(Math.random() * CHALLENGE_TOPICS.length)];
+	const difficultyGuide =
+		entry.difficulty === "hard"
+			? "This is a HARD challenge. The build turns should require non-trivial algorithmic reasoning:\n" +
+				"  1. Define the core types/interfaces — include any non-obvious data structures needed\n" +
+				"  2. Implement the core algorithm (the tricky part — correctness matters)\n" +
+				"  3. Add advanced operations, edge cases, and performance-sensitive paths\n"
+			: "buildTurns must have exactly 3 prompts that build incrementally:\n" +
+				"  1. Define the TypeScript interfaces/types for the data structure\n" +
+				"  2. Implement the core class or function\n" +
+				"  3. Add input validation and edge-case handling\n";
+
+	const prompt =
+		`Generate a TypeScript coding challenge about: ${entry.topic}\n` +
 		"Reply with ONLY a JSON object — no prose, no markdown fences.\n\n" +
 		'{"taskLabel":"<50-char description>","buildTurns":["turn1","turn2","turn3"],"consolidatePrompt":"...","acceptanceTest":"...TypeScript source..."}\n\n' +
-		"buildTurns must have exactly 3 prompts that build incrementally:\n" +
-		"  1. Define the TypeScript interfaces/types for the data structure\n" +
-		"  2. Implement the core class or function\n" +
-		"  3. Add input validation and edge-case handling\n\n" +
+		`${difficultyGuide}\n` +
 		"consolidatePrompt must:\n" +
 		"  - Ask for a single impl.ts combining everything\n" +
 		"  - List EXACT exports with their TypeScript signatures, e.g.: export class Foo {...} export function bar(...) {...}\n" +
@@ -326,8 +346,8 @@ function buildChallengePrompt(): string {
 		"  - Ends with: if (failed > 0) process.exit(1);\n" +
 		"  - Uses only top-level await and node:assert (no timeouts, no randomness)\n\n" +
 		"AVOID: rate limiting, express middleware, HTTP servers, auth systems.\n\n" +
-		"Output ONLY the JSON object."
-	);
+		"Output ONLY the JSON object.";
+	return { prompt, topic: entry.topic, difficulty: entry.difficulty };
 }
 
 interface GeneratedChallenge {
@@ -335,16 +355,19 @@ interface GeneratedChallenge {
 	buildTurns: string[];
 	consolidatePrompt: string;
 	acceptanceTest: string;
+	difficulty: "standard" | "hard";
 }
 
 async function generateChallenge(apiKey: string): Promise<GeneratedChallenge | null> {
-	process.stdout.write("  Generating challenge via Kimi K2.5...");
+	const challenge = buildChallengePrompt();
+	const diffTag = challenge.difficulty === "hard" ? " \x1b[31m[HARD]\x1b[0m" : "";
+	process.stdout.write(`  Generating challenge via Kimi K2.5...${diffTag} topic: ${challenge.topic}`);
 	try {
 		const msg = await completeSimple(
 			KIMI_MODEL,
 			{
 				systemPrompt: "You are a technical challenge designer. Output only valid JSON.",
-				messages: [{ role: "user", content: buildChallengePrompt(), timestamp: Date.now() }],
+				messages: [{ role: "user", content: challenge.prompt, timestamp: Date.now() }],
 			},
 			{ apiKey, maxTokens: 3_000 },
 		);
@@ -392,6 +415,7 @@ async function generateChallenge(apiKey: string): Promise<GeneratedChallenge | n
 			buildTurns: c.buildTurns as string[],
 			consolidatePrompt: c.consolidatePrompt as string,
 			acceptanceTest: c.acceptanceTest as string,
+			difficulty: challenge.difficulty as "standard" | "hard",
 		};
 	} catch (e) {
 		console.log(` ✗ (${(e as Error).message?.slice(0, 50) ?? "error"}, using default task)`);
@@ -420,6 +444,8 @@ interface RunConfig {
 	fixPromptExtra: string;
 	/** True when the challenge was generated via LLM (suppresses static-task memory hints). */
 	generated: boolean;
+	/** Difficulty level of the generated challenge. */
+	difficulty?: "standard" | "hard";
 }
 
 // tsx binary: prefer the one from the monorepo root node_modules
@@ -870,7 +896,7 @@ function printScorecard(
 	console.log(`${"═".repeat(70)}`);
 	console.log(`  Task:   ${config.taskLabel}`);
 	console.log(
-		`  Budget: ${budget}J (display)  |  ${config.generated ? "LLM-generated challenge" : "hardcoded rate-limiter"}`,
+		`  Budget: ${budget}J (display)  |  ${config.generated ? `LLM-generated challenge${config.difficulty === "hard" ? " \x1b[31m[HARD]\x1b[0m" : ""}` : "hardcoded rate-limiter"}`,
 	);
 	console.log("  +-----------------+-------------------+---------------------------+");
 	console.log("  |                 | Baseline          | Energy-Aware              |");
@@ -1082,6 +1108,7 @@ async function buildRunConfig(
 			fixPromptExtra:
 				"Re-implement the complete solution satisfying all exports specified in the consolidation prompt.",
 			generated: true,
+			difficulty: gen.difficulty,
 		};
 	}
 	// Fallback
