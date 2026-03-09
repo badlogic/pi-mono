@@ -569,10 +569,84 @@ function createClient(
 	}
 
 	// API key auth
+
+	// Some third-party Anthropic-compatible proxies return valid SSE `data:` lines
+	// but omit the preceding `event:` lines. The @anthropic-ai/sdk SSE parser only
+	// dispatches events when `sse.event` matches known types, so without `event:`
+	// lines all events are silently dropped, causing "request ended without sending
+	// any chunks". We wrap fetch to inject `event: <type>` lines inferred from
+	// `data.type` when they are missing.
+	// See: https://github.com/badlogic/pi-mono/issues/1983
+	const customFetch: typeof fetch = async (url, init) => {
+		const response = await fetch(url, init);
+		if (!response.body) return response;
+
+		const reader = response.body.getReader();
+		const encoder = new TextEncoder();
+		const decoder = new TextDecoder();
+
+		const stream = new ReadableStream<Uint8Array>({
+			async start(controller) {
+				let buffer = "";
+				let lastEventType: string | null = null;
+				try {
+					while (true) {
+						const { done, value } = await reader.read();
+						if (done) {
+							if (buffer) controller.enqueue(encoder.encode(buffer));
+							controller.close();
+							break;
+						}
+						buffer += decoder.decode(value, { stream: true });
+						const lines = buffer.split("\n");
+						buffer = lines.pop() ?? "";
+						for (const line of lines) {
+							if (line.startsWith("event:")) {
+								lastEventType = line.slice(6).trim();
+								controller.enqueue(encoder.encode(line + "\n"));
+							} else if (line.startsWith("data:")) {
+								const dataStr = line.slice(5).trim();
+								if (dataStr && !lastEventType) {
+									try {
+										const parsed = JSON.parse(dataStr) as { type?: string };
+										if (parsed.type) {
+											lastEventType = parsed.type;
+											controller.enqueue(encoder.encode(`event: ${parsed.type}\n`));
+										}
+									} catch {
+										// Not JSON — pass through as-is
+									}
+								}
+								controller.enqueue(encoder.encode(line + "\n"));
+							} else if (line === "") {
+								lastEventType = null;
+								controller.enqueue(encoder.encode("\n"));
+							} else {
+								controller.enqueue(encoder.encode(line + "\n"));
+							}
+						}
+					}
+				} catch (e) {
+					controller.error(e);
+				}
+			},
+			cancel() {
+				reader.cancel();
+			},
+		});
+
+		return new Response(stream, {
+			status: response.status,
+			statusText: response.statusText,
+			headers: response.headers,
+		});
+	};
+
 	const client = new Anthropic({
 		apiKey,
 		baseURL: model.baseUrl,
 		dangerouslyAllowBrowser: true,
+		fetch: customFetch,
 		defaultHeaders: mergeHeaders(
 			{
 				accept: "application/json",
