@@ -714,19 +714,25 @@ async function runCodingAgent(
 			if (!stats.failedTestNames.includes(name)) stats.failedTestNames.push(name);
 		}
 
+		const MAX_FIX_ATTEMPTS = 3;
 		let fixAttempt = 0;
-		while (!testResult.passed) {
+		while (!testResult.passed && fixAttempt < MAX_FIX_ATTEMPTS) {
 			fixAttempt++;
 			const fixTurnLabel = `[fix #${fixAttempt}]`;
 			const failureSummary =
 				testResult.failedTests.length > 0
 					? testResult.failedTests.map((f) => `  - ${f}`).join("\n")
 					: testResult.output.split("\n").slice(0, 10).join("\n");
+
+			// Extract expected imports from acceptance test so the model knows what to export
+			const importLine = config.acceptanceTest?.match(/import \{[^}]+\} from ['"]\.\/impl\.js['"]/)?.[0];
+			const importHint = importLine ? `\nThe test imports: ${importLine}\nYou MUST export these exact names.\n` : "";
+
 			const fixPrompt =
-				`The acceptance tests failed:\n${failureSummary}\n\n` +
+				`The acceptance tests failed:\n${failureSummary}\n${importHint}\n` +
 				(config.fixPromptExtra ? `${config.fixPromptExtra}\n` : "") +
 				"Write the complete corrected implementation as a single TypeScript file. " +
-				"Make sure all classes and functions are named exports. " +
+				"Make sure all classes and functions are named exports (use 'export class', 'export function'). " +
 				"No external imports. Output raw TypeScript only — no markdown fences.";
 
 			await runTurn(fixPrompt, fixTurnLabel);
@@ -748,9 +754,13 @@ async function runCodingAgent(
 					const name = f.includes(": ") ? f.slice(0, f.indexOf(": ")) : f;
 					if (!stats.failedTestNames.includes(name)) stats.failedTestNames.push(name);
 				}
-				console.log(
-					`  → ${testResult.failedTests.length} test${testResult.failedTests.length !== 1 ? "s" : ""} failed — requesting correction`,
-				);
+				if (fixAttempt >= MAX_FIX_ATTEMPTS) {
+					console.log(`\n  \x1b[31m✗ Giving up after ${MAX_FIX_ATTEMPTS} fix attempts\x1b[0m`);
+				} else {
+					console.log(
+						`  → ${testResult.failedTests.length} test${testResult.failedTests.length !== 1 ? "s" : ""} failed — requesting correction`,
+					);
+				}
 			}
 		}
 	}
@@ -879,7 +889,7 @@ function printScorecard(
 				tier === "thinking"
 					? "Kimi K2.5  "
 					: tier === "complex"
-						? "Qwen3-480B "
+						? "Qwen3.5-397B"
 						: tier === "medium"
 							? "Devstral-24B"
 							: "GPT-OSS-20B ";
