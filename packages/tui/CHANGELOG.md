@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Fixed O(N_session) render cost per keypress: `doRender()` diff loop, `applyLineResets()`, and `previousLines` storage are now clipped to the visible viewport (O(terminal height)), eliminating input lag that grew monotonically with session length
+- Fixed stale `previousLines` slice on no-change render cycles: `commitFrame()` is now called on every exit path of `doRender()`, including the early-return when no lines changed
+- Fixed diff skipping visible changed lines when content grows between frames: `diffStart` now anchors to `previousLinesOffset` alone instead of `max(viewportTop, previousLinesOffset)`
+- Removed redundant `previousViewportTop` field: `previousLinesOffset` serves both roles (diff anchor and previous viewport top for cursor arithmetic), eliminating a duplicate-state maintenance trap
 - Fixed `Input` horizontal scrolling for wide Unicode text (CJK, fullwidth characters) to use visual column width instead of string length, preventing rendered line overflow and TUI crashes ([#1982](https://github.com/badlogic/pi-mono/issues/1982))
 
 ## [0.57.1] - 2026-03-07

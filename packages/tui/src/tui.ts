@@ -209,6 +209,8 @@ export class Container implements Component {
 export class TUI extends Container {
 	public terminal: Terminal;
 	private previousLines: string[] = [];
+	/** Absolute index of previousLines[0] in the full line array; equals max(0, maxLinesRendered - height) after each commit. */
+	private previousLinesOffset = 0;
 	private previousWidth = 0;
 	private previousHeight = 0;
 	private focusedComponent: Component | null = null;
@@ -224,7 +226,6 @@ export class TUI extends Container {
 	private showHardwareCursor = process.env.PI_HARDWARE_CURSOR === "1";
 	private clearOnShrink = process.env.PI_CLEAR_ON_SHRINK === "1"; // Clear empty rows when content shrinks (default: off)
 	private maxLinesRendered = 0; // Track terminal's working area (max lines ever rendered)
-	private previousViewportTop = 0; // Track previous viewport top for resize-aware cursor moves
 	private fullRedrawCount = 0;
 	private stopped = false;
 
@@ -441,10 +442,8 @@ export class TUI extends Container {
 
 	stop(): void {
 		this.stopped = true;
-		// Move cursor to the end of the content to prevent overwriting/artifacts on exit
-		if (this.previousLines.length > 0) {
-			const targetRow = this.previousLines.length; // Line after the last content
-			const lineDiff = targetRow - this.hardwareCursorRow;
+		if (this.cursorRow > 0 || this.hardwareCursorRow > 0 || this.maxLinesRendered > 0) {
+			const lineDiff = this.cursorRow - this.hardwareCursorRow;
 			if (lineDiff > 0) {
 				this.terminal.write(`\x1b[${lineDiff}B`);
 			} else if (lineDiff < 0) {
@@ -460,12 +459,12 @@ export class TUI extends Container {
 	requestRender(force = false): void {
 		if (force) {
 			this.previousLines = [];
+			this.previousLinesOffset = 0;
 			this.previousWidth = -1; // -1 triggers widthChanged, forcing a full clear
 			this.previousHeight = -1; // -1 triggers heightChanged, forcing a full clear
 			this.cursorRow = 0;
 			this.hardwareCursorRow = 0;
 			this.maxLinesRendered = 0;
-			this.previousViewportTop = 0;
 		}
 		if (this.renderRequested) return;
 		this.renderRequested = true;
@@ -776,9 +775,9 @@ export class TUI extends Container {
 
 	private static readonly SEGMENT_RESET = "\x1b[0m\x1b]8;;\x07";
 
-	private applyLineResets(lines: string[]): string[] {
+	private applyLineResets(lines: string[], viewportTop: number): string[] {
 		const reset = TUI.SEGMENT_RESET;
-		for (let i = 0; i < lines.length; i++) {
+		for (let i = viewportTop; i < lines.length; i++) {
 			const line = lines[i];
 			if (!isImageLine(line)) {
 				lines[i] = line + reset;
@@ -871,7 +870,7 @@ export class TUI extends Container {
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
 		let viewportTop = Math.max(0, this.maxLinesRendered - height);
-		let prevViewportTop = this.previousViewportTop;
+		let prevViewportTop = this.previousLinesOffset;
 		let hardwareCursorRow = this.hardwareCursorRow;
 		const computeLineDiff = (targetRow: number): number => {
 			const currentScreenRow = hardwareCursorRow - prevViewportTop;
@@ -890,7 +889,9 @@ export class TUI extends Container {
 		// Extract cursor position before applying line resets (marker must be found first)
 		const cursorPos = this.extractCursorPosition(newLines, height);
 
-		newLines = this.applyLineResets(newLines);
+		// Clamp viewportTop to newLines.length: content may have shrunk below the working area,
+		// making viewportTop exceed newLines.length, so all remaining lines must get reset suffixes.
+		newLines = this.applyLineResets(newLines, Math.min(viewportTop, newLines.length));
 
 		// Width or height changed - need full re-render
 		const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;
@@ -915,23 +916,22 @@ export class TUI extends Container {
 			} else {
 				this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
 			}
-			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
 			this.positionHardwareCursor(cursorPos, newLines.length);
-			this.previousLines = newLines;
-			this.previousWidth = width;
-			this.previousHeight = height;
+			this.commitFrame(newLines, width, height);
 		};
 
 		const debugRedraw = process.env.PI_DEBUG_REDRAW === "1";
 		const logRedraw = (reason: string): void => {
 			if (!debugRedraw) return;
 			const logPath = path.join(os.homedir(), ".pi", "agent", "pi-debug.log");
-			const msg = `[${new Date().toISOString()}] fullRender: ${reason} (prev=${this.previousLines.length}, new=${newLines.length}, height=${height})\n`;
+			const msg = `[${new Date().toISOString()}] fullRender: ${reason} (prevTotal=${this.previousLinesOffset + this.previousLines.length}, new=${newLines.length}, height=${height})\n`;
 			fs.appendFileSync(logPath, msg);
 		};
 
-		// First render - just output everything without clearing (assumes clean screen)
-		if (this.previousLines.length === 0 && !widthChanged && !heightChanged) {
+		// First render - just output everything without clearing (assumes clean screen).
+		// Both length and offset must be zero: length==0 with offset>0 means "viewport-trimmed
+		// to an empty slice", not "no prior state".
+		if (this.previousLines.length === 0 && this.previousLinesOffset === 0 && !widthChanged && !heightChanged) {
 			logRedraw("first render");
 			fullRender(false);
 			return;
@@ -953,12 +953,16 @@ export class TUI extends Container {
 			return;
 		}
 
-		// Find first and last changed lines
+		// Do NOT advance diffStart to the current viewportTop: if content just grew, the new
+		// viewportTop is higher and those additional lines must still be diffed.
+		const prevTotalLines = this.previousLinesOffset + this.previousLines.length;
+		const diffStart = this.previousLinesOffset;
+		const maxLines = Math.max(newLines.length, prevTotalLines);
 		let firstChanged = -1;
 		let lastChanged = -1;
-		const maxLines = Math.max(newLines.length, this.previousLines.length);
-		for (let i = 0; i < maxLines; i++) {
-			const oldLine = i < this.previousLines.length ? this.previousLines[i] : "";
+		for (let i = diffStart; i < maxLines; i++) {
+			const prevIdx = i - this.previousLinesOffset;
+			const oldLine = prevIdx >= 0 && prevIdx < this.previousLines.length ? this.previousLines[prevIdx] : "";
 			const newLine = i < newLines.length ? newLines[i] : "";
 
 			if (oldLine !== newLine) {
@@ -968,26 +972,26 @@ export class TUI extends Container {
 				lastChanged = i;
 			}
 		}
-		const appendedLines = newLines.length > this.previousLines.length;
+		const appendedLines = newLines.length > prevTotalLines;
 		if (appendedLines) {
 			if (firstChanged === -1) {
-				firstChanged = this.previousLines.length;
+				firstChanged = prevTotalLines;
 			}
 			lastChanged = newLines.length - 1;
 		}
-		const appendStart = appendedLines && firstChanged === this.previousLines.length && firstChanged > 0;
+		const appendStart = appendedLines && firstChanged === prevTotalLines && firstChanged > 0;
 
-		// No changes - but still need to update hardware cursor position if it moved
+		// No content changes, but commit anyway: previousLinesOffset may have shifted.
 		if (firstChanged === -1) {
+			this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
 			this.positionHardwareCursor(cursorPos, newLines.length);
-			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
-			this.previousHeight = height;
+			this.commitFrame(newLines, width, height);
 			return;
 		}
 
 		// All changes are in deleted lines (nothing to render, just clear)
 		if (firstChanged >= newLines.length) {
-			if (this.previousLines.length > newLines.length) {
+			if (prevTotalLines > newLines.length) {
 				let buffer = "\x1b[?2026h";
 				// Move to end of new content (clamp to 0 for empty content)
 				const targetRow = Math.max(0, newLines.length - 1);
@@ -996,7 +1000,7 @@ export class TUI extends Container {
 				else if (lineDiff < 0) buffer += `\x1b[${-lineDiff}A`;
 				buffer += "\r";
 				// Clear extra lines without scrolling
-				const extraLines = this.previousLines.length - newLines.length;
+				const extraLines = prevTotalLines - newLines.length;
 				if (extraLines > height) {
 					logRedraw(`extraLines > height (${extraLines} > ${height})`);
 					fullRender(true);
@@ -1018,19 +1022,13 @@ export class TUI extends Container {
 				this.hardwareCursorRow = targetRow;
 			}
 			this.positionHardwareCursor(cursorPos, newLines.length);
-			this.previousLines = newLines;
-			this.previousWidth = width;
-			this.previousHeight = height;
-			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+			this.maxLinesRendered = newLines.length;
+			this.commitFrame(newLines, width, height);
 			return;
 		}
 
-		// Check if firstChanged is above what was previously visible
-		// Use previousLines.length (not maxLinesRendered) to avoid false positives after content shrinks
-		const previousContentViewportTop = Math.max(0, this.previousLines.length - height);
-		if (firstChanged < previousContentViewportTop) {
-			// First change is above previous viewport - need full re-render
-			logRedraw(`firstChanged < viewportTop (${firstChanged} < ${previousContentViewportTop})`);
+		if (firstChanged < this.previousLinesOffset) {
+			logRedraw(`firstChanged < viewportTop (${firstChanged} < ${this.previousLinesOffset})`);
 			fullRender(true);
 			return;
 		}
@@ -1106,15 +1104,15 @@ export class TUI extends Container {
 		let finalCursorRow = renderEnd;
 
 		// If we had more lines before, clear them and move cursor back
-		if (this.previousLines.length > newLines.length) {
+		if (prevTotalLines > newLines.length) {
 			// Move to end of new content first if we stopped before it
 			if (renderEnd < newLines.length - 1) {
 				const moveDown = newLines.length - 1 - renderEnd;
 				buffer += `\x1b[${moveDown}B`;
 				finalCursorRow = newLines.length - 1;
 			}
-			const extraLines = this.previousLines.length - newLines.length;
-			for (let i = newLines.length; i < this.previousLines.length; i++) {
+			const extraLines = prevTotalLines - newLines.length;
+			for (let _i = 0; _i < extraLines; _i++) {
 				buffer += "\r\n\x1b[2K";
 			}
 			// Move cursor back to end of new content
@@ -1138,7 +1136,7 @@ export class TUI extends Container {
 				`finalCursorRow: ${finalCursorRow}`,
 				`cursorPos: ${JSON.stringify(cursorPos)}`,
 				`newLines.length: ${newLines.length}`,
-				`previousLines.length: ${this.previousLines.length}`,
+				`previousLines.length: ${this.previousLines.length} (offset=${this.previousLinesOffset}, total=${this.previousLinesOffset + this.previousLines.length})`,
 				"",
 				"=== newLines ===",
 				JSON.stringify(newLines, null, 2),
@@ -1162,12 +1160,24 @@ export class TUI extends Container {
 		this.hardwareCursorRow = finalCursorRow;
 		// Track terminal's working area (grows but doesn't shrink unless cleared)
 		this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
-		this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
 
 		// Position hardware cursor for IME
 		this.positionHardwareCursor(cursorPos, newLines.length);
 
-		this.previousLines = newLines;
+		this.commitFrame(newLines, width, height);
+	}
+
+	/**
+	 * Commit the current frame as the new "previous" state for the next diff.
+	 * Stores only the visible viewport slice so previousLines stays O(height).
+	 * The slice may be empty if newLines has shrunk below storeOffset — this is
+	 * distinct from "no prior state" and is guarded by the previousLinesOffset===0
+	 * check in the first-render path.
+	 */
+	private commitFrame(newLines: string[], width: number, height: number): void {
+		const storeOffset = Math.max(0, this.maxLinesRendered - height);
+		this.previousLines = newLines.slice(storeOffset);
+		this.previousLinesOffset = storeOffset;
 		this.previousWidth = width;
 		this.previousHeight = height;
 	}
