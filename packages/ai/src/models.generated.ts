@@ -1675,7 +1675,7 @@ export const MODELS = {
 		} satisfies Model<"anthropic-messages">,
 		"claude-opus-4-5": {
 			id: "claude-opus-4-5",
-			name: "Claude Opus 4.5 (latest)",
+			name: "Claude Opus 4.5",
 			api: "anthropic-messages",
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
@@ -1709,7 +1709,7 @@ export const MODELS = {
 		} satisfies Model<"anthropic-messages">,
 		"claude-opus-4-6": {
 			id: "claude-opus-4-6",
-			name: "Claude Opus 4.6",
+			name: "Claude Opus 4.6 (latest)",
 			api: "anthropic-messages",
 			provider: "anthropic",
 			baseUrl: "https://api.anthropic.com",
