@@ -468,8 +468,8 @@ export class Input implements Component, Focusable {
 					startCol = Math.max(0, cursorCol - halfWidth);
 				}
 
-				visibleText = sliceByColumn(this.value, startCol, scrollWidth);
-				const beforeCursor = sliceByColumn(this.value, startCol, Math.max(0, cursorCol - startCol));
+				visibleText = sliceByColumn(this.value, startCol, scrollWidth, true);
+				const beforeCursor = sliceByColumn(this.value, startCol, Math.max(0, cursorCol - startCol), true);
 				cursorDisplay = beforeCursor.length;
 			} else {
 				visibleText = "";

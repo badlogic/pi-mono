@@ -43,15 +43,28 @@ describe("Input component", () => {
 				"这是一段测试文本，用于验证中文字符在终端中的显示宽度是否被正确计算，如果不正确就会导致用户界面崩溃的问题",
 				"ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ０１２３４５６７８９ａｂｃｄｅｆｇｈｉｊｋｌｍ",
 			];
+			const cursorPositions = [
+				{ label: "start", move: (_input: Input) => {} },
+				{
+					label: "middle",
+					move: (input: Input) => {
+						for (let i = 0; i < 10; i++) input.handleInput("\x1b[C");
+					},
+				},
+				{ label: "end", move: (input: Input) => input.handleInput("\x05") },
+			];
 
 			for (const text of cases) {
-				const input = new Input();
-				input.setValue(text);
-				input.focused = true;
+				for (const { label, move } of cursorPositions) {
+					const input = new Input();
+					input.setValue(text);
+					input.focused = true;
+					move(input);
 
-				const [line] = input.render(width);
-				assert.ok(line);
-				assert.ok(visibleWidth(line) <= width, `rendered line overflowed for ${text}`);
+					const [line] = input.render(width);
+					assert.ok(line);
+					assert.ok(visibleWidth(line) <= width, `rendered line overflowed for ${text} at ${label}`);
+				}
 			}
 		});
 
