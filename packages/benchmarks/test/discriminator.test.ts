@@ -341,6 +341,63 @@ describe("discriminate — models without capabilities field", () => {
 	});
 });
 
+// ─── maxTier clamping ────────────────────────────────────────────────────────
+
+describe("discriminate — maxTier", () => {
+	it("clamps thinking → medium when maxTier is medium", async () => {
+		mockClassifierResponse("thinking", "full", "needs debugging");
+		const result = await discriminate("fix-1", "tests failed", fullConfig(), "", "key", { maxTier: "medium" });
+		expect(result.tier).toBe("medium");
+		expect(result.model.id).toBe("medium-model");
+	});
+
+	it("clamps complex → medium when maxTier is medium", async () => {
+		mockClassifierResponse("complex", "full", "complex task");
+		const result = await discriminate("consolidate", "merge code", fullConfig(), "", "key", { maxTier: "medium" });
+		expect(result.tier).toBe("medium");
+		expect(result.model.id).toBe("medium-model");
+	});
+
+	it("allows medium when maxTier is medium", async () => {
+		mockClassifierResponse("medium", "full", "standard impl");
+		const result = await discriminate("fix-1", "tests failed", fullConfig(), "", "key", { maxTier: "medium" });
+		expect(result.tier).toBe("medium");
+		expect(result.model.id).toBe("medium-model");
+	});
+
+	it("allows simple when maxTier is medium", async () => {
+		mockClassifierResponse("simple", "full", "boilerplate");
+		const result = await discriminate("fix-1", "tests failed", fullConfig(), "", "key", { maxTier: "medium" });
+		expect(result.tier).toBe("simple");
+		expect(result.model.id).toBe("simple-model");
+	});
+
+	it("clamps thinking → simple when maxTier is simple", async () => {
+		mockClassifierResponse("thinking", "full", "debugging");
+		const result = await discriminate("test", "hello", fullConfig(), "", "key", { maxTier: "simple" });
+		expect(result.tier).toBe("simple");
+		expect(result.model.id).toBe("simple-model");
+	});
+
+	it("combines maxTier with requires — clamp then fallback", async () => {
+		mockClassifierResponse("thinking", "full", "needs debugging");
+		// maxTier=medium clamps to medium; medium has tool_calling so it stays
+		const result = await discriminate("fix-1", "tests failed", fullConfig(), "", "key", {
+			maxTier: "medium",
+			requires: ["tool_calling"],
+		});
+		expect(result.tier).toBe("medium");
+		expect(result.model.id).toBe("medium-model");
+	});
+
+	it("no maxTier does not clamp", async () => {
+		mockClassifierResponse("thinking", "full", "needs debugging");
+		const result = await discriminate("fix-1", "tests failed", fullConfig(), "", "key");
+		expect(result.tier).toBe("thinking");
+		expect(result.model.id).toBe("thinking-model");
+	});
+});
+
 // ─── Fugue-specific scenario: tool_calling routing ───────────────────────────
 
 describe("discriminate — Fugue tool_calling scenario", () => {

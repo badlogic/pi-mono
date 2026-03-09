@@ -90,6 +90,12 @@ export interface RoutingDecision {
 export interface DiscriminateOptions {
 	/** Required model capabilities. If set, the resolved tier's model must support all of them. */
 	requires?: ModelCapability[];
+	/**
+	 * Maximum tier the classifier is allowed to select (cost ceiling).
+	 * Tier order: simple < medium < complex < thinking.
+	 * If the classifier picks a tier above maxTier, it is clamped down to maxTier.
+	 */
+	maxTier?: DiscriminatorTier;
 }
 
 // -- Default system prompt ----------------------------------------------------
@@ -107,6 +113,16 @@ export const DEFAULT_DISCRIMINATOR_SYSTEM_PROMPT =
 	'  "simple"   — boilerplate, obvious implementation, or trivial answer (GPT-OSS 20B)\n' +
 	'Also classify response length: "full" if a detailed response is needed, "brief" if a short concise answer suffices.\n' +
 	'Reply with ONLY valid JSON: {"tier":"medium","length":"full","reason":"<=10 words"}';
+
+/** Tier cost order: lower index = cheaper. */
+const TIER_ORDER: DiscriminatorTier[] = ["simple", "medium", "complex", "thinking"];
+
+/** Clamp a tier down to a maximum allowed tier. */
+function clampTier(tier: DiscriminatorTier, maxTier: DiscriminatorTier): DiscriminatorTier {
+	const tierIdx = TIER_ORDER.indexOf(tier);
+	const maxIdx = TIER_ORDER.indexOf(maxTier);
+	return tierIdx > maxIdx ? maxTier : tier;
+}
 
 // -- Tier resolution ----------------------------------------------------------
 
@@ -240,9 +256,12 @@ export async function discriminate(
 			? (rawTier as DiscriminatorTier)
 			: "complex";
 
+		const clampedTier = options?.maxTier ? clampTier(tier, options.maxTier) : tier;
 		const requires = options?.requires ?? [];
 		const { resolvedTier, tierConfig } =
-			requires.length > 0 ? resolveTierWithRequirements(tier, config, requires) : resolveTier(tier, config);
+			requires.length > 0
+				? resolveTierWithRequirements(clampedTier, config, requires)
+				: resolveTier(clampedTier, config);
 		const isBrief = parsed.length === "brief";
 		const maxTokens = isBrief ? tierConfig.briefMaxTokens : undefined;
 		const reason =

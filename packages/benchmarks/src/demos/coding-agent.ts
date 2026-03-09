@@ -147,11 +147,15 @@ const DISCRIMINATOR_CONFIG: DiscriminatorConfig = {
 	tokensPerJoule: TOKENS_PER_JOULE,
 	systemPrompt:
 		"You are a routing classifier for a four-tier coding AI system.\n" +
-		"Choose the tier that best matches the coding task:\n" +
-		'  "thinking" → Kimi K2.5: needs chain-of-thought reasoning — debugging, tricky edge cases, ambiguous specs, logic puzzles.\n' +
-		'  "complex"  → Qwen3.5 397B: high-quality implementation without reasoning — clear architecture, feature implementation.\n' +
-		'  "medium"   → Devstral 24B: moderate complexity — clear spec, standard patterns, non-trivial but routine.\n' +
-		'  "simple"   → GPT-OSS 20B: boilerplate, interface/type definitions, trivial wrappers, obvious code.\n' +
+		"Choose the CHEAPEST tier that can handle the task correctly:\n" +
+		'  "thinking" → Kimi K2.5: ONLY for truly ambiguous specs, algorithmic puzzles, or multi-step logical reasoning.\n' +
+		'  "complex"  → Qwen3.5 397B: novel architecture or design decisions with no clear pattern to follow.\n' +
+		'  "medium"   → Devstral 24B: standard implementation — the model has conversation context with prior code.\n' +
+		'  "simple"   → GPT-OSS 20B: boilerplate, interface/type definitions, trivial wrappers.\n' +
+		"Phase hints (the phase label tells you the workflow stage):\n" +
+		'  build-N   → usually "medium" or "simple"; the spec is clear and incremental.\n' +
+		'  consolidate → "medium" at most; merging existing code from prior turns into one file.\n' +
+		'  fix-N     → "medium" at most; test failures with error output — straightforward correction, not open-ended debugging.\n' +
 		'Also classify response length: "full" for complete implementations, "brief" for short focused answers.\n' +
 		'Reply with ONLY valid JSON: {"tier":"medium","length":"full","reason":"<=10 words"}',
 };
@@ -587,7 +591,7 @@ async function runCodingAgent(
 	/**
 	 * Execute one turn. In EA mode, calls the discriminator first to select model.
 	 */
-	async function runTurn(prompt: string, phaseLabel: string): Promise<void> {
+	async function runTurn(prompt: string, phaseLabel: string, maxTier?: DiscriminatorTier): Promise<void> {
 		const turnNum = stats.turns.length + 1;
 		const phase = simplifyPhase(phaseLabel);
 
@@ -600,7 +604,15 @@ async function runCodingAgent(
 
 		if (mode === "energy-aware") {
 			const memCtx = buildDiscriminatorContext(phase, MEMORY_KEY, mem);
-			const disc: RoutingDecision = await discriminate(phase, prompt, DISCRIMINATOR_CONFIG, memCtx, apiKey);
+			const discOpts = maxTier ? { maxTier } : undefined;
+			const disc: RoutingDecision = await discriminate(
+				phase,
+				prompt,
+				DISCRIMINATOR_CONFIG,
+				memCtx,
+				apiKey,
+				discOpts,
+			);
 			discriminatorDecision = disc.tier;
 			discriminatorReason = disc.reason;
 			discriminatorEnergyJ = disc.energyJ;
@@ -686,7 +698,7 @@ async function runCodingAgent(
 	}
 
 	// -- Phase 2: Consolidate --------------------------------------------------
-	await runTurn(config.consolidatePrompt, "[consolidate]");
+	await runTurn(config.consolidatePrompt, "[consolidate]", "medium");
 
 	// If no acceptance test, done after consolidation
 	if (!config.acceptanceTest) {
@@ -736,7 +748,7 @@ async function runCodingAgent(
 				"Make sure all classes and functions are named exports (use 'export class', 'export function'). " +
 				"No external imports. Output raw TypeScript only — no markdown fences.";
 
-			await runTurn(fixPrompt, fixTurnLabel);
+			await runTurn(fixPrompt, fixTurnLabel, "medium");
 
 			const fixMsg = messages[messages.length - 1] as AssistantMessage;
 			code = extractCode(extractText(fixMsg));
