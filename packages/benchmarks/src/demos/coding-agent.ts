@@ -277,33 +277,58 @@ if (failed > 0) process.exit(1);
  * Prompt for generating a fresh coding challenge with a self-contained
  * acceptance test. Embedded template ensures the test harness is correct.
  */
-const CHALLENGE_GENERATOR_PROMPT =
-	"Generate a TypeScript coding challenge. Reply with ONLY a JSON object — no prose, no markdown fences.\n\n" +
-	'{"taskLabel":"<50-char description>","buildTurns":["turn1","turn2","turn3"],"consolidatePrompt":"...","acceptanceTest":"...TypeScript source..."}\n\n' +
-	"buildTurns must have exactly 3 prompts that build incrementally:\n" +
-	"  1. Define the TypeScript interfaces/types for the data structure\n" +
-	"  2. Implement the core class or function\n" +
-	"  3. Add input validation and edge-case handling\n\n" +
-	"consolidatePrompt must:\n" +
-	"  - Ask for a single impl.ts combining everything\n" +
-	"  - List EXACT exports with their TypeScript signatures, e.g.: export class Foo {...} export function bar(...) {...}\n" +
-	"  - End with: No imports except node standard lib. Output raw TypeScript only — no markdown fences.\n\n" +
-	"acceptanceTest must be valid TypeScript that:\n" +
-	"  - Starts with: import assert from 'node:assert/strict';\n" +
-	"  - Imports the named exports from './impl.js'\n" +
-	"  - Uses this EXACT test harness (copy verbatim):\n" +
-	"      let failed = 0;\n" +
-	"      async function test(name: string, fn: () => void | Promise<void>): Promise<void> {\n" +
-	"        try { await fn(); console.log('PASS: ' + name); }\n" +
-	"        catch (e) { const msg = e instanceof Error ? e.message : String(e); console.log('FAIL: ' + name + ': ' + msg); failed++; }\n" +
-	"      }\n" +
-	"  - Has 4-5 test cases covering: happy path, boundary conditions, error cases\n" +
-	"  - Ends with: if (failed > 0) process.exit(1);\n" +
-	"  - Uses only top-level await and node:assert (no timeouts, no randomness)\n\n" +
-	"AVOID: rate limiting, express middleware, HTTP servers, auth systems.\n" +
-	"GOOD topics: LRU cache, debounce/throttle, event emitter, retry utility, " +
-	"promise queue, memoize with TTL, circular buffer, priority queue, observable, pipe operator.\n\n" +
-	"Output ONLY the JSON object.";
+const CHALLENGE_TOPICS = [
+	"LRU cache",
+	"debounce/throttle utility",
+	"event emitter",
+	"retry with exponential backoff",
+	"promise queue with concurrency limit",
+	"memoize with TTL",
+	"circular buffer (ring buffer)",
+	"priority queue (min-heap)",
+	"observable/subject (reactive)",
+	"pipe operator (function composition)",
+	"pub-sub message bus",
+	"task scheduler with dependencies",
+	"semaphore (async concurrency control)",
+	"trie (prefix tree)",
+	"bloom filter",
+	"undo-redo stack",
+	"object pool",
+	"finite state machine",
+	"middleware pipeline",
+];
+
+function buildChallengePrompt(): string {
+	const topic = CHALLENGE_TOPICS[Math.floor(Math.random() * CHALLENGE_TOPICS.length)];
+	return (
+		`Generate a TypeScript coding challenge about: ${topic}\n` +
+		"Reply with ONLY a JSON object — no prose, no markdown fences.\n\n" +
+		'{"taskLabel":"<50-char description>","buildTurns":["turn1","turn2","turn3"],"consolidatePrompt":"...","acceptanceTest":"...TypeScript source..."}\n\n' +
+		"buildTurns must have exactly 3 prompts that build incrementally:\n" +
+		"  1. Define the TypeScript interfaces/types for the data structure\n" +
+		"  2. Implement the core class or function\n" +
+		"  3. Add input validation and edge-case handling\n\n" +
+		"consolidatePrompt must:\n" +
+		"  - Ask for a single impl.ts combining everything\n" +
+		"  - List EXACT exports with their TypeScript signatures, e.g.: export class Foo {...} export function bar(...) {...}\n" +
+		"  - End with: No imports except node standard lib. Output raw TypeScript only — no markdown fences.\n\n" +
+		"acceptanceTest must be valid TypeScript that:\n" +
+		"  - Starts with: import assert from 'node:assert/strict';\n" +
+		"  - Imports the named exports from './impl.js'\n" +
+		"  - Uses this EXACT test harness (copy verbatim):\n" +
+		"      let failed = 0;\n" +
+		"      async function test(name: string, fn: () => void | Promise<void>): Promise<void> {\n" +
+		"        try { await fn(); console.log('PASS: ' + name); }\n" +
+		"        catch (e) { const msg = e instanceof Error ? e.message : String(e); console.log('FAIL: ' + name + ': ' + msg); failed++; }\n" +
+		"      }\n" +
+		"  - Has 4-5 test cases covering: happy path, boundary conditions, error cases\n" +
+		"  - Ends with: if (failed > 0) process.exit(1);\n" +
+		"  - Uses only top-level await and node:assert (no timeouts, no randomness)\n\n" +
+		"AVOID: rate limiting, express middleware, HTTP servers, auth systems.\n\n" +
+		"Output ONLY the JSON object."
+	);
+}
 
 interface GeneratedChallenge {
 	taskLabel: string;
@@ -319,7 +344,7 @@ async function generateChallenge(apiKey: string): Promise<GeneratedChallenge | n
 			KIMI_MODEL,
 			{
 				systemPrompt: "You are a technical challenge designer. Output only valid JSON.",
-				messages: [{ role: "user", content: CHALLENGE_GENERATOR_PROMPT, timestamp: Date.now() }],
+				messages: [{ role: "user", content: buildChallengePrompt(), timestamp: Date.now() }],
 			},
 			{ apiKey, maxTokens: 3_000 },
 		);
