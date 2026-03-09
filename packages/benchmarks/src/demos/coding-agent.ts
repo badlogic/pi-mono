@@ -753,9 +753,12 @@ async function runCodingAgent(
 		}
 
 		const MAX_FIX_ATTEMPTS = 3;
+		// Progressive escalation: start cheap, escalate if cheaper models can't fix it
+		const FIX_TIER_CEILING: DiscriminatorTier[] = ["medium", "complex", "thinking"];
 		let fixAttempt = 0;
 		while (!testResult.passed && fixAttempt < MAX_FIX_ATTEMPTS) {
 			fixAttempt++;
+			const fixMaxTier = FIX_TIER_CEILING[Math.min(fixAttempt - 1, FIX_TIER_CEILING.length - 1)];
 			const fixTurnLabel = `[fix #${fixAttempt}]`;
 			const failureSummary =
 				testResult.failedTests.length > 0
@@ -773,7 +776,7 @@ async function runCodingAgent(
 				"Make sure all classes and functions are named exports (use 'export class', 'export function'). " +
 				"No external imports. Output raw TypeScript only — no markdown fences.";
 
-			await runTurn(fixPrompt, fixTurnLabel, "medium");
+			await runTurn(fixPrompt, fixTurnLabel, fixMaxTier);
 
 			const fixMsg = messages[messages.length - 1] as AssistantMessage;
 			code = extractCode(extractText(fixMsg));
