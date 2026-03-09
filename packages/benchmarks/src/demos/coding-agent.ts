@@ -778,9 +778,10 @@ async function runCodingAgent(
 			if (!stats.failedTestNames.includes(name)) stats.failedTestNames.push(name);
 		}
 
-		const MAX_FIX_ATTEMPTS = 3;
-		// Progressive escalation: start cheap, escalate if cheaper models can't fix it
-		const FIX_TIER_CEILING: DiscriminatorTier[] = ["medium", "complex", "thinking"];
+		const MAX_FIX_ATTEMPTS = 5;
+		// Progressive escalation: start cheap, give each tier a fair shot, then escalate.
+		// fix 1-2: medium (Devstral), fix 3: complex (Qwen), fix 4-5: thinking (Kimi)
+		const FIX_TIER_CEILING: DiscriminatorTier[] = ["medium", "medium", "complex", "thinking", "thinking"];
 		let fixAttempt = 0;
 		while (!testResult.passed && fixAttempt < MAX_FIX_ATTEMPTS) {
 			fixAttempt++;
