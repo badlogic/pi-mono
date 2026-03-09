@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `Input` horizontal scrolling for wide Unicode text (CJK, fullwidth characters) to use visual column width instead of string length, preventing rendered line overflow and TUI crashes ([#1982](https://github.com/badlogic/pi-mono/issues/1982))
+
 ## [0.57.1] - 2026-03-07
 
 ### Added
