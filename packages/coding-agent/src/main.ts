@@ -7,8 +7,9 @@
 
 import { type ImageContent, modelsAreEqual, supportsXhigh } from "@mariozechner/pi-ai";
 import chalk from "chalk";
+import { existsSync } from "fs";
 import { createInterface } from "readline";
-import { type Args, parseArgs, printHelp } from "./cli/args.js";
+import { type Args, parseArgs, printHelp, type SessionMode } from "./cli/args.js";
 import { selectConfig } from "./cli/config-selector.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { listModels } from "./cli/list-models.js";
@@ -334,13 +335,27 @@ type ResolvedSession =
 	| { type: "global"; path: string; cwd: string } // Found in different project
 	| { type: "not_found"; arg: string }; // Not found anywhere
 
+type ResolvedExactSession =
+	| { type: "path"; path: string }
+	| { type: "local"; path: string }
+	| { type: "global"; path: string; cwd: string }
+	| { type: "not_found"; arg: string };
+
+function isSessionPathLike(sessionArg: string): boolean {
+	return sessionArg.includes("/") || sessionArg.includes("\\") || sessionArg.endsWith(".jsonl");
+}
+
+function isValidSessionIdForCreation(sessionId: string): boolean {
+	return /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(sessionId);
+}
+
 /**
  * Resolve a session argument to a file path.
  * If it looks like a path, use as-is. Otherwise try to match as session ID prefix.
  */
 async function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: string): Promise<ResolvedSession> {
 	// If it looks like a file path, use as-is
-	if (sessionArg.includes("/") || sessionArg.includes("\\") || sessionArg.endsWith(".jsonl")) {
+	if (isSessionPathLike(sessionArg)) {
 		return { type: "path", path: sessionArg };
 	}
 
@@ -363,6 +378,77 @@ async function resolveSessionPath(sessionArg: string, cwd: string, sessionDir?: 
 
 	// Not found anywhere
 	return { type: "not_found", arg: sessionArg };
+}
+
+async function resolveSessionExact(
+	sessionArg: string,
+	cwd: string,
+	sessionDir?: string,
+): Promise<ResolvedExactSession> {
+	if (isSessionPathLike(sessionArg)) {
+		if (existsSync(sessionArg)) {
+			return { type: "path", path: sessionArg };
+		}
+		return { type: "not_found", arg: sessionArg };
+	}
+
+	const localSessions = await SessionManager.list(cwd, sessionDir);
+	const localMatch = localSessions.find((s) => s.id === sessionArg);
+	if (localMatch) {
+		return { type: "local", path: localMatch.path };
+	}
+
+	const allSessions = await SessionManager.listAll();
+	const globalMatch = allSessions.find((s) => s.id === sessionArg);
+	if (globalMatch) {
+		return { type: "global", path: globalMatch.path, cwd: globalMatch.cwd };
+	}
+
+	return { type: "not_found", arg: sessionArg };
+}
+
+async function createSessionFromId(
+	sessionId: string,
+	mode: SessionMode,
+	cwd: string,
+	sessionDir?: string,
+): Promise<SessionManager> {
+	if (mode === "create") {
+		// Exact match: error if session already exists
+		const resolved = await resolveSessionExact(sessionId, cwd, sessionDir);
+		if (resolved.type !== "not_found") {
+			console.error(chalk.red(`Session '${sessionId}' already exists`));
+			process.exit(1);
+		}
+	} else {
+		// continue / auto: prefix match to find existing session
+		const resolved = await resolveSessionPath(sessionId, cwd, sessionDir);
+		if (resolved.type !== "not_found") {
+			if (resolved.type === "global" && resolved.cwd !== cwd) {
+				console.log(chalk.yellow(`Reusing session from different project: ${resolved.cwd}`));
+			}
+			return SessionManager.open(resolved.path, sessionDir);
+		}
+
+		if (mode === "continue") {
+			console.error(chalk.red(`Session '${sessionId}' not found`));
+			process.exit(1);
+		}
+	}
+
+	// create or auto (not found): create new session
+	if (isSessionPathLike(sessionId)) {
+		return SessionManager.open(sessionId, sessionDir);
+	}
+
+	if (!isValidSessionIdForCreation(sessionId)) {
+		console.error(
+			chalk.red(`Invalid session ID '${sessionId}'. Use only letters, numbers, '.', '-', and '_' characters.`),
+		);
+		process.exit(1);
+	}
+
+	return SessionManager.createWithSessionId(cwd, sessionId, sessionDir);
 }
 
 /** Prompt user for yes/no confirmation */
@@ -421,6 +507,10 @@ async function createSessionManager(
 	}
 
 	if (parsed.session) {
+		if (parsed.sessionMode) {
+			return createSessionFromId(parsed.session, parsed.sessionMode, cwd, effectiveSessionDir);
+		}
+
 		const resolved = await resolveSessionPath(parsed.session, cwd, effectiveSessionDir);
 
 		switch (resolved.type) {
@@ -664,6 +754,11 @@ export async function main(args: string[]) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
 		await listModels(modelRegistry, searchPattern);
 		process.exit(0);
+	}
+
+	if (parsed.sessionMode && !parsed.session) {
+		console.error(chalk.red("--session-mode requires --session <path|id>"));
+		process.exit(1);
 	}
 
 	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC

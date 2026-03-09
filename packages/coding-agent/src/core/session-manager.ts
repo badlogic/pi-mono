@@ -37,6 +37,7 @@ export interface SessionHeader {
 
 export interface NewSessionOptions {
 	parentSession?: string;
+	sessionId?: string;
 }
 
 export interface SessionEntryBase {
@@ -721,7 +722,7 @@ export class SessionManager {
 	}
 
 	newSession(options?: NewSessionOptions): string | undefined {
-		this.sessionId = randomUUID();
+		this.sessionId = options?.sessionId ?? randomUUID();
 		const timestamp = new Date().toISOString();
 		const header: SessionHeader = {
 			type: "session",
@@ -1255,6 +1256,19 @@ export class SessionManager {
 	static create(cwd: string, sessionDir?: string): SessionManager {
 		const dir = sessionDir ?? getDefaultSessionDir(cwd);
 		return new SessionManager(cwd, dir, undefined, true);
+	}
+
+	/**
+	 * Create a new session with a specific session ID.
+	 * @param cwd Working directory
+	 * @param sessionId Custom session ID to store in the session header
+	 * @param sessionDir Optional session directory. If omitted, uses default (~/.pi/agent/sessions/<encoded-cwd>/).
+	 */
+	static createWithSessionId(cwd: string, sessionId: string, sessionDir?: string): SessionManager {
+		const dir = sessionDir ?? getDefaultSessionDir(cwd);
+		const manager = new SessionManager(cwd, dir, undefined, true);
+		manager.newSession({ sessionId });
+		return manager;
 	}
 
 	/**

@@ -18,6 +18,7 @@ import type {
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
 } from "../../core/extensions/index.js";
+import { SessionManager } from "../../core/session-manager.js";
 import { type Theme, theme } from "../interactive/theme/theme.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import type {
@@ -356,6 +357,63 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			}
 
 			case "new_session": {
+				if (command.sessionId) {
+					const mode = command.sessionMode ?? "auto";
+					const cwd = session.sessionManager.getCwd();
+
+					if (mode === "create") {
+						// Exact match: error if session already exists
+						const localSessions = await SessionManager.list(cwd);
+						const localMatch = localSessions.find((s) => s.id === command.sessionId);
+						if (localMatch) {
+							return error(id, "new_session", `Session '${command.sessionId}' already exists`);
+						}
+						const allSessions = await SessionManager.listAll();
+						const globalMatch = allSessions.find((s) => s.id === command.sessionId);
+						if (globalMatch) {
+							return error(id, "new_session", `Session '${command.sessionId}' already exists`);
+						}
+					} else {
+						// continue / auto: prefix match to find existing session
+						const localSessions = await SessionManager.list(cwd);
+						const localMatch = localSessions.find((s) => s.id.startsWith(command.sessionId!));
+						if (localMatch) {
+							const switched = await session.switchSession(localMatch.path);
+							return success(id, "new_session", {
+								cancelled: !switched,
+								sessionId: localMatch.id,
+								sessionFile: localMatch.path,
+							});
+						}
+						const allSessions = await SessionManager.listAll();
+						const globalMatch = allSessions.find((s) => s.id.startsWith(command.sessionId!));
+						if (globalMatch) {
+							const switched = await session.switchSession(globalMatch.path);
+							return success(id, "new_session", {
+								cancelled: !switched,
+								sessionId: globalMatch.id,
+								sessionFile: globalMatch.path,
+							});
+						}
+
+						if (mode === "continue") {
+							return error(id, "new_session", `Session '${command.sessionId}' not found`);
+						}
+					}
+
+					// create or auto (not found): create new session with the given ID
+					const created = await session.newSession({
+						parentSession: command.parentSession,
+						setup: async (sm) => {
+							sm.newSession({ sessionId: command.sessionId, parentSession: command.parentSession });
+						},
+					});
+					return success(id, "new_session", {
+						cancelled: !created,
+						sessionId: command.sessionId,
+						sessionFile: session.sessionFile,
+					});
+				}
 				const options = command.parentSession ? { parentSession: command.parentSession } : undefined;
 				const cancelled = !(await session.newSession(options));
 				return success(id, "new_session", { cancelled });

@@ -144,9 +144,24 @@ With optional parent session tracking:
 {"type": "new_session", "parentSession": "/path/to/parent-session.jsonl"}
 ```
 
+With a custom session ID and mode:
+```json
+{"type": "new_session", "sessionId": "feature-auth", "sessionMode": "auto"}
+```
+
+Session mode values:
+- `auto` (default when `sessionId` is set): open existing session or create new
+- `continue`: open existing session, error if not found
+- `create`: create new session, error if already exists
+
 Response:
 ```json
 {"type": "response", "command": "new_session", "success": true, "data": {"cancelled": false}}
+```
+
+When `sessionId` is provided, the response includes session info:
+```json
+{"type": "response", "command": "new_session", "success": true, "data": {"cancelled": false, "sessionId": "feature-auth", "sessionFile": "/path/to/session.jsonl"}}
 ```
 
 If an extension cancelled:

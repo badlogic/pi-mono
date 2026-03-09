@@ -110,6 +110,26 @@ describe("parseArgs", () => {
 			expect(result.session).toBe("/path/to/session.jsonl");
 		});
 
+		test("parses --session-mode continue", () => {
+			const result = parseArgs(["--session-mode", "continue"]);
+			expect(result.sessionMode).toBe("continue");
+		});
+
+		test("parses --session-mode create", () => {
+			const result = parseArgs(["--session-mode", "create"]);
+			expect(result.sessionMode).toBe("create");
+		});
+
+		test("parses --session-mode auto", () => {
+			const result = parseArgs(["--session-mode", "auto"]);
+			expect(result.sessionMode).toBe("auto");
+		});
+
+		test("ignores invalid --session-mode", () => {
+			const result = parseArgs(["--session-mode", "invalid"]);
+			expect(result.sessionMode).toBeUndefined();
+		});
+
 		test("parses --export", () => {
 			const result = parseArgs(["--export", "session.jsonl"]);
 			expect(result.export).toBe("session.jsonl");

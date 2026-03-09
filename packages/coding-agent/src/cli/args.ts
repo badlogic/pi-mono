@@ -8,6 +8,7 @@ import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR } from "../config.js";
 import { allTools, type ToolName } from "../core/tools/index.js";
 
 export type Mode = "text" | "json" | "rpc";
+export type SessionMode = "continue" | "create" | "auto";
 
 export interface Args {
 	provider?: string;
@@ -23,6 +24,7 @@ export interface Args {
 	mode?: Mode;
 	noSession?: boolean;
 	session?: string;
+	sessionMode?: SessionMode;
 	sessionDir?: string;
 	models?: string[];
 	tools?: ToolName[];
@@ -89,6 +91,15 @@ export function parseArgs(args: string[], extensionFlags?: Map<string, { type: "
 			result.noSession = true;
 		} else if (arg === "--session" && i + 1 < args.length) {
 			result.session = args[++i];
+		} else if (arg === "--session-mode" && i + 1 < args.length) {
+			const mode = args[++i];
+			if (mode === "continue" || mode === "create" || mode === "auto") {
+				result.sessionMode = mode;
+			} else {
+				console.error(
+					chalk.yellow(`Warning: Invalid session mode "${mode}". Valid values: continue, create, auto`),
+				);
+			}
 		} else if (arg === "--session-dir" && i + 1 < args.length) {
 			result.sessionDir = args[++i];
 		} else if (arg === "--models" && i + 1 < args.length) {
@@ -200,7 +211,11 @@ ${chalk.bold("Options:")}
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume
-  --session <path>               Use specific session file
+  --session <path|id>            Use specific session file or session ID
+  --session-mode <mode>           Session ID behavior: continue | create | auto
+                                 continue: open existing, error if not found
+                                 create: create new, error if already exists
+                                 auto: open if exists, create if not
   --session-dir <dir>            Directory for session storage and lookup
   --no-session                   Don't save session (ephemeral)
   --models <patterns>            Comma-separated model patterns for Ctrl+P cycling
@@ -244,6 +259,15 @@ ${chalk.bold("Examples:")}
 
   # Continue previous session
   ${APP_NAME} --continue "What did we discuss?"
+
+  # Open or create a named session
+  ${APP_NAME} --session feature-auth --session-mode auto
+
+  # Create a new named session (fails if it already exists)
+  ${APP_NAME} --session feature-auth --session-mode create
+
+  # Continue a named session (fails if it doesn't exist)
+  ${APP_NAME} --session feature-auth --session-mode continue
 
   # Use different model
   ${APP_NAME} --provider openai --model gpt-4o-mini "Help me refactor this code"
