@@ -127,11 +127,15 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 			};
 
 			for await (const chunk of openaiStream) {
-				if (chunk.usage) {
-					const cachedTokens = chunk.usage.prompt_tokens_details?.cached_tokens || 0;
-					const reasoningTokens = chunk.usage.completion_tokens_details?.reasoning_tokens || 0;
-					const input = (chunk.usage.prompt_tokens || 0) - cachedTokens;
-					const outputTokens = (chunk.usage.completion_tokens || 0) + reasoningTokens;
+				// Moonshot/Kimi models put usage in choices[0].usage instead of chunk.usage
+				const isMoonshotModel = model.id?.toLowerCase().includes("kimi") || model.id?.toLowerCase().includes("moonshot");
+				const usage = isMoonshotModel ? (chunk.choices?.[0]?.usage || chunk.usage) : chunk.usage;
+
+				if (usage) {
+					const cachedTokens = usage.prompt_tokens_details?.cached_tokens || 0;
+					const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens || 0;
+					const input = (usage.prompt_tokens || 0) - cachedTokens;
+					const outputTokens = (usage.completion_tokens || 0) + reasoningTokens;
 					output.usage = {
 						// OpenAI includes cached tokens in prompt_tokens, so subtract to get non-cached input
 						input,
