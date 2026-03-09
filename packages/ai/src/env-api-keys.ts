@@ -73,9 +73,13 @@ export function getEnvApiKey(provider: any): string | undefined {
 		return process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
 	}
 
-	// Vertex AI uses Application Default Credentials, not API keys.
-	// Auth is configured via `gcloud auth application-default login`.
+	// Vertex AI supports either an explicit API key or Application Default Credentials
+	// Auth is configured via `gcloud auth application-default login`
 	if (provider === "google-vertex") {
+		if (process.env.GOOGLE_CLOUD_API_KEY) {
+			return process.env.GOOGLE_CLOUD_API_KEY;
+		}
+
 		const hasCredentials = hasVertexAdcCredentials();
 		const hasProject = !!(process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT);
 		const hasLocation = !!process.env.GOOGLE_CLOUD_LOCATION;

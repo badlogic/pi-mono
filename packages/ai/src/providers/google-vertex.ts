@@ -84,9 +84,11 @@ export const streamGoogleVertex: StreamFunction<"google-vertex", GoogleVertexOpt
 		};
 
 		try {
-			const project = resolveProject(options);
-			const location = resolveLocation(options);
-			const client = createClient(model, project, location, options?.headers);
+			const apiKey = resolveApiKey(options);
+			// Create the client using either a Vertex API key, if provided, or ADC with project and location
+			const client = apiKey
+				? createClientWithApiKey(model, apiKey, options?.headers)
+				: createClient(model, resolveProject(options), resolveLocation(options), options?.headers);
 			let params = buildParams(model, context, options);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
@@ -339,6 +341,31 @@ function createClient(
 		apiVersion: API_VERSION,
 		httpOptions: hasHttpOptions ? httpOptions : undefined,
 	});
+}
+
+function createClientWithApiKey(
+	model: Model<"google-vertex">,
+	apiKey: string,
+	optionsHeaders?: Record<string, string>,
+): GoogleGenAI {
+	const httpOptions: { headers?: Record<string, string> } = {};
+
+	if (model.headers || optionsHeaders) {
+		httpOptions.headers = { ...model.headers, ...optionsHeaders };
+	}
+
+	const hasHttpOptions = Object.values(httpOptions).some(Boolean);
+
+	return new GoogleGenAI({
+		vertexai: true,
+		apiKey,
+		apiVersion: API_VERSION,
+		httpOptions: hasHttpOptions ? httpOptions : undefined,
+	});
+}
+
+function resolveApiKey(options?: GoogleVertexOptions): string | undefined {
+	return options?.apiKey || process.env.GOOGLE_CLOUD_API_KEY;
 }
 
 function resolveProject(options?: GoogleVertexOptions): string {
