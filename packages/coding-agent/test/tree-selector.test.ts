@@ -1,4 +1,5 @@
-import { beforeAll, describe, expect, test } from "vitest";
+import { DEFAULT_EDITOR_KEYBINDINGS, EditorKeybindingsManager, setEditorKeybindings } from "@mariozechner/pi-tui";
+import { beforeAll, beforeEach, describe, expect, test } from "vitest";
 import type {
 	ModelChangeEntry,
 	SessionEntry,
@@ -10,6 +11,11 @@ import { initTheme } from "../src/modes/interactive/theme/theme.js";
 
 beforeAll(() => {
 	initTheme("dark");
+});
+
+beforeEach(() => {
+	// Editor keybindings are a global singleton; keep these tests independent of user config.
+	setEditorKeybindings(new EditorKeybindingsManager(DEFAULT_EDITOR_KEYBINDINGS));
 });
 
 // Helper to create a user message entry

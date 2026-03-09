@@ -1,4 +1,5 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { DEFAULT_EDITOR_KEYBINDINGS, EditorKeybindingsManager, setEditorKeybindings } from "@mariozechner/pi-tui";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../src/core/session-manager.js";
 import { SessionSelectorComponent } from "../src/modes/interactive/components/session-selector.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
@@ -29,6 +30,11 @@ const CTRL_R = "\x1b[114;5u";
 describe("session selector rename", () => {
 	beforeAll(() => {
 		initTheme("dark");
+	});
+
+	beforeEach(() => {
+		// Editor keybindings are a global singleton; keep these tests independent of user config.
+		setEditorKeybindings(new EditorKeybindingsManager(DEFAULT_EDITOR_KEYBINDINGS));
 	});
 
 	it("shows rename hint in interactive /resume picker configuration", async () => {
