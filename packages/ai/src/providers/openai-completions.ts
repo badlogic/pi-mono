@@ -559,15 +559,12 @@ export function convertMessages(
 			// Filter out empty text blocks to avoid API validation errors
 			const nonEmptyTextBlocks = textBlocks.filter((b) => b.text && b.text.trim().length > 0);
 			if (nonEmptyTextBlocks.length > 0) {
-				// GitHub Copilot requires assistant content as a string, not an array.
-				// Sending as array causes Claude models to re-answer all previous prompts.
-				if (model.provider === "github-copilot") {
-					assistantMsg.content = nonEmptyTextBlocks.map((b) => sanitizeSurrogates(b.text)).join("");
-				} else {
-					assistantMsg.content = nonEmptyTextBlocks.map((b) => {
-						return { type: "text", text: sanitizeSurrogates(b.text) };
-					});
-				}
+				// Always send assistant content as a plain string (OpenAI Chat Completions
+				// API standard format). Sending as an array of {type:"text", text:"..."}
+				// objects is non-standard and causes some models (e.g. DeepSeek V3.2 via
+				// NVIDIA NIM) to mirror the content-block structure literally in their
+				// output, producing recursive nesting like [{'type':'text','text':'[{...}]'}].
+				assistantMsg.content = nonEmptyTextBlocks.map((b) => sanitizeSurrogates(b.text)).join("");
 			}
 
 			// Handle thinking blocks
