@@ -63,7 +63,7 @@ Add to `keybindings.json` to enable `Shift+Enter` for multi-line input:
 
 ## Windows Terminal
 
-Add to `settings.json` (Ctrl+Shift+, or Settings → Open JSON file):
+Add to `settings.json` (Ctrl+Shift+, or Settings → Open JSON file) to forward the modified Enter keys pi uses:
 
 ```json
 {
@@ -71,12 +71,20 @@ Add to `settings.json` (Ctrl+Shift+, or Settings → Open JSON file):
     {
       "command": { "action": "sendInput", "input": "\u001b[13;2u" },
       "keys": "shift+enter"
+    },
+    {
+      "command": { "action": "sendInput", "input": "\u001b[13;3u" },
+      "keys": "alt+enter"
     }
   ]
 }
 ```
 
-If you already have an `actions` array, add the object to it.
+- `Shift+Enter` inserts a new line.
+- Windows Terminal binds `Alt+Enter` to fullscreen by default. That prevents pi from receiving `Alt+Enter` for follow-up queueing.
+- Remapping `Alt+Enter` to `sendInput` forwards the real key chord to pi instead.
+
+If you already have an `actions` array, add the objects to it. If the old fullscreen behavior persists, fully close and reopen Windows Terminal.
 
 ## IntelliJ IDEA (Integrated Terminal)
 
