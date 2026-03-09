@@ -656,7 +656,8 @@ async function runCodingAgent(
 		stats.totalCacheRead += cacheRead;
 
 		const energyLabel = fromApi ? "api" : "est";
-		const cachePct = inputTokens > 0 && cacheRead > 0 ? Math.round((cacheRead / inputTokens) * 100) : 0;
+		const totalPrompt = inputTokens + cacheRead;
+		const cachePct = totalPrompt > 0 && cacheRead > 0 ? Math.round((cacheRead / totalPrompt) * 100) : 0;
 		const cacheLabel = cacheRead > 0 ? ` \x1b[33m(${cacheRead} cached = ${cachePct}% of input)\x1b[0m` : "";
 		console.log(
 			`  \x1b[2m${tokens} tokens | ${energy.toFixed(1)}J [${energyLabel}] | input:${inputTokens} output:${assistantMsg.usage.output}\x1b[0m${cacheLabel}`,
@@ -850,7 +851,8 @@ function printScorecard(
 	if (totalCacheRead > 0) {
 		const fmtCache = (cr: number, inp: number) => {
 			if (cr === 0) return "none";
-			const pct = inp > 0 ? Math.round((cr / inp) * 100) : 0;
+			const totalPrompt = inp + cr;
+			const pct = totalPrompt > 0 ? Math.round((cr / totalPrompt) * 100) : 0;
 			return `\x1b[33m${cr} tok (${pct}% of input)\x1b[0m`;
 		};
 		console.log(
