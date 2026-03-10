@@ -839,6 +839,10 @@ async function main(): Promise<void> {
 
 		// Run baseline, discriminator, and fast concurrently to avoid adding latency.
 		// Then use the discriminator result to drive the EA scoring call.
+		const logErr = (label: string) => (e: unknown) => {
+			console.error(`  [${label}] ${e instanceof Error ? e.message : String(e)}`);
+			return null;
+		};
 		const [baseResult, discResult, fastResult] = await Promise.all([
 			scoreWithPolicy(
 				story.title,
@@ -850,10 +854,10 @@ async function main(): Promise<void> {
 				nowS * 1000,
 				apiKey,
 				"",
-			).catch(() => null),
+			).catch(logErr("baseline")),
 			eaStats.aborted
 				? Promise.resolve(null)
-				: discriminate("score", story.title, HN_DISCRIMINATOR_CONFIG, "", apiKey).catch(() => null),
+				: discriminate("score", story.title, HN_DISCRIMINATOR_CONFIG, "", apiKey).catch(logErr("disc")),
 			enableFast
 				? scoreStoryLLM(story.title, keywords, KIMI_FAST_MODEL, apiKey)
 						.then((r) => ({
@@ -863,7 +867,7 @@ async function main(): Promise<void> {
 							cost: r.message.usage.cost.total,
 							model: KIMI_FAST_MODEL.id,
 						}))
-						.catch(() => null)
+						.catch(logErr("fast"))
 				: Promise.resolve(null),
 		]);
 
@@ -895,7 +899,7 @@ async function main(): Promise<void> {
 					// Override model for simple/medium — complex defers to EnergyAwarePolicy
 					discResult && discResult.tier !== "complex" ? discResult.model : undefined,
 					discResult?.maxTokens,
-				).catch(() => null);
+				).catch(logErr("ea"));
 
 		if (baseResult && !baseResult.aborted) {
 			baseStats.totalEnergy += baseResult.energy;
