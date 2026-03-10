@@ -453,14 +453,18 @@ export class InteractiveMode {
 		this.setupKeyHandlers();
 		this.setupEditorSubmitHandler();
 
-		// Initialize extensions first so resources are shown before messages
+		// Start the UI before extensions so extensions can use interactive
+		// UI methods (confirm, select, input) during session_start hooks.
+		// Previously, ui.start() came after initExtensions(), which meant
+		// the TUI input handler wasn't active yet when extensions fired.
+		this.ui.start();
+
+		// Initialize extensions — UI is now active for interactive prompts
 		await this.initExtensions();
 
 		// Render initial messages AFTER showing loaded resources
 		this.renderInitialMessages();
 
-		// Start the UI
-		this.ui.start();
 		this.isInitialized = true;
 
 		// Set terminal title
