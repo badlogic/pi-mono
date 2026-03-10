@@ -197,9 +197,14 @@ interface HNStory {
 
 /** Per-story score pair for tracking EA vs baseline agreement. */
 interface ScorePair {
+	title: string;
 	base: number;
+	baseModel: string;
 	ea: number;
+	eaModel: string;
+	eaTier: string;
 	fast?: number;
+	fastModel?: string;
 }
 
 // -- Energy tracking ----------------------------------------------------------
@@ -687,6 +692,107 @@ function printFinalSummary(
 	}
 }
 
+// -- Post-run score analysis --------------------------------------------------
+
+function printScoreAnalysis(scorePairs: ScorePair[]): void {
+	if (scorePairs.length === 0) {
+		console.log("\n  No score pairs to analyze.");
+		return;
+	}
+
+	console.log("");
+	console.log("  ═══ SCORE ANALYSIS ════════════════════════════════════════════════");
+	console.log("");
+
+	// Per-story table
+	const hdrTitle = pad("Story", 42);
+	const hdrBase = pad("Base", 6);
+	const hdrEa = pad("EA", 6);
+	const hdrDelta = pad("Delta", 7);
+	const hdrModel = pad("EA Model", 14);
+	const hdrTier = pad("Tier", 8);
+	console.log(`  ${hdrTitle} ${hdrBase} ${hdrEa} ${hdrDelta} ${hdrModel} ${hdrTier}`);
+	console.log(`  ${"─".repeat(87)}`);
+
+	const disagreements: ScorePair[] = [];
+	for (const p of scorePairs) {
+		const delta = p.ea - p.base;
+		const absDelta = Math.abs(delta);
+		const agree = absDelta <= 0.15;
+		const deltaStr = `${delta >= 0 ? "+" : ""}${delta.toFixed(2)}`;
+		const color = agree ? "\x1b[32m" : absDelta > 0.3 ? "\x1b[31m" : "\x1b[33m";
+		const mark = agree ? " " : absDelta > 0.3 ? "!!" : " !";
+
+		console.log(
+			`  ${pad(truncate(p.title, 42), 42)} ${pad(p.base.toFixed(2), 6)} ${pad(p.ea.toFixed(2), 6)} ${color}${pad(deltaStr, 7)}\x1b[0m ${pad(modelShort(p.eaModel), 14)} ${pad(p.eaTier, 8)} ${mark}`,
+		);
+		if (!agree) disagreements.push(p);
+	}
+
+	// Pattern analysis
+	console.log("");
+	const total = scorePairs.length;
+	const agreed = total - disagreements.length;
+	console.log(
+		`  Agreement: ${agreed}/${total} stories within 0.15 threshold (${((agreed / total) * 100).toFixed(0)}%)`,
+	);
+
+	if (disagreements.length === 0) {
+		console.log("  \x1b[32mAll scores agree — routing is working well.\x1b[0m");
+		return;
+	}
+
+	// Group disagreements by EA model
+	const byModel = new Map<string, { count: number; avgDelta: number; deltas: number[] }>();
+	for (const p of disagreements) {
+		const key = modelShort(p.eaModel);
+		const entry = byModel.get(key) ?? { count: 0, avgDelta: 0, deltas: [] };
+		entry.count++;
+		entry.deltas.push(p.ea - p.base);
+		byModel.set(key, entry);
+	}
+
+	console.log("");
+	console.log("  DISAGREEMENT PATTERNS:");
+	for (const [model, data] of byModel) {
+		const avg = data.deltas.reduce((a, b) => a + b, 0) / data.deltas.length;
+		const direction = avg > 0 ? "scores higher" : "scores lower";
+		console.log(
+			`    ${model}: ${data.count} disagreement${data.count !== 1 ? "s" : ""}, avg delta ${avg >= 0 ? "+" : ""}${avg.toFixed(2)} (${direction} than baseline)`,
+		);
+	}
+
+	// Group by tier
+	const byTier = new Map<string, number>();
+	for (const p of disagreements) {
+		byTier.set(p.eaTier, (byTier.get(p.eaTier) ?? 0) + 1);
+	}
+	const tierTotal = new Map<string, number>();
+	for (const p of scorePairs) {
+		tierTotal.set(p.eaTier, (tierTotal.get(p.eaTier) ?? 0) + 1);
+	}
+
+	console.log("");
+	console.log("  DISAGREEMENT BY TIER:");
+	for (const [tier, count] of byTier) {
+		const tTotal = tierTotal.get(tier) ?? count;
+		console.log(`    ${tier}: ${count}/${tTotal} stories disagreed (${((count / tTotal) * 100).toFixed(0)}%)`);
+	}
+
+	// Large disagreements (> 0.3)
+	const large = disagreements.filter((p) => Math.abs(p.ea - p.base) > 0.3);
+	if (large.length > 0) {
+		console.log("");
+		console.log("  LARGE DISAGREEMENTS (delta > 0.3):");
+		for (const p of large) {
+			const delta = p.ea - p.base;
+			console.log(
+				`    \x1b[31m${delta >= 0 ? "+" : ""}${delta.toFixed(2)}\x1b[0m  [${modelShort(p.eaModel)}/${p.eaTier}]  "${truncate(p.title, 55)}"`,
+			);
+		}
+	}
+}
+
 // -- Memory helpers -----------------------------------------------------------
 
 function updateHNMemory(
@@ -962,12 +1068,19 @@ async function main(): Promise<void> {
 		}
 
 		// Record score pair when both baseline and EA returned results for this story
-		const pair: ScorePair = {
-			base: baseResult && !baseResult.aborted ? baseResult.storyScore.score : 0,
-			ea: eaResult && !eaResult.aborted ? eaResult.storyScore.score : 0,
-		};
-		if (fastResult) pair.fast = fastResult.score;
 		if (baseResult && !baseResult.aborted && eaResult && !eaResult.aborted) {
+			const pair: ScorePair = {
+				title: story.title,
+				base: baseResult.storyScore.score,
+				baseModel: baseResult.storyScore.model,
+				ea: eaResult.storyScore.score,
+				eaModel: eaResult.storyScore.model,
+				eaTier: discResult?.tier ?? "complex",
+			};
+			if (fastResult) {
+				pair.fast = fastResult.score;
+				pair.fastModel = fastResult.model;
+			}
 			scorePairs.push(pair);
 		}
 
@@ -987,6 +1100,7 @@ async function main(): Promise<void> {
 
 	const totalElapsed = Math.round((Date.now() - startTime) / 1000);
 	printFinalSummary(baseStats, eaStats, totalElapsed, budgetJ, scorePairs, enableFast ? fastStats : undefined);
+	printScoreAnalysis(scorePairs);
 
 	// Update and persist memory
 	updateHNMemory(mem, baseStats, eaStats, scorePairs);
