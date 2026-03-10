@@ -13,7 +13,7 @@ describe("Neuralwatt provider configuration", () => {
 		it("should have all 7 neuralwatt models", () => {
 			const models = getModels("neuralwatt");
 			expect(models.length).toBe(7);
-			const ids = models.map((m: Model<"openai-completions">) => m.id);
+			const ids = models.map((m) => m.id);
 			expect(ids).toContain("mistralai/Devstral-Small-2-24B-Instruct-2512");
 			expect(ids).toContain("openai/gpt-oss-20b");
 			expect(ids).toContain("moonshotai/Kimi-K2.5");
@@ -112,7 +112,7 @@ describe("Neuralwatt provider configuration", () => {
 
 	describe("model compat settings", () => {
 		it("should have conservative compat settings for neuralwatt models", () => {
-			const model = getModel("neuralwatt", "openai/gpt-oss-20b");
+			const model = getModel("neuralwatt", "openai/gpt-oss-20b") as Model<"openai-completions">;
 			expect(model.compat).toBeDefined();
 			expect(model.compat!.supportsStore).toBe(false);
 			expect(model.compat!.supportsDeveloperRole).toBe(false);
