@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Added
-- Fast mode (`--fast`): third comparison column using speed-optimized model aliases (Kimi K2.5 Fast)
+- Fast mode (`--fast`): third comparison column in both coding-agent and hn-watcher demos (Kimi K2.5 Fast)
 - `minTier` option on discriminator for failure-based tier escalation (escalate after 2 consecutive failures)
 - New model definitions: MiniMax M2.5, Qwen3.5 35B, Kimi K2.5 Fast, GLM-5 Fast
 - Separate input/output token cost estimation (replaces averaged pricing)
@@ -11,7 +11,7 @@
 ### Changed
 - Aggregate scorecard now only averages runs where all modes passed (apples-to-apples comparison)
 - Escalation strategy: replaced `FIX_TIER_CEILING` (maxTier per attempt) with failure-counting minTier escalation
-- Updated all model pricing from portal.neuralwatt.com (asymmetric input/output rates)
+- Updated all model pricing in both demos from portal.neuralwatt.com (asymmetric input/output rates)
 - Quality summary now shows failure status when EA/fast fails but baseline passes
 - maxTier takes precedence when minTier > maxTier (prevents silent contract violation)
 
