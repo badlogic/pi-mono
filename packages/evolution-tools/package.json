@@ -1,0 +1,26 @@
+{
+	"name": "@mariozechner/pi-evolution-tools",
+	"version": "0.57.1",
+	"description": "Pi package providing bounded skill evolution workflows and slash commands",
+	"type": "module",
+	"keywords": ["pi-package"],
+	"files": ["extensions", "skills", "src", "python", "README.md", "CHANGELOG.md"],
+	"license": "MIT",
+	"author": "Mario Zechner",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/badlogic/pi-mono.git",
+		"directory": "packages/evolution-tools"
+	},
+	"pi": {
+		"extensions": ["./extensions"],
+		"skills": ["./skills"]
+	},
+	"dependencies": {
+		"@mariozechner/pi-extension-sdk": "^0.57.1"
+	},
+	"peerDependencies": {
+		"@mariozechner/pi-coding-agent": "*",
+		"@sinclair/typebox": "*"
+	}
+}

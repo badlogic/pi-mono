@@ -1,0 +1,27 @@
+{
+	"name": "@mariozechner/pi-pokemon-tools",
+	"version": "0.57.1",
+	"description": "Pi package providing pokemon-agent integration, slash commands, and gameplay skills",
+	"type": "module",
+	"keywords": ["pi-package"],
+	"files": ["extensions", "skills", "src", "README.md", "CHANGELOG.md"],
+	"license": "MIT",
+	"author": "Mario Zechner",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/badlogic/pi-mono.git",
+		"directory": "packages/pokemon-tools"
+	},
+	"pi": {
+		"extensions": ["./extensions"],
+		"skills": ["./skills"]
+	},
+	"dependencies": {
+		"@mariozechner/pi-extension-sdk": "^0.57.1"
+	},
+	"peerDependencies": {
+		"@mariozechner/pi-ai": "*",
+		"@mariozechner/pi-coding-agent": "*",
+		"@sinclair/typebox": "*"
+	}
+}

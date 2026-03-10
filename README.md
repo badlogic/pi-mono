@@ -1,18 +1,3 @@
-<p align="center">
-  <a href="https://shittycodingagent.ai">
-    <img src="https://shittycodingagent.ai/logo.svg" alt="pi logo" width="128">
-  </a>
-</p>
-<p align="center">
-  <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
-  <a href="https://github.com/badlogic/pi-mono/actions/workflows/ci.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/badlogic/pi-mono/ci.yml?style=flat-square&branch=main" /></a>
-</p>
-<p align="center">
-  <a href="https://pi.dev">pi.dev</a> domain graciously donated by
-  <br /><br />
-  <a href="https://exe.dev"><img src="packages/coding-agent/docs/images/exy.png" alt="Exy mascot" width="48" /><br />exe.dev</a>
-</p>
-
 ![Codi Header](wallhaven-jew6op.jpg)
 
 # Codi Monorepo
@@ -29,6 +14,19 @@ This fork uses a split CLI setup:
 - `pi`: runs upstream npm-installed Pi in an isolated config dir (`~/.pi-upstream/agent`)
 
 This keeps custom Codi extensions/settings separate from upstream Pi.
+
+## Current Package Scope
+
+The custom package split in this fork is currently:
+
+- User scope (`~/.pi/agent/settings.json`): general-purpose packages you may want from any directory
+- Project scope ([`.pi/settings.json`](/Users/ever/Documents/GitHub/Codi%20/.pi/settings.json)): repo-local packages that should only load inside this checkout
+
+Current status:
+
+- `pokemon-tools` is intended for user scope so `/pokemon` and the `pokemon-player` skill are available across Codi sessions
+- `evolution-tools` stays project-scoped because it writes outputs under `<cwd>/.pi/evolution/`
+- `autoresearch-tools` remains project-scoped in this repo
 
 ## Packages
 
