@@ -19,6 +19,7 @@
  *   npx tsx src/demos/coding-agent.ts --static           (use hardcoded rate-limiter)
  *   npx tsx src/demos/coding-agent.ts --budget 25000
  *   npx tsx src/demos/coding-agent.ts --fast             (add fast-mode 3rd column)
+ *   npx tsx src/demos/coding-agent.ts --hard             (force hard difficulty challenges)
  *   npx tsx src/demos/coding-agent.ts --clear-memory
  *
  * Requires NEURALWATT_API_KEY in the environment.
@@ -353,8 +354,9 @@ const CHALLENGE_TOPICS: ChallengeTopic[] = [
 	{ topic: "cron expression parser and next-run calculator", difficulty: "hard" },
 ];
 
-function buildChallengePrompt(): { prompt: string; topic: string; difficulty: string } {
-	const entry = CHALLENGE_TOPICS[Math.floor(Math.random() * CHALLENGE_TOPICS.length)];
+function buildChallengePrompt(hardOnly = false): { prompt: string; topic: string; difficulty: string } {
+	const pool = hardOnly ? CHALLENGE_TOPICS.filter((e) => e.difficulty === "hard") : CHALLENGE_TOPICS;
+	const entry = pool[Math.floor(Math.random() * pool.length)];
 	const difficultyGuide =
 		entry.difficulty === "hard"
 			? "This is a HARD challenge. The build turns should require non-trivial algorithmic reasoning:\n" +
@@ -400,8 +402,8 @@ interface GeneratedChallenge {
 	difficulty: "standard" | "hard";
 }
 
-async function generateChallenge(apiKey: string): Promise<GeneratedChallenge | null> {
-	const challenge = buildChallengePrompt();
+async function generateChallenge(apiKey: string, hardOnly = false): Promise<GeneratedChallenge | null> {
+	const challenge = buildChallengePrompt(hardOnly);
 	const diffTag = challenge.difficulty === "hard" ? " \x1b[31m[HARD]\x1b[0m" : "";
 	process.stdout.write(`  Generating challenge via Kimi K2.5...${diffTag} topic: ${challenge.topic}`);
 	try {
@@ -1253,6 +1255,7 @@ async function buildRunConfig(
 	acceptancePath: string | undefined,
 	apiKey: string,
 	mem: ReturnType<typeof loadMemory>,
+	hardOnly = false,
 ): Promise<RunConfig> {
 	if (taskStr) {
 		const acceptanceTest = acceptancePath ? readFileSync(acceptancePath, "utf8") : null;
@@ -1284,7 +1287,7 @@ async function buildRunConfig(
 	}
 
 	// Generated: fresh challenge each call
-	const gen = await generateChallenge(apiKey);
+	const gen = await generateChallenge(apiKey, hardOnly);
 	if (gen) {
 		return {
 			taskLabel: gen.taskLabel,
@@ -1494,6 +1497,7 @@ async function main(): Promise<void> {
 			reverse: { type: "boolean", default: false }, // run EA first in every pair
 			runs: { type: "string", default: "1" }, // number of run pairs
 			fast: { type: "boolean", default: false }, // add fast mode as 3rd column
+			hard: { type: "boolean", default: false }, // force hard difficulty challenges
 			"clear-memory": { type: "boolean", default: false },
 		},
 		allowPositionals: true,
@@ -1516,6 +1520,7 @@ async function main(): Promise<void> {
 	const numRuns = Math.max(1, parseInt(values.runs ?? "1", 10));
 	const startEaFirst = values.reverse ?? false;
 	const enableFast = values.fast ?? false;
+	const enableHard = values.hard ?? false;
 
 	const mem = loadMemory();
 
@@ -1542,13 +1547,16 @@ async function main(): Promise<void> {
 	} else if (values.static) {
 		console.log(`║  Task:   ${"hardcoded rate-limiter (--static)".padEnd(60)}║`);
 	} else {
-		console.log(`║  Task:   ${"LLM-generated per run (fresh challenge each time)".padEnd(60)}║`);
+		const diffLabel = enableHard
+			? "LLM-generated per run (--hard: hard challenges only)"
+			: "LLM-generated per run (fresh challenge each time)";
+		console.log(`║  Task:   ${diffLabel.padEnd(60)}║`);
 	}
 	if (enableFast) {
 		console.log(`║  Fast:   ${`${FAST_MODEL.name} (speed-optimized 3rd column)`.padEnd(60)}║`);
 	}
 	console.log("╠══════════════════════════════════════════════════════════════════════╣");
-	console.log("║  Flags:  --runs N --reverse --budget N --static --fast --clear-memory║");
+	console.log("║  Flags:  --runs N --reverse --budget N --static --fast --hard       ║");
 	console.log("╚══════════════════════════════════════════════════════════════════════╝");
 
 	if (memSummary) {
@@ -1577,7 +1585,14 @@ async function main(): Promise<void> {
 			console.log(`${"─".repeat(70)}`);
 		}
 
-		const config = await buildRunConfig(values.static ?? false, values.task, values.acceptance, apiKey, mem);
+		const config = await buildRunConfig(
+			values.static ?? false,
+			values.task,
+			values.acceptance,
+			apiKey,
+			mem,
+			enableHard,
+		);
 
 		let baselineStats: RunStats;
 		let eaStats: RunStats;
