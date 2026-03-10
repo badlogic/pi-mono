@@ -398,6 +398,49 @@ describe("discriminate — maxTier", () => {
 	});
 });
 
+// ─── minTier clamping ────────────────────────────────────────────────────────
+
+describe("discriminate — minTier", () => {
+	it("raises simple → medium when minTier is medium", async () => {
+		mockClassifierResponse("simple", "full", "boilerplate");
+		const result = await discriminate("fix-3", "tests failed", fullConfig(), "", "key", { minTier: "medium" });
+		expect(result.tier).toBe("medium");
+		expect(result.model.id).toBe("medium-model");
+	});
+
+	it("raises simple → complex when minTier is complex", async () => {
+		mockClassifierResponse("simple", "full", "boilerplate");
+		const result = await discriminate("fix-3", "tests failed", fullConfig(), "", "key", { minTier: "complex" });
+		expect(result.tier).toBe("complex");
+		expect(result.model.id).toBe("complex-model");
+	});
+
+	it("does not raise complex when minTier is medium", async () => {
+		mockClassifierResponse("complex", "full", "hard task");
+		const result = await discriminate("fix-3", "tests failed", fullConfig(), "", "key", { minTier: "medium" });
+		expect(result.tier).toBe("complex");
+		expect(result.model.id).toBe("complex-model");
+	});
+
+	it("maxTier wins when minTier > maxTier", async () => {
+		mockClassifierResponse("simple", "full", "boilerplate");
+		const result = await discriminate("fix-3", "tests failed", fullConfig(), "", "key", {
+			minTier: "complex",
+			maxTier: "medium",
+		});
+		// maxTier=medium should take precedence over minTier=complex
+		expect(result.tier).toBe("medium");
+		expect(result.model.id).toBe("medium-model");
+	});
+
+	it("no minTier does not raise", async () => {
+		mockClassifierResponse("simple", "full", "boilerplate");
+		const result = await discriminate("fix-3", "tests failed", fullConfig(), "", "key");
+		expect(result.tier).toBe("simple");
+		expect(result.model.id).toBe("simple-model");
+	});
+});
+
 // ─── Fugue-specific scenario: tool_calling routing ───────────────────────────
 
 describe("discriminate — Fugue tool_calling scenario", () => {

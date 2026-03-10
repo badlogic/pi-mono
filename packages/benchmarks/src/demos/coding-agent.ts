@@ -5,20 +5,20 @@
  * server-side KV caching — every demo uses a different task.
  *
  * Architecture:
- *   Baseline:      Every turn uses Kimi K2.5 (powerful, 0.482 tokens/J)
- *   Energy-aware:  A lightweight discriminator (GPT-OSS-20B, 1.371 tokens/J)
- *                  classifies each prompt as "complex" (→ Kimi K2.5) or
- *                  "simple" (→ GPT-OSS-20B) before each turn.
+ *   Baseline:      Every turn uses Kimi K2.5 (0.21 tok/J)
+ *   Energy-aware:  A four-tier discriminator (GPT-OSS-20B) routes each turn:
+ *                    thinking → Kimi K2.5     ($0.52/$2.59 per 1M)
+ *                    complex  → Qwen3.5 397B  ($0.69/$4.14 per 1M)
+ *                    medium   → Devstral 24B  ($0.12/$0.35 per 1M)
+ *                    simple   → GPT-OSS 20B  ($0.03/$0.16 per 1M)
  *                  Memory accumulates per-phase discriminator accuracy across runs.
- *
- * Energy benchmarks from portal.neuralwatt.com:
- *   Kimi K2.5:    0.21 tokens/J   ($1.327/$1.327 per 1M)  ← default/baseline
- *   GPT-OSS-20B:  0.50 tokens/J   ($0.10/$0.10 per 1M)   ← 2.4x more efficient
+ *   Fast (opt-in): Every turn uses Kimi K2.5 Fast (speed-optimized alias)
  *
  * Usage:
  *   npx tsx src/demos/coding-agent.ts                    (generate new challenge)
  *   npx tsx src/demos/coding-agent.ts --static           (use hardcoded rate-limiter)
  *   npx tsx src/demos/coding-agent.ts --budget 25000
+ *   npx tsx src/demos/coding-agent.ts --fast             (add fast-mode 3rd column)
  *   npx tsx src/demos/coding-agent.ts --clear-memory
  *
  * Requires NEURALWATT_API_KEY in the environment.
@@ -38,6 +38,7 @@ import {
 	registerBuiltInApiProviders,
 } from "@mariozechner/pi-ai";
 import {
+	type DiscriminateOptions,
 	type DiscriminatorConfig,
 	type DiscriminatorTier,
 	discriminate,
@@ -60,72 +61,113 @@ import {
 /**
  * Energy efficiency (tokens per joule) from portal.neuralwatt.com.
  * Used as fallback when the API does not return energy_joules.
+ * Prefer API-reported energy_joules when available — these are approximations.
  */
 const TOKENS_PER_JOULE: Record<string, number> = {
-	"mistralai/Devstral-Small-2-24B-Instruct-2512": 9.92,
+	"mistralai/Devstral-Small-2-24B-Instruct-2512": 22.35,
 	"Qwen/Qwen3.5-397B-A17B-FP8": 1.03,
+	"Qwen/Qwen3.5-35B-A3B": 27.51,
 	"openai/gpt-oss-20b": 0.5,
 	"moonshotai/Kimi-K2.5": 0.21,
+	"MiniMaxAI/MiniMax-M2.5": 0.5,
+	"kimi-k2.5-fast": 0.21,
+	"glm-5-fast": 0.5,
+};
+
+/** Shared base for all NeuralWatt models. */
+const NW_BASE = {
+	api: "openai-completions" as const,
+	provider: "neuralwatt" as const,
+	baseUrl: "https://api.neuralwatt.com/v1",
+	reasoning: false,
+	input: ["text"] as ["text"],
 };
 
 const KIMI_MODEL: Model<"openai-completions"> = {
-	// thinking tier: 0.21 tok/J, $1.327/1M — best CoT reasoning, 262K context
+	// thinking tier: $0.52/$2.59 per 1M — best CoT reasoning, 262K context
 	id: "moonshotai/Kimi-K2.5",
 	name: "Kimi K2.5",
-	api: "openai-completions",
-	provider: "neuralwatt",
-	baseUrl: "https://api.neuralwatt.com/v1",
-	reasoning: false,
-	input: ["text"],
-	cost: { input: 1.327, output: 1.327, cacheRead: 0, cacheWrite: 0 },
+	...NW_BASE,
+	cost: { input: 0.52, output: 2.59, cacheRead: 0, cacheWrite: 0 },
 	contextWindow: 262_144,
 	maxTokens: 16_384,
 };
 
 const QWEN_MODEL: Model<"openai-completions"> = {
-	// complex tier: 1.03 tok/J, $0/1M — 397B MoE (17B active), high quality, no CoT overhead
+	// complex tier: $0.69/$4.14 per 1M — 397B MoE (17B active), high quality
 	id: "Qwen/Qwen3.5-397B-A17B-FP8",
 	name: "Qwen3.5 397B",
-	api: "openai-completions",
-	provider: "neuralwatt",
-	baseUrl: "https://api.neuralwatt.com/v1",
-	reasoning: false,
-	input: ["text"],
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	...NW_BASE,
+	cost: { input: 0.69, output: 4.14, cacheRead: 0, cacheWrite: 0 },
 	contextWindow: 262_144,
 	maxTokens: 16_384,
 };
 
 const DEVSTRAL_MODEL: Model<"openai-completions"> = {
-	// medium tier: 9.92 tok/J, $0.12/1M — most energy-efficient model, 262K context
+	// medium tier: 22.35 tok/J, $0.12/$0.35 per 1M — most energy-efficient, 262K context
 	id: "mistralai/Devstral-Small-2-24B-Instruct-2512",
 	name: "Devstral 24B",
-	api: "openai-completions",
-	provider: "neuralwatt",
-	baseUrl: "https://api.neuralwatt.com/v1",
-	reasoning: false,
-	input: ["text"],
-	cost: { input: 0.12, output: 0.12, cacheRead: 0, cacheWrite: 0 },
+	...NW_BASE,
+	cost: { input: 0.12, output: 0.35, cacheRead: 0, cacheWrite: 0 },
 	contextWindow: 262_144,
 	maxTokens: 8_192,
 };
 
 const GPT_OSS_MODEL: Model<"openai-completions"> = {
-	// simple tier + discriminator: 0.50 tok/J, $0.10/1M — cheap and fast
+	// simple tier + discriminator: $0.03/$0.16 per 1M — cheapest model
 	id: "openai/gpt-oss-20b",
 	name: "GPT-OSS 20B",
-	api: "openai-completions",
-	provider: "neuralwatt",
-	baseUrl: "https://api.neuralwatt.com/v1",
-	reasoning: false,
-	input: ["text"],
-	cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 },
+	...NW_BASE,
+	cost: { input: 0.03, output: 0.16, cacheRead: 0, cacheWrite: 0 },
 	contextWindow: 16_384,
 	maxTokens: 4_096,
 };
 
+const MINIMAX_MODEL: Model<"openai-completions"> = {
+	// $0.35/$1.38 per 1M — 196K context, tools+JSON
+	id: "MiniMaxAI/MiniMax-M2.5",
+	name: "MiniMax M2.5",
+	...NW_BASE,
+	cost: { input: 0.35, output: 1.38, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 196_608,
+	maxTokens: 16_384,
+};
+
+const QWEN_35B_MODEL: Model<"openai-completions"> = {
+	// 27.51 tok/J, $0.29/$1.15 per 1M — small MoE, very energy-efficient, 16K context
+	id: "Qwen/Qwen3.5-35B-A3B",
+	name: "Qwen3.5 35B",
+	...NW_BASE,
+	cost: { input: 0.29, output: 1.15, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 16_384,
+	maxTokens: 4_096,
+};
+
+const KIMI_FAST_MODEL: Model<"openai-completions"> = {
+	// fast alias of Kimi K2.5 — speed-optimized, $0.52/$2.59 per 1M
+	id: "kimi-k2.5-fast",
+	name: "Kimi K2.5 Fast",
+	...NW_BASE,
+	cost: { input: 0.52, output: 2.59, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 262_144,
+	maxTokens: 16_384,
+};
+
+const GLM_FAST_MODEL: Model<"openai-completions"> = {
+	// fast alias of GLM-5 — speed-optimized, $0.92/$2.94 per 1M, 200K context
+	id: "glm-5-fast",
+	name: "GLM-5 Fast",
+	...NW_BASE,
+	cost: { input: 0.92, output: 2.94, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 200_000,
+	maxTokens: 16_384,
+};
+
 /** Default model for baseline and EA complex turns. */
 const DEFAULT_MODEL = KIMI_MODEL;
+
+/** Default model for fast mode. */
+const FAST_MODEL = KIMI_FAST_MODEL;
 
 /**
  * Budget sized for Kimi K2.5 (~3100J/turn).
@@ -542,7 +584,12 @@ function printTurnHeader(
 	energy: number,
 	budget: number,
 ): void {
-	const tag = mode === "baseline" ? "\x1b[36m[baseline ]\x1b[0m" : "\x1b[35m[energy-▼ ]\x1b[0m";
+	const tag =
+		mode === "baseline"
+			? "\x1b[36m[baseline ]\x1b[0m"
+			: mode === "fast"
+				? "\x1b[33m[fast     ]\x1b[0m"
+				: "\x1b[35m[energy-▼ ]\x1b[0m";
 	console.log(`\n${tag} ${phase}  model: ${modelId}  ${energyBar(energy, budget)}`);
 	if (decisionLabel) {
 		console.log(`           \x1b[33m${decisionLabel}\x1b[0m`);
@@ -581,6 +628,8 @@ interface TurnResult {
 	model: string;
 	energy: number;
 	tokens: number;
+	inputTokens: number;
+	outputTokens: number;
 	cacheRead: number;
 	/** Human-readable decision label shown in scorecard. */
 	decision: string;
@@ -611,7 +660,7 @@ interface RunStats {
 }
 
 async function runCodingAgent(
-	mode: "baseline" | "energy-aware",
+	mode: "baseline" | "energy-aware" | "fast",
 	config: RunConfig,
 	mem: ReturnType<typeof loadMemory>,
 	apiKey: string,
@@ -636,13 +685,20 @@ async function runCodingAgent(
 	console.log(`  Running: ${mode.toUpperCase()} mode  |  Budget: ${budgetJ}J (display only)`);
 	if (mode === "energy-aware") {
 		console.log("  Routing: discriminator (GPT-OSS-20B) classifies each prompt → Kimi or GPT-OSS");
+	} else if (mode === "fast") {
+		console.log(`  Model: ${FAST_MODEL.name} (speed-optimized alias)`);
 	}
 	console.log(`${"═".repeat(70)}`);
 
 	/**
 	 * Execute one turn. In EA mode, calls the discriminator first to select model.
 	 */
-	async function runTurn(prompt: string, phaseLabel: string, maxTier?: DiscriminatorTier): Promise<void> {
+	async function runTurn(
+		prompt: string,
+		phaseLabel: string,
+		maxTier?: DiscriminatorTier,
+		minTier?: DiscriminatorTier,
+	): Promise<void> {
 		const turnNum = stats.turns.length + 1;
 		const phase = simplifyPhase(phaseLabel);
 
@@ -655,14 +711,15 @@ async function runCodingAgent(
 
 		if (mode === "energy-aware") {
 			const memCtx = buildDiscriminatorContext(phase, MEMORY_KEY, mem);
-			const discOpts = maxTier ? { maxTier } : undefined;
+			const discOptsArg: DiscriminateOptions | undefined =
+				maxTier || minTier ? { ...(maxTier && { maxTier }), ...(minTier && { minTier }) } : undefined;
 			const disc: RoutingDecision = await discriminate(
 				phase,
 				prompt,
 				DISCRIMINATOR_CONFIG,
 				memCtx,
 				apiKey,
-				discOpts,
+				discOptsArg,
 			);
 			discriminatorDecision = disc.tier;
 			discriminatorReason = disc.reason;
@@ -686,7 +743,7 @@ async function runCodingAgent(
 			const briefLabel = turnMaxTokens ? ` \x1b[2m[brief: max ${turnMaxTokens} tok]\x1b[0m` : "";
 			decisionLabel = `↳ discriminated: ${discriminatorDecision} → ${modelLabel}${memLabel}${briefLabel}  (${discriminatorEnergyJ.toFixed(1)}J)  reason: ${disc.reason}`;
 		} else {
-			effectiveModel = DEFAULT_MODEL;
+			effectiveModel = mode === "fast" ? FAST_MODEL : DEFAULT_MODEL;
 			decisionLabel = "";
 		}
 
@@ -735,6 +792,8 @@ async function runCodingAgent(
 			model: effectiveModel.id,
 			energy,
 			tokens,
+			inputTokens,
+			outputTokens: assistantMsg.usage.output,
 			cacheRead,
 			decision: decisionLabel,
 			discriminatorDecision,
@@ -779,13 +838,28 @@ async function runCodingAgent(
 		}
 
 		const MAX_FIX_ATTEMPTS = 5;
-		// Progressive escalation: start cheap, give each tier a fair shot, then escalate.
-		// fix 1-2: medium (Devstral), fix 3: complex (Qwen), fix 4-5: thinking (Kimi)
-		const FIX_TIER_CEILING: DiscriminatorTier[] = ["medium", "medium", "complex", "thinking", "thinking"];
+		// Failure-based escalation: after 2 consecutive failures at the same tier,
+		// force the next fix to use at least one tier above the failing tier.
+		const TIER_ESCALATION: DiscriminatorTier[] = ["simple", "medium", "complex", "thinking"];
+		const MAX_FAILURES_BEFORE_ESCALATION = 2;
 		let fixAttempt = 0;
+		let consecutiveFailuresAtTier = 0;
+		let currentMinTier: DiscriminatorTier | undefined;
+		let lastFixTier: DiscriminatorTier | undefined;
 		while (!testResult.passed && fixAttempt < MAX_FIX_ATTEMPTS) {
 			fixAttempt++;
-			const fixMaxTier = FIX_TIER_CEILING[Math.min(fixAttempt - 1, FIX_TIER_CEILING.length - 1)];
+			// Escalate: jump one tier above the actual failing tier (not currentMinTier)
+			if (lastFixTier && consecutiveFailuresAtTier >= MAX_FAILURES_BEFORE_ESCALATION) {
+				const failingIdx = TIER_ESCALATION.indexOf(lastFixTier);
+				if (failingIdx < TIER_ESCALATION.length - 1) {
+					currentMinTier = TIER_ESCALATION[failingIdx + 1];
+					console.log(
+						`  \x1b[33m↑ Escalating: ${MAX_FAILURES_BEFORE_ESCALATION} failures at ${lastFixTier} → minTier=${currentMinTier}\x1b[0m`,
+					);
+					// Reset to 1 (not 0): the last failure counts as the first at the new tier
+					consecutiveFailuresAtTier = 1;
+				}
+			}
 			const fixTurnLabel = `[fix #${fixAttempt}]`;
 			const failureSummary =
 				testResult.failedTests.length > 0
@@ -803,12 +877,16 @@ async function runCodingAgent(
 				"Make sure all classes and functions are named exports (use 'export class', 'export function'). " +
 				"No external imports. Output raw TypeScript only — no markdown fences.";
 
-			await runTurn(fixPrompt, fixTurnLabel, fixMaxTier);
+			await runTurn(fixPrompt, fixTurnLabel, undefined, currentMinTier);
 
 			const fixMsg = messages[messages.length - 1] as AssistantMessage;
 			code = extractCode(extractText(fixMsg));
 			testResult = runAcceptanceTest(code, config.acceptanceTest);
 			printTestResults(testResult);
+
+			// Track which tier was used for escalation logic
+			const fixTurn = stats.turns[stats.turns.length - 1];
+			const fixTierUsed = fixTurn.discriminatorDecision;
 
 			if (testResult.passed) {
 				stats.testPassed = true;
@@ -817,6 +895,14 @@ async function runCodingAgent(
 					`\n  \x1b[32m✓ All acceptance tests passed on turn ${stats.turns.length} (+${fixAttempt} fix${fixAttempt !== 1 ? "es" : ""})\x1b[0m`,
 				);
 			} else {
+				// Track consecutive failures at the same effective tier for escalation
+				if (fixTierUsed && fixTierUsed === lastFixTier) {
+					consecutiveFailuresAtTier++;
+				} else {
+					consecutiveFailuresAtTier = 1;
+				}
+				lastFixTier = fixTierUsed;
+
 				// Track any newly-failing tests during fix iterations
 				for (const f of testResult.failedTests) {
 					const name = f.includes(": ") ? f.slice(0, f.indexOf(": ")) : f;
@@ -841,6 +927,35 @@ async function runCodingAgent(
 	return stats;
 }
 
+// -- Cost helpers -------------------------------------------------------------
+
+/** All known models for cost lookup. */
+const ALL_MODELS: Model<"openai-completions">[] = [
+	KIMI_MODEL,
+	KIMI_FAST_MODEL,
+	QWEN_MODEL,
+	QWEN_35B_MODEL,
+	DEVSTRAL_MODEL,
+	GPT_OSS_MODEL,
+	MINIMAX_MODEL,
+	GLM_FAST_MODEL,
+];
+
+/** Look up a model's cost rates (per 1M tokens) by model ID. */
+function modelCostRates(modelId: string): { input: number; output: number } {
+	const model = ALL_MODELS.find((m) => m.id === modelId);
+	if (!model) return { input: KIMI_MODEL.cost.input, output: KIMI_MODEL.cost.output };
+	return { input: model.cost.input, output: model.cost.output };
+}
+
+/** Estimate total cost for a set of turns using separate input/output pricing. */
+function estimateCost(turns: { inputTokens: number; outputTokens: number; model: string }[]): number {
+	return turns.reduce((sum, t) => {
+		const rates = modelCostRates(t.model);
+		return sum + (t.inputTokens * rates.input + t.outputTokens * rates.output) / 1_000_000;
+	}, 0);
+}
+
 // -- Scorecard ----------------------------------------------------------------
 
 function printScorecard(
@@ -849,6 +964,7 @@ function printScorecard(
 	config: RunConfig,
 	budget: number,
 	runLabel = "",
+	fast?: RunStats,
 ): void {
 	const baseTime = (baseline.endTime - baseline.startTime) / 1000;
 	const eaTime = (energyAware.endTime - energyAware.startTime) / 1000;
@@ -856,89 +972,141 @@ function printScorecard(
 		baseline.totalEnergy > 0 ? ((baseline.totalEnergy - energyAware.totalEnergy) / baseline.totalEnergy) * 100 : 0;
 	const timeDelta = baseTime > 0 ? ((eaTime - baseTime) / baseTime) * 100 : 0;
 
-	const modelPrice = (modelId: string): number => {
-		if (modelId.includes("gpt-oss")) return 0.1 / 1_000_000;
-		if (modelId.includes("Devstral")) return 0.12 / 1_000_000;
-		if (modelId.includes("Qwen")) return 0; // Qwen3.5-397B is free
-		return 1.327 / 1_000_000; // Kimi default
-	};
-	const baseCost = baseline.turns.reduce((sum, t) => sum + t.tokens * modelPrice(t.model), 0);
-	const eaCost = energyAware.turns.reduce((sum, t) => sum + t.tokens * modelPrice(t.model), 0);
+	const baseCost = estimateCost(baseline.turns);
+	const eaCost = estimateCost(energyAware.turns);
 	const costSaved = baseCost > 0 ? ((baseCost - eaCost) / baseCost) * 100 : 0;
 
 	const fmtDelta = (val: number, positive = "+"): string => `${val >= 0 ? positive : ""}${val.toFixed(0)}%`;
 
 	const consolidateTurnOffset = config.buildTurns.length + 1;
 	const fmtQuality = (s: RunStats): string => {
-		if (!config.acceptanceTest) return "n/a (no tests)       ";
+		if (!config.acceptanceTest) return "n/a (no tests)";
 		if (s.testPassed === true) {
 			const fixCount = s.turnsToPass != null ? Math.max(0, s.turnsToPass - consolidateTurnOffset) : 0;
 			const fixes = fixCount > 0 ? `, +${fixCount} fix${fixCount !== 1 ? "es" : ""}` : ", +0 fixes";
 			return `✓ PASSED (turn ${s.turnsToPass}${fixes})`;
 		}
-		return "✗ FAILED             ";
+		return "✗ FAILED";
 	};
 
 	// Model distribution for EA mode
-	const countTurns = (id: string) => energyAware.turns.filter((t) => t.model === id).length;
+	const countTurns = (stats: RunStats, id: string) => stats.turns.filter((t) => t.model === id).length;
 	const eaModelParts = [
-		countTurns(KIMI_MODEL.id) > 0 ? `Kimi:${countTurns(KIMI_MODEL.id)}` : null,
-		countTurns(QWEN_MODEL.id) > 0 ? `Qwen:${countTurns(QWEN_MODEL.id)}` : null,
-		countTurns(DEVSTRAL_MODEL.id) > 0 ? `Devstral:${countTurns(DEVSTRAL_MODEL.id)}` : null,
-		countTurns(GPT_OSS_MODEL.id) > 0 ? `GPT-OSS:${countTurns(GPT_OSS_MODEL.id)}` : null,
+		countTurns(energyAware, KIMI_MODEL.id) > 0 ? `Kimi:${countTurns(energyAware, KIMI_MODEL.id)}` : null,
+		countTurns(energyAware, QWEN_MODEL.id) > 0 ? `Qwen:${countTurns(energyAware, QWEN_MODEL.id)}` : null,
+		countTurns(energyAware, DEVSTRAL_MODEL.id) > 0 ? `Devstral:${countTurns(energyAware, DEVSTRAL_MODEL.id)}` : null,
+		countTurns(energyAware, GPT_OSS_MODEL.id) > 0 ? `GPT-OSS:${countTurns(energyAware, GPT_OSS_MODEL.id)}` : null,
 	].filter((p): p is string => p !== null);
 	const eaModelLabel = `${eaModelParts.join(", ")} (discriminator)`;
+
+	const hasFast = fast != null;
+
+	// Fast mode stats (computed only when present)
+	const fastTime = hasFast ? (fast.endTime - fast.startTime) / 1000 : 0;
+	const fastEnergySaved =
+		hasFast && baseline.totalEnergy > 0
+			? ((baseline.totalEnergy - fast.totalEnergy) / baseline.totalEnergy) * 100
+			: 0;
+	const fastTimeDelta = hasFast && baseTime > 0 ? ((fastTime - baseTime) / baseTime) * 100 : 0;
+	const fastCost = hasFast ? estimateCost(fast.turns) : 0;
+	const fastCostSaved = hasFast && baseCost > 0 ? ((baseCost - fastCost) / baseCost) * 100 : 0;
 
 	const header = runLabel
 		? `SCORECARD ${runLabel} — Coding Agent Energy Challenge`
 		: "FINAL SCORECARD — Coding Agent Energy Challenge";
-	console.log(`\n${"═".repeat(70)}`);
+
+	// Column widths adapt to 2-col or 3-col layout
+	const colW = hasFast ? 21 : 25;
+	const rowSep = hasFast
+		? "  +-----------------+-------------------+---------------------+---------------------+"
+		: "  +-----------------+-------------------+---------------------------+";
+
+	console.log(`\n${"═".repeat(hasFast ? 82 : 70)}`);
 	console.log(`  ${header}`);
-	console.log(`${"═".repeat(70)}`);
+	console.log(`${"═".repeat(hasFast ? 82 : 70)}`);
 	console.log(`  Task:   ${config.taskLabel}`);
 	console.log(
 		`  Budget: ${budget}J (display)  |  ${config.generated ? `LLM-generated challenge${config.difficulty === "hard" ? " \x1b[31m[HARD]\x1b[0m" : ""}` : "hardcoded rate-limiter"}`,
 	);
-	console.log("  +-----------------+-------------------+---------------------------+");
-	console.log("  |                 | Baseline          | Energy-Aware              |");
-	console.log("  +-----------------+-------------------+---------------------------+");
-	console.log(`  | Model(s)        | ${"Kimi K2.5 (all)".padEnd(17)} | ${eaModelLabel.padEnd(25)} |`);
-	console.log(
-		`  | Turns           | ${String(baseline.turns.length).padEnd(17)} | ${String(energyAware.turns.length).padEnd(25)} |`,
+	console.log(rowSep);
+	if (hasFast) {
+		console.log(`  |                 | Baseline          | Energy-Aware        | Fast                |`);
+	} else {
+		console.log("  |                 | Baseline          | Energy-Aware              |");
+	}
+	console.log(rowSep);
+
+	// Helper for building rows
+	const row = (label: string, baseVal: string, eaVal: string, fastVal?: string): void => {
+		if (hasFast && fastVal != null) {
+			console.log(`  | ${label.padEnd(15)} | ${baseVal.padEnd(17)} | ${eaVal.padEnd(19)} | ${fastVal.padEnd(19)} |`);
+		} else {
+			console.log(`  | ${label.padEnd(15)} | ${baseVal.padEnd(17)} | ${eaVal.padEnd(colW)} |`);
+		}
+	};
+
+	const fastModelLabel = hasFast ? `${FAST_MODEL.name} (all)` : undefined;
+	row("Model(s)", "Kimi K2.5 (all)", eaModelLabel, fastModelLabel);
+	row(
+		"Turns",
+		String(baseline.turns.length),
+		String(energyAware.turns.length),
+		hasFast ? String(fast.turns.length) : undefined,
 	);
-	console.log(
-		`  | Energy used     | ${`${baseline.totalEnergy.toFixed(0)} J`.padEnd(17)} | ${`${energyAware.totalEnergy.toFixed(0)} J  (${fmtDelta(-energySaved, "-")} saved)`.padEnd(25)} |`,
+	row(
+		"Energy used",
+		`${baseline.totalEnergy.toFixed(0)} J`,
+		`${energyAware.totalEnergy.toFixed(0)} J  (${fmtDelta(-energySaved, "-")})`,
+		hasFast ? `${fast.totalEnergy.toFixed(0)} J  (${fmtDelta(-fastEnergySaved, "-")})` : undefined,
 	);
+
 	if (energyAware.totalDiscriminatorEnergyJ > 0) {
-		console.log(
-			`  | Discriminator   | ${"n/a".padEnd(17)} | ${`${energyAware.totalDiscriminatorEnergyJ.toFixed(1)}J (incl. in energy ↑)`.padEnd(25)} |`,
+		row(
+			"Discriminator",
+			"n/a",
+			`${energyAware.totalDiscriminatorEnergyJ.toFixed(1)}J (incl. ↑)`,
+			hasFast ? "n/a" : undefined,
 		);
 	}
-	const totalCacheRead = baseline.totalCacheRead + energyAware.totalCacheRead;
+
+	const totalCacheRead = baseline.totalCacheRead + energyAware.totalCacheRead + (hasFast ? fast.totalCacheRead : 0);
 	if (totalCacheRead > 0) {
 		const fmtCache = (cr: number, inp: number) => {
 			if (cr === 0) return "none";
 			const totalPrompt = inp + cr;
 			const pct = totalPrompt > 0 ? Math.round((cr / totalPrompt) * 100) : 0;
-			return `\x1b[33m${cr} tok (${pct}% of input)\x1b[0m`;
+			return `\x1b[33m${cr} tok (${pct}%)\x1b[0m`;
 		};
-		console.log(
-			`  | Cache reads     | ${fmtCache(baseline.totalCacheRead, baseline.totalInputTokens).padEnd(17)} | ${fmtCache(energyAware.totalCacheRead, energyAware.totalInputTokens).padEnd(25)} |`,
+		row(
+			"Cache reads",
+			fmtCache(baseline.totalCacheRead, baseline.totalInputTokens),
+			fmtCache(energyAware.totalCacheRead, energyAware.totalInputTokens),
+			hasFast ? fmtCache(fast.totalCacheRead, fast.totalInputTokens) : undefined,
 		);
 	}
-	console.log(
-		`  | Est. cost       | ${`$${baseCost.toFixed(4)}`.padEnd(17)} | ${`$${eaCost.toFixed(4)}  (${fmtDelta(-costSaved, "-")} saved)`.padEnd(25)} |`,
+
+	row(
+		"Est. cost",
+		`$${baseCost.toFixed(4)}`,
+		`$${eaCost.toFixed(4)}  (${fmtDelta(-costSaved, "-")})`,
+		hasFast ? `$${fastCost.toFixed(4)}  (${fmtDelta(-fastCostSaved, "-")})` : undefined,
 	);
-	console.log(
-		`  | Tokens used     | ${String(baseline.totalTokens).padEnd(17)} | ${String(energyAware.totalTokens).padEnd(25)} |`,
+	row(
+		"Tokens used",
+		String(baseline.totalTokens),
+		String(energyAware.totalTokens),
+		hasFast ? String(fast.totalTokens) : undefined,
 	);
-	console.log(
-		`  | Wall time       | ${`${baseTime.toFixed(1)} s`.padEnd(17)} | ${`${eaTime.toFixed(1)} s  (${fmtDelta(timeDelta)})`.padEnd(25)} |`,
+	row(
+		"Wall time",
+		`${baseTime.toFixed(1)} s`,
+		`${eaTime.toFixed(1)} s  (${fmtDelta(timeDelta)})`,
+		hasFast ? `${fastTime.toFixed(1)} s  (${fmtDelta(fastTimeDelta)})` : undefined,
 	);
 	if (config.acceptanceTest) {
-		console.log(`  | Quality         | ${fmtQuality(baseline).padEnd(17)} | ${fmtQuality(energyAware).padEnd(25)} |`);
+		row("Quality", fmtQuality(baseline), fmtQuality(energyAware), hasFast ? fmtQuality(fast) : undefined);
 	}
-	console.log("  +-----------------+-------------------+---------------------------+");
+	console.log(rowSep);
 
 	// Per-turn routing decisions for EA
 	const eaDecisions = energyAware.turns.filter((t) => t.discriminatorDecision);
@@ -968,12 +1136,28 @@ function printScorecard(
 	}
 
 	console.log("");
-	if (energySaved > 0) {
-		const qualitySame =
-			baseline.testPassed === true && energyAware.testPassed === true ? " — same quality outcome" : "";
-		console.log(
-			`  \x1b[32m✓ Energy-aware: ${energySaved.toFixed(0)}% less energy, ${costSaved.toFixed(0)}% lower cost${qualitySame}\x1b[0m`,
-		);
+	// Summary line for each mode — account for quality differences
+	const fmtSummary = (
+		label: string,
+		color: string,
+		saved: number,
+		costPct: number,
+		passed: boolean | undefined,
+		baselinePassed: boolean | undefined,
+	): void => {
+		if (passed === false && baselinePassed === true) {
+			console.log(`  \x1b[31m✗ ${label}: ${saved.toFixed(0)}% less energy but FAILED (baseline passed)\x1b[0m`);
+		} else if (saved > 0) {
+			const qualitySame = baselinePassed === true && passed === true ? " — same quality outcome" : "";
+			console.log(
+				`  ${color}✓ ${label}: ${saved.toFixed(0)}% less energy, ${costPct.toFixed(0)}% lower cost${qualitySame}\x1b[0m`,
+			);
+		}
+	};
+
+	fmtSummary("Energy-aware", "\x1b[32m", energySaved, costSaved, energyAware.testPassed, baseline.testPassed);
+	if (hasFast) {
+		fmtSummary("Fast mode", "\x1b[33m", fastEnergySaved, fastCostSaved, fast.testPassed, baseline.testPassed);
 	}
 }
 
@@ -1056,6 +1240,7 @@ interface RunPair {
 	config: RunConfig;
 	baseline: RunStats;
 	ea: RunStats;
+	fast?: RunStats;
 }
 
 /**
@@ -1124,51 +1309,92 @@ async function buildRunConfig(
 }
 
 function printAggregateScorecard(pairs: RunPair[]): void {
+	const hasFast = pairs.some((p) => p.fast != null);
 	const baselineFirstCount = pairs.filter((p) => p.order === "baseline-first").length;
 	const eaFirstCount = pairs.filter((p) => p.order === "ea-first").length;
-
-	const avgBaseEnergy = pairs.reduce((s, p) => s + p.baseline.totalEnergy, 0) / pairs.length;
-	const avgEaEnergy = pairs.reduce((s, p) => s + p.ea.totalEnergy, 0) / pairs.length;
-	const avgSavedPct =
-		pairs.reduce((s, p) => {
-			const saved =
-				p.baseline.totalEnergy > 0
-					? ((p.baseline.totalEnergy - p.ea.totalEnergy) / p.baseline.totalEnergy) * 100
-					: 0;
-			return s + saved;
-		}, 0) / pairs.length;
 
 	const basePassed = pairs.filter((p) => p.baseline.testPassed).length;
 	const eaPassed = pairs.filter((p) => p.ea.testPassed).length;
 	const totalCacheBase = pairs.reduce((s, p) => s + p.baseline.totalCacheRead, 0);
 	const totalCacheEa = pairs.reduce((s, p) => s + p.ea.totalCacheRead, 0);
 
-	const kimiPrice = 1.327 / 1_000_000;
-	const gptPrice = 0.1 / 1_000_000;
-	const avgBaseCost =
-		pairs.reduce((s, p) => s + p.baseline.turns.reduce((ts, t) => ts + t.tokens * kimiPrice, 0), 0) / pairs.length;
-	const avgEaCost =
-		pairs.reduce(
-			(s, p) =>
-				s + p.ea.turns.reduce((ts, t) => ts + t.tokens * (t.model.includes("gpt-oss") ? gptPrice : kimiPrice), 0),
-			0,
-		) / pairs.length;
+	// Fast pass/cache counts (all pairs)
+	const fastPairs = pairs.filter((p): p is RunPair & { fast: RunStats } => p.fast != null);
+	const fastPassed = hasFast ? fastPairs.filter((p) => p.fast.testPassed).length : 0;
+	const totalCacheFast = hasFast ? fastPairs.reduce((s, p) => s + p.fast.totalCacheRead, 0) : 0;
+
+	// Only average runs where ALL modes passed (apples-to-apples comparison)
+	const allPassed = pairs.filter((p) => {
+		if (!p.baseline.testPassed || !p.ea.testPassed) return false;
+		if (p.fast && !p.fast.testPassed) return false;
+		return true;
+	});
+	const nPassed = allPassed.length;
+
+	const avgBaseEnergy = nPassed > 0 ? allPassed.reduce((s, p) => s + p.baseline.totalEnergy, 0) / nPassed : 0;
+	const avgEaEnergy = nPassed > 0 ? allPassed.reduce((s, p) => s + p.ea.totalEnergy, 0) / nPassed : 0;
+	const avgSavedPct =
+		nPassed > 0
+			? allPassed.reduce((s, p) => {
+					const saved =
+						p.baseline.totalEnergy > 0
+							? ((p.baseline.totalEnergy - p.ea.totalEnergy) / p.baseline.totalEnergy) * 100
+							: 0;
+					return s + saved;
+				}, 0) / nPassed
+			: 0;
+
+	const avgBaseCost = nPassed > 0 ? allPassed.reduce((s, p) => s + estimateCost(p.baseline.turns), 0) / nPassed : 0;
+	const avgEaCost = nPassed > 0 ? allPassed.reduce((s, p) => s + estimateCost(p.ea.turns), 0) / nPassed : 0;
 	const avgCostSavedPct = avgBaseCost > 0 ? ((avgBaseCost - avgEaCost) / avgBaseCost) * 100 : 0;
+
+	// Fast aggregates (only all-passed runs)
+	const allPassedFast = allPassed.filter((p): p is RunPair & { fast: RunStats } => p.fast != null);
+	const avgFastEnergy =
+		hasFast && allPassedFast.length > 0
+			? allPassedFast.reduce((s, p) => s + p.fast.totalEnergy, 0) / allPassedFast.length
+			: 0;
+	const avgFastSavedPct =
+		hasFast && allPassedFast.length > 0
+			? allPassedFast.reduce((s, p) => {
+					const saved =
+						p.baseline.totalEnergy > 0
+							? ((p.baseline.totalEnergy - p.fast.totalEnergy) / p.baseline.totalEnergy) * 100
+							: 0;
+					return s + saved;
+				}, 0) / allPassedFast.length
+			: 0;
+	const avgFastCost =
+		hasFast && allPassedFast.length > 0
+			? allPassedFast.reduce((s, p) => s + estimateCost(p.fast.turns), 0) / allPassedFast.length
+			: 0;
+	const avgFastCostSavedPct = hasFast && avgBaseCost > 0 ? ((avgBaseCost - avgFastCost) / avgBaseCost) * 100 : 0;
 
 	const taskCol = 32;
 	const pad = (s: string, n: number) => s.slice(0, n).padEnd(n);
+	const tableWidth = hasFast ? 100 : 80;
 
-	console.log(`\n${"═".repeat(80)}`);
+	console.log(`\n${"═".repeat(tableWidth)}`);
 	console.log(
 		`  AGGREGATE — ${pairs.length} run${pairs.length !== 1 ? "s" : ""}  (${baselineFirstCount} baseline-first, ${eaFirstCount} ea-first)`,
 	);
-	console.log(`${"═".repeat(80)}`);
-	console.log(
-		`  ${"#  Task".padEnd(taskCol)}  ${"Order".padEnd(10)}  ${"Baseline".padEnd(10)}  ${"EA".padEnd(10)}  ${"Saved".padEnd(6)}  Quality`,
-	);
-	console.log(
-		`  ${"─".repeat(taskCol)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(6)}  ───────`,
-	);
+	console.log(`${"═".repeat(tableWidth)}`);
+
+	if (hasFast) {
+		console.log(
+			`  ${"#  Task".padEnd(taskCol)}  ${"Order".padEnd(10)}  ${"Baseline".padEnd(10)}  ${"EA".padEnd(10)}  ${"Fast".padEnd(10)}  ${"Saved".padEnd(6)}  Quality`,
+		);
+		console.log(
+			`  ${"─".repeat(taskCol)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(6)}  ───────`,
+		);
+	} else {
+		console.log(
+			`  ${"#  Task".padEnd(taskCol)}  ${"Order".padEnd(10)}  ${"Baseline".padEnd(10)}  ${"EA".padEnd(10)}  ${"Saved".padEnd(6)}  Quality`,
+		);
+		console.log(
+			`  ${"─".repeat(taskCol)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(6)}  ───────`,
+		);
+	}
 
 	for (const p of pairs) {
 		const orderLabel = p.order === "baseline-first" ? "base→ea" : "ea→base";
@@ -1176,32 +1402,83 @@ function printAggregateScorecard(pairs: RunPair[]): void {
 			p.baseline.totalEnergy > 0 ? ((p.baseline.totalEnergy - p.ea.totalEnergy) / p.baseline.totalEnergy) * 100 : 0;
 		const qualLabel = `${p.baseline.testPassed ? "✓" : "✗"}/${p.ea.testPassed ? "✓" : "✗"}`;
 		const taskStr = `${p.runIndex + 1}  ${p.config.taskLabel}`;
-		const cacheFlag = p.baseline.totalCacheRead + p.ea.totalCacheRead > 0 ? " \x1b[33m[C]\x1b[0m" : "";
-		console.log(
-			`  ${pad(taskStr, taskCol)}  ${orderLabel.padEnd(10)}  ${`${p.baseline.totalEnergy.toFixed(0)}J`.padEnd(10)}  ${`${p.ea.totalEnergy.toFixed(0)}J`.padEnd(10)}  ${`${savedPct.toFixed(0)}%`.padEnd(6)}  ${qualLabel}${cacheFlag}`,
-		);
+		const cacheFlag =
+			p.baseline.totalCacheRead + p.ea.totalCacheRead + (p.fast?.totalCacheRead ?? 0) > 0
+				? " \x1b[33m[C]\x1b[0m"
+				: "";
+		if (hasFast) {
+			const fastEnergy = p.fast ? `${p.fast.totalEnergy.toFixed(0)}J` : "n/a";
+			const qualFast = p.fast ? `/${p.fast.testPassed ? "✓" : "✗"}` : "";
+			console.log(
+				`  ${pad(taskStr, taskCol)}  ${orderLabel.padEnd(10)}  ${`${p.baseline.totalEnergy.toFixed(0)}J`.padEnd(10)}  ${`${p.ea.totalEnergy.toFixed(0)}J`.padEnd(10)}  ${fastEnergy.padEnd(10)}  ${`${savedPct.toFixed(0)}%`.padEnd(6)}  ${qualLabel}${qualFast}${cacheFlag}`,
+			);
+		} else {
+			console.log(
+				`  ${pad(taskStr, taskCol)}  ${orderLabel.padEnd(10)}  ${`${p.baseline.totalEnergy.toFixed(0)}J`.padEnd(10)}  ${`${p.ea.totalEnergy.toFixed(0)}J`.padEnd(10)}  ${`${savedPct.toFixed(0)}%`.padEnd(6)}  ${qualLabel}${cacheFlag}`,
+			);
+		}
 	}
 
-	console.log(
-		`  ${"─".repeat(taskCol)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(6)}  ───────`,
-	);
-	console.log(
-		`  ${"avg".padEnd(taskCol)}  ${"".padEnd(10)}  ${`${avgBaseEnergy.toFixed(0)}J`.padEnd(10)}  ${`${avgEaEnergy.toFixed(0)}J`.padEnd(10)}  ${`${avgSavedPct.toFixed(0)}%`.padEnd(6)}  ${basePassed}/${pairs.length} / ${eaPassed}/${pairs.length}`,
-	);
-	console.log(
-		`  ${"est. cost".padEnd(taskCol)}  ${"".padEnd(10)}  ${`$${avgBaseCost.toFixed(4)}`.padEnd(10)}  ${`$${avgEaCost.toFixed(4)}`.padEnd(10)}  ${`${avgCostSavedPct.toFixed(0)}%`.padEnd(6)}`,
-	);
+	const avgLabel = nPassed < pairs.length ? `avg (${nPassed}/${pairs.length} all-pass)` : "avg";
+	if (hasFast) {
+		console.log(
+			`  ${"─".repeat(taskCol)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(6)}  ───────`,
+		);
+		console.log(
+			`  ${"passed".padEnd(taskCol)}  ${"".padEnd(10)}  ${"".padEnd(10)}  ${"".padEnd(10)}  ${"".padEnd(10)}  ${"".padEnd(6)}  ${basePassed}/${pairs.length} / ${eaPassed}/${pairs.length} / ${fastPassed}/${fastPairs.length}`,
+		);
+		if (nPassed > 0) {
+			console.log(
+				`  ${avgLabel.padEnd(taskCol)}  ${"".padEnd(10)}  ${`${avgBaseEnergy.toFixed(0)}J`.padEnd(10)}  ${`${avgEaEnergy.toFixed(0)}J`.padEnd(10)}  ${`${avgFastEnergy.toFixed(0)}J`.padEnd(10)}  ${`${avgSavedPct.toFixed(0)}%`.padEnd(6)}`,
+			);
+			console.log(
+				`  ${"est. cost".padEnd(taskCol)}  ${"".padEnd(10)}  ${`$${avgBaseCost.toFixed(4)}`.padEnd(10)}  ${`$${avgEaCost.toFixed(4)}`.padEnd(10)}  ${`$${avgFastCost.toFixed(4)}`.padEnd(10)}  ${`${avgCostSavedPct.toFixed(0)}%`.padEnd(6)}`,
+			);
+		}
+	} else {
+		console.log(
+			`  ${"─".repeat(taskCol)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(10)}  ${"─".repeat(6)}  ───────`,
+		);
+		console.log(
+			`  ${"passed".padEnd(taskCol)}  ${"".padEnd(10)}  ${"".padEnd(10)}  ${"".padEnd(10)}  ${"".padEnd(6)}  ${basePassed}/${pairs.length} / ${eaPassed}/${pairs.length}`,
+		);
+		if (nPassed > 0) {
+			console.log(
+				`  ${avgLabel.padEnd(taskCol)}  ${"".padEnd(10)}  ${`${avgBaseEnergy.toFixed(0)}J`.padEnd(10)}  ${`${avgEaEnergy.toFixed(0)}J`.padEnd(10)}  ${`${avgSavedPct.toFixed(0)}%`.padEnd(6)}`,
+			);
+			console.log(
+				`  ${"est. cost".padEnd(taskCol)}  ${"".padEnd(10)}  ${`$${avgBaseCost.toFixed(4)}`.padEnd(10)}  ${`$${avgEaCost.toFixed(4)}`.padEnd(10)}  ${`${avgCostSavedPct.toFixed(0)}%`.padEnd(6)}`,
+			);
+		}
+	}
 
-	if (totalCacheBase + totalCacheEa > 0) {
+	const totalCacheAll = totalCacheBase + totalCacheEa + totalCacheFast;
+	if (totalCacheAll > 0) {
 		console.log(`\n  \x1b[33m[C] = cache reads detected — results for those runs may be skewed\x1b[0m`);
-		console.log(`  Cache reads: baseline=${totalCacheBase} tok, ea=${totalCacheEa} tok across all runs`);
+		const fastLabel = hasFast ? `, fast=${totalCacheFast} tok` : "";
+		console.log(`  Cache reads: baseline=${totalCacheBase} tok, ea=${totalCacheEa} tok${fastLabel} across all runs`);
 	}
-	console.log(`${"═".repeat(80)}`);
+	console.log(`${"═".repeat(tableWidth)}`);
 
-	if (avgSavedPct > 0) {
-		console.log(
-			`\n  \x1b[32m✓ Average energy savings: ${avgSavedPct.toFixed(0)}%, average cost savings: ${avgCostSavedPct.toFixed(0)}%\x1b[0m`,
-		);
+	if (nPassed === 0) {
+		console.log(`\n  \x1b[31mNo runs where all modes passed — no averages to compare.\x1b[0m`);
+	} else {
+		if (nPassed < pairs.length) {
+			const skipped = pairs.length - nPassed;
+			console.log(
+				`\n  \x1b[33m${skipped} run${skipped !== 1 ? "s" : ""} excluded — only runs where all modes passed acceptance tests are counted in averages.\x1b[0m`,
+			);
+		}
+		if (avgSavedPct > 0) {
+			console.log(
+				`  \x1b[32m✓ Average energy savings: ${avgSavedPct.toFixed(0)}%, cost savings: ${avgCostSavedPct.toFixed(0)}%\x1b[0m`,
+			);
+		}
+		if (hasFast && avgFastSavedPct > 0) {
+			console.log(
+				`  \x1b[33m✓ Fast mode avg savings: ${avgFastSavedPct.toFixed(0)}% energy, ${avgFastCostSavedPct.toFixed(0)}% cost\x1b[0m`,
+			);
+		}
 	}
 }
 
@@ -1216,6 +1493,7 @@ async function main(): Promise<void> {
 			static: { type: "boolean", default: false },
 			reverse: { type: "boolean", default: false }, // run EA first in every pair
 			runs: { type: "string", default: "1" }, // number of run pairs
+			fast: { type: "boolean", default: false }, // add fast mode as 3rd column
 			"clear-memory": { type: "boolean", default: false },
 		},
 		allowPositionals: true,
@@ -1237,6 +1515,7 @@ async function main(): Promise<void> {
 	const budgetJ = Number(values.budget);
 	const numRuns = Math.max(1, parseInt(values.runs ?? "1", 10));
 	const startEaFirst = values.reverse ?? false;
+	const enableFast = values.fast ?? false;
 
 	const mem = loadMemory();
 
@@ -1265,8 +1544,11 @@ async function main(): Promise<void> {
 	} else {
 		console.log(`║  Task:   ${"LLM-generated per run (fresh challenge each time)".padEnd(60)}║`);
 	}
+	if (enableFast) {
+		console.log(`║  Fast:   ${`${FAST_MODEL.name} (speed-optimized 3rd column)`.padEnd(60)}║`);
+	}
 	console.log("╠══════════════════════════════════════════════════════════════════════╣");
-	console.log("║  Flags:  --runs N  --reverse  --budget N  --static  --clear-memory  ║");
+	console.log("║  Flags:  --runs N --reverse --budget N --static --fast --clear-memory║");
 	console.log("╚══════════════════════════════════════════════════════════════════════╝");
 
 	if (memSummary) {
@@ -1299,6 +1581,7 @@ async function main(): Promise<void> {
 
 		let baselineStats: RunStats;
 		let eaStats: RunStats;
+		let fastStats: RunStats | undefined;
 
 		if (order === "baseline-first") {
 			baselineStats = await runCodingAgent("baseline", config, mem, apiKey, budgetJ);
@@ -1308,13 +1591,17 @@ async function main(): Promise<void> {
 			baselineStats = await runCodingAgent("baseline", config, mem, apiKey, budgetJ);
 		}
 
+		if (enableFast) {
+			fastStats = await runCodingAgent("fast", config, mem, apiKey, budgetJ);
+		}
+
 		const runLabel = numRuns > 1 ? `(Run ${i + 1}/${numRuns})` : "";
-		printScorecard(baselineStats, eaStats, config, budgetJ, runLabel);
+		printScorecard(baselineStats, eaStats, config, budgetJ, runLabel, fastStats);
 
 		updateCodingMemory(mem, baselineStats, eaStats);
 		saveMemory(mem);
 
-		pairs.push({ runIndex: i, order, config, baseline: baselineStats, ea: eaStats });
+		pairs.push({ runIndex: i, order, config, baseline: baselineStats, ea: eaStats, fast: fastStats });
 	}
 
 	if (numRuns > 1) {
