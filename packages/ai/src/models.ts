@@ -34,9 +34,11 @@ export function getProviders(): KnownProvider[] {
 
 export function getModels<TProvider extends GeneratedProvider>(
 	provider: TProvider,
-): Model<ModelApi<TProvider, keyof (typeof MODELS)[TProvider]>>[] {
+): Model<ModelApi<TProvider, keyof (typeof MODELS)[TProvider]>>[];
+export function getModels(provider: string): Model<Api>[];
+export function getModels(provider: string): Model<Api>[] {
 	const models = modelRegistry.get(provider);
-	return models ? (Array.from(models.values()) as Model<ModelApi<TProvider, keyof (typeof MODELS)[TProvider]>>[]) : [];
+	return models ? (Array.from(models.values()) as Model<Api>[]) : [];
 }
 
 export function calculateCost<TApi extends Api>(model: Model<TApi>, usage: Usage): Usage["cost"] {
