@@ -17,11 +17,21 @@ triggers:
 
 Play Pokemon autonomously through the `pokemon` tool.
 
+## Invocation Rule
+
+If this skill is invoked directly without an accompanying user message, treat that as an explicit request to start the Pokemon workflow.
+
+- Do not ask what project, codebase, or task the user wants to work on.
+- Start by running `pokemon` with action `setup`.
+- If a ROM path is missing, ask only for the legal local ROM path.
+- Once a ROM path is available, continue with the normal startup flow.
+
 ## Guardrails
 
 - The package never downloads or distributes ROMs.
 - Ask the user for a legal local ROM path if they have not provided one.
 - Prefer a named session when the user wants to keep multiple runs.
+- If the user gives a ROM path without an extension, try it as-is and then common ROM suffixes such as `.gb`, `.gbc`, and `.gba`.
 
 ## First-Time Setup
 
@@ -33,11 +43,23 @@ If setup reports missing dependencies, tell the user exactly what is missing. Th
 pip install pokemon-agent[dashboard] pyboy
 ```
 
+Prefer a dedicated Pokemon venv when possible. The package looks for:
+
+- `~/.pi/agent/tools/pokemon-agent/.venv`
+- `POKEMON_AGENT_PYTHON` if explicitly set
+
 ## Starting a Session
 
 1. Ask for a ROM path if it is missing.
 2. Run `pokemon` with action `start`, `romPath`, and optionally `session`, `port`, `dataDir`, or `loadState`.
 3. Tell the user about the dashboard URL when the tool reports one.
+
+Mental model:
+
+- session name = emulator workspace
+- save name = checkpoint inside that workspace
+
+If the user wants a clean slate, prefer a new session name over deleting old data immediately.
 
 ## Gameplay Loop
 
@@ -71,7 +93,7 @@ If the screen is ambiguous, call `pokemon` with action `screenshot` and inspect 
 
 ## Battle Strategy
 
-Use simple Gen 1 priorities:
+Use simple Gen 1 priorities for Red/Blue-style runs:
 
 - Prefer super-effective damaging moves.
 - Switch or play conservatively when at a strong type disadvantage.
@@ -86,6 +108,18 @@ Key matchups:
 - Electric beats Water, Flying.
 - Ground beats Fire, Electric, Rock, Poison.
 - Psychic is unusually strong in Gen 1.
+
+For GBA runs such as Emerald, treat those Gen 1 notes as a loose fallback only. Prefer current state, move effectiveness, and safer exploration over Gen 1-specific assumptions.
+
+## Reference Material
+
+Use repo references as supporting context, not as a ROM replacement:
+
+- `pret/pokered`: useful for Gen 1 maps, memory notes, and progression references
+- `pret/pokefirered`: useful for FireRed/LeafGreen internals
+- `pret/pokeemerald`: useful for Emerald-specific mechanics and map/progression references
+
+These decompilation projects help with reasoning about the game state, but the emulator still requires a legal local ROM file to run.
 
 ## Save Discipline
 
@@ -142,3 +176,8 @@ If state does not change after several actions:
 1. Save with a clear slot name such as `session-end`.
 2. Summarize progress for the user.
 3. Stop the server with `pokemon` action `stop`.
+
+If the user asks how to clean up fully, explain that they can:
+
+1. Stop the session.
+2. Delete the session metadata file, log file, and session data directory under `~/.pi/agent/tools/pokemon-agent/`.

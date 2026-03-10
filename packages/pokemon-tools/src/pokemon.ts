@@ -98,6 +98,7 @@ const DEFAULT_SESSION = "default";
 const DEFAULT_HEALTH_TIMEOUT_MS = 30_000;
 const HEALTH_POLL_INTERVAL_MS = 500;
 const SESSION_NAME_RE = /[^a-zA-Z0-9._-]+/g;
+const ROM_EXTENSIONS = [".gb", ".gbc", ".gba"];
 
 export const pokemonRuntime = {
 	runProcessSync(
@@ -162,6 +163,13 @@ function pokemonToolsRoot(): string {
 	return path.join(resolveAgentDir(), "tools", "pokemon-agent");
 }
 
+function pokemonVenvPythonCandidates(): string[] {
+	const root = pokemonToolsRoot();
+	const binDir = process.platform === "win32" ? "Scripts" : "bin";
+	const exeName = process.platform === "win32" ? "python.exe" : "python";
+	return [path.join(root, ".venv", binDir, exeName), path.join(root, "venv", binDir, exeName)];
+}
+
 function sanitizeSessionName(session: string | undefined): string {
 	const cleaned = (session?.trim() || DEFAULT_SESSION).replace(SESSION_NAME_RE, "-").replace(/^-+|-+$/g, "");
 	return cleaned || DEFAULT_SESSION;
@@ -176,6 +184,20 @@ function expandHome(candidate: string): string {
 function resolveMaybeRelativePath(cwd: string, candidate: string): string {
 	const expanded = expandHome(candidate.trim());
 	return path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(cwd, expanded);
+}
+
+function resolveRomPath(cwd: string, candidate: string): string {
+	const base = resolveMaybeRelativePath(cwd, candidate);
+	if (fs.existsSync(base)) {
+		return base;
+	}
+	for (const extension of ROM_EXTENSIONS) {
+		const withExtension = `${base}${extension}`;
+		if (fs.existsSync(withExtension)) {
+			return withExtension;
+		}
+	}
+	return base;
 }
 
 function metadataRootForSession(session: string): string {
@@ -214,7 +236,17 @@ export function clearPokemonSessionMetadata(session: string | undefined): void {
 }
 
 function detectPython(): CommandProbe {
-	for (const candidate of ["python3", "python"]) {
+	const explicit = process.env.POKEMON_AGENT_PYTHON?.trim();
+	const candidates = [
+		...(explicit ? [expandHome(explicit)] : []),
+		...pokemonVenvPythonCandidates(),
+		"python3",
+		"python",
+	];
+	for (const candidate of candidates) {
+		if ((candidate.includes(path.sep) || path.isAbsolute(candidate)) && !fs.existsSync(candidate)) {
+			continue;
+		}
 		const result = pokemonRuntime.runProcessSync(candidate, ["--version"]);
 		if (result.ok) {
 			const version = `${result.stdout}\n${result.stderr}`.trim().split(/\r?\n/)[0];
@@ -286,7 +318,7 @@ export function buildPokemonSetupDiagnostics(
 	const python = detectPython();
 	const pokemonAgent = detectPokemonAgent(python);
 	const pyboy = detectPythonModule(python, "pyboy");
-	const romPath = request.romPath ? resolveMaybeRelativePath(cwd, request.romPath) : undefined;
+	const romPath = request.romPath ? resolveRomPath(cwd, request.romPath) : undefined;
 	const romExists = romPath ? fs.existsSync(romPath) : undefined;
 	const guidance: string[] = [];
 

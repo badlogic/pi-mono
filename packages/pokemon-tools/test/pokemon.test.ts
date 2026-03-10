@@ -87,6 +87,44 @@ describe("pokemon tools", () => {
 		expect(diagnostics.guidance.join("\n")).toContain("Install python3");
 	});
 
+	it("prefers the dedicated pokemon venv python when available", () => {
+		const expectedPython = path.join(
+			agentDir,
+			"tools",
+			"pokemon-agent",
+			".venv",
+			process.platform === "win32" ? "Scripts" : "bin",
+			process.platform === "win32" ? "python.exe" : "python",
+		);
+		fs.mkdirSync(path.dirname(expectedPython), { recursive: true });
+		fs.writeFileSync(expectedPython, "");
+		const spawnSync = vi.spyOn(pokemonRuntime, "runProcessSync");
+		spawnSync
+			.mockReturnValueOnce(commandResult(true, "", "Python 3.12.7"))
+			.mockReturnValueOnce(commandResult(true, "pokemon-agent 0.1.0", ""))
+			.mockReturnValueOnce(commandResult(true, "1.0.0", ""));
+
+		const diagnostics = buildPokemonSetupDiagnostics(process.cwd(), {});
+		expect(diagnostics.python.commandPrefix[0]).toBe(expectedPython);
+		expect(diagnostics.pokemonAgent.available).toBe(true);
+		expect(diagnostics.pyboy.available).toBe(true);
+	});
+
+	it("resolves rom paths when the extension is omitted", () => {
+		const romPath = path.join(agentDir, "Pokemon - Emerald Version (USA, Europe).gba");
+		fs.writeFileSync(romPath, "rom");
+		const spawnSync = vi.spyOn(pokemonRuntime, "runProcessSync");
+		spawnSync
+			.mockReturnValueOnce(commandResult(false, "", "missing"))
+			.mockReturnValueOnce(commandResult(false, "", "missing"));
+
+		const diagnostics = buildPokemonSetupDiagnostics(process.cwd(), {
+			romPath: romPath.slice(0, -4),
+		});
+		expect(diagnostics.romPath).toBe(romPath);
+		expect(diagnostics.romExists).toBe(true);
+	});
+
 	it("parses slash command requests", () => {
 		expect(parsePokemonCommand('start --rom "./poke.gb" --session firered --port 9000').request).toEqual({
 			action: "start",
