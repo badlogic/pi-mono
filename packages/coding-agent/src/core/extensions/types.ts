@@ -339,6 +339,10 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	label: string;
 	/** Description for LLM */
 	description: string;
+	/** Optional one-line snippet for the Available tools section in the default system prompt. Falls back to description when omitted. */
+	promptSnippet?: string;
+	/** Optional guideline bullets appended to the default system prompt Guidelines section when this tool is active. */
+	promptGuidelines?: string[];
 	/** Parameter schema (TypeBox) */
 	parameters: TParams;
 
@@ -352,10 +356,14 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	): Promise<AgentToolResult<TDetails>>;
 
 	/** Custom rendering for tool call display */
-	renderCall?: (args: Static<TParams>, theme: Theme) => Component;
+	renderCall?: (args: Static<TParams>, theme: Theme) => Component | undefined;
 
 	/** Custom rendering for tool result display */
-	renderResult?: (result: AgentToolResult<TDetails>, options: ToolRenderResultOptions, theme: Theme) => Component;
+	renderResult?: (
+		result: AgentToolResult<TDetails>,
+		options: ToolRenderResultOptions,
+		theme: Theme,
+	) => Component | undefined;
 }
 
 // ============================================================================
@@ -379,6 +387,12 @@ export interface ResourcesDiscoverResult {
 // ============================================================================
 // Session Events
 // ============================================================================
+
+/** Fired before session manager creation to allow custom session directory resolution */
+export interface SessionDirectoryEvent {
+	type: "session_directory";
+	cwd: string;
+}
 
 /** Fired on initial session load */
 export interface SessionStartEvent {
@@ -464,6 +478,7 @@ export interface SessionTreeEvent {
 }
 
 export type SessionEvent =
+	| SessionDirectoryEvent
 	| SessionStartEvent
 	| SessionBeforeSwitchEvent
 	| SessionSwitchEvent
@@ -483,6 +498,12 @@ export type SessionEvent =
 export interface ContextEvent {
 	type: "context";
 	messages: AgentMessage[];
+}
+
+/** Fired before a provider request is sent. Can replace the payload. */
+export interface BeforeProviderRequestEvent {
+	type: "before_provider_request";
+	payload: unknown;
 }
 
 /** Fired after user submits prompt but before agent loop. */
@@ -799,6 +820,7 @@ export type ExtensionEvent =
 	| ResourcesDiscoverEvent
 	| SessionEvent
 	| ContextEvent
+	| BeforeProviderRequestEvent
 	| BeforeAgentStartEvent
 	| AgentStartEvent
 	| AgentEndEvent
@@ -824,6 +846,8 @@ export interface ContextEventResult {
 	messages?: AgentMessage[];
 }
 
+export type BeforeProviderRequestEventResult = unknown;
+
 export interface ToolCallEventResult {
 	block?: boolean;
 	reason?: string;
@@ -848,6 +872,16 @@ export interface BeforeAgentStartEventResult {
 	/** Replace the system prompt for this turn. If multiple extensions return this, they are chained. */
 	systemPrompt?: string;
 }
+
+export interface SessionDirectoryResult {
+	/** Custom session directory path. If multiple extensions return this, the last one wins. */
+	sessionDir?: string;
+}
+
+/** Special startup-only handler. Unlike other events, this receives no ExtensionContext. */
+export type SessionDirectoryHandler = (
+	event: SessionDirectoryEvent,
+) => Promise<SessionDirectoryResult | undefined> | SessionDirectoryResult | undefined;
 
 export interface SessionBeforeSwitchResult {
 	cancel?: boolean;
@@ -919,6 +953,7 @@ export interface ExtensionAPI {
 	// =========================================================================
 
 	on(event: "resources_discover", handler: ExtensionHandler<ResourcesDiscoverEvent, ResourcesDiscoverResult>): void;
+	on(event: "session_directory", handler: SessionDirectoryHandler): void;
 	on(event: "session_start", handler: ExtensionHandler<SessionStartEvent>): void;
 	on(
 		event: "session_before_switch",
@@ -936,6 +971,10 @@ export interface ExtensionAPI {
 	on(event: "session_before_tree", handler: ExtensionHandler<SessionBeforeTreeEvent, SessionBeforeTreeResult>): void;
 	on(event: "session_tree", handler: ExtensionHandler<SessionTreeEvent>): void;
 	on(event: "context", handler: ExtensionHandler<ContextEvent, ContextEventResult>): void;
+	on(
+		event: "before_provider_request",
+		handler: ExtensionHandler<BeforeProviderRequestEvent, BeforeProviderRequestEventResult>,
+	): void;
 	on(event: "before_agent_start", handler: ExtensionHandler<BeforeAgentStartEvent, BeforeAgentStartEventResult>): void;
 	on(event: "agent_start", handler: ExtensionHandler<AgentStartEvent>): void;
 	on(event: "agent_end", handler: ExtensionHandler<AgentEndEvent>): void;
@@ -1071,6 +1110,11 @@ export interface ExtensionAPI {
 	 * If `oauth` is provided: registers OAuth provider for /login support.
 	 * If `streamSimple` is provided: registers a custom API stream handler.
 	 *
+	 * During initial extension load this call is queued and applied once the
+	 * runner has bound its context. After that it takes effect immediately, so
+	 * it is safe to call from command handlers or event callbacks without
+	 * requiring a `/reload`.
+	 *
 	 * @example
 	 * // Register a new provider with custom models
 	 * pi.registerProvider("my-proxy", {
@@ -1111,6 +1155,21 @@ export interface ExtensionAPI {
 	 * });
 	 */
 	registerProvider(name: string, config: ProviderConfig): void;
+
+	/**
+	 * Unregister a previously registered provider.
+	 *
+	 * Removes all models belonging to the named provider and restores any
+	 * built-in models that were overridden by it. Has no effect if the provider
+	 * is not currently registered.
+	 *
+	 * Like `registerProvider`, this takes effect immediately when called after
+	 * the initial load phase.
+	 *
+	 * @example
+	 * pi.unregisterProvider("my-proxy");
+	 */
+	unregisterProvider(name: string): void;
 
 	/** Shared event bus for extension communication. */
 	events: EventBus;
@@ -1231,6 +1290,8 @@ export type GetCommandsHandler = () => SlashCommandInfo[];
 
 export type SetActiveToolsHandler = (toolNames: string[]) => void;
 
+export type RefreshToolsHandler = () => void;
+
 export type SetModelHandler = (model: Model<any>) => Promise<boolean>;
 
 export type GetThinkingLevelHandler = () => ThinkingLevel;
@@ -1247,6 +1308,14 @@ export interface ExtensionRuntimeState {
 	flagValues: Map<string, boolean | string>;
 	/** Provider registrations queued during extension loading, processed when runner binds */
 	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig }>;
+	/**
+	 * Register or unregister a provider.
+	 *
+	 * Before bindCore(): queues registrations / removes from queue.
+	 * After bindCore(): calls ModelRegistry directly for immediate effect.
+	 */
+	registerProvider: (name: string, config: ProviderConfig) => void;
+	unregisterProvider: (name: string) => void;
 }
 
 /**
@@ -1263,6 +1332,7 @@ export interface ExtensionActions {
 	getActiveTools: GetActiveToolsHandler;
 	getAllTools: GetAllToolsHandler;
 	setActiveTools: SetActiveToolsHandler;
+	refreshTools: RefreshToolsHandler;
 	getCommands: GetCommandsHandler;
 	setModel: SetModelHandler;
 	getThinkingLevel: GetThinkingLevelHandler;

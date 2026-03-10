@@ -174,6 +174,11 @@ function detectColorMode(): ColorMode {
 	if (process.env.TERM_PROGRAM === "Apple_Terminal") {
 		return "256color";
 	}
+	// GNU screen doesn't support truecolor unless explicitly opted in via COLORTERM=truecolor.
+	// TERM under screen is typically "screen", "screen-256color", or "screen.xterm-256color".
+	if (term === "screen" || term.startsWith("screen-") || term.startsWith("screen.")) {
+		return "256color";
+	}
 	// Assume truecolor for everything else - virtually all modern terminals support it
 	return "truecolor";
 }

@@ -14,9 +14,10 @@ import {
 	type OpenAICompletionsCompat,
 	type OpenAIResponsesCompat,
 	registerApiProvider,
-	registerOAuthProvider,
+	resetApiProviders,
 	type SimpleStreamOptions,
 } from "@mariozechner/pi-ai";
+import { registerOAuthProvider, resetOAuthProviders } from "@mariozechner/pi-ai/oauth";
 import { type Static, Type } from "@sinclair/typebox";
 import AjvModule from "ajv";
 import { existsSync, readFileSync } from "fs";
@@ -26,6 +27,7 @@ import type { AuthStorage } from "./auth-storage.js";
 import { clearConfigValueCache, resolveConfigValue, resolveHeaders } from "./resolve-config-value.js";
 
 const Ajv = (AjvModule as any).default || AjvModule;
+const ajv = new Ajv();
 
 // Schema for OpenRouter routing preferences
 const OpenRouterRoutingSchema = Type.Object({
@@ -67,6 +69,7 @@ const ModelDefinitionSchema = Type.Object({
 	id: Type.String({ minLength: 1 }),
 	name: Type.Optional(Type.String({ minLength: 1 })),
 	api: Type.Optional(Type.String({ minLength: 1 })),
+	baseUrl: Type.Optional(Type.String({ minLength: 1 })),
 	reasoning: Type.Optional(Type.Boolean()),
 	input: Type.Optional(Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]))),
 	cost: Type.Optional(
@@ -117,6 +120,8 @@ const ProviderConfigSchema = Type.Object({
 const ModelsConfigSchema = Type.Object({
 	providers: Type.Record(Type.String(), ProviderConfigSchema),
 });
+
+ajv.addSchema(ModelsConfigSchema, "ModelsConfig");
 
 type ModelsConfig = Static<typeof ModelsConfigSchema>;
 
@@ -243,6 +248,11 @@ export class ModelRegistry {
 	refresh(): void {
 		this.customProviderApiKeys.clear();
 		this.loadError = undefined;
+
+		// Ensure dynamic API/OAuth registrations are rebuilt from current provider state.
+		resetApiProviders();
+		resetOAuthProviders();
+
 		this.loadModels();
 
 		for (const [providerName, config] of this.registeredProviders.entries()) {
@@ -343,8 +353,7 @@ export class ModelRegistry {
 			const config: ModelsConfig = JSON.parse(content);
 
 			// Validate schema
-			const ajv = new Ajv();
-			const validate = ajv.compile(ModelsConfigSchema);
+			const validate = ajv.getSchema("ModelsConfig")!;
 			if (!validate(config)) {
 				const errors =
 					validate.errors?.map((e: any) => `  - ${e.instancePath || "root"}: ${e.message}`).join("\n") ||
@@ -460,15 +469,15 @@ export class ModelRegistry {
 					}
 				}
 
-				// baseUrl is validated to exist for providers with models
-				// Apply defaults for optional fields
+				// Provider baseUrl is required when custom models are defined.
+				// Individual models can override it with modelDef.baseUrl.
 				const defaultCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 				models.push({
 					id: modelDef.id,
 					name: modelDef.name ?? modelDef.id,
 					api: api as Api,
 					provider: providerName,
-					baseUrl: providerConfig.baseUrl!,
+					baseUrl: modelDef.baseUrl ?? providerConfig.baseUrl!,
 					reasoning: modelDef.reasoning ?? false,
 					input: (modelDef.input ?? ["text"]) as ("text" | "image")[],
 					cost: modelDef.cost ?? defaultCost,
@@ -540,6 +549,22 @@ export class ModelRegistry {
 		this.applyProviderConfig(providerName, config);
 	}
 
+	/**
+	 * Unregister a previously registered provider.
+	 *
+	 * Removes the provider from the registry and reloads models from disk so that
+	 * built-in models overridden by this provider are restored to their original state.
+	 * Also resets dynamic OAuth and API stream registrations before reapplying
+	 * remaining dynamic providers.
+	 * Has no effect if the provider was never registered.
+	 */
+	unregisterProvider(providerName: string): void {
+		if (!this.registeredProviders.has(providerName)) return;
+		this.registeredProviders.delete(providerName);
+		this.customProviderApiKeys.delete(providerName);
+		this.refresh();
+	}
+
 	private applyProviderConfig(providerName: string, config: ProviderConfigInput): void {
 		// Register OAuth provider if provided
 		if (config.oauth) {
@@ -556,11 +581,14 @@ export class ModelRegistry {
 				throw new Error(`Provider ${providerName}: "api" is required when registering streamSimple.`);
 			}
 			const streamSimple = config.streamSimple;
-			registerApiProvider({
-				api: config.api,
-				stream: (model, context, options) => streamSimple(model, context, options as SimpleStreamOptions),
-				streamSimple,
-			});
+			registerApiProvider(
+				{
+					api: config.api,
+					stream: (model, context, options) => streamSimple(model, context, options as SimpleStreamOptions),
+					streamSimple,
+				},
+				`provider:${providerName}`,
+			);
 		}
 
 		// Store API key for auth resolution
@@ -654,6 +682,7 @@ export interface ProviderConfigInput {
 		id: string;
 		name: string;
 		api?: Api;
+		baseUrl?: string;
 		reasoning: boolean;
 		input: ("text" | "image")[];
 		cost: { input: number; output: number; cacheRead: number; cacheWrite: number };

@@ -93,6 +93,9 @@ const handle = tui.showOverlay(component, {
 
   // Responsive visibility
   visible: (termWidth, termHeight) => termWidth >= 100  // Hide on narrow terminals
+
+  // Focus behavior
+  nonCapturing: true       // Don't auto-focus when shown
 });
 
 // OverlayHandle methods
@@ -100,6 +103,9 @@ handle.hide();              // Permanently remove the overlay
 handle.setHidden(true);     // Temporarily hide (can show again)
 handle.setHidden(false);    // Show again after hiding
 handle.isHidden();          // Check if temporarily hidden
+handle.focus();             // Focus and bring to visual front
+handle.unfocus();           // Release focus to previous target
+handle.isFocused();         // Check if overlay has focus
 
 // Hide topmost overlay
 tui.hideOverlay();

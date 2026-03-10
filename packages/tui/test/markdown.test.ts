@@ -757,6 +757,29 @@ bar`,
 			assert.ok(!barLine?.includes("\x1b[36m"), `bar line should NOT have cyan color: ${barLine}`);
 		});
 
+		it("should render list content inside blockquotes", () => {
+			const markdown = new Markdown(
+				`> 1. bla bla
+> - nested bullet`,
+				0,
+				0,
+				defaultMarkdownTheme,
+			);
+
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+			const quotedLines = plainLines.filter((line) => line.startsWith("│ "));
+
+			assert.ok(
+				quotedLines.some((line) => line.includes("1. bla bla")),
+				`Missing ordered list item: ${JSON.stringify(quotedLines)}`,
+			);
+			assert.ok(
+				quotedLines.some((line) => line.includes("- nested bullet")),
+				`Missing unordered list item: ${JSON.stringify(quotedLines)}`,
+			);
+		});
+
 		it("should wrap long blockquote lines and add border to each wrapped line", () => {
 			const longText = "This is a very long blockquote line that should wrap to multiple lines when rendered";
 			const markdown = new Markdown(`> ${longText}`, 0, 0, defaultMarkdownTheme);

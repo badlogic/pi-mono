@@ -23,8 +23,12 @@ Pi implements the [Agent Skills standard](https://agentskills.io/specification),
 
 Pi loads skills from:
 
-- Global: `~/.pi/agent/skills/`
-- Project: `.pi/skills/`
+- Global:
+  - `~/.pi/agent/skills/`
+  - `~/.agents/skills/`
+- Project:
+  - `.pi/skills/`
+  - `.agents/skills/` in `cwd` and ancestor directories (up to git repo root, or filesystem root when not in a repo)
 - Packages: `skills/` directories or `pi.skills` entries in `package.json`
 - Settings: `skills` array with files or directories
 - CLI: `--skill <path>` (repeatable, additive even with `--no-skills`)

@@ -88,13 +88,20 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 		const blocks = output.content as Block[];
 
 		const config: BedrockRuntimeClientConfig = {
-			region: options.region,
 			profile: options.profile,
 		};
 
 		// in Node.js/Bun environment only
 		if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
-			config.region = config.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
+			// Region resolution: explicit option > env vars > SDK default chain.
+			// When AWS_PROFILE is set, we leave region undefined so the SDK can
+			// resovle it from aws profile configs. Otherwise fall back to us-east-1.
+			const explicitRegion = options.region || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
+			if (explicitRegion) {
+				config.region = explicitRegion;
+			} else if (!process.env.AWS_PROFILE) {
+				config.region = "us-east-1";
+			}
 
 			// Support proxies that don't need authentication
 			if (process.env.AWS_BEDROCK_SKIP_AUTH === "1") {
@@ -129,15 +136,17 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 				const nodeHttpHandler = await import("@smithy/node-http-handler");
 				config.requestHandler = new nodeHttpHandler.NodeHttpHandler();
 			}
+		} else {
+			// Non-Node environment (browser): fall back to us-east-1 since
+			// there's no config file resolution available.
+			config.region = options.region || "us-east-1";
 		}
-
-		config.region = config.region || "us-east-1";
 
 		try {
 			const client = new BedrockRuntimeClient(config);
 
 			const cacheRetention = resolveCacheRetention(options.cacheRetention);
-			const commandInput = {
+			let commandInput = {
 				modelId: model.id,
 				messages: convertMessages(context, model, cacheRetention),
 				system: buildSystemPrompt(context.systemPrompt, model, cacheRetention),
@@ -145,7 +154,10 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 				toolConfig: convertToolConfig(context.tools, options.toolChoice),
 				additionalModelRequestFields: buildAdditionalModelRequestFields(model, options),
 			};
-			options?.onPayload?.(commandInput);
+			const nextCommandInput = await options?.onPayload?.(commandInput, model);
+			if (nextCommandInput !== undefined) {
+				commandInput = nextCommandInput as typeof commandInput;
+			}
 			const command = new ConverseStreamCommand(commandInput);
 
 			const response = await client.send(command, { abortSignal: options.signal });
@@ -371,13 +383,21 @@ function handleContentBlockStop(
 }
 
 /**
- * Check if the model supports adaptive thinking (Opus 4.6+).
+ * Check if the model supports adaptive thinking (Opus 4.6 and Sonnet 4.6).
  */
 function supportsAdaptiveThinking(modelId: string): boolean {
-	return modelId.includes("opus-4-6") || modelId.includes("opus-4.6");
+	return (
+		modelId.includes("opus-4-6") ||
+		modelId.includes("opus-4.6") ||
+		modelId.includes("sonnet-4-6") ||
+		modelId.includes("sonnet-4.6")
+	);
 }
 
-function mapThinkingLevelToEffort(level: SimpleStreamOptions["reasoning"]): "low" | "medium" | "high" | "max" {
+function mapThinkingLevelToEffort(
+	level: SimpleStreamOptions["reasoning"],
+	modelId: string,
+): "low" | "medium" | "high" | "max" {
 	switch (level) {
 		case "minimal":
 		case "low":
@@ -387,7 +407,7 @@ function mapThinkingLevelToEffort(level: SimpleStreamOptions["reasoning"]): "low
 		case "high":
 			return "high";
 		case "xhigh":
-			return "max";
+			return modelId.includes("opus-4-6") || modelId.includes("opus-4.6") ? "max" : "high";
 		default:
 			return "high";
 	}
@@ -668,7 +688,7 @@ function buildAdditionalModelRequestFields(
 		const result: Record<string, any> = supportsAdaptiveThinking(model.id)
 			? {
 					thinking: { type: "adaptive" },
-					output_config: { effort: mapThinkingLevelToEffort(options.reasoning) },
+					output_config: { effort: mapThinkingLevelToEffort(options.reasoning, model.id) },
 				}
 			: (() => {
 					const defaultBudgets: Record<ThinkingLevel, number> = {

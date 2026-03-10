@@ -21,6 +21,7 @@ See these complete provider examples:
 - [Quick Reference](#quick-reference)
 - [Override Existing Provider](#override-existing-provider)
 - [Register New Provider](#register-new-provider)
+- [Unregister Provider](#unregister-provider)
 - [OAuth Support](#oauth-support)
 - [Custom Streaming API](#custom-streaming-api)
 - [Testing Your Implementation](#testing-your-implementation)
@@ -116,6 +117,37 @@ pi.registerProvider("my-llm", {
 
 When `models` is provided, it **replaces** all existing models for that provider.
 
+## Unregister Provider
+
+Use `pi.unregisterProvider(name)` to remove a provider that was previously registered via `pi.registerProvider(name, ...)`:
+
+```typescript
+// Register
+pi.registerProvider("my-llm", {
+  baseUrl: "https://api.my-llm.com/v1",
+  apiKey: "MY_LLM_API_KEY",
+  api: "openai-completions",
+  models: [
+    {
+      id: "my-llm-large",
+      name: "My LLM Large",
+      reasoning: true,
+      input: ["text", "image"],
+      cost: { input: 3.0, output: 15.0, cacheRead: 0.3, cacheWrite: 3.75 },
+      contextWindow: 200000,
+      maxTokens: 16384
+    }
+  ]
+});
+
+// Later, remove it
+pi.unregisterProvider("my-llm");
+```
+
+Unregistering removes that provider's dynamic models, API key fallback, OAuth provider registration, and custom stream handler registrations. Any built-in models or provider behavior that were overridden are restored.
+
+Calls made after the initial extension load phase are applied immediately, so no `/reload` is required.
+
 ### API Types
 
 The `api` field determines which streaming implementation is used:
@@ -127,6 +159,7 @@ The `api` field determines which streaming implementation is used:
 | `openai-responses` | OpenAI Responses API |
 | `azure-openai-responses` | Azure OpenAI Responses API |
 | `openai-codex-responses` | OpenAI Codex Responses API |
+| `mistral-conversations` | Mistral SDK Conversations/Chat streaming |
 | `google-generative-ai` | Google Generative AI API |
 | `google-gemini-cli` | Google Cloud Code Assist API |
 | `google-vertex` | Google Vertex AI API |
@@ -140,14 +173,24 @@ models: [{
   // ...
   compat: {
     supportsDeveloperRole: false,      // use "system" instead of "developer"
-    supportsReasoningEffort: false,    // disable reasoning_effort param
-    maxTokensField: "max_tokens",      // instead of "max_completion_tokens"
-    requiresToolResultName: true,      // tool results need name field
-    requiresMistralToolIds: true       // tool IDs must be 9 alphanumeric chars
-    thinkingFormat: "qwen"             // uses enable_thinking: true
-  }
-}]
+    supportsReasoningEffort: true,
+    reasoningEffortMap: {              // map pi-ai levels to provider values
+      minimal: "default",
+      low: "default",
+      medium: "default",
+      high: "default",
+      xhigh: "default"
+    },
+      maxTokensField: "max_tokens",      // instead of "max_completion_tokens"
+      requiresToolResultName: true,      // tool results need name field
+      thinkingFormat: "qwen"             // uses enable_thinking: true
+    }
+  }]
 ```
+
+> Migration note: Mistral moved from `openai-completions` to `mistral-conversations`.
+> Use `mistral-conversations` for native Mistral models.
+> If you intentionally route Mistral-compatible/custom endpoints through `openai-completions`, set `compat` flags explicitly as needed.
 
 ### Auth Header
 
@@ -262,6 +305,7 @@ For providers with non-standard APIs, implement `streamSimple`. Study the existi
 
 **Reference implementations:**
 - [anthropic.ts](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/providers/anthropic.ts) - Anthropic Messages API
+- [mistral.ts](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/providers/mistral.ts) - Mistral Conversations API
 - [openai-completions.ts](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/providers/openai-completions.ts) - OpenAI Chat Completions
 - [openai-responses.ts](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/providers/openai-responses.ts) - OpenAI Responses API
 - [google.ts](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/providers/google.ts) - Google Generative AI
@@ -536,12 +580,12 @@ interface ProviderModelConfig {
     supportsStore?: boolean;
     supportsDeveloperRole?: boolean;
     supportsReasoningEffort?: boolean;
+    reasoningEffortMap?: Partial<Record<"minimal" | "low" | "medium" | "high" | "xhigh", string>>;
     supportsUsageInStreaming?: boolean;
     maxTokensField?: "max_completion_tokens" | "max_tokens";
     requiresToolResultName?: boolean;
     requiresAssistantAfterToolResult?: boolean;
     requiresThinkingAsText?: boolean;
-    requiresMistralToolIds?: boolean;
     thinkingFormat?: "openai" | "zai" | "qwen";
   };
 }

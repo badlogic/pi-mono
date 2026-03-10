@@ -1,19 +1,35 @@
 {
 	"name": "@neuralwatt/pi-ai",
-	"version": "0.53.0",
+	"version": "0.57.1",
 	"description": "Unified LLM API with automatic model discovery and provider configuration",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./oauth": {
+			"types": "./dist/oauth.d.ts",
+			"import": "./dist/oauth.js"
+		},
+		"./bedrock-provider": {
+			"types": "./bedrock-provider.d.ts",
+			"import": "./bedrock-provider.js"
+		}
+	},
 	"bin": {
 		"pi-ai": "./dist/cli.js"
 	},
 	"files": [
 		"dist",
+		"bedrock-provider.js",
+		"bedrock-provider.d.ts",
 		"README.md"
 	],
 	"scripts": {
-		"clean": "rm -rf dist",
+		"clean": "shx rm -rf dist",
 		"generate-models": "npx tsx scripts/generate-models.ts",
 		"build": "npm run generate-models && tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
@@ -25,12 +41,12 @@
 		"@anthropic-ai/sdk": "^0.73.0",
 		"@aws-sdk/client-bedrock-runtime": "^3.983.0",
 		"@google/genai": "^1.40.0",
-		"@mistralai/mistralai": "1.10.0",
+		"@mistralai/mistralai": "1.14.1",
 		"@sinclair/typebox": "^0.34.41",
 		"ajv": "^8.17.1",
 		"ajv-formats": "^3.0.1",
 		"chalk": "^5.6.2",
-		"openai": "6.10.0",
+		"openai": "6.26.0",
 		"partial-json": "^0.1.7",
 		"proxy-agent": "^6.5.0",
 		"undici": "^7.19.1",

@@ -15,7 +15,6 @@ import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
 import { APP_NAME, getAgentDir, getModelsPath, VERSION } from "./config.js";
 import { AuthStorage } from "./core/auth-storage.js";
-import { DEFAULT_THINKING_LEVEL } from "./core/defaults.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import type { LoadExtensionsResult } from "./core/extensions/index.js";
 import { KeybindingsManager } from "./core/keybindings.js";
@@ -63,6 +62,11 @@ function reportSettingsErrors(settingsManager: SettingsManager, context: string)
 			console.error(chalk.dim(error.stack));
 		}
 	}
+}
+
+function isTruthyEnvFlag(value: string | undefined): boolean {
+	if (!value) return false;
+	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
 }
 
 type PackageCommand = "install" | "remove" | "update" | "list";
@@ -375,17 +379,54 @@ async function promptConfirm(message: string): Promise<boolean> {
 	});
 }
 
-async function createSessionManager(parsed: Args, cwd: string): Promise<SessionManager | undefined> {
+/** Helper to call CLI-only session_directory handlers before the initial session manager is created */
+async function callSessionDirectoryHook(extensions: LoadExtensionsResult, cwd: string): Promise<string | undefined> {
+	let customSessionDir: string | undefined;
+
+	for (const ext of extensions.extensions) {
+		const handlers = ext.handlers.get("session_directory");
+		if (!handlers || handlers.length === 0) continue;
+
+		for (const handler of handlers) {
+			try {
+				const event = { type: "session_directory" as const, cwd };
+				const result = (await handler(event)) as { sessionDir?: string } | undefined;
+
+				if (result?.sessionDir) {
+					customSessionDir = result.sessionDir;
+				}
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				console.error(chalk.red(`Extension "${ext.path}" session_directory handler failed: ${message}`));
+			}
+		}
+	}
+
+	return customSessionDir;
+}
+
+async function createSessionManager(
+	parsed: Args,
+	cwd: string,
+	extensions: LoadExtensionsResult,
+): Promise<SessionManager | undefined> {
 	if (parsed.noSession) {
 		return SessionManager.inMemory();
 	}
+
+	// CLI flag takes precedence, otherwise ask extensions for custom session directory
+	let effectiveSessionDir = parsed.sessionDir;
+	if (!effectiveSessionDir) {
+		effectiveSessionDir = await callSessionDirectoryHook(extensions, cwd);
+	}
+
 	if (parsed.session) {
-		const resolved = await resolveSessionPath(parsed.session, cwd, parsed.sessionDir);
+		const resolved = await resolveSessionPath(parsed.session, cwd, effectiveSessionDir);
 
 		switch (resolved.type) {
 			case "path":
 			case "local":
-				return SessionManager.open(resolved.path, parsed.sessionDir);
+				return SessionManager.open(resolved.path, effectiveSessionDir);
 
 			case "global": {
 				// Session found in different project - ask user if they want to fork
@@ -395,7 +436,7 @@ async function createSessionManager(parsed: Args, cwd: string): Promise<SessionM
 					console.log(chalk.dim("Aborted."));
 					process.exit(0);
 				}
-				return SessionManager.forkFrom(resolved.path, cwd, parsed.sessionDir);
+				return SessionManager.forkFrom(resolved.path, cwd, effectiveSessionDir);
 			}
 
 			case "not_found":
@@ -404,12 +445,12 @@ async function createSessionManager(parsed: Args, cwd: string): Promise<SessionM
 		}
 	}
 	if (parsed.continue) {
-		return SessionManager.continueRecent(cwd, parsed.sessionDir);
+		return SessionManager.continueRecent(cwd, effectiveSessionDir);
 	}
 	// --resume is handled separately (needs picker UI)
-	// If --session-dir provided without --continue/--resume, create new session there
-	if (parsed.sessionDir) {
-		return SessionManager.create(cwd, parsed.sessionDir);
+	// If effective session dir is set, create new session there
+	if (effectiveSessionDir) {
+		return SessionManager.create(cwd, effectiveSessionDir);
 	}
 	// Default case (new session) returns undefined, SDK will create one
 	return undefined;
@@ -483,12 +524,13 @@ function buildSessionOptions(
 		options.thinkingLevel = parsed.thinking;
 	}
 
-	// Scoped models for Ctrl+P cycling - fill in default thinking level for models without explicit level
+	// Scoped models for Ctrl+P cycling
+	// Keep thinking level undefined when not explicitly set in the model pattern.
+	// Undefined means "inherit current session thinking level" during cycling.
 	if (scopedModels.length > 0) {
-		const defaultThinkingLevel = settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;
 		options.scopedModels = scopedModels.map((sm) => ({
 			model: sm.model,
-			thinkingLevel: sm.thinkingLevel ?? defaultThinkingLevel,
+			thinkingLevel: sm.thinkingLevel,
 		}));
 	}
 
@@ -535,6 +577,12 @@ async function handleConfigCommand(args: string[]): Promise<boolean> {
 }
 
 export async function main(args: string[]) {
+	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
+	if (offlineMode) {
+		process.env.PI_OFFLINE = "1";
+		process.env.PI_SKIP_VERSION_CHECK = "1";
+	}
+
 	if (await handlePackageCommand(args)) {
 		return;
 	}
@@ -665,15 +713,18 @@ export async function main(args: string[]) {
 	}
 
 	// Create session manager based on CLI flags
-	let sessionManager = await createSessionManager(parsed, cwd);
+	let sessionManager = await createSessionManager(parsed, cwd, extensionsResult);
 
 	// Handle --resume: show session picker
 	if (parsed.resume) {
 		// Initialize keybindings so session picker respects user config
 		KeybindingsManager.create();
 
+		// Compute effective session dir for resume (same logic as createSessionManager)
+		const effectiveSessionDir = parsed.sessionDir || (await callSessionDirectoryHook(extensionsResult, cwd));
+
 		const selectedPath = await selectSession(
-			(onProgress) => SessionManager.list(cwd, parsed.sessionDir, onProgress),
+			(onProgress) => SessionManager.list(cwd, effectiveSessionDir, onProgress),
 			SessionManager.listAll,
 		);
 		if (!selectedPath) {
@@ -681,7 +732,7 @@ export async function main(args: string[]) {
 			stopThemeWatcher();
 			process.exit(0);
 		}
-		sessionManager = SessionManager.open(selectedPath);
+		sessionManager = SessionManager.open(selectedPath, effectiveSessionDir);
 	}
 
 	const { options: sessionOptions, cliThinkingFromModel } = buildSessionOptions(

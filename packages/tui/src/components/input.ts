@@ -1,8 +1,9 @@
 import { getEditorKeybindings } from "../keybindings.js";
+import { decodeKittyPrintable } from "../keys.js";
 import { KillRing } from "../kill-ring.js";
 import { type Component, CURSOR_MARKER, type Focusable } from "../tui.js";
 import { UndoStack } from "../undo-stack.js";
-import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
+import { getSegmenter, isPunctuationChar, isWhitespaceChar, sliceByColumn, visibleWidth } from "../utils.js";
 
 const segmenter = getSegmenter();
 
@@ -184,6 +185,16 @@ export class Input implements Component, Focusable {
 
 		if (kb.matches(data, "cursorWordRight")) {
 			this.moveWordForwards();
+			return;
+		}
+
+		// Kitty CSI-u printable character (e.g. \x1b[97u for 'a').
+		// Terminals with Kitty protocol flag 1 (disambiguate) send CSI-u for all keys,
+		// including plain printable characters. Decode before the control-char check
+		// since CSI-u sequences contain \x1b which would be rejected.
+		const kittyPrintable = decodeKittyPrintable(data);
+		if (kittyPrintable !== undefined) {
+			this.insertCharacter(kittyPrintable);
 			return;
 		}
 
@@ -409,7 +420,7 @@ export class Input implements Component, Focusable {
 		this.pushUndo();
 
 		// Clean the pasted text - remove newlines and carriage returns
-		const cleanText = pastedText.replace(/\r\n/g, "").replace(/\r/g, "").replace(/\n/g, "");
+		const cleanText = pastedText.replace(/\r\n/g, "").replace(/\r/g, "").replace(/\n/g, "").replace(/\t/g, "    ");
 
 		// Insert at cursor position
 		this.value = this.value.slice(0, this.cursor) + cleanText + this.value.slice(this.cursor);
@@ -431,56 +442,38 @@ export class Input implements Component, Focusable {
 
 		let visibleText = "";
 		let cursorDisplay = this.cursor;
+		const totalWidth = visibleWidth(this.value);
 
-		if (this.value.length < availableWidth) {
+		if (totalWidth < availableWidth) {
 			// Everything fits (leave room for cursor at end)
 			visibleText = this.value;
 		} else {
 			// Need horizontal scrolling
-			// Reserve one character for cursor if it's at the end
+			// Reserve one column for cursor if it's at the end
 			const scrollWidth = this.cursor === this.value.length ? availableWidth - 1 : availableWidth;
-			const halfWidth = Math.floor(scrollWidth / 2);
+			const cursorCol = visibleWidth(this.value.slice(0, this.cursor));
 
-			const findValidStart = (start: number) => {
-				while (start < this.value.length) {
-					const charCode = this.value.charCodeAt(start);
-					// this is low surrogate, not a valid start
-					if (charCode >= 0xdc00 && charCode < 0xe000) {
-						start++;
-						continue;
-					}
-					break;
+			if (scrollWidth > 0) {
+				const halfWidth = Math.floor(scrollWidth / 2);
+				let startCol = 0;
+
+				if (cursorCol < halfWidth) {
+					// Cursor near start
+					startCol = 0;
+				} else if (cursorCol > totalWidth - halfWidth) {
+					// Cursor near end
+					startCol = Math.max(0, totalWidth - scrollWidth);
+				} else {
+					// Cursor in middle
+					startCol = Math.max(0, cursorCol - halfWidth);
 				}
-				return start;
-			};
 
-			const findValidEnd = (end: number) => {
-				while (end > 0) {
-					const charCode = this.value.charCodeAt(end - 1);
-					// this is high surrogate, might be split.
-					if (charCode >= 0xd800 && charCode < 0xdc00) {
-						end--;
-						continue;
-					}
-					break;
-				}
-				return end;
-			};
-
-			if (this.cursor < halfWidth) {
-				// Cursor near start
-				visibleText = this.value.slice(0, findValidEnd(scrollWidth));
-				cursorDisplay = this.cursor;
-			} else if (this.cursor > this.value.length - halfWidth) {
-				// Cursor near end
-				const start = findValidStart(this.value.length - scrollWidth);
-				visibleText = this.value.slice(start);
-				cursorDisplay = this.cursor - start;
+				visibleText = sliceByColumn(this.value, startCol, scrollWidth, true);
+				const beforeCursor = sliceByColumn(this.value, startCol, Math.max(0, cursorCol - startCol), true);
+				cursorDisplay = beforeCursor.length;
 			} else {
-				// Cursor in middle
-				const start = findValidStart(this.cursor - halfWidth);
-				visibleText = this.value.slice(start, findValidEnd(start + scrollWidth));
-				cursorDisplay = halfWidth;
+				visibleText = "";
+				cursorDisplay = 0;
 			}
 		}
 

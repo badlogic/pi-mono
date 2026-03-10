@@ -291,11 +291,11 @@ describe("Tool Results with Images", () => {
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider (pixtral-12b)", () => {
 		const llm = getModel("mistral", "pixtral-12b");
 
-		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
+		it("should handle tool result with only image", { retry: 5, timeout: 30000 }, async () => {
 			await handleToolWithImageResult(llm);
 		});
 
-		it("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
+		it("should handle tool result with text and image", { retry: 5, timeout: 30000 }, async () => {
 			await handleToolWithTextAndImageResult(llm);
 		});
 	});

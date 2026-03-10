@@ -1,6 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import { Input } from "../src/components/input.js";
+import { visibleWidth } from "../src/utils.js";
 
 describe("Input component", () => {
 	it("submits value including backslash on Enter", () => {
@@ -31,6 +32,55 @@ describe("Input component", () => {
 		input.handleInput("x");
 
 		assert.strictEqual(input.getValue(), "\\x");
+	});
+
+	describe("render", () => {
+		it("does not overflow with wide CJK and fullwidth text", () => {
+			const width = 93;
+			const cases = [
+				"가나다라마바사아자차카타파하 한글 텍스트가 터미널 너비를 초과하면 크래시가 발생합니다 이것은 재현용 테스트입니다",
+				"これはテスト文章です。日本語のテキストが正しく表示されるかどうかを確認するためのサンプルテキストです。あいうえお",
+				"这是一段测试文本，用于验证中文字符在终端中的显示宽度是否被正确计算，如果不正确就会导致用户界面崩溃的问题",
+				"ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ０１２３４５６７８９ａｂｃｄｅｆｇｈｉｊｋｌｍ",
+			];
+			const cursorPositions = [
+				{ label: "start", move: (_input: Input) => {} },
+				{
+					label: "middle",
+					move: (input: Input) => {
+						for (let i = 0; i < 10; i++) input.handleInput("\x1b[C");
+					},
+				},
+				{ label: "end", move: (input: Input) => input.handleInput("\x05") },
+			];
+
+			for (const text of cases) {
+				for (const { label, move } of cursorPositions) {
+					const input = new Input();
+					input.setValue(text);
+					input.focused = true;
+					move(input);
+
+					const [line] = input.render(width);
+					assert.ok(line);
+					assert.ok(visibleWidth(line) <= width, `rendered line overflowed for ${text} at ${label}`);
+				}
+			}
+		});
+
+		it("keeps the cursor visible when horizontally scrolling wide text", () => {
+			const input = new Input();
+			const width = 20;
+			const text = "가나다라마바사아자차카타파하";
+			input.setValue(text);
+			input.focused = true;
+			input.handleInput("\x01");
+			for (let i = 0; i < 5; i++) input.handleInput("\x1b[C");
+
+			const [line] = input.render(width);
+			assert.ok(line);
+			assert.ok(visibleWidth(line) <= width);
+		});
 	});
 
 	describe("Kill ring", () => {

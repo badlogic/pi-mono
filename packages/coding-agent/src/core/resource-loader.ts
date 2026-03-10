@@ -376,7 +376,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 		const extensionPaths = this.noExtensions
 			? cliEnabledExtensions
-			: this.mergePaths(enabledExtensions, cliEnabledExtensions);
+			: this.mergePaths(cliEnabledExtensions, enabledExtensions);
 
 		const extensionsResult = await loadExtensions(extensionPaths, this.cwd, this.eventBus);
 		const inlineExtensions = await this.loadExtensionFactories(extensionsResult.runtime);
@@ -384,13 +384,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 		extensionsResult.errors.push(...inlineExtensions.errors);
 
 		// Detect extension conflicts (tools, commands, flags with same names from different extensions)
+		// Keep all extensions loaded. Conflicts are reported as diagnostics, and precedence is handled by load order.
 		const conflicts = this.detectExtensionConflicts(extensionsResult.extensions);
-		if (conflicts.length > 0) {
-			const conflictingPaths = new Set(conflicts.map((c) => c.path));
-			extensionsResult.extensions = extensionsResult.extensions.filter((ext) => !conflictingPaths.has(ext.path));
-			for (const conflict of conflicts) {
-				extensionsResult.errors.push({ path: conflict.path, error: conflict.message });
-			}
+		for (const conflict of conflicts) {
+			extensionsResult.errors.push({ path: conflict.path, error: conflict.message });
 		}
 
 		this.extensionsResult = this.extensionsOverride ? this.extensionsOverride(extensionsResult) : extensionsResult;

@@ -193,6 +193,10 @@ describe.skipIf(!API_KEY)("AgentSession tree navigation e2e", () => {
 
 		// Abort after a short delay (let the LLM call start)
 		await new Promise((resolve) => setTimeout(resolve, 100));
+
+		// isCompacting should be true during branch summarization
+		expect(session.isCompacting).toBe(true);
+
 		session.abortBranchSummary();
 
 		const result = await navigationPromise;

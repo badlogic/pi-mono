@@ -74,8 +74,11 @@ export const streamGoogle: StreamFunction<"google-generative-ai", GoogleOptions>
 		try {
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
 			const client = createClient(model, apiKey, options?.headers);
-			const params = buildParams(model, context, options);
-			options?.onPayload?.(params);
+			let params = buildParams(model, context, options);
+			const nextParams = await options?.onPayload?.(params, model);
+			if (nextParams !== undefined) {
+				params = nextParams as GenerateContentParameters;
+			}
 			const googleStream = await client.models.generateContentStream(params);
 
 			stream.push({ type: "start", partial: output });
@@ -386,11 +389,11 @@ function buildParams(
 type ClampedThinkingLevel = Exclude<ThinkingLevel, "xhigh">;
 
 function isGemini3ProModel(model: Model<"google-generative-ai">): boolean {
-	return model.id.includes("3-pro");
+	return /gemini-3(?:\.\d+)?-pro/.test(model.id.toLowerCase());
 }
 
 function isGemini3FlashModel(model: Model<"google-generative-ai">): boolean {
-	return model.id.includes("3-flash");
+	return /gemini-3(?:\.\d+)?-flash/.test(model.id.toLowerCase());
 }
 
 function getGemini3ThinkingLevel(

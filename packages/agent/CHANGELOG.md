@@ -16,6 +16,36 @@
 
 - Fixed `AgentLoopConfig` fields `availableModels` and `budget` not being passed through to `PolicyContext` in the agent loop — previously both were hardcoded as empty, preventing `EnergyAwarePolicy` from triggering model routing or budget pressure in real runs
 
+## [0.57.1] - 2026-03-07
+
+## [0.57.0] - 2026-03-07
+
+## [0.56.3] - 2026-03-06
+
+## [0.56.2] - 2026-03-05
+
+## [0.56.1] - 2026-03-05
+
+## [0.56.0] - 2026-03-04
+
+## [0.55.4] - 2026-03-02
+
+## [0.55.3] - 2026-02-27
+
+## [0.55.2] - 2026-02-27
+
+## [0.55.1] - 2026-02-26
+
+## [0.55.0] - 2026-02-24
+
+## [0.54.2] - 2026-02-23
+
+## [0.54.1] - 2026-02-22
+
+## [0.54.0] - 2026-02-19
+
+## [0.53.1] - 2026-02-19
+
 ## [0.53.0] - 2026-02-17
 
 ## [0.52.12] - 2026-02-13

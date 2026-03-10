@@ -101,6 +101,9 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 	{ provider: "opencode", model: "glm-4.7-free", label: "zen-glm-4.7-free" },
 	{ provider: "opencode", model: "gpt-5.2-codex", label: "zen-gpt-5.2-codex" },
 	{ provider: "opencode", model: "minimax-m2.1-free", label: "zen-minimax-m2.1-free" },
+	// OpenCode Go
+	{ provider: "opencode-go", model: "kimi-k2.5", label: "go-kimi-k2.5" },
+	{ provider: "opencode-go", model: "minimax-m2.5", label: "go-minimax-m2.5" },
 ];
 
 // Cached context structure

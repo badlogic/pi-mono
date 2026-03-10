@@ -23,7 +23,7 @@ interface ModelItem {
 
 interface ScopedModelItem {
 	model: Model<any>;
-	thinkingLevel: string;
+	thinkingLevel?: string;
 }
 
 type ModelScope = "all" | "scoped";

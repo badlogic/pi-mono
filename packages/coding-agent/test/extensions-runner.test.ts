@@ -7,8 +7,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
-import { discoverAndLoadExtensions } from "../src/core/extensions/loader.js";
+import { createExtensionRuntime, discoverAndLoadExtensions } from "../src/core/extensions/loader.js";
 import { ExtensionRunner } from "../src/core/extensions/runner.js";
+import type { ExtensionActions, ExtensionContextActions, ProviderConfig } from "../src/core/extensions/types.js";
 import { DEFAULT_KEYBINDINGS, type KeyId } from "../src/core/keybindings.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
@@ -31,6 +32,51 @@ describe("ExtensionRunner", () => {
 	afterEach(() => {
 		fs.rmSync(tempDir, { recursive: true, force: true });
 	});
+
+	const providerModelConfig: ProviderConfig = {
+		baseUrl: "https://provider.test/v1",
+		apiKey: "PROVIDER_TEST_KEY",
+		api: "openai-completions",
+		models: [
+			{
+				id: "instant-model",
+				name: "Instant Model",
+				reasoning: false,
+				input: ["text"],
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 128000,
+				maxTokens: 4096,
+			},
+		],
+	};
+
+	const extensionActions: ExtensionActions = {
+		sendMessage: () => {},
+		sendUserMessage: () => {},
+		appendEntry: () => {},
+		setSessionName: () => {},
+		getSessionName: () => undefined,
+		setLabel: () => {},
+		getActiveTools: () => [],
+		getAllTools: () => [],
+		setActiveTools: () => {},
+		refreshTools: () => {},
+		getCommands: () => [],
+		setModel: async () => false,
+		getThinkingLevel: () => "off",
+		setThinkingLevel: () => {},
+	};
+
+	const extensionContextActions: ExtensionContextActions = {
+		getModel: () => undefined,
+		isIdle: () => true,
+		abort: () => {},
+		hasPendingMessages: () => false,
+		shutdown: () => {},
+		getContextUsage: () => undefined,
+		compact: () => {},
+		getSystemPrompt: () => "",
+	};
 
 	describe("shortcut conflicts", () => {
 		it("warns when extension shortcut conflicts with built-in", async () => {
@@ -234,6 +280,42 @@ describe("ExtensionRunner", () => {
 			expect(tools.length).toBe(2);
 			expect(tools.map((t) => t.definition.name).sort()).toEqual(["tool_a", "tool_b"]);
 		});
+
+		it("keeps first tool when two extensions register the same name", async () => {
+			const first = `
+				import { Type } from "@sinclair/typebox";
+				export default function(pi) {
+					pi.registerTool({
+						name: "shared",
+						label: "shared",
+						description: "first",
+						parameters: Type.Object({}),
+						execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
+					});
+				}
+			`;
+			const second = `
+				import { Type } from "@sinclair/typebox";
+				export default function(pi) {
+					pi.registerTool({
+						name: "shared",
+						label: "shared",
+						description: "second",
+						parameters: Type.Object({}),
+						execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
+					});
+				}
+			`;
+			fs.writeFileSync(path.join(extensionsDir, "a-first.ts"), first);
+			fs.writeFileSync(path.join(extensionsDir, "b-second.ts"), second);
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const tools = runner.getAllRegisteredTools();
+
+			expect(tools).toHaveLength(1);
+			expect(tools[0]?.definition.description).toBe("first");
+		});
 	});
 
 	describe("command collection", () => {
@@ -377,6 +459,36 @@ describe("ExtensionRunner", () => {
 			expect(flags.has("my-flag")).toBe(true);
 		});
 
+		it("keeps first flag when two extensions register the same name", async () => {
+			const first = `
+				export default function(pi) {
+					pi.registerFlag("shared-flag", {
+						description: "first",
+						type: "boolean",
+						default: true,
+					});
+				}
+			`;
+			const second = `
+				export default function(pi) {
+					pi.registerFlag("shared-flag", {
+						description: "second",
+						type: "boolean",
+						default: false,
+					});
+				}
+			`;
+			fs.writeFileSync(path.join(extensionsDir, "a-first.ts"), first);
+			fs.writeFileSync(path.join(extensionsDir, "b-second.ts"), second);
+
+			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
+			const flags = runner.getFlags();
+
+			expect(flags.get("shared-flag")?.description).toBe("first");
+			expect(result.runtime.flagValues.get("shared-flag")).toBe(true);
+		});
+
 		it("can set flag values", async () => {
 			const extCode = `
 				export default function(pi) {
@@ -488,6 +600,47 @@ describe("ExtensionRunner", () => {
 				details: { source: "ext1" },
 				isError: true,
 			});
+		});
+	});
+
+	describe("provider registration", () => {
+		it("pre-bind unregister removes all queued registrations for a provider", () => {
+			const runtime = createExtensionRuntime();
+
+			runtime.registerProvider("queued-provider", providerModelConfig);
+			runtime.registerProvider("queued-provider", {
+				...providerModelConfig,
+				models: [
+					{
+						id: "instant-model-2",
+						name: "Instant Model 2",
+						reasoning: false,
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 128000,
+						maxTokens: 4096,
+					},
+				],
+			});
+			expect(runtime.pendingProviderRegistrations).toHaveLength(2);
+
+			runtime.unregisterProvider("queued-provider");
+			expect(runtime.pendingProviderRegistrations).toHaveLength(0);
+		});
+
+		it("post-bind register and unregister take effect immediately", () => {
+			const runtime = createExtensionRuntime();
+			const runner = new ExtensionRunner([], runtime, tempDir, sessionManager, modelRegistry);
+
+			runner.bindCore(extensionActions, extensionContextActions);
+			expect(runtime.pendingProviderRegistrations).toHaveLength(0);
+
+			runtime.registerProvider("instant-provider", providerModelConfig);
+			expect(runtime.pendingProviderRegistrations).toHaveLength(0);
+			expect(modelRegistry.find("instant-provider", "instant-model")).toBeDefined();
+
+			runtime.unregisterProvider("instant-provider");
+			expect(modelRegistry.find("instant-provider", "instant-model")).toBeUndefined();
 		});
 	});
 

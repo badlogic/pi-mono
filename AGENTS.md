@@ -41,6 +41,14 @@ When creating issues:
   - Available labels: `pkg:agent`, `pkg:ai`, `pkg:coding-agent`, `pkg:mom`, `pkg:pods`, `pkg:tui`, `pkg:web-ui`
 - If an issue spans multiple packages, add all relevant labels
 
+When posting issue/PR comments:
+- Write the full comment to a temp file and use `gh issue comment --body-file` or `gh pr comment --body-file`
+- Never pass multi-line markdown directly via `--body` in shell commands
+- Preview the exact comment text before posting
+- Post exactly one final comment unless the user explicitly asks for multiple comments
+- If a comment is malformed, delete it immediately, then post one corrected comment
+- Keep comments concise, technical, and in the user's tone
+
 When closing issues via commit:
 - Include `fixes #<number>` or `closes #<number>` in the commit message
 - This automatically closes the issue when the commit is merged

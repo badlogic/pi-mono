@@ -20,7 +20,7 @@ import type { AssistantMessage } from "../types.js";
  * - MiniMax: "invalid params, context window exceeds limit"
  * - Kimi For Coding: "Your request exceeded model token limit: X (requested: Y)"
  * - Cerebras: Returns "400/413 status code (no body)" - handled separately below
- * - Mistral: Returns "400/413 status code (no body)" - handled separately below
+ * - Mistral: "Prompt contains X tokens ... too large for model with Y maximum context length"
  * - z.ai: Does NOT error, accepts overflow silently - handled via usage.input > contextWindow
  * - Ollama: Silently truncates input - not detectable via error message
  */
@@ -37,6 +37,8 @@ const OVERFLOW_PATTERNS = [
 	/greater than the context length/i, // LM Studio
 	/context window exceeds limit/i, // MiniMax
 	/exceeded model token limit/i, // Kimi For Coding
+	/too large for model with \d+ maximum context length/i, // Mistral
+	/model_context_window_exceeded/i, // z.ai non-standard finish_reason surfaced as error text
 	/context[_ ]length[_ ]exceeded/i, // Generic fallback
 	/too many tokens/i, // Generic fallback
 	/token limit exceeded/i, // Generic fallback
@@ -60,7 +62,7 @@ const OVERFLOW_PATTERNS = [
  * - xAI (Grok): "maximum prompt length is X but request contains Y"
  * - Groq: "reduce the length of the messages"
  * - Cerebras: 400/413 status code (no body)
- * - Mistral: 400/413 status code (no body)
+ * - Mistral: "Prompt contains X tokens ... too large for model with Y maximum context length"
  * - OpenRouter (all backends): "maximum context length is X tokens"
  * - llama.cpp: "exceeds the available context size"
  * - LM Studio: "greater than the context length"
@@ -95,7 +97,7 @@ export function isContextOverflow(message: AssistantMessage, contextWindow?: num
 			return true;
 		}
 
-		// Cerebras and Mistral return 400/413 with no body for context overflow
+		// Cerebras returns 400/413 with no body for context overflow
 		// Note: 429 is rate limiting (requests/tokens per time), NOT context overflow
 		if (/^4(00|13)\s*(status code)?\s*\(no body\)/i.test(message.errorMessage)) {
 			return true;

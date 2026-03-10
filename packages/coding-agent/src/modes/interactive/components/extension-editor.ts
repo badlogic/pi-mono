@@ -11,6 +11,7 @@ import {
 	Container,
 	Editor,
 	type EditorOptions,
+	type Focusable,
 	getEditorKeybindings,
 	Spacer,
 	Text,
@@ -21,12 +22,21 @@ import { getEditorTheme, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { appKeyHint, keyHint } from "./keybinding-hints.js";
 
-export class ExtensionEditorComponent extends Container {
+export class ExtensionEditorComponent extends Container implements Focusable {
 	private editor: Editor;
 	private onSubmitCallback: (value: string) => void;
 	private onCancelCallback: () => void;
 	private tui: TUI;
 	private keybindings: KeybindingsManager;
+
+	private _focused = false;
+	get focused(): boolean {
+		return this._focused;
+	}
+	set focused(value: boolean) {
+		this._focused = value;
+		this.editor.focused = value;
+	}
 
 	constructor(
 		tui: TUI,
@@ -116,6 +126,7 @@ export class ExtensionEditorComponent extends Container {
 			const [editor, ...editorArgs] = editorCmd.split(" ");
 			const result = spawnSync(editor, [...editorArgs, tmpFile], {
 				stdio: "inherit",
+				shell: process.platform === "win32",
 			});
 
 			if (result.status === 0) {

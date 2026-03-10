@@ -145,6 +145,8 @@ export interface OverlayOptions {
 	 * Called each render cycle with current terminal dimensions.
 	 */
 	visible?: (termWidth: number, termHeight: number) => boolean;
+	/** If true, don't capture keyboard focus when shown */
+	nonCapturing?: boolean;
 }
 
 /**
@@ -157,6 +159,12 @@ export interface OverlayHandle {
 	setHidden(hidden: boolean): void;
 	/** Check if overlay is temporarily hidden */
 	isHidden(): boolean;
+	/** Focus this overlay and bring it to the visual front */
+	focus(): void;
+	/** Release focus to the previous target */
+	unfocus(): void;
+	/** Check if this overlay currently has focus */
+	isFocused(): boolean;
 }
 
 /**
@@ -202,6 +210,7 @@ export class TUI extends Container {
 	public terminal: Terminal;
 	private previousLines: string[] = [];
 	private previousWidth = 0;
+	private previousHeight = 0;
 	private focusedComponent: Component | null = null;
 	private inputListeners = new Set<InputListener>();
 
@@ -220,11 +229,13 @@ export class TUI extends Container {
 	private stopped = false;
 
 	// Overlay stack for modal components rendered on top of base content
+	private focusOrderCounter = 0;
 	private overlayStack: {
 		component: Component;
 		options?: OverlayOptions;
 		preFocus: Component | null;
 		hidden: boolean;
+		focusOrder: number;
 	}[] = [];
 
 	constructor(terminal: Terminal, showHardwareCursor?: boolean) {
@@ -284,10 +295,16 @@ export class TUI extends Container {
 	 * Returns a handle to control the overlay's visibility.
 	 */
 	showOverlay(component: Component, options?: OverlayOptions): OverlayHandle {
-		const entry = { component, options, preFocus: this.focusedComponent, hidden: false };
+		const entry = {
+			component,
+			options,
+			preFocus: this.focusedComponent,
+			hidden: false,
+			focusOrder: ++this.focusOrderCounter,
+		};
 		this.overlayStack.push(entry);
 		// Only focus if overlay is actually visible
-		if (this.isOverlayVisible(entry)) {
+		if (!options?.nonCapturing && this.isOverlayVisible(entry)) {
 			this.setFocus(component);
 		}
 		this.terminal.hideCursor();
@@ -320,13 +337,29 @@ export class TUI extends Container {
 					}
 				} else {
 					// Restore focus to this overlay when showing (if it's actually visible)
-					if (this.isOverlayVisible(entry)) {
+					if (!options?.nonCapturing && this.isOverlayVisible(entry)) {
+						entry.focusOrder = ++this.focusOrderCounter;
 						this.setFocus(component);
 					}
 				}
 				this.requestRender();
 			},
 			isHidden: () => entry.hidden,
+			focus: () => {
+				if (!this.overlayStack.includes(entry) || !this.isOverlayVisible(entry)) return;
+				if (this.focusedComponent !== component) {
+					this.setFocus(component);
+				}
+				entry.focusOrder = ++this.focusOrderCounter;
+				this.requestRender();
+			},
+			unfocus: () => {
+				if (this.focusedComponent !== component) return;
+				const topVisible = this.getTopmostVisibleOverlay();
+				this.setFocus(topVisible && topVisible !== entry ? topVisible.component : entry.preFocus);
+				this.requestRender();
+			},
+			isFocused: () => this.focusedComponent === component,
 		};
 	}
 
@@ -334,9 +367,11 @@ export class TUI extends Container {
 	hideOverlay(): void {
 		const overlay = this.overlayStack.pop();
 		if (!overlay) return;
-		// Find topmost visible overlay, or fall back to preFocus
-		const topVisible = this.getTopmostVisibleOverlay();
-		this.setFocus(topVisible?.component ?? overlay.preFocus);
+		if (this.focusedComponent === overlay.component) {
+			// Find topmost visible overlay, or fall back to preFocus
+			const topVisible = this.getTopmostVisibleOverlay();
+			this.setFocus(topVisible?.component ?? overlay.preFocus);
+		}
 		if (this.overlayStack.length === 0) this.terminal.hideCursor();
 		this.requestRender();
 	}
@@ -355,9 +390,10 @@ export class TUI extends Container {
 		return true;
 	}
 
-	/** Find the topmost visible overlay, if any */
+	/** Find the topmost visible capturing overlay, if any */
 	private getTopmostVisibleOverlay(): (typeof this.overlayStack)[number] | undefined {
 		for (let i = this.overlayStack.length - 1; i >= 0; i--) {
+			if (this.overlayStack[i].options?.nonCapturing) continue;
 			if (this.isOverlayVisible(this.overlayStack[i])) {
 				return this.overlayStack[i];
 			}
@@ -425,6 +461,7 @@ export class TUI extends Container {
 		if (force) {
 			this.previousLines = [];
 			this.previousWidth = -1; // -1 triggers widthChanged, forcing a full clear
+			this.previousHeight = -1; // -1 triggers heightChanged, forcing a full clear
 			this.cursorRow = 0;
 			this.hardwareCursorRow = 0;
 			this.maxLinesRendered = 0;
@@ -676,7 +713,7 @@ export class TUI extends Container {
 		}
 	}
 
-	/** Composite all overlays into content lines (in stack order, later = on top). */
+	/** Composite all overlays into content lines (sorted by focusOrder, higher = on top). */
 	private compositeOverlays(lines: string[], termWidth: number, termHeight: number): string[] {
 		if (this.overlayStack.length === 0) return lines;
 		const result = [...lines];
@@ -685,10 +722,9 @@ export class TUI extends Container {
 		const rendered: { overlayLines: string[]; row: number; col: number; w: number }[] = [];
 		let minLinesNeeded = result.length;
 
-		for (const entry of this.overlayStack) {
-			// Skip invisible overlays (hidden or visible() returns false)
-			if (!this.isOverlayVisible(entry)) continue;
-
+		const visibleEntries = this.overlayStack.filter((e) => this.isOverlayVisible(e));
+		visibleEntries.sort((a, b) => a.focusOrder - b.focusOrder);
+		for (const entry of visibleEntries) {
 			const { component, options } = entry;
 
 			// Get layout with height=0 first to determine width and maxHeight
@@ -721,9 +757,6 @@ export class TUI extends Container {
 
 		const viewportStart = Math.max(0, workingHeight - termHeight);
 
-		// Track which lines were modified for final verification
-		const modifiedLines = new Set<number>();
-
 		// Composite each overlay
 		for (const { overlayLines, row, col, w } of rendered) {
 			for (let i = 0; i < overlayLines.length; i++) {
@@ -734,19 +767,7 @@ export class TUI extends Container {
 					const truncatedOverlayLine =
 						visibleWidth(overlayLines[i]) > w ? sliceByColumn(overlayLines[i], 0, w, true) : overlayLines[i];
 					result[idx] = this.compositeLineAt(result[idx], truncatedOverlayLine, col, w, termWidth);
-					modifiedLines.add(idx);
 				}
-			}
-		}
-
-		// Final verification: ensure no composited line exceeds terminal width
-		// This is a belt-and-suspenders safeguard - compositeLineAt should already
-		// guarantee this, but we verify here to prevent crashes from any edge cases
-		// Only check lines that were actually modified (optimization)
-		for (const idx of modifiedLines) {
-			const lineWidth = visibleWidth(result[idx]);
-			if (lineWidth > termWidth) {
-				result[idx] = sliceByColumn(result[idx], 0, termWidth, true);
 			}
 		}
 
@@ -871,8 +892,9 @@ export class TUI extends Container {
 
 		newLines = this.applyLineResets(newLines);
 
-		// Width changed - need full re-render (line wrapping changes)
+		// Width or height changed - need full re-render
 		const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;
+		const heightChanged = this.previousHeight !== 0 && this.previousHeight !== height;
 
 		// Helper to clear scrollback and viewport and render all new lines
 		const fullRender = (clear: boolean): void => {
@@ -897,6 +919,7 @@ export class TUI extends Container {
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
 			this.previousWidth = width;
+			this.previousHeight = height;
 		};
 
 		const debugRedraw = process.env.PI_DEBUG_REDRAW === "1";
@@ -908,15 +931,15 @@ export class TUI extends Container {
 		};
 
 		// First render - just output everything without clearing (assumes clean screen)
-		if (this.previousLines.length === 0 && !widthChanged) {
+		if (this.previousLines.length === 0 && !widthChanged && !heightChanged) {
 			logRedraw("first render");
 			fullRender(false);
 			return;
 		}
 
-		// Width changed - full re-render (line wrapping changes)
-		if (widthChanged) {
-			logRedraw(`width changed (${this.previousWidth} -> ${width})`);
+		// Width or height changed - full re-render
+		if (widthChanged || heightChanged) {
+			logRedraw(`terminal size changed (${this.previousWidth}x${this.previousHeight} -> ${width}x${height})`);
 			fullRender(true);
 			return;
 		}
@@ -958,6 +981,7 @@ export class TUI extends Container {
 		if (firstChanged === -1) {
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+			this.previousHeight = height;
 			return;
 		}
 
@@ -996,6 +1020,7 @@ export class TUI extends Container {
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
 			this.previousWidth = width;
+			this.previousHeight = height;
 			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
 			return;
 		}
@@ -1144,6 +1169,7 @@ export class TUI extends Container {
 
 		this.previousLines = newLines;
 		this.previousWidth = width;
+		this.previousHeight = height;
 	}
 
 	/**

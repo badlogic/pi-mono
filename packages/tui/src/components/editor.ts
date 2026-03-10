@@ -1,6 +1,6 @@
 import type { AutocompleteProvider, CombinedAutocompleteProvider } from "../autocomplete.js";
 import { getEditorKeybindings } from "../keybindings.js";
-import { matchesKey } from "../keys.js";
+import { decodeKittyPrintable, matchesKey } from "../keys.js";
 import { KillRing } from "../kill-ring.js";
 import { type Component, CURSOR_MARKER, type Focusable, type TUI } from "../tui.js";
 import { UndoStack } from "../undo-stack.js";
@@ -92,43 +92,6 @@ export function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
 }
 
 // Kitty CSI-u sequences for printable keys, including optional shifted/base codepoints.
-const KITTY_CSI_U_REGEX = /^\x1b\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$/;
-const KITTY_MOD_SHIFT = 1;
-const KITTY_MOD_ALT = 2;
-const KITTY_MOD_CTRL = 4;
-
-// Decode a printable CSI-u sequence, preferring the shifted key when present.
-function decodeKittyPrintable(data: string): string | undefined {
-	const match = data.match(KITTY_CSI_U_REGEX);
-	if (!match) return undefined;
-
-	// CSI-u groups: <codepoint>[:<shifted>[:<base>]];<mod>u
-	const codepoint = Number.parseInt(match[1] ?? "", 10);
-	if (!Number.isFinite(codepoint)) return undefined;
-
-	const shiftedKey = match[2] && match[2].length > 0 ? Number.parseInt(match[2], 10) : undefined;
-	const modValue = match[4] ? Number.parseInt(match[4], 10) : 1;
-	// Modifiers are 1-indexed in CSI-u; normalize to our bitmask.
-	const modifier = Number.isFinite(modValue) ? modValue - 1 : 0;
-
-	// Ignore CSI-u sequences used for Alt/Ctrl shortcuts.
-	if (modifier & (KITTY_MOD_ALT | KITTY_MOD_CTRL)) return undefined;
-
-	// Prefer the shifted keycode when Shift is held.
-	let effectiveCodepoint = codepoint;
-	if (modifier & KITTY_MOD_SHIFT && typeof shiftedKey === "number") {
-		effectiveCodepoint = shiftedKey;
-	}
-	// Drop control characters or invalid codepoints.
-	if (!Number.isFinite(effectiveCodepoint) || effectiveCodepoint < 32) return undefined;
-
-	try {
-		return String.fromCodePoint(effectiveCodepoint);
-	} catch {
-		return undefined;
-	}
-}
-
 interface EditorState {
 	lines: string[];
 	cursorLine: number;
@@ -516,6 +479,8 @@ export class Editor implements Component, Focusable {
 			if (kb.matches(data, "tab")) {
 				const selected = this.autocompleteList.getSelectedItem();
 				if (selected && this.autocompleteProvider) {
+					const shouldChainSlashArgumentAutocomplete = this.shouldChainSlashArgumentAutocompleteOnTabSelection();
+
 					this.pushUndoSnapshot();
 					this.lastAction = null;
 					const result = this.autocompleteProvider.applyCompletion(
@@ -530,6 +495,10 @@ export class Editor implements Component, Focusable {
 					this.setCursorCol(result.cursorCol);
 					this.cancelAutocomplete();
 					if (this.onChange) this.onChange(this.getText());
+
+					if (shouldChainSlashArgumentAutocomplete && this.isBareCompletedSlashCommandAtCursor()) {
+						this.tryTriggerAutocomplete();
+					}
 				}
 				return;
 			}
@@ -1024,10 +993,8 @@ export class Editor implements Component, Focusable {
 		}
 
 		if (pastedLines.length === 1) {
-			// Single line - insert character by character to trigger autocomplete
-			for (const char of filteredText) {
-				this.insertCharacter(char, true);
-			}
+			// Single line - insert atomically (do not trigger autocomplete during paste)
+			this.insertTextAtCursorInternal(filteredText);
 			return;
 		}
 
@@ -1866,7 +1833,56 @@ export class Editor implements Component, Focusable {
 		return this.isSlashMenuAllowed() && textBeforeCursor.trimStart().startsWith("/");
 	}
 
+	private shouldChainSlashArgumentAutocompleteOnTabSelection(): boolean {
+		if (this.autocompleteState !== "regular") {
+			return false;
+		}
+
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+		const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
+		return this.isInSlashCommandContext(textBeforeCursor) && !textBeforeCursor.trimStart().includes(" ");
+	}
+
+	private isBareCompletedSlashCommandAtCursor(): boolean {
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+		if (this.state.cursorCol !== currentLine.length) {
+			return false;
+		}
+
+		const textBeforeCursor = currentLine.slice(0, this.state.cursorCol).trimStart();
+		return /^\/\S+ $/.test(textBeforeCursor);
+	}
+
 	// Autocomplete methods
+	/**
+	 * Find the best autocomplete item index for the given prefix.
+	 * Returns -1 if no match is found.
+	 *
+	 * Match priority:
+	 * 1. Exact match (prefix === item.value) -> always selected
+	 * 2. Prefix match -> first item whose value starts with prefix
+	 * 3. No match -> -1 (keep default highlight)
+	 *
+	 * Matching is case-sensitive and checks item.value only.
+	 */
+	private getBestAutocompleteMatchIndex(items: Array<{ value: string; label: string }>, prefix: string): number {
+		if (!prefix) return -1;
+
+		let firstPrefixIndex = -1;
+
+		for (let i = 0; i < items.length; i++) {
+			const value = items[i]!.value;
+			if (value === prefix) {
+				return i; // Exact match always wins
+			}
+			if (firstPrefixIndex === -1 && value.startsWith(prefix)) {
+				firstPrefixIndex = i;
+			}
+		}
+
+		return firstPrefixIndex;
+	}
+
 	private tryTriggerAutocomplete(explicitTab: boolean = false): void {
 		if (!this.autocompleteProvider) return;
 
@@ -1890,6 +1906,13 @@ export class Editor implements Component, Focusable {
 		if (suggestions && suggestions.items.length > 0) {
 			this.autocompletePrefix = suggestions.prefix;
 			this.autocompleteList = new SelectList(suggestions.items, this.autocompleteMaxVisible, this.theme.selectList);
+
+			// If typed prefix exactly matches one of the suggestions, select that item
+			const bestMatchIndex = this.getBestAutocompleteMatchIndex(suggestions.items, suggestions.prefix);
+			if (bestMatchIndex >= 0) {
+				this.autocompleteList.setSelectedIndex(bestMatchIndex);
+			}
+
 			this.autocompleteState = "regular";
 		} else {
 			this.cancelAutocomplete();
@@ -1959,6 +1982,13 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 
 			this.autocompletePrefix = suggestions.prefix;
 			this.autocompleteList = new SelectList(suggestions.items, this.autocompleteMaxVisible, this.theme.selectList);
+
+			// If typed prefix exactly matches one of the suggestions, select that item
+			const bestMatchIndex = this.getBestAutocompleteMatchIndex(suggestions.items, suggestions.prefix);
+			if (bestMatchIndex >= 0) {
+				this.autocompleteList.setSelectedIndex(bestMatchIndex);
+			}
+
 			this.autocompleteState = "force";
 		} else {
 			this.cancelAutocomplete();
@@ -1992,6 +2022,12 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 			this.autocompletePrefix = suggestions.prefix;
 			// Always create new SelectList to ensure update
 			this.autocompleteList = new SelectList(suggestions.items, this.autocompleteMaxVisible, this.theme.selectList);
+
+			// If typed prefix exactly matches one of the suggestions, select that item
+			const bestMatchIndex = this.getBestAutocompleteMatchIndex(suggestions.items, suggestions.prefix);
+			if (bestMatchIndex >= 0) {
+				this.autocompleteList.setSelectedIndex(bestMatchIndex);
+			}
 		} else {
 			this.cancelAutocomplete();
 		}

@@ -8,6 +8,7 @@ import {
 	type ImageContent,
 	type Message,
 	type Model,
+	type SimpleStreamOptions,
 	streamSimple,
 	type TextContent,
 	type ThinkingBudgets,
@@ -75,6 +76,11 @@ export interface AgentOptions {
 	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
 
 	/**
+	 * Inspect or replace provider payloads before they are sent.
+	 */
+	onPayload?: SimpleStreamOptions["onPayload"];
+
+	/**
 	 * Custom token budgets for thinking levels (token-based providers only).
 	 */
 	thinkingBudgets?: ThinkingBudgets;
@@ -117,6 +123,7 @@ export class Agent {
 	public streamFn: StreamFn;
 	private _sessionId?: string;
 	public getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+	private _onPayload?: SimpleStreamOptions["onPayload"];
 	private runningPrompt?: Promise<void>;
 	private resolveRunningPrompt?: () => void;
 	private _thinkingBudgets?: ThinkingBudgets;
@@ -132,6 +139,7 @@ export class Agent {
 		this.streamFn = opts.streamFn || streamSimple;
 		this._sessionId = opts.sessionId;
 		this.getApiKey = opts.getApiKey;
+		this._onPayload = opts.onPayload;
 		this._thinkingBudgets = opts.thinkingBudgets;
 		this._transport = opts.transport ?? "sse";
 		this._maxRetryDelayMs = opts.maxRetryDelayMs;
@@ -429,6 +437,7 @@ export class Agent {
 			model,
 			reasoning,
 			sessionId: this._sessionId,
+			onPayload: this._onPayload,
 			transport: this._transport,
 			thinkingBudgets: this._thinkingBudgets,
 			maxRetryDelayMs: this._maxRetryDelayMs,

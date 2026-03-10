@@ -32,6 +32,8 @@ export type {
 	BashToolResultEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	BeforeProviderRequestEvent,
+	BeforeProviderRequestEventResult,
 	// Context
 	CompactOptions,
 	// Events - Agent
@@ -112,6 +114,9 @@ export type {
 	SessionBeforeTreeEvent,
 	SessionBeforeTreeResult,
 	SessionCompactEvent,
+	SessionDirectoryEvent,
+	SessionDirectoryHandler,
+	SessionDirectoryResult,
 	SessionEvent,
 	SessionForkEvent,
 	SessionShutdownEvent,

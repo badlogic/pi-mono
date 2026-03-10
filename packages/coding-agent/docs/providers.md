@@ -65,6 +65,7 @@ pi
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` | `vercel-ai-gateway` |
 | ZAI | `ZAI_API_KEY` | `zai` |
 | OpenCode Zen | `OPENCODE_API_KEY` | `opencode` |
+| OpenCode Go | `OPENCODE_API_KEY` | `opencode-go` |
 | Hugging Face | `HF_TOKEN` | `huggingface` |
 | Kimi For Coding | `KIMI_API_KEY` | `kimi-coding` |
 | MiniMax | `MINIMAX_API_KEY` | `minimax` |
@@ -81,7 +82,8 @@ Store credentials in `~/.pi/agent/auth.json`:
   "anthropic": { "type": "api_key", "key": "sk-ant-..." },
   "openai": { "type": "api_key", "key": "sk-..." },
   "google": { "type": "api_key", "key": "..." },
-  "opencode": { "type": "api_key", "key": "..." }
+  "opencode": { "type": "api_key", "key": "..." },
+  "opencode-go": { "type": "api_key", "key": "..." }
 }
 ```
 

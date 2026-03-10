@@ -1,6 +1,6 @@
 {
   "name": "pi-web-ui-example",
-  "version": "1.41.0",
+  "version": "1.45.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "tsgo --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "shx rm -rf dist"
   },
   "dependencies": {
     "@mariozechner/mini-lit": "^0.2.0",

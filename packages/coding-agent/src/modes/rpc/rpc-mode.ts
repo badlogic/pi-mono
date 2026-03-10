@@ -12,7 +12,6 @@
  */
 
 import * as crypto from "node:crypto";
-import * as readline from "readline";
 import type { AgentSession } from "../../core/agent-session.js";
 import type {
 	ExtensionUIContext,
@@ -20,6 +19,7 @@ import type {
 	ExtensionWidgetOptions,
 } from "../../core/extensions/index.js";
 import { type Theme, theme } from "../interactive/theme/theme.js";
+import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import type {
 	RpcCommand,
 	RpcExtensionUIRequest,
@@ -44,7 +44,7 @@ export type {
  */
 export async function runRpcMode(session: AgentSession): Promise<never> {
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
-		console.log(JSON.stringify(obj));
+		process.stdout.write(serializeJsonLine(obj));
 	};
 
 	const success = <T extends RpcCommand["type"]>(
@@ -587,6 +587,8 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	 * Check if shutdown was requested and perform shutdown if so.
 	 * Called after handling each command when waiting for the next command.
 	 */
+	let detachInput = () => {};
+
 	async function checkShutdownRequested(): Promise<void> {
 		if (!shutdownRequested) return;
 
@@ -595,19 +597,12 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			await currentRunner.emit({ type: "session_shutdown" });
 		}
 
-		// Close readline interface to stop waiting for input
-		rl.close();
+		detachInput();
+		process.stdin.pause();
 		process.exit(0);
 	}
 
-	// Listen for JSON input
-	const rl = readline.createInterface({
-		input: process.stdin,
-		output: process.stdout,
-		terminal: false,
-	});
-
-	rl.on("line", async (line: string) => {
+	const handleInputLine = async (line: string) => {
 		try {
 			const parsed = JSON.parse(line);
 
@@ -632,6 +627,10 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		} catch (e: any) {
 			output(error(undefined, "parse", `Failed to parse command: ${e.message}`));
 		}
+	};
+
+	detachInput = attachJsonlLineReader(process.stdin, (line) => {
+		void handleInputLine(line);
 	});
 
 	// Keep process alive forever

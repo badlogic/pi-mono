@@ -1,7 +1,9 @@
 import * as fs from "node:fs";
-import koffi from "koffi";
+import { createRequire } from "node:module";
 import { setKittyProtocolActive } from "./keys.js";
 import { StdinBuffer } from "./stdin-buffer.js";
+
+const cjsRequire = createRequire(import.meta.url);
 
 /**
  * Minimal terminal interface for TUI
@@ -55,6 +57,7 @@ export class ProcessTerminal implements Terminal {
 	private inputHandler?: (data: string) => void;
 	private resizeHandler?: () => void;
 	private _kittyProtocolActive = false;
+	private _modifyOtherKeysActive = false;
 	private stdinBuffer?: StdinBuffer;
 	private stdinDataHandler?: (data: string) => void;
 	private writeLogPath = process.env.PI_TUI_WRITE_LOG || "";
@@ -156,6 +159,11 @@ export class ProcessTerminal implements Terminal {
 	 * Sends CSI ? u to query current flags. If terminal responds with CSI ? <flags> u,
 	 * it supports the protocol and we enable it with CSI > 1 u.
 	 *
+	 * If no Kitty response arrives shortly after startup, fall back to enabling
+	 * xterm modifyOtherKeys mode 2. This is needed for tmux, which can forward
+	 * modified enter keys as CSI-u when extended-keys is enabled, but may not
+	 * answer the Kitty protocol query.
+	 *
 	 * The response is detected in setupStdinBuffer's data handler, which properly
 	 * handles the case where the response arrives split across multiple stdin events.
 	 */
@@ -163,6 +171,12 @@ export class ProcessTerminal implements Terminal {
 		this.setupStdinBuffer();
 		process.stdin.on("data", this.stdinDataHandler!);
 		process.stdout.write("\x1b[?u");
+		setTimeout(() => {
+			if (!this._kittyProtocolActive && !this._modifyOtherKeysActive) {
+				process.stdout.write("\x1b[>4;2m");
+				this._modifyOtherKeysActive = true;
+			}
+		}, 150);
 	}
 
 	/**
@@ -174,6 +188,10 @@ export class ProcessTerminal implements Terminal {
 	private enableWindowsVTInput(): void {
 		if (process.platform !== "win32") return;
 		try {
+			// Dynamic require to avoid bundling koffi's 74MB of cross-platform
+			// native binaries into every compiled binary. Koffi is only needed
+			// on Windows for VT input support.
+			const koffi = cjsRequire("koffi");
 			const k32 = koffi.load("kernel32.dll");
 			const GetStdHandle = k32.func("void* __stdcall GetStdHandle(int)");
 			const GetConsoleMode = k32.func("bool __stdcall GetConsoleMode(void*, _Out_ uint32_t*)");
@@ -197,6 +215,10 @@ export class ProcessTerminal implements Terminal {
 			process.stdout.write("\x1b[<u");
 			this._kittyProtocolActive = false;
 			setKittyProtocolActive(false);
+		}
+		if (this._modifyOtherKeysActive) {
+			process.stdout.write("\x1b[>4;0m");
+			this._modifyOtherKeysActive = false;
 		}
 
 		const previousHandler = this.inputHandler;
@@ -233,6 +255,10 @@ export class ProcessTerminal implements Terminal {
 			process.stdout.write("\x1b[<u");
 			this._kittyProtocolActive = false;
 			setKittyProtocolActive(false);
+		}
+		if (this._modifyOtherKeysActive) {
+			process.stdout.write("\x1b[>4;0m");
+			this._modifyOtherKeysActive = false;
 		}
 
 		// Clean up StdinBuffer

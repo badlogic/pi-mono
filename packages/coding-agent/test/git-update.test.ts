@@ -53,7 +53,9 @@ describe("DefaultPackageManager git update", () => {
 	let settingsManager: SettingsManager;
 	let packageManager: DefaultPackageManager;
 
-	// Git source that maps to our installed directory structure
+	// Git source that maps to our installed directory structure.
+	// Must use "git:" prefix so parseSource() treats it as a git source
+	// (bare "github.com/..." is not recognized as a git URL).
 	const gitSource = "git:github.com/test/extension";
 
 	beforeEach(() => {

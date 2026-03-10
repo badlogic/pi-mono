@@ -1,12 +1,20 @@
-// NEVER convert to top-level import - breaks browser/Vite builds (web-ui)
-let _os: typeof import("node:os") | null = null;
+import type * as NodeOs from "node:os";
+import type { Tool as OpenAITool, ResponseInput, ResponseStreamEvent } from "openai/resources/responses/responses.js";
+
+// NEVER convert to top-level runtime imports - breaks browser/Vite builds (web-ui)
+let _os: typeof NodeOs | null = null;
+
+type DynamicImport = (specifier: string) => Promise<unknown>;
+
+const dynamicImport: DynamicImport = (specifier) => import(specifier);
+const NODE_OS_SPECIFIER = "node:" + "os";
+
 if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
-	import("node:os").then((m) => {
-		_os = m;
+	dynamicImport(NODE_OS_SPECIFIER).then((m) => {
+		_os = m as typeof NodeOs;
 	});
 }
 
-import type { Tool as OpenAITool, ResponseInput, ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { getEnvApiKey } from "../env-api-keys.js";
 import { supportsXhigh } from "../models.js";
 import type {
@@ -132,8 +140,11 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 			}
 
 			const accountId = extractAccountId(apiKey);
-			const body = buildRequestBody(model, context, options);
-			options?.onPayload?.(body);
+			let body = buildRequestBody(model, context, options);
+			const nextBody = await options?.onPayload?.(body, model);
+			if (nextBody !== undefined) {
+				body = nextBody as RequestBody;
+			}
 			const headers = buildHeaders(model.headers, options?.headers, accountId, apiKey, options?.sessionId);
 			const bodyJson = JSON.stringify(body);
 			const transport = options?.transport || "sse";
@@ -316,7 +327,8 @@ function buildRequestBody(
 
 function clampReasoningEffort(modelId: string, effort: string): string {
 	const id = modelId.includes("/") ? modelId.split("/").pop()! : modelId;
-	if ((id.startsWith("gpt-5.2") || id.startsWith("gpt-5.3")) && effort === "minimal") return "low";
+	if ((id.startsWith("gpt-5.2") || id.startsWith("gpt-5.3") || id.startsWith("gpt-5.4")) && effort === "minimal")
+		return "low";
 	if (id === "gpt-5.1" && effort === "xhigh") return "high";
 	if (id === "gpt-5.1-codex-mini") return effort === "high" || effort === "xhigh" ? "high" : "medium";
 	return effort;

@@ -44,6 +44,9 @@ export type EditorAction =
 	| "undo"
 	// Tool output
 	| "expandTools"
+	// Tree navigation
+	| "treeFoldOrUp"
+	| "treeUnfoldOrDown"
 	// Session
 	| "toggleSessionPath"
 	| "toggleSessionSort"
@@ -105,6 +108,9 @@ export const DEFAULT_EDITOR_KEYBINDINGS: Required<EditorKeybindingsConfig> = {
 	undo: "ctrl+-",
 	// Tool output
 	expandTools: "ctrl+o",
+	// Tree navigation
+	treeFoldOrUp: ["ctrl+left", "alt+left"],
+	treeUnfoldOrDown: ["ctrl+right", "alt+right"],
 	// Session
 	toggleSessionPath: "ctrl+p",
 	toggleSessionSort: "ctrl+s",

@@ -966,7 +966,7 @@
           default: {
             // Check for pre-rendered custom tool HTML
             const rendered = renderedTools?.[call.id];
-            if (rendered?.callHtml || rendered?.resultHtml) {
+            if (rendered?.callHtml || rendered?.resultHtmlCollapsed || rendered?.resultHtmlExpanded) {
               // Custom tool with pre-rendered HTML from TUI renderer
               if (rendered.callHtml) {
                 html += `<div class="tool-header ansi-rendered">${rendered.callHtml}</div>`;
@@ -974,20 +974,17 @@
                 html += `<div class="tool-header"><span class="tool-name">${escapeHtml(name)}</span></div>`;
               }
               
-              if (rendered.resultHtml) {
-                // Apply same truncation as built-in tools (10 lines)
-                const lines = rendered.resultHtml.split('\n');
-                if (lines.length > 10) {
-                  const preview = lines.slice(0, 10).join('\n');
-                  html += `<div class="tool-output expandable ansi-rendered" onclick="this.classList.toggle('expanded')">
-                    <div class="output-preview">${preview}<div class="expand-hint">... (${lines.length - 10} more lines)</div></div>
-                    <div class="output-full">${rendered.resultHtml}</div>
-                  </div>`;
-                } else {
-                  html += `<div class="tool-output ansi-rendered">${rendered.resultHtml}</div>`;
-                }
+              if (rendered.resultHtmlCollapsed && rendered.resultHtmlExpanded && rendered.resultHtmlCollapsed !== rendered.resultHtmlExpanded) {
+                // Both collapsed and expanded differ - render expandable section
+                html += `<div class="tool-output expandable ansi-rendered" onclick="this.classList.toggle('expanded')">
+                  <div class="output-preview">${rendered.resultHtmlCollapsed}</div>
+                  <div class="output-full">${rendered.resultHtmlExpanded}</div>
+                </div>`;
+              } else if (rendered.resultHtmlExpanded) {
+                // Only expanded exists (or collapsed is identical) - show directly
+                html += `<div class="tool-output ansi-rendered">${rendered.resultHtmlExpanded}</div>`;
               } else if (result) {
-                // Fallback to JSON for result if no pre-rendered HTML
+                // No pre-rendered result HTML - fallback to JSON
                 const output = getResultText();
                 if (output) html += formatExpandableOutput(output, 10);
               }

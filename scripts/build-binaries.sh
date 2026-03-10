@@ -102,10 +102,14 @@ fi
 
 for platform in "${PLATFORMS[@]}"; do
     echo "Building for $platform..."
+    # Externalize koffi to avoid embedding all 18 platform .node files (~74MB)
+    # into every binary. Koffi is only used on Windows for VT input and the
+    # call site has a try/catch fallback. For Windows builds, we copy the
+    # appropriate .node file alongside the binary below.
     if [[ "$platform" == "windows-x64" ]]; then
-        bun build --compile --target=bun-$platform ./dist/cli.js --outfile binaries/$platform/pi.exe
+        bun build --compile --external koffi --target=bun-$platform ./dist/cli.js --outfile binaries/$platform/pi.exe
     else
-        bun build --compile --target=bun-$platform ./dist/cli.js --outfile binaries/$platform/pi
+        bun build --compile --external koffi --target=bun-$platform ./dist/cli.js --outfile binaries/$platform/pi
     fi
 done
 
@@ -122,6 +126,14 @@ for platform in "${PLATFORMS[@]}"; do
     cp -r dist/core/export-html binaries/$platform/
     cp -r docs binaries/$platform/
     cp -r examples binaries/$platform/
+
+    # Copy koffi native module for Windows (needed for VT input support)
+    if [[ "$platform" == "windows-x64" ]]; then
+        mkdir -p binaries/$platform/node_modules/koffi/build/koffi/win32_x64
+        cp ../../node_modules/koffi/index.js binaries/$platform/node_modules/koffi/
+        cp ../../node_modules/koffi/package.json binaries/$platform/node_modules/koffi/
+        cp ../../node_modules/koffi/build/koffi/win32_x64/koffi.node binaries/$platform/node_modules/koffi/build/koffi/win32_x64/
+    fi
 done
 
 # Create archives

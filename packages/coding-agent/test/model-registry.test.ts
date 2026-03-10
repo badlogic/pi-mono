@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { OpenAICompletionsCompat } from "@mariozechner/pi-ai";
+import type { Api, Context, Model, OpenAICompletionsCompat } from "@mariozechner/pi-ai";
+import { getApiProvider } from "@mariozechner/pi-ai";
+import { getOAuthProvider } from "@mariozechner/pi-ai/oauth";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { clearApiKeyCache, ModelRegistry } from "../src/core/model-registry.js";
@@ -64,6 +66,23 @@ describe("ModelRegistry", () => {
 	function writeRawModelsJson(providers: Record<string, unknown>) {
 		writeFileSync(modelsJsonPath, JSON.stringify({ providers }));
 	}
+
+	const openAiModel: Model<Api> = {
+		id: "test-openai-model",
+		name: "Test OpenAI Model",
+		api: "openai-completions",
+		provider: "openai",
+		baseUrl: "https://api.openai.com/v1",
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128000,
+		maxTokens: 4096,
+	};
+
+	const emptyContext: Context = {
+		messages: [],
+	};
 
 	describe("baseUrl override (no custom models)", () => {
 		test("overriding baseUrl keeps all built-in models", () => {
@@ -217,6 +236,43 @@ describe("ModelRegistry", () => {
 			for (const model of anthropicModels) {
 				expect(model.baseUrl).toBe("https://merged-proxy.example.com/v1");
 			}
+		});
+
+		test("model-level baseUrl overrides provider-level baseUrl for custom models", () => {
+			writeRawModelsJson({
+				"opencode-go": {
+					baseUrl: "https://opencode.ai/zen/go/v1",
+					apiKey: "TEST_KEY",
+					models: [
+						{
+							id: "minimax-m2.5",
+							api: "anthropic-messages",
+							baseUrl: "https://opencode.ai/zen/go",
+							reasoning: true,
+							input: ["text"],
+							cost: { input: 0.3, output: 1.2, cacheRead: 0.03, cacheWrite: 0 },
+							contextWindow: 204800,
+							maxTokens: 131072,
+						},
+						{
+							id: "glm-5",
+							api: "openai-completions",
+							reasoning: true,
+							input: ["text"],
+							cost: { input: 1, output: 3.2, cacheRead: 0.2, cacheWrite: 0 },
+							contextWindow: 204800,
+							maxTokens: 131072,
+						},
+					],
+				},
+			});
+
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+			const m25 = registry.find("opencode-go", "minimax-m2.5");
+			const glm5 = registry.find("opencode-go", "glm-5");
+
+			expect(m25?.baseUrl).toBe("https://opencode.ai/zen/go");
+			expect(glm5?.baseUrl).toBe("https://opencode.ai/zen/go/v1");
 		});
 
 		test("modelOverrides still apply when provider also defines models", () => {
@@ -524,6 +580,61 @@ describe("ModelRegistry", () => {
 				(m) => m.id === "anthropic/claude-sonnet-4",
 			)?.name;
 			expect(restoredName).not.toBe("Custom Name");
+		});
+	});
+
+	describe("dynamic provider lifecycle", () => {
+		test("unregisterProvider removes custom OAuth provider and restores built-in OAuth provider", () => {
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+			registry.registerProvider("anthropic", {
+				oauth: {
+					name: "Custom Anthropic OAuth",
+					login: async () => ({
+						access: "custom-access-token",
+						refresh: "custom-refresh-token",
+						expires: Date.now() + 60_000,
+					}),
+					refreshToken: async (credentials) => credentials,
+					getApiKey: (credentials) => credentials.access,
+				},
+			});
+
+			expect(getOAuthProvider("anthropic")?.name).toBe("Custom Anthropic OAuth");
+
+			registry.unregisterProvider("anthropic");
+
+			expect(getOAuthProvider("anthropic")?.name).not.toBe("Custom Anthropic OAuth");
+		});
+
+		test("unregisterProvider removes custom streamSimple override and restores built-in API stream handler", () => {
+			const registry = new ModelRegistry(authStorage, modelsJsonPath);
+
+			registry.registerProvider("stream-override-provider", {
+				api: "openai-completions",
+				streamSimple: () => {
+					throw new Error("custom streamSimple override");
+				},
+			});
+
+			let threwCustomOverride = false;
+			try {
+				getApiProvider("openai-completions")?.streamSimple(openAiModel, emptyContext);
+			} catch (error) {
+				threwCustomOverride = error instanceof Error && error.message === "custom streamSimple override";
+			}
+			expect(threwCustomOverride).toBe(true);
+
+			registry.unregisterProvider("stream-override-provider");
+
+			let threwCustomOverrideAfterUnregister = false;
+			try {
+				getApiProvider("openai-completions")?.streamSimple(openAiModel, emptyContext);
+			} catch (error) {
+				threwCustomOverrideAfterUnregister =
+					error instanceof Error && error.message === "custom streamSimple override";
+			}
+			expect(threwCustomOverrideAfterUnregister).toBe(false);
 		});
 	});
 

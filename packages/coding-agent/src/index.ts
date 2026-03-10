@@ -56,6 +56,8 @@ export type {
 	AppAction,
 	BashToolCallEvent,
 	BeforeAgentStartEvent,
+	BeforeProviderRequestEvent,
+	BeforeProviderRequestEventResult,
 	CompactOptions,
 	ContextEvent,
 	ContextUsage,
