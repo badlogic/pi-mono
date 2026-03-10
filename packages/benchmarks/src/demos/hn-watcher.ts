@@ -2,10 +2,12 @@
  * Demo 2: HackerNews Energy-Aware Watcher
  *
  * Polls real HackerNews top stories and uses a Neuralwatt LLM to score each
- * title's relevance against configurable keywords. Runs baseline and energy-aware
- * policies side by side — energy savings compound as the budget tightens,
- * triggering routing from Kimi K2.5 down to GPT-OSS-20B (13x cheaper, 2.8x
- * more energy-efficient).
+ * title's relevance against configurable keywords. Runs baseline, energy-aware,
+ * and (optionally) fast mode side by side.
+ *
+ * Energy-aware routing (clamped to maxTier=medium since scoring is simple):
+ *   medium → Devstral-24B ($0.12/$0.35 per 1M) — ambiguous/niche titles
+ *   simple → GPT-OSS-20B  ($0.03/$0.16 per 1M) — clear titles (most stories)
  *
  * Learned memory: persists score agreement observations across runs so each
  * startup displays routing quality confidence from previous sessions.
@@ -113,19 +115,17 @@ const KIMI_FAST_MODEL: Model<"openai-completions"> = {
 /** Models available for EnergyAwarePolicy routing (cheapest-first order). */
 const NEURALWATT_MODELS: Model<"openai-completions">[] = [GPT_OSS_MODEL, DEVSTRAL_MODEL, KIMI_MODEL];
 
-/**
- * Start on Kimi K2.5 (0.21 tokens/J) — policy will route to
- * GPT-OSS-20B (0.50 tokens/J, 2.4x more efficient, 13x cheaper) at >70% budget pressure.
- */
+/** Baseline model — used for baseline scoring and as the default for EA before discriminator overrides. */
 const SCORING_MODEL = KIMI_MODEL;
 
 const DEFAULT_DURATION_S = 120;
 /**
- * Budget sized so routing kicks in after ~5 stories.
- * Kimi K2.5 at 0.482 tokens/J with ~250 tokens per scoring call ~= 519J each.
- * Budget 3500J: routing fires at story 5 (2595J / 3500J = 74%+ pressure).
+ * Budget for display and EA policy pressure calculation.
+ * Real-world Kimi K2.5 scoring calls cost ~4000-6000J each.
+ * At 50_000J, EA can score ~10 stories via discriminator routing
+ * (most routed to GPT-OSS at ~100J each, discriminator ~750J overhead).
  */
-const DEFAULT_BUDGET_JOULES = 3_500;
+const DEFAULT_BUDGET_JOULES = 50_000;
 
 /** Memory key for this routing pair. */
 const MEMORY_KEY = "kimi-k2.5→gpt-oss-20b";
@@ -141,25 +141,28 @@ const TOKENS_PER_JOULE: Record<string, number> = {
 
 /**
  * Discriminator config for the HN watcher.
- * Three tiers for story scoring:
- *   complex → Kimi K2.5: ambiguous title, niche topic, nuanced reasoning needed
- *   medium  → Devstral-24B: moderately clear title, some judgment required
- *   simple  → GPT-OSS-20B: clear title, obvious relevance or irrelevance
- * No "thinking" tier — scoring tasks don't require chain-of-thought.
+ * Scoring a title's relevance (0.0-1.0) is inherently a simple task.
+ * The discriminator decides whether the title itself is ambiguous enough
+ * to need a larger model, not whether the scoring task is complex.
+ * Clamped to maxTier=medium at call site — no need for complex/thinking.
+ *
+ *   medium  → Devstral-24B: ambiguous or niche title, needs domain knowledge
+ *   simple  → GPT-OSS-20B: clear title, obviously relevant or irrelevant
  */
 const HN_DISCRIMINATOR_CONFIG: DiscriminatorConfig = {
 	classifierModel: GPT_OSS_MODEL,
-	complex: { model: KIMI_MODEL },
+	complex: { model: DEVSTRAL_MODEL, briefMaxTokens: 8 }, // fallback if maxTier not applied
 	medium: { model: DEVSTRAL_MODEL, briefMaxTokens: 8 },
-	simple: { model: GPT_OSS_MODEL, briefMaxTokens: 8 }, // just a number 0.0–1.0
+	simple: { model: GPT_OSS_MODEL, briefMaxTokens: 8 },
 	tokensPerJoule: TOKENS_PER_JOULE,
 	systemPrompt:
 		"You are a routing classifier for a relevance-scoring pipeline.\n" +
-		"Classify whether scoring a HackerNews story title requires a capable, moderate, or efficient model.\n" +
-		'"complex" → Kimi K2.5: ambiguous title, specialized niche topic, nuanced judgment required.\n' +
-		'"medium"  → Devstral-24B: moderately clear but needs some domain knowledge.\n' +
+		"The task is always simple: score a HackerNews title's relevance to AI/ML as 0.0-1.0.\n" +
+		"You are deciding whether the TITLE is clear enough for a small model, not whether the task is hard.\n" +
+		"Most titles should be simple. Only use medium for genuinely ambiguous or niche titles.\n" +
+		'"medium"  → Devstral-24B: ambiguous title, niche topic, needs domain knowledge to interpret.\n' +
 		'"simple"  → GPT-OSS-20B: clear title, obviously relevant or irrelevant to AI/ML.\n' +
-		'Response length: "brief" for a quick numeric score, "full" if reasoning is needed.\n' +
+		'Response length is always "brief" (output is just a single number).\n' +
 		'Reply with ONLY valid JSON: {"tier":"simple","length":"brief","reason":"<=10 words"}',
 };
 
@@ -563,7 +566,7 @@ function printFinalSummary(
 		console.log(`  |                 | ${pad("Baseline", c1)} | ${pad("Energy-Aware", c2)} | ${pad("Fast", c3)} |`);
 		console.log(sep);
 		console.log(
-			`  | Model           | ${pad("kimi-k2.5", c1)} | ${pad("kimi→gpt-oss (routed)", c2)} | ${pad("kimi-k2.5-fast", c3)} |`,
+			`  | Model           | ${pad("kimi-k2.5", c1)} | ${pad("gpt-oss/devstral (routed)", c2)} | ${pad("kimi-k2.5-fast", c3)} |`,
 		);
 		console.log(
 			`  | Stories scored  | ${pad(String(baseStats.storiesScored), c1)} | ${pad(String(eaStats.storiesScored), c2)} | ${pad(String(fastStats.storiesScored), c3)} |`,
@@ -593,7 +596,7 @@ function printFinalSummary(
 		console.log("  +-----------------+---------------+---------------------------+");
 		console.log("  |                 | Baseline      | Energy-Aware              |");
 		console.log("  +-----------------+---------------+---------------------------+");
-		console.log(`  | Model           | ${pad("kimi-k2.5", 13)} | ${pad("kimi → gpt-oss (routed)", 25)} |`);
+		console.log(`  | Model           | ${pad("kimi-k2.5", 13)} | ${pad("gpt-oss/devstral (routed)", 25)} |`);
 		console.log(
 			`  | Stories scored  | ${pad(String(baseStats.storiesScored), 13)} | ${pad(String(eaStats.storiesScored), 25)} |`,
 		);
@@ -654,12 +657,13 @@ function printFinalSummary(
 
 	if (eaStats.discriminatorDecisions.length > 0) {
 		const simpleCount = eaStats.discriminatorDecisions.filter((d) => d.tier === "simple").length;
-		const mediumCount = eaStats.discriminatorDecisions.filter((d) => d.tier === "medium").length;
-		const complexCount = eaStats.discriminatorDecisions.filter((d) => d.tier === "complex").length;
+		const mediumCount = eaStats.discriminatorDecisions.filter(
+			(d) => d.tier === "medium" || d.tier === "complex",
+		).length;
 		const total = eaStats.discriminatorDecisions.length;
 		console.log("");
 		console.log(
-			`  DISCRIMINATOR SUMMARY (${total} stories): ${simpleCount} simple→GPT-OSS | ${mediumCount} medium→Devstral | ${complexCount} complex→Kimi`,
+			`  DISCRIMINATOR SUMMARY (${total} stories): ${simpleCount} simple→GPT-OSS | ${mediumCount} medium→Devstral`,
 		);
 		// Show a sample of decisions (last 5)
 		const sample = eaStats.discriminatorDecisions.slice(-5);
@@ -863,7 +867,9 @@ async function main(): Promise<void> {
 			).catch(logErr("baseline")),
 			eaStats.aborted
 				? Promise.resolve(null)
-				: discriminate("score", story.title, HN_DISCRIMINATOR_CONFIG, "", apiKey).catch(logErr("disc")),
+				: discriminate("score", story.title, HN_DISCRIMINATOR_CONFIG, "", apiKey, {
+						maxTier: "medium",
+					}).catch(logErr("disc")),
 			enableFast
 				? scoreStoryLLM(story.title, keywords, KIMI_FAST_MODEL, apiKey)
 						.then((r) => ({
@@ -902,8 +908,8 @@ async function main(): Promise<void> {
 					nowS * 1000,
 					apiKey,
 					memoryConfidence,
-					// Override model for simple/medium — complex defers to EnergyAwarePolicy
-					discResult && discResult.tier !== "complex" ? discResult.model : undefined,
+					// Discriminator drives all routing (clamped to maxTier=medium)
+					discResult ? discResult.model : undefined,
 					discResult?.maxTokens,
 				).catch(logErr("ea"));
 
