@@ -766,6 +766,13 @@ async function runCodingAgent(
 			{ systemPrompt: SYSTEM_PROMPT, messages },
 			{ apiKey, ...(turnMaxTokens ? { maxTokens: turnMaxTokens } : {}) },
 		);
+
+		// Detect API errors (completeSimple doesn't throw — returns stopReason: "error")
+		const errorMsg = (assistantMsg as unknown as Record<string, unknown>).errorMessage;
+		if (assistantMsg.stopReason === "error" || errorMsg) {
+			throw new Error(`API error (${effectiveModel.id}): ${errorMsg ?? "unknown"}`);
+		}
+
 		messages.push(assistantMsg);
 
 		const { joules: energy, fromApi } = getEnergy(assistantMsg, effectiveModel.id);

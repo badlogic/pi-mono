@@ -252,6 +252,12 @@ async function scoreStoryLLM(
 
 	const message = await completeSimple(model, { systemPrompt, messages }, { apiKey, maxTokens: maxTokens ?? 8 });
 
+	// Detect API errors (completeSimple doesn't throw — returns stopReason: "error")
+	const errorMsg = (message as unknown as Record<string, unknown>).errorMessage;
+	if (message.stopReason === "error" || errorMsg) {
+		throw new Error(`API error (${model.id}): ${errorMsg ?? "unknown"}`);
+	}
+
 	const text = message.content
 		.filter((c) => c.type === "text")
 		.map((c) => (c as { type: "text"; text: string }).text)
