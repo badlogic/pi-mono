@@ -1,6 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import { getModel } from "../src/models.js";
-import type { EnergyUsage } from "../src/types.js";
+import type { EnergyUsage, Model } from "../src/types.js";
+
+/** Inline neuralwatt model fixture — not in the generated MODELS file. */
+const NW_GPT_OSS: Model<"openai-completions"> = {
+	id: "openai/gpt-oss-20b",
+	name: "GPT-OSS 20B",
+	api: "openai-completions",
+	provider: "neuralwatt",
+	baseUrl: "https://api.neuralwatt.com/v1",
+	reasoning: false,
+	input: ["text"],
+	cost: { input: 0.03, output: 0.16, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 16_384,
+	maxTokens: 4_096,
+};
 
 vi.mock("openai", () => {
 	let usagePayload: Record<string, unknown> = {};
@@ -52,7 +66,7 @@ describe("energy metrics parsing", () => {
 		});
 
 		const { complete } = await import("../src/stream.js");
-		const model = getModel("neuralwatt", "openai/gpt-oss-20b");
+		const model = NW_GPT_OSS;
 		const response = await complete(
 			model,
 			{
@@ -80,7 +94,7 @@ describe("energy metrics parsing", () => {
 		});
 
 		const { complete } = await import("../src/stream.js");
-		const model = getModel("neuralwatt", "openai/gpt-oss-20b");
+		const model = NW_GPT_OSS;
 		const response = await complete(
 			model,
 			{
@@ -108,7 +122,7 @@ describe("energy metrics parsing", () => {
 		});
 
 		const { complete } = await import("../src/stream.js");
-		const model = getModel("neuralwatt", "openai/gpt-oss-20b");
+		const model = NW_GPT_OSS;
 		const response = await complete(
 			model,
 			{
@@ -135,7 +149,7 @@ describe("energy metrics parsing", () => {
 		});
 
 		const { complete } = await import("../src/stream.js");
-		const model = getModel("neuralwatt", "openai/gpt-oss-20b");
+		const model = NW_GPT_OSS;
 		const response = await complete(
 			model,
 			{
@@ -160,7 +174,7 @@ describe("energy metrics parsing", () => {
 		});
 
 		const { complete } = await import("../src/stream.js");
-		const model = getModel("neuralwatt", "openai/gpt-oss-20b");
+		const model = NW_GPT_OSS;
 		const response = await complete(
 			model,
 			{
