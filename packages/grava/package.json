@@ -1,0 +1,31 @@
+{
+	"name": "@mariozechner/pi-grava",
+	"version": "0.56.3",
+	"description": "Grava — AI agent framework with AI Search, multi-model audit, and cognitive memory",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./blueprint": {
+			"types": "./dist/blueprint/index.d.ts",
+			"import": "./dist/blueprint/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"dev": "tsc -p tsconfig.build.json --watch",
+		"clean": "shx rm -rf dist"
+	},
+	"dependencies": {
+		"@mariozechner/pi-ai": "^0.56.3",
+		"@mariozechner/pi-agent-core": "^0.56.3"
+	},
+	"devDependencies": {
+		"shx": "^0.4.0"
+	},
+	"license": "MIT"
+}
