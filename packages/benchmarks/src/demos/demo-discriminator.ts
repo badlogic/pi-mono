@@ -5,10 +5,10 @@
  * RoutingDecision selecting one of four tiers based on task complexity and
  * whether chain-of-thought reasoning is needed:
  *
- *   thinking → Kimi K2.5      (0.21 tok/J, $1.327/1M)  — CoT reasoning, debugging
- *   complex  → Qwen3.5 397B  (1.03 tok/J, $0/1M)      — high quality, no CoT needed
- *   medium   → Devstral 24B  (9.92 tok/J, $0.12/1M)   — moderate complexity
- *   simple   → GPT-OSS 20B   (0.50 tok/J, $0.10/1M)   — boilerplate, obvious tasks
+ *   thinking → Kimi K2.5      (0.21 tok/J, $0.52/$2.59 per 1M)  — CoT reasoning, debugging
+ *   complex  → Qwen3.5 397B  (1.03 tok/J, $0.69/$4.14 per 1M)  — high quality, no CoT needed
+ *   medium   → Devstral 24B  (22.35 tok/J, $0.12/$0.35 per 1M) — moderate complexity
+ *   simple   → GPT-OSS 20B   (0.50 tok/J, $0.03/$0.16 per 1M)  — boilerplate, obvious tasks
  *
  * Tiers are optional in the config — if "thinking" or "medium" are omitted,
  * the classifier falls back to the nearest configured tier.
@@ -96,6 +96,13 @@ export interface DiscriminateOptions {
 	 * If the classifier picks a tier above maxTier, it is clamped down to maxTier.
 	 */
 	maxTier?: DiscriminatorTier;
+	/**
+	 * Minimum tier the classifier is allowed to select (quality floor).
+	 * Tier order: simple < medium < complex < thinking.
+	 * If the classifier picks a tier below minTier, it is raised to minTier.
+	 * If minTier > maxTier, maxTier wins (cost ceiling takes precedence).
+	 */
+	minTier?: DiscriminatorTier;
 }
 
 // -- Default system prompt ----------------------------------------------------
@@ -122,6 +129,13 @@ function clampTier(tier: DiscriminatorTier, maxTier: DiscriminatorTier): Discrim
 	const tierIdx = TIER_ORDER.indexOf(tier);
 	const maxIdx = TIER_ORDER.indexOf(maxTier);
 	return tierIdx > maxIdx ? maxTier : tier;
+}
+
+/** Clamp a tier up to a minimum allowed tier. */
+function clampTierUp(tier: DiscriminatorTier, minTier: DiscriminatorTier): DiscriminatorTier {
+	const tierIdx = TIER_ORDER.indexOf(tier);
+	const minIdx = TIER_ORDER.indexOf(minTier);
+	return tierIdx < minIdx ? minTier : tier;
 }
 
 // -- Tier resolution ----------------------------------------------------------
@@ -256,7 +270,12 @@ export async function discriminate(
 			? (rawTier as DiscriminatorTier)
 			: "complex";
 
-		const clampedTier = options?.maxTier ? clampTier(tier, options.maxTier) : tier;
+		let clampedTier = options?.maxTier ? clampTier(tier, options.maxTier) : tier;
+		// Apply minTier, but never exceed maxTier (maxTier wins on conflict)
+		if (options?.minTier) {
+			clampedTier = clampTierUp(clampedTier, options.minTier);
+			if (options.maxTier) clampedTier = clampTier(clampedTier, options.maxTier);
+		}
 		const requires = options?.requires ?? [];
 		const { resolvedTier, tierConfig } =
 			requires.length > 0

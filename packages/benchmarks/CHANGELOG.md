@@ -3,6 +3,25 @@
 ## [Unreleased]
 
 ### Added
+- Fast mode (`--fast`): third comparison column in both coding-agent and hn-watcher demos (Kimi K2.5 Fast)
+- `minTier` option on discriminator for failure-based tier escalation (escalate after 2 consecutive failures)
+- New model definitions: MiniMax M2.5, Qwen3.5 35B, Kimi K2.5 Fast, GLM-5 Fast
+- Separate input/output token cost estimation (replaces averaged pricing)
+
+### Changed
+- Aggregate scorecard now only averages runs where all modes passed (apples-to-apples comparison)
+- Escalation strategy: replaced `FIX_TIER_CEILING` (maxTier per attempt) with failure-counting minTier escalation
+- Updated all model pricing in both demos from portal.neuralwatt.com (asymmetric input/output rates)
+- Quality summary now shows failure status when EA/fast fails but baseline passes
+- maxTier takes precedence when minTier > maxTier (prevents silent contract violation)
+
+### Fixed
+- Escalation counter off-by-one: reset to 1 after escalation so next tier also needs only 2 failures
+- Stale file header comments updated with correct four-tier architecture and pricing
+
+---
+
+### Added (initial)
 - Initial package scaffold for energy-aware benchmark harness
 - Core types: TelemetryRecord, BenchmarkTask, TaskResult, TaskComparison, BenchmarkReport, RunConfig, RunResult
 - Benchmark runner with runTask/runSuite supporting policy hooks and mocked turn usage

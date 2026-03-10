@@ -2,17 +2,19 @@
  * Demo 2: HackerNews Energy-Aware Watcher
  *
  * Polls real HackerNews top stories and uses a Neuralwatt LLM to score each
- * title's relevance against configurable keywords. Runs baseline and energy-aware
- * policies side by side — energy savings compound as the budget tightens,
- * triggering routing from Kimi K2.5 down to GPT-OSS-20B (13x cheaper, 2.8x
- * more energy-efficient).
+ * title's relevance against configurable keywords. Runs baseline, energy-aware,
+ * and (optionally) fast mode side by side.
+ *
+ * Energy-aware routing (clamped to maxTier=medium since scoring is simple):
+ *   medium → Devstral-24B ($0.12/$0.35 per 1M) — ambiguous/niche titles
+ *   simple → GPT-OSS-20B  ($0.03/$0.16 per 1M) — clear titles (most stories)
  *
  * Learned memory: persists score agreement observations across runs so each
  * startup displays routing quality confidence from previous sessions.
  *
  * Usage:
  *   npx tsx src/demos/hn-watcher.ts [--duration <seconds>] [--budget <joules>]
- *     [--keywords "AI,LLM,GPU,RAG"] [--clear-memory]
+ *     [--keywords "AI,LLM,GPU,RAG"] [--fast] [--clear-memory]
  *
  * Requires NEURALWATT_API_KEY in the environment.
  */
@@ -61,44 +63,51 @@ const DEFAULT_KEYWORDS = [
 	"model routing",
 ];
 
-const GPT_OSS_MODEL: Model<"openai-completions"> = {
-	// 0.50 tokens/J, $0.10/$0.10/1M — cheap and fast
-	id: "openai/gpt-oss-20b",
-	name: "GPT-OSS 20B",
-	api: "openai-completions",
-	provider: "neuralwatt",
+/** Shared base for all NeuralWatt models. */
+const NW_BASE = {
+	api: "openai-completions" as const,
+	provider: "neuralwatt" as const,
 	baseUrl: "https://api.neuralwatt.com/v1",
 	reasoning: false,
-	input: ["text"],
-	cost: { input: 0.1, output: 0.1, cacheRead: 0, cacheWrite: 0 },
+	input: ["text"] as ["text"],
+};
+
+const GPT_OSS_MODEL: Model<"openai-completions"> = {
+	// 0.50 tok/J, $0.03/$0.16 per 1M — cheapest model
+	id: "openai/gpt-oss-20b",
+	name: "GPT-OSS 20B",
+	...NW_BASE,
+	cost: { input: 0.03, output: 0.16, cacheRead: 0, cacheWrite: 0 },
 	contextWindow: 16_384,
 	maxTokens: 4_096,
 };
 
 const DEVSTRAL_MODEL: Model<"openai-completions"> = {
-	// Most energy-efficient: 9.92 tokens/J, $0.12/$0.12/1M, 262K context
+	// 22.35 tok/J, $0.12/$0.35 per 1M — most energy-efficient, 262K context
 	id: "mistralai/Devstral-Small-2-24B-Instruct-2512",
 	name: "Devstral-24B",
-	api: "openai-completions",
-	provider: "neuralwatt",
-	baseUrl: "https://api.neuralwatt.com/v1",
-	reasoning: false,
-	input: ["text"],
-	cost: { input: 0.12, output: 0.12, cacheRead: 0, cacheWrite: 0 },
+	...NW_BASE,
+	cost: { input: 0.12, output: 0.35, cacheRead: 0, cacheWrite: 0 },
 	contextWindow: 262_144,
 	maxTokens: 8_192,
 };
 
 const KIMI_MODEL: Model<"openai-completions"> = {
-	// Flagship: 0.21 tokens/J, $1.327/$1.327/1M, 262K context — CoT/thinking
+	// 0.21 tok/J, $0.52/$2.59 per 1M, 262K context — CoT/thinking
 	id: "moonshotai/Kimi-K2.5",
 	name: "Kimi K2.5",
-	api: "openai-completions",
-	provider: "neuralwatt",
-	baseUrl: "https://api.neuralwatt.com/v1",
-	reasoning: false,
-	input: ["text"],
-	cost: { input: 1.327, output: 1.327, cacheRead: 0, cacheWrite: 0 },
+	...NW_BASE,
+	cost: { input: 0.52, output: 2.59, cacheRead: 0, cacheWrite: 0 },
+	contextWindow: 262_144,
+	maxTokens: 16_384,
+};
+
+const KIMI_FAST_MODEL: Model<"openai-completions"> = {
+	// Fast alias of Kimi K2.5 — speed-optimized, $0.52/$2.59 per 1M
+	id: "kimi-k2.5-fast",
+	name: "Kimi K2.5 Fast",
+	...NW_BASE,
+	cost: { input: 0.52, output: 2.59, cacheRead: 0, cacheWrite: 0 },
 	contextWindow: 262_144,
 	maxTokens: 16_384,
 };
@@ -106,52 +115,54 @@ const KIMI_MODEL: Model<"openai-completions"> = {
 /** Models available for EnergyAwarePolicy routing (cheapest-first order). */
 const NEURALWATT_MODELS: Model<"openai-completions">[] = [GPT_OSS_MODEL, DEVSTRAL_MODEL, KIMI_MODEL];
 
-/**
- * Start on Kimi K2.5 (0.21 tokens/J) — policy will route to
- * GPT-OSS-20B (0.50 tokens/J, 2.4x more efficient, 13x cheaper) at >70% budget pressure.
- */
+/** Baseline model — used for baseline scoring and as the default for EA before discriminator overrides. */
 const SCORING_MODEL = KIMI_MODEL;
 
 const DEFAULT_DURATION_S = 120;
 /**
- * Budget sized so routing kicks in after ~5 stories.
- * Kimi K2.5 at 0.482 tokens/J with ~250 tokens per scoring call ~= 519J each.
- * Budget 3500J: routing fires at story 5 (2595J / 3500J = 74%+ pressure).
+ * Budget for display and EA policy pressure calculation.
+ * Real-world Kimi K2.5 scoring calls cost ~4000-6000J each.
+ * At 50_000J, EA can score ~10 stories via discriminator routing
+ * (most routed to GPT-OSS at ~100J each, discriminator ~750J overhead).
  */
-const DEFAULT_BUDGET_JOULES = 3_500;
+const DEFAULT_BUDGET_JOULES = 50_000;
 
 /** Memory key for this routing pair. */
 const MEMORY_KEY = "kimi-k2.5→gpt-oss-20b";
 
 /** Energy efficiency (tokens per joule) from portal.neuralwatt.com. */
 const TOKENS_PER_JOULE: Record<string, number> = {
-	"mistralai/Devstral-Small-2-24B-Instruct-2512": 9.92,
+	"mistralai/Devstral-Small-2-24B-Instruct-2512": 22.35,
 	"Qwen/Qwen3.5-397B-A17B-FP8": 1.03,
 	"openai/gpt-oss-20b": 0.5,
 	"moonshotai/Kimi-K2.5": 0.21,
+	"kimi-k2.5-fast": 0.21,
 };
 
 /**
  * Discriminator config for the HN watcher.
- * Three tiers for story scoring:
- *   complex → Kimi K2.5: ambiguous title, niche topic, nuanced reasoning needed
- *   medium  → Devstral-24B: moderately clear title, some judgment required
- *   simple  → GPT-OSS-20B: clear title, obvious relevance or irrelevance
- * No "thinking" tier — scoring tasks don't require chain-of-thought.
+ * Scoring a title's relevance (0.0-1.0) is inherently a simple task.
+ * The discriminator decides whether the title itself is ambiguous enough
+ * to need a larger model, not whether the scoring task is complex.
+ * Clamped to maxTier=medium at call site — no need for complex/thinking.
+ *
+ *   medium  → Devstral-24B: ambiguous or niche title, needs domain knowledge
+ *   simple  → GPT-OSS-20B: clear title, obviously relevant or irrelevant
  */
 const HN_DISCRIMINATOR_CONFIG: DiscriminatorConfig = {
 	classifierModel: GPT_OSS_MODEL,
-	complex: { model: KIMI_MODEL },
+	complex: { model: DEVSTRAL_MODEL, briefMaxTokens: 8 }, // fallback if maxTier not applied
 	medium: { model: DEVSTRAL_MODEL, briefMaxTokens: 8 },
-	simple: { model: GPT_OSS_MODEL, briefMaxTokens: 8 }, // just a number 0.0–1.0
+	simple: { model: GPT_OSS_MODEL, briefMaxTokens: 8 },
 	tokensPerJoule: TOKENS_PER_JOULE,
 	systemPrompt:
 		"You are a routing classifier for a relevance-scoring pipeline.\n" +
-		"Classify whether scoring a HackerNews story title requires a capable, moderate, or efficient model.\n" +
-		'"complex" → Kimi K2.5: ambiguous title, specialized niche topic, nuanced judgment required.\n' +
-		'"medium"  → Devstral-24B: moderately clear but needs some domain knowledge.\n' +
+		"The task is always simple: score a HackerNews title's relevance to AI/ML as 0.0-1.0.\n" +
+		"You are deciding whether the TITLE is clear enough for a small model, not whether the task is hard.\n" +
+		"Most titles should be simple. Only use medium for genuinely ambiguous or niche titles.\n" +
+		'"medium"  → Devstral-24B: ambiguous title, niche topic, needs domain knowledge to interpret.\n' +
 		'"simple"  → GPT-OSS-20B: clear title, obviously relevant or irrelevant to AI/ML.\n' +
-		'Response length: "brief" for a quick numeric score, "full" if reasoning is needed.\n' +
+		'Response length is always "brief" (output is just a single number).\n' +
 		'Reply with ONLY valid JSON: {"tier":"simple","length":"brief","reason":"<=10 words"}',
 };
 
@@ -186,8 +197,14 @@ interface HNStory {
 
 /** Per-story score pair for tracking EA vs baseline agreement. */
 interface ScorePair {
+	title: string;
 	base: number;
+	baseModel: string;
 	ea: number;
+	eaModel: string;
+	eaTier: string;
+	fast?: number;
+	fastModel?: string;
 }
 
 // -- Energy tracking ----------------------------------------------------------
@@ -242,6 +259,12 @@ async function scoreStoryLLM(
 	const messages: Message[] = [{ role: "user", content: userPrompt, timestamp: Date.now() }];
 
 	const message = await completeSimple(model, { systemPrompt, messages }, { apiKey, maxTokens: maxTokens ?? 8 });
+
+	// Detect API errors (completeSimple doesn't throw — returns stopReason: "error")
+	const errorMsg = (message as unknown as Record<string, unknown>).errorMessage;
+	if (message.stopReason === "error" || errorMsg) {
+		throw new Error(`API error (${model.id}): ${errorMsg ?? "unknown"}`);
+	}
 
 	const text = message.content
 		.filter((c) => c.type === "text")
@@ -384,6 +407,7 @@ function baselineBar(consumed: number, width = 22): string {
 }
 
 const modelShort = (id: string): string => {
+	if (id === "kimi-k2.5-fast") return "kimi-fast";
 	if (id.includes("gpt-oss")) return "gpt-oss-20b";
 	if (id.includes("Devstral")) return "devstral-24b";
 	if (id.includes("deepseek")) return "deepseek-33b";
@@ -402,6 +426,7 @@ function renderDisplay(
 	recentBase: StoryScore[],
 	recentEa: StoryScore[],
 	lastDecision: string | null,
+	fastStats?: WatcherStats,
 ): void {
 	process.stdout.write("\x1b[2J\x1b[H");
 
@@ -438,6 +463,11 @@ function renderDisplay(
 		if (lastDecision) {
 			console.log(`               \x1b[33m[policy] ${fmtDecision(lastDecision)}\x1b[0m`);
 		}
+	}
+	if (fastStats) {
+		console.log(
+			`  \x1b[33m[fast      ]\x1b[0m ${baselineBar(fastStats.totalEnergy)}  ${fastStats.storiesScored} stories`,
+		);
 	}
 
 	console.log("");
@@ -500,6 +530,7 @@ function printFinalSummary(
 	elapsed: number,
 	budget: number,
 	scorePairs: ScorePair[],
+	fastStats?: WatcherStats,
 ): void {
 	process.stdout.write("\x1b[2J\x1b[H");
 
@@ -510,43 +541,92 @@ function printFinalSummary(
 	const matches = scorePairs.filter((p) => Math.abs(p.base - p.ea) <= 0.15).length;
 	const agreementPct = scorePairs.length > 0 ? ((matches / scorePairs.length) * 100).toFixed(0) : "n/a";
 
+	const hasFast = fastStats != null && fastStats.storiesScored > 0;
+	const fastEnergySaved =
+		hasFast && baseStats.totalEnergy > 0
+			? ((baseStats.totalEnergy - fastStats.totalEnergy) / baseStats.totalEnergy) * 100
+			: 0;
+	const fastCostSaved =
+		hasFast && baseStats.totalCost > 0
+			? ((baseStats.totalCost - fastStats.totalCost) / baseStats.totalCost) * 100
+			: 0;
+
 	console.log("╔══════════════════════════════════════════════════════════════════════╗");
 	console.log("║            HackerNews Energy-Aware Watcher  — Final Report          ║");
 	console.log("╚══════════════════════════════════════════════════════════════════════╝");
 	console.log(`  Elapsed: ${elapsed}s | Per-run budget: ${budget}J`);
 	console.log("");
-	console.log("  +-----------------+---------------+---------------------------+");
-	console.log("  |                 | Baseline      | Energy-Aware              |");
-	console.log("  +-----------------+---------------+---------------------------+");
-	console.log(`  | Model           | ${pad("kimi-k2.5", 13)} | ${pad("kimi → gpt-oss (routed)", 25)} |`);
-	console.log(
-		`  | Stories scored  | ${pad(String(baseStats.storiesScored), 13)} | ${pad(String(eaStats.storiesScored), 25)} |`,
-	);
+
+	const fmtDelta = (pct: number) => `${pct >= 0 ? "-" : "+"}${Math.abs(pct).toFixed(0)}%`;
+	const fmtCost = (c: number) => `$${c.toFixed(5)}`;
 	const costSaved =
 		baseStats.totalCost > 0 ? ((baseStats.totalCost - eaStats.totalCost) / baseStats.totalCost) * 100 : 0;
-	const fmtCost = (c: number) => `$${c.toFixed(5)}`;
 
-	console.log(
-		`  | Energy used     | ${pad(`${baseStats.totalEnergy.toFixed(2)} J`, 13)} | ${pad(`${eaStats.totalEnergy.toFixed(2)} J  (${energySaved >= 0 ? "-" : "+"}${Math.abs(energySaved).toFixed(0)}%)`, 25)} |`,
-	);
-	if (eaStats.totalDiscriminatorEnergyJ > 0) {
+	if (hasFast) {
+		const c1 = 13;
+		const c2 = 25;
+		const c3 = 18;
+		const sep = `  +-----------------+${"-".repeat(c1 + 2)}+${"-".repeat(c2 + 2)}+${"-".repeat(c3 + 2)}+`;
+		console.log(sep);
+		console.log(`  |                 | ${pad("Baseline", c1)} | ${pad("Energy-Aware", c2)} | ${pad("Fast", c3)} |`);
+		console.log(sep);
 		console.log(
-			`  | Discriminator   | ${pad("n/a", 13)} | ${pad(`${eaStats.totalDiscriminatorEnergyJ.toFixed(1)}J (incl. in energy ↑)`, 25)} |`,
+			`  | Model           | ${pad("kimi-k2.5", c1)} | ${pad("gpt-oss/devstral (routed)", c2)} | ${pad("kimi-k2.5-fast", c3)} |`,
 		);
+		console.log(
+			`  | Stories scored  | ${pad(String(baseStats.storiesScored), c1)} | ${pad(String(eaStats.storiesScored), c2)} | ${pad(String(fastStats.storiesScored), c3)} |`,
+		);
+		console.log(
+			`  | Energy used     | ${pad(`${baseStats.totalEnergy.toFixed(1)} J`, c1)} | ${pad(`${eaStats.totalEnergy.toFixed(1)} J (${fmtDelta(energySaved)})`, c2)} | ${pad(`${fastStats.totalEnergy.toFixed(1)} J (${fmtDelta(fastEnergySaved)})`, c3)} |`,
+		);
+		if (eaStats.totalDiscriminatorEnergyJ > 0) {
+			console.log(
+				`  | Discriminator   | ${pad("n/a", c1)} | ${pad(`${eaStats.totalDiscriminatorEnergyJ.toFixed(1)}J (incl.)`, c2)} | ${pad("n/a", c3)} |`,
+			);
+		}
+		console.log(
+			`  | Est. cost       | ${pad(fmtCost(baseStats.totalCost), c1)} | ${pad(`${fmtCost(eaStats.totalCost)} (${fmtDelta(costSaved)})`, c2)} | ${pad(`${fmtCost(fastStats.totalCost)} (${fmtDelta(fastCostSaved)})`, c3)} |`,
+		);
+		console.log(
+			`  | Tokens used     | ${pad(String(baseStats.totalTokens), c1)} | ${pad(String(eaStats.totalTokens), c2)} | ${pad(String(fastStats.totalTokens), c3)} |`,
+		);
+		console.log(
+			`  | High-relevance  | ${pad(String(baseStats.highRelevance.length), c1)} | ${pad(String(eaStats.highRelevance.length), c2)} | ${pad(String(fastStats.highRelevance.length), c3)} |`,
+		);
+		console.log(
+			`  | Score agreement | ${pad("(baseline)", c1)} | ${pad(`${agreementPct}% (n=${scorePairs.length})`, c2)} | ${pad("n/a", c3)} |`,
+		);
+		console.log(sep);
+	} else {
+		console.log("  +-----------------+---------------+---------------------------+");
+		console.log("  |                 | Baseline      | Energy-Aware              |");
+		console.log("  +-----------------+---------------+---------------------------+");
+		console.log(`  | Model           | ${pad("kimi-k2.5", 13)} | ${pad("gpt-oss/devstral (routed)", 25)} |`);
+		console.log(
+			`  | Stories scored  | ${pad(String(baseStats.storiesScored), 13)} | ${pad(String(eaStats.storiesScored), 25)} |`,
+		);
+		console.log(
+			`  | Energy used     | ${pad(`${baseStats.totalEnergy.toFixed(2)} J`, 13)} | ${pad(`${eaStats.totalEnergy.toFixed(2)} J  (${fmtDelta(energySaved)})`, 25)} |`,
+		);
+		if (eaStats.totalDiscriminatorEnergyJ > 0) {
+			console.log(
+				`  | Discriminator   | ${pad("n/a", 13)} | ${pad(`${eaStats.totalDiscriminatorEnergyJ.toFixed(1)}J (incl. in energy)`, 25)} |`,
+			);
+		}
+		console.log(
+			`  | Est. cost       | ${pad(fmtCost(baseStats.totalCost), 13)} | ${pad(`${fmtCost(eaStats.totalCost)}  (${fmtDelta(costSaved)})`, 25)} |`,
+		);
+		console.log(
+			`  | Tokens used     | ${pad(String(baseStats.totalTokens), 13)} | ${pad(String(eaStats.totalTokens), 25)} |`,
+		);
+		console.log(
+			`  | High-relevance  | ${pad(String(baseStats.highRelevance.length), 13)} | ${pad(String(eaStats.highRelevance.length), 25)} |`,
+		);
+		console.log(
+			`  | Score agreement | ${pad("(baseline)", 13)} | ${pad(`${agreementPct}% within 0.15 (n=${scorePairs.length})`, 25)} |`,
+		);
+		console.log("  +-----------------+---------------+---------------------------+");
 	}
-	console.log(
-		`  | Est. cost       | ${pad(fmtCost(baseStats.totalCost), 13)} | ${pad(`${fmtCost(eaStats.totalCost)}  (${costSaved >= 0 ? "-" : "+"}${Math.abs(costSaved).toFixed(0)}%)`, 25)} |`,
-	);
-	console.log(
-		`  | Tokens used     | ${pad(String(baseStats.totalTokens), 13)} | ${pad(String(eaStats.totalTokens), 25)} |`,
-	);
-	console.log(
-		`  | High-relevance  | ${pad(String(baseStats.highRelevance.length), 13)} | ${pad(String(eaStats.highRelevance.length), 25)} |`,
-	);
-	console.log(
-		`  | Score agreement | ${pad("(baseline)", 13)} | ${pad(`${agreementPct}% within 0.15 (n=${scorePairs.length})`, 25)} |`,
-	);
-	console.log("  +-----------------+---------------+---------------------------+");
 
 	// Verdict
 	console.log("");
@@ -561,6 +641,11 @@ function printFinalSummary(
 		);
 	} else if (energySaved <= 0) {
 		console.log(`  \x1b[33m~ Energy-aware used more energy this run (budget may be too high for story count)\x1b[0m`);
+	}
+	if (hasFast && fastEnergySaved > 0) {
+		console.log(
+			`  \x1b[33m✓ Fast mode: ${fastEnergySaved.toFixed(0)}% less energy, ${fastCostSaved.toFixed(0)}% lower cost vs baseline\x1b[0m`,
+		);
 	}
 
 	const allHigh = [...baseStats.highRelevance, ...eaStats.highRelevance]
@@ -577,12 +662,13 @@ function printFinalSummary(
 
 	if (eaStats.discriminatorDecisions.length > 0) {
 		const simpleCount = eaStats.discriminatorDecisions.filter((d) => d.tier === "simple").length;
-		const mediumCount = eaStats.discriminatorDecisions.filter((d) => d.tier === "medium").length;
-		const complexCount = eaStats.discriminatorDecisions.filter((d) => d.tier === "complex").length;
+		const mediumCount = eaStats.discriminatorDecisions.filter(
+			(d) => d.tier === "medium" || d.tier === "complex",
+		).length;
 		const total = eaStats.discriminatorDecisions.length;
 		console.log("");
 		console.log(
-			`  DISCRIMINATOR SUMMARY (${total} stories): ${simpleCount} simple→GPT-OSS | ${mediumCount} medium→Devstral | ${complexCount} complex→Kimi`,
+			`  DISCRIMINATOR SUMMARY (${total} stories): ${simpleCount} simple→GPT-OSS | ${mediumCount} medium→Devstral`,
 		);
 		// Show a sample of decisions (last 5)
 		const sample = eaStats.discriminatorDecisions.slice(-5);
@@ -602,6 +688,107 @@ function printFinalSummary(
 		console.log("  POLICY DECISIONS (energy-aware):");
 		for (const d of eaStats.policyDecisions) {
 			console.log(`    Story #${String(d.story).padStart(2)}: ${fmtDecision(d.reason)}`);
+		}
+	}
+}
+
+// -- Post-run score analysis --------------------------------------------------
+
+function printScoreAnalysis(scorePairs: ScorePair[]): void {
+	if (scorePairs.length === 0) {
+		console.log("\n  No score pairs to analyze.");
+		return;
+	}
+
+	console.log("");
+	console.log("  ═══ SCORE ANALYSIS ════════════════════════════════════════════════");
+	console.log("");
+
+	// Per-story table
+	const hdrTitle = pad("Story", 42);
+	const hdrBase = pad("Base", 6);
+	const hdrEa = pad("EA", 6);
+	const hdrDelta = pad("Delta", 7);
+	const hdrModel = pad("EA Model", 14);
+	const hdrTier = pad("Tier", 8);
+	console.log(`  ${hdrTitle} ${hdrBase} ${hdrEa} ${hdrDelta} ${hdrModel} ${hdrTier}`);
+	console.log(`  ${"─".repeat(87)}`);
+
+	const disagreements: ScorePair[] = [];
+	for (const p of scorePairs) {
+		const delta = p.ea - p.base;
+		const absDelta = Math.abs(delta);
+		const agree = absDelta <= 0.15;
+		const deltaStr = `${delta >= 0 ? "+" : ""}${delta.toFixed(2)}`;
+		const color = agree ? "\x1b[32m" : absDelta > 0.3 ? "\x1b[31m" : "\x1b[33m";
+		const mark = agree ? " " : absDelta > 0.3 ? "!!" : " !";
+
+		console.log(
+			`  ${pad(truncate(p.title, 42), 42)} ${pad(p.base.toFixed(2), 6)} ${pad(p.ea.toFixed(2), 6)} ${color}${pad(deltaStr, 7)}\x1b[0m ${pad(modelShort(p.eaModel), 14)} ${pad(p.eaTier, 8)} ${mark}`,
+		);
+		if (!agree) disagreements.push(p);
+	}
+
+	// Pattern analysis
+	console.log("");
+	const total = scorePairs.length;
+	const agreed = total - disagreements.length;
+	console.log(
+		`  Agreement: ${agreed}/${total} stories within 0.15 threshold (${((agreed / total) * 100).toFixed(0)}%)`,
+	);
+
+	if (disagreements.length === 0) {
+		console.log("  \x1b[32mAll scores agree — routing is working well.\x1b[0m");
+		return;
+	}
+
+	// Group disagreements by EA model
+	const byModel = new Map<string, { count: number; avgDelta: number; deltas: number[] }>();
+	for (const p of disagreements) {
+		const key = modelShort(p.eaModel);
+		const entry = byModel.get(key) ?? { count: 0, avgDelta: 0, deltas: [] };
+		entry.count++;
+		entry.deltas.push(p.ea - p.base);
+		byModel.set(key, entry);
+	}
+
+	console.log("");
+	console.log("  DISAGREEMENT PATTERNS:");
+	for (const [model, data] of byModel) {
+		const avg = data.deltas.reduce((a, b) => a + b, 0) / data.deltas.length;
+		const direction = avg > 0 ? "scores higher" : "scores lower";
+		console.log(
+			`    ${model}: ${data.count} disagreement${data.count !== 1 ? "s" : ""}, avg delta ${avg >= 0 ? "+" : ""}${avg.toFixed(2)} (${direction} than baseline)`,
+		);
+	}
+
+	// Group by tier
+	const byTier = new Map<string, number>();
+	for (const p of disagreements) {
+		byTier.set(p.eaTier, (byTier.get(p.eaTier) ?? 0) + 1);
+	}
+	const tierTotal = new Map<string, number>();
+	for (const p of scorePairs) {
+		tierTotal.set(p.eaTier, (tierTotal.get(p.eaTier) ?? 0) + 1);
+	}
+
+	console.log("");
+	console.log("  DISAGREEMENT BY TIER:");
+	for (const [tier, count] of byTier) {
+		const tTotal = tierTotal.get(tier) ?? count;
+		console.log(`    ${tier}: ${count}/${tTotal} stories disagreed (${((count / tTotal) * 100).toFixed(0)}%)`);
+	}
+
+	// Large disagreements (> 0.3)
+	const large = disagreements.filter((p) => Math.abs(p.ea - p.base) > 0.3);
+	if (large.length > 0) {
+		console.log("");
+		console.log("  LARGE DISAGREEMENTS (delta > 0.3):");
+		for (const p of large) {
+			const delta = p.ea - p.base;
+			console.log(
+				`    \x1b[31m${delta >= 0 ? "+" : ""}${delta.toFixed(2)}\x1b[0m  [${modelShort(p.eaModel)}/${p.eaTier}]  "${truncate(p.title, 55)}"`,
+			);
 		}
 	}
 }
@@ -648,6 +835,7 @@ async function main(): Promise<void> {
 			duration: { type: "string", default: String(DEFAULT_DURATION_S) },
 			budget: { type: "string", default: String(DEFAULT_BUDGET_JOULES) },
 			keywords: { type: "string" },
+			fast: { type: "boolean", default: false },
 			"clear-memory": { type: "boolean", default: false },
 		},
 		allowPositionals: true,
@@ -674,6 +862,8 @@ async function main(): Promise<void> {
 				.filter(Boolean)
 		: DEFAULT_KEYWORDS;
 
+	const enableFast = values.fast ?? false;
+
 	registerBuiltInApiProviders();
 
 	// Load and display memory
@@ -683,6 +873,9 @@ async function main(): Promise<void> {
 	console.log("Fetching HackerNews top stories…");
 	if (values.keywords) {
 		console.log(`Keywords: ${keywords.join(", ")}`);
+	}
+	if (enableFast) {
+		console.log(`Fast mode: ${KIMI_FAST_MODEL.name} (speed-optimized 3rd column)`);
 	}
 
 	if (memSummary) {
@@ -719,12 +912,24 @@ async function main(): Promise<void> {
 		discriminatorDecisions: [],
 		aborted: false,
 	};
+	const fastStats: WatcherStats = {
+		storiesScored: 0,
+		totalEnergy: 0,
+		totalCost: 0,
+		totalTokens: 0,
+		totalDiscriminatorEnergyJ: 0,
+		highRelevance: [],
+		policyDecisions: [],
+		discriminatorDecisions: [],
+		aborted: false,
+	};
 
 	const baseBudget: EnergyBudget = {};
 	const eaBudget: EnergyBudget = { energy_budget_joules: budgetJ };
 
 	const recentBase: StoryScore[] = [];
 	const recentEa: StoryScore[] = [];
+	const recentFast: StoryScore[] = [];
 	const scorePairs: ScorePair[] = [];
 	let lastDecision: string | null = null;
 	let currentTitle = "";
@@ -748,9 +953,13 @@ async function main(): Promise<void> {
 
 		const nowS = (Date.now() - startTime) / 1000;
 
-		// Run baseline and discriminator concurrently to avoid adding latency.
+		// Run baseline, discriminator, and fast concurrently to avoid adding latency.
 		// Then use the discriminator result to drive the EA scoring call.
-		const [baseResult, discResult] = await Promise.all([
+		const logErr = (label: string) => (e: unknown) => {
+			console.error(`  [${label}] ${e instanceof Error ? e.message : String(e)}`);
+			return null;
+		};
+		const [baseResult, discResult, fastResult] = await Promise.all([
 			scoreWithPolicy(
 				story.title,
 				keywords,
@@ -761,10 +970,23 @@ async function main(): Promise<void> {
 				nowS * 1000,
 				apiKey,
 				"",
-			).catch(() => null),
+			).catch(logErr("baseline")),
 			eaStats.aborted
 				? Promise.resolve(null)
-				: discriminate("score", story.title, HN_DISCRIMINATOR_CONFIG, "", apiKey).catch(() => null),
+				: discriminate("score", story.title, HN_DISCRIMINATOR_CONFIG, "", apiKey, {
+						maxTier: "medium",
+					}).catch(logErr("disc")),
+			enableFast
+				? scoreStoryLLM(story.title, keywords, KIMI_FAST_MODEL, apiKey)
+						.then((r) => ({
+							score: r.score,
+							energy: getEnergy(r.message, KIMI_FAST_MODEL.id),
+							tokens: r.message.usage.totalTokens,
+							cost: r.message.usage.cost.total,
+							model: KIMI_FAST_MODEL.id,
+						}))
+						.catch(logErr("fast"))
+				: Promise.resolve(null),
 		]);
 
 		// Account for discriminator energy before the EA scoring call so the
@@ -792,10 +1014,10 @@ async function main(): Promise<void> {
 					nowS * 1000,
 					apiKey,
 					memoryConfidence,
-					// Override model for simple/medium — complex defers to EnergyAwarePolicy
-					discResult && discResult.tier !== "complex" ? discResult.model : undefined,
+					// Discriminator drives all routing (clamped to maxTier=medium)
+					discResult ? discResult.model : undefined,
 					discResult?.maxTokens,
-				).catch(() => null);
+				).catch(logErr("ea"));
 
 		if (baseResult && !baseResult.aborted) {
 			baseStats.totalEnergy += baseResult.energy;
@@ -828,9 +1050,38 @@ async function main(): Promise<void> {
 			}
 		}
 
-		// Record score pair when both runs returned results for this story
+		if (fastResult) {
+			fastStats.totalEnergy += fastResult.energy;
+			fastStats.totalCost += fastResult.cost;
+			fastStats.totalTokens += fastResult.tokens;
+			fastStats.storiesScored++;
+			const fastStoryScore: StoryScore = {
+				title: story.title,
+				score: fastResult.score,
+				energy_joules: fastResult.energy,
+				model: fastResult.model,
+				decision: "",
+			};
+			recentFast.push(fastStoryScore);
+			if (recentFast.length > 5) recentFast.shift();
+			if (fastResult.score > 0.8) fastStats.highRelevance.push(fastStoryScore);
+		}
+
+		// Record score pair when both baseline and EA returned results for this story
 		if (baseResult && !baseResult.aborted && eaResult && !eaResult.aborted) {
-			scorePairs.push({ base: baseResult.storyScore.score, ea: eaResult.storyScore.score });
+			const pair: ScorePair = {
+				title: story.title,
+				base: baseResult.storyScore.score,
+				baseModel: baseResult.storyScore.model,
+				ea: eaResult.storyScore.score,
+				eaModel: eaResult.storyScore.model,
+				eaTier: discResult?.tier ?? "complex",
+			};
+			if (fastResult) {
+				pair.fast = fastResult.score;
+				pair.fastModel = fastResult.model;
+			}
+			scorePairs.push(pair);
 		}
 
 		renderDisplay(
@@ -843,11 +1094,13 @@ async function main(): Promise<void> {
 			recentBase,
 			recentEa,
 			lastDecision,
+			enableFast ? fastStats : undefined,
 		);
 	}
 
 	const totalElapsed = Math.round((Date.now() - startTime) / 1000);
-	printFinalSummary(baseStats, eaStats, totalElapsed, budgetJ, scorePairs);
+	printFinalSummary(baseStats, eaStats, totalElapsed, budgetJ, scorePairs, enableFast ? fastStats : undefined);
+	printScoreAnalysis(scorePairs);
 
 	// Update and persist memory
 	updateHNMemory(mem, baseStats, eaStats, scorePairs);
