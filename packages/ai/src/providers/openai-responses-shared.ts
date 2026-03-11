@@ -469,7 +469,14 @@ export async function processResponsesStream<TApi extends Api>(
 		} else if (event.type === "error") {
 			throw new Error(`Error Code ${event.code}: ${event.message}` || "Unknown error");
 		} else if (event.type === "response.failed") {
-			throw new Error("Unknown error");
+			const error = event.response?.error;
+			const details = event.response?.incomplete_details;
+			const msg = error
+				? `${error.code || "unknown"}: ${error.message || "no message"}`
+				: details?.reason
+					? `incomplete: ${details.reason}`
+					: "Unknown error (no error details in response)";
+			throw new Error(msg);
 		}
 	}
 }

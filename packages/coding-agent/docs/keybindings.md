@@ -7,11 +7,12 @@ All keyboard shortcuts can be customized via `~/.pi/agent/keybindings.json`. Eac
 `modifier+key` where modifiers are `ctrl`, `shift`, `alt` (combinable) and keys are:
 
 - **Letters:** `a-z`
+- **Digits:** `0-9`
 - **Special:** `escape`, `esc`, `enter`, `return`, `tab`, `space`, `backspace`, `delete`, `insert`, `clear`, `home`, `end`, `pageUp`, `pageDown`, `up`, `down`, `left`, `right`
 - **Function:** `f1`-`f12`
 - **Symbols:** `` ` ``, `-`, `=`, `[`, `]`, `\`, `;`, `'`, `,`, `.`, `/`, `!`, `@`, `#`, `$`, `%`, `^`, `&`, `*`, `(`, `)`, `_`, `+`, `|`, `~`, `{`, `}`, `:`, `<`, `>`, `?`
 
-Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, etc.
+Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1`, etc.
 
 ## All Actions
 
@@ -118,6 +119,13 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, etc.
 | `selectPageDown` | `pageDown` | Page down in list |
 | `selectConfirm` | `enter` | Confirm selection |
 | `selectCancel` | `escape`, `ctrl+c` | Cancel selection |
+
+### Tree Navigation
+
+| Action | Default | Description |
+|--------|---------|-------------|
+| `treeFoldOrUp` | `ctrl+left`, `alt+left` | Fold current branch segment, or jump to the previous segment start |
+| `treeUnfoldOrDown` | `ctrl+right`, `alt+right` | Unfold current branch segment, or jump to the next segment start or branch end |
 
 ### Session Picker
 

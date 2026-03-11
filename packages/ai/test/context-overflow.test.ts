@@ -384,29 +384,32 @@ describe("Context overflow error handling", () => {
 
 	// =============================================================================
 	// z.ai
-	// Special case: Sometimes accepts overflow silently, sometimes rate limits
-	// Detection via usage.input > contextWindow when successful
+	// Special case: may return explicit overflow error text, may accept overflow silently,
+	// or may rate limit instead
 	// =============================================================================
 
 	describe.skipIf(!process.env.ZAI_API_KEY)("z.ai", () => {
-		it("glm-4.5-flash - should detect overflow via isContextOverflow (silent overflow or rate limit)", async () => {
+		it("glm-4.5-flash - should detect overflow via isContextOverflow when z.ai reports it", async () => {
 			const model = getModel("zai", "glm-4.5-flash");
 			const result = await testContextOverflow(model, process.env.ZAI_API_KEY!);
 			logResult(result);
 
 			// z.ai behavior is inconsistent:
+			// - Sometimes returns explicit overflow error text via non-standard finish_reason handling
 			// - Sometimes accepts overflow and returns successfully with usage.input > contextWindow
 			// - Sometimes returns rate limit error
-			// Either way, isContextOverflow should detect it (via usage check or we skip if rate limited)
-			if (result.stopReason === "stop") {
+			if (result.stopReason === "error") {
+				if (result.errorMessage?.match(/model_context_window_exceeded/i)) {
+					expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+				} else {
+					console.log("  z.ai returned non-overflow error (possibly rate limited), skipping overflow detection");
+				}
+			} else if (result.stopReason === "stop") {
 				if (result.hasUsageData && result.usage.input > model.contextWindow) {
 					expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
 				} else {
 					console.log("  z.ai returned stop without overflow usage data, skipping overflow detection");
 				}
-			} else {
-				// Rate limited or other error - just log and pass
-				console.log("  z.ai returned error (possibly rate limited), skipping overflow detection");
 			}
 		}, 120000);
 	});

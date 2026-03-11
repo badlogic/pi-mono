@@ -483,5 +483,73 @@ export default function(pi: ExtensionAPI) {
 			const { errors } = loader.getExtensions();
 			expect(errors.some((e) => e.error.includes("duplicate-tool") && e.error.includes("conflicts"))).toBe(true);
 		});
+
+		it("should prefer explicit CLI extensions over discovered extensions when commands and tools conflict", async () => {
+			const globalExtDir = join(agentDir, "extensions");
+			mkdirSync(globalExtDir, { recursive: true });
+			const explicitExtPath = join(tempDir, "explicit-extension.ts");
+
+			writeFileSync(
+				join(globalExtDir, "global.ts"),
+				`
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+export default function(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "duplicate-tool",
+    description: "global tool",
+    parameters: Type.Object({}),
+    execute: async () => ({ result: "global" }),
+  });
+  pi.registerCommand("deploy", {
+    description: "global command",
+    handler: async () => {},
+  });
+}`,
+			);
+
+			writeFileSync(
+				explicitExtPath,
+				`
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+export default function(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "duplicate-tool",
+    description: "explicit tool",
+    parameters: Type.Object({}),
+    execute: async () => ({ result: "explicit" }),
+  });
+  pi.registerCommand("deploy", {
+    description: "explicit command",
+    handler: async () => {},
+  });
+}`,
+			);
+
+			const loader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				additionalExtensionPaths: [explicitExtPath],
+			});
+			await loader.reload();
+
+			const extensionsResult = loader.getExtensions();
+			expect(extensionsResult.extensions[0]?.path).toBe(explicitExtPath);
+
+			const sessionManager = SessionManager.inMemory();
+			const authStorage = AuthStorage.create(join(tempDir, "auth-explicit.json"));
+			const modelRegistry = new ModelRegistry(authStorage);
+			const runner = new ExtensionRunner(
+				extensionsResult.extensions,
+				extensionsResult.runtime,
+				cwd,
+				sessionManager,
+				modelRegistry,
+			);
+
+			expect(runner.getCommand("deploy")?.description).toBe("explicit command");
+			expect(runner.getToolDefinition("duplicate-tool")?.description).toBe("explicit tool");
+		});
 	});
 });

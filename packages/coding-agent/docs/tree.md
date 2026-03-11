@@ -33,16 +33,25 @@ Sessions are stored as trees where each entry has an `id` and `parentId`. The "l
 | Key | Action |
 |-----|--------|
 | ↑/↓ | Navigate (depth-first order) |
+| ←/→ | Page up/down |
+| Ctrl+←/Ctrl+→ or Alt+←/Alt+→ | Fold/unfold and jump between branch segments |
 | Enter | Select node |
 | Escape/Ctrl+C | Cancel |
 | Ctrl+U | Toggle: user messages only |
 | Ctrl+O | Toggle: show all (including custom/label entries) |
+
+`Ctrl+←` or `Alt+←` folds the current node if it is foldable. Foldable nodes are roots and branch segment starts that have visible children. If the current node is not foldable, or is already folded, the selection jumps up to the previous visible branch segment start.
+
+`Ctrl+→` or `Alt+→` unfolds the current node if it is folded. Otherwise, the selection jumps down to the next visible branch segment start, or to the branch end when there is no further branch point.
 
 ### Display
 
 - Height: half terminal height
 - Current leaf marked with `← active`
 - Labels shown inline: `[label-name]`
+- Foldable branch starts show `⊟` in the connector. Folded branches show `⊞`
+- Active path marker `•` appears after the fold indicator when applicable
+- Search and filter changes reset all folds
 - Default filter hides `label` and `custom` entries (shown in Ctrl+O mode)
 - Children sorted by timestamp (oldest first)
 

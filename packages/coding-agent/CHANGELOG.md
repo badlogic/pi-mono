@@ -3,8 +3,29 @@
 ## [Unreleased]
 
 ### Fixed
+
+- Fixed interactive input fields backed by the TUI `Input` component to scroll by visual column width for wide Unicode text (CJK, fullwidth characters), preventing rendered line overflow and TUI crashes in places like search and filter inputs ([#1982](https://github.com/badlogic/pi-mono/issues/1982))
+
+## [0.57.1] - 2026-03-07
+
+### New Features
+- Tree branch folding and segment-jump navigation in `/tree`, with `Ctrl+←`/`Ctrl+→` and `Alt+←`/`Alt+→` shortcuts while `←`/`→` and `Page Up`/`Page Down` remain available for paging. See [docs/tree.md](docs/tree.md) and [docs/keybindings.md](docs/keybindings.md).
+- `session_directory` extension event for customizing session directory paths before session manager creation. See [docs/extensions.md](docs/extensions.md).
+- Digit keybindings (`0-9`) in the TUI keybinding system, including modified combos like `ctrl+1`. See [docs/keybindings.md](docs/keybindings.md).
+
+### Added
+- Added `/tree` branch folding and segment-jump navigation with `Ctrl+←`/`Ctrl+→` and `Alt+←`/`Alt+→`, while keeping `←`/`→` and `Page Up`/`Page Down` for paging ([#1724](https://github.com/badlogic/pi-mono/pull/1724) by [@Perlence](https://github.com/Perlence))
+- Added `session_directory` extension event that fires before session manager creation, allowing extensions to customize the session directory path based on cwd and other factors. CLI `--session-dir` flag takes precedence over extension-provided paths ([#1730](https://github.com/badlogic/pi-mono/pull/1730) by [@hjanuschka](https://github.com/hjanuschka)).
+- Added digit keys (`0-9`) to the keybinding system, including Kitty CSI-u and xterm `modifyOtherKeys` support for bindings like `ctrl+1` ([#1905](https://github.com/badlogic/pi-mono/issues/1905))
+
+### Fixed
 - Fixed custom tool collapsed/expanded rendering in HTML exports. Custom tools that define different collapsed vs expanded displays now render correctly in exported HTML, with expandable sections when both states differ and direct display when only expanded exists ([#1934](https://github.com/badlogic/pi-mono/pull/1934) by [@aliou](https://github.com/aliou))
 - Fixed tmux startup guidance and keyboard setup warnings for modified key handling, including Ghostty `shift+enter=text:\n` remap guidance and tmux `extended-keys-format` detection ([#1872](https://github.com/badlogic/pi-mono/issues/1872))
+- Fixed z.ai context overflow recovery so `model_context_window_exceeded` errors trigger auto-compaction instead of surfacing as unhandled stop reason failures ([#1937](https://github.com/badlogic/pi-mono/issues/1937))
+- Fixed autocomplete selection ignoring typed text: highlight now follows the first prefix match as the user types, and exact matches are always selected on Enter ([#1931](https://github.com/badlogic/pi-mono/pull/1931) by [@aliou](https://github.com/aliou))
+- Fixed slash-command Tab completion to immediately open argument completions when available ([#1481](https://github.com/badlogic/pi-mono/pull/1481) by [@barapa](https://github.com/barapa))
+- Fixed explicit `pi -e <path>` extensions losing command and tool conflicts to discovered extensions by giving CLI-loaded extensions higher precedence ([#1896](https://github.com/badlogic/pi-mono/issues/1896))
+- Fixed Windows external editor launch for `Ctrl+G` and `ctx.ui.editor()` so shell-based commands like `EDITOR="code --wait"` work correctly ([#1925](https://github.com/badlogic/pi-mono/issues/1925))
 
 ## [0.57.0] - 2026-03-07
 
@@ -140,7 +161,6 @@
 - Fixed Bedrock `AWS_PROFILE` region resolution by honoring profile `region` values ([#1800](https://github.com/badlogic/pi-mono/issues/1800)).
 - Fixed Gemini 3.1 thinking-level detection for `google` and `google-vertex` providers ([#1785](https://github.com/badlogic/pi-mono/issues/1785)).
 - Fixed browser bundling compatibility for `@mariozechner/pi-ai` by removing Node-only side effects from default browser import paths ([#1814](https://github.com/badlogic/pi-mono/issues/1814)).
-
 ## [0.55.4] - 2026-03-02
 
 ### New Features

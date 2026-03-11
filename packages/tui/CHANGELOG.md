@@ -4,8 +4,20 @@
 
 ### Fixed
 
+- Fixed `Input` horizontal scrolling for wide Unicode text (CJK, fullwidth characters) to use visual column width and strict slice boundaries, preventing rendered line overflow and TUI crashes ([#1982](https://github.com/badlogic/pi-mono/issues/1982))
+
+## [0.57.1] - 2026-03-07
+
+### Added
+
+- Added `treeFoldOrUp` and `treeUnfoldOrDown` editor actions with default bindings for `Ctrl+←`/`Ctrl+→` and `Alt+←`/`Alt+→` ([#1724](https://github.com/badlogic/pi-mono/pull/1724) by [@Perlence](https://github.com/Perlence))
+- Added digit keys (`0-9`) to the keybinding system, including Kitty CSI-u and xterm `modifyOtherKeys` support for bindings like `ctrl+1` ([#1905](https://github.com/badlogic/pi-mono/issues/1905))
+
+### Fixed
+
 - Fixed autocomplete selection ignoring typed text: highlight now follows the first prefix match as the user types, and exact matches are always selected on Enter ([#1931](https://github.com/badlogic/pi-mono/pull/1931) by [@aliou](https://github.com/aliou))
 - Fixed xterm `modifyOtherKeys` parsing in `matchesKey()` and `parseKey()`, restoring Ctrl-based keybindings and modified Enter keys in tmux when `extended-keys-format` is left at the default `xterm` ([#1872](https://github.com/badlogic/pi-mono/issues/1872))
+- Fixed slash-command Tab completion to immediately open argument completions when available ([#1481](https://github.com/badlogic/pi-mono/pull/1481) by [@barapa](https://github.com/barapa))
 
 ## [0.57.0] - 2026-03-07
 

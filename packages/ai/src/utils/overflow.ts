@@ -38,6 +38,7 @@ const OVERFLOW_PATTERNS = [
 	/context window exceeds limit/i, // MiniMax
 	/exceeded model token limit/i, // Kimi For Coding
 	/too large for model with \d+ maximum context length/i, // Mistral
+	/model_context_window_exceeded/i, // z.ai non-standard finish_reason surfaced as error text
 	/context[_ ]length[_ ]exceeded/i, // Generic fallback
 	/too many tokens/i, // Generic fallback
 	/token limit exceeded/i, // Generic fallback

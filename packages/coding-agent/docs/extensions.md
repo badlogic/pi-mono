@@ -225,8 +225,9 @@ Run `npm install` in the extension directory, then imports from `node_modules/` 
 ### Lifecycle Overview
 
 ```
-pi starts
+pi starts (CLI only)
   │
+  ├─► session_directory (CLI startup only, no ctx)
   └─► session_start
       │
       ▼
@@ -284,6 +285,26 @@ exit (Ctrl+C, Ctrl+D)
 ### Session Events
 
 See [session.md](session.md) for session storage internals and the SessionManager API.
+
+#### session_directory
+
+Fired by the `pi` CLI during startup session resolution, before the initial session manager is created.
+
+This event is:
+- CLI-only. It is not emitted in SDK mode.
+- Startup-only. It is not emitted for later interactive `/new` or `/resume` actions.
+- Bypassed when `--session-dir` is provided.
+- Special-cased to receive no `ctx` argument.
+
+If multiple extensions return `sessionDir`, the last one wins.
+
+```typescript
+pi.on("session_directory", async (event) => {
+  return {
+    sessionDir: `/tmp/pi-sessions/${encodeURIComponent(event.cwd)}`,
+  };
+});
+```
 
 #### session_start
 
@@ -674,7 +695,9 @@ Transforms chain across handlers. See [input-transform.ts](../examples/extension
 
 ## ExtensionContext
 
-Every handler receives `ctx: ExtensionContext`:
+All handlers except `session_directory` receive `ctx: ExtensionContext`.
+
+`session_directory` is a CLI startup hook and receives only the event.
 
 ### ctx.ui
 
