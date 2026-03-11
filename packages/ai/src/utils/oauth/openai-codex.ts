@@ -17,6 +17,7 @@ if (typeof process !== "undefined" && (process.versions?.node || process.version
 	});
 }
 
+import { fetchWithTimeout } from "./fetch-utils.js";
 import { generatePKCE } from "./pkce.js";
 import type { OAuthCredentials, OAuthLoginCallbacks, OAuthPrompt, OAuthProviderInterface } from "./types.js";
 
@@ -103,18 +104,23 @@ async function exchangeAuthorizationCode(
 	code: string,
 	verifier: string,
 	redirectUri: string = REDIRECT_URI,
+	signal?: AbortSignal,
 ): Promise<TokenResult> {
-	const response = await fetch(TOKEN_URL, {
-		method: "POST",
-		headers: { "Content-Type": "application/x-www-form-urlencoded" },
-		body: new URLSearchParams({
-			grant_type: "authorization_code",
-			client_id: CLIENT_ID,
-			code,
-			code_verifier: verifier,
-			redirect_uri: redirectUri,
-		}),
-	});
+	const response = await fetchWithTimeout(
+		TOKEN_URL,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/x-www-form-urlencoded" },
+			body: new URLSearchParams({
+				grant_type: "authorization_code",
+				client_id: CLIENT_ID,
+				code,
+				code_verifier: verifier,
+				redirect_uri: redirectUri,
+			}),
+		},
+		signal,
+	);
 
 	if (!response.ok) {
 		const text = await response.text().catch(() => "");
@@ -143,7 +149,7 @@ async function exchangeAuthorizationCode(
 
 async function refreshAccessToken(refreshToken: string): Promise<TokenResult> {
 	try {
-		const response = await fetch(TOKEN_URL, {
+		const response = await fetchWithTimeout(TOKEN_URL, {
 			method: "POST",
 			headers: { "Content-Type": "application/x-www-form-urlencoded" },
 			body: new URLSearchParams({
@@ -308,6 +314,7 @@ export async function loginOpenAICodex(options: {
 	onProgress?: (message: string) => void;
 	onManualCodeInput?: () => Promise<string>;
 	originator?: string;
+	signal?: AbortSignal;
 }): Promise<OAuthCredentials> {
 	const { verifier, state, url } = await createAuthorizationFlow(options.originator);
 	const server = await startLocalOAuthServer(state);
@@ -388,7 +395,7 @@ export async function loginOpenAICodex(options: {
 			throw new Error("Missing authorization code");
 		}
 
-		const tokenResult = await exchangeAuthorizationCode(code, verifier);
+		const tokenResult = await exchangeAuthorizationCode(code, verifier, REDIRECT_URI, options.signal);
 		if (tokenResult.type !== "success") {
 			throw new Error("Token exchange failed");
 		}
@@ -442,6 +449,7 @@ export const openaiCodexOAuthProvider: OAuthProviderInterface = {
 			onPrompt: callbacks.onPrompt,
 			onProgress: callbacks.onProgress,
 			onManualCodeInput: callbacks.onManualCodeInput,
+			signal: callbacks.signal,
 		});
 	},
 

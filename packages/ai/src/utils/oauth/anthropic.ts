@@ -2,6 +2,7 @@
  * Anthropic OAuth flow (Claude Pro/Max)
  */
 
+import { fetchWithTimeout } from "./fetch-utils.js";
 import { generatePKCE } from "./pkce.js";
 import type { OAuthCredentials, OAuthLoginCallbacks, OAuthProviderInterface } from "./types.js";
 
@@ -15,12 +16,14 @@ const SCOPES = "org:create_api_key user:profile user:inference";
 /**
  * Login with Anthropic OAuth (device code flow)
  *
- * @param onAuthUrl - Callback to handle the authorization URL (e.g., open browser)
- * @param onPromptCode - Callback to prompt user for the authorization code
+ * @param onAuthUrl     - Callback to handle the authorization URL (e.g., open browser)
+ * @param onPromptCode  - Callback to prompt user for the authorization code
+ * @param signal        - Optional AbortSignal for cancellation (e.g. from dialog cancel button)
  */
 export async function loginAnthropic(
 	onAuthUrl: (url: string) => void,
 	onPromptCode: () => Promise<string>,
+	signal?: AbortSignal,
 ): Promise<OAuthCredentials> {
 	const { verifier, challenge } = await generatePKCE();
 
@@ -47,21 +50,26 @@ export async function loginAnthropic(
 	const code = splits[0];
 	const state = splits[1];
 
-	// Exchange code for tokens
-	const tokenResponse = await fetch(TOKEN_URL, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
+	// Exchange code for tokens.
+	// Uses fetchWithTimeout so a flaky/unreachable Anthropic endpoint does not
+	// hang the UI forever; the caller's AbortSignal (cancel button) is also
+	// respected so the dialog can be dismissed at any point.
+	const tokenResponse = await fetchWithTimeout(
+		TOKEN_URL,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				grant_type: "authorization_code",
+				client_id: CLIENT_ID,
+				code: code,
+				state: state,
+				redirect_uri: REDIRECT_URI,
+				code_verifier: verifier,
+			}),
 		},
-		body: JSON.stringify({
-			grant_type: "authorization_code",
-			client_id: CLIENT_ID,
-			code: code,
-			state: state,
-			redirect_uri: REDIRECT_URI,
-			code_verifier: verifier,
-		}),
-	});
+		signal,
+	);
 
 	if (!tokenResponse.ok) {
 		const error = await tokenResponse.text();
@@ -77,7 +85,6 @@ export async function loginAnthropic(
 	// Calculate expiry time (current time + expires_in seconds - 5 min buffer)
 	const expiresAt = Date.now() + tokenData.expires_in * 1000 - 5 * 60 * 1000;
 
-	// Save credentials
 	return {
 		refresh: tokenData.refresh_token,
 		access: tokenData.access_token,
@@ -89,7 +96,7 @@ export async function loginAnthropic(
  * Refresh Anthropic OAuth token
  */
 export async function refreshAnthropicToken(refreshToken: string): Promise<OAuthCredentials> {
-	const response = await fetch(TOKEN_URL, {
+	const response = await fetchWithTimeout(TOKEN_URL, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({
@@ -125,6 +132,7 @@ export const anthropicOAuthProvider: OAuthProviderInterface = {
 		return loginAnthropic(
 			(url) => callbacks.onAuth({ url }),
 			() => callbacks.onPrompt({ message: "Paste the authorization code:" }),
+			callbacks.signal,
 		);
 	},
 

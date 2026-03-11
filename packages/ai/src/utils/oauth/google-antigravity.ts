@@ -7,6 +7,7 @@
  */
 
 import type { Server } from "node:http";
+import { fetchWithTimeout } from "./fetch-utils.js";
 import { generatePKCE } from "./pkce.js";
 import type { OAuthCredentials, OAuthLoginCallbacks, OAuthProviderInterface } from "./types.js";
 
@@ -174,7 +175,7 @@ async function discoverProject(accessToken: string, onProgress?: (message: strin
 
 	for (const endpoint of endpoints) {
 		try {
-			const loadResponse = await fetch(`${endpoint}/v1internal:loadCodeAssist`, {
+			const loadResponse = await fetchWithTimeout(`${endpoint}/v1internal:loadCodeAssist`, {
 				method: "POST",
 				headers,
 				body: JSON.stringify({
@@ -216,7 +217,7 @@ async function discoverProject(accessToken: string, onProgress?: (message: strin
  */
 async function getUserEmail(accessToken: string): Promise<string | undefined> {
 	try {
-		const response = await fetch("https://www.googleapis.com/oauth2/v1/userinfo?alt=json", {
+		const response = await fetchWithTimeout("https://www.googleapis.com/oauth2/v1/userinfo?alt=json", {
 			headers: {
 				Authorization: `Bearer ${accessToken}`,
 			},
@@ -236,7 +237,7 @@ async function getUserEmail(accessToken: string): Promise<string | undefined> {
  * Refresh Antigravity token
  */
 export async function refreshAntigravityToken(refreshToken: string, projectId: string): Promise<OAuthCredentials> {
-	const response = await fetch(TOKEN_URL, {
+	const response = await fetchWithTimeout(TOKEN_URL, {
 		method: "POST",
 		headers: { "Content-Type": "application/x-www-form-urlencoded" },
 		body: new URLSearchParams({
@@ -278,6 +279,7 @@ export async function loginAntigravity(
 	onAuth: (info: { url: string; instructions?: string }) => void,
 	onProgress?: (message: string) => void,
 	onManualCodeInput?: () => Promise<string>,
+	signal?: AbortSignal,
 ): Promise<OAuthCredentials> {
 	const { verifier, challenge } = await generatePKCE();
 
@@ -379,20 +381,24 @@ export async function loginAntigravity(
 
 		// Exchange code for tokens
 		onProgress?.("Exchanging authorization code for tokens...");
-		const tokenResponse = await fetch(TOKEN_URL, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/x-www-form-urlencoded",
+		const tokenResponse = await fetchWithTimeout(
+			TOKEN_URL,
+			{
+				method: "POST",
+				headers: {
+					"Content-Type": "application/x-www-form-urlencoded",
+				},
+				body: new URLSearchParams({
+					client_id: CLIENT_ID,
+					client_secret: CLIENT_SECRET,
+					code,
+					grant_type: "authorization_code",
+					redirect_uri: REDIRECT_URI,
+					code_verifier: verifier,
+				}),
 			},
-			body: new URLSearchParams({
-				client_id: CLIENT_ID,
-				client_secret: CLIENT_SECRET,
-				code,
-				grant_type: "authorization_code",
-				redirect_uri: REDIRECT_URI,
-				code_verifier: verifier,
-			}),
-		});
+			signal,
+		);
 
 		if (!tokenResponse.ok) {
 			const error = await tokenResponse.text();
@@ -439,7 +445,7 @@ export const antigravityOAuthProvider: OAuthProviderInterface = {
 	usesCallbackServer: true,
 
 	async login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
-		return loginAntigravity(callbacks.onAuth, callbacks.onProgress, callbacks.onManualCodeInput);
+		return loginAntigravity(callbacks.onAuth, callbacks.onProgress, callbacks.onManualCodeInput, callbacks.signal);
 	},
 
 	async refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials> {
