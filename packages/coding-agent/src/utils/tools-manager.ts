@@ -5,7 +5,7 @@ import { chmodSync, createWriteStream, existsSync, mkdirSync, readdirSync, renam
 import { arch, platform } from "os";
 import { join } from "path";
 import { Readable } from "stream";
-import { finished } from "stream/promises";
+import { pipeline } from "stream/promises";
 import { APP_NAME, getBinDir } from "../config.js";
 
 const TOOLS_DIR = getBinDir();
@@ -129,7 +129,7 @@ async function downloadFile(url: string, dest: string): Promise<void> {
 	}
 
 	const fileStream = createWriteStream(dest);
-	await finished(Readable.fromWeb(response.body as any).pipe(fileStream));
+	await pipeline(Readable.fromWeb(response.body as any), fileStream);
 }
 
 function findBinaryRecursively(rootDir: string, binaryFileName: string): string | null {
