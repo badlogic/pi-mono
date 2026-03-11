@@ -9,7 +9,8 @@ import { finished } from "stream/promises";
 import { APP_NAME, getBinDir } from "../config.js";
 
 const TOOLS_DIR = getBinDir();
-const NETWORK_TIMEOUT_MS = 10000;
+const GITHUB_API_TIMEOUT_MS = parseInt(process.env.PI_GITHUB_API_TIMEOUT || "10000", 10);
+const DOWNLOAD_TIMEOUT_MS = parseInt(process.env.PI_DOWNLOAD_TIMEOUT || "60000", 10);
 
 function isOfflineModeEnabled(): boolean {
 	const value = process.env.PI_OFFLINE;
@@ -102,7 +103,7 @@ export function getToolPath(tool: "fd" | "rg"): string | null {
 async function getLatestVersion(repo: string): Promise<string> {
 	const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
 		headers: { "User-Agent": `${APP_NAME}-coding-agent` },
-		signal: AbortSignal.timeout(NETWORK_TIMEOUT_MS),
+		signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
 	});
 
 	if (!response.ok) {
@@ -116,7 +117,7 @@ async function getLatestVersion(repo: string): Promise<string> {
 // Download a file from URL
 async function downloadFile(url: string, dest: string): Promise<void> {
 	const response = await fetch(url, {
-		signal: AbortSignal.timeout(NETWORK_TIMEOUT_MS),
+		signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
 	});
 
 	if (!response.ok) {
