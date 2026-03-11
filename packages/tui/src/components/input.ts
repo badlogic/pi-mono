@@ -27,6 +27,9 @@ export class Input implements Component, Focusable {
 	// Bracketed paste mode buffering
 	private pasteBuffer: string = "";
 	private isInPaste: boolean = false;
+	// Watchdog: if the end marker never arrives, flush and reset after this delay.
+	private pasteTimeoutId: ReturnType<typeof setTimeout> | null = null;
+	private static readonly PASTE_TIMEOUT_MS = 500;
 
 	// Kill ring for Emacs-style kill/yank operations
 	private killRing = new KillRing();
@@ -54,6 +57,19 @@ export class Input implements Component, Focusable {
 			this.isInPaste = true;
 			this.pasteBuffer = "";
 			data = data.replace("\x1b[200~", "");
+
+			// Watchdog: if the end marker never arrives (e.g. dropped chunk or
+			// component swapped mid-paste) flush the buffer after a short delay so
+			// subsequent keystrokes (including Enter) are not silently swallowed.
+			if (this.pasteTimeoutId !== null) clearTimeout(this.pasteTimeoutId);
+			this.pasteTimeoutId = setTimeout(() => {
+				if (this.isInPaste) {
+					this.handlePaste(this.pasteBuffer);
+					this.isInPaste = false;
+					this.pasteBuffer = "";
+					this.pasteTimeoutId = null;
+				}
+			}, Input.PASTE_TIMEOUT_MS);
 		}
 
 		// If we're in a paste, buffer the data
@@ -71,6 +87,10 @@ export class Input implements Component, Focusable {
 
 				// Reset paste state
 				this.isInPaste = false;
+				if (this.pasteTimeoutId !== null) {
+					clearTimeout(this.pasteTimeoutId);
+					this.pasteTimeoutId = null;
+				}
 
 				// Handle any remaining input after the paste marker
 				const remaining = this.pasteBuffer.substring(endIndex + 6); // 6 = length of \x1b[201~
@@ -84,8 +104,18 @@ export class Input implements Component, Focusable {
 
 		const kb = getEditorKeybindings();
 
-		// Escape/Cancel
+		// Escape/Cancel — also clears any stuck bracketed-paste state so the
+		// user is never left with a swallowed keyboard after a malformed paste.
 		if (kb.matches(data, "selectCancel")) {
+			if (this.isInPaste) {
+				this.isInPaste = false;
+				this.pasteBuffer = "";
+				if (this.pasteTimeoutId !== null) {
+					clearTimeout(this.pasteTimeoutId);
+					this.pasteTimeoutId = null;
+				}
+				return;
+			}
 			if (this.onEscape) this.onEscape();
 			return;
 		}
