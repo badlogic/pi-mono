@@ -5,28 +5,31 @@
 
 import { execSync } from "child_process";
 
-// Cache for shell command results (persists for process lifetime)
+// Cache for shell command results (persists for process lifetime, used by "!" commands only)
 const commandResultCache = new Map<string, string | undefined>();
 
 /**
  * Resolve a config value (API key, header value, etc.) to an actual value.
+ * - If starts with "!!", executes the rest as a shell command on every call (no caching)
  * - If starts with "!", executes the rest as a shell command and uses stdout (cached)
  * - Otherwise checks environment variable first, then treats as literal (not cached)
  */
 export function resolveConfigValue(config: string): string | undefined {
+	if (config.startsWith("!!")) {
+		return executeCommand(config.slice(2), false);
+	}
 	if (config.startsWith("!")) {
-		return executeCommand(config);
+		return executeCommand(config.slice(1), true);
 	}
 	const envValue = process.env[config];
 	return envValue || config;
 }
 
-function executeCommand(commandConfig: string): string | undefined {
-	if (commandResultCache.has(commandConfig)) {
-		return commandResultCache.get(commandConfig);
+function executeCommand(command: string, cache: boolean): string | undefined {
+	if (cache && commandResultCache.has(command)) {
+		return commandResultCache.get(command);
 	}
 
-	const command = commandConfig.slice(1);
 	let result: string | undefined;
 	try {
 		const output = execSync(command, {
@@ -39,7 +42,9 @@ function executeCommand(commandConfig: string): string | undefined {
 		result = undefined;
 	}
 
-	commandResultCache.set(commandConfig, result);
+	if (cache) {
+		commandResultCache.set(command, result);
+	}
 	return result;
 }
 

@@ -91,12 +91,16 @@ The file is created with `0600` permissions (user read/write only). Auth file cr
 
 ### Key Resolution
 
-The `key` field supports three formats:
+The `key` field supports these formats:
 
-- **Shell command:** `"!command"` executes and uses stdout (cached for process lifetime)
+- **Shell command (cached):** `"!command"` executes and uses stdout, cached for process lifetime
   ```json
   { "type": "api_key", "key": "!security find-generic-password -ws 'anthropic'" }
   { "type": "api_key", "key": "!op read 'op://vault/item/credential'" }
+  ```
+- **Shell command (fresh):** `"!!command"` executes on every request, never cached. Use this for tokens that rotate or expire (e.g., Azure tokens refreshed by an external process).
+  ```json
+  { "type": "api_key", "key": "!!cat /path/to/azure-token" }
   ```
 - **Environment variable:** Uses the value of the named variable
   ```json

@@ -89,12 +89,16 @@ Set `api` at provider level (default for all models) or model level (override pe
 
 ### Value Resolution
 
-The `apiKey` and `headers` fields support three formats:
+The `apiKey` and `headers` fields support these formats:
 
-- **Shell command:** `"!command"` executes and uses stdout
+- **Shell command (cached):** `"!command"` executes and uses stdout, cached for process lifetime
   ```json
   "apiKey": "!security find-generic-password -ws 'anthropic'"
   "apiKey": "!op read 'op://vault/item/credential'"
+  ```
+- **Shell command (fresh):** `"!!command"` executes on every request, never cached. Use this for tokens that rotate or expire (e.g., Azure tokens refreshed by an external process).
+  ```json
+  "apiKey": "!!cat /path/to/azure-token"
   ```
 - **Environment variable:** Uses the value of the named variable
   ```json
