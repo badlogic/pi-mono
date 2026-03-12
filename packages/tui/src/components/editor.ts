@@ -102,7 +102,15 @@ interface LayoutLine {
 	text: string;
 	hasCursor: boolean;
 	cursorPos?: number;
+	startsLogicalLine: boolean;
+	logicalLine: number;
+	startIndex: number;
+	endIndex: number;
 }
+
+const OSC133_INPUT_START = "\x1b]133;A;click_events=1\x07\x1b]133;I\x07";
+const OSC133_CONTINUATION_INPUT = "\x1b]133;P;k=c\x07\x1b]133;I\x07";
+const OSC133_INPUT_END = "\x1b]133;D\x07";
 
 export interface EditorTheme {
 	borderColor: (str: string) => string;
@@ -168,6 +176,9 @@ export class Editor implements Component, Focusable {
 
 	// Undo support
 	private undoStack = new UndoStack<EditorState>();
+
+	private lastRenderedVisibleLines: LayoutLine[] = [];
+	private lastRenderedPaddingX = 0;
 
 	public onSubmit?: (text: string) => void;
 	public onChange?: (text: string) => void;
@@ -321,6 +332,8 @@ export class Editor implements Component, Focusable {
 
 		// Get visible lines slice
 		const visibleLines = layoutLines.slice(this.scrollOffset, this.scrollOffset + maxVisibleLines);
+		this.lastRenderedVisibleLines = visibleLines;
+		this.lastRenderedPaddingX = paddingX;
 
 		const result: string[] = [];
 		const leftPadding = " ".repeat(paddingX);
@@ -338,8 +351,9 @@ export class Editor implements Component, Focusable {
 		// Render each visible layout line
 		// Emit hardware cursor marker only when focused and not showing autocomplete
 		const emitCursorMarker = this.focused && !this.autocompleteState;
+		const emitSemanticPrompt = this.focused && !this.autocompleteState;
 
-		for (const layoutLine of visibleLines) {
+		for (const [visibleIndex, layoutLine] of visibleLines.entries()) {
 			let displayText = layoutLine.text;
 			let lineVisibleWidth = visibleWidth(layoutLine.text);
 			let cursorInPadding = false;
@@ -378,7 +392,14 @@ export class Editor implements Component, Focusable {
 			const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
 
 			// Render the line (no side borders, just horizontal lines above and below)
-			result.push(`${leftPadding}${displayText}${padding}${lineRightPadding}`);
+			let renderedLine = `${leftPadding}${displayText}${padding}${lineRightPadding}`;
+			if (emitSemanticPrompt) {
+				const semanticStart =
+					visibleIndex === 0 ? OSC133_INPUT_START : layoutLine.startsLogicalLine ? OSC133_CONTINUATION_INPUT : "";
+				const semanticEnd = visibleIndex === visibleLines.length - 1 ? OSC133_INPUT_END : "";
+				renderedLine = `${leftPadding}${semanticStart}${displayText}${semanticEnd}${padding}${lineRightPadding}`;
+			}
+			result.push(renderedLine);
 		}
 
 		// Render bottom border (with scroll indicator if more content below)
@@ -402,6 +423,36 @@ export class Editor implements Component, Focusable {
 		}
 
 		return result;
+	}
+
+	handleMouse(
+		event: { button: number; shift: boolean; alt: boolean; ctrl: boolean; action: "press" | "release" },
+		row: number,
+		col: number,
+	): void {
+		if (event.button !== 0 || event.shift || event.alt || event.ctrl) {
+			return;
+		}
+
+		const contentRow = row - 1;
+		if (contentRow < 0 || contentRow >= this.lastRenderedVisibleLines.length) {
+			return;
+		}
+
+		const layoutLine = this.lastRenderedVisibleLines[contentRow];
+		if (!layoutLine) {
+			return;
+		}
+
+		const targetVisualCol = Math.max(0, col - this.lastRenderedPaddingX);
+		const targetCol = this.getTextIndexForVisualColumn(
+			layoutLine.text,
+			targetVisualCol,
+			layoutLine.endIndex - layoutLine.startIndex,
+		);
+		const logicalLine = this.state.lines[layoutLine.logicalLine] || "";
+		this.state.cursorLine = layoutLine.logicalLine;
+		this.setCursorCol(Math.min(layoutLine.startIndex + targetCol, logicalLine.length));
 	}
 
 	handleInput(data: string): void {
@@ -698,6 +749,23 @@ export class Editor implements Component, Focusable {
 		}
 	}
 
+	private getTextIndexForVisualColumn(text: string, visualCol: number, fallbackEndIndex: number): number {
+		if (visualCol <= 0 || text.length === 0) {
+			return 0;
+		}
+
+		let currentWidth = 0;
+		for (const part of segmenter.segment(text)) {
+			const partWidth = visibleWidth(part.segment);
+			if (currentWidth + partWidth > visualCol) {
+				return part.index;
+			}
+			currentWidth += partWidth;
+		}
+
+		return fallbackEndIndex;
+	}
+
 	private layoutText(contentWidth: number): LayoutLine[] {
 		const layoutLines: LayoutLine[] = [];
 
@@ -707,6 +775,10 @@ export class Editor implements Component, Focusable {
 				text: "",
 				hasCursor: true,
 				cursorPos: 0,
+				startsLogicalLine: true,
+				logicalLine: 0,
+				startIndex: 0,
+				endIndex: 0,
 			});
 			return layoutLines;
 		}
@@ -724,11 +796,19 @@ export class Editor implements Component, Focusable {
 						text: line,
 						hasCursor: true,
 						cursorPos: this.state.cursorCol,
+						startsLogicalLine: true,
+						logicalLine: i,
+						startIndex: 0,
+						endIndex: line.length,
 					});
 				} else {
 					layoutLines.push({
 						text: line,
 						hasCursor: false,
+						startsLogicalLine: true,
+						logicalLine: i,
+						startIndex: 0,
+						endIndex: line.length,
 					});
 				}
 			} else {
@@ -772,11 +852,19 @@ export class Editor implements Component, Focusable {
 							text: chunk.text,
 							hasCursor: true,
 							cursorPos: adjustedCursorPos,
+							startsLogicalLine: chunkIndex === 0,
+							logicalLine: i,
+							startIndex: chunk.startIndex,
+							endIndex: chunk.endIndex,
 						});
 					} else {
 						layoutLines.push({
 							text: chunk.text,
 							hasCursor: false,
+							startsLogicalLine: chunkIndex === 0,
+							logicalLine: i,
+							startIndex: chunk.startIndex,
+							endIndex: chunk.endIndex,
 						});
 					}
 				}

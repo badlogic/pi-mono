@@ -82,6 +82,7 @@ export {
 	CURSOR_MARKER,
 	type Focusable,
 	isFocusable,
+	type MouseEvent,
 	type OverlayAnchor,
 	type OverlayHandle,
 	type OverlayMargin,

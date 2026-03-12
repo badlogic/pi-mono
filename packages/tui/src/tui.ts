@@ -13,6 +13,16 @@ import { extractSegments, sliceByColumn, sliceWithWidth, visibleWidth } from "./
 /**
  * Component interface - all components must implement this
  */
+export interface MouseEvent {
+	button: number;
+	row: number;
+	col: number;
+	shift: boolean;
+	alt: boolean;
+	ctrl: boolean;
+	action: "press" | "release";
+}
+
 export interface Component {
 	/**
 	 * Render the component to lines for the given viewport width
@@ -25,6 +35,12 @@ export interface Component {
 	 * Optional handler for keyboard input when component has focus
 	 */
 	handleInput?(data: string): void;
+
+	/**
+	 * Optional handler for mouse input when component has focus.
+	 * `row` and `col` are zero-indexed and relative to the component's rendered box.
+	 */
+	handleMouse?(event: MouseEvent, row: number, col: number): void;
 
 	/**
 	 * If true, component receives key release events (Kitty protocol).
@@ -41,6 +57,28 @@ export interface Component {
 
 type InputListenerResult = { consume?: boolean; data?: string } | undefined;
 type InputListener = (data: string) => InputListenerResult;
+
+function parseSgrMouseEvent(data: string): MouseEvent | null {
+	const match = data.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
+	if (!match) return null;
+
+	const code = parseInt(match[1], 10);
+	const col = parseInt(match[2], 10);
+	const row = parseInt(match[3], 10);
+	if (!Number.isFinite(code) || !Number.isFinite(col) || !Number.isFinite(row)) {
+		return null;
+	}
+
+	return {
+		button: code & 0b11,
+		shift: (code & 0b100) !== 0,
+		alt: (code & 0b1000) !== 0,
+		ctrl: (code & 0b10000) !== 0,
+		action: match[4] === "M" ? "press" : "release",
+		col,
+		row,
+	};
+}
 
 /**
  * Interface for components that can receive focus and display a hardware cursor.
@@ -227,6 +265,13 @@ export class TUI extends Container {
 	private previousViewportTop = 0; // Track previous viewport top for resize-aware cursor moves
 	private fullRedrawCount = 0;
 	private stopped = false;
+	private focusedComponentBounds: {
+		absoluteRow: number;
+		viewportRow: number;
+		col: number;
+		width: number;
+		height: number;
+	} | null = null;
 
 	// Overlay stack for modal components rendered on top of base content
 	private focusOrderCounter = 0;
@@ -409,7 +454,7 @@ export class TUI extends Container {
 	start(): void {
 		this.stopped = false;
 		this.terminal.start(
-			(data) => this.handleInput(data),
+			(data) => this.handleTerminalInput(data),
 			() => this.requestRender(),
 		);
 		this.terminal.hideCursor();
@@ -475,7 +520,70 @@ export class TUI extends Container {
 		});
 	}
 
-	private handleInput(data: string): void {
+	private findComponentBounds(
+		component: Component,
+		width: number,
+		target: Component,
+		startRow: number,
+	): { startRow: number; height: number } | null {
+		const lines = component.render(width);
+		if (component === target) {
+			return { startRow, height: lines.length };
+		}
+
+		if (component instanceof Container) {
+			let childRow = startRow;
+			for (const child of component.children) {
+				const result = this.findComponentBounds(child, width, target, childRow);
+				if (result) return result;
+				childRow += child.render(width).length;
+			}
+		}
+
+		return null;
+	}
+
+	private updateFocusedComponentBounds(width: number, height: number, contentLineCount: number): void {
+		this.focusedComponentBounds = null;
+		if (!this.focusedComponent) return;
+
+		const workingHeight = Math.max(this.maxLinesRendered, contentLineCount);
+		const viewportTop = Math.max(0, workingHeight - height);
+
+		for (const entry of this.overlayStack.filter((overlay) => this.isOverlayVisible(overlay))) {
+			const { width: overlayWidth, maxHeight } = this.resolveOverlayLayout(entry.options, 0, width, height);
+			let overlayLines = entry.component.render(overlayWidth);
+			if (maxHeight !== undefined && overlayLines.length > maxHeight) {
+				overlayLines = overlayLines.slice(0, maxHeight);
+			}
+			const { row, col } = this.resolveOverlayLayout(entry.options, overlayLines.length, width, height);
+			const overlayTarget = this.findComponentBounds(entry.component, overlayWidth, this.focusedComponent, 0);
+			if (overlayTarget) {
+				const absoluteRow = row + overlayTarget.startRow;
+				this.focusedComponentBounds = {
+					absoluteRow,
+					viewportRow: absoluteRow,
+					col,
+					width: overlayWidth,
+					height: overlayTarget.height,
+				};
+				return;
+			}
+		}
+
+		const target = this.findComponentBounds(this, width, this.focusedComponent, 0);
+		if (!target) return;
+
+		this.focusedComponentBounds = {
+			absoluteRow: target.startRow,
+			viewportRow: target.startRow - viewportTop,
+			col: 0,
+			width,
+			height: target.height,
+		};
+	}
+
+	private handleTerminalInput(data: string): void {
 		if (this.inputListeners.size > 0) {
 			let current = data;
 			for (const listener of this.inputListeners) {
@@ -499,6 +607,28 @@ export class TUI extends Container {
 			const filtered = this.parseCellSizeResponse();
 			if (filtered.length === 0) return;
 			data = filtered;
+		}
+
+		const mouseEvent = parseSgrMouseEvent(data);
+		if (mouseEvent && this.focusedComponent?.handleMouse && this.focusedComponentBounds) {
+			const zeroBasedMouseRow = mouseEvent.row - 1;
+			const relativeViewportRow = zeroBasedMouseRow - this.focusedComponentBounds.viewportRow;
+			const relativeAbsoluteRow = zeroBasedMouseRow - this.focusedComponentBounds.absoluteRow;
+			const row =
+				relativeViewportRow >= 0 && relativeViewportRow < this.focusedComponentBounds.height
+					? relativeViewportRow
+					: relativeAbsoluteRow;
+			const col = mouseEvent.col - 1 - this.focusedComponentBounds.col;
+			if (
+				row >= 0 &&
+				row < this.focusedComponentBounds.height &&
+				col >= 0 &&
+				col < this.focusedComponentBounds.width
+			) {
+				this.focusedComponent.handleMouse(mouseEvent, row, col);
+				this.requestRender();
+				return;
+			}
 		}
 
 		// Global debug key handler (Shift+Ctrl+D)
@@ -881,11 +1011,14 @@ export class TUI extends Container {
 
 		// Render all components to get new lines
 		let newLines = this.render(width);
+		const contentLineCount = newLines.length;
 
 		// Composite overlays into the rendered lines (before differential compare)
 		if (this.overlayStack.length > 0) {
 			newLines = this.compositeOverlays(newLines, width, height);
 		}
+
+		this.updateFocusedComponentBounds(width, height, contentLineCount);
 
 		// Extract cursor position before applying line resets (marker must be found first)
 		const cursorPos = this.extractCursorPosition(newLines, height);
