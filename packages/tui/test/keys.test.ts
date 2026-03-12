@@ -157,6 +157,16 @@ describe("matchesKey", () => {
 			assert.strictEqual(parseKey("\x1b[27;3;13~"), "alt+enter");
 		});
 
+		it("should match xterm modifyOtherKeys Tab variants", () => {
+			setKittyProtocolActive(false);
+			assert.strictEqual(matchesKey("\x1b[27;2;9~", "shift+tab"), true);
+			assert.strictEqual(matchesKey("\x1b[27;5;9~", "ctrl+tab"), true);
+			assert.strictEqual(matchesKey("\x1b[27;3;9~", "alt+tab"), true);
+			assert.strictEqual(parseKey("\x1b[27;2;9~"), "shift+tab");
+			assert.strictEqual(parseKey("\x1b[27;5;9~"), "ctrl+tab");
+			assert.strictEqual(parseKey("\x1b[27;3;9~"), "alt+tab");
+		});
+
 		it("should match xterm modifyOtherKeys symbol combos", () => {
 			setKittyProtocolActive(false);
 			assert.strictEqual(matchesKey("\x1b[27;5;47~", "ctrl+/"), true);

@@ -769,12 +769,19 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 
 		case "tab":
 			if (shift && !ctrl && !alt) {
-				return data === "\x1b[Z" || matchesKittySequence(data, CODEPOINTS.tab, MODIFIERS.shift);
+				return (
+					data === "\x1b[Z" ||
+					matchesKittySequence(data, CODEPOINTS.tab, MODIFIERS.shift) ||
+					matchesModifyOtherKeys(data, CODEPOINTS.tab, MODIFIERS.shift)
+				);
 			}
 			if (modifier === 0) {
 				return data === "\t" || matchesKittySequence(data, CODEPOINTS.tab, 0);
 			}
-			return matchesKittySequence(data, CODEPOINTS.tab, modifier);
+			return (
+				matchesKittySequence(data, CODEPOINTS.tab, modifier) ||
+				matchesModifyOtherKeys(data, CODEPOINTS.tab, modifier)
+			);
 
 		case "enter":
 		case "return":
