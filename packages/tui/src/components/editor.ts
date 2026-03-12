@@ -272,7 +272,7 @@ export class Editor implements Component, Focusable {
 
 	/** Internal setText that doesn't reset history state - used by navigateHistory */
 	private setTextInternal(text: string): void {
-		const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+		const lines = text.split("\n");
 		this.state.lines = lines.length === 0 ? [""] : lines;
 		this.state.cursorLine = this.state.lines.length - 1;
 		this.setCursorCol(this.state.lines[this.state.cursorLine]?.length || 0);
@@ -819,11 +819,12 @@ export class Editor implements Component, Focusable {
 	setText(text: string): void {
 		this.lastAction = null;
 		this.historyIndex = -1; // Exit history browsing mode
+		const normalized = this.normalizeText(text);
 		// Push undo snapshot if content differs (makes programmatic changes undoable)
-		if (this.getText() !== text) {
+		if (this.getText() !== normalized) {
 			this.pushUndoSnapshot();
 		}
-		this.setTextInternal(text);
+		this.setTextInternal(normalized);
 	}
 
 	/**
@@ -840,6 +841,15 @@ export class Editor implements Component, Focusable {
 	}
 
 	/**
+	 * Normalize text for editor storage:
+	 * - Normalize line endings (\r\n and \r -> \n)
+	 * - Expand tabs to 4 spaces
+	 */
+	private normalizeText(text: string): string {
+		return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\t/g, "    ");
+	}
+
+	/**
 	 * Internal text insertion at cursor. Handles single and multi-line text.
 	 * Does not push undo snapshots or trigger autocomplete - caller is responsible.
 	 * Normalizes line endings and calls onChange once at the end.
@@ -847,8 +857,8 @@ export class Editor implements Component, Focusable {
 	private insertTextAtCursorInternal(text: string): void {
 		if (!text) return;
 
-		// Normalize line endings
-		const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+		// Normalize line endings and tabs
+		const normalized = this.normalizeText(text);
 		const insertedLines = normalized.split("\n");
 
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
@@ -955,14 +965,11 @@ export class Editor implements Component, Focusable {
 
 		this.pushUndoSnapshot();
 
-		// Clean the pasted text
-		const cleanText = pastedText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-		// Convert tabs to spaces (4 spaces per tab)
-		const tabExpandedText = cleanText.replace(/\t/g, "    ");
+		// Clean the pasted text: normalize line endings, expand tabs
+		const cleanText = this.normalizeText(pastedText);
 
 		// Filter out non-printable characters except newlines
-		let filteredText = tabExpandedText
+		let filteredText = cleanText
 			.split("")
 			.filter((char) => char === "\n" || char.charCodeAt(0) >= 32)
 			.join("");
