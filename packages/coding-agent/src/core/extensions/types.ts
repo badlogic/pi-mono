@@ -120,6 +120,9 @@ export interface ExtensionUIContext {
 	/** Listen to raw terminal input (interactive mode only). Returns an unsubscribe function. */
 	onTerminalInput(handler: TerminalInputHandler): () => void;
 
+	/** Whether the terminal window currently has focus. */
+	isTerminalFocused(): boolean;
+
 	/** Set status text in the footer/status bar. Pass undefined to clear. */
 	setStatus(key: string, text: string | undefined): void;
 
@@ -600,6 +603,17 @@ export interface ModelSelectEvent {
 }
 
 // ============================================================================
+// Terminal Focus Events
+// ============================================================================
+
+/** Fired when terminal window focus changes in interactive mode. */
+export interface TerminalFocusEvent {
+	type: "terminal_focus";
+	focused: boolean;
+	previousFocused: boolean;
+}
+
+// ============================================================================
 // User Bash Events
 // ============================================================================
 
@@ -833,6 +847,7 @@ export type ExtensionEvent =
 	| ToolExecutionUpdateEvent
 	| ToolExecutionEndEvent
 	| ModelSelectEvent
+	| TerminalFocusEvent
 	| UserBashEvent
 	| InputEvent
 	| ToolCallEvent
@@ -987,6 +1002,7 @@ export interface ExtensionAPI {
 	on(event: "tool_execution_update", handler: ExtensionHandler<ToolExecutionUpdateEvent>): void;
 	on(event: "tool_execution_end", handler: ExtensionHandler<ToolExecutionEndEvent>): void;
 	on(event: "model_select", handler: ExtensionHandler<ModelSelectEvent>): void;
+	on(event: "terminal_focus", handler: ExtensionHandler<TerminalFocusEvent>): void;
 	on(event: "tool_call", handler: ExtensionHandler<ToolCallEvent, ToolCallEventResult>): void;
 	on(event: "tool_result", handler: ExtensionHandler<ToolResultEvent, ToolResultEventResult>): void;
 	on(event: "user_bash", handler: ExtensionHandler<UserBashEvent, UserBashEventResult>): void;

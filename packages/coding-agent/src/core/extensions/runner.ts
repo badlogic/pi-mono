@@ -173,6 +173,7 @@ const noOpUIContext: ExtensionUIContext = {
 	input: async () => undefined,
 	notify: () => {},
 	onTerminalInput: () => () => {},
+	isTerminalFocused: () => false,
 	setStatus: () => {},
 	setWorkingMessage: () => {},
 	setWidget: () => {},

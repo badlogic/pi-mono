@@ -14,6 +14,8 @@ export class VirtualTerminal implements Terminal {
 	private resizeHandler?: () => void;
 	private _columns: number;
 	private _rows: number;
+	private _focused = true;
+	private focusListeners = new Set<(focused: boolean) => void>();
 
 	constructor(columns = 80, rows = 24) {
 		this._columns = columns;
@@ -32,6 +34,7 @@ export class VirtualTerminal implements Terminal {
 	start(onInput: (data: string) => void, onResize: () => void): void {
 		this.inputHandler = onInput;
 		this.resizeHandler = onResize;
+		this._focused = true;
 		// Enable bracketed paste mode for consistency with ProcessTerminal
 		this.xterm.write("\x1b[?2004h");
 	}
@@ -43,6 +46,7 @@ export class VirtualTerminal implements Terminal {
 	stop(): void {
 		// Disable bracketed paste mode
 		this.xterm.write("\x1b[?2004l");
+		this._focused = true;
 		this.inputHandler = undefined;
 		this.resizeHandler = undefined;
 	}
@@ -62,6 +66,17 @@ export class VirtualTerminal implements Terminal {
 	get kittyProtocolActive(): boolean {
 		// Virtual terminal always reports Kitty protocol as active for testing
 		return true;
+	}
+
+	get focused(): boolean {
+		return this._focused;
+	}
+
+	onFocusChange(listener: (focused: boolean) => void): () => void {
+		this.focusListeners.add(listener);
+		return () => {
+			this.focusListeners.delete(listener);
+		};
 	}
 
 	moveBy(lines: number): void {
@@ -120,6 +135,14 @@ export class VirtualTerminal implements Terminal {
 		this.xterm.resize(columns, rows);
 		if (this.resizeHandler) {
 			this.resizeHandler();
+		}
+	}
+
+	setFocused(focused: boolean): void {
+		if (this._focused === focused) return;
+		this._focused = focused;
+		for (const listener of this.focusListeners) {
+			listener(focused);
 		}
 	}
 

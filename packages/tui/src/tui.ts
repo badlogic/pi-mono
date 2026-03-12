@@ -41,6 +41,7 @@ export interface Component {
 
 type InputListenerResult = { consume?: boolean; data?: string } | undefined;
 type InputListener = (data: string) => InputListenerResult;
+type TerminalFocusListener = (focused: boolean, previousFocused: boolean) => void;
 
 /**
  * Interface for components that can receive focus and display a hardware cursor.
@@ -51,6 +52,8 @@ type InputListener = (data: string) => InputListenerResult;
 export interface Focusable {
 	/** Set by TUI when focus changes. Component should emit CURSOR_MARKER when true. */
 	focused: boolean;
+	/** Optional terminal focus signal for caret styling when window focus changes. */
+	terminalFocused?: boolean;
 }
 
 /** Type guard to check if a component implements Focusable */
@@ -213,6 +216,9 @@ export class TUI extends Container {
 	private previousHeight = 0;
 	private focusedComponent: Component | null = null;
 	private inputListeners = new Set<InputListener>();
+	private terminalFocused = true;
+	private terminalFocusListeners = new Set<TerminalFocusListener>();
+	private terminalFocusUnsubscribe?: () => void;
 
 	/** Global callback for debug key (Shift+Ctrl+D). Called before input is forwarded to focused component. */
 	public onDebug?: () => void;
@@ -241,6 +247,7 @@ export class TUI extends Container {
 	constructor(terminal: Terminal, showHardwareCursor?: boolean) {
 		super();
 		this.terminal = terminal;
+		this.terminalFocused = terminal.focused;
 		if (showHardwareCursor !== undefined) {
 			this.showHardwareCursor = showHardwareCursor;
 		}
@@ -276,18 +283,35 @@ export class TUI extends Container {
 		this.clearOnShrink = enabled;
 	}
 
+	isTerminalFocused(): boolean {
+		return this.terminalFocused;
+	}
+
+	onTerminalFocusChange(listener: TerminalFocusListener): () => void {
+		this.terminalFocusListeners.add(listener);
+		return () => {
+			this.terminalFocusListeners.delete(listener);
+		};
+	}
+
+	private notifyTerminalFocusChange(focused: boolean, previousFocused: boolean): void {
+		for (const listener of this.terminalFocusListeners) {
+			listener(focused, previousFocused);
+		}
+	}
+
+	private setFocusableState(component: Component | null, focused: boolean): void {
+		if (!isFocusable(component)) return;
+		component.focused = focused;
+		if ("terminalFocused" in component) {
+			component.terminalFocused = this.terminalFocused;
+		}
+	}
+
 	setFocus(component: Component | null): void {
-		// Clear focused flag on old component
-		if (isFocusable(this.focusedComponent)) {
-			this.focusedComponent.focused = false;
-		}
-
+		this.setFocusableState(this.focusedComponent, false);
 		this.focusedComponent = component;
-
-		// Set focused flag on new component
-		if (isFocusable(component)) {
-			component.focused = true;
-		}
+		this.setFocusableState(component, true);
 	}
 
 	/**
@@ -412,6 +436,19 @@ export class TUI extends Container {
 			(data) => this.handleInput(data),
 			() => this.requestRender(),
 		);
+		this.terminalFocused = this.terminal.focused;
+		this.terminalFocusUnsubscribe?.();
+		this.terminalFocusUnsubscribe = this.terminal.onFocusChange((focused) => {
+			const previousFocused = this.terminalFocused;
+			if (previousFocused === focused) return;
+			this.terminalFocused = focused;
+			this.setFocusableState(this.focusedComponent, this.focusedComponent !== null);
+			if (!focused) {
+				this.terminal.hideCursor();
+			}
+			this.notifyTerminalFocusChange(focused, previousFocused);
+			this.requestRender();
+		});
 		this.terminal.hideCursor();
 		this.queryCellSize();
 		this.requestRender();
@@ -441,6 +478,8 @@ export class TUI extends Container {
 
 	stop(): void {
 		this.stopped = true;
+		this.terminalFocusUnsubscribe?.();
+		this.terminalFocusUnsubscribe = undefined;
 		// Move cursor to the end of the content to prevent overwriting/artifacts on exit
 		if (this.previousLines.length > 0) {
 			const targetRow = this.previousLines.length; // Line after the last content
@@ -1203,7 +1242,7 @@ export class TUI extends Container {
 		}
 
 		this.hardwareCursorRow = targetRow;
-		if (this.showHardwareCursor) {
+		if (this.showHardwareCursor && this.terminalFocused) {
 			this.terminal.showCursor();
 		} else {
 			this.terminal.hideCursor();

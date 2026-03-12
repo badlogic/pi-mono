@@ -278,6 +278,9 @@ user sends another prompt ◄─────────────────
 /model or Ctrl+P (model selection/cycling)
   └─► model_select
 
+terminal focus changes (interactive mode)
+  └─► terminal_focus
+
 exit (Ctrl+C, Ctrl+D)
   └─► session_shutdown
 ```
@@ -548,6 +551,33 @@ pi.on("model_select", async (event, ctx) => {
 ```
 
 Use this to update UI elements (status bars, footers) or perform model-specific initialization when the active model changes.
+
+### Terminal Focus Events
+
+#### terminal_focus
+
+Fired in interactive mode when the terminal window gains or loses focus.
+
+```typescript
+pi.on("terminal_focus", async (event, ctx) => {
+  // event.focused - current focus state
+  // event.previousFocused - previous focus state
+
+  const state = event.focused ? "focused" : "blurred";
+  ctx.ui.setStatus("focus", `Terminal: ${state}`);
+
+  // You can also read current state at any time
+  const current = ctx.ui.isTerminalFocused();
+  if (!current) {
+    // pause animations, timers, etc.
+  }
+});
+```
+
+Notes:
+- Emitted only in interactive mode.
+- Not emitted in print/json mode.
+- In RPC mode, `ctx.ui.isTerminalFocused()` currently returns `false`.
 
 ### Tool Events
 
@@ -1740,6 +1770,9 @@ ctx.ui.setTitle("pi - my-project");
 // Editor text
 ctx.ui.setEditorText("Prefill text");
 const current = ctx.ui.getEditorText();
+
+// Terminal focus state (interactive mode)
+const focused = ctx.ui.isTerminalFocused();
 
 // Paste into editor (triggers paste handling, including collapse for large content)
 ctx.ui.pasteToEditor("pasted content");

@@ -23,6 +23,8 @@ export class Input implements Component, Focusable {
 
 	/** Focusable interface - set by TUI when focus changes */
 	focused: boolean = false;
+	/** Terminal window focus state for caret styling. */
+	terminalFocused: boolean = true;
 
 	// Bracketed paste mode buffering
 	private pasteBuffer: string = "";
@@ -487,10 +489,11 @@ export class Input implements Component, Focusable {
 		const afterCursor = visibleText.slice(cursorDisplay + atCursor.length);
 
 		// Hardware cursor marker (zero-width, emitted before fake cursor for IME positioning)
-		const marker = this.focused ? CURSOR_MARKER : "";
+		const marker = this.focused && this.terminalFocused ? CURSOR_MARKER : "";
 
-		// Use inverse video to show cursor
-		const cursorChar = `\x1b[7m${atCursor}\x1b[27m`; // ESC[7m = reverse video, ESC[27m = normal
+		// Use subdued underlined caret when terminal is blurred
+		const cursorChar =
+			this.focused && !this.terminalFocused ? `\x1b[2m\x1b[4m${atCursor}\x1b[0m` : `\x1b[7m${atCursor}\x1b[27m`; // ESC[7m = reverse video, ESC[27m = normal
 		const textWithCursor = beforeCursor + marker + cursorChar + afterCursor;
 
 		// Calculate visual width

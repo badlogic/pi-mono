@@ -215,6 +215,7 @@ export class InteractiveMode {
 	private extensionInput: ExtensionInputComponent | undefined = undefined;
 	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
 	private extensionTerminalInputUnsubscribers = new Set<() => void>();
+	private terminalFocusListenerUnsubscribe: (() => void) | undefined = undefined;
 
 	// Extension widgets (components rendered above/below the editor)
 	private extensionWidgetsAbove = new Map<string, Component & { dispose?(): void }>();
@@ -455,6 +456,7 @@ export class InteractiveMode {
 
 		// Initialize extensions first so resources are shown before messages
 		await this.initExtensions();
+		this.setupTerminalFocusTracking();
 
 		// Render initial messages AFTER showing loaded resources
 		this.renderInitialMessages();
@@ -1435,6 +1437,7 @@ export class InteractiveMode {
 			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts),
 			notify: (message, type) => this.showExtensionNotify(message, type),
 			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
+			isTerminalFocused: () => this.ui.isTerminalFocused(),
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
 			setWorkingMessage: (message) => {
 				if (this.loadingAnimation) {
@@ -1483,6 +1486,21 @@ export class InteractiveMode {
 			getToolsExpanded: () => this.toolOutputExpanded,
 			setToolsExpanded: (expanded) => this.setToolsExpanded(expanded),
 		};
+	}
+
+	private setupTerminalFocusTracking(): void {
+		this.terminalFocusListenerUnsubscribe?.();
+		this.terminalFocusListenerUnsubscribe = this.ui.onTerminalFocusChange((focused, previousFocused) => {
+			const extensionRunner = this.session.extensionRunner;
+			if (!extensionRunner?.hasHandlers("terminal_focus")) {
+				return;
+			}
+			void extensionRunner.emit({
+				type: "terminal_focus",
+				focused,
+				previousFocused,
+			});
+		});
 	}
 
 	/**
@@ -4451,6 +4469,8 @@ export class InteractiveMode {
 			this.loadingAnimation = undefined;
 		}
 		this.clearExtensionTerminalInputListeners();
+		this.terminalFocusListenerUnsubscribe?.();
+		this.terminalFocusListenerUnsubscribe = undefined;
 		this.footer.dispose();
 		this.footerDataProvider.dispose();
 		if (this.unsubscribe) {

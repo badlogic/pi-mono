@@ -149,6 +149,11 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			return () => {};
 		},
 
+		isTerminalFocused(): boolean {
+			// Terminal focus state not available in RPC mode
+			return false;
+		},
+
 		setStatus(key: string, text: string | undefined): void {
 			// Fire and forget - no response needed
 			output({

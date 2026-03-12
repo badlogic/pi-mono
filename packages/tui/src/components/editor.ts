@@ -216,6 +216,8 @@ export class Editor implements Component, Focusable {
 
 	/** Focusable interface - set by TUI when focus changes */
 	focused: boolean = false;
+	/** Terminal window focus state for caret styling. */
+	terminalFocused: boolean = true;
 
 	protected tui: TUI;
 	private theme: EditorTheme;
@@ -443,8 +445,9 @@ export class Editor implements Component, Focusable {
 		}
 
 		// Render each visible layout line
-		// Emit hardware cursor marker only when focused and not showing autocomplete
-		const emitCursorMarker = this.focused && !this.autocompleteState;
+		// Emit hardware cursor marker only when terminal is focused and autocomplete is hidden
+		const emitCursorMarker = this.focused && this.terminalFocused && !this.autocompleteState;
+		const useBlurredCaret = this.focused && !this.terminalFocused;
 
 		for (const layoutLine of visibleLines) {
 			let displayText = layoutLine.text;
@@ -465,12 +468,18 @@ export class Editor implements Component, Focusable {
 					const afterGraphemes = [...this.segment(after)];
 					const firstGrapheme = afterGraphemes[0]?.segment || "";
 					const restAfter = after.slice(firstGrapheme.length);
-					const cursor = `\x1b[7m${firstGrapheme}\x1b[0m`;
-					displayText = before + marker + cursor + restAfter;
-					// lineVisibleWidth stays the same - we're replacing, not adding
+					if (useBlurredCaret) {
+						const cursor = `\x1b[2m\x1b[4m${firstGrapheme}\x1b[0m`;
+						displayText = before + marker + cursor + restAfter;
+						// lineVisibleWidth stays the same - we're replacing, not adding
+					} else {
+						const cursor = `\x1b[7m${firstGrapheme}\x1b[0m`;
+						displayText = before + marker + cursor + restAfter;
+						// lineVisibleWidth stays the same - we're replacing, not adding
+					}
 				} else {
 					// Cursor is at the end - add highlighted space
-					const cursor = "\x1b[7m \x1b[0m";
+					const cursor = useBlurredCaret ? "\x1b[2m\x1b[4m \x1b[0m" : "\x1b[7m \x1b[0m";
 					displayText = before + marker + cursor;
 					lineVisibleWidth = lineVisibleWidth + 1;
 					// If cursor overflows content width into the padding, flag it

@@ -128,6 +128,7 @@ export type {
 	SetLabelHandler,
 	SetModelHandler,
 	SetThinkingLevelHandler,
+	TerminalFocusEvent,
 	TerminalInputHandler,
 	// Events - Tool
 	ToolCallEvent,
