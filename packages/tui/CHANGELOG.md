@@ -5,6 +5,7 @@
 ### Fixed
 
 - Fixed `Input` horizontal scrolling for wide Unicode text (CJK, fullwidth characters) to use visual column width and strict slice boundaries, preventing rendered line overflow and TUI crashes ([#1982](https://github.com/badlogic/pi-mono/issues/1982))
+- Fixed xterm `modifyOtherKeys` handling for `Tab` in `matchesKey()`, restoring `shift+tab` and other modified Tab bindings in tmux when `extended-keys-format` is left at the default `xterm`
 
 ## [0.57.1] - 2026-03-07
 
