@@ -58,13 +58,18 @@ export function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
 
 		// Overflow check before advancing.
 		if (currentWidth + gWidth > maxWidth) {
-			if (wrapOppIndex >= 0) {
-				// Backtrack to last wrap opportunity.
+			if (wrapOppIndex >= 0 && currentWidth - wrapOppWidth + gWidth <= maxWidth) {
+				// Backtrack to last wrap opportunity (the remaining content
+				// plus the current grapheme still fits within maxWidth).
 				chunks.push({ text: line.slice(chunkStart, wrapOppIndex), startIndex: chunkStart, endIndex: wrapOppIndex });
 				chunkStart = wrapOppIndex;
 				currentWidth -= wrapOppWidth;
 			} else if (chunkStart < charIndex) {
-				// No wrap opportunity: force-break at current position.
+				// No viable wrap opportunity: force-break at current position.
+				// This also handles the case where backtracking to a word
+				// boundary wouldn't help because the remaining content plus
+				// the current grapheme (e.g. a wide character) still exceeds
+				// maxWidth.
 				chunks.push({ text: line.slice(chunkStart, charIndex), startIndex: chunkStart, endIndex: charIndex });
 				chunkStart = charIndex;
 				currentWidth = 0;

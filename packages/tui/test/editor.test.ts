@@ -874,6 +874,24 @@ describe("Editor component", () => {
 			assert.strictEqual(chunks[1]!.text, "amet,                         ");
 			assert.strictEqual(chunks[2]!.text, "            consectetur");
 		});
+
+		it("force-breaks when wide char after word boundary wrap still overflows", () => {
+			// " " (1) + "a"*186 (186) + "你" (2) = 189 visible width
+			// maxWidth = 187: backtracking to the space would leave 186 + 2 = 188 > 187,
+			// so the algorithm must force-break before the wide char instead.
+			const line = ` ${"a".repeat(186)}你`;
+			const chunks = wordWrapLine(line, 187);
+
+			for (const chunk of chunks) {
+				assert.ok(
+					visibleWidth(chunk.text) <= 187,
+					`chunk "${chunk.text.slice(0, 20)}..." has visible width ${visibleWidth(chunk.text)}, expected <= 187`,
+				);
+			}
+			// Verify no content is lost
+			const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
+			assert.strictEqual(reconstructed, line);
+		});
 	});
 
 	describe("Kill ring", () => {
