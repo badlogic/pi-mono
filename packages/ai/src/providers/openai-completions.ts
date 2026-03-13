@@ -742,10 +742,11 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): Sto
 			return "toolUse";
 		case "content_filter":
 			return "error";
-		default: {
-			const _exhaustive: never = reason;
-			throw new Error(`Unhandled stop reason: ${_exhaustive}`);
-		}
+		default:
+			// OpenAI-compatible providers may return non-standard finish reasons
+			// (e.g. "end"). Treat unknown reasons as "stop" since the assistant
+			// content has already been produced at this point.
+			return "stop";
 	}
 }
 
