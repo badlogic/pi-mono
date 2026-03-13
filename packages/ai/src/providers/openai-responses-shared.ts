@@ -259,13 +259,27 @@ export function convertResponsesMessages<TApi extends Api>(
 // Tool conversion
 // =============================================================================
 
+/**
+ * Normalize tool parameters so that `type: "object"` schemas always include a
+ * `required` array.  Some schema generators (e.g. TypeBox) omit `required`
+ * when every property is optional, but the OpenAI API rejects schemas without
+ * it, returning a 400 "required is a required property" error.
+ */
+function normalizeToolParams(params: unknown): Record<string, unknown> {
+	const p = (params ?? {}) as Record<string, unknown>;
+	if (p.type === "object" && !Array.isArray(p.required)) {
+		return { ...p, required: p.required ?? [] };
+	}
+	return p as Record<string, unknown>;
+}
+
 export function convertResponsesTools(tools: Tool[], options?: ConvertResponsesToolsOptions): OpenAITool[] {
 	const strict = options?.strict === undefined ? false : options.strict;
 	return tools.map((tool) => ({
 		type: "function",
 		name: tool.name,
 		description: tool.description,
-		parameters: tool.parameters as any, // TypeBox already generates JSON Schema
+		parameters: normalizeToolParams(tool.parameters),
 		strict,
 	}));
 }
