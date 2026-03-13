@@ -892,6 +892,128 @@ describe("Editor component", () => {
 			const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
 			assert.strictEqual(reconstructed, line);
 		});
+
+		it("splits oversized atomic segment across multiple chunks", () => {
+			// Simulate a paste marker wider than maxWidth by passing pre-segmented data
+			const marker = "[paste #1 +20 lines]"; // 21 chars
+			const line = `A${marker}B`;
+			const segments: Intl.SegmentData[] = [
+				{ segment: "A", index: 0, input: line },
+				{ segment: marker, index: 1, input: line },
+				{ segment: "B", index: 1 + marker.length, input: line },
+			];
+
+			const chunks = wordWrapLine(line, 10, segments);
+
+			// Every chunk must fit within maxWidth
+			for (const chunk of chunks) {
+				assert.ok(
+					visibleWidth(chunk.text) <= 10,
+					`chunk "${chunk.text}" has visible width ${visibleWidth(chunk.text)}, expected <= 10`,
+				);
+			}
+
+			// Verify no content is lost
+			const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
+			assert.strictEqual(reconstructed, line);
+		});
+
+		it("splits oversized atomic segment at start of line", () => {
+			const marker = "[paste #1 +20 lines]"; // 21 chars
+			const line = `${marker}B`;
+			const segments: Intl.SegmentData[] = [
+				{ segment: marker, index: 0, input: line },
+				{ segment: "B", index: marker.length, input: line },
+			];
+
+			const chunks = wordWrapLine(line, 10, segments);
+
+			for (const chunk of chunks) {
+				assert.ok(visibleWidth(chunk.text) <= 10);
+			}
+			// "B" ends up on the last line (either alone or with the marker tail)
+			assert.strictEqual(chunks[chunks.length - 1]!.text.includes("B"), true);
+
+			const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
+			assert.strictEqual(reconstructed, line);
+		});
+
+		it("splits oversized atomic segment at end of line", () => {
+			const marker = "[paste #1 +20 lines]"; // 21 chars
+			const line = `A${marker}`;
+			const segments: Intl.SegmentData[] = [
+				{ segment: "A", index: 0, input: line },
+				{ segment: marker, index: 1, input: line },
+			];
+
+			const chunks = wordWrapLine(line, 10, segments);
+
+			for (const chunk of chunks) {
+				assert.ok(visibleWidth(chunk.text) <= 10);
+			}
+			assert.strictEqual(chunks[0]!.text, "A");
+
+			const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
+			assert.strictEqual(reconstructed, line);
+		});
+
+		it("splits consecutive oversized atomic segments", () => {
+			const m1 = "[paste #1 +20 lines]"; // 21 chars
+			const m2 = "[paste #2 +30 lines]"; // 21 chars
+			const line = `${m1}${m2}`;
+			const segments: Intl.SegmentData[] = [
+				{ segment: m1, index: 0, input: line },
+				{ segment: m2, index: m1.length, input: line },
+			];
+
+			const chunks = wordWrapLine(line, 10, segments);
+
+			for (const chunk of chunks) {
+				assert.ok(
+					visibleWidth(chunk.text) <= 10,
+					`chunk "${chunk.text}" has visible width ${visibleWidth(chunk.text)}, expected <= 10`,
+				);
+			}
+
+			const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
+			assert.strictEqual(reconstructed, line);
+		});
+
+		it("wraps normally after oversized atomic segment", () => {
+			const marker = "[paste #1 +20 lines]"; // 21 chars
+			const line = `${marker} hello world`;
+			const segments: Intl.SegmentData[] = [
+				{ segment: marker, index: 0, input: line },
+				{ segment: " ", index: marker.length, input: line },
+				{ segment: "h", index: marker.length + 1, input: line },
+				{ segment: "e", index: marker.length + 2, input: line },
+				{ segment: "l", index: marker.length + 3, input: line },
+				{ segment: "l", index: marker.length + 4, input: line },
+				{ segment: "o", index: marker.length + 5, input: line },
+				{ segment: " ", index: marker.length + 6, input: line },
+				{ segment: "w", index: marker.length + 7, input: line },
+				{ segment: "o", index: marker.length + 8, input: line },
+				{ segment: "r", index: marker.length + 9, input: line },
+				{ segment: "l", index: marker.length + 10, input: line },
+				{ segment: "d", index: marker.length + 11, input: line },
+			];
+
+			const chunks = wordWrapLine(line, 10, segments);
+
+			// All chunks must fit
+			for (const chunk of chunks) {
+				assert.ok(
+					visibleWidth(chunk.text) <= 10,
+					`chunk "${chunk.text}" has visible width ${visibleWidth(chunk.text)}, expected <= 10`,
+				);
+			}
+
+			// Last chunk should contain "world" (normal wrapping resumes)
+			assert.strictEqual(chunks[chunks.length - 1]!.text, "world");
+
+			const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
+			assert.strictEqual(reconstructed, line);
+		});
 	});
 
 	describe("Kill ring", () => {
@@ -3178,6 +3300,93 @@ describe("Editor component", () => {
 			editor.handleInput("\x01"); // Ctrl+A
 			editor.handleInput("\x1b[C"); // Right
 			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 1 }); // Just past "["
+		});
+
+		it("does not crash when paste marker is wider than terminal width", () => {
+			// Reproduce: terminal width 8, paste marker "[paste #1 +47 lines]" (21 chars)
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme);
+			const bigContent = "line\n".repeat(47).trimEnd();
+			editor.handleInput(`\x1b[200~${bigContent}\x1b[201~`);
+
+			const text = editor.getText();
+			const marker = text.match(/\[paste #\d+ \+\d+ lines\]/);
+			assert.ok(marker, "paste marker should be created");
+			assert.ok(visibleWidth(marker[0]) > 8, "marker should be wider than render width");
+
+			// Render at very narrow width - should not throw
+			const lines = editor.render(8);
+			// Every rendered line must fit within the width (marker is split)
+			for (const line of lines) {
+				assert.ok(
+					visibleWidth(line) <= 8,
+					`line exceeds width 8: visible=${visibleWidth(line)} text=${JSON.stringify(line)}`,
+				);
+			}
+		});
+
+		it("does not crash when text + paste marker exceeds terminal width with cursor on marker", () => {
+			// Reproduce: terminal width 54, text "b".repeat(35) + "[paste #1 +27 lines]" + "bbbb"
+			// Cursor lands on the paste marker after word-wrap, causing the rendered line
+			// to be 55 visible chars (1 over the width).
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme);
+
+			// Type 35 'b' characters
+			for (let i = 0; i < 35; i++) editor.handleInput("b");
+
+			// Paste 27 lines
+			const bigContent = "line\n".repeat(27).trimEnd();
+			editor.handleInput(`\x1b[200~${bigContent}\x1b[201~`);
+
+			// Type a few more characters
+			for (let i = 0; i < 4; i++) editor.handleInput("b");
+
+			// Move cursor left to land on the paste marker
+			editor.handleInput("\x1b[D"); // past last 'b'
+			editor.handleInput("\x1b[D"); // past last 'b'
+			editor.handleInput("\x1b[D"); // past last 'b'
+			editor.handleInput("\x1b[D"); // past last 'b'
+			editor.handleInput("\x1b[D"); // now on the paste marker
+
+			// Render at width 54 - should not throw
+			const renderWidth = 54;
+			const lines = editor.render(renderWidth);
+			for (const line of lines) {
+				assert.ok(
+					visibleWidth(line) <= renderWidth,
+					`line exceeds width ${renderWidth}: visible=${visibleWidth(line)} text=${JSON.stringify(line)}`,
+				);
+			}
+		});
+
+		it("wordWrapLine re-checks overflow after backtracking to wrap opportunity", () => {
+			// Reproduce crash #2: " " + "b".repeat(35) + atomic_marker(20 chars) + "bbbb"
+			// layoutWidth=53. After wrapping at the space, the remaining 35 b's + marker = 55
+			// must trigger a second force-break instead of silently overflowing.
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme);
+
+			// Type a space, then 35 b's
+			editor.handleInput(" ");
+			for (let i = 0; i < 35; i++) editor.handleInput("b");
+
+			// Paste 27 lines to create marker
+			const bigContent = "line\n".repeat(27).trimEnd();
+			editor.handleInput(`\x1b[200~${bigContent}\x1b[201~`);
+
+			// Type trailing chars
+			for (let i = 0; i < 4; i++) editor.handleInput("b");
+
+			// Render at width 54 (contentWidth=54, layoutWidth=53 with paddingX=0)
+			const renderWidth = 54;
+			const lines = editor.render(renderWidth);
+			for (const line of lines) {
+				assert.ok(
+					visibleWidth(line) <= renderWidth,
+					`line exceeds width ${renderWidth}: visible=${visibleWidth(line)} text=${JSON.stringify(line)}`,
+				);
+			}
 		});
 	});
 });

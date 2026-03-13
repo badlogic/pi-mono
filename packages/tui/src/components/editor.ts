@@ -147,6 +147,24 @@ export function wordWrapLine(line: string, maxWidth: number, preSegmented?: Intl
 			wrapOppIndex = -1;
 		}
 
+		if (gWidth > maxWidth) {
+			// Single atomic segment wider than maxWidth (e.g. paste marker
+			// in a narrow terminal). Re-wrap it at grapheme granularity.
+
+			// The segment remains logically atomic for cursor
+			// movement / editing — the split is purely visual for word-wrap layout.
+			const subChunks = wordWrapLine(grapheme, maxWidth);
+			for (let j = 0; j < subChunks.length - 1; j++) {
+				const sc = subChunks[j]!;
+				chunks.push({ text: sc.text, startIndex: charIndex + sc.startIndex, endIndex: charIndex + sc.endIndex });
+			}
+			const last = subChunks[subChunks.length - 1]!;
+			chunkStart = charIndex + last.startIndex;
+			currentWidth = visibleWidth(last.text);
+			wrapOppIndex = -1;
+			continue;
+		}
+
 		// Advance.
 		currentWidth += gWidth;
 
@@ -1251,6 +1269,20 @@ export class Editor implements Component, Focusable {
 			const targetCol = targetVL.startCol + moveToVisualCol;
 			const logicalLine = this.state.lines[targetVL.logicalLine] || "";
 			this.state.cursorCol = Math.min(targetCol, logicalLine.length);
+
+			// Snap cursor to atomic segment boundary (e.g. paste markers)
+			// so the cursor never lands in the middle of a multi-grapheme unit.
+			// Single-grapheme segments don't need snapping.
+			const segments = [...this.segment(logicalLine)];
+			for (const seg of segments) {
+				if (seg.index > this.state.cursorCol) break;
+				if (seg.segment.length <= 1) continue;
+				if (this.state.cursorCol < seg.index + seg.segment.length) {
+					// jump to the start of the segment when moving up, to the end when moving down.
+					this.state.cursorCol = currentVisualLine > targetVisualLine ? seg.index : seg.index + seg.segment.length;
+					break;
+				}
+			}
 		}
 	}
 
