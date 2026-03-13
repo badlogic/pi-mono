@@ -5,8 +5,6 @@ set -euo pipefail
 # Parse arguments passed from pi CLI
 MOUNT_COMMAND=""
 MODELS_PATH=""
-HF_TOKEN=""
-PI_API_KEY=""
 VLLM_VERSION="release"  # Default to release
 
 while [[ $# -gt 0 ]]; do
@@ -17,14 +15,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --models-path)
             MODELS_PATH="$2"
-            shift 2
-            ;;
-        --hf-token)
-            HF_TOKEN="$2"
-            shift 2
-            ;;
-        --vllm-api-key)
-            PI_API_KEY="$2"
             shift 2
             ;;
         --vllm)
@@ -39,16 +29,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate required parameters
-if [ -z "$HF_TOKEN" ]; then
-    echo "ERROR: HF_TOKEN is required" >&2
-    exit 1
-fi
-
-if [ -z "$PI_API_KEY" ]; then
-    echo "ERROR: PI_API_KEY is required" >&2
-    exit 1
-fi
-
 if [ -z "$MODELS_PATH" ]; then
     echo "ERROR: MODELS_PATH is required" >&2
     exit 1
@@ -305,9 +285,6 @@ cat >> ~/.bashrc << EOF
 [ -d "\$HOME/venv" ] && source "\$HOME/venv/bin/activate"
 export PATH="/usr/local/cuda-${DRIVER_CUDA_VERSION}/bin:\$HOME/.local/bin:\$PATH"
 export LD_LIBRARY_PATH="/usr/local/cuda-${DRIVER_CUDA_VERSION}/lib64:\${LD_LIBRARY_PATH:-}"
-export HF_TOKEN="${HF_TOKEN}"
-export PI_API_KEY="${PI_API_KEY}"
-export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}"
 export HF_HUB_ENABLE_HF_TRANSFER=1
 export VLLM_NO_USAGE_STATS=1
 export VLLM_DO_NOT_TRACK=1

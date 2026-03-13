@@ -46,23 +46,6 @@ export const setupPod = async (
 	sshCmd: string,
 	options: { mount?: string; modelsPath?: string; vllm?: "release" | "nightly" | "gpt-oss" },
 ) => {
-	// Validate environment variables
-	const hfToken = process.env.HF_TOKEN;
-	const vllmApiKey = process.env.PI_API_KEY;
-
-	if (!hfToken) {
-		console.error(chalk.red("ERROR: HF_TOKEN environment variable is required"));
-		console.error("Get a token from: https://huggingface.co/settings/tokens");
-		console.error("Then run: export HF_TOKEN=your_token_here");
-		process.exit(1);
-	}
-
-	if (!vllmApiKey) {
-		console.error(chalk.red("ERROR: PI_API_KEY environment variable is required"));
-		console.error("Set an API key: export PI_API_KEY=your_api_key_here");
-		process.exit(1);
-	}
-
 	// Determine models path
 	let modelsPath = options.modelsPath;
 	if (!modelsPath && options.mount) {
@@ -109,7 +92,7 @@ export const setupPod = async (
 	console.log(chalk.green("✓ Setup script copied"));
 
 	// Build setup command
-	let setupCmd = `bash /tmp/pod_setup.sh --models-path '${modelsPath}' --hf-token '${hfToken}' --vllm-api-key '${vllmApiKey}'`;
+	let setupCmd = `bash /tmp/pod_setup.sh --models-path '${modelsPath}'`;
 	if (options.mount) {
 		setupCmd += ` --mount '${options.mount}'`;
 	}
@@ -166,6 +149,11 @@ export const setupPod = async (
 	addPod(name, pod);
 	console.log("");
 	console.log(chalk.green(`✓ Pod '${name}' setup complete and set as active pod`));
+	console.log("");
+	console.log("Before starting a model, set credentials in your local shell:");
+	console.log(chalk.cyan("  export HF_TOKEN=your_huggingface_token"));
+	console.log(chalk.cyan("  export PI_API_KEY=your_api_key"));
+	console.log(chalk.gray("  These credentials are sent at model start time and are not persisted on the pod."));
 	console.log("");
 	console.log("You can now deploy models with:");
 	console.log(chalk.cyan(`  pi start <model> --name <name>`));
