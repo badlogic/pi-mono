@@ -98,6 +98,8 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * these messages are added to the context before the next LLM call.
 	 *
 	 * Use this for "steering" the agent while it's working.
+	 *
+	 * Contract: must not throw or reject. Return [] when no steering messages are available.
 	 */
 	getSteeringMessages?: () => Promise<AgentMessage[]>;
 
@@ -109,6 +111,8 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * continues with another turn.
 	 *
 	 * Use this for follow-up messages that should wait until the agent finishes.
+	 *
+	 * Contract: must not throw or reject. Return [] when no follow-up messages are available.
 	 */
 	getFollowUpMessages?: () => Promise<AgentMessage[]>;
 }
