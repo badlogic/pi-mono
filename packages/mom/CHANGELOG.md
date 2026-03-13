@@ -202,7 +202,7 @@
 
 ### Breaking Changes
 
-- `AgentTool` import moved from `@mariozechner/pi-ai` to `@mariozechner/pi-agent-core`
+- `AgentTool` import moved from `@apholdings/jensen-ai` to `@apholdings/jensen-agent-core`
 - `AppMessage` type renamed to `AgentMessage`
 - `Attachment` type replaced with `ImageContent` for image handling
 - `MomSessionManager.loadSession()` renamed to `buildSessionContex()`

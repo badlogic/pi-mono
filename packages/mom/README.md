@@ -108,7 +108,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 2. **OAuth Login via coding agent command** (Recommended for Claude Pro/Max)
 
-- run interactive coding agent session: `npx @mariozechner/pi-coding-agent`
+- run interactive coding agent session: `npx @apholdings/jensen-code`
 - enter `/login` command
   - choose "Anthropic" provider
   - follow instructions in the browser
@@ -488,3 +488,4 @@ npx tsx --watch-path src --watch src/main.ts --sandbox=docker:mom-sandbox ./data
 ## License
 
 MIT
+

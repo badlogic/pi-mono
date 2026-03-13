@@ -5,8 +5,8 @@
  * Multiple questions: tab bar navigation between questions
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import type { ExtensionAPI } from "@apholdings/jensen-code";
+import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth } from "@apholdings/jensen-tui";
 import { Type } from "@sinclair/typebox";
 
 // Types

@@ -1,6 +1,6 @@
 {
-	"name": "@mariozechner/pi-agent-core",
-	"version": "0.57.1",
+	"name": "@apholdings/jensen-agent-core",
+	"version": "0.0.1",
 	"description": "General-purpose agent with transport abstraction, state management, and attachment support",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -16,8 +16,11 @@
 		"test": "vitest --run",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"dependencies": {
-		"@mariozechner/pi-ai": "^0.57.1"
+		"@apholdings/jensen-ai": "^0.0.1"
 	},
 	"keywords": [
 		"ai",
@@ -26,12 +29,16 @@
 		"transport",
 		"state-management"
 	],
-	"author": "Mario Zechner",
+	"author": "AP Holdings",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/apholdings/jensen-code.git",
 		"directory": "packages/agent"
+	},
+	"homepage": "https://github.com/apholdings/jensen-code/tree/main/packages/agent",
+	"bugs": {
+		"url": "https://github.com/apholdings/jensen-code/issues"
 	},
 	"engines": {
 		"node": ">=20.0.0"

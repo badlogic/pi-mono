@@ -10,7 +10,7 @@ import {
 	Text,
 	type TUI,
 	truncateToWidth,
-} from "@mariozechner/pi-tui";
+} from "@apholdings/jensen-tui";
 import stripAnsi from "strip-ansi";
 import type { ToolDefinition } from "../../../core/extensions/types.js";
 import { computeEditDiff, type EditDiffError, type EditDiffResult } from "../../../core/tools/edit-diff.js";

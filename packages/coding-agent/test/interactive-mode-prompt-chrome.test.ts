@@ -1,4 +1,4 @@
-import type { Component, EditorComponent } from "@mariozechner/pi-tui";
+import type { Component, EditorComponent } from "@apholdings/jensen-tui";
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import type { AppAction, KeybindingsManager } from "../src/core/keybindings.js";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";

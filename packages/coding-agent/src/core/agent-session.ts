@@ -22,9 +22,9 @@ import type {
 	AgentState,
 	AgentTool,
 	ThinkingLevel,
-} from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
-import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@mariozechner/pi-ai";
+} from "@apholdings/jensen-agent-core";
+import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@apholdings/jensen-ai";
+import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@apholdings/jensen-ai";
 import { getDocsPath } from "../config.js";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { stripFrontmatter } from "../utils/frontmatter.js";

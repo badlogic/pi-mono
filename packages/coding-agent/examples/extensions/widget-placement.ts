@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@apholdings/jensen-code";
 
 const applyWidgets = (ctx: ExtensionContext) => {
 	if (!ctx.hasUI) return;

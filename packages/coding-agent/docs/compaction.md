@@ -9,7 +9,7 @@ LLMs have limited context windows. When conversations grow too long, pi uses com
 - [`packages/coding-agent/src/core/session-manager.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/session-manager.ts) - Entry types (`CompactionEntry`, `BranchSummaryEntry`)
 - [`packages/coding-agent/src/core/extensions/types.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/extensions/types.ts) - Extension event types
 
-For TypeScript definitions in your project, inspect `node_modules/@mariozechner/pi-coding-agent/dist/`.
+For TypeScript definitions in your project, inspect `node_modules/@apholdings/jensen-code/dist/`.
 
 ## Overview
 
@@ -307,7 +307,7 @@ pi.on("session_before_compact", async (event, ctx) => {
 To generate a summary with your own model, convert messages to text using `serializeConversation`:
 
 ```typescript
-import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
+import { convertToLlm, serializeConversation } from "@apholdings/jensen-code";
 
 pi.on("session_before_compact", async (event, ctx) => {
   const { preparation } = event;
@@ -390,3 +390,4 @@ Configure compaction in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settin
 | `keepRecentTokens` | `20000` | Recent tokens to keep (not summarized) |
 
 Disable auto-compaction with `"enabled": false`. You can still compact manually with `/compact`.
+

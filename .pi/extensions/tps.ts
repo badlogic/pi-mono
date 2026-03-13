@@ -1,5 +1,5 @@
-import type { AssistantMessage } from "@mariozechner/pi-ai";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { AssistantMessage } from "@apholdings/jensen-ai";
+import type { ExtensionAPI } from "@apholdings/jensen-code";
 
 function isAssistantMessage(message: unknown): message is AssistantMessage {
 	if (!message || typeof message !== "object") return false;
@@ -45,3 +45,4 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.notify(message, "info");
 	});
 }
+

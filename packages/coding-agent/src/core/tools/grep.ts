@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline";
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { AgentTool } from "@apholdings/jensen-agent-core";
 import { type Static, Type } from "@sinclair/typebox";
 import { spawn } from "child_process";
 import { readFileSync, statSync } from "fs";

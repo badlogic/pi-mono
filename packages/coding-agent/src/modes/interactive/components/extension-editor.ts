@@ -16,7 +16,7 @@ import {
 	Spacer,
 	Text,
 	type TUI,
-} from "@mariozechner/pi-tui";
+} from "@apholdings/jensen-tui";
 import { FILE_PREFIX } from "../../../config.js";
 import type { KeybindingsManager } from "../../../core/keybindings.js";
 import { getEditorTheme, theme } from "../theme/theme.js";

@@ -4,7 +4,7 @@
 
 Extensions and custom tools can render custom TUI components for interactive user interfaces. This page covers the component system and available building blocks.
 
-**Source:** [`@mariozechner/pi-tui`](https://github.com/badlogic/pi-mono/tree/main/packages/tui)
+**Source:** [`@apholdings/jensen-tui`](https://github.com/badlogic/pi-mono/tree/main/packages/tui)
 
 ## Component Interface
 
@@ -33,7 +33,7 @@ The TUI appends a full SGR reset and OSC 8 reset at the end of each rendered lin
 Components that display a text cursor and need IME (Input Method Editor) support should implement the `Focusable` interface:
 
 ```typescript
-import { CURSOR_MARKER, type Component, type Focusable } from "@mariozechner/pi-tui";
+import { CURSOR_MARKER, type Component, type Focusable } from "@apholdings/jensen-tui";
 
 class MyInput implements Component, Focusable {
   focused: boolean = false;  // Set by TUI when focus changes
@@ -59,7 +59,7 @@ This enables IME candidate windows to appear at the correct position for CJK inp
 When a container component (dialog, selector, etc.) contains an `Input` or `Editor` child, the container must implement `Focusable` and propagate the focus state to the child. Otherwise, the hardware cursor won't be positioned correctly for IME input.
 
 ```typescript
-import { Container, type Focusable, Input } from "@mariozechner/pi-tui";
+import { Container, type Focusable, Input } from "@apholdings/jensen-tui";
 
 class SearchDialog extends Container implements Focusable {
   private searchInput: Input;
@@ -179,10 +179,10 @@ See [overlay-qa-tests.ts](../examples/extensions/overlay-qa-tests.ts) for compre
 
 ## Built-in Components
 
-Import from `@mariozechner/pi-tui`:
+Import from `@apholdings/jensen-tui`:
 
 ```typescript
-import { Text, Box, Container, Spacer, Markdown } from "@mariozechner/pi-tui";
+import { Text, Box, Container, Spacer, Markdown } from "@apholdings/jensen-tui";
 ```
 
 ### Text
@@ -264,7 +264,7 @@ const image = new Image(
 Use `matchesKey()` for key detection:
 
 ```typescript
-import { matchesKey, Key } from "@mariozechner/pi-tui";
+import { matchesKey, Key } from "@apholdings/jensen-tui";
 
 handleInput(data: string) {
   if (matchesKey(data, Key.up)) {
@@ -290,7 +290,7 @@ handleInput(data: string) {
 **Critical:** Each line from `render()` must not exceed the `width` parameter.
 
 ```typescript
-import { visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
+import { visibleWidth, truncateToWidth } from "@apholdings/jensen-tui";
 
 render(width: number): string[] {
   // Truncate long lines
@@ -311,7 +311,7 @@ Example: Interactive selector
 import {
   matchesKey, Key,
   truncateToWidth, visibleWidth
-} from "@mariozechner/pi-tui";
+} from "@apholdings/jensen-tui";
 
 class MySelector {
   private items: string[];
@@ -425,8 +425,8 @@ renderResult(result, options, theme) {
 **For Markdown**, use `getMarkdownTheme()`:
 
 ```typescript
-import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import { Markdown } from "@mariozechner/pi-tui";
+import { getMarkdownTheme } from "@apholdings/jensen-code";
+import { Markdown } from "@apholdings/jensen-tui";
 
 renderResult(result, options, theme) {
   const mdTheme = getMarkdownTheme();
@@ -587,12 +587,12 @@ These patterns cover the most common UI needs in extensions. **Copy these patter
 
 ### Pattern 1: Selection Dialog (SelectList)
 
-For letting users pick from a list of options. Use `SelectList` from `@mariozechner/pi-tui` with `DynamicBorder` for framing.
+For letting users pick from a list of options. Use `SelectList` from `@apholdings/jensen-tui` with `DynamicBorder` for framing.
 
 ```typescript
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder } from "@mariozechner/pi-coding-agent";
-import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
+import type { ExtensionAPI } from "@apholdings/jensen-code";
+import { DynamicBorder } from "@apholdings/jensen-code";
+import { Container, type SelectItem, SelectList, Text } from "@apholdings/jensen-tui";
 
 pi.registerCommand("pick", {
   handler: async (_args, ctx) => {
@@ -650,7 +650,7 @@ pi.registerCommand("pick", {
 For operations that take time and should be cancellable. `BorderedLoader` shows a spinner and handles escape to cancel.
 
 ```typescript
-import { BorderedLoader } from "@mariozechner/pi-coding-agent";
+import { BorderedLoader } from "@apholdings/jensen-code";
 
 pi.registerCommand("fetch", {
   handler: async (_args, ctx) => {
@@ -679,11 +679,11 @@ pi.registerCommand("fetch", {
 
 ### Pattern 3: Settings/Toggles (SettingsList)
 
-For toggling multiple settings. Use `SettingsList` from `@mariozechner/pi-tui` with `getSettingsListTheme()`.
+For toggling multiple settings. Use `SettingsList` from `@apholdings/jensen-tui` with `getSettingsListTheme()`.
 
 ```typescript
-import { getSettingsListTheme } from "@mariozechner/pi-coding-agent";
-import { Container, type SettingItem, SettingsList, Text } from "@mariozechner/pi-tui";
+import { getSettingsListTheme } from "@apholdings/jensen-code";
+import { Container, type SettingItem, SettingsList, Text } from "@apholdings/jensen-tui";
 
 pi.registerCommand("settings", {
   handler: async (_args, ctx) => {
@@ -792,8 +792,8 @@ Token stats available via `ctx.sessionManager.getBranch()` and `ctx.model`.
 Replace the main input editor with a custom implementation. Useful for modal editing (vim), different keybindings (emacs), or specialized input handling.
 
 ```typescript
-import { CustomEditor, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
+import { CustomEditor, type ExtensionAPI } from "@apholdings/jensen-code";
+import { matchesKey, truncateToWidth } from "@apholdings/jensen-tui";
 
 type Mode = "normal" | "insert";
 
@@ -885,3 +885,4 @@ export default function (pi: ExtensionAPI) {
 - **Custom editor**: [examples/extensions/modal-editor.ts](../examples/extensions/modal-editor.ts) - Vim-like modal editing
 - **Snake game**: [examples/extensions/snake.ts](../examples/extensions/snake.ts) - Full game with keyboard input, game loop
 - **Custom tool rendering**: [examples/extensions/todo.ts](../examples/extensions/todo.ts) - renderCall and renderResult
+

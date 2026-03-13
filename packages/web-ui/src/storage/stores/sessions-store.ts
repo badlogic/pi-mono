@@ -1,4 +1,4 @@
-import type { AgentState } from "@mariozechner/pi-agent-core";
+import type { AgentState } from "@apholdings/jensen-agent-core";
 import { Store } from "../store.js";
 import type { SessionData, SessionMetadata, StoreConfig } from "../types.js";
 

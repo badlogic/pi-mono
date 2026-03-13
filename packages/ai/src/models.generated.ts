@@ -7520,23 +7520,6 @@ export const MODELS = {
 			contextWindow: 8192,
 			maxTokens: 16384,
 		} satisfies Model<"openai-completions">,
-		"meta-llama/llama-3.1-405b-instruct": {
-			id: "meta-llama/llama-3.1-405b-instruct",
-			name: "Meta: Llama 3.1 405B Instruct",
-			api: "openai-completions",
-			provider: "openrouter",
-			baseUrl: "https://openrouter.ai/api/v1",
-			reasoning: false,
-			input: ["text"],
-			cost: {
-				input: 4,
-				output: 4,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 131000,
-			maxTokens: 4096,
-		} satisfies Model<"openai-completions">,
 		"meta-llama/llama-3.1-70b-instruct": {
 			id: "meta-llama/llama-3.1-70b-instruct",
 			name: "Meta: Llama 3.1 70B Instruct",

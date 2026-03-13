@@ -34,7 +34,7 @@ Source on GitHub ([pi-mono](https://github.com/badlogic/pi-mono)):
 - [`packages/ai/src/types.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/types.ts) - Base message types (UserMessage, AssistantMessage, ToolResultMessage)
 - [`packages/agent/src/types.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/agent/src/types.ts) - AgentMessage union type
 
-For TypeScript definitions in your project, inspect `node_modules/@mariozechner/pi-coding-agent/dist/` and `node_modules/@mariozechner/pi-ai/dist/`.
+For TypeScript definitions in your project, inspect `node_modules/@apholdings/jensen-code/dist/` and `node_modules/@apholdings/jensen-ai/dist/`.
 
 ## Message Types
 
@@ -410,3 +410,4 @@ Key methods for working with sessions programmatically.
 - `getSessionId()` - Session UUID
 - `getSessionFile()` - Session file path (undefined for in-memory)
 - `isPersisted()` - Whether session is saved to disk
+

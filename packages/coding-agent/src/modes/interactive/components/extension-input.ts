@@ -2,7 +2,7 @@
  * Simple text input component for extensions.
  */
 
-import { Container, type Focusable, getEditorKeybindings, Input, Spacer, Text, type TUI } from "@mariozechner/pi-tui";
+import { Container, type Focusable, getEditorKeybindings, Input, Spacer, Text, type TUI } from "@apholdings/jensen-tui";
 import { theme } from "../theme/theme.js";
 import { CountdownTimer } from "./countdown-timer.js";
 import { DynamicBorder } from "./dynamic-border.js";

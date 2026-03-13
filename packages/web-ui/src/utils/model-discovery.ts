@@ -1,5 +1,5 @@
+import type { Model } from "@apholdings/jensen-ai";
 import { LMStudioClient } from "@lmstudio/sdk";
-import type { Model } from "@mariozechner/pi-ai";
 import { Ollama } from "ollama/browser";
 
 /**

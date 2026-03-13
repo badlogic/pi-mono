@@ -20,8 +20,8 @@ import {
 	type SimpleStreamOptions,
 	streamSimpleAnthropic,
 	streamSimpleOpenAIResponses,
-} from "@mariozechner/pi-ai";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+} from "@apholdings/jensen-ai";
+import type { ExtensionAPI } from "@apholdings/jensen-code";
 
 // =============================================================================
 // Constants

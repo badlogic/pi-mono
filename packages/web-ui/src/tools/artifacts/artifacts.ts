@@ -1,8 +1,8 @@
 import { icon } from "@mariozechner/mini-lit";
 import "@mariozechner/mini-lit/dist/MarkdownBlock.js";
+import type { Agent, AgentMessage, AgentTool } from "@apholdings/jensen-agent-core";
+import { StringEnum, type ToolCall } from "@apholdings/jensen-ai";
 import { Button } from "@mariozechner/mini-lit/dist/Button.js";
-import type { Agent, AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
-import { StringEnum, type ToolCall } from "@mariozechner/pi-ai";
 import { type Static, Type } from "@sinclair/typebox";
 import { html, LitElement, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";

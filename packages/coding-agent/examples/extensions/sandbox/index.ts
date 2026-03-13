@@ -42,8 +42,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { SandboxManager, type SandboxRuntimeConfig } from "@anthropic-ai/sandbox-runtime";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { type BashOperations, createBashTool } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@apholdings/jensen-code";
+import { type BashOperations, createBashTool } from "@apholdings/jensen-code";
 
 interface SandboxConfig extends SandboxRuntimeConfig {
 	enabled?: boolean;

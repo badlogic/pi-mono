@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@mariozechner/pi-agent-core";
-import { type AssistantMessage, getModel } from "@mariozechner/pi-ai";
+import { Agent } from "@apholdings/jensen-agent-core";
+import { type AssistantMessage, getModel } from "@apholdings/jensen-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";

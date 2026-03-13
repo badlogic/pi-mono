@@ -17,7 +17,7 @@ pkg update && pkg upgrade
 pkg install nodejs termux-api git
 
 # Install pi
-npm install -g @mariozechner/pi-coding-agent
+npm install -g @apholdings/jensen-code
 
 # Create config directory
 mkdir -p ~/.pi/agent
@@ -125,3 +125,4 @@ If npm fails, try clearing the cache:
 ```bash
 npm cache clean --force
 ```
+

@@ -1,10 +1,10 @@
+import type { Model } from "@apholdings/jensen-ai";
 import { i18n } from "@mariozechner/mini-lit";
 import { Button } from "@mariozechner/mini-lit/dist/Button.js";
 import { DialogBase } from "@mariozechner/mini-lit/dist/DialogBase.js";
 import { Input } from "@mariozechner/mini-lit/dist/Input.js";
 import { Label } from "@mariozechner/mini-lit/dist/Label.js";
 import { Select } from "@mariozechner/mini-lit/dist/Select.js";
-import type { Model } from "@mariozechner/pi-ai";
 import { html, type TemplateResult } from "lit";
 import { state } from "lit/decorators.js";
 import { getAppStorage } from "../storage/app-storage.js";

@@ -46,7 +46,7 @@
 	"version": "0.0.3",
 	"dependencies": {
 		"@mariozechner/jiti": "^2.6.5",
-		"@mariozechner/pi-coding-agent": "^0.30.2",
+		"@apholdings/jensen-code": "^0.0.2",
 		"get-east-asian-width": "^1.4.0"
 	},
 	"overrides": {

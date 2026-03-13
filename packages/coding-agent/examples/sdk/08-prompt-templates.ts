@@ -9,7 +9,7 @@ import {
 	DefaultResourceLoader,
 	type PromptTemplate,
 	SessionManager,
-} from "@mariozechner/pi-coding-agent";
+} from "@apholdings/jensen-code";
 
 // Define custom templates
 const deployTemplate: PromptTemplate = {

@@ -1,7 +1,7 @@
-import { complete, getModel } from "@mariozechner/pi-ai";
-import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { DynamicBorder, getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Markdown, matchesKey, Text } from "@mariozechner/pi-tui";
+import { complete, getModel } from "@apholdings/jensen-ai";
+import type { ExtensionAPI, ExtensionCommandContext } from "@apholdings/jensen-code";
+import { DynamicBorder, getMarkdownTheme } from "@apholdings/jensen-code";
+import { Container, Markdown, matchesKey, Text } from "@apholdings/jensen-tui";
 
 type ContentBlock = {
 	type?: string;

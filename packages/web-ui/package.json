@@ -1,7 +1,7 @@
 {
 	"name": "@mariozechner/pi-web-ui",
 	"version": "0.57.1",
-	"description": "Reusable web UI components for AI chat interfaces powered by @mariozechner/pi-ai",
+	"description": "Reusable web UI components for AI chat interfaces powered by @apholdings/jensen-ai",
 	"type": "module",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
@@ -18,14 +18,14 @@
 	},
 	"dependencies": {
 		"@lmstudio/sdk": "^1.5.0",
-		"@mariozechner/pi-ai": "^0.57.1",
-		"@mariozechner/pi-tui": "^0.57.1",
 		"docx-preview": "^0.3.7",
 		"jszip": "^3.10.1",
 		"lucide": "^0.544.0",
 		"ollama": "^0.6.0",
 		"pdfjs-dist": "5.4.394",
-		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+		"@apholdings/jensen-tui": "^0.0.1",
+		"@apholdings/jensen-ai": "^0.0.1"
 	},
 	"peerDependencies": {
 		"@mariozechner/mini-lit": "^0.2.0",

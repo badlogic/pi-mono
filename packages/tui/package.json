@@ -1,9 +1,14 @@
 {
-	"name": "@mariozechner/pi-tui",
-	"version": "0.57.1",
+	"name": "@apholdings/jensen-tui",
+	"version": "0.0.1",
 	"description": "Terminal User Interface library with differential rendering for efficient text-based applications",
 	"type": "module",
-	"main": "dist/index.js",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist/**/*",
+		"README.md"
+	],
 	"scripts": {
 		"clean": "shx rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json",
@@ -11,10 +16,9 @@
 		"test": "node --test --import tsx test/*.test.ts",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
-	"files": [
-		"dist/**/*",
-		"README.md"
-	],
+	"publishConfig": {
+		"access": "public"
+	},
 	"keywords": [
 		"tui",
 		"terminal",
@@ -24,17 +28,20 @@
 		"typescript",
 		"cli"
 	],
-	"author": "Mario Zechner",
+	"author": "AP Holdings",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/apholdings/jensen-code.git",
 		"directory": "packages/tui"
 	},
+	"homepage": "https://github.com/apholdings/jensen-code/tree/main/packages/tui",
+	"bugs": {
+		"url": "https://github.com/apholdings/jensen-code/issues"
+	},
 	"engines": {
 		"node": ">=20.0.0"
 	},
-	"types": "./dist/index.d.ts",
 	"dependencies": {
 		"@types/mime-types": "^2.1.4",
 		"chalk": "^5.5.0",

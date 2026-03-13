@@ -1,4 +1,4 @@
-import type { Component } from "@mariozechner/pi-tui";
+import type { Component } from "@apholdings/jensen-tui";
 import type { ExtensionAPI } from "../../../core/extensions/index.js";
 
 type RGB = { r: number; g: number; b: number };

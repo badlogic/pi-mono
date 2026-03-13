@@ -9,8 +9,8 @@ import { FILE_PREFIX } from "./config.js";
 
 process.title = FILE_PREFIX;
 
-import { setBedrockProviderModule } from "@mariozechner/pi-ai";
-import { bedrockProviderModule } from "@mariozechner/pi-ai/bedrock-provider";
+import { setBedrockProviderModule } from "@apholdings/jensen-ai";
+import { bedrockProviderModule } from "@apholdings/jensen-ai/bedrock-provider";
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { main } from "./main.js";
 

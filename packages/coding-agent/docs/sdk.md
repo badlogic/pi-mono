@@ -16,7 +16,7 @@ See [examples/sdk/](../examples/sdk/) for working examples from minimal to full 
 ## Quick Start
 
 ```typescript
-import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@apholdings/jensen-code";
 
 // Set up credential storage and model registry
 const authStorage = AuthStorage.create();
@@ -40,7 +40,7 @@ await session.prompt("What files are in the current directory?");
 ## Installation
 
 ```bash
-npm install @mariozechner/pi-coding-agent
+npm install @apholdings/jensen-code
 ```
 
 The SDK is included in the main package. No separate installation needed.
@@ -54,7 +54,7 @@ The main factory function. Creates an `AgentSession` with configurable options.
 `createAgentSession()` uses a `ResourceLoader` to supply extensions, skills, prompt templates, themes, and context files. If you do not provide one, it uses `DefaultResourceLoader` with standard discovery.
 
 ```typescript
-import { createAgentSession } from "@mariozechner/pi-coding-agent";
+import { createAgentSession } from "@apholdings/jensen-code";
 
 // Minimal: defaults with DefaultResourceLoader
 const { session } = await createAgentSession();
@@ -161,7 +161,7 @@ Both `steer()` and `followUp()` expand file-based prompt templates but error on 
 
 ### Agent and AgentState
 
-The `Agent` class (from `@mariozechner/pi-agent-core`) handles the core LLM interaction. Access it via `session.agent`.
+The `Agent` class (from `@apholdings/jensen-agent-core`) handles the core LLM interaction. Access it via `session.agent`.
 
 ```typescript
 // Access current state
@@ -282,8 +282,8 @@ When you pass a custom `ResourceLoader`, `cwd` and `agentDir` no longer control 
 ### Model
 
 ```typescript
-import { getModel } from "@mariozechner/pi-ai";
-import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
+import { getModel } from "@apholdings/jensen-ai";
+import { AuthStorage, ModelRegistry } from "@apholdings/jensen-code";
 
 const authStorage = AuthStorage.create();
 const modelRegistry = new ModelRegistry(authStorage);
@@ -330,7 +330,7 @@ API key resolution priority (handled by AuthStorage):
 4. Fallback resolver (for custom provider keys from `models.json`)
 
 ```typescript
-import { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, ModelRegistry } from "@apholdings/jensen-code";
 
 // Default: uses ~/.pi/agent/auth.json and ~/.pi/agent/models.json
 const authStorage = AuthStorage.create();
@@ -366,7 +366,7 @@ const simpleRegistry = new ModelRegistry(authStorage);
 Use a `ResourceLoader` to override the system prompt:
 
 ```typescript
-import { createAgentSession, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader } from "@apholdings/jensen-code";
 
 const loader = new DefaultResourceLoader({
   systemPromptOverride: () => "You are a helpful assistant.",
@@ -386,7 +386,7 @@ import {
   readOnlyTools, // read, grep, find, ls
   readTool, bashTool, editTool, writeTool,
   grepTool, findTool, lsTool,
-} from "@mariozechner/pi-coding-agent";
+} from "@apholdings/jensen-code";
 
 // Use built-in tool set
 const { session } = await createAgentSession({
@@ -414,7 +414,7 @@ import {
   createGrepTool,
   createFindTool,
   createLsTool,
-} from "@mariozechner/pi-coding-agent";
+} from "@apholdings/jensen-code";
 
 const cwd = "/path/to/project";
 
@@ -444,7 +444,7 @@ const { session } = await createAgentSession({
 
 ```typescript
 import { Type } from "@sinclair/typebox";
-import { createAgentSession, type ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, type ToolDefinition } from "@apholdings/jensen-code";
 
 // Inline custom tool
 const myTool: ToolDefinition = {
@@ -475,7 +475,7 @@ Custom tools passed via `customTools` are combined with extension-registered too
 Extensions are loaded by the `ResourceLoader`. `DefaultResourceLoader` discovers extensions from `~/.pi/agent/extensions/`, `.pi/extensions/`, and settings.json extension sources.
 
 ```typescript
-import { createAgentSession, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader } from "@apholdings/jensen-code";
 
 const loader = new DefaultResourceLoader({
   additionalExtensionPaths: ["/path/to/my-extension.ts"],
@@ -497,7 +497,7 @@ Extensions can register tools, subscribe to events, add commands, and more. See 
 **Event Bus:** Extensions can communicate via `pi.events`. Pass a shared `eventBus` to `DefaultResourceLoader` if you need to emit or listen from outside:
 
 ```typescript
-import { createEventBus, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
+import { createEventBus, DefaultResourceLoader } from "@apholdings/jensen-code";
 
 const eventBus = createEventBus();
 const loader = new DefaultResourceLoader({
@@ -517,7 +517,7 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   type Skill,
-} from "@mariozechner/pi-coding-agent";
+} from "@apholdings/jensen-code";
 
 const customSkill: Skill = {
   name: "my-skill",
@@ -543,7 +543,7 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 ### Context Files
 
 ```typescript
-import { createAgentSession, DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader } from "@apholdings/jensen-code";
 
 const loader = new DefaultResourceLoader({
   agentsFilesOverride: (current) => ({
@@ -567,7 +567,7 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   type PromptTemplate,
-} from "@mariozechner/pi-coding-agent";
+} from "@apholdings/jensen-code";
 
 const customCommand: PromptTemplate = {
   name: "deploy",
@@ -594,7 +594,7 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 Sessions use a tree structure with `id`/`parentId` linking, enabling in-place branching.
 
 ```typescript
-import { createAgentSession, SessionManager } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, SessionManager } from "@apholdings/jensen-code";
 
 // In-memory (no persistence)
 const { session } = await createAgentSession({
@@ -665,7 +665,7 @@ sm.createBranchedSession(leafId);       // Extract path to new file
 ### Settings Management
 
 ```typescript
-import { createAgentSession, SettingsManager, SessionManager } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, SettingsManager, SessionManager } from "@apholdings/jensen-code";
 
 // Default: loads from files (global + project merged)
 const { session } = await createAgentSession({
@@ -721,7 +721,7 @@ Use `DefaultResourceLoader` to discover extensions, skills, prompts, themes, and
 import {
   DefaultResourceLoader,
   getAgentDir,
-} from "@mariozechner/pi-coding-agent";
+} from "@apholdings/jensen-code";
 
 const loader = new DefaultResourceLoader({
   cwd,
@@ -762,7 +762,7 @@ interface LoadExtensionsResult {
 ## Complete Example
 
 ```typescript
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel } from "@apholdings/jensen-ai";
 import { Type } from "@sinclair/typebox";
 import {
   AuthStorage,
@@ -774,7 +774,7 @@ import {
   readTool,
   bashTool,
   type ToolDefinition,
-} from "@mariozechner/pi-coding-agent";
+} from "@apholdings/jensen-code";
 
 // Set up auth storage (custom location)
 const authStorage = AuthStorage.create("/custom/agent/auth.json");
@@ -851,7 +851,7 @@ The SDK exports run mode utilities for building custom interfaces on top of `cre
 Full TUI interactive mode with editor, chat history, and all built-in commands:
 
 ```typescript
-import { createAgentSession, InteractiveMode } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, InteractiveMode } from "@apholdings/jensen-code";
 
 const { session } = await createAgentSession({ /* ... */ });
 
@@ -872,7 +872,7 @@ await mode.run();  // Blocks until exit
 Single-shot mode: send prompts, output result, exit:
 
 ```typescript
-import { createAgentSession, runPrintMode } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, runPrintMode } from "@apholdings/jensen-code";
 
 const { session } = await createAgentSession({ /* ... */ });
 
@@ -889,7 +889,7 @@ await runPrintMode(session, {
 JSON-RPC mode for subprocess integration:
 
 ```typescript
-import { createAgentSession, runRpcMode } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, runRpcMode } from "@apholdings/jensen-code";
 
 const { session } = await createAgentSession({ /* ... */ });
 
@@ -966,3 +966,4 @@ type Tool
 ```
 
 For extension types, see [extensions.md](extensions.md) for the full API.
+

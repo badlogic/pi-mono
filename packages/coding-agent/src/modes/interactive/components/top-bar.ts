@@ -1,5 +1,5 @@
-import type { Component } from "@mariozechner/pi-tui";
-import { visibleWidth } from "@mariozechner/pi-tui";
+import type { Component } from "@apholdings/jensen-tui";
+import { visibleWidth } from "@apholdings/jensen-tui";
 import type { AppAction, KeybindingsManager } from "../../../core/keybindings.js";
 import { type ThemeColor, theme } from "../theme/theme.js";
 import { appKey } from "./keybinding-hints.js";

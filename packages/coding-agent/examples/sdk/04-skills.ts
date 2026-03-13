@@ -5,7 +5,7 @@
  * Discover, filter, merge, or replace them.
  */
 
-import { createAgentSession, DefaultResourceLoader, SessionManager, type Skill } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader, SessionManager, type Skill } from "@apholdings/jensen-code";
 
 // Or define custom skills inline
 const customSkill: Skill = {
