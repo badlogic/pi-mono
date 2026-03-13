@@ -4,7 +4,7 @@ import { decodeKittyPrintable, matchesKey } from "../keys.js";
 import { KillRing } from "../kill-ring.js";
 import { type Component, CURSOR_MARKER, type Focusable, type TUI } from "../tui.js";
 import { UndoStack } from "../undo-stack.js";
-import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
+import { getSegmenter, isPunctuationChar, isWhitespaceChar, truncateToWidth, visibleWidth } from "../utils.js";
 import { SelectList, type SelectListTheme } from "./select-list.js";
 
 const segmenter = getSegmenter();
@@ -335,7 +335,11 @@ export class Editor implements Component, Focusable {
 		if (this.scrollOffset > 0) {
 			const indicator = `─── ↑ ${this.scrollOffset} more `;
 			const remaining = width - visibleWidth(indicator);
-			result.push(this.borderColor(indicator + "─".repeat(Math.max(0, remaining))));
+			if (remaining >= 0) {
+				result.push(this.borderColor(indicator + "─".repeat(remaining)));
+			} else {
+				result.push(this.borderColor(truncateToWidth(indicator, width)));
+			}
 		} else {
 			result.push(horizontal.repeat(width));
 		}
