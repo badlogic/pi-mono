@@ -734,6 +734,7 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): Sto
 	if (reason === null) return "stop";
 	switch (reason) {
 		case "stop":
+		case "end":
 			return "stop";
 		case "length":
 			return "length";

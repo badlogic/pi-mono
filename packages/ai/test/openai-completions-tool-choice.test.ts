@@ -1,10 +1,13 @@
 import { Type } from "@sinclair/typebox";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getModel } from "../src/models.js";
 import { streamSimple } from "../src/stream.js";
 import type { Tool } from "../src/types.js";
 
-const mockState = vi.hoisted(() => ({ lastParams: undefined as unknown }));
+const mockState = vi.hoisted(() => ({
+	lastParams: undefined as unknown,
+	finishReason: "stop" as "stop" | "end",
+}));
 
 vi.mock("openai", () => {
 	class FakeOpenAI {
@@ -15,7 +18,7 @@ vi.mock("openai", () => {
 					return {
 						async *[Symbol.asyncIterator]() {
 							yield {
-								choices: [{ delta: {}, finish_reason: "stop" }],
+								choices: [{ delta: {}, finish_reason: mockState.finishReason }],
 								usage: {
 									prompt_tokens: 1,
 									completion_tokens: 1,
@@ -34,6 +37,11 @@ vi.mock("openai", () => {
 });
 
 describe("openai-completions tool_choice", () => {
+	beforeEach(() => {
+		mockState.lastParams = undefined;
+		mockState.finishReason = "stop";
+	});
+
 	it("forwards toolChoice from simple options to payload", async () => {
 		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini")!;
 		const model = { ...baseModel, api: "openai-completions" } as const;
@@ -174,5 +182,29 @@ describe("openai-completions tool_choice", () => {
 
 		const params = (payload ?? mockState.lastParams) as { reasoning_effort?: string };
 		expect(params.reasoning_effort).toBe("medium");
+	});
+
+	it("maps finish_reason=end to stop", async () => {
+		mockState.finishReason = "end";
+		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini")!;
+		const model = { ...baseModel, api: "openai-completions" } as const;
+
+		const response = await streamSimple(
+			model,
+			{
+				messages: [
+					{
+						role: "user",
+						content: "Hi",
+						timestamp: Date.now(),
+					},
+				],
+			},
+			{
+				apiKey: "test",
+			},
+		).result();
+
+		expect(response.stopReason, `Error: ${response.errorMessage}`).toBe("stop");
 	});
 });
