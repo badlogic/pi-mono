@@ -7,7 +7,7 @@ dist/
 packages/*/dist/
 packages/*/dist-chrome/
 packages/*/dist-firefox/
-
+.browser-smoke/
 # Environment
 .env
 
