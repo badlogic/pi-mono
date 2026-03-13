@@ -361,9 +361,7 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 		stream: true,
 	};
 
-	if (compat.supportsUsageInStreaming !== false) {
-		(params as any).stream_options = { include_usage: true };
-	}
+	(params as any).stream_options = { include_usage: true };
 
 	if (compat.supportsStore) {
 		params.store = false;
