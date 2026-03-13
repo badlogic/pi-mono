@@ -38,7 +38,7 @@ export function appKey(keybindings: KeybindingsManager, action: AppAction): stri
  * @returns Formatted string with dim key and muted description
  */
 export function keyHint(action: EditorAction, description: string): string {
-	return theme.fg("dim", editorKey(action)) + theme.fg("muted", ` ${description}`);
+	return theme.fg("accent", editorKey(action)) + theme.fg("muted", ` ${description}`);
 }
 
 /**
@@ -51,7 +51,7 @@ export function keyHint(action: EditorAction, description: string): string {
  * @returns Formatted string with dim key and muted description
  */
 export function appKeyHint(keybindings: KeybindingsManager, action: AppAction, description: string): string {
-	return theme.fg("dim", appKey(keybindings, action)) + theme.fg("muted", ` ${description}`);
+	return theme.fg("accent", appKey(keybindings, action)) + theme.fg("muted", ` ${description}`);
 }
 
 /**
@@ -62,5 +62,5 @@ export function appKeyHint(keybindings: KeybindingsManager, action: AppAction, d
  * @returns Formatted string with dim key and muted description
  */
 export function rawKeyHint(key: string, description: string): string {
-	return theme.fg("dim", key) + theme.fg("muted", ` ${description}`);
+	return theme.fg("accent", key) + theme.fg("muted", ` ${description}`);
 }

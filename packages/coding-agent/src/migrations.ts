@@ -8,8 +8,9 @@ import { dirname, join } from "path";
 import { CONFIG_DIR_NAME, getAgentDir, getBinDir } from "./config.js";
 
 const MIGRATION_GUIDE_URL =
-	"https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/CHANGELOG.md#extensions-migration";
-const EXTENSIONS_DOC_URL = "https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md";
+	"https://github.com/apholdings/jensen-code/blob/main/packages/coding-agent/CHANGELOG.md#extensions-migration";
+const EXTENSIONS_DOC_URL =
+	"https://github.com/apholdings/jensen-code/blob/main/packages/coding-agent/docs/extensions.md";
 
 /**
  * Migrate legacy oauth.json and settings.json apiKeys to auth.json.

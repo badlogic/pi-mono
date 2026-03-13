@@ -31,8 +31,11 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "login", description: "Login with OAuth provider" },
 	{ name: "logout", description: "Logout from OAuth provider" },
 	{ name: "new", description: "Start a new session" },
+	{ name: "clear", description: "Clear current session and start fresh" },
 	{ name: "compact", description: "Manually compact the session context" },
 	{ name: "resume", description: "Resume a different session" },
 	{ name: "reload", description: "Reload extensions, skills, prompts, and themes" },
 	{ name: "quit", description: "Quit pi" },
+	{ name: "exit", description: "Exit pi" },
+	{ name: "help", description: "Show startup help and loaded resources" },
 ];

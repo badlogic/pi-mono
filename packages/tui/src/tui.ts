@@ -41,6 +41,8 @@ export interface Component {
 
 type InputListenerResult = { consume?: boolean; data?: string } | undefined;
 type InputListener = (data: string) => InputListenerResult;
+type WindowFocusListener = (focused: boolean) => void;
+type FocusTargetListener = (component: Component | null) => void;
 
 /**
  * Interface for components that can receive focus and display a hardware cursor.
@@ -212,7 +214,10 @@ export class TUI extends Container {
 	private previousWidth = 0;
 	private previousHeight = 0;
 	private focusedComponent: Component | null = null;
+	private windowFocused = true;
 	private inputListeners = new Set<InputListener>();
+	private windowFocusListeners = new Set<WindowFocusListener>();
+	private focusTargetListeners = new Set<FocusTargetListener>();
 
 	/** Global callback for debug key (Shift+Ctrl+D). Called before input is forwarded to focused component. */
 	public onDebug?: () => void;
@@ -277,6 +282,10 @@ export class TUI extends Container {
 	}
 
 	setFocus(component: Component | null): void {
+		if (this.focusedComponent === component) {
+			return;
+		}
+
 		// Clear focused flag on old component
 		if (isFocusable(this.focusedComponent)) {
 			this.focusedComponent.focused = false;
@@ -288,6 +297,32 @@ export class TUI extends Container {
 		if (isFocusable(component)) {
 			component.focused = true;
 		}
+
+		for (const listener of this.focusTargetListeners) {
+			listener(this.focusedComponent);
+		}
+	}
+
+	getFocusedComponent(): Component | null {
+		return this.focusedComponent;
+	}
+
+	isWindowFocused(): boolean {
+		return this.windowFocused;
+	}
+
+	onWindowFocusChange(listener: WindowFocusListener): () => void {
+		this.windowFocusListeners.add(listener);
+		return () => {
+			this.windowFocusListeners.delete(listener);
+		};
+	}
+
+	onFocusTargetChange(listener: FocusTargetListener): () => void {
+		this.focusTargetListeners.add(listener);
+		return () => {
+			this.focusTargetListeners.delete(listener);
+		};
 	}
 
 	/**
@@ -491,6 +526,28 @@ export class TUI extends Container {
 				return;
 			}
 			data = current;
+		}
+
+		if (data === "\x1b[I") {
+			if (!this.windowFocused) {
+				this.windowFocused = true;
+				for (const listener of this.windowFocusListeners) {
+					listener(true);
+				}
+				this.requestRender();
+			}
+			return;
+		}
+
+		if (data === "\x1b[O") {
+			if (this.windowFocused) {
+				this.windowFocused = false;
+				for (const listener of this.windowFocusListeners) {
+					listener(false);
+				}
+				this.requestRender();
+			}
+			return;
 		}
 
 		// If we're waiting for cell size response, buffer input and parse
@@ -746,9 +803,10 @@ export class TUI extends Container {
 			minLinesNeeded = Math.max(minLinesNeeded, row + overlayLines.length);
 		}
 
-		// Ensure result covers the terminal working area to keep overlay positioning stable across resizes.
-		// maxLinesRendered can exceed current content length after a shrink; pad to keep viewportStart consistent.
-		const workingHeight = Math.max(this.maxLinesRendered, minLinesNeeded);
+		// Only preserve the historical working area while the current composed frame still overflows.
+		// Once everything fits again, reset overlay anchoring to the real top of the viewport.
+		const workingHeight =
+			minLinesNeeded <= termHeight ? minLinesNeeded : Math.max(this.maxLinesRendered, minLinesNeeded);
 
 		// Extend result with empty lines if content is too short for overlay placement or working area
 		while (result.length < workingHeight) {
@@ -870,14 +928,6 @@ export class TUI extends Container {
 		if (this.stopped) return;
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
-		let viewportTop = Math.max(0, this.maxLinesRendered - height);
-		let prevViewportTop = this.previousViewportTop;
-		let hardwareCursorRow = this.hardwareCursorRow;
-		const computeLineDiff = (targetRow: number): number => {
-			const currentScreenRow = hardwareCursorRow - prevViewportTop;
-			const targetScreenRow = targetRow - viewportTop;
-			return targetScreenRow - currentScreenRow;
-		};
 
 		// Render all components to get new lines
 		let newLines = this.render(width);
@@ -891,6 +941,15 @@ export class TUI extends Container {
 		const cursorPos = this.extractCursorPosition(newLines, height);
 
 		newLines = this.applyLineResets(newLines);
+		const frameFits = newLines.length <= height;
+		let viewportTop = frameFits ? 0 : Math.max(0, this.maxLinesRendered - height);
+		let prevViewportTop = this.previousLines.length <= height ? 0 : this.previousViewportTop;
+		let hardwareCursorRow = this.hardwareCursorRow;
+		const computeLineDiff = (targetRow: number): number => {
+			const currentScreenRow = hardwareCursorRow - prevViewportTop;
+			const targetScreenRow = targetRow - viewportTop;
+			return targetScreenRow - currentScreenRow;
+		};
 
 		// Width or height changed - need full re-render
 		const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;
@@ -915,7 +974,7 @@ export class TUI extends Container {
 			} else {
 				this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
 			}
-			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+			this.previousViewportTop = frameFits ? 0 : Math.max(0, this.maxLinesRendered - height);
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
 			this.previousWidth = width;
@@ -980,7 +1039,7 @@ export class TUI extends Container {
 		// No changes - but still need to update hardware cursor position if it moved
 		if (firstChanged === -1) {
 			this.positionHardwareCursor(cursorPos, newLines.length);
-			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+			this.previousViewportTop = frameFits ? 0 : Math.max(0, this.maxLinesRendered - height);
 			this.previousHeight = height;
 			return;
 		}
@@ -1021,7 +1080,7 @@ export class TUI extends Container {
 			this.previousLines = newLines;
 			this.previousWidth = width;
 			this.previousHeight = height;
-			this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+			this.previousViewportTop = frameFits ? 0 : Math.max(0, this.maxLinesRendered - height);
 			return;
 		}
 
@@ -1162,7 +1221,7 @@ export class TUI extends Container {
 		this.hardwareCursorRow = finalCursorRow;
 		// Track terminal's working area (grows but doesn't shrink unless cleared)
 		this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
-		this.previousViewportTop = Math.max(0, this.maxLinesRendered - height);
+		this.previousViewportTop = frameFits ? 0 : Math.max(0, this.maxLinesRendered - height);
 
 		// Position hardware cursor for IME
 		this.positionHardwareCursor(cursorPos, newLines.length);

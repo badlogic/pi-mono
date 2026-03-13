@@ -17,6 +17,7 @@ import {
 	Text,
 	type TUI,
 } from "@mariozechner/pi-tui";
+import { FILE_PREFIX } from "../../../config.js";
 import type { KeybindingsManager } from "../../../core/keybindings.js";
 import { getEditorTheme, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -117,7 +118,7 @@ export class ExtensionEditorComponent extends Container implements Focusable {
 		}
 
 		const currentText = this.editor.getText();
-		const tmpFile = path.join(os.tmpdir(), `pi-extension-editor-${Date.now()}.md`);
+		const tmpFile = path.join(os.tmpdir(), `${FILE_PREFIX}-extension-editor-${Date.now()}.md`);
 
 		try {
 			fs.writeFileSync(tmpFile, currentText, "utf-8");

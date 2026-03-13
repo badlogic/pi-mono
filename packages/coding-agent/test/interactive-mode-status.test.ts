@@ -182,3 +182,95 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(output).not.toContain("[Skills]");
 	});
 });
+
+describe("InteractiveMode help and session reset", () => {
+	beforeAll(() => {
+		initTheme("dark");
+	});
+
+	test("renders expanded operational help sections", () => {
+		const fakeThis: any = {
+			version: "0.57.1",
+			chatContainer: new Container(),
+			helpContainer: undefined,
+			ui: { requestRender: vi.fn() },
+			session: {
+				extensionRunner: {
+					getExtensionPaths: () => [],
+				},
+			},
+			buildStartupInstructionsText: () => "startup shortcuts",
+			buildHelpReferenceText: (InteractiveMode as any).prototype.buildHelpReferenceText,
+			showLoadedResources: vi.fn(),
+			clearHelpContainer: (InteractiveMode as any).prototype.clearHelpContainer,
+		};
+
+		(InteractiveMode as any).prototype.handleHelpCommand.call(fakeThis);
+
+		const output = renderAll(fakeThis.helpContainer);
+		expect(output).toContain("Operational Reference");
+		expect(output).toContain("Built-in tools:");
+		expect(output).toContain("Modes:");
+		expect(output).toContain("Slash Commands");
+		expect(output).toContain("/tree, /fork, /compact, /reload");
+		expect(output).toContain("Customization");
+		expect(fakeThis.showLoadedResources).toHaveBeenCalledOnce();
+	});
+
+	test("resetSessionUiState clears help and stale UI state", () => {
+		const editor = {
+			text: "/new",
+			setText(text: string) {
+				this.text = text;
+			},
+		};
+		const helpContainer = new Container();
+		helpContainer.addChild({ render: () => ["HELP"], invalidate: () => {} });
+		const fakeThis: any = {
+			chatContainer: new Container(),
+			pendingMessagesContainer: new Container(),
+			statusContainer: new Container(),
+			helpContainer,
+			compactionQueuedMessages: ["queued"],
+			streamingComponent: { id: "stream" },
+			streamingMessage: { id: "message" },
+			pendingTools: new Map([["tool", { id: "tool" }]]),
+			pendingBashComponents: [{ id: "bash" }],
+			bashComponent: { id: "bash-active" },
+			pendingWorkingMessage: "Working...",
+			isBashMode: true,
+			editor,
+			ui: {
+				invalidate: vi.fn(),
+				requestRender: vi.fn(),
+			},
+			clearChatContainer: (InteractiveMode as any).prototype.clearChatContainer,
+			updatePromptChrome: vi.fn(),
+			renderInitialMessages: vi.fn(),
+		};
+
+		fakeThis.chatContainer.addChild(helpContainer);
+		fakeThis.chatContainer.addChild({ render: () => ["OTHER"], invalidate: () => {} });
+		fakeThis.pendingMessagesContainer.addChild({ render: () => ["PENDING"], invalidate: () => {} });
+		fakeThis.statusContainer.addChild({ render: () => ["STATUS"], invalidate: () => {} });
+
+		(InteractiveMode as any).prototype.resetSessionUiState.call(fakeThis, false);
+
+		expect(fakeThis.chatContainer.children).toHaveLength(0);
+		expect(fakeThis.pendingMessagesContainer.children).toHaveLength(0);
+		expect(fakeThis.statusContainer.children).toHaveLength(0);
+		expect(fakeThis.helpContainer).toBeUndefined();
+		expect(fakeThis.compactionQueuedMessages).toEqual([]);
+		expect(fakeThis.streamingComponent).toBeUndefined();
+		expect(fakeThis.streamingMessage).toBeUndefined();
+		expect(fakeThis.pendingTools.size).toBe(0);
+		expect(fakeThis.pendingBashComponents).toEqual([]);
+		expect(fakeThis.bashComponent).toBeUndefined();
+		expect(fakeThis.pendingWorkingMessage).toBeUndefined();
+		expect(fakeThis.isBashMode).toBe(false);
+		expect(editor.text).toBe("");
+		expect(fakeThis.updatePromptChrome).toHaveBeenCalledOnce();
+		expect(fakeThis.renderInitialMessages).not.toHaveBeenCalled();
+		expect(fakeThis.ui.invalidate).toHaveBeenCalledOnce();
+	});
+});

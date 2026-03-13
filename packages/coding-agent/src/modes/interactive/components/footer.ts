@@ -1,37 +1,83 @@
+import { execFileSync } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
 import { type Component, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import type { AgentSession } from "../../../core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
 import { theme } from "../theme/theme.js";
+
+type GitInfo = {
+	inGitRepo: boolean;
+	repoName?: string;
+	branch?: string;
+	dirty?: boolean;
+};
+
+type GitCache = {
+	cwd: string;
+	info: GitInfo;
+	fetchedAt: number;
+};
+
+const GIT_CACHE_TTL_MS = 5000;
 
 /**
  * Sanitize text for display in a single-line status.
  * Removes newlines, tabs, carriage returns, and other control characters.
  */
 function sanitizeStatusText(text: string): string {
-	// Replace newlines, tabs, carriage returns with space, then collapse multiple spaces
 	return text
 		.replace(/[\r\n\t]/g, " ")
 		.replace(/ +/g, " ")
 		.trim();
 }
 
-/**
- * Format token counts (similar to web-ui)
- */
-function formatTokens(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
-	return `${Math.round(count / 1000000)}M`;
+function formatTokenCount(value: number): string {
+	if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+	if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+	return String(value);
 }
 
-/**
- * Footer component that shows pwd, token stats, and context usage.
- * Computes token/context stats from session, gets git branch and extension statuses from provider.
- */
+function shortenPath(input: string): string {
+	const home = os.homedir();
+	let p = input;
+
+	if (home && p.startsWith(home)) {
+		p = `~${p.slice(home.length)}`;
+	}
+
+	if (p === "/") return "/";
+
+	const parts = p.split("/").filter(Boolean);
+	if (parts.length <= 4) return p;
+
+	const tail = parts.slice(-3).join("/");
+	return p.startsWith("~") ? `~/…/${tail}` : `/…/${tail}`;
+}
+
+function shortenPathForWidth(input: string, maxWidth: number): string {
+	if (maxWidth <= 0) return "";
+
+	const base = shortenPath(input);
+	if (visibleWidth(base) <= maxWidth) return base;
+
+	const root = base.startsWith("~") ? "~/" : "/";
+	const parts = base.replace(/^~?\//, "").split("/").filter(Boolean);
+	if (parts.length === 0) return truncateToWidth(base, maxWidth, "...");
+
+	const compactParts = parts.map((part, i) => (i === parts.length - 1 ? part : (part[0] ?? part)));
+	const compact = `${root}${compactParts.join("/")}`;
+	if (visibleWidth(compact) <= maxWidth) return compact;
+
+	const tailOnly = `${root}…/${parts[parts.length - 1]}`;
+	if (visibleWidth(tailOnly) <= maxWidth) return tailOnly;
+
+	return truncateToWidth(tailOnly, maxWidth, "...");
+}
+
 export class FooterComponent implements Component {
 	private autoCompactEnabled = true;
+	private gitCache: GitCache | null = null;
 
 	constructor(
 		private session: AgentSession,
@@ -42,172 +88,189 @@ export class FooterComponent implements Component {
 		this.autoCompactEnabled = enabled;
 	}
 
-	/**
-	 * No-op: git branch caching now handled by provider.
-	 * Kept for compatibility with existing call sites in interactive-mode.
-	 */
 	invalidate(): void {
-		// No-op: git branch is cached/invalidated by provider
+		this.gitCache = null;
 	}
 
-	/**
-	 * Clean up resources.
-	 * Git watcher cleanup now handled by provider.
-	 */
 	dispose(): void {
-		// Git watcher cleanup handled by provider
+		this.gitCache = null;
+	}
+
+	private getGitInfo(cwd: string): GitInfo {
+		const now = Date.now();
+		if (this.gitCache?.cwd === cwd && now - this.gitCache.fetchedAt < GIT_CACHE_TTL_MS) {
+			return this.gitCache.info;
+		}
+
+		const providerBranch = this.footerData.getGitBranch();
+
+		try {
+			const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+				cwd,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+				timeout: 500,
+			}).trim();
+
+			if (!repoRoot) {
+				const fallbackInfo = providerBranch ? { inGitRepo: true, branch: providerBranch } : { inGitRepo: false };
+				this.gitCache = { cwd, info: fallbackInfo, fetchedAt: now };
+				return fallbackInfo;
+			}
+
+			const branch =
+				providerBranch ||
+				execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+					cwd,
+					encoding: "utf8",
+					stdio: ["ignore", "pipe", "ignore"],
+					timeout: 500,
+				}).trim() ||
+				undefined;
+
+			const porcelain = execFileSync("git", ["status", "--porcelain", "-uno"], {
+				cwd,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+				timeout: 500,
+			}).trim();
+
+			const info: GitInfo = {
+				inGitRepo: true,
+				repoName: path.basename(repoRoot),
+				branch,
+				dirty: porcelain.length > 0,
+			};
+
+			this.gitCache = { cwd, info, fetchedAt: now };
+			return info;
+		} catch {
+			const fallbackInfo = providerBranch ? { inGitRepo: true, branch: providerBranch } : { inGitRepo: false };
+			this.gitCache = { cwd, info: fallbackInfo, fetchedAt: now };
+			return fallbackInfo;
+		}
+	}
+
+	private getContextTokens(): string {
+		const usage = this.session.getContextUsage();
+		if (!usage || usage.tokens == null) return "--";
+
+		const contextWindow =
+			typeof usage.contextWindow === "number"
+				? usage.contextWindow
+				: (this.session.state.model?.contextWindow ?? null);
+
+		if (contextWindow == null) {
+			return formatTokenCount(usage.tokens);
+		}
+
+		return `${formatTokenCount(usage.tokens)}/${formatTokenCount(contextWindow)}`;
+	}
+
+	private getContextPercentValue(): number | null {
+		const usage = this.session.getContextUsage();
+		if (!usage || usage.percent == null) return null;
+		return usage.percent;
+	}
+
+	private getContextPercentDisplay(): string {
+		const percent = this.getContextPercentValue();
+		if (percent == null) return "--";
+		return `${percent.toFixed(1)}%${this.autoCompactEnabled ? " (auto)" : ""}`;
+	}
+
+	private getContextPercentColor(): "success" | "warning" | "error" {
+		const percent = this.getContextPercentValue();
+		if (percent == null) return "success";
+		if (percent > 90) return "error";
+		if (percent > 70) return "warning";
+		return "success";
 	}
 
 	render(width: number): string[] {
-		const state = this.session.state;
+		if (width <= 0) return [""];
 
-		// Calculate cumulative usage from ALL session entries (not just post-compaction messages)
-		let totalInput = 0;
-		let totalOutput = 0;
-		let totalCacheRead = 0;
-		let totalCacheWrite = 0;
-		let totalCost = 0;
+		const cwd = process.cwd();
+		const git = this.getGitInfo(cwd);
+		const separator = theme.fg("dim", " · ");
 
-		for (const entry of this.session.sessionManager.getEntries()) {
-			if (entry.type === "message" && entry.message.role === "assistant") {
-				totalInput += entry.message.usage.input;
-				totalOutput += entry.message.usage.output;
-				totalCacheRead += entry.message.usage.cacheRead;
-				totalCacheWrite += entry.message.usage.cacheWrite;
-				totalCost += entry.message.usage.cost.total;
+		let cwdLabel = shortenPath(cwd);
+
+		const leftMetaParts: string[] = [
+			theme.fg("dim", "host ") + theme.fg("muted", `${os.userInfo().username}@${os.hostname()}`),
+		];
+
+		if (git.inGitRepo) {
+			if (git.repoName) {
+				leftMetaParts.push(theme.fg("dim", "repo ") + theme.fg("toolTitle", git.repoName));
+			}
+			if (git.branch) {
+				const branchDisplay = git.dirty ? `${git.branch}*` : git.branch;
+				leftMetaParts.push(
+					theme.fg("dim", "branch ") + theme.fg(git.dirty ? "warning" : "borderAccent", branchDisplay),
+				);
 			}
 		}
 
-		// Calculate context usage from session (handles compaction correctly).
-		// After compaction, tokens are unknown until the next LLM response.
-		const contextUsage = this.session.getContextUsage();
-		const contextWindow = contextUsage?.contextWindow ?? state.model?.contextWindow ?? 0;
-		const contextPercentValue = contextUsage?.percent ?? 0;
-		const contextPercent = contextUsage?.percent !== null ? contextPercentValue.toFixed(1) : "?";
+		const rightParts = [
+			theme.fg("dim", "tok ") + theme.fg("success", this.getContextTokens()),
+			theme.fg("dim", "ctx ") + theme.fg(this.getContextPercentColor(), this.getContextPercentDisplay()),
+		];
 
-		// Replace home directory with ~
-		let pwd = process.cwd();
-		const home = process.env.HOME || process.env.USERPROFILE;
-		if (home && pwd.startsWith(home)) {
-			pwd = `~${pwd.slice(home.length)}`;
-		}
+		const ellipsis = theme.fg("dim", "...");
+		const minGap = 1;
 
-		// Add git branch if available
-		const branch = this.footerData.getGitBranch();
-		if (branch) {
-			pwd = `${pwd} (${branch})`;
-		}
+		let right = `${rightParts.join(separator)} `;
+		let left = ` ${theme.fg("accent", cwdLabel)}${
+			leftMetaParts.length > 0 ? separator + leftMetaParts.join(separator) : ""
+		}`;
 
-		// Add session name if set
-		const sessionName = this.session.sessionManager.getSessionName();
-		if (sessionName) {
-			pwd = `${pwd} • ${sessionName}`;
-		}
+		const leftWidth = visibleWidth(left);
+		const rightWidth = visibleWidth(right);
+		let footerLine: string;
 
-		// Build stats line
-		const statsParts = [];
-		if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
-		if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
-		if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
-		if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
-
-		// Show cost with "(sub)" indicator if using OAuth subscription
-		const usingSubscription = state.model ? this.session.modelRegistry.isUsingOAuth(state.model) : false;
-		if (totalCost || usingSubscription) {
-			const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
-			statsParts.push(costStr);
-		}
-
-		// Colorize context percentage based on usage
-		let contextPercentStr: string;
-		const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
-		const contextPercentDisplay =
-			contextPercent === "?"
-				? `?/${formatTokens(contextWindow)}${autoIndicator}`
-				: `${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
-		if (contextPercentValue > 90) {
-			contextPercentStr = theme.fg("error", contextPercentDisplay);
-		} else if (contextPercentValue > 70) {
-			contextPercentStr = theme.fg("warning", contextPercentDisplay);
+		if (leftWidth + minGap + rightWidth <= width) {
+			const gap = Math.max(minGap, width - leftWidth - rightWidth);
+			footerLine = left + " ".repeat(gap) + right;
 		} else {
-			contextPercentStr = contextPercentDisplay;
-		}
-		statsParts.push(contextPercentStr);
+			const maxRight = Math.max(12, Math.floor(width * 0.55));
+			right = truncateToWidth(right, Math.min(rightWidth, maxRight), ellipsis);
 
-		let statsLeft = statsParts.join(" ");
+			const rightFitWidth = visibleWidth(right);
+			const availableLeft = Math.max(0, width - minGap - rightFitWidth);
 
-		// Add model name on the right side, plus thinking level if model supports it
-		const modelName = state.model?.id || "no-model";
+			if (availableLeft > 0) {
+				const meta = leftMetaParts.length > 0 ? separator + leftMetaParts.join(separator) : "";
+				const fixedLeftWidth = visibleWidth(` ${meta}`);
+				const cwdBudget = Math.max(1, availableLeft - fixedLeftWidth);
 
-		let statsLeftWidth = visibleWidth(statsLeft);
-
-		// If statsLeft is too wide, truncate it
-		if (statsLeftWidth > width) {
-			statsLeft = truncateToWidth(statsLeft, width, "...");
-			statsLeftWidth = visibleWidth(statsLeft);
-		}
-
-		// Calculate available space for padding (minimum 2 spaces between stats and model)
-		const minPadding = 2;
-
-		// Add thinking level indicator if model supports reasoning
-		let rightSideWithoutProvider = modelName;
-		if (state.model?.reasoning) {
-			const thinkingLevel = state.thinkingLevel || "off";
-			rightSideWithoutProvider =
-				thinkingLevel === "off" ? `${modelName} • thinking off` : `${modelName} • ${thinkingLevel}`;
-		}
-
-		// Prepend the provider in parentheses if there are multiple providers and there's enough room
-		let rightSide = rightSideWithoutProvider;
-		if (this.footerData.getAvailableProviderCount() > 1 && state.model) {
-			rightSide = `(${state.model!.provider}) ${rightSideWithoutProvider}`;
-			if (statsLeftWidth + minPadding + visibleWidth(rightSide) > width) {
-				// Too wide, fall back
-				rightSide = rightSideWithoutProvider;
-			}
-		}
-
-		const rightSideWidth = visibleWidth(rightSide);
-		const totalNeeded = statsLeftWidth + minPadding + rightSideWidth;
-
-		let statsLine: string;
-		if (totalNeeded <= width) {
-			// Both fit - add padding to right-align model
-			const padding = " ".repeat(width - statsLeftWidth - rightSideWidth);
-			statsLine = statsLeft + padding + rightSide;
-		} else {
-			// Need to truncate right side
-			const availableForRight = width - statsLeftWidth - minPadding;
-			if (availableForRight > 0) {
-				const truncatedRight = truncateToWidth(rightSide, availableForRight, "");
-				const truncatedRightWidth = visibleWidth(truncatedRight);
-				const padding = " ".repeat(Math.max(0, width - statsLeftWidth - truncatedRightWidth));
-				statsLine = statsLeft + padding + truncatedRight;
+				cwdLabel = shortenPathForWidth(cwd, cwdBudget);
+				left = ` ${theme.fg("accent", cwdLabel)}${meta}`;
+				left = truncateToWidth(left, availableLeft, ellipsis);
 			} else {
-				// Not enough space for right side at all
-				statsLine = statsLeft;
+				left = "";
+			}
+
+			const leftFitWidth = visibleWidth(left);
+
+			if (leftFitWidth === 0) {
+				footerLine = truncateToWidth(right, width, ellipsis);
+			} else {
+				const gap = Math.max(minGap, width - leftFitWidth - rightFitWidth);
+				footerLine = left + " ".repeat(gap) + right;
 			}
 		}
 
-		// Apply dim to each part separately. statsLeft may contain color codes (for context %)
-		// that end with a reset, which would clear an outer dim wrapper. So we dim the parts
-		// before and after the colored section independently.
-		const dimStatsLeft = theme.fg("dim", statsLeft);
-		const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
-		const dimRemainder = theme.fg("dim", remainder);
+		footerLine = truncateToWidth(footerLine, width, ellipsis);
+		const lines = [footerLine];
 
-		const pwdLine = truncateToWidth(theme.fg("dim", pwd), width, theme.fg("dim", "..."));
-		const lines = [pwdLine, dimStatsLeft + dimRemainder];
-
-		// Add extension statuses on a single line, sorted by key alphabetically
 		const extensionStatuses = this.footerData.getExtensionStatuses();
 		if (extensionStatuses.size > 0) {
 			const sortedStatuses = Array.from(extensionStatuses.entries())
 				.sort(([a], [b]) => a.localeCompare(b))
 				.map(([, text]) => sanitizeStatusText(text));
+
 			const statusLine = sortedStatuses.join(" ");
-			// Truncate to terminal width with dim ellipsis for consistency with footer style
 			lines.push(truncateToWidth(statusLine, width, theme.fg("dim", "...")));
 		}
 

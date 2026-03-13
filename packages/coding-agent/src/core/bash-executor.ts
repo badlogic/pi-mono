@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ChildProcess, spawn } from "child_process";
 import stripAnsi from "strip-ansi";
+import { FILE_PREFIX } from "../config.js";
 import { getShellConfig, getShellEnv, killProcessTree, sanitizeBinaryOutput } from "../utils/shell.js";
 import type { BashOperations } from "./tools/bash.js";
 import { DEFAULT_MAX_BYTES, truncateTail } from "./tools/truncate.js";
@@ -110,7 +111,7 @@ export function executeBash(command: string, options?: BashExecutorOptions): Pro
 			// Start writing to temp file if exceeds threshold
 			if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
 				const id = randomBytes(8).toString("hex");
-				tempFilePath = join(tmpdir(), `pi-bash-${id}.log`);
+				tempFilePath = join(tmpdir(), `${FILE_PREFIX}-bash-${id}.log`);
 				tempFileStream = createWriteStream(tempFilePath);
 				// Write already-buffered chunks to temp file
 				for (const chunk of outputChunks) {
@@ -209,7 +210,7 @@ export async function executeBashWithOperations(
 		// Start writing to temp file if exceeds threshold
 		if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
 			const id = randomBytes(8).toString("hex");
-			tempFilePath = join(tmpdir(), `pi-bash-${id}.log`);
+			tempFilePath = join(tmpdir(), `${FILE_PREFIX}-bash-${id}.log`);
 			tempFileStream = createWriteStream(tempFilePath);
 			for (const chunk of outputChunks) {
 				tempFileStream.write(chunk);

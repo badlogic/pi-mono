@@ -5,7 +5,9 @@
  *
  * Test with: npx tsx src/cli-new.ts [args...]
  */
-process.title = "pi";
+import { FILE_PREFIX } from "./config.js";
+
+process.title = FILE_PREFIX;
 
 import { setBedrockProviderModule } from "@mariozechner/pi-ai";
 import { bedrockProviderModule } from "@mariozechner/pi-ai/bedrock-provider";

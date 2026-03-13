@@ -66,7 +66,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/badlogic/pi-mono.git",
+		"url": "git+https://github.com/apholdings/jensen-code.git",
 		"directory": "packages/ai"
 	},
 	"engines": {

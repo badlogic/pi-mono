@@ -435,6 +435,10 @@ export class Theme {
 	getBashModeBorderColor(): (str: string) => string {
 		return (str: string) => this.fg("bashMode", str);
 	}
+
+	getInactivePromptBorderColor(): (str: string) => string {
+		return (str: string) => this.fg("borderMuted", str);
+	}
 }
 
 // ============================================================================
@@ -448,9 +452,11 @@ function getBuiltinThemes(): Record<string, ThemeJson> {
 		const themesDir = getThemesDir();
 		const darkPath = path.join(themesDir, "dark.json");
 		const lightPath = path.join(themesDir, "light.json");
+		const jensenThemePath = path.join(themesDir, "jensen-theme.json");
 		BUILTIN_THEMES = {
 			dark: JSON.parse(fs.readFileSync(darkPath, "utf-8")) as ThemeJson,
 			light: JSON.parse(fs.readFileSync(lightPath, "utf-8")) as ThemeJson,
+			"jensen-theme": JSON.parse(fs.readFileSync(jensenThemePath, "utf-8")) as ThemeJson,
 		};
 	}
 	return BUILTIN_THEMES;
@@ -639,7 +645,9 @@ function detectTerminalBackground(): "dark" | "light" {
 }
 
 function getDefaultTheme(): string {
-	return detectTerminalBackground();
+	const terminalBackground = detectTerminalBackground();
+	void terminalBackground;
+	return "jensen-theme";
 }
 
 // ============================================================================
@@ -686,9 +694,9 @@ export function initTheme(themeName?: string, enableWatcher: boolean = false): v
 			startThemeWatcher();
 		}
 	} catch (_error) {
-		// Theme is invalid - fall back to dark theme silently
-		currentThemeName = "dark";
-		setGlobalTheme(loadTheme("dark"));
+		// Theme is invalid - fall back to jensen-theme silently
+		currentThemeName = "jensen-theme";
+		setGlobalTheme(loadTheme("jensen-theme"));
 		// Don't start watcher for fallback theme
 	}
 }
@@ -705,9 +713,9 @@ export function setTheme(name: string, enableWatcher: boolean = false): { succes
 		}
 		return { success: true };
 	} catch (error) {
-		// Theme is invalid - fall back to dark theme
-		currentThemeName = "dark";
-		setGlobalTheme(loadTheme("dark"));
+		// Theme is invalid - fall back to jensen-theme
+		currentThemeName = "jensen-theme";
+		setGlobalTheme(loadTheme("jensen-theme"));
 		// Don't start watcher for fallback theme
 		return {
 			success: false,
@@ -737,7 +745,12 @@ function startThemeWatcher(): void {
 	}
 
 	// Only watch if it's a custom theme (not built-in)
-	if (!currentThemeName || currentThemeName === "dark" || currentThemeName === "light") {
+	if (
+		!currentThemeName ||
+		currentThemeName === "dark" ||
+		currentThemeName === "light" ||
+		currentThemeName === "jensen-theme"
+	) {
 		return;
 	}
 
@@ -769,8 +782,8 @@ function startThemeWatcher(): void {
 				// File was deleted or renamed - fall back to default theme
 				setTimeout(() => {
 					if (!fs.existsSync(themeFile)) {
-						currentThemeName = "dark";
-						setGlobalTheme(loadTheme("dark"));
+						currentThemeName = "jensen-theme";
+						setGlobalTheme(loadTheme("jensen-theme"));
 						if (themeWatcher) {
 							themeWatcher.close();
 							themeWatcher = undefined;

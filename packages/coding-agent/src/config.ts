@@ -53,7 +53,7 @@ export function getUpdateInstruction(packageName: string): string {
 	const method = detectInstallMethod();
 	switch (method) {
 		case "bun-binary":
-			return `Download from: https://github.com/badlogic/pi-mono/releases/latest`;
+			return `Download from: https://github.com/apholdings/jensen-code/releases/latest`;
 		case "pnpm":
 			return `Run: pnpm install -g ${packageName}`;
 		case "yarn":
@@ -167,9 +167,11 @@ const pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8"));
 export const APP_NAME: string = pkg.piConfig?.name || "pi";
 export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".pi";
 export const VERSION: string = pkg.version;
+export const PACKAGE_NAME: string = pkg.name;
+export const FILE_PREFIX: string = APP_NAME.toLowerCase().replace(/\s+/g, "-");
 
-// e.g., PI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
-export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
+// e.g., JENSEN_CODE_CODING_AGENT_DIR or PI_CODING_AGENT_DIR
+export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase().replace(/\s+/g, "_")}_CODING_AGENT_DIR`;
 
 const DEFAULT_SHARE_VIEWER_URL = "https://pi.dev/session/";
 
