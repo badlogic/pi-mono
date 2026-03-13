@@ -1026,11 +1026,9 @@ export class TUI extends Container {
 		}
 
 		// Check if firstChanged is above what was previously visible
-		// Use previousLines.length (not maxLinesRendered) to avoid false positives after content shrinks
-		const previousContentViewportTop = Math.max(0, this.previousLines.length - height);
-		if (firstChanged < previousContentViewportTop) {
+		if (firstChanged < prevViewportTop) {
 			// First change is above previous viewport - need full re-render
-			logRedraw(`firstChanged < viewportTop (${firstChanged} < ${previousContentViewportTop})`);
+			logRedraw(`firstChanged < viewportTop (${firstChanged} < ${prevViewportTop})`);
 			fullRender(true);
 			return;
 		}
