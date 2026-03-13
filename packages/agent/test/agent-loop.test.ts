@@ -128,6 +128,38 @@ describe("agentLoop with AgentMessage", () => {
 		expect(eventTypes).toContain("agent_end");
 	});
 
+	it("should terminate the stream when the async loop throws before agent_end", async () => {
+		const context: AgentContext = {
+			systemPrompt: "You are helpful.",
+			messages: [],
+			tools: [],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("Hello");
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([userPrompt], context, config, undefined, async () => {
+			throw new Error("boom");
+		});
+
+		const result = await Promise.race([
+			(async () => {
+				for await (const event of stream) {
+					events.push(event);
+				}
+				return "completed" as const;
+			})(),
+			new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 50)),
+		]);
+
+		expect(result).toBe("timeout");
+		expect(events.map((e) => e.type)).not.toContain("agent_end");
+	});
+
 	it("should handle custom message types via convertToLlm", async () => {
 		// Create a custom message type
 		interface CustomNotification {
