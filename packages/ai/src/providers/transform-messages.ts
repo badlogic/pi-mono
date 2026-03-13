@@ -13,8 +13,20 @@ export function transformMessages<TApi extends Api>(
 	// Build a map of original tool call IDs to normalized IDs
 	const toolCallIdMap = new Map<string, string>();
 
-	// First pass: transform messages (thinking blocks, tool call ID normalization)
-	const transformed = messages.map((msg) => {
+	// Find the index of the last assistant message so we can preserve its
+	// thinking blocks verbatim while stripping them from earlier messages.
+	// Anthropic requires only the *latest* assistant message's thinking blocks
+	// to be unmodified; older ones can be safely removed to avoid corruption
+	// during compaction and to save context window tokens.
+	let lastAssistantIndex = -1;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		if (messages[i].role === "assistant") {
+			lastAssistantIndex = i;
+			break;
+		}
+	}
+
+	const transformed = messages.map((msg, msgIndex) => {
 		// User messages pass through unchanged
 		if (msg.role === "user") {
 			return msg;
@@ -37,8 +49,17 @@ export function transformMessages<TApi extends Api>(
 				assistantMsg.api === model.api &&
 				assistantMsg.model === model.id;
 
+			const isLatestAssistant = msgIndex === lastAssistantIndex;
+
 			const transformedContent = assistantMsg.content.flatMap((block) => {
 				if (block.type === "thinking") {
+					// For non-latest assistant messages: strip thinking blocks entirely.
+					// Anthropic only requires the latest assistant message's thinking
+					// blocks to be preserved verbatim. Stripping older ones avoids
+					// compaction-induced corruption and saves context tokens.
+					if (!isLatestAssistant) {
+						return [];
+					}
 					// Redacted thinking is opaque encrypted content, only valid for the same model.
 					// Drop it for cross-model to avoid API errors.
 					if (block.redacted) {

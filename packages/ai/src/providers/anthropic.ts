@@ -688,8 +688,19 @@ function convertMessages(
 	// Transform messages for cross-provider compatibility
 	const transformedMessages = transformMessages(messages, model, normalizeToolCallId);
 
+	// Find the last assistant message index so we can preserve its thinking
+	// blocks byte-for-byte (Anthropic validates signatures on the latest one).
+	let lastAssistantIdx = -1;
+	for (let k = transformedMessages.length - 1; k >= 0; k--) {
+		if (transformedMessages[k].role === "assistant") {
+			lastAssistantIdx = k;
+			break;
+		}
+	}
+
 	for (let i = 0; i < transformedMessages.length; i++) {
 		const msg = transformedMessages[i];
+		const isLatestAssistant = i === lastAssistantIdx;
 
 		if (msg.role === "user") {
 			if (typeof msg.content === "string") {
@@ -761,7 +772,12 @@ function convertMessages(
 					} else {
 						blocks.push({
 							type: "thinking",
-							thinking: sanitizeSurrogates(block.thinking),
+							// For the latest assistant message, preserve thinking text
+							// byte-for-byte — Anthropic validates the signature against
+							// the exact original content. sanitizeSurrogates() can strip
+							// lone surrogates or other characters, invalidating the
+							// cryptographic signature and causing API rejection.
+							thinking: isLatestAssistant ? block.thinking : sanitizeSurrogates(block.thinking),
 							signature: block.thinkingSignature,
 						});
 					}
