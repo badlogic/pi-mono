@@ -44,12 +44,11 @@ export function transformMessages<TApi extends Api>(
 					if (block.redacted) {
 						return isSameModel ? block : [];
 					}
-					// For same model: keep thinking blocks with signatures (needed for replay)
-					// even if the thinking text is empty (OpenAI encrypted reasoning)
-					if (isSameModel && block.thinkingSignature) return block;
-					// Skip empty thinking blocks, convert others to plain text
-					if (!block.thinking || block.thinking.trim() === "") return [];
+					// For same model: keep thinking blocks exactly as-is, including empty blocks.
+					// Empty same-model thinking blocks are used later to detect reasoning skip cases.
 					if (isSameModel) return block;
+					// Cross-model: skip empty thinking blocks, convert non-empty ones to plain text.
+					if (!block.thinking || block.thinking.trim() === "") return [];
 					return {
 						type: "text" as const,
 						text: block.thinking,

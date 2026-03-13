@@ -157,12 +157,15 @@ export function convertResponsesMessages<TApi extends Api>(
 				assistantMsg.model !== model.id &&
 				assistantMsg.provider === model.provider &&
 				assistantMsg.api === model.api;
+			let hasSkippedThinking = false;
 
 			for (const block of msg.content) {
 				if (block.type === "thinking") {
 					if (block.thinkingSignature) {
 						const reasoningItem = JSON.parse(block.thinkingSignature) as ResponseReasoningItem;
 						output.push(reasoningItem);
+					} else {
+						hasSkippedThinking = true;
 					}
 				} else if (block.type === "text") {
 					const textBlock = block as TextContent;
@@ -188,9 +191,10 @@ export function convertResponsesMessages<TApi extends Api>(
 					let itemId: string | undefined = itemIdRaw;
 
 					// For different-model messages, set id to undefined to avoid pairing validation.
+					// Also drop fc_* ids if a thinking block was present but skipped (no replayable reasoning item).
 					// OpenAI tracks which fc_xxx IDs were paired with rs_xxx reasoning items.
-					// By omitting the id, we avoid triggering that validation (like cross-provider does).
-					if (isDifferentModel && itemId?.startsWith("fc_")) {
+					// By omitting the id, we avoid triggering that validation.
+					if ((isDifferentModel || hasSkippedThinking) && itemId?.startsWith("fc_")) {
 						itemId = undefined;
 					}
 
@@ -409,7 +413,9 @@ export async function processResponsesStream<TApi extends Api>(
 
 			if (item.type === "reasoning" && currentBlock?.type === "thinking") {
 				currentBlock.thinking = item.summary?.map((s) => s.text).join("\n\n") || "";
-				currentBlock.thinkingSignature = JSON.stringify(item);
+				if ((item.summary?.length || 0) > 0) {
+					currentBlock.thinkingSignature = JSON.stringify(item);
+				}
 				stream.push({
 					type: "thinking_end",
 					contentIndex: blockIndex(),
