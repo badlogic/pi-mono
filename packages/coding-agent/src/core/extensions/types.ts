@@ -279,6 +279,16 @@ export interface ExtensionContext {
 	hasPendingMessages(): boolean;
 	/** Gracefully shutdown pi and exit. Available in all contexts. */
 	shutdown(): void;
+	/**
+	 * Change the working directory and rebuild all tools.
+	 * Tools (bash, read, edit, write) are bound to cwd at creation time via closure.
+	 * This method updates the cwd and recreates the tool runtime so that all
+	 * subsequent tool invocations use the new directory.
+	 *
+	 * Typical use case: worktree extensions that create a new directory and need
+	 * the agent to operate there without restarting pi.
+	 */
+	setCwd(newCwd: string): void;
 	/** Get current context usage for the active model. */
 	getContextUsage(): ContextUsage | undefined;
 	/** Trigger compaction without awaiting completion. */
@@ -1349,6 +1359,7 @@ export interface ExtensionContextActions {
 	abort: () => void;
 	hasPendingMessages: () => boolean;
 	shutdown: () => void;
+	setCwd: (newCwd: string) => void;
 	getContextUsage: () => ContextUsage | undefined;
 	compact: (options?: CompactOptions) => void;
 	getSystemPrompt: () => string;

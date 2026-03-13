@@ -2092,6 +2092,15 @@ export class AgentSession {
 				shutdown: () => {
 					this._extensionShutdownHandler?.();
 				},
+				setCwd: (newCwd: string) => {
+					this._cwd = newCwd;
+					process.chdir(newCwd);
+					this._buildRuntime({
+						activeToolNames: this.getActiveToolNames(),
+						includeAllExtensionTools: true,
+					});
+					this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+				},
 				getContextUsage: () => this.getContextUsage(),
 				compact: (options) => {
 					void (async () => {

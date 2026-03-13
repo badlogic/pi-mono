@@ -1175,6 +1175,10 @@ export class InteractiveMode {
 			shutdown: () => {
 				this.shutdownRequested = true;
 			},
+			setCwd: () => {
+				// setCwd is handled by the session's extension runner; this context
+				// is only used for keyboard shortcuts and doesn't need its own impl.
+			},
 			getContextUsage: () => this.session.getContextUsage(),
 			compact: (options) => {
 				void (async () => {
