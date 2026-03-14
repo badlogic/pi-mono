@@ -48,6 +48,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		skills: providedSkills,
 	} = options;
 	const resolvedCwd = cwd ?? process.cwd();
+	const promptCwd = resolvedCwd.replace(/\\/g, "/");
 
 	const date = new Date().toISOString().slice(0, 10);
 
@@ -80,7 +81,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 		// Add date and working directory last
 		prompt += `\nCurrent date: ${date}`;
-		prompt += `\nCurrent working directory: ${resolvedCwd}`;
+		prompt += `\nCurrent working directory: ${promptCwd}`;
 
 		return prompt;
 	}
@@ -202,7 +203,7 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 
 	// Add date and working directory last
 	prompt += `\nCurrent date: ${date}`;
-	prompt += `\nCurrent working directory: ${resolvedCwd}`;
+	prompt += `\nCurrent working directory: ${promptCwd}`;
 
 	return prompt;
 }
