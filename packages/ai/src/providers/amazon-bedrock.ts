@@ -537,11 +537,21 @@ function convertMessages(
 							// For other models, we omit the signature to avoid errors like:
 							// "This model doesn't support the reasoningContent.reasoningText.signature field"
 							if (supportsThinkingSignature(model)) {
-								contentBlocks.push({
-									reasoningContent: {
-										reasoningText: { text: sanitizeSurrogates(c.thinking), signature: c.thinkingSignature },
-									},
-								});
+								// Signatures arrive after thinking deltas. If a partial or externally
+								// persisted message lacks a signature, Bedrock rejects the replayed
+								// reasoning block. Fall back to plain text, matching Anthropic.
+								if (!c.thinkingSignature || c.thinkingSignature.trim().length === 0) {
+									contentBlocks.push({ text: sanitizeSurrogates(c.thinking) });
+								} else {
+									contentBlocks.push({
+										reasoningContent: {
+											reasoningText: {
+												text: sanitizeSurrogates(c.thinking),
+												signature: c.thinkingSignature,
+											},
+										},
+									});
+								}
 							} else {
 								contentBlocks.push({
 									reasoningContent: {
