@@ -1,6 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import { SelectList } from "../src/components/select-list.js";
+import { visibleWidth } from "../src/utils.js";
 
 const testTheme = {
 	selectedPrefix: (text: string) => text,
@@ -8,6 +9,12 @@ const testTheme = {
 	description: (text: string) => text,
 	scrollInfo: (text: string) => text,
 	noMatch: (text: string) => text,
+};
+
+const visibleIndexOf = (line: string, text: string): number => {
+	const index = line.indexOf(text);
+	assert.notEqual(index, -1);
+	return visibleWidth(line.slice(0, index));
 };
 
 describe("SelectList", () => {
@@ -41,7 +48,7 @@ describe("SelectList", () => {
 		const list = new SelectList(items, 5, testTheme);
 		const rendered = list.render(80);
 
-		assert.equal(rendered[0].indexOf("short description"), rendered[1].indexOf("long description"));
+		assert.equal(visibleIndexOf(rendered[0], "short description"), visibleIndexOf(rendered[1], "long description"));
 	});
 
 	it("uses the configured minimum primary column width", () => {
@@ -76,8 +83,8 @@ describe("SelectList", () => {
 		});
 		const rendered = list.render(80);
 
-		assert.equal(rendered[0].indexOf("first"), 22);
-		assert.equal(rendered[1].indexOf("second"), 22);
+		assert.equal(visibleIndexOf(rendered[0], "first"), 22);
+		assert.equal(visibleIndexOf(rendered[1], "second"), 22);
 	});
 
 	it("allows overriding primary truncation while preserving description alignment", () => {
@@ -104,6 +111,6 @@ describe("SelectList", () => {
 		const rendered = list.render(80);
 
 		assert.ok(rendered[0].includes("…"));
-		assert.equal(rendered[0].indexOf("first"), rendered[1].indexOf("second"));
+		assert.equal(visibleIndexOf(rendered[0], "first"), visibleIndexOf(rendered[1], "second"));
 	});
 });
