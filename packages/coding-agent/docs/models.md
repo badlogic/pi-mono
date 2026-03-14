@@ -136,6 +136,7 @@ The `apiKey` and `headers` fields support three formats:
 | `contextWindow` | No | `128000` | Context window size in tokens |
 | `maxTokens` | No | `16384` | Maximum output tokens |
 | `cost` | No | all zeros | `{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}` (per million tokens) |
+| `compat` | No | provider `compat` | OpenAI compatibility overrides. Merged with provider-level `compat` when both are set. |
 
 Current behavior:
 - `/model` and `--list-models` list entries by model `id`.
@@ -211,7 +212,10 @@ Behavior notes:
 
 ## OpenAI Compatibility
 
-For providers with partial OpenAI compatibility, use the `compat` field:
+For providers with partial OpenAI compatibility, use the `compat` field.
+
+- Provider-level `compat` applies defaults to all models under that provider.
+- Model-level `compat` overrides provider-level values for that model.
 
 ```json
 {
@@ -234,8 +238,14 @@ For providers with partial OpenAI compatibility, use the `compat` field:
 | `supportsStore` | Provider supports `store` field |
 | `supportsDeveloperRole` | Use `developer` vs `system` role |
 | `supportsReasoningEffort` | Support for `reasoning_effort` parameter |
+| `reasoningEffortMap` | Map pi thinking levels to provider-specific `reasoning_effort` values |
 | `supportsUsageInStreaming` | Supports `stream_options: { include_usage: true }` (default: `true`) |
 | `maxTokensField` | Use `max_completion_tokens` or `max_tokens` |
+| `requiresToolResultName` | Include `name` on tool result messages |
+| `requiresAssistantAfterToolResult` | Insert an assistant message before a user message after tool results |
+| `requiresThinkingAsText` | Convert thinking blocks to plain text |
+| `thinkingFormat` | Use `reasoning_effort`, `zai`, or `qwen` thinking parameters |
+| `supportsStrictMode` | Include the `strict` field in tool definitions |
 | `openRouterRouting` | OpenRouter routing config passed to OpenRouter for model/provider selection |
 | `vercelGatewayRouting` | Vercel AI Gateway routing config for provider selection (`only`, `order`) |
 
