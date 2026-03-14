@@ -575,6 +575,10 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 						}
 					} else {
 						relativePath = join(dirname(displayPrefix), name);
+						// path.join normalizes away ./ prefix, preserve it
+						if (displayPrefix.startsWith("./") && !relativePath.startsWith("./")) {
+							relativePath = `./${relativePath}`;
+						}
 					}
 				} else {
 					// For standalone entries, preserve ~/ if original prefix was ~/
