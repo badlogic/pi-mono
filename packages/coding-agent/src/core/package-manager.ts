@@ -125,6 +125,10 @@ function toPosixPath(p: string): string {
 	return p.split(sep).join("/");
 }
 
+function getHomeDir(): string {
+	return process.env.HOME || homedir();
+}
+
 function prefixIgnorePattern(line: string, prefix: string): string | null {
 	const trimmed = line.trim();
 	if (!trimmed) return null;
@@ -512,44 +516,55 @@ function collectResourceFiles(dir: string, resourceType: ResourceType): string[]
 }
 
 function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
-	const rel = relative(baseDir, filePath);
+	const rel = toPosixPath(relative(baseDir, filePath));
 	const name = basename(filePath);
+	const filePathPosix = toPosixPath(filePath);
 	const isSkillFile = name === "SKILL.md";
 	const parentDir = isSkillFile ? dirname(filePath) : undefined;
-	const parentRel = isSkillFile ? relative(baseDir, parentDir!) : undefined;
+	const parentRel = isSkillFile ? toPosixPath(relative(baseDir, parentDir!)) : undefined;
 	const parentName = isSkillFile ? basename(parentDir!) : undefined;
+	const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
 
 	return patterns.some((pattern) => {
-		if (minimatch(rel, pattern) || minimatch(name, pattern) || minimatch(filePath, pattern)) {
+		const normalizedPattern = toPosixPath(pattern);
+		if (
+			minimatch(rel, normalizedPattern) ||
+			minimatch(name, normalizedPattern) ||
+			minimatch(filePathPosix, normalizedPattern)
+		) {
 			return true;
 		}
 		if (!isSkillFile) return false;
-		return minimatch(parentRel!, pattern) || minimatch(parentName!, pattern) || minimatch(parentDir!, pattern);
+		return (
+			minimatch(parentRel!, normalizedPattern) ||
+			minimatch(parentName!, normalizedPattern) ||
+			minimatch(parentDirPosix!, normalizedPattern)
+		);
 	});
 }
 
 function normalizeExactPattern(pattern: string): string {
-	if (pattern.startsWith("./") || pattern.startsWith(".\\")) {
-		return pattern.slice(2);
-	}
-	return pattern;
+	const normalized = pattern.startsWith("./") || pattern.startsWith(".\\") ? pattern.slice(2) : pattern;
+	return toPosixPath(normalized);
 }
 
 function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: string): boolean {
 	if (patterns.length === 0) return false;
-	const rel = relative(baseDir, filePath);
+	const rel = toPosixPath(relative(baseDir, filePath));
 	const name = basename(filePath);
+	const filePathPosix = toPosixPath(filePath);
 	const isSkillFile = name === "SKILL.md";
 	const parentDir = isSkillFile ? dirname(filePath) : undefined;
-	const parentRel = isSkillFile ? relative(baseDir, parentDir!) : undefined;
+	const parentRel = isSkillFile ? toPosixPath(relative(baseDir, parentDir!)) : undefined;
+	const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
 
 	return patterns.some((pattern) => {
 		const normalized = normalizeExactPattern(pattern);
-		if (normalized === rel || normalized === filePath) {
+		if (normalized === rel || normalized === filePathPosix) {
 			return true;
 		}
 		if (!isSkillFile) return false;
-		return normalized === parentRel || normalized === parentDir;
+		return normalized === parentRel || normalized === parentDirPosix;
 	});
 }
 
@@ -1385,17 +1400,17 @@ export class DefaultPackageManager implements PackageManager {
 
 	private resolvePath(input: string): string {
 		const trimmed = input.trim();
-		if (trimmed === "~") return homedir();
-		if (trimmed.startsWith("~/")) return join(homedir(), trimmed.slice(2));
-		if (trimmed.startsWith("~")) return join(homedir(), trimmed.slice(1));
+		if (trimmed === "~") return getHomeDir();
+		if (trimmed.startsWith("~/")) return join(getHomeDir(), trimmed.slice(2));
+		if (trimmed.startsWith("~")) return join(getHomeDir(), trimmed.slice(1));
 		return resolve(this.cwd, trimmed);
 	}
 
 	private resolvePathFromBase(input: string, baseDir: string): string {
 		const trimmed = input.trim();
-		if (trimmed === "~") return homedir();
-		if (trimmed.startsWith("~/")) return join(homedir(), trimmed.slice(2));
-		if (trimmed.startsWith("~")) return join(homedir(), trimmed.slice(1));
+		if (trimmed === "~") return getHomeDir();
+		if (trimmed.startsWith("~/")) return join(getHomeDir(), trimmed.slice(2));
+		if (trimmed.startsWith("~")) return join(getHomeDir(), trimmed.slice(1));
 		return resolve(baseDir, trimmed);
 	}
 
@@ -1632,7 +1647,7 @@ export class DefaultPackageManager implements PackageManager {
 			prompts: join(projectBaseDir, "prompts"),
 			themes: join(projectBaseDir, "themes"),
 		};
-		const userAgentsSkillsDir = join(homedir(), ".agents", "skills");
+		const userAgentsSkillsDir = join(getHomeDir(), ".agents", "skills");
 		const projectAgentsSkillDirs = collectAncestorAgentsSkillDirs(this.cwd).filter(
 			(dir) => resolve(dir) !== resolve(userAgentsSkillsDir),
 		);
