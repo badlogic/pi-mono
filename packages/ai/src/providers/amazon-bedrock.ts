@@ -432,13 +432,10 @@ function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention 
  * Supported: Claude 3.5 Haiku, Claude 3.7 Sonnet, Claude 4.x models
  */
 function supportsPromptCaching(model: Model<"bedrock-converse-stream">): boolean {
-	if (model.cost.cacheRead || model.cost.cacheWrite) {
-		return true;
-	}
-
 	const id = model.id.toLowerCase();
+	if (!id.includes("claude")) return false;
 	// Claude 4.x models (opus-4, sonnet-4, haiku-4)
-	if (id.includes("claude") && (id.includes("-4-") || id.includes("-4."))) return true;
+	if (id.includes("-4-") || id.includes("-4.")) return true;
 	// Claude 3.7 Sonnet
 	if (id.includes("claude-3-7-sonnet")) return true;
 	// Claude 3.5 Haiku
