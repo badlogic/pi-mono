@@ -343,6 +343,7 @@ pi install https://github.com/user/repo@v1      # tag or commit
 pi install ssh://git@github.com/user/repo
 pi install ssh://git@github.com/user/repo@v1    # tag or commit
 pi remove npm:@foo/pi-tools
+pi uninstall npm:@foo/pi-tools          # alias for remove
 pi list
 pi update                               # skips pinned packages
 pi config                               # enable/disable extensions, skills, prompts, themes
@@ -432,11 +433,12 @@ pi [options] [@files...] [messages...]
 ### Package Commands
 
 ```bash
-pi install <source> [-l]    # Install package, -l for project-local
-pi remove <source> [-l]     # Remove package
-pi update [source]          # Update packages (skips pinned)
-pi list                     # List installed packages
-pi config                   # Enable/disable package resources
+pi install <source> [-l]     # Install package, -l for project-local
+pi remove <source> [-l]      # Remove package
+pi uninstall <source> [-l]   # Alias for remove
+pi update [source]           # Update packages (skips pinned)
+pi list                      # List installed packages
+pi config                    # Enable/disable package resources
 ```
 
 ### Modes
