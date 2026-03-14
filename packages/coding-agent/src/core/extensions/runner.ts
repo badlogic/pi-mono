@@ -263,6 +263,12 @@ export class ExtensionRunner {
 		this.compactFn = contextActions.compact;
 		this.getSystemPromptFn = contextActions.getSystemPrompt;
 
+		// Flush hold conditions queued during extension loading
+		for (const fn of this.runtime.pendingHoldConditions) {
+			actions.setHoldCondition(fn);
+		}
+		this.runtime.pendingHoldConditions = [];
+
 		// Flush provider registrations queued during extension loading
 		for (const { name, config } of this.runtime.pendingProviderRegistrations) {
 			this.modelRegistry.registerProvider(name, config);
