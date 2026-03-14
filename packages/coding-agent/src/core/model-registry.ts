@@ -60,7 +60,14 @@ const OpenAICompletionsCompatSchema = Type.Object({
 	requiresToolResultName: Type.Optional(Type.Boolean()),
 	requiresAssistantAfterToolResult: Type.Optional(Type.Boolean()),
 	requiresThinkingAsText: Type.Optional(Type.Boolean()),
-	thinkingFormat: Type.Optional(Type.Union([Type.Literal("openai"), Type.Literal("zai"), Type.Literal("qwen")])),
+	thinkingFormat: Type.Optional(
+		Type.Union([
+			Type.Literal("openai"),
+			Type.Literal("zai"),
+			Type.Literal("qwen"),
+			Type.Literal("qwen-chat-template"),
+		]),
+	),
 	openRouterRouting: Type.Optional(OpenRouterRoutingSchema),
 	vercelGatewayRouting: Type.Optional(VercelGatewayRoutingSchema),
 	supportsStrictMode: Type.Optional(Type.Boolean()),
