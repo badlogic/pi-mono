@@ -1,8 +1,8 @@
 /**
  * Anthropic OAuth flow (Claude Pro/Max)
  *
- * NOTE: This module uses Node.js http.createServer and child_process for the OAuth callback
- * and token exchange. It is only intended for CLI use, not browser environments.
+ * NOTE: This module uses Node.js http.createServer for the OAuth callback server.
+ * It is only intended for CLI use, not browser environments.
  */
 
 import type { Server } from "node:http";
@@ -18,7 +18,6 @@ type CallbackServerInfo = {
 
 type NodeApis = {
 	createServer: typeof import("node:http").createServer;
-	execFile: typeof import("node:child_process").execFile;
 };
 
 let nodeApis: NodeApis | null = null;
@@ -53,12 +52,9 @@ async function getNodeApis(): Promise<NodeApis> {
 		if (typeof process === "undefined" || (!process.versions?.node && !process.versions?.bun)) {
 			throw new Error("Anthropic OAuth is only available in Node.js environments");
 		}
-		nodeApisPromise = Promise.all([import("node:http"), import("node:child_process")]).then(
-			([httpModule, childProcessModule]) => ({
-				createServer: httpModule.createServer,
-				execFile: childProcessModule.execFile,
-			}),
-		);
+		nodeApisPromise = import("node:http").then((httpModule) => ({
+			createServer: httpModule.createServer,
+		}));
 	}
 	nodeApis = await nodeApisPromise;
 	return nodeApis;
@@ -183,59 +179,21 @@ async function startCallbackServer(expectedState: string): Promise<CallbackServe
 	});
 }
 
-async function postJsonWithCurl(url: string, body: Record<string, string | number>): Promise<string> {
-	const { execFile } = await getNodeApis();
-	const payload = JSON.stringify(body);
-	const marker = "__PI_CURL_HTTP_STATUS__:";
-
-	const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-		execFile(
-			"curl",
-			[
-				"-sS",
-				"--connect-timeout",
-				"15",
-				"--max-time",
-				"30",
-				"-X",
-				"POST",
-				url,
-				"-H",
-				"Content-Type: application/json",
-				"-H",
-				"Accept: application/json",
-				"--data-binary",
-				payload,
-				"-w",
-				`\n${marker}%{http_code}`,
-			],
-			(error, stdout, stderr) => {
-				if (error) {
-					reject(
-						new Error(`curl request failed. url=${url}; details=${formatErrorDetails(error)}; stderr=${stderr}`),
-					);
-					return;
-				}
-				resolve({ stdout, stderr });
-			},
-		);
+async function postJson(url: string, body: Record<string, string | number>): Promise<string> {
+	const response = await fetch(url, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Accept: "application/json",
+		},
+		body: JSON.stringify(body),
+		signal: AbortSignal.timeout(30_000),
 	});
 
-	const markerIndex = result.stdout.lastIndexOf(`\n${marker}`);
-	if (markerIndex === -1) {
-		throw new Error(
-			`curl response missing status marker. url=${url}; stdout=${result.stdout}; stderr=${result.stderr}`,
-		);
-	}
+	const responseBody = await response.text();
 
-	const responseBody = result.stdout.slice(0, markerIndex);
-	const statusText = result.stdout.slice(markerIndex + `\n${marker}`.length).trim();
-	const status = Number.parseInt(statusText, 10);
-	if (!Number.isFinite(status)) {
-		throw new Error(`curl returned invalid status. url=${url}; status=${statusText}; body=${responseBody}`);
-	}
-	if (status < 200 || status >= 300) {
-		throw new Error(`HTTP request failed. status=${status}; url=${url}; body=${responseBody}`);
+	if (!response.ok) {
+		throw new Error(`HTTP request failed. status=${response.status}; url=${url}; body=${responseBody}`);
 	}
 
 	return responseBody;
@@ -249,7 +207,7 @@ async function exchangeAuthorizationCode(
 ): Promise<OAuthCredentials> {
 	let responseBody: string;
 	try {
-		responseBody = await postJsonWithCurl(TOKEN_URL, {
+		responseBody = await postJson(TOKEN_URL, {
 			grant_type: "authorization_code",
 			client_id: CLIENT_ID,
 			code,
@@ -406,7 +364,7 @@ export async function loginAnthropic(options: {
 export async function refreshAnthropicToken(refreshToken: string): Promise<OAuthCredentials> {
 	let responseBody: string;
 	try {
-		responseBody = await postJsonWithCurl(TOKEN_URL, {
+		responseBody = await postJson(TOKEN_URL, {
 			grant_type: "refresh_token",
 			client_id: CLIENT_ID,
 			refresh_token: refreshToken,
