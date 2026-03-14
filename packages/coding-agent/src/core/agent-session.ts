@@ -1271,6 +1271,16 @@ export class AgentSession {
 		this._steeringMessages = [];
 		this._followUpMessages = [];
 		this._pendingNextTurnMessages = [];
+		this._pendingBashMessages = [];
+		this._lastAssistantMessage = undefined;
+		this._overflowRecoveryAttempted = false;
+		this._retryAttempt = 0;
+		this._retryAbortController = undefined;
+		this._compactionAbortController = undefined;
+		this._autoCompactionAbortController = undefined;
+		this._branchSummaryAbortController = undefined;
+		this._bashAbortController = undefined;
+		this._resolveRetry();
 
 		this.sessionManager.appendThinkingLevelChange(this.thinkingLevel);
 

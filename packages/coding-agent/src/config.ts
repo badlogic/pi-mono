@@ -20,6 +20,35 @@ export const isBunBinary =
 /** Detect if Bun is the runtime (compiled binary or bun run) */
 export const isBunRuntime = !!process.versions.bun;
 
+/**
+ * Get the base directory for resolving package assets (themes, package.json, README.md, CHANGELOG.md).
+ * Note: Does NOT use environment variables to avoid circular dependency during APP_NAME detection.
+ */
+function findPackageDir(): string {
+	if (isBunBinary) {
+		return dirname(process.execPath);
+	}
+	// Node.js: walk up from __dirname until we find package.json
+	let dir = __dirname;
+	while (dir !== dirname(dir)) {
+		if (existsSync(join(dir, "package.json"))) {
+			return dir;
+		}
+		dir = dirname(dir);
+	}
+	return __dirname;
+}
+
+const PACKAGE_DIR = findPackageDir();
+const pkg = JSON.parse(readFileSync(join(PACKAGE_DIR, "package.json"), "utf-8"));
+
+export const APP_NAME: string = pkg.piConfig?.name || "pi";
+export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".pi";
+export const VERSION: string = pkg.version;
+export const PACKAGE_NAME: string = pkg.name;
+export const FILE_PREFIX: string = APP_NAME.toLowerCase().replace(/\s+/g, "-");
+export const ENV_PREFIX: string = APP_NAME.toUpperCase().replace(/\s+/g, "_");
+
 // =============================================================================
 // Install Method Detection
 // =============================================================================
@@ -79,27 +108,13 @@ export function getUpdateInstruction(packageName: string): string {
  */
 export function getPackageDir(): string {
 	// Allow override via environment variable (useful for Nix/Guix where store paths tokenize poorly)
-	const envDir = process.env.PI_PACKAGE_DIR;
+	const envDir = process.env[`${ENV_PREFIX}_PACKAGE_DIR`] || process.env.PI_PACKAGE_DIR;
 	if (envDir) {
 		if (envDir === "~") return homedir();
 		if (envDir.startsWith("~/")) return homedir() + envDir.slice(1);
 		return envDir;
 	}
-
-	if (isBunBinary) {
-		// Bun binary: process.execPath points to the compiled executable
-		return dirname(process.execPath);
-	}
-	// Node.js: walk up from __dirname until we find package.json
-	let dir = __dirname;
-	while (dir !== dirname(dir)) {
-		if (existsSync(join(dir, "package.json"))) {
-			return dir;
-		}
-		dir = dirname(dir);
-	}
-	// Fallback (shouldn't happen)
-	return __dirname;
+	return PACKAGE_DIR;
 }
 
 /**
@@ -159,25 +174,18 @@ export function getChangelogPath(): string {
 }
 
 // =============================================================================
-// App Config (from package.json piConfig)
+// App Config
 // =============================================================================
 
-const pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8"));
-
-export const APP_NAME: string = pkg.piConfig?.name || "pi";
-export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".pi";
-export const VERSION: string = pkg.version;
-export const PACKAGE_NAME: string = pkg.name;
-export const FILE_PREFIX: string = APP_NAME.toLowerCase().replace(/\s+/g, "-");
-
 // e.g., JENSEN_CODE_CODING_AGENT_DIR or PI_CODING_AGENT_DIR
-export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase().replace(/\s+/g, "_")}_CODING_AGENT_DIR`;
+export const ENV_AGENT_DIR = `${ENV_PREFIX}_CODING_AGENT_DIR`;
 
 const DEFAULT_SHARE_VIEWER_URL = "https://pi.dev/session/";
 
 /** Get the share viewer URL for a gist ID */
 export function getShareViewerUrl(gistId: string): string {
-	const baseUrl = process.env.PI_SHARE_VIEWER_URL || DEFAULT_SHARE_VIEWER_URL;
+	const baseUrl =
+		process.env[`${ENV_PREFIX}_SHARE_VIEWER_URL`] || process.env.PI_SHARE_VIEWER_URL || DEFAULT_SHARE_VIEWER_URL;
 	return `${baseUrl}#${gistId}`;
 }
 
@@ -187,7 +195,7 @@ export function getShareViewerUrl(gistId: string): string {
 
 /** Get the agent config directory (e.g., ~/.pi/agent/) */
 export function getAgentDir(): string {
-	const envDir = process.env[ENV_AGENT_DIR];
+	const envDir = process.env[ENV_AGENT_DIR] || process.env.PI_CODING_AGENT_DIR;
 	if (envDir) {
 		// Expand tilde to home directory
 		if (envDir === "~") return homedir();

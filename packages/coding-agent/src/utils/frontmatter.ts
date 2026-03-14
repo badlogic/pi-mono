@@ -6,21 +6,25 @@ type ParsedFrontmatter<T extends Record<string, unknown>> = {
 };
 
 const normalizeNewlines = (value: string): string => value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+const stripUtf8Bom = (value: string): string => value.replace(/^\uFEFF/, "");
+const normalizeFrontmatterInput = (value: string): string => stripUtf8Bom(normalizeNewlines(value));
 
 const extractFrontmatter = (content: string): { yamlString: string | null; body: string } => {
-	const normalized = normalizeNewlines(content);
+	const normalized = normalizeFrontmatterInput(content);
+	const leadingFrontmatterMatch = normalized.match(/^\s*---(?:\n|$)/);
 
-	if (!normalized.startsWith("---")) {
+	if (!leadingFrontmatterMatch) {
 		return { yamlString: null, body: normalized };
 	}
 
-	const endIndex = normalized.indexOf("\n---", 3);
+	const frontmatterStartIndex = leadingFrontmatterMatch[0].length;
+	const endIndex = normalized.indexOf("\n---", frontmatterStartIndex);
 	if (endIndex === -1) {
 		return { yamlString: null, body: normalized };
 	}
 
 	return {
-		yamlString: normalized.slice(4, endIndex),
+		yamlString: normalized.slice(frontmatterStartIndex, endIndex),
 		body: normalized.slice(endIndex + 4).trim(),
 	};
 };

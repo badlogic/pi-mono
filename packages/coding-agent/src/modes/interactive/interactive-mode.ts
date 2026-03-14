@@ -236,6 +236,11 @@ export class InteractiveMode {
 	// Epoch hardening
 	private uiEpoch = 0;
 	private sessionEpoch = 0;
+	private isInitialMessagesRendered = false;
+
+	// Visual region ownership
+	private statusOwner: any = undefined;
+	private promptOwner: any = undefined;
 
 	// Extension UI state
 	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
@@ -526,6 +531,7 @@ export class InteractiveMode {
 		// Invalidate all stale async callbacks
 		this.uiEpoch++;
 		this.sessionEpoch++;
+		this.isInitialMessagesRendered = false;
 
 		// Stop all loaders
 		if (this.loadingAnimation) {
@@ -599,64 +605,72 @@ export class InteractiveMode {
 				const [fdPath] = await Promise.all([ensureTool("fd"), ensureTool("rg")]);
 				this.fdPath = fdPath;
 
+				// Add containers only if they're not already children
+				const addIfMissing = (parent: Container | TUI, child: Component) => {
+					if (!parent.children.includes(child)) {
+						parent.addChild(child);
+					}
+				};
+
 				// Add header container as first child
-				this.ui.addChild(this.headerContainer);
+				addIfMissing(this.ui, this.headerContainer);
 
 				// Always show the branded header/logo, even when quietStartup is enabled
-				this.headerContainer.addChild(this.header);
-				this.headerContainer.addChild(new Spacer(1));
+				addIfMissing(this.headerContainer, this.header);
+				addIfMissing(this.headerContainer, new Spacer(1));
 
 				// Add startup instructions only when not silenced
 				if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
 					const instructions = this.buildStartupInstructionsText();
 					this.builtInHeader = new Text(instructions, 1, 0);
-					this.headerContainer.addChild(this.builtInHeader);
-					this.headerContainer.addChild(new Spacer(1));
+					addIfMissing(this.headerContainer, this.builtInHeader);
+					addIfMissing(this.headerContainer, new Spacer(1));
 
 					// Add changelog if provided
 					if (this.changelogMarkdown) {
-						this.headerContainer.addChild(new DynamicBorder());
+						addIfMissing(this.headerContainer, new DynamicBorder());
 						if (this.settingsManager.getCollapseChangelog()) {
 							const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
 							const latestVersion = versionMatch ? versionMatch[1] : this.version;
 							const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
-							this.headerContainer.addChild(new Text(condensedText, 1, 0));
+							addIfMissing(this.headerContainer, new Text(condensedText, 1, 0));
 						} else {
-							this.headerContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
-							this.headerContainer.addChild(new Spacer(1));
-							this.headerContainer.addChild(
+							addIfMissing(this.headerContainer, new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
+							addIfMissing(this.headerContainer, new Spacer(1));
+							addIfMissing(
+								this.headerContainer,
 								new Markdown(this.changelogMarkdown.trim(), 1, 0, this.getMarkdownThemeWithSettings()),
 							);
-							this.headerContainer.addChild(new Spacer(1));
+							addIfMissing(this.headerContainer, new Spacer(1));
 						}
-						this.headerContainer.addChild(new DynamicBorder());
+						addIfMissing(this.headerContainer, new DynamicBorder());
 					}
 				} else {
 					// Quiet startup: keep the logo visible, but suppress instruction text
 					this.builtInHeader = new Text("", 0, 0);
-					this.headerContainer.addChild(this.builtInHeader);
+					addIfMissing(this.headerContainer, this.builtInHeader);
 
 					if (this.changelogMarkdown) {
-						this.headerContainer.addChild(new Spacer(1));
+						addIfMissing(this.headerContainer, new Spacer(1));
 						const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
 						const latestVersion = versionMatch ? versionMatch[1] : this.version;
 						const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
-						this.headerContainer.addChild(new Text(condensedText, 1, 0));
+						addIfMissing(this.headerContainer, new Text(condensedText, 1, 0));
 					}
 				}
 
-				this.ui.addChild(this.chatContainer);
-				this.ui.addChild(this.pendingMessagesContainer);
-				this.ui.addChild(this.statusContainer);
+				addIfMissing(this.ui, this.chatContainer);
+				addIfMissing(this.ui, this.pendingMessagesContainer);
+				addIfMissing(this.ui, this.statusContainer);
 				this.renderWidgets(); // Initialize with default spacer
 
 				// The prompt area consists of an optional widget strip, the editor, and a bottom widget strip.
 				// Extensions should use ctx.ui.setWidget(..., { placement: "aboveEditor" }) for the top strip.
-				this.ui.addChild(this.widgetContainerAbove);
-				this.ui.addChild(this.editorContainer);
-				this.ui.addChild(this.widgetContainerBelow);
+				addIfMissing(this.ui, this.widgetContainerAbove);
+				addIfMissing(this.ui, this.editorContainer);
+				addIfMissing(this.ui, this.widgetContainerBelow);
 
-				this.ui.addChild(this.footer);
+				addIfMissing(this.ui, this.footer);
 				this.ui.setFocus(this.editor);
 				this.updatePromptChrome();
 
@@ -1531,6 +1545,7 @@ export class InteractiveMode {
 
 	private mountPromptOwner(
 		component: Component,
+		owner: any,
 		options?: { focus?: Component; showWidgets?: boolean; requestRender?: boolean },
 	): void {
 		const focus = options?.focus ?? component;
@@ -1542,6 +1557,7 @@ export class InteractiveMode {
 			this.editorContainer.children[0] === component;
 
 		if (!isMounted) {
+			this.promptOwner = owner;
 			this.editorContainer.clear();
 			this.editorContainer.addChild(component);
 			this.promptAreaComponent = component;
@@ -1562,7 +1578,16 @@ export class InteractiveMode {
 		}
 	}
 
-	private restoreCanonicalEditor(options?: { text?: string; focus?: boolean; requestRender?: boolean }): void {
+	private restoreCanonicalEditor(options?: {
+		text?: string;
+		focus?: boolean;
+		requestRender?: boolean;
+		owner?: any;
+	}): void {
+		if (options?.owner !== undefined && this.promptOwner !== options.owner) {
+			return;
+		}
+
 		if (options?.text !== undefined) {
 			this.editor.setText(options.text);
 		}
@@ -1572,6 +1597,7 @@ export class InteractiveMode {
 			this.editorContainer.children.length === 1 &&
 			this.editorContainer.children[0] === editorComponent;
 		if (!isMounted) {
+			this.promptOwner = undefined;
 			this.editorContainer.clear();
 			this.editorContainer.addChild(editorComponent);
 			this.promptAreaComponent = editorComponent;
@@ -1595,13 +1621,14 @@ export class InteractiveMode {
 		}
 	}
 
-	private mountStatusOwner(component: Component, options?: { requestRender?: boolean }): void {
+	private mountStatusOwner(component: Component, owner: any, options?: { requestRender?: boolean }): void {
 		const requestRender = options?.requestRender ?? true;
 		const isMounted =
 			this.statusComponent === component &&
 			this.statusContainer.children.length === 1 &&
 			this.statusContainer.children[0] === component;
 		if (!isMounted) {
+			this.statusOwner = owner;
 			this.statusContainer.clear();
 			this.statusContainer.addChild(component);
 			this.statusComponent = component;
@@ -1622,12 +1649,17 @@ export class InteractiveMode {
 		const row = new Container();
 		row.addChild(new Spacer(1));
 		row.addChild(loader);
-		this.mountStatusOwner(row, options);
+		this.mountStatusOwner(row, loader, options);
 	}
 
-	private clearStatusOwner(options?: { requestRender?: boolean }): void {
+	private clearStatusOwner(options?: { requestRender?: boolean; owner?: any }): void {
+		if (options?.owner !== undefined && this.statusOwner !== options.owner) {
+			return;
+		}
+
 		const requestRender = options?.requestRender ?? true;
 		if (this.statusComponent !== undefined || this.statusContainer.children.length > 0) {
+			this.statusOwner = undefined;
 			this.statusContainer.clear();
 			this.statusComponent = undefined;
 		}
@@ -1791,14 +1823,46 @@ export class InteractiveMode {
 	 * Create the ExtensionUIContext for extensions.
 	 */
 	private createExtensionUIContext(): ExtensionUIContext {
+		const capturedUiEpoch = this.uiEpoch;
+		const capturedSessionEpoch = this.sessionEpoch;
+
+		const guard = <T extends (...args: any[]) => any>(fn: T): T => {
+			return ((...args: any[]) => {
+				if (this.uiEpoch !== capturedUiEpoch || this.sessionEpoch !== capturedSessionEpoch) {
+					return undefined;
+				}
+				return fn(...args);
+			}) as T;
+		};
+
 		return {
-			select: (title, options, opts) => this.showExtensionSelector(title, options, opts),
-			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts),
-			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts),
-			notify: (message, type) => this.showExtensionNotify(message, type),
-			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
-			setStatus: (key, text) => this.setExtensionStatus(key, text),
-			setWorkingMessage: (message) => {
+			select: (title, options, opts) => {
+				if (this.uiEpoch !== capturedUiEpoch || this.sessionEpoch !== capturedSessionEpoch) {
+					return Promise.resolve(undefined);
+				}
+				return this.showExtensionSelector(title, options, opts);
+			},
+			confirm: (title, message, opts) => {
+				if (this.uiEpoch !== capturedUiEpoch || this.sessionEpoch !== capturedSessionEpoch) {
+					return Promise.resolve(false);
+				}
+				return this.showExtensionConfirm(title, message, opts);
+			},
+			input: (title, placeholder, opts) => {
+				if (this.uiEpoch !== capturedUiEpoch || this.sessionEpoch !== capturedSessionEpoch) {
+					return Promise.resolve(undefined);
+				}
+				return this.showExtensionInput(title, placeholder, opts);
+			},
+			notify: guard((message, type) => this.showExtensionNotify(message, type)),
+			onTerminalInput: (handler) => {
+				if (this.uiEpoch !== capturedUiEpoch || this.sessionEpoch !== capturedSessionEpoch) {
+					return () => {};
+				}
+				return this.addExtensionTerminalInputListener(handler);
+			},
+			setStatus: guard((key, text) => this.setExtensionStatus(key, text)),
+			setWorkingMessage: guard((message) => {
 				if (this.loadingAnimation) {
 					if (message) {
 						this.loadingAnimation.setMessage(message);
@@ -1811,23 +1875,41 @@ export class InteractiveMode {
 					// Queue message for when loadingAnimation is created (handles agent_start race)
 					this.pendingWorkingMessage = message;
 				}
+			}),
+			setWidget: guard((key, content, options) => this.setExtensionWidget(key, content, options)),
+			setFooter: guard((factory) => this.setExtensionFooter(factory)),
+			setHeader: guard((factory) => this.setExtensionHeader(factory)),
+			setTitle: guard((title) => this.ui.terminal.setTitle(title)),
+			custom: (factory, options) => {
+				if (this.uiEpoch !== capturedUiEpoch || this.sessionEpoch !== capturedSessionEpoch) {
+					return Promise.resolve(undefined as any);
+				}
+				return this.showExtensionCustom(factory, options);
 			},
-			setWidget: (key, content, options) => this.setExtensionWidget(key, content, options),
-			setFooter: (factory) => this.setExtensionFooter(factory),
-			setHeader: (factory) => this.setExtensionHeader(factory),
-			setTitle: (title) => this.ui.terminal.setTitle(title),
-			custom: (factory, options) => this.showExtensionCustom(factory, options),
-			pasteToEditor: (text) => this.editor.handleInput(`\x1b[200~${text}\x1b[201~`),
-			setEditorText: (text) => this.editor.setText(text),
-			getEditorText: () => this.editor.getText(),
-			editor: (title, prefill) => this.showExtensionEditor(title, prefill),
-			setEditorComponent: (factory) => this.setCustomEditorComponent(factory),
+			pasteToEditor: guard((text) => this.editor.handleInput(`\x1b[200~${text}\x1b[201~`)),
+			setEditorText: guard((text) => this.editor.setText(text)),
+			getEditorText: () => {
+				if (this.uiEpoch !== capturedUiEpoch || this.sessionEpoch !== capturedSessionEpoch) {
+					return "";
+				}
+				return this.editor.getText();
+			},
+			editor: (title, prefill) => {
+				if (this.uiEpoch !== capturedUiEpoch || this.sessionEpoch !== capturedSessionEpoch) {
+					return Promise.resolve(undefined);
+				}
+				return this.showExtensionEditor(title, prefill);
+			},
+			setEditorComponent: guard((factory) => this.setCustomEditorComponent(factory)),
 			get theme() {
 				return theme;
 			},
 			getAllThemes: () => getAvailableThemesWithPaths(),
 			getTheme: (name) => getThemeByName(name),
 			setTheme: (themeOrName) => {
+				if (this.uiEpoch !== capturedUiEpoch || this.sessionEpoch !== capturedSessionEpoch) {
+					return { success: false, error: "Stale context" };
+				}
 				if (themeOrName instanceof Theme) {
 					setThemeInstance(themeOrName);
 					this.ui.requestRender();
@@ -1843,7 +1925,7 @@ export class InteractiveMode {
 				return result;
 			},
 			getToolsExpanded: () => this.toolOutputExpanded,
-			setToolsExpanded: (expanded) => this.setToolsExpanded(expanded),
+			setToolsExpanded: guard((expanded) => this.setToolsExpanded(expanded)),
 		};
 	}
 
@@ -1881,7 +1963,7 @@ export class InteractiveMode {
 						resolve(undefined);
 						return;
 					}
-					this.hideExtensionSelector();
+					this.hideExtensionSelector(this.extensionSelector);
 					resolve(option);
 				},
 				() => {
@@ -1890,23 +1972,23 @@ export class InteractiveMode {
 						resolve(undefined);
 						return;
 					}
-					this.hideExtensionSelector();
+					this.hideExtensionSelector(this.extensionSelector);
 					resolve(undefined);
 				},
 				{ tui: this.ui, timeout: opts?.timeout },
 			);
 
-			this.mountPromptOwner(this.extensionSelector);
+			this.mountPromptOwner(this.extensionSelector, this.extensionSelector);
 		});
 	}
 
 	/**
 	 * Hide the extension selector.
 	 */
-	private hideExtensionSelector(): void {
+	private hideExtensionSelector(owner?: any): void {
 		this.extensionSelector?.dispose();
 		this.extensionSelector = undefined;
-		this.restoreCanonicalEditor();
+		this.restoreCanonicalEditor({ owner });
 	}
 
 	/**
@@ -1941,7 +2023,7 @@ export class InteractiveMode {
 					resolve(undefined);
 					return;
 				}
-				this.hideExtensionInput();
+				this.hideExtensionInput(this.extensionInput);
 				resolve(undefined);
 			};
 			opts?.signal?.addEventListener("abort", onAbort, { once: true });
@@ -1955,7 +2037,7 @@ export class InteractiveMode {
 						resolve(undefined);
 						return;
 					}
-					this.hideExtensionInput();
+					this.hideExtensionInput(this.extensionInput);
 					resolve(value);
 				},
 				() => {
@@ -1964,23 +2046,23 @@ export class InteractiveMode {
 						resolve(undefined);
 						return;
 					}
-					this.hideExtensionInput();
+					this.hideExtensionInput(this.extensionInput);
 					resolve(undefined);
 				},
 				{ tui: this.ui, timeout: opts?.timeout },
 			);
 
-			this.mountPromptOwner(this.extensionInput);
+			this.mountPromptOwner(this.extensionInput, this.extensionInput);
 		});
 	}
 
 	/**
 	 * Hide the extension input.
 	 */
-	private hideExtensionInput(): void {
+	private hideExtensionInput(owner?: any): void {
 		this.extensionInput?.dispose();
 		this.extensionInput = undefined;
-		this.restoreCanonicalEditor();
+		this.restoreCanonicalEditor({ owner });
 	}
 
 	/**
@@ -1999,7 +2081,7 @@ export class InteractiveMode {
 						resolve(undefined);
 						return;
 					}
-					this.hideExtensionEditor();
+					this.hideExtensionEditor(this.extensionEditor);
 					resolve(value);
 				},
 				() => {
@@ -2007,21 +2089,21 @@ export class InteractiveMode {
 						resolve(undefined);
 						return;
 					}
-					this.hideExtensionEditor();
+					this.hideExtensionEditor(this.extensionEditor);
 					resolve(undefined);
 				},
 			);
 
-			this.mountPromptOwner(this.extensionEditor);
+			this.mountPromptOwner(this.extensionEditor, this.extensionEditor);
 		});
 	}
 
 	/**
 	 * Hide the extension editor.
 	 */
-	private hideExtensionEditor(): void {
+	private hideExtensionEditor(owner?: any): void {
 		this.extensionEditor = undefined;
-		this.restoreCanonicalEditor();
+		this.restoreCanonicalEditor({ owner });
 	}
 
 	/**
@@ -2118,12 +2200,13 @@ export class InteractiveMode {
 		const savedText = this.editor.getText();
 		const isOverlay = options?.overlay ?? false;
 
+		let component: Component & { dispose?(): void };
+
 		const restoreEditor = () => {
-			this.restoreCanonicalEditor({ text: savedText });
+			this.restoreCanonicalEditor({ text: savedText, owner: component });
 		};
 
 		return new Promise((resolve, reject) => {
-			let component: Component & { dispose?(): void };
 			let closed = false;
 
 			const close = (result: T) => {
@@ -2176,7 +2259,7 @@ export class InteractiveMode {
 						// Expose handle to caller for visibility control
 						options?.onHandle?.(handle);
 					} else {
-						this.mountPromptOwner(component);
+						this.mountPromptOwner(component, component);
 					}
 				})
 				.catch((err) => {
@@ -2505,8 +2588,12 @@ export class InteractiveMode {
 				}
 				if (this.loadingAnimation) {
 					this.loadingAnimation.dispose();
+					const oldLoader = this.loadingAnimation;
+					this.loadingAnimation = undefined;
+					this.clearStatusOwner({ requestRender: false, owner: oldLoader });
+				} else {
+					this.clearStatusOwner({ requestRender: false });
 				}
-				this.clearStatusOwner({ requestRender: false });
 				this.loadingAnimation = new Loader(
 					this.ui,
 					(spinner) => theme.fg("accent", spinner),
@@ -2539,6 +2626,17 @@ export class InteractiveMode {
 					}
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
+					// Check if we already have a streaming component for this message to prevent duplicates
+					if (this.streamingComponent && this.streamingMessage === event.message) {
+						return;
+					}
+
+					// If we have a different streaming component, something is wrong, but let's at least not leak it
+					if (this.streamingComponent) {
+						this.chatContainer.removeChild(this.streamingComponent);
+						this.streamingComponent = undefined;
+					}
+
 					this.streamingComponent = new AssistantMessageComponent(
 						undefined,
 						this.hideThinkingBlock,
@@ -2665,8 +2763,9 @@ export class InteractiveMode {
 			case "agent_end":
 				if (this.loadingAnimation) {
 					this.loadingAnimation.dispose();
+					const oldLoader = this.loadingAnimation;
 					this.loadingAnimation = undefined;
-					this.clearStatusOwner({ requestRender: false });
+					this.clearStatusOwner({ requestRender: false, owner: oldLoader });
 				}
 				if (this.streamingComponent) {
 					this.chatContainer.removeChild(this.streamingComponent);
@@ -2692,8 +2791,15 @@ export class InteractiveMode {
 				this.defaultEditor.onEscape = () => {
 					this.session.abortCompaction();
 				};
-				// Show compacting indicator with reason
+
+				// Stop loading animation
+				if (this.loadingAnimation) {
+					this.loadingAnimation.dispose();
+					this.loadingAnimation = undefined;
+				}
 				this.clearStatusOwner({ requestRender: false });
+
+				// Show compacting indicator with reason
 				const reasonText = event.reason === "overflow" ? "Context overflow detected, " : "";
 				this.autoCompactionLoader = new Loader(
 					this.ui,
@@ -2715,8 +2821,9 @@ export class InteractiveMode {
 				// Stop loader
 				if (this.autoCompactionLoader) {
 					this.autoCompactionLoader.dispose();
+					const oldLoader = this.autoCompactionLoader;
 					this.autoCompactionLoader = undefined;
-					this.clearStatusOwner({ requestRender: false });
+					this.clearStatusOwner({ requestRender: false, owner: oldLoader });
 				}
 				// Handle result
 				if (event.aborted) {
@@ -2749,8 +2856,15 @@ export class InteractiveMode {
 				this.defaultEditor.onEscape = () => {
 					this.session.abortRetry();
 				};
-				// Show retry indicator
+
+				// Stop loading animation
+				if (this.loadingAnimation) {
+					this.loadingAnimation.dispose();
+					this.loadingAnimation = undefined;
+				}
 				this.clearStatusOwner({ requestRender: false });
+
+				// Show retry indicator
 				const delaySeconds = Math.round(event.delayMs / 1000);
 				this.retryLoader = new Loader(
 					this.ui,
@@ -2772,8 +2886,9 @@ export class InteractiveMode {
 				// Stop loader
 				if (this.retryLoader) {
 					this.retryLoader.dispose();
+					const oldLoader = this.retryLoader;
 					this.retryLoader = undefined;
-					this.clearStatusOwner({ requestRender: false });
+					this.clearStatusOwner({ requestRender: false, owner: oldLoader });
 				}
 				// Show error only on final failure (success shows normal response)
 				if (!event.success) {
@@ -2801,7 +2916,9 @@ export class InteractiveMode {
 	 * If multiple status messages are emitted back-to-back (without anything else being added to the chat),
 	 * we update the previous status line instead of appending new ones to avoid log spam.
 	 */
-	private showStatus(message: string): void {
+	private showStatus(message: string, ownerEpoch?: number): void {
+		if (ownerEpoch !== undefined && this.sessionEpoch !== ownerEpoch) return;
+
 		const children = this.chatContainer.children;
 		const last = children.length > 0 ? children[children.length - 1] : undefined;
 		const secondLast = children.length > 1 ? children[children.length - 2] : undefined;
@@ -2981,6 +3098,9 @@ export class InteractiveMode {
 	}
 
 	renderInitialMessages(): void {
+		if (this.isInitialMessagesRendered) return;
+		this.isInitialMessagesRendered = true;
+
 		// Get aligned messages and entries from session context
 		const context = this.sessionManager.buildSessionContext();
 		this.renderSessionContext(context, {
@@ -3305,7 +3425,8 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	showError(errorMessage: string): void {
+	showError(errorMessage: string, ownerEpoch?: number): void {
+		if (ownerEpoch !== undefined && this.sessionEpoch !== ownerEpoch) return;
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
 		this.ui.requestRender();
@@ -3337,14 +3458,16 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	showWarning(warningMessage: string): void {
+	showWarning(warningMessage: string, ownerEpoch?: number): void {
+		if (ownerEpoch !== undefined && this.sessionEpoch !== ownerEpoch) return;
 		this.enqueueStartupNotice(() => {
 			this.chatContainer.addChild(new Spacer(1));
 			this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
 		});
 	}
 
-	showNewVersionNotification(newVersion: string): void {
+	showNewVersionNotification(newVersion: string, ownerEpoch?: number): void {
+		if (ownerEpoch !== undefined && this.sessionEpoch !== ownerEpoch) return;
 		const action = theme.fg("accent", getUpdateInstruction(PACKAGE_NAME));
 		const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. `) + action;
 		const changelogUrl = theme.fg(
@@ -3577,10 +3700,10 @@ export class InteractiveMode {
 		const capturedEpoch = this.uiEpoch;
 		const done = () => {
 			if (this.uiEpoch !== capturedEpoch) return;
-			this.restoreCanonicalEditor({ requestRender: false });
+			this.restoreCanonicalEditor({ requestRender: false, owner: component });
 		};
 		const { component, focus } = create(done);
-		this.mountPromptOwner(component, { focus });
+		this.mountPromptOwner(component, component, { focus });
 	}
 
 	private showSettingsSelector(): void {
@@ -4086,7 +4209,7 @@ export class InteractiveMode {
 					} finally {
 						if (summaryLoader) {
 							summaryLoader.dispose();
-							this.clearStatusOwner({ requestRender: false });
+							this.clearStatusOwner({ requestRender: false, owner: summaryLoader });
 						}
 						this.defaultEditor.onEscape = originalOnEscape;
 					}
@@ -4219,7 +4342,7 @@ export class InteractiveMode {
 		});
 
 		// Show dialog in editor container
-		this.mountPromptOwner(dialog);
+		this.mountPromptOwner(dialog, dialog);
 
 		// Promise for manual code input (racing with callback server)
 		let manualCodeResolve: ((code: string) => void) | undefined;
@@ -4233,7 +4356,7 @@ export class InteractiveMode {
 		const capturedEpoch = this.uiEpoch;
 		const restoreEditor = () => {
 			if (this.uiEpoch !== capturedEpoch) return;
-			this.restoreCanonicalEditor();
+			this.restoreCanonicalEditor({ owner: dialog });
 		};
 
 		try {
@@ -4313,13 +4436,13 @@ export class InteractiveMode {
 			cancellable: false,
 		});
 		const previousEditor = this.editor;
-		this.mountPromptOwner(loader);
+		this.mountPromptOwner(loader, loader);
 
 		const capturedEpoch = this.uiEpoch;
 		const dismissLoader = (_editor: Component) => {
 			loader.dispose();
 			if (this.uiEpoch !== capturedEpoch) return;
-			this.restoreCanonicalEditor();
+			this.restoreCanonicalEditor({ owner: loader });
 		};
 
 		try {
@@ -4416,12 +4539,12 @@ export class InteractiveMode {
 
 		// Show cancellable loader, replacing the editor
 		const loader = new BorderedLoader(this.ui, theme, "Creating gist...");
-		this.mountPromptOwner(loader);
+		this.mountPromptOwner(loader, loader);
 
 		const restoreEditor = () => {
 			loader.dispose();
 			if (this.uiEpoch !== capturedEpoch) return;
-			this.restoreCanonicalEditor({ requestRender: false });
+			this.restoreCanonicalEditor({ requestRender: false, owner: loader });
 			try {
 				fs.unlinkSync(tmpFile);
 			} catch {
@@ -4721,7 +4844,10 @@ export class InteractiveMode {
 
 	private async handleClearCommand(): Promise<void> {
 		// New session via session (emits extension session events)
-		await this.session.newSession();
+		const success = await this.session.newSession();
+		if (!success) {
+			return;
+		}
 
 		this.resetInteractiveSessionUI(true);
 		this.ui.requestRender();
@@ -4942,7 +5068,7 @@ export class InteractiveMode {
 		} finally {
 			if (this.sessionEpoch === capturedEpoch) {
 				compactingLoader.dispose();
-				this.clearStatusOwner({ requestRender: false });
+				this.clearStatusOwner({ requestRender: false, owner: compactingLoader });
 				this.defaultEditor.onEscape = originalOnEscape;
 			}
 		}
@@ -4958,6 +5084,14 @@ export class InteractiveMode {
 		if (this.loadingAnimation) {
 			this.loadingAnimation.dispose();
 			this.loadingAnimation = undefined;
+		}
+		if (this.autoCompactionLoader) {
+			this.autoCompactionLoader.dispose();
+			this.autoCompactionLoader = undefined;
+		}
+		if (this.retryLoader) {
+			this.retryLoader.dispose();
+			this.retryLoader = undefined;
 		}
 		this.clearExtensionTerminalInputListeners();
 		this.footer.dispose();

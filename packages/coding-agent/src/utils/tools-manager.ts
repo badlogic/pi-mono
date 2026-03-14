@@ -6,13 +6,13 @@ import { arch, platform } from "os";
 import { join } from "path";
 import { Readable } from "stream";
 import { finished } from "stream/promises";
-import { APP_NAME, getBinDir } from "../config.js";
+import { APP_NAME, ENV_PREFIX, getBinDir } from "../config.js";
 
 const TOOLS_DIR = getBinDir();
 const NETWORK_TIMEOUT_MS = 10000;
 
 function isOfflineModeEnabled(): boolean {
-	const value = process.env.PI_OFFLINE;
+	const value = process.env[`${ENV_PREFIX}_OFFLINE`] || process.env.PI_OFFLINE;
 	if (!value) return false;
 	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
 }

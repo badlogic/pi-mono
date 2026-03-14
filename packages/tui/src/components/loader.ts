@@ -30,7 +30,6 @@ export class Loader extends Text {
 		this.start();
 	}
 
-	// loader.ts
 	render(width: number): string[] {
 		if (this.state === "disposed") {
 			return [""];
@@ -45,7 +44,9 @@ export class Loader extends Text {
 		}
 
 		if (elapsed === 0 && this.state !== "running") {
-			this.setText(prefix);
+			if (this.text !== prefix) {
+				this.setText(prefix);
+			}
 			return super.render(width);
 		}
 
@@ -59,15 +60,20 @@ export class Loader extends Text {
 		const secStr = seconds.toString().padStart(2, "0");
 		const timerStr = this.messageColorFn(`${minStr}:${secStr}.${tenths}`);
 
-		const contentWidth = Math.max(1, width - 2);
+		const contentWidth = Math.max(1, width - this.paddingX * 2);
 		const prefixWidth = visibleWidth(prefix);
 		const timerWidth = visibleWidth(timerStr);
 
+		let nextText: string;
 		if (prefixWidth + timerWidth + 2 <= contentWidth) {
 			const padding = " ".repeat(contentWidth - prefixWidth - timerWidth);
-			this.setText(prefix + padding + timerStr);
+			nextText = prefix + padding + timerStr;
 		} else {
-			this.setText(`${prefix}  ${timerStr}`);
+			nextText = `${prefix}  ${timerStr}`;
+		}
+
+		if (this.text !== nextText) {
+			this.setText(nextText);
 		}
 
 		return super.render(width);
@@ -124,6 +130,10 @@ export class Loader extends Text {
 		this.epoch++;
 		this.cleanupInterval();
 		this.ui = null;
+		this.cachedLines = undefined;
+		this.cachedText = undefined;
+		this.cachedWidth = undefined;
+		this.text = "";
 	}
 
 	private cleanupInterval() {

@@ -17,6 +17,14 @@ describe("parseFrontmatter", () => {
 		expect(body).toBe("Line one\nLine two");
 	});
 
+	it("parses frontmatter with a UTF-8 BOM and leading whitespace", () => {
+		const input = "\uFEFF  \n---\nname: tester\ndescription: Test agent\n---\n\nBody text";
+		const { frontmatter, body } = parseFrontmatter<Record<string, string>>(input);
+		expect(frontmatter.name).toBe("tester");
+		expect(frontmatter.description).toBe("Test agent");
+		expect(body).toBe("Body text");
+	});
+
 	it("throws on invalid YAML frontmatter", () => {
 		const input = "---\nfoo: [bar\n---\nBody";
 		expect(() => parseFrontmatter<Record<string, string>>(input)).toThrow(/at line 1, column 10/);

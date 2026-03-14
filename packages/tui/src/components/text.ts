@@ -5,15 +5,15 @@ import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.
  * Text component - displays multi-line text with word wrapping
  */
 export class Text implements Component {
-	private text: string;
-	private paddingX: number; // Left/right padding
-	private paddingY: number; // Top/bottom padding
+	protected text: string;
+	protected paddingX: number; // Left/right padding
+	protected paddingY: number; // Top/bottom padding
 	private customBgFn?: (text: string) => string;
 
 	// Cache for rendered output
-	private cachedText?: string;
-	private cachedWidth?: number;
-	private cachedLines?: string[];
+	protected cachedText?: string;
+	protected cachedWidth?: number;
+	protected cachedLines?: string[];
 
 	constructor(text: string = "", paddingX: number = 1, paddingY: number = 1, customBgFn?: (text: string) => string) {
 		this.text = text;
