@@ -37,7 +37,7 @@ export function getModels<TProvider extends KnownProvider>(
 }
 
 export function calculateCost<TApi extends Api>(model: Model<TApi>, usage: Usage): Usage["cost"] {
-	usage.cost.input = (model.cost.input / 1000000) * usage.input;
+	usage.cost.input = (model.cost.input / 1000000) * Math.max(0, usage.input - usage.cacheRead);
 	usage.cost.output = (model.cost.output / 1000000) * usage.output;
 	usage.cost.cacheRead = (model.cost.cacheRead / 1000000) * usage.cacheRead;
 	usage.cost.cacheWrite = (model.cost.cacheWrite / 1000000) * usage.cacheWrite;
