@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Fixed npm package installs and lookups being tied to the active repository Node version by adding `npmCommand` as an argv-style settings override for package manager operations ([#2072](https://github.com/badlogic/pi-mono/issues/2072))
 - Fixed `ctx.ui.getEditorText()` in the extension API returning paste markers (e.g., `[paste #1 +24 lines]`) instead of the actual pasted content ([#2084](https://github.com/badlogic/pi-mono/issues/2084))
 - Fixed startup crash when downloading `fd`/`ripgrep` on first run by using `pipeline()` instead of `finished(readable.pipe(writable))` so stream errors from timeouts are caught properly, and increased the download timeout from 10s to 120s ([#2066](https://github.com/badlogic/pi-mono/issues/2066))
 

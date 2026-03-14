@@ -352,6 +352,68 @@ Content`,
 		});
 	});
 
+	describe("npmCommand", () => {
+		it("should use npmCommand argv for npm installs", async () => {
+			settingsManager = SettingsManager.inMemory({
+				npmCommand: ["mise", "exec", "node@20", "--", "npm"],
+			});
+			packageManager = new DefaultPackageManager({
+				cwd: tempDir,
+				agentDir,
+				settingsManager,
+			});
+
+			const runCommandSpy = vi.spyOn(packageManager as any, "runCommand").mockResolvedValue(undefined);
+
+			await packageManager.install("npm:@scope/pkg");
+
+			expect(runCommandSpy).toHaveBeenCalledWith(
+				"mise",
+				["exec", "node@20", "--", "npm", "install", "-g", "@scope/pkg"],
+				undefined,
+			);
+		});
+
+		it("should use npmCommand argv for npm root lookup and invalidate cached root when npmCommand changes", () => {
+			settingsManager = SettingsManager.inMemory({
+				npmCommand: ["mise", "exec", "node@20", "--", "npm"],
+			});
+			packageManager = new DefaultPackageManager({
+				cwd: tempDir,
+				agentDir,
+				settingsManager,
+			});
+
+			const root20 = join(tempDir, "node20", "lib", "node_modules");
+			const root22 = join(tempDir, "node22", "lib", "node_modules");
+			mkdirSync(join(root20, "@scope", "pkg"), { recursive: true });
+
+			const runCommandSyncSpy = vi
+				.spyOn(packageManager as any, "runCommandSync")
+				.mockImplementation((...callArgs: unknown[]) => {
+					const [command, args] = callArgs as [string, string[]];
+					if (command !== "mise") {
+						throw new Error(`unexpected command ${command}`);
+					}
+					if (args[1] === "node@20") {
+						return root20;
+					}
+					if (args[1] === "node@22") {
+						return root22;
+					}
+					throw new Error(`unexpected args ${args.join(" ")}`);
+				});
+
+			expect(packageManager.getInstalledPath("npm:@scope/pkg", "user")).toBe(join(root20, "@scope", "pkg"));
+			expect(runCommandSyncSpy).toHaveBeenNthCalledWith(1, "mise", ["exec", "node@20", "--", "npm", "root", "-g"]);
+
+			settingsManager.setNpmCommand(["mise", "exec", "node@22", "--", "npm"]);
+
+			expect(packageManager.getInstalledPath("npm:@scope/pkg", "user")).toBeUndefined();
+			expect(runCommandSyncSpy).toHaveBeenNthCalledWith(2, "mise", ["exec", "node@22", "--", "npm", "root", "-g"]);
+		});
+	});
+
 	describe("source parsing", () => {
 		it("should emit progress events on install attempt", async () => {
 			const events: ProgressEvent[] = [];

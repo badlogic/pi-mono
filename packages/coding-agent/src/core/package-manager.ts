@@ -637,6 +637,7 @@ export class DefaultPackageManager implements PackageManager {
 	private agentDir: string;
 	private settingsManager: SettingsManager;
 	private globalNpmRoot: string | undefined;
+	private globalNpmRootCommandKey: string | undefined;
 	private progressCallback: ProgressCallback | undefined;
 
 	constructor(options: PackageManagerOptions) {
@@ -1156,26 +1157,48 @@ export class DefaultPackageManager implements PackageManager {
 		return { name, version };
 	}
 
+	private getNpmCommand(): { command: string; args: string[] } {
+		const configuredCommand = this.settingsManager.getNpmCommand();
+		if (!configuredCommand || configuredCommand.length === 0) {
+			return { command: "npm", args: [] };
+		}
+		const [command, ...args] = configuredCommand;
+		if (!command) {
+			throw new Error("Invalid npmCommand: first array entry must be a non-empty command");
+		}
+		return { command, args };
+	}
+
+	private async runNpmCommand(args: string[], options?: { cwd?: string }): Promise<void> {
+		const npmCommand = this.getNpmCommand();
+		await this.runCommand(npmCommand.command, [...npmCommand.args, ...args], options);
+	}
+
+	private runNpmCommandSync(args: string[]): string {
+		const npmCommand = this.getNpmCommand();
+		return this.runCommandSync(npmCommand.command, [...npmCommand.args, ...args]);
+	}
+
 	private async installNpm(source: NpmSource, scope: SourceScope, temporary: boolean): Promise<void> {
 		if (scope === "user" && !temporary) {
-			await this.runCommand("npm", ["install", "-g", source.spec]);
+			await this.runNpmCommand(["install", "-g", source.spec]);
 			return;
 		}
 		const installRoot = this.getNpmInstallRoot(scope, temporary);
 		this.ensureNpmProject(installRoot);
-		await this.runCommand("npm", ["install", source.spec, "--prefix", installRoot]);
+		await this.runNpmCommand(["install", source.spec, "--prefix", installRoot]);
 	}
 
 	private async uninstallNpm(source: NpmSource, scope: SourceScope): Promise<void> {
 		if (scope === "user") {
-			await this.runCommand("npm", ["uninstall", "-g", source.name]);
+			await this.runNpmCommand(["uninstall", "-g", source.name]);
 			return;
 		}
 		const installRoot = this.getNpmInstallRoot(scope, false);
 		if (!existsSync(installRoot)) {
 			return;
 		}
-		await this.runCommand("npm", ["uninstall", source.name, "--prefix", installRoot]);
+		await this.runNpmCommand(["uninstall", source.name, "--prefix", installRoot]);
 	}
 
 	private async installGit(source: GitSource, scope: SourceScope): Promise<void> {
@@ -1195,7 +1218,7 @@ export class DefaultPackageManager implements PackageManager {
 		}
 		const packageJsonPath = join(targetDir, "package.json");
 		if (existsSync(packageJsonPath)) {
-			await this.runCommand("npm", ["install"], { cwd: targetDir });
+			await this.runNpmCommand(["install"], { cwd: targetDir });
 		}
 	}
 
@@ -1222,7 +1245,7 @@ export class DefaultPackageManager implements PackageManager {
 
 		const packageJsonPath = join(targetDir, "package.json");
 		if (existsSync(packageJsonPath)) {
-			await this.runCommand("npm", ["install"], { cwd: targetDir });
+			await this.runNpmCommand(["install"], { cwd: targetDir });
 		}
 	}
 
@@ -1301,11 +1324,14 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private getGlobalNpmRoot(): string {
-		if (this.globalNpmRoot) {
+		const npmCommand = this.getNpmCommand();
+		const commandKey = [npmCommand.command, ...npmCommand.args].join("\0");
+		if (this.globalNpmRoot && this.globalNpmRootCommandKey === commandKey) {
 			return this.globalNpmRoot;
 		}
-		const result = this.runCommandSync("npm", ["root", "-g"]);
+		const result = this.runNpmCommandSync(["root", "-g"]);
 		this.globalNpmRoot = result.trim();
+		this.globalNpmRootCommandKey = commandKey;
 		return this.globalNpmRoot;
 	}
 
