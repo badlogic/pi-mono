@@ -453,15 +453,15 @@ export class InteractiveMode {
 		this.setupKeyHandlers();
 		this.setupEditorSubmitHandler();
 
+		// Start the UI before initializing extensions so session_start handlers can use interactive dialogs
+		this.ui.start();
+		this.isInitialized = true;
+
 		// Initialize extensions first so resources are shown before messages
 		await this.initExtensions();
 
 		// Render initial messages AFTER showing loaded resources
 		this.renderInitialMessages();
-
-		// Start the UI
-		this.ui.start();
-		this.isInitialized = true;
 
 		// Set terminal title
 		this.updateTerminalTitle();
