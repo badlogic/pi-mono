@@ -593,6 +593,18 @@ export class AgentSession {
 	}
 
 	/**
+	 * Wait for already-enqueued agent event processing to finish.
+	 * This prevents stale events from mutating session state after a reset/switch.
+	 */
+	private async _drainAgentEventQueue(): Promise<void> {
+		try {
+			await this._agentEventQueue;
+		} catch {
+			// The queue is kept alive by _handleAgentEvent(); ignore the prior failure here.
+		}
+	}
+
+	/**
 	 * Remove all listeners and disconnect from agent.
 	 * Call this when completely done with the session.
 	 */
@@ -1252,6 +1264,7 @@ export class AgentSession {
 
 		this._disconnectFromAgent();
 		await this.abort();
+		await this._drainAgentEventQueue();
 		this.agent.reset();
 		this.sessionManager.newSession({ parentSession: options?.parentSession });
 		this.agent.sessionId = this.sessionManager.getSessionId();
@@ -1547,6 +1560,7 @@ export class AgentSession {
 	async compact(customInstructions?: string): Promise<CompactionResult> {
 		this._disconnectFromAgent();
 		await this.abort();
+		await this._drainAgentEventQueue();
 		this._compactionAbortController = new AbortController();
 
 		try {
@@ -2519,6 +2533,7 @@ export class AgentSession {
 
 		this._disconnectFromAgent();
 		await this.abort();
+		await this._drainAgentEventQueue();
 		this._steeringMessages = [];
 		this._followUpMessages = [];
 		this._pendingNextTurnMessages = [];

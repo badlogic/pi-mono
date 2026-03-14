@@ -176,6 +176,7 @@ export class Container implements Component {
 	children: Component[] = [];
 
 	addChild(component: Component): void {
+		if (this.children.includes(component)) return;
 		this.children.push(component);
 	}
 

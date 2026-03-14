@@ -120,6 +120,8 @@ interface LayoutLine {
 
 export interface EditorTheme {
 	borderColor: (str: string) => string;
+	promptBg?: (str: string) => string;
+	promptChromeBg?: (str: string) => string;
 	selectList: SelectListTheme;
 }
 
@@ -138,6 +140,9 @@ export class Editor implements Component, Focusable {
 		cursorLine: 0,
 		cursorCol: 0,
 	};
+
+	private promptBg?: (str: string) => string;
+	private promptChromeBg?: (str: string) => string;
 
 	/** Focusable interface - set by TUI when focus changes */
 	focused: boolean = false;
@@ -159,7 +164,7 @@ export class Editor implements Component, Focusable {
 	private promptGlyph: string = DEFAULT_PROMPT_GLYPH;
 	private placeholderText: string = "";
 	private promptGlyphStyle: (str: string) => string = (str) => str;
-	private placeholderStyle: (str: string) => string = (str) => `\x1b[90m${str}\x1b[0m`;
+	private placeholderStyle: (str: string) => string = (str) => `\x1b[90m${str}\x1b[39m`;
 
 	// Autocomplete support
 	private autocompleteProvider?: AutocompleteProvider;
@@ -200,7 +205,10 @@ export class Editor implements Component, Focusable {
 	constructor(tui: TUI, theme: EditorTheme, options: EditorOptions = {}) {
 		this.tui = tui;
 		this.theme = theme;
+
 		this.borderColor = theme.borderColor;
+		this.promptBg = theme.promptBg;
+		this.promptChromeBg = theme.promptChromeBg ?? theme.promptBg;
 
 		const paddingX = options.paddingX ?? 0;
 		this.paddingX = Number.isFinite(paddingX) ? Math.max(0, Math.floor(paddingX)) : 0;
@@ -211,7 +219,30 @@ export class Editor implements Component, Focusable {
 		this.promptGlyph = options.promptGlyph ?? DEFAULT_PROMPT_GLYPH;
 		this.placeholderText = options.placeholderText ?? "";
 		this.promptGlyphStyle = options.promptGlyphStyle ?? ((str) => `\x1b[1m${this.borderColor(str)}\x1b[22m`);
-		this.placeholderStyle = options.placeholderStyle ?? ((str) => `\x1b[90m${str}\x1b[0m`);
+		this.placeholderStyle = options.placeholderStyle ?? ((str) => `\x1b[90m${str}\x1b[39m`);
+	}
+
+	private sanitizePromptBgLine(line: string): string {
+		// Keep style resets that do NOT clear background.
+		// Avoid \x1b[0m because it resets everything, including the prompt background.
+		return line.replace(/\x1b\[0m/g, "\x1b[22m\x1b[23m\x1b[24m\x1b[27m\x1b[39m");
+	}
+
+	private padToVisualWidth(line: string, width: number): string {
+		const padding = Math.max(0, width - visibleWidth(line));
+		return line + " ".repeat(padding);
+	}
+
+	private applyPromptBg(line: string, width: number): string {
+		const safeLine = this.padToVisualWidth(this.sanitizePromptBgLine(line), width);
+		if (!this.promptBg) return safeLine;
+		return this.promptBg(safeLine);
+	}
+
+	private applyPromptChromeBg(line: string, width: number): string {
+		const safeLine = this.padToVisualWidth(this.sanitizePromptBgLine(line), width);
+		if (!this.promptChromeBg) return safeLine;
+		return this.promptChromeBg(safeLine);
 	}
 
 	getPaddingX(): number {
@@ -238,7 +269,7 @@ export class Editor implements Component, Focusable {
 		}
 	}
 
-	getPromptGlyph(): string {
+	getPromptGlyph(): number | string {
 		return this.promptGlyph;
 	}
 
@@ -383,40 +414,9 @@ export class Editor implements Component, Focusable {
 		});
 	}
 
-	private stylePromptPrefix(text: string): string {
-		if (text.length === 0) return text;
-
-		const { first: glyph, rest } = splitFirstGrapheme(text);
-		if (glyph.trim().length === 0) {
-			return this.borderColor(text);
-		}
-
-		const styledGlyph = `\x1b[1m${this.borderColor(glyph)}\x1b[22m`;
-		const styledRest = rest.length > 0 ? this.borderColor(rest) : "";
-		return styledGlyph + styledRest;
-	}
-
-	private stylePlaceholderLine(text: string, promptPrefixLength?: number): string {
-		if (!promptPrefixLength || promptPrefixLength <= 0) {
-			return this.placeholderStyle(text);
-		}
-
-		const promptPrefix = text.slice(0, promptPrefixLength);
-		const body = text.slice(promptPrefixLength);
-		return this.stylePromptPrefix(promptPrefix) + (body ? this.placeholderStyle(body) : "");
-	}
-
 	private getPromptPrefixWidth(): number {
 		if (!this.promptGlyph) return 0;
 		return visibleWidth(this.promptGlyph) + 1;
-	}
-
-	private getRenderedPromptPrefix(isFirstVisualLine: boolean, promptPrefixWidth: number): string {
-		if (!promptPrefixWidth) return "";
-		if (isFirstVisualLine) {
-			return `${this.promptGlyphStyle(this.promptGlyph)} `;
-		}
-		return " ".repeat(promptPrefixWidth);
 	}
 
 	render(width: number): string[] {
@@ -433,6 +433,11 @@ export class Editor implements Component, Focusable {
 		this.lastWidth = layoutWidth;
 
 		const horizontal = this.borderColor("─");
+
+		const glyphWidth = visibleWidth(this.promptGlyph);
+
+		const paintFullLine = (line: string): string => this.applyPromptBg(line, width);
+		const paintChromeLine = (line: string): string => this.applyPromptChromeBg(line, width);
 
 		// Layout the text
 		const layoutLines = this.layoutText(layoutWidth);
@@ -463,29 +468,44 @@ export class Editor implements Component, Focusable {
 		const leftPadding = " ".repeat(paddingX);
 		const rightPadding = leftPadding;
 
-		// Render top border (with scroll indicator if scrolled down)
+		// Top border
 		if (this.scrollOffset > 0) {
 			const indicator = `─── ↑ ${this.scrollOffset} more `;
 			const remaining = width - visibleWidth(indicator);
-			result.push(this.borderColor(indicator + "─".repeat(Math.max(0, remaining))));
+			result.push(paintChromeLine(this.borderColor(indicator + "─".repeat(Math.max(0, remaining)))));
 		} else {
-			result.push(horizontal.repeat(width));
+			result.push(paintChromeLine(horizontal.repeat(width)));
 		}
 
-		// Render each visible layout line
 		// Emit hardware cursor marker only when focused and not showing autocomplete
 		const emitCursorMarker = this.focused && !this.autocompleteState;
 
 		for (let visibleIndex = 0; visibleIndex < visibleLines.length; visibleIndex++) {
 			const layoutLine = visibleLines[visibleIndex]!;
 			const absoluteLineIndex = this.scrollOffset + visibleIndex;
-			const promptPrefix =
-				layoutLine.isPlaceholder && layoutLine.promptPrefixLength !== undefined
-					? ""
-					: this.getRenderedPromptPrefix(absoluteLineIndex === 0, promptPrefixWidth);
 
-			let displayText = layoutLine.text;
-			let lineVisibleWidth = visibleWidth(layoutLine.text);
+			let prefixPart = leftPadding;
+			let bodyPart = "";
+
+			if (layoutLine.isPlaceholder && layoutLine.promptPrefixLength !== undefined) {
+				const promptPrefixText = layoutLine.text.slice(0, layoutLine.promptPrefixLength);
+				const { first: glyph } = splitFirstGrapheme(promptPrefixText);
+				const glyphSpace = promptPrefixText.slice(glyph.length);
+
+				prefixPart += glyph.trim() ? this.promptGlyphStyle(glyph) : " ".repeat(visibleWidth(glyph));
+				bodyPart = glyphSpace;
+			} else if (promptPrefixWidth > 0) {
+				if (absoluteLineIndex === 0) {
+					prefixPart += this.promptGlyphStyle(this.promptGlyph);
+					bodyPart = " ";
+				} else {
+					prefixPart += " ".repeat(glyphWidth);
+					bodyPart = " ";
+				}
+			}
+
+			let displayText = "";
+			let lineVisibleWidth = 0;
 			let cursorInPadding = false;
 
 			// Add cursor if this line has it
@@ -493,78 +513,67 @@ export class Editor implements Component, Focusable {
 				const marker = emitCursorMarker ? CURSOR_MARKER : "";
 
 				if (layoutLine.isPlaceholder) {
-					const cursor = "\x1b[7m \x1b[0m";
-
-					if (layoutLine.promptPrefixLength !== undefined) {
-						const promptPrefixText = layoutLine.text.slice(0, layoutLine.promptPrefixLength);
-						const placeholderBodyText = layoutLine.text.slice(layoutLine.promptPrefixLength);
-
-						displayText =
-							this.stylePromptPrefix(promptPrefixText) +
-							marker +
-							cursor +
-							this.placeholderStyle(placeholderBodyText);
-					} else {
-						displayText = marker + cursor + this.placeholderStyle(layoutLine.text);
-					}
-
-					lineVisibleWidth = 1 + visibleWidth(layoutLine.text);
+					const cursor = "\x1b[7m \x1b[27m";
+					const placeholderBodyText = layoutLine.text.slice(layoutLine.promptPrefixLength ?? 0);
+					displayText = marker + cursor + this.placeholderStyle(placeholderBodyText);
+					lineVisibleWidth = 1 + visibleWidth(placeholderBodyText);
 				} else {
-					const before = displayText.slice(0, layoutLine.cursorPos);
-					const after = displayText.slice(layoutLine.cursorPos);
+					const lineText = layoutLine.text;
+					const before = lineText.slice(0, layoutLine.cursorPos);
+					const after = lineText.slice(layoutLine.cursorPos);
 
-					// Hardware cursor marker (zero-width, emitted before fake cursor for IME positioning)
 					if (after.length > 0) {
-						// Cursor is on a character (grapheme) - replace it with highlighted version
-						// Get the first grapheme from 'after'
 						const afterGraphemes = [...segmenter.segment(after)];
 						const firstGrapheme = afterGraphemes[0]?.segment || "";
 						const restAfter = after.slice(firstGrapheme.length);
-						const cursor = `\x1b[7m${firstGrapheme}\x1b[0m`;
+						const cursor = `\x1b[7m${firstGrapheme}\x1b[27m`;
 						displayText = before + marker + cursor + restAfter;
-						// lineVisibleWidth stays the same - we're replacing, not adding
+						lineVisibleWidth = visibleWidth(lineText);
 					} else {
-						// Cursor is at the end - add highlighted space
-						const cursor = "\x1b[7m \x1b[0m";
+						const cursor = "\x1b[7m \x1b[27m";
 						displayText = before + marker + cursor;
-						lineVisibleWidth = lineVisibleWidth + 1;
-						// If cursor overflows content width into the padding, flag it
+						lineVisibleWidth = visibleWidth(lineText) + 1;
+
 						if (lineVisibleWidth > layoutWidth && paddingX > 0) {
 							cursorInPadding = true;
 						}
 					}
 				}
 			} else if (layoutLine.isPlaceholder) {
-				displayText = this.stylePlaceholderLine(layoutLine.text, layoutLine.promptPrefixLength);
+				const placeholderBodyText = layoutLine.text.slice(layoutLine.promptPrefixLength ?? 0);
+				displayText = this.placeholderStyle(placeholderBodyText);
+				lineVisibleWidth = visibleWidth(placeholderBodyText);
+			} else {
+				displayText = layoutLine.text;
 				lineVisibleWidth = visibleWidth(layoutLine.text);
 			}
 
-			// Calculate padding based on actual visible width
+			bodyPart += displayText;
 			const linePadding = " ".repeat(Math.max(0, layoutWidth - lineVisibleWidth));
 			const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
 
-			// Render the line (no side borders, just horizontal lines above and below)
-			result.push(`${leftPadding}${promptPrefix}${displayText}${linePadding}${lineRightPadding}`);
+			result.push(paintFullLine(prefixPart + bodyPart + linePadding + lineRightPadding));
 		}
 
-		// Render bottom border (with scroll indicator if more content below)
+		// Bottom border
 		const linesBelow = layoutLines.length - (this.scrollOffset + visibleLines.length);
 		if (linesBelow > 0) {
 			const indicator = `─── ↓ ${linesBelow} more `;
 			const remaining = width - visibleWidth(indicator);
-			result.push(this.borderColor(indicator + "─".repeat(Math.max(0, remaining))));
+			result.push(paintChromeLine(this.borderColor(indicator + "─".repeat(Math.max(0, remaining)))));
 		} else {
-			result.push(horizontal.repeat(width));
+			result.push(paintChromeLine(horizontal.repeat(width)));
 		}
 
 		// Add autocomplete list if active
 		if (this.autocompleteState && this.autocompleteList) {
 			const autocompleteResult = this.autocompleteList.render(layoutWidth);
 			const autocompleteIndent = " ".repeat(promptPrefixWidth);
+
 			for (const line of autocompleteResult) {
 				const lineWidth = visibleWidth(line);
 				const linePadding = " ".repeat(Math.max(0, layoutWidth - lineWidth));
-				result.push(`${leftPadding}${autocompleteIndent}${line}${linePadding}${rightPadding}`);
+				result.push(paintFullLine(leftPadding + autocompleteIndent + line + linePadding + rightPadding));
 			}
 		}
 

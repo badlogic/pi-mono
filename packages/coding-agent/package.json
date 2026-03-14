@@ -1,5 +1,6 @@
 {
 	"name": "@apholdings/jensen-code",
+	"title": "Jensen Code",
 	"version": "0.0.3",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",

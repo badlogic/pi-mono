@@ -1,52 +1,40 @@
-import type { Component } from "@apholdings/jensen-tui";
-import type { ExtensionAPI } from "../../../core/extensions/index.js";
+import { createRequire } from "node:module";
+import os from "node:os";
+import { type Component, truncateToWidth, visibleWidth } from "@apholdings/jensen-tui";
+import type { AgentSession } from "../../../core/agent-session.js";
+import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
+
+const require = createRequire(import.meta.url);
+const packageJson = require("../../../../package.json") as {
+	title?: string;
+	version?: string;
+	displayTitle?: string;
+	productTitle?: string;
+};
 
 type RGB = { r: number; g: number; b: number };
-type Glyph7 = [string, string, string, string, string, string, string];
-type Glyph5 = [string, string, string, string, string];
-type PixelKind = "empty" | "face" | "detail" | "highlight";
-
-const ANSI_ESCAPE_GLOBAL = /\x1b\[[0-9;]*m/g;
 const ANSI_ESCAPE_AT_START = /^\x1b\[[0-9;]*m/;
 
-const TITLE = "[JENSEN]";
-const MINI_TITLE = "[J]";
+const TITLE = packageJson.displayTitle ?? packageJson.productTitle ?? packageJson.title ?? "Jensen Code";
 
-const faceStops: RGB[] = [
+const VERSION = packageJson.version ? `v${packageJson.version}` : "v0.0.0";
+
+const LOGO = [" █████████ ", "██▓░░░░░▓██", "█░░░█░█░░░█", "█░░░░░░░░░█", " █████████ "];
+
+const GRADIENT_STOPS: RGB[] = [
 	{ r: 0x1a, g: 0xf5, b: 0x8a },
 	{ r: 0x57, g: 0xe3, b: 0xf7 },
 	{ r: 0x8c, g: 0xb6, b: 0xff },
 	{ r: 0xc0, g: 0x7b, b: 0xff },
 ];
 
-const detailStops: RGB[] = [
-	{ r: 0x0e, g: 0x8a, b: 0x53 },
-	{ r: 0x2c, g: 0x86, b: 0xa2 },
-	{ r: 0x5a, g: 0x6d, b: 0xb8 },
-	{ r: 0x7f, g: 0x4b, b: 0xb6 },
-];
-
-const shadowStops: RGB[] = [
-	{ r: 0x05, g: 0x2a, b: 0x19 },
-	{ r: 0x0b, g: 0x22, b: 0x3a },
-	{ r: 0x19, g: 0x12, b: 0x33 },
-];
-
-function g7(...rows: string[]): Glyph7 {
-	return rows as Glyph7;
-}
-
-function g5(...rows: string[]): Glyph5 {
-	return rows as Glyph5;
-}
-
-function stripAnsi(input: string): string {
-	return input.replace(ANSI_ESCAPE_GLOBAL, "");
-}
-
-function visibleWidth(input: string): number {
-	return Array.from(stripAnsi(input)).length;
-}
+const COLORS = {
+	border: { r: 0x72, g: 0x7c, b: 0xb0 },
+	title: { r: 0xd5, g: 0xd6, b: 0xdb },
+	muted: { r: 0x7a, g: 0x84, b: 0xb2 },
+	subtle: { r: 0x56, g: 0x5f, b: 0x89 },
+	accent: { r: 0xa1, g: 0x88, b: 0xf1 },
+};
 
 function truncatePlain(input: string, maxWidth: number): string {
 	if (maxWidth <= 0) return "";
@@ -63,7 +51,7 @@ function truncatePlain(input: string, maxWidth: number): string {
 	return out;
 }
 
-function truncateToWidth(input: string, maxWidth: number, ellipsis = ""): string {
+function truncateAnsi(input: string, maxWidth: number, ellipsis = ""): string {
 	if (maxWidth <= 0) return "";
 	if (visibleWidth(input) <= maxWidth) return input;
 
@@ -107,7 +95,20 @@ function color(rgb: RGB, text: string): string {
 	return `\x1b[38;2;${rgb.r};${rgb.g};${rgb.b}m${text}\x1b[0m`;
 }
 
+function bold(text: string): string {
+	return `\x1b[1m${text}\x1b[0m`;
+}
+
+function dim(text: string): string {
+	return `\x1b[38;2;${COLORS.muted.r};${COLORS.muted.g};${COLORS.muted.b}m${text}\x1b[0m`;
+}
+
+function subtle(text: string): string {
+	return `\x1b[38;2;${COLORS.subtle.r};${COLORS.subtle.g};${COLORS.subtle.b}m${text}\x1b[0m`;
+}
+
 function interpolateStops(stops: RGB[], t: number): RGB {
+	if (stops.length === 0) return { r: 0, g: 0, b: 0 };
 	if (stops.length === 1) return stops[0];
 
 	const clamped = Math.max(0, Math.min(1, t));
@@ -122,251 +123,141 @@ function interpolateStops(stops: RGB[], t: number): RGB {
 	};
 }
 
-function brighten(rgb: RGB, amount: number): RGB {
-	return {
-		r: Math.min(255, rgb.r + amount),
-		g: Math.min(255, rgb.g + amount),
-		b: Math.min(255, rgb.b + amount),
-	};
-}
+function renderColoredLogoLine(line: string): string {
+	const chars = Array.from(line);
+	const width = chars.length;
 
-function glyphWidth<T extends readonly string[]>(glyph: T): number {
-	return Math.max(...glyph.map((row) => row.length));
-}
-
-function classifyPixel(ch: string): PixelKind {
-	if (ch === " ") return "empty";
-	if (ch === "█") return "face";
-	if (ch === "░") return "detail";
-	if (ch === "▓") return "highlight";
-	return "face";
-}
-
-const LARGE_GLYPHS: Record<string, Glyph7> = {
-	// UFO
-	"[": g7(
-		"   ▓███████▓   ",
-		"  ███████████  ",
-		" ███░░░░░░░███ ",
-		"███████████████",
-		"░░▓██▓░▓░▓██▓░░",
-		"░░▓██▓░▓░▓██▓░░",
-		"░▓█▓▓░▓▓▓░▓▓█▓░",
-	),
-
-	// ALIEN
-	"]": g7(
-		"  ████████████  ",
-		" ███░▓░░░░░▓░███ ",
-		"██░░░░█░░░█░░░░██",
-		"██░░░░░░░░░░░░░██",
-		"██░░░░█▓█▓█░░░░██",
-		" ███░░░░░░░░░███ ",
-		"  ████████████  ",
-	),
-
-	" ": g7("   ", "   ", "   ", "   ", "   ", "   ", "   "),
-
-	J: g7("████████", "░░░░██░ ", "  ░░██  ", "  ░░██  ", "██░░██  ", "██░░██  ", "░█████  "),
-
-	E: g7("█████████", "███░░░░██", "███ ░█   ", "██████  ", "███░░█   ", "███░░  ██", "█████████"),
-
-	N: g7("████░░░████", " ████░░░░██", " ██░██░░░██", " ██░░██░░██", " ██ ░░██░██", " ██  ░░████", "███   ░░███"),
-
-	S: g7(" ████████ ", "███░░░░███", "░███      ", " ░██████  ", "   ░░░███ ", "███░░░░███", " ████████ "),
-};
-
-const COMPACT_GLYPHS: Record<string, Glyph5> = {
-	// Tiny UFO
-	"[": ["  ▓█████▓  ", " █████████ ", "███░░░░░███", "░░██▓░▓██░░", " ░█▓▓░▓▓█░ "],
-
-	// ALIEN - Scaled down to 5 rows
-	"]": [" █████████ ", "██░▓░░░▓░██", "█░░░█░█░░░█", "█░░░░░░░░░█", " █████████ "],
-
-	" ": g5(" ", " ", " ", " ", " "),
-
-	J: ["███████", "  ░░██ ", "  ░░██ ", "██░░██ ", "░█████ "],
-
-	E: ["████████", "███░░░█ ", "██████  ", "███░░ █ ", "████████"],
-
-	N: ["███░░░██", "██░█░░██", "██░░█░██", "██ ░░███", "███ ░░██"],
-
-	S: [" ██████ ", "███░░░░ ", " ░█████ ", " ░░░░███", " ██████ "],
-};
-
-function buildBitmap<T extends readonly string[]>(
-	text: string,
-	glyphs: Record<string, T>,
-	rows: number,
-	gap: number,
-): { pixels: PixelKind[][]; width: number; height: number } {
-	const chars = Array.from(text).map((ch) => glyphs[ch] ?? glyphs[" "]);
-
-	let totalWidth = 0;
-	chars.forEach((glyph, index) => {
-		totalWidth += glyphWidth(glyph);
-		if (index < chars.length - 1) totalWidth += gap;
-	});
-
-	const pixels = Array.from({ length: rows }, () => Array<PixelKind>(totalWidth).fill("empty"));
-
-	let cursorX = 0;
-	chars.forEach((glyph, index) => {
-		const width = glyphWidth(glyph);
-
-		for (let y = 0; y < rows; y++) {
-			const row = glyph[y].padEnd(width, " ");
-			for (let x = 0; x < width; x++) {
-				pixels[y][cursorX + x] = classifyPixel(row[x]);
-			}
-		}
-
-		cursorX += width;
-		if (index < chars.length - 1) cursorX += gap;
-	});
-
-	return { pixels, width: totalWidth, height: rows };
-}
-
-function renderBitmapLogo(options: {
-	width: number;
-	pixels: PixelKind[][];
-	bitmapWidth: number;
-	bitmapHeight: number;
-	indent?: number;
-	shadowOffsetX?: number;
-	shadowOffsetY?: number;
-}): string[] {
-	const { width, pixels, bitmapWidth, bitmapHeight, indent = 1, shadowOffsetX = 2, shadowOffsetY = 1 } = options;
-
-	if (width <= 0) return [""];
-
-	// Face is shifted right inside the render canvas so the cast shadow can live on the left.
-	const renderWidth = bitmapWidth + shadowOffsetX;
-	const renderHeight = bitmapHeight + shadowOffsetY;
-	const lines: string[] = [""];
-
-	for (let y = 0; y < renderHeight; y++) {
-		let line = " ".repeat(Math.max(0, indent));
-
-		for (let x = 0; x < renderWidth; x++) {
-			const faceSourceX = x - shadowOffsetX;
-			const facePixel =
-				y >= 0 && y < bitmapHeight && faceSourceX >= 0 && faceSourceX < bitmapWidth
-					? pixels[y][faceSourceX]
-					: "empty";
-
-			const shadowSourceX = x;
-			const shadowSourceY = y - shadowOffsetY;
-			const shadowPixel =
-				shadowSourceX >= 0 && shadowSourceX < bitmapWidth && shadowSourceY >= 0 && shadowSourceY < bitmapHeight
-					? pixels[shadowSourceY][shadowSourceX]
-					: "empty";
-
-			const shadowOn = facePixel === "empty" && shadowPixel !== "empty";
-
-			if (facePixel === "face") {
-				const t = bitmapWidth > 1 ? faceSourceX / (bitmapWidth - 1) : 0;
-				line += color(interpolateStops(faceStops, t), "█");
-			} else if (facePixel === "detail") {
-				const t = bitmapWidth > 1 ? faceSourceX / (bitmapWidth - 1) : 0;
-				line += color(interpolateStops(detailStops, t), "█");
-			} else if (facePixel === "highlight") {
-				const t = bitmapWidth > 1 ? faceSourceX / (bitmapWidth - 1) : 0;
-				line += color(brighten(interpolateStops(faceStops, t), 28), "█");
-			} else if (shadowOn) {
-				const t = bitmapWidth > 1 ? shadowSourceX / (bitmapWidth - 1) : 0;
-				line += color(interpolateStops(shadowStops, t), "█");
-			} else {
-				line += " ";
-			}
-		}
-
-		lines.push(truncateToWidth(line, width));
-	}
-
-	return lines.map((line) => truncateToWidth(line, width));
-}
-
-function renderMicroFallback(width: number): string[] {
-	if (width <= 0) return [""];
-
-	let line = "";
-	const chars = Array.from(MINI_TITLE);
-	const plainWidth = chars.length;
-
+	let out = "";
 	chars.forEach((ch, i) => {
 		if (ch === " ") {
-			line += " ";
+			out += " ";
 			return;
 		}
-
-		const t = plainWidth > 1 ? i / (plainWidth - 1) : 0;
-		line += color(interpolateStops(faceStops, t), ch);
+		const t = width > 1 ? i / (width - 1) : 0;
+		out += color(interpolateStops(GRADIENT_STOPS, t), ch);
 	});
 
-	return ["", truncateToWidth(line, width, "")];
+	return out;
 }
 
-function renderResponsiveLogo(width: number): string[] {
-	const large = buildBitmap(TITLE, LARGE_GLYPHS, 7, 1);
-	const largeNeeded = 1 + large.width + 1;
+function compactPath(input: string, maxWidth = 44): string {
+	const normalized = input.replaceAll("/", process.platform === "win32" ? "\\" : "/");
+	if (normalized.length <= maxWidth) return normalized;
 
-	const compact = buildBitmap(TITLE, COMPACT_GLYPHS, 5, 1);
-	const compactNeeded = 1 + compact.width + 1;
+	const separator = normalized.includes("\\") ? "\\" : "/";
+	const parts = normalized.split(separator).filter(Boolean);
+	if (parts.length <= 2) return normalized;
 
-	const mini = buildBitmap(MINI_TITLE, COMPACT_GLYPHS, 5, 1);
-	const miniNeeded = 1 + mini.width + 1;
+	const first = normalized.startsWith(separator) ? separator : "";
+	const driveMatch = parts[0]?.match(/^[A-Za-z]:$/);
+	const head = driveMatch ? `${parts[0]}${separator}` : first;
+	const tail = parts.slice(-2).join(separator);
+	return `${head}…${separator}${tail}`;
+}
 
-	if (width >= largeNeeded) {
-		return renderBitmapLogo({
-			width,
-			pixels: large.pixels,
-			bitmapWidth: large.width,
-			bitmapHeight: large.height,
-			indent: 1,
-			shadowOffsetX: 2,
-			shadowOffsetY: 1,
-		});
-	}
+function padAnsi(input: string, width: number): string {
+	const remaining = Math.max(0, width - visibleWidth(input));
+	return input + " ".repeat(remaining);
+}
 
-	if (width >= compactNeeded) {
-		return renderBitmapLogo({
-			width,
-			pixels: compact.pixels,
-			bitmapWidth: compact.width,
-			bitmapHeight: compact.height,
-			indent: 1,
-			shadowOffsetX: 1,
-			shadowOffsetY: 1,
-		});
-	}
+function bulletJoin(parts: Array<string | undefined>): string {
+	return parts.filter((part) => Boolean(part && part.trim().length > 0)).join(` ${subtle("•")} `);
+}
 
-	if (width >= miniNeeded) {
-		return renderBitmapLogo({
-			width,
-			pixels: mini.pixels,
-			bitmapWidth: mini.width,
-			bitmapHeight: mini.height,
-			indent: 1,
-			shadowOffsetX: 1,
-			shadowOffsetY: 1,
-		});
-	}
-
-	return renderMicroFallback(width);
+function maybePrefix(label: string, value: string | undefined): string | undefined {
+	if (!value) return undefined;
+	return `${dim(label)} ${value}`;
 }
 
 export class Header implements Component {
+	constructor(
+		private readonly agentSession?: AgentSession,
+		private readonly footerDataProvider?: ReadonlyFooterDataProvider,
+	) {}
+
+	private getData() {
+		const host = `${os.userInfo().username}@${os.hostname()}`;
+		const cwd = process.cwd();
+		const repo = this.footerDataProvider?.getGitRepoName() ?? undefined;
+		const branch = this.footerDataProvider?.getGitBranch() ?? undefined;
+		const workspace = this.agentSession?.sessionName;
+
+		return {
+			branch,
+			cwd,
+			host,
+			repo,
+			workspace,
+		};
+	}
+
+	private renderCompact(width: number): string[] {
+		const { branch, cwd, host, repo, workspace } = this.getData();
+
+		const line1 = truncateAnsi(`${bold(color(COLORS.title, TITLE))} ${dim(VERSION)}`, width);
+		const line2 = subtle(truncateAnsi(bulletJoin([maybePrefix("repo", repo), maybePrefix("branch", branch)]), width));
+		const line3 = subtle(
+			truncateAnsi(bulletJoin([maybePrefix("workspace", workspace), maybePrefix("host", host)]), width),
+		);
+		const line4 = subtle(truncateAnsi(maybePrefix("cwd", compactPath(cwd, Math.max(16, width - 8))) ?? "", width));
+
+		return [line1, line2, line3, line4];
+	}
+
 	render(width: number): string[] {
-		return renderResponsiveLogo(width);
+		if (width <= 0) return [""];
+		if (width < 72) return this.renderCompact(width);
+
+		const { branch, cwd, host, repo, workspace } = this.getData();
+		const logoWidth = visibleWidth(LOGO[0]);
+		const gap = 2;
+		const sidePadding = 1;
+		const minTextWidth = 12;
+		const maxTextWidth = Math.max(minTextWidth, width - logoWidth - gap - sidePadding * 2 - 2);
+
+		const baseRows = [
+			`${bold(color(COLORS.title, TITLE))} ${dim(VERSION)}`,
+			color(COLORS.title, bulletJoin([maybePrefix("repo", repo), maybePrefix("branch", branch)])),
+			color(COLORS.title, bulletJoin([maybePrefix("workspace", workspace), maybePrefix("host", host)])),
+			"",
+		];
+
+		const textRows = [
+			...baseRows,
+			color(COLORS.title, maybePrefix("cwd", compactPath(cwd, Math.max(18, maxTextWidth - 10))) ?? ""),
+			"",
+		];
+		const textWidth = Math.max(
+			minTextWidth,
+			Math.min(
+				maxTextWidth,
+				textRows.reduce((max, row) => Math.max(max, visibleWidth(row)), 0),
+			),
+		);
+		const innerWidth = logoWidth + gap + textWidth + sidePadding * 2;
+
+		const topBorder =
+			color(COLORS.border, "╭") + color(COLORS.border, "─".repeat(innerWidth)) + color(COLORS.border, "╮");
+
+		const bottomBorder =
+			color(COLORS.border, "╰") + color(COLORS.border, "─".repeat(innerWidth)) + color(COLORS.border, "╯");
+
+		const lines: string[] = [];
+
+		// lines.push("");
+		lines.push(topBorder);
+		for (let i = 0; i < LOGO.length; i += 1) {
+			const logo = renderColoredLogoLine(LOGO[i]);
+			const text = padAnsi(truncateAnsi(textRows[i] ?? "", textWidth), textWidth);
+
+			lines.push(`${color(COLORS.border, "│")} ${logo}${" ".repeat(gap)}${text} ${color(COLORS.border, "│")}`);
+		}
+		lines.push(bottomBorder);
+		// lines.push("");
+		return lines.map((line) => truncateToWidth(line, width));
 	}
 
 	invalidate(): void {}
 }
 
-export default function jensenHeader(pi: ExtensionAPI) {
-	pi.on("session_start", async (_event, ctx) => {
-		ctx.ui.setHeader((_tui, _theme) => new Header());
-	});
-}
+export default Header;

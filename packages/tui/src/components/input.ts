@@ -3,7 +3,14 @@ import { decodeKittyPrintable } from "../keys.js";
 import { KillRing } from "../kill-ring.js";
 import { type Component, CURSOR_MARKER, type Focusable } from "../tui.js";
 import { UndoStack } from "../undo-stack.js";
-import { getSegmenter, isPunctuationChar, isWhitespaceChar, sliceByColumn, visibleWidth } from "../utils.js";
+import {
+	applyBackgroundToLine,
+	getSegmenter,
+	isPunctuationChar,
+	isWhitespaceChar,
+	sliceByColumn,
+	visibleWidth,
+} from "../utils.js";
 
 const segmenter = getSegmenter();
 
@@ -20,6 +27,8 @@ export class Input implements Component, Focusable {
 	private cursor: number = 0; // Cursor position in the value
 	public onSubmit?: (value: string) => void;
 	public onEscape?: () => void;
+
+	public promptBg?: (text: string) => string;
 
 	/** Focusable interface - set by TUI when focus changes */
 	focused: boolean = false;
@@ -437,7 +446,9 @@ export class Input implements Component, Focusable {
 		const availableWidth = width - prompt.length;
 
 		if (availableWidth <= 0) {
-			return [prompt];
+			const raw = prompt;
+			const line = this.promptBg ? applyBackgroundToLine(raw, width, this.promptBg) : raw;
+			return [line];
 		}
 
 		let visibleText = "";
@@ -445,11 +456,10 @@ export class Input implements Component, Focusable {
 		const totalWidth = visibleWidth(this.value);
 
 		if (totalWidth < availableWidth) {
-			// Everything fits (leave room for cursor at end)
+			// Everything fits
 			visibleText = this.value;
 		} else {
 			// Need horizontal scrolling
-			// Reserve one column for cursor if it's at the end
 			const scrollWidth = this.cursor === this.value.length ? availableWidth - 1 : availableWidth;
 			const cursorCol = visibleWidth(this.value.slice(0, this.cursor));
 
@@ -458,13 +468,10 @@ export class Input implements Component, Focusable {
 				let startCol = 0;
 
 				if (cursorCol < halfWidth) {
-					// Cursor near start
 					startCol = 0;
 				} else if (cursorCol > totalWidth - halfWidth) {
-					// Cursor near end
 					startCol = Math.max(0, totalWidth - scrollWidth);
 				} else {
-					// Cursor in middle
 					startCol = Math.max(0, cursorCol - halfWidth);
 				}
 
@@ -478,26 +485,25 @@ export class Input implements Component, Focusable {
 		}
 
 		// Build line with fake cursor
-		// Insert cursor character at cursor position
 		const graphemes = [...segmenter.segment(visibleText.slice(cursorDisplay))];
 		const cursorGrapheme = graphemes[0];
 
 		const beforeCursor = visibleText.slice(0, cursorDisplay);
-		const atCursor = cursorGrapheme?.segment ?? " "; // Character at cursor, or space if at end
+		const atCursor = cursorGrapheme?.segment ?? " ";
 		const afterCursor = visibleText.slice(cursorDisplay + atCursor.length);
 
-		// Hardware cursor marker (zero-width, emitted before fake cursor for IME positioning)
+		// Hardware cursor marker for IME positioning
 		const marker = this.focused ? CURSOR_MARKER : "";
 
-		// Use inverse video to show cursor
-		const cursorChar = `\x1b[7m${atCursor}\x1b[27m`; // ESC[7m = reverse video, ESC[27m = normal
+		// Fake cursor
+		const cursorChar = `\x1b[7m${atCursor}\x1b[27m`;
 		const textWithCursor = beforeCursor + marker + cursorChar + afterCursor;
 
-		// Calculate visual width
 		const visualLength = visibleWidth(textWithCursor);
 		const padding = " ".repeat(Math.max(0, availableWidth - visualLength));
-		const line = prompt + textWithCursor + padding;
+		const rawLine = prompt + textWithCursor + padding;
 
+		const line = this.promptBg ? applyBackgroundToLine(rawLine, width, this.promptBg) : rawLine;
 		return [line];
 	}
 }

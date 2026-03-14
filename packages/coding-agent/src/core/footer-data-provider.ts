@@ -1,11 +1,11 @@
 import { existsSync, type FSWatcher, readFileSync, statSync, watch } from "fs";
-import { dirname, join, resolve } from "path";
+import { basename, dirname, join, resolve } from "path";
 
 /**
- * Find the git HEAD path by walking up from cwd.
+ * Find git metadata by walking up from cwd.
  * Handles both regular git repos (.git is a directory) and worktrees (.git is a file).
  */
-function findGitHeadPath(): string | null {
+function findGitInfo(): { headPath: string; repoRoot: string } | null {
 	let dir = process.cwd();
 	while (true) {
 		const gitPath = join(dir, ".git");
@@ -17,11 +17,11 @@ function findGitHeadPath(): string | null {
 					if (content.startsWith("gitdir: ")) {
 						const gitDir = content.slice(8);
 						const headPath = resolve(dir, gitDir, "HEAD");
-						if (existsSync(headPath)) return headPath;
+						if (existsSync(headPath)) return { headPath, repoRoot: dir };
 					}
 				} else if (stat.isDirectory()) {
 					const headPath = join(gitPath, "HEAD");
-					if (existsSync(headPath)) return headPath;
+					if (existsSync(headPath)) return { headPath, repoRoot: dir };
 				}
 			} catch {
 				return null;
@@ -40,6 +40,7 @@ function findGitHeadPath(): string | null {
 export class FooterDataProvider {
 	private extensionStatuses = new Map<string, string>();
 	private cachedBranch: string | null | undefined = undefined;
+	private cachedRepoName: string | null | undefined = undefined;
 	private gitWatcher: FSWatcher | null = null;
 	private branchChangeCallbacks = new Set<() => void>();
 	private availableProviderCount = 0;
@@ -53,17 +54,31 @@ export class FooterDataProvider {
 		if (this.cachedBranch !== undefined) return this.cachedBranch;
 
 		try {
-			const gitHeadPath = findGitHeadPath();
-			if (!gitHeadPath) {
+			const gitInfo = findGitInfo();
+			if (!gitInfo) {
 				this.cachedBranch = null;
 				return null;
 			}
-			const content = readFileSync(gitHeadPath, "utf8").trim();
+			const content = readFileSync(gitInfo.headPath, "utf8").trim();
 			this.cachedBranch = content.startsWith("ref: refs/heads/") ? content.slice(16) : "detached";
 		} catch {
 			this.cachedBranch = null;
 		}
 		return this.cachedBranch;
+	}
+
+	/** Current git repo name, or null if not in a repo. */
+	getGitRepoName(): string | null {
+		if (this.cachedRepoName !== undefined) return this.cachedRepoName;
+
+		try {
+			const gitInfo = findGitInfo();
+			this.cachedRepoName = gitInfo ? basename(gitInfo.repoRoot) || null : null;
+		} catch {
+			this.cachedRepoName = null;
+		}
+
+		return this.cachedRepoName;
 	}
 
 	/** Extension status texts set via ctx.ui.setStatus() */
@@ -116,13 +131,13 @@ export class FooterDataProvider {
 			this.gitWatcher = null;
 		}
 
-		const gitHeadPath = findGitHeadPath();
-		if (!gitHeadPath) return;
+		const gitInfo = findGitInfo();
+		if (!gitInfo) return;
 
 		// Watch the directory containing HEAD, not HEAD itself.
 		// Git uses atomic writes (write temp, rename over HEAD), which changes the inode.
 		// fs.watch on a file stops working after the inode changes.
-		const gitDir = dirname(gitHeadPath);
+		const gitDir = dirname(gitInfo.headPath);
 
 		try {
 			this.gitWatcher = watch(gitDir, (_eventType, filename) => {
@@ -140,5 +155,5 @@ export class FooterDataProvider {
 /** Read-only view for extensions - excludes setExtensionStatus, setAvailableProviderCount and dispose */
 export type ReadonlyFooterDataProvider = Pick<
 	FooterDataProvider,
-	"getGitBranch" | "getExtensionStatuses" | "getAvailableProviderCount" | "onBranchChange"
+	"getGitBranch" | "getGitRepoName" | "getExtensionStatuses" | "getAvailableProviderCount" | "onBranchChange"
 >;

@@ -668,6 +668,15 @@ function breakLongWord(word: string, width: number, tracker: AnsiCodeTracker): s
  * @returns Line with background applied and padded to width
  */
 export function applyBackgroundToLine(line: string, width: number, bgFn: (text: string) => string): string {
+	// If the line contains hard resets, we need to re-apply the background after each one
+	if (line.includes("\x1b[0m")) {
+		const bgSample = bgFn("__SAMPLE__");
+		const bgStart = bgSample.substring(0, bgSample.indexOf("__SAMPLE__"));
+		if (bgStart) {
+			line = line.replace(/\x1b\[0m/g, `\x1b[0m${bgStart}`);
+		}
+	}
+
 	// Calculate padding needed
 	const visibleLen = visibleWidth(line);
 	const paddingNeeded = Math.max(0, width - visibleLen);

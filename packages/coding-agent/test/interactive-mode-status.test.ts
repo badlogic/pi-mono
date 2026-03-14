@@ -60,6 +60,27 @@ describe("InteractiveMode.showStatus", () => {
 	});
 });
 
+describe("InteractiveMode status component ownership", () => {
+	test("showStatusComponent is idempotent and clearStatusComponent is safe to repeat", () => {
+		const component = { render: () => ["WORKING"], invalidate: () => {} };
+		const fakeThis: any = {
+			statusContainer: new Container(),
+			statusComponent: undefined,
+			ui: { requestRender: vi.fn() },
+		};
+
+		(InteractiveMode as any).prototype.showStatusComponent.call(fakeThis, component, { requestRender: false });
+		(InteractiveMode as any).prototype.showStatusComponent.call(fakeThis, component, { requestRender: false });
+		expect(fakeThis.statusContainer.children).toEqual([component]);
+		expect(fakeThis.statusComponent).toBe(component);
+
+		(InteractiveMode as any).prototype.clearStatusComponent.call(fakeThis, { requestRender: false });
+		(InteractiveMode as any).prototype.clearStatusComponent.call(fakeThis, { requestRender: false });
+		expect(fakeThis.statusContainer.children).toHaveLength(0);
+		expect(fakeThis.statusComponent).toBeUndefined();
+	});
+});
+
 describe("InteractiveMode.createExtensionUIContext setTheme", () => {
 	test("persists theme changes to settings manager", () => {
 		initTheme("dark");
@@ -230,6 +251,7 @@ describe("InteractiveMode help and session reset", () => {
 			chatContainer: new Container(),
 			pendingMessagesContainer: new Container(),
 			statusContainer: new Container(),
+			clearStatusComponent: (InteractiveMode as any).prototype.clearStatusComponent,
 			helpContainer,
 			compactionQueuedMessages: ["queued"],
 			streamingComponent: { id: "stream" },

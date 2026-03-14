@@ -164,16 +164,21 @@ export class InteractiveMode {
 
 	/** Container that normally hosts the prompt/editor, but may be replaced by selectors or extension UI. */
 	private editorContainer: Container;
+	private promptAreaComponent: Component;
+	private promptWidgetsVisible = true;
 
 	private footer: FooterComponent;
 	private footerDataProvider: FooterDataProvider;
 	private keybindings: KeybindingsManager;
 	private version: string;
 	private isInitialized = false;
+	private initializing: Promise<void> | null = null;
 	private onInputCallback?: (text: string) => void;
 	private loadingAnimation: Loader | undefined = undefined;
 	private pendingWorkingMessage: string | undefined = undefined;
 	private readonly defaultWorkingMessage = "Working...";
+	private startupUiGateActive = true;
+	private deferredStartupNotices: Array<() => void> = [];
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
@@ -182,6 +187,7 @@ export class InteractiveMode {
 	// Status line tracking (for mutating immediately-sequential status updates)
 	private lastStatusSpacer: Spacer | undefined = undefined;
 	private lastStatusText: Text | undefined = undefined;
+	private statusComponent: Component | undefined = undefined;
 
 	// Streaming message tracking
 	private streamingComponent: AssistantMessageComponent | undefined = undefined;
@@ -226,6 +232,10 @@ export class InteractiveMode {
 
 	// Shutdown state
 	private shutdownRequested = false;
+
+	// Epoch hardening
+	private uiEpoch = 0;
+	private sessionEpoch = 0;
 
 	// Extension UI state
 	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
@@ -299,7 +309,8 @@ export class InteractiveMode {
 			getThinkingLevel: () => this.session.thinkingLevel || "off",
 			keybindings: this.keybindings,
 		});
-		this.header = new Header();
+		this.footerDataProvider = new FooterDataProvider();
+		this.header = new Header(this.session, this.footerDataProvider);
 		const editorPaddingX = this.settingsManager.getEditorPaddingX();
 		const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
 		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings, {
@@ -313,7 +324,7 @@ export class InteractiveMode {
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
-		this.footerDataProvider = new FooterDataProvider();
+		this.promptAreaComponent = this.editor as Component;
 		this.footer = new FooterComponent(session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
 
@@ -511,10 +522,49 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private resetSessionUiState(renderInitialMessages = false): void {
+	private resetInteractiveSessionUI(renderInitialMessages = false): void {
+		// Invalidate all stale async callbacks
+		this.uiEpoch++;
+		this.sessionEpoch++;
+
+		// Stop all loaders
+		if (this.loadingAnimation) {
+			this.loadingAnimation.dispose();
+			this.loadingAnimation = undefined;
+		}
+		if (this.autoCompactionLoader) {
+			this.autoCompactionLoader.dispose();
+			this.autoCompactionLoader = undefined;
+		}
+		if (this.retryLoader) {
+			this.retryLoader.dispose();
+			this.retryLoader = undefined;
+		}
+
+		// Clean up any transient prompt UI
+		if (this.extensionSelector) {
+			this.extensionSelector.dispose();
+			this.extensionSelector = undefined;
+		}
+		if (this.extensionInput) {
+			this.extensionInput.dispose();
+			this.extensionInput = undefined;
+		}
+		if (this.extensionEditor) {
+			this.extensionEditor = undefined;
+		}
+		this.ui.hideOverlay();
+
 		this.clearChatContainer();
 		this.pendingMessagesContainer.clear();
+		this.clearStatusOwner({ requestRender: false });
+
+		// Force empty the status container directly in case there are other elements left behind
 		this.statusContainer.clear();
+		this.statusComponent = undefined;
+
+		this.restoreCanonicalEditor({ requestRender: false, text: "" });
+
 		this.compactionQueuedMessages = [];
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
@@ -523,125 +573,138 @@ export class InteractiveMode {
 		this.bashComponent = undefined;
 		this.pendingWorkingMessage = undefined;
 		this.isBashMode = false;
-		this.editor.setText("");
+
+		// Ensure clean widget state
+		this.renderWidgets(false);
 		this.updatePromptChrome();
+
 		if (renderInitialMessages) {
 			this.renderInitialMessages();
 		}
 		this.ui.invalidate();
 	}
-
 	async init(): Promise<void> {
 		if (this.isInitialized) return;
+		if (this.initializing) return this.initializing;
 
-		// Load changelog (only show new entries, skip for resumed sessions)
-		this.changelogMarkdown = this.getChangelogForDisplay();
+		this.initializing = (async () => {
+			try {
+				if (this.isInitialized) return;
 
-		// Ensure fd and rg are available (downloads if missing, adds to PATH via getBinDir)
-		// Both are needed: fd for autocomplete, rg for grep tool and bash commands
-		const [fdPath] = await Promise.all([ensureTool("fd"), ensureTool("rg")]);
-		this.fdPath = fdPath;
+				// Load changelog (only show new entries, skip for resumed sessions)
+				this.changelogMarkdown = this.getChangelogForDisplay();
 
-		// Add header container as first child
-		this.ui.addChild(this.headerContainer);
+				// Ensure fd and rg are available (downloads if missing, adds to PATH via getBinDir)
+				// Both are needed: fd for autocomplete, rg for grep tool and bash commands
+				const [fdPath] = await Promise.all([ensureTool("fd"), ensureTool("rg")]);
+				this.fdPath = fdPath;
 
-		// Always show the branded header/logo, even when quietStartup is enabled
-		this.headerContainer.addChild(this.header);
-		this.headerContainer.addChild(new Spacer(1));
+				// Add header container as first child
+				this.ui.addChild(this.headerContainer);
 
-		// Add startup instructions only when not silenced
-		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
-			const instructions = this.buildStartupInstructionsText();
-			this.builtInHeader = new Text(instructions, 1, 0);
-			this.headerContainer.addChild(this.builtInHeader);
-			this.headerContainer.addChild(new Spacer(1));
-
-			// Add changelog if provided
-			if (this.changelogMarkdown) {
-				this.headerContainer.addChild(new DynamicBorder());
-				if (this.settingsManager.getCollapseChangelog()) {
-					const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
-					const latestVersion = versionMatch ? versionMatch[1] : this.version;
-					const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
-					this.headerContainer.addChild(new Text(condensedText, 1, 0));
-				} else {
-					this.headerContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
-					this.headerContainer.addChild(new Spacer(1));
-					this.headerContainer.addChild(
-						new Markdown(this.changelogMarkdown.trim(), 1, 0, this.getMarkdownThemeWithSettings()),
-					);
-					this.headerContainer.addChild(new Spacer(1));
-				}
-				this.headerContainer.addChild(new DynamicBorder());
-			}
-		} else {
-			// Quiet startup: keep the logo visible, but suppress instruction text
-			this.builtInHeader = new Text("", 0, 0);
-			this.headerContainer.addChild(this.builtInHeader);
-
-			if (this.changelogMarkdown) {
+				// Always show the branded header/logo, even when quietStartup is enabled
+				this.headerContainer.addChild(this.header);
 				this.headerContainer.addChild(new Spacer(1));
-				const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
-				const latestVersion = versionMatch ? versionMatch[1] : this.version;
-				const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
-				this.headerContainer.addChild(new Text(condensedText, 1, 0));
+
+				// Add startup instructions only when not silenced
+				if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
+					const instructions = this.buildStartupInstructionsText();
+					this.builtInHeader = new Text(instructions, 1, 0);
+					this.headerContainer.addChild(this.builtInHeader);
+					this.headerContainer.addChild(new Spacer(1));
+
+					// Add changelog if provided
+					if (this.changelogMarkdown) {
+						this.headerContainer.addChild(new DynamicBorder());
+						if (this.settingsManager.getCollapseChangelog()) {
+							const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
+							const latestVersion = versionMatch ? versionMatch[1] : this.version;
+							const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
+							this.headerContainer.addChild(new Text(condensedText, 1, 0));
+						} else {
+							this.headerContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
+							this.headerContainer.addChild(new Spacer(1));
+							this.headerContainer.addChild(
+								new Markdown(this.changelogMarkdown.trim(), 1, 0, this.getMarkdownThemeWithSettings()),
+							);
+							this.headerContainer.addChild(new Spacer(1));
+						}
+						this.headerContainer.addChild(new DynamicBorder());
+					}
+				} else {
+					// Quiet startup: keep the logo visible, but suppress instruction text
+					this.builtInHeader = new Text("", 0, 0);
+					this.headerContainer.addChild(this.builtInHeader);
+
+					if (this.changelogMarkdown) {
+						this.headerContainer.addChild(new Spacer(1));
+						const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
+						const latestVersion = versionMatch ? versionMatch[1] : this.version;
+						const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
+						this.headerContainer.addChild(new Text(condensedText, 1, 0));
+					}
+				}
+
+				this.ui.addChild(this.chatContainer);
+				this.ui.addChild(this.pendingMessagesContainer);
+				this.ui.addChild(this.statusContainer);
+				this.renderWidgets(); // Initialize with default spacer
+
+				// The prompt area consists of an optional widget strip, the editor, and a bottom widget strip.
+				// Extensions should use ctx.ui.setWidget(..., { placement: "aboveEditor" }) for the top strip.
+				this.ui.addChild(this.widgetContainerAbove);
+				this.ui.addChild(this.editorContainer);
+				this.ui.addChild(this.widgetContainerBelow);
+
+				this.ui.addChild(this.footer);
+				this.ui.setFocus(this.editor);
+				this.updatePromptChrome();
+
+				this.setupKeyHandlers();
+				this.setupEditorSubmitHandler();
+
+				// Initialize extensions first so resources are shown before messages
+				await this.initExtensions();
+
+				// Render initial messages AFTER showing loaded resources
+				this.renderInitialMessages();
+
+				// Start the UI
+				this.ui.start();
+				this.isInitialized = true;
+
+				// Set terminal title
+				this.updateTerminalTitle();
+
+				// Subscribe to agent events
+				this.subscribeToAgent();
+				this.windowFocusChangeUnsubscribe = this.ui.onWindowFocusChange(() => {
+					this.updatePromptChrome();
+				});
+				this.focusTargetChangeUnsubscribe = this.ui.onFocusTargetChange(() => {
+					this.updatePromptChrome();
+				});
+
+				// Set up theme file watcher
+				onThemeChange(() => {
+					this.ui.invalidate();
+					this.updatePromptChrome();
+					this.ui.requestRender();
+				});
+
+				// Set up git branch watcher (uses provider instead of footer)
+				this.footerDataProvider.onBranchChange(() => {
+					this.ui.requestRender();
+				});
+
+				// Initialize available provider count for footer display
+				await this.updateAvailableProviderCount();
+			} finally {
+				this.initializing = null;
 			}
-		}
+		})();
 
-		this.ui.addChild(this.chatContainer);
-		this.ui.addChild(this.pendingMessagesContainer);
-		this.ui.addChild(this.statusContainer);
-		this.renderWidgets(); // Initialize with default spacer
-
-		// The prompt area consists of an optional widget strip, the editor, and a bottom widget strip.
-		// Extensions should use ctx.ui.setWidget(..., { placement: "aboveEditor" }) for the top strip.
-		this.ui.addChild(this.widgetContainerAbove);
-		this.ui.addChild(this.editorContainer);
-		this.ui.addChild(this.widgetContainerBelow);
-
-		this.ui.addChild(this.footer);
-		this.ui.setFocus(this.editor);
-		this.updatePromptChrome();
-
-		this.setupKeyHandlers();
-		this.setupEditorSubmitHandler();
-
-		// Initialize extensions first so resources are shown before messages
-		await this.initExtensions();
-
-		// Render initial messages AFTER showing loaded resources
-		this.renderInitialMessages();
-
-		// Start the UI
-		this.ui.start();
-		this.isInitialized = true;
-
-		// Set terminal title
-		this.updateTerminalTitle();
-
-		// Subscribe to agent events
-		this.subscribeToAgent();
-		this.windowFocusChangeUnsubscribe = this.ui.onWindowFocusChange(() => {
-			this.updatePromptChrome();
-		});
-		this.focusTargetChangeUnsubscribe = this.ui.onFocusTargetChange(() => {
-			this.updatePromptChrome();
-		});
-
-		// Set up theme file watcher
-		onThemeChange(() => {
-			this.ui.invalidate();
-			this.updatePromptChrome();
-			this.ui.requestRender();
-		});
-
-		// Set up git branch watcher (uses provider instead of footer)
-		this.footerDataProvider.onBranchChange(() => {
-			this.ui.requestRender();
-		});
-
-		// Initialize available provider count for footer display
-		await this.updateAvailableProviderCount();
+		return this.initializing;
 	}
 
 	/**
@@ -1212,10 +1275,10 @@ export class InteractiveMode {
 				waitForIdle: () => this.session.agent.waitForIdle(),
 				newSession: async (options) => {
 					if (this.loadingAnimation) {
-						this.loadingAnimation.stop();
+						this.loadingAnimation.dispose();
 						this.loadingAnimation = undefined;
 					}
-					this.statusContainer.clear();
+					this.clearStatusOwner({ requestRender: false });
 
 					// Delegate to AgentSession (handles setup + agent state sync)
 					const success = await this.session.newSession(options);
@@ -1223,14 +1286,15 @@ export class InteractiveMode {
 						return { cancelled: true };
 					}
 
-					this.resetSessionUiState(true);
+					this.resetInteractiveSessionUI(true);
 					this.ui.requestRender();
 
 					return { cancelled: false };
 				},
 				fork: async (entryId) => {
+					const capturedEpoch = this.sessionEpoch;
 					const result = await this.session.fork(entryId);
-					if (result.cancelled) {
+					if (result.cancelled || this.sessionEpoch !== capturedEpoch) {
 						return { cancelled: true };
 					}
 
@@ -1242,13 +1306,14 @@ export class InteractiveMode {
 					return { cancelled: false };
 				},
 				navigateTree: async (targetId, options) => {
+					const capturedEpoch = this.sessionEpoch;
 					const result = await this.session.navigateTree(targetId, {
 						summarize: options?.summarize,
 						customInstructions: options?.customInstructions,
 						replaceInstructions: options?.replaceInstructions,
 						label: options?.label,
 					});
-					if (result.cancelled) {
+					if (result.cancelled || this.sessionEpoch !== capturedEpoch) {
 						return { cancelled: true };
 					}
 
@@ -1449,17 +1514,156 @@ export class InteractiveMode {
 		}
 	}
 
+	private setPromptWidgetsVisible(visible: boolean): void {
+		if (this.promptWidgetsVisible === visible) {
+			return;
+		}
+
+		this.promptWidgetsVisible = visible;
+		if (visible) {
+			this.renderWidgets(false);
+			return;
+		}
+
+		this.widgetContainerAbove.clear();
+		this.widgetContainerBelow.clear();
+	}
+
+	private mountPromptOwner(
+		component: Component,
+		options?: { focus?: Component; showWidgets?: boolean; requestRender?: boolean },
+	): void {
+		const focus = options?.focus ?? component;
+		const showWidgets = options?.showWidgets ?? false;
+		const requestRender = options?.requestRender ?? true;
+		const isMounted =
+			this.promptAreaComponent === component &&
+			this.editorContainer.children.length === 1 &&
+			this.editorContainer.children[0] === component;
+
+		if (!isMounted) {
+			this.editorContainer.clear();
+			this.editorContainer.addChild(component);
+			this.promptAreaComponent = component;
+		}
+
+		if (process.env.NODE_ENV !== "production") {
+			if (this.editorContainer.children.length > 1) {
+				throw new Error("Invariant violation: Multiple prompt owners mounted");
+			}
+		}
+
+		this.setPromptWidgetsVisible(showWidgets);
+		if (this.ui.getFocusedComponent() !== focus) {
+			this.ui.setFocus(focus);
+		}
+		if (requestRender) {
+			this.ui.requestRender();
+		}
+	}
+
+	private restoreCanonicalEditor(options?: { text?: string; focus?: boolean; requestRender?: boolean }): void {
+		if (options?.text !== undefined) {
+			this.editor.setText(options.text);
+		}
+		const editorComponent = this.editor as Component;
+		const isMounted =
+			this.promptAreaComponent === editorComponent &&
+			this.editorContainer.children.length === 1 &&
+			this.editorContainer.children[0] === editorComponent;
+		if (!isMounted) {
+			this.editorContainer.clear();
+			this.editorContainer.addChild(editorComponent);
+			this.promptAreaComponent = editorComponent;
+		}
+
+		if (process.env.NODE_ENV !== "production") {
+			if (this.editorContainer.children.length > 1) {
+				throw new Error("Invariant violation: Multiple prompt owners mounted");
+			}
+			if (this.promptAreaComponent !== editorComponent) {
+				throw new Error("Invariant violation: restoreCanonicalEditor mounted non-canonical editor");
+			}
+		}
+
+		this.setPromptWidgetsVisible(true);
+		if (options?.focus ?? true) {
+			this.ui.setFocus(editorComponent);
+		}
+		if (options?.requestRender ?? true) {
+			this.ui.requestRender();
+		}
+	}
+
+	private mountStatusOwner(component: Component, options?: { requestRender?: boolean }): void {
+		const requestRender = options?.requestRender ?? true;
+		const isMounted =
+			this.statusComponent === component &&
+			this.statusContainer.children.length === 1 &&
+			this.statusContainer.children[0] === component;
+		if (!isMounted) {
+			this.statusContainer.clear();
+			this.statusContainer.addChild(component);
+			this.statusComponent = component;
+		}
+
+		if (process.env.NODE_ENV !== "production") {
+			if (this.statusContainer.children.length > 1) {
+				throw new Error("Invariant violation: Multiple status owners mounted");
+			}
+		}
+
+		if (requestRender) {
+			this.ui.requestRender();
+		}
+	}
+
+	private mountStatusLoader(loader: Loader, options?: { requestRender?: boolean }): void {
+		const row = new Container();
+		row.addChild(new Spacer(1));
+		row.addChild(loader);
+		this.mountStatusOwner(row, options);
+	}
+
+	private clearStatusOwner(options?: { requestRender?: boolean }): void {
+		const requestRender = options?.requestRender ?? true;
+		if (this.statusComponent !== undefined || this.statusContainer.children.length > 0) {
+			this.statusContainer.clear();
+			this.statusComponent = undefined;
+		}
+
+		if (process.env.NODE_ENV !== "production") {
+			if (this.statusContainer.children.length > 0) {
+				throw new Error("Invariant violation: Status container not empty after clear");
+			}
+		}
+
+		if (requestRender) {
+			this.ui.requestRender();
+		}
+	}
+
 	// Maximum total widget lines to prevent viewport overflow
 	private static readonly MAX_WIDGET_LINES = 10;
 
 	/**
 	 * Render all extension widgets to the widget container.
 	 */
-	private renderWidgets(): void {
+	private renderWidgets(requestRender = true): void {
 		if (!this.widgetContainerAbove || !this.widgetContainerBelow) return;
+		if (!this.promptWidgetsVisible) {
+			this.widgetContainerAbove.clear();
+			this.widgetContainerBelow.clear();
+			if (requestRender) {
+				this.ui.requestRender();
+			}
+			return;
+		}
 		this.renderWidgetContainer(this.widgetContainerAbove, this.extensionWidgetsAbove, true, true, this.topBar);
 		this.renderWidgetContainer(this.widgetContainerBelow, this.extensionWidgetsBelow, false, false);
-		this.ui.requestRender();
+		if (requestRender) {
+			this.ui.requestRender();
+		}
 	}
 
 	private renderWidgetContainer(
@@ -1651,6 +1855,7 @@ export class InteractiveMode {
 		options: string[],
 		opts?: ExtensionUIDialogOptions,
 	): Promise<string | undefined> {
+		const capturedEpoch = this.uiEpoch;
 		return new Promise((resolve) => {
 			if (opts?.signal?.aborted) {
 				resolve(undefined);
@@ -1658,6 +1863,10 @@ export class InteractiveMode {
 			}
 
 			const onAbort = () => {
+				if (this.uiEpoch !== capturedEpoch) {
+					resolve(undefined);
+					return;
+				}
 				this.hideExtensionSelector();
 				resolve(undefined);
 			};
@@ -1668,21 +1877,26 @@ export class InteractiveMode {
 				options,
 				(option) => {
 					opts?.signal?.removeEventListener("abort", onAbort);
+					if (this.uiEpoch !== capturedEpoch) {
+						resolve(undefined);
+						return;
+					}
 					this.hideExtensionSelector();
 					resolve(option);
 				},
 				() => {
 					opts?.signal?.removeEventListener("abort", onAbort);
+					if (this.uiEpoch !== capturedEpoch) {
+						resolve(undefined);
+						return;
+					}
 					this.hideExtensionSelector();
 					resolve(undefined);
 				},
 				{ tui: this.ui, timeout: opts?.timeout },
 			);
 
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.extensionSelector);
-			this.ui.setFocus(this.extensionSelector);
-			this.ui.requestRender();
+			this.mountPromptOwner(this.extensionSelector);
 		});
 	}
 
@@ -1691,11 +1905,8 @@ export class InteractiveMode {
 	 */
 	private hideExtensionSelector(): void {
 		this.extensionSelector?.dispose();
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
 		this.extensionSelector = undefined;
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
+		this.restoreCanonicalEditor();
 	}
 
 	/**
@@ -1718,6 +1929,7 @@ export class InteractiveMode {
 		placeholder?: string,
 		opts?: ExtensionUIDialogOptions,
 	): Promise<string | undefined> {
+		const capturedEpoch = this.uiEpoch;
 		return new Promise((resolve) => {
 			if (opts?.signal?.aborted) {
 				resolve(undefined);
@@ -1725,6 +1937,10 @@ export class InteractiveMode {
 			}
 
 			const onAbort = () => {
+				if (this.uiEpoch !== capturedEpoch) {
+					resolve(undefined);
+					return;
+				}
 				this.hideExtensionInput();
 				resolve(undefined);
 			};
@@ -1735,21 +1951,26 @@ export class InteractiveMode {
 				placeholder,
 				(value) => {
 					opts?.signal?.removeEventListener("abort", onAbort);
+					if (this.uiEpoch !== capturedEpoch) {
+						resolve(undefined);
+						return;
+					}
 					this.hideExtensionInput();
 					resolve(value);
 				},
 				() => {
 					opts?.signal?.removeEventListener("abort", onAbort);
+					if (this.uiEpoch !== capturedEpoch) {
+						resolve(undefined);
+						return;
+					}
 					this.hideExtensionInput();
 					resolve(undefined);
 				},
 				{ tui: this.ui, timeout: opts?.timeout },
 			);
 
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.extensionInput);
-			this.ui.setFocus(this.extensionInput);
-			this.ui.requestRender();
+			this.mountPromptOwner(this.extensionInput);
 		});
 	}
 
@@ -1758,17 +1979,15 @@ export class InteractiveMode {
 	 */
 	private hideExtensionInput(): void {
 		this.extensionInput?.dispose();
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
 		this.extensionInput = undefined;
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
+		this.restoreCanonicalEditor();
 	}
 
 	/**
 	 * Show a multi-line editor for extensions (with Ctrl+G support).
 	 */
 	private showExtensionEditor(title: string, prefill?: string): Promise<string | undefined> {
+		const capturedEpoch = this.uiEpoch;
 		return new Promise((resolve) => {
 			this.extensionEditor = new ExtensionEditorComponent(
 				this.ui,
@@ -1776,19 +1995,24 @@ export class InteractiveMode {
 				title,
 				prefill,
 				(value) => {
+					if (this.uiEpoch !== capturedEpoch) {
+						resolve(undefined);
+						return;
+					}
 					this.hideExtensionEditor();
 					resolve(value);
 				},
 				() => {
+					if (this.uiEpoch !== capturedEpoch) {
+						resolve(undefined);
+						return;
+					}
 					this.hideExtensionEditor();
 					resolve(undefined);
 				},
 			);
 
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.extensionEditor);
-			this.ui.setFocus(this.extensionEditor);
-			this.ui.requestRender();
+			this.mountPromptOwner(this.extensionEditor);
 		});
 	}
 
@@ -1796,11 +2020,8 @@ export class InteractiveMode {
 	 * Hide the extension editor.
 	 */
 	private hideExtensionEditor(): void {
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
 		this.extensionEditor = undefined;
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
+		this.restoreCanonicalEditor();
 	}
 
 	/**
@@ -1812,8 +2033,6 @@ export class InteractiveMode {
 	): void {
 		// Save text from current editor before switching
 		const currentText = this.editor.getText();
-
-		this.editorContainer.clear();
 
 		if (factory) {
 			// Create the custom editor with tui, theme, and keybindings
@@ -1864,8 +2083,7 @@ export class InteractiveMode {
 			this.editor = this.defaultEditor;
 		}
 
-		this.editorContainer.addChild(this.editor as Component);
-		this.ui.setFocus(this.editor as Component);
+		this.restoreCanonicalEditor({ requestRender: false });
 		this.updatePromptChrome();
 	}
 
@@ -1896,15 +2114,12 @@ export class InteractiveMode {
 			onHandle?: (handle: OverlayHandle) => void;
 		},
 	): Promise<T> {
+		const capturedEpoch = this.uiEpoch;
 		const savedText = this.editor.getText();
 		const isOverlay = options?.overlay ?? false;
 
 		const restoreEditor = () => {
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.editor);
-			this.editor.setText(savedText);
-			this.ui.setFocus(this.editor);
-			this.ui.requestRender();
+			this.restoreCanonicalEditor({ text: savedText });
 		};
 
 		return new Promise((resolve, reject) => {
@@ -1914,6 +2129,12 @@ export class InteractiveMode {
 			const close = (result: T) => {
 				if (closed) return;
 				closed = true;
+				if (this.uiEpoch !== capturedEpoch) {
+					// We're stale, just resolve the promise to avoid leaks, but don't mutate UI
+					resolve(result);
+					return;
+				}
+
 				if (isOverlay) this.ui.hideOverlay();
 				else restoreEditor();
 				// Note: both branches above already call requestRender
@@ -1928,6 +2149,14 @@ export class InteractiveMode {
 			Promise.resolve(factory(this.ui, theme, this.keybindings, close))
 				.then((c) => {
 					if (closed) return;
+					if (this.uiEpoch !== capturedEpoch) {
+						closed = true;
+						try {
+							c?.dispose?.();
+						} catch {}
+						return; // Do not mount if epoch changed
+					}
+
 					component = c;
 					if (isOverlay) {
 						// Resolve overlay options - can be static or dynamic function
@@ -1947,10 +2176,7 @@ export class InteractiveMode {
 						// Expose handle to caller for visibility control
 						options?.onHandle?.(handle);
 					} else {
-						this.editorContainer.clear();
-						this.editorContainer.addChild(component);
-						this.ui.setFocus(component);
-						this.ui.requestRender();
+						this.mountPromptOwner(component);
 					}
 				})
 				.catch((err) => {
@@ -2253,8 +2479,14 @@ export class InteractiveMode {
 	}
 
 	private async handleEvent(event: AgentSessionEvent): Promise<void> {
+		const capturedEpoch = this.sessionEpoch;
+
 		if (!this.isInitialized) {
 			await this.init();
+		}
+
+		if (this.sessionEpoch !== capturedEpoch) {
+			return; // Stale event from previous session/epoch
 		}
 
 		this.footer.invalidate();
@@ -2268,20 +2500,20 @@ export class InteractiveMode {
 					this.retryEscapeHandler = undefined;
 				}
 				if (this.retryLoader) {
-					this.retryLoader.stop();
+					this.retryLoader.dispose();
 					this.retryLoader = undefined;
 				}
 				if (this.loadingAnimation) {
-					this.loadingAnimation.stop();
+					this.loadingAnimation.dispose();
 				}
-				this.statusContainer.clear();
+				this.clearStatusOwner({ requestRender: false });
 				this.loadingAnimation = new Loader(
 					this.ui,
 					(spinner) => theme.fg("accent", spinner),
 					(text) => theme.fg("muted", text),
 					this.defaultWorkingMessage,
 				);
-				this.statusContainer.addChild(this.loadingAnimation);
+				this.mountStatusLoader(this.loadingAnimation, { requestRender: false });
 				// Apply any pending working message queued before loader existed
 				if (this.pendingWorkingMessage !== undefined) {
 					if (this.pendingWorkingMessage) {
@@ -2295,16 +2527,24 @@ export class InteractiveMode {
 			case "message_start":
 				if (event.message.role === "custom") {
 					this.addMessageToChat(event.message);
+					if (this.loadingAnimation || this.statusContainer.children.length > 0) {
+						this.ui.invalidate();
+					}
 					this.ui.requestRender();
 				} else if (event.message.role === "user") {
 					this.addMessageToChat(event.message);
 					this.updatePendingMessagesDisplay();
+					if (this.loadingAnimation || this.statusContainer.children.length > 0) {
+						this.ui.invalidate();
+					}
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
 					this.streamingComponent = new AssistantMessageComponent(
 						undefined,
 						this.hideThinkingBlock,
 						this.getMarkdownThemeWithSettings(),
+						0,
+						1,
 					);
 					this.streamingMessage = event.message;
 					this.chatContainer.addChild(this.streamingComponent);
@@ -2424,9 +2664,9 @@ export class InteractiveMode {
 
 			case "agent_end":
 				if (this.loadingAnimation) {
-					this.loadingAnimation.stop();
+					this.loadingAnimation.dispose();
 					this.loadingAnimation = undefined;
-					this.statusContainer.clear();
+					this.clearStatusOwner({ requestRender: false });
 				}
 				if (this.streamingComponent) {
 					this.chatContainer.removeChild(this.streamingComponent);
@@ -2437,7 +2677,12 @@ export class InteractiveMode {
 
 				await this.checkShutdownRequested();
 
-				this.ui.requestRender();
+				if (this.startupUiGateActive) {
+					this.startupUiGateActive = false;
+					this.flushDeferredStartupNotices();
+				} else {
+					this.ui.requestRender();
+				}
 				break;
 
 			case "auto_compaction_start": {
@@ -2448,7 +2693,7 @@ export class InteractiveMode {
 					this.session.abortCompaction();
 				};
 				// Show compacting indicator with reason
-				this.statusContainer.clear();
+				this.clearStatusOwner({ requestRender: false });
 				const reasonText = event.reason === "overflow" ? "Context overflow detected, " : "";
 				this.autoCompactionLoader = new Loader(
 					this.ui,
@@ -2456,7 +2701,7 @@ export class InteractiveMode {
 					(text) => theme.fg("muted", text),
 					`${reasonText}Auto-compacting... (${appKey(this.keybindings, "interrupt")} to cancel)`,
 				);
-				this.statusContainer.addChild(this.autoCompactionLoader);
+				this.mountStatusLoader(this.autoCompactionLoader, { requestRender: false });
 				this.ui.requestRender();
 				break;
 			}
@@ -2469,9 +2714,9 @@ export class InteractiveMode {
 				}
 				// Stop loader
 				if (this.autoCompactionLoader) {
-					this.autoCompactionLoader.stop();
+					this.autoCompactionLoader.dispose();
 					this.autoCompactionLoader = undefined;
-					this.statusContainer.clear();
+					this.clearStatusOwner({ requestRender: false });
 				}
 				// Handle result
 				if (event.aborted) {
@@ -2505,7 +2750,7 @@ export class InteractiveMode {
 					this.session.abortRetry();
 				};
 				// Show retry indicator
-				this.statusContainer.clear();
+				this.clearStatusOwner({ requestRender: false });
 				const delaySeconds = Math.round(event.delayMs / 1000);
 				this.retryLoader = new Loader(
 					this.ui,
@@ -2513,7 +2758,7 @@ export class InteractiveMode {
 					(text) => theme.fg("muted", text),
 					`Retrying (${event.attempt}/${event.maxAttempts}) in ${delaySeconds}s... (${appKey(this.keybindings, "interrupt")} to cancel)`,
 				);
-				this.statusContainer.addChild(this.retryLoader);
+				this.mountStatusLoader(this.retryLoader, { requestRender: false });
 				this.ui.requestRender();
 				break;
 			}
@@ -2526,9 +2771,9 @@ export class InteractiveMode {
 				}
 				// Stop loader
 				if (this.retryLoader) {
-					this.retryLoader.stop();
+					this.retryLoader.dispose();
 					this.retryLoader = undefined;
-					this.statusContainer.clear();
+					this.clearStatusOwner({ requestRender: false });
 				}
 				// Show error only on final failure (success shows normal response)
 				if (!event.success) {
@@ -2651,6 +2896,8 @@ export class InteractiveMode {
 					message,
 					this.hideThinkingBlock,
 					this.getMarkdownThemeWithSettings(),
+					0,
+					1,
 				);
 				this.chatContainer.addChild(assistantComponent);
 				break;
@@ -2853,6 +3100,8 @@ export class InteractiveMode {
 		const text = (this.editor.getExpandedText?.() ?? this.editor.getText()).trim();
 		if (!text) return;
 
+		const capturedEpoch = this.sessionEpoch;
+
 		// Queue input during compaction (extension commands execute immediately)
 		if (this.session.isCompacting) {
 			if (this.isExtensionCommand(text)) {
@@ -2871,6 +3120,9 @@ export class InteractiveMode {
 			this.editor.addToHistory?.(text);
 			this.editor.setText("");
 			await this.session.prompt(text, { streamingBehavior: "followUp" });
+
+			if (this.sessionEpoch !== capturedEpoch) return;
+
 			this.updatePendingMessagesDisplay();
 			this.ui.requestRender();
 		}
@@ -2943,8 +3195,11 @@ export class InteractiveMode {
 	}
 
 	private async cycleModel(direction: "forward" | "backward"): Promise<void> {
+		const capturedEpoch = this.sessionEpoch;
 		try {
 			const result = await this.session.cycleModel(direction);
+			if (this.sessionEpoch !== capturedEpoch) return;
+
 			if (result === undefined) {
 				const msg = this.session.scopedModels.length > 0 ? "Only one model in scope" : "Only one model available";
 				this.showStatus(msg);
@@ -2956,6 +3211,7 @@ export class InteractiveMode {
 				this.showStatus(`Switched to ${result.model.name || result.model.id}${thinkingStr}`);
 			}
 		} catch (error) {
+			if (this.sessionEpoch !== capturedEpoch) return;
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
 	}
@@ -3055,10 +3311,37 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	showWarning(warningMessage: string): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
+	private enqueueStartupNotice(notice: () => void): void {
+		if (this.startupUiGateActive) {
+			this.deferredStartupNotices.push(notice);
+			return;
+		}
+
+		notice();
 		this.ui.requestRender();
+	}
+
+	private flushDeferredStartupNotices(): void {
+		if (this.deferredStartupNotices.length === 0) {
+			return;
+		}
+
+		const notices = [...this.deferredStartupNotices];
+		this.deferredStartupNotices = [];
+
+		for (const notice of notices) {
+			notice();
+		}
+
+		this.ui.invalidate();
+		this.ui.requestRender();
+	}
+
+	showWarning(warningMessage: string): void {
+		this.enqueueStartupNotice(() => {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
+		});
 	}
 
 	showNewVersionNotification(newVersion: string): void {
@@ -3070,17 +3353,18 @@ export class InteractiveMode {
 		);
 		const changelogLine = theme.fg("muted", "Changelog: ") + changelogUrl;
 
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
-		this.chatContainer.addChild(
-			new Text(
-				`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}\n${changelogLine}`,
-				1,
-				0,
-			),
-		);
-		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
-		this.ui.requestRender();
+		this.enqueueStartupNotice(() => {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
+			this.chatContainer.addChild(
+				new Text(
+					`${theme.bold(theme.fg("warning", "Update Available"))}\n${updateInstruction}\n${changelogLine}`,
+					1,
+					0,
+				),
+			);
+			this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
+		});
 	}
 
 	/**
@@ -3183,11 +3467,14 @@ export class InteractiveMode {
 			return;
 		}
 
+		const capturedEpoch = this.sessionEpoch;
 		const queuedMessages = [...this.compactionQueuedMessages];
 		this.compactionQueuedMessages = [];
 		this.updatePendingMessagesDisplay();
 
 		const restoreQueue = (error: unknown) => {
+			if (this.sessionEpoch !== capturedEpoch) return;
+
 			this.session.clearQueue();
 			this.compactionQueuedMessages = queuedMessages;
 			this.updatePendingMessagesDisplay();
@@ -3202,6 +3489,8 @@ export class InteractiveMode {
 			if (options?.willRetry) {
 				// When retry is pending, queue messages for the retry turn
 				for (const message of queuedMessages) {
+					if (this.sessionEpoch !== capturedEpoch) return;
+
 					if (this.isExtensionCommand(message.text)) {
 						await this.session.prompt(message.text);
 					} else if (message.mode === "followUp") {
@@ -3210,7 +3499,10 @@ export class InteractiveMode {
 						await this.session.steer(message.text);
 					}
 				}
-				this.updatePendingMessagesDisplay();
+
+				if (this.sessionEpoch === capturedEpoch) {
+					this.updatePendingMessagesDisplay();
+				}
 				return;
 			}
 
@@ -3219,6 +3511,7 @@ export class InteractiveMode {
 			if (firstPromptIndex === -1) {
 				// All extension commands - execute them all
 				for (const message of queuedMessages) {
+					if (this.sessionEpoch !== capturedEpoch) return;
 					await this.session.prompt(message.text);
 				}
 				return;
@@ -3230,8 +3523,11 @@ export class InteractiveMode {
 			const rest = queuedMessages.slice(firstPromptIndex + 1);
 
 			for (const message of preCommands) {
+				if (this.sessionEpoch !== capturedEpoch) return;
 				await this.session.prompt(message.text);
 			}
+
+			if (this.sessionEpoch !== capturedEpoch) return;
 
 			// Send first prompt (starts streaming)
 			const promptPromise = this.session.prompt(firstPrompt.text).catch((error) => {
@@ -3240,6 +3536,8 @@ export class InteractiveMode {
 
 			// Queue remaining messages
 			for (const message of rest) {
+				if (this.sessionEpoch !== capturedEpoch) return;
+
 				if (this.isExtensionCommand(message.text)) {
 					await this.session.prompt(message.text);
 				} else if (message.mode === "followUp") {
@@ -3248,7 +3546,10 @@ export class InteractiveMode {
 					await this.session.steer(message.text);
 				}
 			}
-			this.updatePendingMessagesDisplay();
+
+			if (this.sessionEpoch === capturedEpoch) {
+				this.updatePendingMessagesDisplay();
+			}
 			void promptPromise;
 		} catch (error) {
 			restoreQueue(error);
@@ -3273,16 +3574,13 @@ export class InteractiveMode {
 	 * @param create Factory that receives a `done` callback and returns the component and focus target
 	 */
 	private showSelector(create: (done: () => void) => { component: Component; focus: Component }): void {
+		const capturedEpoch = this.uiEpoch;
 		const done = () => {
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.editor);
-			this.ui.setFocus(this.editor);
+			if (this.uiEpoch !== capturedEpoch) return;
+			this.restoreCanonicalEditor({ requestRender: false });
 		};
 		const { component, focus } = create(done);
-		this.editorContainer.clear();
-		this.editorContainer.addChild(component);
-		this.ui.setFocus(focus);
-		this.ui.requestRender();
+		this.mountPromptOwner(component, { focus });
 	}
 
 	private showSettingsSelector(): void {
@@ -3427,15 +3725,20 @@ export class InteractiveMode {
 			return;
 		}
 
+		const capturedEpoch = this.sessionEpoch;
 		const model = await this.findExactModelMatch(searchTerm);
+		if (this.sessionEpoch !== capturedEpoch) return;
+
 		if (model) {
 			try {
 				await this.session.setModel(model);
+				if (this.sessionEpoch !== capturedEpoch) return;
 				this.footer.invalidate();
 				this.updatePromptChrome();
 				// this.showStatus(`Model: ${model.id}`);
 				this.checkDaxnutsEasterEgg(model);
 			} catch (error) {
+				if (this.sessionEpoch !== capturedEpoch) return;
 				this.showError(error instanceof Error ? error.message : String(error));
 			}
 			return;
@@ -3750,7 +4053,7 @@ export class InteractiveMode {
 							(text) => theme.fg("muted", text),
 							`Summarizing branch... (${appKey(this.keybindings, "interrupt")} to cancel)`,
 						);
-						this.statusContainer.addChild(summaryLoader);
+						this.mountStatusLoader(summaryLoader, { requestRender: false });
 						this.ui.requestRender();
 					}
 
@@ -3782,8 +4085,8 @@ export class InteractiveMode {
 						this.showError(error instanceof Error ? error.message : String(error));
 					} finally {
 						if (summaryLoader) {
-							summaryLoader.stop();
-							this.statusContainer.clear();
+							summaryLoader.dispose();
+							this.clearStatusOwner({ requestRender: false });
 						}
 						this.defaultEditor.onEscape = originalOnEscape;
 					}
@@ -3841,10 +4144,10 @@ export class InteractiveMode {
 	private async handleResumeSession(sessionPath: string): Promise<void> {
 		// Stop loading animation
 		if (this.loadingAnimation) {
-			this.loadingAnimation.stop();
+			this.loadingAnimation.dispose();
 			this.loadingAnimation = undefined;
 		}
-		this.statusContainer.clear();
+		this.clearStatusOwner({ requestRender: false });
 
 		// Clear UI state
 		this.pendingMessagesContainer.clear();
@@ -3852,7 +4155,7 @@ export class InteractiveMode {
 		// Switch session via AgentSession (emits extension session events)
 		await this.session.switchSession(sessionPath);
 
-		this.resetSessionUiState(true);
+		this.resetInteractiveSessionUI(true);
 		this.showStatus("Resumed session");
 	}
 
@@ -3916,10 +4219,7 @@ export class InteractiveMode {
 		});
 
 		// Show dialog in editor container
-		this.editorContainer.clear();
-		this.editorContainer.addChild(dialog);
-		this.ui.setFocus(dialog);
-		this.ui.requestRender();
+		this.mountPromptOwner(dialog);
 
 		// Promise for manual code input (racing with callback server)
 		let manualCodeResolve: ((code: string) => void) | undefined;
@@ -3930,11 +4230,10 @@ export class InteractiveMode {
 		});
 
 		// Restore editor helper
+		const capturedEpoch = this.uiEpoch;
 		const restoreEditor = () => {
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.editor);
-			this.ui.setFocus(this.editor);
-			this.ui.requestRender();
+			if (this.uiEpoch !== capturedEpoch) return;
+			this.restoreCanonicalEditor();
 		};
 
 		try {
@@ -3982,9 +4281,11 @@ export class InteractiveMode {
 			restoreEditor();
 			this.session.modelRegistry.refresh();
 			await this.updateAvailableProviderCount();
+			if (this.uiEpoch !== capturedEpoch) return;
 			this.showStatus(`Logged in to ${providerName}. Credentials saved to ${getAuthPath()}`);
 		} catch (error: unknown) {
 			restoreEditor();
+			if (this.uiEpoch !== capturedEpoch) return;
 			const errorMsg = error instanceof Error ? error.message : String(error);
 			if (errorMsg !== "Login cancelled") {
 				this.showError(`Failed to login to ${providerName}: ${errorMsg}`);
@@ -4012,21 +4313,21 @@ export class InteractiveMode {
 			cancellable: false,
 		});
 		const previousEditor = this.editor;
-		this.editorContainer.clear();
-		this.editorContainer.addChild(loader);
-		this.ui.setFocus(loader);
-		this.ui.requestRender();
+		this.mountPromptOwner(loader);
 
-		const dismissLoader = (editor: Component) => {
+		const capturedEpoch = this.uiEpoch;
+		const dismissLoader = (_editor: Component) => {
 			loader.dispose();
-			this.editorContainer.clear();
-			this.editorContainer.addChild(editor);
-			this.ui.setFocus(editor);
-			this.ui.requestRender();
+			if (this.uiEpoch !== capturedEpoch) return;
+			this.restoreCanonicalEditor();
 		};
 
 		try {
 			await this.session.reload();
+			if (this.uiEpoch !== capturedEpoch) {
+				loader.dispose();
+				return;
+			}
 			setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
 			this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 			const themeName = this.settingsManager.getTheme();
@@ -4063,6 +4364,10 @@ export class InteractiveMode {
 			}
 			this.showStatus("Reloaded extensions, skills, prompts, themes");
 		} catch (error) {
+			if (this.uiEpoch !== capturedEpoch) {
+				loader.dispose();
+				return;
+			}
 			dismissLoader(previousEditor as Component);
 			this.showError(`Reload failed: ${error instanceof Error ? error.message : String(error)}`);
 		}
@@ -4071,11 +4376,14 @@ export class InteractiveMode {
 	private async handleExportCommand(text: string): Promise<void> {
 		const parts = text.split(/\s+/);
 		const outputPath = parts.length > 1 ? parts[1] : undefined;
+		const capturedEpoch = this.uiEpoch;
 
 		try {
 			const filePath = await this.session.exportToHtml(outputPath);
+			if (this.uiEpoch !== capturedEpoch) return;
 			this.showStatus(`Session exported to: ${filePath}`);
 		} catch (error: unknown) {
+			if (this.uiEpoch !== capturedEpoch) return;
 			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}
 	}
@@ -4093,27 +4401,27 @@ export class InteractiveMode {
 			return;
 		}
 
+		const capturedEpoch = this.uiEpoch;
+
 		// Export to a temp file
 		const tmpFile = path.join(os.tmpdir(), "session.html");
 		try {
 			await this.session.exportToHtml(tmpFile);
+			if (this.uiEpoch !== capturedEpoch) return;
 		} catch (error: unknown) {
+			if (this.uiEpoch !== capturedEpoch) return;
 			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
 			return;
 		}
 
 		// Show cancellable loader, replacing the editor
 		const loader = new BorderedLoader(this.ui, theme, "Creating gist...");
-		this.editorContainer.clear();
-		this.editorContainer.addChild(loader);
-		this.ui.setFocus(loader);
-		this.ui.requestRender();
+		this.mountPromptOwner(loader);
 
 		const restoreEditor = () => {
 			loader.dispose();
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.editor);
-			this.ui.setFocus(this.editor);
+			if (this.uiEpoch !== capturedEpoch) return;
+			this.restoreCanonicalEditor({ requestRender: false });
 			try {
 				fs.unlinkSync(tmpFile);
 			} catch {
@@ -4127,6 +4435,7 @@ export class InteractiveMode {
 		loader.onAbort = () => {
 			proc?.kill();
 			restoreEditor();
+			if (this.uiEpoch !== capturedEpoch) return;
 			this.showStatus("Share cancelled");
 		};
 
@@ -4145,6 +4454,7 @@ export class InteractiveMode {
 			});
 
 			if (loader.signal.aborted) return;
+			if (this.uiEpoch !== capturedEpoch) return;
 
 			restoreEditor();
 
@@ -4169,6 +4479,7 @@ export class InteractiveMode {
 		} catch (error: unknown) {
 			if (!loader.signal.aborted) {
 				restoreEditor();
+				if (this.uiEpoch !== capturedEpoch) return;
 				this.showError(`Failed to create gist: ${error instanceof Error ? error.message : "Unknown error"}`);
 			}
 		}
@@ -4409,16 +4720,10 @@ export class InteractiveMode {
 	}
 
 	private async handleClearCommand(): Promise<void> {
-		// Stop loading animation
-		if (this.loadingAnimation) {
-			this.loadingAnimation.stop();
-			this.loadingAnimation = undefined;
-		}
-
 		// New session via session (emits extension session events)
 		await this.session.newSession();
 
-		this.resetSessionUiState();
+		this.resetInteractiveSessionUI(true);
 		this.ui.requestRender();
 	}
 
@@ -4474,6 +4779,7 @@ export class InteractiveMode {
 	}
 
 	private async handleBashCommand(command: string, excludeFromContext = false): Promise<void> {
+		const capturedEpoch = this.sessionEpoch;
 		const extensionRunner = this.session.extensionRunner;
 
 		// Emit user_bash event to let extensions intercept
@@ -4485,6 +4791,8 @@ export class InteractiveMode {
 					cwd: process.cwd(),
 				})
 			: undefined;
+
+		if (this.sessionEpoch !== capturedEpoch) return;
 
 		// If extension returned a full result, use it directly
 		if (eventResult?.result) {
@@ -4535,6 +4843,7 @@ export class InteractiveMode {
 			const result = await this.session.executeBash(
 				command,
 				(chunk) => {
+					if (this.sessionEpoch !== capturedEpoch) return;
 					if (this.bashComponent) {
 						this.bashComponent.appendOutput(chunk);
 						this.ui.requestRender();
@@ -4542,6 +4851,8 @@ export class InteractiveMode {
 				},
 				{ excludeFromContext, operations: eventResult?.operations },
 			);
+
+			if (this.sessionEpoch !== capturedEpoch) return;
 
 			if (this.bashComponent) {
 				this.bashComponent.setComplete(
@@ -4552,6 +4863,7 @@ export class InteractiveMode {
 				);
 			}
 		} catch (error) {
+			if (this.sessionEpoch !== capturedEpoch) return;
 			if (this.bashComponent) {
 				this.bashComponent.setComplete(undefined, false);
 			}
@@ -4575,12 +4887,14 @@ export class InteractiveMode {
 	}
 
 	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<CompactionResult | undefined> {
+		const capturedEpoch = this.sessionEpoch;
+
 		// Stop loading animation
 		if (this.loadingAnimation) {
-			this.loadingAnimation.stop();
+			this.loadingAnimation.dispose();
 			this.loadingAnimation = undefined;
 		}
-		this.statusContainer.clear();
+		this.clearStatusOwner({ requestRender: false });
 
 		// Set up escape handler during compaction
 		const originalOnEscape = this.defaultEditor.onEscape;
@@ -4598,13 +4912,15 @@ export class InteractiveMode {
 			(text) => theme.fg("muted", text),
 			label,
 		);
-		this.statusContainer.addChild(compactingLoader);
+		this.mountStatusLoader(compactingLoader, { requestRender: false });
 		this.ui.requestRender();
 
 		let result: CompactionResult | undefined;
 
 		try {
 			result = await this.session.compact(customInstructions);
+
+			if (this.sessionEpoch !== capturedEpoch) return undefined;
 
 			// Rebuild UI
 			this.rebuildChatFromMessages();
@@ -4615,6 +4931,8 @@ export class InteractiveMode {
 
 			this.footer.invalidate();
 		} catch (error) {
+			if (this.sessionEpoch !== capturedEpoch) return undefined;
+
 			const message = error instanceof Error ? error.message : String(error);
 			if (message === "Compaction cancelled" || (error instanceof Error && error.name === "AbortError")) {
 				this.showError("Compaction cancelled");
@@ -4622,17 +4940,23 @@ export class InteractiveMode {
 				this.showError(`Compaction failed: ${message}`);
 			}
 		} finally {
-			compactingLoader.stop();
-			this.statusContainer.clear();
-			this.defaultEditor.onEscape = originalOnEscape;
+			if (this.sessionEpoch === capturedEpoch) {
+				compactingLoader.dispose();
+				this.clearStatusOwner({ requestRender: false });
+				this.defaultEditor.onEscape = originalOnEscape;
+			}
 		}
-		void this.flushCompactionQueue({ willRetry: false });
+
+		if (this.sessionEpoch === capturedEpoch) {
+			void this.flushCompactionQueue({ willRetry: false });
+		}
+
 		return result;
 	}
 
 	stop(): void {
 		if (this.loadingAnimation) {
-			this.loadingAnimation.stop();
+			this.loadingAnimation.dispose();
 			this.loadingAnimation = undefined;
 		}
 		this.clearExtensionTerminalInputListeners();

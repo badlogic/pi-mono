@@ -55,9 +55,18 @@ type UiStub = {
 type PromptChromeHarness = {
 	editor: EditorComponent;
 	defaultEditor: FakeDefaultEditor;
+	promptAreaComponent?: Component;
+	promptWidgetsVisible?: boolean;
 	editorContainer: {
+		children?: Component[];
 		clear(): void;
 		addChild(component: Component): void;
+	};
+	widgetContainerAbove?: {
+		clear(): void;
+	};
+	widgetContainerBelow?: {
+		clear(): void;
 	};
 	ui: UiStub;
 	session: {
@@ -68,8 +77,20 @@ type PromptChromeHarness = {
 	isBashMode: boolean;
 	getActivePromptBorderColor(): (str: string) => string;
 	isPromptActive(): boolean;
+	setPromptWidgetsVisible?(visible: boolean): void;
+	restorePromptEditor?(options?: { text?: string; focus?: boolean; requestRender?: boolean }): void;
 	updatePromptChrome(): void;
+	renderWidgets?(requestRender?: boolean): void;
 };
+
+function bindPromptAreaHelpers(harness: PromptChromeHarness): void {
+	harness.setPromptWidgetsVisible = (visible: boolean) => {
+		(InteractiveMode as any).prototype.setPromptWidgetsVisible.call(harness, visible);
+	};
+	harness.restorePromptEditor = (options?: { text?: string; focus?: boolean; requestRender?: boolean }) => {
+		(InteractiveMode as any).prototype.restorePromptEditor.call(harness, options);
+	};
+}
 
 function callUpdatePromptChrome(harness: PromptChromeHarness): void {
 	(
@@ -114,6 +135,7 @@ describe("InteractiveMode prompt chrome", () => {
 			isPromptActive: () => harness.ui.isWindowFocused() && harness.ui.getFocusedComponent() === harness.editor,
 			updatePromptChrome: () => callUpdatePromptChrome(harness),
 		};
+		bindPromptAreaHelpers(harness);
 
 		callUpdatePromptChrome(harness);
 		expect(editor.borderColor?.("x")).toBe(theme.getThinkingBorderColor("medium")("x"));
@@ -163,6 +185,7 @@ describe("InteractiveMode prompt chrome", () => {
 			isPromptActive: () => harness.ui.isWindowFocused() && harness.ui.getFocusedComponent() === harness.editor,
 			updatePromptChrome: () => callUpdatePromptChrome(harness),
 		};
+		bindPromptAreaHelpers(harness);
 
 		const swappedEditor = new FakeEditor();
 		(
@@ -183,5 +206,106 @@ describe("InteractiveMode prompt chrome", () => {
 		expect(focusedComponent).toBe(swappedEditor);
 		expect(mountedEditor).toBe(swappedEditor);
 		expect(harness.ui.requestRender).toHaveBeenCalled();
+	});
+
+	test("prompt area helper hides widgets and is idempotent", () => {
+		const editor = new FakeEditor();
+		const replacement = { render: () => ["loader"], invalidate: () => {} };
+		const children: Component[] = [editor];
+		let focusedComponent: Component | null = editor;
+		const widgetContainerAbove = { clear: vi.fn() };
+		const widgetContainerBelow = { clear: vi.fn() };
+		const harness: PromptChromeHarness = {
+			editor,
+			defaultEditor: new FakeDefaultEditor(),
+			promptAreaComponent: editor,
+			promptWidgetsVisible: true,
+			editorContainer: {
+				children,
+				clear: () => {
+					children.length = 0;
+				},
+				addChild: (component) => {
+					children.push(component);
+				},
+			},
+			widgetContainerAbove,
+			widgetContainerBelow,
+			ui: {
+				isWindowFocused: () => true,
+				getFocusedComponent: () => focusedComponent,
+				setFocus: (component) => {
+					focusedComponent = component;
+				},
+				requestRender: vi.fn(),
+			},
+			session: { thinkingLevel: "off" },
+			keybindings: {} as KeybindingsManager,
+			autocompleteProvider: undefined,
+			isBashMode: false,
+			getActivePromptBorderColor: () => theme.getThinkingBorderColor("off"),
+			isPromptActive: () => true,
+			updatePromptChrome: () => callUpdatePromptChrome(harness),
+			renderWidgets: vi.fn(),
+		};
+		bindPromptAreaHelpers(harness);
+
+		(InteractiveMode as any).prototype.showPromptAreaComponent.call(harness, replacement);
+		(InteractiveMode as any).prototype.showPromptAreaComponent.call(harness, replacement);
+
+		expect(children).toEqual([replacement]);
+		expect(harness.promptAreaComponent).toBe(replacement);
+		expect(harness.promptWidgetsVisible).toBe(false);
+		expect(widgetContainerAbove.clear).toHaveBeenCalledOnce();
+		expect(widgetContainerBelow.clear).toHaveBeenCalledOnce();
+		expect(focusedComponent).toBe(replacement);
+	});
+
+	test("restorePromptEditor remounts the canonical editor and restores widgets", () => {
+		const editor = new FakeEditor("D");
+		const replacement = { render: () => ["loader"], invalidate: () => {} };
+		const children: Component[] = [replacement];
+		let focusedComponent: Component | null = replacement;
+		const harness: PromptChromeHarness = {
+			editor,
+			defaultEditor: new FakeDefaultEditor(),
+			promptAreaComponent: replacement,
+			promptWidgetsVisible: false,
+			editorContainer: {
+				children,
+				clear: () => {
+					children.length = 0;
+				},
+				addChild: (component) => {
+					children.push(component);
+				},
+			},
+			ui: {
+				isWindowFocused: () => true,
+				getFocusedComponent: () => focusedComponent,
+				setFocus: (component) => {
+					focusedComponent = component;
+				},
+				requestRender: vi.fn(),
+			},
+			session: { thinkingLevel: "off" },
+			keybindings: {} as KeybindingsManager,
+			autocompleteProvider: undefined,
+			isBashMode: false,
+			getActivePromptBorderColor: () => theme.getThinkingBorderColor("off"),
+			isPromptActive: () => true,
+			updatePromptChrome: () => callUpdatePromptChrome(harness),
+			renderWidgets: vi.fn(),
+		};
+		bindPromptAreaHelpers(harness);
+
+		(InteractiveMode as any).prototype.restorePromptEditor.call(harness, { requestRender: false });
+		(InteractiveMode as any).prototype.restorePromptEditor.call(harness, { requestRender: false });
+
+		expect(children).toEqual([editor]);
+		expect(harness.promptAreaComponent).toBe(editor);
+		expect(harness.promptWidgetsVisible).toBe(true);
+		expect(harness.renderWidgets).toHaveBeenCalledOnce();
+		expect(focusedComponent).toBe(editor);
 	});
 });

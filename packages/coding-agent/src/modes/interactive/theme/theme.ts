@@ -1103,6 +1103,8 @@ export function getSelectListTheme(): SelectListTheme {
 export function getEditorTheme(): EditorTheme {
 	return {
 		borderColor: (text: string) => theme.fg("borderMuted", text),
+		promptBg: (text: string) => theme.bg("userMessageBg", text),
+		promptChromeBg: (str) => theme.bg("userMessageBg", str),
 		selectList: getSelectListTheme(),
 	};
 }
