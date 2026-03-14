@@ -221,6 +221,8 @@ export class AgentSession {
 	private _unsubscribeAgent?: () => void;
 	private _eventListeners: AgentSessionEventListener[] = [];
 	private _agentEventQueue: Promise<void> = Promise.resolve();
+	/** True when inside the prompt drain loop, so sendCustomMessage can use followUp */
+	private _isInPromptDrainLoop = false;
 
 	/** Tracks pending steering messages for UI display. Removed when delivered. */
 	private _steeringMessages: string[] = [];
@@ -940,7 +942,35 @@ export class AgentSession {
 			}
 		}
 
-		await this.agent.prompt(messages);
+		// Set drain flag BEFORE agent.prompt() so extension handlers that fire
+		// during the turn (via _agentEventQueue microtasks) use followUp() instead of
+		// starting fire-and-forget prompt() calls. Must be set here (after command
+		// handling) because command handlers need _isInPromptDrainLoop=false.
+		this._isInPromptDrainLoop = true;
+		try {
+			await this.agent.prompt(messages);
+			// Drain extension event handlers queued via _agentEventQueue.
+			await this._agentEventQueue;
+			// If handlers enqueued follow-up messages, continue the agent loop.
+			// Cap iterations to prevent infinite loops from extensions that
+			// unconditionally re-enqueue on every agent_end.
+			let drainCount = 0;
+			while (this.agent.hasQueuedMessages() && drainCount++ < 50) {
+				// Respect abort: don't start a new turn if the user cancelled.
+				const lastMsg = this.agent.state.messages[this.agent.state.messages.length - 1];
+				if (
+					lastMsg?.role === "assistant" &&
+					((lastMsg as AssistantMessage).stopReason === "aborted" ||
+						(lastMsg as AssistantMessage).stopReason === "error")
+				) {
+					break;
+				}
+				await this.agent.continue();
+				await this._agentEventQueue;
+			}
+		} finally {
+			this._isInPromptDrainLoop = false;
+		}
 		await this.waitForRetry();
 	}
 
@@ -1128,7 +1158,35 @@ export class AgentSession {
 				this.agent.steer(appMessage);
 			}
 		} else if (options?.triggerTurn) {
-			await this.agent.prompt(appMessage);
+			if (this._isInPromptDrainLoop) {
+				// Inside the prompt drain loop — queue as follow-up.
+				// The drain loop will pick it up via agent.continue().
+				this.agent.followUp(appMessage);
+			} else {
+				// Outside a turn (e.g., from a command handler or cold start).
+				// Start a new turn with its own drain loop.
+				this._isInPromptDrainLoop = true;
+				try {
+					await this.agent.prompt(appMessage);
+					await this._agentEventQueue;
+					let drainCount = 0;
+					while (this.agent.hasQueuedMessages() && drainCount++ < 50) {
+						const lastMsg = this.agent.state.messages[this.agent.state.messages.length - 1];
+						if (
+							lastMsg?.role === "assistant" &&
+							((lastMsg as AssistantMessage).stopReason === "aborted" ||
+								(lastMsg as AssistantMessage).stopReason === "error")
+						) {
+							break;
+						}
+						await this.agent.continue();
+						await this._agentEventQueue;
+					}
+				} finally {
+					this._isInPromptDrainLoop = false;
+				}
+				await this.waitForRetry();
+			}
 		} else {
 			this.agent.appendMessage(appMessage);
 			this.sessionManager.appendCustomMessageEntry(
