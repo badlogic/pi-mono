@@ -2,10 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added paste marker atomic segment handling in editor, treating paste markers as indivisible units during word wrapping and cursor navigation ([#2111](https://github.com/badlogic/pi-mono/pull/2111) by [@haoqixu](https://github.com/haoqixu))
+
 ### Fixed
 
 - Fixed `Input` horizontal scrolling for wide Unicode text (CJK, fullwidth characters) to use visual column width and strict slice boundaries, preventing rendered line overflow and TUI crashes ([#1982](https://github.com/badlogic/pi-mono/issues/1982))
 - Fixed xterm `modifyOtherKeys` handling for `Tab` in `matchesKey()`, restoring `shift+tab` and other modified Tab bindings in tmux when `extended-keys-format` is left at the default `xterm`
+- Fixed editor scroll indicator rendering crash in narrow terminal widths ([#2103](https://github.com/badlogic/pi-mono/pull/2103) by [@haoqixu](https://github.com/haoqixu))
+- Fixed tab characters in editor `setText()` and input paths not being normalized to spaces ([#2027](https://github.com/badlogic/pi-mono/pull/2027) by [@haoqixu](https://github.com/haoqixu))
+- Fixed `wordWrapLine` overflow when wide characters (CJK, fullwidth) fall exactly at the wrap boundary ([#2082](https://github.com/badlogic/pi-mono/pull/2082) by [@haoqixu](https://github.com/haoqixu))
+- Fixed tab characters in `Input` paste not being normalized to spaces ([#1975](https://github.com/badlogic/pi-mono/pull/1975) by [@haoqixu](https://github.com/haoqixu))
 
 ## [0.57.1] - 2026-03-07
 
