@@ -36,6 +36,13 @@ When reading issues:
   gh issue view <number> --json title,body,comments,labels,state
   ```
 
+## OSS Weekend
+- If the user says `enable OSS weekend mode until X`, run `node scripts/oss-weekend.mjs --mode=close --end-date=YYYY-MM-DD --git` with the requested end date
+- If the user says `end OSS weekend mode`, run `node scripts/oss-weekend.mjs --mode=open --git`
+- The script updates `README.md`, `packages/coding-agent/README.md`, and `.github/oss-weekend.json`
+- With `--git`, the script stages only those OSS weekend files, commits them, and pushes them
+- During OSS weekend, `.github/workflows/oss-weekend-issues.yml` auto-closes new issues from non-maintainers, and `.github/workflows/pr-gate.yml` auto-closes PRs from approved non-maintainers with the weekend message
+
 When creating issues:
 - Add `pkg:*` labels to indicate which package(s) the issue affects
   - Available labels: `pkg:agent`, `pkg:ai`, `pkg:coding-agent`, `pkg:mom`, `pkg:pods`, `pkg:tui`, `pkg:web-ui`

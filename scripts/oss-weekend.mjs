@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import process from "node:process";
 
@@ -147,19 +148,89 @@ async function readOptionalFile(path) {
   }
 }
 
+function runCommand(command, args, options = {}) {
+  return execFileSync(command, args, { encoding: "utf8", ...options });
+}
+
+function quoteArg(arg) {
+  return /[^A-Za-z0-9_./:=@-]/.test(arg) ? JSON.stringify(arg) : arg;
+}
+
+function formatCommand(command, args) {
+  return [command, ...args].map(quoteArg).join(" ");
+}
+
+function hasStagedChanges(paths) {
+  try {
+    runCommand("git", ["diff", "--cached", "--quiet", "--", ...paths], { stdio: "ignore" });
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+function runGitOperations(mode, paths, dryRun) {
+  const commitMessage = mode === "close" ? "docs: enable OSS weekend" : "docs: disable OSS weekend";
+  const addArgs = ["add", "--", ...paths];
+  const pushArgs = ["push"];
+  const commands = [formatCommand("git", addArgs)];
+
+  if (dryRun) {
+    commands.push(`git commit -m ${quoteArg(commitMessage)}`);
+    commands.push(formatCommand("git", pushArgs));
+    return {
+      commitMessage,
+      commands,
+      committed: false,
+      pushed: false,
+      stagedChanges: false,
+    };
+  }
+
+  runCommand("git", addArgs, { stdio: "inherit" });
+
+  if (!hasStagedChanges(paths)) {
+    return {
+      commitMessage,
+      commands,
+      committed: false,
+      pushed: false,
+      stagedChanges: false,
+    };
+  }
+
+  const commitArgs = ["commit", "-m", commitMessage];
+  commands.push(formatCommand("git", commitArgs));
+  runCommand("git", commitArgs, { stdio: "inherit" });
+
+  commands.push(formatCommand("git", pushArgs));
+  runCommand("git", pushArgs, { stdio: "inherit" });
+
+  return {
+    commitMessage,
+    commands,
+    committed: true,
+    pushed: true,
+    stagedChanges: true,
+  };
+}
+
 function printUsage() {
   process.stdout.write(
     [
       "Usage:",
       "  node scripts/oss-weekend.mjs --mode=close --end-date=2026-03-23",
+      "  node scripts/oss-weekend.mjs --mode=close --end-date=2026-03-23 --git",
       "  node scripts/oss-weekend.mjs --mode=open",
+      "  node scripts/oss-weekend.mjs --mode=open --git",
       "",
       "Options:",
       "  --mode=close|open     Required. close enables OSS weekend mode. open disables it.",
       "  --end-date=YYYY-MM-DD Required for --mode=close.",
       "  --readme=PATHS        Optional comma-separated README paths. Defaults to README.md,packages/coding-agent/README.md.",
       "  --state=PATH          Optional state file path. Defaults to .github/oss-weekend.json.",
-      "  --dry-run             Preview without editing files.",
+      "  --git                 Stage only the OSS weekend files, commit, and push after updating them.",
+      "  --dry-run             Preview without editing files or running git operations.",
       "  --now=ISO             Optional current timestamp override for testing.",
       "  --help                Show this message.",
       "",
@@ -181,6 +252,7 @@ async function main() {
   }
 
   const dryRun = isTruthy(getOption("dry-run", cliOptions, "OSS_WEEKEND_DRY_RUN", "false"));
+  const runGit = isTruthy(getOption("git", cliOptions, "OSS_WEEKEND_GIT", "false"));
   const nowInput = getOption("now", cliOptions, "OSS_WEEKEND_NOW", "");
   const readmePaths = parseReadmePaths(cliOptions);
   const statePath = getOption("state", cliOptions, "OSS_WEEKEND_STATE_PATH", DEFAULT_STATE_PATH);
@@ -222,6 +294,9 @@ async function main() {
     }
   }
 
+  const gitPaths = [...readmePaths, statePath];
+  const gitResult = runGit ? runGitOperations(mode, gitPaths, dryRun) : null;
+
   const output = {
     mode,
     dry_run: dryRun ? "true" : "false",
@@ -234,6 +309,12 @@ async function main() {
       .join(","),
     state_path: statePath,
     state_changed: stateChanged ? "true" : "false",
+    git_enabled: runGit ? "true" : "false",
+    git_paths: gitPaths.join(","),
+    git_commit_message: gitResult?.commitMessage ?? "",
+    git_committed: gitResult?.committed ? "true" : "false",
+    git_pushed: gitResult?.pushed ? "true" : "false",
+    git_commands: gitResult ? gitResult.commands.join(" && ") : "",
     end_date: endDate ? endDateInput : "",
     end_date_text: endDate ? formatLongDate(endDate) : "",
     now_utc: now.toISOString(),
