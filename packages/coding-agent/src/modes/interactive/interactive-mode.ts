@@ -1457,7 +1457,7 @@ export class InteractiveMode {
 			custom: (factory, options) => this.showExtensionCustom(factory, options),
 			pasteToEditor: (text) => this.editor.handleInput(`\x1b[200~${text}\x1b[201~`),
 			setEditorText: (text) => this.editor.setText(text),
-			getEditorText: () => this.editor.getText(),
+			getEditorText: () => this.editor.getExpandedText?.() ?? this.editor.getText(),
 			editor: (title, prefill) => this.showExtensionEditor(title, prefill),
 			setEditorComponent: (factory) => this.setCustomEditorComponent(factory),
 			get theme() {
