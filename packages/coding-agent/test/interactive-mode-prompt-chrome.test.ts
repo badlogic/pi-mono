@@ -1,6 +1,8 @@
 import type { Component, EditorComponent } from "@apholdings/jensen-tui";
+import { Container } from "@apholdings/jensen-tui";
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import type { AppAction, KeybindingsManager } from "../src/core/keybindings.js";
+import { TopBar } from "../src/modes/interactive/components/top-bar.js";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
 import { initTheme, theme } from "../src/modes/interactive/theme/theme.js";
 
@@ -307,5 +309,25 @@ describe("InteractiveMode prompt chrome", () => {
 		expect(harness.promptWidgetsVisible).toBe(true);
 		expect(harness.renderWidgets).toHaveBeenCalledOnce();
 		expect(focusedComponent).toBe(editor);
+	});
+
+	test("renders the top bar as a single prompt widget line", () => {
+		const container = new Container();
+		const topBar = new TopBar({
+			getModel: () => ({ provider: "openai", id: "gpt-5", reasoning: true }),
+			getThinkingLevel: () => "medium",
+			keybindings: {
+				getEffectiveConfig: () => ({}),
+			} as KeybindingsManager,
+		});
+		const fakeThis: any = {
+			renderWidgetContainer: (InteractiveMode as any).prototype.renderWidgetContainer,
+		};
+
+		(InteractiveMode as any).prototype.renderWidgetContainer.call(fakeThis, container, new Map(), true, true, topBar);
+
+		expect(container.children).toHaveLength(2);
+		expect(container.children[0].render(80)).toEqual([""]);
+		expect(container.children[1].render(80)).toHaveLength(1);
 	});
 });

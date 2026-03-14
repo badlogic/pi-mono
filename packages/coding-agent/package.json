@@ -1,7 +1,7 @@
 {
 	"name": "@apholdings/jensen-code",
 	"title": "Jensen Code",
-	"version": "0.0.4",
+	"version": "0.0.5",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"piConfig": {
@@ -45,7 +45,7 @@
 	"dependencies": {
 		"@apholdings/jensen-agent-core": "^0.0.1",
 		"@apholdings/jensen-ai": "^0.0.1",
-		"@apholdings/jensen-tui": "^0.0.2",
+		"@apholdings/jensen-tui": "^0.0.3",
 		"@mariozechner/jiti": "^2.6.2",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"chalk": "^5.5.0",

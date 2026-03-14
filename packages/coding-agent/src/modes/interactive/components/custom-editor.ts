@@ -27,6 +27,15 @@ export class CustomEditor extends Editor {
 		this.actionHandlers.set(action, handler);
 	}
 
+	clearHistory(): void {
+		const editorState = this as unknown as {
+			history: string[];
+			historyIndex: number;
+		};
+		editorState.history = [];
+		editorState.historyIndex = -1;
+	}
+
 	handleInput(data: string): void {
 		// Check extension-registered shortcuts first
 		if (this.onExtensionShortcut?.(data)) {

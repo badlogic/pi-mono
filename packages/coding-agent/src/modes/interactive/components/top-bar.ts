@@ -104,7 +104,7 @@ export class TopBar implements Component {
 		const rightWidth = visibleWidth(rightString);
 		const spaces = Math.max(0, width - leftWidth - rightWidth);
 
-		return ["", leftString + " ".repeat(spaces) + rightString];
+		return [leftString + " ".repeat(spaces) + rightString];
 	}
 
 	invalidate(): void {}

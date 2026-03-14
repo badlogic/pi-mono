@@ -258,8 +258,11 @@ function resolveCliCommandPrefix(): { command: string; prefixArgs: string[] } {
 	const cliEntry = process.argv[1];
 	if (typeof cliEntry === "string" && cliEntry.length > 0) {
 		const resolvedCliEntry = path.resolve(cliEntry);
-		if (/\.(?:cjs|cts|js|mjs|mts|ts)$/iu.test(resolvedCliEntry)) {
-			return { command: process.execPath, prefixArgs: [resolvedCliEntry] };
+		if (cliEntry !== "-" && !cliEntry.startsWith("-") && fs.existsSync(resolvedCliEntry)) {
+			return {
+				command: process.execPath,
+				prefixArgs: [...process.execArgv, resolvedCliEntry],
+			};
 		}
 	}
 	return { command: process.execPath, prefixArgs: [] };
@@ -544,6 +547,14 @@ async function runSingleAgent(
 			if (!currentResult.diagnosticMessage) {
 				currentResult.diagnosticMessage = currentResult.errorMessage;
 			}
+		}
+
+		if (!currentResult.failureStage && currentResult.exitCode !== 0) {
+			currentResult.failureStage = "result";
+			currentResult.diagnosticMessage =
+				currentResult.stderr.trim().length > 0
+					? currentResult.stderr.trim()
+					: `Child process exited with code ${currentResult.exitCode}. Command: ${invocation.displayCommand}`;
 		}
 
 		const output = extractFinalOutput(currentResult.messages);

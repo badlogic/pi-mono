@@ -244,6 +244,7 @@ describe("InteractiveMode help and session reset", () => {
 			setText(text: string) {
 				this.text = text;
 			},
+			clearHistory: vi.fn(),
 		};
 		const helpContainer = new Container();
 		helpContainer.addChild({ render: () => ["HELP"], invalidate: () => {} });
@@ -291,6 +292,7 @@ describe("InteractiveMode help and session reset", () => {
 		expect(fakeThis.pendingWorkingMessage).toBeUndefined();
 		expect(fakeThis.isBashMode).toBe(false);
 		expect(editor.text).toBe("");
+		expect(editor.clearHistory).toHaveBeenCalledOnce();
 		expect(fakeThis.updatePromptChrome).toHaveBeenCalledOnce();
 		expect(fakeThis.renderInitialMessages).not.toHaveBeenCalled();
 		expect(fakeThis.ui.invalidate).toHaveBeenCalledOnce();

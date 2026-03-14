@@ -257,6 +257,36 @@ You are a test agent.
 		expect(text).not.toContain("(no output)");
 	});
 
+	it("non-zero child exit surfaces stderr instead of empty-output fallback", async () => {
+		fs.writeFileSync(
+			path.join(agentDir, "agents", "tester.md"),
+			`---
+name: tester
+description: A simple test agent
+---
+
+You are a test agent.
+`,
+		);
+
+		const tool = createSubagentTool({
+			runSubagent: async () => ({ exitCode: 9, stderr: "node.exe: bad option: --mode" }),
+		});
+
+		const result = await tool.execute(
+			"call-4b",
+			{ agent: "tester", task: "Reply exactly with SUBAGENT_OK", agentScope: "user" },
+			undefined,
+			undefined,
+			createContext(repoDir),
+		);
+
+		expect(isToolError(result)).toBe(true);
+		const text = (result.content[0] as { type: "text"; text: string }).text;
+		expect(text).toContain("bad option: --mode");
+		expect(text).not.toContain("Final assistant output was empty");
+	});
+
 	it("empty assistant output surfaces a specific empty-output diagnostic", async () => {
 		fs.writeFileSync(
 			path.join(agentDir, "agents", "tester.md"),
@@ -312,5 +342,34 @@ You are a test agent.
 		);
 		expect(invocation.cwd).toBe(path.resolve("D:\\Documents\\software\\jensen-code\\packages\\coding-agent"));
 		expect(invocation.cwd.includes("jensen-code\\jensen-code")).toBe(false);
+	});
+
+	it("CLI invocation preserves loader args for extensionless entrypoints", () => {
+		const cliEntry = path.join(tempDir, "jensen");
+		fs.writeFileSync(cliEntry, "#!/usr/bin/env node\n");
+		process.argv = [process.argv[0], cliEntry];
+		const previousExecArgv = process.execArgv;
+		process.execArgv = ["--require", "tsx/preflight", "--import", "tsx/loader"];
+
+		try {
+			const invocation = buildSubagentInvocation(
+				repoDir,
+				{
+					name: "tester",
+					description: "A simple test agent",
+					source: "user",
+					systemPrompt: "Reply exactly with SUBAGENT_OK.",
+					filePath: path.join(agentDir, "agents", "tester.md"),
+				},
+				"Reply exactly with SUBAGENT_OK",
+			);
+
+			expect(invocation.command).toBe(process.execPath);
+			expect(invocation.args.slice(0, 4)).toEqual(["--require", "tsx/preflight", "--import", "tsx/loader"]);
+			expect(invocation.args[4]).toBe(path.resolve(cliEntry));
+			expect(invocation.args[5]).toBe("--mode");
+		} finally {
+			process.execArgv = previousExecArgv;
+		}
 	});
 });

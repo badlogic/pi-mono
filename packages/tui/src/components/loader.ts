@@ -5,19 +5,24 @@ import { Text } from "./text.js";
 export type LoaderState = "idle" | "running" | "stopped" | "disposed";
 
 /**
- * Loader component that updates every 80ms with spinning animation
- * and includes an inference timer.
+ * Loader component that updates with a moonwalking stickman animation.
+ * Kept as a single-line loader so it still fits the current status row layout.
  */
 export class Loader extends Text {
-	private frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+	private readonly frames = ["▱▱▱", "▰▱▱", "▰▰▱", "▰▰▰", "▱▱▱"];
+
+	private readonly frameWidth = Math.max(...this.frames.map((frame) => visibleWidth(frame)));
+
+	private readonly frameIntervalMs = 100;
+
 	private currentFrame = 0;
-	private intervalId: NodeJS.Timeout | null = null;
+	private intervalId: ReturnType<typeof setInterval> | null = null;
 	private ui: TUI | null = null;
 
 	private state: LoaderState = "idle";
 	private epoch = 0;
 	private startTime: number | null = null;
-	private elapsedAtStop: number = 0;
+	private elapsedAtStop = 0;
 
 	constructor(
 		ui: TUI,
@@ -30,13 +35,15 @@ export class Loader extends Text {
 		this.start();
 	}
 
-	render(width: number): string[] {
+	override render(width: number): string[] {
 		if (this.state === "disposed") {
 			return [""];
 		}
 
-		const frame = this.frames[this.currentFrame];
-		const prefix = `${this.spinnerColorFn(frame)} ${this.messageColorFn(this.message)}`;
+		const rawFrame = this.frames[this.currentFrame] ?? this.frames[0];
+		const paddedFrame = this.padFrame(rawFrame);
+		const frame = this.spinnerColorFn(paddedFrame);
+		const prefix = `${frame} ${this.messageColorFn(this.message)}`;
 
 		let elapsed = this.elapsedAtStop;
 		if (this.state === "running" && this.startTime !== null) {
@@ -86,6 +93,7 @@ export class Loader extends Text {
 
 		this.state = "running";
 		this.epoch++;
+		this.currentFrame = 0;
 		this.startTime = performance.now();
 		this.elapsedAtStop = 0;
 
@@ -97,9 +105,10 @@ export class Loader extends Text {
 				this.cleanupInterval();
 				return;
 			}
+
 			this.currentFrame = (this.currentFrame + 1) % this.frames.length;
 			this.updateDisplay();
-		}, 80);
+		}, this.frameIntervalMs);
 	}
 
 	stop() {
@@ -114,7 +123,7 @@ export class Loader extends Text {
 		this.state = "stopped";
 		this.epoch++;
 		this.cleanupInterval();
-		this.updateDisplay(); // Final render with stopped timer
+		this.updateDisplay();
 	}
 
 	dispose() {
@@ -136,13 +145,6 @@ export class Loader extends Text {
 		this.text = "";
 	}
 
-	private cleanupInterval() {
-		if (this.intervalId) {
-			clearInterval(this.intervalId);
-			this.intervalId = null;
-		}
-	}
-
 	setMessage(message: string) {
 		if (this.state === "disposed") {
 			return;
@@ -150,6 +152,18 @@ export class Loader extends Text {
 
 		this.message = message;
 		this.updateDisplay();
+	}
+
+	private cleanupInterval() {
+		if (this.intervalId) {
+			clearInterval(this.intervalId);
+			this.intervalId = null;
+		}
+	}
+
+	private padFrame(frame: string): string {
+		const padding = Math.max(0, this.frameWidth - visibleWidth(frame));
+		return frame + " ".repeat(padding);
 	}
 
 	private updateDisplay() {

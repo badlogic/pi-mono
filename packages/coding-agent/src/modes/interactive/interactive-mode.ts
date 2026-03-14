@@ -1718,7 +1718,7 @@ export class InteractiveMode {
 		}
 
 		if (leadingSpacer) {
-			container.addChild(new Spacer(0));
+			container.addChild(new Spacer(1));
 		}
 
 		if (builtInComponent) {
@@ -2641,8 +2641,6 @@ export class InteractiveMode {
 						undefined,
 						this.hideThinkingBlock,
 						this.getMarkdownThemeWithSettings(),
-						0,
-						1,
 					);
 					this.streamingMessage = event.message;
 					this.chatContainer.addChild(this.streamingComponent);
@@ -3013,8 +3011,6 @@ export class InteractiveMode {
 					message,
 					this.hideThinkingBlock,
 					this.getMarkdownThemeWithSettings(),
-					0,
-					1,
 				);
 				this.chatContainer.addChild(assistantComponent);
 				break;

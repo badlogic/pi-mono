@@ -20,7 +20,7 @@
 	},
 	"dependencies": {
 		"@anthropic-ai/sandbox-runtime": "^0.0.16",
-		"@apholdings/jensen-code": "^0.0.2",
+		"@apholdings/jensen-code": "^0.0.5",
 		"@sinclair/typebox": "^0.34.0",
 		"@slack/socket-mode": "^2.0.0",
 		"@slack/web-api": "^7.0.0",
