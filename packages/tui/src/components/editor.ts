@@ -897,17 +897,21 @@ export class Editor implements Component, Focusable {
 		return this.state.lines.join("\n");
 	}
 
+	private expandPasteMarkers(text: string): string {
+		let result = text;
+		for (const [pasteId, pasteContent] of this.pastes) {
+			const markerRegex = new RegExp(`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`, "g");
+			result = result.replace(markerRegex, () => pasteContent);
+		}
+		return result;
+	}
+
 	/**
 	 * Get text with paste markers expanded to their actual content.
 	 * Use this when you need the full content (e.g., for external editor).
 	 */
 	getExpandedText(): string {
-		let result = this.state.lines.join("\n");
-		for (const [pasteId, pasteContent] of this.pastes) {
-			const markerRegex = new RegExp(`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`, "g");
-			result = result.replace(markerRegex, pasteContent);
-		}
-		return result;
+		return this.expandPasteMarkers(this.state.lines.join("\n"));
 	}
 
 	getLines(): string[] {
@@ -1152,11 +1156,7 @@ export class Editor implements Component, Focusable {
 	}
 
 	private submitValue(): void {
-		let result = this.state.lines.join("\n").trim();
-		for (const [pasteId, pasteContent] of this.pastes) {
-			const markerRegex = new RegExp(`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`, "g");
-			result = result.replace(markerRegex, pasteContent);
-		}
+		const result = this.expandPasteMarkers(this.state.lines.join("\n")).trim();
 
 		this.state = { lines: [""], cursorLine: 0, cursorCol: 0 };
 		this.pastes.clear();

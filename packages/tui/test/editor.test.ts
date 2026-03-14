@@ -3388,5 +3388,53 @@ describe("Editor component", () => {
 				);
 			}
 		});
+
+		it("expands large pasted content literally in getExpandedText", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const pastedText = [
+				"line 1",
+				"line 2",
+				"line 3",
+				"line 4",
+				"line 5",
+				"line 6",
+				"line 7",
+				"line 8",
+				"line 9",
+				"line 10",
+				"tokens $1 $2 $& $$ $` $' end",
+			].join("\n");
+
+			editor.handleInput(`\x1b[200~${pastedText}\x1b[201~`);
+
+			assert.match(editor.getText(), /\[paste #\d+ \+\d+ lines\]/);
+			assert.strictEqual(editor.getExpandedText(), pastedText);
+		});
+
+		it("submits large pasted content literally", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const pastedText = [
+				"line 1",
+				"line 2",
+				"line 3",
+				"line 4",
+				"line 5",
+				"line 6",
+				"line 7",
+				"line 8",
+				"line 9",
+				"line 10",
+				"tokens $1 $2 $& $$ $` $' end",
+			].join("\n");
+			let submitted = "";
+			editor.onSubmit = (text) => {
+				submitted = text;
+			};
+
+			editor.handleInput(`\x1b[200~${pastedText}\x1b[201~`);
+			editor.handleInput("\r");
+
+			assert.strictEqual(submitted, pastedText);
+		});
 	});
 });
