@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Fixed Windows shell and path handling in autocomplete to properly handle drive letters and mixed path separators
+- Fixed editor paste to preserve literal content instead of normalizing newlines, preventing content corruption for text with embedded escape sequences ([#2064](https://github.com/badlogic/pi-mono/issues/2064))
+- Fixed tab completion to preserve `./` prefix when completing relative paths ([#2087](https://github.com/badlogic/pi-mono/issues/2087))
 - Fixed `ctrl+backspace` being indistinguishable from plain `backspace` on Windows Terminal. `0x08` is now recognized as `ctrl+backspace` instead of `backspace`, making `ctrl+backspace` bindable on terminals where it produces a distinct byte ([#2139](https://github.com/badlogic/pi-mono/issues/2139))
 
 ## [0.58.0] - 2026-03-14

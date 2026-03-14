@@ -2,8 +2,26 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `pi uninstall` alias for `pi install --uninstall` convenience
+
 ### Fixed
 
+- Fixed OpenAI Codex websocket protocol to include required headers and properly terminate SSE streams on connection close ([#1961](https://github.com/badlogic/pi-mono/issues/1961))
+- Fixed WSL clipboard image fallback to properly handle missing clipboard utilities and permission errors ([#1722](https://github.com/badlogic/pi-mono/issues/1722))
+- Fixed extension `session_start` hook firing before TUI was ready, causing UI operations in `session_start` handlers to fail ([#2035](https://github.com/badlogic/pi-mono/issues/2035))
+- Fixed Windows shell and path handling for package manager operations and autocomplete to properly handle drive letters and mixed path separators
+- Fixed Bedrock prompt caching being enabled for non-Claude models, causing API errors ([#2053](https://github.com/badlogic/pi-mono/issues/2053))
+- Fixed Qwen models via OpenAI-compatible providers by adding `qwen-chat-template` compat mode that uses Qwen's native chat template format ([#2020](https://github.com/badlogic/pi-mono/issues/2020))
+- Fixed Bedrock unsigned thinking replay to handle edge cases with empty or malformed thinking blocks ([#2063](https://github.com/badlogic/pi-mono/issues/2063))
+- Fixed headless clipboard fallback logging spurious errors in non-interactive environments ([#2056](https://github.com/badlogic/pi-mono/issues/2056))
+- Fixed `models.json` provider compat flags not being honored when loading custom model definitions ([#2062](https://github.com/badlogic/pi-mono/issues/2062))
+- Fixed xhigh reasoning effort detection for Claude Opus 4.6 to match by model ID instead of requiring explicit capability flag ([#2040](https://github.com/badlogic/pi-mono/issues/2040))
+- Fixed prompt cwd containing Windows backslashes breaking bash tool execution by normalizing to forward slashes ([#2080](https://github.com/badlogic/pi-mono/issues/2080))
+- Fixed editor paste to preserve literal content instead of normalizing newlines, preventing content corruption for text with embedded escape sequences ([#2064](https://github.com/badlogic/pi-mono/issues/2064))
+- Fixed skill discovery recursing past skill root directories when nested SKILL.md files exist ([#2075](https://github.com/badlogic/pi-mono/issues/2075))
+- Fixed tab completion to preserve `./` prefix when completing relative paths ([#2087](https://github.com/badlogic/pi-mono/issues/2087))
 - Fixed npm package installs and lookups being tied to the active repository Node version by adding `npmCommand` as an argv-style settings override for package manager operations ([#2072](https://github.com/badlogic/pi-mono/issues/2072))
 - Fixed `ctx.ui.getEditorText()` in the extension API returning paste markers (e.g., `[paste #1 +24 lines]`) instead of the actual pasted content ([#2084](https://github.com/badlogic/pi-mono/issues/2084))
 - Fixed startup crash when downloading `fd`/`ripgrep` on first run by using `pipeline()` instead of `finished(readable.pipe(writable))` so stream errors from timeouts are caught properly, and increased the download timeout from 10s to 120s ([#2066](https://github.com/badlogic/pi-mono/issues/2066))
