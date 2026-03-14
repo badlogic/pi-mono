@@ -846,8 +846,14 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 				}
 				return matchesKittySequence(data, CODEPOINTS.backspace, MODIFIERS.alt);
 			}
+			if (ctrl && !alt && !shift) {
+				// Legacy: 0x08 (BS) is sent by Windows Terminal for Ctrl+Backspace.
+				// Also matches Ctrl+H (same byte, ambiguous in legacy terminals).
+				if (data === "\x08") return true;
+				return matchesKittySequence(data, CODEPOINTS.backspace, MODIFIERS.ctrl);
+			}
 			if (modifier === 0) {
-				return data === "\x7f" || data === "\x08" || matchesKittySequence(data, CODEPOINTS.backspace, 0);
+				return data === "\x7f" || matchesKittySequence(data, CODEPOINTS.backspace, 0);
 			}
 			return matchesKittySequence(data, CODEPOINTS.backspace, modifier);
 
@@ -1165,7 +1171,8 @@ export function parseKey(data: string): string | undefined {
 	if (data === "\r" || (!_kittyProtocolActive && data === "\n") || data === "\x1bOM") return "enter";
 	if (data === "\x00") return "ctrl+space";
 	if (data === " ") return "space";
-	if (data === "\x7f" || data === "\x08") return "backspace";
+	if (data === "\x7f") return "backspace";
+	if (data === "\x08") return "ctrl+backspace";
 	if (data === "\x1b[Z") return "shift+tab";
 	if (!_kittyProtocolActive && data === "\x1b\r") return "alt+enter";
 	if (!_kittyProtocolActive && data === "\x1b ") return "alt+space";
