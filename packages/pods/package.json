@@ -1,10 +1,10 @@
 {
-	"name": "@mariozechner/pi",
-	"version": "0.57.1",
+	"name": "@apholdings/jensen-pods",
+	"version": "0.0.1",
 	"description": "CLI tool for managing vLLM deployments on GPU pods",
 	"type": "module",
 	"bin": {
-		"pi-pods": "dist/cli.js"
+		"jensen-pods": "dist/cli.js"
 	},
 	"scripts": {
 		"clean": "shx rm -rf dist",
@@ -22,7 +22,7 @@
 		"ai",
 		"cli"
 	],
-	"author": "Mario Zechner",
+	"author": "AP Holdings",
 	"license": "MIT",
 	"repository": {
 		"type": "git",

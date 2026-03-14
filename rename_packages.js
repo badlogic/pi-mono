@@ -5,6 +5,9 @@ const replacements = [
   { old: '@mariozechner/pi-tui', new: '@apholdings/jensen-tui' },
   { old: '@mariozechner/pi-ai', new: '@apholdings/jensen-ai' },
   { old: '@mariozechner/pi-agent-core', new: '@apholdings/jensen-agent-core' },
+  { old: '@mariozechner/pi-mom', new: '@apholdings/jensen-mom' },
+  { old: '@mariozechner/pi', new: '@apholdings/jensen-pods' },
+  { old: '@mariozechner/pi-web-ui', new: '@apholdings/jensen-web-ui' },
 ];
 
 const versionUpdate = '^0.0.1';

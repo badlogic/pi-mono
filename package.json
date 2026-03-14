@@ -1,5 +1,6 @@
 {
-	"name": "pi-monorepo",
+	"name": "jensen-monorepo",
+	"author": "AP Holdings",
 	"private": true,
 	"type": "module",
 	"workspaces": [

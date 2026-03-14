@@ -567,6 +567,6 @@ MIT
 ## See Also
 
 - [@apholdings/jensen-ai](https://www.npmjs.com/package/@apholdings/jensen-ai): Core LLM toolkit
-- [@mariozechner/pi-agent](https://www.npmjs.com/package/@mariozechner/pi-agent): Agent framework
+- [@apholdings/jensen-pods-agent](https://www.npmjs.com/package/@apholdings/jensen-pods-agent): Agent framework
 - [@apholdings/jensen-tui](https://www.npmjs.com/package/@apholdings/jensen-tui): Terminal UI components
 

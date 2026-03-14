@@ -1,6 +1,6 @@
 # Pi Web UI - Example
 
-This is a minimal example showing how to use `@mariozechner/pi-web-ui` in a web application.
+This is a minimal example showing how to use `@apholdings/jensen-pods-web-ui` in a web application.
 
 ## Setup
 
@@ -57,5 +57,5 @@ example/
 ## Learn More
 
 - [Pi Web UI Documentation](../README.md)
-- [Pi AI Documentation](../../ai/README.md)
+- [Jensen AI Documentation](../../ai/README.md)
 - [Mini Lit Documentation](https://github.com/badlogic/mini-lit)

@@ -251,7 +251,7 @@
 
 ### Added
 
-- `streamFn` option on `Agent` for custom stream implementations. Default uses `streamSimple` from pi-ai.
+- `streamFn` option on `Agent` for custom stream implementations. Default uses `streamSimple` from jensen-ai.
 
 - `streamProxy()` utility function for browser apps that need to proxy LLM calls through a backend server. Replaces the removed `AppTransport`.
 

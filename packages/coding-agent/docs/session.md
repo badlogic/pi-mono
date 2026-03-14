@@ -69,7 +69,7 @@ interface ToolCall {
 }
 ```
 
-### Base Message Types (from pi-ai)
+### Base Message Types (from jensen-ai)
 
 ```typescript
 interface UserMessage {

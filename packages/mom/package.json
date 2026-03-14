@@ -1,5 +1,5 @@
 {
-	"name": "@mariozechner/pi-mom",
+	"name": "@apholdings/jensen-mom",
 	"version": "0.57.1",
 	"description": "Slack bot that delegates messages to the pi coding agent",
 	"type": "module",
@@ -20,7 +20,7 @@
 	},
 	"dependencies": {
 		"@anthropic-ai/sandbox-runtime": "^0.0.16",
-		"@apholdings/jensen-code": "^0.0.5",
+		"@apholdings/jensen-code": "^0.0.6",
 		"@sinclair/typebox": "^0.34.0",
 		"@slack/socket-mode": "^2.0.0",
 		"@slack/web-api": "^7.0.0",
@@ -41,7 +41,7 @@
 		"ai",
 		"agent"
 	],
-	"author": "Mario Zechner",
+	"author": "AP Holdings",
 	"license": "MIT",
 	"repository": {
 		"type": "git",

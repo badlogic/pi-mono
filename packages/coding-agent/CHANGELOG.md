@@ -674,7 +674,7 @@ Jensen Code is a fork of [pi-mono](https://github.com/badlogic/pi-mono). This re
 ### Added
 
 - Added `titlebar-spinner.ts` example extension that shows a braille spinner animation in the terminal title while the agent is working.
-- Added `PI_AI_ANTIGRAVITY_VERSION` environment variable documentation to help text ([#1129](https://github.com/badlogic/pi-mono/issues/1129))
+- Added `JENSEN_AI_ANTIGRAVITY_VERSION` environment variable documentation to help text ([#1129](https://github.com/badlogic/pi-mono/issues/1129))
 - Added `cacheRetention` stream option with provider-specific mappings for prompt cache controls, defaulting to short retention ([#1134](https://github.com/badlogic/pi-mono/issues/1134))
 
 ## [0.50.8] - 2026-02-01

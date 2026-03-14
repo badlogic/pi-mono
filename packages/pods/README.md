@@ -5,7 +5,7 @@ Deploy and manage LLMs on GPU pods with automatic vLLM configuration for agentic
 ## Installation
 
 ```bash
-npm install -g @mariozechner/pi
+npm install -g @apholdings/jensen-pods
 ```
 
 ## What is pi?
@@ -312,7 +312,7 @@ response = client.chat.completions.create(
 
 ```bash
 # Install globally to get pi-agent command
-npm install -g @mariozechner/pi
+npm install -g @apholdings/jensen-pods
 
 # Use with OpenAI
 pi-agent --api-key sk-... "What is machine learning?"

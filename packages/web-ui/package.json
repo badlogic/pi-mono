@@ -1,5 +1,5 @@
 {
-	"name": "@mariozechner/pi-web-ui",
+	"name": "@apholdings/jensen-web-ui",
 	"version": "0.57.1",
 	"description": "Reusable web UI components for AI chat interfaces powered by @apholdings/jensen-ai",
 	"type": "module",
@@ -24,7 +24,7 @@
 		"ollama": "^0.6.0",
 		"pdfjs-dist": "5.4.394",
 		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
-		"@apholdings/jensen-tui": "^0.0.3",
+		"@apholdings/jensen-tui": "^0.0.4",
 		"@apholdings/jensen-ai": "^0.0.1"
 	},
 	"peerDependencies": {
@@ -46,6 +46,6 @@
 		"web-components",
 		"mini-lit"
 	],
-	"author": "Mario Zechner",
+	"author": "AP Holdings",
 	"license": "MIT"
 }

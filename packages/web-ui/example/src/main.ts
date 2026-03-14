@@ -18,7 +18,7 @@ import {
 	SettingsDialog,
 	SettingsStore,
 	setAppStorage,
-} from "@mariozechner/pi-web-ui";
+} from "@apholdings/jensen-pods-web-ui";
 import { html, render } from "lit";
 import { Bell, History, Plus, Settings } from "lucide";
 import "./app.css";

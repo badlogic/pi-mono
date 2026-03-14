@@ -42,8 +42,8 @@ function findPackageDir(): string {
 const PACKAGE_DIR = findPackageDir();
 const pkg = JSON.parse(readFileSync(join(PACKAGE_DIR, "package.json"), "utf-8"));
 
-export const APP_NAME: string = pkg.piConfig?.name || "pi";
-export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".pi";
+export const APP_NAME: string = pkg.jensenConfig?.name || pkg.piConfig?.name || "jensen";
+export const CONFIG_DIR_NAME: string = pkg.jensenConfig?.configDir || pkg.piConfig?.configDir || ".jensen";
 export const VERSION: string = pkg.version;
 export const PACKAGE_NAME: string = pkg.name;
 export const FILE_PREFIX: string = APP_NAME.toLowerCase().replace(/\s+/g, "-");
@@ -180,7 +180,7 @@ export function getChangelogPath(): string {
 // e.g., JENSEN_CODE_CODING_AGENT_DIR or PI_CODING_AGENT_DIR
 export const ENV_AGENT_DIR = `${ENV_PREFIX}_CODING_AGENT_DIR`;
 
-const DEFAULT_SHARE_VIEWER_URL = "https://pi.dev/session/";
+const DEFAULT_SHARE_VIEWER_URL = "https://jensen.dev/session/";
 
 /** Get the share viewer URL for a gist ID */
 export function getShareViewerUrl(gistId: string): string {
@@ -189,11 +189,36 @@ export function getShareViewerUrl(gistId: string): string {
 	return `${baseUrl}#${gistId}`;
 }
 
+/** Get if offline mode is enabled via environment variable */
+export function getOfflineEnv(): string | undefined {
+	return process.env[`${ENV_PREFIX}_OFFLINE`] || process.env.PI_OFFLINE;
+}
+
+/** Get if version check should be skipped via environment variable */
+export function getSkipVersionCheckEnv(): string | undefined {
+	return process.env[`${ENV_PREFIX}_SKIP_VERSION_CHECK`] || process.env.PI_SKIP_VERSION_CHECK;
+}
+
+/** Get if timings should be enabled via environment variable */
+export function getTimingEnv(): string | undefined {
+	return process.env[`${ENV_PREFIX}_TIMING`] || process.env.PI_TIMING;
+}
+
+/** Get if hardware cursor should be shown via environment variable */
+export function getHardwareCursorEnv(): string | undefined {
+	return process.env[`${ENV_PREFIX}_HARDWARE_CURSOR`] || process.env.PI_HARDWARE_CURSOR;
+}
+
+/** Get if clear on shrink is enabled via environment variable */
+export function getClearOnShrinkEnv(): string | undefined {
+	return process.env[`${ENV_PREFIX}_CLEAR_ON_SHRINK`] || process.env.PI_CLEAR_ON_SHRINK;
+}
+
 // =============================================================================
-// User Config Paths (~/.pi/agent/*)
+// User Config Paths (~/.jensen/agent/*)
 // =============================================================================
 
-/** Get the agent config directory (e.g., ~/.pi/agent/) */
+/** Get the agent config directory (e.g., ~/.jensen/agent/) */
 export function getAgentDir(): string {
 	const envDir = process.env[ENV_AGENT_DIR] || process.env.PI_CODING_AGENT_DIR;
 	if (envDir) {

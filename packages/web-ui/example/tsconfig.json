@@ -9,7 +9,7 @@
 			"@apholdings/jensen-agent-core": ["../../agent/dist/index.d.ts"],
 			"@apholdings/jensen-ai": ["../../ai/dist/index.d.ts"],
 			"@apholdings/jensen-tui": ["../../tui/dist/index.d.ts"],
-			"@mariozechner/pi-web-ui": ["../dist/index.d.ts"]
+			"@apholdings/jensen-pods-web-ui": ["../dist/index.d.ts"]
 		},
 		"strict": true,
 		"skipLibCheck": true,
