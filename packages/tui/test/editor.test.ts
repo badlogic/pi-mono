@@ -3437,4 +3437,281 @@ describe("Editor component", () => {
 			assert.strictEqual(submitted, pastedText);
 		});
 	});
+
+	describe("Ghost text (inline suggestions)", () => {
+		/** Create a synchronous ghost text provider for testing */
+		function createMockProvider(suggestion: string | null) {
+			return {
+				calls: [] as Array<{ text: string; cursorLine: number; cursorCol: number }>,
+				getSuggestion(text: string, cursorLine: number, cursorCol: number, _signal: AbortSignal) {
+					this.calls.push({ text, cursorLine, cursorCol });
+					return Promise.resolve(suggestion);
+				},
+			};
+		}
+
+		/** Flush pending timers and microtasks so ghost text resolves */
+		async function flushGhostText(debounceMs: number = 0) {
+			// Wait for debounce timer
+			await new Promise((resolve) => setTimeout(resolve, debounceMs + 10));
+			// Wait for promise resolution
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+
+		it("stores ghost text from provider", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			const provider = createMockProvider("world");
+			editor.setGhostTextProvider(provider);
+
+			editor.handleInput("h");
+			await flushGhostText();
+
+			assert.strictEqual(editor.getGhostText(), "world");
+		});
+
+		it("renders ghost text as dim text after cursor", async () => {
+			const tui = createTestTUI(40, 10);
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			const provider = createMockProvider("world");
+			editor.setGhostTextProvider(provider);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			await flushGhostText();
+
+			const rendered = editor.render(40);
+			// Ghost text should appear in the rendered output (dim escape: \x1b[2m)
+			const contentLine = rendered[1]; // First content line (after top border)
+			assert.ok(contentLine?.includes("\x1b[2m"), "Ghost text should be rendered with dim style");
+			assert.ok(contentLine?.includes("world"), "Ghost text content should appear");
+		});
+
+		it("clears ghost text on character input", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			const provider = createMockProvider("suggestion");
+			editor.setGhostTextProvider(provider);
+
+			editor.handleInput("a");
+			await flushGhostText();
+			assert.strictEqual(editor.getGhostText(), "suggestion");
+
+			// Type another character - ghost text should be cleared immediately
+			provider.getSuggestion = () => Promise.resolve(null);
+			editor.handleInput("b");
+			// Ghost text cleared synchronously before new request
+			assert.strictEqual(editor.getGhostText(), null);
+		});
+
+		it("clears ghost text on backspace", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			const provider = createMockProvider("suggestion");
+			editor.setGhostTextProvider(provider);
+
+			editor.handleInput("a");
+			await flushGhostText();
+			assert.strictEqual(editor.getGhostText(), "suggestion");
+
+			provider.getSuggestion = () => Promise.resolve(null);
+			editor.handleInput("\x7f"); // Backspace
+			assert.strictEqual(editor.getGhostText(), null);
+		});
+
+		it("clears ghost text on setText", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			const provider = createMockProvider("suggestion");
+			editor.setGhostTextProvider(provider);
+
+			editor.handleInput("a");
+			await flushGhostText();
+			assert.strictEqual(editor.getGhostText(), "suggestion");
+
+			editor.setText("replaced");
+			assert.strictEqual(editor.getGhostText(), null);
+		});
+
+		it("accepts ghost text on Tab", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			const provider = createMockProvider(" world");
+			editor.setGhostTextProvider(provider);
+
+			editor.handleInput("h");
+			editor.handleInput("e");
+			editor.handleInput("l");
+			editor.handleInput("l");
+			editor.handleInput("o");
+			await flushGhostText();
+			assert.strictEqual(editor.getGhostText(), " world");
+
+			// Tab should accept the ghost text
+			editor.handleInput("\t");
+			assert.strictEqual(editor.getText(), "hello world");
+			assert.strictEqual(editor.getGhostText(), null);
+		});
+
+		it("falls through to autocomplete on Tab when no ghost text", () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			// No ghost text provider - Tab should not crash
+			editor.setText("/hel");
+			editor.handleInput("\t");
+			// Should not throw, just trigger normal tab completion
+		});
+
+		it("does not show ghost text when autocomplete is active", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+
+			// Set up autocomplete provider
+			const autocompleteProvider: AutocompleteProvider = {
+				getSuggestions(_lines: string[], _cursorLine: number, _cursorCol: number) {
+					return { items: [{ value: "/help", label: "/help" }], prefix: "/" };
+				},
+				applyCompletion(
+					lines: string[],
+					cursorLine: number,
+					_cursorCol: number,
+					item: { value: string },
+					prefix: string,
+				) {
+					const line = lines[cursorLine] || "";
+					const newLine = line.slice(0, line.length - prefix.length) + item.value;
+					return { lines: [newLine], cursorLine: 0, cursorCol: newLine.length };
+				},
+			};
+			editor.setAutocompleteProvider(autocompleteProvider);
+
+			const ghostProvider = createMockProvider("ghost");
+			editor.setGhostTextProvider(ghostProvider);
+
+			// Type "/" to trigger autocomplete
+			editor.handleInput("/");
+			await flushGhostText();
+
+			// Ghost text should not appear while autocomplete is shown
+			assert.strictEqual(editor.getGhostText(), null);
+		});
+
+		it("handles null suggestion from provider", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			const provider = createMockProvider(null);
+			editor.setGhostTextProvider(provider);
+
+			editor.handleInput("a");
+			await flushGhostText();
+
+			assert.strictEqual(editor.getGhostText(), null);
+		});
+
+		it("aborts previous request when new input arrives", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+
+			let requestCount = 0;
+			let abortedCount = 0;
+			const provider = {
+				getSuggestion(_text: string, _cursorLine: number, _cursorCol: number, signal: AbortSignal) {
+					requestCount++;
+					return new Promise<string | null>((resolve) => {
+						signal.addEventListener("abort", () => {
+							abortedCount++;
+						});
+						// Simulate slow provider
+						setTimeout(() => {
+							if (!signal.aborted) resolve("suggestion");
+							else resolve(null);
+						}, 200);
+					});
+				},
+			};
+			editor.setGhostTextProvider(provider);
+
+			// Type first character and let the debounce fire
+			editor.handleInput("a");
+			await flushGhostText();
+			// First request is now in-flight (waiting 200ms)
+			assert.strictEqual(requestCount, 1);
+
+			// Type another character - this should abort the in-flight request
+			editor.handleInput("b");
+			assert.strictEqual(abortedCount, 1, "In-flight request should be aborted on new input");
+		});
+
+		it("clears ghost text when provider is set to undefined", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			const provider = createMockProvider("suggestion");
+			editor.setGhostTextProvider(provider);
+
+			editor.handleInput("a");
+			await flushGhostText();
+			assert.strictEqual(editor.getGhostText(), "suggestion");
+
+			editor.setGhostTextProvider(undefined);
+			assert.strictEqual(editor.getGhostText(), null);
+		});
+
+		it("truncates ghost text to available width", async () => {
+			const tui = createTestTUI(20, 10);
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			const longSuggestion = "this is a very long suggestion that should be truncated";
+			const provider = createMockProvider(longSuggestion);
+			editor.setGhostTextProvider(provider);
+
+			editor.setText("hello");
+			editor.handleInput("!");
+			await flushGhostText();
+
+			const rendered = editor.render(20);
+			// Each rendered line should not exceed terminal width
+			for (const line of rendered) {
+				assert.ok(
+					visibleWidth(line) <= 20,
+					`Line should not exceed width 20, got ${visibleWidth(line)}: "${stripVTControlCharacters(line)}"`,
+				);
+			}
+		});
+
+		it("respects debounce delay", async () => {
+			const tui = createTestTUI();
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 100 });
+			const provider = createMockProvider("delayed");
+			editor.setGhostTextProvider(provider);
+
+			editor.handleInput("a");
+
+			// Should not have ghost text immediately
+			await new Promise((resolve) => setTimeout(resolve, 10));
+			assert.strictEqual(editor.getGhostText(), null);
+			assert.strictEqual(provider.calls.length, 0);
+
+			// Should have ghost text after debounce
+			await flushGhostText(100);
+			assert.strictEqual(editor.getGhostText(), "delayed");
+			assert.strictEqual(provider.calls.length, 1);
+		});
+
+		it("only shows first line of multi-line ghost text", async () => {
+			const tui = createTestTUI(40, 10);
+			const editor = new Editor(tui, defaultEditorTheme, { ghostTextDebounceMs: 0 });
+			const provider = createMockProvider("first line\nsecond line\nthird line");
+			editor.setGhostTextProvider(provider);
+
+			editor.handleInput("x");
+			await flushGhostText();
+
+			const rendered = editor.render(40);
+			const allContent = rendered.join("\n");
+			assert.ok(allContent.includes("first line"), "First line of ghost text should be shown");
+			assert.ok(!allContent.includes("second line"), "Subsequent lines should not be rendered inline");
+		});
+	});
 });

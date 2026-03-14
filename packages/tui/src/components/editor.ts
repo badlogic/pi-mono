@@ -202,9 +202,27 @@ export interface EditorTheme {
 	selectList: SelectListTheme;
 }
 
+/**
+ * Provider for ghost text (inline suggestions).
+ * Returns a suggestion string to display as dimmed text after the cursor.
+ */
+export interface GhostTextProvider {
+	/**
+	 * Get a suggestion for the current editor content.
+	 * @param text - Full editor text
+	 * @param cursorLine - Current cursor line
+	 * @param cursorCol - Current cursor column
+	 * @param signal - Abort signal for cancellation
+	 * @returns Suggestion text to display, or null for no suggestion
+	 */
+	getSuggestion(text: string, cursorLine: number, cursorCol: number, signal: AbortSignal): Promise<string | null>;
+}
+
 export interface EditorOptions {
 	paddingX?: number;
 	autocompleteMaxVisible?: number;
+	/** Debounce delay in ms before requesting ghost text (default: 500) */
+	ghostTextDebounceMs?: number;
 }
 
 const SLASH_COMMAND_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
@@ -241,6 +259,13 @@ export class Editor implements Component, Focusable {
 	private autocompleteState: "regular" | "force" | null = null;
 	private autocompletePrefix: string = "";
 	private autocompleteMaxVisible: number = 5;
+
+	// Ghost text (inline suggestion) support
+	private ghostTextProvider?: GhostTextProvider;
+	private ghostText: string | null = null;
+	private ghostTextAbortController: AbortController | null = null;
+	private ghostTextDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	private ghostTextDebounceMs: number = 500;
 
 	// Paste tracking for large pastes
 	private pastes: Map<number, string> = new Map();
@@ -279,6 +304,8 @@ export class Editor implements Component, Focusable {
 		this.paddingX = Number.isFinite(paddingX) ? Math.max(0, Math.floor(paddingX)) : 0;
 		const maxVisible = options.autocompleteMaxVisible ?? 5;
 		this.autocompleteMaxVisible = Number.isFinite(maxVisible) ? Math.max(3, Math.min(20, Math.floor(maxVisible))) : 5;
+		const debounceMs = options.ghostTextDebounceMs ?? 500;
+		this.ghostTextDebounceMs = Number.isFinite(debounceMs) ? Math.max(0, Math.floor(debounceMs)) : 500;
 	}
 
 	/** Set of currently valid paste IDs, for marker-aware segmentation. */
@@ -317,6 +344,91 @@ export class Editor implements Component, Focusable {
 
 	setAutocompleteProvider(provider: AutocompleteProvider): void {
 		this.autocompleteProvider = provider;
+	}
+
+	/**
+	 * Set a ghost text provider for inline suggestions.
+	 * Pass undefined to disable ghost text.
+	 */
+	setGhostTextProvider(provider: GhostTextProvider | undefined): void {
+		this.ghostTextProvider = provider;
+		if (!provider) {
+			this.clearGhostText();
+		}
+	}
+
+	/** Get the current ghost text, if any. */
+	getGhostText(): string | null {
+		return this.ghostText;
+	}
+
+	private clearGhostText(): void {
+		this.ghostText = null;
+		if (this.ghostTextAbortController) {
+			this.ghostTextAbortController.abort();
+			this.ghostTextAbortController = null;
+		}
+		if (this.ghostTextDebounceTimer) {
+			clearTimeout(this.ghostTextDebounceTimer);
+			this.ghostTextDebounceTimer = null;
+		}
+	}
+
+	/** Accept the current ghost text, inserting it at the cursor. */
+	acceptGhostText(): boolean {
+		if (!this.ghostText) return false;
+		const text = this.ghostText;
+		this.ghostText = null;
+		this.pushUndoSnapshot();
+		this.lastAction = null;
+		this.insertTextAtCursorInternal(text);
+		this.scheduleGhostText();
+		return true;
+	}
+
+	private scheduleGhostText(): void {
+		// Cancel any pending request
+		if (this.ghostTextAbortController) {
+			this.ghostTextAbortController.abort();
+			this.ghostTextAbortController = null;
+		}
+		if (this.ghostTextDebounceTimer) {
+			clearTimeout(this.ghostTextDebounceTimer);
+			this.ghostTextDebounceTimer = null;
+		}
+
+		if (!this.ghostTextProvider) return;
+
+		// Don't show ghost text when autocomplete is active
+		if (this.autocompleteState) return;
+
+		this.ghostTextDebounceTimer = setTimeout(() => {
+			this.requestGhostText();
+		}, this.ghostTextDebounceMs);
+	}
+
+	private requestGhostText(): void {
+		if (!this.ghostTextProvider) return;
+
+		const controller = new AbortController();
+		this.ghostTextAbortController = controller;
+
+		const text = this.getText();
+		const { cursorLine, cursorCol } = this.state;
+
+		this.ghostTextProvider.getSuggestion(text, cursorLine, cursorCol, controller.signal).then(
+			(suggestion) => {
+				if (controller.signal.aborted) return;
+				this.ghostText = suggestion;
+				this.ghostTextAbortController = null;
+				this.tui.requestRender();
+			},
+			(_error) => {
+				// Silently ignore errors (aborted, network, etc.)
+				if (controller.signal.aborted) return;
+				this.ghostTextAbortController = null;
+			},
+		);
 	}
 
 	/**
@@ -485,6 +597,19 @@ export class Editor implements Component, Focusable {
 				}
 			}
 
+			// Add ghost text after cursor on the cursor line (single-line only, no wrapping)
+			if (layoutLine.hasCursor && this.ghostText && !this.autocompleteState) {
+				const ghostFirstLine = this.ghostText.split("\n")[0] || "";
+				if (ghostFirstLine) {
+					const availableWidth = contentWidth - lineVisibleWidth;
+					if (availableWidth > 0) {
+						const truncatedGhost = truncateToWidth(ghostFirstLine, availableWidth);
+						displayText += `\x1b[2m${truncatedGhost}\x1b[0m`;
+						lineVisibleWidth += visibleWidth(truncatedGhost);
+					}
+				}
+			}
+
 			// Calculate padding based on actual visible width
 			const padding = " ".repeat(Math.max(0, contentWidth - lineVisibleWidth));
 			const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
@@ -643,8 +768,12 @@ export class Editor implements Component, Focusable {
 			}
 		}
 
-		// Tab - trigger completion
+		// Tab - accept ghost text or trigger completion
 		if (kb.matches(data, "tab") && !this.autocompleteState) {
+			if (this.ghostText) {
+				this.acceptGhostText();
+				return;
+			}
 			this.handleTabCompletion();
 			return;
 		}
@@ -928,6 +1057,7 @@ export class Editor implements Component, Focusable {
 	}
 
 	setText(text: string): void {
+		this.clearGhostText();
 		this.lastAction = null;
 		this.historyIndex = -1; // Exit history browsing mode
 		const normalized = this.normalizeText(text);
@@ -1008,8 +1138,8 @@ export class Editor implements Component, Focusable {
 		}
 	}
 
-	// All the editor methods from before...
 	private insertCharacter(char: string, skipUndoCoalescing?: boolean): void {
+		this.clearGhostText();
 		this.historyIndex = -1; // Exit history browsing mode
 
 		// Undo coalescing (fish-style):
@@ -1068,9 +1198,15 @@ export class Editor implements Component, Focusable {
 		} else {
 			this.updateAutocomplete();
 		}
+
+		// Schedule ghost text after typing (only if no autocomplete is showing)
+		if (!this.autocompleteState) {
+			this.scheduleGhostText();
+		}
 	}
 
 	private handlePaste(pastedText: string): void {
+		this.clearGhostText();
 		this.historyIndex = -1; // Exit history browsing mode
 		this.lastAction = null;
 
@@ -1126,6 +1262,7 @@ export class Editor implements Component, Focusable {
 	}
 
 	private addNewLine(): void {
+		this.clearGhostText();
 		this.historyIndex = -1; // Exit history browsing mode
 		this.lastAction = null;
 
@@ -1176,6 +1313,7 @@ export class Editor implements Component, Focusable {
 	}
 
 	private handleBackspace(): void {
+		this.clearGhostText();
 		this.historyIndex = -1; // Exit history browsing mode
 		this.lastAction = null;
 
@@ -1229,6 +1367,11 @@ export class Editor implements Component, Focusable {
 			else if (textBeforeCursor.match(/(?:^|[\s])@[^\s]*$/)) {
 				this.tryTriggerAutocomplete();
 			}
+		}
+
+		// Schedule ghost text after deletion
+		if (!this.autocompleteState) {
+			this.scheduleGhostText();
 		}
 	}
 
@@ -1360,6 +1503,7 @@ export class Editor implements Component, Focusable {
 	}
 
 	private deleteToStartOfLine(): void {
+		this.clearGhostText();
 		this.historyIndex = -1; // Exit history browsing mode
 
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
@@ -1395,6 +1539,7 @@ export class Editor implements Component, Focusable {
 	}
 
 	private deleteToEndOfLine(): void {
+		this.clearGhostText();
 		this.historyIndex = -1; // Exit history browsing mode
 
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
@@ -1427,6 +1572,7 @@ export class Editor implements Component, Focusable {
 	}
 
 	private deleteWordBackwards(): void {
+		this.clearGhostText();
 		this.historyIndex = -1; // Exit history browsing mode
 
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
@@ -1472,6 +1618,7 @@ export class Editor implements Component, Focusable {
 	}
 
 	private deleteWordForward(): void {
+		this.clearGhostText();
 		this.historyIndex = -1; // Exit history browsing mode
 
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
@@ -1514,6 +1661,7 @@ export class Editor implements Component, Focusable {
 	}
 
 	private handleForwardDelete(): void {
+		this.clearGhostText();
 		this.historyIndex = -1; // Exit history browsing mode
 		this.lastAction = null;
 
@@ -2046,6 +2194,8 @@ export class Editor implements Component, Focusable {
 
 	private tryTriggerAutocomplete(explicitTab: boolean = false): void {
 		if (!this.autocompleteProvider) return;
+		// Clear ghost text when autocomplete activates
+		this.clearGhostText();
 
 		// Check if we should trigger file completion on Tab
 		if (explicitTab) {
