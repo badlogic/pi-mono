@@ -2,8 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Changed extension tool interception to use agent-core `beforeToolCall` and `afterToolCall` hooks instead of wrapper-based interception. Tool calls now execute in parallel by default, extension `tool_call` preflight still runs sequentially, and final tool results are emitted in assistant source order.
+
 ### Fixed
 
+- Fixed `tool_call` extension handlers observing stale `sessionManager` state during multi-tool turns by draining queued agent events before each `tool_call` preflight. In parallel tool mode this guarantees state through the current assistant tool-calling message, but not sibling tool results from the same assistant message.
 - Fixed interactive input fields backed by the TUI `Input` component to scroll by visual column width for wide Unicode text (CJK, fullwidth characters), preventing rendered line overflow and TUI crashes in places like search and filter inputs ([#1982](https://github.com/badlogic/pi-mono/issues/1982))
 - Fixed `shift+tab` and other modified Tab bindings in tmux when `extended-keys-format` is left at the default `xterm`
 - Fixed EXIF orientation not being applied during image convert and resize, causing JPEG and WebP images from phone cameras to display rotated or mirrored ([#2105](https://github.com/badlogic/pi-mono/pull/2105) by [@melihmucuk](https://github.com/melihmucuk))
