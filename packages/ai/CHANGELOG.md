@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.58.2] - 2026-03-15
+
+### Fixed
+
+- Fixed Anthropic OAuth manual login and token refresh by using the localhost callback URI for pasted redirect/code flows and omitting `scope` from refresh-token requests ([#2169](https://github.com/badlogic/pi-mono/issues/2169))
 
 ## [0.58.1] - 2026-03-14
 
