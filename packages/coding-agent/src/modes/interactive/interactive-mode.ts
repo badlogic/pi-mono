@@ -63,7 +63,7 @@ import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
-import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
+import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { ensureTool } from "../../utils/tools-manager.js";
@@ -182,7 +182,7 @@ export class InteractiveMode {
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
-	private changelogMarkdown: string | undefined = undefined;
+	// private changelogMarkdown: string | undefined = undefined;
 
 	// Status line tracking (for mutating immediately-sequential status updates)
 	private lastStatusSpacer: Spacer | undefined = undefined;
@@ -598,7 +598,7 @@ export class InteractiveMode {
 				if (this.isInitialized) return;
 
 				// Load changelog (only show new entries, skip for resumed sessions)
-				this.changelogMarkdown = this.getChangelogForDisplay();
+				// this.changelogMarkdown = this.getChangelogForDisplay();
 
 				// Ensure fd and rg are available (downloads if missing, adds to PATH via getBinDir)
 				// Both are needed: fd for autocomplete, rg for grep tool and bash commands
@@ -627,36 +627,36 @@ export class InteractiveMode {
 					addIfMissing(this.headerContainer, new Spacer(1));
 
 					// Add changelog if provided
-					if (this.changelogMarkdown) {
-						addIfMissing(this.headerContainer, new DynamicBorder());
-						if (this.settingsManager.getCollapseChangelog()) {
-							const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
-							const latestVersion = versionMatch ? versionMatch[1] : this.version;
-							const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
-							addIfMissing(this.headerContainer, new Text(condensedText, 1, 0));
-						} else {
-							addIfMissing(this.headerContainer, new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
-							addIfMissing(this.headerContainer, new Spacer(1));
-							addIfMissing(
-								this.headerContainer,
-								new Markdown(this.changelogMarkdown.trim(), 1, 0, this.getMarkdownThemeWithSettings()),
-							);
-							addIfMissing(this.headerContainer, new Spacer(1));
-						}
-						addIfMissing(this.headerContainer, new DynamicBorder());
-					}
+					// if (this.changelogMarkdown) {
+					// 	addIfMissing(this.headerContainer, new DynamicBorder());
+					// 	if (this.settingsManager.getCollapseChangelog()) {
+					// 		const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
+					// 		const latestVersion = versionMatch ? versionMatch[1] : this.version;
+					// 		const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
+					// 		addIfMissing(this.headerContainer, new Text(condensedText, 1, 0));
+					// 	} else {
+					// 		addIfMissing(this.headerContainer, new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
+					// 		addIfMissing(this.headerContainer, new Spacer(1));
+					// 		addIfMissing(
+					// 			this.headerContainer,
+					// 			new Markdown(this.changelogMarkdown.trim(), 1, 0, this.getMarkdownThemeWithSettings()),
+					// 		);
+					// 		addIfMissing(this.headerContainer, new Spacer(1));
+					// 	}
+					// 	addIfMissing(this.headerContainer, new DynamicBorder());
+					// }
 				} else {
 					// Quiet startup: keep the logo visible, but suppress instruction text
 					this.builtInHeader = new Text("", 0, 0);
 					addIfMissing(this.headerContainer, this.builtInHeader);
 
-					if (this.changelogMarkdown) {
-						addIfMissing(this.headerContainer, new Spacer(1));
-						const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
-						const latestVersion = versionMatch ? versionMatch[1] : this.version;
-						const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
-						addIfMissing(this.headerContainer, new Text(condensedText, 1, 0));
-					}
+					// if (this.changelogMarkdown) {
+					// 	addIfMissing(this.headerContainer, new Spacer(1));
+					// 	const versionMatch = this.changelogMarkdown.match(/##\s+\[?(\d+\.\d+\.\d+)\]?/);
+					// 	const latestVersion = versionMatch ? versionMatch[1] : this.version;
+					// 	const condensedText = `Updated to v${latestVersion}. Use ${theme.bold("/changelog")} to view full changelog.`;
+					// 	addIfMissing(this.headerContainer, new Text(condensedText, 1, 0));
+					// }
 				}
 
 				addIfMissing(this.ui, this.chatContainer);
@@ -877,30 +877,30 @@ export class InteractiveMode {
 	 * Get changelog entries to display on startup.
 	 * Only shows new entries since last seen version, skips for resumed sessions.
 	 */
-	private getChangelogForDisplay(): string | undefined {
-		// Skip changelog for resumed/continued sessions (already have messages)
-		if (this.session.state.messages.length > 0) {
-			return undefined;
-		}
+	// private getChangelogForDisplay(): string | undefined {
+	// 	// Skip changelog for resumed/continued sessions (already have messages)
+	// 	if (this.session.state.messages.length > 0) {
+	// 		return undefined;
+	// 	}
 
-		const lastVersion = this.settingsManager.getLastChangelogVersion();
-		const changelogPath = getChangelogPath();
-		const entries = parseChangelog(changelogPath);
+	// 	const lastVersion = this.settingsManager.getLastChangelogVersion();
+	// 	const changelogPath = getChangelogPath();
+	// 	const entries = parseChangelog(changelogPath);
 
-		if (!lastVersion) {
-			// Fresh install - just record the version, don't show changelog
-			this.settingsManager.setLastChangelogVersion(VERSION);
-			return undefined;
-		} else {
-			const newEntries = getNewEntries(entries, lastVersion);
-			if (newEntries.length > 0) {
-				this.settingsManager.setLastChangelogVersion(VERSION);
-				return newEntries.map((e) => e.content).join("\n\n");
-			}
-		}
+	// 	if (!lastVersion) {
+	// 		// Fresh install - just record the version, don't show changelog
+	// 		this.settingsManager.setLastChangelogVersion(VERSION);
+	// 		return undefined;
+	// 	} else {
+	// 		const newEntries = getNewEntries(entries, lastVersion);
+	// 		if (newEntries.length > 0) {
+	// 			this.settingsManager.setLastChangelogVersion(VERSION);
+	// 			return newEntries.map((e) => e.content).join("\n\n");
+	// 		}
+	// 	}
 
-		return undefined;
-	}
+	// 	return undefined;
+	// }
 
 	private getMarkdownThemeWithSettings(): MarkdownTheme {
 		return {
