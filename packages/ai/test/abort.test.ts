@@ -157,6 +157,20 @@ describe("AI Providers Abort Tests", () => {
 		});
 	});
 
+	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Completions Provider Abort", () => {
+		const llm = getModel("azure-openai-completions", "gpt-4o-mini");
+		const azureDeploymentName = resolveAzureDeploymentName(llm.id);
+		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
+
+		it("should abort mid-stream", { retry: 3 }, async () => {
+			await testAbortSignal(llm, azureOptions);
+		});
+
+		it("should handle immediate abort", { retry: 3 }, async () => {
+			await testImmediateAbort(llm, azureOptions);
+		});
+	});
+
 	describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("Anthropic Provider Abort", () => {
 		const llm = getModel("anthropic", "claude-opus-4-1-20250805");
 

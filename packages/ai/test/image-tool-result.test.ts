@@ -264,6 +264,20 @@ describe("Tool Results with Images", () => {
 		});
 	});
 
+	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Completions Provider (gpt-4o-mini)", () => {
+		const llm = getModel("azure-openai-completions", "gpt-4o-mini");
+		const azureDeploymentName = resolveAzureDeploymentName(llm.id);
+		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
+
+		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithImageResult(llm, azureOptions);
+		});
+
+		it("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithTextAndImageResult(llm, azureOptions);
+		});
+	});
+
 	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider (claude-haiku-4-5)", () => {
 		const model = getModel("anthropic", "claude-haiku-4-5");
 

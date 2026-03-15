@@ -64,6 +64,11 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 	},
 	{ provider: "openai", model: "gpt-5-mini", label: "openai-responses-gpt-5-mini" },
 	{ provider: "azure-openai-responses", model: "gpt-4o-mini", label: "azure-openai-responses-gpt-4o-mini" },
+	{
+		provider: "azure-openai-completions",
+		model: "gpt-4o-mini",
+		label: "azure-openai-completions-gpt-4o-mini",
+	},
 	// OpenAI Codex
 	{ provider: "openai-codex", model: "gpt-5.2-codex", label: "openai-codex-gpt-5.2-codex" },
 	// Google Antigravity
@@ -129,7 +134,7 @@ async function getApiKey(provider: string): Promise<string | undefined> {
  * Synchronous check for API key availability (env vars only, for skipIf)
  */
 function hasApiKey(provider: string): boolean {
-	if (provider === "azure-openai-responses") {
+	if (provider === "azure-openai-responses" || provider === "azure-openai-completions") {
 		return hasAzureOpenAICredentials();
 	}
 	return !!getEnvApiKey(provider);

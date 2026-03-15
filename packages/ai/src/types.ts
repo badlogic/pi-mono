@@ -26,6 +26,7 @@ export type KnownProvider =
 	| "google-vertex"
 	| "openai"
 	| "azure-openai-responses"
+	| "azure-openai-completions"
 	| "openai-codex"
 	| "github-copilot"
 	| "xai"

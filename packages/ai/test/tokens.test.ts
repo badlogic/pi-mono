@@ -55,6 +55,7 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: St
 	// MiniMax reports input tokens but not output tokens when aborted.
 	if (
 		llm.api === "openai-completions" ||
+		llm.api === "azure-openai-completions" ||
 		llm.api === "mistral-conversations" ||
 		llm.api === "openai-responses" ||
 		llm.api === "azure-openai-responses" ||
@@ -115,6 +116,16 @@ describe("Token Statistics on Abort", () => {
 
 	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Responses Provider", () => {
 		const llm = getModel("azure-openai-responses", "gpt-4o-mini");
+		const azureDeploymentName = resolveAzureDeploymentName(llm.id);
+		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm, azureOptions);
+		});
+	});
+
+	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Completions Provider", () => {
+		const llm = getModel("azure-openai-completions", "gpt-4o-mini");
 		const azureDeploymentName = resolveAzureDeploymentName(llm.id);
 		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
 

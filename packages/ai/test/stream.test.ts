@@ -517,6 +517,28 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Completions Provider (gpt-4o-mini)", () => {
+		const llm = getModel("azure-openai-completions", "gpt-4o-mini");
+		const azureDeploymentName = resolveAzureDeploymentName(llm.id);
+		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
+
+		it("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm, azureOptions);
+		});
+
+		it("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm, azureOptions);
+		});
+
+		it("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm, azureOptions);
+		});
+
+		it("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm, azureOptions);
+		});
+	});
+
 	describe.skipIf(!process.env.XAI_API_KEY)("xAI Provider (grok-code-fast-1 via OpenAI Completions)", () => {
 		const llm = getModel("xai", "grok-code-fast-1");
 

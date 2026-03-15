@@ -136,6 +136,16 @@ describe("Tool Call Without Result Tests", () => {
 		});
 	});
 
+	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Completions Provider", () => {
+		const model = getModel("azure-openai-completions", "gpt-4o-mini");
+		const azureDeploymentName = resolveAzureDeploymentName(model.id);
+		const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
+
+		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
+			await testToolCallWithoutResult(model, azureOptions);
+		});
+	});
+
 	describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic Provider", () => {
 		const model = getModel("anthropic", "claude-3-5-haiku-20241022");
 

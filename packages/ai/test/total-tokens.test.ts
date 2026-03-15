@@ -214,6 +214,27 @@ describe("totalTokens field", () => {
 		);
 	});
 
+	describe.skipIf(!hasAzureOpenAICredentials())("Azure OpenAI Completions", () => {
+		it(
+			"gpt-4o-mini - should return totalTokens equal to sum of components",
+			{ retry: 3, timeout: 60000 },
+			async () => {
+				const llm = getModel("azure-openai-completions", "gpt-4o-mini");
+				const azureDeploymentName = resolveAzureDeploymentName(llm.id);
+				const azureOptions = azureDeploymentName ? { azureDeploymentName } : {};
+
+				console.log(`\nAzure OpenAI Completions / ${llm.id}:`);
+				const { first, second } = await testTotalTokensWithCache(llm, azureOptions);
+
+				logUsage("First request", first);
+				logUsage("Second request", second);
+
+				assertTotalTokensEqualsComponents(first);
+				assertTotalTokensEqualsComponents(second);
+			},
+		);
+	});
+
 	// =========================================================================
 	// Google
 	// =========================================================================
