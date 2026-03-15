@@ -25,8 +25,11 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import type { GoogleThinkingLevel } from "./google-gemini-cli.js";
 import {
 	convertMessages,
+	convertMessagesToInteractionInput,
 	convertTools,
+	convertToolsToInteractionFormat,
 	isThinkingPart,
+	mapInteractionStatus,
 	mapStopReason,
 	mapToolChoice,
 	retainThoughtSignature,
@@ -34,6 +37,7 @@ import {
 import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 
 export interface GoogleOptions extends StreamOptions {
+	useInteractionsApi?: boolean;
 	toolChoice?: "auto" | "none" | "any";
 	thinking?: {
 		enabled: boolean;
@@ -74,6 +78,123 @@ export const streamGoogle: StreamFunction<"google-generative-ai", GoogleOptions>
 		try {
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
 			const client = createClient(model, apiKey, options?.headers);
+
+			if (options?.useInteractionsApi) {
+				let params = buildInteractionParams(model, context, options);
+				const nextParams = await options?.onPayload?.(params, model);
+				if (nextParams !== undefined) {
+					params = nextParams;
+				}
+				const finalPayload = { ...params, stream: true, store: false };
+
+				// Use generic 'any' typing to bypass typed client restrictions
+				const interactionStream = await (client as any).interactions.create(finalPayload);
+				stream.push({ type: "start", partial: output });
+
+				let currentBlock: TextContent | ThinkingContent | null = null;
+				const blocks = output.content;
+				const blockIndex = () => blocks.length - 1;
+
+				function emitBlockEnd() {
+					if (currentBlock) {
+						const idx = blockIndex();
+						if (currentBlock.type === "text" && currentBlock.text.length > 0) {
+							stream.push({ type: "text_end", contentIndex: idx, content: currentBlock.text, partial: output });
+						} else if (currentBlock.type === "thinking") {
+							if (currentBlock.thinking.length > 0 || currentBlock.thinkingSignature) {
+								stream.push({
+									type: "thinking_end",
+									contentIndex: idx,
+									content: currentBlock.thinking,
+									partial: output,
+								});
+							} else {
+								blocks.pop();
+							}
+						}
+					}
+					currentBlock = null;
+				}
+
+				for await (const chunk of interactionStream) {
+					if (chunk.content?.delta) {
+						const delta = chunk.content.delta;
+						if (delta.type === "text" && delta.text) {
+							if (!currentBlock || currentBlock.type !== "text") {
+								emitBlockEnd();
+								currentBlock = { type: "text", text: "" };
+								blocks.push(currentBlock);
+								stream.push({ type: "text_start", contentIndex: blockIndex(), partial: output });
+							}
+							currentBlock.text += delta.text;
+							stream.push({
+								type: "text_delta",
+								contentIndex: blockIndex(),
+								delta: delta.text,
+								partial: output,
+							});
+						} else if ((delta.type === "thought" || delta.type === "thought_summary") && delta.text) {
+							if (!currentBlock || currentBlock.type !== "thinking") {
+								emitBlockEnd();
+								currentBlock = { type: "thinking", thinking: "" };
+								blocks.push(currentBlock);
+								stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
+							}
+							currentBlock.thinking += delta.text;
+							stream.push({
+								type: "thinking_delta",
+								contentIndex: blockIndex(),
+								delta: delta.text,
+								partial: output,
+							});
+						} else if (delta.type === "thought_signature" && delta.text) {
+							if (!currentBlock || currentBlock.type !== "thinking") {
+								emitBlockEnd();
+								currentBlock = { type: "thinking", thinking: "" };
+								blocks.push(currentBlock);
+								stream.push({ type: "thinking_start", contentIndex: blockIndex(), partial: output });
+							}
+							currentBlock.thinkingSignature = (currentBlock.thinkingSignature || "") + delta.text;
+						} else if (delta.type === "function_call") {
+							emitBlockEnd();
+							const callId = delta.id || `call_${toolCallCounter++}`;
+							const tc: ToolCall = {
+								type: "toolCall",
+								id: callId,
+								name: delta.name || "",
+								arguments: delta.arguments || {},
+							};
+							blocks.push(tc);
+							stream.push({ type: "toolcall_start", contentIndex: blockIndex(), partial: output });
+							stream.push({ type: "toolcall_end", contentIndex: blockIndex(), toolCall: tc, partial: output });
+						}
+					}
+
+					if (chunk.interaction?.complete) {
+						emitBlockEnd();
+						const complete = chunk.interaction.complete;
+						if (complete.usage) {
+							output.usage.input = complete.usage.total_input_tokens || 0;
+							output.usage.output = complete.usage.total_output_tokens || 0;
+							output.usage.cacheRead = complete.usage.total_cached_tokens || 0;
+							output.usage.totalTokens = complete.usage.total_tokens || 0;
+							// Add thought tokens to usage if available
+							(output.usage as any).thoughtTokens = complete.usage.total_thought_tokens || 0;
+						}
+						if (complete.status) {
+							output.stopReason = mapInteractionStatus(complete.status);
+						}
+					}
+				}
+
+				emitBlockEnd();
+
+				output.usage.cost = calculateCost(model, output.usage);
+				output.timestamp = Date.now();
+				stream.push({ type: "done", reason: output.stopReason as any, message: output });
+				return;
+			}
+
 			let params = buildParams(model, context, options);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
@@ -452,4 +573,37 @@ function getGoogleBudget(
 	}
 
 	return -1;
+}
+
+function buildInteractionParams(model: Model<"google-generative-ai">, context: Context, options?: GoogleOptions): any {
+	const input = convertMessagesToInteractionInput(model, context);
+	const system_instruction =
+		typeof context.systemPrompt === "string" ? sanitizeSurrogates(context.systemPrompt) : undefined;
+
+	const params: any = {
+		model: model.id,
+		input,
+		tools: convertToolsToInteractionFormat(context.tools) as any,
+	};
+
+	if (system_instruction) {
+		params.system_instruction = system_instruction;
+	}
+
+	if (options) {
+		const genConfig: any = {};
+		if (options.temperature !== undefined) genConfig.temperature = options.temperature;
+		if (options.maxTokens !== undefined) genConfig.maxOutputTokens = options.maxTokens;
+
+		if (options.thinking?.enabled && model.reasoning) {
+			genConfig.thinking_level = options.thinking.level;
+			genConfig.thinking_budget = options.thinking.budgetTokens;
+		}
+
+		if (Object.keys(genConfig).length > 0) {
+			params.generation_config = genConfig;
+		}
+	}
+
+	return params;
 }

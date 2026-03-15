@@ -311,3 +311,165 @@ export function mapStopReasonString(reason: string): StopReason {
 			return "error";
 	}
 }
+
+export function convertToolsToInteractionFormat(tools: Tool[] | undefined): any[] | undefined {
+	if (!tools || tools.length === 0) return undefined;
+	return tools.map((tool) => {
+		const params = tool.parameters ? { ...tool.parameters } : undefined;
+		if (params?.required && Array.isArray(params.required) && params.required.length === 0) {
+			delete params.required;
+		}
+		if (params?.properties) {
+			params.properties = sanitizeSchemaProperties(params.properties);
+		}
+		return {
+			type: "function",
+			name: tool.name,
+			description: tool.description,
+			parameters: params,
+		};
+	});
+}
+
+function sanitizeSchemaProperties(props: any): any {
+	if (!props || typeof props !== "object") return props;
+	const cleaned: any = {};
+	for (const [key, val] of Object.entries(props)) {
+		if (!val || typeof val !== "object") {
+			cleaned[key] = val;
+			continue;
+		}
+		const prop = { ...(val as any) };
+		if (prop.required && Array.isArray(prop.required) && prop.required.length === 0) {
+			delete prop.required;
+		}
+		if (prop.properties) {
+			prop.properties = sanitizeSchemaProperties(prop.properties);
+		}
+		if (prop.items && typeof prop.items === "object") {
+			const items = { ...prop.items };
+			if (items.required && Array.isArray(items.required) && items.required.length === 0) {
+				delete items.required;
+			}
+			if (items.properties) {
+				items.properties = sanitizeSchemaProperties(items.properties);
+			}
+			prop.items = items;
+		}
+		cleaned[key] = prop;
+	}
+	return cleaned;
+}
+
+export function convertMessagesToInteractionInput(model: Model<"google-generative-ai">, context: Context): any[] {
+	const input: any[] = [];
+	const transformedMessages = transformMessages(context.messages, model, (id) => id);
+	const SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator";
+	for (const msg of transformedMessages) {
+		if (msg.role === "user") {
+			if (typeof msg.content === "string") {
+				input.push({
+					role: "user",
+					content: sanitizeSurrogates(msg.content),
+				});
+			} else {
+				const parts: any[] = [];
+				for (const item of msg.content) {
+					if (item.type === "text") {
+						parts.push({ type: "text", text: sanitizeSurrogates(item.text) });
+					} else if (model.input.includes("image")) {
+						parts.push({
+							type: "image",
+							data: (item as any).data,
+							mime_type: (item as any).mimeType,
+						});
+					}
+				}
+				if (parts.length > 0) {
+					input.push({ role: "user", content: parts });
+				}
+			}
+		} else if (msg.role === "assistant") {
+			const outputParts: any[] = [];
+			const isSameProviderAndModel = msg.provider === model.provider && msg.model === model.id;
+			for (const block of msg.content) {
+				if (block.type === "text") {
+					if (!block.text || block.text.trim() === "") continue;
+					outputParts.push({ type: "text", text: sanitizeSurrogates(block.text) });
+				} else if (block.type === "thinking") {
+					if (!block.thinking || block.thinking.trim() === "") continue;
+					if (isSameProviderAndModel) {
+						if (block.thinkingSignature && block.thinkingSignature.trim() !== "") {
+							outputParts.push({ type: "thought", signature: block.thinkingSignature });
+						}
+					} else {
+						outputParts.push({ type: "text", text: sanitizeSurrogates(block.thinking) });
+					}
+				} else if (block.type === "toolCall") {
+					outputParts.push({
+						type: "function_call",
+						id: block.id,
+						name: block.name,
+						arguments: block.arguments ?? {},
+					});
+				}
+			}
+			if (outputParts.length > 0) {
+				const hasFunctionCall = outputParts.some((p) => p.type === "function_call");
+				const hasValidThought = outputParts.some((p) => p.type === "thought" && p.signature);
+				if (hasFunctionCall && !hasValidThought) {
+					outputParts.unshift({ type: "thought", signature: SKIP_THOUGHT_SIGNATURE });
+				}
+				input.push({ role: "model", content: outputParts });
+			}
+		} else if (msg.role === "toolResult") {
+			const textContent = msg.content.filter((c) => c.type === "text") as any[];
+			const textResult = textContent.map((c) => c.text).join("\n");
+			const imageContent = model.input.includes("image")
+				? (msg.content.filter((c) => c.type === "image") as any[])
+				: [];
+			let result: any;
+			if (imageContent.length > 0) {
+				const resultParts: any[] = [];
+				if (textResult) {
+					resultParts.push({ type: "text", text: sanitizeSurrogates(textResult) });
+				}
+				for (const img of imageContent) {
+					resultParts.push({ type: "image", mime_type: img.mimeType, data: img.data });
+				}
+				result = resultParts;
+			} else {
+				result = textResult ? sanitizeSurrogates(textResult) : "";
+			}
+			const fnResult = {
+				type: "function_result",
+				name: msg.toolName,
+				call_id: msg.toolCallId,
+				result: msg.isError ? `Error: ${result}` : result,
+			};
+			const lastInput = input[input.length - 1];
+			if (
+				lastInput?.role === "user" &&
+				Array.isArray(lastInput.content) &&
+				lastInput.content.some?.((c: any) => c.type === "function_result")
+			) {
+				lastInput.content.push(fnResult);
+			} else {
+				input.push({ role: "user", content: [fnResult] });
+			}
+		}
+	}
+	return input;
+}
+
+export function mapInteractionStatus(status: string): StopReason {
+	switch (status) {
+		case "completed":
+			return "stop";
+		case "failed":
+		case "cancelled":
+			return "error";
+		default:
+			return "stop";
+	}
+}
