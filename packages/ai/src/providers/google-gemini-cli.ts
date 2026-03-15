@@ -67,8 +67,8 @@ const ANTIGRAVITY_ENDPOINT_FALLBACKS = [
 ] as const;
 // Headers for Gemini CLI (prod endpoint)
 const GEMINI_CLI_HEADERS = {
-	"User-Agent": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-	"X-Goog-Api-Client": "gl-node/22.17.0",
+	"User-Agent": "GeminiCLI/0.33.1",
+	"X-Goog-Api-Client": "gemini-cli",
 	"Client-Metadata": JSON.stringify({
 		ideType: "IDE_UNSPECIFIED",
 		platform: "PLATFORM_UNSPECIFIED",
@@ -267,7 +267,7 @@ interface CloudCodeAssistRequest {
 	model: string;
 	request: {
 		contents: Content[];
-		sessionId?: string;
+		session_id?: string;
 		systemInstruction?: { role?: string; parts: { text: string }[] };
 		generationConfig?: {
 			maxOutputTokens?: number;
@@ -892,7 +892,7 @@ export function buildRequest(
 		contents,
 	};
 
-	request.sessionId = options.sessionId;
+	request.session_id = options.sessionId;
 
 	// System instruction must be object with parts, not plain string
 	if (context.systemPrompt) {
