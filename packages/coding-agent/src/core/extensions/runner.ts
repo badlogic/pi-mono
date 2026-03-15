@@ -251,6 +251,7 @@ export class ExtensionRunner {
 		this.runtime.setModel = actions.setModel;
 		this.runtime.getThinkingLevel = actions.getThinkingLevel;
 		this.runtime.setThinkingLevel = actions.setThinkingLevel;
+		this.runtime.setHoldCondition = actions.setHoldCondition;
 
 		// Context actions (required)
 		this.getModel = contextActions.getModel;
@@ -261,6 +262,12 @@ export class ExtensionRunner {
 		this.getContextUsageFn = contextActions.getContextUsage;
 		this.compactFn = contextActions.compact;
 		this.getSystemPromptFn = contextActions.getSystemPrompt;
+
+		// Flush hold conditions queued during extension loading
+		for (const fn of this.runtime.pendingHoldConditions) {
+			actions.setHoldCondition(fn);
+		}
+		this.runtime.pendingHoldConditions = [];
 
 		// Flush provider registrations queued during extension loading
 		for (const { name, config } of this.runtime.pendingProviderRegistrations) {
