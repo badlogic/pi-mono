@@ -1,7 +1,7 @@
 {
 	"name": "@apholdings/jensen-code",
 	"title": "Jensen Code",
-	"version": "0.0.7",
+	"version": "0.1.0",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"jensenConfig": {
@@ -43,9 +43,9 @@
 		"access": "public"
 	},
 	"dependencies": {
-		"@apholdings/jensen-agent-core": "0.0.3",
-		"@apholdings/jensen-ai": "0.0.2",
-		"@apholdings/jensen-tui": "0.0.5",
+		"@apholdings/jensen-agent-core": "0.1.0",
+		"@apholdings/jensen-ai": "0.1.0",
+		"@apholdings/jensen-tui": "0.1.0",
 		"@mariozechner/jiti": "^2.6.2",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"chalk": "^5.5.0",
@@ -94,7 +94,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/apholdings/jensen-code.git",
+		"url": "https://github.com/apholdings/jensen-code",
 		"directory": "packages/coding-agent"
 	},
 	"homepage": "https://github.com/apholdings/jensen-code/tree/main/packages/coding-agent",

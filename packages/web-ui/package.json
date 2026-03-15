@@ -1,6 +1,6 @@
 {
 	"name": "@apholdings/jensen-web-ui",
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"description": "Reusable web UI components for AI chat interfaces powered by @apholdings/jensen-ai",
 	"type": "module",
 	"main": "dist/index.js",
@@ -27,8 +27,8 @@
 		"ollama": "^0.6.0",
 		"pdfjs-dist": "5.4.394",
 		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
-		"@apholdings/jensen-tui": "0.0.5",
-		"@apholdings/jensen-ai": "0.0.2"
+		"@apholdings/jensen-tui": "0.1.0",
+		"@apholdings/jensen-ai": "0.1.0"
 	},
 	"peerDependencies": {
 		"@mariozechner/mini-lit": "^0.2.0",
@@ -50,5 +50,10 @@
 		"mini-lit"
 	],
 	"author": "AP Holdings",
-	"license": "MIT"
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/apholdings/jensen-code",
+		"directory": "packages/web-ui"
+	}
 }

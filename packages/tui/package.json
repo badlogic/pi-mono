@@ -1,6 +1,6 @@
 {
 	"name": "@apholdings/jensen-tui",
-	"version": "0.0.5",
+	"version": "0.1.0",
 	"description": "Terminal User Interface library with differential rendering for efficient text-based applications",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -32,7 +32,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/apholdings/jensen-code.git",
+		"url": "https://github.com/apholdings/jensen-code",
 		"directory": "packages/tui"
 	},
 	"homepage": "https://github.com/apholdings/jensen-code/tree/main/packages/tui",

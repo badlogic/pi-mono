@@ -1,6 +1,6 @@
 {
 	"name": "@apholdings/jensen-ai",
-	"version": "0.0.2",
+	"version": "0.1.0",
 	"description": "Unified LLM API with automatic model discovery and provider configuration",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -20,7 +20,7 @@
 		}
 	},
 	"bin": {
-		"jensen-ai": "./dist/cli.js"
+		"jensen-ai": "dist/cli.js"
 	},
 	"files": [
 		"dist",
@@ -69,7 +69,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/apholdings/jensen-code.git",
+		"url": "https://github.com/apholdings/jensen-code",
 		"directory": "packages/ai"
 	},
 	"engines": {

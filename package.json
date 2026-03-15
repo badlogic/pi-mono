@@ -3,6 +3,10 @@
 	"author": "AP Holdings",
 	"private": true,
 	"type": "module",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/apholdings/jensen-code"
+	},
 	"workspaces": [
 		"packages/*",
 		"packages/web-ui/example",
@@ -40,9 +44,9 @@
 	"engines": {
 		"node": ">=20.0.0"
 	},
-	"version": "0.0.3",
+	"version": "0.1.0",
 	"dependencies": {
-		"@apholdings/jensen-code": "0.0.7",
+		"@apholdings/jensen-code": "0.1.0",
 		"@mariozechner/jiti": "^2.6.5",
 		"get-east-asian-width": "^1.4.0"
 	},

@@ -1,6 +1,6 @@
 {
 	"name": "@apholdings/jensen-pods",
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"description": "CLI tool for managing vLLM deployments on GPU pods",
 	"type": "module",
 	"bin": {
@@ -29,7 +29,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/apholdings/jensen-code.git",
+		"url": "https://github.com/apholdings/jensen-code",
 		"directory": "packages/pods"
 	},
 	"engines": {
@@ -37,7 +37,7 @@
 	},
 	"dependencies": {
 		"chalk": "^5.5.0",
-		"@apholdings/jensen-agent-core": "0.0.3"
+		"@apholdings/jensen-agent-core": "0.1.0"
 	},
 	"devDependencies": {}
 }

@@ -1,6 +1,6 @@
 {
 	"name": "@apholdings/jensen-mom",
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"description": "Slack bot that delegates messages to Jensen Code",
 	"type": "module",
 	"bin": {
@@ -23,15 +23,15 @@
 	},
 	"dependencies": {
 		"@anthropic-ai/sandbox-runtime": "^0.0.16",
-		"@apholdings/jensen-code": "0.0.7",
+		"@apholdings/jensen-code": "0.1.0",
 		"@sinclair/typebox": "^0.34.0",
 		"@slack/socket-mode": "^2.0.0",
 		"@slack/web-api": "^7.0.0",
 		"chalk": "^5.6.2",
 		"croner": "^9.1.0",
 		"diff": "^8.0.2",
-		"@apholdings/jensen-ai": "0.0.2",
-		"@apholdings/jensen-agent-core": "0.0.3"
+		"@apholdings/jensen-ai": "0.1.0",
+		"@apholdings/jensen-agent-core": "0.1.0"
 	},
 	"devDependencies": {
 		"@types/diff": "^7.0.2",
@@ -48,7 +48,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/apholdings/jensen-code.git",
+		"url": "https://github.com/apholdings/jensen-code",
 		"directory": "packages/mom"
 	},
 	"engines": {
