@@ -2231,11 +2231,17 @@ export class AgentSession {
 	}): void {
 		const autoResizeImages = this.settingsManager.getImageAutoResize();
 		const shellCommandPrefix = this.settingsManager.getShellCommandPrefix();
+		const defaultTimeout = this.settingsManager.getTerminalTimeoutDefault();
+		const patternTimeouts = this.settingsManager.getTerminalTimeoutPatterns();
 		const baseTools = this._baseToolsOverride
 			? this._baseToolsOverride
 			: createAllTools(this._cwd, {
 					read: { autoResizeImages },
-					bash: { commandPrefix: shellCommandPrefix },
+					bash: {
+						commandPrefix: shellCommandPrefix,
+						defaultTimeout,
+						patternTimeouts,
+					},
 				});
 
 		this._baseToolRegistry = new Map(Object.entries(baseTools).map(([name, tool]) => [name, tool as AgentTool]));

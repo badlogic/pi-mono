@@ -252,6 +252,36 @@ Use `/settings` to modify common options, or edit JSON files directly:
 
 See [docs/settings.md](docs/settings.md) for all options.
 
+### Terminal Command Timeout
+
+Configure timeout for bash commands to prevent hanging indefinitely:
+
+```json
+{
+  "terminal": {
+    "timeout": {
+      "default": 60,
+      "patterns": {
+        "npm install": 300,
+        "pip install": 300,
+        "git.*push": 600,
+        "cargo.*build": 600
+      }
+    }
+  }
+}
+```
+
+- `default`: Default timeout in seconds for all commands (0 = no timeout)
+- `patterns`: Per-regex-pattern timeout in seconds. Pattern matching happens before default, so order matters.
+
+Example patterns:
+- `"npm install"` - matches commands containing "npm install"
+- `"git.*push"` - matches "git push", "git push origin", etc.
+- `"cargo.*build"` - matches "cargo build", "cargo build --release", etc.
+
+Configure via `/settings` → "Terminal timeout" for the default timeout, or edit the JSON files directly for pattern-based timeouts.
+
 ---
 
 ## Context Files

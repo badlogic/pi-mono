@@ -108,8 +108,38 @@ When a provider requests a retry delay longer than `maxDelayMs` (e.g., Google's 
 |---------|------|---------|-------------|
 | `terminal.showImages` | boolean | `true` | Show images in terminal (if supported) |
 | `terminal.clearOnShrink` | boolean | `false` | Clear empty rows when content shrinks (can cause flicker) |
+| `terminal.timeout.default` | number | `0` | Default timeout in seconds for bash commands (0 = no timeout) |
+| `terminal.timeout.patterns` | object | `{}` | Per-regex-pattern timeout in seconds |
 | `images.autoResize` | boolean | `true` | Resize images to 2000x2000 max |
 | `images.blockImages` | boolean | `false` | Block all images from being sent to LLM |
+
+#### terminal.timeout
+
+Configure timeout for bash commands to prevent hanging indefinitely:
+
+```json
+{
+  "terminal": {
+    "timeout": {
+      "default": 60,
+      "patterns": {
+        "npm install": 300,
+        "pip install": 300,
+        "git.*push": 600,
+        "cargo.*build": 600
+      }
+    }
+  }
+}
+```
+
+- `default`: Default timeout in seconds for all commands (0 = no timeout). Configure via `/settings` → "Terminal timeout".
+- `patterns`: Per-regex-pattern timeout in seconds. Pattern matching happens before default, so order matters. Edit JSON files directly for pattern-based timeouts.
+
+Example patterns:
+- `"npm install"` - matches commands containing "npm install"
+- `"git.*push"` - matches "git push", "git push origin", etc.
+- `"cargo.*build"` - matches "cargo build", "cargo build --release", etc.
 
 ### Shell
 

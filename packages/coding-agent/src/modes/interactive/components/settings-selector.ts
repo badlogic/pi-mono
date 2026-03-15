@@ -50,6 +50,8 @@ export interface SettingsConfig {
 	autocompleteMaxVisible: number;
 	quietStartup: boolean;
 	clearOnShrink: boolean;
+	terminalTimeoutDefault: number;
+	terminalTimeoutPatterns: Record<string, number>;
 }
 
 export interface SettingsCallbacks {
@@ -73,6 +75,8 @@ export interface SettingsCallbacks {
 	onAutocompleteMaxVisibleChange: (maxVisible: number) => void;
 	onQuietStartupChange: (enabled: boolean) => void;
 	onClearOnShrinkChange: (enabled: boolean) => void;
+	onTerminalTimeoutDefaultChange: (timeout: number) => void;
+	onTerminalTimeoutPatternsChange: (patterns: Record<string, number>) => void;
 	onCancel: () => void;
 }
 
@@ -354,6 +358,53 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
+		// Terminal timeout settings (insert after clear-on-shrink)
+		const clearOnShrinkIndex = items.findIndex((item) => item.id === "clear-on-shrink");
+		items.splice(clearOnShrinkIndex + 1, 0, {
+			id: "terminal-timeout",
+			label: "Terminal timeout",
+			description: "Configure timeout for bash commands",
+			currentValue: String(config.terminalTimeoutDefault) + "s",
+			submenu: (currentValue, done) =>
+				new SelectSubmenu(
+					"Terminal Timeout",
+					"Set default timeout in seconds (0 = no timeout). Pattern-based timeouts are configured separately.",
+					[
+						{
+							value: "0",
+							label: "No timeout",
+							description: "Commands run indefinitely",
+						},
+						{
+							value: "30",
+							label: "30 seconds",
+							description: "Short timeout for quick commands",
+						},
+						{
+							value: "60",
+							label: "60 seconds",
+							description: "Standard timeout",
+						},
+						{
+							value: "120",
+							label: "120 seconds",
+							description: "Long timeout",
+						},
+						{
+							value: "300",
+							label: "300 seconds",
+							description: "Very long timeout",
+						},
+					],
+					currentValue,
+					(value) => {
+						callbacks.onTerminalTimeoutDefaultChange(parseInt(value, 10));
+						done(value);
+					},
+					() => done(),
+				),
+		});
+
 		// Add borders
 		this.addChild(new DynamicBorder());
 
@@ -415,6 +466,10 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "clear-on-shrink":
 						callbacks.onClearOnShrinkChange(newValue === "true");
+						break;
+					case "terminal-timeout":
+						// Handle timeout value selection (e.g., "0", "30", "60")
+						callbacks.onTerminalTimeoutDefaultChange(parseInt(newValue, 10));
 						break;
 				}
 			},

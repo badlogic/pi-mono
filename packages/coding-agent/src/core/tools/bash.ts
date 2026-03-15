@@ -161,12 +161,18 @@ export interface BashToolOptions {
 	commandPrefix?: string;
 	/** Hook to adjust command, cwd, or env before execution */
 	spawnHook?: BashSpawnHook;
+	/** Default timeout in seconds (0 = no timeout) */
+	defaultTimeout?: number;
+	/** Per-pattern timeout configuration (regex pattern -> timeout in seconds) */
+	patternTimeouts?: Record<string, number>;
 }
 
 export function createBashTool(cwd: string, options?: BashToolOptions): AgentTool<typeof bashSchema> {
 	const ops = options?.operations ?? defaultBashOperations;
 	const commandPrefix = options?.commandPrefix;
 	const spawnHook = options?.spawnHook;
+	const defaultTimeout = options?.defaultTimeout ?? 0;
+	const patternTimeouts = options?.patternTimeouts ?? {};
 
 	return {
 		name: "bash",
@@ -182,6 +188,27 @@ export function createBashTool(cwd: string, options?: BashToolOptions): AgentToo
 			// Apply command prefix if configured (e.g., "shopt -s expand_aliases" for alias support)
 			const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
 			const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook);
+
+			// Determine effective timeout: explicit > pattern-based > default
+			let effectiveTimeout: number | undefined;
+			if (timeout !== undefined && timeout > 0) {
+				// Explicit timeout from tool call takes precedence
+				effectiveTimeout = timeout;
+			} else if (defaultTimeout > 0 || Object.keys(patternTimeouts).length > 0) {
+				// Apply configured timeouts
+				// Check pattern-based timeouts first
+				for (const [pattern, patternTimeout] of Object.entries(patternTimeouts)) {
+					const regex = new RegExp(pattern);
+					if (regex.test(resolvedCommand)) {
+						effectiveTimeout = patternTimeout;
+						break;
+					}
+				}
+				// Fall back to default timeout if no pattern matched
+				if (effectiveTimeout === undefined && defaultTimeout > 0) {
+					effectiveTimeout = defaultTimeout;
+				}
+			}
 
 			return new Promise((resolve, reject) => {
 				// We'll stream to a temp file if output gets large
@@ -241,7 +268,7 @@ export function createBashTool(cwd: string, options?: BashToolOptions): AgentToo
 				ops.exec(spawnContext.command, spawnContext.cwd, {
 					onData: handleData,
 					signal,
-					timeout,
+					timeout: effectiveTimeout,
 					env: spawnContext.env,
 				})
 					.then(({ exitCode }) => {

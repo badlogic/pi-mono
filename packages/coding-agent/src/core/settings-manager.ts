@@ -22,9 +22,15 @@ export interface RetrySettings {
 	maxDelayMs?: number; // default: 60000 (max server-requested delay before failing)
 }
 
+export interface TerminalTimeoutSettings {
+	default?: number; // Default timeout in seconds for all terminal commands (0 = no timeout)
+	patterns?: Record<string, number>; // Per-regex-pattern timeout in seconds (e.g., {"npm install": 300, "git push": 600})
+}
+
 export interface TerminalSettings {
 	showImages?: boolean; // default: true (only relevant if terminal supports images)
 	clearOnShrink?: boolean; // default: false (clear empty rows when content shrinks)
+	timeout?: TerminalTimeoutSettings; // Timeout configuration for terminal commands
 }
 
 export interface ImageSettings {
@@ -949,5 +955,85 @@ export class SettingsManager {
 
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
+	}
+
+	getTerminalTimeoutDefault(): number {
+		// Environment variable takes precedence over settings, which takes precedence over default 0
+		const envTimeout = process.env.PI_TERMINAL_TIMEOUT_DEFAULT;
+		if (envTimeout !== undefined && envTimeout !== "") {
+			const parsed = parseInt(envTimeout, 10);
+			if (!isNaN(parsed)) {
+				return parsed;
+			}
+		}
+		return this.settings.terminal?.timeout?.default ?? 0; // 0 = no timeout
+	}
+
+	getTerminalTimeoutPatterns(): Record<string, number> {
+		return this.settings.terminal?.timeout?.patterns ?? {};
+	}
+
+	getTerminalTimeoutForCommand(command: string): number {
+		const defaultTimeout = this.getTerminalTimeoutDefault();
+		const patterns = this.getTerminalTimeoutPatterns();
+
+		// Check pattern-based timeouts first
+		for (const [pattern, timeout] of Object.entries(patterns)) {
+			const regex = new RegExp(pattern);
+			if (regex.test(command)) {
+				return timeout;
+			}
+		}
+
+		// Fall back to default timeout
+		return defaultTimeout;
+	}
+
+	setTerminalTimeoutDefault(timeout: number): void {
+		if (!this.globalSettings.terminal) {
+			this.globalSettings.terminal = {};
+		}
+		if (!this.globalSettings.terminal.timeout) {
+			this.globalSettings.terminal.timeout = {};
+		}
+		this.globalSettings.terminal.timeout.default = timeout;
+		this.markModified("terminal", "timeout.default");
+		this.save();
+	}
+
+	setTerminalTimeoutPatterns(patterns: Record<string, number>): void {
+		if (!this.globalSettings.terminal) {
+			this.globalSettings.terminal = {};
+		}
+		if (!this.globalSettings.terminal.timeout) {
+			this.globalSettings.terminal.timeout = {};
+		}
+		this.globalSettings.terminal.timeout.patterns = { ...patterns };
+		this.markModified("terminal", "timeout.patterns");
+		this.save();
+	}
+
+	addTerminalTimeoutPattern(pattern: string, timeout: number): void {
+		if (!this.globalSettings.terminal) {
+			this.globalSettings.terminal = {};
+		}
+		if (!this.globalSettings.terminal.timeout) {
+			this.globalSettings.terminal.timeout = {};
+		}
+		if (!this.globalSettings.terminal.timeout.patterns) {
+			this.globalSettings.terminal.timeout.patterns = {};
+		}
+		this.globalSettings.terminal.timeout.patterns[pattern] = timeout;
+		this.markModified("terminal", "timeout.patterns");
+		this.save();
+	}
+
+	removeTerminalTimeoutPattern(pattern: string): void {
+		if (!this.globalSettings.terminal?.timeout?.patterns) {
+			return;
+		}
+		delete this.globalSettings.terminal.timeout.patterns[pattern];
+		this.markModified("terminal", "timeout.patterns");
+		this.save();
 	}
 }

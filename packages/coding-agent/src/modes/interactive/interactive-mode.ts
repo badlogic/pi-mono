@@ -3111,6 +3111,8 @@ export class InteractiveMode {
 					autocompleteMaxVisible: this.settingsManager.getAutocompleteMaxVisible(),
 					quietStartup: this.settingsManager.getQuietStartup(),
 					clearOnShrink: this.settingsManager.getClearOnShrink(),
+					terminalTimeoutDefault: this.settingsManager.getTerminalTimeoutDefault(),
+					terminalTimeoutPatterns: this.settingsManager.getTerminalTimeoutPatterns(),
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -3209,6 +3211,12 @@ export class InteractiveMode {
 					onClearOnShrinkChange: (enabled) => {
 						this.settingsManager.setClearOnShrink(enabled);
 						this.ui.setClearOnShrink(enabled);
+					},
+					onTerminalTimeoutDefaultChange: (timeout) => {
+						this.settingsManager.setTerminalTimeoutDefault(timeout);
+					},
+					onTerminalTimeoutPatternsChange: (patterns) => {
+						this.settingsManager.setTerminalTimeoutPatterns(patterns);
 					},
 					onCancel: () => {
 						done();
