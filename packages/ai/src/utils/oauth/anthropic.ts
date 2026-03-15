@@ -27,7 +27,6 @@ const decode = (s: string) => atob(s);
 const CLIENT_ID = decode("OWQxYzI1MGEtZTYxYi00NGQ5LTg4ZWQtNTk0NGQxOTYyZjVl");
 const AUTHORIZE_URL = "https://claude.ai/oauth/authorize";
 const TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
-const MANUAL_REDIRECT_URI = "https://platform.claude.com/oauth/code/callback";
 const CALLBACK_HOST = "127.0.0.1";
 const CALLBACK_PORT = 53692;
 const CALLBACK_PATH = "/callback";
@@ -302,7 +301,6 @@ export async function loginAnthropic(options: {
 				}
 				code = parsed.code;
 				state = parsed.state ?? verifier;
-				redirectUriForExchange = MANUAL_REDIRECT_URI;
 			}
 
 			if (!code) {
@@ -317,7 +315,6 @@ export async function loginAnthropic(options: {
 					}
 					code = parsed.code;
 					state = parsed.state ?? verifier;
-					redirectUriForExchange = MANUAL_REDIRECT_URI;
 				}
 			}
 		} else {
@@ -332,7 +329,7 @@ export async function loginAnthropic(options: {
 		if (!code) {
 			const input = await options.onPrompt({
 				message: "Paste the authorization code or full redirect URL:",
-				placeholder: MANUAL_REDIRECT_URI,
+				placeholder: REDIRECT_URI,
 			});
 			const parsed = parseAuthorizationInput(input);
 			if (parsed.state && parsed.state !== verifier) {
@@ -340,7 +337,6 @@ export async function loginAnthropic(options: {
 			}
 			code = parsed.code;
 			state = parsed.state ?? verifier;
-			redirectUriForExchange = MANUAL_REDIRECT_URI;
 		}
 
 		if (!code) {
@@ -368,7 +364,6 @@ export async function refreshAnthropicToken(refreshToken: string): Promise<OAuth
 			grant_type: "refresh_token",
 			client_id: CLIENT_ID,
 			refresh_token: refreshToken,
-			scope: SCOPES,
 		});
 	} catch (error) {
 		throw new Error(`Anthropic token refresh request failed. url=${TOKEN_URL}; details=${formatErrorDetails(error)}`);
