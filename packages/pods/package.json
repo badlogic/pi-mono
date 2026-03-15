@@ -11,6 +11,9 @@
 		"build": "tsgo -p tsconfig.build.json && shx chmod +x dist/cli.js && shx cp src/models.json dist/ && shx cp -r scripts dist/",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"files": [
 		"dist",
 		"scripts"
@@ -34,7 +37,7 @@
 	},
 	"dependencies": {
 		"chalk": "^5.5.0",
-		"@apholdings/jensen-agent-core": "^0.0.1"
+		"@apholdings/jensen-agent-core": "^0.0.2"
 	},
 	"devDependencies": {}
 }

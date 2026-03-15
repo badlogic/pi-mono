@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release:
+    name: Version and Publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Ensure npm version for trusted publishing
+        run: npm install -g npm@^11.5.1
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Create Release Pull Request or prepare release state
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: npm run version:packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Detect unpublished package versions
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        id: unpublished
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { execSync } = require("node:child_process");
+          const fs = require("node:fs");
+          const path = require("node:path");
+
+          const packageDirs = [
+            "packages/coding-agent",
+            "packages/tui",
+            "packages/agent",
+            "packages/ai",
+            "packages/mom",
+            "packages/pods",
+            "packages/web-ui",
+          ];
+
+          const unpublished = [];
+
+          for (const dir of packageDirs) {
+            const pkgJsonPath = path.join(dir, "package.json");
+            if (!fs.existsSync(pkgJsonPath)) continue;
+
+            const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, "utf8"));
+            if (pkg.private) continue;
+
+            try {
+              execSync(`npm view "${pkg.name}@${pkg.version}" version`, {
+                stdio: "ignore",
+              });
+            } catch {
+              unpublished.push(`${pkg.name}@${pkg.version}`);
+            }
+          }
+
+          const needsPublish = unpublished.length > 0 ? "true" : "false";
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `needs_publish=${needsPublish}\n`);
+          fs.appendFileSync(
+            process.env.GITHUB_OUTPUT,
+            `packages<<EOF\n${unpublished.join("\n")}\nEOF\n`
+          );
+
+          if (unpublished.length) {
+            console.log("Unpublished packages detected:");
+            for (const item of unpublished) console.log(`- ${item}`);
+          } else {
+            console.log("No unpublished package versions detected.");
+          }
+          NODE
+
+      - name: Publish to npm with OIDC
+        if: steps.changesets.outputs.hasChangesets == 'false' && steps.unpublished.outputs.needs_publish == 'true'
+        run: npx changeset publish
+
+      - name: Push release tags
+        if: steps.changesets.outputs.hasChangesets == 'false' && steps.unpublished.outputs.needs_publish == 'true'
+        run: git push --follow-tags

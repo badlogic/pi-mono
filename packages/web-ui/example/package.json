@@ -12,13 +12,13 @@
 	},
 	"dependencies": {
 		"@mariozechner/mini-lit": "^0.2.0",
-		"@apholdings/jensen-web-ui": "file:../",
 		"@tailwindcss/vite": "^4.1.17",
 		"lit": "^3.3.1",
-		"lucide": "^0.544.0",
-		"@apholdings/jensen-ai": "file:../../ai"
+		"lucide": "^0.544.0"
 	},
 	"devDependencies": {
+		"@apholdings/jensen-ai": "file:../../ai",
+		"@apholdings/jensen-web-ui": "file:../",
 		"typescript": "^5.7.3",
 		"vite": "^7.1.6"
 	}

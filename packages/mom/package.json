@@ -18,6 +18,9 @@
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"dependencies": {
 		"@anthropic-ai/sandbox-runtime": "^0.0.16",
 		"@apholdings/jensen-code": "^0.0.6",
@@ -28,7 +31,7 @@
 		"croner": "^9.1.0",
 		"diff": "^8.0.2",
 		"@apholdings/jensen-ai": "^0.0.1",
-		"@apholdings/jensen-agent-core": "^0.0.1"
+		"@apholdings/jensen-agent-core": "^0.0.2"
 	},
 	"devDependencies": {
 		"@types/diff": "^7.0.2",
@@ -52,4 +55,3 @@
 		"node": ">=20.0.0"
 	}
 }
-
