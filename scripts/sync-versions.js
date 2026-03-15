@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Syncs ALL @mariozechner/* package dependency versions to match their current versions.
+ * Syncs ALL @apholdings/jensen-* package dependency versions to match their current versions.
  * This ensures lockstep versioning across the monorepo.
  */
 
@@ -33,18 +33,9 @@ for (const [name, version] of Object.entries(versionMap).sort()) {
 	console.log(`  ${name}: ${version}`);
 }
 
-// Verify all versions are the same (lockstep)
-const versions = new Set(Object.values(versionMap));
-if (versions.size > 1) {
-	console.error('\n❌ ERROR: Not all packages have the same version!');
-	console.error('Expected lockstep versioning. Run one of:');
-	console.error('  npm run version:patch');
-	console.error('  npm run version:minor');
-	console.error('  npm run version:major');
-	process.exit(1);
-}
-
-console.log('\n✅ All packages at same version (lockstep)');
+// We no longer require same versions for ALL packages (lockstep)
+// as the user specifically asked for exact versions while in 0.0.x.
+// But we still want to keep them in sync where they ARE used.
 
 // Update all inter-package dependencies
 let totalUpdates = 0;
@@ -55,7 +46,7 @@ for (const [dir, pkg] of Object.entries(packages)) {
 	if (pkg.data.dependencies) {
 		for (const [depName, currentVersion] of Object.entries(pkg.data.dependencies)) {
 			if (versionMap[depName]) {
-				const newVersion = `^${versionMap[depName]}`;
+				const newVersion = versionMap[depName];
 				if (currentVersion !== newVersion) {
 					console.log(`\n${pkg.data.name}:`);
 					console.log(`  ${depName}: ${currentVersion} → ${newVersion}`);
@@ -71,7 +62,7 @@ for (const [dir, pkg] of Object.entries(packages)) {
 	if (pkg.data.devDependencies) {
 		for (const [depName, currentVersion] of Object.entries(pkg.data.devDependencies)) {
 			if (versionMap[depName]) {
-				const newVersion = `^${versionMap[depName]}`;
+				const newVersion = versionMap[depName];
 				if (currentVersion !== newVersion) {
 					console.log(`\n${pkg.data.name}:`);
 					console.log(`  ${depName}: ${currentVersion} → ${newVersion} (devDependencies)`);

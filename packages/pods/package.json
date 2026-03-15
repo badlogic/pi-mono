@@ -37,7 +37,7 @@
 	},
 	"dependencies": {
 		"chalk": "^5.5.0",
-		"@apholdings/jensen-agent-core": "^0.0.2"
+		"@apholdings/jensen-agent-core": "0.0.2"
 	},
 	"devDependencies": {}
 }
