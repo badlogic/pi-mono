@@ -3,6 +3,7 @@ import type { AssistantMessage, AssistantMessageEvent, Context, Model, SimpleStr
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import type { BedrockOptions } from "./amazon-bedrock.js";
 import { streamAnthropic, streamSimpleAnthropic } from "./anthropic.js";
+import { streamAzureOpenAICompletions, streamSimpleAzureOpenAICompletions } from "./azure-openai-completions.js";
 import { streamAzureOpenAIResponses, streamSimpleAzureOpenAIResponses } from "./azure-openai-responses.js";
 import { streamGoogle, streamSimpleGoogle } from "./google.js";
 import { streamGoogleGeminiCli, streamSimpleGoogleGeminiCli } from "./google-gemini-cli.js";
@@ -145,6 +146,12 @@ export function registerBuiltInApiProviders(): void {
 		api: "azure-openai-responses",
 		stream: streamAzureOpenAIResponses,
 		streamSimple: streamSimpleAzureOpenAIResponses,
+	});
+
+	registerApiProvider({
+		api: "azure-openai-completions",
+		stream: streamAzureOpenAICompletions,
+		streamSimple: streamSimpleAzureOpenAICompletions,
 	});
 
 	registerApiProvider({

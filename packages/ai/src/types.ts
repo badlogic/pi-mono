@@ -4,6 +4,7 @@ export type { AssistantMessageEventStream } from "./utils/event-stream.js";
 
 export type KnownApi =
 	| "openai-completions"
+	| "azure-openai-completions"
 	| "mistral-conversations"
 	| "openai-responses"
 	| "azure-openai-responses"
@@ -330,7 +331,9 @@ export interface Model<TApi extends Api> {
 	/** Compatibility overrides for OpenAI-compatible APIs. If not set, auto-detected from baseUrl. */
 	compat?: TApi extends "openai-completions"
 		? OpenAICompletionsCompat
-		: TApi extends "openai-responses"
-			? OpenAIResponsesCompat
-			: never;
+		: TApi extends "azure-openai-completions"
+			? OpenAICompletionsCompat
+			: TApi extends "openai-responses"
+				? OpenAIResponsesCompat
+				: never;
 }
