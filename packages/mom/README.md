@@ -64,7 +64,7 @@ export MOM_SLACK_APP_TOKEN=xapp-...
 export MOM_SLACK_BOT_TOKEN=xoxb-...
 # Option 1: Anthropic API key
 export ANTHROPIC_API_KEY=sk-ant-...
-# Option 2: use /login command in pi agent, then copy/link auth.json to ~/.pi/mom/
+# Option 2: use /login command in jensen agent, then copy/link auth.json to ~/.jensen/mom/
 
 # Create Docker sandbox (recommended)
 docker run -d \
@@ -112,7 +112,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 - enter `/login` command
   - choose "Anthropic" provider
   - follow instructions in the browser
-- link `auth.json` to mom: `ln -s ~/.pi/agent/auth.json ~/.pi/mom/auth.json`
+- link `auth.json` to mom: `ln -s ~/.jensen/agent/auth.json ~/.jensen/mom/auth.json`
 
 ## How Mom Works
 
@@ -237,7 +237,7 @@ description: Read, search, and send Gmail via IMAP/SMTP
 
 When mom responds, she's given the names, descriptions, and file locations of all `SKILL.md` files in `/workspace/skills/` and `/workspace/<channel>/skills/`, so she knows what's available to handle your request. When mom decides to use a skill, she reads the `SKILL.md` in full, after which she's able to use the skill by invoking its scripts and programs.
 
-You can find a set of basic skills at <https://github.com/badlogic/pi-skills|github.com/badlogic/pi-skills>. Just tell mom to clone this repository into `/workspace/skills/pi-skills` and she'll help you set up the rest.
+You can find a set of basic skills at <https://github.com/apholdings/jensen-skills|github.com/apholdings/jensen-skills>. Just tell mom to clone this repository into `/workspace/skills/jensen-skills` and she'll help you set up the rest.
 
 #### Creating a Skill
 

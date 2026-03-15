@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-03-15
+
+- Reset version for Jensen Code fork
+- Updated branding to Jensen Code
+- Synchronized with monorepo baseline
+
+---
+
+## Inherited Upstream History (pi-mono)
+
 ## [0.57.1] - 2026-03-07
 
 ## [0.57.0] - 2026-03-07

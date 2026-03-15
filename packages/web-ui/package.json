@@ -1,6 +1,6 @@
 {
 	"name": "@apholdings/jensen-web-ui",
-	"version": "0.57.1",
+	"version": "0.0.1",
 	"description": "Reusable web UI components for AI chat interfaces powered by @apholdings/jensen-ai",
 	"type": "module",
 	"main": "dist/index.js",

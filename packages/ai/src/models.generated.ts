@@ -10529,6 +10529,23 @@ export const MODELS = {
 			contextWindow: 202752,
 			maxTokens: 131072,
 		} satisfies Model<"openai-completions">,
+		"z-ai/glm-5-turbo": {
+			id: "z-ai/glm-5-turbo",
+			name: "Z.ai: GLM 5 Turbo",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 0.96,
+				output: 3.1999999999999997,
+				cacheRead: 0.192,
+				cacheWrite: 0,
+			},
+			contextWindow: 202752,
+			maxTokens: 131072,
+		} satisfies Model<"openai-completions">,
 	},
 	"vercel-ai-gateway": {
 		"alibaba/qwen-3-14b": {

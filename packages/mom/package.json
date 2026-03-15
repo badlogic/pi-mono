@@ -1,7 +1,7 @@
 {
 	"name": "@apholdings/jensen-mom",
-	"version": "0.57.1",
-	"description": "Slack bot that delegates messages to the pi coding agent",
+	"version": "0.0.1",
+	"description": "Slack bot that delegates messages to Jensen Code",
 	"type": "module",
 	"bin": {
 		"mom": "dist/main.js"

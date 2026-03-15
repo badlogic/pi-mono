@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-03-15
+
+- Reset version for Jensen Code fork
+- Updated branding to Jensen Code
+- Synchronized with monorepo baseline
+
+---
+
+## Inherited Upstream History (pi-mono)
+
 ### Fixed
 
 - Fixed GitHub Copilot device-code login polling to respect OAuth slow-down intervals, wait before the first token poll, and include a clearer clock-drift hint in WSL/VM environments when repeated slow-downs lead to timeout.

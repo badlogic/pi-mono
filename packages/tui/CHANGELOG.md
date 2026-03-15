@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-03-15
+
+- Reset version for Jensen Code fork
+- Updated branding to Jensen Code
+- Synchronized with monorepo baseline
+
+---
+
+## Inherited Upstream History (pi-mono)
+
 ### Fixed
 
 - Fixed `Input` horizontal scrolling for wide Unicode text (CJK, fullwidth characters) to use visual column width and strict slice boundaries, preventing rendered line overflow and TUI crashes ([#1982](https://github.com/badlogic/pi-mono/issues/1982))
