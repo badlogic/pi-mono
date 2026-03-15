@@ -1,6 +1,6 @@
 # Pi Web UI - Example
 
-This is a minimal example showing how to use `@apholdings/jensen-pods-web-ui` in a web application.
+This is a minimal example showing how to use `@apholdings/jensen-web-ui` in a web application.
 
 ## Setup
 

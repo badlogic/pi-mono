@@ -1,6 +1,6 @@
 import type { Message } from "@apholdings/jensen-ai";
-import type { AgentMessage, MessageRenderer } from "@apholdings/jensen-pods-web-ui";
-import { defaultConvertToLlm, registerMessageRenderer } from "@apholdings/jensen-pods-web-ui";
+import type { AgentMessage, MessageRenderer } from "@apholdings/jensen-web-ui";
+import { defaultConvertToLlm, registerMessageRenderer } from "@apholdings/jensen-web-ui";
 import { Alert } from "@mariozechner/mini-lit/dist/Alert.js";
 import { html } from "lit";
 

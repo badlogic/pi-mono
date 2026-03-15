@@ -28,7 +28,7 @@ Tools for building AI agents and managing LLM deployments.
 | **[@apholdings/jensen-code](packages/coding-agent)** | Interactive coding agent CLI |
 | **[@apholdings/jensen-mom](packages/mom)** | Slack bot that delegates messages to the pi coding agent |
 | **[@apholdings/jensen-tui](packages/tui)** | Terminal UI library with differential rendering |
-| **[@apholdings/jensen-pods-web-ui](packages/web-ui)** | Web components for AI chat interfaces |
+| **[@apholdings/jensen-web-ui](packages/web-ui)** | Web components for AI chat interfaces |
 | **[@apholdings/jensen-pods-pods](packages/pods)** | CLI for managing vLLM deployments on GPU pods |
 
 ## Contributing

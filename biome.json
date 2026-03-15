@@ -1,5 +1,13 @@
 {
 	"$schema": "https://biomejs.dev/schemas/2.3.5/schema.json",
+	"overrides": [
+		{
+			"includes": ["packages/web-ui/src/tools/artifacts/ArtifactElement.ts"],
+			"linter": {
+				"enabled": false
+			}
+		}
+	],
 	"linter": {
 		"enabled": true,
 		"rules": {

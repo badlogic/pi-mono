@@ -250,7 +250,7 @@
 
 **Before (0.30.x):**
 ```typescript
-import { Agent, ProviderTransport, type AppMessage } from '@apholdings/jensen-pods-web-ui';
+import { Agent, ProviderTransport, type AppMessage } from '@apholdings/jensen-web-ui';
 
 const agent = new Agent({
   transport: new ProviderTransport(),
@@ -261,7 +261,7 @@ const agent = new Agent({
 **After:**
 ```typescript
 import { Agent, type AgentMessage } from '@apholdings/jensen-agent-core';
-import { defaultConvertToLlm } from '@apholdings/jensen-pods-web-ui';
+import { defaultConvertToLlm } from '@apholdings/jensen-web-ui';
 
 const agent = new Agent({
   convertToLlm: (messages: AgentMessage[]) => {
@@ -275,7 +275,7 @@ const agent = new Agent({
 **Custom message types:**
 ```typescript
 // Before: declaration merging on CustomMessages
-declare module "@apholdings/jensen-pods-web-ui" {
+declare module "@apholdings/jensen-web-ui" {
   interface CustomMessages {
     "my-message": MyMessage;
   }
