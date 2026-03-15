@@ -326,4 +326,64 @@ describe("TUI differential rendering", () => {
 
 		tui.stop();
 	});
+
+	it("clears stale content when maxLinesRendered inflated by transient component", async () => {
+		const terminal = new VirtualTerminal(40, 10);
+		const tui = new TUI(terminal);
+		const chat = new TestComponent();
+		const editor = new TestComponent();
+		tui.addChild(chat);
+		tui.addChild(editor);
+
+		const longChat = Array.from({ length: 15 }, (_, i) => `Chat ${i}`);
+		const shortChat = Array.from({ length: 12 }, (_, i) => `Chat ${i}`);
+		const editorLines = ["Editor 0", "Editor 1", "Editor 2"];
+		const selectorLines = Array.from({ length: 8 }, (_, i) => `Selector ${i}`);
+
+		// Render 1: long chat (15) + editor (3) = 18 lines
+		chat.lines = longChat;
+		editor.lines = editorLines;
+		tui.start();
+		await terminal.flush();
+
+		// Render 2: replace editor with taller selector -> 23 lines, maxLinesRendered=23
+		editor.lines = selectorLines;
+		tui.requestRender();
+		await terminal.flush();
+
+		// Render 3: restore editor -> 18 lines, maxLinesRendered stays 23
+		editor.lines = editorLines;
+		tui.requestRender();
+		await terminal.flush();
+
+		// Render 4: switch to shorter chat -> 15 lines
+		// firstChanged=12 (where short diverges from long)
+		// Bug: previousContentViewportTop = 18-10 = 8, so 12>=8 -> differential path
+		// But actual viewportTop = 23-10 = 13, and 12<13 -> should be fullRender
+		chat.lines = shortChat;
+		tui.requestRender();
+		await terminal.flush();
+
+		const viewport = terminal.getViewport();
+
+		// Stale lines from the long chat must not appear
+		for (let i = 0; i < 10; i++) {
+			const line = viewport[i] ?? "";
+			assert.ok(!line.includes("Chat 12"), `Stale "Chat 12" at viewport row ${i}`);
+			assert.ok(!line.includes("Chat 13"), `Stale "Chat 13" at viewport row ${i}`);
+			assert.ok(!line.includes("Chat 14"), `Stale "Chat 14" at viewport row ${i}`);
+		}
+
+		// Correct content visible: last 10 of the 15 lines (Chat 5..11, Editor 0..2)
+		assert.ok(
+			viewport.some((l) => l.includes("Chat 11")),
+			"Last short-chat line visible",
+		);
+		assert.ok(
+			viewport.some((l) => l.includes("Editor 0")),
+			"Editor visible",
+		);
+
+		tui.stop();
+	});
 });
