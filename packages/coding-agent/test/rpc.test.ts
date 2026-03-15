@@ -5,8 +5,37 @@ import { fileURLToPath } from "node:url";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { RpcClient } from "../src/modes/rpc/rpc-client.js";
+import type { RpcTreeNode } from "../src/modes/rpc/rpc-types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function findFirstUserNode(tree: RpcTreeNode[]): RpcTreeNode | undefined {
+	const stack: RpcTreeNode[] = [...tree];
+	while (stack.length > 0) {
+		const node = stack.pop()!;
+		if (node.type === "message" && node.role === "user") {
+			return node;
+		}
+		for (let i = node.children.length - 1; i >= 0; i--) {
+			stack.push(node.children[i]!);
+		}
+	}
+	return undefined;
+}
+
+function findNodeById(tree: RpcTreeNode[], targetId: string): RpcTreeNode | undefined {
+	const stack: RpcTreeNode[] = [...tree];
+	while (stack.length > 0) {
+		const node = stack.pop()!;
+		if (node.id === targetId) {
+			return node;
+		}
+		for (let i = node.children.length - 1; i >= 0; i--) {
+			stack.push(node.children[i]!);
+		}
+	}
+	return undefined;
+}
 
 /**
  * RPC mode tests.
@@ -43,6 +72,55 @@ describe.skipIf(!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_OAUTH_T
 		expect(state.isStreaming).toBe(false);
 		expect(state.messageCount).toBe(0);
 	}, 30000);
+
+	test("should list sessions for current scope", async () => {
+		await client.start();
+		const promptText = `rpc-list-${Date.now()}`;
+		await client.promptAndWait(promptText);
+
+		const sessions = await client.listSessions({ scope: "current" });
+		expect(sessions.length).toBeGreaterThan(0);
+		expect(sessions[0]?.allMessagesText).toContain(promptText);
+	}, 60000);
+
+	test("should get tree and find user node", async () => {
+		await client.start();
+		await client.promptAndWait("tree-smoke");
+
+		const treeResult = await client.getTree();
+		const userNode = findFirstUserNode(treeResult.tree);
+		expect(userNode).toBeDefined();
+		expect(userNode!.type).toBe("message");
+		expect((userNode as Extract<RpcTreeNode, { type: "message" }>).role).toBe("user");
+	}, 60000);
+
+	test("should set and verify label on tree entry", async () => {
+		await client.start();
+		await client.promptAndWait("label-smoke");
+
+		const treeResult = await client.getTree();
+		const userNode = findFirstUserNode(treeResult.tree);
+		expect(userNode).toBeDefined();
+
+		await client.setLabel(userNode!.id, "smoke");
+		const labeledTree = await client.getTree();
+		const relabeledNode = findNodeById(labeledTree.tree, userNode!.id);
+		expect(relabeledNode?.label).toBe("smoke");
+	}, 60000);
+
+	test("should navigate to tree entry", async () => {
+		await client.start();
+		const promptText = `navigate-smoke-${Date.now()}`;
+		await client.promptAndWait(promptText);
+
+		const treeResult = await client.getTree();
+		const userNode = findFirstUserNode(treeResult.tree);
+		expect(userNode).toBeDefined();
+
+		const result = await client.navigateTree(userNode!.id);
+		expect(result.cancelled).toBe(false);
+		expect(result.editorText).toContain(promptText);
+	}, 120000);
 
 	test("should save messages to session file", async () => {
 		await client.start();

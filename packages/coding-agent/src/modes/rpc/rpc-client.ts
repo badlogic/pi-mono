@@ -11,7 +11,15 @@ import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
 import type { CompactionResult } from "../../core/compaction/index.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
-import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.js";
+import type {
+	RpcCommand,
+	RpcNavigateTreeResult,
+	RpcResponse,
+	RpcSessionListItem,
+	RpcSessionState,
+	RpcSlashCommand,
+	RpcTreeNode,
+} from "./rpc-types.js";
 
 // ============================================================================
 // Types
@@ -46,6 +54,18 @@ export interface ModelInfo {
 }
 
 export type RpcEventListener = (event: AgentEvent) => void;
+
+export interface RpcListSessionsOptions {
+	/** current: sessions for the project directory pi was started in, all: sessions across projects */
+	scope?: "current" | "all";
+}
+
+export interface RpcNavigateTreeOptions {
+	summarize?: boolean;
+	customInstructions?: string;
+	replaceInstructions?: boolean;
+	label?: string;
+}
 
 // ============================================================================
 // RPC Client
@@ -195,7 +215,7 @@ export class RpcClient {
 	 */
 	async newSession(parentSession?: string): Promise<{ cancelled: boolean }> {
 		const response = await this.send({ type: "new_session", parentSession });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -203,7 +223,7 @@ export class RpcClient {
 	 */
 	async getState(): Promise<RpcSessionState> {
 		const response = await this.send({ type: "get_state" });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -211,7 +231,7 @@ export class RpcClient {
 	 */
 	async setModel(provider: string, modelId: string): Promise<{ provider: string; id: string }> {
 		const response = await this.send({ type: "set_model", provider, modelId });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -223,7 +243,7 @@ export class RpcClient {
 		isScoped: boolean;
 	} | null> {
 		const response = await this.send({ type: "cycle_model" });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -231,7 +251,7 @@ export class RpcClient {
 	 */
 	async getAvailableModels(): Promise<ModelInfo[]> {
 		const response = await this.send({ type: "get_available_models" });
-		return this.getData<{ models: ModelInfo[] }>(response).models;
+		return this.extractData<{ models: ModelInfo[] }>(response).models;
 	}
 
 	/**
@@ -246,7 +266,7 @@ export class RpcClient {
 	 */
 	async cycleThinkingLevel(): Promise<{ level: ThinkingLevel } | null> {
 		const response = await this.send({ type: "cycle_thinking_level" });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -268,7 +288,7 @@ export class RpcClient {
 	 */
 	async compact(customInstructions?: string): Promise<CompactionResult> {
 		const response = await this.send({ type: "compact", customInstructions });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -297,7 +317,7 @@ export class RpcClient {
 	 */
 	async bash(command: string): Promise<BashResult> {
 		const response = await this.send({ type: "bash", command });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -308,11 +328,18 @@ export class RpcClient {
 	}
 
 	/**
+	 * Abort in-progress branch summarization.
+	 */
+	async abortBranchSummary(): Promise<void> {
+		await this.send({ type: "abort_branch_summary" });
+	}
+
+	/**
 	 * Get session statistics.
 	 */
 	async getSessionStats(): Promise<SessionStats> {
 		const response = await this.send({ type: "get_session_stats" });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -320,7 +347,7 @@ export class RpcClient {
 	 */
 	async exportHtml(outputPath?: string): Promise<{ path: string }> {
 		const response = await this.send({ type: "export_html", outputPath });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -329,7 +356,7 @@ export class RpcClient {
 	 */
 	async switchSession(sessionPath: string): Promise<{ cancelled: boolean }> {
 		const response = await this.send({ type: "switch_session", sessionPath });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -338,7 +365,7 @@ export class RpcClient {
 	 */
 	async fork(entryId: string): Promise<{ text: string; cancelled: boolean }> {
 		const response = await this.send({ type: "fork", entryId });
-		return this.getData(response);
+		return this.extractData(response);
 	}
 
 	/**
@@ -346,7 +373,7 @@ export class RpcClient {
 	 */
 	async getForkMessages(): Promise<Array<{ entryId: string; text: string }>> {
 		const response = await this.send({ type: "get_fork_messages" });
-		return this.getData<{ messages: Array<{ entryId: string; text: string }> }>(response).messages;
+		return this.extractData<{ messages: Array<{ entryId: string; text: string }> }>(response).messages;
 	}
 
 	/**
@@ -354,7 +381,7 @@ export class RpcClient {
 	 */
 	async getLastAssistantText(): Promise<string | null> {
 		const response = await this.send({ type: "get_last_assistant_text" });
-		return this.getData<{ text: string | null }>(response).text;
+		return this.extractData<{ text: string | null }>(response).text;
 	}
 
 	/**
@@ -369,7 +396,7 @@ export class RpcClient {
 	 */
 	async getMessages(): Promise<AgentMessage[]> {
 		const response = await this.send({ type: "get_messages" });
-		return this.getData<{ messages: AgentMessage[] }>(response).messages;
+		return this.extractData<{ messages: AgentMessage[] }>(response).messages;
 	}
 
 	/**
@@ -377,7 +404,50 @@ export class RpcClient {
 	 */
 	async getCommands(): Promise<RpcSlashCommand[]> {
 		const response = await this.send({ type: "get_commands" });
-		return this.getData<{ commands: RpcSlashCommand[] }>(response).commands;
+		return this.extractData<{ commands: RpcSlashCommand[] }>(response).commands;
+	}
+
+	/**
+	 * List sessions for the active context or across all projects.
+	 */
+	async listSessions(options: RpcListSessionsOptions = {}): Promise<RpcSessionListItem[]> {
+		const response = await this.send({
+			type: "list_sessions",
+			scope: options.scope,
+		});
+		return this.extractData<{ sessions: RpcSessionListItem[] }>(response).sessions;
+	}
+
+	/**
+	 * Get the session tree projection for browsing.
+	 */
+	async getTree(): Promise<{ tree: RpcTreeNode[]; leafId: string | null }> {
+		const response = await this.send({ type: "get_tree" });
+		return this.extractData(response);
+	}
+
+	/**
+	 * Navigate to a tree entry.
+	 * Returns cancellation/abort state and optional editorText/summary metadata.
+	 */
+	async navigateTree(targetId: string, options: RpcNavigateTreeOptions = {}): Promise<RpcNavigateTreeResult> {
+		const response = await this.send({
+			type: "navigate_tree",
+			targetId,
+			summarize: options.summarize,
+			customInstructions: options.customInstructions,
+			replaceInstructions: options.replaceInstructions,
+			label: options.label,
+		});
+		return this.extractData(response);
+	}
+
+	/**
+	 * Set or clear a label on an entry.
+	 * Empty/whitespace labels clear the existing label.
+	 */
+	async setLabel(entryId: string, label?: string): Promise<void> {
+		await this.send({ type: "set_label", entryId, label });
 	}
 
 	// =========================================================================
@@ -469,7 +539,7 @@ export class RpcClient {
 		const id = `req_${++this.requestId}`;
 		const fullCommand = { ...command, id } as RpcCommand;
 
-		return new Promise((resolve, reject) => {
+		const response = await new Promise<RpcResponse>((resolve, reject) => {
 			this.pendingRequests.set(id, { resolve, reject });
 
 			const timeout = setTimeout(() => {
@@ -490,15 +560,15 @@ export class RpcClient {
 
 			this.process!.stdin!.write(serializeJsonLine(fullCommand));
 		});
+
+		if (!response.success) {
+			throw new Error((response as Extract<RpcResponse, { success: false }>).error);
+		}
+
+		return response;
 	}
 
-	private getData<T>(response: RpcResponse): T {
-		if (!response.success) {
-			const errorResponse = response as Extract<RpcResponse, { success: false }>;
-			throw new Error(errorResponse.error);
-		}
-		// Type assertion: we trust response.data matches T based on the command sent.
-		// This is safe because each public method specifies the correct T for its command.
+	private extractData<T>(response: RpcResponse): T {
 		const successResponse = response as Extract<RpcResponse, { success: true; data: unknown }>;
 		return successResponse.data as T;
 	}
