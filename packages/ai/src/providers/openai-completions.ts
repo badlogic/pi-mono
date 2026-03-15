@@ -300,12 +300,12 @@ function detectCompat(model: Model<"openai-completions">): Required<OpenAIComple
 	const reasoningEffortMap =
 		isGroq && model.id === "qwen/qwen3-32b"
 			? {
-				minimal: "default",
-				low: "default",
-				medium: "default",
-				high: "default",
-				xhigh: "default",
-			}
+					minimal: "default",
+					low: "default",
+					medium: "default",
+					high: "default",
+					xhigh: "default",
+				}
 			: {};
 	return {
 		supportsStore: !isNonStandard,
