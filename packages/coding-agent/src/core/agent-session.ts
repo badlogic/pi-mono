@@ -23,8 +23,18 @@ import type {
 	AgentTool,
 	ThinkingLevel,
 } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
-import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Context, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
+import {
+	type ClassifierRoutingContext,
+	ClassifierRoutingStrategy,
+	completeSimple,
+	isContextOverflow,
+	ModelRouterService,
+	modelsAreEqual,
+	resetApiProviders,
+	supportsXhigh,
+} from "@mariozechner/pi-ai";
+import chalk from "chalk";
 import { getDocsPath } from "../config.js";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { stripFrontmatter } from "../utils/frontmatter.js";
@@ -274,6 +284,9 @@ export class AgentSession {
 	// Base system prompt (without extension appends) - used to apply fresh appends each turn
 	private _baseSystemPrompt = "";
 
+	private _modelRouter: ModelRouterService;
+	private _classifierModel: Model<any> | undefined;
+
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
@@ -296,6 +309,29 @@ export class AgentSession {
 			activeToolNames: this._initialActiveToolNames,
 			includeAllExtensionTools: true,
 		});
+
+		// Initialize model router with classifier strategy
+		const getAllFlashModels = () => {
+			return this._modelRegistry
+				.getAll()
+				.filter(
+					(m) =>
+						(m.provider === "google" || m.provider === "google-gemini-cli") &&
+						m.id.toLowerCase().includes("flash") &&
+						m.id !== "auto",
+				)
+				.sort((a, b) => this._getGeminiVersion(b.id) - this._getGeminiVersion(a.id));
+		};
+
+		// Initial selection: highest version overall
+		const allFlash = getAllFlashModels();
+		this._classifierModel = allFlash[0];
+
+		// We will dynamically update the classifier in _resolveAutoModel to match the requested provider's auth
+		const strategies = this._classifierModel
+			? [new ClassifierRoutingStrategy(this._classifierModel, completeSimple)]
+			: [];
+		this._modelRouter = new ModelRouterService(strategies);
 	}
 
 	/** Model registry for API key resolution and model discovery */
@@ -849,6 +885,96 @@ export class AgentSession {
 		});
 	}
 
+	private _getGeminiVersion(id: string): number {
+		const match = id.match(/gemini-(\d+\.?\d*)/i);
+		return match ? Number.parseFloat(match[1]) : 0;
+	}
+
+	private _isAutoModel(model: Model<any>): boolean {
+		const isGoogle = model.provider === "google" || model.provider === "google-gemini-cli";
+		return isGoogle && (model.id === "auto" || model.id === "gemini-auto");
+	}
+
+	private async _resolveAutoModel(requestedModel: Model<any>): Promise<Model<any>> {
+		if (!this._isAutoModel(requestedModel)) {
+			return requestedModel;
+		}
+
+		try {
+			// Select best classifier for this provider
+			const provider = requestedModel.provider;
+			const classifier = this._modelRegistry
+				.getAll()
+				.filter((m) => m.provider === provider && m.id.toLowerCase().includes("flash") && m.id !== "auto")
+				.sort((a, b) => this._getGeminiVersion(b.id) - this._getGeminiVersion(a.id))[0];
+
+			// Update strategy if we found a better/matching classifier
+			if (classifier && (!this._classifierModel || !modelsAreEqual(classifier, this._classifierModel))) {
+				this._classifierModel = classifier;
+				const strategies = [new ClassifierRoutingStrategy(this._classifierModel, completeSimple)];
+				this._modelRouter = new ModelRouterService(strategies);
+			}
+
+			// Extract context for routing
+			const messages = this.agent.state.messages;
+			const tools = this.agent.state.tools;
+			const context: Context = {
+				systemPrompt: this.agent.state.systemPrompt,
+				messages: messages.map((m) => ({
+					role: (m as any).role,
+					content: (m as any).content,
+					timestamp: (m as any).timestamp,
+				})),
+				tools: tools.map((t) => ({
+					name: t.name,
+					description: t.description,
+					parameters: t.parameters,
+				})),
+			};
+
+			const classifierApiKey = this._classifierModel
+				? await this._modelRegistry.getApiKey(this._classifierModel)
+				: undefined;
+
+			const decision = await this._modelRouter.route(
+				{
+					requestedModel,
+					context,
+					apiKey: classifierApiKey,
+				} as ClassifierRoutingContext,
+				this._modelRegistry.getAll(),
+			);
+
+			if (decision.latencyMs > 0) {
+				console.log(chalk.blue(`[Routing] Selected ${decision.model.id} (${decision.reasoning})`));
+				return decision.model;
+			}
+
+			// If classifier failed or no strategies matched, use heuristic
+			const hasTools = tools.length > 0;
+			const contextSize = JSON.stringify(context).length;
+			const isComplex = hasTools || contextSize > 10000;
+
+			const providerModels = this._modelRegistry
+				.getAll()
+				.filter((m) => m.provider === provider && m.id !== "auto")
+				.sort((a, b) => this._getGeminiVersion(b.id) - this._getGeminiVersion(a.id));
+
+			const selected = isComplex
+				? providerModels.find((m) => m.id.toLowerCase().includes("pro")) || providerModels[0]
+				: providerModels.find((m) => m.id.toLowerCase().includes("flash")) || providerModels[0];
+
+			console.log(
+				chalk.blue(
+					`[Routing] Selected ${selected.id} (heuristic: ${isComplex ? "complex" : "simple"}, tools: ${hasTools}, size: ${contextSize})`,
+				),
+			);
+			return selected;
+		} catch (_error) {
+			return requestedModel;
+		}
+	}
+
 	// =========================================================================
 	// Prompting
 	// =========================================================================
@@ -918,8 +1044,9 @@ export class AgentSession {
 		// Flush any pending bash messages before the new prompt
 		this._flushPendingBashMessages();
 
-		// Validate model
-		if (!this.model) {
+		// Resolve auto model if needed
+		const originalModel = this.model;
+		if (!originalModel) {
 			throw new Error(
 				"No model selected.\n\n" +
 					`Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}\n\n` +
@@ -927,19 +1054,32 @@ export class AgentSession {
 			);
 		}
 
-		// Validate API key
-		const apiKey = await this._modelRegistry.getApiKey(this.model);
+		const resolvedModel = await this._resolveAutoModel(originalModel);
+
+		// Temporarily set the resolved model on the agent for this turn
+		if (!modelsAreEqual(originalModel, resolvedModel)) {
+			this.agent.setModel(resolvedModel);
+		}
+
+		// Validate API key for the resolved model
+		const apiKey = await this._modelRegistry.getApiKey(resolvedModel);
 		if (!apiKey) {
-			const isOAuth = this._modelRegistry.isUsingOAuth(this.model);
+			// If we switched to a different model (e.g. via auto routing) and it has no key,
+			// switch back to avoid leaving the agent in an invalid state.
+			if (!modelsAreEqual(originalModel, resolvedModel)) {
+				this.agent.setModel(originalModel);
+			}
+
+			const isOAuth = this._modelRegistry.isUsingOAuth(resolvedModel);
 			if (isOAuth) {
 				throw new Error(
-					`Authentication failed for "${this.model.provider}". ` +
+					`Authentication failed for "${resolvedModel.provider}". ` +
 						`Credentials may have expired or network is unavailable. ` +
-						`Run '/login ${this.model.provider}' to re-authenticate.`,
+						`Run '/login ${resolvedModel.provider}' to re-authenticate.`,
 				);
 			}
 			throw new Error(
-				`No API key found for ${this.model.provider}.\n\n` +
+				`No API key found for ${resolvedModel.provider}.\n\n` +
 					`Use /login or set an API key environment variable. See ${join(getDocsPath(), "providers.md")}`,
 			);
 		}
@@ -999,7 +1139,14 @@ export class AgentSession {
 			}
 		}
 
-		await this.agent.prompt(messages);
+		try {
+			await this.agent.prompt(messages);
+		} finally {
+			// Restore original model (e.g. if we were in "auto" mode)
+			if (!modelsAreEqual(originalModel, this.agent.state.model)) {
+				this.agent.setModel(originalModel);
+			}
+		}
 		await this.waitForRetry();
 	}
 
