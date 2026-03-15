@@ -21,7 +21,7 @@ import {
 } from "./openai-completions-shared.js";
 import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 
-const DEFAULT_AZURE_API_VERSION = "v1";
+const DEFAULT_AZURE_API_VERSION = "2024-10-21";
 
 function parseDeploymentNameMap(value: string | undefined): Map<string, string> {
 	const map = new Map<string, string>();
@@ -146,7 +146,7 @@ function normalizeAzureBaseUrl(baseUrl: string): string {
 }
 
 function buildDefaultBaseUrl(resourceName: string): string {
-	return `https://${resourceName}.openai.azure.com/openai/v1`;
+	return `https://${resourceName}.openai.azure.com/openai`;
 }
 
 function resolveAzureConfig(
