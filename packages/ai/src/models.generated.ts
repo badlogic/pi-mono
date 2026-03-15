@@ -3393,7 +3393,7 @@ export const MODELS = {
 				cacheRead: 0.5,
 				cacheWrite: 6.25,
 			},
-			contextWindow: 200000,
+			contextWindow: 1000000,
 			maxTokens: 128000,
 		} satisfies Model<"google-gemini-cli">,
 		"claude-sonnet-4-5": {
@@ -3444,7 +3444,7 @@ export const MODELS = {
 				cacheRead: 0.3,
 				cacheWrite: 3.75,
 			},
-			contextWindow: 200000,
+			contextWindow: 1000000,
 			maxTokens: 64000,
 		} satisfies Model<"google-gemini-cli">,
 		"gemini-3-flash": {
