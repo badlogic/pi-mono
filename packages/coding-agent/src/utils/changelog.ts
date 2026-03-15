@@ -25,6 +25,11 @@ export function parseChangelog(changelogPath: string): ChangelogEntry[] {
 		let currentVersion: { major: number; minor: number; patch: number } | null = null;
 
 		for (const line of lines) {
+			// Stop parsing if we reach inherited upstream history to avoid version comparison issues
+			if (line.startsWith("## Inherited Upstream History")) {
+				break;
+			}
+
 			// Check if this is a version header (## [x.y.z] ...)
 			if (line.startsWith("## ")) {
 				// Save previous entry if exists

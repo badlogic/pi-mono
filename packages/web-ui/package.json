@@ -27,8 +27,8 @@
 		"ollama": "^0.6.0",
 		"pdfjs-dist": "5.4.394",
 		"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
-		"@apholdings/jensen-tui": "0.0.4",
-		"@apholdings/jensen-ai": "0.0.1"
+		"@apholdings/jensen-tui": "0.0.5",
+		"@apholdings/jensen-ai": "0.0.2"
 	},
 	"peerDependencies": {
 		"@mariozechner/mini-lit": "^0.2.0",

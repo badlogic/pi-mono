@@ -42,7 +42,7 @@
 	},
 	"version": "0.0.3",
 	"dependencies": {
-		"@apholdings/jensen-code": "^0.0.6",
+		"@apholdings/jensen-code": "0.0.7",
 		"@mariozechner/jiti": "^2.6.5",
 		"get-east-asian-width": "^1.4.0"
 	},

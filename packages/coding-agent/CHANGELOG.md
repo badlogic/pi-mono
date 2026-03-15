@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-03-15
+
+- Updated Jensen Code branding and alignment
+- Fixed stale update notifications from upstream
+- Improved monorepo release integration
+
 ## [0.0.1] - 2026-03-13
 
 Jensen Code is a fork of [pi-mono](https://github.com/badlogic/pi-mono). This release marks the baseline for Jensen Code.
