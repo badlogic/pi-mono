@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Build `@mariozechner/pi-web-ui` with `tsc` instead of `tsgo` so Lit decorator-based state updates rerender correctly.
+
 ## [0.58.2] - 2026-03-15
 
 ## [0.58.1] - 2026-03-14
