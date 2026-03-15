@@ -755,8 +755,8 @@ function startThemeWatcher(): void {
 				// Debounce rapid changes
 				setTimeout(() => {
 					try {
-						// Reload the theme
-						setGlobalTheme(loadTheme(currentThemeName!));
+						// Reload the theme directly from disk to bypass cache
+						setGlobalTheme(loadThemeFromPath(themeFile));
 						// Notify callback (to invalidate UI)
 						if (onThemeChangeCallback) {
 							onThemeChangeCallback();
