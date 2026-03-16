@@ -539,7 +539,7 @@ export function convertMessages(
 						} satisfies ChatCompletionContentPartImage;
 					}
 				});
-				const filteredContent = !model.input.includes("image")
+				const filteredContent = !model.input?.includes("image")
 					? content.filter((c) => c.type !== "image_url")
 					: content;
 				if (filteredContent.length === 0) continue;
@@ -657,7 +657,7 @@ export function convertMessages(
 				}
 				params.push(toolResultMsg);
 
-				if (hasImages && model.input.includes("image")) {
+				if (hasImages && model.input?.includes("image")) {
 					for (const block of toolMsg.content) {
 						if (block.type === "image") {
 							imageBlocks.push({
