@@ -27,7 +27,6 @@ const decode = (s: string) => atob(s);
 const CLIENT_ID = decode("OWQxYzI1MGEtZTYxYi00NGQ5LTg4ZWQtNTk0NGQxOTYyZjVl");
 const AUTHORIZE_URL = "https://claude.ai/oauth/authorize";
 const TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
-const MANUAL_REDIRECT_URI = "https://platform.claude.com/oauth/code/callback";
 const CALLBACK_HOST = "127.0.0.1";
 const CALLBACK_PORT = 53692;
 const CALLBACK_PATH = "/callback";
@@ -248,17 +247,17 @@ export async function loginAnthropic(options: {
 }): Promise<OAuthCredentials> {
 	const { verifier, challenge } = await generatePKCE();
 	const server = await startCallbackServer(verifier);
+	const redirectUri = server.redirectUri;
 
 	let code: string | undefined;
 	let state: string | undefined;
-	let redirectUriForExchange = REDIRECT_URI;
 
 	try {
 		const authParams = new URLSearchParams({
 			code: "true",
 			client_id: CLIENT_ID,
 			response_type: "code",
-			redirect_uri: REDIRECT_URI,
+			redirect_uri: redirectUri,
 			scope: SCOPES,
 			code_challenge: challenge,
 			code_challenge_method: "S256",
@@ -294,7 +293,6 @@ export async function loginAnthropic(options: {
 			if (result?.code) {
 				code = result.code;
 				state = result.state;
-				redirectUriForExchange = REDIRECT_URI;
 			} else if (manualInput) {
 				const parsed = parseAuthorizationInput(manualInput);
 				if (parsed.state && parsed.state !== verifier) {
@@ -302,7 +300,6 @@ export async function loginAnthropic(options: {
 				}
 				code = parsed.code;
 				state = parsed.state ?? verifier;
-				redirectUriForExchange = MANUAL_REDIRECT_URI;
 			}
 
 			if (!code) {
@@ -317,7 +314,6 @@ export async function loginAnthropic(options: {
 					}
 					code = parsed.code;
 					state = parsed.state ?? verifier;
-					redirectUriForExchange = MANUAL_REDIRECT_URI;
 				}
 			}
 		} else {
@@ -325,14 +321,13 @@ export async function loginAnthropic(options: {
 			if (result?.code) {
 				code = result.code;
 				state = result.state;
-				redirectUriForExchange = REDIRECT_URI;
 			}
 		}
 
 		if (!code) {
 			const input = await options.onPrompt({
 				message: "Paste the authorization code or full redirect URL:",
-				placeholder: MANUAL_REDIRECT_URI,
+				placeholder: redirectUri,
 			});
 			const parsed = parseAuthorizationInput(input);
 			if (parsed.state && parsed.state !== verifier) {
@@ -340,7 +335,6 @@ export async function loginAnthropic(options: {
 			}
 			code = parsed.code;
 			state = parsed.state ?? verifier;
-			redirectUriForExchange = MANUAL_REDIRECT_URI;
 		}
 
 		if (!code) {
@@ -352,7 +346,7 @@ export async function loginAnthropic(options: {
 		}
 
 		options.onProgress?.("Exchanging authorization code for tokens...");
-		return exchangeAuthorizationCode(code, state, verifier, redirectUriForExchange);
+		return exchangeAuthorizationCode(code, state, verifier, redirectUri);
 	} finally {
 		server.server.close();
 	}
