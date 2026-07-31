@@ -279,6 +279,15 @@ describe("detectCapabilities", () => {
 		});
 	});
 
+	it("enables images and hyperlinks for Orca", () => {
+		withEnv({ TERM_PROGRAM: "Orca" }, () => {
+			const caps = detectCapabilities();
+			assert.strictEqual(caps.images, "kitty");
+			assert.strictEqual(caps.trueColor, true);
+			assert.strictEqual(caps.hyperlinks, true);
+		});
+	});
+
 	it("enables images and hyperlinks for Warp via TERM_PROGRAM", () => {
 		withEnv({ TERM_PROGRAM: "WarpTerminal" }, () => {
 			const caps = detectCapabilities();
