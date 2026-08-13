@@ -266,7 +266,11 @@ export function estimateProjectedContextTokens(
  */
 export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
 	if (!settings.enabled) return false;
-	return contextTokens > contextWindow - settings.reserveTokens;
+	// contextWindow <= 400k 时，reserveTokens（默认 650000）超过 contextWindow 会导致
+	// `contextWindow - reserveTokens` 为负 → 永远立即压缩。此时改用 90% 阈值：
+	// 保留 10% 给 prompt/response，上下文用到 90% 才压缩。
+	const effectiveReserve = contextWindow <= 400000 ? Math.round(contextWindow * 0.1) : settings.reserveTokens;
+	return contextTokens > contextWindow - effectiveReserve;
 }
 
 // ============================================================================

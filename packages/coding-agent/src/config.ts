@@ -392,13 +392,18 @@ export function findNodePackageDir(startDir: string): string {
 
 export function getPackageDir(): string {
 	// Allow override via environment variable (useful for Nix/Guix where store paths tokenize poorly)
-	const envDir = process.env.PI_PACKAGE_DIR;
+	const envDir = process.env.PI_PACKAGE_DIR || process.env.YUANGUANG_PI_DIR;
 	if (envDir) {
 		return normalizePath(envDir);
 	}
 
 	if (isBunBinary) {
-		// Bun binary: process.execPath points to the compiled executable
+		// Bun binary: check YUANGUANG_HOME or cwd for pi/packages/coding-agent
+		const yuanguangRoot = process.env.YUANGUANG_HOME || process.cwd();
+		const piDir = join(yuanguangRoot, "pi", "packages", "coding-agent");
+		if (existsSync(join(piDir, "package.json"))) {
+			return piDir;
+		}
 		return dirname(process.execPath);
 	}
 	return findNodePackageDir(__dirname);
