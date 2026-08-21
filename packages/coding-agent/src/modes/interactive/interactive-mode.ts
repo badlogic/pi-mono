@@ -542,6 +542,9 @@ export class InteractiveMode {
 	// Custom header from extension (undefined = use built-in header)
 	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
 
+	// Additive headers contributed by extensions, rendered after the primary header.
+	private extensionHeaders = new Map<string, Component & { dispose?(): void }>();
+
 	private options: InteractiveModeOptions;
 	private readonly onRightClickPaste = (): void => {
 		void this.handleRightClickPaste();
@@ -2254,6 +2257,7 @@ export class InteractiveMode {
 		this.clearExtensionTerminalInputListeners();
 		this.setExtensionFooter(undefined);
 		this.setExtensionHeader(undefined);
+		this.clearExtensionHeaderWidgets();
 		this.clearExtensionWidgets();
 		this.footerDataProvider.clearExtensionStatuses();
 		this.footer.invalidate();
@@ -2380,6 +2384,53 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	/**
+	 * Set an extension header that is rendered after Pi's primary startup header.
+	 */
+	private setExtensionHeaderWidget(
+		key: string,
+		factory: ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined,
+	): void {
+		if (!this.builtInHeader) return;
+
+		const existing = this.extensionHeaders.get(key);
+		if (existing?.dispose) existing.dispose();
+
+		if (!factory) {
+			if (!existing) return;
+			this.extensionHeaders.delete(key);
+			const index = this.headerContainer.children.indexOf(existing);
+			if (index !== -1) this.headerContainer.children.splice(index, 1);
+			this.ui.requestRender();
+			return;
+		}
+
+		const header = factory(this.ui, theme);
+		if (isExpandable(header)) header.setExpanded(this.toolOutputExpanded);
+		this.extensionHeaders.set(key, header);
+		const existingIndex = existing ? this.headerContainer.children.indexOf(existing) : -1;
+		if (existingIndex !== -1) {
+			this.headerContainer.children[existingIndex] = header;
+		} else {
+			const primaryHeader = this.customHeader ?? this.builtInHeader;
+			const primaryHeaderIndex = this.headerContainer.children.indexOf(primaryHeader);
+			let insertAt = primaryHeaderIndex + 1;
+			for (const extensionHeader of this.extensionHeaders.values()) {
+				const index = this.headerContainer.children.indexOf(extensionHeader);
+				if (index !== -1) insertAt = Math.max(insertAt, index + 1);
+			}
+			this.headerContainer.children.splice(insertAt, 0, header);
+		}
+
+		this.ui.requestRender();
+	}
+
+	private clearExtensionHeaderWidgets(): void {
+		for (const key of [...this.extensionHeaders.keys()]) {
+			this.setExtensionHeaderWidget(key, undefined);
+		}
+	}
+
 	private addExtensionTerminalInputListener(
 		handler: (data: string) => { consume?: boolean; data?: string } | undefined,
 	): () => void {
@@ -2441,6 +2492,7 @@ export class InteractiveMode {
 			setWidget: (key, content, options) => this.setExtensionWidget(key, content, options),
 			setFooter: (factory) => this.setExtensionFooter(factory),
 			setHeader: (factory) => this.setExtensionHeader(factory),
+			setHeaderWidget: (key, factory) => this.setExtensionHeaderWidget(key, factory),
 			setTitle: (title) => this.ui.terminal.setTitle(title),
 			custom: (factory, options) => this.showExtensionCustom(factory, options),
 			pasteToEditor: (text) => this.editor.handleInput(`\x1b[200~${text}\x1b[201~`),

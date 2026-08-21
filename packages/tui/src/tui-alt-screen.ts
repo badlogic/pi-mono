@@ -34,6 +34,7 @@ import {
 	compositeTuiLine,
 	type OverlayHandle,
 	TuiBase,
+	type TuiMouseEvent,
 	type TuiStopOptions,
 	VIEWPORT_TUI,
 	type ViewportTUI,
@@ -186,6 +187,11 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 	private selectionAutoScrollDirection: -1 | 0 | 1 = 0;
 	private selectionAutoScrollTimer?: NodeJS.Timeout;
 	private selectionPressActive = false;
+	private selectionClickTarget?: {
+		component: Component & Required<Pick<Component, "handleMouse">>;
+		x: number;
+		y: number;
+	};
 	private scrollbarDrag?: ScrollbarDrag;
 	private scrollbarHover?: ScrollView;
 	private activeSearch?: ActiveSearch;
@@ -541,6 +547,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			const hadActiveSelection = this.selectionPressActive;
 			const hadNonEmptyActiveSelection = hadActiveSelection && this.getSelectionBounds() !== undefined;
 			this.selectionPressActive = false;
+			this.selectionClickTarget = undefined;
 			this.stopSelectionAutoScroll();
 			this.stopScrollbarHover();
 			this.stopScrollbarDrag();
@@ -772,6 +779,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		if (!target) return false;
 		this.stopSelectionAutoScroll();
 		this.selectionPressActive = false;
+		this.selectionClickTarget = undefined;
 		this.selectionAnchor = undefined;
 		this.selectionFocus = undefined;
 		this.selectionGranularity = "character";
@@ -809,6 +817,42 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			col: Math.max(0, Math.min(box.rect.width - 1, x - box.rect.x)),
 			scrollView,
 		};
+	}
+
+	private getMouseTargetAt(
+		x: number,
+		y: number,
+	): { component: Component & Required<Pick<Component, "handleMouse">>; x: number; y: number } | undefined {
+		if (!this.currentLayout || this.hasOverlay()) return undefined;
+
+		const visit = (
+			box: LayoutFrame["root"],
+		): { component: Component & Required<Pick<Component, "handleMouse">>; x: number; y: number } | undefined => {
+			if (
+				x < box.rect.x ||
+				x >= box.rect.x + box.rect.width ||
+				y < box.rect.y ||
+				y >= box.rect.y + box.rect.height ||
+				x < box.clip.x ||
+				x >= box.clip.x + box.clip.width ||
+				y < box.clip.y ||
+				y >= box.clip.y + box.clip.height
+			) {
+				return undefined;
+			}
+			for (let index = box.children.length - 1; index >= 0; index--) {
+				const target = visit(box.children[index]!);
+				if (target) return target;
+			}
+			if (!box.component.handleMouse) return undefined;
+			return {
+				component: box.component as Component & Required<Pick<Component, "handleMouse">>,
+				x: x - box.rect.x,
+				y: y - box.rect.y,
+			};
+		};
+
+		return visit(this.currentLayout.root);
 	}
 
 	private getSelectionPoint(event: SgrMouseEvent, scrollView?: ScrollView): SelectionPoint {
@@ -965,6 +1009,17 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 			this.stopSelectionAutoScroll();
 			if (!this.selectionAnchor) return;
 			this.updateSelectionFocus(point);
+			const clickTarget = this.selectionDragged ? undefined : this.selectionClickTarget;
+			this.selectionClickTarget = undefined;
+			if (clickTarget) {
+				this.selectionAnchor = undefined;
+				this.selectionFocus = undefined;
+				this.pressedUrl = undefined;
+				const mouseEvent: TuiMouseEvent = { x: clickTarget.x, y: clickTarget.y };
+				clickTarget.component.handleMouse(mouseEvent);
+				this.requestRender();
+				return;
+			}
 			const clickedUrl =
 				!this.selectionDragged &&
 				this.selectionAnchor.scrollView === point.scrollView &&
@@ -991,6 +1046,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		if ((event.button & 32) !== 0) {
 			if (!this.selectionPressActive || !this.selectionAnchor) return;
 			this.selectionDragged = true;
+			this.selectionClickTarget = undefined;
 			this.lastClick = undefined;
 			this.pressedUrl = undefined;
 			this.updateSelectionFocus(point);
@@ -1000,6 +1056,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		}
 		this.stopSelectionAutoScroll();
 		this.selectionPressActive = true;
+		this.selectionClickTarget = this.getMouseTargetAt(event.x, event.y);
 		const scrollView =
 			!this.hasOverlay() && this.currentLayout
 				? getScrollViewsAt(this.currentLayout, event.x, event.y)[0]

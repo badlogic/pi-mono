@@ -6,6 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
 import { isKeyRelease, matchesKey } from "./keys.ts";
+import { LAYOUT_NODE, type LayoutNode } from "./layout-node.ts";
 import type { Terminal } from "./terminal.ts";
 import {
 	isOsc11BackgroundColorResponse,
@@ -20,6 +21,13 @@ import { extractSegments, normalizeTerminalOutput, sliceByColumn, sliceWithWidth
 /**
  * Component interface - all components must implement this
  */
+export interface TuiMouseEvent {
+	/** X coordinate relative to the component's rendered box. */
+	x: number;
+	/** Y coordinate relative to the component's rendered box. */
+	y: number;
+}
+
 export interface Component {
 	/**
 	 * Render the component to lines for the given viewport width
@@ -32,6 +40,9 @@ export interface Component {
 	 * Optional handler for keyboard input when component has focus
 	 */
 	handleInput?(data: string): void;
+
+	/** Optional handler for an unmodified left-click inside the component. */
+	handleMouse?(event: TuiMouseEvent): void;
 
 	/**
 	 * If true, component receives key release events (Kitty protocol).
@@ -210,6 +221,15 @@ type OverlayFocusRestorePolicy = "clear" | "preserve";
  */
 export class Container implements Component {
 	children: Component[] = [];
+
+	[LAYOUT_NODE](): LayoutNode {
+		return {
+			type: "vstack",
+			entries: this.children.map((component) => ({ component })),
+			gap: 0,
+			align: "stretch",
+		};
+	}
 
 	addChild(component: Component): void {
 		this.children.push(component);

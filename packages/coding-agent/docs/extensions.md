@@ -2491,6 +2491,7 @@ Extensions can interact with users via `ctx.ui` methods and customize how messag
 - Widgets above/below editor (setWidget)
 - Autocomplete providers layered on top of built-in slash/path completion (addAutocompleteProvider)
 - Custom footers (setFooter)
+- Additive startup headers (setHeaderWidget)
 
 ### Dialogs
 
@@ -2602,6 +2603,13 @@ ctx.ui.setFooter((tui, theme) => ({
   invalidate() {},
 }));
 ctx.ui.setFooter(undefined);  // Restore built-in footer
+
+// Add a keyed header below Pi's normal startup header.
+ctx.ui.setHeaderWidget("my-header", (tui, theme) => ({
+  render: (width) => [theme.fg("accent", "Extension startup details")],
+  invalidate() {},
+}));
+ctx.ui.setHeaderWidget("my-header", undefined);  // Remove it
 
 // Terminal title
 ctx.ui.setTitle("pi - my-project");

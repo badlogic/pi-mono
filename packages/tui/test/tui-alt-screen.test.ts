@@ -1,6 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import { findAltScreenSearchMatches } from "../src/alt-screen-search.ts";
+import { Editor } from "../src/components/editor.ts";
 import { HStack } from "../src/components/h-stack.ts";
 import { Image } from "../src/components/image.ts";
 import { ScrollView } from "../src/components/scroll-view.ts";
@@ -14,7 +15,9 @@ import {
 	resetCapabilitiesCache,
 	setCapabilities,
 } from "../src/terminal-image.ts";
+import { Container } from "../src/tui.ts";
 import { TuiAltScreen } from "../src/tui-alt-screen.ts";
+import { defaultEditorTheme } from "./test-themes.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
@@ -85,6 +88,106 @@ describe("TuiAltScreen", () => {
 			["line 6", "line 7", "line 8", "line 9"],
 		);
 
+		tui.stop();
+	});
+
+	it("dispatches a click in a docked component to that component", async () => {
+		const terminal = new VirtualTerminal(20, 4);
+		const tui = new TuiAltScreen(terminal);
+		const clicks: Array<{ x: number; y: number }> = [];
+		const target = {
+			render: () => ["editor"],
+			invalidate: () => {},
+			handleMouse: (event: { x: number; y: number }) => clicks.push(event),
+		};
+		tui.setLayoutRoot(new VStack([new Text("transcript", 0, 0), target]));
+		tui.start();
+		await terminal.waitForRender();
+
+		terminal.sendInput("\x1b[<0;4;2M");
+		terminal.sendInput("\x1b[<0;4;2m");
+		await terminal.waitForRender();
+
+		assert.deepStrictEqual(clicks, [{ x: 3, y: 0 }]);
+		tui.stop();
+	});
+
+	it("dispatches a click to a component nested in a container", async () => {
+		const terminal = new VirtualTerminal(20, 4);
+		const tui = new TuiAltScreen(terminal);
+		const clicks: Array<{ x: number; y: number }> = [];
+		const target = {
+			render: () => ["editor"],
+			invalidate: () => {},
+			handleMouse: (event: { x: number; y: number }) => clicks.push(event),
+		};
+		const container = new Container();
+		container.addChild(target);
+		tui.setLayoutRoot(new VStack([new Text("transcript", 0, 0), container]));
+		tui.start();
+		await terminal.waitForRender();
+
+		terminal.sendInput("\x1b[<0;4;2M");
+		terminal.sendInput("\x1b[<0;4;2m");
+		await terminal.waitForRender();
+
+		assert.deepStrictEqual(clicks, [{ x: 3, y: 0 }]);
+		tui.stop();
+	});
+
+	it("keeps drag selection instead of dispatching a click", async () => {
+		const terminal = new VirtualTerminal(20, 4);
+		const tui = new TuiAltScreen(terminal);
+		const clicks: Array<{ x: number; y: number }> = [];
+		const target = {
+			render: () => ["editor text"],
+			invalidate: () => {},
+			handleMouse: (event: { x: number; y: number }) => clicks.push(event),
+		};
+		tui.setLayoutRoot(new VStack([new Text("transcript", 0, 0), target]));
+		tui.start();
+		await terminal.waitForRender();
+
+		terminal.sendInput("\x1b[<0;2;2M");
+		terminal.sendInput("\x1b[<32;6;2M");
+		terminal.sendInput("\x1b[<0;6;2m");
+		await terminal.waitForRender();
+
+		assert.deepStrictEqual(clicks, []);
+		tui.stop();
+	});
+
+	it("places the editor cursor where the user clicks", async () => {
+		const terminal = new VirtualTerminal(20, 5);
+		const tui = new TuiAltScreen(terminal);
+		const editor = new Editor(tui, defaultEditorTheme);
+		editor.setText("hello");
+		tui.setLayoutRoot(new VStack([new Text("transcript", 0, 0), editor]));
+		tui.start();
+		await terminal.waitForRender();
+
+		terminal.sendInput("\x1b[<0;4;3M");
+		terminal.sendInput("\x1b[<0;4;3m");
+		await terminal.waitForRender();
+
+		assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 3 });
+		tui.stop();
+	});
+
+	it("places the cursor relative to padded editor content", async () => {
+		const terminal = new VirtualTerminal(8, 5);
+		const tui = new TuiAltScreen(terminal);
+		const editor = new Editor(tui, defaultEditorTheme, { paddingX: 2 });
+		editor.setText("ab");
+		tui.setLayoutRoot(new VStack([new Text("text", 0, 0), editor]));
+		tui.start();
+		await terminal.waitForRender();
+
+		terminal.sendInput("\x1b[<0;4;3M");
+		terminal.sendInput("\x1b[<0;4;3m");
+		await terminal.waitForRender();
+
+		assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 1 });
 		tui.stop();
 	});
 

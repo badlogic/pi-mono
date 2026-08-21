@@ -131,6 +131,7 @@ export {
 	type TuiInputListener,
 	type TuiInputListenerResult,
 	type TuiMode,
+	type TuiMouseEvent,
 	type TuiStopOptions,
 	type ViewportTUI,
 } from "./tui.ts";

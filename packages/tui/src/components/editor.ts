@@ -2,7 +2,7 @@ import type { AutocompleteProvider, AutocompleteSuggestions } from "../autocompl
 import { getKeybindings } from "../keybindings.ts";
 import { decodePrintableKey, matchesKey } from "../keys.ts";
 import { KillRing } from "../kill-ring.ts";
-import { type Component, CURSOR_MARKER, type Focusable, type TUI } from "../tui.ts";
+import { type Component, CURSOR_MARKER, type Focusable, type TUI, type TuiMouseEvent } from "../tui.ts";
 import { UndoStack } from "../undo-stack.ts";
 import {
 	cjkBreakRegex,
@@ -221,6 +221,9 @@ interface EditorSnapshot {
 
 interface LayoutLine {
 	text: string;
+	logicalLine: number;
+	startIndex: number;
+	endIndex: number;
 	hasCursor: boolean;
 	cursorPos?: number;
 }
@@ -281,8 +284,9 @@ export class Editor implements Component, Focusable {
 	private theme: EditorTheme;
 	private paddingX: number = 0;
 
-	// Store last render width for cursor navigation
+	// Store the last render dimensions for cursor navigation and mouse placement.
 	private lastWidth: number = 80;
+	private lastRenderWidth: number = 80;
 
 	// Vertical scrolling support
 	private scrollOffset: number = 0;
@@ -480,6 +484,7 @@ export class Editor implements Component, Focusable {
 	}
 
 	render(width: number): string[] {
+		this.lastRenderWidth = width;
 		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
 		const paddingX = Math.min(this.paddingX, maxPadding);
 		const contentWidth = Math.max(1, width - paddingX * 2);
@@ -902,6 +907,38 @@ export class Editor implements Component, Focusable {
 		}
 	}
 
+	handleMouse(event: TuiMouseEvent): void {
+		const maxPadding = Math.max(0, Math.floor((this.lastRenderWidth - 1) / 2));
+		const paddingX = Math.min(this.paddingX, maxPadding);
+		const layoutLines = this.layoutText(this.lastWidth);
+		const layoutLine = layoutLines[this.scrollOffset + event.y - 1];
+		if (!layoutLine) return;
+
+		const column = Math.max(0, event.x - paddingX);
+		let cursorCol = layoutLine.startIndex;
+		let renderedWidth = 0;
+		for (const segment of this.segment(layoutLine.text, "grapheme")) {
+			const width = visibleWidth(segment.segment);
+			const end = renderedWidth + width;
+			if (column < end) {
+				cursorCol =
+					layoutLine.startIndex +
+					segment.index +
+					(column - renderedWidth < width / 2 ? 0 : segment.segment.length);
+				break;
+			}
+			cursorCol = layoutLine.startIndex + segment.index + segment.segment.length;
+			renderedWidth = end;
+		}
+
+		this.cancelAutocomplete();
+		this.lastAction = null;
+		this.exitHistoryBrowsing();
+		this.state.cursorLine = layoutLine.logicalLine;
+		this.setCursorCol(Math.min(cursorCol, layoutLine.endIndex));
+		this.tui.requestRender();
+	}
+
 	private layoutText(contentWidth: number): LayoutLine[] {
 		const layoutLines: LayoutLine[] = [];
 
@@ -909,6 +946,9 @@ export class Editor implements Component, Focusable {
 			// Empty editor
 			layoutLines.push({
 				text: "",
+				logicalLine: 0,
+				startIndex: 0,
+				endIndex: 0,
 				hasCursor: true,
 				cursorPos: 0,
 			});
@@ -926,12 +966,18 @@ export class Editor implements Component, Focusable {
 				if (isCurrentLine) {
 					layoutLines.push({
 						text: line,
+						logicalLine: i,
+						startIndex: 0,
+						endIndex: line.length,
 						hasCursor: true,
 						cursorPos: this.state.cursorCol,
 					});
 				} else {
 					layoutLines.push({
 						text: line,
+						logicalLine: i,
+						startIndex: 0,
+						endIndex: line.length,
 						hasCursor: false,
 					});
 				}
@@ -974,12 +1020,18 @@ export class Editor implements Component, Focusable {
 					if (hasCursorInChunk) {
 						layoutLines.push({
 							text: chunk.text,
+							logicalLine: i,
+							startIndex: chunk.startIndex,
+							endIndex: chunk.endIndex,
 							hasCursor: true,
 							cursorPos: adjustedCursorPos,
 						});
 					} else {
 						layoutLines.push({
 							text: chunk.text,
+							logicalLine: i,
+							startIndex: chunk.startIndex,
+							endIndex: chunk.endIndex,
 							hasCursor: false,
 						});
 					}
