@@ -6,6 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
 import { isKeyRelease, matchesKey } from "./keys.ts";
+import { LAYOUT_NODE, type LayoutNode } from "./layout-node.ts";
 import type { Terminal } from "./terminal.ts";
 import {
 	isOsc11BackgroundColorResponse,
@@ -220,6 +221,15 @@ type OverlayFocusRestorePolicy = "clear" | "preserve";
  */
 export class Container implements Component {
 	children: Component[] = [];
+
+	[LAYOUT_NODE](): LayoutNode {
+		return {
+			type: "vstack",
+			entries: this.children.map((component) => ({ component })),
+			gap: 0,
+			align: "stretch",
+		};
+	}
 
 	addChild(component: Component): void {
 		this.children.push(component);

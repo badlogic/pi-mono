@@ -15,6 +15,7 @@ import {
 	resetCapabilitiesCache,
 	setCapabilities,
 } from "../src/terminal-image.ts";
+import { Container } from "../src/tui.ts";
 import { TuiAltScreen } from "../src/tui-alt-screen.ts";
 import { defaultEditorTheme } from "./test-themes.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
@@ -100,6 +101,29 @@ describe("TuiAltScreen", () => {
 			handleMouse: (event: { x: number; y: number }) => clicks.push(event),
 		};
 		tui.setLayoutRoot(new VStack([new Text("transcript", 0, 0), target]));
+		tui.start();
+		await terminal.waitForRender();
+
+		terminal.sendInput("\x1b[<0;4;2M");
+		terminal.sendInput("\x1b[<0;4;2m");
+		await terminal.waitForRender();
+
+		assert.deepStrictEqual(clicks, [{ x: 3, y: 0 }]);
+		tui.stop();
+	});
+
+	it("dispatches a click to a component nested in a container", async () => {
+		const terminal = new VirtualTerminal(20, 4);
+		const tui = new TuiAltScreen(terminal);
+		const clicks: Array<{ x: number; y: number }> = [];
+		const target = {
+			render: () => ["editor"],
+			invalidate: () => {},
+			handleMouse: (event: { x: number; y: number }) => clicks.push(event),
+		};
+		const container = new Container();
+		container.addChild(target);
+		tui.setLayoutRoot(new VStack([new Text("transcript", 0, 0), container]));
 		tui.start();
 		await terminal.waitForRender();
 
