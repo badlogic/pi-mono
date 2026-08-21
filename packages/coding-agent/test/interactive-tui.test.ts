@@ -128,6 +128,30 @@ describe("createInteractiveTui", () => {
 	});
 });
 
+describe("InteractiveMode extension headers", () => {
+	it("keeps Pi's startup header when an extension adds a header", () => {
+		const builtInHeader = new Text("Pi startup", 0, 0);
+		const extensionHeader = new Text("Powerline welcome", 0, 0);
+		const headerContainer = new Container();
+		headerContainer.addChild(builtInHeader);
+		const context = {
+			builtInHeader,
+			customHeader: undefined,
+			extensionHeaders: new Map(),
+			headerContainer,
+			toolOutputExpanded: false,
+			ui: { requestRender: vi.fn() },
+		};
+		const prototype = InteractiveMode.prototype as unknown as {
+			setExtensionHeaderWidget(this: typeof context, key: string, factory: () => Component | undefined): void;
+		};
+
+		prototype.setExtensionHeaderWidget.call(context, "powerline-welcome", () => extensionHeader);
+
+		expect(headerContainer.children).toEqual([builtInHeader, extensionHeader]);
+	});
+});
+
 describe("InteractiveMode right-click paste", () => {
 	it("feeds clipboard text to the focused component as a bracketed paste", async () => {
 		clipboardMocks.readClipboardText.mockResolvedValue("clipboard text");

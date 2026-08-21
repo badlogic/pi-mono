@@ -189,6 +189,12 @@ export interface ExtensionUIContext {
 	/** Set a custom header component (shown at startup, above chat), or undefined to restore the built-in header. */
 	setHeader(factory: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
 
+	/** Add or replace a keyed header after Pi's primary startup header; pass undefined to remove it. */
+	setHeaderWidget(
+		key: string,
+		factory: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined,
+	): void;
+
 	/** Set the terminal window/tab title. */
 	setTitle(title: string): void;
 

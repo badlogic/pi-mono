@@ -20,6 +20,13 @@ import { extractSegments, normalizeTerminalOutput, sliceByColumn, sliceWithWidth
 /**
  * Component interface - all components must implement this
  */
+export interface TuiMouseEvent {
+	/** X coordinate relative to the component's rendered box. */
+	x: number;
+	/** Y coordinate relative to the component's rendered box. */
+	y: number;
+}
+
 export interface Component {
 	/**
 	 * Render the component to lines for the given viewport width
@@ -32,6 +39,9 @@ export interface Component {
 	 * Optional handler for keyboard input when component has focus
 	 */
 	handleInput?(data: string): void;
+
+	/** Optional handler for an unmodified left-click inside the component. */
+	handleMouse?(event: TuiMouseEvent): void;
 
 	/**
 	 * If true, component receives key release events (Kitty protocol).
