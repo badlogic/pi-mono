@@ -221,6 +221,36 @@ describe("AI telemetry", () => {
 		expect(JSON.stringify(span)).not.toContain("native-secret");
 	});
 
+	// Regression #8409: abort classification must preserve the telemetry observer in argument three.
+	it.each(["stream", "streamSimple", "streamDeferred"] as const)(
+		"reports aborted %s setup through telemetry without marking the span as an error",
+		async (method) => {
+			const telemetry = new InMemoryTelemetryContext();
+			const { models } = setup();
+			const controller = new AbortController();
+			controller.abort();
+			await telemetry.startSpan({ name: "caller" }, async (parent) => {
+				const options = { telemetry: parent, signal: controller.signal };
+				const stream =
+					method === "streamDeferred"
+						? models.streamDeferred(model, handle, options)
+						: models[method](model, { messages: [] }, options);
+				const received: AssistantMessageEvent[] = [];
+				for await (const event of stream) received.push(event);
+				const result = await stream.result();
+				expect(result.stopReason).toBe("aborted");
+				expect(received).toEqual([{ type: "error", reason: "aborted", error: result }]);
+			});
+			await settled(telemetry);
+			const [, span] = telemetry.getSpans();
+			expect(span.name).toBe(method === "streamDeferred" ? "pi.ai.poll" : "pi.ai.request");
+			expect(span.attributes.stop).toBe("aborted");
+			expect(span.status).toEqual({ status: "ok" });
+			expect(span.events).toEqual([{ name: "pi.ai.first_chunk", attributes: {} }]);
+			expect(telemetry.getMetrics().filter((metric) => metric.name === "pi.ai.request.duration")).toHaveLength(1);
+		},
+	);
+
 	it("counts interleaved tool deltas independently without reading arguments", async () => {
 		const telemetry = new InMemoryTelemetryContext();
 		const result = message();
@@ -404,19 +434,43 @@ describe("lazyStream observation", () => {
 		expect(observed).toEqual([result]);
 	});
 
-	it("reports setup failure events and the result once", async () => {
-		const observed: string[] = [];
-		const stream = lazyStream(
-			model,
-			async () => {
-				throw new Error("setup-secret");
-			},
-			{
-				onEvent: (event) => observed.push(event.type),
-				onResult: (result) => observed.push(result?.stopReason ?? "missing"),
-			},
-		);
-		expect((await stream.result()).errorMessage).toBe("setup-secret");
-		expect(observed).toEqual(["error", "error"]);
-	});
+	// Regression #8409: the fourth argument controls cancellation without losing observation or timing.
+	it.each(["never", "before setup", "during setup"] as const)(
+		"reports setup failure events and the result once when aborted %s",
+		async (abortWhen) => {
+			const controller = new AbortController();
+			if (abortWhen === "before setup") controller.abort();
+			const startedAt = 1700000000000;
+			let now = startedAt;
+			const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+			const observedEvents: AssistantMessageEvent[] = [];
+			const observedResults: Array<AssistantMessage | undefined> = [];
+			try {
+				const stream = lazyStream(
+					model,
+					async () => {
+						now += 50;
+						if (abortWhen === "during setup") controller.abort();
+						throw new Error("setup-secret");
+					},
+					{
+						onEvent: (event) => observedEvents.push(event),
+						onResult: (result) => observedResults.push(result),
+					},
+					controller.signal,
+				);
+				const received: AssistantMessageEvent[] = [];
+				for await (const event of stream) received.push(event);
+				const result = await stream.result();
+				const reason = abortWhen === "never" ? "error" : "aborted";
+				expect(result).toMatchObject({ stopReason: reason, errorMessage: "setup-secret", timestamp: startedAt });
+				expect(received).toEqual([{ type: "error", reason, error: result }]);
+				expect(observedEvents).toEqual(received);
+				expect(observedEvents[0]).toBe(received[0]);
+				expect(observedResults).toEqual([result]);
+			} finally {
+				clock.mockRestore();
+			}
+		},
+	);
 });
