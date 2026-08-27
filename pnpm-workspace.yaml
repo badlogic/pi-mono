@@ -1,0 +1,19 @@
+nodeLinker: hoisted
+linkWorkspacePackages: true
+
+packages:
+  - "packages/*"
+  - "packages/session-backends/*"
+  - "packages/coding-agent/examples/extensions/with-deps"
+  - "packages/coding-agent/examples/extensions/custom-provider-anthropic"
+  - "packages/coding-agent/examples/extensions/custom-provider-gitlab-duo"
+  - "packages/coding-agent/examples/extensions/sandbox"
+  - "packages/coding-agent/examples/extensions/gondolin"
+
+allowBuilds:
+  '@google/genai': true
+  canvas: true
+  cpu-features: true
+  esbuild: true
+  protobufjs: true
+  ssh2: true
