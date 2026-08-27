@@ -393,9 +393,21 @@ export abstract class TuiBase extends Container implements TUI {
 		if (this.showHardwareCursor === enabled) return;
 		this.showHardwareCursor = enabled;
 		if (!enabled) {
-			this.terminal.hideCursor();
+			this.hideCursorIfActive();
 		}
 		this.requestRender();
+	}
+
+	/**
+	 * Hide the hardware cursor, but only while the TUI is running.
+	 * After stop() has restored cursor visibility, late teardown paths
+	 * (e.g. extension session_shutdown hooks hiding overlays) must not
+	 * re-hide it, leaving the terminal cursor invisible.
+	 */
+	private hideCursorIfActive(): void {
+		if (!this.stopped) {
+			this.terminal.hideCursor();
+		}
 	}
 
 	getClearOnShrink(): boolean {
@@ -559,7 +571,7 @@ export abstract class TuiBase extends Container implements TUI {
 		if (!options?.nonCapturing && this.isOverlayVisible(entry)) {
 			this.setFocus(component);
 		}
-		this.terminal.hideCursor();
+		this.hideCursorIfActive();
 		this.requestRender();
 
 		// Return handle for controlling this overlay
@@ -575,7 +587,7 @@ export abstract class TuiBase extends Container implements TUI {
 						const topVisible = this.getTopmostVisibleOverlay();
 						this.setFocus(topVisible?.component ?? entry.preFocus);
 					}
-					if (this.overlayStack.length === 0) this.terminal.hideCursor();
+					if (this.overlayStack.length === 0) this.hideCursorIfActive();
 					this.requestRender();
 				}
 			},
@@ -653,7 +665,7 @@ export abstract class TuiBase extends Container implements TUI {
 			const topVisible = this.getTopmostVisibleOverlay();
 			this.setFocus(topVisible?.component ?? overlay.preFocus);
 		}
-		if (this.overlayStack.length === 0) this.terminal.hideCursor();
+		if (this.overlayStack.length === 0) this.hideCursorIfActive();
 		this.requestRender();
 	}
 
@@ -762,6 +774,7 @@ export abstract class TuiBase extends Container implements TUI {
 	}
 
 	renderNow(force = false): void {
+		if (this.stopped) return;
 		if (force) this.resetRenderState();
 		this.renderRequested = false;
 		this.cancelRenderTimer();
