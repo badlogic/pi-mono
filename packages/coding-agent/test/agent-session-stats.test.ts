@@ -34,15 +34,20 @@ function createUsage(totalTokens: number): Usage {
 	};
 }
 
-function createAssistantMessage(text: string, totalTokens: number, timestamp: number): AssistantMessage {
+function createAssistantMessage(
+	text: string,
+	totalTokens: number,
+	timestamp: number,
+	stopReason: AssistantMessage["stopReason"] = "stop",
+): AssistantMessage {
 	return {
 		role: "assistant",
-		content: [{ type: "text", text }],
+		content: stopReason === "error" ? [] : [{ type: "text", text }],
 		api: model.api,
 		provider: model.provider,
 		model: model.id,
 		usage: createUsage(totalTokens),
-		stopReason: "stop",
+		stopReason,
 		timestamp,
 	};
 }
@@ -276,6 +281,88 @@ describe("AgentSession.getSessionStats", () => {
 			expect(stats.contextUsage).toBeDefined();
 			expect(stats.contextUsage?.tokens).not.toBeNull();
 			expect(stats.contextUsage?.tokens ?? 0).toBeGreaterThan(25_000);
+		} finally {
+			session.dispose();
+		}
+	});
+
+	// Reported live shape: a footer/get_session_stats reading past 100% after
+	// the most recent assistant message errored or was aborted following a
+	// huge quoted turn. getContextUsage() computed its own full-array estimate
+	// independently of _checkCompaction()'s Case 3, so the trigger-side fix
+	// there left this display path unpatched - these tests cover the display
+	// path's own narrowing and clamp, mirroring the trigger-side fix exactly.
+	it("narrows displayed context to the last reliable usage when the most recent assistant errored", async () => {
+		const { session, sessionManager } = await createSession();
+
+		try {
+			sessionManager.appendMessage(createUserMessage("first", 1));
+			sessionManager.appendMessage(createAssistantMessage("response1", 68_000, 2)); // reliable baseline: 6.8% of window
+			sessionManager.appendMessage(createUserMessage("x".repeat(4_000_000), 3)); // one action's worth of quoted content alone estimates past the window
+			sessionManager.appendMessage(createAssistantMessage("", 0, 4, "error")); // failed before reporting any usage
+			syncAgentMessages(session, sessionManager);
+
+			const stats = session.getSessionStats();
+			expect(stats.contextUsage?.tokens).toBe(68_000);
+			expect(stats.contextUsage?.percent).toBe((68_000 / model.contextWindow) * 100);
+		} finally {
+			session.dispose();
+		}
+	});
+
+	it("narrows displayed context to the last reliable usage when the most recent assistant was aborted", async () => {
+		const { session, sessionManager } = await createSession();
+
+		try {
+			sessionManager.appendMessage(createUserMessage("first", 1));
+			sessionManager.appendMessage(createAssistantMessage("response1", 68_000, 2));
+			sessionManager.appendMessage(createUserMessage("x".repeat(4_000_000), 3));
+			sessionManager.appendMessage(createAssistantMessage("", 0, 4, "aborted"));
+			syncAgentMessages(session, sessionManager);
+
+			const stats = session.getSessionStats();
+			expect(stats.contextUsage?.tokens).toBe(68_000);
+			expect(stats.contextUsage?.percent).toBe((68_000 / model.contextWindow) * 100);
+		} finally {
+			session.dispose();
+		}
+	});
+
+	it("never reports a displayed percent above 100%, even with no reliable baseline to narrow to", async () => {
+		const { session, sessionManager } = await createSession();
+
+		try {
+			// No prior reliable usage anywhere: the narrowing branch cannot apply
+			// (estimate.lastUsageIndex stays null), so this exercises the plain
+			// full-array estimate - which must still be clamped to the window,
+			// the same #8328 case the trigger-side fix also had to keep serving.
+			sessionManager.appendMessage(createUserMessage("x".repeat(8_000_000), 1)); // ~2M estimated tokens, 2x the window
+			sessionManager.appendMessage(createAssistantMessage("", 0, 2, "error"));
+			syncAgentMessages(session, sessionManager);
+
+			const stats = session.getSessionStats();
+			expect(stats.contextUsage?.tokens).toBeLessThanOrEqual(model.contextWindow);
+			expect(stats.contextUsage?.percent).toBeLessThanOrEqual(100);
+		} finally {
+			session.dispose();
+		}
+	});
+
+	it("does not narrow when the most recent assistant message completed normally with zero usage (malformed, not failed)", async () => {
+		const { session, sessionManager } = await createSession();
+
+		try {
+			sessionManager.appendMessage(createUserMessage("first", 1));
+			sessionManager.appendMessage(createAssistantMessage("response1", 68_000, 2));
+			sessionManager.appendMessage(createUserMessage("x".repeat(4_000_000), 3));
+			sessionManager.appendMessage(createAssistantMessage("", 0, 4, "stop")); // zero usage but not a confirmed failure
+			syncAgentMessages(session, sessionManager);
+
+			const stats = session.getSessionStats();
+			// Unaffected by the narrowing: still adds the trailing estimate, only
+			// clamped to the window like every other path.
+			expect(stats.contextUsage?.tokens).toBeGreaterThan(68_000);
+			expect(stats.contextUsage?.tokens).toBeLessThanOrEqual(model.contextWindow);
 		} finally {
 			session.dispose();
 		}

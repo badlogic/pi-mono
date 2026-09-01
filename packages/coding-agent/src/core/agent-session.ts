@@ -3451,10 +3451,27 @@ export class AgentSession {
 		}
 
 		const estimate = estimateContextTokens(this.messages);
-		const percent = (estimate.tokens / contextWindow) * 100;
+
+		// Same reasoning as _checkCompaction()'s Case 3: a most-recent assistant
+		// message that itself failed or was aborted never confirms how much of
+		// its own rendered content the provider actually processed, so adding
+		// the crude per-character trailingTokens estimate of everything since
+		// the last reliable usage on top of that baseline can read far past what
+		// a healthy turn would actually use - this is the displayed-context
+		// counterpart of the trigger-side estimate _checkCompaction() already
+		// narrows, and needs the identical narrowing so the two never diverge.
+		const lastAssistant = this._findLastAssistantMessage();
+		const lastIsUnreliable = lastAssistant?.stopReason === "error" || lastAssistant?.stopReason === "aborted";
+		let tokens = lastIsUnreliable && estimate.lastUsageIndex !== null ? estimate.usageTokens : estimate.tokens;
+
+		// A displayed percentage past 100% is never meaningful: the provider
+		// would have rejected an over-window request outright, so anything
+		// larger is already an artifact of the heuristic, not a real size.
+		tokens = Math.min(tokens, contextWindow);
+		const percent = (tokens / contextWindow) * 100;
 
 		return {
-			tokens: estimate.tokens,
+			tokens,
 			contextWindow,
 			percent,
 		};
