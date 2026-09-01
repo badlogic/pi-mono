@@ -2225,27 +2225,31 @@ export class AgentSession {
 					return false;
 				}
 			}
-			// A message this checked assistantMessage itself failed with (stopReason
-			// "error") never confirms how much of its own rendered content the
-			// provider actually processed - it may have failed before sending
-			// anything at all. Once a reliable post-compaction baseline exists
-			// (estimate.usageTokens, from the last real, non-error usage), trust
-			// that baseline alone for THIS specific failed turn rather than adding
-			// the crude per-character trailingTokens estimate of everything since
-			// it on top: a provider whose bridge resends the full conversation as
-			// quoted text on every turn (no cross-turn prompt-cache reuse) can make
-			// that single trailing estimate far larger than the real, cached
-			// context a healthy turn would actually use, which both overstates the
-			// trigger relative to the displayed context and can refire
-			// auto-compaction immediately after a real compaction completed. A
-			// zero-usage response whose own stopReason is not "error" (the
-			// malformed-response case this fallback also exists for) still adds
-			// trailingTokens as before: only a confirmed failure narrows the
-			// estimate, never an ordinary response missing its usage field.
-			contextTokens =
-				assistantMessage.stopReason === "error" && estimate.lastUsageIndex !== null
-					? estimate.usageTokens
-					: estimate.tokens;
+			// A message this checked assistantMessage itself failed or was aborted
+			// with (stopReason "error" or "aborted") never confirms how much of its
+			// own rendered content the provider actually processed - it may have
+			// failed, or been interrupted, before sending anything at all. The
+			// pre-prompt check (the caller that passes skipAbortedCheck: false so an
+			// aborted lastAssistant still reaches this method, ahead of the user's
+			// next prompt) is exactly where an aborted message shows up here. Once a
+			// reliable post-compaction baseline exists (estimate.usageTokens, from
+			// the last real, non-failed usage), trust that baseline alone for THIS
+			// specific failed/aborted turn rather than adding the crude
+			// per-character trailingTokens estimate of everything since it on top:
+			// a provider whose bridge resends the full conversation as quoted text
+			// on every turn (no cross-turn prompt-cache reuse) can make that single
+			// trailing estimate far larger than the real, cached context a healthy
+			// turn would actually use, which both overstates the trigger relative
+			// to the displayed context (readings past 100% are exactly this) and can
+			// refire auto-compaction immediately after a real compaction completed,
+			// or immediately ahead of the very next prompt after an abort, with no
+			// new reliable usage in between. A zero-usage response whose own
+			// stopReason is neither "error" nor "aborted" (the malformed-response
+			// case this fallback also exists for) still adds trailingTokens as
+			// before: only a confirmed failure or abort narrows the estimate, never
+			// an ordinary response missing its usage field.
+			const confirmedFailure = assistantMessage.stopReason === "error" || assistantMessage.stopReason === "aborted";
+			contextTokens = confirmedFailure && estimate.lastUsageIndex !== null ? estimate.usageTokens : estimate.tokens;
 			// However it was derived, an estimate can never legitimately exceed the
 			// real context window: the provider would have rejected an over-window
 			// request outright, so anything past that is already an artifact of

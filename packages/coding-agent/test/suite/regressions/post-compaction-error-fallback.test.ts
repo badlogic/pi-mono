@@ -139,4 +139,63 @@ describe("post-compaction error turn does not retrigger auto-compact from a low 
 
 		expect(runAutoCompactionSpy).toHaveBeenCalledOnce();
 	});
+
+	// Reported shape: "Auto-compact triggered at >=80% context", then the turn
+	// itself surfaces "This operation was aborted", then the displayed context
+	// reads 416.2% of the window. Traced to the pre-prompt check
+	// (_checkCompaction(lastAssistant, false), the caller that explicitly
+	// passes skipAbortedCheck: false so an aborted lastAssistant still reaches
+	// this method ahead of the user's next prompt): an aborted message's own
+	// usage is unreliable in exactly the same way a failed "error" message's
+	// is, so it must narrow to the last reliable baseline the same way -
+	// never the full unbounded trailing estimate, and never a value past the
+	// context window (a >100% display is definitionally impossible from a
+	// window-bounded estimate).
+	it('narrows to the last reliable usage instead of the full trailing estimate when the next turn is "aborted", keeping the estimate within the window (no >100% display, no unwarranted re-trigger)', async () => {
+		const harness = await createPostCompactionHarness();
+		const baseline = assistantWithUsage(harness, 68, "stop"); // last reliable post-compaction baseline, well under threshold
+		const abortedTurn = assistantWithUsage(harness, 0, "aborted"); // usage cleared: "This operation was aborted"
+
+		// Same shape as the error-path test: a huge amount of raw text between
+		// the reliable baseline and the aborted turn, large enough on its own
+		// that the unbounded chars/4 estimate would blow past the window
+		// (reproducing the reported 416.2%/1.0M overflow) if this fallback did
+		// not narrow aborted turns the same way it narrows error turns.
+		harness.session.agent.state.messages = [
+			{
+				role: "user",
+				content: [{ type: "text", text: "kept-recent context after compaction" }],
+				timestamp: Date.now() - 3,
+			},
+			baseline,
+			{ role: "user", content: [{ type: "text", text: "x".repeat(20000) }], timestamp: Date.now() - 1 }, // ~5000 estimated tokens - 5x the 1000-token window alone
+			abortedTurn,
+		];
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
+
+		// Mirrors the pre-prompt check's own call shape: skipAbortedCheck: false,
+		// the exact call site that let an aborted lastAssistant reach Case 3 in
+		// the reported case.
+		await sessionInternals._checkCompaction(abortedTurn, false);
+
+		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
+	});
+
+	it('still compacts from the full trailing estimate when an "aborted" turn has no reliable usage anywhere before it (the #8328 case this fallback also serves)', async () => {
+		const harness = await createPostCompactionHarness();
+		const abortedTurn = assistantWithUsage(harness, 0, "aborted");
+
+		harness.session.agent.state.messages = [
+			{ role: "user", content: [{ type: "text", text: "x".repeat(4000) }], timestamp: Date.now() - 1 },
+			abortedTurn,
+		];
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
+
+		await sessionInternals._checkCompaction(abortedTurn, false);
+
+		expect(runAutoCompactionSpy).toHaveBeenCalledOnce();
+		expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
+	});
 });
