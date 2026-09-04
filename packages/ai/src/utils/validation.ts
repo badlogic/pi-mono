@@ -279,6 +279,37 @@ function getValidator(schema: Tool["parameters"]): ReturnType<typeof Compile> {
 	return validator;
 }
 
+/**
+ * Builds a hint listing the allowed values for enum validation errors, so callers
+ * can self-correct without reading the tool schema (e.g. graph_compose has 25 op
+ * values — "must be equal to one of the allowed values" alone is not actionable).
+ * Resolves the enum node from the tool schema by walking error.instancePath.
+ */
+function allowedValuesHint(error: TLocalizedValidationError, schema: JsonSchemaObject): string {
+	if (error.keyword !== "enum") {
+		return "";
+	}
+	let node: JsonSchemaObject | undefined = schema;
+	for (const segment of error.instancePath.split("/").filter(Boolean)) {
+		if (node.type === "array" && node.items) {
+			node = Array.isArray(node.items) ? (node.items as JsonSchemaObject[])[Number(segment)] : (node.items as JsonSchemaObject);
+		} else {
+			node = node.properties?.[segment];
+		}
+		if (!node) {
+			return "";
+		}
+	}
+	const values = (node as { enum?: unknown[] }).enum;
+	if (!Array.isArray(values) || values.length === 0) {
+		return "";
+	}
+	const MAX_LISTED = 20;
+	const listed = values.slice(0, MAX_LISTED).map((v) => JSON.stringify(v)).join(", ");
+	const overflow = values.length > MAX_LISTED ? ` …(${values.length - MAX_LISTED} more)` : "";
+	return ` (allowed: ${listed}${overflow})`;
+}
+
 function formatValidationPath(error: TLocalizedValidationError): string {
 	if (error.keyword === "required") {
 		const requiredProperties = (error.params as { requiredProperties?: string[] }).requiredProperties;
@@ -344,7 +375,7 @@ export function validateToolArguments(tool: Tool, toolCall: ToolCall): any {
 	const errors =
 		validator
 			.Errors(args)
-			.map((error) => `  - ${formatValidationPath(error)}: ${error.message}`)
+			.map((error) => `  - ${formatValidationPath(error)}: ${error.message}${allowedValuesHint(error, tool.parameters as JsonSchemaObject)}`)
 			.join("\n") || "Unknown validation error";
 
 	const errorMessage = `Validation failed for tool "${toolCall.name}":\n${errors}\n\nReceived arguments:\n${JSON.stringify(toolCall.arguments, null, 2)}`;
