@@ -386,6 +386,9 @@ export interface ExtensionCommandContext extends ExtensionContext {
 
 	/** Reload extensions, skills, prompts, themes, and context files. */
 	reload(): Promise<void>;
+
+	/** Retry the last interrupted turn or continue from the current transcript. */
+	retry(): Promise<void>;
 }
 
 /**
@@ -1753,6 +1756,7 @@ export interface ExtensionCommandContextActions {
 		options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
 	) => Promise<{ cancelled: boolean }>;
 	reload: () => Promise<void>;
+	retry: () => Promise<void>;
 }
 
 /**

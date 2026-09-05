@@ -327,6 +327,13 @@ export class RpcClient {
 	}
 
 	/**
+	 * Retry the last interrupted turn or continue from the current transcript.
+	 */
+	async retry(): Promise<void> {
+		await this.send({ type: "retry" });
+	}
+
+	/**
 	 * Set auto-retry enabled/disabled.
 	 */
 	async setAutoRetry(enabled: boolean): Promise<void> {

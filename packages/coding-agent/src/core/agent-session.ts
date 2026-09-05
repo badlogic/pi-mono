@@ -252,6 +252,11 @@ export interface PromptOptions {
 	preflightResult?: (success: boolean) => void;
 }
 
+export interface RetryOptions {
+	/** Internal hook used by RPC mode to observe retry preflight acceptance or rejection. */
+	preflightResult?: (success: boolean) => void;
+}
+
 /** Options for model/thinking mutations. */
 export interface ModelMutationOptions {
 	/** Persist the new value to global defaults. Defaults to session-only. */
@@ -1117,6 +1122,28 @@ export class AgentSession {
 		}
 	}
 
+	/** Throw if no model is selected or the selected provider has no usable credentials. */
+	private async _assertModelReady(): Promise<void> {
+		if (!this.model) {
+			throw new Error(formatNoModelSelectedMessage());
+		}
+
+		const hasConfiguredAuth =
+			this._modelRuntime.hasConfiguredAuth(this.model.provider) ||
+			(await this._modelRuntime.checkAuth(this.model.provider)) !== undefined;
+		if (!hasConfiguredAuth) {
+			const isOAuth = this._modelRuntime.isUsingOAuth(this.model.provider);
+			if (isOAuth) {
+				throw new Error(
+					`Authentication failed for "${this.model.provider}". ` +
+						`Credentials may have expired or network is unavailable. ` +
+						`Run '/login ${this.model.provider}' to re-authenticate.`,
+				);
+			}
+			throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
+		}
+	}
+
 	private async _handlePostAgentRun(): Promise<boolean> {
 		const msg = this._lastAssistantMessage;
 		this._lastAssistantMessage = undefined;
@@ -1226,25 +1253,7 @@ export class AgentSession {
 			this._flushPendingBashMessages();
 			this._flushPendingCustomMessages();
 
-			// Validate model
-			if (!this.model) {
-				throw new Error(formatNoModelSelectedMessage());
-			}
-
-			const hasConfiguredAuth =
-				this._modelRuntime.hasConfiguredAuth(this.model.provider) ||
-				(await this._modelRuntime.checkAuth(this.model.provider)) !== undefined;
-			if (!hasConfiguredAuth) {
-				const isOAuth = this._modelRuntime.isUsingOAuth(this.model.provider);
-				if (isOAuth) {
-					throw new Error(
-						`Authentication failed for "${this.model.provider}". ` +
-							`Credentials may have expired or network is unavailable. ` +
-							`Run '/login ${this.model.provider}' to re-authenticate.`,
-					);
-				}
-				throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
-			}
+			await this._assertModelReady();
 
 			// Check if we need to compact before sending (catches aborted responses).
 			// The user's new prompt is sent below, so do not call agent.continue() here.
@@ -2965,6 +2974,74 @@ export class AgentSession {
 	 */
 	setAutoRetryEnabled(enabled: boolean): void {
 		this.settingsManager.setRetryEnabled(enabled);
+	}
+
+	/**
+	 * Retry the last interrupted turn or continue from the current transcript.
+	 *
+	 * An errored, aborted, or truncated (length) assistant response at the end of the transcript
+	 * is dropped from agent state (it stays in the session file, as with auto-retry) and the
+	 * request that produced it is sent again. A truncated response only ends the transcript when
+	 * it carried no tool calls; otherwise agent-core has already failed those calls and their
+	 * results are last. A transcript ending in a user or tool-result message is
+	 * continued as-is; this covers tool batches interrupted by abort, whose "Operation aborted"
+	 * results are handed to the model rather than re-executed, because tools may have
+	 * half-run. A completed assistant response cannot be retried.
+	 *
+	 * @throws Error while streaming or compacting, when no model or credentials are available,
+	 *   when the transcript is empty, or when the last assistant response completed normally
+	 */
+	async retry(options?: RetryOptions): Promise<void> {
+		const preflightResult = options?.preflightResult;
+
+		try {
+			if (this.isStreaming) {
+				throw new Error("Wait for the current response to finish before retrying.");
+			}
+			if (this.isCompacting) {
+				throw new Error("Wait for compaction to finish before retrying.");
+			}
+
+			this._flushPendingBashMessages();
+			this._flushPendingCustomMessages();
+
+			await this._assertModelReady();
+
+			const messages = this.agent.state.messages;
+			const lastMessage = messages[messages.length - 1];
+			if (!lastMessage) {
+				throw new Error("Nothing to retry: the session has no messages.");
+			}
+			if (lastMessage.role === "assistant") {
+				const assistantMessage = lastMessage as AssistantMessage;
+				if (
+					assistantMessage.stopReason === "error" ||
+					assistantMessage.stopReason === "aborted" ||
+					assistantMessage.stopReason === "length"
+				) {
+					this.agent.state.messages = messages.slice(0, -1);
+				} else if (!this.agent.hasQueuedMessages()) {
+					throw new Error("Cannot retry from a completed assistant response.");
+				}
+			}
+		} catch (error) {
+			preflightResult?.(false);
+			throw error;
+		}
+
+		preflightResult?.(true);
+		this._isAgentRunActive = true;
+		try {
+			await this.agent.continue();
+			while (await this._handlePostAgentRun()) {
+				await this.agent.continue();
+			}
+		} finally {
+			this._systemPromptOverride = undefined;
+			this._flushPendingBashMessages();
+			this._flushPendingCustomMessages();
+			await this._emitAgentSettled();
+		}
 	}
 
 	// =========================================================================

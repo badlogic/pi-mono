@@ -1911,6 +1911,9 @@ export class InteractiveMode {
 				reload: async () => {
 					await this.handleReloadCommand();
 				},
+				retry: async () => {
+					await this.handleRetryCommand();
+				},
 			},
 			shutdownHandler: () => {
 				this.shutdownRequested = true;
@@ -3074,6 +3077,11 @@ export class InteractiveMode {
 			if (text === "/reload") {
 				this.editor.setText("");
 				await this.handleReloadCommand();
+				return;
+			}
+			if (text === "/retry") {
+				this.editor.setText("");
+				await this.handleRetryCommand();
 				return;
 			}
 			if (text === "/debug") {
@@ -6054,6 +6062,16 @@ export class InteractiveMode {
 				dismissReloadBox(previousEditor as Component);
 			}
 			this.showError(`Reload failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	private async handleRetryCommand(): Promise<void> {
+		this.clearStatusIndicator();
+
+		try {
+			await this.session.retry();
+		} catch (error) {
+			this.showError(`Retry failed: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}
 	}
 

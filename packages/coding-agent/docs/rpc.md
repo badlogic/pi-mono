@@ -448,6 +448,27 @@ Response:
 
 ### Retry
 
+#### retry
+
+Retry the last interrupted turn or continue from the current transcript. Same as `/retry` in interactive mode.
+
+```json
+{"type": "retry"}
+```
+
+Response:
+```json
+{"type": "response", "command": "retry", "success": true}
+```
+
+Response semantics match `prompt`: the success response is emitted once the retry is accepted, before the run's events stream. A failure response is emitted when preflight rejects, for example while a response is streaming, while compacting, or when the last assistant response completed normally:
+
+```json
+{"type": "response", "command": "retry", "success": false, "error": "Cannot retry from a completed assistant response."}
+```
+
+An errored, aborted, or truncated (`length`) assistant response at the end of the transcript is dropped from agent state (the session file keeps it) and its request is sent again. A transcript ending in a user or tool-result message is continued as-is. A tool batch interrupted by abort ends this way, with "Operation aborted" results: the model reacts to those results, the tools are not re-executed.
+
 #### set_auto_retry
 
 Enable or disable automatic retry on transient errors (overloaded, rate limit, 5xx).

@@ -1330,6 +1330,28 @@ Important behavior:
 
 For predictable behavior, treat reload as terminal for that handler (`await ctx.reload(); return;`).
 
+### ctx.retry()
+
+Run the same retry flow as `/retry`: re-send the last request after an errored, aborted, or truncated (`length`) assistant response, or continue a transcript that ends in a user or tool-result message. Tool calls interrupted by abort are not re-executed; the model sees their "Operation aborted" results and decides.
+
+```typescript
+pi.registerCommand("retry-last", {
+  description: "Retry the last interrupted turn",
+  handler: async (_args, ctx) => {
+    if (!ctx.isIdle()) {
+      ctx.ui.notify("Wait for the agent to finish first", "warning");
+      return;
+    }
+    await ctx.retry();
+  },
+});
+```
+
+Important behavior:
+- It rejects while a response is streaming or compaction is running, so check `ctx.isIdle()` or call `ctx.waitForIdle()` first
+- It rejects when the last assistant response completed normally; use `pi.sendUserMessage()` to start a new turn instead
+- It resolves after the full run finishes, including auto-retries and auto-compaction
+
 Tools run with `ExtensionContext`, so they cannot call `ctx.reload()` directly. Use a command as the reload entrypoint, then expose a tool that queues that command as a follow-up user message.
 
 Example tool the LLM can call to trigger reload:

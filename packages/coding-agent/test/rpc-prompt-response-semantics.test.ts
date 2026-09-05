@@ -85,10 +85,14 @@ function parseOutputLines(outputLines: string[]): ParsedOutputLine[] {
 		.map((line) => JSON.parse(line) as ParsedOutputLine);
 }
 
-function getPromptResponses(outputLines: string[], id: string): ParsedOutputLine[] {
+function getResponses(outputLines: string[], id: string, command: string): ParsedOutputLine[] {
 	return parseOutputLines(outputLines).filter(
-		(record) => record.id === id && record.type === "response" && record.command === "prompt",
+		(record) => record.id === id && record.type === "response" && record.command === command,
 	);
+}
+
+function getPromptResponses(outputLines: string[], id: string): ParsedOutputLine[] {
+	return getResponses(outputLines, id, "prompt");
 }
 
 function sleep(ms: number): Promise<void> {
@@ -279,6 +283,62 @@ describe("RPC prompt response semantics", () => {
 			});
 
 			await sleep(150);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("emits one failure response when retry preflight rejects during streaming", async () => {
+		const { lineHandler, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 200 });
+
+		try {
+			lineHandler(JSON.stringify({ id: "r1-start", type: "prompt", message: "Start" }));
+			await vi.waitFor(() => {
+				expect(getPromptResponses(rpcIo.outputLines, "r1-start")).toHaveLength(1);
+			});
+
+			lineHandler(JSON.stringify({ id: "r1", type: "retry" }));
+
+			await vi.waitFor(() => {
+				const responses = getResponses(rpcIo.outputLines, "r1", "retry");
+				expect(responses).toHaveLength(1);
+				expect(responses[0]).toMatchObject({
+					id: "r1",
+					type: "response",
+					command: "retry",
+					success: false,
+					error: "Wait for the current response to finish before retrying.",
+				});
+			});
+
+			await sleep(250);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("emits one failure response when retry preflight rejects after a completed response", async () => {
+		const { lineHandler, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+
+		try {
+			lineHandler(JSON.stringify({ id: "r2-start", type: "prompt", message: "Start" }));
+			await vi.waitFor(() => {
+				expect(parseOutputLines(rpcIo.outputLines).some((record) => record.type === "agent_settled")).toBe(true);
+			});
+
+			lineHandler(JSON.stringify({ id: "r2", type: "retry" }));
+
+			await vi.waitFor(() => {
+				const responses = getResponses(rpcIo.outputLines, "r2", "retry");
+				expect(responses).toHaveLength(1);
+				expect(responses[0]).toMatchObject({
+					id: "r2",
+					type: "response",
+					command: "retry",
+					success: false,
+					error: "Cannot retry from a completed assistant response.",
+				});
+			});
 		} finally {
 			await cleanup();
 		}

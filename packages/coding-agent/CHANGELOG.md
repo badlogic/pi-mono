@@ -5,6 +5,7 @@
 ### Added
 
 - Added `ctx.modelRegistry.stream()` and `streamSimple()` for extension model calls through configured providers with resolved authentication ([#8964](https://github.com/earendil-works/pi/issues/8964)).
+- Added `/retry` to resume the last turn after an errored, aborted, or truncated assistant response, with matching `session.retry()` SDK, `ctx.retry()` extension, and `retry` RPC entry points. See [Retrying an Interrupted Turn](docs/sdk.md#retrying-an-interrupted-turn) and [RPC retry](docs/rpc.md#retry).
 
 ### Changed
 

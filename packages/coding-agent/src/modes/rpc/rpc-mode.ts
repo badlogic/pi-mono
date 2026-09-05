@@ -341,6 +341,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				reload: async () => {
 					await session.reload();
 				},
+				retry: async () => {
+					await session.retry();
+				},
 			},
 			shutdownHandler: () => {
 				shutdownRequested = true;
@@ -545,6 +548,27 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 			// Retry
 			// =================================================================
+
+			case "retry": {
+				// Same response semantics as "prompt": respond once the retry is accepted, before
+				// the run finishes, so the caller sees the response ahead of the event stream.
+				let preflightSucceeded = false;
+				void session
+					.retry({
+						preflightResult: (didSucceed) => {
+							if (didSucceed) {
+								preflightSucceeded = true;
+								output(success(id, "retry"));
+							}
+						},
+					})
+					.catch((e) => {
+						if (!preflightSucceeded) {
+							output(error(id, "retry", e.message));
+						}
+					});
+				return undefined;
+			}
 
 			case "set_auto_retry": {
 				session.setAutoRetryEnabled(command.enabled);

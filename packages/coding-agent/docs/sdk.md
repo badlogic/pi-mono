@@ -103,6 +103,13 @@ interface AgentSession {
   compact(customInstructions?: string): Promise<CompactionResult>;
   abortCompaction(): void;
 
+  // Retry
+  retry(options?: RetryOptions): Promise<void>;
+  abortRetry(): void;
+  isRetrying: boolean;
+  autoRetryEnabled: boolean;
+  setAutoRetryEnabled(enabled: boolean): void;
+
   // Abort current operation
   abort(): Promise<void>;
 
@@ -234,6 +241,30 @@ await session.followUp("After you're done, also do this");
 ```
 
 Both `steer()` and `followUp()` expand file-based prompt templates but error on extension commands (extension commands cannot be queued).
+
+### Retrying an Interrupted Turn
+
+`retry()` resumes the last turn without adding a new user message. It is the programmatic form of `/retry`, for when auto-retry is disabled, exhausted, or the run was aborted:
+
+```typescript
+try {
+  await session.prompt("Refactor the parser");
+} finally {
+  const last = session.messages.at(-1);
+  if (last?.role === "assistant" && last.stopReason === "error") {
+    await session.retry();
+  }
+}
+```
+
+**Behavior:**
+- **Errored, aborted, or truncated (`length`) assistant response last**: It is dropped from agent state (the session file keeps it, as with auto-retry) and the request that produced it is sent again. For a truncation this is the manual form of overflow recovery: `/compact` first if the context was full.
+- **User or tool-result message last**: The transcript is continued from that message. A tool batch interrupted by abort ends this way, with "Operation aborted" results: the model reacts to those results, the tools are not re-executed, since they may have half-run.
+- **Completed assistant response last**: Throws. There is nothing to retry; send a new prompt instead.
+- **While streaming or compacting**: Throws. Wait for `agent_settled` (or `agent.waitForIdle()`) first.
+- **No model or credentials**: Throws the same errors as `prompt()`.
+
+`retry()` resolves after the full run finishes, including auto-retries and auto-compaction. `RetryOptions.preflightResult` fires once, with `true` when the retry was accepted and `false` when preflight rejected it, mirroring `PromptOptions.preflightResult`.
 
 ### Agent and AgentState
 

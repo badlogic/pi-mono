@@ -132,6 +132,110 @@ describe("AgentSession retry and event characterization", () => {
 		expect(harness.eventsOfType("auto_retry_start")).toEqual([]);
 	});
 
+	it("manually retries an interrupted turn when auto-retry is disabled", async () => {
+		const harness = await createHarness({ settings: { retry: { enabled: false } } });
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage("", { stopReason: "error", errorMessage: "overloaded_error" }),
+			fauxAssistantMessage("manual recovery"),
+		]);
+
+		await harness.session.prompt("test");
+		await harness.session.retry();
+
+		expect(harness.faux.state.callCount).toBe(2);
+		expect(harness.eventsOfType("auto_retry_start")).toEqual([]);
+		expect(harness.session.messages.at(-1)).toMatchObject({ role: "assistant" });
+	});
+
+	it("manually retries an aborted turn", async () => {
+		const harness = await createHarness({ settings: { retry: { enabled: false } } });
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("x".repeat(20_000)), fauxAssistantMessage("after abort")]);
+
+		const sawMessageUpdate = new Promise<void>((resolve) => {
+			const unsubscribe = harness.session.subscribe((event) => {
+				if (event.type === "message_update") {
+					unsubscribe();
+					resolve();
+				}
+			});
+		});
+		const promptPromise = harness.session.prompt("test");
+		await sawMessageUpdate;
+		await harness.session.abort();
+		await promptPromise;
+		expect(harness.session.messages.at(-1)).toMatchObject({ role: "assistant", stopReason: "aborted" });
+
+		await harness.session.retry();
+
+		expect(harness.faux.state.callCount).toBe(2);
+		expect(harness.session.messages.at(-1)).toMatchObject({ role: "assistant", stopReason: "stop" });
+		expect(harness.session.messages.filter((message) => message.role === "user")).toHaveLength(1);
+		expect(harness.events[harness.events.length - 1]?.type).toBe("agent_settled");
+	});
+
+	it("manually retries a truncated response", async () => {
+		const harness = await createHarness({
+			models: [{ id: "faux-1", contextWindow: 1_000_000, maxTokens: 100 }],
+			settings: { retry: { enabled: false } },
+		});
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage("x".repeat(400), { stopReason: "length" }),
+			fauxAssistantMessage("complete"),
+		]);
+
+		await harness.session.prompt("test");
+		expect(harness.session.messages.at(-1)).toMatchObject({ role: "assistant", stopReason: "length" });
+
+		await harness.session.retry();
+
+		expect(harness.faux.state.callCount).toBe(2);
+		expect(harness.session.messages.at(-1)).toMatchObject({ role: "assistant", stopReason: "stop" });
+		expect(harness.session.messages.filter((message) => message.role === "user")).toHaveLength(1);
+	});
+
+	it("rejects manual retry while a response is streaming", async () => {
+		const harness = await createHarness({ settings: { retry: { enabled: false } } });
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("x".repeat(20_000))]);
+
+		const sawMessageUpdate = new Promise<void>((resolve) => {
+			const unsubscribe = harness.session.subscribe((event) => {
+				if (event.type === "message_update") {
+					unsubscribe();
+					resolve();
+				}
+			});
+		});
+		const promptPromise = harness.session.prompt("test");
+		await sawMessageUpdate;
+
+		await expect(harness.session.retry()).rejects.toThrow("Wait for the current response to finish before retrying.");
+		await promptPromise;
+		expect(harness.faux.state.callCount).toBe(1);
+	});
+
+	it("rejects manual retry on an empty session", async () => {
+		const harness = await createHarness({ settings: { retry: { enabled: false } } });
+		harnesses.push(harness);
+
+		await expect(harness.session.retry()).rejects.toThrow("Nothing to retry: the session has no messages.");
+		expect(harness.faux.state.callCount).toBe(0);
+	});
+
+	it("rejects manual retry after a completed assistant response", async () => {
+		const harness = await createHarness({ settings: { retry: { enabled: false } } });
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("done")]);
+
+		await harness.session.prompt("test");
+
+		await expect(harness.session.retry()).rejects.toThrow("Cannot retry from a completed assistant response.");
+		expect(harness.faux.state.callCount).toBe(1);
+	});
+
 	it("does not retry non-retryable errors", async () => {
 		const harness = await createHarness({ settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } } });
 		harnesses.push(harness);
