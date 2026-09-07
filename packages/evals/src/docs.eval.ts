@@ -7,21 +7,20 @@ import { loadDocumentationCatalog, loadDocumentationSourceHints } from "./docs-c
 import { createPiCodingAgentHarness } from "./pi-harness.ts";
 
 const SUBMIT_AUDIT_TOOL_NAME = "submit_documentation_audit";
-const DocumentationAuditSchema = Type.Object(
-	{
-		verdict: Type.Union([Type.Literal("match"), Type.Literal("mismatch")]),
-		explanation: Type.String({ minLength: 1, maxLength: 2000 }),
-		documentationEvidence: Type.String({ minLength: 1, maxLength: 2000 }),
-		implementationEvidence: Type.String({ minLength: 1, maxLength: 3000 }),
-	},
-	{ additionalProperties: false },
-);
 const submitDocumentationAuditTool = defineTool({
 	name: SUBMIT_AUDIT_TOOL_NAME,
 	label: "Submit documentation audit",
 	description: "Submit the final verdict after completing the documentation investigation.",
 	promptSnippet: "Submit the final documentation audit as validated structured data",
-	parameters: DocumentationAuditSchema,
+	parameters: Type.Object(
+		{
+			verdict: Type.Union([Type.Literal("match"), Type.Literal("mismatch")]),
+			explanation: Type.String({ minLength: 1, maxLength: 2000 }),
+			documentationEvidence: Type.String({ minLength: 1, maxLength: 2000 }),
+			implementationEvidence: Type.String({ minLength: 1, maxLength: 3000 }),
+		},
+		{ additionalProperties: false },
+	),
 	constrainedSampling: { type: "json_schema", strict: "prefer" },
 	async execute(_toolCallId, params) {
 		return {
