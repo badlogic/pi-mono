@@ -180,6 +180,20 @@ interface Expandable {
 	setExpanded(expanded: boolean): void;
 }
 
+interface WorkingStatusEditor extends EditorComponent {
+	readonly embedWorkingStatus: boolean;
+	setWorkingStatusIndicator(indicator: StatusIndicator | undefined): void;
+}
+
+function isWorkingStatusEditor(editor: EditorComponent): editor is WorkingStatusEditor {
+	return (
+		"embedWorkingStatus" in editor &&
+		editor.embedWorkingStatus === true &&
+		"setWorkingStatusIndicator" in editor &&
+		typeof editor.setWorkingStatusIndicator === "function"
+	);
+}
+
 function isExpandable(obj: unknown): obj is Expandable {
 	return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
 }
@@ -389,11 +403,12 @@ export class InteractiveMode {
 	private onInputCallback?: (text: string) => void;
 	private pendingUserInputs: string[] = [];
 	private activeStatusIndicator: StatusIndicator | undefined = undefined;
+	private activeWorkingIndicatorEmbedded = false;
 	private readonly idleStatus = new IdleStatus();
 	private workingMessage: string | undefined = undefined;
 	private workingVisible = true;
 	private workingIndicatorOptions: WorkingIndicatorOptions | undefined = undefined;
-	private readonly defaultWorkingMessage = "Working...";
+	private readonly defaultWorkingMessage = "Working";
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
 
@@ -543,6 +558,7 @@ export class InteractiveMode {
 		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings, {
 			paddingX: editorPaddingX,
 			autocompleteMaxVisible,
+			embedWorkingStatus: true,
 		});
 		this.editor = this.defaultEditor;
 		this.editorContainer = new Container();
@@ -866,7 +882,8 @@ export class InteractiveMode {
 			widgetsBelow: this.widgetContainerBelow,
 			footer: this.footerContainer,
 			scrollbar: this.settingsManager.getFullscreenScrollbar(),
-			scrollbarStyle: (text) => theme.bg("scrollbarThumb", text),
+			scrollbarTrackStyle: (text) => theme.fg("scrollbarTrack", text),
+			scrollbarThumbStyle: (text) => theme.fg("scrollbarThumb", text),
 		});
 		this.transcriptScrollView = viewport.transcript;
 		this.fullscreenLayoutRoot = viewport.root;
@@ -2075,10 +2092,23 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	private setEditorWorkingStatusIndicator(indicator: StatusIndicator | undefined): boolean {
+		this.defaultEditor.setWorkingStatusIndicator(undefined);
+		if (!isWorkingStatusEditor(this.editor)) return false;
+		this.editor.setWorkingStatusIndicator(indicator);
+		return true;
+	}
+
 	private showStatusIndicator(indicator: StatusIndicator): void {
 		this.activeStatusIndicator?.dispose();
 		this.activeStatusIndicator = indicator;
+		this.activeWorkingIndicatorEmbedded = false;
 		this.statusContainer.clear();
+		this.setEditorWorkingStatusIndicator(undefined);
+		if (this.setEditorWorkingStatusIndicator(indicator)) {
+			this.activeWorkingIndicatorEmbedded = true;
+			return;
+		}
 		this.statusContainer.addChild(indicator);
 	}
 
@@ -2086,21 +2116,34 @@ export class InteractiveMode {
 		if (kind && this.activeStatusIndicator?.kind !== kind) {
 			return;
 		}
-		const hadActiveStatusIndicator = this.activeStatusIndicator !== undefined;
-		this.activeStatusIndicator?.dispose();
+		const clearedIndicator = this.activeStatusIndicator;
+		const clearedIndicatorWasEmbedded = this.activeWorkingIndicatorEmbedded;
+		clearedIndicator?.dispose();
 		this.activeStatusIndicator = undefined;
+		this.activeWorkingIndicatorEmbedded = false;
 		this.statusContainer.clear();
-		if (hadActiveStatusIndicator && this.options.tuiMode === "regular" && this.ui.getClearOnShrink()) {
+		this.setEditorWorkingStatusIndicator(undefined);
+		if (
+			clearedIndicator &&
+			!clearedIndicatorWasEmbedded &&
+			this.options.tuiMode === "regular" &&
+			this.ui.getClearOnShrink()
+		) {
 			this.statusContainer.addChild(this.idleStatus);
 		}
 	}
 
 	private showWorkingStatusIndicator(): void {
+		const colorFn = isWorkingStatusEditor(this.editor)
+			? (text: string) =>
+					(this.editor.borderColor ?? theme.getThinkingBorderColor(this.session.thinkingLevel || "off"))(text)
+			: undefined;
 		this.showStatusIndicator(
 			new WorkingStatusIndicator(
 				this.ui,
 				this.workingMessage ?? this.defaultWorkingMessage,
 				this.workingIndicatorOptions,
+				colorFn,
 			),
 		);
 	}
@@ -2674,6 +2717,13 @@ export class InteractiveMode {
 		}
 
 		this.editorContainer.addChild(this.editor as Component);
+		if (this.activeStatusIndicator) {
+			this.statusContainer.clear();
+			this.activeWorkingIndicatorEmbedded = this.setEditorWorkingStatusIndicator(this.activeStatusIndicator);
+			if (!this.activeWorkingIndicatorEmbedded) {
+				this.statusContainer.addChild(this.activeStatusIndicator);
+			}
+		}
 		this.ui.setFocus(this.editor as Component);
 		this.ui.requestRender();
 	}
@@ -4120,6 +4170,7 @@ export class InteractiveMode {
 			const level = this.session.thinkingLevel || "off";
 			this.editor.borderColor = theme.getThinkingBorderColor(level);
 		}
+		this.activeStatusIndicator?.invalidate();
 		this.ui.requestRender();
 	}
 
@@ -5217,6 +5268,14 @@ export class InteractiveMode {
 						await this.session.abort();
 					}
 
+					// Recheck after the dialogs and streaming abort, before replacing another operation's UI.
+					if (this.session.isCompacting) {
+						this.showError(
+							"Wait for the current compaction or tree navigation to finish before navigating the session tree.",
+						);
+						return;
+					}
+
 					// Set up escape handler and status indicator if summarizing
 					let showingSummaryIndicator = false;
 					const originalOnEscape = this.defaultEditor.onEscape;
@@ -5625,60 +5684,82 @@ export class InteractiveMode {
 	): Promise<void> {
 		const actionLabel = authType === "oauth" ? `Logged in to ${providerName}` : `Saved API key for ${providerName}`;
 
-		let selectedModel: Model<any> | undefined;
-		let selectionError: string | undefined;
-		if (isUnknownModel(previousModel)) {
-			const availableModels = this.session.modelRuntime.getAvailableSnapshot();
-			const providerModels = availableModels.filter((model) => model.provider === providerId);
-			// Matches LLAMA_PROVIDER_ID from extensions/llama/provider.ts; kept inline to avoid coupling interactive mode to the built-in extension.
-			if (providerId === "llama.cpp") {
-				selectionError = llamaCppPostLoginGuidance(actionLabel, providerModels.length);
-			} else if (!hasDefaultModelProvider(providerId)) {
-				selectionError = `${actionLabel}, but no default model is configured for provider "${providerId}". Use /model to select a model.`;
-			} else if (providerModels.length === 0) {
-				selectionError = `${actionLabel}, but no models are available for that provider. Use /model to select a model.`;
-			} else {
-				const defaultModelId = defaultModelPerProvider[providerId];
-				selectedModel = providerModels.find((model) => model.id === defaultModelId);
-				if (!selectedModel) {
-					selectionError = `${actionLabel}, but its default model "${defaultModelId}" is not available. Use /model to select a model.`;
+		const session = this.session;
+		// Dynamic catalogs may be empty until the first authenticated network refresh.
+		const deferSelection =
+			isUnknownModel(previousModel) &&
+			hasDefaultModelProvider(providerId) &&
+			!session.modelRuntime
+				.getAvailableSnapshot()
+				.some((model) => model.provider === providerId && model.id === defaultModelPerProvider[providerId]);
+		const finishAuthentication = async () => {
+			let selectedModel: Model<any> | undefined;
+			let selectionError: string | undefined;
+			if (isUnknownModel(previousModel)) {
+				const availableModels = this.session.modelRuntime.getAvailableSnapshot();
+				const providerModels = availableModels.filter((model) => model.provider === providerId);
+				// Matches LLAMA_PROVIDER_ID from extensions/llama/provider.ts; kept inline to avoid coupling interactive mode to the built-in extension.
+				if (providerId === "llama.cpp") {
+					selectionError = llamaCppPostLoginGuidance(actionLabel, providerModels.length);
+				} else if (!hasDefaultModelProvider(providerId)) {
+					selectionError = `${actionLabel}, but no default model is configured for provider "${providerId}". Use /model to select a model.`;
+				} else if (providerModels.length === 0) {
+					selectionError = `${actionLabel}, but no models are available for that provider. Use /model to select a model.`;
 				} else {
-					try {
-						await this.session.setModel(selectedModel, { persist: true });
-					} catch (error: unknown) {
-						selectedModel = undefined;
-						const errorMessage = error instanceof Error ? error.message : String(error);
-						selectionError = `${actionLabel}, but selecting its default model failed: ${errorMessage}. Use /model to select a model.`;
+					const defaultModelId = defaultModelPerProvider[providerId];
+					// Radius catalogs vary by account; prefer balanced, then use catalog order.
+					selectedModel =
+						providerModels.find((model) => model.id === defaultModelId) ??
+						(providerId === "radius" ? providerModels[0] : undefined);
+					if (!selectedModel) {
+						selectionError = `${actionLabel}, but its default model "${defaultModelId}" is not available. Use /model to select a model.`;
+					} else {
+						try {
+							await this.session.setModel(selectedModel, { persist: true });
+						} catch (error: unknown) {
+							selectedModel = undefined;
+							const errorMessage = error instanceof Error ? error.message : String(error);
+							selectionError = `${actionLabel}, but selecting its default model failed: ${errorMessage}. Use /model to select a model.`;
+						}
 					}
 				}
 			}
-		}
 
-		await this.updateAvailableProviderCount();
-		this.footer.invalidate();
-		this.updateEditorBorderColor();
-		if (selectedModel) {
-			this.showStatus(`${actionLabel}. Selected ${selectedModel.id}. Credentials saved to ${getAuthPath()}`);
-			void this.maybeWarnAboutAnthropicSubscriptionAuth(selectedModel);
-			this.checkDaxnutsEasterEgg(selectedModel);
-		} else {
-			this.showStatus(`${actionLabel}. Credentials saved to ${getAuthPath()}`);
-			if (selectionError) {
-				this.showError(selectionError);
+			await this.updateAvailableProviderCount();
+			this.footer.invalidate();
+			this.updateEditorBorderColor();
+			if (selectedModel) {
+				this.showStatus(`${actionLabel}. Selected ${selectedModel.id}. Credentials saved to ${getAuthPath()}`);
+				void this.maybeWarnAboutAnthropicSubscriptionAuth(selectedModel);
+				this.checkDaxnutsEasterEgg(selectedModel);
 			} else {
-				void this.maybeWarnAboutAnthropicSubscriptionAuth();
+				this.showStatus(`${actionLabel}. Credentials saved to ${getAuthPath()}`);
+				if (selectionError) {
+					this.showError(selectionError);
+				} else {
+					void this.maybeWarnAboutAnthropicSubscriptionAuth();
+				}
 			}
+		};
+		if (deferSelection) {
+			this.showStatus(`${actionLabel}. Credentials saved to ${getAuthPath()}. Refreshing model catalog…`);
+		} else {
+			await finishAuthentication();
 		}
 
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), 15_000);
-		void this.session.modelRuntime
+		void session.modelRuntime
 			.refresh({ providers: [providerId], signal: controller.signal })
-			.then((result) => {
+			.then(async (result) => {
 				if (result.aborted) {
 					this.showWarning(`${actionLabel}, but its model catalog refresh timed out; using cached models.`);
 				} else if (result.errors.size > 0) {
 					this.showWarning(`${actionLabel}, but its model catalog could not be refreshed; using cached models.`);
+				}
+				// Do not replace a model or session selected while the refresh was running.
+				if (deferSelection && this.session === session && session.model === previousModel) {
+					await finishAuthentication();
 				}
 				this.updateAvailableProviderCount();
 				this.footer.invalidate();

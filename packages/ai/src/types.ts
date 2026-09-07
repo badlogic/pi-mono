@@ -325,8 +325,9 @@ export interface SimpleStreamOptions extends StreamOptions {
 //
 // Contract:
 // - Must return an AssistantMessageEventStream.
-// - Once invoked, request/model/runtime failures should be encoded in the
-//   returned stream, not thrown.
+// - Direct streamSimple() calls may throw synchronously when request auth is
+//   missing. Once a stream is returned, request/model/runtime failures should
+//   be encoded in that stream.
 // - Error termination must produce an AssistantMessage with stopReason
 //   "error" or "aborted" and errorMessage, emitted via the stream protocol.
 export type StreamFunction<TApi extends Api = Api, TOptions extends StreamOptions = StreamOptions> = (
@@ -532,16 +533,15 @@ export interface Context {
  * Successful streams emit `start` before partial updates and terminate with
  * `done`. A stream may terminate directly with `error` when request setup fails
  * before generation starts; after `start`, failures also terminate with `error`.
+ * Direct `streamSimple()` calls throw synchronously when request auth is missing.
  * Updates and `done` must never appear before `start`.
  *
  * `partial` is the shared live response-so-far helper, not an event-time
  * snapshot. Text and thinking blocks are empty when their `*_start` event is
  * emitted and grow only through their corresponding `*_delta` events until the
  * authoritative `*_end`. Redacted thinking may be complete at start and emit no
- * deltas. A streaming tool call starts with empty arguments and emits its full
- * raw JSON through `toolcall_delta`; a provider that starts with complete
- * arguments must emit a cumulative delta prefix that parses to those arguments
- * before emitting any later argument delta.
+ * deltas. Tool-call arguments at `toolcall_start` are provider-specific;
+ * `toolcall_delta` carries subsequent JSON updates.
  */
 export type AssistantMessageEvent =
 	| { type: "start"; partial: AssistantMessage }
@@ -648,7 +648,7 @@ export interface OpenAIResponsesCompat {
 	supportsDeveloperRole?: boolean;
 	/** Session-affinity header format: `openai` sends `session_id` and `x-client-request-id`; `openai-nosession` sends `x-client-request-id`; `openrouter` sends `x-session-id`. Does not affect the `prompt_cache_key` body param, which is governed by cache retention. Default: auto-detected. */
 	sessionAffinityFormat?: SessionAffinityFormat;
-	/** Whether the provider supports `prompt_cache_retention: "24h"`. Default: true. */
+	/** Whether the provider supports long prompt cache retention. This uses `prompt_cache_options.ttl: "30m"` on GPT-5.6+ and `prompt_cache_retention: "24h"` on earlier models. Default: true. */
 	supportsLongCacheRetention?: boolean;
 	/** Whether the provider supports strict JSON-schema function tools. Defaults are API-specific; generated OpenAI models enable it explicitly. */
 	supportsStrictMode?: boolean;
@@ -658,7 +658,7 @@ export interface OpenAIResponsesCompat {
 	supportsAdditionalTools?: boolean;
 	/** Whether the model supports client-executed tool search for deferred tools. Default: false. */
 	supportsToolSearch?: boolean;
-	/** Whether the model accepts `prompt_cache_options` (OpenAI GPT-5.6+ explicit prompt caching). Older OpenAI models reject the parameter. Default: false. */
+	/** Whether the model accepts `prompt_cache_options` (OpenAI GPT-5.6+ prompt caching). Older OpenAI models reject the parameter. Default: false. */
 	supportsExplicitPromptCacheMode?: boolean;
 	/** Whether the provider accepts the `max_output_tokens` parameter. Some Codex-protocol gateways reject it. Default: true. */
 	supportsMaxOutputTokens?: boolean;
