@@ -5,6 +5,14 @@ import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
 import { KeybindingsManager } from "../src/core/keybindings.ts";
 import type { FullscreenExitOutput, TuiMode } from "../src/core/settings-manager.ts";
 import {
+	BranchSummaryStatusIndicator,
+	CompactionStatusIndicator,
+	RetryStatusIndicator,
+	type StatusIndicator,
+	type StatusIndicatorKind,
+	WorkingStatusIndicator,
+} from "../src/modes/interactive/components/status-indicator.ts";
+import {
 	createInteractiveTui,
 	createInteractiveTuiReference,
 	InteractiveMode,
@@ -345,11 +353,11 @@ describe("InteractiveMode copy confirmation", () => {
 
 type StatusEditor = {
 	embedWorkingStatus: boolean;
-	setWorkingStatusIndicator: (indicator: undefined) => void;
+	setWorkingStatusIndicator: (indicator: StatusIndicator | undefined) => void;
 };
 
 type ClearStatusContext = {
-	activeStatusIndicator: { kind: "working" | "retry"; dispose: () => void } | undefined;
+	activeStatusIndicator: { kind: StatusIndicatorKind; dispose: () => void } | undefined;
 	activeWorkingIndicatorEmbedded: boolean;
 	statusContainer: Container;
 	defaultEditor: StatusEditor;
@@ -357,38 +365,82 @@ type ClearStatusContext = {
 	options: { tuiMode?: TuiMode };
 	ui: { getClearOnShrink: () => boolean };
 	idleStatus: Component;
-	setEditorWorkingStatusIndicator(indicator: undefined): boolean;
+	setEditorWorkingStatusIndicator(indicator: StatusIndicator | undefined): boolean;
 };
 
 type InteractiveModePrototype = {
-	clearStatusIndicator(this: ClearStatusContext, kind?: "working" | "retry"): void;
-	setEditorWorkingStatusIndicator(this: ClearStatusContext, indicator: undefined): boolean;
+	showStatusIndicator(this: ClearStatusContext, indicator: StatusIndicator): void;
+	clearStatusIndicator(this: ClearStatusContext, kind?: StatusIndicatorKind): void;
+	setEditorWorkingStatusIndicator(this: ClearStatusContext, indicator: StatusIndicator | undefined): boolean;
 };
 
 const interactiveModePrototype = InteractiveMode.prototype as unknown as InteractiveModePrototype;
 
 describe("clear-on-shrink status spacing", () => {
-	it("does not reserve separate status height for the editor-border working indicator", () => {
-		const dispose = vi.fn();
-		const editor: StatusEditor = { embedWorkingStatus: true, setWorkingStatusIndicator: vi.fn() };
+	it.each([true, false])("routes every status through the editor opt-in (%s)", (embedWorkingStatus) => {
+		initTheme("dark");
+		const tui = { requestRender: vi.fn() } as unknown as TUI;
+		const editor: StatusEditor = { embedWorkingStatus, setWorkingStatusIndicator: vi.fn() };
 		const context: ClearStatusContext = {
-			activeStatusIndicator: { kind: "working", dispose },
-			activeWorkingIndicatorEmbedded: true,
+			activeStatusIndicator: undefined,
+			activeWorkingIndicatorEmbedded: false,
 			statusContainer: new Container(),
-			defaultEditor: editor,
+			defaultEditor: { embedWorkingStatus: true, setWorkingStatusIndicator: vi.fn() },
 			editor,
 			options: { tuiMode: "regular" },
 			ui: { getClearOnShrink: () => true },
 			idleStatus: new Text("", 0, 0),
 			setEditorWorkingStatusIndicator: interactiveModePrototype.setEditorWorkingStatusIndicator,
 		};
-
-		interactiveModePrototype.clearStatusIndicator.call(context);
-
-		expect(dispose).toHaveBeenCalledOnce();
-		expect(editor.setWorkingStatusIndicator).toHaveBeenCalledWith(undefined);
-		expect(context.statusContainer.children).toHaveLength(0);
+		const indicators = [
+			new WorkingStatusIndicator(tui, "Working"),
+			new CompactionStatusIndicator(tui, "manual"),
+			new CompactionStatusIndicator(tui, "threshold"),
+			new CompactionStatusIndicator(tui, "overflow"),
+			new BranchSummaryStatusIndicator(tui),
+			new RetryStatusIndicator(tui, 1, 3, 1000),
+		];
+		try {
+			for (const indicator of indicators) {
+				interactiveModePrototype.showStatusIndicator.call(context, indicator);
+				expect(context.activeStatusIndicator).toBe(indicator);
+				expect(context.activeWorkingIndicatorEmbedded).toBe(embedWorkingStatus);
+				if (embedWorkingStatus) {
+					expect(editor.setWorkingStatusIndicator).toHaveBeenLastCalledWith(indicator);
+					expect(context.statusContainer.children).toHaveLength(0);
+				} else {
+					expect(context.statusContainer.children).toEqual([indicator]);
+				}
+			}
+		} finally {
+			for (const indicator of indicators) indicator.dispose();
+		}
 	});
+
+	it.each<StatusIndicatorKind>(["working", "compaction", "branchSummary", "retry"])(
+		"does not reserve separate status height for an embedded %s indicator",
+		(kind) => {
+			const dispose = vi.fn();
+			const editor: StatusEditor = { embedWorkingStatus: true, setWorkingStatusIndicator: vi.fn() };
+			const context: ClearStatusContext = {
+				activeStatusIndicator: { kind, dispose },
+				activeWorkingIndicatorEmbedded: true,
+				statusContainer: new Container(),
+				defaultEditor: editor,
+				editor,
+				options: { tuiMode: "regular" },
+				ui: { getClearOnShrink: () => true },
+				idleStatus: new Text("", 0, 0),
+				setEditorWorkingStatusIndicator: interactiveModePrototype.setEditorWorkingStatusIndicator,
+			};
+
+			interactiveModePrototype.clearStatusIndicator.call(context);
+
+			expect(dispose).toHaveBeenCalledOnce();
+			expect(editor.setWorkingStatusIndicator).toHaveBeenCalledWith(undefined);
+			expect(context.statusContainer.children).toHaveLength(0);
+		},
+	);
 
 	it("uses the standalone row for a custom editor that has not opted in", () => {
 		for (const [tuiMode, expectedChildren] of [

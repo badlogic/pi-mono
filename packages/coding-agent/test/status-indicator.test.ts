@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { KeybindingsManager } from "../src/core/keybindings.ts";
 import { CustomEditor } from "../src/modes/interactive/components/custom-editor.ts";
 import {
+	BranchSummaryStatusIndicator,
+	CompactionStatusIndicator,
 	IdleStatus,
 	RetryStatusIndicator,
 	WorkingStatusIndicator,
@@ -59,6 +61,38 @@ describe("status indicators", () => {
 		expect(visibleWidth(topBorder)).toBe(20);
 		expect(topBorder.split(theme.getFgAnsi("thinkingHigh"))).toHaveLength(5);
 		indicator.dispose();
+	});
+
+	it("embeds compaction, summary, and retry labels within the border width", () => {
+		initTheme("dark");
+		vi.useFakeTimers();
+		const tui = { requestRender: vi.fn(), terminal: { rows: 10 } } as unknown as TUI;
+		const editor = new CustomEditor(tui, getEditorTheme(), KeybindingsManager.create(), {
+			embedWorkingStatus: true,
+		});
+		const indicators = [
+			new CompactionStatusIndicator(tui, "manual"),
+			new CompactionStatusIndicator(tui, "threshold"),
+			new CompactionStatusIndicator(tui, "overflow"),
+			new BranchSummaryStatusIndicator(tui),
+			new RetryStatusIndicator(tui, 1, 3, 3000),
+		];
+		try {
+			for (const indicator of indicators) {
+				editor.setWorkingStatusIndicator(indicator);
+				const label = stripAnsi(indicator.render(120)[1]!).trim();
+				expect(stripAnsi(editor.render(120)[0]!)).toContain(`── ${label} `);
+				for (const width of [1, 4, 10, 20, 80, 120]) {
+					expect(visibleWidth(editor.render(width)[0]!)).toBe(width);
+				}
+			}
+			vi.advanceTimersByTime(1000);
+			expect(stripAnsi(editor.render(120)[0]!)).toContain("Retrying (1/3) in 2s");
+			editor.setWorkingStatusIndicator(undefined);
+			expect(stripAnsi(editor.render(120)[0]!)).toBe("─".repeat(120));
+		} finally {
+			for (const indicator of indicators) indicator.dispose();
+		}
 	});
 
 	it("disposes retry countdown updates", () => {

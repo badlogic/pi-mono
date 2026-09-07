@@ -1,9 +1,9 @@
 import { Editor, type EditorOptions, type EditorTheme, type TUI, visibleWidth } from "@earendil-works/pi-tui";
 import type { AppKeybinding, KeybindingsManager } from "../../../core/keybindings.ts";
-import type { WorkingStatusIndicator } from "./status-indicator.ts";
+import type { StatusIndicator } from "./status-indicator.ts";
 
 export type CustomEditorOptions = EditorOptions & {
-	/** Render the streaming working status in the editor's top border. */
+	/** Render working, compaction, summarization, and retry status in the editor's top border. */
 	embedWorkingStatus?: boolean;
 };
 
@@ -12,7 +12,7 @@ export type CustomEditorOptions = EditorOptions & {
  */
 export class CustomEditor extends Editor {
 	private keybindings: KeybindingsManager;
-	private workingStatusIndicator: WorkingStatusIndicator | undefined;
+	private workingStatusIndicator: StatusIndicator | undefined;
 	public readonly embedWorkingStatus: boolean;
 	public actionHandlers: Map<AppKeybinding, () => void> = new Map();
 
@@ -29,7 +29,7 @@ export class CustomEditor extends Editor {
 		this.embedWorkingStatus = options?.embedWorkingStatus ?? false;
 	}
 
-	setWorkingStatusIndicator(indicator: WorkingStatusIndicator | undefined): void {
+	setWorkingStatusIndicator(indicator: StatusIndicator | undefined): void {
 		this.workingStatusIndicator = indicator;
 	}
 
