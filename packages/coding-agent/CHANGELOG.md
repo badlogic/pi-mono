@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `ctx.modelRegistry.stream()` and `streamSimple()` for extension model calls through configured providers with resolved authentication ([#8964](https://github.com/earendil-works/pi/issues/8964)).
+
+### Changed
+
+- Enabled strict-prefer JSON-schema sampling by default for built-in `read`, `bash`, `powershell`, `edit`, and `write` tools, without requiring `PI_EXPERIMENTAL`. Extensions can re-register tool definitions with `constrainedSampling: false`.
+
+### Fixed
+
+- Fixed premature missing-model errors after login by waiting for catalog discovery. Radius now defaults to `balanced`, falling back to the first available Radius model when needed.
+
+## [0.85.1] - 2026-09-05
+
+### New Features
+
+- **GPT-6 Astra** — Available through OpenAI API keys and OpenAI Codex subscriptions. See [API Keys](docs/providers.md#api-keys) and [OpenAI Codex](docs/providers.md#openai-codex).
+
+### Added
+
+- Added GPT-6 Astra for OpenAI API keys and OpenAI Codex subscriptions.
+- Added five-times-faster mouse wheel scrolling while holding Alt in fullscreen mode ([#9166](https://github.com/earendil-works/pi/pull/9166) by [@xl0](https://github.com/xl0)).
+
+### Fixed
+
+- Fixed configurable save keybindings in the model and thinking selectors ([#9149](https://github.com/earendil-works/pi/pull/9149) by [@rwachtler](https://github.com/rwachtler)).
+- Fixed SDK import failures caused by unintentionally publishing internal experimental code and dependencies in 0.85.0. The experimental `client` and `experimental/plugin` subpaths and server/client commands are now source-only through `pi-test.sh`; the supported local SDK and stdio RPC API are unchanged ([#9132](https://github.com/earendil-works/pi/issues/9132)).
+- Fixed mouse hover changing selection and recentering autocomplete and settings lists, causing clicks to target a different item.
+- Fixed long prompt-cache requests for GPT-5.6+ Responses models to use `prompt_cache_options.ttl: "30m"` instead of `prompt_cache_retention: "24h"`.
+
 ## [0.85.0] - 2026-09-04
 
 ### New Features

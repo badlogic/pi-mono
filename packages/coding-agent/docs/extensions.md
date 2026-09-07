@@ -1016,6 +1016,12 @@ Access to models, providers, and resolved authentication. `ctx.modelRegistry.get
 
 `ctx.scopedModels` is the read-only list of models scoped to the current session — the same set the `/scoped-models` command shows. It is resolved at session start from the `--models` CLI flag and the `enabledModels` setting (matched against the available catalogue with minimatch on `provider/modelId` or a bare `modelId`). It is empty when no scoping is configured, meaning every available model is usable. Each entry is `{ model, thinkingLevel? }`, where `thinkingLevel` is set only when a pattern pinned it (e.g. `anthropic/*:high`). Use it to populate a model picker that mirrors the built-in one instead of enumerating the whole catalogue via `ctx.modelRegistry.getAvailable()`.
 
+#### Streaming model calls
+
+Use `ctx.modelRegistry.streamSimple(model, context, options)` for provider-neutral options such as `reasoning`, or `stream()` for API-specific options. Both use configured providers and resolve authentication, including for providers registered with `pi.registerProvider()`. Use these instead of `pi-ai/compat` streaming functions, which cannot see extension provider registrations.
+
+Both return an `AssistantMessageEventStream`. Iterate it for response events and await `.result()` for the final message. Setup failures produce error events and error results.
+
 ### ctx.signal
 
 The current agent abort signal, or `undefined` when no agent turn is active.
