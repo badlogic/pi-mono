@@ -167,9 +167,13 @@ export function wordWrapLine(line: string, maxWidth: number, preSegmented?: Intl
 			wrapOppIndex = -1;
 		}
 
-		if (gWidth > maxWidth) {
+		if (gWidth > maxWidth && (segments.length > 1 || isPasteMarker(grapheme))) {
 			// Single atomic segment wider than maxWidth (e.g. paste marker
 			// in a narrow terminal). Re-wrap it at grapheme granularity.
+			// Skipped when the line is a lone non-marker grapheme: recursion
+			// would receive identical input and never terminate. An atomic
+			// wide grapheme cannot be split, so fall through to the normal
+			// advance and let the chunk overflow maxWidth instead.
 
 			// The segment remains logically atomic for cursor
 			// movement / editing — the split is purely visual for word-wrap layout.

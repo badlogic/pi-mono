@@ -1192,6 +1192,27 @@ describe("Editor component", () => {
 			const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
 			assert.strictEqual(reconstructed, line);
 		});
+
+		it("accepts a single unsplittable wide grapheme as an over-wide chunk", () => {
+			// A width-2 grapheme with maxWidth 1 cannot be split further;
+			// recursing would loop on identical input (stack overflow).
+			const chunks = wordWrapLine("😀", 1);
+
+			assert.strictEqual(chunks.length, 1);
+			assert.strictEqual(chunks[0]!.text, "😀");
+			assert.strictEqual(chunks[0]!.startIndex, 0);
+			assert.strictEqual(chunks[0]!.endIndex, "😀".length);
+		});
+
+		it("does not recurse forever on a wide grapheme inside a longer line", () => {
+			const line = "hello 😀 world";
+			const chunks = wordWrapLine(line, 1);
+
+			// The wide grapheme overflows as its own chunk; nothing is lost.
+			assert.ok(chunks.some((c) => c.text === "😀"));
+			const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
+			assert.strictEqual(reconstructed, line);
+		});
 	});
 
 	describe("Kill ring", () => {
